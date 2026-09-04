@@ -75,6 +75,23 @@ jobs:
       - name: SpectraEngine.Editor.Tests
         run: dotnet run --project Test/SpectraEngine.Editor.Tests
 
+      # The one suite that brings up an Avalonia platform. Headless windowing,
+      # so no display and no GPU, but real Skia and real text metrics: the
+      # measurements are worthless under the headless stub typeface, whose every
+      # glyph has the same advance.
+      - name: SpectraEngine.Editor.Render.Tests
+        run: dotnet run --project Test/SpectraEngine.Editor.Render.Tests
+
+      # The sheets a person looks at. if: always() because a failed measurement
+      # is exactly when somebody wants to see the picture.
+      - name: Ribbon sheets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ribbon-sheets-windows
+          path: artifacts/ribbon/
+          if-no-files-found: ignore
+
       # The physics suite runs, but only half of it can: 26 of its 53 tests are
       # guarded by File.Exists(box3d.dll) beside the test binary and skip
       # themselves when the native library was never built. That is a real gap
@@ -226,7 +243,14 @@ jobs:
       #                   csproj comment: scene tree replay, property panel
       #                   commit policy, document state, the virtual-key table.
       #                   It never initialises an Avalonia platform, on any OS,
-      #                   which is what makes it display-independent here.
+      #                   which is what makes it display-independent here - and
+      #                   is why the render suite beside it is a project of its
+      #                   own rather than more tests in this one.
+      #   Editor.Render.  the only suite that DOES initialise one, and it is
+      #   Tests           display-independent for a different reason: headless
+      #                   windowing, so no X server and no GPU, with real Skia
+      #                   for text metrics. One apt package, libfontconfig1,
+      #                   which libSkiaSharp links against.
       #   Physics.Tests   the native half self-skips (see the Windows job); what
       #                   remains is managed struct layout against the committed
       #                   manifest plus pure hull maths.
@@ -246,6 +270,17 @@ jobs:
 
       - name: SpectraEngine.Editor.Tests
         run: dotnet run --project Test/SpectraEngine.Editor.Tests
+
+      # libSkiaSharp.so carries a hard DT_NEEDED on libfontconfig.so.1, and
+      # ubuntu-latest has it - but "works today on the hosted image" is exactly
+      # the assumption this repo probes rather than makes. Without it the
+      # failure reads "Unable to load shared library 'libSkiaSharp'", which
+      # names Skia and not fontconfig.
+      - name: fontconfig, which libSkiaSharp links against
+        run: sudo apt-get install -y --no-install-recommends libfontconfig1
+
+      - name: SpectraEngine.Editor.Render.Tests
+        run: dotnet run --project Test/SpectraEngine.Editor.Render.Tests
 
       - name: SpectraEngine.Physics.Tests
         run: dotnet run --project Test/SpectraEngine.Physics.Tests

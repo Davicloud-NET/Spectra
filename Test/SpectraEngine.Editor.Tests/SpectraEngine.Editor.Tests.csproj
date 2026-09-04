@@ -5,10 +5,17 @@
   </PropertyGroup>
 
   <!--
-    The shell is an application, but the two pieces worth pinning in it are pure:
-    the scene tree's replay of a change log, and the virtual-key table. Neither
-    needs a window, a dispatcher or a GPU, which is exactly why they are the two
-    that get tests rather than a screenshot.
+    THE SHELL'S PURE PIECES, and this project takes no Avalonia platform - which
+    is not tidiness, it is what three of its convention tests justify themselves
+    by: a project that cannot evaluate a style, a brush or a binding has to read
+    the sources, and those are facts about the sources anyway.
+
+    Anything needing a window, a dispatcher or a rasteriser lives next door in
+    SpectraEngine.Editor.Render.Tests instead. That split is the reason this
+    comment no longer says these are the only pieces worth pinning "rather than
+    a screenshot": the ribbon's geometry is measured now, on a real layout pass,
+    because every defect it ever had was found by a person looking at the
+    running window and by nothing else.
   -->
   <ItemGroup>
     <ProjectReference Include="..\..\SpectraEngine.Editor\SpectraEngine.Editor.csproj" />
