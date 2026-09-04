@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spectra editor icon. Swap this file to change the glyph; the build
+     turns every .svg in this folder into the resource the shell binds.
+     The path data is copied VERBATIM and the width/height against the
+     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor">
+  <!-- Group collects two things behind one bracket; ungroup shows them getting
+       out. The old pair was one glyph and the same glyph with strokes removed,
+       which is the same silhouette twice. -->
+  <path d="M6,3 L13.5,3 L13.5,7 L6,7 Z M6,9 L13.5,9 L13.5,13 L6,13 Z M3.5,2.5 L2.5,2.5 L2.5,13.5 L3.5,13.5" />
+</svg>

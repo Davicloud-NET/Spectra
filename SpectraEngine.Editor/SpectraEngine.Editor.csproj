@@ -66,4 +66,6 @@
     <PackageReference Include="Silk.NET.DXGI" />
   </ItemGroup>
 
+  <Import Project="Icons.targets" />
+
 </Project>

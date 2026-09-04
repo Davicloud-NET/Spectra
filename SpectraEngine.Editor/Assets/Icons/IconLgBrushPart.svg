@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spectra editor icon. Swap this file to change the glyph; the build
+     turns every .svg in this folder into the resource the shell binds.
+     The path data is copied VERBATIM and the width/height against the
+     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"
+     fill="none" stroke="currentColor">
+  <!-- A part: the same cube off the ground, over its own shadow. A shorter
+       rule would have been the small set's distinction at twice the size and
+       therefore the same silhouette twice; a cube with a gap and a shadow
+       under it is a thing that is not touching anything, which is what a part
+       IS. -->
+  <path d="M5,7.5 L16,2.5 L27,7.5 L27,19 L16,24 L5,19 Z M5,7.5 L16,12.5 L27,7.5 M16,12.5 L16,24 M9.5,27.8 A6.5,1.7 0 1 1 9.49,27.8 Z" />
+</svg>

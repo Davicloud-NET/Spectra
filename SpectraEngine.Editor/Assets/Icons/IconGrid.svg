@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spectra editor icon. Swap this file to change the glyph; the build
+     turns every .svg in this folder into the resource the shell binds.
+     The path data is copied VERBATIM and the width/height against the
+     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor">
+  <!-- The snap increment's own glyph is a GRID, not a magnet. The control
+       beside it holds a grid size in world units, and the horseshoe that used
+       to sit here read as an arch at 16px anyway. -->
+  <path d="M3,3 L13,3 M3,8 L13,8 M3,13 L13,13 M3,3 L3,13 M8,3 L8,13 M13,3 L13,13" />
+</svg>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spectra editor icon. Swap this file to change the glyph; the build
+     turns every .svg in this folder into the resource the shell binds.
+     The path data is copied VERBATIM and the width/height against the
+     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor">
+  <!-- The status bar's failure mark. The one glyph in the set allowed to carry
+       the accent, because it is the one that means stop and read this. -->
+  <path d="M8,2.5 L13.8,13.1 L2.2,13.1 Z M8,6.4 L8,9.6 M8,11.4 L8,11.5" />
+</svg>

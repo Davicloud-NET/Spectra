@@ -123,39 +123,62 @@ public sealed class RibbonDepthConventionTests
     }
 
     [Fact]
-    public void Every_large_glyph_the_markup_asks_for_exists()
+    public void Every_glyph_the_markup_asks_for_is_a_file_and_every_file_is_asked_for()
     {
-        // The second size is a second set of geometry keys, and a StaticResource
-        // that resolves to nothing throws at load rather than at build - which
-        // for a ribbon page means the window refuses to open with a resource
-        // name in the message and no line number.
-        string icons = File.ReadAllText(
-            Path.Combine(SourceRoot(), "SpectraEngine.Editor", "Theme", "Icons.axaml"));
-
-        var declared = new HashSet<string>(
-            Regex.Matches(icons, @"x:Key=""(IconLg[A-Za-z0-9]+)""")
-                 .Select(m => m.Groups[1].Value),
+        // THE SUBJECT MOVED WITH THE ARTWORK. Icons used to be geometry written
+        // out inside Theme/Icons.axaml; they are Assets/Icons/*.svg now, and
+        // that file is generated from them, so asking it what exists would be
+        // asking the build what the build just did. The files are the fact.
+        //
+        // A StaticResource that resolves to nothing throws at LOAD rather than
+        // at build, which for a ribbon page means the window refuses to open
+        // with a resource name in the message and no line number. The other
+        // direction matters too: a file nothing names is artwork somebody is
+        // maintaining for no surface.
+        var files = new HashSet<string>(
+            Directory.EnumerateFiles(IconFolder(), "*.svg").Select(Path.GetFileNameWithoutExtension)!,
             StringComparer.Ordinal);
 
-        declared.ShouldNotBeEmpty("the large icon set should exist");
+        files.Count.ShouldBeGreaterThan(40, "the icon set should be a folder of svg files");
 
+        var named = new HashSet<string>(StringComparer.Ordinal);
         var missing = new List<string>();
 
-        foreach (string file in Directory.EnumerateFiles(
-                     Path.Combine(SourceRoot(), "SpectraEngine.Editor"), "*.axaml",
-                     SearchOption.AllDirectories))
+        // BOTH MARKUP AND CODE, because an icon key is a string either way and
+        // a markup-only sweep reports a false orphan: IconEmpty is named from
+        // ContentBrowserModel and SceneNodeKindConverters and appears in no
+        // .axaml at all, so scanning one file type would have deleted artwork
+        // three call sites depend on.
+        IEnumerable<string> sources = Directory
+            .EnumerateFiles(Path.Combine(SourceRoot(), "SpectraEngine.Editor"), "*.*", SearchOption.AllDirectories)
+            .Where(f => f.EndsWith(".axaml", StringComparison.Ordinal) || f.EndsWith(".cs", StringComparison.Ordinal));
+
+        foreach (string file in sources)
         {
             if (string.Equals(Path.GetFileName(file), "Icons.axaml", StringComparison.Ordinal))
-                continue;
-
-            foreach (Match m in Regex.Matches(File.ReadAllText(file), @"StaticResource (IconLg[A-Za-z0-9]+)"))
             {
-                if (!declared.Contains(m.Groups[1].Value))
-                    missing.Add($"{Path.GetFileName(file)}: {m.Groups[1].Value}");
+                continue;
+            }
+
+            foreach (Match m in Regex.Matches(File.ReadAllText(file), @"(?:StaticResource |"")([A-Za-z0-9]+)"))
+            {
+                string key = m.Groups[1].Value;
+                if (!key.StartsWith("Icon", StringComparison.Ordinal) && key != "CaretDown")
+                {
+                    continue;
+                }
+
+                named.Add(key);
+                if (!files.Contains(key))
+                {
+                    missing.Add($"{Path.GetFileName(file)}: {key}");
+                }
             }
         }
 
-        missing.ShouldBeEmpty("every IconLg* the markup names must be declared in Icons.axaml");
+        named.ShouldNotBeEmpty("the markup should name icons");
+        missing.ShouldBeEmpty("every icon the markup names must be a file in Assets/Icons");
+        files.Except(named).ShouldBeEmpty("every file in Assets/Icons should be named by some markup");
     }
 
     [Fact]
@@ -166,27 +189,40 @@ public sealed class RibbonDepthConventionTests
         // carries no transform and there is no second shared scale factor to
         // drift from the first. A geometry that strayed back onto the 16 grid
         // would render at a quarter of the area with nothing failing.
-        string icons = File.ReadAllText(
-            Path.Combine(SourceRoot(), "SpectraEngine.Editor", "Theme", "Icons.axaml"));
-
+        //
+        // COUNTED, because this test read the generated dictionary until the
+        // artwork became files and its regex wanted element content where there
+        // is now an attribute: it matched nothing, iterated nothing and passed.
+        // A conventions test that has quietly stopped biting reports coverage
+        // that does not exist, so the count is asserted before the claim.
         var offenders = new List<string>();
+        int examined = 0;
 
-        foreach (Match m in Regex.Matches(
-                     icons, @"x:Key=""(IconLg[A-Za-z0-9]+)"">([^<]*)<"))
+        foreach (string file in Directory.EnumerateFiles(IconFolder(), "IconLg*.svg"))
         {
-            string name = m.Groups[1].Value;
-            double max = Regex.Matches(m.Groups[2].Value, @"-?\d+(\.\d+)?")
+            examined++;
+            string name = Path.GetFileNameWithoutExtension(file);
+            double max = Regex.Matches(Regex.Match(File.ReadAllText(file), @"\bd\s*=\s*""([^""]*)""").Groups[1].Value,
+                                       @"-?\d+(\.\d+)?")
                               .Select(n => double.Parse(n.Value, CultureInfo.InvariantCulture))
                               .DefaultIfEmpty(0)
                               .Max();
 
             // 16 would be dead centre of the 32 box, so anything that never
             // exceeds it is a glyph still drawn on the small grid.
-            if (max <= 16.0) offenders.Add($"{name}: widest coordinate {max}");
+            if (max <= 16.0)
+            {
+                offenders.Add($"{name}: widest coordinate {max}");
+            }
         }
 
+        examined.ShouldBeGreaterThan(8, "the large set should have been read, not silently skipped");
         offenders.ShouldBeEmpty("a large glyph is authored to fill a 32 box, ink 3.5 to 28.5");
     }
+
+    /// <summary>The artwork the build turns into Theme/Icons.axaml.</summary>
+    private static string IconFolder() =>
+        Path.Combine(SourceRoot(), "SpectraEngine.Editor", "Assets", "Icons");
 
     /// <summary>Every gradient key declared in the token file.</summary>
     private static IReadOnlyList<string> GradientKeys()

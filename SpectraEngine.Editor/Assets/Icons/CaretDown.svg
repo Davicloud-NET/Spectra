@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spectra editor icon. Swap this file to change the glyph; the build
+     turns every .svg in this folder into the resource the shell binds.
+     The path data is copied VERBATIM and the width/height against the
+     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="8" height="6" viewBox="0 0 8 6"
+     fill="none" stroke="currentColor">
+  <!-- The one glyph deliberately NOT on the shared 16x16 grid: it is a
+       menu-affordance caret inside a 22px chip, not an icon, so it is
+       authored small and drawn with RenderTransform="none" per the one-off
+       rule rather than being renormalised and scaled with the icon set. -->
+  <path d="M1,1.5 L4,4.5 L7,1.5" />
+</svg>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spectra editor icon. Swap this file to change the glyph; the build
+     turns every .svg in this folder into the resource the shell binds.
+     The path data is copied VERBATIM and the width/height against the
+     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"
+     fill="none" stroke="currentColor">
+  <!-- Rotate: three quarters of a turn with a head, about a centre. -->
+  <path d="M27.5,16 A11.5,11.5 0 1 1 16,4.5 M16,4.5 L11.6,2.4 M16,4.5 L11.6,8.6 M14.4,16 A1.6,1.6 0 1 1 14.39,16 Z" />
+</svg>

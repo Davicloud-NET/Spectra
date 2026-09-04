@@ -1,0 +1,182 @@
+<Project>
+
+  <!--
+    ICONS ARE FILES, AND THE BUILD TURNS THEM INTO THE RESOURCE THE SHELL BINDS.
+
+    Assets/Icons/*.svg is the artwork. Dropping a replacement over one of them
+    and rebuilding changes the glyph; nothing in the markup, the styles or the
+    roster names a file, because every consumer still says
+    {StaticResource IconLgMove} exactly as it did when the geometry was written
+    out by hand in Theme/Icons.axaml.
+
+    THE PATH DATA IS COPIED VERBATIM. The generator never parses or rewrites a
+    'd' string - scaling one means understanding arcs, relative commands and
+    flags, and getting that subtly wrong produces artwork that still draws and
+    is silently deformed. Instead the SVG's own width and height against its
+    viewBox become a Transform on the emitted geometry, which is the mechanism
+    SVG already defines for exactly this. So a Lucide glyph drops in by keeping
+    its viewBox="0 0 24 24" and setting width="16" height="16", and the build
+    works out the 0.667.
+
+    Emitted as PathGeometry rather than StreamGeometry because a StreamGeometry
+    in XAML carries its data as element CONTENT and so cannot also carry an
+    attribute: "No Content property or any Add methods found" at compile time,
+    which is a thing to know rather than to rediscover. PathGeometry takes both.
+  -->
+
+  <UsingTask TaskName="GenerateIconResources"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Icons ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <Output ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.Globalization" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Linq" />
+      <Using Namespace="System.Text" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Using Namespace="Microsoft.Build.Framework" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        // REGEX RATHER THAN AN XML PARSER, because a RoslynCodeTaskFactory task
+        // cannot reference System.Xml.Linq on this SDK ("Could not find
+        // reference System.Xml.Linq"). The shapes matched here are the ones an
+        // icon file guarantees: one svg element carrying a viewBox, and paths
+        // carrying a d.
+        var svgTag = new Regex(@"<svg\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        var attrs = new Regex(@"(?<n>viewBox|width|height)\s*=\s*""(?<v>[^""]*)""", RegexOptions.IgnoreCase);
+        var paths = new Regex(@"<path\b[^>]*?\bd\s*=\s*""(?<d>[^""]*)""", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        // A length may carry a unit ("16px"); the viewBox is the fallback,
+        // which makes width and height optional exactly as SVG does.
+        Func<string, double, double> Length = (raw, fallback) =>
+        {
+            if (string.IsNullOrWhiteSpace(raw)) { return fallback; }
+            string digits = new string(raw.Trim().TakeWhile(c => char.IsDigit(c) || c == '.' || c == '-').ToArray());
+            double parsed;
+            return double.TryParse(digits, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed) && parsed > 0
+                ? parsed
+                : fallback;
+        };
+
+        Func<double, string> N = v => Math.Round(v, 5).ToString("0.#####", CultureInfo.InvariantCulture);
+
+        var rows = new List<string>();
+
+        // Ordinal by key, so the emitted file does not depend on the order the
+        // filesystem happened to enumerate in. The artifact has to be
+        // byte-stable, or every build dirties a tracked file.
+        foreach (ITaskItem item in Icons.OrderBy(i => Path.GetFileNameWithoutExtension(i.ItemSpec), StringComparer.Ordinal))
+        {
+            string key = Path.GetFileNameWithoutExtension(item.ItemSpec);
+            string svg = File.ReadAllText(item.ItemSpec);
+
+            Match tag = svgTag.Match(svg);
+            if (!tag.Success)
+            {
+                Log.LogError("Icons: '{0}' has no svg element.", item.ItemSpec);
+                continue;
+            }
+
+            string viewBox = null, widthRaw = null, heightRaw = null;
+            foreach (Match a in attrs.Matches(tag.Value))
+            {
+                string n = a.Groups["n"].Value.ToLowerInvariant();
+                if (n == "viewbox") { viewBox = a.Groups["v"].Value; }
+                else if (n == "width") { widthRaw = a.Groups["v"].Value; }
+                else if (n == "height") { heightRaw = a.Groups["v"].Value; }
+            }
+
+            double[] view = (viewBox ?? string.Empty)
+                .Split(new[] { ' ', ',', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(v => double.Parse(v, CultureInfo.InvariantCulture))
+                .ToArray();
+            if (view.Length != 4 || view[2] <= 0 || view[3] <= 0)
+            {
+                Log.LogError("Icons: '{0}' needs a viewBox of four numbers with a positive width and height.", item.ItemSpec);
+                continue;
+            }
+
+            string figures = string.Join(" ", paths.Matches(svg).Cast<Match>()
+                .Select(m => m.Groups["d"].Value.Trim())
+                .Where(d => d.Length > 0));
+            if (figures.Length == 0)
+            {
+                Log.LogError("Icons: '{0}' declares no path with a d attribute; only path geometry is supported.", item.ItemSpec);
+                continue;
+            }
+
+            double width = Length(widthRaw, view[2]);
+            double height = Length(heightRaw, view[3]);
+
+            // Uniform, so a replacement whose aspect differs is letterboxed
+            // rather than stretched: a squashed glyph is the kind of wrong that
+            // still looks deliberate.
+            double scale = Math.Min(width / view[2], height / view[3]);
+            double dx = ((width - (view[2] * scale)) / 2) - (view[0] * scale);
+            double dy = ((height - (view[3] * scale)) / 2) - (view[1] * scale);
+
+            // A MATRIX, NOT "scale(0.5)". Avalonia's Transform converter is
+            // Matrix.Parse, which wants six numbers; a CSS-shaped function
+            // compiles perfectly and throws System.FormatException "Invalid
+            // Matrix" when the resource is first USED - so it survives a build,
+            // survives every icon that needs no transform, and fails the day
+            // somebody drops in a glyph on a different viewBox. Which is to say
+            // it fails for the one person this whole mechanism is for.
+            bool identity = Math.Abs(scale - 1) <= 1e-9 && Math.Abs(dx) <= 1e-9 && Math.Abs(dy) <= 1e-9;
+            string transformAttr = identity
+                ? string.Empty
+                : " Transform=\"" + N(scale) + ",0,0," + N(scale) + "," + N(dx) + "," + N(dy) + "\"";
+
+            rows.Add("  <PathGeometry x:Key=\"" + key + "\" Figures=\"" +
+                     figures.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;") +
+                     "\"" + transformAttr + " />");
+        }
+
+        var text = new StringBuilder();
+        text.Append("<!--\n");
+        text.Append("  GENERATED FROM Assets/Icons/*.svg BY Icons.targets. DO NOT EDIT.\n\n");
+        text.Append("  Change a glyph by replacing its .svg and rebuilding. Each Figures below\n");
+        text.Append("  is its file's own path data, copied verbatim; only the viewBox to\n");
+        text.Append("  width/height mapping is expressed here, as a Transform.\n");
+        text.Append("-->\n");
+        text.Append("<ResourceDictionary xmlns=\"https://github.com/avaloniaui\"\n");
+        text.Append("                    xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n\n");
+        foreach (string row in rows)
+        {
+            text.Append(row).Append('\n');
+        }
+
+        text.Append("\n</ResourceDictionary>\n");
+
+        // Written only when it CHANGED, or every build dirties a tracked file
+        // and every incremental build recompiles the XAML that depends on it.
+        string emitted = text.ToString();
+        if (!File.Exists(Output) || File.ReadAllText(Output) != emitted)
+        {
+            File.WriteAllText(Output, emitted);
+            Log.LogMessage(MessageImportance.High, "Icons: wrote {0} glyphs to {1}", rows.Count, Output);
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!--
+    Outside the target, because Inputs is evaluated before the target runs and
+    an ItemGroup declared inside one would be invisible to it - which presents
+    as a generator that never re-runs when an icon changes.
+  -->
+  <ItemGroup>
+    <SpectraIcon Include="$(MSBuildThisFileDirectory)Assets\Icons\*.svg" />
+  </ItemGroup>
+
+  <Target Name="GenerateIcons" BeforeTargets="BeforeBuild"
+          Inputs="@(SpectraIcon);$(MSBuildThisFileFullPath)"
+          Outputs="$(MSBuildThisFileDirectory)Theme\Icons.axaml">
+    <GenerateIconResources Icons="@(SpectraIcon)" Output="$(MSBuildThisFileDirectory)Theme\Icons.axaml" />
+  </Target>
+
+</Project>

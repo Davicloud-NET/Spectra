@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spectra editor icon. Swap this file to change the glyph; the build
+     turns every .svg in this folder into the resource the shell binds.
+     The path data is copied VERBATIM and the width/height against the
+     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor">
+  <!-- ___ Chrome __________________________________________
+       The expander is drawn pointing right and rotated 90 degrees when open,
+       so one geometry covers both states and they cannot drift in weight. -->
+  <path d="M6,3.5 L10.5,8 L6,12.5" />
+</svg>

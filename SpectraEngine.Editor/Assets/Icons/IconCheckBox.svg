@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spectra editor icon. Swap this file to change the glyph; the build
+     turns every .svg in this folder into the resource the shell binds.
+     The path data is copied VERBATIM and the width/height against the
+     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor">
+  <!-- ___ Selection marks _________________________________
+       A tick and a dot, each drawn to sit inside its own box or ring, because
+       the ribbon's overlay rows and grid-mode column are a Button wearing
+       Classes.active rather than a CheckBox or a RadioButton. That is the same
+       refusal Controls.axaml already makes for every other lit control in this
+       shell: a two-way toggle bound to engine state flickers when the snapshot
+       corrects it, so the box is drawn and the mark is lit.
+       The mark is a SEPARATE geometry from its container rather than a second
+       version of it, so lighting one is a brush moving on one element and the
+       two can never disagree about where the box is. -->
+  <path d="M3,3 L13,3 L13,13 L3,13 Z" />
+</svg>

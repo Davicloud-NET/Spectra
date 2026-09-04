@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spectra editor icon. Swap this file to change the glyph; the build
+     turns every .svg in this folder into the resource the shell binds.
+     The path data is copied VERBATIM and the width/height against the
+     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"
+     fill="none" stroke="currentColor">
+  <!-- A cut: a cube with a hole DRILLED through it - the mouth on the top
+       face, both walls, and the floor of the bore. The small glyph can only
+       manage a circle on the outline; this is the detail a 32px box buys. -->
+  <path d="M5,9 L16,3.5 L27,9 L27,21.5 L16,27 L5,21.5 Z M5,9 L16,14.5 L27,9 M16,14.5 L16,27 M11,9.4 A5,2.5 0 1 1 10.99,9.4 Z M11,9.4 L11,17 M21,9.4 L21,17 M11,17 A5,2.5 0 0 0 21,17" />
+</svg>
