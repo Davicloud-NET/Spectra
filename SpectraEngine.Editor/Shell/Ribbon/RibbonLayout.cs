@@ -117,7 +117,15 @@ public sealed record RibbonGroup(string Caption, IReadOnlyList<RibbonItem> Items
 /// <summary>One page of the command surface.</summary>
 /// <param name="Id">Matches the markup file that renders it.</param>
 /// <param name="Title">The word on the tab.</param>
-public sealed record RibbonTab(string Id, string Title, IReadOnlyList<RibbonGroup> Groups);
+/// <param name="Summary">
+/// What the page is FOR, as the tab's tooltip. The tabs were the only controls
+/// on this surface with no tooltip at all, and they carry the one thing a new
+/// user has to understand about it: the two pages divide on whether a verb
+/// changes the level or changes how you look at it. Roster data rather than a
+/// string in <c>BuildRibbon</c>, so the strip still cannot say anything the
+/// roster does not know.
+/// </param>
+public sealed record RibbonTab(string Id, string Title, string Summary, IReadOnlyList<RibbonGroup> Groups);
 
 /// <summary>
 /// The ribbon's roster: which verbs are on which tab, which are never on one,
@@ -145,6 +153,24 @@ public sealed record RibbonTab(string Id, string Title, IReadOnlyList<RibbonGrou
 /// it. The floors in the tests exist so a future thin tab is a build failure
 /// rather than a taste argument.</item>
 /// </list>
+/// <para>
+/// <b>NO KEYTIPS, AND THE REASON IS ALT RATHER THAN TASTE.</b> Office's ribbon
+/// can own Alt because in Office the ribbon IS the menu bar; here the five
+/// menus carry <c>_File _Edit _Object _View _Help</c>, so Avalonia's access-key
+/// handler owns that chord and KeyTips would need an entry key nobody would
+/// guess or would have to take the menus' own away. Plain access keys on the
+/// tabs collide too - Alt+V is the View menu, and Avalonia round-robins
+/// duplicates, so one chord would open a menu on one press and switch a page on
+/// the next - and even distinct letters would open a page and then strand the
+/// user, which teaches that the surface answers the keyboard and then stops.
+/// <c>Ctrl+F1</c> collapses and expands it, which is Office's own chord for
+/// that and collides with nothing here.
+/// <br/>
+/// <b>This refusal is CONDITIONAL and the condition is testable:</b> it holds
+/// only while the ribbon carries no verb that is reachable nowhere else. It was
+/// indefensible until <c>FrameAll</c> reached the Object menu, because that verb
+/// was on this surface alone.
+/// </para>
 /// <para>
 /// <b>Two tabs, not three, and that is the honest count.</b> The verbs this
 /// shell has fill two pages properly. A third would have to be padded out of
@@ -197,6 +223,7 @@ public static class RibbonLayout
     public static IReadOnlyList<RibbonTab> Tabs { get; } =
     [
         new(DefaultTabId, "Build",
+            "Everything that changes the level: what is in it, where it is, and how it snaps.",
         [
             // FIRST GROUP OF THE FIRST TAB, and that placement is the whole
             // answer to the second finding. A new user's first question is
@@ -291,6 +318,7 @@ public static class RibbonLayout
         ]),
 
         new(ViewTabId, "View",
+            "Everything that changes how you look at the level, and nothing that changes the level.",
         [
             new RibbonGroup("Frame",
             [

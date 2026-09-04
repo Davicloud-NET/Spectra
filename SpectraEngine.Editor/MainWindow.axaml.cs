@@ -425,6 +425,11 @@ public partial class MainWindow : Window
         // open a panel.
         AddChord(Key.OemTilde, KeyModifiers.None, () => OnShowConsolePanel(this, new RoutedEventArgs()));
 
+        // Office's own chord for exactly this, and it collides with nothing
+        // here. It is also the ribbon's ONLY keyboard route, deliberately: see
+        // RibbonLayout's remarks for why the surface takes no KeyTips.
+        AddChord(Key.F1, KeyModifiers.Control, () => OnRibbonPinClicked(this, new RoutedEventArgs()));
+
         // Drop a project or a level folder anywhere on the window. The engine's
         // viewport is a native child and never sees Avalonia's drag events, so
         // the drop target is the window itself and the chrome around the
@@ -2001,6 +2006,8 @@ public partial class MainWindow : Window
                 Tag = tab.Id,
                 Content = new TextBlock { Text = tab.Title },
             };
+
+            ToolTip.SetTip(button, tab.Summary);
             button.Click += OnRibbonTabClicked;
             RibbonTabs.Children.Add(button);
         }

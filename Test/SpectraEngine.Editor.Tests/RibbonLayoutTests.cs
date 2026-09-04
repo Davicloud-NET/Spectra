@@ -266,6 +266,38 @@ public sealed class RibbonLayoutTests
     }
 
     [Fact]
+    public void Every_tab_says_what_it_is_for()
+    {
+        // The tabs were the only controls on this surface with no tooltip, and
+        // they carry the one thing a new user has to understand about it. Roster
+        // data rather than a string in BuildRibbon, so the strip still cannot
+        // say anything the roster does not know.
+        foreach (RibbonTab tab in RibbonLayout.Tabs)
+        {
+            tab.Summary.ShouldNotBeNullOrWhiteSpace($"{tab.Id} should say what it is for");
+            tab.Summary.Length.ShouldBeGreaterThan(20, $"{tab.Id}'s summary should be a sentence");
+        }
+
+        RibbonLayout.Tabs.Select(t => t.Summary).Distinct().Count()
+            .ShouldBe(RibbonLayout.Tabs.Count, "two tabs that describe themselves the same way divide on nothing");
+    }
+
+    [Fact]
+    public void The_ribbon_can_be_collapsed_from_the_keyboard()
+    {
+        // The surface takes no KeyTips - Alt belongs to the five menus, see
+        // RibbonLayout's remarks - so this is its only keyboard route, and a
+        // refusal that leaves NO route is a different decision from one that
+        // leaves the standard one.
+        string window = File.ReadAllText(
+            Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml.cs"));
+
+        window.ShouldContain(
+            "AddChord(Key.F1, KeyModifiers.Control",
+            customMessage: "Ctrl+F1 is Office's chord for collapsing a ribbon and the only one this surface has");
+    }
+
+    [Fact]
     public void The_always_visible_pair_dispatches_through_the_roster()
     {
         // Undo and redo carried a Tag only so the test above could find them on
