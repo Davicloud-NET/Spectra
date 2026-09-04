@@ -23,20 +23,31 @@ namespace SpectraEngine.Editor.Render.Tests;
 /// is that finding kept.
 /// </para>
 /// </remarks>
-public sealed class IconTransformTests
+/// <remarks>
+/// In the session's collection, and running on its thread, because these are
+/// Avalonia calls: touching Transform.Parse from xunit's own thread first
+/// initialises the platform there, and the session's later StartNew then dies
+/// constructing a ServerCompositor with "a different thread owns it" - taking
+/// every other test in the assembly with it.
+/// </remarks>
+[Collection(RibbonSessionCollection.Name)]
+public sealed class IconTransformTests(RibbonSession session)
 {
     [Fact]
     public void The_generator_emits_a_transform_Avalonia_can_actually_parse()
     {
-        // The exact shape Icons.targets writes: uniform scale, then offset.
-        Transform.Parse("0.5,0,0,0.5,0,0").Value.ShouldBe(Matrix.CreateScale(0.5, 0.5));
-        Transform.Parse("0.66667,0,0,0.66667,0,4").ShouldNotBeNull();
+        session.On(() =>
+        {
+            // The exact shape Icons.targets writes: uniform scale, then offset.
+            Transform.Parse("0.5,0,0,0.5,0,0").Value.ShouldBe(Matrix.CreateScale(0.5, 0.5));
+            Transform.Parse("0.66667,0,0,0.66667,0,4").ShouldNotBeNull();
+        });
     }
 
     [Fact]
     public void A_css_shaped_transform_is_refused_which_is_why_the_matrix_form_is_used()
     {
         // Falsification, kept: this is what the generator used to write.
-        Should.Throw<FormatException>(() => Transform.Parse("scale(0.5)"));
+        session.On(() => Should.Throw<FormatException>(() => Transform.Parse("scale(0.5)")));
     }
 }

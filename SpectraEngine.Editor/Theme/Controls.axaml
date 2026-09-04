@@ -787,6 +787,7 @@
        hover states to exactly that. Declared after Button.chip so it wins the
        tie on order. -->
   <Style Selector="Button.chip.compact">
+    <Setter Property="Focusable" Value="False" />
     <Setter Property="Height" Value="26" />
   </Style>
 
@@ -820,6 +821,7 @@
        The resting bottom border is the same 2px at zero alpha, so lighting it
        moves a colour rather than the layout. -->
   <Style Selector="Button.ribbontab">
+    <Setter Property="Focusable" Value="False" />
     <Setter Property="Height" Value="26" />
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="Padding" Value="12,0" />
@@ -880,6 +882,9 @@
        that parses as rotate(); and the icon's own Stroke transition has to be
        re-declared here, because assigning Transitions replaces the collection
        rather than adding to it. -->
+  <Style Selector="Button.ribbonpin">
+    <Setter Property="Focusable" Value="False" />
+  </Style>
   <Style Selector="Button.ribbonpin Path.icon">
     <Setter Property="RenderTransform" Value="rotate(-90deg) scale(1.2)" />
     <Setter Property="Transitions">
@@ -1053,7 +1058,14 @@
 
        The fill is on the ContentPresenter and the rim is on the sheen, so the
        one transitioned property here is a solid Background. -->
+    <!-- REFUSES THE KEYBOARD. See MainWindow.ReturnKeyboardToEngine: the tool
+         chords run through the ENGINE keymap, which fires only while the
+         viewport holds focus, so a ribbon control that takes it kills W, E, R,
+         Delete, Ctrl+D and the rest until the user clicks back in the scene. It
+         also stops Space re-invoking the button that was just clicked, which is
+         how pressing Space after Delete deleted a second node. -->
   <Style Selector="Button.rbig">
+    <Setter Property="Focusable" Value="False" />
     <Setter Property="Width" Value="64" />
     <Setter Property="Height" Value="66" />
     <Setter Property="Padding" Value="0" />
@@ -1141,6 +1153,7 @@
        the sheen would both be invisible at this height and cost two elements
        each to be invisible with. -->
   <Style Selector="Button.rsmall">
+    <Setter Property="Focusable" Value="False" />
     <Setter Property="Height" Value="22" />
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="Padding" Value="4,0" />
@@ -1217,6 +1230,7 @@
        row. One caret geometry, rotated, so up and down cannot drift in
        weight - the pin's own trick. -->
   <Style Selector="Button.rspin">
+    <Setter Property="Focusable" Value="False" />
     <Setter Property="Width" Value="18" />
     <Setter Property="Height" Value="11" />
     <Setter Property="MinWidth" Value="0" />
@@ -1304,6 +1318,7 @@
     <Setter Property="Background" Value="Transparent" />
   </Style>
   <Style Selector="Button.rsplitcaret">
+    <Setter Property="Focusable" Value="False" />
     <Setter Property="Height" Value="66" />
     <!-- Narrow, because it buys its width out of the page's headroom: the
          Build page measures 1098 against a 1180 floor, and this is 12 of it.

@@ -1516,6 +1516,36 @@ public partial class MainWindow : Window
             Focus();
     }
 
+    /// <summary>
+    /// Hands the keyboard back to the engine after a ribbon control took it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>THE RIBBON USED TO EAT EVERY TOOL KEY.</b> W, E, R, 2, 3, 4, X, Y, G,
+    /// the bracket pair, Escape, Ctrl+D, Delete, Ctrl+G, Ctrl+Shift+G and
+    /// Ctrl+T all run through the ENGINE keymap, which only fires while the
+    /// viewport holds the keyboard - they are not window key bindings. So one
+    /// click on the ribbon killed all of them until the user clicked back in
+    /// the scene, and the ribbon's own tooltips advertise exactly those chords.
+    /// The viewport context menu has done this since it was written
+    /// (<c>menu.Closed</c>); the ribbon simply never did.
+    /// </para>
+    /// <para>
+    /// <b>The blur comes first, and it is not optional.</b> Ribbon controls
+    /// refuse focus now (<c>Focusable="False"</c> on their classes), so a click
+    /// on one no longer blurs the snap field on its way past - and that blur is
+    /// what used to commit a typed increment. Without this call the field keeps
+    /// focus, <c>RefreshSnapField</c> goes on standing down because
+    /// <c>box.IsFocused</c>, and the box shows a number the engine never
+    /// received, for as long as the session lasts.
+    /// </para>
+    /// </remarks>
+    private void ReturnKeyboardToEngine()
+    {
+        CommitFocusedEdit();
+        _viewport?.FocusEngine();
+    }
+
     private void RevertSnapField(TextBox box)
     {
         // Before the first snapshot there is nothing published to revert TO,
@@ -1983,6 +2013,11 @@ public partial class MainWindow : Window
 
         _ribbon = RibbonSurface.SelectTab(_ribbon, tabId);
         ApplyRibbonState();
+
+        // Not while a page is flying out: that is a popup, and it wants the
+        // keyboard for its own light dismiss.
+        if (RibbonSurface.HostFor(_ribbon) != RibbonBodyHost.Flyout)
+            ReturnKeyboardToEngine();
     }
 
     private void OnRibbonPinClicked(object? sender, RoutedEventArgs e)
@@ -1994,6 +2029,8 @@ public partial class MainWindow : Window
         // keeps. The ACTIVE TAB deliberately does not go with it.
         _settings.SetRibbonExpanded(_ribbon.Expanded);
         _settings.Save(_logger);
+
+        ReturnKeyboardToEngine();
     }
 
     /// <summary>The flyout was light-dismissed by a click outside it.</summary>
@@ -2148,6 +2185,12 @@ public partial class MainWindow : Window
                     _session?.InsertEntity(className);
                 break;
         }
+
+        // The field is the one ribbon control whose whole contract is focus, so
+        // a verb that ever reached it must not yank the keyboard out of the box
+        // the user just clicked into.
+        if (verb.Kind != RibbonVerbKind.SnapIncrement)
+            ReturnKeyboardToEngine();
     }
 
     /// <summary>
@@ -2187,6 +2230,8 @@ public partial class MainWindow : Window
         // order this needs anyway, since an empty MenuFlyout has nothing to
         // draw and no way to say so.
         _buildTab.EntityCaretButton.Click += OnEntityCaretClicked;
+        _entityFlyout.Closed += (_, _) => ReturnKeyboardToEngine();
+
         RefreshEntityInsertTip();
     }
 

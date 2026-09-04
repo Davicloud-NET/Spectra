@@ -220,6 +220,53 @@ public sealed class RibbonDepthConventionTests
         offenders.ShouldBeEmpty("a large glyph is authored to fill a 32 box, ink 3.5 to 28.5");
     }
 
+    [Fact]
+    public void Every_ribbon_route_hands_the_keyboard_back_to_the_engine()
+    {
+        // A SOURCE FACT, and it stays one: whether a handler CALLS something is
+        // not visible from a constructed control, and the render suite's own
+        // focus test can only see the result of the styles. These four are every
+        // way a ribbon gesture ends.
+        //
+        // The viewport context menu has refocused the engine since it was
+        // written; the ribbon simply never did, which is why one click on it
+        // killed every engine-keymap chord until the user clicked back in the
+        // scene.
+        string window = File.ReadAllText(
+            Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml.cs"));
+
+        foreach (string handler in new[]
+                 {
+                     "OnRibbonVerb", "OnRibbonTabClicked", "OnRibbonPinClicked", "WireEntitySplit",
+                 })
+        {
+            Body(window, handler).ShouldContain(
+                "ReturnKeyboardToEngine",
+                customMessage: $"{handler} must hand the keyboard back, or the tool keys stay dead after it");
+        }
+    }
+
+    /// <summary>
+    /// One method's body, from its signature to the next member. Crude on
+    /// purpose, and in the same idiom as the markup scrapes above: the question
+    /// is whether a name appears inside a handler, not how the handler works.
+    /// </summary>
+    private static string Body(string source, string method)
+    {
+        // "void X(" rather than " X(", or this finds the first CALL: the
+        // window calls WireEntitySplit() long before it declares it.
+        int start = source.IndexOf($"void {method}(", StringComparison.Ordinal);
+        start.ShouldBeGreaterThan(-1, $"{method} should exist");
+
+        int end = source.IndexOf(Environment.NewLine + "    private ", start, StringComparison.Ordinal);
+        if (end < 0)
+        {
+            end = source.Length;
+        }
+
+        return source[start..end];
+    }
+
     /// <summary>The artwork the build turns into Theme/Icons.axaml.</summary>
     private static string IconFolder() =>
         Path.Combine(SourceRoot(), "SpectraEngine.Editor", "Assets", "Icons");
