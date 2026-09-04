@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SpectraEngine.Editor.Render.Tests</RootNamespace>
+    <!-- The sheet reader walks the frame buffer directly. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!--
+    THE SUITE THAT NEEDS A WINDOW, and it is a project of its own for one
+    reason: SpectraEngine.Editor.Tests beside it justifies three of its
+    convention tests by the fact that it references no Avalonia and therefore
+    structurally cannot evaluate a style, a brush or a binding. Giving that
+    project an Avalonia platform would make its own comments false. This is the
+    same separation SpectraEngine.Graphics.Tests already has for a suite that
+    needs a real device, with a weaker requirement: headless windowing, no X
+    server and no GPU.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\SpectraEngine.Editor\SpectraEngine.Editor.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless" />
+    <!-- Named although Avalonia.Desktop already drags it in, because this
+         project calls UseSkia itself. Same rule as the Silk.NET .Glfw entries
+         in Directory.Packages.props. -->
+    <PackageReference Include="Avalonia.Skia" />
+  </ItemGroup>
+
+</Project>

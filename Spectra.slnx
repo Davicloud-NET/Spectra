@@ -4,6 +4,7 @@
     <Project Path="Test/Spectra.Kitchen.Tests/Spectra.Kitchen.Tests.csproj" />
     <Project Path="Test/SpectraEngine.Editing.Tests/SpectraEngine.Editing.Tests.csproj" />
     <Project Path="Test/SpectraEngine.Editor.Tests/SpectraEngine.Editor.Tests.csproj" />
+    <Project Path="Test/SpectraEngine.Editor.Render.Tests/SpectraEngine.Editor.Render.Tests.csproj" />
     <Project Path="Test/SpectraEngine.Entities.Tests/SpectraEngine.Entities.Tests.csproj" />
     <Project Path="Test/SpectraEngine.Graphics.Tests/SpectraEngine.Graphics.Tests.csproj">
       <Build Solution="Debug|*" Project="false" />

@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
@@ -42,6 +42,37 @@
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.1" />
+    <!--
+      The headless windowing platform, and Skia beside it. Adopted for one
+      reason: every defect this shell's ribbon has ever had was found by a
+      person looking at the running window and by nothing else - a 58px button
+      that broke "Everything" mid-word, and a split button's caret that
+      rendered 28px left of its glyph. Neither is reachable from a source
+      scrape, and the arithmetic bound that stood in for a measurement invents
+      a width per control kind rather than measuring one.
+
+      SKIA IS NOT ACTUALLY NEW HERE, and that is most of why this is cheap:
+      Avalonia.Desktop already depends on Avalonia.Skia, which already brings
+      SkiaSharp and its Windows and Linux natives, and CI already builds
+      SpectraEngine.Editor on both hosts. It is named explicitly because the
+      render suite calls UseSkia itself, on the rule the Silk.NET .Glfw entries
+      below already follow. What is genuinely new is Avalonia.Headless, MIT,
+      whose whole dependency set (Avalonia, Avalonia.Fonts.Inter,
+      Avalonia.HarfBuzz) was already restored and which ships no native asset.
+
+      UseHeadlessDrawing MUST BE FALSE, and that is the whole point of pairing
+      the two. The headless render interface installs a stub typeface whose
+      every glyph has the same advance, so a width measured under it is not a
+      measurement - it is the invented model again, wearing a framework's name.
+      Skia plus HarfBuzz is what makes "does this word fit" a fact.
+
+      What this CANNOT prove is written in the suite's own header: nothing here
+      judges colour, contrast or whether a layout reads well, and the viewport
+      is a native child that composites above everything Avalonia draws and so
+      cannot appear in a captured frame at all.
+    -->
+    <PackageVersion Include="Avalonia.Headless" Version="12.1.1" />
+    <PackageVersion Include="Avalonia.Skia" Version="12.1.1" />
     <!--
       Docking. Dock.Avalonia is MIT and did NOT go the commercial route
       TreeDataGrid 12.x took (verified 2026-08: licence in repo and NuGet).
