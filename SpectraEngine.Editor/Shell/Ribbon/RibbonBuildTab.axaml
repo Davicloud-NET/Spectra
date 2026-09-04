@@ -109,26 +109,24 @@
              caret band's own top hairline, so each half gets its own hover and
              its own tooltip. Only the main half carries a Tag: the caret names
              no verb, it opens a list, and the roster describes verbs. -->
-        <Border Classes="rsplit">
-          <Grid RowDefinitions="*,Auto">
-            <Button Grid.Row="0" Classes="rbig" Tag="insert.entity"
-                    x:Name="EntityInsert" Click="OnRibbonItemClick"
-                    IsEnabled="{Binding CanInsertEntity}">
-              <Panel>
-                <Border Classes="sheen" />
-                <StackPanel Classes="rbigstack">
-                  <Path Classes="icon-lg kind-entity" Data="{StaticResource IconLgEntity}" />
-                  <TextBlock Text="Entity" />
-                </StackPanel>
-              </Panel>
-            </Button>
-            <Button Grid.Row="1" Classes="rsplitcaret" x:Name="EntityCaret"
-                    IsEnabled="{Binding CanInsertEntity}"
-                    ToolTip.Tip="Choose which entity class to place.">
-              <Path Classes="spincaret" Data="{StaticResource CaretDown}" />
-            </Button>
-          </Grid>
-        </Border>
+        <StackPanel Classes="rsplit" Orientation="Horizontal">
+          <Button Classes="rbig" Tag="insert.entity"
+                  x:Name="EntityInsert" Click="OnRibbonItemClick"
+                  IsEnabled="{Binding CanInsertEntity}">
+            <Panel>
+              <Border Classes="sheen" />
+              <StackPanel Classes="rbigstack">
+                <Path Classes="icon-lg kind-entity" Data="{StaticResource IconLgEntity}" />
+                <TextBlock Text="Entity" />
+              </StackPanel>
+            </Panel>
+          </Button>
+          <Button Classes="rsplitcaret" x:Name="EntityCaret"
+                  IsEnabled="{Binding CanInsertEntity}"
+                  ToolTip.Tip="Choose which entity class to place.">
+            <Path Classes="spincaret" Data="{StaticResource CaretDown}" />
+          </Button>
+        </StackPanel>
       </StackPanel>
       <TextBlock Classes="ribbongroupcaption" Text="Insert" />
     </StackPanel>
@@ -203,35 +201,37 @@
          and is what these two verbs have always been: [ and ] step one number,
          and two arrows against the box holding it say so without a word. -->
     <StackPanel Classes="ribbongroup">
-      <StackPanel Classes="rcol rrow">
-        <Button Classes="rsmall rcheck" Tag="choice.snap" Classes.active="{Binding SnapEnabled}"
-                Click="OnRibbonItemClick" ToolTip.Tip="Snap drags to the grid.  G">
-          <StackPanel Orientation="Horizontal" Spacing="5">
-            <Panel Width="16" Height="16">
-              <Path Classes="markbox" Data="{StaticResource IconCheckBox}" />
-              <Path Classes="mark" Data="{StaticResource IconCheckTick}" />
-            </Panel>
-            <TextBlock Text="Snap to grid" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
+      <StackPanel Classes="rrow" Orientation="Horizontal">
+        <StackPanel Classes="rcol">
+          <Button Classes="rsmall rcheck" Tag="choice.snap" Classes.active="{Binding SnapEnabled}"
+                  Click="OnRibbonItemClick" ToolTip.Tip="Snap drags to the grid.  G">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Panel Width="16" Height="16">
+                <Path Classes="markbox" Data="{StaticResource IconCheckBox}" />
+                <Path Classes="mark" Data="{StaticResource IconCheckTick}" />
+              </Panel>
+              <TextBlock Text="Snap to grid" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
 
-        <StackPanel Orientation="Horizontal" Spacing="4" Margin="2,3,0,0">
-          <TextBox x:Name="SnapBox" Tag="snap.increment" Classes="field num" Width="58"
-                   VerticalAlignment="Center"
-                   ToolTip.Tip="Grid size for the live tool. [ and ] step it." />
-          <TextBlock Classes="label" Text="{Binding SnapUnitLabel}" MinWidth="20"
-                     VerticalAlignment="Center" />
-          <!-- Coarser is up and finer is down, which is which way the NUMBER
-               goes rather than which way the grid feels. -->
-          <StackPanel VerticalAlignment="Center">
-            <Button Classes="rspin up" Tag="snap.coarser" Click="OnRibbonItemClick"
-                    ToolTip.Tip="Step every snap increment one rung coarser.  ]">
-              <Path Classes="spincaret" Data="{StaticResource CaretDown}" />
-            </Button>
-            <Button Classes="rspin" Tag="snap.finer" Click="OnRibbonItemClick"
-                    ToolTip.Tip="Step every snap increment one rung finer.  [">
-              <Path Classes="spincaret" Data="{StaticResource CaretDown}" />
-            </Button>
+          <StackPanel Orientation="Horizontal" Spacing="4" Margin="2,3,0,0">
+            <TextBox x:Name="SnapBox" Tag="snap.increment" Classes="field num inline" Width="58"
+                     VerticalAlignment="Center"
+                     ToolTip.Tip="Grid size for the live tool. [ and ] step it." />
+            <TextBlock Classes="label" Text="{Binding SnapUnitLabel}" MinWidth="20"
+                       VerticalAlignment="Center" />
+            <!-- Coarser is up and finer is down, which is which way the NUMBER
+                 goes rather than which way the grid feels. -->
+            <StackPanel VerticalAlignment="Center">
+              <Button Classes="rspin up" Tag="snap.coarser" Click="OnRibbonItemClick"
+                      ToolTip.Tip="Step every snap increment one rung coarser.  ]">
+                <Path Classes="spincaret" Data="{StaticResource CaretDown}" />
+              </Button>
+              <Button Classes="rspin" Tag="snap.finer" Click="OnRibbonItemClick"
+                      ToolTip.Tip="Step every snap increment one rung finer.  [">
+                <Path Classes="spincaret" Data="{StaticResource CaretDown}" />
+              </Button>
+            </StackPanel>
           </StackPanel>
         </StackPanel>
       </StackPanel>

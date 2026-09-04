@@ -942,12 +942,33 @@
   </Style>
 
   <!-- A column of small rows beside the large buttons: three of 22 against one
-       of 66, which is the arithmetic the whole hierarchy is built on. Top
-       aligned, so a column of two does not float in the middle of a row of
-       fours. -->
+       of 66, which is the arithmetic the whole hierarchy is built on.
+
+       CENTRED, AND THAT IS A CORRECTION. This was Top, on the reasoning that a
+       column of two should not float in the middle of a row of fours - but a
+       large button centres its own icon and label inside its 66
+       (StackPanel.rbigstack), so a top-aligned column of two put its first row
+       at y=0 while the cube beside it started at y=9.5, and its last row ended
+       22px above the button's label. Measured on the Build page, four of five
+       columns were short: Insert 44, Transform 54, Arrange 44 and 44, all
+       hanging from the top of a 66 row. Centring puts a column of two at
+       11..55 against a large button's content at 9.5..56.5, which is the
+       alignment the arithmetic always intended.
+
+       A GROUP WHOSE COLUMNS DIFFER IN LENGTH MUST NOT USE THIS: centring two
+       columns of three and two rows aligns neither to the other. Those wear
+       .ragged. -->
   <Style Selector="StackPanel.rcol">
-    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Margin" Value="2,0,0,0" />
+  </Style>
+
+  <!-- Columns of UNEQUAL length in one group, which must share a top edge with
+       each other rather than each centring on its own. The Overlays group is
+       the only one: three checks beside two, and centring the short one would
+       put its rows halfway between the tall one's. -->
+  <Style Selector="StackPanel.rcol.ragged">
+    <Setter Property="VerticalAlignment" Value="Top" />
   </Style>
 
   <!-- The caption NAMES the box above it, exactly as the status bar's labels
@@ -1257,39 +1278,39 @@
 
   <!-- THE SPLIT BUTTON: one control, two hit regions, divided by a hairline -
        the only Office idiom on this surface that cannot be faked with what was
-       already here. The caret band is at the FOOT rather than down one side,
-       which is what a large split looks like in Office and what keeps the
-       glyph on the same baseline as the large buttons beside it.
+       already here.
+
+       THE CARET IS BESIDE THE BUTTON RATHER THAN UNDER IT, AND THAT IS A
+       CORRECTION MEASURED ON THE RENDER. A foot band cannot be made to align:
+       a large button centres 53px of content in its 66, which puts every
+       neighbour's icon at 9.5 and its label at 43.5..56.5, so a main half of
+       50 with a top-aligned stack put this one's icon at 3 and its label at
+       37 - SEVEN PIXELS above every button beside it, on the one control in
+       the group that is meant to look like the others. The block this replaces
+       said the foot band "keeps the line every large button stands on"; it had
+       compared top-in-50 against centre-in-50 rather than against the
+       neighbours. Nor can the band simply move down: the label's own ink ends
+       at 56.5, so a hairline at the foot draws through the word.
+
+       Beside it, the main half is an ORDINARY Button.rbig with no override at
+       all, so it cannot drift from its neighbours again, and the divider is a
+       vertical hairline that crosses nothing. It is also the shape WinUI's own
+       SplitButton takes, which is the closer family than Office here.
 
        Two real Buttons, so each half gets its own hover and its own tooltip;
-       the container is a plain Border and does nothing. -->
-  <Style Selector="Border.rsplit">
-    <Setter Property="Width" Value="64" />
+       the container is a plain StackPanel and does nothing. -->
+  <Style Selector="StackPanel.rsplit">
     <Setter Property="Height" Value="66" />
     <Setter Property="Background" Value="Transparent" />
   </Style>
-  <Style Selector="Border.rsplit Button.rbig">
-    <Setter Property="Height" Value="50" />
-  </Style>
-  <!-- The glyph keeps the line every large button stands on. Centred inside
-       the 50px main half it would ride four pixels high, and a row of icons
-       where one is nearly aligned is worse than one where none are. -->
-  <Style Selector="Border.rsplit Button.rbig StackPanel.rbigstack">
-    <Setter Property="VerticalAlignment" Value="Top" />
-  </Style>
-
-  <!-- One line, because the caret band has taken the second one. -->
-  <Style Selector="Border.rsplit Button.rbig TextBlock">
-    <Setter Property="MaxLines" Value="1" />
-    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-  </Style>
   <Style Selector="Button.rsplitcaret">
-    <Setter Property="Height" Value="16" />
-    <!-- The band is the whole width of the split, so the caret sits under
-         the glyph rather than in a corner, and so the hit region is a band
-         rather than a target. Stated rather than left to Stretch: it is the
-         width that makes the two halves read as one control. -->
-    <Setter Property="Width" Value="64" />
+    <Setter Property="Height" Value="66" />
+    <!-- Narrow, because it buys its width out of the page's headroom: the
+         Build page measures 1098 against a 1180 floor, and this is 12 of it.
+         Stated rather than left to Stretch, which would give a Shape's own
+         geometry the left edge to draw from - the defect that put this
+         caret 28px from its glyph the first time. -->
+    <Setter Property="Width" Value="12" />
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="Padding" Value="0" />
     <Setter Property="Background" Value="Transparent" />
@@ -1301,7 +1322,7 @@
   <Style Selector="Button.rsplitcaret /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="#00FFFFFF" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
-    <Setter Property="BorderThickness" Value="0,1,0,0" />
+    <Setter Property="BorderThickness" Value="1,0,0,0" />
     <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
     <Setter Property="Transitions">
       <Transitions>
@@ -1405,9 +1426,19 @@
     <Setter Property="TextAlignment" Value="Right" />
   </Style>
 
-  <!-- A field that lives INSIDE a raised capsule: sunken fill so it still reads
-       as somewhere you type, no resting border because the capsule around it
-       already draws one, and an accent border while focused.
+  <!-- A field on the RIBBON'S ROW HEIGHT: 22 rather than SpectraFieldHeight's
+       26, because the ribbon's small row is 22 and the stepper pair beside this
+       one is documented above as "two 11px halves of one 22px control, so the
+       column they sit in is the same height as every other row". A 26px box in
+       that column is the one thing in the group off the rhythm, and it reads as
+       a hole rather than a field.
+
+       IT KEEPS ITS RESTING BORDER, and that is a correction rather than an
+       omission. This block used to drop the border on the reasoning that "the
+       capsule around it already draws one" - and the ribbon then retired the
+       capsules (see StackPanel.ribbongroup). On the flat ground that left, a
+       borderless sunken box does not read as somewhere you type, so
+       TextBox.field's own soft edge and accent focus ring stand.
 
        APP-SCOPED rather than window-scoped, because its one consumer - the
        ribbon's snap increment - can end up inside the collapsed ribbon's
@@ -1417,16 +1448,6 @@
     <Setter Property="Height" Value="22" />
     <Setter Property="MinHeight" Value="22" />
     <Setter Property="Padding" Value="5,0" />
-    <Setter Property="BorderBrush" Value="{StaticResource SpectraBgInput}" />
-  </Style>
-  <Style Selector="TextBox.field.inline /template/ Border#PART_BorderElement">
-    <Setter Property="BorderBrush" Value="{StaticResource SpectraBgInput}" />
-  </Style>
-  <Style Selector="TextBox.field.inline:pointerover /template/ Border#PART_BorderElement">
-    <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
-  </Style>
-  <Style Selector="TextBox.field.inline:focus /template/ Border#PART_BorderElement">
-    <Setter Property="BorderBrush" Value="{StaticResource SpectraAccent}" />
   </Style>
 
   <!-- ___ Checkbox ________________________________________

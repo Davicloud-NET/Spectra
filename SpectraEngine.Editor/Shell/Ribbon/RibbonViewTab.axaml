@@ -79,38 +79,40 @@
          Classes.active and not RadioButtons, since a two-way toggle bound to
          engine state flickers when the snapshot corrects it. -->
     <StackPanel Classes="ribbongroup">
-      <StackPanel Classes="rcol rrow">
-        <Button Classes="rsmall rradio" Tag="grid.auto" Classes.active="{Binding GridAuto}"
-                Click="OnRibbonItemClick"
-                ToolTip.Tip="Show the ground grid during move and resize gestures only.">
-          <StackPanel Orientation="Horizontal" Spacing="5">
-            <Panel Width="16" Height="16">
-              <Path Classes="markbox" Data="{StaticResource IconRadio}" />
-              <Path Classes="mark dot" Data="{StaticResource IconRadioDot}" />
-            </Panel>
-            <TextBlock Text="Auto" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-        <Button Classes="rsmall rradio" Tag="grid.on" Classes.active="{Binding GridOn}"
-                Click="OnRibbonItemClick" ToolTip.Tip="Always draw the ground grid.">
-          <StackPanel Orientation="Horizontal" Spacing="5">
-            <Panel Width="16" Height="16">
-              <Path Classes="markbox" Data="{StaticResource IconRadio}" />
-              <Path Classes="mark dot" Data="{StaticResource IconRadioDot}" />
-            </Panel>
-            <TextBlock Text="Always" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-        <Button Classes="rsmall rradio" Tag="grid.off" Classes.active="{Binding GridOff}"
-                Click="OnRibbonItemClick" ToolTip.Tip="Never draw the ground grid.">
-          <StackPanel Orientation="Horizontal" Spacing="5">
-            <Panel Width="16" Height="16">
-              <Path Classes="markbox" Data="{StaticResource IconRadio}" />
-              <Path Classes="mark dot" Data="{StaticResource IconRadioDot}" />
-            </Panel>
-            <TextBlock Text="Off" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
+      <StackPanel Classes="rrow" Orientation="Horizontal">
+        <StackPanel Classes="rcol">
+          <Button Classes="rsmall rradio" Tag="grid.auto" Classes.active="{Binding GridAuto}"
+                  Click="OnRibbonItemClick"
+                  ToolTip.Tip="Show the ground grid during move and resize gestures only.">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Panel Width="16" Height="16">
+                <Path Classes="markbox" Data="{StaticResource IconRadio}" />
+                <Path Classes="mark dot" Data="{StaticResource IconRadioDot}" />
+              </Panel>
+              <TextBlock Text="Auto" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="rsmall rradio" Tag="grid.on" Classes.active="{Binding GridOn}"
+                  Click="OnRibbonItemClick" ToolTip.Tip="Always draw the ground grid.">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Panel Width="16" Height="16">
+                <Path Classes="markbox" Data="{StaticResource IconRadio}" />
+                <Path Classes="mark dot" Data="{StaticResource IconRadioDot}" />
+              </Panel>
+              <TextBlock Text="Always" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="rsmall rradio" Tag="grid.off" Classes.active="{Binding GridOff}"
+                  Click="OnRibbonItemClick" ToolTip.Tip="Never draw the ground grid.">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Panel Width="16" Height="16">
+                <Path Classes="markbox" Data="{StaticResource IconRadio}" />
+                <Path Classes="mark dot" Data="{StaticResource IconRadioDot}" />
+              </Panel>
+              <TextBlock Text="Off" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
       </StackPanel>
       <TextBlock Classes="ribbongroupcaption" Text="Ground grid" />
     </StackPanel>
@@ -120,7 +122,7 @@
     <!-- Office's Show group: independent switches, three to a column. -->
     <StackPanel Classes="ribbongroup">
       <StackPanel Classes="rrow" Orientation="Horizontal" Spacing="1">
-        <StackPanel Classes="rcol">
+        <StackPanel Classes="rcol ragged">
           <Button Classes="rsmall rcheck" Tag="overlay.wireframe"
                   Classes.active="{Binding DebugWireframe}" Click="OnRibbonItemClick"
                   ToolTip.Tip="Draw every triangle as line edges.  F1">
@@ -156,7 +158,7 @@
           </Button>
         </StackPanel>
 
-        <StackPanel Classes="rcol">
+        <StackPanel Classes="rcol ragged">
           <Button Classes="rsmall rcheck" Tag="overlay.normals"
                   Classes.active="{Binding DebugNormals}" Click="OnRibbonItemClick"
                   ToolTip.Tip="Draw an arrow along every outward face normal.  F4">

@@ -324,7 +324,10 @@ public sealed class RibbonLayoutTests
         int splitStart = markup.IndexOf("Classes=\"rsplit\"", StringComparison.Ordinal);
         splitStart.ShouldBeGreaterThan(-1, "the split button should be drawn");
 
-        int splitEnd = markup.IndexOf("</Border>", splitStart, StringComparison.Ordinal);
+        // The container is a StackPanel because the caret sits BESIDE the main
+        // half rather than under it; see Button.rsplitcaret in Controls.axaml
+        // for why a foot band could not align its label with its neighbours.
+        int splitEnd = markup.IndexOf("</StackPanel>", splitStart, StringComparison.Ordinal);
         string split = markup[splitStart..splitEnd];
 
         Regex.Matches(split, "Tag=\"([^\"]+)\"")
