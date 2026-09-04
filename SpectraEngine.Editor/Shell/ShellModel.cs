@@ -234,6 +234,9 @@ public sealed class ShellModel : ObservableObject
             Raise(nameof(PlayTip));
             Raise(nameof(PlayLabel));
             Raise(nameof(CanInsertEntity));
+            Raise(nameof(CanEditSelection));
+            Raise(nameof(CanUndo));
+            Raise(nameof(CanRedo));
         }
     }
 
@@ -635,6 +638,7 @@ public sealed class ShellModel : ObservableObject
                 return;
 
             Raise(nameof(HasSelection));
+            Raise(nameof(CanEditSelection));
             Raise(nameof(SelectionLabel));
         }
     }
@@ -705,10 +709,31 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>Whether the undo button should be live.</summary>
-    public bool CanUndo => _undoDepth > 0;
+    /// <remarks>
+    /// <b>Depth is not the whole answer, and the other half was missing.</b>
+    /// Undo goes through <c>RefuseEdit</c>, which refuses it while play mode
+    /// owns the scene - and <c>Suspend()</c> never clears the selection or the
+    /// history, so both buttons stayed lit and inert for a whole play session
+    /// with a Debug log line as the only evidence. The command bar wears the
+    /// mode colour during play precisely so greying things there reads as
+    /// suspended rather than broken.
+    /// </remarks>
+    public bool CanUndo => _undoDepth > 0 && !_isPlaying;
 
-    /// <summary>Whether the redo button should be live.</summary>
-    public bool CanRedo => _redoDepth > 0;
+    /// <summary>Whether the redo button should be live. See <see cref="CanUndo"/>.</summary>
+    public bool CanRedo => _redoDepth > 0 && !_isPlaying;
+
+    /// <summary>
+    /// Whether the verbs that CHANGE the selection should be live: duplicate,
+    /// delete, convert, group, ungroup.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="HasSelection"/>, which stays a plain question
+    /// about the selection and still answers for framing and for the property
+    /// panel. All five of these go through <c>RefuseEdit</c> and were refused
+    /// throughout play while their controls stayed enabled.
+    /// </remarks>
+    public bool CanEditSelection => _selectionCount > 0 && !_isPlaying;
 
     /// <summary>
     /// The undo button's tooltip, which says how deep the history is.

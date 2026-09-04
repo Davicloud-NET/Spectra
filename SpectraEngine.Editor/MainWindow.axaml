@@ -341,6 +341,16 @@
             <MenuItem Header="Undo" InputGesture="Ctrl+Z" Click="OnUndoClicked" IsEnabled="{Binding CanUndo}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconUndo}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Redo" InputGesture="Ctrl+Y" Click="OnRedoClicked" IsEnabled="{Binding CanRedo}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconRedo}" /></MenuItem.Icon></MenuItem>
             <Separator />
+            <!-- SelectAll had no control anywhere in the shell: its only route
+                 was the engine keymap's Ctrl+A, which stands down whenever a
+                 camera claims the movement keys, so it was dead outright while
+                 the fly camera drove. And the keyboard reference promised
+                 Escape clears the selection, which nothing did. Both are verbs
+                 you reach for when NOTHING is selected, so neither belongs in a
+                 ribbon group that binds HasSelection. -->
+            <MenuItem Header="Select all" InputGesture="Ctrl+A" Click="OnSelectAllClicked" />
+            <MenuItem Header="Deselect all" InputGesture="Escape" Click="OnClearSelectionClicked" IsEnabled="{Binding HasSelection}" />
+            <Separator />
             <MenuItem Header="Move tool" InputGesture="W" Click="OnMoveClicked"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconMove}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Rotate tool" InputGesture="E" Click="OnRotateClicked"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconRotate}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Size tool" InputGesture="R" Click="OnResizeClicked"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconResize}" /></MenuItem.Icon></MenuItem>
@@ -381,14 +391,20 @@
               <MenuItem.Icon><Path Classes="icon menuicon kind-entity" Data="{StaticResource IconEntity}" /></MenuItem.Icon>
             </MenuItem>
             <Separator />
-            <MenuItem Header="Duplicate" InputGesture="Ctrl+D" Click="OnDuplicateClicked" IsEnabled="{Binding HasSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconDuplicate}" /></MenuItem.Icon></MenuItem>
-            <MenuItem Header="Delete" InputGesture="Delete" Click="OnDeleteClicked" IsEnabled="{Binding HasSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconDelete}" /></MenuItem.Icon></MenuItem>
+            <MenuItem Header="Duplicate" InputGesture="Ctrl+D" Click="OnDuplicateClicked" IsEnabled="{Binding CanEditSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconDuplicate}" /></MenuItem.Icon></MenuItem>
+            <MenuItem Header="Delete" InputGesture="Delete" Click="OnDeleteClicked" IsEnabled="{Binding CanEditSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconDelete}" /></MenuItem.Icon></MenuItem>
             <Separator />
-            <MenuItem Header="Group" InputGesture="Ctrl+G" Click="OnGroupClicked" IsEnabled="{Binding HasSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconGroupNodes}" /></MenuItem.Icon></MenuItem>
-            <MenuItem Header="Ungroup" InputGesture="Ctrl+Shift+G" Click="OnUngroupClicked" IsEnabled="{Binding HasSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconUngroupNodes}" /></MenuItem.Icon></MenuItem>
-            <MenuItem Header="Convert block / part" InputGesture="Ctrl+T" Click="OnToggleBrushKindClicked" IsEnabled="{Binding HasSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconConvertKind}" /></MenuItem.Icon></MenuItem>
+            <MenuItem Header="Group" InputGesture="Ctrl+G" Click="OnGroupClicked" IsEnabled="{Binding CanEditSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconGroupNodes}" /></MenuItem.Icon></MenuItem>
+            <MenuItem Header="Ungroup" InputGesture="Ctrl+Shift+G" Click="OnUngroupClicked" IsEnabled="{Binding CanEditSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconUngroupNodes}" /></MenuItem.Icon></MenuItem>
+            <MenuItem Header="Convert block / part" InputGesture="Ctrl+T" Click="OnToggleBrushKindClicked" IsEnabled="{Binding CanEditSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconConvertKind}" /></MenuItem.Icon></MenuItem>
             <Separator />
             <MenuItem Header="Frame in viewport" InputGesture="F" Click="OnFrameClicked" IsEnabled="{Binding HasSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconFrame}" /></MenuItem.Icon></MenuItem>
+            <!-- Kept beside its sibling rather than filed under View: Frame was
+                 written out three times on the strip this ribbon replaced, and
+                 splitting the pair across two menus is that again. Until now
+                 FrameAll was reachable from the ribbon alone, plus an engine
+                 Shift+F the keyboard reference did not mention. -->
+            <MenuItem Header="Frame everything" InputGesture="Shift+F" Click="OnFrameAllClicked"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconLgFrameAll}" /></MenuItem.Icon></MenuItem>
           </MenuItem>
 
           <MenuItem Header="_View" IsEnabled="{Binding HasSession}">

@@ -415,6 +415,15 @@ public partial class MainWindow : Window
         // Neither of these is a scene edit, so both are safe from anywhere.
         AddChord(Key.F8, KeyModifiers.None, () => _session?.Host.RequestPlayMode(!_latest.IsPlaying));
         AddChord(Key.F, KeyModifiers.None, () => _session?.Post(EditorCameraCommand.FrameSelection));
+        AddChord(Key.F, KeyModifiers.Shift, () => _session?.Post(EditorCameraCommand.FrameAll));
+        AddChord(Key.A, KeyModifiers.Control, () => _session?.Post(EditorHostCommand.SelectAll));
+
+        // The View menu has printed this gesture since the console panel was
+        // written and nothing bound it, so the shell's one cheap key opened
+        // nothing. OemTilde joins the printable set above for the same reason
+        // the letters are in it: a backtick typed into a rename box must not
+        // open a panel.
+        AddChord(Key.OemTilde, KeyModifiers.None, () => OnShowConsolePanel(this, new RoutedEventArgs()));
 
         // Drop a project or a level folder anywhere on the window. The engine's
         // viewport is a native child and never sees Avalonia's drag events, so
@@ -500,8 +509,14 @@ public partial class MainWindow : Window
         // would break every filter search containing it. Function keys carry no
         // such risk, which is why the guard is on the key rather than on the
         // binding.
-        bool printable = modifiers == KeyModifiers.None
-            && (key is >= Key.A and <= Key.Z || key is >= Key.D0 and <= Key.D9);
+        // SHIFT COUNTS AS NO MODIFIER HERE, because a capital letter is what a
+        // person types. The guard used to test for None alone, so a window-level
+        // Shift+F would have fired on the F of "Floor" typed into a rename box -
+        // committing the half-typed name and framing the selection, which is the
+        // exact defect this comment describes, one modifier over.
+        bool printable = modifiers is KeyModifiers.None or KeyModifiers.Shift
+            && (key is >= Key.A and <= Key.Z || key is >= Key.D0 and <= Key.D9
+                || key is Key.OemTilde);
 
         KeyBindings.Add(new KeyBinding
         {
@@ -2434,6 +2449,15 @@ public partial class MainWindow : Window
 
     private void OnFrameClicked(object? sender, RoutedEventArgs e) =>
         _session?.Post(EditorCameraCommand.FrameSelection);
+
+    private void OnFrameAllClicked(object? sender, RoutedEventArgs e) =>
+        _session?.Post(EditorCameraCommand.FrameAll);
+
+    private void OnSelectAllClicked(object? sender, RoutedEventArgs e) =>
+        _session?.Post(EditorHostCommand.SelectAll);
+
+    private void OnClearSelectionClicked(object? sender, RoutedEventArgs e) =>
+        _session?.Post(EditorHostCommand.ClearSelection);
 
     // --- Menu ----------------------------------------------------------------
 

@@ -50,12 +50,14 @@ public partial class KeyboardReferenceWindow : Window
             new("Middle-drag", "Pan."),
             new("Wheel", "Zoom toward the cursor."),
             new("F", "Frame the selection."),
+            new("Shift + F", "Frame everything."),
             new("F7", "Switch between the editor camera and the engine fly camera."),
         ]),
 
         new("Selecting", [
             new("Click", "Select what is under the cursor."),
             new("Ctrl + click", "Add to or remove from the selection."),
+            new("Ctrl + A", "Select every top-level object."),
             new("Drag on empty space", "Box select."),
             new("Right-click", "Open the scene menu on whatever is under the cursor."),
             new("Esc", "Clear the selection."),

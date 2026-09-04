@@ -383,7 +383,21 @@ public sealed class SceneEditorHost : ISceneEditor
         // Escape arrives as the cancel flag rather than as a GizmoCommand: it
         // has to reach the marquee as well as the manipulator, and Update is the
         // one call that routes it to whichever owns the pointer.
-        _viewport.Update(in frame, _input.WasKeyPressed(InputKey.Escape));
+        bool escape = _input.WasKeyPressed(InputKey.Escape);
+        _viewport.Update(in frame, escape);
+
+        // AND WITH NOTHING TO CANCEL, IT CLEARS THE SELECTION. The keyboard
+        // reference has promised that since it was written and nothing did it:
+        // the only Selection.Clear on a user gesture was a click on empty space,
+        // and EditorHostCommand.ClearSelection - implemented, and deliberately
+        // exempt from RefuseEdit so it stays safe while play owns the scene -
+        // was posted by nothing at all.
+        //
+        // Gated on the same idle predicate the probe uses, so Escape still means
+        // "abandon this drag" while one is live and only falls through to the
+        // selection when there is no drag to abandon.
+        if (escape && viewportIdle && _scene.Selection.Count > 0)
+            ClearSelection();
         UpdateCursorShape();
         TrackSelectMoveTravel(in frame);
         UpdateGridFade((float)deltaTime);

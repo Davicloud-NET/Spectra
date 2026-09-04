@@ -247,7 +247,7 @@
     <StackPanel Classes="ribbongroup">
       <StackPanel Classes="rrow" Orientation="Horizontal" Spacing="1">
         <Button Classes="rbig" Tag="edit.duplicate" Click="OnRibbonItemClick"
-                IsEnabled="{Binding HasSelection}" ToolTip.Tip="Copy the selection.  Ctrl+D">
+                IsEnabled="{Binding CanEditSelection}" ToolTip.Tip="Copy the selection.  Ctrl+D">
           <Panel>
             <Border Classes="sheen" />
             <StackPanel Classes="rbigstack">
@@ -259,14 +259,14 @@
 
         <StackPanel Classes="rcol">
           <Button Classes="rsmall" Tag="edit.delete" Click="OnRibbonItemClick"
-                  IsEnabled="{Binding HasSelection}" ToolTip.Tip="Remove the selection.  Delete">
+                  IsEnabled="{Binding CanEditSelection}" ToolTip.Tip="Remove the selection.  Delete">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <Path Classes="icon" Data="{StaticResource IconDelete}" />
               <TextBlock Text="Delete" VerticalAlignment="Center" />
             </StackPanel>
           </Button>
           <Button Classes="rsmall" Tag="edit.convert" Click="OnRibbonItemClick"
-                  IsEnabled="{Binding HasSelection}"
+                  IsEnabled="{Binding CanEditSelection}"
                   ToolTip.Tip="Flip the selected brushes between block and part.  Ctrl+T">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <Path Classes="icon" Data="{StaticResource IconConvertKind}" />
@@ -277,7 +277,7 @@
 
         <StackPanel Classes="rcol">
           <Button Classes="rsmall" Tag="edit.group" Click="OnRibbonItemClick"
-                  IsEnabled="{Binding HasSelection}"
+                  IsEnabled="{Binding CanEditSelection}"
                   ToolTip.Tip="Put the selection under one new parent.  Ctrl+G">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <Path Classes="icon" Data="{StaticResource IconGroupNodes}" />
@@ -285,7 +285,7 @@
             </StackPanel>
           </Button>
           <Button Classes="rsmall" Tag="edit.ungroup" Click="OnRibbonItemClick"
-                  IsEnabled="{Binding HasSelection}"
+                  IsEnabled="{Binding CanEditSelection}"
                   ToolTip.Tip="Dissolve the selected groups, keeping their children.  Ctrl+Shift+G">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <Path Classes="icon" Data="{StaticResource IconUngroupNodes}" />
