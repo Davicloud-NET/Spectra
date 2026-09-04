@@ -26,7 +26,7 @@ public enum RibbonItemSize
     /// <summary>A 22px row: a 16px glyph and a word, three to a column.</summary>
     Small,
 
-    /// <summary>A 58x66 button: a 32px glyph over up to two lines of label.</summary>
+    /// <summary>A 64x66 button: a 32px glyph over up to two lines of label.</summary>
     Large,
 }
 
@@ -93,9 +93,9 @@ public enum RibbonControlKind
 /// <param name="Verb">The existing verb it resolves to.</param>
 /// <param name="Size">
 /// How much room it takes. A <see cref="RibbonItemSize.Large"/> label is capped
-/// at twelve characters by a test, because the button is 58 wide and wraps to
-/// two lines of 13: a third line has nowhere to go and <c>MaxLines</c> would
-/// silently eat it.
+/// at <see cref="RibbonLayout.LargeLabelLimit"/> characters by a test, because
+/// the button wraps to two lines of 13 and a third has nowhere to go -
+/// <c>MaxLines</c> would silently eat it rather than clip it visibly.
 /// </param>
 /// <param name="Kind">What it needs wired. See <see cref="RibbonControlKind"/>.</param>
 public sealed record RibbonItem(
@@ -163,6 +163,20 @@ public sealed record RibbonTab(string Id, string Title, IReadOnlyList<RibbonGrou
 /// </remarks>
 public static class RibbonLayout
 {
+    /// <summary>
+    /// The most characters a large label can hold.
+    /// </summary>
+    /// <remarks>
+    /// MEASURED, not chosen. The cap was twelve, and twelve is what let
+    /// "Everything" ship at a 58px button where it broke mid-word to
+    /// "Everythin / g": a single word longer than the line has no boundary to
+    /// wrap at, so <c>TextWrapping</c> cuts it wherever it runs out. The button
+    /// is 64 now and holds that word with two pixels to spare. Named here so
+    /// the number lives in one place rather than in three comments, two of
+    /// which still said twelve.
+    /// </remarks>
+    public const int LargeLabelLimit = 10;
+
     /// <summary>The tab a session opens on, every launch.</summary>
     public const string DefaultTabId = "build";
 

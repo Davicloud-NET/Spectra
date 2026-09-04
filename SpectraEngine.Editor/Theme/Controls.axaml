@@ -1110,7 +1110,8 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <!-- Two lines, centred, and the wrap is the reason a large label is capped
-       at twelve characters in the roster's own tests: a third line has nowhere
+       by RibbonLayout.LargeLabelLimit in the roster's own tests: a third line
+       has nowhere
        to go and MaxLines would silently eat it. -->
   <Style Selector="Button.rbig TextBlock">
     <Setter Property="TextAlignment" Value="Center" />

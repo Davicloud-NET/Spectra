@@ -475,71 +475,13 @@ public sealed class RibbonLayoutTests
     }
 
     // ─── The size hierarchy, and the width it costs ──────
-
-    /// <summary>
-    /// The window's own <c>MinWidth</c>. A page has to fit inside it, because
-    /// nothing here scrolls or collapses a group.
-    /// </summary>
-    private const double WindowMinimum = 1180.0;
-
-    /// <summary>What each control kind measures, from the theme's own numbers.</summary>
-    private static double WidthOf(RibbonItem item) => item.Kind switch
-    {
-        // Button.chip.compact plus its two words; the widest is "Handles Studio".
-        RibbonControlKind.Chip => 106.0,
-
-        // TextBox.field.num at 58 plus a unit label and the stepper column.
-        RibbonControlKind.Field => 100.0,
-
-        // Both steppers stack inside the field's own row.
-        RibbonControlKind.Stepper => 0.0,
-
-        _ => item.Size == RibbonItemSize.Large ? 64.0 : 96.0,
-    };
-
-    [Fact]
-    public void A_page_fits_the_window_the_shell_refuses_to_go_below()
-    {
-        // THE FLOOR THE SIZE HIERARCHY NEEDED. A large button is three times a
-        // small row's share of the width, so a group that grows one is a group
-        // that can push the last one off the end - and the way that presents is
-        // a control nobody can find, on a window nobody resized, on somebody
-        // else's monitor. Arithmetic here rather than a screenshot there.
-        //
-        // Small rows stack three to a column, so a group's small items cost
-        // ceil(n / 3) columns rather than n rows. Deliberately generous per
-        // item: the point is a bound that fails before the layout does, not a
-        // measurement of it.
-        foreach (RibbonTab tab in RibbonLayout.Tabs)
-        {
-            double width = 0;
-
-            foreach (RibbonGroup group in tab.Groups)
-            {
-                double large = group.Items
-                    .Where(i => i.Size == RibbonItemSize.Large)
-                    .Sum(WidthOf);
-
-                // Everything that is not a large button lives in a column, and
-                // a column holds three rows.
-                List<RibbonItem> small = group.Items
-                    .Where(i => i.Size != RibbonItemSize.Large && WidthOf(i) > 0)
-                    .ToList();
-
-                double columns = 0;
-                for (int i = 0; i < small.Count; i += 3)
-                    columns += small.Skip(i).Take(3).Max(WidthOf);
-
-                width += large + columns + 10; // StackPanel.ribbongroup's own margin
-            }
-
-            width += (tab.Groups.Count - 1) * 5; // the rules between them
-
-            width.ShouldBeLessThan(
-                WindowMinimum,
-                $"the '{tab.Id}' page must fit the window's MinWidth of {WindowMinimum}");
-        }
-    }
+    //
+    // A PAGE'S MEASURED WIDTH MOVED TO RibbonWidthTests, in the render suite,
+    // together with the arithmetic model that stands in for it. The model was
+    // always a claim about itself - "deliberately generous per item" - and a
+    // project with no Avalonia could never check it. Beside a real layout pass
+    // it can: the measurement is the truth, the model is the fast bound, and a
+    // test now holds that the bound bounds.
 
     [Fact]
     public void Every_page_leads_with_a_large_control()
@@ -562,21 +504,24 @@ public sealed class RibbonLayoutTests
         // and MaxLines is 2 - so a third line is not clipped visibly, it is
         // silently dropped.
         //
-        // TEN IS MEASURED, NOT CHOSEN. The cap was twelve, and twelve is what
-        // let "Everything" ship at a 58px button where it broke mid-word to
-        // "Everythin / g" - a single word longer than the line has no word
-        // boundary to wrap at, so TextWrapping cuts it wherever it runs out.
-        // The button is 64 now and holds that word with two pixels to spare,
-        // which makes ten the honest cap rather than a round number.
+        // THE NUMBER LIVES IN RibbonLayout.LargeLabelLimit, because it used to
+        // live here and in two comments that both still said twelve.
+        //
+        // THIS IS A PROXY, and the fact it stands in for is measured elsewhere:
+        // RibbonLabelTests lays the label out on a real text engine and fails
+        // if a single word breaks. This one fails FIRST, and "'Everything!' is
+        // 11 characters" is a better message for somebody about to type a
+        // label than a line-break position.
         var offenders = new List<string>();
 
         foreach (RibbonItem item in AllItems().Where(i => i.Size == RibbonItemSize.Large))
         {
-            if (item.Label.Length > 10)
+            if (item.Label.Length > RibbonLayout.LargeLabelLimit)
                 offenders.Add($"{item.Id}: '{item.Label}' is {item.Label.Length} characters");
         }
 
-        offenders.ShouldBeEmpty("a large button's label must fit two lines at 64px");
+        offenders.ShouldBeEmpty(
+            $"a large button's label must fit two lines at {RibbonLayout.LargeLabelLimit} characters");
     }
 
     [Fact]
