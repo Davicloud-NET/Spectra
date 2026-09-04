@@ -140,7 +140,7 @@
          icon could not say which of the two is current. -->
     <StackPanel Classes="ribbongroup">
       <StackPanel Classes="rrow" Orientation="Horizontal" Spacing="1">
-        <Button Classes="rbig" Tag="tool.move" Classes.active="{Binding IsMoveActive}"
+        <Button Classes="rbig rtoggle" Tag="tool.move" Classes.active="{Binding IsMoveActive}"
                 Click="OnRibbonItemClick" ToolTip.Tip="Move the selection.  W or 2">
           <Panel>
             <Border Classes="sheen" />
@@ -151,7 +151,7 @@
           </Panel>
         </Button>
 
-        <Button Classes="rbig" Tag="tool.rotate" Classes.active="{Binding IsRotateActive}"
+        <Button Classes="rbig rtoggle" Tag="tool.rotate" Classes.active="{Binding IsRotateActive}"
                 Click="OnRibbonItemClick" ToolTip.Tip="Rotate the selection.  E or 4">
           <Panel>
             <Border Classes="sheen" />
@@ -162,7 +162,7 @@
           </Panel>
         </Button>
 
-        <Button Classes="rbig" Tag="tool.size" Classes.active="{Binding IsResizeActive}"
+        <Button Classes="rbig rtoggle" Tag="tool.size" Classes.active="{Binding IsResizeActive}"
                 Click="OnRibbonItemClick" ToolTip.Tip="Change the selection's size.  R or 3">
           <Panel>
             <Border Classes="sheen" />

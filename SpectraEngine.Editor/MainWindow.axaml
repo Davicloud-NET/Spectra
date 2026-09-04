@@ -562,12 +562,12 @@
                        against the markup as well as against the data - the
                        claim being made is that these two are HERE and on no
                        page. -->
-                  <Button Classes="seg" Width="26" Padding="0" Tag="history.undo" Focusable="False" Click="OnUndoClicked"
+                  <Button Classes="seg" Width="26" Padding="0" Tag="history.undo" Focusable="False" Click="OnRibbonStripClick"
                           IsEnabled="{Binding CanUndo}" ToolTip.Tip="{Binding UndoTip}">
                     <Path Classes="icon" Data="{StaticResource IconUndo}" />
                   </Button>
                   <Border Classes="segsep" />
-                  <Button Classes="seg" Width="26" Padding="0" Tag="history.redo" Focusable="False" Click="OnRedoClicked"
+                  <Button Classes="seg" Width="26" Padding="0" Tag="history.redo" Focusable="False" Click="OnRibbonStripClick"
                           IsEnabled="{Binding CanRedo}" ToolTip.Tip="{Binding RedoTip}">
                     <Path Classes="icon" Data="{StaticResource IconRedo}" />
                   </Button>

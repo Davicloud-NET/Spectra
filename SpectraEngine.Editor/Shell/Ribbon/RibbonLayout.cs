@@ -252,7 +252,7 @@ public static class RibbonLayout
             // without a word.
             new RibbonGroup("Snap",
             [
-                new RibbonItem("choice.snap", "Snap", RibbonVerb.Of(RibbonToggle.Snap),
+                new RibbonItem("choice.snap", "Snap to grid", RibbonVerb.Of(RibbonToggle.Snap),
                     RibbonItemSize.Small, RibbonControlKind.Check),
                 new RibbonItem("snap.increment", "Increment", RibbonVerb.SnapIncrement(),
                     RibbonItemSize.Small, RibbonControlKind.Field),
@@ -419,6 +419,14 @@ public static class RibbonLayout
         return item.Kind switch
         {
             RibbonControlKind.Check => "rcheck",
+
+            // The third member of a set rcheck and rradio already establish: a
+            // class with no geometry of its own, whose job is that the roster
+            // declares the kind and both validators can check it. Without it a
+            // Toggle fell through to the size default, so the page's own
+            // validator - the one that refuses the shipped window - could not
+            // tell a tool button that lights from a plain button that does not.
+            RibbonControlKind.Toggle => "rtoggle",
             RibbonControlKind.Radio => "rradio",
             RibbonControlKind.Chip => "chip",
             RibbonControlKind.Field => "field",
@@ -432,22 +440,4 @@ public static class RibbonLayout
             _ => item.Size == RibbonItemSize.Large ? "rbig" : "rsmall",
         };
     }
-
-    /// <summary>
-    /// The two idempotent verbs a two-way choice resolves between: the one it
-    /// posts when the choice is currently OFF, and the one it posts when it is
-    /// on.
-    /// </summary>
-    /// <remarks>
-    /// Expressed once, here, so the dispatcher and the tests read the same
-    /// pairing. "Currently on" means the non-default half: local axes, Classic
-    /// handles, snapping enabled.
-    /// </remarks>
-    public static (GizmoCommand WhenOff, GizmoCommand WhenOn) CommandsFor(RibbonToggle toggle) => toggle switch
-    {
-        RibbonToggle.Axes => (GizmoCommand.UseWorldOrientation, GizmoCommand.UseLocalOrientation),
-        RibbonToggle.Handles => (GizmoCommand.UseStudioStyle, GizmoCommand.UseClassicStyle),
-        RibbonToggle.Snap => (GizmoCommand.DisableSnap, GizmoCommand.EnableSnap),
-        _ => throw new ArgumentOutOfRangeException(nameof(toggle)),
-    };
 }

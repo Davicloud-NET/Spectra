@@ -250,12 +250,81 @@ public sealed class RibbonLayoutTests
                     break;
 
                 case RibbonVerbKind.Toggle:
-                    (GizmoCommand off, GizmoCommand on) = RibbonLayout.CommandsFor(item.Verb.Toggle);
-                    off.ShouldNotBe(on, item.Id);
-                    Enum.IsDefined(off).ShouldBeTrue(item.Id);
-                    Enum.IsDefined(on).ShouldBeTrue(item.Id);
+                    Enum.IsDefined(item.Verb.Toggle).ShouldBeTrue(item.Id);
+
+                    // BOTH DIRECTIONS, spelled out, because the table this
+                    // replaced returned a positional pair and read as its own
+                    // inverse: "the verb it posts when the choice is OFF" would
+                    // have posted UseWorldOrientation while already in world.
+                    // The old test asserted the pair was distinct and defined,
+                    // which an inversion passes.
+                    RibbonToggles.CommandFor(item.Verb.Toggle, on: true)
+                        .ShouldNotBe(RibbonToggles.CommandFor(item.Verb.Toggle, on: false), item.Id);
                     break;
             }
+        }
+    }
+
+    [Fact]
+    public void The_always_visible_pair_dispatches_through_the_roster()
+    {
+        // Undo and redo carried a Tag only so the test above could find them on
+        // the strip; their Click went straight to the handler, so FindItem was
+        // never asked and AlwaysVisible's verbs were never dispatched at all.
+        // Change either entry to any other verb and the buttons still did undo
+        // and redo, with every test green - which is a verb living in a click
+        // handler, the one thing this roster exists to refuse.
+        string window = File.ReadAllText(
+            Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml"));
+
+        foreach (RibbonItem item in RibbonLayout.AlwaysVisible)
+        {
+            ElementFor(window, item.Id).ShouldContain(
+                "Click=\"OnRibbonStripClick\"",
+                customMessage: $"{item.Id} must resolve its verb through the roster, not name a handler");
+        }
+    }
+
+    [Fact]
+    public void A_two_way_choice_posts_the_verb_for_the_state_it_is_ENTERING()
+    {
+        // THE DIRECTION, WHICH IS THE HALF THAT WAS UNTESTABLE. The table this
+        // replaced returned a positional (WhenOff, WhenOn) pair whose own doc
+        // read it backwards, and the only assertion on it was that the two
+        // differed - which an inversion passes, shipping three controls that do
+        // nothing the first time they are clicked.
+        //
+        // "On" is the NON-DEFAULT half: local axes, Classic handles, snapping
+        // enabled.
+        RibbonToggles.CommandFor(RibbonToggle.Axes, on: true).ShouldBe(GizmoCommand.UseLocalOrientation);
+        RibbonToggles.CommandFor(RibbonToggle.Axes, on: false).ShouldBe(GizmoCommand.UseWorldOrientation);
+        RibbonToggles.CommandFor(RibbonToggle.Handles, on: true).ShouldBe(GizmoCommand.UseClassicStyle);
+        RibbonToggles.CommandFor(RibbonToggle.Handles, on: false).ShouldBe(GizmoCommand.UseStudioStyle);
+        RibbonToggles.CommandFor(RibbonToggle.Snap, on: true).ShouldBe(GizmoCommand.EnableSnap);
+        RibbonToggles.CommandFor(RibbonToggle.Snap, on: false).ShouldBe(GizmoCommand.DisableSnap);
+    }
+
+    [Fact]
+    public void A_two_way_choice_is_never_resolved_in_a_click_handler()
+    {
+        // WHAT MAKES "EXPRESSED ONCE" A FACT RATHER THAN A WISH. The window
+        // legitimately still names FinerSnap, CoarserSnap and the three tool
+        // verbs, so this is an assertion about the six idempotent halves of the
+        // two-way choices and nothing wider.
+        string window = File.ReadAllText(
+            Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml.cs"));
+
+        foreach (string verb in new[]
+                 {
+                     nameof(GizmoCommand.UseWorldOrientation), nameof(GizmoCommand.UseLocalOrientation),
+                     nameof(GizmoCommand.UseStudioStyle), nameof(GizmoCommand.UseClassicStyle),
+                     nameof(GizmoCommand.EnableSnap), nameof(GizmoCommand.DisableSnap),
+                 })
+        {
+            window.ShouldNotContain(
+                verb,
+                customMessage: $"{verb} belongs to RibbonToggles.CommandFor; a handler naming it is the " +
+                               "second expression of the pairing that made the first one dead");
         }
     }
 

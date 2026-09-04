@@ -44,14 +44,26 @@ public abstract class RibbonTabView : UserControl
     protected abstract string TabId { get; }
 
     /// <summary>
+    /// The roster item a clicked control names, or null if it names none.
+    /// </summary>
+    /// <remarks>
+    /// Public and static because the strip's own controls are not on a page and
+    /// still have to resolve the same way. Undo and redo used to call their
+    /// handlers directly and carry a <c>Tag</c> only so a test could find them,
+    /// which meant <see cref="RibbonLayout.AlwaysVisible"/>'s verbs were never
+    /// dispatched at all: changing either one left the buttons still doing undo
+    /// and redo with every test green. That is a verb living in a click handler,
+    /// which is the one thing this roster exists to refuse.
+    /// </remarks>
+    public static RibbonItem? ItemOf(object? sender) =>
+        sender is Control { Tag: string id } ? RibbonLayout.FindItem(id) : null;
+
+    /// <summary>
     /// Every control on this page routes here. The <c>Tag</c> is the roster id.
     /// </summary>
     protected void OnRibbonItemClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { Tag: string id })
-            return;
-
-        if (RibbonLayout.FindItem(id) is { } item)
+        if (ItemOf(sender) is { } item)
             Invoked?.Invoke(item.Verb);
     }
 

@@ -2006,6 +2006,22 @@ public partial class MainWindow : Window
         ApplyRibbonState();
     }
 
+    /// <summary>
+    /// A control on the tab STRIP was clicked, rather than one on a page.
+    /// </summary>
+    /// <remarks>
+    /// Undo and redo live outside both pages, so they have no page to route
+    /// through - and until this existed they called their handlers directly and
+    /// their roster entries were decoration. <c>OnRibbonVerb</c> already sends
+    /// those two verbs to the same handlers, so this changes no behaviour and
+    /// makes the weld real.
+    /// </remarks>
+    private void OnRibbonStripClick(object? sender, RoutedEventArgs e)
+    {
+        if (RibbonTabView.ItemOf(sender) is { } item)
+            OnRibbonVerb(item.Verb);
+    }
+
     private void OnRibbonTabClicked(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { Tag: string tabId })
@@ -2159,16 +2175,8 @@ public partial class MainWindow : Window
                 _session?.Post(verb.Gizmo);
                 break;
 
-            case RibbonVerbKind.Toggle when verb.Toggle == RibbonToggle.Axes:
-                OnOrientationClicked(this, args);
-                break;
-
-            case RibbonVerbKind.Toggle when verb.Toggle == RibbonToggle.Handles:
-                OnStyleClicked(this, args);
-                break;
-
-            case RibbonVerbKind.Toggle when verb.Toggle == RibbonToggle.Snap:
-                OnSnapClicked(this, args);
+            case RibbonVerbKind.Toggle:
+                ApplyTwoWayChoice(verb.Toggle);
                 break;
 
             case RibbonVerbKind.SnapIncrement:
@@ -2368,34 +2376,33 @@ public partial class MainWindow : Window
     // rather than to "the other one". The toggle verbs still exist and are
     // still what the keyboard sends; a shell posting one would be computing
     // the answer from a snapshot it may already have superseded locally.
-    private void OnOrientationClicked(object? sender, RoutedEventArgs e)
+    private void OnOrientationClicked(object? sender, RoutedEventArgs e) =>
+        ApplyTwoWayChoice(RibbonToggle.Axes);
+
+    private void OnStyleClicked(object? sender, RoutedEventArgs e) =>
+        ApplyTwoWayChoice(RibbonToggle.Handles);
+
+    private void OnSnapClicked(object? sender, RoutedEventArgs e) =>
+        ApplyTwoWayChoice(RibbonToggle.Snap);
+
+    /// <summary>
+    /// Flips one two-way choice: shows the new half at once and posts the
+    /// idempotent verb that lands on it.
+    /// </summary>
+    /// <remarks>
+    /// One body for all three, and the pairing it uses lives in
+    /// <see cref="RibbonToggles"/> rather than here. Three handlers each
+    /// recomputing "which verb reaches the other half" is how a table meant to
+    /// be the single expression of that ended up read only by a test.
+    /// </remarks>
+    private void ApplyTwoWayChoice(RibbonToggle toggle)
     {
         if (_session is not { } session)
             return;
 
-        bool toWorld = !_shell.IsWorldSpace;
-        _shell.RequestOrientation(toWorld ? "world" : "local");
-        session.Post(toWorld ? GizmoCommand.UseWorldOrientation : GizmoCommand.UseLocalOrientation);
-    }
-
-    private void OnStyleClicked(object? sender, RoutedEventArgs e)
-    {
-        if (_session is not { } session)
-            return;
-
-        bool toStudio = !_shell.IsStudioStyle;
-        _shell.RequestGizmoStyle(toStudio ? "Studio" : "Classic");
-        session.Post(toStudio ? GizmoCommand.UseStudioStyle : GizmoCommand.UseClassicStyle);
-    }
-
-    private void OnSnapClicked(object? sender, RoutedEventArgs e)
-    {
-        if (_session is not { } session)
-            return;
-
-        bool on = !_shell.SnapEnabled;
-        _shell.RequestSnapEnabled(on);
-        session.Post(on ? GizmoCommand.EnableSnap : GizmoCommand.DisableSnap);
+        bool on = !RibbonToggles.IsOn(toggle, _shell);
+        RibbonToggles.Request(_shell, toggle, on);
+        session.Post(RibbonToggles.CommandFor(toggle, on));
     }
 
     private void OnUndoClicked(object? sender, RoutedEventArgs e)

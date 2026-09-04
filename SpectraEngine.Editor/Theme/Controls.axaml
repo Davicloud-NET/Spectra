@@ -1218,6 +1218,14 @@
        Button.seg makes above: a two-way toggle bound to engine state flickers
        when the snapshot corrects it. The exclusivity of a radio column is a
        property of three set-verbs, not of the controls. -->
+  <!-- A TOGGLE: a large button that shows which of a set is running. Like
+       rcheck and rradio it carries no geometry - Button.rbig.active already
+       lights it - and exists so the roster can declare the kind and both
+       validators can require the class. -->
+  <Style Selector="Button.rtoggle">
+    <Setter Property="Focusable" Value="False" />
+  </Style>
+
   <Style Selector="Button.rsmall.rcheck">
     <Setter Property="Padding" Value="2,0" />
   </Style>
