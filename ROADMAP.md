@@ -710,7 +710,7 @@ The shell stopped looking like an unstyled Fluent app: a token layer (`Theme/Tok
 - **Depends on** — `H2`. **Risk** — **LOW.** **Size** — **M.**
 
 ### H4 — Ribbon, themes, docking: the shell's three declared directions
-Recorded 2026-08-28 from the owner, in the order they were raised. None is started; each is written down so the work that happens before it does not paint itself into a corner.
+Recorded 2026-08-28 from the owner, in the order they were raised. Two of the three are struck DONE below; the theming item is half-built (see `CLAUDE.md` on the `DynamicResource` colour split). Each is written down so the work that happens before it does not paint itself into a corner.
 - ~~**The toolbar becomes a full ribbon.**~~ **DONE** (see `H13`). The property it asked to protect held: every ribbon control is a verb the roster names, resolved from the control's own `Tag`, so nothing grew logic that lives only in a click handler.
 - **Custom theming is a stated goal, so the token layer must stay the only source of colour.** `Theme/Tokens.axaml` already holds every value and nothing outside it writes a literal, which is exactly the precondition. What is still missing for user themes: the tokens are `StaticResource` (resolved once) rather than `DynamicResource`, there is no theme file format or loader, and the node-kind tints are consumed through a converter that looks keys up by name. **The conversion to `DynamicResource` is the one thing worth doing early**, because retrofitting it after more views exist is a mechanical edit across all of them. **Risk** — **LOW.** **Size** — **S** now, **M** later.
 - ~~**No dockable panes yet, and that is a decision rather than a gap.**~~ **DONE.** Dock.Avalonia (MIT) landed with `H2b`'s successor and the viewport joined it in `H10` for composited sessions. The airspace risk this bullet recorded, a floating pane over the viewport being invisible, was answered twice: floats are pinned to native OS windows, which may legally cross a native child, and a composited session has no child window for anything to cross. The fake-window-chrome question it bundled in stays settled the same way, because panel headers are Dock's own now.
@@ -751,6 +751,33 @@ A drop affordance over the viewport while an asset drag is over it: a frame arou
 - **A collapse may not hide a verb whose absence is dangerous.** Play is unchanged in the menu row's corner; undo and redo sit on the tab strip, which both states show. The flyout is a POPUP, which is the one surface that may cross a native viewport. The body does not animate its height, because that row sizes the viewport and a ramp would be eight swap-chain resizes per collapse.
 - **~~Unverified: what it LOOKS like.~~ VERIFIED, and the verdict was that it read as grey blobs.** Three structural causes, all now fixed and recorded in `CLAUDE.md`: no size hierarchy (thirty controls, all `Button.seg` at 26px), no depth anywhere in the shell (`LinearGradientBrush`, `GradientStop`, `BoxShadow` and `DropShadow` all returned zero matches across the project), and a View page that had withdrawn its icons on the correct reasoning that five ambiguous 16px outlines are a grey texture - the right diagnosis with the wrong remedy, since the cure is a size step rather than fewer icons. The surface now has a 32px large button over 22px rows, Office 2010 bevels on a static depth layer no `BrushTransition` can reach, groups delimited by a fading rule and a caption instead of a capsule, and one split button. **Two defects were found by looking at the running window and by nothing else**: a 58px large button broke "Everything" mid-word, and the split's caret rendered 28px left of its glyph because a `Shape` defaults to `HorizontalAlignment=Stretch` and `Stretch="None"` then draws from the left edge.
 - **Depends on**: `H2b`. **Size**: **M.**
+
+### H15 - The ribbon becomes measurable, and the icons become files ✅ **landed**
+`H13` closed its own "Unverified: what it LOOKS like" by a person opening the
+window, and recorded that BOTH defects it ever had were found that way and by
+nothing else. This is the attempt to stop that being the only instrument.
+- **A headless render suite** (`Test/SpectraEngine.Editor.Render.Tests`): real
+  Skia over the shell's own `App`, measuring a constructed page. It found three
+  things on arrival that no source scrape could reach - a split button whose
+  label sat seven pixels above its neighbours, four of five columns hanging from
+  the top of a row whose large buttons centre their content, and four dead
+  styles leaving the snap field off the row rhythm. Its own header says what it
+  cannot claim: nothing here judges colour or whether a hierarchy reads.
+- **Icons are files.** `Assets/Icons/*.svg`, one per key, compiled in as
+  `AvaloniaResource`, with `Icons.targets` generating the dictionary at build
+  time and never rewriting a `d` string. Byte-identical on screen, measured.
+- **The ribbon stopped eating the tool keys**, which was the severe one: every
+  engine-keymap chord died on the first ribbon click, while the tooltips went on
+  advertising them.
+- **Four welds the roster claimed and did not have**, and the verbs that existed
+  and could not be reached (`SelectAll`, `ClearSelection`, `FrameAll`).
+- **The command palette**, `Ctrl+P`, which `CLAUDE.md` has recorded as owed
+  since `H13` and which the design doctrine names as the third route onto every
+  verb. `RibbonVerb` became `ShellVerb` so it is a second reader of one
+  dispatcher rather than a fourth command path.
+- **Unverified, and honestly**: nothing here has been seen by a person in the
+  running window. The suite renders sheets to `artifacts/ribbon/` for that.
+- **Depends on**: `H13`. **Size**: **M.**
 
 ---
 
