@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
+             x:Class="SpectraEngine.Editor.Shell.CommandPaletteView">
+
+  <!--
+    A control of its own rather than markup inside the window, so the render
+    suite can construct and measure the real thing. A palette declared inline
+    would have to be declared a second time to be rendered, and a second
+    declaration is what every convention test in this shell exists to prevent.
+  -->
+  <Border Classes="palette">
+    <DockPanel>
+      <TextBox x:Name="Query" DockPanel.Dock="Top" Classes="field"
+               Watermark="Type a command" />
+      <ListBox x:Name="Rows" Classes="palettelist" MaxHeight="320">
+        <ListBox.ItemTemplate>
+          <DataTemplate DataType="shell:ShellCommand">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Text="{Binding Title}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="palettechord" Text="{Binding Gesture}"
+                         VerticalAlignment="Center" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+  </Border>
+</UserControl>

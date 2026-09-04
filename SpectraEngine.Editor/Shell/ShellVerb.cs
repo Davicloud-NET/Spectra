@@ -3,12 +3,12 @@ using SpectraEngine.Editing.Cameras;
 using SpectraEngine.Editing.Gizmos;
 using SpectraEngine.Editing.Hosting;
 
-namespace SpectraEngine.Editor.Shell.Ribbon;
+namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
 /// Which family of existing verb a ribbon control resolves to.
 /// </summary>
-public enum RibbonVerbKind
+public enum ShellVerbKind
 {
     /// <summary>Nothing. Never valid on a roster item.</summary>
     None,
@@ -33,7 +33,7 @@ public enum RibbonVerbKind
 
     /// <summary>
     /// A two-way choice whose target verb depends on the state it is in. See
-    /// <see cref="RibbonToggle"/>.
+    /// <see cref="ShellToggle"/>.
     /// </summary>
     Toggle,
 
@@ -69,7 +69,7 @@ public enum RibbonVerbKind
 /// toggles, which is right, because a key press carries no displayed state to
 /// disagree with.
 /// </remarks>
-public enum RibbonToggle
+public enum ShellToggle
 {
     /// <summary>World or local drag axes.</summary>
     Axes,
@@ -101,44 +101,44 @@ public enum RibbonToggle
 /// bullet asks to protect.
 /// </para>
 /// </remarks>
-public readonly record struct RibbonVerb(
-    RibbonVerbKind Kind,
+public readonly record struct ShellVerb(
+    ShellVerbKind Kind,
     EditorHostCommand Host,
     GizmoCommand Gizmo,
     EditorCameraCommand Camera,
     InsertKind Insert,
     DebugVisualization Debug,
-    RibbonToggle Toggle)
+    ShellToggle Toggle)
 {
     /// <summary>A host verb: history, a structural edit, a grid mode.</summary>
-    public static RibbonVerb Of(EditorHostCommand command) =>
-        new(RibbonVerbKind.Host, command, default, default, default, default, default);
+    public static ShellVerb Of(EditorHostCommand command) =>
+        new(ShellVerbKind.Host, command, default, default, default, default, default);
 
     /// <summary>A manipulator verb.</summary>
-    public static RibbonVerb Of(GizmoCommand command) =>
-        new(RibbonVerbKind.Gizmo, default, command, default, default, default, default);
+    public static ShellVerb Of(GizmoCommand command) =>
+        new(ShellVerbKind.Gizmo, default, command, default, default, default, default);
 
     /// <summary>A camera verb.</summary>
-    public static RibbonVerb Of(EditorCameraCommand command) =>
-        new(RibbonVerbKind.Camera, default, default, command, default, default, default);
+    public static ShellVerb Of(EditorCameraCommand command) =>
+        new(ShellVerbKind.Camera, default, default, command, default, default, default);
 
     /// <summary>An insert.</summary>
-    public static RibbonVerb Of(InsertKind kind) =>
-        new(RibbonVerbKind.Insert, default, default, default, kind, default, default);
+    public static ShellVerb Of(InsertKind kind) =>
+        new(ShellVerbKind.Insert, default, default, default, kind, default, default);
 
     /// <summary>One debug overlay flag.</summary>
-    public static RibbonVerb Of(DebugVisualization flag) =>
-        new(RibbonVerbKind.Debug, default, default, default, default, flag, default);
+    public static ShellVerb Of(DebugVisualization flag) =>
+        new(ShellVerbKind.Debug, default, default, default, default, flag, default);
 
     /// <summary>A two-way choice.</summary>
-    public static RibbonVerb Of(RibbonToggle toggle) =>
-        new(RibbonVerbKind.Toggle, default, default, default, default, default, toggle);
+    public static ShellVerb Of(ShellToggle toggle) =>
+        new(ShellVerbKind.Toggle, default, default, default, default, default, toggle);
 
     /// <summary>The snap increment field.</summary>
-    public static RibbonVerb SnapIncrement() =>
-        new(RibbonVerbKind.SnapIncrement, default, default, default, default, default, default);
+    public static ShellVerb SnapIncrement() =>
+        new(ShellVerbKind.SnapIncrement, default, default, default, default, default, default);
 
     /// <summary>Place an entity of whichever class the session last used.</summary>
-    public static RibbonVerb InsertEntity() =>
-        new(RibbonVerbKind.InsertEntity, default, default, default, default, default, default);
+    public static ShellVerb InsertEntity() =>
+        new(ShellVerbKind.InsertEntity, default, default, default, default, default, default);
 }

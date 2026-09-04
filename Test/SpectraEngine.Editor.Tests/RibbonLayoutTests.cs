@@ -40,11 +40,11 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void No_verb_appears_on_more_than_one_tab()
     {
-        // THE TEST THIS WHOLE DESIGN EXISTS FOR. A RibbonVerb is a value, so
+        // THE TEST THIS WHOLE DESIGN EXISTS FOR. A ShellVerb is a value, so
         // this is a set comparison rather than a review habit; the previous
         // strip's Home and Model pages carried six verbs each way and nothing
         // anywhere said so.
-        var seen = new Dictionary<RibbonVerb, string>();
+        var seen = new Dictionary<ShellVerb, string>();
         var offenders = new List<string>();
 
         foreach (RibbonTab tab in RibbonLayout.Tabs)
@@ -74,7 +74,7 @@ public sealed class RibbonLayoutTests
         // A collapse can hide every page, so anything whose ABSENCE is
         // dangerous cannot be tab-scoped. Undo is the recovery verb for the
         // destructive verbs the Build page carries.
-        var onTabs = new HashSet<RibbonVerb>(
+        var onTabs = new HashSet<ShellVerb>(
             RibbonLayout.Tabs.SelectMany(RibbonLayout.ItemsOf).Select(i => i.Verb));
 
         foreach (RibbonItem item in RibbonLayout.AlwaysVisible)
@@ -94,8 +94,8 @@ public sealed class RibbonLayoutTests
         // to justify it here.
         RibbonLayout.AlwaysVisible.Select(i => i.Verb).ShouldBe(
         [
-            RibbonVerb.Of(EditorHostCommand.Undo),
-            RibbonVerb.Of(EditorHostCommand.Redo),
+            ShellVerb.Of(EditorHostCommand.Undo),
+            ShellVerb.Of(EditorHostCommand.Redo),
         ]);
     }
 
@@ -135,7 +135,7 @@ public sealed class RibbonLayoutTests
         {
             foreach (RibbonItem item in RibbonLayout.ItemsOf(tab))
             {
-                if (item.Verb.Kind != RibbonVerbKind.Insert)
+                if (item.Verb.Kind != ShellVerbKind.Insert)
                     continue;
 
                 tab.Id.ShouldBe(RibbonLayout.DefaultTabId, $"'{item.Id}' is an insert");
@@ -198,8 +198,8 @@ public sealed class RibbonLayoutTests
 
         foreach (RibbonItem item in RibbonLayout.ItemsOf(view))
         {
-            item.Verb.Kind.ShouldNotBe(RibbonVerbKind.Insert, item.Id);
-            if (item.Verb.Kind == RibbonVerbKind.Host)
+            item.Verb.Kind.ShouldNotBe(ShellVerbKind.Insert, item.Id);
+            if (item.Verb.Kind == ShellVerbKind.Host)
             {
                 item.Verb.Host.ShouldBeOneOf(
                     EditorHostCommand.GridAuto, EditorHostCommand.GridOn, EditorHostCommand.GridOff);
@@ -208,8 +208,8 @@ public sealed class RibbonLayoutTests
 
         foreach (RibbonItem item in RibbonLayout.ItemsOf(build))
         {
-            item.Verb.Kind.ShouldNotBe(RibbonVerbKind.Camera, item.Id);
-            item.Verb.Kind.ShouldNotBe(RibbonVerbKind.Debug, item.Id);
+            item.Verb.Kind.ShouldNotBe(ShellVerbKind.Camera, item.Id);
+            item.Verb.Kind.ShouldNotBe(ShellVerbKind.Debug, item.Id);
         }
     }
 
@@ -222,34 +222,34 @@ public sealed class RibbonLayoutTests
         {
             item.Id.ShouldNotBeNullOrWhiteSpace();
             item.Label.ShouldNotBeNullOrWhiteSpace();
-            item.Verb.Kind.ShouldNotBe(RibbonVerbKind.None, item.Id);
+            item.Verb.Kind.ShouldNotBe(ShellVerbKind.None, item.Id);
 
             switch (item.Verb.Kind)
             {
-                case RibbonVerbKind.Host:
+                case ShellVerbKind.Host:
                     Enum.IsDefined(item.Verb.Host).ShouldBeTrue(item.Id);
                     break;
 
-                case RibbonVerbKind.Gizmo:
+                case ShellVerbKind.Gizmo:
                     Enum.IsDefined(item.Verb.Gizmo).ShouldBeTrue(item.Id);
                     break;
 
-                case RibbonVerbKind.Camera:
+                case ShellVerbKind.Camera:
                     Enum.IsDefined(item.Verb.Camera).ShouldBeTrue(item.Id);
                     break;
 
-                case RibbonVerbKind.Insert:
+                case ShellVerbKind.Insert:
                     Enum.IsDefined(item.Verb.Insert).ShouldBeTrue(item.Id);
                     break;
 
-                case RibbonVerbKind.Debug:
+                case ShellVerbKind.Debug:
                     // A single declared flag, never a combination: the button
                     // toggles exactly one overlay and its lit state reads one.
                     Enum.IsDefined(item.Verb.Debug).ShouldBeTrue(item.Id);
                     item.Verb.Debug.ShouldNotBe(DebugVisualization.None, item.Id);
                     break;
 
-                case RibbonVerbKind.Toggle:
+                case ShellVerbKind.Toggle:
                     Enum.IsDefined(item.Verb.Toggle).ShouldBeTrue(item.Id);
 
                     // BOTH DIRECTIONS, spelled out, because the table this
@@ -258,8 +258,8 @@ public sealed class RibbonLayoutTests
                     // have posted UseWorldOrientation while already in world.
                     // The old test asserted the pair was distinct and defined,
                     // which an inversion passes.
-                    RibbonToggles.CommandFor(item.Verb.Toggle, on: true)
-                        .ShouldNotBe(RibbonToggles.CommandFor(item.Verb.Toggle, on: false), item.Id);
+                    ShellToggles.CommandFor(item.Verb.Toggle, on: true)
+                        .ShouldNotBe(ShellToggles.CommandFor(item.Verb.Toggle, on: false), item.Id);
                     break;
             }
         }
@@ -328,12 +328,12 @@ public sealed class RibbonLayoutTests
         //
         // "On" is the NON-DEFAULT half: local axes, Classic handles, snapping
         // enabled.
-        RibbonToggles.CommandFor(RibbonToggle.Axes, on: true).ShouldBe(GizmoCommand.UseLocalOrientation);
-        RibbonToggles.CommandFor(RibbonToggle.Axes, on: false).ShouldBe(GizmoCommand.UseWorldOrientation);
-        RibbonToggles.CommandFor(RibbonToggle.Handles, on: true).ShouldBe(GizmoCommand.UseClassicStyle);
-        RibbonToggles.CommandFor(RibbonToggle.Handles, on: false).ShouldBe(GizmoCommand.UseStudioStyle);
-        RibbonToggles.CommandFor(RibbonToggle.Snap, on: true).ShouldBe(GizmoCommand.EnableSnap);
-        RibbonToggles.CommandFor(RibbonToggle.Snap, on: false).ShouldBe(GizmoCommand.DisableSnap);
+        ShellToggles.CommandFor(ShellToggle.Axes, on: true).ShouldBe(GizmoCommand.UseLocalOrientation);
+        ShellToggles.CommandFor(ShellToggle.Axes, on: false).ShouldBe(GizmoCommand.UseWorldOrientation);
+        ShellToggles.CommandFor(ShellToggle.Handles, on: true).ShouldBe(GizmoCommand.UseClassicStyle);
+        ShellToggles.CommandFor(ShellToggle.Handles, on: false).ShouldBe(GizmoCommand.UseStudioStyle);
+        ShellToggles.CommandFor(ShellToggle.Snap, on: true).ShouldBe(GizmoCommand.EnableSnap);
+        ShellToggles.CommandFor(ShellToggle.Snap, on: false).ShouldBe(GizmoCommand.DisableSnap);
     }
 
     [Fact]
@@ -355,7 +355,7 @@ public sealed class RibbonLayoutTests
         {
             window.ShouldNotContain(
                 verb,
-                customMessage: $"{verb} belongs to RibbonToggles.CommandFor; a handler naming it is the " +
+                customMessage: $"{verb} belongs to ShellToggles.CommandFor; a handler naming it is the " +
                                "second expression of the pairing that made the first one dead");
         }
     }
@@ -366,7 +366,7 @@ public sealed class RibbonLayoutTests
         // The one control whose verb carries a NUMBER rather than naming a
         // state. Two of them would be the three boxes labelled mv / rot / sz
         // this shell already retired once.
-        AllItems().Count(i => i.Verb.Kind == RibbonVerbKind.SnapIncrement).ShouldBe(1);
+        AllItems().Count(i => i.Verb.Kind == ShellVerbKind.SnapIncrement).ShouldBe(1);
     }
 
     [Fact]
@@ -380,7 +380,7 @@ public sealed class RibbonLayoutTests
             .ToList();
 
         splits.Count.ShouldBe(1);
-        splits[0].Verb.Kind.ShouldBe(RibbonVerbKind.InsertEntity);
+        splits[0].Verb.Kind.ShouldBe(ShellVerbKind.InsertEntity);
         splits[0].Size.ShouldBe(RibbonItemSize.Large);
     }
 
@@ -398,7 +398,7 @@ public sealed class RibbonLayoutTests
         // comment: exactly one item may carry a verb with no payload, and no
         // item may name a class.
         AllItems()
-            .Count(i => i.Verb.Kind == RibbonVerbKind.InsertEntity)
+            .Count(i => i.Verb.Kind == ShellVerbKind.InsertEntity)
             .ShouldBe(1, "the class is session state, so only the control is in the roster");
 
         // The built-in classes, which are what a roster entry would most
@@ -442,9 +442,9 @@ public sealed class RibbonLayoutTests
         // The click handler's only input is the control's Tag, so an id the
         // roster does not know must resolve to nothing rather than to
         // something.
-        RibbonLayout.FindItem("insert.block")!.Verb.ShouldBe(RibbonVerb.Of(InsertKind.WorldBrush));
-        RibbonLayout.FindItem("history.undo")!.Verb.ShouldBe(RibbonVerb.Of(EditorHostCommand.Undo));
-        RibbonLayout.FindItem("camera.frameall")!.Verb.ShouldBe(RibbonVerb.Of(EditorCameraCommand.FrameAll));
+        RibbonLayout.FindItem("insert.block")!.Verb.ShouldBe(ShellVerb.Of(InsertKind.WorldBrush));
+        RibbonLayout.FindItem("history.undo")!.Verb.ShouldBe(ShellVerb.Of(EditorHostCommand.Undo));
+        RibbonLayout.FindItem("camera.frameall")!.Verb.ShouldBe(ShellVerb.Of(EditorCameraCommand.FrameAll));
         RibbonLayout.FindItem("nothing.at.all").ShouldBeNull();
         RibbonLayout.FindItem(null).ShouldBeNull();
     }

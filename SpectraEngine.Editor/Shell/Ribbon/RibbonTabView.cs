@@ -38,7 +38,7 @@ namespace SpectraEngine.Editor.Shell.Ribbon;
 public abstract class RibbonTabView : UserControl
 {
     /// <summary>A control on this page was clicked, carrying its verb.</summary>
-    public event Action<RibbonVerb>? Invoked;
+    public event Action<ShellVerb>? Invoked;
 
     /// <summary>Which page this is. Must name a tab in <see cref="RibbonLayout.Tabs"/>.</summary>
     protected abstract string TabId { get; }

@@ -1474,6 +1474,70 @@
     <Setter Property="Padding" Value="5,0" />
   </Style>
 
+  <!-- ___ Command palette _________________________________
+       A float, so it takes the float radius and the strong border every other
+       floating surface here takes. Wider than it looks like it needs: the rows
+       carry a chord on the right, and a palette that wraps a command name is
+       one nobody reads. -->
+  <Style Selector="Border.palette">
+    <Setter Property="Width" Value="520" />
+    <Setter Property="Background" Value="{StaticResource SpectraBgApp}" />
+    <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderStrong}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusFloat}" />
+    <Setter Property="Padding" Value="8" />
+  </Style>
+  <Style Selector="Border.palette TextBox.field">
+    <Setter Property="Margin" Value="0,0,0,6" />
+  </Style>
+
+  <Style Selector="ListBox.palettelist">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="ListBox.palettelist ListBoxItem">
+    <Setter Property="Padding" Value="6,0" />
+    <Setter Property="MinHeight" Value="24" />
+    <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+  </Style>
+
+  <!-- ON THE TEMPLATE PART, because Fluent paints a ListBoxItem's states on its
+       own ContentPresenter at trigger priority: setting Background on the ITEM
+       reaches the presenter only at TemplateBinding priority and loses, which is
+       the documented trap that left menu items and text boxes in stock fills.
+
+       And a QUIET fill rather than the accent one. Left alone, the selected row
+       arrived as a full-strength brand-red bar - Fluent's stock selection over
+       the SystemAccentColor this theme overrides - which is a different, louder
+       answer to "this row is selected" than the scene tree three panels away
+       gives to the same question. -->
+  <Style Selector="ListBox.palettelist ListBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource SpectraRowHover}" />
+  </Style>
+  <Style Selector="ListBox.palettelist ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource SpectraRowSelected}" />
+  </Style>
+  <Style Selector="ListBox.palettelist ListBoxItem:selected:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource SpectraRowSelected}" />
+  </Style>
+  <Style Selector="ListBox.palettelist ListBoxItem:selected TextBlock">
+    <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+  </Style>
+  <Style Selector="ListBox.palettelist ListBoxItem:selected TextBlock.palettechord">
+    <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+  </Style>
+
+  <!-- The chord, muted and mono: it is a VALUE, and this shell reserves mono
+       for values. Printing it beside the name is the whole reason a palette
+       teaches the keyboard rather than replacing it. -->
+  <Style Selector="TextBlock.palettechord">
+    <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
+    <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
+    <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+    <Setter Property="Margin" Value="12,0,0,0" />
+  </Style>
+
   <!-- ___ Checkbox ________________________________________
        Fluent's stock box is 20px with a system-accent fill; at 20 it is the
        tallest thing in a 24px inspector row and it arrives in whatever colour

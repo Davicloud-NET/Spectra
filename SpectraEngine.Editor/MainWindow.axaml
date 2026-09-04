@@ -626,6 +626,22 @@
             <ContentControl x:Name="RibbonFlyoutHost" />
           </Border>
         </Popup>
+
+        <!-- THE COMMAND PALETTE, and it is a Popup for the same reason the
+             flyout above is: an Avalonia popup is a real OS window, so it may
+             cross a native viewport, and anything drawn in this window's own
+             layer would be composited away over one.
+
+             Anchored to the strip rather than centred on the window, because a
+             palette that lands in the middle of the picture covers the thing
+             you are about to run a command on. -->
+        <Popup x:Name="CommandPalettePopup" Grid.Row="0"
+               PlacementTarget="{Binding #RibbonStrip}"
+               Placement="BottomEdgeAlignedLeft"
+               HorizontalOffset="120"
+               IsLightDismissEnabled="True">
+          <shell:CommandPaletteView x:Name="Palette" />
+        </Popup>
       </Grid>
     </Border>
 

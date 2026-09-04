@@ -76,6 +76,37 @@ public sealed class RibbonSheetTests(RibbonSession session)
         });
     }
 
+    [Fact]
+    public void The_command_palette_rasterises_into_a_sheet_too()
+    {
+        // A NEW VISIBLE SURFACE, so it gets looked at before it ships. That is
+        // the whole premise of this suite, and shipping a palette nobody had
+        // seen would contradict it.
+        session.On(() =>
+        {
+            var palette = new SpectraEngine.Editor.Shell.CommandPaletteView();
+            palette.RowList.ItemsSource =
+                CommandTable.Search("in", hasSelection: true, isPlaying: false);
+            palette.RowList.SelectedIndex = 0;
+            palette.QueryBox.Text = "in";
+
+            var window = new Window { Content = palette, SizeToContent = SizeToContent.WidthAndHeight };
+            window.SetRenderScaling(2.0);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+            WriteableBitmap? frame = window.GetLastRenderedFrame();
+            frame.ShouldNotBeNull();
+
+            Directory.CreateDirectory(OutputDirectory);
+            frame.Save(Path.Combine(OutputDirectory, "palette@2x.png"), quality: null);
+
+            DistinctColours(frame).ShouldBeGreaterThan(8);
+            window.Close();
+        });
+    }
+
     /// <summary>Puts the model into the state the sheet is named for.</summary>
     private static Action<ShellModel>? Drive(string state) => state switch
     {

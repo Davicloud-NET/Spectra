@@ -101,7 +101,7 @@ public enum RibbonControlKind
 public sealed record RibbonItem(
     string Id,
     string Label,
-    RibbonVerb Verb,
+    ShellVerb Verb,
     RibbonItemSize Size = RibbonItemSize.Small,
     RibbonControlKind Kind = RibbonControlKind.Button);
 
@@ -141,7 +141,7 @@ public sealed record RibbonTab(string Id, string Title, string Summary, IReadOnl
 /// argue with those findings but to make each of them a property of this file.
 /// </para>
 /// <list type="number">
-/// <item><b>No verb appears on two tabs.</b> A <see cref="RibbonVerb"/> is a
+/// <item><b>No verb appears on two tabs.</b> A <see cref="ShellVerb"/> is a
 /// value, so this is a set comparison rather than a review habit, and
 /// <c>RibbonLayoutTests</c> fails the build over it.</item>
 /// <item><b>Insert is the first group of the DEFAULT tab</b>
@@ -215,8 +215,8 @@ public static class RibbonLayout
     /// </summary>
     public static IReadOnlyList<RibbonItem> AlwaysVisible { get; } =
     [
-        new("history.undo", "Undo", RibbonVerb.Of(EditorHostCommand.Undo)),
-        new("history.redo", "Redo", RibbonVerb.Of(EditorHostCommand.Redo)),
+        new("history.undo", "Undo", ShellVerb.Of(EditorHostCommand.Undo)),
+        new("history.redo", "Redo", ShellVerb.Of(EditorHostCommand.Redo)),
     ];
 
     /// <summary>The pages, in strip order.</summary>
@@ -239,16 +239,16 @@ public static class RibbonLayout
             // as four grey outlines.
             new RibbonGroup("Insert",
             [
-                new RibbonItem("insert.block", "Block", RibbonVerb.Of(InsertKind.WorldBrush),
+                new RibbonItem("insert.block", "Block", ShellVerb.Of(InsertKind.WorldBrush),
                     RibbonItemSize.Large),
-                new RibbonItem("insert.part", "Part", RibbonVerb.Of(InsertKind.PartBrush),
+                new RibbonItem("insert.part", "Part", ShellVerb.Of(InsertKind.PartBrush),
                     RibbonItemSize.Large),
-                new RibbonItem("insert.cut", "Cut", RibbonVerb.Of(InsertKind.SubtractiveBrush),
+                new RibbonItem("insert.cut", "Cut", ShellVerb.Of(InsertKind.SubtractiveBrush),
                     RibbonItemSize.Large),
-                new RibbonItem("insert.light", "Light", RibbonVerb.Of(InsertKind.PointLight),
+                new RibbonItem("insert.light", "Light", ShellVerb.Of(InsertKind.PointLight),
                     RibbonItemSize.Large),
-                new RibbonItem("insert.panel", "Panel", RibbonVerb.Of(InsertKind.SurfaceLight)),
-                new RibbonItem("insert.group", "Group", RibbonVerb.Of(InsertKind.Group)),
+                new RibbonItem("insert.panel", "Panel", ShellVerb.Of(InsertKind.SurfaceLight)),
+                new RibbonItem("insert.group", "Group", ShellVerb.Of(InsertKind.Group)),
 
                 // THE ONE SPLIT BUTTON, and the only Office idiom on this
                 // surface that cannot be faked with what was already here: a
@@ -263,7 +263,7 @@ public static class RibbonLayout
                 // test says so, because a roster that quietly grew a dynamic
                 // entry would make every claim in this file about a fixed set
                 // untrue.
-                new RibbonItem("insert.entity", "Entity", RibbonVerb.InsertEntity(),
+                new RibbonItem("insert.entity", "Entity", ShellVerb.InsertEntity(),
                     RibbonItemSize.Large, RibbonControlKind.Split),
             ]),
 
@@ -275,15 +275,15 @@ public static class RibbonLayout
             // current.
             new RibbonGroup("Transform",
             [
-                new RibbonItem("tool.move", "Move", RibbonVerb.Of(GizmoCommand.UseTranslate),
+                new RibbonItem("tool.move", "Move", ShellVerb.Of(GizmoCommand.UseTranslate),
                     RibbonItemSize.Large, RibbonControlKind.Toggle),
-                new RibbonItem("tool.rotate", "Rotate", RibbonVerb.Of(GizmoCommand.UseRotate),
+                new RibbonItem("tool.rotate", "Rotate", ShellVerb.Of(GizmoCommand.UseRotate),
                     RibbonItemSize.Large, RibbonControlKind.Toggle),
-                new RibbonItem("tool.size", "Size", RibbonVerb.Of(GizmoCommand.UseScale),
+                new RibbonItem("tool.size", "Size", ShellVerb.Of(GizmoCommand.UseScale),
                     RibbonItemSize.Large, RibbonControlKind.Toggle),
-                new RibbonItem("choice.axes", "Axes", RibbonVerb.Of(RibbonToggle.Axes),
+                new RibbonItem("choice.axes", "Axes", ShellVerb.Of(ShellToggle.Axes),
                     RibbonItemSize.Small, RibbonControlKind.Chip),
-                new RibbonItem("choice.handles", "Handles", RibbonVerb.Of(RibbonToggle.Handles),
+                new RibbonItem("choice.handles", "Handles", ShellVerb.Of(ShellToggle.Handles),
                     RibbonItemSize.Small, RibbonControlKind.Chip),
             ]),
 
@@ -293,13 +293,13 @@ public static class RibbonLayout
             // without a word.
             new RibbonGroup("Snap",
             [
-                new RibbonItem("choice.snap", "Snap to grid", RibbonVerb.Of(RibbonToggle.Snap),
+                new RibbonItem("choice.snap", "Snap to grid", ShellVerb.Of(ShellToggle.Snap),
                     RibbonItemSize.Small, RibbonControlKind.Check),
-                new RibbonItem("snap.increment", "Increment", RibbonVerb.SnapIncrement(),
+                new RibbonItem("snap.increment", "Increment", ShellVerb.SnapIncrement(),
                     RibbonItemSize.Small, RibbonControlKind.Field),
-                new RibbonItem("snap.finer", "Finer", RibbonVerb.Of(GizmoCommand.FinerSnap),
+                new RibbonItem("snap.finer", "Finer", ShellVerb.Of(GizmoCommand.FinerSnap),
                     RibbonItemSize.Small, RibbonControlKind.Stepper),
-                new RibbonItem("snap.coarser", "Coarser", RibbonVerb.Of(GizmoCommand.CoarserSnap),
+                new RibbonItem("snap.coarser", "Coarser", ShellVerb.Of(GizmoCommand.CoarserSnap),
                     RibbonItemSize.Small, RibbonControlKind.Stepper),
             ]),
 
@@ -308,12 +308,12 @@ public static class RibbonLayout
             // it is the one of the five somebody reaches for repeatedly.
             new RibbonGroup("Arrange",
             [
-                new RibbonItem("edit.duplicate", "Duplicate", RibbonVerb.Of(EditorHostCommand.Duplicate),
+                new RibbonItem("edit.duplicate", "Duplicate", ShellVerb.Of(EditorHostCommand.Duplicate),
                     RibbonItemSize.Large),
-                new RibbonItem("edit.delete", "Delete", RibbonVerb.Of(EditorHostCommand.Delete)),
-                new RibbonItem("edit.convert", "Convert", RibbonVerb.Of(EditorHostCommand.ToggleBrushKind)),
-                new RibbonItem("edit.group", "Group", RibbonVerb.Of(EditorHostCommand.Group)),
-                new RibbonItem("edit.ungroup", "Ungroup", RibbonVerb.Of(EditorHostCommand.Ungroup)),
+                new RibbonItem("edit.delete", "Delete", ShellVerb.Of(EditorHostCommand.Delete)),
+                new RibbonItem("edit.convert", "Convert", ShellVerb.Of(EditorHostCommand.ToggleBrushKind)),
+                new RibbonItem("edit.group", "Group", ShellVerb.Of(EditorHostCommand.Group)),
+                new RibbonItem("edit.ungroup", "Ungroup", ShellVerb.Of(EditorHostCommand.Ungroup)),
             ]),
         ]),
 
@@ -322,12 +322,12 @@ public static class RibbonLayout
         [
             new RibbonGroup("Frame",
             [
-                new RibbonItem("camera.frame", "Selection", RibbonVerb.Of(EditorCameraCommand.FrameSelection),
+                new RibbonItem("camera.frame", "Selection", ShellVerb.Of(EditorCameraCommand.FrameSelection),
                     RibbonItemSize.Large),
                 // Reachable from nothing at all before the ribbon: no key, no
                 // menu, no button. The verb has existed since the editor camera
                 // did.
-                new RibbonItem("camera.frameall", "Everything", RibbonVerb.Of(EditorCameraCommand.FrameAll),
+                new RibbonItem("camera.frameall", "Everything", ShellVerb.Of(EditorCameraCommand.FrameAll),
                     RibbonItemSize.Large),
             ]),
 
@@ -338,11 +338,11 @@ public static class RibbonLayout
             // property of the three set-verbs, never of the controls.
             new RibbonGroup("Ground grid",
             [
-                new RibbonItem("grid.auto", "Auto", RibbonVerb.Of(EditorHostCommand.GridAuto),
+                new RibbonItem("grid.auto", "Auto", ShellVerb.Of(EditorHostCommand.GridAuto),
                     RibbonItemSize.Small, RibbonControlKind.Radio),
-                new RibbonItem("grid.on", "Always", RibbonVerb.Of(EditorHostCommand.GridOn),
+                new RibbonItem("grid.on", "Always", ShellVerb.Of(EditorHostCommand.GridOn),
                     RibbonItemSize.Small, RibbonControlKind.Radio),
-                new RibbonItem("grid.off", "Off", RibbonVerb.Of(EditorHostCommand.GridOff),
+                new RibbonItem("grid.off", "Off", ShellVerb.Of(EditorHostCommand.GridOff),
                     RibbonItemSize.Small, RibbonControlKind.Radio),
             ]),
 
@@ -358,15 +358,15 @@ public static class RibbonLayout
             // on or off and leaves the word to say which overlay.
             new RibbonGroup("Overlays",
             [
-                new RibbonItem("overlay.wireframe", "Wireframe", RibbonVerb.Of(DebugVisualization.Wireframe),
+                new RibbonItem("overlay.wireframe", "Wireframe", ShellVerb.Of(DebugVisualization.Wireframe),
                     RibbonItemSize.Small, RibbonControlKind.Check),
-                new RibbonItem("overlay.vertices", "Vertices", RibbonVerb.Of(DebugVisualization.Vertices),
+                new RibbonItem("overlay.vertices", "Vertices", ShellVerb.Of(DebugVisualization.Vertices),
                     RibbonItemSize.Small, RibbonControlKind.Check),
-                new RibbonItem("overlay.bounds", "Bounds", RibbonVerb.Of(DebugVisualization.Aabbs),
+                new RibbonItem("overlay.bounds", "Bounds", ShellVerb.Of(DebugVisualization.Aabbs),
                     RibbonItemSize.Small, RibbonControlKind.Check),
-                new RibbonItem("overlay.normals", "Normals", RibbonVerb.Of(DebugVisualization.Normals),
+                new RibbonItem("overlay.normals", "Normals", ShellVerb.Of(DebugVisualization.Normals),
                     RibbonItemSize.Small, RibbonControlKind.Check),
-                new RibbonItem("overlay.axes", "Node axes", RibbonVerb.Of(DebugVisualization.SceneGraph),
+                new RibbonItem("overlay.axes", "Node axes", ShellVerb.Of(DebugVisualization.SceneGraph),
                     RibbonItemSize.Small, RibbonControlKind.Check),
             ]),
         ]),

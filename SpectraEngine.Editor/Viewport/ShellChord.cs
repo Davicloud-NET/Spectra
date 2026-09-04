@@ -49,4 +49,15 @@ public enum ShellChord
 
     /// <summary>Ctrl+4: a light.</summary>
     InsertLight,
+
+    /// <summary>
+    /// Ctrl+P: the command palette.
+    /// </summary>
+    /// <remarks>
+    /// Here as well as on the window, because the viewport is a child window the
+    /// OS gives the keyboard to: a palette bound only at the window level would
+    /// be dead exactly when the user is looking at the scene, which is the same
+    /// defect the tilde key had.
+    /// </remarks>
+    OpenPalette,
 }

@@ -237,7 +237,7 @@ public sealed class RibbonDepthConventionTests
 
         foreach (string handler in new[]
                  {
-                     "OnRibbonVerb", "OnRibbonTabClicked", "OnRibbonPinClicked", "WireEntitySplit",
+                     "OnShellVerb", "OnRibbonTabClicked", "OnRibbonPinClicked", "WireEntitySplit",
                  })
         {
             Body(window, handler).ShouldContain(

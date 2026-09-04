@@ -430,6 +430,9 @@ public partial class MainWindow : Window
         // RibbonLayout's remarks for why the surface takes no KeyTips.
         AddChord(Key.F1, KeyModifiers.Control, () => OnRibbonPinClicked(this, new RoutedEventArgs()));
 
+        // The third route onto every verb, on a cheap key, and it never moves.
+        AddChord(Key.P, KeyModifiers.Control, TogglePalette);
+
         // Drop a project or a level folder anywhere on the window. The engine's
         // viewport is a native child and never sees Avalonia's drag events, so
         // the drop target is the window itself and the chrome around the
@@ -1998,7 +2001,7 @@ public partial class MainWindow : Window
             // a popup, which is a separate visual root, and the shell has been
             // caught once already by a content host that assumed inheritance.
             page.DataContext = _shell;
-            page.Invoked += OnRibbonVerb;
+            page.Invoked += OnShellVerb;
 
             var button = new Button
             {
@@ -2028,20 +2031,126 @@ public partial class MainWindow : Window
         ApplyRibbonState();
     }
 
+    // --- Command palette -----------------------------------------------------
+
+    /// <summary>
+    /// Opens the palette, or closes it if it is already open.
+    /// </summary>
+    /// <remarks>
+    /// <b>A THIRD ROUTE ONTO VERBS THAT ALREADY HAVE TWO</b>, which is what the
+    /// design doctrine this shell follows asks for and what CLAUDE.md has
+    /// recorded as owed since the ribbon landed. It is not a fourth command
+    /// path: every row carries a <see cref="ShellVerb"/> and goes through
+    /// <see cref="OnShellVerb"/>, the same dispatcher the ribbon uses, so a
+    /// command run from here cannot light a frame later than the same command
+    /// run from a button.
+    /// </remarks>
+    private void TogglePalette()
+    {
+        if (CommandPalettePopup.IsOpen)
+        {
+            ClosePalette();
+            return;
+        }
+
+        Palette.QueryBox.Text = string.Empty;
+        RefreshPalette();
+        CommandPalettePopup.IsOpen = true;
+
+        // After the popup is open, or there is nothing to focus yet.
+        Dispatcher.UIThread.Post(() => Palette.QueryBox.Focus(), DispatcherPriority.Input);
+    }
+
+    private void ClosePalette()
+    {
+        CommandPalettePopup.IsOpen = false;
+
+        // The line the menus already have and the ribbon just gained: the tool
+        // chords run through the engine keymap, which fires only while the
+        // viewport holds the keyboard.
+        ReturnKeyboardToEngine();
+    }
+
+    private void RefreshPalette()
+    {
+        IReadOnlyList<ShellCommand> rows =
+            CommandTable.Search(Palette.QueryBox.Text ?? string.Empty, _shell.HasSelection, _shell.IsPlaying);
+
+        Palette.RowList.ItemsSource = rows;
+        Palette.RowList.SelectedIndex = rows.Count > 0 ? 0 : -1;
+    }
+
+    private void OnPaletteQueryChanged(object? sender, TextChangedEventArgs e) => RefreshPalette();
+
+    /// <summary>
+    /// The palette's keyboard: the arrows move the list, Enter runs, Escape puts
+    /// it away.
+    /// </summary>
+    /// <remarks>
+    /// Handled on the query box rather than on the list, because the list never
+    /// takes focus: a palette where the arrows move the selection only after you
+    /// click into a second control is one you have to look at.
+    /// </remarks>
+    private void OnPaletteKeyDown(object? sender, KeyEventArgs e)
+    {
+        int count = Palette.RowList.ItemCount;
+
+        switch (e.Key)
+        {
+            case Key.Escape:
+                ClosePalette();
+                e.Handled = true;
+                break;
+
+            case Key.Down when count > 0:
+                Palette.RowList.SelectedIndex = (Palette.RowList.SelectedIndex + 1) % count;
+                e.Handled = true;
+                break;
+
+            case Key.Up when count > 0:
+                Palette.RowList.SelectedIndex = (Palette.RowList.SelectedIndex - 1 + count) % count;
+                e.Handled = true;
+                break;
+
+            case Key.Enter:
+                RunSelectedCommand();
+                e.Handled = true;
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    private void OnPaletteRowClicked(object? sender, TappedEventArgs e) => RunSelectedCommand();
+
+    private void RunSelectedCommand()
+    {
+        if (Palette.RowList.SelectedItem is not ShellCommand command)
+            return;
+
+        // Closed FIRST, so the verb lands with the keyboard already back on the
+        // viewport: several of these are tool changes whose next gesture is a
+        // key, and a palette that stays open over the result is one you have to
+        // dismiss before you can see what you did.
+        ClosePalette();
+        OnShellVerb(command.Verb);
+    }
+
     /// <summary>
     /// A control on the tab STRIP was clicked, rather than one on a page.
     /// </summary>
     /// <remarks>
     /// Undo and redo live outside both pages, so they have no page to route
     /// through - and until this existed they called their handlers directly and
-    /// their roster entries were decoration. <c>OnRibbonVerb</c> already sends
+    /// their roster entries were decoration. <c>OnShellVerb</c> already sends
     /// those two verbs to the same handlers, so this changes no behaviour and
     /// makes the weld real.
     /// </remarks>
     private void OnRibbonStripClick(object? sender, RoutedEventArgs e)
     {
         if (RibbonTabView.ItemOf(sender) is { } item)
-            OnRibbonVerb(item.Verb);
+            OnShellVerb(item.Verb);
     }
 
     private void OnRibbonTabClicked(object? sender, RoutedEventArgs e)
@@ -2144,7 +2253,7 @@ public partial class MainWindow : Window
     /// optimistic handlers rather than posting directly, or the ribbon would
     /// light a frame later than the menu does for the same verb.
     /// </remarks>
-    private void OnRibbonVerb(RibbonVerb verb)
+    private void OnShellVerb(ShellVerb verb)
     {
         // A command posted out of a flown-out page closes the page, which is
         // what makes a collapsed ribbon usable rather than sticky.
@@ -2157,56 +2266,56 @@ public partial class MainWindow : Window
         var args = new RoutedEventArgs();
         switch (verb.Kind)
         {
-            case RibbonVerbKind.Insert:
+            case ShellVerbKind.Insert:
                 _session?.Insert(verb.Insert);
                 break;
 
-            case RibbonVerbKind.Camera:
+            case ShellVerbKind.Camera:
                 _session?.Post(verb.Camera);
                 break;
 
-            case RibbonVerbKind.Debug:
+            case ShellVerbKind.Debug:
                 RequestDebug(verb.Debug, !_shell.IsDebugEnabled(verb.Debug));
                 break;
 
-            case RibbonVerbKind.Host when verb.Host == EditorHostCommand.Undo:
+            case ShellVerbKind.Host when verb.Host == EditorHostCommand.Undo:
                 OnUndoClicked(this, args);
                 break;
 
-            case RibbonVerbKind.Host when verb.Host == EditorHostCommand.Redo:
+            case ShellVerbKind.Host when verb.Host == EditorHostCommand.Redo:
                 OnRedoClicked(this, args);
                 break;
 
-            case RibbonVerbKind.Host:
+            case ShellVerbKind.Host:
                 _session?.Post(verb.Host);
                 break;
 
-            case RibbonVerbKind.Gizmo when verb.Gizmo == GizmoCommand.UseTranslate:
+            case ShellVerbKind.Gizmo when verb.Gizmo == GizmoCommand.UseTranslate:
                 UseTool("move", GizmoCommand.UseTranslate);
                 break;
 
-            case RibbonVerbKind.Gizmo when verb.Gizmo == GizmoCommand.UseRotate:
+            case ShellVerbKind.Gizmo when verb.Gizmo == GizmoCommand.UseRotate:
                 UseTool("rotate", GizmoCommand.UseRotate);
                 break;
 
-            case RibbonVerbKind.Gizmo when verb.Gizmo == GizmoCommand.UseScale:
+            case ShellVerbKind.Gizmo when verb.Gizmo == GizmoCommand.UseScale:
                 UseTool("resize", GizmoCommand.UseScale);
                 break;
 
-            case RibbonVerbKind.Gizmo:
+            case ShellVerbKind.Gizmo:
                 _session?.Post(verb.Gizmo);
                 break;
 
-            case RibbonVerbKind.Toggle:
+            case ShellVerbKind.Toggle:
                 ApplyTwoWayChoice(verb.Toggle);
                 break;
 
-            case RibbonVerbKind.SnapIncrement:
+            case ShellVerbKind.SnapIncrement:
                 // The field commits through its own focus and Enter handlers;
                 // there is no click to answer.
                 break;
 
-            case RibbonVerbKind.InsertEntity:
+            case ShellVerbKind.InsertEntity:
                 // The one verb whose target is resolved HERE rather than named
                 // by the roster: an entity class comes from the project, not
                 // from this build. Nothing at all when a project declares none,
@@ -2219,7 +2328,7 @@ public partial class MainWindow : Window
         // The field is the one ribbon control whose whole contract is focus, so
         // a verb that ever reached it must not yank the keyboard out of the box
         // the user just clicked into.
-        if (verb.Kind != RibbonVerbKind.SnapIncrement)
+        if (verb.Kind != ShellVerbKind.SnapIncrement)
             ReturnKeyboardToEngine();
     }
 
@@ -2261,6 +2370,15 @@ public partial class MainWindow : Window
         // draw and no way to say so.
         _buildTab.EntityCaretButton.Click += OnEntityCaretClicked;
         _entityFlyout.Closed += (_, _) => ReturnKeyboardToEngine();
+
+        Palette.QueryBox.TextChanged += OnPaletteQueryChanged;
+        Palette.QueryBox.KeyDown += OnPaletteKeyDown;
+        Palette.RowList.Tapped += OnPaletteRowClicked;
+
+        // A light dismiss is a click somewhere else, and that click decides
+        // where focus goes - but the keyboard still has to come off a popup
+        // that is no longer there.
+        CommandPalettePopup.Closed += (_, _) => ReturnKeyboardToEngine();
 
         RefreshEntityInsertTip();
     }
@@ -2399,13 +2517,13 @@ public partial class MainWindow : Window
     // still what the keyboard sends; a shell posting one would be computing
     // the answer from a snapshot it may already have superseded locally.
     private void OnOrientationClicked(object? sender, RoutedEventArgs e) =>
-        ApplyTwoWayChoice(RibbonToggle.Axes);
+        ApplyTwoWayChoice(ShellToggle.Axes);
 
     private void OnStyleClicked(object? sender, RoutedEventArgs e) =>
-        ApplyTwoWayChoice(RibbonToggle.Handles);
+        ApplyTwoWayChoice(ShellToggle.Handles);
 
     private void OnSnapClicked(object? sender, RoutedEventArgs e) =>
-        ApplyTwoWayChoice(RibbonToggle.Snap);
+        ApplyTwoWayChoice(ShellToggle.Snap);
 
     /// <summary>
     /// Flips one two-way choice: shows the new half at once and posts the
@@ -2413,18 +2531,18 @@ public partial class MainWindow : Window
     /// </summary>
     /// <remarks>
     /// One body for all three, and the pairing it uses lives in
-    /// <see cref="RibbonToggles"/> rather than here. Three handlers each
+    /// <see cref="ShellToggles"/> rather than here. Three handlers each
     /// recomputing "which verb reaches the other half" is how a table meant to
     /// be the single expression of that ended up read only by a test.
     /// </remarks>
-    private void ApplyTwoWayChoice(RibbonToggle toggle)
+    private void ApplyTwoWayChoice(ShellToggle toggle)
     {
         if (_session is not { } session)
             return;
 
-        bool on = !RibbonToggles.IsOn(toggle, _shell);
-        RibbonToggles.Request(_shell, toggle, on);
-        session.Post(RibbonToggles.CommandFor(toggle, on));
+        bool on = !ShellToggles.IsOn(toggle, _shell);
+        ShellToggles.Request(_shell, toggle, on);
+        session.Post(ShellToggles.CommandFor(toggle, on));
     }
 
     private void OnUndoClicked(object? sender, RoutedEventArgs e)
@@ -2482,6 +2600,7 @@ public partial class MainWindow : Window
             case ShellChord.InsertPart: _session?.Insert(InsertKind.PartBrush); break;
             case ShellChord.InsertCut: _session?.Insert(InsertKind.SubtractiveBrush); break;
             case ShellChord.InsertLight: _session?.Insert(InsertKind.PointLight); break;
+            case ShellChord.OpenPalette: TogglePalette(); break;
         }
     }
 

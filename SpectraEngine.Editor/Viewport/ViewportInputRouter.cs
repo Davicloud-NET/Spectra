@@ -141,6 +141,8 @@ internal sealed class ViewportInputRouter
         InputKey.Number3 => Viewport.ShellChord.InsertCut,
         InputKey.Number4 => Viewport.ShellChord.InsertLight,
 
+        InputKey.P => Viewport.ShellChord.OpenPalette,
+
         _ => null,
     };
 
