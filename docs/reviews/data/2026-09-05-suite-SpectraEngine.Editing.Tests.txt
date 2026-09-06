@@ -1,0 +1,7 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 10.0.5)
+  Discovering: SpectraEngine.Editing.Tests
+  Discovered:  SpectraEngine.Editing.Tests
+  Starting:    SpectraEngine.Editing.Tests
+  Finished:    SpectraEngine.Editing.Tests (ID = '747d221501c0cdc010a1570adf661d2a377643b071053522095d2a792ae61dbe')
+=== TEST EXECUTION SUMMARY ===
+   SpectraEngine.Editing.Tests  Total: 793, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0, Time: 1,115s

@@ -1,0 +1,15 @@
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\DxgiDebugMessages.cs(95,26): warning CS0618: 'InfoQueueMessageSeverity.InfoQueueMessageSeverityCorruption' is obsolete: 'Deprecated in favour of "Corruption"' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\DxgiDebugMessages.cs(96,26): warning CS0618: 'InfoQueueMessageSeverity.InfoQueueMessageSeverityError' is obsolete: 'Deprecated in favour of "Error"' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\DxgiDebugMessages.cs(100,26): warning CS0618: 'InfoQueueMessageSeverity.InfoQueueMessageSeverityWarning' is obsolete: 'Deprecated in favour of "Warning"' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11SharedTargetConsumer.cs(90,20): warning CS0618: 'DXGI.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11SharedTargetConsumer.cs(154,23): warning CS0618: 'D3D11.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11Renderer.cs(29,40): warning CS0618: 'D3D11.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11Renderer.cs(30,38): warning CS0618: 'DXGI.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D12\D3D12Renderer.cs(68,38): warning CS0618: 'DXGI.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+Runtime 10.0.5; CPUs 32; tiering false
+3 timed samples, 2 warmups; culling sample = 200 calls; blocking GC before samples.
+One shared brush; preconstructed nodes. Attachment includes scene membership and BVH insertion.
+nodes | attach world ms | attach part ms | BuildRenderView us | QueryFrustum us | view bytes/call
+ 1000 |            0.91 |           0.88 |              18.10 |            0.01 |             0.0
+10000 |           16.17 |          17.51 |             197.55 |            0.01 |             0.0
+50000 |           88.09 |          92.68 |            1182.87 |            0.01 |             0.0

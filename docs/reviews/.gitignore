@@ -1,0 +1,4 @@
+tools/
+data/*.nettrace
+data/*.etlx
+scratch/

@@ -1,0 +1,74 @@
+[05:46:14 INF] Entity catalogue: 3 classes registered (logic_relay, logic_timer, math_counter)
+[05:46:14 INF] Shader hot-reload on; sources under D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders
+[05:46:14 INF] Deferred G-buffer layout: Standard
+[05:46:14 INF] Demo animation: off
+[05:46:14 INF] Spectra Engine 1.0.0 starting (embedded, Composited surface)
+[05:46:14 INF] Content sources: loose files @ D:\Projekte\Spectra\Assets [priority 0]
+[05:46:14 INF] Asset manager initialized; content root D:\Projekte\Spectra\Assets (hot-reload on)
+[05:46:14 INF] Scene manager initialized
+[05:46:14 INF] Audio manager initialized on OpenAL Soft with 32 sources
+[05:46:14 INF] D3D11 debug layer off (not requested).
+[05:46:14 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\Lit.spectrashade
+[05:46:14 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\DebugLine.spectrashade
+[05:46:14 INF] Shared present target 1280x720, generation 1, handle 0x948.
+[05:46:14 INF] Renderer initialized (D3D11, pipeline=Deferred, surface=composited (no swap chain))
+[05:46:14 DBG] Asset manager attached to D3D11 renderer
+[05:46:14 DBG] Watching texture directory: D:\Projekte\Spectra\Assets\Textures
+[05:46:14 INF] Loaded texture Textures/dev_grid.png (128x128, 4ch, Rgba8)
+[05:46:14 INF] Loaded material Materials/dev_grid.spectramat (6 parameter(s), 1 texture(s))
+[05:46:14 INF] Loaded texture Textures/checker_orange.png (128x128, 3ch, Rgb8)
+[05:46:14 INF] Loaded material Materials/checker_orange.spectramat (6 parameter(s), 1 texture(s))
+[05:46:14 INF] Loaded texture Textures/floor_tile.png (128x128, 3ch, Rgb8)
+[05:46:14 INF] Loaded material Materials/floor.spectramat (6 parameter(s), 1 texture(s))
+[05:46:14 INF] Loaded texture Textures/wall_brick.png (128x128, 3ch, Rgb8)
+[05:46:14 INF] Loaded material Materials/wall.spectramat (6 parameter(s), 1 texture(s))
+[05:46:14 INF] Loaded texture Textures/checker_gray.png (128x128, 3ch, Rgb8)
+[05:46:14 INF] Loaded material Materials/checker_gray.spectramat (6 parameter(s), 1 texture(s))
+[05:46:14 INF] Loaded texture Textures/checker_orange.png (128x128, 3ch, Rgb8)
+[05:46:14 INF] Loaded model Models/crate.obj (2 submesh(es), 24 vertices, 12 triangles, 3 material(s))
+[05:46:14 INF] Loaded texture Textures/white.png (4x4, 3ch, Rgb8)
+[05:46:14 INF] Loaded material Materials/pbr_gold.spectramat (6 parameter(s), 1 texture(s))
+[05:46:14 INF] Loaded material Materials/pbr_copper_brushed.spectramat (6 parameter(s), 1 texture(s))
+[05:46:14 INF] Loaded material Materials/pbr_plastic_red.spectramat (6 parameter(s), 1 texture(s))
+[05:46:14 INF] Loaded material Materials/pbr_rubber.spectramat (6 parameter(s), 1 texture(s))
+[05:46:14 INF] Loaded material Materials/pbr_emissive.spectramat (6 parameter(s), 1 texture(s))
+[05:46:15 INF] Static world: 234 brush nodes (192 scattered parts, 37 play area) -> 1492 carved surfaces in 110 chunks wearing 5 distinct face material(s), compiled in 86.9 ms; floor-solid=True, pillar-solid=True, air-empty=True, ray-hit=True at y=-1.000, doorway-open=True, lintel-solid=True; play area: floor-solid=True, door-open=True, jamb-solid=True, chasm-open=True
+[05:46:15 INF] Editor viewport ready: hold right mouse to lock the cursor and look, W/A/S/D + Q/E (or Space/Ctrl) fly while you do, Shift boosts, the wheel trims fly speed while looking and zooms otherwise; Alt+drag orbits, middle-drag pans, F frames the selection; left-drag picks/moves, marquee on empty space; W/E/R or 2/3/4 pick the tool, X flips world/local, Y flips the handle style, G and [ ] drive snap, Ctrl+Z / Ctrl+Y walk 256 entries of history; Ctrl+D duplicates, Delete removes, Ctrl+G groups and Ctrl+Shift+G ungroups the selection; Ctrl+T converts the selected brushes between world geometry and parts (parts leave the CSG carve, so they stop merging with what they touch and cost no recompile when they move — they are outlined in cyan); F7 toggles between the editor camera and the engine fly camera (starting: editor freelook, gizmos: move/Studio)
+[05:46:15 INF] Box3D 0.2.0 world created: 1 worker(s), gravity -9.81 sunit/s², 1 sunit = 1 m, fixed tick 60 Hz
+[05:46:15 INF] Physics backend installed: Box3DScenePhysics
+[05:46:15 INF] Demo scene 'Demo' loaded in 253.7 ms (assets 76.1 ms = 43.9 ms materials/textures + 32.2 ms models, static world 86.9 ms); content root D:\Projekte\Spectra\Assets; 10 material(s), 8 texture(s), 2 model(s) requested (1 placed so far)
+[05:46:15 INF] F8 enters play mode (walk the world as a 1.8 sunit character); F9 toggles the capsule overlay
+[05:46:15 INF] All subsystems initialized
+[05:46:15 INF] Texture ready Textures/gradient_mask.png (64x64, 1ch, R8)
+[05:46:15 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\GBufferFillCompact.spectrashade
+[05:46:15 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\ShadowDepth.spectrashade
+[05:46:15 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\DeferredLight.spectrashade
+[05:46:15 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\PostResolve.spectrashade
+[05:46:15 INF] Loaded material Materials/PostWood.spectramat (6 parameter(s), 1 texture(s))
+[05:46:15 INF] Loaded material Materials/SignFace.spectramat (6 parameter(s), 1 texture(s))
+[05:46:15 INF] Loaded model Models/signpost.gltf (2 submesh(es), 48 vertices, 24 triangles, 3 material(s))
+[05:46:16 INF] Shared target key not available within 100 ms; skipping the shared write while the consumer is not taking its turn. It keeps the last frame it was given.
+[05:46:16 INF] Async prop Models/signpost.gltf landed 0.20 s after load and was placed in the scene
+[05:46:18 INF] Shared pacing probe on D3D11 at 1280x720 (shared generation 1, handle 0x948). The producer is real and so is the consumer - a second device that opens the same handle - and only the cadence of its turn is set here. Each phase runs 2.0 s.
+[05:46:18 INF] Shared target key available again; resuming shared writes.
+[05:46:21 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 1 times, last touched 110 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (149 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 0.32 ms/frame (3152 fps) [; CPU frame EMA 0.00 ms; GPU unavailable]; churn: 21 mesh(es)/s, 0 compile(s)/s, 0 buffer(s) pooled; memory: 4.1 MB/s allocated (3.0 on the render thread), 0.2/s gen0, 0 gen1, 0 gen2, 5 MB heap; character: idle; entities: not running
+[05:46:21 INF] Scene probe: center ray hit 'SpinningCube' at 4.61 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[05:46:26 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 1 times, last touched 110 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (149 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 33.33 ms/frame (30 fps) [; CPU frame EMA 0.00 ms; GPU unavailable]; churn: 0 mesh(es)/s, 0 compile(s)/s, 0 buffer(s) pooled; memory: 0.0 MB/s allocated (0.0 on the render thread), 0.0/s gen0, 0 gen1, 0 gen2, 6 MB heap; character: idle; entities: not running
+[05:46:26 INF] Scene probe: center ray hit 'SpinningCube' at 4.56 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[05:46:27 INF] Shared target key not available within 100 ms; skipping the shared write while the consumer is not taking its turn. It keeps the last frame it was given.
+[05:46:29 INF] Shared pacing:  phase        eng fps    hand/s    wait avg   wait peak
+[05:46:29 INF] Shared pacing:  free          3124.8    3125.3     0.16 ms     6.77 ms   turns taken as fast as the mutex allows: the producer's ceiling
+[05:46:29 INF] Shared pacing:  vsync-60        61.5      61.0    16.01 ms    16.49 ms   a turn every display refresh, which is a compositor keeping up
+[05:46:29 INF] Shared pacing:  late-40         40.2      40.2    24.43 ms    25.10 ms   a turn every 25 ms, which is a compositor missing every other refresh
+[05:46:29 INF] Shared pacing:  slow-30         30.1      30.1    32.92 ms    33.07 ms   a turn every other refresh
+[05:46:29 INF] Shared pacing:  hidden           9.3       0.0   107.97 ms   110.63 ms   no turns at all: the acquire timeout, which is meant to cost this
+[05:46:29 INF] Shared pacing: the engine's frame rate equals the consumer's turn rate in every paced row - the producer cannot start a frame until key 0 comes back, so the wait is the difference between the two rates. The 'free' row is the producer's own speed with nothing pacing it.
+[05:46:29 INF] Asset manager released 4 GPU model meshes
+[05:46:29 INF] Asset manager released 8 GPU textures
+[05:46:29 INF] Renderer shut down
+[05:46:29 INF] Renderer shut down (D3D11)
+[05:46:29 INF] Input manager shut down
+[05:46:29 INF] Audio manager shut down
+[05:46:29 INF] Scene manager shut down
+[05:46:29 INF] Asset manager shut down
+[05:46:29 INF] Spectra Engine shut down

@@ -1,0 +1,69 @@
+[05:46:29 INF] Entity catalogue: 3 classes registered (logic_relay, logic_timer, math_counter)
+[05:46:29 INF] Shader hot-reload on; sources under D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders
+[05:46:29 INF] Deferred G-buffer layout: Standard
+[05:46:29 INF] Demo animation: off
+[05:46:29 INF] Spectra Engine 1.0.0 starting (embedded, Composited surface)
+[05:46:29 INF] Content sources: loose files @ D:\Projekte\Spectra\Assets [priority 0]
+[05:46:29 INF] Asset manager initialized; content root D:\Projekte\Spectra\Assets (hot-reload on)
+[05:46:29 INF] Scene manager initialized
+[05:46:29 INF] Audio manager initialized on OpenAL Soft with 32 sources
+[05:46:29 INF] D3D12 debug layer off (not requested).
+[05:46:29 INF] D3D12 frame contexts: 2
+[05:46:29 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\Lit.spectrashade
+[05:46:29 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\DebugLine.spectrashade
+[05:46:29 INF] Shared present target 1280x720, generation 1, handle 0x8E4 (through a D3D11On12 bridge).
+[05:46:29 INF] Renderer initialized (D3D12, pipeline=Deferred, surface=composited (no swap chain))
+[05:46:29 DBG] Asset manager attached to D3D12 renderer
+[05:46:29 DBG] Watching texture directory: D:\Projekte\Spectra\Assets\Textures
+[05:46:29 INF] Loaded texture Textures/dev_grid.png (128x128, 4ch, Rgba8)
+[05:46:29 INF] Loaded material Materials/dev_grid.spectramat (6 parameter(s), 1 texture(s))
+[05:46:29 INF] Loaded texture Textures/checker_orange.png (128x128, 3ch, Rgb8)
+[05:46:29 INF] Loaded material Materials/checker_orange.spectramat (6 parameter(s), 1 texture(s))
+[05:46:29 INF] Loaded texture Textures/floor_tile.png (128x128, 3ch, Rgb8)
+[05:46:29 INF] Loaded material Materials/floor.spectramat (6 parameter(s), 1 texture(s))
+[05:46:29 INF] Loaded texture Textures/wall_brick.png (128x128, 3ch, Rgb8)
+[05:46:29 INF] Loaded material Materials/wall.spectramat (6 parameter(s), 1 texture(s))
+[05:46:29 INF] Loaded texture Textures/checker_gray.png (128x128, 3ch, Rgb8)
+[05:46:29 INF] Loaded material Materials/checker_gray.spectramat (6 parameter(s), 1 texture(s))
+[05:46:30 INF] Loaded texture Textures/checker_orange.png (128x128, 3ch, Rgb8)
+[05:46:30 INF] Loaded model Models/crate.obj (2 submesh(es), 24 vertices, 12 triangles, 3 material(s))
+[05:46:30 INF] Loaded texture Textures/white.png (4x4, 3ch, Rgb8)
+[05:46:30 INF] Loaded material Materials/pbr_gold.spectramat (6 parameter(s), 1 texture(s))
+[05:46:30 INF] Loaded material Materials/pbr_copper_brushed.spectramat (6 parameter(s), 1 texture(s))
+[05:46:30 INF] Loaded material Materials/pbr_plastic_red.spectramat (6 parameter(s), 1 texture(s))
+[05:46:30 INF] Loaded material Materials/pbr_rubber.spectramat (6 parameter(s), 1 texture(s))
+[05:46:30 INF] Loaded material Materials/pbr_emissive.spectramat (6 parameter(s), 1 texture(s))
+[05:46:30 INF] Static world: 234 brush nodes (192 scattered parts, 37 play area) -> 1492 carved surfaces in 110 chunks wearing 5 distinct face material(s), compiled in 108.4 ms; floor-solid=True, pillar-solid=True, air-empty=True, ray-hit=True at y=-1.000, doorway-open=True, lintel-solid=True; play area: floor-solid=True, door-open=True, jamb-solid=True, chasm-open=True
+[05:46:30 INF] Editor viewport ready: hold right mouse to lock the cursor and look, W/A/S/D + Q/E (or Space/Ctrl) fly while you do, Shift boosts, the wheel trims fly speed while looking and zooms otherwise; Alt+drag orbits, middle-drag pans, F frames the selection; left-drag picks/moves, marquee on empty space; W/E/R or 2/3/4 pick the tool, X flips world/local, Y flips the handle style, G and [ ] drive snap, Ctrl+Z / Ctrl+Y walk 256 entries of history; Ctrl+D duplicates, Delete removes, Ctrl+G groups and Ctrl+Shift+G ungroups the selection; Ctrl+T converts the selected brushes between world geometry and parts (parts leave the CSG carve, so they stop merging with what they touch and cost no recompile when they move — they are outlined in cyan); F7 toggles between the editor camera and the engine fly camera (starting: editor freelook, gizmos: move/Studio)
+[05:46:30 INF] Box3D 0.2.0 world created: 1 worker(s), gravity -9.81 sunit/s², 1 sunit = 1 m, fixed tick 60 Hz
+[05:46:30 INF] Physics backend installed: Box3DScenePhysics
+[05:46:30 INF] Demo scene 'Demo' loaded in 285.8 ms (assets 85.1 ms = 50.9 ms materials/textures + 34.2 ms models, static world 108.4 ms); content root D:\Projekte\Spectra\Assets; 10 material(s), 8 texture(s), 2 model(s) requested (1 placed so far)
+[05:46:30 INF] F8 enters play mode (walk the world as a 1.8 sunit character); F9 toggles the capsule overlay
+[05:46:30 INF] All subsystems initialized
+[05:46:30 INF] Loaded material Materials/PostWood.spectramat (6 parameter(s), 1 texture(s))
+[05:46:30 INF] Viewport compare: warming up 4 frame(s) on D3D12, then rendering one frame into the shared present target and an ordinary sRGB target at once. Passes at a max per-channel delta of 2 or less.
+[05:46:30 WRN] Viewport compare: the graphics validation layer is OFF, so this run measures the picture only. Re-run with --debug-layer=true to gate the shared route's barriers as well.
+[05:46:30 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\GBufferFillCompact.spectrashade
+[05:46:30 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\ShadowDepth.spectrashade
+[05:46:31 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\DeferredLight.spectrashade
+[05:46:31 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\PostResolve.spectrashade
+[05:46:31 INF] Loaded material Materials/SignFace.spectramat (6 parameter(s), 1 texture(s))
+[05:46:31 INF] Texture ready Textures/gradient_mask.png (64x64, 7 prepared mips, R8)
+[05:46:31 INF] D3D12 SRV descriptor ring sized to 1024 slots for a 660-descriptor frame
+[05:46:31 INF] D3D12 sampler descriptor ring sized to 1024 slots for a 660-descriptor frame
+[05:46:31 INF] Loaded model Models/signpost.gltf (2 submesh(es), 48 vertices, 24 triangles, 3 material(s))
+[05:46:31 INF] D3D12 SRV descriptor ring sized to 1024 slots for a 660-descriptor frame
+[05:46:31 INF] D3D12 sampler descriptor ring sized to 1024 slots for a 660-descriptor frame
+[05:46:31 INF] Async prop Models/signpost.gltf landed 0.11 s after load and was placed in the scene
+[05:46:31 INF] Viewport compare: armed at 1280x720 (shared generation 1, handle 0x8E4).
+[05:46:31 INF] Viewport compare on D3D12: PASS - max delta 0 on Red at texel 0 (window 0, shared 0), over 921600 texels
+[05:46:31 INF] Asset manager released 4 GPU model meshes
+[05:46:31 INF] Asset manager released 8 GPU textures
+[05:46:31 INF] Renderer shut down
+[05:46:31 INF] Renderer shut down (D3D12)
+[05:46:31 INF] Input manager shut down
+[05:46:31 INF] Audio manager shut down
+[05:46:31 INF] Scene manager shut down
+[05:46:31 INF] Asset manager shut down
+[05:46:31 INF] Spectra Engine shut down
+[05:46:31 INF] Viewport compare: verdict recorded for system default on D3D12 at C:\Users\David\AppData\Roaming\Spectra\viewport-compare.json.

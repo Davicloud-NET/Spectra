@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><OutputType>Exe</OutputType><AssemblyName>SpectraEngine.Bsp.Tests</AssemblyName><TieredCompilation>false</TieredCompilation><InvariantGlobalization>true</InvariantGlobalization></PropertyGroup>
+<ItemGroup><ProjectReference Include="../Spectra.Kitchen/Spectra.Kitchen.csproj"/><ProjectReference Include="../SpectraEngine.Core/SpectraEngine.Core.csproj"/><Compile Include="../Test/SpectraEngine.Bsp.Tests/FakeRenderer.cs" Link="FakeRenderer.cs"/></ItemGroup>
+</Project>
+

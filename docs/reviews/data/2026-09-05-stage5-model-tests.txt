@@ -1,0 +1,48 @@
+D:\Projekte\Spectra\Test\SpectraEngine.Bsp.Tests\BaseplateSceneTests.cs(60,9): warning CS8602: Dereference of a possibly null reference. [D:\Projekte\Spectra\Test\SpectraEngine.Bsp.Tests\SpectraEngine.Bsp.Tests.csproj]
+D:\Projekte\Spectra\Test\SpectraEngine.Bsp.Tests\StructuralOrderTests.cs(100,46): warning CS8602: Dereference of a possibly null reference. [D:\Projekte\Spectra\Test\SpectraEngine.Bsp.Tests\SpectraEngine.Bsp.Tests.csproj]
+D:\Projekte\Spectra\Test\SpectraEngine.Bsp.Tests\MapSceneRoundTripTests.cs(577,9): warning CS8602: Dereference of a possibly null reference. [D:\Projekte\Spectra\Test\SpectraEngine.Bsp.Tests\SpectraEngine.Bsp.Tests.csproj]
+D:\Projekte\Spectra\Test\SpectraEngine.Bsp.Tests\EngineHostTests.cs(123,25): warning xUnit1051: Calls to methods which accept CancellationToken should use TestContext.Current.CancellationToken to allow test cancellation to be more responsive. (https://xunit.net/xunit.analyzers/rules/xUnit1051) [D:\Projekte\Spectra\Test\SpectraEngine.Bsp.Tests\SpectraEngine.Bsp.Tests.csproj]
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 10.0.5)
+  Discovering: SpectraEngine.Bsp.Tests
+  Discovered:  SpectraEngine.Bsp.Tests
+  Starting:    SpectraEngine.Bsp.Tests
+    SpectraEngine.Bsp.Tests.CsgClosureTests.A_staircase_meeting_a_terrace_on_an_inexact_plane_is_closed [SKIP]
+      Known CSG defect: two solids meeting flush lose one side of the shared interface when the junction plane is not exactly representable in binary. See the test remarks.
+    SpectraEngine.Bsp.Tests.CookedModelTests.A_cooked_model_loads_with_one_gpu_mesh_per_submesh [FAIL]
+      Shouldly.ShouldAssertException : renderer.CreatedMeshes.Count
+          should be
+      2
+          but was
+      1
+      Stack Trace:
+        Test\SpectraEngine.Bsp.Tests\CookedModelTests.cs(83,0): at SpectraEngine.Bsp.Tests.CookedModelTests.A_cooked_model_loads_with_one_gpu_mesh_per_submesh()
+           at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+           at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    SpectraEngine.Bsp.Tests.ModelAssetTests.Unload_destroys_the_models_gpu_meshes_and_drops_the_cache_entry [FAIL]
+      System.InvalidCastException : Unable to cast object of type 'MeshRange' to type 'SpectraEngine.Bsp.Tests.FakeMesh'.
+      Stack Trace:
+           at System.Linq.Enumerable.CastICollectionIterator`1.ToArray()
+        Test\SpectraEngine.Bsp.Tests\ModelAssetTests.cs(297,0): at SpectraEngine.Bsp.Tests.ModelAssetTests.Unload_destroys_the_models_gpu_meshes_and_drops_the_cache_entry()
+           at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+           at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    SpectraEngine.Bsp.Tests.ModelAssetTests.Sync_load_creates_one_gpu_mesh_per_submesh [FAIL]
+      Shouldly.ShouldAssertException : model.Meshes[i]
+          should be of type
+      SpectraEngine.Bsp.Tests.FakeMesh
+          but was
+      SpectraEngine.Core.Graphics.SharedMeshStorage+MeshRange
+      Stack Trace:
+        Test\SpectraEngine.Bsp.Tests\ModelAssetTests.cs(42,0): at SpectraEngine.Bsp.Tests.ModelAssetTests.Sync_load_creates_one_gpu_mesh_per_submesh()
+           at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+           at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    SpectraEngine.Bsp.Tests.ModelAssetTests.Releasing_graphics_resources_destroys_every_model_mesh [FAIL]
+      System.InvalidCastException : Unable to cast object of type 'MeshRange' to type 'SpectraEngine.Bsp.Tests.FakeMesh'.
+      Stack Trace:
+           at System.Linq.Enumerable.CastIterator[TResult](IEnumerable source)+MoveNext()
+           at System.Linq.Enumerable.<ToArray>g__EnumerableToArray|324_0[TSource](IEnumerable`1 source)
+        Test\SpectraEngine.Bsp.Tests\ModelAssetTests.cs(358,0): at SpectraEngine.Bsp.Tests.ModelAssetTests.Releasing_graphics_resources_destroys_every_model_mesh()
+           at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+           at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Finished:    SpectraEngine.Bsp.Tests (ID = '36498298d446cdfc7a14af17198de90381b8357acd778e1ed5c93131ee2f0b37')
+=== TEST EXECUTION SUMMARY ===
+   SpectraEngine.Bsp.Tests  Total: 1050, Errors: 0, Failed: 4, Skipped: 1, Not Run: 0, Time: 4,437s

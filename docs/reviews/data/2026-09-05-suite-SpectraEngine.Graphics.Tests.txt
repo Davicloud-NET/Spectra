@@ -1,0 +1,7 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 10.0.5)
+  Discovering: SpectraEngine.Graphics.Tests
+  Discovered:  SpectraEngine.Graphics.Tests
+  Starting:    SpectraEngine.Graphics.Tests
+  Finished:    SpectraEngine.Graphics.Tests (ID = '8395408c1ed88e9f0c0ac1f559044c6531de7610799697b4f0b66d97f61b7022')
+=== TEST EXECUTION SUMMARY ===
+   SpectraEngine.Graphics.Tests  Total: 260, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0, Time: 4,929s

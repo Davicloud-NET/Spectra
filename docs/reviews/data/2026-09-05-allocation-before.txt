@@ -1,0 +1,8 @@
+ProcessorCount: 32
+GC server mode: False
+TieredCompilation: false
+Protocol: median of 3 timed reps, 2 untimed warmups, forced blocking GC between reps
+
+INCREMENTAL (grid k=10) — recompile after translating ONE center brush by 0.3.
+  full recompile:     8.65 ms | alloc   9.6 MiB
+  cached recompile:   6.02 ms | alloc   3.0 MiB | carve 4.21 ms | 973 hits / 27 misses

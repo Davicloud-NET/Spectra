@@ -1,0 +1,4 @@
+2 warmups + 9 samples; medians; same source runs against original and final commits. No GPU driver. Boxes centered inside distinct cells.
+1000: unchanged parts=8.139 us; replacement-only world swap=8.000 us [7.200,10.900]; remote collision publication=32.900 us [32.800,34.000]
+10000: unchanged parts=80.079 us; replacement-only world swap=153.000 us [87.400,297.800]; remote collision publication=324.900 us [322.300,420.000]
+50000: unchanged parts=408.897 us; replacement-only world swap=828.600 us [796.700,1027.700]; remote collision publication=1617.400 us [1612.200,1708.500]

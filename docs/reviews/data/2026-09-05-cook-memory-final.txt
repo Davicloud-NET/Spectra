@@ -1,0 +1,4 @@
+2 GiB raw corpus, four distinct 512 MiB payloads, 128 KiB streaming buffers; runtime 10.0.5
+cold-serial jobs=1 elapsed=11.310s pack=2147487760 hash=6ED5885A716B3B00EFEB100DFE599669 private peak=13.77 MiB increase=3.05; heap peak=2.63 MiB retained delta=0.13 MiB allocated=2.31 MiB
+warm-parallel jobs=4 elapsed=6.366s pack=2147487760 hash=6ED5885A716B3B00EFEB100DFE599669 private peak=13.84 MiB increase=0.54; heap peak=2.18 MiB retained delta=0.37 MiB allocated=1.71 MiB
+session-parallel jobs=4 elapsed=5.909s pack=2147487760 hash=6ED5885A716B3B00EFEB100DFE599669 private peak=14.04 MiB increase=1.32; heap peak=2.19 MiB retained delta=0.11 MiB allocated=1.36 MiB

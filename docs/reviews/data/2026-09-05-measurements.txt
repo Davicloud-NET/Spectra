@@ -1,0 +1,6 @@
+baseline visibility exit=0
+final visibility exit=0
+structural exit=0
+csg exit=0
+trace exit=0
+cook memory exit=0

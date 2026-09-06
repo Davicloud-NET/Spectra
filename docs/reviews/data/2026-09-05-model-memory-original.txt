@@ -1,0 +1,4 @@
+Adapter=NVIDIA GeForce RTX 4070 Ti; original D3D12 synchronous submission; 262144 vertices, 8 submeshes with overlapping full vertex spans; 2 ms / 8 MiB / 256 KiB upload defaults; 1 ms delay between pumps.
+original Full: retained=116.01 MiB peak increase=116.02 MiB load=46.86ms; upload pumps=1, p50=22.095ms max=22.095ms
+original Full: retained=116.01 MiB peak increase=116.03 MiB load=53.45ms; upload pumps=1, p50=21.986ms max=21.986ms
+original Full: retained=116.01 MiB peak increase=116.03 MiB load=53.14ms; upload pumps=1, p50=22.368ms max=22.368ms

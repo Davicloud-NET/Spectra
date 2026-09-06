@@ -1,0 +1,7 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 10.0.5)
+  Discovering: Spectra.Kitchen.Tests
+  Discovered:  Spectra.Kitchen.Tests
+  Starting:    Spectra.Kitchen.Tests
+  Finished:    Spectra.Kitchen.Tests (ID = '263f88c66260e2f6050aed11ae831398f0d3da89594cb168f77c19590fcff4c7')
+=== TEST EXECUTION SUMMARY ===
+   Spectra.Kitchen.Tests  Total: 345, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0, Time: 3,378s

@@ -1,0 +1,2 @@
+final-d3d12-props-stress exit=0 selftest=4 errors=0
+final-nativeaot-smoke exit=0 selftest=4 errors=0

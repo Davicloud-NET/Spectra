@@ -1,0 +1,7 @@
+xUnit.net v3 In-Process Runner v3.2.2+728c1dce01 (64-bit .NET 10.0.5)
+  Discovering: SpectraShade.Compiler.Tests
+  Discovered:  SpectraShade.Compiler.Tests
+  Starting:    SpectraShade.Compiler.Tests
+  Finished:    SpectraShade.Compiler.Tests (ID = '19bb2a03e504fcd80297fa524a345060ad4c6946b06c825e6dc7c2073633ac8d')
+=== TEST EXECUTION SUMMARY ===
+   SpectraShade.Compiler.Tests  Total: 74, Errors: 0, Failed: 0, Skipped: 0, Not Run: 0, Time: 0,511s

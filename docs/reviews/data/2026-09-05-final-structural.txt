@@ -1,0 +1,5 @@
+Live Scene journal, isolated boxes spaced 80 units; 2 warmups, 9 samples, full GC before each sample.
+Includes journal capture, worker dispatch, CPU compile, publication and headless GPU mesh replacement; no polling sleep.
+1000: add 0.169 ms [0.137,0.351], remove 0.065 ms [0.049,0.098], median 239152 B/edit
+10000: add 0.514 ms [0.418,0.576], remove 0.388 ms [0.345,0.460], median 550272 B/edit
+50000: add 1.895 ms [1.719,2.082], remove 2.185 ms [1.973,2.356], median 2111992 B/edit

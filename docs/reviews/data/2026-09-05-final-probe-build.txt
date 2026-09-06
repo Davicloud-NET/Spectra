@@ -1,0 +1,31 @@
+  Determining projects to restore...
+  Restored D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj (in 500 ms).
+  Restored D:\Projekte\Spectra\SpectraShade.Compiler\SpectraShade.Compiler.csproj (in 500 ms).
+  2 of 4 projects are up-to-date for restore.
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D12\D3D12Renderer.cs(68,38): warning CS0618: 'DXGI.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11SharedTargetConsumer.cs(90,20): warning CS0618: 'DXGI.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11SharedTargetConsumer.cs(154,23): warning CS0618: 'D3D11.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\DxgiDebugMessages.cs(95,26): warning CS0618: 'InfoQueueMessageSeverity.InfoQueueMessageSeverityCorruption' is obsolete: 'Deprecated in favour of "Corruption"' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\DxgiDebugMessages.cs(96,26): warning CS0618: 'InfoQueueMessageSeverity.InfoQueueMessageSeverityError' is obsolete: 'Deprecated in favour of "Error"' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\DxgiDebugMessages.cs(100,26): warning CS0618: 'InfoQueueMessageSeverity.InfoQueueMessageSeverityWarning' is obsolete: 'Deprecated in favour of "Warning"' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11Renderer.cs(29,40): warning CS0618: 'D3D11.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11Renderer.cs(30,38): warning CS0618: 'DXGI.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+  SpectraEngine.Core -> D:\Projekte\Spectra\SpectraEngine.Core\bin\Release\net10.0\SpectraEngine.Core.dll
+  SpectraShade.Compiler -> D:\Projekte\Spectra\SpectraShade.Compiler\bin\Release\net10.0\SpectraShade.Compiler.dll
+  Spectra.Kitchen -> D:\Projekte\Spectra\Spectra.Kitchen\bin\Release\net10.0\Spectra.Kitchen.dll
+  SceneProbe -> D:\Projekte\Spectra\docs\reviews\probes\bin\Release\net10.0\SceneProbe.dll
+
+Build succeeded.
+
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D12\D3D12Renderer.cs(68,38): warning CS0618: 'DXGI.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11SharedTargetConsumer.cs(90,20): warning CS0618: 'DXGI.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11SharedTargetConsumer.cs(154,23): warning CS0618: 'D3D11.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\DxgiDebugMessages.cs(95,26): warning CS0618: 'InfoQueueMessageSeverity.InfoQueueMessageSeverityCorruption' is obsolete: 'Deprecated in favour of "Corruption"' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\DxgiDebugMessages.cs(96,26): warning CS0618: 'InfoQueueMessageSeverity.InfoQueueMessageSeverityError' is obsolete: 'Deprecated in favour of "Error"' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\DxgiDebugMessages.cs(100,26): warning CS0618: 'InfoQueueMessageSeverity.InfoQueueMessageSeverityWarning' is obsolete: 'Deprecated in favour of "Warning"' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11Renderer.cs(29,40): warning CS0618: 'D3D11.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+D:\Projekte\Spectra\SpectraEngine.Core\Graphics\D3D11\D3D11Renderer.cs(30,38): warning CS0618: 'DXGI.GetApi(DXSwapchainProvider, bool)' is obsolete: 'Use the GetApi(INativeWindow window, bool forceDxvk = false) overload!' [D:\Projekte\Spectra\SpectraEngine.Core\SpectraEngine.Core.csproj]
+    8 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:09.89

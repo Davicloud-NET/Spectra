@@ -1,0 +1,15 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  SpectraEngine.Core -> D:\Projekte\Spectra\SpectraEngine.Core\bin\Release\net10.0\SpectraEngine.Core.dll
+  SpectraEngine.Entities.Generator -> D:\Projekte\Spectra\SpectraEngine.Entities.Generator\bin\Release\netstandard2.0\SpectraEngine.Entities.Generator.dll
+  SpectraEngine.Physics.Box3D -> D:\Projekte\Spectra\SpectraEngine.Physics.Box3D\bin\Release\net10.0\SpectraEngine.Physics.Box3D.dll
+  SpectraEngine.Editing -> D:\Projekte\Spectra\SpectraEngine.Editing\bin\Release\net10.0\SpectraEngine.Editing.dll
+  SpectraShade.Compiler -> D:\Projekte\Spectra\SpectraShade.Compiler\bin\Release\net10.0\SpectraShade.Compiler.dll
+  SpectraEngine.Entities -> D:\Projekte\Spectra\SpectraEngine.Entities\bin\Release\net10.0\SpectraEngine.Entities.dll
+  SpectraEngine.Executable -> D:\Projekte\Spectra\SpectraEngine.Executable\bin\Release\net10.0\SpectraEngine.Executable.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:01.25

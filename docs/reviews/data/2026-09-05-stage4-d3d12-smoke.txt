@@ -1,0 +1,93 @@
+[03:28:07 INF] Editing self-test ENABLED (from --selftest): every 5 s the demo drives a synthetic pick/grab/drag/commit/undo/redo on the self-test brush node and logs one 'Editing self-test: PASS' line. That node visibly moves ~1 unit for a handful of frames per run while the static world recompiles - that motion IS the test. Drop --selftest (and SPECTRA_SELFTEST) for a scene nothing synthetic touches.
+[03:28:07 INF] Entity catalogue: 3 classes registered (logic_relay, logic_timer, math_counter)
+[03:28:07 INF] Shader hot-reload on; sources under D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders
+[03:28:07 INF] Demo animation: csg
+[03:28:07 INF] Fullscreen cycle ENABLED: after 3 s the window toggles windowed <-> borderless fullscreen every 2 s, driven off the render thread, while rendering continues. Gate instrumentation for the DXGI resize path - drop --fullscreen-cycle for a window that stays where you put it.
+[03:28:07 INF] Spectra Engine 1.0.0 starting
+[03:28:07 INF] Content sources: loose files @ D:\Projekte\Spectra\Assets [priority 0]
+[03:28:07 INF] Asset manager initialized; content root D:\Projekte\Spectra\Assets (hot-reload on)
+[03:28:07 INF] Scene manager initialized
+[03:28:07 INF] Audio manager initialized on OpenAL Soft with 32 sources
+[03:28:07 INF] Input manager initialized (1 keyboards, 1 mice)
+[03:28:07 INF] D3D12 debug layer active.
+[03:28:07 INF] Graphics adapter: NVIDIA GeForce RTX 4070 Ti (matched '4070')
+[03:28:07 INF] DXGI debug layer active.
+[03:28:07 DBG] D3D12: Alt+Enter taken from DXGI; fullscreen is the engine's (F11, borderless).
+[03:28:07 INF] D3D12 frame contexts: 2
+[03:28:07 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\Lit.spectrashade
+[03:28:07 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\DebugLine.spectrashade
+[03:28:07 INF] Renderer initialized (D3D12, pipeline=Deferred, surface=window)
+[03:28:07 DBG] Asset manager attached to D3D12 renderer
+[03:28:07 DBG] Watching texture directory: D:\Projekte\Spectra\Assets\Textures
+[03:28:07 INF] Loaded texture Textures/dev_grid.png (128x128, 4ch, Rgba8)
+[03:28:07 INF] Loaded material Materials/dev_grid.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Loaded texture Textures/checker_orange.png (128x128, 3ch, Rgb8)
+[03:28:07 INF] Loaded material Materials/checker_orange.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Loaded texture Textures/floor_tile.png (128x128, 3ch, Rgb8)
+[03:28:07 INF] Loaded material Materials/floor.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Loaded texture Textures/wall_brick.png (128x128, 3ch, Rgb8)
+[03:28:07 INF] Loaded material Materials/wall.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Loaded texture Textures/checker_gray.png (128x128, 3ch, Rgb8)
+[03:28:07 INF] Loaded material Materials/checker_gray.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Loaded texture Textures/checker_orange.png (128x128, 3ch, Rgb8)
+[03:28:07 INF] Loaded model Models/crate.obj (2 submesh(es), 24 vertices, 12 triangles, 3 material(s))
+[03:28:07 INF] Loaded texture Textures/white.png (4x4, 3ch, Rgb8)
+[03:28:07 INF] Loaded material Materials/pbr_gold.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Loaded material Materials/pbr_copper_brushed.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Loaded material Materials/pbr_plastic_red.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Loaded material Materials/pbr_rubber.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Loaded material Materials/pbr_emissive.spectramat (6 parameter(s), 1 texture(s))
+[03:28:07 INF] Static world: 234 brush nodes (192 scattered parts, 37 play area) -> 1494 carved surfaces in 110 chunks wearing 5 distinct face material(s), compiled in 123.9 ms; floor-solid=True, pillar-solid=True, air-empty=True, ray-hit=True at y=-1.000, doorway-open=True, lintel-solid=True; play area: floor-solid=True, door-open=True, jamb-solid=True, chasm-open=True
+[03:28:07 INF] Editor viewport ready: hold right mouse to lock the cursor and look, W/A/S/D + Q/E (or Space/Ctrl) fly while you do, Shift boosts, the wheel trims fly speed while looking and zooms otherwise; Alt+drag orbits, middle-drag pans, F frames the selection; left-drag picks/moves, marquee on empty space; W/E/R or 2/3/4 pick the tool, X flips world/local, Y flips the handle style, G and [ ] drive snap, Ctrl+Z / Ctrl+Y walk 256 entries of history; Ctrl+D duplicates, Delete removes, Ctrl+G groups and Ctrl+Shift+G ungroups the selection; Ctrl+T converts the selected brushes between world geometry and parts (parts leave the CSG carve, so they stop merging with what they touch and cost no recompile when they move - they are outlined in cyan); F7 toggles between the editor camera and the engine fly camera (starting: editor freelook, gizmos: move/Studio)
+[03:28:08 INF] Box3D 0.2.0 world created: 1 worker(s), gravity -9.81 sunit/sý, 1 sunit = 1 m, fixed tick 60 Hz
+[03:28:08 INF] Physics backend installed: Box3DScenePhysics
+[03:28:08 INF] Demo scene 'Demo' loaded in 337.0 ms (assets 62.5 ms = 31.7 ms materials/textures + 30.9 ms models, static world 123.9 ms); content root D:\Projekte\Spectra\Assets; 10 material(s), 8 texture(s), 2 model(s) requested (1 placed so far)
+[03:28:08 INF] F8 enters play mode (walk the world as a 1.8 sunit character); F9 toggles the capsule overlay
+[03:28:08 INF] All subsystems initialized
+[03:28:08 INF] Texture ready Textures/gradient_mask.png (64x64, 1ch, R8)
+[03:28:08 DBG] Model Models/signpost.gltf: material 'PostWood' resolved to authored Materials/PostWood.spectramat
+[03:28:08 INF] Loaded material Materials/PostWood.spectramat (6 parameter(s), 1 texture(s))
+[03:28:08 DBG] Model Models/signpost.gltf: material 'SignFace' resolved to authored Materials/SignFace.spectramat
+[03:28:08 INF] Loaded material Materials/SignFace.spectramat (6 parameter(s), 1 texture(s))
+[03:28:08 INF] Loaded model Models/signpost.gltf (2 submesh(es), 48 vertices, 24 triangles, 3 material(s))
+[03:28:08 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\GBufferFillCompact.spectrashade
+[03:28:08 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\ShadowDepth.spectrashade
+[03:28:08 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\DeferredLight.spectrashade
+[03:28:08 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\PostResolve.spectrashade
+[03:28:08 INF] Async prop Models/signpost.gltf landed 0.10 s after load and was placed in the scene
+[03:28:08 DBG] Static world compiles: 1 landed since last report, latest v235: 1492 surfaces in 22.57 ms (compile #2, carve cache 232 hits / 2 misses)
+[03:28:08 INF] D3D12 SRV descriptor ring sized to 1024 slots for a 672-descriptor frame
+[03:28:08 INF] D3D12 sampler descriptor ring sized to 1024 slots for a 672-descriptor frame
+[03:28:08 INF] D3D12 SRV descriptor ring sized to 1024 slots for a 672-descriptor frame
+[03:28:08 INF] D3D12 sampler descriptor ring sized to 1024 slots for a 672-descriptor frame
+[03:28:10 INF] Fullscreen cycle: toggle #1 requested (Windowed -> BorderlessFullscreen)
+[03:28:10 INF] Window mode -> BorderlessFullscreen (2560x1440)
+[03:28:12 INF] Fullscreen cycle: toggle #2 requested (BorderlessFullscreen -> Windowed)
+[03:28:12 INF] Window mode -> Windowed (1280x720)
+[03:28:13 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 1850 times, last touched 2 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (149 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 1.32 ms/frame (755 fps) [Shadows 0.46 ms, Geometry 0.23 ms, Unaccounted 0.22 ms, Present 0.11 ms, GpuWait 0.11 ms, WorldSwap 0.03 ms; frame p50/p95/p99/max 1.36/16.33/17.51/936.28 ms (1915 samples); GPU total/shadow/geometry/light/resolve 0.14/0.02/0.05/0.06/0.01 ms (completed sample 1913)]; churn: 4275 mesh(es)/s, 370 compile(s)/s, 0 buffer(s) pooled; memory: 184.6 MB/s allocated (11.7 on the render thread), 10.4/s gen0, 2 gen1, 1 gen2, 3 MB heap; character: idle; entities: not running
+[03:28:13 INF] Scene probe: center ray hit 'SpinningCube' at 4.61 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[03:28:13 INF] Editing self-test: PASS - screen-ray picked 'PillarB', grabbed its x handle (108 gizmo line vertices), dragged over 3 frames to (1.0000, 0.0000, 0.0000) against an expected (1.0000, 0.0000, 0.0000), error 0.000000 units; the commit recompiled 4 dirty cell(s) including (0, 0, 0) after 1 frame(s); undo restored and redo re-applied the transform exactly; node left at rest
+[03:28:13 DBG] Static world compiles: 1914 landed since last report, latest v2220: 1492 surfaces in 0.22 ms (compile #1916, carve cache 445399 hits / 2477 misses)
+[03:28:14 INF] Fullscreen cycle: toggle #3 requested (Windowed -> BorderlessFullscreen)
+[03:28:14 INF] Window mode -> BorderlessFullscreen (2560x1440)
+[03:28:16 INF] Fullscreen cycle: toggle #4 requested (BorderlessFullscreen -> Windowed)
+[03:28:16 INF] Window mode -> Windowed (1280x720)
+[03:28:18 INF] Fullscreen cycle: toggle #5 requested (Windowed -> BorderlessFullscreen)
+[03:28:18 INF] Window mode -> BorderlessFullscreen (2560x1440)
+[03:28:18 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 3723 times, last touched 2 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (149 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 3.76 ms/frame (266 fps) [GpuWait 13.26 ms, Shadows 0.55 ms, Unaccounted 0.30 ms, Geometry 0.27 ms, Present 0.12 ms, WorldSwap 0.06 ms; frame p50/p95/p99/max 1.17/16.38/17.74/54.33 ms (2048 samples); GPU total/shadow/geometry/light/resolve 1.31/0.02/0.16/0.23/0.89 ms (completed sample 3786)]; churn: 4299 mesh(es)/s, 375 compile(s)/s, 0 buffer(s) pooled; memory: 180.9 MB/s allocated (9.1 on the render thread), 10.0/s gen0, 0 gen1, 0 gen2, 19 MB heap; character: idle; entities: not running
+[03:28:18 INF] Scene probe: center ray hit 'SpinningCube' at 4.56 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[03:28:18 DBG] Static world compiles: 1814 landed since last report, latest v4038: 1494 surfaces in 0.42 ms (compile #3730, carve cache 422105 hits / 2371 misses)
+[03:28:18 INF] Editing self-test: PASS - screen-ray picked 'PillarB', grabbed its x handle (108 gizmo line vertices), dragged over 3 frames to (1.0000, 0.0000, 0.0000) against an expected (1.0000, 0.0000, 0.0000), error 0.000010 units; the commit recompiled 4 dirty cell(s) including (0, 0, 0) after 1 frame(s); undo restored and redo re-applied the transform exactly; node left at rest
+[03:28:20 INF] Fullscreen cycle: toggle #6 requested (BorderlessFullscreen -> Windowed)
+[03:28:20 INF] Window mode -> Windowed (1280x720)
+[03:28:22 INF] Fullscreen cycle: toggle #7 requested (Windowed -> BorderlessFullscreen)
+[03:28:22 INF] Window mode -> BorderlessFullscreen (2560x1440)
+[03:28:22 INF] Asset manager released 4 GPU model meshes
+[03:28:22 INF] Asset manager released 8 GPU textures
+[03:28:22 INF] Renderer shut down
+[03:28:22 INF] Renderer shut down (D3D12)
+[03:28:22 INF] Input manager shut down
+[03:28:22 INF] Audio manager shut down
+[03:28:22 INF] Scene manager shut down
+[03:28:22 INF] Asset manager shut down
+[03:28:22 INF] Spectra Engine shut down

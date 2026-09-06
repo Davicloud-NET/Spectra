@@ -1,0 +1,24 @@
+frame-1-rep-0 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=1920x1080 --frame-contexts=1
+frame-2-rep-0 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=1920x1080 --frame-contexts=2
+frame-3-rep-0 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=1920x1080 --frame-contexts=3
+frame-3-rep-1 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=1920x1080 --frame-contexts=3
+frame-2-rep-1 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=1920x1080 --frame-contexts=2
+frame-1-rep-1 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=1920x1080 --frame-contexts=1
+frame-2-rep-2 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=1920x1080 --frame-contexts=2
+frame-1-rep-2 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=1920x1080 --frame-contexts=1
+frame-3-rep-2 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=1920x1080 --frame-contexts=3
+gbuffer-4070-extended-rep-0 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=3840x2160 --gbuffer=extended
+gbuffer-4070-standard-rep-0 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=3840x2160 --gbuffer=standard
+gbuffer-4070-standard-rep-1 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=3840x2160 --gbuffer=standard
+gbuffer-4070-extended-rep-1 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=4070 --size=3840x2160 --gbuffer=extended
+gbuffer-770-extended-rep-0 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=770 --size=3840x2160 --gbuffer=extended
+gbuffer-770-standard-rep-0 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=770 --size=3840x2160 --gbuffer=standard
+gbuffer-770-standard-rep-1 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=770 --size=3840x2160 --gbuffer=standard
+gbuffer-770-extended-rep-1 exit=0 duration=32s args=d3d12 --profile --uncapped --debug-layer=false --selftest=false --demo-animation=off --adapter=770 --size=3840x2160 --gbuffer=extended
+final-d3d12-smoke exit=0 duration=18s args=d3d12 --profile --debug-layer=true --selftest --demo-animation=csg --fullscreen-cycle=2 --adapter=4070 --size=1280x720
+final-d3d11-smoke exit=0 duration=16s args=d3d11 --profile --debug-layer=true --selftest --demo-animation=csg --adapter=4070 --size=1280x720
+final-opengl-smoke exit=0 duration=16s args=opengl --profile --selftest --demo-animation=csg --size=1280x720
+gbuffer-770-standard-long exit=0 duration=102s warmup=75s
+gbuffer-770-extended-long exit=0 duration=102s warmup=75s
+gbuffer-770-standard-contexts-1-long exit=0 duration=102s warmup=75s
+gbuffer-770-extended-contexts-1-long exit=0 duration=102s warmup=75s

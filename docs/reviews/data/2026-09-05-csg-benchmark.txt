@@ -1,0 +1,53 @@
+ProcessorCount: 32
+GC server mode: False
+TieredCompilation: false
+Protocol: median of 3 timed reps, 2 untimed warmups, forced blocking GC between reps
+
+QUERY (floorplan k=20) — splitter/routing changes may reshape the per-cell trees; the checksums must not change.
+  trees: 32 cells, 612 nodes, 322 leaves, avg leaf depth 4.5, max depth 8
+  ContainsPoint: 1,000,000 calls in 23.6 ms -> 42.42 M calls/s | checksum inside=70,870 (7.09 %)
+  Raycast:       100,000 calls in 13.3 ms -> 7.52 M calls/s | checksum hits=49,502 (49.50 %)
+
+INCREMENTAL (grid k=10) — recompile after translating ONE center brush by 0.3.
+  full recompile:    10.33 ms | alloc  10.8 MiB
+  cached recompile:  10.69 ms | alloc   4.8 MiB | carve 8.10 ms | 817 hits / 183 misses
+
+OPENWORLD — scattered parts at constant density (85% isolated / 10% touching pairs / 5% overlapping clusters),
+half of every world placed around +8,000 units (position-independent precision). HEADLINE: 'edit' columns —
+recompile after moving ONE isolated part by 0.3 with the previous-world carry (incremental compile), no monolithic mesh.
+'add' is the OTHER common gesture: appending one isolated part, which the patch path refuses (count change) and the
+validated caching fallback resolves — its O(world) validation floor is a real per-placement cost, measured here.
+parts  | cells  | surfaces | initial ms | init MiB | edit ms | noop ms | add ms  | edit MiB | dirty | carveMiss | weld | bspBuilt | meshBuilt
+-------|--------|----------|------------|----------|---------|---------|---------|----------|-------|-----------|------|----------|----------
+  1000 |    369 |     6388 |       13.5 |     14.7 |    0.12 |    0.00 |    0.86 |     0.08 |     1 |         1 |    4 |        1 |         1
+ 10000 |   3666 |    63622 |      264.9 |    143.0 |    0.09 |    0.00 |   20.61 |     0.10 |     1 |         1 |    3 |        2 |         1
+ 50000 |  17992 |   319016 |     2999.0 |    700.8 |    0.11 |    0.00 |  175.34 |     0.08 |     1 |         1 |    3 |        1 |         1
+  verdict (MOVE gesture): one-part edit at 50k parts = 0.90x the edit at 1k parts -> world-size independent (within noise)
+  attribution: patch-path no-op (changed-empty short-circuit) 0.00 / 0.00 / 0.00 ms; edit-scoped work (edit - noop) 0.12 / 0.09 / 0.11 ms; validated fallback floor (add one part) 0.86 / 20.61 / 175.34 ms at 1k / 10k / 50k parts
+
+  QUERY (openworld 10k) — routed point->cell / ray->DDA; samples alternate near-origin and +8,000 regions.
+  ContainsPoint: 1,000,000 calls in 97.8 ms -> 10.23 M calls/s | checksum inside=4,567 (0.46 %)
+  Raycast:       100,000 calls in 62.5 ms -> 1.60 M calls/s | checksum hits=3,991 (3.99 %)
+
+BAKE - one clean cook of a map, split into COMPILE and SERIALIZE.
+COMPILE   = cache-free CsgWorld.Build (the overload ScmapBake calls: no previous world, no carve cache,
+            because a bake must be a pure function of its source) plus BspFlattener.Flatten per cell.
+SERIALIZE = ScmapBuilder staging (AddNode per brush, AddChunk per cell) plus Build, which emits
+            STRT/ASTB/META/NODE/CHDR/CMSH/CBSP. The bake's own glue is counted HERE deliberately: it is
+            bookkeeping paid only because a file is being written, and putting it on this side can only
+            make the serializer look worse than it is.
+NEITHER HALF IS INFERRED BY SUBTRACTION. The compile's own cost swings by two orders of magnitude across
+these content sets, so a serialize time taken as total-minus-compile would be flattered by exactly the
+content that compiles slowest. A clean cook is legitimately O(world) and nothing here argues otherwise -
+the incremental story belongs to the cook cache and its own no-op-cook test. What this guards is the SHARE.
+content     | brushes | cells | surfaces | build ms | flat ms | compile ms | node ms | cell ms | emit ms | serial ms | file MiB | share
+------------|---------|-------|----------|----------|---------|------------|---------|---------|---------|-----------|----------|------
+grid k=4    |      64 |     8 |      186 |     1.93 |    0.01 |       1.94 |    0.02 |    0.00 |    0.04 |      0.06 |     0.04 | 3.0 %
+grid k=8    |     512 |     8 |      818 |     7.90 |    0.00 |       7.90 |    0.05 |    0.00 |    0.37 |      0.42 |     0.17 | 5.3 %
+grid k=13   |    2197 |     8 |     2238 |    22.34 |    0.01 |      22.35 |    0.20 |    0.01 |    0.96 |      1.17 |     0.52 | 5.2 %
+open 1k     |    1000 |   369 |     6388 |    25.56 |    0.49 |      26.05 |    0.08 |    0.05 |    5.52 |      5.65 |     1.34 | 21.7 %
+open 10k    |   10000 |  3666 |    63622 |   418.77 |    7.18 |     425.95 |    0.85 |    1.45 |   29.52 |     31.82 |    13.24 | 7.5 %
+open 50k    |   50000 | 17992 |   319016 |  1508.36 |   92.58 |    1600.94 |    2.33 |    5.22 |  189.96 |    197.52 |    66.74 | 12.3 %
+  verdict (SERIALIZE share): worst case open 1k at 21.7 % of its own compile -> a small fraction of the compile (ceiling 33 %)
+  verdict (CELL staging): 0.29 us per cell at 17992 cells = 0.73x the cost at 3666, over a 4.91x bigger world -> flat per cell (ceiling 2.5x), no term scaling with the world
+  attribution: emit 944 / 454 / 544 / 242 / 449 / 351 MiB/s; cell staging 0.50 / 0.59 / 0.62 / 0.14 / 0.40 / 0.29 us per cell, over 8 / 8 / 8 / 369 / 3666 / 17992 cells

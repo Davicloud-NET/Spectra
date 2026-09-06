@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TieredCompilation>false</TieredCompilation>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="original/**/*.cs" />
+    <ProjectReference Include="../../../SpectraEngine.Core/SpectraEngine.Core.csproj" />
+    <ProjectReference Include="../../../Spectra.Kitchen/Spectra.Kitchen.csproj" />
+    <Compile Include="../../../Test/SpectraEngine.Bsp.Tests/FakeRenderer.cs" Link="FakeRenderer.cs" />
+  </ItemGroup>
+</Project>

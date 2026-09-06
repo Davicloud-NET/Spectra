@@ -1,0 +1,79 @@
+[05:41:36 INF] Entity catalogue: 3 classes registered (logic_relay, logic_timer, math_counter)
+[05:41:36 INF] Shader hot-reload on; sources under D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders
+[05:41:36 INF] Deferred G-buffer layout: Standard
+[05:41:36 INF] Demo animation: off
+[05:41:36 INF] Spectra Engine 1.0.0 starting
+[05:41:36 INF] Content sources: loose files @ D:\Projekte\Spectra\Assets [priority 0]
+[05:41:36 INF] Asset manager initialized; content root D:\Projekte\Spectra\Assets (hot-reload on)
+[05:41:36 INF] Scene manager initialized
+[05:41:36 INF] Audio manager initialized on OpenAL Soft with 32 sources
+[05:41:36 INF] Input manager initialized (1 keyboards, 1 mice)
+[05:41:36 INF] D3D12 debug layer off (not requested).
+[05:41:36 INF] Graphics adapter: NVIDIA GeForce RTX 4070 Ti (matched '4070')
+[05:41:37 DBG] D3D12: Alt+Enter taken from DXGI; fullscreen is the engine's (F11, borderless).
+[05:41:37 INF] Uncapped presentation enabled (DXGI allow tearing)
+[05:41:37 INF] D3D12 frame contexts: 2
+[05:41:37 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\Lit.spectrashade
+[05:41:37 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\DebugLine.spectrashade
+[05:41:37 INF] Renderer initialized (D3D12, pipeline=Deferred, surface=window)
+[05:41:37 DBG] Asset manager attached to D3D12 renderer
+[05:41:37 DBG] Watching texture directory: D:\Projekte\Spectra\Assets\Textures
+[05:41:37 INF] Loaded texture Textures/dev_grid.png (128x128, 4ch, Rgba8)
+[05:41:37 INF] Loaded material Materials/dev_grid.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Loaded texture Textures/checker_orange.png (128x128, 3ch, Rgb8)
+[05:41:37 INF] Loaded material Materials/checker_orange.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Loaded texture Textures/floor_tile.png (128x128, 3ch, Rgb8)
+[05:41:37 INF] Loaded material Materials/floor.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Loaded texture Textures/wall_brick.png (128x128, 3ch, Rgb8)
+[05:41:37 INF] Loaded material Materials/wall.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Loaded texture Textures/checker_gray.png (128x128, 3ch, Rgb8)
+[05:41:37 INF] Loaded material Materials/checker_gray.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Loaded texture Textures/checker_orange.png (128x128, 3ch, Rgb8)
+[05:41:37 INF] Loaded model Models/crate.obj (2 submesh(es), 24 vertices, 12 triangles, 3 material(s))
+[05:41:37 INF] Loaded texture Textures/white.png (4x4, 3ch, Rgb8)
+[05:41:37 INF] Loaded material Materials/pbr_gold.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Loaded material Materials/pbr_copper_brushed.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Loaded material Materials/pbr_plastic_red.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Loaded material Materials/pbr_rubber.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Loaded material Materials/pbr_emissive.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Static world: 234 brush nodes (192 scattered parts, 37 play area) -> 1492 carved surfaces in 110 chunks wearing 5 distinct face material(s), compiled in 111.7 ms; floor-solid=True, pillar-solid=True, air-empty=True, ray-hit=True at y=-1.000, doorway-open=True, lintel-solid=True; play area: floor-solid=True, door-open=True, jamb-solid=True, chasm-open=True
+[05:41:37 INF] Editor viewport ready: hold right mouse to lock the cursor and look, W/A/S/D + Q/E (or Space/Ctrl) fly while you do, Shift boosts, the wheel trims fly speed while looking and zooms otherwise; Alt+drag orbits, middle-drag pans, F frames the selection; left-drag picks/moves, marquee on empty space; W/E/R or 2/3/4 pick the tool, X flips world/local, Y flips the handle style, G and [ ] drive snap, Ctrl+Z / Ctrl+Y walk 256 entries of history; Ctrl+D duplicates, Delete removes, Ctrl+G groups and Ctrl+Shift+G ungroups the selection; Ctrl+T converts the selected brushes between world geometry and parts (parts leave the CSG carve, so they stop merging with what they touch and cost no recompile when they move - they are outlined in cyan); F7 toggles between the editor camera and the engine fly camera (starting: editor freelook, gizmos: move/Studio)
+[05:41:37 INF] Box3D 0.2.0 world created: 1 worker(s), gravity -9.81 sunit/sý, 1 sunit = 1 m, fixed tick 60 Hz
+[05:41:37 INF] Physics backend installed: Box3DScenePhysics
+[05:41:37 INF] Demo scene 'Demo' loaded in 297.0 ms (assets 87.5 ms = 51.7 ms materials/textures + 35.8 ms models, static world 111.7 ms); content root D:\Projekte\Spectra\Assets; 10 material(s), 8 texture(s), 2 model(s) requested (1 placed so far)
+[05:41:37 INF] F8 enters play mode (walk the world as a 1.8 sunit character); F9 toggles the capsule overlay
+[05:41:37 INF] All subsystems initialized
+[05:41:37 INF] Loaded material Materials/PostWood.spectramat (6 parameter(s), 1 texture(s))
+[05:41:37 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\GBufferFillCompact.spectrashade
+[05:41:37 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\ShadowDepth.spectrashade
+[05:41:38 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\DeferredLight.spectrashade
+[05:41:38 INF] Watching shader source: D:\Projekte\Spectra\SpectraEngine.Core\Graphics\BaseShaders\PostResolve.spectrashade
+[05:41:38 INF] Loaded material Materials/SignFace.spectramat (6 parameter(s), 1 texture(s))
+[05:41:38 INF] Texture ready Textures/gradient_mask.png (64x64, 7 prepared mips, R8)
+[05:41:38 INF] D3D12 SRV descriptor ring sized to 1024 slots for a 660-descriptor frame
+[05:41:38 INF] D3D12 sampler descriptor ring sized to 1024 slots for a 660-descriptor frame
+[05:41:38 INF] Loaded model Models/signpost.gltf (2 submesh(es), 48 vertices, 24 triangles, 3 material(s))
+[05:41:38 INF] D3D12 SRV descriptor ring sized to 1024 slots for a 660-descriptor frame
+[05:41:38 INF] D3D12 sampler descriptor ring sized to 1024 slots for a 660-descriptor frame
+[05:41:38 INF] Async prop Models/signpost.gltf landed 0.11 s after load and was placed in the scene
+[05:41:43 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 1 times, last touched 110 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (149 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 0.85 ms/frame (1172 fps) [GpuWait 0.48 ms, Present 0.08 ms, Geometry 0.07 ms, Shadows 0.07 ms, Unaccounted 0.07 ms, Lighting 0.01 ms; CPU frame EMA 0.81 ms; frame p50/p95/p99/max 0.72/1.85/2.76/5.00 ms (2048 samples); GPU total/shadow/geometry/light/resolve 0.63/0.02/0.22/0.32/0.07 ms (completed sample 5071)]; churn: 21 mesh(es)/s, 0 compile(s)/s, 0 buffer(s) pooled; memory: 4.4 MB/s allocated (3.1 on the render thread), 0.2/s gen0, 0 gen1, 0 gen2, 7 MB heap, mesh buffers active/retired/pooled 0.39/0.00/0.00 MiB; character: idle; entities: not running
+[05:41:43 INF] Scene probe: center ray hit 'SpinningCube' at 4.61 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[05:41:48 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 1 times, last touched 110 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (149 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 0.87 ms/frame (1144 fps) [GpuWait 0.52 ms, Present 0.08 ms, Geometry 0.08 ms, Shadows 0.07 ms, Unaccounted 0.07 ms, Lighting 0.01 ms; CPU frame EMA 0.85 ms; frame p50/p95/p99/max 0.73/1.81/2.84/5.13 ms (2048 samples); GPU total/shadow/geometry/light/resolve 0.54/0.02/0.21/0.24/0.07 ms (completed sample 10824)]; churn: 0 mesh(es)/s, 0 compile(s)/s, 0 buffer(s) pooled; memory: 0.5 MB/s allocated (0.5 on the render thread), 0.0/s gen0, 0 gen1, 0 gen2, 10 MB heap, mesh buffers active/retired/pooled 0.39/0.00/0.00 MiB; character: idle; entities: not running
+[05:41:48 INF] Scene probe: center ray hit 'SpinningCube' at 4.55 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[05:41:53 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 1 times, last touched 110 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (149 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 0.85 ms/frame (1183 fps) [GpuWait 0.57 ms, Present 0.08 ms, Geometry 0.07 ms, Shadows 0.07 ms, Unaccounted 0.07 ms, Lighting 0.01 ms; CPU frame EMA 0.90 ms; frame p50/p95/p99/max 0.72/1.65/2.57/4.76 ms (2048 samples); GPU total/shadow/geometry/light/resolve 0.62/0.02/0.21/0.33/0.07 ms (completed sample 16675)]; churn: 0 mesh(es)/s, 0 compile(s)/s, 0 buffer(s) pooled; memory: 0.5 MB/s allocated (0.5 on the render thread), 0.0/s gen0, 0 gen1, 0 gen2, 12 MB heap, mesh buffers active/retired/pooled 0.39/0.00/0.00 MiB; character: idle; entities: not running
+[05:41:53 INF] Scene probe: center ray hit 'SpinningCube' at 4.46 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[05:41:58 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 1 times, last touched 110 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (150 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 0.83 ms/frame (1206 fps) [GpuWait 0.50 ms, Present 0.09 ms, Shadows 0.08 ms, Unaccounted 0.08 ms, Geometry 0.08 ms, Lighting 0.01 ms; CPU frame EMA 0.86 ms; frame p50/p95/p99/max 0.71/1.77/2.65/4.35 ms (2048 samples); GPU total/shadow/geometry/light/resolve 0.63/0.02/0.22/0.33/0.07 ms (completed sample 22620)]; churn: 0 mesh(es)/s, 0 compile(s)/s, 0 buffer(s) pooled; memory: 0.5 MB/s allocated (0.5 on the render thread), 0.0/s gen0, 0 gen1, 0 gen2, 15 MB heap, mesh buffers active/retired/pooled 0.39/0.00/0.00 MiB; character: idle; entities: not running
+[05:41:58 INF] Scene probe: center ray hit 'SpinningCube' at 4.46 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[05:42:03 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 1 times, last touched 110 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (149 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 0.85 ms/frame (1175 fps) [GpuWait 0.47 ms, Present 0.10 ms, Geometry 0.08 ms, Shadows 0.08 ms, Unaccounted 0.08 ms, Lighting 0.01 ms; CPU frame EMA 0.83 ms; frame p50/p95/p99/max 0.72/1.82/2.77/3.54 ms (2048 samples); GPU total/shadow/geometry/light/resolve 0.61/0.02/0.20/0.33/0.07 ms (completed sample 28634)]; churn: 0 mesh(es)/s, 0 compile(s)/s, 0 buffer(s) pooled; memory: 0.5 MB/s allocated (0.5 on the render thread), 0.0/s gen0, 0 gen1, 0 gen2, 17 MB heap, mesh buffers active/retired/pooled 0.39/0.00/0.00 MiB; character: idle; entities: not running
+[05:42:03 INF] Scene probe: center ray hit 'SpinningCube' at 4.47 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[05:42:08 INF] Assets: 8 texture(s), 12 material(s), 2 model(s) requested / 2 placed; world: 28 of 83 chunks visible, 35 of 96 material batches; scene: 11 of 11 mesh nodes, 1 of 2 part brush(es); recompiled 1 times, last touched 110 dirty cell(s); physics: Box3DScenePhysics, 83 body(ies) / 230 shape(s); editing: 0 selected, move/Studio gizmo, editor freelook navigation, undo 0 / redo 0; rendering: Deferred pipeline, shadows on (150 caster(s), 4 cascade(s) in a 2048px atlas, texel 0.006 sunit near / 0.148 far, 60 sunit range), 0.87 ms/frame (1151 fps) [GpuWait 0.50 ms, Present 0.09 ms, Geometry 0.08 ms, Shadows 0.07 ms, Unaccounted 0.07 ms, Lighting 0.01 ms; CPU frame EMA 0.83 ms; frame p50/p95/p99/max 0.73/1.84/2.78/3.39 ms (2048 samples); GPU total/shadow/geometry/light/resolve 0.63/0.02/0.22/0.33/0.07 ms (completed sample 34377)]; churn: 0 mesh(es)/s, 0 compile(s)/s, 0 buffer(s) pooled; memory: 0.5 MB/s allocated (0.5 on the render thread), 0.0/s gen0, 0 gen1, 0 gen2, 20 MB heap, mesh buffers active/retired/pooled 0.39/0.00/0.00 MiB; character: idle; entities: not running
+[05:42:08 INF] Scene probe: center ray hit 'SpinningCube' at 4.42 m; 11 of 11 mesh nodes, 28 of 83 world chunks visible
+[05:42:08 INF] Asset manager released 4 GPU model meshes
+[05:42:08 INF] Asset manager released 8 GPU textures
+[05:42:08 INF] Renderer shut down
+[05:42:08 INF] Renderer shut down (D3D12)
+[05:42:08 INF] Input manager shut down
+[05:42:08 INF] Audio manager shut down
+[05:42:08 INF] Scene manager shut down
+[05:42:08 INF] Asset manager shut down
+[05:42:08 INF] Spectra Engine shut down

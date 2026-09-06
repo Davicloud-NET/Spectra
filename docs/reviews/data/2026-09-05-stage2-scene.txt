@@ -1,0 +1,7 @@
+Runtime 10.0.5; CPUs 32; tiering false
+3 timed samples, 2 warmups; culling sample = 200 calls; blocking GC before samples.
+One shared brush; preconstructed nodes. Attachment includes scene membership and BVH insertion.
+nodes | attach world ms | attach part ms | BuildRenderView us | QueryFrustum us | view bytes/call
+ 1000 |            0.95 |           1.74 |               0.04 |            0.01 |             0.0
+10000 |           16.81 |          35.92 |               0.04 |            0.01 |             0.0
+50000 |           91.21 |         190.88 |               0.04 |            0.01 |             0.0

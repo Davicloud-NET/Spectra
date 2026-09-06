@@ -1,0 +1,8 @@
+SpectraShade.Compiler.Tests exit=0
+SpectraEngine.Bsp.Tests exit=0
+SpectraEngine.Editing.Tests exit=0
+SpectraEngine.Editor.Tests exit=0
+SpectraEngine.Physics.Tests exit=0
+SpectraEngine.Entities.Tests exit=0
+Spectra.Kitchen.Tests exit=0
+SpectraEngine.Graphics.Tests exit=0
