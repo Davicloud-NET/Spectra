@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
@@ -20,9 +20,9 @@ public class OpenGLRenderer : Renderer
     // Renderer.DestroyMesh/DestroyTexture via the Unregister callback handed
     // out at creation. Unsynchronized: creation and destruction both happen
     // on the render thread.
-    private readonly List<Mesh> _meshes = [];
+    private readonly HashSet<Mesh> _meshes = new(ReferenceEqualityComparer.Instance);
     private readonly List<ShaderProgram> _shaders = [];
-    private readonly List<Texture> _textures = [];
+    private readonly HashSet<Texture> _textures = new(ReferenceEqualityComparer.Instance);
     private readonly List<IOpenGLRenderPipeline> _pipelines = [];
     private readonly List<RenderTarget> _renderTargets = [];
     private int _pipelineIndex;
@@ -216,7 +216,11 @@ public class OpenGLRenderer : Renderer
     public override void AcquireContext(IRenderSurface surface)
     {
         base.AcquireContext(surface);
-        _appliedSwapInterval = VSync ? 1 : 0;
+        UncappedPresentationAvailable = surface.GLContext is not null;
+        if (UncappedPresentation)
+            _logger.LogInformation("Uncapped presentation {Status}", UncappedPresentationAvailable
+                ? "requested (GL swap interval 0; driver overrides may still apply)" : "unavailable without a GL context");
+        _appliedSwapInterval = UncappedPresentation ? 0 : VSync ? 1 : 0;
         surface.GLContext?.SwapInterval(_appliedSwapInterval);
     }
 
@@ -228,7 +232,7 @@ public class OpenGLRenderer : Renderer
     /// <inheritdoc/>
     public override void Present(IRenderSurface surface)
     {
-        int wanted = VSync ? 1 : 0;
+        int wanted = UncappedPresentation ? 0 : VSync ? 1 : 0;
         if (wanted != _appliedSwapInterval)
         {
             _appliedSwapInterval = wanted;
@@ -268,6 +272,13 @@ public class OpenGLRenderer : Renderer
 
         if (_pipelines.Count == 0 || _gl is null || _surface is null)
             return;
+
+        if (Profiler.Enabled && Profiler.GpuTimer is null && !_gpuTimingUnavailable)
+        {
+            try { Profiler.GpuTimer = new OpenGLGpuTimer(_gl); }
+            catch (Exception ex) { _gpuTimingUnavailable = true; _logger.LogWarning(ex, "OpenGL GPU timestamps unavailable"); }
+        }
+        using var gpuTiming = new Diagnostics.GpuTimestampTimer.FrameScope(Profiler.Enabled ? Profiler.GpuTimer : null);
 
         var context = new OpenGLRenderContext
         {
@@ -590,6 +601,8 @@ public class OpenGLRenderer : Renderer
 
     public override void Shutdown()
     {
+        Profiler.GpuTimer?.Dispose();
+        Profiler.GpuTimer = null;
         foreach (var pipeline in _pipelines)
             pipeline.Dispose();
         _pipelines.Clear();
@@ -644,6 +657,16 @@ public class OpenGLRenderer : Renderer
         return mesh;
     }
 
+    public override MeshUpload BeginMeshUpload(ReadOnlyMemory<float> vertices, ReadOnlyMemory<uint> indices,
+        ReadOnlySpan<VertexAttribute> attributes, MeshCpuAccess cpuAccess = MeshCpuAccess.Retained, Bsp.Aabb? knownBounds = null)
+    {
+        MeshesCreated++;
+        var mesh = OpenGLMesh.Create(_gl!, vertices.Span, indices.Span, attributes, cpuAccess, deferred: true, knownBounds: knownBounds);
+        mesh.Unregister = () => _meshes.Remove(mesh);
+        _meshes.Add(mesh);
+        return new MeshUpload(this, mesh, vertices, indices, uploaded: false);
+    }
+
     /// <inheritdoc/>
     public override InstanceBuffer CreateInstanceBuffer(
         int capacityInstances, ReadOnlySpan<VertexAttribute> attributes, ShaderProgram program)
@@ -660,6 +683,15 @@ public class OpenGLRenderer : Renderer
         texture.Unregister = () => _textures.Remove(texture);
         _textures.Add(texture);
         return texture;
+    }
+
+    public override TextureUpload BeginTextureUpload(in TextureUploadDesc desc)
+    {
+        desc.Validate();
+        var texture = OpenGLTexture.Create(_gl!, in desc, deferred: true);
+        texture.Unregister = () => _textures.Remove(texture);
+        _textures.Add(texture);
+        return new TextureUpload(this, texture, desc);
     }
 
     public override ShaderProgram CreateShader(string vertexSource, string fragmentSource)

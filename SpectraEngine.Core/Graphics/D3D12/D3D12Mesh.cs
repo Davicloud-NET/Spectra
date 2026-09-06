@@ -1,4 +1,4 @@
-﻿using Silk.NET.Core.Native;
+using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 using Silk.NET.DXGI;
 using System;
@@ -33,7 +33,7 @@ internal sealed unsafe class D3D12Mesh : Mesh
         ReadOnlySpan<float> vertices,
         ReadOnlySpan<uint> indices,
         ReadOnlySpan<VertexAttribute> attributes,
-        MeshCpuAccess cpuAccess)
+        MeshCpuAccess cpuAccess, bool deferred = false, Bsp.Aabb? knownBounds = null)
     {
         _renderer = renderer;
 
@@ -56,26 +56,39 @@ internal sealed unsafe class D3D12Mesh : Mesh
         // frees and re-creates chunk meshes every frame a world brush moves.
         _vertexCapacity = D3D12Renderer.MeshBufferBucket(vbBytes);
         _indexCapacity = D3D12Renderer.MeshBufferBucket(ibBytes);
-        _vertexBuffer = renderer.RentMeshBuffer(_vertexCapacity);
-        _indexBuffer = renderer.RentMeshBuffer(_indexCapacity);
-        CopyInto(_vertexBuffer, vertices, vbBytes);
-        CopyInto(_indexBuffer, indices, ibBytes);
-
-        _vbView = new VertexBufferView
+        try
         {
-            BufferLocation = ((ID3D12Resource*)_vertexBuffer.Handle)->GetGPUVirtualAddress(),
-            SizeInBytes = vbBytes,
-            StrideInBytes = Layout.StrideBytes,
-        };
-        _ibView = new IndexBufferView
-        {
-            BufferLocation = ((ID3D12Resource*)_indexBuffer.Handle)->GetGPUVirtualAddress(),
-            SizeInBytes = ibBytes,
-            Format = Format.FormatR32Uint,
-        };
+            _vertexBuffer = renderer.RentMeshBuffer(_vertexCapacity);
+            _indexBuffer = renderer.RentMeshBuffer(_indexCapacity);
+            if (!deferred)
+            {
+                CopyInto(_vertexBuffer, vertices, vbBytes);
+                CopyInto(_indexBuffer, indices, ibBytes);
+            }
 
-        IndexCount = (uint)indices.Length;
-        InitializeCpuData(vertices, indices, attributes, cpuAccess);
+            _vbView = new VertexBufferView
+            {
+                BufferLocation = ((ID3D12Resource*)_vertexBuffer.Handle)->GetGPUVirtualAddress(),
+                SizeInBytes = vbBytes,
+                StrideInBytes = Layout.StrideBytes,
+            };
+            _ibView = new IndexBufferView
+            {
+                BufferLocation = ((ID3D12Resource*)_indexBuffer.Handle)->GetGPUVirtualAddress(),
+                SizeInBytes = ibBytes,
+                Format = Format.FormatR32Uint,
+            };
+
+            IndexCount = (uint)indices.Length;
+            if (knownBounds is { } bounds && cpuAccess == MeshCpuAccess.None) SetKnownBounds(bounds);
+            else InitializeCpuData(vertices, indices, attributes, cpuAccess);
+        }
+        catch
+        {
+            if (_indexBuffer.Handle is not null) renderer.ReturnMeshBuffer(_indexCapacity, _indexBuffer);
+            if (_vertexBuffer.Handle is not null) renderer.ReturnMeshBuffer(_vertexCapacity, _vertexBuffer);
+            throw;
+        }
     }
 
     private static void CopyInto<T>(ComPtr<ID3D12Resource> buffer, ReadOnlySpan<T> data, uint byteSize) where T : unmanaged
@@ -100,7 +113,9 @@ internal sealed unsafe class D3D12Mesh : Mesh
         _ => throw new ArgumentOutOfRangeException(nameof(componentCount), $"Unsupported component count {componentCount}"),
     };
 
-    public override void Draw()
+    public override void Draw() => DrawRange(new(0, IndexCount));
+
+    public override unsafe void DrawRange(MeshDrawRange range)
     {
         var list = _renderer.CurrentList;
         var program = _renderer.CurrentProgram;
@@ -123,11 +138,14 @@ internal sealed unsafe class D3D12Mesh : Mesh
         {
             list->IASetIndexBuffer(ib);
         }
-        list->DrawIndexedInstanced(IndexCount, 1, 0, 0, 0);
+        list->DrawIndexedInstanced(range.IndexCount, 1, range.FirstIndex, range.BaseVertex, 0);
     }
 
     /// <inheritdoc/>
-    public override void DrawInstanced(InstanceBuffer instances, int instanceCount, int firstInstance = 0)
+    public override void DrawInstanced(InstanceBuffer instances, int instanceCount, int firstInstance = 0) =>
+        DrawInstancedRange(new(0, IndexCount), instances, instanceCount, firstInstance);
+
+    public override unsafe void DrawInstancedRange(MeshDrawRange range, InstanceBuffer instances, int instanceCount, int firstInstance = 0)
     {
         ArgumentNullException.ThrowIfNull(instances);
         if (instanceCount <= 0)
@@ -161,7 +179,7 @@ internal sealed unsafe class D3D12Mesh : Mesh
         {
             list->IASetIndexBuffer(ib);
         }
-        list->DrawIndexedInstanced(IndexCount, (uint)instanceCount, 0, 0, (uint)firstInstance);
+        list->DrawIndexedInstanced(range.IndexCount, (uint)instanceCount, range.FirstIndex, range.BaseVertex, (uint)firstInstance);
     }
 
     public override void Dispose()
@@ -174,5 +192,16 @@ internal sealed unsafe class D3D12Mesh : Mesh
         _renderer.ReturnMeshBuffer(_vertexCapacity, _vertexBuffer);
         _indexBuffer = default;
         _vertexBuffer = default;
+    }
+
+    internal override void WriteUploadBytes(bool indices, int offset, ReadOnlySpan<byte> bytes)
+    {
+        var resource = (ID3D12Resource*)(indices ? _indexBuffer.Handle : _vertexBuffer.Handle);
+        void* mapped = null;
+        var noRead = new Silk.NET.Direct3D12.Range(0, 0);
+        SilkMarshal.ThrowHResult(resource->Map(0, &noRead, &mapped));
+        bytes.CopyTo(new Span<byte>((byte*)mapped + offset, bytes.Length));
+        var written = new Silk.NET.Direct3D12.Range((nuint)offset, (nuint)(offset + bytes.Length));
+        resource->Unmap(0, &written);
     }
 }

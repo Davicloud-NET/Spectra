@@ -20,6 +20,7 @@ internal sealed unsafe class D3D12Texture : Texture
     private ComPtr<ID3D12DescriptorHeap> _srvHeap;      // 1 slot, non-shader-visible
     private ComPtr<ID3D12DescriptorHeap> _samplerHeap;  // 1 slot, non-shader-visible
     private bool _disposed;
+    private readonly D3D12Renderer _renderer;
 
     internal CpuDescriptorHandle SrvCpu { get; private set; }
     internal CpuDescriptorHandle SamplerCpu { get; private set; }
@@ -38,6 +39,7 @@ internal sealed unsafe class D3D12Texture : Texture
         TextureFormat format, TextureColorSpace colorSpace, Silk.NET.DXGI.Format dxgiFormat,
         TextureFilter filter, TextureWrap wrap)
     {
+        _renderer = renderer;
         Width = width;
         Height = height;
         Format = format;
@@ -113,7 +115,7 @@ internal sealed unsafe class D3D12Texture : Texture
     /// <summary>Reallocates a depth texture in place, keeping the wrapper and its SRV slot.</summary>
     internal void ReplaceDepthStorage(D3D12Renderer renderer, int width, int height)
     {
-        ComOwnership.Release(ref _texture);
+        _renderer.Retire(ref _texture);
         AllocateDepthStorage(renderer, width, height);
         Width = width;
         Height = height;
@@ -148,7 +150,7 @@ internal sealed unsafe class D3D12Texture : Texture
     /// </summary>
     internal void ReplaceStorage(D3D12Renderer renderer, int width, int height)
     {
-        ComOwnership.Release(ref _texture);
+        _renderer.Retire(ref _texture);
         AllocateRenderTargetStorage(renderer, width, height);
         Width = width;
         Height = height;
@@ -193,8 +195,9 @@ internal sealed unsafe class D3D12Texture : Texture
         renderer.DevicePtr->CreateSampler(&samplerDesc, SamplerCpu);
     }
 
-    internal D3D12Texture(D3D12Renderer renderer, in TextureUploadDesc desc)
+    internal D3D12Texture(D3D12Renderer renderer, in TextureUploadDesc desc, bool deferred = false)
     {
+        _renderer = renderer;
         TextureFormat format = desc.Format;
         TextureColorSpace resolved = TextureFormatInfo.Resolve(format, desc.ColorSpace);
         bool srgb = resolved == TextureColorSpace.Srgb;
@@ -216,7 +219,7 @@ internal sealed unsafe class D3D12Texture : Texture
         ReadOnlySpan<byte> payload = desc.Payload;
         ReadOnlySpan<TextureMipDesc> mips = desc.Mips;
         byte[]? owned = null;
-        if (format == TextureFormat.Rgb8)
+        if (format == TextureFormat.Rgb8 && !deferred)
         {
             owned = TextureUploadLayout.ExpandRgbToRgba(payload, mips, out TextureMipDesc[] expandedMips);
             payload = owned;
@@ -228,7 +231,7 @@ internal sealed unsafe class D3D12Texture : Texture
         // chain is what the cooker produced, and a BC chain cannot be built here
         // at all: there is no block encoder in the engine.
         bool wantsMips = filter == TextureFilter.LinearMipmap;
-        if (wantsMips && !desc.HasSuppliedMipChain && !TextureFormatInfo.IsBlockCompressed(uploadFormat))
+        if (!deferred && wantsMips && !desc.HasSuppliedMipChain && !TextureFormatInfo.IsBlockCompressed(uploadFormat))
         {
             var levels = BuildMipChain(
                 TextureUploadLayout.TightLevel(payload, uploadFormat, mips[0], out _).ToArray(),
@@ -240,7 +243,7 @@ internal sealed unsafe class D3D12Texture : Texture
 
         DxgiFormat = dxgiFormat;
         _texture = renderer.CreateTexture2D((uint)Width, (uint)Height, (ushort)mips.Length, dxgiFormat);
-        renderer.UploadTexture(_texture, payload, mips);
+        if (!deferred) renderer.UploadTexture(_texture, payload, mips);
 
         GC.KeepAlive(owned);
 
@@ -341,7 +344,7 @@ internal sealed unsafe class D3D12Texture : Texture
     /// the loop simply leaves index 3 alone.
     /// </para>
     /// </remarks>
-    private static List<(byte[] Pixels, int Width, int Height)> BuildMipChain(
+    internal static List<(byte[] Pixels, int Width, int Height)> BuildMipChain(
         byte[] level0, int width, int height, int bpp, bool srgb)
     {
         var mips = new List<(byte[], int, int)> { (level0, width, height) };
@@ -410,12 +413,23 @@ internal sealed unsafe class D3D12Texture : Texture
         return (byte)Math.Clamp((int)(encoded * 255f + 0.5f), 0, 255);
     }
 
+    internal override void WriteUploadRows(int level, TextureMipDesc mip, int firstRow, int rowCount, ReadOnlySpan<byte> bytes) =>
+        _renderer.UploadTextureRows(this, level, mip, firstRow, rowCount, bytes);
+
+    internal override int UploadRowPitch(TextureMipDesc mip)
+    {
+        long pitch = Format == TextureFormat.Rgb8 ? (long)mip.Width * 4 : base.UploadRowPitch(mip);
+        return checked((int)((pitch + 255) / 256 * 256));
+    }
+
+    internal override void FinishUpload(bool generateMips) => _renderer.FinishTextureUpload(this);
+
     public override void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        ComOwnership.Release(ref _samplerHeap);
-        ComOwnership.Release(ref _srvHeap);
-        ComOwnership.Release(ref _texture);
+        _renderer.Retire(ref _samplerHeap);
+        _renderer.Retire(ref _srvHeap);
+        _renderer.Retire(ref _texture);
     }
 }

@@ -1,4 +1,4 @@
-﻿using Silk.NET.Core.Native;
+using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 using Silk.NET.DXGI;
 using System;
@@ -28,7 +28,10 @@ namespace SpectraEngine.Core.Graphics.D3D12;
 /// </remarks>
 internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
 {
+    private readonly D3D12Renderer _renderer;
     private ComPtr<ID3D12Resource> _buffer;
+    private uint _bufferCapacity;
+    private bool _needsStorage = true;
     private void* _mapped;
     private bool _disposed;
 
@@ -36,10 +39,10 @@ internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
     internal D3D12VertexLayout CombinedLayout { get; }
 
     /// <summary>The view binding this buffer into slot 1.</summary>
-    internal VertexBufferView View { get; }
+    internal VertexBufferView View { get; private set; }
 
     internal D3D12InstanceBuffer(
-        ComPtr<ID3D12Device> device,
+        D3D12Renderer renderer,
         int capacityInstances,
         ReadOnlySpan<VertexAttribute> vertexAttributes,
         ReadOnlySpan<VertexAttribute> instanceAttributes,
@@ -48,45 +51,11 @@ internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
         Capacity = capacityInstances;
         FloatsPerInstance = floatsPerInstance;
 
-        uint stride = (uint)(floatsPerInstance * sizeof(float));
-        uint bytes = (uint)(capacityInstances * stride);
-
+        _renderer = renderer;
         CombinedLayout = BuildCombinedLayout(vertexAttributes, instanceAttributes);
-
-        var heap = new HeapProperties { Type = HeapType.Upload };
-        var desc = new ResourceDesc
-        {
-            Dimension = ResourceDimension.Buffer,
-            Alignment = 0,
-            Width = bytes,
-            Height = 1,
-            DepthOrArraySize = 1,
-            MipLevels = 1,
-            Format = Format.FormatUnknown,
-            SampleDesc = new SampleDesc(1, 0),
-            Layout = TextureLayout.LayoutRowMajor,
-            Flags = ResourceFlags.None,
-        };
-
-        ID3D12Resource* res = null;
-        SilkMarshal.ThrowHResult(((ID3D12Device*)device.Handle)->CreateCommittedResource(
-            &heap, HeapFlags.None, &desc, ResourceStates.GenericRead, null,
-            SilkMarshal.GuidPtrOf<ID3D12Resource>(), (void**)&res));
-        _buffer = ComOwnership.Own(res);
-
-        var readRange = new Silk.NET.Direct3D12.Range { Begin = 0, End = 0 };
-        void* mapped = null;
-        SilkMarshal.ThrowHResult(((ID3D12Resource*)_buffer.Handle)->Map(0, &readRange, &mapped));
-        _mapped = mapped;
-
-        View = new VertexBufferView
-        {
-            BufferLocation = ((ID3D12Resource*)_buffer.Handle)->GetGPUVirtualAddress(),
-            SizeInBytes = bytes,
-            StrideInBytes = stride,
-        };
     }
 
+    protected override void OnBeginFrame() => _needsStorage = true;
     private static D3D12VertexLayout BuildCombinedLayout(
         ReadOnlySpan<VertexAttribute> vertexAttributes,
         ReadOnlySpan<VertexAttribute> instanceAttributes)
@@ -143,9 +112,37 @@ internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
     {
         ValidateUpdate(data, instanceCount);
         int first = Cursor;
-        if (instanceCount == 0 || _mapped is null)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (instanceCount == 0)
             return first;
 
+        if (_needsStorage)
+        {
+            uint stride = checked((uint)FloatsPerInstance * sizeof(float));
+            uint bytes = checked((uint)Capacity * stride);
+            uint capacity = D3D12Renderer.MeshBufferBucket(bytes);
+            // Every BeginFrame/Update gets an immutable buffer version. The
+            // completed-buffer pool makes steady frames cheap and keeps both
+            // submitted and currently recorded commands' previous versions live.
+            // Unlike a transient ring address this also supports callers that
+            // upload between frames, then draw unchanged data in later frames.
+            var buffer = _renderer.RentMeshBuffer(capacity);
+            void* mapped = null;
+            var range = new Silk.NET.Direct3D12.Range();
+            try { SilkMarshal.ThrowHResult(((ID3D12Resource*)buffer.Handle)->Map(0, &range, &mapped)); }
+            catch { _renderer.ReturnMeshBuffer(capacity, buffer); throw; }
+            ReleaseStorage();
+            _buffer = buffer;
+            _bufferCapacity = capacity;
+            _mapped = mapped;
+            _needsStorage = false;
+            View = new VertexBufferView
+            {
+                BufferLocation = ((ID3D12Resource*)buffer.Handle)->GetGPUVirtualAddress(),
+                SizeInBytes = bytes,
+                StrideInBytes = stride,
+            };
+        }
         byte* dst = (byte*)_mapped + (long)first * View.StrideInBytes;
         fixed (float* src = data)
         {
@@ -166,11 +163,15 @@ internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
             return;
         _disposed = true;
 
-        if (_mapped is not null && _buffer.Handle is not null)
-        {
-            ((ID3D12Resource*)_buffer.Handle)->Unmap(0, null);
-            _mapped = null;
-        }
-        ComOwnership.Release(ref _buffer);
+        ReleaseStorage();
+    }
+
+    private void ReleaseStorage()
+    {
+        if (_buffer.Handle is null) return;
+        if (_mapped is not null) ((ID3D12Resource*)_buffer.Handle)->Unmap(0, null);
+        _mapped = null;
+        _renderer.ReturnMeshBuffer(_bufferCapacity, _buffer);
+        _buffer = default;
     }
 }

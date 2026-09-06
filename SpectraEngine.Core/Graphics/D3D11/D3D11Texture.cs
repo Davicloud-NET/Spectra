@@ -66,7 +66,7 @@ internal sealed unsafe partial class D3D11Texture : Texture
         RtvFormat = rtvFormat ?? dxgiFormat;
     }
 
-    internal static D3D11Texture Create(ComPtr<ID3D11Device> device, in TextureUploadDesc desc)
+    internal static D3D11Texture Create(ComPtr<ID3D11Device> device, in TextureUploadDesc desc, bool deferred = false)
     {
         TextureFormat format = desc.Format;
         TextureColorSpace resolved = TextureFormatInfo.Resolve(format, desc.ColorSpace);
@@ -82,7 +82,7 @@ internal sealed unsafe partial class D3D11Texture : Texture
         ReadOnlySpan<byte> payload = desc.Payload;
         ReadOnlySpan<TextureMipDesc> mips = desc.Mips;
         byte[]? expanded = null;
-        if (format == TextureFormat.Rgb8)
+        if (format == TextureFormat.Rgb8 && !deferred)
         {
             expanded = TextureUploadLayout.ExpandRgbToRgba(payload, mips, out TextureMipDesc[] expandedMips);
             payload = expanded;
@@ -127,7 +127,7 @@ internal sealed unsafe partial class D3D11Texture : Texture
 
         var dev = (ID3D11Device*)device.Handle;
         ID3D11Texture2D* texPtr = null;
-        if (generateMips)
+        if (generateMips || deferred)
         {
             // Have to create without initial data (mipmap chain isn't ready)
             // then UpdateSubresource into mip 0 + GenerateMips.
@@ -176,7 +176,7 @@ internal sealed unsafe partial class D3D11Texture : Texture
         ID3D11ShaderResourceView* srvPtr = null;
         SilkMarshal.ThrowHResult(dev->CreateShaderResourceView((ID3D11Resource*)texPtr, &srvDesc, &srvPtr));
 
-        if (generateMips)
+        if (generateMips && !deferred)
         {
             ID3D11DeviceContext* ctxPtr = null;
             dev->GetImmediateContext(&ctxPtr);
@@ -536,6 +536,51 @@ internal sealed unsafe partial class D3D11Texture : Texture
         ID3D11SamplerState* samplerPtr = null;
         SilkMarshal.ThrowHResult(dev->CreateSamplerState(&samplerDesc, &samplerPtr));
         return samplerPtr;
+    }
+
+    internal override void WriteUploadRows(int level, TextureMipDesc mip, int firstRow, int rowCount, ReadOnlySpan<byte> bytes)
+    {
+        ID3D11Device* device = null;
+        Resource->GetDevice(&device);
+        ID3D11DeviceContext* context = null;
+        device->GetImmediateContext(&context);
+        device->Release();
+        byte[]? expanded = null;
+        try
+        {
+            int pitch = mip.RowPitch;
+            if (Format == TextureFormat.Rgb8)
+            {
+                pitch = checked(mip.Width * 4);
+                expanded = ArrayPool<byte>.Shared.Rent(pitch * rowCount);
+                TextureUploadLayout.CopyRows(bytes, mip.RowPitch, expanded, pitch, mip.Width, rowCount, Format);
+                bytes = expanded.AsSpan(0, pitch * rowCount);
+            }
+            uint blockHeight = TextureFormatInfo.IsBlockCompressed(Format) ? 4u : 1u;
+            uint y = (uint)firstRow * blockHeight;
+            var box = new Box(0, y, 0, (uint)mip.Width, Math.Min((uint)mip.Height, y + (uint)rowCount * blockHeight), 1);
+            fixed (byte* source = bytes)
+                context->UpdateSubresource(Resource, (uint)level, &box, source, (uint)pitch, 0);
+        }
+        finally
+        {
+            if (expanded is not null) ArrayPool<byte>.Shared.Return(expanded);
+            context->Release();
+        }
+    }
+
+    internal override int UploadRowPitch(TextureMipDesc mip) => Format == TextureFormat.Rgb8 ? checked(mip.Width * 4) : base.UploadRowPitch(mip);
+
+    internal override void FinishUpload(bool generateMips)
+    {
+        if (!generateMips) return;
+        ID3D11Device* device = null;
+        Resource->GetDevice(&device);
+        ID3D11DeviceContext* context = null;
+        device->GetImmediateContext(&context);
+        device->Release();
+        context->GenerateMips((ID3D11ShaderResourceView*)_srv.Handle);
+        context->Release();
     }
 
     public override void Dispose()

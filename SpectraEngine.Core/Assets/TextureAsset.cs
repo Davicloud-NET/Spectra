@@ -127,4 +127,5 @@ public sealed class TextureAsset
 
     /// <summary>Reserves the next decode ticket for this asset. Any thread.</summary>
     internal long NextRequestSequence() => Interlocked.Increment(ref _requestSequence);
+    internal long RequestSequence => Interlocked.Read(ref _requestSequence);
 }

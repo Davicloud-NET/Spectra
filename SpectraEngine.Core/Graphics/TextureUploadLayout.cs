@@ -14,6 +14,22 @@ namespace SpectraEngine.Core.Graphics;
 /// </remarks>
 internal static class TextureUploadLayout
 {
+    internal static void CopyRows(ReadOnlySpan<byte> source, int sourcePitch, Span<byte> destination,
+        int destinationPitch, int width, int rows, TextureFormat format)
+    {
+        int tight = TextureFormatInfo.TightRowPitch(format, width);
+        for (int row = 0; row < rows; row++)
+        {
+            var input = source.Slice(row * sourcePitch, tight);
+            var output = destination.Slice(row * destinationPitch);
+            if (format != TextureFormat.Rgb8) input.CopyTo(output);
+            else for (int x = 0; x < width; x++)
+            {
+                output[x * 4] = input[x * 3]; output[x * 4 + 1] = input[x * 3 + 1];
+                output[x * 4 + 2] = input[x * 3 + 2]; output[x * 4 + 3] = 255;
+            }
+        }
+    }
     /// <summary>The bytes one level actually occupies when its rows are packed tight.</summary>
     internal static int TightLevelSize(TextureFormat format, in TextureMipDesc mip) =>
         TextureFormatInfo.RowCount(format, mip.Height) * TextureFormatInfo.TightRowPitch(format, mip.Width);

@@ -139,6 +139,11 @@ try
     // Opt-in, unlike the editor shell where it is the default: the demo is the
     // measurement instrument, and a frame time under vsync measures the monitor.
     renderer.VSync = options.VSync;
+    renderer.UncappedPresentation = options.Uncapped;
+    renderer.DeferredGBufferLayout = options.GBufferLayout;
+    Log.Information("Deferred G-buffer layout: {Layout}", options.GBufferLayout);
+    if (renderer is D3D12Renderer d3d12Renderer)
+        d3d12Renderer.FrameContextCount = options.FrameContexts;
 
     SceneManager.ScatterGridOverride = options.ScatterGrid;
     SceneManager.PropCountOverride = options.PropCount;
@@ -179,6 +184,8 @@ try
     }
 
     var sceneManager = new SceneManager(loggerFactory.CreateLogger<SceneManager>());
+    sceneManager.DemoCsgAnimation = options.DemoCsgAnimation;
+    Log.Information("Demo animation: {Mode}", options.DemoCsgAnimation ? "csg" : "off");
 
     // The cooked boot path. Disposed after Run returns, never before: a mounted
     // pack hands out spans into a memory-mapped view, and unmapping one while

@@ -80,7 +80,9 @@ public class CookedModelTests : IDisposable
 
         model.Error.ShouldBeNull();
         data.Meshes.Count.ShouldBe(2);
-        renderer.CreatedMeshes.Count.ShouldBe(2);
+        renderer.CreatedMeshes.Count.ShouldBe(1);
+        model.Data!.Meshes[0].Geometry.ShouldBeSameAs(model.Data.Meshes[1].Geometry);
+        model.Meshes[0].Positions.ShouldBeSameAs(model.Meshes[1].Positions);
 
         // The whole model's bounds ride the header, so Mesh.LocalBounds and the
         // BVH cost no vertex walk at load.

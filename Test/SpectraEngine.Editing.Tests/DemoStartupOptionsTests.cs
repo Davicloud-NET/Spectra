@@ -21,6 +21,37 @@ namespace SpectraEngine.Editing.Tests;
 /// </remarks>
 public sealed class DemoStartupOptionsTests
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("true")]
+    public void Extended_gbuffer_is_explicit_and_preserved_with_environment_selftest(string? environment)
+    {
+        DemoStartupOptions.Parse(["d3d12"], environment).GBufferLayout.ShouldBe(GBufferLayout.Standard);
+        DemoStartupOptions.Parse(["d3d12", "--gbuffer=extended"], environment).GBufferLayout.ShouldBe(GBufferLayout.Extended);
+        Should.Throw<ArgumentException>(() => DemoStartupOptions.Parse(["--gbuffer=unknown"], environment));
+    }
+    [Fact]
+    public void Performance_defaults_leave_animation_and_presentation_unchanged()
+    {
+        var options = DemoStartupOptions.Parse([], null);
+        options.DemoCsgAnimation.ShouldBeFalse();
+        options.Uncapped.ShouldBeFalse();
+        options.FrameContexts.ShouldBe(2);
+        var selected = DemoStartupOptions.Parse(["--demo-animation=csg", "--uncapped", "--frame-contexts=3"], null);
+        selected.DemoCsgAnimation.ShouldBeTrue();
+        selected.Uncapped.ShouldBeTrue();
+        selected.FrameContexts.ShouldBe(3);
+        selected.SelfTestEnabled.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("--demo-animation")]
+    [InlineData("--demo-animation=yes")]
+    [InlineData("--frame-contexts=0")]
+    [InlineData("--frame-contexts=4")]
+    public void Invalid_performance_settings_are_reported(string argument) =>
+        Should.Throw<ArgumentException>(() => DemoStartupOptions.Parse([argument], null));
+
     [Fact]
     public void The_self_test_is_off_when_nothing_asks_for_it()
     {

@@ -22,7 +22,7 @@ public enum FramePhase
     /// <summary>Landing a finished static-world compile: GPU meshes created and destroyed.</summary>
     WorldSwap,
 
-    /// <summary>Asset uploads and part-brush mesh building.</summary>
+    /// <summary>Budgeted texture/model uploads and reload dispatch.</summary>
     Assets,
 
     /// <summary>Frustum culling and draw-list building for the camera.</summary>
@@ -40,9 +40,19 @@ public enum FramePhase
     /// <summary>Tone mapping, the debug overlay, and anything else after the scene.</summary>
     Resolve,
 
-    /// <summary>Present, including any block on vsync or on the GPU.</summary>
+    /// <summary>Presentation and consumer pacing; explicit fence waits have their own scope.</summary>
     Present,
+    Editor,
+    CollisionSync,
+    PartMeshes,
+    Audio,
+    Snapshot,
+    GpuWait,
+    Unaccounted,
 }
+
+/// <summary>Immutable rolling CPU-frame distribution, in milliseconds.</summary>
+public readonly record struct FrameProfileSnapshot(int Samples, double P50, double P95, double P99, double Max);
 
 /// <summary>
 /// Where a frame's time went, measured on the CPU, phase by phase.
@@ -57,11 +67,9 @@ public enum FramePhase
 /// bottleneck is on this side.
 /// </para>
 /// <para>
-/// <b><see cref="FramePhase.Present"/> absorbs everything the other phases
-/// hide.</b> Where a backend blocks for the GPU or for vsync, it blocks there,
-/// so a frame that reads 1 ms of work and 15 ms of Present is waiting rather
-/// than working. Reading it as "Present is slow" is the mistake it exists to
-/// prevent.
+/// Explicit GPU fence waits are separated from presentation. Nested scopes
+/// account exclusively for elapsed wall time; any remaining time belongs to
+/// Unaccounted, so the phase sum covers the complete frame.
 /// </para>
 /// <para>
 /// Values are smoothed with an exponential average because a raw frame is
@@ -75,15 +83,21 @@ public sealed class FrameProfiler
     private static readonly int PhaseCount = Enum.GetValues<FramePhase>().Length;
 
     private readonly long[] _current;
-    private readonly long[] _open;
     private readonly double[] _smoothed;
     private readonly double _smoothing;
+    private readonly long[] _frames = new long[2048];
+    private readonly long[] _sortScratch = new long[2048];
+    private readonly FramePhase[] _scopeStack = new FramePhase[64];
+    private int _depth, _frameCursor, _frameCount;
+    private long _frameStart, _transition;
+    private bool _frameOpen;
+    internal GpuTimestampTimer? GpuTimer { get; set; }
+    public GpuProfileSnapshot GpuSnapshot => GpuTimer?.Snapshot ?? default;
 
     /// <summary>Creates a profiler. <paramref name="smoothing"/> is the weight of each new frame.</summary>
     public FrameProfiler(double smoothing = 0.05)
     {
         _current = new long[PhaseCount];
-        _open = new long[PhaseCount];
         _smoothed = new double[PhaseCount];
         _smoothing = smoothing;
     }
@@ -108,10 +122,42 @@ public sealed class FrameProfiler
     /// <summary>Opens a timing scope; dispose to close it. Use with <c>using</c>.</summary>
     public Scope Measure(FramePhase phase) => new(this, phase);
 
+    /// <summary>Starts complete wall-clock frame accounting. Render thread.</summary>
+    public void BeginFrame() => BeginFrame(Stopwatch.GetTimestamp());
+
+    internal void BeginFrame(long timestamp)
+    {
+        Array.Clear(_current);
+        _depth = 0;
+        _frameOpen = Enabled;
+        _frameStart = _transition = timestamp;
+    }
+
+    /// <summary>Sorts retained samples only when a consumer requests a report.</summary>
+    public FrameProfileSnapshot Snapshot()
+    {
+        if (_frameCount == 0) return default;
+        Array.Copy(_frames, _sortScratch, _frameCount);
+        Array.Sort(_sortScratch, 0, _frameCount);
+        double Percentile(double p) => _sortScratch[Math.Max(0, (int)Math.Ceiling(p * _frameCount) - 1)] * MillisecondsPerTick;
+        return new(_frameCount, Percentile(.50), Percentile(.95), Percentile(.99), Percentile(1));
+    }
+
     /// <summary>Folds this frame's measurements into the smoothed averages and resets.</summary>
-    public void EndFrame()
+    public void EndFrame() => EndFrame(Stopwatch.GetTimestamp());
+
+    internal void EndFrame(long timestamp)
     {
         if (!Enabled) return;
+
+        if (_frameOpen)
+        {
+            Charge(timestamp);
+            _frames[_frameCursor] = Math.Max(0, timestamp - _frameStart);
+            _frameCursor = (_frameCursor + 1) % _frames.Length;
+            _frameCount = Math.Min(_frameCount + 1, _frames.Length);
+            _frameOpen = false;
+        }
 
         for (int i = 0; i < _current.Length; i++)
         {
@@ -150,15 +196,40 @@ public sealed class FrameProfiler
             text.Append((FramePhase)order[i]).Append(' ').Append(ms.ToString("0.00")).Append(" ms");
         }
 
+        text.Append($"; CPU frame EMA {TotalMs:0.00} ms");
+        FrameProfileSnapshot stats = Snapshot();
+        if (stats.Samples > 0)
+            text.Append($"; frame p50/p95/p99/max {stats.P50:0.00}/{stats.P95:0.00}/{stats.P99:0.00}/{stats.Max:0.00} ms ({stats.Samples} samples)");
+        GpuProfileSnapshot gpu = GpuSnapshot;
+        text.Append(gpu.Available
+            ? $"; GPU total/shadow/geometry/light/resolve {gpu.Total:0.00}/{gpu.Shadows:0.00}/{gpu.Geometry:0.00}/{gpu.Lighting:0.00}/{gpu.Resolve:0.00} ms (completed sample {gpu.Frame})"
+            : "; GPU unavailable");
         return text.Length == 0 ? "not measured" : text.ToString();
     }
 
-    private void Open(FramePhase phase) => _open[(int)phase] = Stopwatch.GetTimestamp();
-
-    private void Close(FramePhase phase)
+    // Exclusive accounting: a nested GPU wait is not also charged to Present.
+    private void Charge(long timestamp)
     {
-        int index = (int)phase;
-        _current[index] += Stopwatch.GetTimestamp() - _open[index];
+        if (_frameOpen || _depth > 0)
+            _current[(int)(_depth > 0 ? _scopeStack[_depth - 1] : FramePhase.Unaccounted)] += timestamp - _transition;
+        _transition = timestamp;
+    }
+
+    internal void Open(FramePhase phase, long timestamp)
+    {
+        if (_depth == _scopeStack.Length) throw new InvalidOperationException("Profiler scope nesting exceeded 64.");
+        Charge(timestamp);
+        _scopeStack[_depth++] = phase;
+        GpuTimer?.Mark(phase, true);
+    }
+
+    internal void Close(FramePhase phase, long timestamp)
+    {
+        if (_depth == 0 || _scopeStack[_depth - 1] != phase)
+            throw new InvalidOperationException("Profiler scopes must close in reverse order.");
+        Charge(timestamp);
+        _depth--;
+        GpuTimer?.Mark(phase, false);
     }
 
     /// <summary>One open phase. A ref struct so it cannot outlive its frame or escape to the heap.</summary>
@@ -173,9 +244,9 @@ public sealed class FrameProfiler
             // second lookup of the same flag.
             _profiler = profiler.Enabled ? profiler : null;
             _phase = phase;
-            _profiler?.Open(phase);
+            _profiler?.Open(phase, Stopwatch.GetTimestamp());
         }
 
-        public void Dispose() => _profiler?.Close(_phase);
+        public void Dispose() => _profiler?.Close(_phase, Stopwatch.GetTimestamp());
     }
 }

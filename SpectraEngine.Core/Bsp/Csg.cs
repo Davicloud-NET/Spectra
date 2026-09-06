@@ -175,21 +175,8 @@ public static class Csg
         int[][] neighbors = BrushBroadphase.FindOverlaps(worldBounds);
         neighborsOut = neighbors;
 
-        // Neighbour lists are consumed in the broadphase's sweep-discovery
-        // order — the clip order this engine has always carved in. Clip order
-        // changes the fragment decomposition bit-wise (A-then-B splits a face
-        // along A's planes first; B-then-A covers the same area with
-        // different polygons), so reordering here — e.g. canonicalising to
-        // ascending placement index — would change the emitted surfaces and
-        // the final mesh arrays for the same scene, which the determinism
-        // gate forbids: only BSP tree shape may change, never output.
-        // Discovery order is itself a deterministic function of the placement
-        // list (the broadphase is sequential and its sort is unchanged from
-        // the original engine), so recompiles of the same scene still match
-        // bit for bit. Cache reuse stays sound without a canonical order
-        // because each entry records the exact ordered carver sequence it was
-        // carved under and TryGetValid compares it element-wise: a reshuffled
-        // list is a miss (wasted work), never a wrong hit.
+        // Geometry v2 clips in authored placement order. Cache validation
+        // compares that ordered sequence; the broadphase only selects members.
 
         bool[]? hitFlags = previousCache is not null ? new bool[n] : null;
         var perBrush = new Polygon[n][];
@@ -200,7 +187,7 @@ public static class Csg
         // which depends only on b's own input — partitioning cannot affect
         // the result.
         Parallel.For(0, n,
-            static () => new CarveScratch(),
+            static () => CarveScratch.Rent(),
             (b, _, scratch) =>
             {
                 int[] neighborIndices = neighbors[b];
@@ -225,7 +212,7 @@ public static class Csg
                     cacheEntries[b] = CsgCompileCache.Entry.Create(placements, b, neighborIndices, worldSurfaces);
                 return scratch;
             },
-            static _ => { });
+            static scratch => scratch.Dispose());
 
         if (hitFlags is not null)
         {
@@ -252,6 +239,7 @@ public static class Csg
         _carveInvocations++;
 
         BrushPlacement placement = placements[b];
+        if (placement.Brush is null) return []; // vacant stable slot
 
         // Pre-transform each neighbour into this brush's local frame
         // once. All carvers' planes are packed back-to-back into the
@@ -268,7 +256,8 @@ public static class Csg
         for (int k = 0; k < neighborIndices.Length; k++)
         {
             int o = neighborIndices[k];
-            carvers[k] = CarverInFrame.Build(placements[o], placement, carverWins: o < b, planeBuffer, planeStart);
+            bool wins = placements is PlacementSlotView ordered ? ordered.Compare(o, b) < 0 : o < b;
+            carvers[k] = CarverInFrame.Build(placements[o], placement, wins, planeBuffer, planeStart);
             planeStart += carvers[k].PlaneCount;
         }
 
@@ -425,11 +414,41 @@ public static class Csg
     // shares thread-local state across concurrently-running workers), and
     // nothing stored here may ever escape into Carve's results — result
     // polygons and per-brush arrays are always freshly allocated at exact
-    // size. Buffers only grow; entries past the counts the current brush
+    // size. Buffers are bounded and cleared between jobs; entries past the counts a brush
     // wrote are stale and must never be read. Internal (not private) so the
     // incremental compile can drive CarveSingle with one too.
-    internal sealed class CarveScratch
+    internal sealed class CarveScratch : IDisposable
     {
+        [ThreadStatic] private static CarveScratch? _available;
+        private bool _leased;
+        internal static CarveScratch Rent()
+        {
+            var scratch = _available ?? new CarveScratch();
+            _available = null;
+            scratch._leased = true;
+            return scratch;
+        }
+
+        public void Dispose()
+        {
+            if (!_leased) return;
+            _leased = false;
+            Clear(LocalSurfaces);
+            Clear(Current);
+            Clear(Next);
+            if (Carvers.Length > 4096) Carvers = [];
+            else Array.Clear(Carvers);
+            if (PlaneBuffer.Length > 4096) PlaneBuffer = [];
+            else Array.Clear(PlaneBuffer);
+            _available ??= this;
+        }
+
+        private static void Clear(List<Polygon> list)
+        {
+            list.Clear();
+            if (list.Capacity > 4096) list.Capacity = 0;
+        }
+
         public readonly List<Polygon> LocalSurfaces = [];
         public readonly List<Polygon> Current = [];
         public readonly List<Polygon> Next = [];

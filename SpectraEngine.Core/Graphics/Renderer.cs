@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
 using SpectraEngine.Core.Assets.Sources;
@@ -121,6 +121,11 @@ public abstract class Renderer
 
     private volatile bool _vsync;
 
+    /// <summary>Requests the backend's uncapped benchmark presentation path. Set before initialization.</summary>
+    public bool UncappedPresentation { get; set; }
+    /// <summary>Whether this surface supports an uncapped presentation request.</summary>
+    public bool UncappedPresentationAvailable { get; protected set; }
+
     /// <summary>
     /// A backend-provided shader suitable for general lit geometry. Available
     /// after <see cref="Initialize"/> has run.
@@ -218,6 +223,7 @@ public abstract class Renderer
     /// scopes cost a branch each, but a profile nobody reads is still work.
     /// </summary>
     public Diagnostics.FrameProfiler Profiler { get; } = new();
+    protected bool _gpuTimingUnavailable;
 
     /// <summary>GPU meshes created over this renderer's life. Diagnostics.</summary>
     /// <remarks>
@@ -240,6 +246,8 @@ public abstract class Renderer
     /// trimmed.
     /// </remarks>
     public virtual int PooledBufferCount => 0;
+    /// <summary>Optional backend mesh-memory accounting. Null means unavailable.</summary>
+    public virtual MeshBufferMemory? MeshMemory => null;
 
     /// <summary>
     /// Hot-reloads shaders created via <see cref="CreateShaderFromFile"/> when
@@ -1215,7 +1223,7 @@ public abstract class Renderer
     /// between frames. Nothing may nest inside it and nothing in the frame path
     /// calls it.
     /// </remarks>
-    protected virtual void BeginOutOfFrameCommands()
+    protected internal virtual void BeginOutOfFrameCommands()
     {
     }
 
@@ -1223,7 +1231,7 @@ public abstract class Renderer
     /// Closes the scope <see cref="BeginOutOfFrameCommands"/> opened and blocks
     /// until the GPU has executed it.
     /// </summary>
-    protected virtual void EndOutOfFrameCommands()
+    protected internal virtual void EndOutOfFrameCommands()
     {
     }
 
@@ -1766,7 +1774,7 @@ public abstract class Renderer
         if (width <= 0 || height <= 0) return null;
 
         if (_gbuffer is null)
-            _gbuffer = new GBuffer(this, width, height);
+            _gbuffer = new GBuffer(this, width, height, DeferredGBufferLayout);
         else
             _gbuffer.Resize(width, height);
 
@@ -1786,7 +1794,24 @@ public abstract class Renderer
     /// renders in both paths with no migration.
     /// </remarks>
     internal ShaderProgram EnsureGBufferShader() =>
-        _gbufferShader ??= CreateBaseShader(BaseShaders.GBufferFillFileName);
+        _gbufferShader ??= CreateBaseShader(GBufferShaderFileName);
+
+    private GBufferLayout _deferredGBufferLayout;
+    /// <summary>Choose before the first deferred frame. Standard omits the unused custom target.</summary>
+    public GBufferLayout DeferredGBufferLayout
+    {
+        get => _deferredGBufferLayout;
+        set
+        {
+            if (value == _deferredGBufferLayout) return;
+            if (_gbuffer is not null || _gbufferShader is not null || _gbufferInstancedShader is not null)
+                throw new InvalidOperationException("Set the G-buffer layout before the first deferred frame.");
+            if (value is not (GBufferLayout.Standard or GBufferLayout.Extended)) throw new ArgumentOutOfRangeException(nameof(value));
+            _deferredGBufferLayout = value;
+        }
+    }
+    private string GBufferShaderFileName => DeferredGBufferLayout == GBufferLayout.Standard
+        ? BaseShaders.GBufferFillCompactFileName : BaseShaders.GBufferFillFileName;
 
     /// <summary>
     /// The instanced twin of the G-buffer program, generated from the same
@@ -1799,7 +1824,7 @@ public abstract class Renderer
         if (_gbufferInstancedShader is not null || !_geometryBatchingAvailable)
             return _gbufferInstancedShader;
 
-        _gbufferInstancedShader = TryCreateInstancedBaseShader(BaseShaders.GBufferFillFileName);
+        _gbufferInstancedShader = TryCreateInstancedBaseShader(GBufferShaderFileName);
 
         // Asked for once. Retrying every frame would recompile a shader that
         // has already said no, in the frame loop.
@@ -2409,6 +2434,17 @@ public abstract class Renderer
         ReadOnlySpan<VertexAttribute> attributes,
         MeshCpuAccess cpuAccess = MeshCpuAccess.Retained);
 
+    /// <summary>Uploads geometry once; draw views share both GPU and picking storage.</summary>
+    public SharedMeshStorage CreateSharedMeshStorage(
+        ReadOnlySpan<float> vertices, ReadOnlySpan<uint> indices,
+        ReadOnlySpan<VertexAttribute> attributes, MeshCpuAccess cpuAccess = MeshCpuAccess.Retained) =>
+        new(this, CreateMesh(vertices, indices, attributes, cpuAccess));
+
+    /// <summary>Begins an unpublished upload. Source memories must stay immutable until completion or disposal.</summary>
+    public virtual MeshUpload BeginMeshUpload(ReadOnlyMemory<float> vertices, ReadOnlyMemory<uint> indices,
+        ReadOnlySpan<VertexAttribute> attributes, MeshCpuAccess cpuAccess = MeshCpuAccess.Retained, Bsp.Aabb? knownBounds = null) =>
+        new(this, CreateMesh(vertices.Span, indices.Span, attributes, cpuAccess), vertices, indices, uploaded: true);
+
     /// <summary>
     /// Creates a buffer able to hold <paramref name="capacityInstances"/>
     /// instances of <paramref name="attributes"/>, for
@@ -2593,6 +2629,15 @@ public abstract class Renderer
     /// with the creating renderer's tracking list.
     /// </summary>
     protected abstract Texture CreateTextureCore(in TextureUploadDesc desc);
+
+    /// <summary>Creates unpublished storage; Step copies aligned rows without retaining the payload span.</summary>
+    public virtual TextureUpload BeginTextureUpload(in TextureUploadDesc desc) =>
+        new(this, CreateTexture(desc), desc, uploaded: true);
+
+    /// <summary>Submits queued upload commands. Synchronous asset APIs explicitly request completion.</summary>
+    public virtual void FlushUploads(bool waitForCompletion = false) { }
+
+    internal virtual PreparedTextureData? PrepareTextureUpload(in TextureUploadDesc desc) => null;
 
     /// <summary>
     /// Disposes a texture created by <see cref="CreateTexture"/> and drops it

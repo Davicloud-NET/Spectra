@@ -89,6 +89,46 @@ public sealed class ChunkGrid
     /// <summary>Number of occupied cells.</summary>
     public int Count => _orderedChunks.Count;
 
+    internal ChunkGrid RemapIndices(Func<int, int> map)
+    {
+        var chunks = new Dictionary<ChunkCoord, WorldChunk>(Count);
+        var ordered = new WorldChunk[Count];
+        for (int i = 0; i < ordered.Length; i++)
+        {
+            var chunk = _orderedChunks[i].RemapIndices(map);
+            chunks.Add(chunk.Coord, chunk);
+            ordered[i] = chunk;
+        }
+        return new(chunks, null, PagedArray<WorldChunk>.From(ordered), _cellMin, _cellMax);
+    }
+
+    /// <summary>Collects resident placement indices from intersecting cells. Caller owns scratch.</summary>
+    internal void CollectResidents(in Aabb bounds, HashSet<int> results)
+    {
+        if (Count == 0) return;
+        ChunkCoord from = ChunkCoord.FromPosition(bounds.Min);
+        ChunkCoord to = ChunkCoord.FromPosition(bounds.Max);
+        int minX = Math.Max(from.X, _cellMin.X), maxX = Math.Min(to.X, _cellMax.X);
+        int minY = Math.Max(from.Y, _cellMin.Y), maxY = Math.Min(to.Y, _cellMax.Y);
+        int minZ = Math.Max(from.Z, _cellMin.Z), maxZ = Math.Min(to.Z, _cellMax.Z);
+        if (minX > maxX || minY > maxY || minZ > maxZ) return;
+        double cells = ((double)maxX - minX + 1) * ((double)maxY - minY + 1) * ((double)maxZ - minZ + 1);
+        if (cells > Count * 2.0)
+        {
+            foreach (WorldChunk chunk in _orderedChunks)
+                if (chunk.Coord.X >= minX && chunk.Coord.X <= maxX &&
+                    chunk.Coord.Y >= minY && chunk.Coord.Y <= maxY &&
+                    chunk.Coord.Z >= minZ && chunk.Coord.Z <= maxZ)
+                    foreach (int resident in chunk.ResidentBrushIndices) results.Add(resident);
+            return;
+        }
+        for (long z = minZ; z <= maxZ; z++)
+        for (long y = minY; y <= maxY; y++)
+        for (long x = minX; x <= maxX; x++)
+            if (TryGet(new ChunkCoord((int)x, (int)y, (int)z), out WorldChunk chunk))
+                foreach (int resident in chunk.ResidentBrushIndices) results.Add(resident);
+    }
+
     /// <summary>Looks up the chunk at <paramref name="coord"/>, if that cell is occupied.</summary>
     public bool TryGet(ChunkCoord coord, out WorldChunk chunk)
     {

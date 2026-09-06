@@ -43,6 +43,39 @@ namespace SpectraEngine.Graphics.Tests;
 [Collection(D3DDeviceCollection.Name)]
 public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture fixture)
 {
+    [Fact]
+    public void Completed_mesh_pool_obeys_global_bucket_and_idle_limits()
+    {
+        Require();
+        var renderer = fixture.Renderer;
+        var buffers = new List<(uint Size, ComPtr<ID3D12Resource> Resource)>();
+        try
+        {
+            // Five full buckets exceed the global allowance while each fits
+            // separately. Nothing is returned until all resources are distinct.
+            for (uint size = 1024 * 1024; size <= 16 * 1024 * 1024; size *= 2)
+                for (int i = 0; i < 16 * 1024 * 1024 / size; i++)
+                    buffers.Add((size, renderer.RentMeshBuffer(size)));
+        }
+        finally
+        {
+            foreach (var entry in buffers) renderer.ReturnMeshBuffer(entry.Size, entry.Resource);
+        }
+        renderer.WaitForGpu();
+        fixture.Present();
+        renderer.MeshBufferMemory.Retired.ShouldBe(0UL);
+        renderer.MeshBufferMemory.Pooled.ShouldBeLessThanOrEqualTo(D3D12Renderer.MeshPoolLimit);
+        // Returned buffers must expire even if no future mesh asks for them.
+        var target = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8));
+        try
+        {
+            for (int i = 0; i < 301; i++) renderer.ClearForTest(target, Vector4.Zero);
+        }
+        finally { renderer.DestroyRenderTarget(target); }
+        fixture.Present();
+        renderer.MeshBufferMemory.Pooled.ShouldBe(0UL);
+        renderer.DebugLayerErrorCount.ShouldBe(0, fixture.Diagnostics);
+    }
     private void Require() => Assert.SkipWhen(
         !fixture.Available,
         $"no usable D3D12 device in this process: {fixture.UnavailableReason}");
@@ -461,7 +494,7 @@ public sealed unsafe class SharedTargetD3D12Fixture : IDisposable
             return;
         }
 
-        var renderer = new D3D12Renderer(_log, new SpectraShadeCompiler());
+        var renderer = new D3D12Renderer(_log, new SpectraShadeCompiler()) { EnableDebugLayer = true };
 
         // The engine publishes this from the main thread before the render
         // thread starts, so a renderer that has never been told its size is not

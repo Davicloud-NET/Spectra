@@ -1,4 +1,4 @@
-﻿using Silk.NET.OpenGL;
+using Silk.NET.OpenGL;
 using System;
 
 namespace SpectraEngine.Core.Graphics.OpenGL;
@@ -21,7 +21,7 @@ internal sealed class OpenGLMesh : Mesh
     }
 
     internal static unsafe OpenGLMesh Create(GL gl, ReadOnlySpan<float> vertices, ReadOnlySpan<uint> indices,
-        ReadOnlySpan<VertexAttribute> attributes, MeshCpuAccess cpuAccess)
+        ReadOnlySpan<VertexAttribute> attributes, MeshCpuAccess cpuAccess, bool deferred = false, Bsp.Aabb? knownBounds = null)
     {
         uint vao = gl.GenVertexArray();
         uint vbo = gl.GenBuffer();
@@ -32,13 +32,13 @@ internal sealed class OpenGLMesh : Mesh
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, vbo);
         fixed (float* v = vertices)
         {
-            gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), v, BufferUsageARB.StaticDraw);
+            gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), deferred ? null : v, BufferUsageARB.StaticDraw);
         }
 
         gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, ebo);
         fixed (uint* i = indices)
         {
-            gl.BufferData(BufferTargetARB.ElementArrayBuffer, (nuint)(indices.Length * sizeof(uint)), i, BufferUsageARB.StaticDraw);
+            gl.BufferData(BufferTargetARB.ElementArrayBuffer, (nuint)(indices.Length * sizeof(uint)), deferred ? null : i, BufferUsageARB.StaticDraw);
         }
 
         uint stride = 0;
@@ -59,14 +59,17 @@ internal sealed class OpenGLMesh : Mesh
         gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, 0);
 
         var mesh = new OpenGLMesh(gl, vao, vbo, ebo, (uint)indices.Length);
-        mesh.InitializeCpuData(vertices, indices, attributes, cpuAccess);
+        if (knownBounds is { } bounds && cpuAccess == MeshCpuAccess.None) mesh.SetKnownBounds(bounds);
+        else mesh.InitializeCpuData(vertices, indices, attributes, cpuAccess);
         return mesh;
     }
 
-    public override unsafe void Draw()
+    public override void Draw() => DrawRange(new(0, IndexCount));
+
+    public override unsafe void DrawRange(MeshDrawRange range)
     {
         _gl.BindVertexArray(_vao);
-        _gl.DrawElements(PrimitiveType.Triangles, IndexCount, DrawElementsType.UnsignedInt, null);
+        _gl.DrawElementsBaseVertex(PrimitiveType.Triangles, range.IndexCount, DrawElementsType.UnsignedInt, (void*)((nuint)range.FirstIndex * sizeof(uint)), range.BaseVertex);
     }
 
     // Which instance buffer's attributes are currently wired into this mesh's
@@ -77,7 +80,10 @@ internal sealed class OpenGLMesh : Mesh
     private int _wiredFirstInstance;
 
     /// <inheritdoc/>
-    public override unsafe void DrawInstanced(InstanceBuffer instances, int instanceCount, int firstInstance = 0)
+    public override void DrawInstanced(InstanceBuffer instances, int instanceCount, int firstInstance = 0) =>
+        DrawInstancedRange(new(0, IndexCount), instances, instanceCount, firstInstance);
+
+    public override unsafe void DrawInstancedRange(MeshDrawRange range, InstanceBuffer instances, int instanceCount, int firstInstance = 0)
     {
         ArgumentNullException.ThrowIfNull(instances);
         if (instanceCount <= 0)
@@ -123,8 +129,8 @@ internal sealed class OpenGLMesh : Mesh
             _wiredFirstInstance = firstInstance;
         }
 
-        _gl.DrawElementsInstanced(
-            PrimitiveType.Triangles, IndexCount, DrawElementsType.UnsignedInt, null, (uint)instanceCount);
+        _gl.DrawElementsInstancedBaseVertex(
+            PrimitiveType.Triangles, range.IndexCount, DrawElementsType.UnsignedInt, (void*)((nuint)range.FirstIndex * sizeof(uint)), (uint)instanceCount, range.BaseVertex);
     }
 
     public override void Dispose()
@@ -135,5 +141,14 @@ internal sealed class OpenGLMesh : Mesh
         _gl.DeleteBuffer(_ebo);
         _gl.DeleteBuffer(_vbo);
         _gl.DeleteVertexArray(_vao);
+    }
+
+    internal override unsafe void WriteUploadBytes(bool indices, int offset, ReadOnlySpan<byte> bytes)
+    {
+        // CopyWriteBuffer leaves VAO element bindings intact.
+        _gl.BindBuffer(BufferTargetARB.CopyWriteBuffer, indices ? _ebo : _vbo);
+        fixed (byte* source = bytes)
+            _gl.BufferSubData(BufferTargetARB.CopyWriteBuffer, (nint)offset, (nuint)bytes.Length, source);
+        _gl.BindBuffer(BufferTargetARB.CopyWriteBuffer, 0);
     }
 }

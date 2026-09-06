@@ -39,7 +39,7 @@ public sealed class ModelAssetTests
         // produced — no re-packing between the two.
         for (int i = 0; i < model.Meshes.Count; i++)
         {
-            var uploaded = model.Meshes[i].ShouldBeOfType<FakeMesh>();
+            var uploaded = renderer.CreatedMeshes[i];
             uploaded.VertexData.ShouldBe(model.Data.Meshes[i].Vertices);
             uploaded.IndexData.ShouldBe(model.Data.Meshes[i].Indices);
             uploaded.IndexCount.ShouldBe((uint)model.Data.Meshes[i].Indices.Length);
@@ -294,7 +294,7 @@ public sealed class ModelAssetTests
         var (assets, renderer) = CreateAttached();
 
         ModelAsset model = assets.LoadModel(Crate);
-        var meshes = model.Meshes.Cast<FakeMesh>().ToArray();
+        var meshes = renderer.CreatedMeshes.ToArray();
 
         assets.UnloadModel(Crate).ShouldBeTrue();
 
@@ -307,7 +307,7 @@ public sealed class ModelAssetTests
         // Loading again is a fresh import, not a resurrection of dead handles.
         ModelAsset reloaded = assets.LoadModel(Crate);
         reloaded.IsReady.ShouldBeTrue();
-        reloaded.Meshes.ShouldAllBe(m => !((FakeMesh)m).Disposed);
+        renderer.CreatedMeshes.Skip(2).ShouldAllBe(m => !m.Disposed);
         renderer.CreatedMeshes.Count.ShouldBe(4);
 
         assets.ReleaseGraphicsResources();
@@ -333,7 +333,7 @@ public sealed class ModelAssetTests
             requested.ImportPending.ShouldBeFalse();
 
             int expected = i + 1;
-            PumpUntil(assets, () => DroppedImports(logger) == expected);
+            PumpUntil(assets, () => assets.QueueStatistics.Stale >= expected);
 
             // Meshes published on an evicted handle are invisible to
             // ReleaseModelResources, which only walks the cache — before the fix
@@ -352,17 +352,39 @@ public sealed class ModelAssetTests
     [Fact]
     public void Releasing_graphics_resources_destroys_every_model_mesh()
     {
-        var (assets, _) = CreateAttached();
+        var (assets, renderer) = CreateAttached();
 
         ModelAsset crate = assets.LoadModel(Crate);
         ModelAsset signpost = assets.LoadModel(Signpost);
-        var meshes = crate.Meshes.Concat(signpost.Meshes).Cast<FakeMesh>().ToArray();
+        var meshes = renderer.CreatedMeshes.ToArray();
         meshes.Length.ShouldBe(4);
 
         assets.ReleaseGraphicsResources();
 
         meshes.ShouldAllBe(m => m.Disposed);
         assets.ModelCount.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(ModelCpuRetention.Full)]
+    [InlineData(ModelCpuRetention.Picking)]
+    [InlineData(ModelCpuRetention.GpuOnly)]
+    public void Cpu_policy_preserves_instantiation_and_controls_retained_geometry(ModelCpuRetention policy)
+    {
+        var (assets, _) = CreateAttached();
+        var model = assets.LoadModel(Crate, new ModelImportOptions { CpuRetention = policy });
+        model.IsReady.ShouldBeTrue();
+        model.Metadata.ShouldNotBeNull();
+        (model.Data is not null).ShouldBe(policy == ModelCpuRetention.Full);
+        foreach (var mesh in model.Meshes)
+        {
+            (mesh.Positions.Count != 0).ShouldBe(policy != ModelCpuRetention.GpuOnly);
+            (mesh.Indices.Count != 0).ShouldBe(policy != ModelCpuRetention.GpuOnly);
+            mesh.HasLocalBounds.ShouldBeTrue();
+        }
+        SpectraEngine.Core.Scene.ModelInstantiator.Instantiate(model).Children.Count.ShouldBe(2);
+        assets.ReleaseGraphicsResources();
+        model.IsReady.ShouldBeFalse();
     }
 
     // ---- helpers ---------------------------------------------------------

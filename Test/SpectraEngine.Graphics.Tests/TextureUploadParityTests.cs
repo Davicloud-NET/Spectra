@@ -160,6 +160,9 @@ internal static class TextureUploadParity
     /// </summary>
     internal static void AssertBothPathsAgree(Renderer renderer, string backend)
     {
+        GBufferLayoutParity.Check(renderer);
+        MeshUploadParity.Check(renderer);
+        AssertSlicedUploads(renderer, backend);
         const int width = 8;
         const int height = 8;
         byte[] pixels = BuildSource(width, height);
@@ -199,6 +202,45 @@ internal static class TextureUploadParity
         {
             renderer.DestroyTexture(viaDesc);
             renderer.DestroyTexture(viaSpan);
+        }
+    }
+
+    private static void AssertSlicedUploads(Renderer renderer, string backend)
+    {
+        Check(TextureFormat.Rgba8, 1031, 515, BuildSource(1031, 515), 1031 * 4, TextureFilter.Nearest);
+        Check(TextureFormat.Rgb8, 64, 64, BuildRgb8Quadrants(64), 64 * 3, TextureFilter.LinearMipmap);
+        byte[] bc = new byte[36 * 17 * 16];
+        for (int i = 0; i < bc.Length / 16; i++)
+            Bc7Fixture.SolidBlock(i % 2 == 0 ? (byte)255 : (byte)1, 1, 255, 255).CopyTo(bc, i * 16);
+        Check(TextureFormat.Bc7, 140, 68, bc, 36 * 16, TextureFilter.Nearest);
+
+        void Check(TextureFormat format, int width, int height, byte[] bytes, int pitch, TextureFilter filter)
+        {
+            var desc = new TextureUploadDesc(format, TextureColorSpace.Srgb, bytes,
+                [new(width, height, 0, pitch)], filter, TextureWrap.Clamp);
+            Texture expected = renderer.CreateTexture(desc);
+            using var upload = renderer.BeginTextureUpload(desc);
+            Texture? actual = null;
+            try
+            {
+                int steps = 0;
+                while (!upload.IsComplete)
+                {
+                    upload.Step(bytes, 8 * 1024).ShouldBeInRange(1, 8 * 1024);
+                    steps++;
+                }
+                steps.ShouldBeGreaterThan(1, $"{backend}/{format} must exercise slicing");
+                actual = upload.Complete();
+                renderer.FlushUploads(true);
+                var reference = RenderWhole(renderer, expected);
+                ViewportCompare.HasVariation(reference).ShouldBeTrue();
+                RenderWhole(renderer, actual).ShouldBe(reference, $"{backend}/{format}: sliced pixels differ");
+            }
+            finally
+            {
+                if (actual is not null) renderer.DestroyTexture(actual);
+                renderer.DestroyTexture(expected);
+            }
         }
     }
 }

@@ -107,7 +107,8 @@ internal static class ChunkWelder
         bool produceCache,
         out CsgWeldCache? nextCache,
         out CsgWeldStats stats,
-        out int[][] candidatesOut)
+        out int[][] candidatesOut,
+        Polygon[]?[]? retainedSnaps = null)
     {
         int n = placements.Count;
         var welded = new Polygon[n][];
@@ -165,7 +166,7 @@ internal static class ChunkWelder
         // per brush and computed only where needed (welded brushes and their
         // candidates), so an edit's snap cost stays proportional to its
         // neighbourhood, not the world.
-        var snapped = new Polygon[]?[n];
+        var snapped = retainedSnaps ?? new Polygon[]?[n];
         var distinctSets = new HashSet<int[]>();
         var unionScratch = new HashSet<int>();
         var candidateCarvesMemo = entries is not null ? new Dictionary<int[], Polygon[][]>() : null;

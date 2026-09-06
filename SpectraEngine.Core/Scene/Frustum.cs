@@ -87,6 +87,18 @@ public readonly struct Frustum
         Plane.DotCoordinate(Near, point) >= 0f &&
         Plane.DotCoordinate(Far, point) >= 0f;
 
+    /// <summary>True only when the complete box lies inside all six planes.</summary>
+    public bool Contains(in Aabb box) =>
+        InsidePlane(Left, box) && InsidePlane(Right, box) &&
+        InsidePlane(Bottom, box) && InsidePlane(Top, box) &&
+        InsidePlane(Near, box) && InsidePlane(Far, box);
+
+    private static bool InsidePlane(in Plane plane, in Aabb box) =>
+        Plane.DotCoordinate(plane, new Vector3(
+            plane.Normal.X >= 0 ? box.Min.X : box.Max.X,
+            plane.Normal.Y >= 0 ? box.Min.Y : box.Max.Y,
+            plane.Normal.Z >= 0 ? box.Min.Z : box.Max.Z)) >= 0;
+
     private static bool OutsidePlane(in Plane plane, in Aabb box)
     {
         // Positive-vertex trick: test only the box corner farthest along the

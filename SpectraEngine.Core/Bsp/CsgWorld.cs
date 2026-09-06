@@ -13,7 +13,7 @@ namespace SpectraEngine.Core.Bsp;
 /// <see cref="Raycast"/>), and can produce a render mesh — all from one
 /// <see cref="Build"/> call.
 /// </summary>
-public sealed class CsgWorld
+public sealed partial class CsgWorld
 {
     // How far a cell's ray segment is allowed to overshoot its traversal
     // interval when accepting a hit. Guards float rounding at cell boundaries:
@@ -40,10 +40,12 @@ public sealed class CsgWorld
         CsgMeshCache? meshCache, CsgMeshStats? meshStats,
         long patchBaseId = 0, IReadOnlyList<(ChunkCoord Coord, ChunkMesh? Mesh)>? chunkMeshDelta = null)
     {
-        Placements = placements;
+        StoragePlacements = placements;
+        SourceSnapshot = (placements as PlacementSlotView)?.Snapshot;
+        Placements = SourceSnapshot is null ? placements : SourceSnapshot;
         _surfaces = surfaces;
         SurfaceCount = surfaceCount;
-        Chunks = chunks;
+        StorageChunks = chunks;
         ChunkMeshesPaged = chunkMeshes as PagedArray<ChunkMesh> ?? PagedArray<ChunkMesh>.From(chunkMeshes);
         DirtyCells = dirtyCells;
         Carry = carry;
@@ -136,6 +138,8 @@ public sealed class CsgWorld
     /// carved at transforms the live brushes no longer carry.
     /// </summary>
     public IReadOnlyList<BrushPlacement> Placements { get; }
+    internal IReadOnlyList<BrushPlacement> StoragePlacements { get; }
+    internal PlacementSnapshot? SourceSnapshot { get; }
 
     /// <summary>
     /// The visible exterior surfaces of the brush union, in world space, in
@@ -150,7 +154,8 @@ public sealed class CsgWorld
         get
         {
             if (_surfaces is null)
-                Interlocked.CompareExchange(ref _surfaces, Csg.Concatenate(Carry.WeldedPerBrush, SurfaceCount), null);
+                Interlocked.CompareExchange(ref _surfaces, SourceSnapshot is null
+                    ? Csg.Concatenate(Carry.WeldedPerBrush, SurfaceCount) : CanonicalWorld.SurfacesArray(), null);
             return _surfaces;
         }
     }
@@ -177,7 +182,8 @@ public sealed class CsgWorld
     /// monolithic <see cref="BuildMesh"/> remains as the oracle/benchmark
     /// reference over it.
     /// </summary>
-    public ChunkGrid Chunks { get; }
+    public ChunkGrid Chunks => SourceSnapshot is null ? StorageChunks : CanonicalWorld.StorageChunks;
+    internal ChunkGrid StorageChunks { get; }
 
     /// <summary>
     /// The per-cell render meshes (W4): one <see cref="ChunkMesh"/> per cell
@@ -225,6 +231,7 @@ public sealed class CsgWorld
     {
         get
         {
+            if (SourceSnapshot is not null && _lazyCaches) return CanonicalWorld.CompileCache;
             if (_compileCache is null && _lazyCaches)
             {
                 int n = Placements.Count;
@@ -255,6 +262,7 @@ public sealed class CsgWorld
     {
         get
         {
+            if (SourceSnapshot is not null && _lazyCaches) return CanonicalWorld.WeldCache;
             if (_weldCache is null && _lazyCaches)
             {
                 int n = Placements.Count;
@@ -302,6 +310,7 @@ public sealed class CsgWorld
     {
         get
         {
+            if (SourceSnapshot is not null && _lazyCaches) return CanonicalWorld.BspCache;
             if (_bspCache is null && _lazyCaches)
             {
                 IReadOnlyList<WorldChunk> cells = Chunks.OrderedChunks;
@@ -339,6 +348,7 @@ public sealed class CsgWorld
     {
         get
         {
+            if (SourceSnapshot is not null && _lazyCaches) return CanonicalWorld.MeshCache;
             if (_meshCache is null && _lazyCaches)
             {
                 // Geometry cells align 1:1 with ChunkMeshes (both ascending,
@@ -390,6 +400,8 @@ public sealed class CsgWorld
     /// </summary>
     public static CsgWorld Build(IReadOnlyList<BrushPlacement> placements)
     {
+        if (placements is PlacementSnapshot snapshot)
+            return FromDense(snapshot, Build(snapshot.ToDense(out _)));
         Polygon[][] perBrushSurfaces = Csg.CarvePerBrush(placements, out int[][] neighbors);
         return Assemble(
             placements, perBrushSurfaces, neighbors, dirtyCells: null, compileCache: null, cacheStats: null,
@@ -464,6 +476,9 @@ public sealed class CsgWorld
         CsgCompileCache? previousCache, CsgWeldCache? previousWeldCache, CsgBspCache? previousBspCache,
         CsgMeshCache? previousMeshCache)
     {
+        if (placements is PlacementSnapshot snapshot)
+            return FromDense(snapshot, Build(snapshot.ToDense(out _), dirtyCells,
+                previousCache, previousWeldCache, previousBspCache, previousMeshCache));
         Polygon[][] perBrushSurfaces = Csg.CarvePerBrush(
             placements, previousCache, out CsgCompileCache nextCache, out CsgCacheStats stats, out int[][] neighbors);
         return Assemble(
@@ -498,7 +513,8 @@ public sealed class CsgWorld
         IReadOnlyList<BrushPlacement> placements, IReadOnlyList<ChunkCoord>? dirtyCells, CsgWorld? previous)
     {
         if (previous is not null && dirtyCells is not null &&
-            CsgIncrementalCompiler.TryBuild(placements, dirtyCells, previous, out CsgWorld? patched))
+            CsgIncrementalCompiler.TryBuild(placements is PlacementSnapshot snapshot ? snapshot.Storage : placements,
+                dirtyCells, previous, out CsgWorld? patched))
         {
             return patched;
         }
@@ -531,9 +547,10 @@ public sealed class CsgWorld
         // carve-array identity, which only a carve-cache hit chain preserves —
         // so the cache-free overloads stay cache-free here too.
         bool caching = compileCache is not null;
+        var snappedPerBrush = new Polygon[]?[placements.Count];
         Polygon[][] weldedPerBrush = ChunkWelder.Weld(
             placements, perBrushSurfaces, chunks, previousWeldCache, produceCache: caching,
-            out CsgWeldCache? weldCache, out CsgWeldStats weldStats, out int[][] candidates);
+            out CsgWeldCache? weldCache, out CsgWeldStats weldStats, out int[][] candidates, snappedPerBrush);
         chunks.AttachWeldedSurfaces(placements, weldedPerBrush);
 
         // Per-cell BSP (W3): every cell gets a tree over its residents' welded
@@ -566,7 +583,8 @@ public sealed class CsgWorld
             PagedArray<Polygon[]>.From(perBrushSurfaces),
             PagedArray<Polygon[]>.From(weldedPerBrush),
             PagedArray<int[]>.From(neighbors),
-            PagedArray<int[]>.From(candidates));
+            PagedArray<int[]>.From(candidates),
+            PagedArray<Polygon[]?>.From(snappedPerBrush));
 
         return new CsgWorld(
             placements, surfaces, surfaces.Length, chunks, chunkMeshes, dirtyCells,
@@ -618,7 +636,7 @@ public sealed class CsgWorld
     /// </para>
     /// </remarks>
     public bool ContainsPoint(Vector3 point) =>
-        Chunks.TryGet(ChunkCoord.FromPosition(point), out WorldChunk chunk) && chunk.Bsp.ContainsPoint(point);
+        StorageChunks.TryGet(ChunkCoord.FromPosition(point), out WorldChunk chunk) && chunk.Bsp.ContainsPoint(point);
 
     /// <summary>
     /// Casts a ray against solid space. Returns true and reports the first
@@ -668,7 +686,7 @@ public sealed class CsgWorld
     {
         face = default;
 
-        if (!Chunks.TryGet(ChunkCoord.FromPosition(point), out WorldChunk chunk))
+        if (!StorageChunks.TryGet(ChunkCoord.FromPosition(point), out WorldChunk chunk))
             return false;
 
         IReadOnlyList<Polygon> surfaces = chunk.WeldedSurfaces.Count > 0
@@ -754,7 +772,7 @@ public sealed class CsgWorld
         // unoccupied. The box is conservative (it may cover vacated cells
         // after edits — see ChunkGrid.TryGetCellBounds), which only costs a
         // few extra lookups, never a wrong answer.
-        if (!Chunks.TryGetCellBounds(out ChunkCoord cellMin, out ChunkCoord cellMax))
+        if (!StorageChunks.TryGetCellBounds(out ChunkCoord cellMin, out ChunkCoord cellMax))
             return false; // empty world
         float boxEnter = 0f;
         float walkEnd = maxDistance;
@@ -803,7 +821,7 @@ public sealed class CsgWorld
             float exitT = MathF.Min(MathF.Min(tMaxX, tMaxY), tMaxZ);
             float segmentEnd = MathF.Min(exitT, maxLocal);
 
-            if (segmentEnd > entryT && Chunks.TryGet(new ChunkCoord(x, y, z), out WorldChunk chunk))
+            if (segmentEnd > entryT && StorageChunks.TryGet(new ChunkCoord(x, y, z), out WorldChunk chunk))
             {
                 // The interval overshoot applies only at cell boundaries,
                 // never past the ray's own end — a hit epsilon beyond

@@ -494,7 +494,7 @@ public static class MapSceneBinder
         try
         {
             ModelAsset model = assets.LoadModel(mesh.Model);
-            if (model.Data is not { } data)
+            if (model.Metadata is not { } data)
             {
                 report?.RecordUnresolved(node.Name, mesh.Model, model.Error ?? "the model is not loaded");
                 return;
@@ -512,7 +512,7 @@ public static class MapSceneBinder
             }
 
             node.MeshRenderer = new MeshRenderer(
-                model.Meshes[mesh.Submesh], model.MaterialFor(data.Meshes[mesh.Submesh]));
+                model.Meshes[mesh.Submesh], model.MaterialFor(data.Meshes[mesh.Submesh].MaterialIndex));
             node.MeshSource = new MeshSource(mesh.Model, mesh.Submesh);
         }
         catch (Exception ex) when (

@@ -24,6 +24,8 @@ using SpectraEngine.Core.Graphics;
 // through the same headless renderer the scene suite uses - which overrides the
 // internal readback and GPU-resource bookkeeping every Renderer subclass does.
 [assembly: InternalsVisibleTo("Spectra.Kitchen.Tests")]
+// Reproducible review probes exercise the same internal placement journal.
+[assembly: InternalsVisibleTo("SceneProbe")]
 
 namespace SpectraEngine.Core.Scene;
 
@@ -120,8 +122,10 @@ internal sealed class SceneBvh
     private int[] _traversalStack = new int[64];
     private readonly List<SceneNode> _subtreeStack = [];
 
-    internal SceneBvh(Scene scene)
+    private readonly bool _drawableOnly;
+    internal SceneBvh(Scene scene, bool drawableOnly = false)
     {
+        _drawableOnly = drawableOnly;
         // Seed the pool small and chain every node onto the free list; the
         // pool doubles on demand.
         _nodes = new Node[16];
@@ -155,12 +159,12 @@ internal sealed class SceneBvh
 
     // --- Event-driven maintenance -------------------------------------------
 
-    private static bool IsSpatial(SceneNode node) => node.MeshRenderer is not null || node.Brush is not null;
+    private bool IsSpatial(SceneNode node) => node.MeshRenderer is not null ||
+        (node.Brush is not null && (!_drawableOnly || node.BrushKind == BrushKind.Part));
 
     private void OnNodeAdded(SceneNode node)
     {
-        if (IsSpatial(node))
-            Insert(node);
+        OnSpatialComponentChanged(node);
     }
 
     private void OnNodeRemoved(SceneNode node)
@@ -615,6 +619,12 @@ internal sealed class SceneBvh
     /// frustum to <paramref name="results"/>. See
     /// <see cref="Scene.QueryFrustum"/> for the public contract.
     /// </summary>
+    internal bool EntirelyInside(in Frustum frustum)
+    {
+        FlushDirtyLeaves();
+        return _root == Null || frustum.Contains(_nodes[_root].FatBox);
+    }
+
     public void QueryFrustum(in Frustum frustum, List<SceneNode> results)
     {
         FlushDirtyLeaves();

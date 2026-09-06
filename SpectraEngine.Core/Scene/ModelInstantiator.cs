@@ -57,7 +57,7 @@ public static class ModelInstantiator
     {
         ArgumentNullException.ThrowIfNull(model);
 
-        ModelData data = model.Data
+        ModelMetadata data = model.Metadata
             ?? throw new InvalidOperationException(
                 $"Model '{model.RelativePath}' is not loaded yet" +
                 (model.Error is { } error ? $" ({error})" : "; pump the asset manager until it is ready") +
@@ -78,7 +78,7 @@ public static class ModelInstantiator
 
     // One scene node per imported node, then the submeshes.
     private static SceneNode BuildNode(
-        ModelNode source, ModelAsset model, ModelData data, string name)
+        ModelNode source, ModelAsset model, ModelMetadata data, string name)
     {
         var node = new SceneNode(name)
         {
@@ -107,7 +107,7 @@ public static class ModelInstantiator
     // single-submesh case directly keeps the common prop a one-node instance
     // instead of gratuitously nesting it.
     private static void AttachMeshes(
-        SceneNode node, ModelNode source, ModelAsset model, ModelData data)
+        SceneNode node, ModelNode source, ModelAsset model, ModelMetadata data)
     {
         IReadOnlyList<int> meshIndices = source.MeshIndices;
         if (meshIndices.Count == 0)
@@ -122,7 +122,7 @@ public static class ModelInstantiator
         for (int i = 0; i < meshIndices.Count; i++)
         {
             int meshIndex = meshIndices[i];
-            ModelMesh mesh = data.Meshes[meshIndex];
+            ModelMeshInfo mesh = data.Meshes[meshIndex];
             SceneNode part = node.CreateChild(FirstNonEmpty(null, mesh.Name, $"Submesh{i}"));
             Attach(part, model, data, meshIndex);
         }
@@ -139,16 +139,16 @@ public static class ModelInstantiator
     /// Order matters: the renderer's setter clears the source when handed a
     /// null, so the source is written second.
     /// </remarks>
-    private static void Attach(SceneNode node, ModelAsset model, ModelData data, int meshIndex)
+    private static void Attach(SceneNode node, ModelAsset model, ModelMetadata data, int meshIndex)
     {
         node.MeshRenderer = CreateRenderer(model, data, meshIndex);
         node.MeshSource = new MeshSource(model.RelativePath, meshIndex);
     }
 
-    private static MeshRenderer CreateRenderer(ModelAsset model, ModelData data, int meshIndex)
+    private static MeshRenderer CreateRenderer(ModelAsset model, ModelMetadata data, int meshIndex)
     {
-        ModelMesh source = data.Meshes[meshIndex];
-        return new MeshRenderer(model.Meshes[meshIndex], model.MaterialFor(in source));
+        ModelMeshInfo source = data.Meshes[meshIndex];
+        return new MeshRenderer(model.Meshes[meshIndex], model.MaterialFor(source.MaterialIndex));
     }
 
     private static string FirstNonEmpty(string? preferred, string fallback, string lastResort)

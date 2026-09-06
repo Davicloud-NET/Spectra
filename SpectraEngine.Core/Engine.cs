@@ -128,6 +128,7 @@ public sealed class Engine
     // decided it. A composited host imports on the generation and nothing else.
     private Renderer.SharedTargetHandle? _publishedSharedTarget;
     private int _publishedSharedGeneration;
+    private Func<FrameSnapshotBuilder, FrameSnapshot>? _snapshotBuilder;
 
     /// <summary>
     /// Builds and publishes this frame's snapshot, if one is due. Render thread
@@ -175,7 +176,7 @@ public sealed class Engine
             Host.MarkDirty();
         }
 
-        Host.PublishFrame(elapsed, builder =>
+        Host.PublishFrame(elapsed, _snapshotBuilder ??= builder =>
         {
             ISceneEditor? editor = _sceneManager.Editor;
 
@@ -945,6 +946,7 @@ public sealed class Engine
             // because the render thread has exited.
             while (!_closeRequested && !Host.ShutdownRequested)
             {
+                Profiler.BeginFrame();
                 double now = clock.Elapsed.TotalSeconds;
                 double rawDelta = now - previous;
                 previous = now;
@@ -1006,6 +1008,7 @@ public sealed class Engine
                 bool editorNavigated = false;
                 if (!playing)
                 {
+                    using var editorTiming = Profiler.Measure(FramePhase.Editor);
                     editorNavigated = editor is not null && editor.Update(deltaTime);
                     if (!editorNavigated)
                         _cameraController?.Update(deltaTime);
@@ -1086,13 +1089,15 @@ public sealed class Engine
                 // MaxTicksPerFrame times a frame would be that many shape-churn
                 // batches of which at most one can do work.
                 if (_sceneManager.ActiveScene is { } physicsScene)
+                using (Profiler.Measure(FramePhase.CollisionSync))
                     physics.SyncStaticWorld(physicsScene);
 
                 // The other half of the same story: part brushes are NOT in
                 // that compile, so their meshes are built and collected here
                 // instead. Proportional to the number of distinct part brushes,
                 // never to the world — a part that merely moved is a cache hit.
-                _sceneManager.ActiveScene?.ProcessPartBrushMeshes(_renderer);
+                using (Profiler.Measure(FramePhase.PartMeshes))
+                    _sceneManager.ActiveScene?.ProcessPartBrushMeshes(_renderer);
 
                 // Same shape, for content: background decodes hand their pixel
                 // buffers over here and the GPU textures are created on this
@@ -1114,7 +1119,8 @@ public sealed class Engine
                     _audioManager.SetListener(listener.Position, listener.Forward, listener.Up);
                 }
 
-                _audioManager.Update();
+                using (Profiler.Measure(FramePhase.Audio))
+                    _audioManager.Update();
 
                 // Render poses last, once per frame: the blend between the two
                 // most recent ticks. A render-only overlay — it must never
@@ -1279,7 +1285,8 @@ public sealed class Engine
                 // After Present, so a snapshot describes a frame that is
                 // genuinely finished, and the handler's cost lands where it can
                 // only delay the NEXT frame rather than this one's presentation.
-                PublishHostFrame(clock.Elapsed);
+                using (Profiler.Measure(FramePhase.Snapshot))
+                    PublishHostFrame(clock.Elapsed);
 
                 Profiler.EndFrame();
             }

@@ -36,11 +36,11 @@ public readonly record struct BrushSubmesh(MaterialRef Source, Mesh Mesh, Materi
 /// the prefab case and costs nothing extra.
 /// </para>
 /// <para>
-/// <b>Mark and sweep, once per frame, on the render thread.</b> Entries touched
-/// during a pump survive it; entries that were not are destroyed at its end.
-/// That is what collects a brush nobody references any more — after a swap, a
-/// detach, a conversion to <see cref="BrushKind.World"/>, or a node's removal —
-/// without any of those four paths having to know this cache exists.
+/// Membership changes adjust reference counts on the render thread. The pump
+/// reconciles their final counts before creating or destroying meshes; a
+/// detach/reattach in one frame preserves a shared mesh. Transform changes
+/// enqueue no work. Releasing graphics resources retains membership so the
+/// next pump can recreate the same shared geometry.
 /// </para>
 /// <para>
 /// <b>The faces are snapped, exactly as the world path snaps them.</b> Skipping
@@ -59,7 +59,8 @@ internal sealed class PartBrushMeshCache
     private sealed class Entry
     {
         public BrushSubmesh[] Submeshes = [];
-        public bool Touched;
+        public int References;
+        public bool Built;
     }
 
     // Reference identity, deliberately: Brush does not override equality, and
@@ -67,10 +68,12 @@ internal sealed class PartBrushMeshCache
     // upload sites — sharing a GPU mesh between them would need refcounting
     // this cache does not want.
     private readonly Dictionary<Brush, Entry> _entries = new(BrushIdentity.Comparer);
-    private readonly List<Brush> _sweepScratch = [];
+    private readonly Dictionary<SceneNode, Brush> _references = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<Brush> _dirty = new(BrushIdentity.Comparer);
 
     /// <summary>How many distinct part brushes currently hold GPU meshes.</summary>
-    public int Count => _entries.Count;
+    public int Count { get; private set; }
+    internal int PendingCount => _dirty.Count;
 
     /// <summary>Total draw calls the cached part brushes expand to.</summary>
     public int SubmeshCount
@@ -84,49 +87,61 @@ internal sealed class PartBrushMeshCache
         }
     }
 
-    public void BeginPump()
+    /// <summary>Records final brush-reference membership without touching GPU resources.</summary>
+    public void SetReference(SceneNode node, Brush? brush)
+    {
+        _references.TryGetValue(node, out Brush? old);
+        if (ReferenceEquals(old, brush)) return;
+        if (old is not null)
+        {
+            _entries[old].References--;
+            _dirty.Add(old);
+            _references.Remove(node);
+        }
+        if (brush is not null)
+        {
+            if (!_entries.TryGetValue(brush, out Entry? entry))
+                _entries.Add(brush, entry = new Entry());
+            entry.References++;
+            _references.Add(node, brush);
+            _dirty.Add(brush);
+        }
+    }
+
+    /// <summary>Applies only changed memberships. A detach/reattach within a frame reuses its meshes.</summary>
+    public void Pump(Renderer renderer, Func<MaterialRef, Material?> resolveMaterial)
+    {
+        while (_dirty.Count > 0)
+        {
+            using var iterator = _dirty.GetEnumerator();
+            iterator.MoveNext();
+            Brush brush = iterator.Current;
+            Entry entry = _entries[brush];
+            if (entry.References == 0)
+            {
+                Destroy(renderer, entry.Submeshes);
+                if (entry.Built) Count--;
+                _entries.Remove(brush);
+            }
+            else if (!entry.Built)
+            {
+                entry.Submeshes = Build(renderer, brush, resolveMaterial);
+                entry.Built = true;
+                Count++;
+            }
+            _dirty.Remove(brush);
+        }
+    }
+
+    public void RefreshMaterials(Func<MaterialRef, Material?> resolveMaterial)
     {
         foreach (Entry entry in _entries.Values)
-            entry.Touched = false;
+            for (int i = 0; i < entry.Submeshes.Length; i++)
+            {
+                BrushSubmesh mesh = entry.Submeshes[i];
+                entry.Submeshes[i] = mesh with { Material = resolveMaterial(mesh.Source) };
+            }
     }
-
-    /// <summary>
-    /// Ensures <paramref name="brush"/> has GPU meshes and marks it live for
-    /// this pump. A build failure is swallowed into an empty entry rather than
-    /// thrown: a content error must never reach the draw loop, and a part that
-    /// fails to build should be invisible, not fatal.
-    /// </summary>
-    public void Acquire(Renderer renderer, Brush brush, Func<MaterialRef, Material?> resolveMaterial)
-    {
-        if (_entries.TryGetValue(brush, out Entry? existing))
-        {
-            existing.Touched = true;
-            return;
-        }
-
-        var entry = new Entry { Touched = true, Submeshes = Build(renderer, brush, resolveMaterial) };
-        _entries[brush] = entry;
-    }
-
-    /// <summary>Destroys every entry no <see cref="Acquire"/> touched this pump.</summary>
-    public void EndPump(Renderer renderer)
-    {
-        _sweepScratch.Clear();
-        foreach (KeyValuePair<Brush, Entry> pair in _entries)
-        {
-            if (!pair.Value.Touched)
-                _sweepScratch.Add(pair.Key);
-        }
-
-        for (int i = 0; i < _sweepScratch.Count; i++)
-        {
-            Brush key = _sweepScratch[i];
-            Destroy(renderer, _entries[key].Submeshes);
-            _entries.Remove(key);
-        }
-        _sweepScratch.Clear();
-    }
-
     public bool TryGet(Brush brush, out BrushSubmesh[] submeshes)
     {
         if (_entries.TryGetValue(brush, out Entry? entry))
@@ -143,7 +158,13 @@ internal sealed class PartBrushMeshCache
     {
         foreach (Entry entry in _entries.Values)
             Destroy(renderer, entry.Submeshes);
-        _entries.Clear();
+        foreach ((Brush brush, Entry entry) in _entries)
+        {
+            entry.Submeshes = [];
+            entry.Built = false;
+            _dirty.Add(brush);
+        }
+        Count = 0;
     }
 
     private static BrushSubmesh[] Build(Renderer renderer, Brush brush, Func<MaterialRef, Material?> resolveMaterial)

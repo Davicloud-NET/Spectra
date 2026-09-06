@@ -1,4 +1,6 @@
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Graphics;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -44,7 +46,7 @@ public sealed class ModelData
         for (int i = 0; i < meshes.Length; i++)
         {
             vertices += meshes[i].VertexCount;
-            indices += meshes[i].Indices.Length;
+            indices += meshes[i].IndexCount;
         }
         VertexCount = vertices;
         IndexCount = indices;
@@ -118,20 +120,72 @@ public sealed class ModelData
 /// zero for every vertex, which samples one texel rather than leaving garbage in
 /// the stream.
 /// </param>
-public readonly record struct ModelMesh(
-    string Name,
-    int MaterialIndex,
-    float[] Vertices,
-    uint[] Indices,
-    Aabb LocalBounds,
-    bool HadNormals,
-    bool HadTextureCoordinates)
+public readonly record struct ModelMesh
 {
-    /// <summary>Number of vertices, i.e. <see cref="Vertices"/> length over 8.</summary>
-    public int VertexCount => Vertices.Length / ModelVertexLayout.FloatsPerVertex;
+    private readonly LegacySlice? _legacy;
+    public string Name { get; init; }
+    public int MaterialIndex { get; init; }
+    public Aabb LocalBounds { get; init; }
+    public bool HadNormals { get; init; }
+    public bool HadTextureCoordinates { get; init; }
+    public ModelGeometry Geometry { get; }
+    public MeshDrawRange DrawRange { get; }
+    public int VertexCount { get; }
+    public int IndexCount => checked((int)DrawRange.IndexCount);
+
+    // Compatibility arrays are materialized only when explicitly requested.
+    // Upload and picking consume Geometry/DrawRange and never make these copies.
+    public float[] Vertices => _legacy?.Vertices ?? [];
+    public uint[] Indices => _legacy?.Indices ?? [];
+
+    public ModelMesh(string Name, int MaterialIndex, float[] Vertices, uint[] Indices,
+        Aabb LocalBounds, bool HadNormals, bool HadTextureCoordinates)
+        : this(Name, MaterialIndex, new ModelGeometry(Vertices, Indices),
+            new(0, (uint)Indices.Length), 0, Vertices.Length / ModelVertexLayout.FloatsPerVertex,
+            LocalBounds, HadNormals, HadTextureCoordinates) { }
+
+    internal ModelMesh(string name, int materialIndex, ModelGeometry geometry, MeshDrawRange range,
+        int firstVertex, int vertexCount, Aabb bounds, bool hadNormals, bool hadUvs)
+    {
+        Name = name; MaterialIndex = materialIndex; Geometry = geometry; DrawRange = range;
+        LocalBounds = bounds; HadNormals = hadNormals; HadTextureCoordinates = hadUvs;
+        VertexCount = vertexCount;
+        _legacy = new(geometry, range, firstVertex, vertexCount);
+    }
 
     /// <summary>Number of triangles, i.e. <see cref="Indices"/> length over 3.</summary>
-    public int TriangleCount => Indices.Length / 3;
+    public int TriangleCount => IndexCount / 3;
+
+    private sealed class LegacySlice(ModelGeometry geometry, MeshDrawRange range, int firstVertex, int vertexCount)
+    {
+        private float[]? _vertices;
+        private uint[]? _indices;
+        public float[] Vertices
+        {
+            get
+            {
+                lock (this) return _vertices ??= firstVertex == 0 && vertexCount == geometry.VertexCount
+                    ? geometry.Vertices
+                    : geometry.Vertices.AsSpan(firstVertex * ModelVertexLayout.FloatsPerVertex,
+                        vertexCount * ModelVertexLayout.FloatsPerVertex).ToArray();
+            }
+        }
+        public uint[] Indices
+        {
+            get
+            {
+                lock (this)
+                {
+                    if (_indices is not null) return _indices;
+                    if (range.FirstIndex == 0 && range.IndexCount == geometry.Indices.Length && firstVertex == 0)
+                        return _indices = geometry.Indices;
+                    var indices = geometry.Indices.AsSpan((int)range.FirstIndex, (int)range.IndexCount).ToArray();
+                    for (int i = 0; i < indices.Length; i++) indices[i] = checked(indices[i] - (uint)firstVertex);
+                    return _indices = indices;
+                }
+            }
+        }
+    }
 }
 
 /// <summary>

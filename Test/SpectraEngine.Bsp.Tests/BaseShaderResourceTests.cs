@@ -49,9 +49,9 @@ public sealed class BaseShaderResourceTests
     {
         // The accessors go through the same lookup, so this catches a constant
         // that names a file the glob does not embed. The count ties the two
-        // lists together: a ninth accessor added without a ninth entry in
+        // lists together: a tenth accessor added without a tenth entry in
         // FileNames would otherwise leave the enumeration test still green.
-        BaseShaders.FileNames.Count.ShouldBe(8);
+        BaseShaders.FileNames.Count.ShouldBe(9);
 
         foreach (string source in new[]
                  {
@@ -59,6 +59,7 @@ public sealed class BaseShaderResourceTests
                      BaseShaders.DebugLine,
                      BaseShaders.PostResolve,
                      BaseShaders.GBufferFill,
+                     BaseShaders.GBufferFillCompact,
                      BaseShaders.DeferredLight,
                      BaseShaders.ShadowDepth,
                      BaseShaders.WorldLine,

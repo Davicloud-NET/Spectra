@@ -116,7 +116,28 @@ public abstract class Mesh : IDisposable
     /// </summary>
     internal Action? Unregister { get; set; }
 
+    internal void SetCpuViews(IReadOnlyList<Vector3> positions, IReadOnlyList<Vector3> normals, IReadOnlyList<uint> indices)
+    { Positions = positions; Normals = normals; Indices = indices; }
+
+    internal void SetKnownBounds(in Aabb bounds) { LocalBounds = bounds; HasLocalBounds = true; }
+
+    internal virtual void WriteUploadBytes(bool indices, int offset, ReadOnlySpan<byte> bytes) =>
+        throw new NotSupportedException("This mesh has no resumable upload path.");
+
     public abstract void Draw();
+
+    /// <summary>Draws an indexed range. Backends support a signed base-vertex offset.</summary>
+    public virtual void DrawRange(MeshDrawRange range)
+    {
+        if (range != new MeshDrawRange(0, IndexCount)) throw new NotSupportedException("This mesh does not support draw ranges.");
+        Draw();
+    }
+
+    public virtual void DrawInstancedRange(MeshDrawRange range, InstanceBuffer instances, int instanceCount, int firstInstance = 0)
+    {
+        if (range != new MeshDrawRange(0, IndexCount)) throw new NotSupportedException("This mesh does not support draw ranges.");
+        DrawInstanced(instances, instanceCount, firstInstance);
+    }
 
     /// <summary>
     /// Draws this mesh <paramref name="instanceCount"/> times, with per-instance

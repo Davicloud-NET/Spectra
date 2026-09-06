@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace SpectraEngine.Core.Bsp;
@@ -35,6 +36,16 @@ public sealed class WorldChunk
     private readonly List<Polygon> _weldedSurfaces = [];
 
     internal WorldChunk(ChunkCoord coord) => Coord = coord;
+
+    internal WorldChunk RemapIndices(Func<int, int> map)
+    {
+        var result = new WorldChunk(Coord) { Bsp = Bsp };
+        foreach (int i in _ownedBrushIndices) result._ownedBrushIndices.Add(map(i));
+        foreach (int i in _residentBrushIndices) result._residentBrushIndices.Add(map(i));
+        result._surfaces.AddRange(_surfaces);
+        result._weldedSurfaces.AddRange(_weldedSurfaces);
+        return result;
+    }
 
     /// <summary>This cell's coordinates in the grid.</summary>
     public ChunkCoord Coord { get; }

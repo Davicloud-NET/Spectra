@@ -194,6 +194,8 @@ public sealed class SceneManager
 
     private SceneNode? _spinner;
     private DemoBobAnimation? _pillarBob;
+    /// <summary>Opt-in CSG stress fixture. Off leaves the built-in scene at rest.</summary>
+    public bool DemoCsgAnimation { get; set; }
     private double _elapsed;
 
     // Both periodic lines wait one full interval, for the same reason: they
@@ -1588,8 +1590,11 @@ public sealed class SceneManager
         _lastGen1 = gen1;
         _lastGen2 = gen2;
 
+        string buffers = _renderer?.MeshMemory is { } memory
+            ? $", mesh buffers active/retired/pooled {memory.Active / 1048576.0:0.00}/{memory.Retired / 1048576.0:0.00}/{memory.Pooled / 1048576.0:0.00} MiB"
+            : string.Empty;
         return $"{megabytesPerSecond:0.0} MB/s allocated ({renderMegabytesPerSecond:0.0} on the render thread), " +
-               $"{collections}, {GC.GetTotalMemory(forceFullCollection: false) / (1024 * 1024)} MB heap";
+               $"{collections}, {GC.GetTotalMemory(forceFullCollection: false) / (1024 * 1024)} MB heap{buffers}";
     }
 
     // One phrase for the shadow state, because "shadows are on" and "shadows
@@ -1671,7 +1676,7 @@ public sealed class SceneManager
         // never be the writer that wins an argument with a gizmo: the animation
         // re-centres on any edit made since the last frame rather than
         // overwriting it. See DemoBobAnimation for why that is not optional.
-        _pillarBob?.Advance(_elapsed);
+        if (DemoCsgAnimation) _pillarBob?.Advance(_elapsed);
 
         if (ActiveScene is { } scene)
         {

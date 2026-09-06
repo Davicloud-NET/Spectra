@@ -8,6 +8,10 @@ namespace SpectraEngine.Core.Graphics;
 /// </summary>
 public abstract class Texture : IDisposable
 {
+    internal virtual void WriteUploadRows(int level, TextureMipDesc mip, int firstRow, int rowCount, ReadOnlySpan<byte> bytes) =>
+        throw new NotSupportedException("This texture has no resumable upload path.");
+    internal virtual void FinishUpload(bool generateMips) { }
+    internal virtual int UploadRowPitch(TextureMipDesc mip) => TextureFormatInfo.TightRowPitch(Format, mip.Width);
     public int Width { get; protected set; }
     public int Height { get; protected set; }
     public TextureFormat Format { get; protected set; }

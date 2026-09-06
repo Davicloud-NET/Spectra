@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Graphics;
@@ -42,12 +42,14 @@ public sealed partial class Scene
     public Scene(string name = "Scene")
     {
         Name = name;
+        _drawableComparison = _drawableNodes.Compare;
         // The selection subscribes to NodeRemoved for auto-deselection, so it
         // must exist before any node can leave the graph.
         Selection = new SelectionSet(this);
         // The spatial index subscribes to all three change events, so it too
         // must exist before the root (and everything after it) enters the graph.
         Bvh = new SceneBvh(this);
+        DrawableBvh = new SceneBvh(this, drawableOnly: true);
         // The root is created by the property initializer before this runs;
         // claiming it here makes every node later attached under it inherit
         // the owner reference that powers automatic static-world dirtying.
@@ -74,6 +76,7 @@ public sealed partial class Scene
     /// thread only, like every other scene member.
     /// </summary>
     internal SceneBvh Bvh { get; }
+    internal SceneBvh DrawableBvh { get; }
 
     // --- Scene change events ------------------------------------------------
     // Render thread only, like all scene state: the graph is only ever mutated
@@ -182,6 +185,7 @@ public sealed partial class Scene
 
     internal void OnNodeRemoved(SceneNode node)
     {
+        ForgetWorldPlacement(node);
         _graphStructureVersion++;
         // De-index before the event, mirroring how Owner is repointed before
         // the notification: a NodeRemoved handler must not be able to look the
@@ -194,6 +198,7 @@ public sealed partial class Scene
         // leaving whatever it carries, and its meshes are collected by the next
         // pump's sweep.
         _partBrushNodes.Remove(node);
+        _partBrushMeshes.SetReference(node, null);
         _subtractiveBrushNodes.Remove(node);
         _inertPartBrushNodes.Remove(node);
         _drawableNodes.Remove(node);
@@ -211,6 +216,7 @@ public sealed partial class Scene
     internal void OnNodeSpatialComponentChanged(SceneNode node)
     {
         Bvh.OnSpatialComponentChanged(node);
+        DrawableBvh.OnSpatialComponentChanged(node);
         // The Brush setter routes through here unconditionally (it is one of
         // the two gate sites that must stay kind-blind), which makes it the
         // natural place to keep the part set honest through attach, swap and
@@ -226,10 +232,8 @@ public sealed partial class Scene
     internal void UpdateLightMembership(SceneNode node)
     {
         bool shouldBeListed = node.Light is not null;
-        int index = _lightNodes.IndexOf(node);
-
-        if (shouldBeListed && index < 0) _lightNodes.Add(node);
-        else if (!shouldBeListed && index >= 0) _lightNodes.RemoveAt(index);
+        if (shouldBeListed) _lightNodes.Add(node);
+        else _lightNodes.Remove(node);
     }
 
     /// <summary>Nodes currently carrying a <see cref="Scene.Light"/>, in attachment order.</summary>
@@ -237,6 +241,10 @@ public sealed partial class Scene
 
     internal void UpdatePartBrushMembership(SceneNode node)
     {
+        TrackWorldPlacement(node);
+        _partBrushMeshes.SetReference(node,
+            node.BrushKind == BrushKind.Part && node.Brush is { Operation: BrushOperation.Additive }
+                ? node.Brush : null);
         // ADDITIVE part brushes only. A subtractive brush has no outward skin —
         // its geometry is the cavity walls it induces in the brushes it cuts —
         // so building a mesh from its own faces would upload the OUTWARD skin
@@ -293,18 +301,19 @@ public sealed partial class Scene
     // here (it is proportional to what can draw, not to the world) and wants to
     // become a second BVH only once drawables themselves number in the
     // thousands.
-    private readonly List<SceneNode> _drawableNodes = [];
+    private readonly OrderedIdentityList<SceneNode> _drawableNodes = new();
+    private readonly Comparison<SceneNode> _drawableComparison;
 
     private void UpdateDrawableMembership(SceneNode node)
     {
+        DrawableBvh.OnSpatialComponentChanged(node);
         // A mesh renderer draws. So does a PART brush, from its own brush-local
         // mesh. A world brush does not: the static world already carries it.
         bool drawable = node.MeshRenderer is not null ||
                         (node.BrushKind == BrushKind.Part && node.Brush is not null);
 
-        int index = _drawableNodes.IndexOf(node);
-        if (drawable && index < 0) _drawableNodes.Add(node);
-        else if (!drawable && index >= 0) _drawableNodes.RemoveAt(index);
+        if (drawable) _drawableNodes.Add(node);
+        else _drawableNodes.Remove(node);
     }
 
     /// <summary>Nodes that can produce a draw of their own: mesh renderers and part brushes.</summary>
@@ -329,8 +338,10 @@ public sealed partial class Scene
 
     internal void OnNodeSubtreeMoved(SceneNode node)
     {
+        ReorderWorldPlacements(node);
         _graphStructureVersion++;
         Bvh.OnSubtreeMoved(node);
+        DrawableBvh.OnSubtreeMoved(node);
         NodeReparented?.Invoke(node);
     }
 
@@ -727,11 +738,15 @@ public sealed partial class Scene
         // Over what can DRAW, not over everything indexed for picking. See
         // UpdateDrawableMembership for the measurement that motivated it.
         _renderViewScratch.Clear();
-        for (int i = 0; i < _drawableNodes.Count; i++)
+        IReadOnlyList<SceneNode> visible = _drawableNodes;
+        if (!DrawableBvh.EntirelyInside(in frustum))
         {
-            SceneNode candidate = _drawableNodes[i];
-            if (Bvh.TryGetWorldBounds(candidate, out Aabb bounds) && frustum.Intersects(bounds))
-                _renderViewScratch.Add(candidate);
+            DrawableBvh.QueryFrustum(in frustum, _renderViewScratch);
+            if (_renderViewScratch.Count != _drawableNodes.Count)
+            {
+                if (_renderViewScratch.Count > 1) _renderViewScratch.Sort(_drawableComparison);
+                visible = _renderViewScratch;
+            }
         }
 
         // The query yields every visible spatial node, brush nodes included.
@@ -746,9 +761,9 @@ public sealed partial class Scene
         // read as larger than its own total.
         int meshItems = 0;
         int partBrushes = 0;
-        for (int i = 0; i < _renderViewScratch.Count; i++)
+        for (int i = 0; i < visible.Count; i++)
         {
-            SceneNode node = _renderViewScratch[i];
+            SceneNode node = visible[i];
             if (node.MeshRenderer is { } meshRenderer)
             {
                 meshItems++;
@@ -856,6 +871,7 @@ public sealed partial class Scene
     // this needs no tree and no reordering. Emission order is untouched.
     private const int ChunkClusterSize = 64;
     private readonly List<Aabb> _chunkClusterBounds = [];
+    private readonly HashSet<int> _dirtyChunkClusters = [];
     private int _staticWorldBatchTotal;
 
     // Rebuilt whenever the chunk list changes shape. O(chunks), and a swap that
@@ -885,6 +901,19 @@ public sealed partial class Scene
         }
     }
 
+    private void RefitChunkCluster(int cluster)
+    {
+        int start = cluster * ChunkClusterSize;
+        int end = Math.Min(start + ChunkClusterSize, _staticWorldChunkList.Count);
+        Aabb bounds = _staticWorldChunkList[start].RenderBounds;
+        for (int i = start + 1; i < end; i++)
+        {
+            Aabb box = _staticWorldChunkList[i].RenderBounds;
+            bounds = new Aabb(Vector3.Min(bounds.Min, box.Min), Vector3.Max(bounds.Max, box.Max));
+        }
+        _chunkClusterBounds[cluster] = bounds;
+    }
+
     // Every owned node carrying a BrushKind.Part brush, and the GPU meshes
     // those brushes draw with.
     //
@@ -899,7 +928,7 @@ public sealed partial class Scene
     // the light selection is a nearest-N, so ties have to be broken by something
     // stable or two runs of the same scene light it differently. A hash set's
     // iteration order is not that something. Insertion order is.
-    private readonly List<SceneNode> _lightNodes = [];
+    private readonly OrderedIdentityList<SceneNode> _lightNodes = new();
 
     private readonly HashSet<SceneNode> _partBrushNodes = [];
     private readonly PartBrushMeshCache _partBrushMeshes = new();
@@ -989,6 +1018,8 @@ public sealed partial class Scene
     /// </summary>
     public void RefreshStaticWorldMaterials()
     {
+        _resolveWorldMaterial ??= ResolveWorldMaterial;
+        _partBrushMeshes.RefreshMaterials(_resolveWorldMaterial);
         for (int i = 0; i < _staticWorldChunkList.Count; i++)
         {
             StaticWorldChunkMesh chunk = _staticWorldChunkList[i];
@@ -1039,18 +1070,12 @@ public sealed partial class Scene
     /// </remarks>
     public void ProcessPartBrushMeshes(Renderer renderer)
     {
-        if (_partBrushNodes.Count == 0 && _partBrushMeshes.Count == 0)
+        if (_partBrushMeshes.PendingCount == 0)
             return;
 
         _resolveWorldMaterial ??= ResolveWorldMaterial;
 
-        _partBrushMeshes.BeginPump();
-        foreach (SceneNode node in _partBrushNodes)
-        {
-            if (node.Brush is { } brush)
-                _partBrushMeshes.Acquire(renderer, brush, _resolveWorldMaterial);
-        }
-        _partBrushMeshes.EndPump(renderer);
+        _partBrushMeshes.Pump(renderer, _resolveWorldMaterial);
     }
 
     /// <summary>How many distinct part brushes currently hold GPU meshes.</summary>
@@ -1156,28 +1181,8 @@ public sealed partial class Scene
     private int _compileStatsCacheHits;
     private int _compileStatsCacheMisses;
 
-    // --- Dirty-cell tracking -------------------------------------------------
-    // The chunk grid's edit granularity: which cells' brush contents changed
-    // since the last compile. Maintained entirely inside the snapshot/pump on
-    // the render thread — no SceneNode surgery: each successful snapshot's
-    // per-node footprints are remembered here and diffed against the next
-    // snapshot's. A node edit sends two signals: the version bump that arms
-    // the pump, and (for placement-preserving edits) the edited node's
-    // identity, which is what lets the snapshot and this diff run over the
-    // edit's neighbourhood instead of the whole graph.
-
-    // Per-node record of the last successfully captured snapshot: the brush
-    // reference and placement matrix the footprint was computed from, plus the
-    // footprint itself (sorted, from ChunkGrid.ComputeFootprint). Replaced
-    // wholesale at every snapshot; the footprint array is reused when the
-    // node's placement is unchanged, so an idle node costs one dictionary move
-    // per compile, no cell math.
-    private readonly record struct NodeFootprint(Brush Brush, Matrix4x4 Transform, ChunkCoord[] Footprint);
-
-    // Footprints of the previous successful snapshot (empty before the first
-    // one, which is exactly what makes the first compile all-dirty: every node
-    // diffs as newly added).
-    private Dictionary<SceneNode, NodeFootprint> _lastSnapshotFootprints = [];
+    // Dirty cells come from the journal's old/new immutable placements. A failed
+    // compile restores its cells before retrying against the published world.
 
     // Cells dirtied but not yet handed to a compile. Normally drained at every
     // launch; a faulted background compile merges its cell set back in so the
@@ -1189,33 +1194,7 @@ public sealed partial class Scene
     // _pendingDirtyCells).
     private ChunkCoord[]? _inFlightDirtyCells;
 
-    // --- Incremental snapshot state -----------------------------------------
-    // The per-edit compile LAUNCH must be O(edit neighbourhood) like the
-    // compile itself: re-walking the whole graph (and re-validating every
-    // placement, and re-diffing every footprint) per launch was the last
-    // O(world) stage in the edit loop — ~10 ms and ~15 MiB of garbage per
-    // drag frame at 50k parts, dwarfing the sub-millisecond background
-    // compile. So the last snapshot is RETAINED (nodes, slot map, placements
-    // in paged copy-on-write storage) and each launch merely patches the
-    // slots of the nodes that actually reported an edit. The retained
-    // placements are immutable (PagedArray derivations share pages), so
-    // handing them to the background task and keeping them here is safe.
-
-    // Nodes of the last successful snapshot, index-aligned with the placement
-    // list handed to the compile, plus the node -> slot map. Rebuilt only by
-    // a full walk.
-    private readonly List<SceneNode> _snapshotNodes = [];
-    private readonly Dictionary<SceneNode, int> _snapshotSlots = [];
-
-    // The last successful snapshot's placements; successors derive by paged
-    // copy-on-write replacement of the edited slots. Null before the first
-    // snapshot.
-    private PagedArray<BrushPlacement>? _snapshotPlacements;
-
-    // Graph-structure version the retained snapshot's traversal order was
-    // captured at; any structural edit since forces a full re-walk (the slot
-    // assignment is order-derived).
-    private int _snapshotStructureVersion;
+    // Stable placement slots and authored order live in Scene.Placements.cs.
 
     // Nodes that reported a brush-affecting edit since the last successful
     // snapshot — each entry is the EDITED node, whose subtree contains the
@@ -1225,17 +1204,10 @@ public sealed partial class Scene
     // loses another node's pending change.
     private readonly HashSet<SceneNode> _dirtyBrushSubtrees = [];
 
-    // Forces the next snapshot to re-walk the whole graph. Set initially, by
-    // the parameterless MarkStaticWorldDirty (no node context — external
-    // callers get the conservative full validation they always had), by
-    // brush attach/detach (placement count changes shift every later slot),
-    // and by any fast-path anomaly.
+    // Context-free public dirty marks request complete validation. Node-aware
+    // edits journal only their affected placements, including structural edits.
     private bool _snapshotForceFull = true;
 
-    // Scratch for the fast path's changed-slot collection; valid only within
-    // one snapshot call. Never handed to the background task.
-    private readonly List<(int Slot, BrushPlacement Placement)> _changedSlotScratch = [];
-    private readonly HashSet<int> _changedSlotSeen = [];
 
     /// <summary>
     /// The sorted dirty-cell set the most recent static-world compile was
@@ -1262,69 +1234,6 @@ public sealed partial class Scene
     // full re-walk) rebuilds the footprint dictionary over all placements,
     // sweeping the old one for departed nodes. Render thread only, called
     // exactly once per handled snapshot.
-    private ChunkCoord[] CollectDirtyCells(
-        IReadOnlyList<BrushPlacement> placements, List<(int Slot, BrushPlacement Placement)>? changedSlots)
-    {
-        if (changedSlots is not null)
-        {
-            foreach ((int slot, BrushPlacement placement) in changedSlots)
-            {
-                SceneNode node = _snapshotNodes[slot];
-                bool hadPrevious = _lastSnapshotFootprints.TryGetValue(node, out NodeFootprint previous);
-                if (hadPrevious && ReferenceEquals(previous.Brush, placement.Brush) &&
-                    previous.Transform == placement.Transform)
-                {
-                    // Edit-flagged but placement unchanged (e.g. a move that
-                    // was reverted before the snapshot): dirty nothing.
-                    continue;
-                }
-
-                ChunkCoord[] footprint = ChunkGrid.ComputeFootprint(in placement);
-                _lastSnapshotFootprints[node] = new NodeFootprint(placement.Brush, placement.Transform, footprint);
-                MarkCellsDirty(footprint);
-                if (hadPrevious)
-                    MarkCellsDirty(previous.Footprint);
-            }
-            return DrainPendingDirtyCells();
-        }
-
-        var newFootprints = new Dictionary<SceneNode, NodeFootprint>(placements.Count);
-        for (int i = 0; i < placements.Count; i++)
-        {
-            SceneNode node = _snapshotNodes[i];
-            BrushPlacement placement = placements[i];
-
-            bool hadFootprint = _lastSnapshotFootprints.TryGetValue(node, out NodeFootprint recorded);
-            if (hadFootprint && ReferenceEquals(recorded.Brush, placement.Brush) &&
-                recorded.Transform == placement.Transform)
-            {
-                // Unchanged placement: same footprint by construction — reuse
-                // the array, dirty nothing. (Matrix float == is safe here: the
-                // snapshot already rejected non-finite transforms, so no NaN
-                // can force a spurious mismatch.)
-                newFootprints[node] = recorded;
-                continue;
-            }
-
-            ChunkCoord[] footprint = ChunkGrid.ComputeFootprint(in placement);
-            newFootprints[node] = new NodeFootprint(placement.Brush, placement.Transform, footprint);
-            MarkCellsDirty(footprint);
-            if (hadFootprint)
-                MarkCellsDirty(recorded.Footprint);
-        }
-
-        // Nodes that left the snapshot (detached, brush removed, or moved to
-        // another scene) leave stale geometry in their old cells.
-        foreach (var (node, previous) in _lastSnapshotFootprints)
-        {
-            if (!newFootprints.ContainsKey(node))
-                MarkCellsDirty(previous.Footprint);
-        }
-
-        _lastSnapshotFootprints = newFootprints;
-        return DrainPendingDirtyCells();
-    }
-
     private ChunkCoord[] DrainPendingDirtyCells()
     {
         var dirty = new ChunkCoord[_pendingDirtyCells.Count];
@@ -1414,21 +1323,7 @@ public sealed partial class Scene
         _snapshotForceFull = true;
     }
 
-    // The set of brushes ADMITTED to the static world changed — a node's
-    // BrushKind flipped — without the graph's shape changing at all.
-    //
-    // This needs its own door because it breaks two separate assumptions at
-    // once, and MarkStaticWorldDirty only covers one of them. The placement
-    // COUNT changed, so every slot after the converted node shifted (that is
-    // the force-full half). But the snapshot's fast path also gates on the
-    // graph-structure version, whose documented meaning is "the brush
-    // snapshot's TRAVERSAL ORDER may have changed" — and a conversion changes
-    // exactly that while adding and removing no nodes, so no membership event
-    // fires and nothing would bump it. A stale structure version plus a
-    // shifted slot map is a trusted diff applied to the wrong placements: the
-    // corruption is silent, and it renders.
-    //
-    // Render thread only, like the two marks below it.
+    // Brush-kind conversion changes admission without changing graph membership.
     internal void MarkAdmissionChanged(SceneNode node)
     {
         // The membership half runs either way: the part set mirrors what the
@@ -1439,7 +1334,6 @@ public sealed partial class Scene
         {
             _graphStructureVersion++;
             _staticWorldVersion++;
-            _snapshotForceFull = true;
         }
 
         UpdatePartBrushMembership(node);
@@ -1479,18 +1373,27 @@ public sealed partial class Scene
     /// the graph itself would be a second expression of that list, and the two
     /// would drift exactly where nothing fails: traversal order is placement order
     /// is the order the carve breaks its overlap ties in.</para>
-    /// <para><b>The walk commits this scene's retained snapshot, as a rebuild
-    /// does</b>, because it IS the rebuild's own capture rather than a copy of it.
-    /// That is free for a bake, whose scene is built to be thrown away, and correct
-    /// for any other caller: the next compile then sees the same baseline a
-    /// synchronous rebuild would have left.</para>
+    /// <para>This read-only capture leaves the live compiler's change journal
+    /// intact, so baking between edits cannot consume unpublished changes.</para>
     /// <para>Returns null and fills <paramref name="defectMessage"/> when a brush
     /// node's world transform is non-rigid, which is the same refusal
     /// <see cref="RebuildStaticWorld"/> makes and the reason a cook reports
     /// <c>SC7001</c> rather than compiling a level that cannot be rendered.</para>
     /// </remarks>
-    public IReadOnlyList<BrushPlacement>? CaptureStaticWorldPlacements(out string? defectMessage) =>
-        SnapshotFullWalk(out defectMessage);
+    public IReadOnlyList<BrushPlacement>? CaptureStaticWorldPlacements(out string? defectMessage)
+    {
+        defectMessage = null;
+        var placements = new List<BrushPlacement>();
+        foreach (var node in Nodes)
+        {
+            if (!node.IsStaticWorldBrush) continue;
+            var world = node.WorldMatrix;
+            if (DescribeNonRigidDefect(world) is { } defect)
+            { defectMessage = DescribeBrushNodeDefect(node, defect); return null; }
+            placements.Add(new(node.Brush!, world));
+        }
+        return placements;
+    }
 
     /// <summary>
     /// Synchronously recompiles the static world from the graph's brush nodes:
@@ -1537,8 +1440,7 @@ public sealed partial class Scene
             }
         }
 
-        IReadOnlyList<BrushPlacement>? placements = SnapshotBrushPlacements(
-            out string? defectMessage, out List<(int Slot, BrushPlacement Placement)>? changedSlots);
+        PlacementSnapshot? placements = SnapshotBrushPlacements(out string? defectMessage);
         if (placements is null)
             throw new InvalidOperationException(defectMessage);
 
@@ -1548,7 +1450,7 @@ public sealed partial class Scene
         // compiles resumed afterwards diff against THIS snapshot, and the
         // dirty set stays observable (the build below is deliberately
         // dirty-agnostic — it compiles everything regardless).
-        ChunkCoord[] dirtyCells = CollectDirtyCells(placements, changedSlots);
+        ChunkCoord[] dirtyCells = CollectDirtyCells(placements);
         LastCompileDirtyCells = dirtyCells;
 
         if (placements.Count == 0)
@@ -1697,8 +1599,7 @@ public sealed partial class Scene
             return;
 
         int version = _staticWorldVersion;
-        IReadOnlyList<BrushPlacement>? placements = SnapshotBrushPlacements(
-            out string? defectMessage, out List<(int Slot, BrushPlacement Placement)>? changedSlots);
+        PlacementSnapshot? placements = SnapshotBrushPlacements(out string? defectMessage);
 
         // Handled either way: a defective snapshot must not retry-spam every
         // frame — the next MarkStaticWorldDirty re-arms the pump.
@@ -1726,7 +1627,7 @@ public sealed partial class Scene
         // Diff this snapshot against the previous one BEFORE branching on the
         // placement count: an emptied scene must still dirty the cells the
         // departed brushes covered.
-        ChunkCoord[] dirtyCells = CollectDirtyCells(placements, changedSlots);
+        ChunkCoord[] dirtyCells = CollectDirtyCells(placements);
         LastCompileDirtyCells = dirtyCells;
 
         if (placements.Count == 0)
@@ -1779,7 +1680,7 @@ public sealed partial class Scene
         IReadOnlyList<BrushPlacement> placements, ChunkCoord[] dirtyCells, CsgWorld? previous, bool orderStable)
     {
         var stopwatch = Stopwatch.StartNew();
-        CsgWorld world = orderStable
+        CsgWorld world = orderStable || placements is PlacementSnapshot
             ? CsgWorld.Build(placements, dirtyCells, previous)
             : CsgWorld.Build(
                 placements, dirtyCells,
@@ -1890,6 +1791,7 @@ public sealed partial class Scene
         RebuildChunkClusters();
         StaticWorld = world;
         StaticWorldCompileCount++;
+        RecordWorldPublication(world);
     }
 
     // The delta swap: applies a patched compile's per-cell mesh changes to
@@ -1925,6 +1827,8 @@ public sealed partial class Scene
         // position (replacements in place, insertions/removals shifting —
         // rare border-crossing edits only).
         int createdIndex = 0;
+        bool shapeChanged = false;
+        _dirtyChunkClusters.Clear();
         foreach ((ChunkCoord coord, ChunkMesh? artifact) in delta)
         {
             bool existed = _staticWorldChunkMeshes.TryGetValue(coord, out StaticWorldChunkMesh old);
@@ -1932,12 +1836,14 @@ public sealed partial class Scene
                 DestroyChunkSubmeshes(renderer, old.Submeshes);
 
             int position = ChunkListLowerBound(coord);
+            _staticWorldBatchTotal += (artifact?.Submeshes.Count ?? 0) - (existed ? old.Submeshes.Length : 0);
             if (artifact is null)
             {
                 if (existed)
                 {
                     _staticWorldChunkMeshes.Remove(coord);
                     _staticWorldChunkList.RemoveAt(position);
+                    shapeChanged = true;
                 }
                 continue;
             }
@@ -1945,14 +1851,22 @@ public sealed partial class Scene
             var entry = new StaticWorldChunkMesh(artifact, createdChunks[createdIndex++]);
             _staticWorldChunkMeshes[coord] = entry;
             if (existed)
+            {
                 _staticWorldChunkList[position] = entry;
+                _dirtyChunkClusters.Add(position / ChunkClusterSize);
+            }
             else
+            {
                 _staticWorldChunkList.Insert(position, entry);
+                shapeChanged = true;
+            }
         }
 
-        RebuildChunkClusters();
+        if (shapeChanged) RebuildChunkClusters();
+        else foreach (int cluster in _dirtyChunkClusters) RefitChunkCluster(cluster);
         StaticWorld = world;
         StaticWorldCompileCount++;
+        RecordWorldPublication(world);
     }
 
     // Render thread only: uploads one cell's artifact as one GPU mesh per
@@ -2016,168 +1930,7 @@ public sealed partial class Scene
         return lo;
     }
 
-    // How a fast (retained-snapshot) capture attempt resolved.
-    private enum FastSnapshotResult
-    {
-        Patched,          // _changedSlotScratch holds the edited slots' new placements
-        Defect,           // a dirty node's world transform is non-rigid — reject the snapshot
-        FullWalkRequired, // the retained snapshot cannot describe this edit — re-walk
-    }
-
-    // Captures one immutable placement per brush node — the node's world
-    // matrix at this instant. The background compile reads only this
-    // snapshot, so the live scene is free to keep mutating while it runs.
-    // Returns null (with a message naming the node and the defect) when any
-    // captured brush node's world transform is non-rigid; the retained
-    // snapshot state and the pending dirty-subtree set are left untouched
-    // then, so the eventual retry still covers every pending edit.
-    //
-    // FAST PATH (the per-frame drag shape): when the graph's structure is
-    // unchanged since the retained snapshot, only the nodes that reported an
-    // edit are re-visited — their subtrees re-captured, validated, and
-    // patched into the retained placement list by paged copy-on-write. Cost
-    // is O(edit neighbourhood), never O(world). `changedSlots` then reports
-    // exactly the patched slots for the footprint diff. A full walk (first
-    // snapshot, structural edit, external MarkStaticWorldDirty, or any
-    // anomaly) re-captures everything and reports null `changedSlots`.
-    private IReadOnlyList<BrushPlacement>? SnapshotBrushPlacements(
-        out string? defectMessage, out List<(int Slot, BrushPlacement Placement)>? changedSlots)
-    {
-        if (!_snapshotForceFull && _snapshotPlacements is not null &&
-            _snapshotStructureVersion == _graphStructureVersion)
-        {
-            switch (TryCollectChangedSlots(out defectMessage))
-            {
-                case FastSnapshotResult.Defect:
-                    changedSlots = null;
-                    return null;
-                case FastSnapshotResult.Patched:
-                    changedSlots = _changedSlotScratch;
-                    if (changedSlots.Count > 0)
-                        _snapshotPlacements = _snapshotPlacements.WithReplacements(changedSlots);
-                    _dirtyBrushSubtrees.Clear();
-                    return _snapshotPlacements;
-            }
-            // FullWalkRequired: fall through to the walk below.
-        }
-
-        changedSlots = null;
-        return SnapshotFullWalk(out defectMessage);
-    }
-
-    // The fast path's capture: expand each dirty subtree to its brush nodes,
-    // validate their world transforms, and collect their slots' replacement
-    // placements into _changedSlotScratch. Mutates ONLY the scratch
-    // containers, so a defect (or an anomaly) leaves every retained structure
-    // untouched.
-    private FastSnapshotResult TryCollectChangedSlots(out string? defectMessage)
-    {
-        defectMessage = null;
-        _changedSlotScratch.Clear();
-        _changedSlotSeen.Clear();
-        foreach (SceneNode root in _dirtyBrushSubtrees)
-        {
-            // A dirty node that left the scene would have bumped the
-            // structure version (membership events), so this never fires; it
-            // guards the fast path against any future dirtying source that
-            // forgets that contract.
-            if (!ReferenceEquals(root.Owner, this))
-                return FastSnapshotResult.FullWalkRequired;
-
-            foreach (SceneNode node in root.Traverse())
-            {
-                // Admitted brushes only. Testing IsStaticWorldBrush rather
-                // than `Brush is not null` is what keeps a part brush inside a
-                // dirty subtree from forcing the O(world) walk on every drag
-                // frame: an un-admitted node holds no slot, so it would fall
-                // into the "brush appeared since the snapshot" bail below.
-                if (!node.IsStaticWorldBrush)
-                {
-                    // A slot-holding node that is no longer an admitted brush
-                    // means a detach — or a conversion — that the force-full
-                    // signal did not cover: the placement count changed, every
-                    // later slot shifted, so re-walk. (Both routes do signal
-                    // it: detach through MarkStaticWorldDirty, conversion
-                    // through MarkAdmissionChanged. This is the net.)
-                    if (_snapshotSlots.ContainsKey(node))
-                        return FastSnapshotResult.FullWalkRequired;
-                    continue;
-                }
-
-                Bsp.Brush brush = node.Brush!;
-
-                if (!_snapshotSlots.TryGetValue(node, out int slot))
-                    return FastSnapshotResult.FullWalkRequired; // brush appeared since the snapshot
-
-                if (!_changedSlotSeen.Add(slot))
-                    continue; // nested dirty roots cover the same node once
-
-                Matrix4x4 world = node.WorldMatrix;
-                string? defect = DescribeNonRigidDefect(world);
-                if (defect is not null)
-                {
-                    defectMessage = DescribeBrushNodeDefect(node, defect);
-                    return FastSnapshotResult.Defect;
-                }
-
-                _changedSlotScratch.Add((slot, new BrushPlacement(brush, world)));
-            }
-        }
-        return FastSnapshotResult.Patched;
-    }
-
-    // The full capture: walks the whole graph, validates every brush node,
-    // and — only on success — commits the retained snapshot (node list, slot
-    // map, paged placements, structure version) and drains the dirty-subtree
-    // set. O(world); paid only for structural edits, external dirtying, and
-    // the first snapshot — never for the per-frame drag.
-    private IReadOnlyList<BrushPlacement>? SnapshotFullWalk(out string? defectMessage)
-    {
-        var placements = new List<BrushPlacement>();
-        var nodes = new List<SceneNode>();
-        foreach (SceneNode node in Nodes)
-        {
-            // Admitted brushes only: a part brush is not compiled, so it holds
-            // no slot and contributes no placement. Rigidity validation
-            // therefore stops seeing part brushes here — they stay rigid by the
-            // tool-level refusal instead, which reads the kind-BLIND
-            // SubtreeBrushCount precisely so that it still covers them.
-            if (node.IsStaticWorldBrush)
-            {
-                Bsp.Brush brush = node.Brush!;
-                Matrix4x4 world = node.WorldMatrix;
-                string? defect = DescribeNonRigidDefect(world);
-                if (defect is not null)
-                {
-                    defectMessage = DescribeBrushNodeDefect(node, defect);
-                    return null;
-                }
-
-                // The node's world transform IS the brush's placement
-                // (scene-graph-spine architecture). Whatever Transform the
-                // brush itself carries — e.g. the centering translation
-                // Brush.CreateBox(min, max) stores — is ignored for
-                // node-attached brushes, so author them with node-local
-                // (typically centred) extents.
-                placements.Add(new BrushPlacement(brush, world));
-                nodes.Add(node);
-            }
-        }
-
-        _snapshotNodes.Clear();
-        _snapshotNodes.AddRange(nodes);
-        _snapshotSlots.Clear();
-        for (int i = 0; i < nodes.Count; i++)
-            _snapshotSlots[nodes[i]] = i;
-        _snapshotPlacements = PagedArray<BrushPlacement>.From(placements);
-        _snapshotStructureVersion = _graphStructureVersion;
-        _snapshotForceFull = false;
-        _dirtyBrushSubtrees.Clear();
-
-        defectMessage = null;
-        return _snapshotPlacements;
-    }
-
+    // Shared refusal text for live snapshots and pure bake captures.
     private static string DescribeBrushNodeDefect(SceneNode node, string defect) =>
         $"Brush node '{node.Name}' has a non-rigid world transform ({defect}). " +
         "Brush node transforms must be rigid — rotation and translation only; " +

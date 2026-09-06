@@ -190,8 +190,8 @@ internal sealed unsafe class D3D12RenderTarget : RenderTarget
         if (_disposed) return;
         _disposed = true;
 
-        ComOwnership.Release(ref _dsvHeap);
-        ComOwnership.Release(ref _rtvHeap);
+        _renderer.Retire(ref _dsvHeap);
+        _renderer.Retire(ref _rtvHeap);
         _color?.Dispose();
         _depth?.Dispose();
     }

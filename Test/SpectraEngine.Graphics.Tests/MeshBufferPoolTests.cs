@@ -29,6 +29,8 @@ public sealed class MeshBufferPoolTests
     [InlineData(1024u, 1024u)]
     [InlineData(1025u, 2048u)]
     [InlineData(100_000u, 131_072u)]
+    [InlineData(0x80000000u, 0x80000000u)]
+    [InlineData(uint.MaxValue, uint.MaxValue)]
     public void A_request_rounds_up_to_its_bucket(uint requested, uint expected)
     {
         // Never smaller than asked for, or the buffer would be too small for the

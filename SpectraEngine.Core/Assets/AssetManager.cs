@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Numerics;
-using System.Threading.Tasks;
 
 namespace SpectraEngine.Core.Assets;
 
@@ -136,10 +135,6 @@ public sealed partial class AssetManager : IDisposable
     // is attached and after teardown. AttachRenderer fills in its shader and
     // placeholder binding; ReleaseGraphicsResources strips them again.
     private readonly Material _defaultMaterial;
-
-    // Background decode -> render thread. Record struct, so draining an empty
-    // queue allocates nothing (per-frame work must stay allocation-free).
-    private readonly ConcurrentQueue<UploadRequest> _uploads = new();
 
     // Watcher thread -> render thread: absolute paths of files that changed.
     private readonly ConcurrentQueue<string> _changedFiles = new();
@@ -379,6 +374,7 @@ public sealed partial class AssetManager : IDisposable
 
         _renderer = renderer;
         _graphicsReleased = false;
+        _uploadPipeline = new AssetUploadPipeline(_uploadBudget);
         Texture placeholder = CreatePlaceholder(renderer);
         _placeholder = placeholder;
 
@@ -434,7 +430,7 @@ public sealed partial class AssetManager : IDisposable
             // A handle whose decode failed is NOT a cache hit: this method is
             // documented to read the disk, and the file may well be readable now
             // (authored late, or an art tool that was holding the write lock).
-            if (cached is not null && !cached.LoadFailed) return cached;
+            if (cached is not null && !cached.LoadFailed && !cached.IsPlaceholder) return cached;
             failed = cached;
         }
 
@@ -739,44 +735,17 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// Applies everything the background workers finished since the last call:
-    /// creates the GPU textures and swaps them into their handles, creates the
-    /// GPU meshes for any model whose import landed, and turns file-change
-    /// notifications into new decode requests. Render thread only; the engine
+    /// Advances ready textures and models under their shared upload budget,
+    /// publishes completed assets, and turns file-change notifications into
+    /// coalesced decode requests. Render thread only; the engine
     /// calls it once per frame. Returns the number of assets applied (textures
     /// and models together). Allocation-free when nothing is pending.
     /// </summary>
     public int PumpPendingUploads()
     {
         if (_renderer is null || _graphicsReleased) return 0;
-
         DispatchFileChanges();
-
-        int applied = 0;
-        while (_uploads.TryDequeue(out UploadRequest request))
-        {
-            // The queued decode is over the moment its result is in hand,
-            // whether or not applying it succeeds — clear the in-flight count
-            // first so a retry is possible even when the apply below drops the
-            // result. Mirrors EndImport on the model side.
-            EndDecode(request.Asset);
-            try
-            {
-                if (ApplyUpload(in request))
-                    applied++;
-            }
-            finally
-            {
-                // ONE disposal site, covering every early return inside
-                // ApplyUpload. A cooked upload holds a pack reference, and a
-                // dropped request (an unloaded handle, a stale ticket, a GPU
-                // failure) that leaked one would defer that pack's unmount for
-                // the life of the process with nothing reporting it.
-                request.Image.Dispose();
-            }
-        }
-
-        return applied + PumpPendingModelImports();
+        return _uploadPipeline!.Pump();
     }
 
     /// <summary>
@@ -822,6 +791,9 @@ public sealed partial class AssetManager : IDisposable
     {
         if (_graphicsReleased) return;
         _graphicsReleased = true;
+        _uploadPipeline?.StopWorkers();
+        _uploadPipeline?.ReleaseUploads();
+        _renderer?.FlushUploads(waitForCompletion: true);
 
         foreach (FileSystemWatcher watcher in _watchers.Values)
             watcher.Dispose();
@@ -831,7 +803,6 @@ public sealed partial class AssetManager : IDisposable
         // cooked one holds a pack reference, so they are drained THROUGH their
         // disposal rather than discarded. Dropped silently, a session teardown
         // would leave every in-flight texture pinning its mount.
-        while (_uploads.TryDequeue(out UploadRequest stranded)) stranded.Image.Dispose();
         while (_changedFiles.TryDequeue(out _)) { }
 
         // Models first: their meshes are destroyed through the renderer, which
@@ -882,13 +853,14 @@ public sealed partial class AssetManager : IDisposable
     /// </summary>
     public void Shutdown()
     {
+        _uploadPipeline?.StopWorkers();
+        if (_graphicsReleased || _renderer is null) _uploadPipeline?.ReleaseUploads();
         // Again, and deliberately: a background decode can land in the window
         // between ReleaseGraphicsResources draining the queue and the manager
         // being disposed, and the pump is no longer running to take it. A cooked
         // one holds a pack reference, so leaving it there would defer that
         // pack's unmount for the life of the process - which in a shell that
         // opens and closes sessions is a mount leaked per session.
-        while (_uploads.TryDequeue(out UploadRequest stranded)) stranded.Image.Dispose();
 
         // Sounds hold content references rather than GPU objects, so they are
         // released here rather than in ReleaseGraphicsResources - and they must
@@ -967,9 +939,10 @@ public sealed partial class AssetManager : IDisposable
     // Parses the material and turns the definition into a live material. Content
     // problems become warnings and a degraded binding; nothing here throws
     // except the read itself, which LoadMaterial catches.
-    private Material BuildMaterial(string key)
+    private Material BuildMaterial(string key) => BuildMaterial(key, ParseMaterialThroughContent(key), false);
+
+    private Material BuildMaterial(string key, MaterialDefinition definition, bool asynchronous)
     {
-        MaterialDefinition definition = ParseMaterialThroughContent(key);
         foreach (string warning in definition.Warnings)
             _logger.LogWarning("Material {Path}: {Warning}", key, warning);
 
@@ -1005,7 +978,7 @@ public sealed partial class AssetManager : IDisposable
 
         IReadOnlyList<MaterialTextureSlot> slots = definition.Textures;
         for (int i = 0; i < slots.Count; i++)
-            BindTextureSlot(material, key, slots[i]);
+            BindTextureSlot(material, key, slots[i], asynchronous);
 
         _logger.LogInformation(
             "Loaded material {Path} ({Parameters} parameter(s), {Textures} texture(s))",
@@ -1016,7 +989,7 @@ public sealed partial class AssetManager : IDisposable
     // Resolves one texture slot, degrading to the placeholder (never to an
     // unbound sampler, which would read whatever the last draw left on the unit)
     // whenever the image cannot be loaded.
-    private void BindTextureSlot(Material material, string materialKey, in MaterialTextureSlot slot)
+    private void BindTextureSlot(Material material, string materialKey, in MaterialTextureSlot slot, bool asynchronous = false)
     {
         string textureKey;
         try
@@ -1037,7 +1010,7 @@ public sealed partial class AssetManager : IDisposable
         // archive - or that looked for the PNG while the open took the cooked
         // .simage - would bind the placeholder into every packed material and log
         // nothing wrong.
-        if (!ImageExists(textureKey))
+        if (!asynchronous && !ImageExists(textureKey))
         {
             _logger.LogWarning(
                 "Material {Path}: texture {Texture} for '{Slot}' not found; using the placeholder",
@@ -1048,7 +1021,8 @@ public sealed partial class AssetManager : IDisposable
 
         try
         {
-            TextureAsset asset = LoadTexture(textureKey, slot.Filter, slot.Wrap, slot.ColorSpace);
+            TextureAsset asset = asynchronous ? RequestTexture(textureKey, slot.Filter, slot.Wrap, slot.ColorSpace)
+                : LoadTexture(textureKey, slot.Filter, slot.Wrap, slot.ColorSpace);
             // Bound as a handle, not a Texture: the material then follows the
             // asset through hot-reloads instead of pinning today's GPU object.
             material.SetTexture(slot.Name, slot.Unit, asset);
@@ -1155,23 +1129,12 @@ public sealed partial class AssetManager : IDisposable
     {
         WarnIfSrgbUnavailable(key, image.Format, colorSpace);
 
-        if (image.Decoded is { } decoded)
-        {
-            return renderer.CreateTexture(
-                decoded.Pixels, decoded.Width, decoded.Height, decoded.Format, colorSpace, filter, wrap);
-        }
-
-        SimageInfo cooked = image.Cooked!;
-
-        // The CALLER's colour space, never the file's. Whether a block of bytes
-        // is colour or data is a property of the material slot rather than of the
-        // image - which is exactly why this cache keys on it - so the cooker
-        // writes the UNORM form and one cooked artifact serves both an albedo and
-        // a mask. See SimageFormat.TryResolveVkFormat.
-        return renderer.CreateTexture(new TextureUploadDesc(
-            cooked.Format, colorSpace, image.Blob!.Span, cooked.Mips, filter, wrap));
+        using var upload = renderer.BeginTextureUpload(ImageDescriptor(image, colorSpace, filter, wrap));
+        while (!upload.IsComplete) upload.Step(image.Payload);
+        Texture texture = upload.Complete();
+        renderer.FlushUploads(waitForCompletion: true);
+        return texture;
     }
-
     // The second of the three. The bytes never touch the filesystem, so a packed
     // material parses with no temporary file in between.
     private MaterialDefinition ParseMaterialThroughContent(string key)
@@ -1211,24 +1174,13 @@ public sealed partial class AssetManager : IDisposable
     private void QueueDecode(TextureAsset asset)
     {
         long sequence = asset.NextRequestSequence();
-        _ = Task.Run(() =>
+        _uploadPipeline!.Queue(asset, () => TextureRequestStale(asset, sequence), () =>
         {
-            try
-            {
-                // Ownership of a cooked image's pack reference transfers to the
-                // queue here and is released by the pump, which is the one place
-                // that sees every outcome.
-                ImageSource image = ReadImageThroughContent(asset.RelativePath);
-                _uploads.Enqueue(new UploadRequest(asset, sequence, image, null));
-            }
-            catch (Exception ex)
-            {
-                _uploads.Enqueue(new UploadRequest(asset, sequence, default, ex.Message));
-            }
-        });
+            try { return new TextureJob(this, new(asset, sequence, PrepareImage(asset, ReadImageThroughContent(asset.RelativePath)), null)); }
+            catch (Exception ex) { return new TextureJob(this, new(asset, sequence, default, ex.Message)); }
+        }, () => EndDecode(asset));
     }
-
-    private bool ApplyUpload(in UploadRequest request)
+    private bool ApplyUpload(in UploadRequest request, Texture? uploaded = null)
     {
         TextureAsset asset = request.Asset;
 
@@ -1267,7 +1219,7 @@ public sealed partial class AssetManager : IDisposable
         Texture created;
         try
         {
-            created = CreateTextureFrom(
+            created = uploaded ?? CreateTextureFrom(
                 _renderer!, asset.RelativePath, in image, asset.ColorSpace, asset.Filter, asset.Wrap);
         }
         catch (Exception ex)
@@ -1532,16 +1484,21 @@ public sealed partial class AssetManager : IDisposable
     /// is.
     /// </para>
     /// </remarks>
-    private readonly record struct ImageSource(DecodedImage? Decoded, ContentBlob? Blob, SimageInfo? Cooked)
+    private readonly record struct ImageSource(DecodedImage? Decoded, ContentBlob? Blob, SimageInfo? Cooked, PreparedTextureData? Prepared = null)
     {
         /// <summary>Whether this carries a real image rather than standing for a failure.</summary>
-        public bool HasContent => Decoded is not null || Cooked is not null;
+        public bool HasContent => Decoded is not null || Cooked is not null || Prepared is not null;
+
+        public ReadOnlySpan<byte> Payload => Prepared is { } prepared ? prepared.Payload
+            : Decoded is { } decoded ? decoded.Pixels : Blob is { } blob ? blob.Span : [];
 
         /// <summary>The format the texture will be created in.</summary>
-        public TextureFormat Format => Decoded?.Format ?? Cooked!.Format;
+        public TextureFormat Format => Prepared?.Format ?? Decoded?.Format ?? Cooked!.Format;
 
         /// <summary>One phrase for a log line, naming which of the two forms this was.</summary>
-        public string Describe() => Decoded is { } decoded
+        public string Describe() => Prepared is { } prepared
+            ? $"{prepared.Mips[0].Width}x{prepared.Mips[0].Height}, {prepared.Mips.Length} prepared mips, {prepared.Format}"
+            : Decoded is { } decoded
             ? $"{decoded.Width}x{decoded.Height}, {decoded.Channels}ch, {decoded.Format}"
             : $"{Cooked!.Width}x{Cooked.Height}, {Cooked.MipCount} mips, {Cooked.Format}, cooked";
 

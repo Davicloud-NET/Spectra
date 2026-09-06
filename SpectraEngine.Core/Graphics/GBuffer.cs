@@ -2,12 +2,15 @@
 
 namespace SpectraEngine.Core.Graphics;
 
+public enum GBufferLayout { Standard, Extended }
+
 /// <summary>
 /// The surfaces a deferred geometry pass writes, and a light pass reads.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Five colour attachments plus depth, and the layout is a contract.</b>
+/// Four colour attachments plus depth in the standard layout; the extended
+/// layout adds a fifth custom attachment. The layout is a shader contract.
 /// Every material shader writes it and the light pass reads it, so changing a
 /// channel means touching both ends at once. It is written down here rather than
 /// only in the shaders because those are two files that can drift.
@@ -40,9 +43,8 @@ namespace SpectraEngine.Core.Graphics;
 /// encoding those would be actively wrong.
 /// </para>
 /// <para>
-/// Honest cost: about 36 bytes per pixel, so roughly 75 MB written per frame at
-/// 1080p. That is the deferred bargain, and it is why deferred loses to forward
-/// on low-end hardware with few lights.
+/// Standard storage is 28 bytes per pixel including depth; extended storage
+/// is 36. The standard layout saves 16.6 MB at 1080p while retaining emissive.
 /// </para>
 /// </remarks>
 public sealed class GBuffer : IDisposable
@@ -51,13 +53,19 @@ public sealed class GBuffer : IDisposable
     public const int AttachmentCount = 5;
 
     private readonly Renderer _renderer;
-    private readonly RenderTarget[] _targets = new RenderTarget[AttachmentCount];
+    private readonly RenderTarget[] _targets;
     private bool _disposed;
 
     /// <summary>Creates the whole set at one size. Render thread.</summary>
     public GBuffer(Renderer renderer, int width, int height)
+        : this(renderer, width, height, GBufferLayout.Extended) { }
+
+    public GBuffer(Renderer renderer, int width, int height, GBufferLayout layout)
     {
         ArgumentNullException.ThrowIfNull(renderer);
+        if (layout is not (GBufferLayout.Standard or GBufferLayout.Extended)) throw new ArgumentOutOfRangeException(nameof(layout));
+        Layout = layout;
+        _targets = new RenderTarget[layout == GBufferLayout.Standard ? 4 : AttachmentCount];
         _renderer = renderer;
 
         // Only the first carries depth: it is shared by the whole pass, and one
@@ -71,8 +79,9 @@ public sealed class GBuffer : IDisposable
             width, height, TextureFormat.Rgba8, TextureColorSpace.Linear, Depth: false));
         _targets[3] = renderer.CreateRenderTarget(new RenderTargetDesc(
             width, height, TextureFormat.Rgba16Float, TextureColorSpace.Linear, Depth: false));
-        _targets[4] = renderer.CreateRenderTarget(new RenderTargetDesc(
-            width, height, TextureFormat.Rgba16Float, TextureColorSpace.Linear, Depth: false));
+        if (layout == GBufferLayout.Extended)
+            _targets[4] = renderer.CreateRenderTarget(new RenderTargetDesc(
+                width, height, TextureFormat.Rgba16Float, TextureColorSpace.Linear, Depth: false));
 
         Width = width;
         Height = height;
@@ -83,6 +92,7 @@ public sealed class GBuffer : IDisposable
 
     /// <summary>Current height, shared by every attachment.</summary>
     public int Height { get; private set; }
+    public GBufferLayout Layout { get; }
 
     // Every attachment is created with colour above, so the null-forgiving
     // operator on each accessor below is a statement about this constructor
@@ -105,7 +115,8 @@ public sealed class GBuffer : IDisposable
     public Texture Emissive => _targets[3].ColorTexture!;
 
     /// <summary>Whatever the shading model in <see cref="MaterialData"/> says this means.</summary>
-    public Texture Custom => _targets[4].ColorTexture!;
+    public Texture Custom => Layout == GBufferLayout.Extended ? _targets[4].ColorTexture!
+        : throw new InvalidOperationException("The standard G-buffer has no custom attachment. Create an extended layout to use it.");
 
     /// <summary>Depth, for reconstructing world position. Never null: attachment 0 always has it.</summary>
     public Texture Depth => _targets[0].DepthTexture!;

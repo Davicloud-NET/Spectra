@@ -17,6 +17,9 @@ public sealed record ModelImportOptions
     /// <summary>The settings used when a caller passes none.</summary>
     public static ModelImportOptions Default { get; } = new();
 
+    /// <summary>CPU data kept after GPU publication. The existing default retains all import data and picking.</summary>
+    public ModelCpuRetention CpuRetention { get; init; } = ModelCpuRetention.Full;
+
     /// <summary>
     /// Split polygons into triangles. Off only makes sense for a caller that
     /// wants to inspect an untouched file, since nothing downstream can draw an

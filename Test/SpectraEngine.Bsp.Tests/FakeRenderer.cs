@@ -28,7 +28,7 @@ internal sealed class FakeRenderer : Renderer
     /// the leak a plain <c>Dispose</c> would hide, because the dead instance
     /// would sit in the tracking list until shutdown.
     /// </summary>
-    public List<FakeMesh> LiveMeshes { get; } = [];
+    public HashSet<FakeMesh> LiveMeshes { get; } = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>Every texture ever created, in creation order (destroyed ones included).</summary>
     public List<FakeTexture> CreatedTextures { get; } = [];
@@ -38,7 +38,7 @@ internal sealed class FakeRenderer : Renderer
     /// tracking list, so a test can prove <see cref="Renderer.DestroyTexture"/>
     /// deregistered as well as disposed.
     /// </summary>
-    public List<FakeTexture> LiveTextures { get; } = [];
+    public HashSet<FakeTexture> LiveTextures { get; } = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>
     /// Remaining <see cref="CreateMesh"/> calls that succeed before the

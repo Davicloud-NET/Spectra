@@ -48,31 +48,8 @@ namespace SpectraEngine.Core.Bsp;
 /// <see cref="ChunkBspBuilder.BuildCellTree"/>,
 /// <see cref="ChunkMeshBuilder.BuildArtifact"/>), so for the editing gestures
 /// this path accepts the result is bit-identical to a from-scratch compile of
-/// the same placements. The one assumption that is trusted rather than proven
-/// is broadphase ORDER stability: carried carve results embed the clip order
-/// of the original broadphase sweep, so the gates below refuse any edit that
-/// could permute a surviving pair's discovery order — no new overlap pairs,
-/// and no min-X rank crossing between a changed brush and any brush whose
-/// neighbour list the pair could appear in: its own neighbours AND every
-/// member of each surviving neighbour's carried list (the two-hop gate — a
-/// changed brush crossing a non-overlapping brush that merely shares a
-/// neighbour still reshuffles that neighbour's pair-discovery order). What
-/// remains trusted is the sweep's swap-remove active-list bookkeeping among
-/// brushes with no shared neighbour at all: a permutation there would make
-/// some carried fragmentation differ bitwise from a from-scratch compile
-/// while remaining semantically identical (same solid union, same queries)
-/// and fully deterministic. The very next fallback compile re-validates every
-/// carried artifact against a real sweep, so no such drift can persist.
-/// </para>
-/// <para>
-/// <b>Fallback triggers</b> (TryBuild returns false and the caller runs the
-/// fully validated path): placement count changed; a new overlap pair formed
-/// (its clip position inside existing sequences depends on global sweep
-/// history); a changed brush's min-X rank crossed — or exactly tied — that of
-/// a neighbour or of any member of a surviving neighbour's carried list (the
-/// pair's discovery position would move). Every trigger costs one validated
-/// compile, after which patching resumes; a drag that keeps its overlap set
-/// (including none) and its local rank order never falls back.
+/// the same placements. Geometry v2 clips in authored placement order, so
+/// new overlaps and sweep-rank crossings can be patched locally.
 /// </para>
 /// <para>
 /// <b>Threading:</b> pure CPU work over the snapshot and the immutable
@@ -95,17 +72,27 @@ internal static class CsgIncrementalCompiler
     {
         world = null;
         int n = placements.Count;
-        IReadOnlyList<BrushPlacement> prevPlacements = previous.Placements;
-        if (n == 0 || n != prevPlacements.Count)
+        IReadOnlyList<BrushPlacement> prevPlacements = previous.StoragePlacements;
+        PlacementSnapshot? snapshot = (placements as PlacementSlotView)?.Snapshot;
+        if (n == 0 || (snapshot is null && (previous.SourceSnapshot is not null || n != prevPlacements.Count)))
             return false;
+        if (snapshot is not null && (previous.SourceSnapshot is not { } prior ||
+            (snapshot.ParentId != prior.Id && snapshot.Id != prior.Id))) return false;
 
-        CsgWorldCarry carry = previous.Carry;
-        ChunkGrid prevGrid = previous.Chunks;
+        CsgWorldCarry carry = previous.Carry.Expand(n);
+        ChunkGrid prevGrid = previous.StorageChunks;
+        IComparer<int> order = placements as PlacementSlotView ?? (IComparer<int>)Comparer<int>.Default;
 
+        using var workspace = CompileWorkspace.Rent();
         // --- Changed set C: dirty-cell residents whose placement differs. ---
-        var changed = new List<int>();
-        var candidateSeen = new HashSet<int>();
-        foreach (ChunkCoord cell in dirtyCells)
+        var changed = workspace.List<int>();
+        var candidateSeen = workspace.Set<int>();
+        if (snapshot is not null)
+        {
+            if (snapshot.Id != previous.SourceSnapshot!.Id)
+                foreach (var change in snapshot.Changes) changed.Add(change.Slot);
+        }
+        else foreach (ChunkCoord cell in dirtyCells)
         {
             if (!prevGrid.TryGet(cell, out WorldChunk cellChunk))
                 continue;
@@ -115,9 +102,9 @@ internal static class CsgIncrementalCompiler
                     changed.Add(i);
             }
         }
-        changed.Sort();
+        changed.Sort(order);
 
-        VerifyTrustedDiff(placements, prevPlacements, changed);
+        if (snapshot is null) VerifyTrustedDiff(placements, prevPlacements, changed);
 
         if (changed.Count == 0)
         {
@@ -126,51 +113,48 @@ internal static class CsgIncrementalCompiler
             world = CsgWorld.CreatePatched(
                 placements, previous.SurfaceCount, prevGrid, previous.ChunkMeshes, dirtyCells, carry,
                 previous, chunkMeshDelta: [],
-                new CsgCacheStats(n, 0), new CsgWeldStats(n, 0),
+                new CsgCacheStats(snapshot?.Count ?? n, 0), new CsgWeldStats(snapshot?.Count ?? n, 0),
                 new CsgBspStats(prevGrid.Count, 0), new CsgMeshStats(previous.ChunkMeshes.Count, 0));
             return true;
         }
 
         // --- Bounds and residency footprints of the changed placements. ---
-        var oldBounds = new Dictionary<int, Aabb>(changed.Count);
-        var newBounds = new Dictionary<int, Aabb>(changed.Count);
-        var oldFootprints = new Dictionary<int, ChunkCoord[]>(changed.Count);
-        var newFootprints = new Dictionary<int, ChunkCoord[]>(changed.Count);
+        var oldBounds = workspace.Map<int, Aabb>();
+        var newBounds = workspace.Map<int, Aabb>();
+        var oldFootprints = workspace.Map<int, ChunkCoord[]>();
+        var newFootprints = workspace.Map<int, ChunkCoord[]>();
         foreach (int c in changed)
         {
-            BrushPlacement prevPlacement = prevPlacements[c];
+            BrushPlacement prevPlacement = c < prevPlacements.Count ? prevPlacements[c] : default;
             BrushPlacement placement = placements[c];
-            oldBounds[c] = prevPlacement.WorldBounds;
-            newBounds[c] = placement.WorldBounds;
-            oldFootprints[c] = ChunkGrid.ComputeFootprint(in prevPlacement);
-            newFootprints[c] = ChunkGrid.ComputeFootprint(in placement);
+            if (prevPlacement.Brush is not null) oldBounds[c] = prevPlacement.WorldBounds;
+            if (placement.Brush is not null) newBounds[c] = placement.WorldBounds;
+            oldFootprints[c] = prevPlacement.Brush is null ? [] : ChunkGrid.ComputeFootprint(in prevPlacement);
+            newFootprints[c] = placement.Brush is null ? [] : ChunkGrid.ComputeFootprint(in placement);
         }
 
         // --- Overlap-pair delta. Candidates for "overlaps a changed brush":
         // previous-grid residents of every cell the old or new bounds cover,
         // plus the changed brushes themselves (their previous residency does
         // not cover where they moved to).
-        var overlapCandidates = new HashSet<int>(changed);
+        var overlapCandidates = workspace.Set<int>(changed);
         foreach (int c in changed)
         {
-            AddResidentsOfBoundsCells(prevGrid, oldBounds[c], overlapCandidates);
-            AddResidentsOfBoundsCells(prevGrid, newBounds[c], overlapCandidates);
+            if (oldBounds.TryGetValue(c, out var old)) AddResidentsOfBoundsCells(prevGrid, old, overlapCandidates);
+            if (newBounds.TryGetValue(c, out var current)) AddResidentsOfBoundsCells(prevGrid, current, overlapCandidates);
         }
 
-        var recarve = new HashSet<int>(changed);
-        // removedPartners[i] = former neighbours pair (i, j) that no longer
-        // overlaps — the only pair delta the patch path accepts (removal keeps
-        // every survivor's clip order; an ADDED pair's clip position inside
-        // existing sequences depends on global sweep history → fallback).
-        var removedPartners = new Dictionary<int, HashSet<int>>();
-        var newNeighborSet = new HashSet<int>();
+        var recarve = workspace.Set<int>(changed);
+        // Symmetric relationship patches for every changed overlap pair.
+        var removedPartners = workspace.Map<int, HashSet<int>>();
+        var addedPartners = workspace.Map<int, HashSet<int>>();
+        var newNeighborSet = workspace.Set<int>();
         foreach (int c in changed)
         {
-            Aabb boundsC = newBounds[c];
             newNeighborSet.Clear();
-            foreach (int j in overlapCandidates)
+            if (newBounds.TryGetValue(c, out Aabb boundsC)) foreach (int j in overlapCandidates)
             {
-                if (j == c)
+                if (j == c || placements[j].Brush is null)
                     continue;
                 Aabb boundsJ = newBounds.TryGetValue(j, out Aabb movedBounds)
                     ? movedBounds
@@ -183,82 +167,54 @@ internal static class CsgIncrementalCompiler
             foreach (int j in prevNeighbors)
                 recarve.Add(j);
 
-            // Additions → fallback; removals → recorded; survivors → rank check.
-            int surviving = 0;
             foreach (int j in prevNeighbors)
             {
-                if (newNeighborSet.Contains(j))
-                    surviving++;
-                else
+                if (!newNeighborSet.Contains(j))
                 {
                     GetOrAdd(removedPartners, c).Add(j);
                     GetOrAdd(removedPartners, j).Add(c);
                 }
             }
-            if (newNeighborSet.Count != surviving)
-                return false; // at least one new overlap pair formed
-
             foreach (int j in newNeighborSet)
             {
-                // The pair's discovery side is the later min-X rank; it must
-                // not flip (and must not be ambiguous: an exact key tie makes
-                // the sweep order depend on global sort internals).
-                float oldMinC = oldBounds[c].Min.X;
-                float newMinC = boundsC.Min.X;
-                if (!RankRelationStable(c, j, oldMinC, newMinC, placements, oldBounds, newBounds))
-                    return false;
-
-                // TWO-HOP RANK GATE: j is re-carved with its carried neighbour
-                // ORDER, and that order is the pairs' sweep-discovery order —
-                // for a partner m, the position of whichever of {j, m} has the
-                // later min-X rank (or, for partners already active at j's own
-                // sweep step, their insertion order into the active list,
-                // which is again min-X rank order). So c's rank crossing ANY
-                // other member m of j's list — even one c never overlaps —
-                // permutes where a fresh sweep would place the (j, c) pair
-                // inside j's list, and a patched j carved in the carried order
-                // would fragment differently from a from-scratch compile
-                // (bitwise different surfaces; the pinned triangle-multiset
-                // oracle breaks). Rank stability of c against every member of
-                // every surviving neighbour's list closes that hole; unchanged
-                // members keep their relative order among themselves by
-                // construction (their keys did not move).
-                foreach (int m in carry.CarveNeighbors[j])
+                recarve.Add(j);
+                if (Array.IndexOf(prevNeighbors, j) < 0)
                 {
-                    if (m != c && !RankRelationStable(c, m, oldMinC, newMinC, placements, oldBounds, newBounds))
-                        return false;
+                    GetOrAdd(addedPartners, c).Add(j);
+                    GetOrAdd(addedPartners, j).Add(c);
                 }
             }
         }
 
-        // --- Patch the neighbour lists (removals only; order preserved). ---
-        PagedArray<int[]> neighbors = carry.CarveNeighbors;
-        if (removedPartners.Count > 0)
+        // Geometry v2 clips in authored order. New overlaps and min-X rank
+        // crossings therefore have no dependency on the global sweep history.
+        var neighborChanges = workspace.Set<int>(removedPartners.Keys);
+        neighborChanges.UnionWith(addedPartners.Keys);
+        // A reordering changes clip order even when overlap membership stays
+        // identical. Sort every recarved brush's dependencies in the new order.
+        neighborChanges.UnionWith(recarve);
+        var neighborReplacements = workspace.List<(int, int[])>();
+        var partners = workspace.Set<int>();
+        foreach (int i in neighborChanges)
         {
-            var replacements = new List<(int, int[])>(removedPartners.Count);
-            foreach ((int i, HashSet<int> removed) in removedPartners)
-            {
-                int[] old = carry.CarveNeighbors[i];
-                var patched = new int[old.Length - CountIn(old, removed)];
-                int cursor = 0;
-                foreach (int j in old)
-                {
-                    if (!removed.Contains(j))
-                        patched[cursor++] = j;
-                }
-                replacements.Add((i, patched));
-            }
-            neighbors = neighbors.WithReplacements(replacements);
+            partners.Clear();
+            partners.UnionWith(carry.CarveNeighbors[i]);
+            if (removedPartners.TryGetValue(i, out var removed)) partners.ExceptWith(removed);
+            if (addedPartners.TryGetValue(i, out var added)) partners.UnionWith(added);
+            var ordered = new int[partners.Count];
+            partners.CopyTo(ordered);
+            Array.Sort(ordered, order);
+            neighborReplacements.Add((i, ordered));
         }
-
+        PagedArray<int[]> neighbors = carry.CarveNeighbors.WithReplacements(neighborReplacements);
         // --- Re-carve R through the same per-brush core as the full path. ---
-        var recarveList = new List<int>(recarve);
-        recarveList.Sort();
+        var recarveList = workspace.List<int>(recarve);
+        recarveList.Sort(order);
         var carveReplacements = new (int Index, Polygon[] Value)[recarveList.Count];
         PagedArray<int[]> neighborsFinal = neighbors;
         if (recarveList.Count <= 4)
         {
-            var scratch = new Csg.CarveScratch();
+            using var scratch = Csg.CarveScratch.Rent();
             for (int k = 0; k < recarveList.Count; k++)
             {
                 int b = recarveList[k];
@@ -268,19 +224,19 @@ internal static class CsgIncrementalCompiler
         else
         {
             Parallel.For(0, recarveList.Count,
-                static () => new Csg.CarveScratch(),
+                static () => Csg.CarveScratch.Rent(),
                 (k, _, scratch) =>
                 {
                     int b = recarveList[k];
                     carveReplacements[k] = (b, Csg.CarveSingle(placements, b, neighborsFinal[b], scratch));
                     return scratch;
                 },
-                static _ => { });
+                static scratch => scratch.Dispose());
         }
         PagedArray<Polygon[]> carved = carry.CarvedPerBrush.WithReplacements(carveReplacements);
 
         // --- Residency deltas per cell (only changed brushes move cells). ---
-        var cellDeltas = new Dictionary<ChunkCoord, CellDelta>();
+        var cellDeltas = workspace.Map<ChunkCoord, CellDelta>();
         foreach (int c in changed)
         {
             ChunkCoord[] oldFootprint = oldFootprints[c];
@@ -299,8 +255,8 @@ internal static class CsgIncrementalCompiler
 
         // --- Re-weld set W: current residents of R's footprints (old and new
         // for moved brushes) — exactly the weld cache's miss set.
-        var weldCells = new HashSet<ChunkCoord>();
-        var footprintOf = new Dictionary<int, ChunkCoord[]>(recarveList.Count);
+        var weldCells = workspace.Set<ChunkCoord>();
+        var footprintOf = workspace.Map<int, ChunkCoord[]>();
         foreach (int r in recarveList)
         {
             ChunkCoord[] footprint;
@@ -320,19 +276,19 @@ internal static class CsgIncrementalCompiler
                 weldCells.Add(cell);
         }
 
-        var reweld = new HashSet<int>();
-        var residentsScratch = new List<int>();
+        var reweld = workspace.Set<int>();
+        var residentsScratch = workspace.List<int>();
         foreach (ChunkCoord cell in weldCells)
         {
-            ResidentsAfter(prevGrid, cellDeltas, cell, residentsScratch);
+            ResidentsAfter(prevGrid, cellDeltas, cell, residentsScratch, order);
             foreach (int i in residentsScratch)
                 reweld.Add(i);
         }
-        var weldList = new List<int>(reweld);
-        weldList.Sort();
+        var weldList = workspace.List<int>(reweld);
+        weldList.Sort(order);
 
         // --- Rebuilt cells: W's footprints plus the old footprints of C. ---
-        var affectedCells = new HashSet<ChunkCoord>(weldCells);
+        var affectedCells = workspace.Set<ChunkCoord>(weldCells);
         foreach (int w in weldList)
         {
             if (footprintOf.TryGetValue(w, out ChunkCoord[]? known))
@@ -347,16 +303,16 @@ internal static class CsgIncrementalCompiler
                     affectedCells.Add(cell);
             }
         }
-        var affectedList = new List<ChunkCoord>(affectedCells);
+        var affectedList = workspace.List<ChunkCoord>(affectedCells);
         affectedList.Sort();
 
         // --- Fresh WorldChunk per affected cell (the previous instances stay
         // live in the previous world and are never touched).
-        var gridChanges = new List<(ChunkCoord Coord, WorldChunk? Chunk)>(affectedList.Count);
-        var ownerCellOf = new Dictionary<int, ChunkCoord>();
+        var gridChanges = workspace.List<(ChunkCoord Coord, WorldChunk? Chunk)>();
+        var ownerCellOf = workspace.Map<int, ChunkCoord>();
         foreach (ChunkCoord cell in affectedList)
         {
-            ResidentsAfter(prevGrid, cellDeltas, cell, residentsScratch);
+            ResidentsAfter(prevGrid, cellDeltas, cell, residentsScratch, order);
             bool existed = prevGrid.TryGet(cell, out _);
             if (residentsScratch.Count == 0)
             {
@@ -385,10 +341,12 @@ internal static class CsgIncrementalCompiler
         // --- Weld W per owner cell through the same core as the full path,
         // with candidate sets recomputed over the patched grid (same math as
         // ChunkWelder.ComputeCandidateSets, scoped to W).
-        var candidateReplacements = new List<(int, int[])>(weldList.Count);
-        var candidateOf = new Dictionary<int, int[]>(weldList.Count);
-        var byFootprintBox = new Dictionary<(ChunkCoord Min, ChunkCoord Max), int[]>();
-        var candidateScratchSet = new HashSet<int>();
+        var candidateReplacements = workspace.List<(int, int[])>();
+        foreach (int c in changed)
+            if (placements[c].Brush is null) candidateReplacements.Add((c, []));
+        var candidateOf = workspace.Map<int, int[]>();
+        var byFootprintBox = workspace.Map<(ChunkCoord Min, ChunkCoord Max), int[]>();
+        var candidateScratchSet = workspace.Set<int>();
         foreach (int w in weldList)
         {
             BrushPlacement placement = placements[w];
@@ -414,15 +372,15 @@ internal static class CsgIncrementalCompiler
                 }
                 set = new int[candidateScratchSet.Count];
                 candidateScratchSet.CopyTo(set);
-                Array.Sort(set);
+                Array.Sort(set, order);
                 byFootprintBox[box] = set;
             }
             candidateOf[w] = set;
             candidateReplacements.Add((w, set));
         }
 
-        var ownedByCell = new Dictionary<ChunkCoord, List<int>>();
-        var weldCellOrder = new List<ChunkCoord>();
+        var ownedByCell = workspace.Map<ChunkCoord, List<int>>();
+        var weldCellOrder = workspace.List<ChunkCoord>();
         foreach (int w in weldList)
         {
             if (!ownerCellOf.TryGetValue(w, out ChunkCoord owner))
@@ -438,12 +396,16 @@ internal static class CsgIncrementalCompiler
             needing.Add(w);
         }
 
-        var snappedMemo = new Dictionary<int, Polygon[]>();
-        var distinctSets = new HashSet<int[]>();
-        var unionScratch = new HashSet<int>();
-        var candidateSurfaceScratch = new List<Polygon>();
-        var inputScratch = new List<Polygon>();
-        var weldReplacements = new List<(int Index, Polygon[] Value)>(weldList.Count);
+        var snappedMemo = workspace.Map<int, Polygon[]>();
+        var snapReplacements = workspace.List<(int Index, Polygon[]? Value)>();
+        foreach (int index in recarveList) snapReplacements.Add((index, null));
+        var distinctSets = workspace.Set<int[]>();
+        var unionScratch = workspace.Set<int>();
+        var candidateSurfaceScratch = workspace.List<Polygon>();
+        var inputScratch = workspace.List<Polygon>();
+        var weldReplacements = workspace.List<(int Index, Polygon[] Value)>();
+        foreach (int c in changed)
+            if (placements[c].Brush is null) weldReplacements.Add((c, []));
         foreach (ChunkCoord cell in weldCellOrder)
         {
             List<int> needing = ownedByCell[cell];
@@ -451,6 +413,7 @@ internal static class CsgIncrementalCompiler
             foreach (int i in needing)
                 distinctSets.Add(candidateOf[i]);
             int[] cellCandidates = ChunkWelder.UnionDistinctSets(distinctSets, unionScratch);
+            Array.Sort(cellCandidates, order);
 
             ChunkWelder.WeldCell(
                 needing, cellCandidates, SnappedOf,
@@ -467,7 +430,7 @@ internal static class CsgIncrementalCompiler
             surfaceCount += slice.Length - carry.WeldedPerBrush[i].Length;
 
         // --- Attach welded surfaces and rebuild each fresh cell's tree. ---
-        var freshChunks = new List<WorldChunk>(gridChanges.Count);
+        var freshChunks = workspace.List<WorldChunk>();
         foreach ((_, WorldChunk? chunk) in gridChanges)
         {
             if (chunk is null)
@@ -495,8 +458,8 @@ internal static class CsgIncrementalCompiler
         // which is also the GPU swap path's "cell unchanged" signal.
         PagedArray<ChunkMesh> prevMeshes = previous.ChunkMeshesPaged;
         var meshChanges = new List<(ChunkCoord Coord, ChunkMesh? Mesh)>();
-        var toBuild = new List<WorldChunk>();
-        var placeholderSlots = new List<int>(); // meshChanges indices awaiting a built artifact, aligned with toBuild
+        var toBuild = workspace.List<WorldChunk>();
+        var placeholderSlots = workspace.List<int>(); // meshChanges indices awaiting a built artifact, aligned with toBuild
         foreach ((ChunkCoord coord, WorldChunk? chunk) in gridChanges)
         {
             ChunkMesh? prevMesh = FindMesh(prevMeshes, coord);
@@ -536,43 +499,34 @@ internal static class CsgIncrementalCompiler
 
         PagedArray<ChunkMesh> chunkMeshes = SpliceMeshes(prevMeshes, meshChanges);
 
-        var carryNext = new CsgWorldCarry(carved, welded, neighbors, candidates);
+        var carryNext = new CsgWorldCarry(carved, welded, neighbors, candidates,
+            carry.SnappedPerBrush.WithReplacements(snapReplacements));
+        int active = snapshot?.Count ?? n;
+        int carvedActive = 0;
+        foreach (int i in recarveList) if (placements[i].Brush is not null) carvedActive++;
         world = CsgWorld.CreatePatched(
             placements, surfaceCount, grid, chunkMeshes, dirtyCells, carryNext,
             previous, meshChanges,
-            new CsgCacheStats(n - recarveList.Count, recarveList.Count),
-            new CsgWeldStats(n - weldList.Count, weldList.Count),
+            new CsgCacheStats(active - carvedActive, carvedActive),
+            new CsgWeldStats(active - weldList.Count, weldList.Count),
             new CsgBspStats(grid.Count - freshChunks.Count, freshChunks.Count),
             new CsgMeshStats(chunkMeshes.Count - toBuild.Count, toBuild.Count));
         return true;
 
         Polygon[] SnappedOf(int index)
         {
+            if (ReferenceEquals(carved[index], carry.CarvedPerBrush[index]) &&
+                carry.SnappedPerBrush[index] is { } retained) return retained;
             if (!snappedMemo.TryGetValue(index, out Polygon[]? snapped))
+            {
                 snappedMemo[index] = snapped = VertexSnapper.Snap(carved[index]);
+                snapReplacements.Add((index, snapped));
+            }
             return snapped;
         }
 
         void AttachTree(WorldChunk chunk) =>
             chunk.AttachBsp(ChunkBspBuilder.BuildCellTree(chunk, i => welded[i], out _));
-    }
-
-    // True when changed brush c's min-X rank relation to brush `other` is the
-    // same, and unambiguous (no exact key tie), before and after the edit —
-    // the condition under which the sweep discovers every pair involving
-    // either of them on the same side and in the same relative order. `other`
-    // may itself be a changed brush (its own old/new bounds are then
-    // consulted); an unchanged brush keys both poses off its single placement.
-    private static bool RankRelationStable(
-        int c, int other, float oldMinC, float newMinC,
-        IReadOnlyList<BrushPlacement> placements,
-        Dictionary<int, Aabb> oldBounds, Dictionary<int, Aabb> newBounds)
-    {
-        float oldMinOther = (oldBounds.TryGetValue(other, out Aabb old) ? old : placements[other].WorldBounds).Min.X;
-        float newMinOther = (newBounds.TryGetValue(other, out Aabb moved) ? moved : placements[other].WorldBounds).Min.X;
-        int oldRelation = oldMinC.CompareTo(oldMinOther);
-        int newRelation = newMinC.CompareTo(newMinOther);
-        return oldRelation != 0 && newRelation != 0 && oldRelation == newRelation;
     }
 
     // Element-wise placement equality: brush reference plus matrix float ==,
@@ -632,7 +586,7 @@ internal static class CsgIncrementalCompiler
     // changed brushes that left, plus changed brushes that entered — ascending,
     // like every resident list. Fills `into` (cleared first).
     private static void ResidentsAfter(
-        ChunkGrid prevGrid, Dictionary<ChunkCoord, CellDelta> deltas, ChunkCoord cell, List<int> into)
+        ChunkGrid prevGrid, Dictionary<ChunkCoord, CellDelta> deltas, ChunkCoord cell, List<int> into, IComparer<int> order)
     {
         into.Clear();
         bool hasDelta = deltas.TryGetValue(cell, out CellDelta? delta);
@@ -647,19 +601,8 @@ internal static class CsgIncrementalCompiler
         if (hasDelta && delta!.Added.Count > 0)
         {
             into.AddRange(delta.Added);
-            into.Sort();
         }
-    }
-
-    private static int CountIn(int[] values, HashSet<int> set)
-    {
-        int count = 0;
-        foreach (int v in values)
-        {
-            if (set.Contains(v))
-                count++;
-        }
-        return count;
+        into.Sort(order);
     }
 
     private static TValue GetOrAdd<TKey, TValue>(Dictionary<TKey, TValue> map, TKey key)

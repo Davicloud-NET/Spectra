@@ -80,6 +80,9 @@ public class SceneNode
     /// The id is immutable after construction.
     /// </summary>
     public Guid Id { get; }
+    // Compiler identity is separate from authored ids: public duplicate ids
+    // are tolerated by the scene index and must not collapse two placements.
+    internal Guid PlacementIdentity { get; } = Guid.NewGuid();
 
     // Backing field for Name so the setter can notify the owning scene. The
     // early-out matters: replaying an absolute-value rename command (undo/redo)
@@ -117,6 +120,15 @@ public class SceneNode
     internal Scene? Owner { get; private set; }
 
     public IReadOnlyList<SceneNode> Children => _children;
+    internal SceneNode? PreviousSibling { get; private set; }
+    private SceneNode? _nextSibling;
+
+    private void UnlinkSiblings()
+    {
+        if (PreviousSibling is { } previous) previous._nextSibling = _nextSibling;
+        if (_nextSibling is { } next) next.PreviousSibling = PreviousSibling;
+        PreviousSibling = _nextSibling = null;
+    }
 
     /// <summary>
     /// Renderable geometry attached to this node, if any. Assigning, clearing,
@@ -260,7 +272,7 @@ public class SceneNode
             if (world)
             {
                 if (had != has)
-                    Owner?.MarkStaticWorldDirty();
+                    Owner?.MarkStructuralWorldDirty();
                 else
                     Owner?.MarkBrushSubtreeDirty(this);
             }
@@ -589,6 +601,7 @@ public class SceneNode
         // from the old ancestor chain before the chain is severed.
         if (child.Parent is { } oldParent)
         {
+            child.UnlinkSiblings();
             oldParent._children.Remove(child);
             if (child._subtreeBrushCount > 0)
             {
@@ -596,7 +609,7 @@ public class SceneNode
                 // Both lanes move, but only admitted brushes changed the
                 // compiled world: a folder of parts can be reparented for free.
                 if (child._subtreeStaticWorldBrushCount > 0)
-                    child.Owner?.MarkStaticWorldDirty();
+                    child.Owner?.MarkStructuralWorldDirty();
             }
         }
 
@@ -608,6 +621,10 @@ public class SceneNode
             index = _children.Count;
 
         child.Parent = this;
+        child.PreviousSibling = index > 0 ? _children[index - 1] : null;
+        child._nextSibling = index < _children.Count ? _children[index] : null;
+        if (child.PreviousSibling is { } previousSibling) previousSibling._nextSibling = child;
+        if (child._nextSibling is { } nextSibling) nextSibling.PreviousSibling = child;
         _children.Insert(index, child);
         // Invalidate the cached world matrices BEFORE announcing the node to
         // its new scene: NodeAdded handlers (the spatial index in particular)
@@ -619,7 +636,7 @@ public class SceneNode
         {
             AdjustSubtreeBrushCounts(this, child._subtreeBrushCount, child._subtreeStaticWorldBrushCount);
             if (child._subtreeStaticWorldBrushCount > 0)
-                Owner?.MarkStaticWorldDirty();
+                Owner?.MarkStructuralWorldDirty();
         }
 
         // A reparent WITHIN one scene raises no membership events (the subtree
@@ -724,6 +741,7 @@ public class SceneNode
     {
         if (_children.Remove(child))
         {
+            child.UnlinkSiblings();
             child.Parent = null;
             if (child._subtreeBrushCount > 0)
             {
@@ -731,7 +749,7 @@ public class SceneNode
                 // world; its part brushes were never in it.
                 AdjustSubtreeBrushCounts(this, -child._subtreeBrushCount, -child._subtreeStaticWorldBrushCount);
                 if (child._subtreeStaticWorldBrushCount > 0)
-                    Owner?.MarkStaticWorldDirty();
+                    Owner?.MarkStructuralWorldDirty();
             }
             child.SetOwner(null);
             child.MarkWorldDirty();

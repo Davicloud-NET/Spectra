@@ -21,16 +21,8 @@ public static class BrushBroadphase
         if (n == 0)
             return result;
 
-        // Process brushes in order of ascending minimum X. The comparator
-        // sort is deliberately kept bit-compatible with the original engine:
-        // sorting a primitive key array beside the index array would shave
-        // the delegate-dispatched comparisons, but a different sort
-        // implementation permutes TIED keys differently, and tie order here
-        // shuffles pair DISCOVERY order — which is Csg.Carve's clip order and
-        // therefore output-visible in the emitted surfaces and final mesh
-        // arrays (the determinism gate: performance work must never change
-        // output). The delegate cost is microseconds at editor-scale brush
-        // counts.
+        // Sweep by min-X to discover pairs, then order each result by authored
+        // placement index. Tied sweep keys no longer affect emitted geometry.
         var order = new int[n];
         for (int i = 0; i < n; i++)
             order[i] = i;
@@ -70,12 +62,7 @@ public static class BrushBroadphase
             active.Add(i);
         }
 
-        // Count each brush's neighbours, allocate exactly, then fill by
-        // replaying the pairs in discovery order — reproducing exactly the
-        // per-brush list order the original per-brush List building emitted.
-        // That order is output-visible (Csg.Carve clips in it), so the replay
-        // must stay faithful; it is deterministic, so equal inputs yield
-        // identical arrays.
+        // Allocate exact neighbor storage before filling and canonical sorting.
         var counts = new int[n];
         foreach (long pair in pairs)
         {
@@ -95,6 +82,9 @@ public static class BrushBroadphase
             result[j][cursors[j]++] = i;
         }
 
+        // Geometry v2: clipping order is authored placement order, independent
+        // of sweep discovery and of unrelated brushes leaving the active set.
+        foreach (int[] neighbors in result) Array.Sort(neighbors);
         return result;
     }
 }

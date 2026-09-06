@@ -73,6 +73,7 @@ internal sealed class PagedArray<T> : IReadOnlyList<T>
     /// </summary>
     public PagedArray<T> WithReplacements(IReadOnlyList<(int Index, T Value)> replacements)
     {
+        if (replacements.Count == 0) return this;
         var pages = (T[][])_pages.Clone();
         foreach ((int index, T value) in replacements)
         {
@@ -84,6 +85,36 @@ internal sealed class PagedArray<T> : IReadOnlyList<T>
             pages[p][index & PageMask] = value;
         }
         return new PagedArray<T>(pages, Count);
+    }
+
+    /// <summary>Grows stable slot storage without moving any existing index.</summary>
+    public PagedArray<T> WithReplacements(int count, IReadOnlyList<(int Index, T Value)> replacements)
+    {
+        if (count == Count) return WithReplacements(replacements);
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, Count);
+        var pages = new T[(count + PageSize - 1) >> PageShift][];
+        Array.Copy(_pages, pages, _pages.Length);
+        for (int p = 0; p < pages.Length; p++)
+        {
+            int length = Math.Min(PageSize, count - (p << PageShift));
+            if (pages[p] is null) pages[p] = new T[length];
+            else if (pages[p].Length < length)
+            {
+                var expanded = new T[length];
+                Array.Copy(pages[p], expanded, pages[p].Length);
+                pages[p] = expanded;
+            }
+        }
+        foreach (var (index, value) in replacements)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(index);
+            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, count);
+            int p = index >> PageShift;
+            if (p < _pages.Length && ReferenceEquals(pages[p], _pages[p]))
+                pages[p] = (T[])pages[p].Clone();
+            pages[p][index & PageMask] = value;
+        }
+        return new PagedArray<T>(pages, count);
     }
 
     /// <summary>

@@ -23,10 +23,10 @@ namespace SpectraEngine.Core.Graphics.D3D12;
 /// Direct3D 12 implementation of <see cref="Renderer"/>. Owns the device, the
 /// direct queue, a flip-model swap chain, descriptor heaps, and the per-frame
 /// command list; pipelines record into that list between the renderer's
-/// begin/end barriers. Runs a single frame in flight (full fence sync after
-/// each present) — simple and correct first, deeper pipelining later.
+/// begin/end barriers. Each frame context owns writable command and upload
+/// storage; fences guard context reuse and deferred resource destruction.
 /// </summary>
-public sealed unsafe class D3D12Renderer : Renderer
+public sealed unsafe partial class D3D12Renderer : Renderer
 {
     internal const Format BackBufferFormat = Format.FormatR8G8B8A8Unorm;
 
@@ -72,8 +72,8 @@ public sealed unsafe class D3D12Renderer : Renderer
     private ComPtr<ID3D12Device> _device;
     private ComPtr<ID3D12CommandQueue> _queue;
     private ComPtr<IDXGISwapChain3> _swapChain;
-    private ComPtr<ID3D12CommandAllocator> _commandAllocator;
-    private ComPtr<ID3D12GraphicsCommandList> _commandList;
+    private ref ComPtr<ID3D12CommandAllocator> _commandAllocator => ref _frame.Allocator;
+    private ref ComPtr<ID3D12GraphicsCommandList> _commandList => ref _frame.List;
     private ComPtr<ID3D12InfoQueue> _infoQueue;
     private DxgiDebugMessages? _dxgiMessages;
 
@@ -83,38 +83,39 @@ public sealed unsafe class D3D12Renderer : Renderer
     private ComPtr<ID3D12Resource> _depthBuffer;
     private uint _rtvStride;
     private uint _frameIndex;
+    private uint _swapChainFlags;
 
-    // Fence-based frame sync (single frame in flight).
+    // Monotonic queue fence; each context records its last submission.
     private ComPtr<ID3D12Fence> _fence;
     private ulong _fenceValue;
     private nint _fenceEvent;
 
     // Per-frame linear upload allocator (cbuffer slices, debug line vertices).
-    private ComPtr<ID3D12Resource> _uploadRing;
-    private byte* _uploadRingCpu;
-    private ulong _uploadRingGpuVa;
-    private uint _uploadRingCapacity = 1024 * 1024;
+    private ref ComPtr<ID3D12Resource> _uploadRing => ref _frame.UploadRing;
+    private ref byte* _uploadRingCpu => ref _frame.UploadCpu;
+    private ref ulong _uploadRingGpuVa => ref _frame.UploadGpuVa;
+    private ref uint _uploadRingCapacity => ref _frame.UploadCapacity;
     private uint _uploadRingOffset;
 
     // Upload rings outgrown mid-frame: the command list being recorded still
     // holds GPU VAs into them (root CBVs, dynamic line VBs), so they must stay
     // alive until the frame's fence completes. Disposed in Present.
-    private readonly List<ComPtr<ID3D12Resource>> _retiredUploadRings = [];
+    private List<ComPtr<ID3D12Resource>> _retiredUploadRings => _frame.RetiredUploadRings;
 
     // Shader-visible descriptor rings, reset each frame; draws copy their
     // texture SRVs/samplers in and bind tables at the copied position.
     // Capacities grow between frames when a frame's demand nears the cap
     // (see GrowDescriptorRingsIfNeeded); peaks record each frame's demand.
-    private ComPtr<ID3D12DescriptorHeap> _srvRing;
-    private ComPtr<ID3D12DescriptorHeap> _samplerRing;
+    private ref ComPtr<ID3D12DescriptorHeap> _srvRing => ref _frame.SrvRing;
+    private ref ComPtr<ID3D12DescriptorHeap> _samplerRing => ref _frame.SamplerRing;
     private uint _srvStride;
     private uint _samplerStride;
     private uint _srvRingOffset;
     private uint _samplerRingOffset;
-    private uint _srvRingCapacity = 512;
-    private uint _samplerRingCapacity = 256;
-    private uint _srvRingPeak;
-    private uint _samplerRingPeak;
+    private ref uint _srvRingCapacity => ref _frame.SrvCapacity;
+    private ref uint _samplerRingCapacity => ref _frame.SamplerCapacity;
+    private ref uint _srvRingPeak => ref _frame.SrvPeak;
+    private ref uint _samplerRingPeak => ref _frame.SamplerPeak;
 
     // Last table staged this frame, reused by a draw that finds the rings full
     // (see StageDescriptors) — 0 slots means nothing has been staged yet.
@@ -132,8 +133,8 @@ public sealed unsafe class D3D12Renderer : Renderer
     // Renderer.DestroyMesh/DestroyTexture via the Unregister callback handed
     // out at creation. Unsynchronized: creation and destruction both happen
     // on the render thread.
-    private readonly List<Mesh> _meshes = [];
-    private readonly List<Texture> _textures = [];
+    private readonly HashSet<Mesh> _meshes = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<Texture> _textures = new(ReferenceEqualityComparer.Instance);
     private readonly List<ShaderProgram> _shaders = [];
     private readonly List<ID3D12RenderPipeline> _pipelines = [];
     private readonly List<RenderTarget> _renderTargets = [];
@@ -358,6 +359,9 @@ public sealed unsafe class D3D12Renderer : Renderer
         // the same size latch a swap chain would have followed.
         if (!_composited)
             CreateSwapChain(surface, (uint)size.X, (uint)size.Y);
+        if (UncappedPresentation)
+            _logger.LogInformation("Uncapped presentation {Status}", UncappedPresentationAvailable
+                ? "enabled (DXGI allow tearing)" : "unavailable for this surface or adapter");
 
         CreateFrameResources((uint)size.X, (uint)size.Y);
 
@@ -512,6 +516,16 @@ public sealed unsafe class D3D12Renderer : Renderer
         if (!debugFactory)
             SilkMarshal.ThrowHResult(_dxgi.CreateDXGIFactory2(0u, &factoryGuid, (void**)&factory));
 
+        IDXGIFactory5* factory5 = null;
+        if (factory->QueryInterface(SilkMarshal.GuidPtrOf<IDXGIFactory5>(), (void**)&factory5) >= 0)
+        {
+            int tearing = 0;
+            UncappedPresentationAvailable = factory5->CheckFeatureSupport(
+                Silk.NET.DXGI.Feature.PresentAllowTearing, &tearing, sizeof(int)) >= 0 && tearing != 0;
+            factory5->Release();
+        }
+        _swapChainFlags = UncappedPresentation && UncappedPresentationAvailable ? 2048u : 0u; // DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
+
         // Flip model is mandatory on D3D12. The per-frame full fence sync means
         // the rotating back buffer is never in flight when we touch it.
         //
@@ -534,7 +548,7 @@ public sealed unsafe class D3D12Renderer : Renderer
             Scaling = Scaling.Stretch,
             SwapEffect = SwapEffect.FlipDiscard,
             AlphaMode = AlphaMode.Unspecified,
-            Flags = 0,
+            Flags = _swapChainFlags,
         };
 
         IDXGISwapChain1* swapChain1 = null;
@@ -572,17 +586,7 @@ public sealed unsafe class D3D12Renderer : Renderer
         if (!_composited)
             CreateBackBufferViews(width, height);
 
-        ID3D12CommandAllocator* allocator = null;
-        Guid allocGuid = ID3D12CommandAllocator.Guid;
-        SilkMarshal.ThrowHResult(DevicePtr->CreateCommandAllocator(CommandListType.Direct, &allocGuid, (void**)&allocator));
-        _commandAllocator = ComOwnership.Own(allocator);
-
-        ID3D12GraphicsCommandList* list = null;
-        Guid listGuid = ID3D12GraphicsCommandList.Guid;
-        SilkMarshal.ThrowHResult(DevicePtr->CreateCommandList(
-            0, CommandListType.Direct, allocator, (ID3D12PipelineState*)null, &listGuid, (void**)&list));
-        _commandList = ComOwnership.Own(list);
-        SilkMarshal.ThrowHResult(list->Close()); // lists are created open
+        CreateFrameContexts();
 
         ID3D12Fence* fence = null;
         Guid fenceGuid = ID3D12Fence.Guid;
@@ -592,11 +596,6 @@ public sealed unsafe class D3D12Renderer : Renderer
         if (_fenceEvent == 0)
             throw new InvalidOperationException("Failed to create fence event.");
 
-        _uploadRing = CreateUploadBuffer(_uploadRingCapacity, "FrameUploadRing");
-        MapUploadRing();
-
-        _srvRing = CreateDescriptorHeap(DescriptorHeapType.CbvSrvUav, _srvRingCapacity, shaderVisible: true);
-        _samplerRing = CreateDescriptorHeap(DescriptorHeapType.Sampler, _samplerRingCapacity, shaderVisible: true);
     }
 
     private void MapUploadRing()
@@ -730,8 +729,17 @@ public sealed unsafe class D3D12Renderer : Renderer
         // collapsed or mid-layout, which is not an error and not a frame.
         if (_composited && present is null) return;
 
-        var list = (ID3D12GraphicsCommandList*)_commandList.Handle;
         BeginRecording();
+        var list = (ID3D12GraphicsCommandList*)_commandList.Handle;
+
+        _assetOnlyRecording = false; // This list now also owns the rendered frame.
+
+        if (Profiler.Enabled && Profiler.GpuTimer is null && !_gpuTimingUnavailable)
+        {
+            try { Profiler.GpuTimer = new D3D12GpuTimer(this, (ID3D12CommandQueue*)_queue.Handle); }
+            catch (Exception ex) { _gpuTimingUnavailable = true; _logger.LogWarning(ex, "D3D12 GPU timestamps unavailable"); }
+        }
+        if (Profiler.Enabled) Profiler.GpuTimer?.BeginFrame();
 
         // Size the rings for the draw list about to be recorded, BEFORE the
         // heaps are bound. Growing between frames from the previous frame's
@@ -799,17 +807,20 @@ public sealed unsafe class D3D12Renderer : Renderer
                 ResourceStates.RenderTarget, ResourceStates.Present);
         }
 
+        if (Profiler.Enabled) Profiler.GpuTimer?.EndFrame();
         SilkMarshal.ThrowHResult(list->Close());
         _isRecording = false;
 
         ID3D12CommandList* executeList = (ID3D12CommandList*)list;
         ((ID3D12CommandQueue*)_queue.Handle)->ExecuteCommandLists(1, &executeList);
+        if (Profiler.Enabled) (Profiler.GpuTimer as D3D12GpuTimer)?.Submitted();
 
         // AFTER the execute, deliberately. The bridge records its copy into this
         // same queue, so submitting the frame first is what orders the copy
         // behind the draws that produced the picture - there is no fence here
         // and none is needed, because a queue is already a total order.
         PublishSharedFrame();
+        SignalSubmission();
     }
 
     /// <summary>
@@ -873,6 +884,9 @@ public sealed unsafe class D3D12Renderer : Renderer
     /// </remarks>
     private void BeginRecording()
     {
+        if (_isRecording) return; // Asset copies can prefix this frame's direct command list.
+        _assetOnlyRecording = false;
+        AcquireFrameContext();
         var allocator = (ID3D12CommandAllocator*)_commandAllocator.Handle;
         var list = (ID3D12GraphicsCommandList*)_commandList.Handle;
         SilkMarshal.ThrowHResult(allocator->Reset());
@@ -881,8 +895,8 @@ public sealed unsafe class D3D12Renderer : Renderer
         CurrentProgram = null;
         CurrentFillMode = FillMode.Solid;
 
-        // Fresh per-recording arenas: safe because the previous submission
-        // fully synced on the fence before this one starts.
+        // This context's completion fence passed before AcquireFrameContext
+        // returned; other contexts may still be executing.
         FrameNumber++;
         ResetLastBoundState();
         _uploadRingOffset = 0;
@@ -912,6 +926,7 @@ public sealed unsafe class D3D12Renderer : Renderer
 
         ID3D12CommandList* executeList = (ID3D12CommandList*)list;
         ((ID3D12CommandQueue*)_queue.Handle)->ExecuteCommandLists(1, &executeList);
+        SignalSubmission();
         WaitForGpu();
     }
 
@@ -921,8 +936,9 @@ public sealed unsafe class D3D12Renderer : Renderer
     /// needs a command list of its own. The back buffer is deliberately not
     /// transitioned here: nothing outside a frame draws to it.
     /// </remarks>
-    protected override void BeginOutOfFrameCommands()
+    protected internal override void BeginOutOfFrameCommands()
     {
+        FlushUploads();
         if (_isRecording)
             throw new InvalidOperationException("Out-of-frame commands cannot be issued while a frame is recording.");
 
@@ -931,7 +947,7 @@ public sealed unsafe class D3D12Renderer : Renderer
     }
 
     /// <inheritdoc/>
-    protected override void EndOutOfFrameCommands() => EndRecordingAndWait();
+    protected internal override void EndOutOfFrameCommands() => EndRecordingAndWait();
 
     /// <inheritdoc/>
     /// <remarks>
@@ -996,8 +1012,8 @@ public sealed unsafe class D3D12Renderer : Renderer
         ComPtr<ID3D12Resource> readback = CreateReadbackBuffer((uint)totalBytes);
         try
         {
-            var list = (ID3D12GraphicsCommandList*)_commandList.Handle;
             BeginRecording();
+            var list = (ID3D12GraphicsCommandList*)_commandList.Handle;
 
             ResourceStates previous = d3dTarget.ColorState;
             d3dTarget.TransitionColor(list, ResourceStates.CopySource);
@@ -1050,7 +1066,7 @@ public sealed unsafe class D3D12Renderer : Renderer
         }
     }
 
-    private ComPtr<ID3D12Resource> CreateReadbackBuffer(uint sizeBytes)
+    internal ComPtr<ID3D12Resource> CreateReadbackBuffer(uint sizeBytes)
     {
         var heapProps = new HeapProperties { Type = HeapType.Readback };
         var desc = new ResourceDesc
@@ -1076,6 +1092,7 @@ public sealed unsafe class D3D12Renderer : Renderer
     public override void Present(IRenderSurface surface)
     {
         if (_deviceLost) return;
+        FlushUploads(); // A collapsed viewport can skip rendering but still receive assets.
 
         if (_swapChain.Handle is not null)
         {
@@ -1083,7 +1100,9 @@ public sealed unsafe class D3D12Renderer : Renderer
             // reports it far more often than ResizeBuffers does (a TDR lands
             // here). Same treatment: a named diagnosis with the removed reason,
             // not an opaque COMException from deep inside SilkMarshal.
-            int hr = ((IDXGISwapChain3*)_swapChain.Handle)->Present(VSync ? 1u : 0u, 0);
+            bool uncapped = UncappedPresentation && _swapChainFlags != 0;
+            int hr = ((IDXGISwapChain3*)_swapChain.Handle)->Present(uncapped ? 0u : VSync ? 1u : 0u,
+                uncapped ? 512u : 0u); // DXGI_PRESENT_ALLOW_TEARING
             if (hr < 0)
             {
                 if (DxgiInterop.IsDeviceLost(hr))
@@ -1092,20 +1111,8 @@ public sealed unsafe class D3D12Renderer : Renderer
             }
         }
 
-        // OUTSIDE the swap-chain guard, and on a composited surface this is the
-        // only thing left that ends the frame. Dropping the wait because there
-        // is nothing to present would corrupt everything below it: the upload
-        // ring rewinds per recording, the mesh buffer pool hands freed buffers
-        // straight back out, and the descriptor rings are swapped for bigger
-        // ones here - all three are safe only because the GPU is idle at this
-        // point, and none of them has anything to do with a swap chain.
-        WaitForGpu();
-
-        // GPU idle and no list recording: the only safe point to free upload
-        // rings the frame outgrew and to swap descriptor rings for bigger ones.
-        DisposeRetiredUploadRings();
+        ReleaseCompletedResources();
         RecycleRetiredMeshBuffers();
-        GrowDescriptorRingsIfNeeded();
 
         if (_swapChain.Handle is not null)
             _frameIndex = _swapChain.GetCurrentBackBufferIndex();
@@ -1129,7 +1136,10 @@ public sealed unsafe class D3D12Renderer : Renderer
         // because the Clear below drops the entries: each retired ring holds
         // exactly one reference and is released exactly once.
         foreach (var ring in _retiredUploadRings)
+        {
+            ((ID3D12Resource*)ring.Handle)->Unmap(0, null);
             ring.Dispose();
+        }
         _retiredUploadRings.Clear();
     }
 
@@ -1239,6 +1249,8 @@ public sealed unsafe class D3D12Renderer : Renderer
     /// <summary>Blocks until the queue has finished all submitted work.</summary>
     internal void WaitForGpu()
     {
+        FlushUploads();
+        using var timing = Profiler.Measure(SpectraEngine.Core.Diagnostics.FramePhase.GpuWait);
         // A dead device never signals, so the wait below would either fail or
         // block forever. Returning is the only thing that lets the teardown
         // path finish and the run end on its real diagnosis.
@@ -1988,7 +2000,8 @@ public sealed unsafe class D3D12Renderer : Renderer
             // and freed only after this frame's fence (see Present). The
             // replacement is a distinct resource, so restarting its offset at
             // 0 cannot alias slices handed out earlier this frame.
-            ((ID3D12Resource*)_uploadRing.Handle)->Unmap(0, null);
+            // Earlier instance slices can still receive appends in this recording.
+            // Keep the old mapping alive until this context's fence completes.
             _uploadRingCpu = null;
             _retiredUploadRings.Add(_uploadRing);
 
@@ -2118,89 +2131,6 @@ public sealed unsafe class D3D12Renderer : Renderer
         return ComOwnership.Own(heap);
     }
 
-    // ---- mesh buffer pool --------------------------------------------------
-    //
-    // CreateCommittedResource allocates a whole heap per resource and measured
-    // about 480 microseconds per mesh here, against 24 on D3D11's CreateBuffer.
-    // With a world brush animating, the static-world compiler lands new chunk
-    // meshes every frame, so that was 7 ms of a 10 ms frame spent allocating
-    // buffers the previous frame had just freed.
-    //
-    // Freed buffers are therefore kept and handed back out. Sizes are rounded up
-    // to a power of two so a chunk whose vertex count wobbles by a few triangles
-    // still hits the same bucket; the VIEW carries the real byte count, so a
-    // buffer larger than its contents is not a correctness question.
-    private readonly Dictionary<uint, Stack<ComPtr<ID3D12Resource>>> _freeMeshBuffers = [];
-    private readonly List<(uint Capacity, ComPtr<ID3D12Resource> Buffer)> _retiredMeshBuffers = [];
-
-    /// <summary>Buffers currently parked in the pool. Diagnostics.</summary>
-    internal int PooledMeshBufferCount { get; private set; }
-
-    /// <summary>Rounds a request up to its pool bucket. At least 256, D3D12's buffer alignment.</summary>
-    internal static uint MeshBufferBucket(uint sizeBytes)
-    {
-        uint bucket = 256;
-        while (bucket < sizeBytes) bucket <<= 1;
-        return bucket;
-    }
-
-    /// <summary>Takes a buffer of at least <paramref name="capacity"/> bytes, from the pool if one is parked.</summary>
-    internal ComPtr<ID3D12Resource> RentMeshBuffer(uint capacity)
-    {
-        if (_freeMeshBuffers.TryGetValue(capacity, out Stack<ComPtr<ID3D12Resource>>? bucket) && bucket.Count > 0)
-        {
-            PooledMeshBufferCount--;
-            return bucket.Pop();
-        }
-
-        return CreateUploadBuffer(capacity, "MeshBuffer");
-    }
-
-    /// <summary>
-    /// Gives a mesh buffer back. It is NOT reusable until the GPU has finished
-    /// with the frames that referenced it, so it waits on the retired list until
-    /// the next fence wait rather than going straight back into the pool.
-    /// </summary>
-    internal void ReturnMeshBuffer(uint capacity, ComPtr<ID3D12Resource> buffer)
-    {
-        if (buffer.Handle is null) return;
-        _retiredMeshBuffers.Add((capacity, buffer));
-    }
-
-    // Called where the GPU is known idle. Everything freed since the last one is
-    // now safe to hand out again.
-    private void RecycleRetiredMeshBuffers()
-    {
-        if (_retiredMeshBuffers.Count == 0) return;
-
-        foreach ((uint capacity, ComPtr<ID3D12Resource> buffer) in _retiredMeshBuffers)
-        {
-            if (!_freeMeshBuffers.TryGetValue(capacity, out Stack<ComPtr<ID3D12Resource>>? bucket))
-                _freeMeshBuffers[capacity] = bucket = new Stack<ComPtr<ID3D12Resource>>();
-
-            bucket.Push(buffer);
-            PooledMeshBufferCount++;
-        }
-
-        _retiredMeshBuffers.Clear();
-    }
-
-    // Releases the pool for good. Shutdown only.
-    private void ReleaseMeshBufferPool()
-    {
-        RecycleRetiredMeshBuffers();
-        foreach (Stack<ComPtr<ID3D12Resource>> bucket in _freeMeshBuffers.Values)
-        {
-            while (bucket.Count > 0)
-            {
-                ComPtr<ID3D12Resource> buffer = bucket.Pop();
-                ComOwnership.Release(ref buffer);
-            }
-        }
-        _freeMeshBuffers.Clear();
-        PooledMeshBufferCount = 0;
-    }
-
     internal ComPtr<ID3D12Resource> CreateUploadBuffer(uint sizeBytes, string debugName)
     {
         var heapProps = new HeapProperties { Type = HeapType.Upload };
@@ -2314,10 +2244,8 @@ public sealed unsafe class D3D12Renderer : Renderer
         }
         res->Unmap(0, null);
 
-        var allocator = (ID3D12CommandAllocator*)_commandAllocator.Handle;
+        BeginRecording();
         var list = (ID3D12GraphicsCommandList*)_commandList.Handle;
-        SilkMarshal.ThrowHResult(allocator->Reset());
-        SilkMarshal.ThrowHResult(list->Reset(allocator, (ID3D12PipelineState*)null));
 
         for (uint mip = 0; mip < mipCount; mip++)
         {
@@ -2339,10 +2267,7 @@ public sealed unsafe class D3D12Renderer : Renderer
         Transition(list, (ID3D12Resource*)texture.Handle,
             ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
 
-        SilkMarshal.ThrowHResult(list->Close());
-        ID3D12CommandList* executeList = (ID3D12CommandList*)list;
-        ((ID3D12CommandQueue*)_queue.Handle)->ExecuteCommandLists(1, &executeList);
-        WaitForGpu();
+        EndRecordingAndWait();
         staging.Dispose();
     }
 
@@ -2358,6 +2283,16 @@ public sealed unsafe class D3D12Renderer : Renderer
         return mesh;
     }
 
+    public override MeshUpload BeginMeshUpload(ReadOnlyMemory<float> vertices, ReadOnlyMemory<uint> indices,
+        ReadOnlySpan<VertexAttribute> attributes, MeshCpuAccess cpuAccess = MeshCpuAccess.Retained, Bsp.Aabb? knownBounds = null)
+    {
+        MeshesCreated++;
+        var mesh = new D3D12Mesh(this, vertices.Span, indices.Span, attributes, cpuAccess, deferred: true, knownBounds: knownBounds);
+        mesh.Unregister = () => _meshes.Remove(mesh);
+        _meshes.Add(mesh);
+        return new MeshUpload(this, mesh, vertices, indices, uploaded: false);
+    }
+
     /// <inheritdoc/>
     public override InstanceBuffer CreateInstanceBuffer(
         int capacityInstances, ReadOnlySpan<VertexAttribute> attributes, ShaderProgram program)
@@ -2366,7 +2301,7 @@ public sealed unsafe class D3D12Renderer : Renderer
         // the PSO is selected per draw from the program actually bound.
         int floats = ValidateInstanceLayout(capacityInstances, attributes);
         return new D3D12InstanceBuffer(
-            _device, capacityInstances, VertexAttribute.StandardLayout, attributes, floats);
+            this, capacityInstances, VertexAttribute.StandardLayout, attributes, floats);
     }
 
     protected override Texture CreateTextureCore(in TextureUploadDesc desc)
@@ -2375,6 +2310,23 @@ public sealed unsafe class D3D12Renderer : Renderer
         texture.Unregister = () => _textures.Remove(texture);
         _textures.Add(texture);
         return texture;
+    }
+
+    public override TextureUpload BeginTextureUpload(in TextureUploadDesc desc)
+    {
+        desc.Validate();
+        if (PrepareTextureUpload(desc) is { } prepared && prepared.Mips.Length > 1)
+        {
+            var preparedDesc = new TextureUploadDesc(prepared.Format, desc.ColorSpace, prepared.Payload, prepared.Mips, desc.Filter, desc.Wrap);
+            var preparedTexture = new D3D12Texture(this, preparedDesc, deferred: true);
+            preparedTexture.Unregister = () => _textures.Remove(preparedTexture);
+            _textures.Add(preparedTexture);
+            return new TextureUpload(this, preparedTexture, preparedDesc, prepared: prepared.Payload);
+        }
+        var texture = new D3D12Texture(this, in desc, deferred: true);
+        texture.Unregister = () => _textures.Remove(texture);
+        _textures.Add(texture);
+        return new TextureUpload(this, texture, desc);
     }
 
     public override ShaderProgram CreateShader(string vertexSource, string fragmentSource)
@@ -2439,7 +2391,7 @@ public sealed unsafe class D3D12Renderer : Renderer
         ReleaseBackBufferViews();
 
         int hr = ((IDXGISwapChain3*)_swapChain.Handle)->ResizeBuffers(
-            BufferCount, (uint)newSize.X, (uint)newSize.Y, Format.FormatUnknown, 0u);
+            BufferCount, (uint)newSize.X, (uint)newSize.Y, Format.FormatUnknown, _swapChainFlags);
 
         if (hr < 0)
         {
@@ -2525,6 +2477,8 @@ public sealed unsafe class D3D12Renderer : Renderer
     public override void Shutdown()
     {
         WaitForGpu();
+        Profiler.GpuTimer?.Dispose();
+        Profiler.GpuTimer = null;
 
         foreach (var pipeline in _pipelines)
             pipeline.Dispose();
@@ -2573,19 +2527,11 @@ public sealed unsafe class D3D12Renderer : Renderer
         // its handle after Dispose — so plain disposal here would over-release
         // everything the first pass already freed. See ComOwnership.
         ReleaseBackBufferViews();
-        ComOwnership.Release(ref _samplerRing);
-        ComOwnership.Release(ref _srvRing);
-        if (_uploadRingCpu is not null)
-        {
-            ((ID3D12Resource*)_uploadRing.Handle)->Unmap(0, null);
-            _uploadRingCpu = null;
-        }
-        ComOwnership.Release(ref _uploadRing);
-        DisposeRetiredUploadRings(); // safe: WaitForGpu ran above
+        _isRecording = false;
+        ReleaseFrameContexts();
+        ReleaseCompletedResources(abandoningRecording: true);
         ComOwnership.Release(ref _rtvHeap);
         ComOwnership.Release(ref _dsvHeap);
-        ComOwnership.Release(ref _commandList);
-        ComOwnership.Release(ref _commandAllocator);
         ComOwnership.Release(ref _fence);
         if (_fenceEvent != 0)
         {

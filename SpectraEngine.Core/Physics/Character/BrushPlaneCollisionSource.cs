@@ -89,6 +89,11 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
     private readonly List<BrushPlacement> _builtNegatives = [];
     private readonly List<BrushPlacement> _scratchAdditives = [];
     private readonly List<BrushPlacement> _scratchNegatives = [];
+    private readonly HashSet<int> _selectionIndices = [];
+    private readonly HashSet<int> _cutterIndices = [];
+    private readonly List<int> _selectionOrder = [];
+    private Aabb _dependencyBounds;
+    internal int WorldSelections { get; private set; }
 
     // The part lane plus this tick's candidates, both rebuilt per tick.
     private readonly List<ConvexPiece> _partPieces = [];
@@ -378,6 +383,11 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
         bool covered = _hasRegion && Contains(in _builtRegion, in volume);
         if (compileCount == _builtCompileCount && covered)
             return;
+        if (covered && !_scene.WorldChangedSince(_builtCompileCount, _dependencyBounds))
+        {
+            _builtCompileCount = compileCount;
+            return;
+        }
 
         // Keep the existing region when the character is still inside it, so a
         // recompile does not silently re-centre the lane and make the region
@@ -395,12 +405,8 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
         // character rebuilt its entire neighbourhood sixty times a second to
         // stand still next to geometry that had not moved since it spawned.
         //
-        // Comparing the SELECTION rather than the counter costs one bounds scan
-        // over the placement list — the same scan the rebuild would do anyway —
-        // and answers the real question. Brushes compare by reference and
-        // transforms by value, which is exactly what every other change detector
-        // in the engine does: a brush is immutable, so a new reference IS the
-        // edit.
+        // Compare the locally indexed selection only when publication history
+        // intersects its dependency bounds, or the character leaves the region.
         // The region is adopted whether or not the CONTENT changed, and the two
         // are kept separate deliberately. Walking out of the region re-centres
         // it; that is not a change to the world and must not read as one, or the
@@ -413,6 +419,13 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
         _builtCompileCount = compileCount;
         _builtRegion = region;
         _hasRegion = true;
+        Vector3 dependencyMin = region.Min, dependencyMax = region.Max;
+        foreach (BrushPlacement placement in _scratchAdditives)
+        {
+            dependencyMin = Vector3.Min(dependencyMin, placement.WorldBounds.Min);
+            dependencyMax = Vector3.Max(dependencyMax, placement.WorldBounds.Max);
+        }
+        _dependencyBounds = new Aabb(dependencyMin, dependencyMax);
 
         if (!contentChanged)
             return;
@@ -431,34 +444,42 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
             AddCoveredPieces(_builtAdditives[i], _builtNegatives);
     }
 
-    // The additive brushes inside the region, and EVERY negative in the world.
-    //
-    // The asymmetry is deliberate. An additive brush outside the region is
-    // skipped because nothing will ever query it; a negative outside it may
-    // still cut a brush that straddles the boundary, and dropping that negative
-    // would restore the solid it removed — a doorway that seals itself as you
-    // walk away from it. Negatives are a handful of placement references, so
-    // keeping all of them costs a pointer each.
+    // Select additive residents locally, then cutters against each additive's
+    // complete bounds: a cutter outside the character region can still matter.
     private void SelectPlacements(in Aabb region, List<BrushPlacement> additives, List<BrushPlacement> negatives)
     {
+        WorldSelections++;
         additives.Clear();
         negatives.Clear();
 
         if (_scene.StaticWorld is not { } world)
             return;
 
-        IReadOnlyList<BrushPlacement> placements = world.Placements;
-        for (int i = 0; i < placements.Count; i++)
+        IReadOnlyList<BrushPlacement> placements = world.StoragePlacements;
+        _selectionIndices.Clear();
+        _cutterIndices.Clear();
+        world.StorageChunks.CollectResidents(region, _selectionIndices);
+        _selectionOrder.Clear();
+        _selectionOrder.AddRange(_selectionIndices);
+        _selectionOrder.Sort(placements as IComparer<int>);
+        foreach (int i in _selectionOrder)
         {
             BrushPlacement placement = placements[i];
-            if (placement.Brush.Operation == BrushOperation.Subtractive)
+            if (placement.Brush.Operation == BrushOperation.Additive && placement.WorldBounds.Intersects(region))
             {
-                negatives.Add(placement);
-                continue;
-            }
-
-            if (placement.WorldBounds.Intersects(region))
                 additives.Add(placement);
+                world.StorageChunks.CollectResidents(placement.WorldBounds, _cutterIndices);
+            }
+        }
+        _selectionOrder.Clear();
+        _selectionOrder.AddRange(_cutterIndices);
+        _selectionOrder.Sort(placements as IComparer<int>);
+        foreach (int i in _selectionOrder)
+        {
+            BrushPlacement cutter = placements[i];
+            if (cutter.Brush.Operation != BrushOperation.Subtractive) continue;
+            foreach (BrushPlacement additive in additives)
+                if (cutter.WorldBounds.Intersects(additive.WorldBounds)) { negatives.Add(cutter); break; }
         }
     }
 

@@ -100,11 +100,9 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
             return false;
         }
 
-        // The reload pump runs at frame start, after the previous frame's full
-        // fence wait — nothing on the GPU still references the old PSOs.
-        _renderer.WaitForGpu();
+        // Submitted frames keep the previous program alive through retirement.
         DisposePsos();
-        _rootSignature.Dispose();
+        _renderer.Retire(ref _rootSignature);
 
         _vsBytecode = vs;
         _psBytecode = ps;
@@ -627,13 +625,16 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         if (_disposed) return;
         _disposed = true;
         DisposePsos();
-        _rootSignature.Dispose();
+        _renderer.Retire(ref _rootSignature);
     }
 
     private void DisposePsos()
     {
         foreach (var pso in _psoCache.Values)
-            pso.Dispose();
+        {
+            var owned = pso;
+            _renderer.Retire(ref owned);
+        }
         _psoCache.Clear();
     }
 

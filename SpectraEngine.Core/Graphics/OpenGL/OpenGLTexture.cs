@@ -26,7 +26,7 @@ internal sealed class OpenGLTexture : Texture
         _filter = filter;
     }
 
-    internal static unsafe OpenGLTexture Create(GL gl, in TextureUploadDesc desc)
+    internal static unsafe OpenGLTexture Create(GL gl, in TextureUploadDesc desc, bool deferred = false)
     {
         TextureFormat format = desc.Format;
         TextureColorSpace resolved = TextureFormatInfo.Resolve(format, desc.ColorSpace);
@@ -49,14 +49,24 @@ internal sealed class OpenGLTexture : Texture
         if (!compressed && pixelFormat != PixelFormat.Rgba)
             gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
 
-        UploadLevels(gl, desc, internalFormat, pixelFormat, pixelType, compressed);
+        if (!deferred) UploadLevels(gl, desc, internalFormat, pixelFormat, pixelType, compressed);
+        else
+            for (int level = 0; level < desc.MipCount; level++)
+            {
+                var mip = desc.Mips[level];
+                if (compressed)
+                    gl.CompressedTexImage2D(TextureTarget.Texture2D, level, internalFormat,
+                        (uint)mip.Width, (uint)mip.Height, 0, (uint)TextureUploadLayout.TightLevelSize(format, mip), null);
+                else gl.TexImage2D(TextureTarget.Texture2D, level, internalFormat,
+                    (uint)mip.Width, (uint)mip.Height, 0, pixelFormat, pixelType, null);
+            }
 
         // A supplied chain is never regenerated: it is what the cooker produced,
         // and a compressed one cannot be regenerated at all (GenerateMipmap has
         // no path that re-encodes blocks).
         bool wantsMipmaps = filter == TextureFilter.LinearMipmap;
         bool generate = wantsMipmaps && !desc.HasSuppliedMipChain && !compressed;
-        if (generate)
+        if (generate && !deferred)
             gl.GenerateMipmap(TextureTarget.Texture2D);
 
         // A texture with only SOME of its levels defined is INCOMPLETE, and an
@@ -200,6 +210,46 @@ internal sealed class OpenGLTexture : Texture
     {
         _gl.ActiveTexture(TextureUnit.Texture0 + unit);
         _gl.BindTexture(TextureTarget.Texture2D, Handle);
+    }
+
+    internal override unsafe void WriteUploadRows(int level, TextureMipDesc mip, int firstRow, int rowCount, ReadOnlySpan<byte> bytes)
+    {
+        bool compressed = TextureFormatInfo.IsBlockCompressed(Format);
+        int pitch = TextureFormatInfo.TightRowPitch(Format, mip.Width);
+        byte[]? scratch = null;
+        try
+        {
+            if (mip.RowPitch != pitch)
+            {
+                scratch = System.Buffers.ArrayPool<byte>.Shared.Rent(pitch * rowCount);
+                for (int row = 0; row < rowCount; row++) bytes.Slice(row * mip.RowPitch, pitch).CopyTo(scratch.AsSpan(row * pitch));
+                bytes = scratch.AsSpan(0, pitch * rowCount);
+            }
+            var formats = GlFormats(Format, ColorSpace);
+            _gl.BindTexture(TextureTarget.Texture2D, Handle);
+            _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+            int blockHeight = compressed ? 4 : 1;
+            uint y = (uint)(firstRow * blockHeight);
+            uint height = (uint)Math.Min(rowCount * blockHeight, mip.Height - (int)y);
+            fixed (byte* source = bytes)
+            {
+                if (compressed) _gl.CompressedTexSubImage2D(TextureTarget.Texture2D, level, 0, (int)y,
+                    (uint)mip.Width, height, formats.Internal, (uint)bytes.Length, source);
+                else _gl.TexSubImage2D(TextureTarget.Texture2D, level, 0, (int)y,
+                    (uint)mip.Width, height, formats.Pixel, formats.Type, source);
+            }
+            _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
+            _gl.BindTexture(TextureTarget.Texture2D, 0);
+        }
+        finally { if (scratch is not null) System.Buffers.ArrayPool<byte>.Shared.Return(scratch); }
+    }
+
+    internal override void FinishUpload(bool generateMips)
+    {
+        if (!generateMips) return;
+        _gl.BindTexture(TextureTarget.Texture2D, Handle);
+        _gl.GenerateMipmap(TextureTarget.Texture2D);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
     }
 
     // Only the INTERNAL format carries the colour space; the pixel format

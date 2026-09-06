@@ -55,10 +55,13 @@ public sealed class ModelAsset
     public ModelImportOptions Options { get; }
 
     /// <summary>
-    /// The imported geometry and hierarchy, or null while an async import is
-    /// still in flight (or after one failed). Render thread.
+    /// Full import data when the CPU retention policy is Full; otherwise null.
+    /// Use Metadata and IsReady for every retention policy. Render thread.
     /// </summary>
     public ModelData? Data { get; internal set; }
+
+    /// <summary>Retained for every CPU policy, including GPU-only assets.</summary>
+    public ModelMetadata? Metadata { get; internal set; }
 
     /// <summary>
     /// GPU meshes, index-aligned with <see cref="ModelData.Meshes"/>. Empty
@@ -86,13 +89,13 @@ public sealed class ModelAsset
     internal bool ImportPending { get; set; }
 
     /// <summary>True once the import landed and the GPU resources exist. Render thread.</summary>
-    public bool IsReady => Data is not null;
+    public bool IsReady => Metadata is not null;
 
     /// <summary>
     /// The model's bounds in its own space, or an empty box before it is ready.
     /// Render thread.
     /// </summary>
-    public Aabb LocalBounds => Data?.LocalBounds ?? default;
+    public Aabb LocalBounds => Metadata?.LocalBounds ?? default;
 
     /// <summary>
     /// The material a submesh draws with. Falls back to the last material rather
@@ -100,6 +103,9 @@ public sealed class ModelAsset
     /// content and content must not be able to crash a draw. Render thread.
     /// </summary>
     public Material MaterialFor(in ModelMesh mesh)
+        => MaterialFor(mesh.MaterialIndex);
+
+    public Material MaterialFor(int materialIndex)
     {
         IReadOnlyList<Material> materials = Materials;
         if (materials.Count == 0)
@@ -108,7 +114,7 @@ public sealed class ModelAsset
                 $"Model '{RelativePath}' has no materials; it is not loaded yet.");
         }
 
-        int index = mesh.MaterialIndex;
+        int index = materialIndex;
         if ((uint)index >= (uint)materials.Count)
             index = materials.Count - 1;
         return materials[index];
@@ -116,6 +122,7 @@ public sealed class ModelAsset
 
     /// <summary>Reserves the next import ticket for this asset. Any thread.</summary>
     internal long NextRequestSequence() => Interlocked.Increment(ref _requestSequence);
+    internal long RequestSequence => Interlocked.Read(ref _requestSequence);
 
     // Ticket of the newest import actually applied; see _requestSequence.
     internal long AppliedSequence { get; set; }

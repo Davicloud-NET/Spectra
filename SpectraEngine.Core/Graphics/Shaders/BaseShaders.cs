@@ -41,6 +41,7 @@ public static class BaseShaders
 
     /// <summary>File name of the deferred geometry pass.</summary>
     public const string GBufferFillFileName = "GBufferFill.spectrashade";
+    public const string GBufferFillCompactFileName = "GBufferFillCompact.spectrashade";
 
     /// <summary>File name of the deferred light pass.</summary>
     public const string DeferredLightFileName = "DeferredLight.spectrashade";
@@ -72,6 +73,7 @@ public static class BaseShaders
         DebugLineFileName,
         PostResolveFileName,
         GBufferFillFileName,
+        GBufferFillCompactFileName,
         DeferredLightFileName,
         ShadowDepthFileName,
         WorldLineFileName,
@@ -95,6 +97,7 @@ public static class BaseShaders
 
     /// <summary>The deferred geometry pass: writes surface properties, never light.</summary>
     public static string GBufferFill => ReadEmbedded(GBufferFillFileName);
+    public static string GBufferFillCompact => ReadEmbedded(GBufferFillCompactFileName);
 
     /// <summary>The deferred light pass: a Cook-Torrance BRDF over the G-buffer.</summary>
     public static string DeferredLight => ReadEmbedded(DeferredLightFileName);

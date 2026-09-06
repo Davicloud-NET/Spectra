@@ -1,4 +1,4 @@
-﻿using SpectraEngine.Core.Graphics;
+using SpectraEngine.Core.Graphics;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -73,7 +73,11 @@ internal sealed record DemoStartupOptions(
     string? ExportEntitySchemaPath = null,
     bool ExitAfterSave = false,
     bool ViewportCompare = false,
-    bool PacingProbe = false)
+    bool PacingProbe = false,
+    bool DemoCsgAnimation = false,
+    int FrameContexts = 2,
+    bool Uncapped = false,
+    GBufferLayout GBufferLayout = GBufferLayout.Standard)
 {
     /// <summary>
     /// Environment variable read when no command-line switch names the
@@ -86,7 +90,7 @@ internal sealed record DemoStartupOptions(
         "Usage: SpectraEngine.Executable [opengl|d3d11|d3d12] [--selftest[=true|false]] " +
         "[--fullscreen-cycle[=seconds]] [--play[=true|false]] [--offscreen-probe[=true|false]] " +
         "[--pipeline=<name>] [--shadows[=true|false]] [--profile[=true|false]] " +
-        "[--vsync[=true|false]] " +
+        "[--vsync[=true|false]] [--demo-animation=off|csg] [--frame-contexts=1|2|3] [--uncapped] [--gbuffer=standard|extended] " +
         "[--debug-layer[=true|false]] [--adapter=<name>] [--size=WxH] [--parts=<grid>] " +
         "[--props=<count>] [--map=<bundle.smap>] [--save-map=<bundle.smap>] " +
         "[--project=<folder>] [--save-project=<folder>] [--pack[=true|false]] [--dev[=true|false]] " +
@@ -122,6 +126,10 @@ internal sealed record DemoStartupOptions(
         bool shadows = true;
         bool profile = false;
         bool vsync = false;
+        bool demoCsgAnimation = false;
+        int frameContexts = 2;
+        bool uncapped = false;
+        GBufferLayout gbufferLayout = GBufferLayout.Standard;
         bool? debugLayer = null;
         string? adapter = null;
         (int, int)? windowSize = null;
@@ -215,6 +223,30 @@ internal sealed record DemoStartupOptions(
                 // vsync measures the monitor; the editor shell turns it on.
                 case "vsync" or "v-sync":
                     vsync = ParseBoolean(value, token);
+                    continue;
+                case "demo-animation":
+                    demoCsgAnimation = value?.ToLowerInvariant() switch
+                    {
+                        "off" => false,
+                        "csg" => true,
+                        _ => throw new ArgumentException("--demo-animation requires off or csg. " + Usage),
+                    };
+                    continue;
+                case "frame-contexts":
+                    frameContexts = ParseCount(value, token);
+                    if (frameContexts is < 1 or > 3)
+                        throw new ArgumentException("--frame-contexts requires 1, 2 or 3. " + Usage);
+                    continue;
+                case "uncapped":
+                    uncapped = ParseBoolean(value, token);
+                    continue;
+                case "gbuffer":
+                    gbufferLayout = value?.ToLowerInvariant() switch
+                    {
+                        "standard" => GBufferLayout.Standard,
+                        "extended" => GBufferLayout.Extended,
+                        _ => throw new ArgumentException("--gbuffer requires standard or extended. " + Usage),
+                    };
                     continue;
 
                 // The graphics validation layer. Defaults to the build flavour
@@ -396,7 +428,7 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromCommandLine, SelfTestSource.CommandLine,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe);
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout);
 
         if (!string.IsNullOrWhiteSpace(selfTestEnvironmentValue))
         {
@@ -406,14 +438,14 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromEnvironment, SelfTestSource.Environment,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe);
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout);
         }
 
         return new DemoStartupOptions(
             backend ?? GraphicsBackend.OpenGL, false, SelfTestSource.Default,
             fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe);
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout);
     }
 
     // A switch that takes a name needs one: a bare --pipeline says nothing

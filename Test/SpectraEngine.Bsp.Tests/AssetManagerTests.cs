@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Graphics;
@@ -363,7 +363,7 @@ public sealed class AssetManagerTests
             // Wait for this cycle's decode to be drained before the next one, so
             // the count below is exact rather than timing-dependent.
             int expected = i + 1;
-            PumpUntil(assets, () => DroppedDecodes(logger) == expected);
+            PumpUntil(assets, () => assets.QueueStatistics.Stale >= expected);
         }
 
         assets.ReleaseGraphicsResources();

@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D.Compilers;
 using Silk.NET.Direct3D11;
@@ -55,8 +55,8 @@ public sealed unsafe class D3D11Renderer : Renderer
     // Renderer.DestroyMesh/DestroyTexture via the Unregister callback handed
     // out at creation. Unsynchronized: creation and destruction both happen
     // on the render thread.
-    private readonly List<Mesh> _meshes = [];
-    private readonly List<Texture> _textures = [];
+    private readonly HashSet<Mesh> _meshes = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<Texture> _textures = new(ReferenceEqualityComparer.Instance);
     private readonly List<ShaderProgram> _shaders = [];
     private readonly List<ID3D11RenderPipeline> _pipelines = [];
     private readonly List<RenderTarget> _renderTargets = [];
@@ -270,6 +270,8 @@ public sealed unsafe class D3D11Renderer : Renderer
 
     public override void Initialize(IRenderSurface surface)
     {
+        if (UncappedPresentation)
+            _logger.LogInformation("Uncapped presentation unavailable: this D3D11 surface uses the existing bitblt/shared presentation path");
         _surface = surface;
 
         // Read the engine-fed latch, not window.FramebufferSize: this runs on
@@ -359,6 +361,13 @@ public sealed unsafe class D3D11Renderer : Renderer
         BeginFrameInstanceBuffers();
 
         if (_pipelines.Count == 0 || _surface is null) return;
+
+        if (Profiler.Enabled && Profiler.GpuTimer is null && !_gpuTimingUnavailable)
+        {
+            try { Profiler.GpuTimer = new D3D11GpuTimer((ID3D11Device*)_device.Handle, (ID3D11DeviceContext*)_context.Handle); }
+            catch (Exception ex) { _gpuTimingUnavailable = true; _logger.LogWarning(ex, "D3D11 GPU timestamps unavailable"); }
+        }
+        using var gpuTiming = new Diagnostics.GpuTimestampTimer.FrameScope(Profiler.Enabled ? Profiler.GpuTimer : null);
 
         // Null on a window surface, which is what keeps every "output null means
         // the back buffer" decision below byte-for-byte the path it always took.
@@ -1069,6 +1078,18 @@ public sealed unsafe class D3D11Renderer : Renderer
         return mesh;
     }
 
+    public override MeshUpload BeginMeshUpload(ReadOnlyMemory<float> vertices, ReadOnlyMemory<uint> indices,
+        ReadOnlySpan<VertexAttribute> attributes, MeshCpuAccess cpuAccess = MeshCpuAccess.Retained, Bsp.Aabb? knownBounds = null)
+    {
+        MeshesCreated++;
+        var litShader = (D3D11ShaderProgram?)DefaultShader
+            ?? throw new InvalidOperationException("Default shader must be created before meshes.");
+        var mesh = D3D11Mesh.Create(_device, vertices.Span, indices.Span, attributes, litShader.VertexBytecode, cpuAccess, deferred: true, knownBounds: knownBounds);
+        mesh.Unregister = () => _meshes.Remove(mesh);
+        _meshes.Add(mesh);
+        return new MeshUpload(this, mesh, vertices, indices, uploaded: false);
+    }
+
     /// <inheritdoc/>
     public override InstanceBuffer CreateInstanceBuffer(
         int capacityInstances, ReadOnlySpan<VertexAttribute> attributes, ShaderProgram program)
@@ -1095,6 +1116,15 @@ public sealed unsafe class D3D11Renderer : Renderer
         return texture;
     }
 
+    public override TextureUpload BeginTextureUpload(in TextureUploadDesc desc)
+    {
+        desc.Validate();
+        var texture = D3D11Texture.Create(_device, in desc, deferred: true);
+        texture.Unregister = () => _textures.Remove(texture);
+        _textures.Add(texture);
+        return new TextureUpload(this, texture, desc);
+    }
+
     public override ShaderProgram CreateShader(string vertexSource, string fragmentSource)
     {
         var shader = D3D11ShaderProgram.Create(_d3dCompiler, _device, _context, _bindCache, vertexSource, fragmentSource);
@@ -1119,6 +1149,8 @@ public sealed unsafe class D3D11Renderer : Renderer
 
     public override void Shutdown()
     {
+        Profiler.GpuTimer?.Dispose();
+        Profiler.GpuTimer = null;
         foreach (var pipeline in _pipelines)
             pipeline.Dispose();
         _pipelines.Clear();

@@ -40,7 +40,7 @@ internal sealed class HandBuiltSmodel
     public uint Magic = FourCc("SMDL");
     public ushort FormatVersion = 1;
     public ushort Flags;
-    public uint GeometryFormatVersion = 1;
+    public uint GeometryFormatVersion = SpectraEngine.Core.EngineInfo.GeometryFormatVersion;
     public float[] Bounds = [-1f, -2f, -3f, 4f, 5f, 6f];
 
     /// <summary>Written instead of the layout hashed from the VTXL payload.</summary>

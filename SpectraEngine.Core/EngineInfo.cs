@@ -90,7 +90,7 @@ namespace SpectraEngine.Core
         /// before either existed so that no pack is ever unversioned, which is what
         /// retrofitting it would have cost.
         /// </summary>
-        public const uint GeometryFormatVersion = 1;
+        public const uint GeometryFormatVersion = 2;
 
         /// <summary>
         /// Version of the .scmap container a map bake writes, stamped into

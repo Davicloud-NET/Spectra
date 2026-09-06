@@ -11,32 +11,8 @@ namespace SpectraEngine.Core.Assets;
 /// the engine already knows how to upload, instantiate and draw.
 /// </summary>
 /// <remarks>
-/// <para><b>The cooked path joins the loose one HERE and nowhere else</b>, which
-/// is what keeps <see cref="AssetManager"/>'s upload, material and lifetime code
-/// blind to where a model came from. Everything downstream of this - the GPU
-/// mesh per submesh, the material resolution, <c>ModelInstantiator</c>'s walk -
-/// is the code that was already there.</para>
-/// <para><b>This COPIES, and the copy is a stated cost rather than a
-/// mistake.</b> The format's whole point is that <c>VBUF</c> and <c>IBUF</c> are
-/// cast in place out of a mapped view, and <see cref="ModelMesh"/> predates it
-/// and demands a self-contained zero-based array per submesh, because that is
-/// what one <c>CreateMesh</c> call takes. So the zero-copy property survives as
-/// far as <see cref="SmodelReader"/> and stops here. What it buys even so is
-/// everything the cook did: no JSON, no accessor indirection, no de-interleaving,
-/// no importer, no native library. Making the copy go away is a renderer change -
-/// a mesh that can be drawn as a sub-range of a shared buffer - and is exactly
-/// what the format's one-buffer layout was designed to allow later.</para>
-/// <para><b>Because it copies, no span outlives the call and the caller's
-/// <c>ContentBlob</c> may be released the moment this returns.</b> That is worth
-/// stating: a builder that handed a span onward would have made the blob's
-/// lifetime the model's lifetime, and unmapping a pack view under a live span is
-/// an access violation with no managed stack.</para>
-/// <para><b>A submesh is remapped by the MINIMUM index in its own range</b>,
-/// never by an assumed vertex partition. This cooker writes each submesh's
-/// vertices as a contiguous run, so the slice is exact; a file whose submeshes
-/// interleave their vertices still loads correctly, just with a wider slice than
-/// it strictly needs. A remap that assumed contiguity would silently mis-address
-/// every vertex of such a file.</para>
+/// One owned copy of VBUF and IBUF leaves the mapped input free to close. All
+/// submeshes refer to ranges in that backing; compatibility arrays are lazy.
 /// </remarks>
 public static class CookedModelData
 {
@@ -61,6 +37,9 @@ public static class CookedModelData
 
         int submeshCount = model.Submeshes.Length;
         var meshes = new ModelMesh[submeshCount];
+        var indices = new uint[model.IndexCount];
+        for (int i = 0; i < indices.Length; i++) indices[i] = model.IndexAt(i);
+        var geometry = new ModelGeometry(model.Vertices.ToArray(), indices);
         var materials = new List<ModelMaterial>(submeshCount);
 
         // Path -> slot, so two submeshes wearing one material share a slot and
@@ -71,7 +50,7 @@ public static class CookedModelData
         for (int i = 0; i < submeshCount; i++)
         {
             SmodelSubmesh submesh = model.Submeshes[i];
-            meshes[i] = BuildMesh(model, submesh, i, MaterialSlot(model, submesh, materials, slots));
+            meshes[i] = BuildMesh(model, geometry, submesh, i, MaterialSlot(model, submesh, materials, slots));
         }
 
         // A model with no material at all still gets one slot, for the reason the
@@ -160,35 +139,26 @@ public static class CookedModelData
     }
 
     private static ModelMesh BuildMesh(
-        in SmodelModel model, in SmodelSubmesh submesh, int index, int materialSlot)
+        in SmodelModel model, ModelGeometry geometry, in SmodelSubmesh submesh, int index, int materialSlot)
     {
         int start = (int)submesh.IndexStart;
         int count = (int)submesh.IndexCount;
 
-        var indices = new uint[count];
+
         uint min = uint.MaxValue;
         uint max = 0;
         for (int i = 0; i < count; i++)
         {
             uint value = model.IndexAt(start + i);
-            indices[i] = value;
+
             if (value < min) min = value;
             if (value > max) max = value;
         }
 
-        int stride = (int)model.VertexStrideFloats;
         int vertexCount = model.VertexCount;
-
         if (count == 0)
-        {
-            // An empty range addresses no vertex, so there is nothing to slice
-            // and min/max are still their sentinels. A zero-vertex mesh is what
-            // the renderer is handed, which draws nothing - the same outcome as
-            // the range itself.
-            return new ModelMesh(
-                $"Submesh{index}", materialSlot, [], indices,
-                new Aabb(submesh.BoundsMin, submesh.BoundsMax), true, true);
-        }
+            return new ModelMesh("Submesh" + index, materialSlot, geometry, new((uint)start, 0),
+                0, 0, new Aabb(submesh.BoundsMin, submesh.BoundsMax), true, true);
 
         if (max >= (uint)vertexCount)
         {
@@ -200,20 +170,8 @@ public static class CookedModelData
                 $"'{model.Source}' submesh {index} names vertex {max}, past the {vertexCount} in VBUF.");
         }
 
-        int sliceVertices = (int)(max - min) + 1;
-        var vertices = new float[sliceVertices * stride];
-        model.Vertices.Slice((int)min * stride, vertices.Length).CopyTo(vertices);
-
-        for (int i = 0; i < count; i++) indices[i] -= min;
-
-        return new ModelMesh(
-            $"Submesh{index}",
-            materialSlot,
-            vertices,
-            indices,
-            new Aabb(submesh.BoundsMin, submesh.BoundsMax),
-            HadNormals: true,
-            HadTextureCoordinates: true);
+        return new ModelMesh("Submesh" + index, materialSlot, geometry, new((uint)start, (uint)count),
+            (int)min, (int)(max - min) + 1, new Aabb(submesh.BoundsMin, submesh.BoundsMax), true, true);
     }
 
     private static int[] MeshIndices(int count)

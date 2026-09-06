@@ -22,16 +22,20 @@ internal sealed class CsgWorldCarry
         PagedArray<Polygon[]> carvedPerBrush,
         PagedArray<Polygon[]> weldedPerBrush,
         PagedArray<int[]> carveNeighbors,
-        PagedArray<int[]> weldCandidates)
+        PagedArray<int[]> weldCandidates,
+        PagedArray<Polygon[]?> snappedPerBrush)
     {
         CarvedPerBrush = carvedPerBrush;
         WeldedPerBrush = weldedPerBrush;
         CarveNeighbors = carveNeighbors;
         WeldCandidates = weldCandidates;
+        SnappedPerBrush = snappedPerBrush;
     }
 
     /// <summary>Each placement's carved (pre-snap, world-space) surfaces.</summary>
     public PagedArray<Polygon[]> CarvedPerBrush { get; }
+    /// <summary>Immutable snap results; null means not requested by this world.</summary>
+    public PagedArray<Polygon[]?> SnappedPerBrush { get; }
 
     /// <summary>Each placement's snapped+welded surfaces.</summary>
     public PagedArray<Polygon[]> WeldedPerBrush { get; }
@@ -48,4 +52,17 @@ internal sealed class CsgWorldCarry
     /// one array.
     /// </summary>
     public PagedArray<int[]> WeldCandidates { get; }
+
+    internal CsgWorldCarry Expand(int count)
+    {
+        int oldCount = CarvedPerBrush.Count;
+        if (count == oldCount) return this;
+        var surfaces = new (int, Polygon[])[count - oldCount];
+        var indices = new (int, int[])[surfaces.Length];
+        for (int i = 0; i < surfaces.Length; i++)
+        { surfaces[i] = (oldCount + i, []); indices[i] = (oldCount + i, []); }
+        return new(CarvedPerBrush.WithReplacements(count, surfaces), WeldedPerBrush.WithReplacements(count, surfaces),
+            CarveNeighbors.WithReplacements(count, indices), WeldCandidates.WithReplacements(count, indices),
+            SnappedPerBrush.WithReplacements(count, []));
+    }
 }
