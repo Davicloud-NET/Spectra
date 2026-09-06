@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Graphics;
@@ -42,8 +42,8 @@ public sealed class AssetManagerTests
         texture.Wrap.ShouldBe(TextureWrap.Clamp);
         texture.Pixels.Length.ShouldBe(128 * 128 * 4);
 
-        // The placeholder plus this one; both registered with the renderer.
-        renderer.LiveTextures.Count.ShouldBe(2);
+        // The built-ins plus this one; all registered with the renderer.
+        renderer.LiveTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 1);
 
         assets.ReleaseGraphicsResources();
     }
@@ -62,8 +62,8 @@ public sealed class AssetManagerTests
         third.ShouldBeSameAs(first);
         second.Texture.ShouldBeSameAs(first.Texture);
         assets.TextureCount.ShouldBe(1);
-        // Placeholder + one upload: the repeat loads never touched the GPU.
-        renderer.CreatedTextures.Count.ShouldBe(2);
+        // Built-ins + one upload: the repeat loads never touched the GPU.
+        renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 1);
 
         TextureAsset other = assets.LoadTexture(CheckerGray);
         other.ShouldNotBeSameAs(first);
@@ -128,7 +128,7 @@ public sealed class AssetManagerTests
 
         assets.PumpPendingUploads().ShouldBe(0);
         assets.PumpPendingUploads().ShouldBe(0);
-        renderer.CreatedTextures.Count.ShouldBe(2); // placeholder + the one sync load
+        renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 1); // + the one sync load
 
         assets.ReleaseGraphicsResources();
     }
@@ -211,7 +211,7 @@ public sealed class AssetManagerTests
         var (assets, renderer) = CreateAttached();
         assets.LoadTexture(Grid);
         assets.LoadTexture(CheckerGray);
-        renderer.LiveTextures.Count.ShouldBe(3); // placeholder + two textures
+        renderer.LiveTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 2); // + two textures
 
         assets.ReleaseGraphicsResources();
 
@@ -489,7 +489,7 @@ public sealed class AssetManagerTests
         // Asking again for either one still hits the cache.
         assets.LoadTexture(Grid, TextureFilter.Nearest, TextureWrap.Clamp).ShouldBeSameAs(sharp);
         assets.LoadTexture(Grid).ShouldBeSameAs(tiled);
-        renderer.CreatedTextures.Count.ShouldBe(3); // placeholder + the two variants
+        renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 2); // + the two variants
 
         // A path-only lookup resolves to the first variant loaded; the exact
         // overload picks one out.
@@ -502,8 +502,10 @@ public sealed class AssetManagerTests
         // Unloading the path drops every variant of it.
         assets.UnloadTexture(Grid).ShouldBeTrue();
         assets.TextureCount.ShouldBe(0);
-        ((FakeTexture)renderer.CreatedTextures[1]).Disposed.ShouldBeTrue();
-        ((FakeTexture)renderer.CreatedTextures[2]).Disposed.ShouldBeTrue();
+        // Indexed past the built-ins rather than from zero: these are the first
+        // and second textures THIS test loaded.
+        ((FakeTexture)renderer.CreatedTextures[AssetTestFacts.BuiltInTextures]).Disposed.ShouldBeTrue();
+        ((FakeTexture)renderer.CreatedTextures[AssetTestFacts.BuiltInTextures + 1]).Disposed.ShouldBeTrue();
 
         assets.ReleaseGraphicsResources();
     }

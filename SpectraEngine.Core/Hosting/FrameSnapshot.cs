@@ -189,6 +189,28 @@ public sealed class FrameSnapshot
     public bool DebugLayerActive { get; init; }
 
     /// <summary>
+    /// How many cached asset references are standing on a failure: a texture
+    /// that would not decode, a material file that would not read, a sampler
+    /// slot left holding the magenta checker.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The one failure in this engine whose whole report is a colour.</b> A
+    /// reference that cannot be resolved degrades to the placeholder and a
+    /// warning line, deliberately, so a level with one bad path still opens.
+    /// The consequence is that the evidence is a magenta surface somewhere in
+    /// the world and a line in a log nobody is reading, which is why the number
+    /// leaves the engine at all.
+    /// </para>
+    /// <para>
+    /// Read at snapshot rate, so it lags a load or a fix by up to one publish
+    /// interval. It counts standing failures only: a decode still in flight is
+    /// bound to the placeholder too and is deliberately not counted.
+    /// </para>
+    /// </remarks>
+    public int PlaceholderBoundCount { get; init; }
+
+    /// <summary>
     /// Mean time the render thread spent waiting for the shared target's key
     /// since the last snapshot, in milliseconds. Zero on a windowed surface.
     /// </summary>

@@ -115,6 +115,30 @@ public sealed class Material
         return this;
     }
 
+    /// <summary>
+    /// How many sampler slots are bound DIRECTLY to <paramref name="texture"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Direct bindings only, and that is the point.</b> A slot bound through
+    /// a <see cref="Assets.TextureAsset"/> follows that handle through its
+    /// placeholder-to-loaded swap, so it is the handle's own state that says
+    /// whether it is standing on a failure; a slot bound to a raw texture has
+    /// nobody else to ask. The asset manager counts the two separately for that
+    /// reason. Returns 0 for null.
+    /// </remarks>
+    public int CountBindingsTo(Texture? texture)
+    {
+        if (texture is null) return 0;
+
+        int count = 0;
+        foreach (TextureBinding binding in _textures.Values)
+        {
+            if (ReferenceEquals(binding.Direct, texture)) count++;
+        }
+
+        return count;
+    }
+
     /// <summary>Reads back a scalar parameter set on this material.</summary>
     public bool TryGetFloat(string name, out float value) => _floats.TryGetValue(name, out value);
 

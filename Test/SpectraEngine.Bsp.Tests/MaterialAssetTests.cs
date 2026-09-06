@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Graphics;
@@ -86,8 +86,8 @@ public sealed class MaterialAssetTests
         second.ShouldBeSameAs(first);
         third.ShouldBeSameAs(first);
         assets.MaterialCount.ShouldBe(1);
-        // Placeholder + one diffuse upload: the repeat loads never touched disk.
-        renderer.CreatedTextures.Count.ShouldBe(2);
+        // Built-ins + one diffuse upload: the repeat loads never touched disk.
+        renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 1);
 
         Material other = assets.LoadMaterial(CheckerGray);
         other.ShouldNotBeSameAs(first);

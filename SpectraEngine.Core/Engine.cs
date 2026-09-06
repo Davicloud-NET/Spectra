@@ -216,6 +216,7 @@ public sealed class Engine
                 StaticWorldDefect = _sceneManager.ActiveScene?.StaticWorldDefect,
                 DebugLayerErrorCount = _publishedDebugLayerErrors,
                 DebugLayerActive = _renderer.DebugLayerActive,
+                PlaceholderBoundCount = _assetManager.PlaceholderBoundCount,
                 SharedAcquireWaitMs = acquireWaitMs,
                 SharedAcquirePeakMs = acquirePeakMs,
                 SharedTarget = _publishedSharedTarget,

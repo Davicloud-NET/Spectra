@@ -1124,6 +1124,47 @@ public sealed class ShellModel : ObservableObject
     public string DebugLayerLabel =>
         _debugLayerErrors == 1 ? "1 graphics error" : $"{_debugLayerErrors} graphics errors";
 
+    private int _placeholderBound;
+
+    /// <summary>
+    /// How many asset references are standing on a failure and drawing the
+    /// magenta checker.
+    /// </summary>
+    /// <remarks>
+    /// <b>A third standing slot, because this failure's only other report is a
+    /// colour somewhere in the level.</b> A material that will not resolve
+    /// degrades to the placeholder and warns once into a log; the surface itself
+    /// says something is wrong but not what, and a level big enough to scroll
+    /// can hide it entirely. The slot says how many, and the Problems panel says
+    /// which.
+    /// </remarks>
+    public int PlaceholderBoundCount
+    {
+        get => _placeholderBound;
+        private set
+        {
+            if (!Set(ref _placeholderBound, value))
+                return;
+
+            Raise(nameof(HasPlaceholderBound));
+            Raise(nameof(PlaceholderBoundLabel));
+            Raise(nameof(PlaceholderBoundTip));
+        }
+    }
+
+    /// <summary>Whether to show the standing missing-asset warning.</summary>
+    public bool HasPlaceholderBound => _placeholderBound > 0;
+
+    /// <summary>The standing warning's text.</summary>
+    public string PlaceholderBoundLabel =>
+        _placeholderBound == 1 ? "1 missing asset" : $"{_placeholderBound} missing assets";
+
+    /// <summary>What the slot has to say, for its tooltip.</summary>
+    public string PlaceholderBoundTip =>
+        $"{_placeholderBound} texture or material reference(s) could not be resolved, so those " +
+        "surfaces draw the magenta checker. Geometry that names no material at all is not counted " +
+        "here and is drawn flat grey.";
+
     /// <summary>Reports something that went normally.</summary>
     public void SetMessage(string text)
     {
@@ -1327,6 +1368,7 @@ public sealed class ShellModel : ObservableObject
             // detector state that is one publish out of date.
             DebugLayerActive = snapshot.DebugLayerActive;
             DebugLayerErrors = snapshot.DebugLayerErrorCount;
+            PlaceholderBoundCount = snapshot.PlaceholderBoundCount;
 
             // Everything below that goes through an OptimisticValue is reported
             // BY the engine and possibly still pending FROM the user; Apply is

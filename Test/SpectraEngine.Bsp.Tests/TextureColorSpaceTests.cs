@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Graphics;
@@ -128,7 +128,7 @@ public sealed class TextureColorSpaceTests
             .ShouldBeSameAs(albedo);
         assets.LoadTexture(Grid, TextureFilter.Nearest, TextureWrap.Repeat, TextureColorSpace.Linear)
             .ShouldBeSameAs(data);
-        renderer.CreatedTextures.Count.ShouldBe(3); // placeholder + the two variants
+        renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 2); // + the two variants
 
         assets.ReleaseGraphicsResources();
     }

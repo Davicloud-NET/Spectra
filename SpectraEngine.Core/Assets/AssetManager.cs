@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Assets.Images;
 using SpectraEngine.Core.Assets.Sources;
 using SpectraEngine.Core.Graphics;
@@ -83,6 +83,9 @@ public sealed partial class AssetManager : IDisposable
     /// <summary>Name carried by <see cref="DefaultMaterial"/>.</summary>
     public const string DefaultMaterialName = "default";
 
+    /// <summary>Name carried by <see cref="NeutralMaterial"/>.</summary>
+    public const string NeutralMaterialName = "neutral";
+
     // The built-in lit shader's diffuse sampler and tint uniform. The fallback
     // material fills them by name because it is built without ever reading a
     // material file.
@@ -135,6 +138,19 @@ public sealed partial class AssetManager : IDisposable
     // is attached and after teardown. AttachRenderer fills in its shader and
     // placeholder binding; ReleaseGraphicsResources strips them again.
     private readonly Material _defaultMaterial;
+
+    // The surface a face wearing MaterialRef.Default gets. Built beside the
+    // default material and completed by AttachRenderer in the same way, because
+    // the two differ in exactly one thing: what they MEAN. The default material
+    // is the answer to a reference that failed and wears the magenta checker so
+    // the failure is unmistakable; this one is the answer to a face that never
+    // named a material at all, which is not a failure and must not look like one.
+    private readonly Material _neutralMaterial;
+
+    // One white texel, so the neutral material is its base colour and nothing
+    // else. Written on the render thread in AttachRenderer, read from any thread
+    // in PlaceholderBoundCount, so volatile for the same reason _placeholder is.
+    private volatile Texture? _white;
 
     // Watcher thread -> render thread: absolute paths of files that changed.
     private readonly ConcurrentQueue<string> _changedFiles = new();
@@ -217,7 +233,21 @@ public sealed partial class AssetManager : IDisposable
         // back to the default material is unmistakable on screen.
         _defaultMaterial = new Material(null) { Name = DefaultMaterialName };
         SeedBuiltInParameters(_defaultMaterial);
+
+        // Seeded the same way, then tinted: the white texel AttachRenderer binds
+        // shows the base colour through unmodulated, so this is a flat grey
+        // surface and nothing more. #8C8C99 is the value dev_grid.spectramat
+        // names, and it goes through the same sRGB-to-linear conversion the
+        // material parser applies to a colour directive, so the two agree.
+        _neutralMaterial = new Material(null) { Name = NeutralMaterialName };
+        SeedBuiltInParameters(_neutralMaterial);
+        _neutralMaterial.SetVector3(BaseColorParameter, NeutralBaseColorLinear);
     }
+
+    // #8C8C99 in linear light. Computed rather than written out, because a
+    // transcribed linear triple is a number nobody can check against the hex.
+    private static readonly Vector3 NeutralBaseColorLinear =
+        ColorSpace.SrgbToLinear(new Vector3(140f / 255f, 140f / 255f, 153f / 255f));
 
     // The stack a content-root-only caller gets: one loose folder, not strict,
     // which is what the engine has always done.
@@ -296,6 +326,87 @@ public sealed partial class AssetManager : IDisposable
     /// a white tint, and the placeholder checker.
     /// </remarks>
     public Material DefaultMaterial => _defaultMaterial;
+
+    /// <summary>
+    /// The surface for geometry that names no material at all: a face carrying
+    /// <see cref="Bsp.MaterialRef.Default"/>. Flat grey, never the magenta
+    /// checker.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Naming nothing is not the same as naming something that is missing,
+    /// and this is the whole distinction.</b> A brush face with no material is
+    /// the ordinary state of blockout geometry: the baseplate of a new project,
+    /// every freshly inserted block. Answering it with
+    /// <see cref="DefaultMaterial"/> put the engine's error texture under the
+    /// first thing every user ever builds, with nothing wrong and nothing to
+    /// report. A reference that was made and could not be resolved still gets
+    /// the checker and still gets a warning line; that path is untouched.
+    /// </para>
+    /// <para>
+    /// Never null, like <see cref="DefaultMaterial"/>. Before
+    /// <see cref="AttachRenderer"/> it carries no shader and no texture, so a
+    /// headless scene draws nothing with it, which is what the default material
+    /// does at that point too.
+    /// </para>
+    /// </remarks>
+    public Material NeutralMaterial => _neutralMaterial;
+
+    /// <summary>
+    /// How many cached references are standing on a failure right now: textures
+    /// whose decode failed, materials whose file could not be read, and sampler
+    /// slots left holding the magenta checker. Any thread.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Standing failures only.</b> A texture whose decode is still in flight
+    /// is bound to the placeholder and is not counted, or the number would flash
+    /// on every load and teach that it means nothing. <see cref="TextureAsset.LoadFailed"/>
+    /// is what separates the two.
+    /// </para>
+    /// <para>
+    /// <b>What it cannot see:</b> a material handed out by a path that never
+    /// entered the cache. Everything in this class routes through
+    /// <see cref="LoadMaterial"/>, so there is no such site today; a new one
+    /// would go uncounted, which is why this remark exists.
+    /// </para>
+    /// </remarks>
+    public int PlaceholderBoundCount
+    {
+        get
+        {
+            int count = 0;
+
+            lock (_sync)
+            {
+                foreach (List<TextureAsset> variants in _textures.Values)
+                {
+                    foreach (TextureAsset asset in variants)
+                    {
+                        if (asset.LoadFailed) count++;
+                    }
+                }
+            }
+
+            // Never nested with _sync: the two locks are taken one after the
+            // other, and nothing inside either one reaches for the other.
+            Texture? placeholder = _placeholder;
+            lock (_materialSync)
+            {
+                count += _unusableMaterialPaths.Count;
+                foreach (Material material in _materials.Values)
+                {
+                    // A path cached as the fallback is a material file that
+                    // could not be read. Its own bindings are the fallback's, so
+                    // counting them again would count one failure twice.
+                    if (ReferenceEquals(material, _defaultMaterial)) count++;
+                    else count += material.CountBindingsTo(placeholder);
+                }
+            }
+
+            return count;
+        }
+    }
 
     /// <summary>
     /// Optional hook that turns a material file's <c>shader</c> name into a
@@ -377,12 +488,18 @@ public sealed partial class AssetManager : IDisposable
         _uploadPipeline = new AssetUploadPipeline(_uploadBudget);
         Texture placeholder = CreatePlaceholder(renderer);
         _placeholder = placeholder;
+        Texture white = CreateWhiteTexel(renderer);
+        _white = white;
 
         // Complete the fallback material now that a shader and a GPU texture
         // exist. The instance is reused, not replaced, so anything already
         // holding it (a mesh, a brush face) starts drawing correctly.
         _defaultMaterial.Shader = renderer.DefaultShader;
         _defaultMaterial.SetTexture(DiffuseSlotName, 0, placeholder);
+
+        // The same completion for the neutral surface, one texture apart.
+        _neutralMaterial.Shader = renderer.DefaultShader;
+        _neutralMaterial.SetTexture(DiffuseSlotName, 0, white);
         if (renderer.DefaultShader is null)
         {
             _logger.LogWarning(
@@ -834,10 +951,23 @@ public sealed partial class AssetManager : IDisposable
         _defaultMaterial.ClearTextures();
         _defaultMaterial.Shader = null;
 
+        // The neutral surface is stripped for the same reason and at the same
+        // moment: its texture is about to be destroyed, and a material left
+        // pointing at a freed one would draw through a dangling handle in the
+        // next session.
+        _neutralMaterial.ClearTextures();
+        _neutralMaterial.Shader = null;
+
         if (_placeholder is { } placeholder)
         {
             _renderer?.DestroyTexture(placeholder);
             _placeholder = null;
+        }
+
+        if (_white is { } white)
+        {
+            _renderer?.DestroyTexture(white);
+            _white = null;
         }
 
         _renderer = null;
@@ -1250,7 +1380,16 @@ public sealed partial class AssetManager : IDisposable
     // per-asset state and outlives every swap, so it is skipped here.
     private bool DestroyOwned(Texture? texture)
     {
-        if (texture is null || ReferenceEquals(texture, _placeholder)) return false;
+        // The two manager-owned textures are shared by every asset that fell
+        // back to them, so releasing one asset must never destroy them; they go
+        // at teardown and nowhere else.
+        if (texture is null ||
+            ReferenceEquals(texture, _placeholder) ||
+            ReferenceEquals(texture, _white))
+        {
+            return false;
+        }
+
         _renderer?.DestroyTexture(texture);
         return true;
     }
@@ -1443,6 +1582,17 @@ public sealed partial class AssetManager : IDisposable
         // magenta on screen as the same value typed into a material would be.
         return renderer.CreateTexture(
             pixels, size, size, TextureFormat.Rgb8, TextureColorSpace.Srgb,
+            TextureFilter.Nearest, TextureWrap.Repeat);
+    }
+
+    // One white texel: the identity texture for a base colour, so the neutral
+    // material is exactly its own tint. Nearest and Repeat because there is
+    // nothing to filter and nothing to wrap.
+    private static Texture CreateWhiteTexel(Renderer renderer)
+    {
+        byte[] pixels = [255, 255, 255];
+        return renderer.CreateTexture(
+            pixels, 1, 1, TextureFormat.Rgb8, TextureColorSpace.Srgb,
             TextureFilter.Nearest, TextureWrap.Repeat);
     }
 

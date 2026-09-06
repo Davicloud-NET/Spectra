@@ -534,8 +534,10 @@ public sealed class SceneManager
     /// <see cref="Bsp.MaterialRef.Default"/> rather than naming a material,
     /// because a new project's content root is empty and a baseplate that
     /// warned about a missing file on first boot would teach that warnings are
-    /// noise. The sun's direction and tuning are the demo's, which are stated
-    /// for the engine's BRDF.
+    /// noise. That names nothing rather than naming something absent, so it
+    /// draws with <see cref="Assets.AssetManager.NeutralMaterial"/>: flat grey,
+    /// never the magenta checker a failed reference gets. The sun's direction
+    /// and tuning are the demo's, which are stated for the engine's BRDF.
     /// </remarks>
     public static void PopulateBaseplate(Scene scene)
     {
@@ -1715,6 +1717,7 @@ public sealed class SceneManager
                 ISceneEditor? editor = Editor;
                 _logger.LogInformation(
                     "Assets: {Textures} texture(s), {Materials} material(s), " +
+                    "{PlaceholderBound} placeholder-bound, " +
                     "{Models} model(s) requested / {Placed} placed; " +
                     "world: {ChunksVisible} of {ChunksTotal} chunks visible, " +
                     "{BatchesVisible} of {BatchesTotal} material batches; " +
@@ -1730,6 +1733,7 @@ public sealed class SceneManager
                     "character: {CharacterMode}; " +
                     "entities: {EntityRuntime}",
                     assets?.TextureCount ?? 0, assets?.MaterialCount ?? 0,
+                    assets?.PlaceholderBoundCount ?? 0,
                     _modelsRequested, _modelsPlaced,
                     renderView.WorldChunksVisible, renderView.WorldChunksTotal,
                     renderView.WorldMaterialBatchesVisible, renderView.WorldMaterialBatchesTotal,

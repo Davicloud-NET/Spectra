@@ -1085,6 +1085,24 @@
             <Border Classes="groupsep" Margin="4,0" />
           </StackPanel>
 
+          <!-- Missing content, standing for the same reason as the two above.
+               A reference that will not resolve draws the magenta checker and
+               warns once into a log; the surface says something is wrong and
+               not what, and in a level big enough to scroll it can be off
+               screen entirely. Geometry that names no material is NOT counted
+               here: that is flat grey and perfectly healthy. -->
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                      IsVisible="{Binding HasPlaceholderBound}"
+                      ToolTip.Tip="{Binding PlaceholderBoundTip}">
+            <Path Classes="icon" Width="13" Height="13" Stretch="Uniform"
+                  RenderTransform="none"
+                  Data="{StaticResource IconWarning}"
+                  Stroke="{StaticResource SpectraWarning}" StrokeThickness="1.3" />
+            <TextBlock Classes="value" Text="{Binding PlaceholderBoundLabel}"
+                       Foreground="{StaticResource SpectraWarning}" />
+            <Border Classes="groupsep" Margin="4,0" />
+          </StackPanel>
+
           <!-- Play mode's standing chip, in the standing-state area beside the
                world-defect slot: a session someone is walking through must say
                so somewhere that does not scroll away. -->

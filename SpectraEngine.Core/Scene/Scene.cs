@@ -975,6 +975,12 @@ public sealed partial class Scene
     /// uploaded from then on; call <see cref="RefreshStaticWorldMaterials"/> to
     /// re-resolve the ones already on the GPU.
     /// </summary>
+    /// <remarks>
+    /// Optional. Left null, an unnamed face draws with
+    /// <see cref="AssetManager.NeutralMaterial"/>, which is flat grey; a host
+    /// only assigns this when it wants something else, as the demo does with its
+    /// development grid.
+    /// </remarks>
     public Material? StaticWorldMaterial { get; set; }
 
     /// <summary>
@@ -1111,7 +1117,16 @@ public sealed partial class Scene
         if (!reference.IsDefault && Assets is { } assets)
             return assets.ResolveMaterial(reference);
 
-        return StaticWorldMaterial ?? Assets?.ResolveMaterial(MaterialRef.Default);
+        // A face that names NOTHING gets the neutral surface, never the asset
+        // manager's fallback. The two are one call apart and mean opposite
+        // things: the fallback wears the magenta checker because it is the
+        // answer to a reference that failed, and a face with no reference has
+        // not failed at all. This is the only place that distinction is drawn,
+        // so every host inherits it - the editor's baseplate, a fresh map, a
+        // block somebody just inserted - while a host that assigns
+        // StaticWorldMaterial itself still wins, which is what keeps the demo
+        // on its dev grid.
+        return StaticWorldMaterial ?? Assets?.NeutralMaterial;
     }
 
     // --- Static-world compile state -----------------------------------------

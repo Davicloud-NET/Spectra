@@ -362,3 +362,74 @@ public sealed class DebugLayerStatusTests
         Assert.True(model.DebugLayerClean);
     }
 }
+
+/// <summary>
+/// The standing missing-asset slot: how many references are drawing the magenta
+/// checker right now.
+/// </summary>
+/// <remarks>
+/// <b>The third standing slot, and the one whose failure is otherwise invisible
+/// from the chrome.</b> A reference that will not resolve degrades to the
+/// placeholder so the level still opens; the evidence is then a magenta surface
+/// somewhere in the world and one line in a log. This slot is what makes the
+/// count reachable without hunting for the surface.
+/// </remarks>
+public sealed class PlaceholderBoundStatusTests
+{
+    private static ShellModel Apply(int count)
+    {
+        var model = new ShellModel();
+        model.ApplySnapshot(new FrameSnapshot { PlaceholderBoundCount = count });
+        return model;
+    }
+
+    [Fact]
+    public void A_healthy_session_shows_nothing()
+    {
+        ShellModel model = Apply(0);
+
+        Assert.False(model.HasPlaceholderBound);
+    }
+
+    [Fact]
+    public void A_missing_asset_takes_the_standing_slot_and_names_its_count()
+    {
+        ShellModel model = Apply(3);
+
+        Assert.True(model.HasPlaceholderBound);
+        Assert.Equal("3 missing assets", model.PlaceholderBoundLabel);
+        Assert.Contains("3", model.PlaceholderBoundTip);
+
+        // Standing state, not a message: nothing may displace it and it says
+        // nothing on the message line.
+        Assert.False(model.HasMessage);
+    }
+
+    [Fact]
+    public void One_missing_asset_is_not_pluralised()
+    {
+        Assert.Equal("1 missing asset", Apply(1).PlaceholderBoundLabel);
+    }
+
+    [Fact]
+    public void The_tip_says_that_unnamed_geometry_is_not_a_missing_asset()
+    {
+        // The distinction the whole fix turns on, said where somebody reading
+        // the slot can find it: grey is healthy, magenta is not.
+        string tip = Apply(1).PlaceholderBoundTip;
+
+        Assert.Contains("names no material", tip);
+        Assert.Contains("grey", tip);
+    }
+
+    [Fact]
+    public void The_count_going_back_to_zero_clears_the_slot()
+    {
+        var model = new ShellModel();
+        model.ApplySnapshot(new FrameSnapshot { PlaceholderBoundCount = 2 });
+        Assert.True(model.HasPlaceholderBound);
+
+        model.ApplySnapshot(new FrameSnapshot { PlaceholderBoundCount = 0 });
+        Assert.False(model.HasPlaceholderBound);
+    }
+}
