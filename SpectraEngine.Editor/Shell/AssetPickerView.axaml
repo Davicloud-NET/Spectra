@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
+             x:Class="SpectraEngine.Editor.Shell.AssetPickerView">
+
+  <!--
+    The picker an asset row opens: a search box over the project's files of one
+    kind.
+
+    A LIST RATHER THAN A DROPDOWN, because the options are the PROJECT's rather
+    than this build's. A ComboBox is right for a fixed set the engine declares
+    and wrong for however many files somebody put in a folder, which is a search
+    - the same reason PropertyKind.Asset is not PropertyKind.Choice.
+
+    The keyboard is the command palette's, verbatim in shape: Up and Down move
+    the selection while the caret stays in the box, Enter takes the row, Escape
+    abandons. Somebody who has used Ctrl+P once already knows this control.
+  -->
+  <Border Classes="palette" Width="280">
+    <DockPanel>
+      <TextBox x:Name="Query" DockPanel.Dock="Top" Classes="field"
+               PlaceholderText="Search materials" />
+
+      <!-- What is left when nothing matches, or when there is no project to
+           search. A blank list looks exactly like a control that broke. -->
+      <TextBlock x:Name="Footer" DockPanel.Dock="Bottom" Classes="palettefoot"
+                 IsVisible="False" TextWrapping="Wrap" />
+
+      <ListBox x:Name="Rows" Classes="palettelist" MaxHeight="300">
+        <ListBox.ItemTemplate>
+          <DataTemplate DataType="shell:AssetPickerRow">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Text="{Binding Stem}" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" />
+              <!-- The folder, because two projects in three have a brick.
+                   Secondary, because the name is what is being chosen. -->
+              <TextBlock Grid.Column="1" Classes="palettechord" Text="{Binding Folder}"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                         MaxWidth="120" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+  </Border>
+</UserControl>

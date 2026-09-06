@@ -39,6 +39,12 @@ public static class NodeInspector
     public const string NodeGroup = "Node";
     public const string TransformGroup = "Transform";
     public const string BrushGroup = "Brush";
+
+    /// <summary>The material every face of a brush wears.</summary>
+    public const string MaterialGroup = "Material";
+
+    /// <summary>The picked face: its material and its texture frame.</summary>
+    public const string FaceGroup = "Face";
     public const string LightGroup = "Light";
     public const string MeshGroup = "Mesh";
     public const string EntityGroup = "Entity";
@@ -96,7 +102,8 @@ public static class NodeInspector
     /// same answer an unknown classname gets.
     /// </param>
     public static void Describe(
-        SceneNode node, List<PropertyRow> into, EntitySchemaCatalog? schemas = null)
+        SceneNode node, List<PropertyRow> into, EntitySchemaCatalog? schemas = null,
+        int pickedPlane = -1)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(into);
@@ -141,6 +148,11 @@ public static class NodeInspector
 
         if (node.Entity is { } entity)
             DescribeEntity(entity, schemas, into);
+        // LAST, because PropertyId's declaration order is the merged panel's
+        // display order and these ids are appended: emitting them beside the
+        // brush rows would lay a single selection out differently from two.
+        if (node.Brush is { } surfaced)
+            DescribeMaterial(node, surfaced, pickedPlane, into);
     }
 
     /// <summary>
@@ -175,7 +187,8 @@ public static class NodeInspector
     /// <param name="into">The list to fill; cleared first.</param>
     /// <param name="schemas">What the entity classes in this scene declare, or null.</param>
     public static void Describe(
-        IReadOnlyList<SceneNode> nodes, List<PropertyRow> into, EntitySchemaCatalog? schemas = null)
+        IReadOnlyList<SceneNode> nodes, List<PropertyRow> into, EntitySchemaCatalog? schemas = null,
+        int pickedPlane = -1)
     {
         ArgumentNullException.ThrowIfNull(nodes);
         ArgumentNullException.ThrowIfNull(into);
@@ -186,9 +199,13 @@ public static class NodeInspector
 
         if (nodes.Count == 1)
         {
-            Describe(nodes[0], into, schemas);
+            Describe(nodes[0], into, schemas, pickedPlane);
             return;
         }
+
+        // A picked face is dropped for a multi-selection deliberately: a plane
+        // index means nothing across two brushes, because face 4 of one is not
+        // face 4 of another.
 
         var merged = new SortedDictionary<RowSlot, PropertyRow>();
         var slots = new Dictionary<(PropertyId Id, string Key), RowSlot>();
@@ -304,6 +321,131 @@ public static class NodeInspector
         // works in, so the number here and the number the gizmo reports agree.
         Aabb bounds = brush.LocalBounds;
         into.Add(PropertyRow.OfVector(BrushGroup, "Size", PropertyId.BrushSize, bounds.Max - bounds.Min, "su"));
+    }
+
+    private static readonly string[] FaceAlignmentChoices = ["World", "Face"];
+
+    private const string FaceAlignmentHelp =
+        "World: the texture projects from the world axes, so it stays put when the brush turns. " +
+        "Face: it lies in the face's own plane and turns with it.";
+
+    /// <summary>
+    /// What this brush is surfaced with, and the picked face's own frame.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The task this closes is "put that material on this wall", which had no
+    /// complete route in the editor at all.</b> Materials were visible in the
+    /// content browser and could be revealed on disk; nothing assigned one.
+    /// </para>
+    /// <para>
+    /// <b>The Face section needs a SINGLE selected brush</b>, because a plane
+    /// index means nothing across two brushes: face 4 of one is not face 4 of
+    /// another. Multi-brush face editing is a real gesture and is deliberately
+    /// not this one.
+    /// </para>
+    /// </remarks>
+    private static void DescribeMaterial(SceneNode node, Brush brush, int pickedPlane, List<PropertyRow> into)
+    {
+        IReadOnlyList<FaceSurface> faces = brush.FaceSurfaces;
+
+        // What the whole brush wears, when its faces agree. They usually do:
+        // a brush is created with one material on every face and stays that way
+        // unless somebody paints one of them.
+        MaterialRef first = faces.Count > 0 ? faces[0].Material : MaterialRef.Default;
+        int distinct = 1;
+        for (int i = 1; i < faces.Count; i++)
+        {
+            if (!faces[i].Material.Equals(first)) distinct++;
+        }
+
+        bool agree = distinct == 1;
+        string path = agree ? PathOf(first) : string.Empty;
+        string note = agree
+            ? MissingNote(node, first)
+            : $"mixed ({CountDistinct(faces)} materials)";
+
+        into.Add(PropertyRow.OfAsset(
+            MaterialGroup, "Material", PropertyId.BrushMaterial, path, AssetKind.Material, note));
+
+        if (pickedPlane < 0 || pickedPlane >= faces.Count) return;
+
+        FaceSurface face = faces[pickedPlane];
+        Vector3 normal = FaceAxes.WorldNormal(brush.LocalPlanes[pickedPlane], node.WorldMatrix);
+        FaceSurface world = face.Transformed(node.WorldMatrix);
+        string key = pickedPlane.ToString(CultureInfo.InvariantCulture);
+
+        // Keyed like every other row of the section: a row's identity is the
+        // pair, and one row of a family carrying no key is the sort of exception
+        // that is fine until something shows two faces at once.
+        into.Add(PropertyRow.ReadOnly(
+            FaceGroup, "Face", PropertyId.FaceIndex, FaceLabel(brush, pickedPlane), key));
+
+        into.Add(PropertyRow.OfAsset(
+            FaceGroup, "Material", PropertyId.FaceMaterial, PathOf(face.Material),
+            AssetKind.Material, MissingNote(node, face.Material), key));
+
+        into.Add(PropertyRow.OfChoice(
+            FaceGroup, "Alignment", PropertyId.FaceAlignment,
+            FaceAxes.AlignmentLabel(in world),
+            FaceAlignmentChoices, help: FaceAlignmentHelp, key: key));
+
+        // World units per repeat, which is the unit the file stores and the one
+        // an author measures a wall in.
+        into.Add(PropertyRow.OfNumber(FaceGroup, "U scale", PropertyId.FaceUScale, face.UScale, "su/rep", key));
+        into.Add(PropertyRow.OfNumber(FaceGroup, "V scale", PropertyId.FaceVScale, face.VScale, "su/rep", key));
+        into.Add(PropertyRow.OfNumber(FaceGroup, "U offset", PropertyId.FaceUOffset, face.UOffset, "rep", key));
+        into.Add(PropertyRow.OfNumber(FaceGroup, "V offset", PropertyId.FaceVOffset, face.VOffset, "rep", key));
+        into.Add(PropertyRow.OfNumber(
+            FaceGroup, "Rotation", PropertyId.FaceRotation,
+            FaceAxes.RotationDegrees(in world, normal), "deg", key));
+    }
+
+    private static int CountDistinct(IReadOnlyList<FaceSurface> faces)
+    {
+        int count = 0;
+        for (int i = 0; i < faces.Count; i++)
+        {
+            bool seen = false;
+            for (int j = 0; j < i; j++)
+            {
+                if (faces[j].Material.Equals(faces[i].Material)) { seen = true; break; }
+            }
+
+            if (!seen) count++;
+        }
+
+        return count;
+    }
+
+    private static string PathOf(MaterialRef material) =>
+        MaterialRegistry.TryGetPath(material, out string path) ? path : string.Empty;
+
+    // Read from the asset manager's cache rather than the disk: this runs per
+    // publish, and a stat per face per frame is a filesystem call in the
+    // snapshot path.
+    private static string MissingNote(SceneNode node, MaterialRef material)
+    {
+        if (material.IsDefault) return string.Empty;
+        if (node.Owner?.Assets is not { } assets) return string.Empty;
+
+        return assets.IsMaterialMissing(PathOf(material)) ? "missing" : string.Empty;
+    }
+
+    // "+Y" when the plane's local normal is on an axis, which is every face of
+    // every box brush; otherwise its index, which at least identifies it.
+    private static string FaceLabel(Brush brush, int planeIndex)
+    {
+        Vector3 n = brush.LocalPlanes[planeIndex].Normal;
+
+        if (n.X > 0.999f) return "+X";
+        if (n.X < -0.999f) return "-X";
+        if (n.Y > 0.999f) return "+Y";
+        if (n.Y < -0.999f) return "-Y";
+        if (n.Z > 0.999f) return "+Z";
+        if (n.Z < -0.999f) return "-Z";
+
+        return "plane " + planeIndex.ToString(CultureInfo.InvariantCulture);
     }
 
     private static void DescribeLight(Light light, List<PropertyRow> into)

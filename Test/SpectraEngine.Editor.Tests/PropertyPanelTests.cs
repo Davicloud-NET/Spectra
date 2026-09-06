@@ -877,3 +877,152 @@ public sealed class PropertyPanelTests
         Assert.Equal("Part", rig.Row(PropertyId.BrushKind).ChoiceLabel);
     }
 }
+
+/// <summary>
+/// An asset row: a file chosen from the project rather than a value typed into
+/// a box.
+/// </summary>
+/// <remarks>
+/// <b>Not a Choice row, because the options are the PROJECT's rather than this
+/// build's.</b> A choice's list is a shared static array the engine declares; an
+/// asset's list is however many files somebody put in a folder, which is a
+/// search. What the panel owes on top of that is the two words a path cannot
+/// say: what the file is called, and what is wrong with it.
+/// </remarks>
+public sealed class AssetRowTests
+{
+    private sealed class Rig
+    {
+        public List<PropertyEdit> Edits { get; } = [];
+        public PropertyPanelModel Panel { get; }
+
+        public Rig() => Panel = new PropertyPanelModel(Edits.Add, _ => { }, _ => { });
+
+        public void Publish(params PropertyRow[] rows) => Panel.Apply(rows, 1);
+
+        public PropertyRowModel Row(PropertyId id) =>
+            Panel.Groups.SelectMany(g => g.Rows).Single(r => r.Id == id);
+    }
+
+    private static PropertyRow Asset(
+        PropertyId id, string path, string note = "", string key = "", bool mixed = false) =>
+        new()
+        {
+            Group = "Material", Name = "Material", Id = id, Key = key,
+            Kind = PropertyKind.Asset, Asset = AssetKind.Material,
+            Text = path, Note = note, Choices = [],
+            PresentCount = 1, SelectionCount = 1,
+
+            // Mixed is derived from the axis mask, so a one-cell row says so
+            // with All: the same flag a vector row uses for all three of its
+            // components.
+            MixedAxes = mixed ? PropertyAxes.All : PropertyAxes.None,
+        };
+
+    [Fact]
+    public void An_asset_row_shows_the_stem_and_keeps_the_path()
+    {
+        var rig = new Rig();
+        rig.Publish(Asset(PropertyId.BrushMaterial, "Materials/dev/wall_brick_02.spectramat"));
+
+        PropertyRowModel row = rig.Row(PropertyId.BrushMaterial);
+
+        row.IsAsset.ShouldBeTrue();
+        row.AssetKind.ShouldBe(AssetKind.Material);
+
+        // The stem, because the path does not fit: the panel is 300px wide and
+        // the folder is what the picker shows beside every row.
+        row.AssetLabel.ShouldBe("wall_brick_02");
+        row.AssetPath.ShouldBe("Materials/dev/wall_brick_02.spectramat");
+    }
+
+    [Fact]
+    public void An_empty_path_reads_as_the_engine_default()
+    {
+        var rig = new Rig();
+        rig.Publish(Asset(PropertyId.BrushMaterial, ""));
+
+        // A word rather than a blank cell: an empty control looks like a value
+        // that failed to load, and "no material" is a real, chosen state.
+        rig.Row(PropertyId.BrushMaterial).AssetLabel.ShouldBe("(default)");
+    }
+
+    [Fact]
+    public void A_mixed_selection_says_so_instead_of_naming_one_of_them()
+    {
+        var rig = new Rig();
+        rig.Publish(Asset(PropertyId.BrushMaterial, "", mixed: true));
+
+        rig.Row(PropertyId.BrushMaterial).AssetLabel.ShouldBe("(mixed)");
+    }
+
+    [Fact]
+    public void The_note_is_what_says_a_file_is_missing()
+    {
+        var rig = new Rig();
+        rig.Publish(Asset(PropertyId.BrushMaterial, "Materials/gone.spectramat", "missing"));
+
+        PropertyRowModel row = rig.Row(PropertyId.BrushMaterial);
+
+        // The face draws a magenta checker, which is a picture rather than a
+        // report: this row is the only place somebody is looking when they
+        // wonder why.
+        row.HasNote.ShouldBeTrue();
+        row.Note.ShouldBe("missing");
+    }
+
+    [Fact]
+    public void A_refresh_posts_nothing()
+    {
+        var rig = new Rig();
+        rig.Publish(Asset(PropertyId.BrushMaterial, "Materials/a.spectramat"));
+        rig.Publish(Asset(PropertyId.BrushMaterial, "Materials/b.spectramat"));
+
+        rig.Row(PropertyId.BrushMaterial).AssetLabel.ShouldBe("b");
+        rig.Edits.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Picking_posts_one_edit_carrying_the_rows_key()
+    {
+        var rig = new Rig();
+        rig.Publish(Asset(PropertyId.FaceMaterial, "Materials/a.spectramat", key: "4"));
+
+        rig.Row(PropertyId.FaceMaterial).PickAsset("Materials/b.spectramat");
+
+        rig.Edits.Count.ShouldBe(1);
+        rig.Edits[0].Id.ShouldBe(PropertyId.FaceMaterial);
+
+        // Without the key the edit names no face at all, and the editor refuses
+        // it rather than guessing at the first one.
+        rig.Edits[0].Key.ShouldBe("4");
+        rig.Edits[0].Text.ShouldBe("Materials/b.spectramat");
+    }
+
+    [Fact]
+    public void Picking_nothing_is_a_real_answer_and_posts_an_empty_path()
+    {
+        var rig = new Rig();
+        rig.Publish(Asset(PropertyId.BrushMaterial, "Materials/a.spectramat"));
+
+        rig.Row(PropertyId.BrushMaterial).PickAsset("");
+
+        rig.Edits.Count.ShouldBe(1);
+        rig.Edits[0].Text.ShouldBe("");
+    }
+
+    [Fact]
+    public void A_row_that_is_not_an_asset_refuses_a_pick()
+    {
+        var rig = new Rig();
+        rig.Publish(new PropertyRow
+        {
+            Group = "Transform", Name = "Position", Id = PropertyId.Position,
+            Kind = PropertyKind.Vector3, Choices = [], PresentCount = 1, SelectionCount = 1,
+        });
+
+        rig.Row(PropertyId.Position).PickAsset("Materials/a.spectramat");
+
+        rig.Edits.ShouldBeEmpty();
+    }
+}

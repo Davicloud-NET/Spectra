@@ -261,6 +261,54 @@ public sealed class EditorSession : IDisposable
     }
 
     /// <summary>
+    /// Paints a material onto the face under a viewport point, or onto the whole
+    /// brush there.
+    /// </summary>
+    /// <remarks>
+    /// An empty path is allowed and means the engine default, so this cannot
+    /// use <c>ThrowIfNullOrWhiteSpace</c> the way the model insert does: putting
+    /// a face back to no material at all is a thing people mean.
+    /// </remarks>
+    public void AssignMaterial(
+        string contentPath, Vector2? viewportPoint, MaterialDropScope scope,
+        Action<MaterialAssignReport> done)
+    {
+        ArgumentNullException.ThrowIfNull(contentPath);
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(_ => done(
+            Editor is { } editor
+                ? editor.AssignMaterial(contentPath, viewportPoint, scope)
+                : MaterialAssignReport.RefusedBecause(contentPath, "the session has no editor yet")));
+    }
+
+    /// <summary>Paints every selected brush, whole, in one history entry.</summary>
+    public void AssignMaterialToSelection(string contentPath, Action<MaterialAssignReport> done)
+    {
+        ArgumentNullException.ThrowIfNull(contentPath);
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(_ => done(
+            Editor is { } editor
+                ? editor.AssignMaterialToSelection(contentPath)
+                : MaterialAssignReport.RefusedBecause(contentPath, "the session has no editor yet")));
+    }
+
+    /// <summary>
+    /// Says whether a material drag is over the viewport, so the outline can
+    /// show what letting go would paint.
+    /// </summary>
+    /// <remarks>
+    /// <b>One command per STATE CHANGE, never per pointer move.</b> A drag
+    /// raises its hover event several hundred times over a viewport-sized pane
+    /// and every one carries the same answer, so the window compares before it
+    /// posts; a queue of identical commands would drain in front of the compile
+    /// pump on every frame of the gesture.
+    /// </remarks>
+    public void SetMaterialDrag(MaterialDropScope? scope) =>
+        Host.EnqueueCommand(_ => Editor?.SetMaterialDrag(scope));
+
+    /// <summary>
     /// Selects the node with this id. An id the scene no longer has is
     /// ordinary: a UI's view of the graph is a frame or two behind.
     /// </summary>

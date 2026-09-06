@@ -1,3 +1,5 @@
+﻿using SpectraEngine.Editing.Hosting;
+
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
@@ -55,7 +57,9 @@ public readonly record struct ViewportDropPrompt(
     bool Accepts,
     string Headline,
     string Subject,
-    string Reason)
+    string Reason,
+    string Hint = "",
+    string IconKey = "IconMesh")
 {
     /// <summary>No drag over the viewport, and nothing drawn.</summary>
     /// <remarks>
@@ -65,6 +69,12 @@ public readonly record struct ViewportDropPrompt(
     /// </remarks>
     public static ViewportDropPrompt None { get; } =
         new(false, false, string.Empty, string.Empty, string.Empty);
+
+    /// <summary>The icon a refusing prompt wears.</summary>
+    public const string RefusingIcon = "IconWarning";
+
+    /// <summary>The icon a material drop wears.</summary>
+    public const string MaterialIcon = "IconBrushPart";
 
     /// <summary>
     /// What to draw for <paramref name="payload"/> hovering over the viewport,
@@ -77,14 +87,32 @@ public readonly record struct ViewportDropPrompt(
     /// also the answer to "can this session be drawn over at all" - see the
     /// remarks on this type for why those are one question and not two.
     /// </param>
+    /// <param name="scope">
+    /// What a material would cover if it landed now. Read from the modifier
+    /// keys at pointer rate, so the hint follows a Ctrl press mid-drag: a
+    /// modifier whose effect only appears after the drop is a modifier nobody
+    /// trusts.
+    /// </param>
     public static ViewportDropPrompt For(
-        ContentDragPayload? payload, bool hasSession, bool viewportAcceptsDrops)
+        ContentDragPayload? payload, bool hasSession, bool viewportAcceptsDrops,
+        MaterialDropScope scope = MaterialDropScope.Face)
     {
         if (payload is null || !hasSession || !viewportAcceptsDrops)
             return None;
 
-        return AssetDropPolicy.Refuse(payload, hasSession, viewportAcceptsDrops) is { } refusal
-            ? new ViewportDropPrompt(true, false, "Cannot place", string.Empty, refusal)
-            : new ViewportDropPrompt(true, true, "Drop to place", payload.ContentPath, string.Empty);
+        if (AssetDropPolicy.Refuse(payload, hasSession, viewportAcceptsDrops) is { } refusal)
+            return new ViewportDropPrompt(true, false, "Cannot place", string.Empty, refusal, "", RefusingIcon);
+
+        if (payload.Kind == ContentKind.Material)
+        {
+            return new ViewportDropPrompt(
+                true, true, "Drop to paint", payload.ContentPath, string.Empty,
+                scope == MaterialDropScope.Face
+                    ? "this face; hold Ctrl for the whole block"
+                    : "the whole block; release Ctrl for one face",
+                MaterialIcon);
+        }
+
+        return new ViewportDropPrompt(true, true, "Drop to place", payload.ContentPath, string.Empty);
     }
 }

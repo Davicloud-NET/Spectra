@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -37,7 +37,20 @@ namespace SpectraEngine.Core.Scene;
 /// <param name="Distance">World-space distance from the ray origin to the hit (the ray parameter t).</param>
 /// <param name="Point">World-space hit position.</param>
 /// <param name="Normal">Unit world-space surface normal at the hit, facing the ray.</param>
-public readonly record struct SceneRaycastHit(SceneNode Node, float Distance, Vector3 Point, Vector3 Normal);
+/// <param name="PlaneIndex">
+/// Which of the brush's <see cref="Bsp.Brush.LocalPlanes"/> the ray entered
+/// through, or -1 when the hit was not a brush face.
+/// </param>
+/// <remarks>
+/// <b>The plane index was always computed and always thrown away.</b> The brush
+/// raycast finds the entry plane to derive the normal from it, and every gesture
+/// that acts on a FACE rather than an object - painting a material, reading a
+/// face's texture axes - needs exactly that number. A second query that
+/// recomputed it would be a narrow phase free to disagree with what the click
+/// selected.
+/// </remarks>
+public readonly record struct SceneRaycastHit(
+    SceneNode Node, float Distance, Vector3 Point, Vector3 Normal, int PlaneIndex = -1);
 
 /// <summary>
 /// A dynamic bounding-volume hierarchy over a scene's <em>spatial</em> nodes —
@@ -561,16 +574,22 @@ internal sealed class SceneBvh
                     continue;
 
                 if (sceneNode.Brush is { } brush &&
-                    RaycastBrush(sceneNode, brush, ray, best, out float tBrush, out Vector3 nBrush))
+                    RaycastBrush(
+                        sceneNode, brush, ray, best,
+                        out float tBrush, out Vector3 nBrush, out int planeBrush))
                 {
                     best = tBrush;
-                    hit = new SceneRaycastHit(sceneNode, tBrush, ray.PointAt(tBrush), nBrush);
+                    hit = new SceneRaycastHit(sceneNode, tBrush, ray.PointAt(tBrush), nBrush, planeBrush);
                     found = true;
                 }
                 if (sceneNode.MeshRenderer is { } meshRenderer &&
                     RaycastMesh(sceneNode, meshRenderer.Mesh, ray, best, out float tMesh, out Vector3 nMesh))
                 {
                     best = tMesh;
+                    // No plane index: a mesh has no brush face. A nearer mesh
+                    // on a node that also carries a brush therefore clears the
+                    // one the brush arm just set, which is right - what was hit
+                    // is the mesh.
                     hit = new SceneRaycastHit(sceneNode, tMesh, ray.PointAt(tMesh), nMesh);
                     found = true;
                 }
@@ -758,10 +777,12 @@ internal sealed class SceneBvh
     // only the local direction is scaled, not t; the normal maps through the
     // inverse transpose and is re-normalized.
     private static bool RaycastBrush(
-        SceneNode node, Brush brush, in Ray3 ray, float best, out float t, out Vector3 normal)
+        SceneNode node, Brush brush, in Ray3 ray, float best,
+        out float t, out Vector3 normal, out int planeIndex)
     {
         t = 0f;
         normal = default;
+        planeIndex = -1;
 
         if (!Matrix4x4.Invert(node.WorldMatrix, out Matrix4x4 inverse))
             return false; // degenerate transform (e.g. zero scale) — nothing to hit
@@ -810,6 +831,7 @@ internal sealed class SceneBvh
 
         t = tEnter;
         normal = WorldNormal(planes[enterPlane].Normal, inverse);
+        planeIndex = enterPlane;
         return true;
     }
 

@@ -20,6 +20,9 @@ public sealed class PropertyRowModel : ObservableObject
     private string _choice = string.Empty;
     private bool _applyingRefresh;
     private Vector3 _color;
+    private string _assetPath = string.Empty;
+    private bool _assetMixed;
+    private string _note = string.Empty;
     private string _hex = string.Empty;
     private IBrush _swatch = Brushes.Transparent;
 
@@ -33,6 +36,7 @@ public sealed class PropertyRowModel : ObservableObject
         Unit = row.Unit ?? string.Empty;
         Choices = row.Choices;
         ChoiceLabels = row.ChoiceLabels ?? row.Choices;
+        AssetKind = row.Asset;
         Help = row.Help ?? string.Empty;
 
         // A mismatched pair would silently pour one choice's word into another
@@ -300,6 +304,86 @@ public sealed class PropertyRowModel : ObservableObject
     public bool IsChoice => Kind == PropertyKind.Choice;
     public bool IsReadOnly => Kind == PropertyKind.ReadOnlyText;
 
+    /// <summary>A file chosen from the project, shown as a name and a button.</summary>
+    public bool IsAsset => Kind == PropertyKind.Asset;
+
+    /// <summary>Which kind of file this row's picker offers.</summary>
+    public AssetKind AssetKind { get; }
+
+    /// <summary>
+    /// The content-relative path this row holds, empty for the engine default.
+    /// </summary>
+    /// <remarks>
+    /// The PATH rather than the label, because it is what the picker opens on
+    /// and what a reveal navigates to; the label is for reading.
+    /// </remarks>
+    public string AssetPath
+    {
+        get => _assetPath;
+        private set
+        {
+            if (Set(ref _assetPath, value))
+                Raise(nameof(AssetLabel));
+        }
+    }
+
+    /// <summary>
+    /// The file's stem, or the word for having none.
+    /// </summary>
+    /// <remarks>
+    /// <b>The stem, because a path does not fit.</b> The panel is 300px wide
+    /// and <c>Materials/dev/wall_brick_02.spectramat</c> is not readable in it
+    /// at any font this shell uses; the folder is in the tooltip and the picker
+    /// shows it beside every row.
+    /// </remarks>
+    public string AssetLabel
+    {
+        get
+        {
+            if (IsPartial || _assetMixed) return "(mixed)";
+            if (_assetPath.Length == 0) return "(default)";
+
+            int slash = _assetPath.LastIndexOf('/');
+            string name = slash >= 0 ? _assetPath[(slash + 1)..] : _assetPath;
+            int dot = name.LastIndexOf('.');
+            return dot > 0 ? name[..dot] : name;
+        }
+    }
+
+    /// <summary>
+    /// What is wrong or unusual about this row's value, in one or two words.
+    /// </summary>
+    /// <remarks>
+    /// <b>"missing" is the whole reason this exists.</b> A material naming a
+    /// file nobody wrote degrades to the default material and a magenta
+    /// checker, which is a picture rather than a report: the row is the only
+    /// place a person is looking when they wonder why.
+    /// </remarks>
+    public string Note
+    {
+        get => _note;
+        private set
+        {
+            if (Set(ref _note, value))
+                Raise(nameof(HasNote));
+        }
+    }
+
+    /// <summary>Whether there is a note to show.</summary>
+    public bool HasNote => _note.Length > 0;
+
+    /// <summary>Writes a picked file into this row.</summary>
+    /// <remarks>
+    /// An empty path is a real answer and means the engine default, which is
+    /// what an unnamed brush face already draws with.
+    /// </remarks>
+    public void PickAsset(string contentPath)
+    {
+        if (!IsAsset) return;
+
+        Apply(new PropertyEdit { Id = Id, Key = Key, Text = contentPath ?? string.Empty });
+    }
+
     /// <summary>Whether this row's label is a drag handle for its value.</summary>
     public bool IsScrubbable => Kind is PropertyKind.Number or PropertyKind.Vector3;
 
@@ -323,6 +407,13 @@ public sealed class PropertyRowModel : ObservableObject
         PropertyId.Scale => 0.005f,
         PropertyId.LightIntensity => 0.05f,
         PropertyId.LightRange => 0.05f,
+
+        // A face's texture frame is measured in repeats and world units per
+        // repeat, both of which are small numbers where a whole unit of drag is
+        // a change nobody wanted.
+        PropertyId.FaceUScale or PropertyId.FaceVScale => 0.01f,
+        PropertyId.FaceUOffset or PropertyId.FaceVOffset => 0.005f,
+        PropertyId.FaceRotation => 0.25f,
         _ => 0.02f,
     };
 
@@ -334,7 +425,10 @@ public sealed class PropertyRowModel : ObservableObject
     public float KeyStep => Id switch
     {
         PropertyId.Rotation => 5f,
+        PropertyId.FaceRotation => 5f,
         PropertyId.Scale => 0.1f,
+        PropertyId.FaceUScale or PropertyId.FaceVScale => 0.1f,
+        PropertyId.FaceUOffset or PropertyId.FaceVOffset => 0.05f,
         _ => 1f,
     };
 
@@ -462,6 +556,15 @@ public sealed class PropertyRowModel : ObservableObject
                 _applyingRefresh = true;
                 Flag = row.Flag;
                 _applyingRefresh = false;
+                break;
+
+            case PropertyKind.Asset:
+                // No guard needed: nothing here is two-way, so a refresh cannot
+                // echo back as a pick the way a checkbox or a dropdown can.
+                _assetMixed = row.IsMixed;
+                AssetPath = row.IsMixed ? string.Empty : row.Text;
+                Note = row.Note ?? string.Empty;
+                Raise(nameof(AssetLabel));
                 break;
 
             case PropertyKind.Choice:

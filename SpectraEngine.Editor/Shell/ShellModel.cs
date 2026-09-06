@@ -1,4 +1,7 @@
-﻿using Avalonia.Threading;
+﻿using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Threading;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Scene;
 using System;
@@ -975,6 +978,9 @@ public sealed class ShellModel : ObservableObject
             Raise(nameof(DropHeadline));
             Raise(nameof(DropSubject));
             Raise(nameof(DropReason));
+            Raise(nameof(DropHint));
+            Raise(nameof(DropHasHint));
+            Raise(nameof(DropIcon));
         }
     }
 
@@ -992,6 +998,35 @@ public sealed class ShellModel : ObservableObject
 
     /// <summary>Why not, when the answer is no.</summary>
     public string DropReason => _dropPrompt.Reason;
+
+    /// <summary>
+    /// What exactly would be covered, and which key changes it.
+    /// </summary>
+    /// <remarks>
+    /// The modifier is advertised HERE rather than left to be discovered,
+    /// because a drag has no menu beside it and no shortcut printed anywhere:
+    /// the only moment "hold Ctrl for the whole block" can be read is while
+    /// somebody is holding the mouse down over the face it describes.
+    /// </remarks>
+    public string DropHint => _dropPrompt.Hint;
+
+    /// <summary>Whether there is a hint line to draw.</summary>
+    public bool DropHasHint => _dropPrompt.Hint.Length > 0;
+
+    /// <summary>
+    /// The glyph beside the verdict, resolved from the theme by name.
+    /// </summary>
+    /// <remarks>
+    /// One bound Path rather than three with two hidden: the arms share a hue
+    /// by design, so the icon is half of how they are told apart, and a third
+    /// arm would have made that a chain of negated visibility bindings nobody
+    /// can read. A missing resource draws nothing, and the words still say what
+    /// would happen.
+    /// </remarks>
+    public Geometry? DropIcon =>
+        Application.Current?.TryFindResource(_dropPrompt.IconKey, out object? value) == true
+            ? value as Geometry
+            : null;
 
     // ─── Message line ────────────────────────────────────
 
@@ -1294,6 +1329,18 @@ public sealed class ShellModel : ObservableObject
     /// thing that knows where a project's content root is.
     /// </summary>
     public ContentBrowserModel? Content { get; set; }
+
+    /// <summary>
+    /// The project's files, for the pickers that assign them.
+    /// </summary>
+    /// <remarks>
+    /// Beside the browser rather than inside it: a picker asks a different
+    /// question (every file of one kind, anywhere in the project) from the one
+    /// the browser answers (this folder, in order), and a picker that read the
+    /// browser's current folder would offer whatever the user last navigated
+    /// to.
+    /// </remarks>
+    public AssetCatalog? Assets { get; set; }
 
     // ─── Filter ──────────────────────────────────────────
 

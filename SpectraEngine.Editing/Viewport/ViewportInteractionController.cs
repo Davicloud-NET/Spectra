@@ -219,6 +219,19 @@ public sealed class ViewportInteractionController
     /// <summary>What a press would mean at the cursor's current position.</summary>
     public ViewportDragMode HoverMode { get; private set; }
 
+    /// <summary>
+    /// Which brush face is under the cursor, or -1.
+    /// </summary>
+    /// <remarks>
+    /// From the same pick the click uses, so an outline drawn from this cannot
+    /// promise a face the press will not take.
+    /// </remarks>
+    public int HoveredPlaneIndex { get; private set; } = -1;
+
+    // Which face the live press landed on, so the face can be picked once the
+    // selection it narrows has settled.
+    private int _pressedPlane = -1;
+
     // The cursor position the last hover was computed at. Exact equality
     // deliberately: a still cursor is by far the common case, and a tolerance
     // would only ever answer "no" one frame later.
@@ -260,7 +273,8 @@ public sealed class ViewportInteractionController
         PickDistance = HoverPickDistance;
         try
         {
-            HoveredNode = TryPickNode(in frame, out SceneNode? node) ? node : null;
+            HoveredNode = TryPickNode(in frame, out SceneNode? node, out int hoveredPlane) ? node : null;
+            HoveredPlaneIndex = HoveredNode is null ? -1 : hoveredPlane;
         }
         finally
         {
@@ -273,6 +287,7 @@ public sealed class ViewportInteractionController
     private void ClearHover()
     {
         HoveredNode = null;
+        HoveredPlaneIndex = -1;
         HoverMode = ViewportDragMode.None;
         _hoverCursor = new Vector2(float.NaN, float.NaN);
     }
@@ -420,6 +435,7 @@ public sealed class ViewportInteractionController
         BoxSelect.Cancel();
         Gizmos.Reset();
         _deferredSelect = null;
+        _pressedPlane = -1;
         PressedNode = null;
         // A hover names a live SceneNode, and a reset is what happens when a
         // scene is replaced. Keeping it would outline a node that no longer
@@ -467,11 +483,14 @@ public sealed class ViewportInteractionController
 
     private void BeginGesture(in EditorInputFrame frame)
     {
-        if (TryPickNode(in frame, out SceneNode? node))
+        if (TryPickNode(in frame, out SceneNode? node, out int planeIndex))
         {
+            _pressedPlane = planeIndex;
             BeginObjectGesture(in frame, node!);
             return;
         }
+
+        _pressedPlane = -1;
 
         BoxSelect.DragButton = DragButton;
         BoxSelect.Begin(frame.CursorPosition);
@@ -574,13 +593,42 @@ public sealed class ViewportInteractionController
             Scene.Selection.Select(node);
 
         _deferredSelect = null;
+
+        // The face is picked AFTER the selection has settled, because
+        // SelectFace refuses anything but the sole selected node - which is the
+        // guard that stops a face outliving the brush it belongs to. A click on
+        // a second brush therefore selects it and picks nothing, and the next
+        // click on one of its faces picks that.
+        PickPressedFace();
+    }
+
+    // Only for a brush, and only on the press's own node: a click that landed on
+    // a mesh or on empty space clears whatever was picked, because the Face
+    // section it feeds would otherwise describe a face nobody is looking at.
+    private void PickPressedFace()
+    {
+        int plane = _pressedPlane;
+        _pressedPlane = -1;
+
+        if (plane < 0 || PressedNode is not { Brush: not null } node)
+        {
+            Scene.Selection.ClearFace();
+            return;
+        }
+
+        if (!Scene.Selection.SelectFace(node, plane))
+            Scene.Selection.ClearFace();
     }
 
     // --- Helpers -------------------------------------------------------------
 
-    private bool TryPickNode(in EditorInputFrame frame, out SceneNode? node)
+    private bool TryPickNode(in EditorInputFrame frame, out SceneNode? node) =>
+        TryPickNode(in frame, out node, out _);
+
+    private bool TryPickNode(in EditorInputFrame frame, out SceneNode? node, out int planeIndex)
     {
         node = null;
+        planeIndex = -1;
         if (frame.ViewportSize.X <= 0f || frame.ViewportSize.Y <= 0f)
             return false;
 
@@ -603,6 +651,7 @@ public sealed class ViewportInteractionController
         if (!lamp)
         {
             node = geometry ? hit.Node : null;
+            planeIndex = geometry ? hit.PlaneIndex : -1;
             return geometry;
         }
 

@@ -1,3 +1,4 @@
+﻿using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Shell;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -259,5 +260,109 @@ public sealed class ViewportDropOverlayTests
         shell.DropHeadline.ShouldBeEmpty();
         shell.DropSubject.ShouldBeEmpty();
         shell.DropReason.ShouldBeEmpty();
+    }
+}
+
+/// <summary>
+/// The material arm of the same overlay: what it says a drop would paint, and
+/// which key changes that.
+/// </summary>
+/// <remarks>
+/// <b>The modifier is advertised WHILE the drag is in flight, because there is
+/// nowhere else to advertise it.</b> A drag has no menu beside it and no
+/// shortcut printed anywhere, so the only moment "hold Ctrl for the whole block"
+/// can be read is while somebody is holding the mouse down over the face it
+/// describes; a modifier whose effect only shows after the drop is a modifier
+/// nobody uses twice.
+/// </remarks>
+public sealed class MaterialDropPromptTests
+{
+    private static ContentDragPayload Material() =>
+        new(ContentKind.Material, "Materials/wall_brick.spectramat", "wall_brick.spectramat");
+
+    [Fact]
+    public void A_material_over_the_viewport_says_it_would_paint_this_face()
+    {
+        ViewportDropPrompt prompt = ViewportDropPrompt.For(
+            Material(), hasSession: true, viewportAcceptsDrops: true, MaterialDropScope.Face);
+
+        prompt.IsVisible.ShouldBeTrue();
+        prompt.Accepts.ShouldBeTrue();
+        prompt.Headline.ShouldBe("Drop to paint");
+        prompt.Subject.ShouldBe("Materials/wall_brick.spectramat");
+        prompt.Hint.ShouldContain("this face");
+        prompt.Hint.ShouldContain("Ctrl");
+    }
+
+    [Fact]
+    public void Holding_the_modifier_says_the_whole_block_and_how_to_go_back()
+    {
+        ViewportDropPrompt prompt = ViewportDropPrompt.For(
+            Material(), hasSession: true, viewportAcceptsDrops: true, MaterialDropScope.Brush);
+
+        prompt.Hint.ShouldContain("the whole block");
+
+        // Both directions, because a person holding Ctrl needs to know how to
+        // stop as much as one not holding it needs to know how to start.
+        prompt.Hint.ShouldContain("release");
+    }
+
+    [Fact]
+    public void A_model_still_says_place_and_carries_no_hint()
+    {
+        var model = new ContentDragPayload(ContentKind.Model, "Models/crate.obj", "crate.obj");
+
+        ViewportDropPrompt prompt = ViewportDropPrompt.For(
+            model, hasSession: true, viewportAcceptsDrops: true);
+
+        prompt.Headline.ShouldBe("Drop to place");
+        prompt.Hint.ShouldBe("");
+        prompt.IconKey.ShouldBe("IconMesh");
+    }
+
+    [Fact]
+    public void The_two_arms_wear_different_glyphs()
+    {
+        ViewportDropPrompt painting = ViewportDropPrompt.For(
+            Material(), hasSession: true, viewportAcceptsDrops: true);
+
+        var texture = new ContentDragPayload(ContentKind.Texture, "Textures/brick.png", "brick.png");
+        ViewportDropPrompt refusing = ViewportDropPrompt.For(
+            texture, hasSession: true, viewportAcceptsDrops: true);
+
+        // The arms share a hue by design (amber means state or warning here, and
+        // the accent means selection and nothing else), so the icon is half of
+        // how they are told apart.
+        painting.IconKey.ShouldBe(ViewportDropPrompt.MaterialIcon);
+        refusing.IconKey.ShouldBe(ViewportDropPrompt.RefusingIcon);
+        refusing.Accepts.ShouldBeFalse();
+        refusing.Reason.ShouldContain("material");
+    }
+
+    [Fact]
+    public void A_scope_change_produces_a_different_value_and_nothing_else_does()
+    {
+        ViewportDropPrompt face = ViewportDropPrompt.For(
+            Material(), true, true, MaterialDropScope.Face);
+        ViewportDropPrompt again = ViewportDropPrompt.For(
+            Material(), true, true, MaterialDropScope.Face);
+        ViewportDropPrompt block = ViewportDropPrompt.For(
+            Material(), true, true, MaterialDropScope.Brush);
+
+        // Record equality is the notification guard: DragOver fires at pointer
+        // rate and every one of those carries the same answer, so a crossing
+        // must raise nothing until the modifier moves.
+        face.ShouldBe(again);
+        face.ShouldNotBe(block);
+    }
+
+    [Fact]
+    public void A_native_session_draws_nothing_whatever_the_scope_is()
+    {
+        // The airspace rule as data: over a native child every pixel of this
+        // would be painted and composited away, and an overlay nobody can see is
+        // worse than none because the code claims to have reported something.
+        ViewportDropPrompt.For(Material(), true, viewportAcceptsDrops: false, MaterialDropScope.Brush)
+            .ShouldBe(ViewportDropPrompt.None);
     }
 }

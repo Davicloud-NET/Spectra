@@ -275,7 +275,10 @@ public sealed class Engine
         // its CLASS declares and nothing else in this call knows the class. A
         // scene with no catalogue is the ordinary geometry case and still gets
         // rows for whatever an entity is carrying, as text.
-        NodeInspector.Describe(_snapshotNodes, _snapshotProperties, scene.EntitySchemas);
+        // The picked face rides with the selection it narrows, so the Face
+        // section appears and disappears with it.
+        NodeInspector.Describe(
+            _snapshotNodes, _snapshotProperties, scene.EntitySchemas, scene.Selection.FacePlane);
 
         // Copied out, because the working list is reused next publish and a UI
         // reading it a frame later would see rows for a selection that has

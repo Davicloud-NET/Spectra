@@ -79,6 +79,55 @@
       <Setter Property="Margin" Value="0,1,0,3" />
     </Style>
 
+    <!-- An asset row's value is a BUTTON, and it is raised rather than sunken
+         because pressing it is the only thing you can do to it: this shell's
+         rule is that anything you press is lighter than the panel it sits on
+         and anything you type into is darker. It carries the whole width so
+         the hit target is the name a person is reading rather than a glyph
+         beside it. -->
+    <Style Selector="Button.assetcell">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+      <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
+      <Setter Property="Padding" Value="6,0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="{StaticResource SpectraMotionFast}"
+                           Easing="{StaticResource SpectraEaseOut}" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.assetcell:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControlHover}" />
+    </Style>
+    <Style Selector="Button.assetcell TextBlock.assetname">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <!-- A note is amber because it is a WARNING, which in this shell wears the
+         same hue as a lit mode and is told apart by its words and its place.
+         Never the accent, which means selection. -->
+    <Style Selector="Border.notebadge">
+      <Setter Property="Background" Value="{StaticResource SpectraControlChecked}" />
+      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+      <Setter Property="Padding" Value="4,0" />
+      <Setter Property="Margin" Value="5,0,0,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.notebadge TextBlock">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraMode}" />
+    </Style>
+
     <Style Selector="Border.cell">
       <Setter Property="Background" Value="{StaticResource SpectraBgInput}" />
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
@@ -472,6 +521,25 @@
                                   ToolTip.Tip="{Binding Help}"
                                   HorizontalAlignment="Stretch" />
 
+                        <!-- An asset: the file's stem, a note when something
+                             is wrong with it, and the whole cell opens the
+                             picker. The path is in the tooltip, because
+                             "Materials/dev/wall_brick_02" does not fit in a
+                             300px panel at any font this shell uses. -->
+                        <Button Grid.Column="1" Classes="assetcell"
+                                IsVisible="{Binding IsAsset}"
+                                Click="OnAssetCellPressed"
+                                ToolTip.Tip="{Binding AssetPath}">
+                          <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Classes="assetname"
+                                       Text="{Binding AssetLabel}" />
+                            <Border Grid.Column="1" Classes="notebadge"
+                                    IsVisible="{Binding HasNote}">
+                              <TextBlock Text="{Binding Note}" />
+                            </Border>
+                          </Grid>
+                        </Button>
+
                         <TextBlock Grid.Column="1" Text="{Binding ReadOnlyText}"
                                    IsVisible="{Binding IsReadOnly}"
                                    VerticalAlignment="Center"
@@ -644,6 +712,14 @@
          be painted and thrown away. Light dismiss COMMITS, which is what a
          click outside means everywhere else in this panel; Escape is the only
          cancel. -->
+    <!-- The asset picker, a Popup for the same airspace reason the colour one
+         is: a real OS window is the only surface that may cross a native-child
+         viewport, and this panel can be docked anywhere. -->
+    <Popup x:Name="AssetPopup" Placement="BottomEdgeAlignedLeft"
+           IsLightDismissEnabled="True" Closed="OnAssetPopupClosed">
+      <shell:AssetPickerView x:Name="AssetPicker" />
+    </Popup>
+
     <Popup x:Name="ColorPopup" Placement="BottomEdgeAlignedLeft"
            IsLightDismissEnabled="True" Closed="OnColorPopupClosed">
       <shell:ColorPickerView x:Name="ColorPicker" />

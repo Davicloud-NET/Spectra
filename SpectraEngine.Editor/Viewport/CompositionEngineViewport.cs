@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Input;
+using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Viewport.Windows;
 using System;
@@ -78,9 +79,14 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     private IPointer? _pointer;
     private bool _releasingCapture;
 
-    // The asset hovering over this pane, so AssetDragChanged is raised on a
-    // change rather than per pointer move.
-    private ContentDragPayload? _dragPayload;
+    // The asset hovering over this pane and what letting go would cover, so
+    // AssetDragChanged is raised on a change rather than per pointer move.
+    private AssetDragState? _dragState;
+
+    // Where the pointer was the last time a drag event moved it, in dips. A
+    // drag delivers no PointerMoved at all, so this is the only thing feeding
+    // the editor a hover while one is in flight.
+    private Point? _lastDragPoint;
 
     // Whether the shell has a surface from this viewport with an engine on it,
     // and whether the shell has said the viewport is finished. Two bits, and the
@@ -149,10 +155,10 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     public event Action<int, int>? ContextMenuRequested;
 
     /// <inheritdoc/>
-    public event Action<ContentDragPayload, int, int>? AssetDropped;
+    public event Action<ContentDragPayload, int, int, MaterialDropScope>? AssetDropped;
 
     /// <inheritdoc/>
-    public event Action<ContentDragPayload?>? AssetDragChanged;
+    public event Action<AssetDragState?>? AssetDragChanged;
 
     /// <inheritdoc/>
     public bool AcceptsAssetDrops => true;
@@ -741,7 +747,21 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         // What the overlay draws. Set here rather than only on DragEnter,
         // because a drag that begins INSIDE this pane (the browser floated over
         // it, which docking now allows) can produce its first event here.
-        ReportDrag(payload);
+        ReportDrag(new AssetDragState(payload, ScopeOf(e.KeyModifiers)));
+
+        // AND the position, through the ordinary input path. Avalonia delivers
+        // no PointerMoved during an OLE drag, so without this the editor has no
+        // idea where the pointer is and cannot outline the face about to be
+        // painted; feeding the router is what gives it one with no second
+        // latch to keep in step. Not OnPointerMoved, deliberately: that method
+        // is also the guard that decides a stuck overlay is over, and calling
+        // it here would clear the very overlay this event is drawing.
+        Point position = e.GetPosition(this);
+        if (_lastDragPoint != position)
+        {
+            _lastDragPoint = position;
+            SubmitMove(position);
+        }
 
         // Copy, not Move: the file stays where it is and the scene gains a
         // reference to it.
@@ -756,7 +776,17 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     /// swallowed here would make the scene tree stop showing its own drop line
     /// after a drag had once crossed the viewport.
     /// </remarks>
-    private void OnAssetDragLeave(object? sender, RoutedEventArgs e) => ReportDrag(null);
+    private void OnAssetDragLeave(object? sender, RoutedEventArgs e)
+    {
+        _lastDragPoint = null;
+        ReportDrag(null);
+    }
+
+    // Ctrl widens a material drop from the face under the pointer to the whole
+    // block. Read at every event rather than latched, because the modifier can
+    // be pressed and released mid-gesture and the prompt has to follow it.
+    private static MaterialDropScope ScopeOf(Avalonia.Input.KeyModifiers modifiers) =>
+        modifiers.HasFlag(Avalonia.Input.KeyModifiers.Control) ? MaterialDropScope.Brush : MaterialDropScope.Face;
 
     private void OnAssetDrop(object? sender, DragEventArgs e)
     {
@@ -775,7 +805,7 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         // pixel aim at one pixel. A high-DPI pane's dips are not its framebuffer
         // pixels, and the insert ray is cast in the latter.
         (int x, int y) = ToPixels(e.GetPosition(this));
-        AssetDropped?.Invoke(payload, x, y);
+        AssetDropped?.Invoke(payload, x, y, ScopeOf(e.KeyModifiers));
     }
 
     /// <summary>
@@ -788,13 +818,16 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     /// bindings a few hundred times per crossing, for a frame and a label that
     /// never change - the same churn the shell's pump was fixed for.
     /// </remarks>
-    private void ReportDrag(ContentDragPayload? payload)
+    private void ReportDrag(AssetDragState? state)
     {
-        if (ReferenceEquals(_dragPayload, payload))
+        // Value equality, not reference: DragOver builds a fresh state per
+        // pointer move and every one of them is equal to the last unless the
+        // file or the modifier changed.
+        if (_dragState == state)
             return;
 
-        _dragPayload = payload;
-        AssetDragChanged?.Invoke(payload);
+        _dragState = state;
+        AssetDragChanged?.Invoke(state);
     }
 
     // --- Keyboard and focus --------------------------------------------------

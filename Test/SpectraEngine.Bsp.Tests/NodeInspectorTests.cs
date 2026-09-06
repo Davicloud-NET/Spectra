@@ -74,6 +74,11 @@ public sealed class NodeInspectorTests
             NodeInspector.TransformGroup,
             NodeInspector.BrushGroup,
             NodeInspector.LightGroup,
+
+            // A brush is surfaced with something, so it grows a Material
+            // section too. Last, because these ids are appended and the merged
+            // panel lays out in PropertyId order.
+            NodeInspector.MaterialGroup,
         ]);
     }
 

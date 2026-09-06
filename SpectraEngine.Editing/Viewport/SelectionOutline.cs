@@ -5,6 +5,7 @@ using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Gizmos;
+using SpectraEngine.Editing.Hosting;
 
 namespace SpectraEngine.Editing.Viewport;
 
@@ -74,7 +75,21 @@ public sealed class SelectionOutline
     /// it already carries the full-weight outline, and brightening it would
     /// promise that this press does something different, which it does not.
     /// </param>
-    public void Draw(DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize, SceneNode? hovered)
+    public void Draw(DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize, SceneNode? hovered) =>
+        Draw(output, scene, camera, viewportSize, new OutlineFocus(hovered, -1, null));
+
+    /// <summary>
+    /// Draws the selection, the hover, the picked face and what a material drag
+    /// would land on.
+    /// </summary>
+    /// <remarks>
+    /// <b>A drag's target is drawn at FULL weight and takes the hover's place
+    /// rather than joining it.</b> The whole point of drawing anything during a
+    /// drag is saying which surface letting go would paint; a brush outline and
+    /// a face loop both lit would be two answers to that question.
+    /// </remarks>
+    public void Draw(
+        DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize, in OutlineFocus focus)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(scene);
@@ -87,9 +102,28 @@ public sealed class SelectionOutline
             return;
 
         IReadOnlyList<SceneNode> selection = scene.Selection.Items;
+        SceneNode? hovered = focus.Hovered;
 
-        if (hovered is not null && !selection.Contains(hovered))
+        if (focus.MaterialDrag is { } scope && hovered?.Brush is { } dragged)
+        {
+            // What letting go would paint, and nothing else: no hover outline
+            // beside it, or the viewport shows a face and a block at once and
+            // means one of them.
+            if (scope == MaterialDropScope.Brush || focus.HoveredPlane < 0)
+            {
+                PartBrushOverlay.DrawBrushEdges(output, dragged, hovered.WorldMatrix, SelectedColor);
+            }
+            else
+            {
+                DrawFaceLoop(output, dragged, hovered.WorldMatrix, focus.HoveredPlane, SelectedColor);
+            }
+
+            DrawnLastDraw++;
+        }
+        else if (hovered is not null && !selection.Contains(hovered))
+        {
             DrawNode(output, scene, camera, viewportSize, hovered, HoverColor);
+        }
 
         for (int i = 0; i < selection.Count; i++)
         {
@@ -104,7 +138,19 @@ public sealed class SelectionOutline
                 continue;
             }
 
-            DrawNode(output, scene, camera, viewportSize, node, SelectedColor);
+            // A picked face outranks its own brush: the brush drops to hover
+            // weight so the loop on top of it reads as the thing that is
+            // selected, which is what the Face section of the panel is editing.
+            bool picked = focus.MaterialDrag is null &&
+                focus.PickedFaceNode is not null &&
+                ReferenceEquals(focus.PickedFaceNode, node) &&
+                node.Brush is not null;
+
+            DrawNode(output, scene, camera, viewportSize, node, picked ? HoverColor : SelectedColor);
+
+            if (picked && node.Brush is { } pickedBrush)
+                DrawFaceLoop(output, pickedBrush, node.WorldMatrix, focus.PickedFacePlane, SelectedColor);
+
             DrawnLastDraw++;
         }
 
@@ -130,6 +176,33 @@ public sealed class SelectionOutline
 
             if (any)
                 output.Box(lo, hi, SelectedColor * 0.4f);
+        }
+    }
+
+    /// <summary>Draws one plane's face loop, when that plane has a face.</summary>
+    /// <remarks>
+    /// A plane clipped away by its neighbours has a face SURFACE and no
+    /// polygon, so this draws nothing rather than refusing: the picked face is
+    /// still a legitimate thing to have selected, and the panel above it is
+    /// still editing that face's material.
+    /// </remarks>
+    public static void DrawFaceLoop(
+        DebugDraw output, Brush brush, Matrix4x4 world, int planeIndex, Vector3 color)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(brush);
+
+        if (!brush.TryGetPlaneFace(planeIndex, out Polygon face)) return;
+
+        ReadOnlySpan<Vector3> verts = face.VertexSpan;
+        if (verts.Length < 2) return;
+
+        Vector3 previous = Vector3.Transform(verts[^1], world);
+        for (int v = 0; v < verts.Length; v++)
+        {
+            Vector3 current = Vector3.Transform(verts[v], world);
+            output.Line(previous, current, color);
+            previous = current;
         }
     }
 

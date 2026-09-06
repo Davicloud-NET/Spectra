@@ -276,6 +276,7 @@ public partial class MainWindow : Window
         // survive being replaced, and a line to type a verb into.
 
         _shell.Content = new ContentBrowserModel(_loggerFactory.CreateLogger<ContentBrowserModel>());
+        _shell.Assets = new AssetCatalog(_loggerFactory.CreateLogger<AssetCatalog>());
 
         _contentView = new ContentPanel();
         _contentView.EntryActivated += OnContentActivated;
@@ -335,7 +336,15 @@ public partial class MainWindow : Window
             // project is a different content root, and a browser still showing
             // the previous one would offer files this scene cannot resolve.
             if (args.PropertyName is nameof(EditorDocument.Project))
+            {
                 _shell.Content?.SetRoot(_document.Project?.AssetsPath);
+
+                // Walked here rather than on every picker open: a project change
+                // is the only thing that can invalidate the whole list, and a
+                // file added since is picked up by the rebuild the picker does
+                // when it opens.
+                _shell.Assets?.Rebuild(_document.Project?.AssetsPath);
+            }
         };
         RefreshDocumentIdentity();
         _shell.AboutLabel = $"Version {SpectraEngine.Core.EngineInfo.VersionString}";
@@ -1824,7 +1833,7 @@ public partial class MainWindow : Window
     /// </remarks>
     private void OnContentActivated(ContentEntry entry)
     {
-        if (entry.Kind != ContentKind.Model)
+        if (entry.Kind is not (ContentKind.Model or ContentKind.Material))
         {
             // Everything else selects and describes itself. Revealing on a
             // double-click sent people out to Explorer for the ordinary act of
@@ -1835,7 +1844,7 @@ public partial class MainWindow : Window
 
         if (_session is not { } session)
         {
-            _shell.SetWarning("Open a project before inserting a model.");
+            _shell.SetWarning("Open a project before inserting or assigning anything.");
             return;
         }
 
@@ -1845,6 +1854,19 @@ public partial class MainWindow : Window
             // reason: a path this engine cannot name is not something to hand
             // three threads down and discover there.
             _shell.SetWarning($"{entry.Name} is not inside this project's Assets folder.");
+            return;
+        }
+
+        // A material has no point to aim at from here, so it paints what is
+        // SELECTED, whole. The face gesture needs a pointer and is the drag; a
+        // double-click that painted "whichever face happens to be under the
+        // view centre" would be a different thing every time.
+        if (entry.Kind == ContentKind.Material)
+        {
+            _shell.Content?.Select(entry);
+            session.AssignMaterialToSelection(
+                payload.ContentPath,
+                report => Dispatcher.UIThread.Post(() => ReportMaterialAssign(report)));
             return;
         }
 
@@ -2056,7 +2078,8 @@ public partial class MainWindow : Window
     /// about a scene graph this thread is a frame or two behind on. This handler
     /// says which file and which pixel; the editor answers with what it did.
     /// </remarks>
-    private void OnViewportAssetDropped(ContentDragPayload payload, int x, int y)
+    private void OnViewportAssetDropped(
+        ContentDragPayload payload, int x, int y, MaterialDropScope scope)
     {
         if (AssetDropPolicy.Refuse(payload, _session is not null, viewportAcceptsDrops: true) is { } refusal)
         {
@@ -2067,10 +2090,55 @@ public partial class MainWindow : Window
         if (_session is not { } session)
             return;
 
+        var point = new System.Numerics.Vector2(x, y);
+
+        // Two kinds, two verbs, one gesture. Which face and how much of the
+        // brush are the editor's answers, from the same ray a click uses: this
+        // handler still only says which file and which pixel.
+        if (payload.Kind == ContentKind.Material)
+        {
+            session.AssignMaterial(
+                payload.ContentPath, point, scope,
+                report => Dispatcher.UIThread.Post(() => ReportMaterialAssign(report)));
+            return;
+        }
+
         session.InsertModel(
             payload.ContentPath,
-            new System.Numerics.Vector2(x, y),
+            point,
             report => Dispatcher.UIThread.Post(() => ReportModelInsert(report)));
+    }
+
+    /// <summary>
+    /// Says what one material assignment did, in the voice its outcome earns.
+    /// </summary>
+    /// <remarks>
+    /// <b>Three voices, because the three outcomes need three different things
+    /// from the user.</b> A refusal means nothing happened and the gesture is
+    /// worth repeating; a missing file means the faces really were painted and
+    /// the answer is to write the material rather than to press Ctrl+Z; and a
+    /// plain success is a status line nobody has to act on.
+    /// </remarks>
+    private void ReportMaterialAssign(MaterialAssignReport report)
+    {
+        string line = report.Describe();
+
+        if (!report.Applied)
+        {
+            _shell.SetWarning(line);
+            return;
+        }
+
+        if (report.Unresolved is not null)
+        {
+            _shell.SetError(line);
+            _shell.Problems.Report(
+                OutputSeverity.Error, "Material {Path} is missing", line, report.ContentPath,
+                ProblemScope.Map, report.NodeId);
+            return;
+        }
+
+        _shell.SetMessage(line);
     }
 
     /// <summary>
@@ -2083,9 +2151,18 @@ public partial class MainWindow : Window
     /// <see cref="OnViewportAssetDropped"/> then refuses, and the moment it
     /// would be discovered is the moment somebody let go of the mouse.
     /// </remarks>
-    private void OnViewportAssetDragChanged(ContentDragPayload? payload) =>
+    private void OnViewportAssetDragChanged(AssetDragState? state)
+    {
         _shell.DropPrompt = ViewportDropPrompt.For(
-            payload, _session is not null, _viewport?.AcceptsAssetDrops ?? false);
+            state?.Payload, _session is not null, _viewport?.AcceptsAssetDrops ?? false, state?.Scope ?? MaterialDropScope.Face);
+
+        // And the engine, so the outline can draw the face letting go would
+        // paint. Only a material asks for that: a model lands where the pointer
+        // is rather than on a surface, and lighting one up would promise a
+        // relationship the drop does not have.
+        _session?.SetMaterialDrag(
+            state is { Payload.Kind: ContentKind.Material } ? state.Scope : null);
+    }
 
     // Marshalled back deliberately: EditorSession runs its completion on the
     // RENDER thread, which is the whole point of that contract.

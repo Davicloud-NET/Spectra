@@ -1,7 +1,8 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Hosting;
+using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Shell;
 using System;
 using System.Collections.Generic;
@@ -94,7 +95,12 @@ public interface IEngineViewport
     /// session to place it in. Never raised by a viewport whose
     /// <see cref="AcceptsAssetDrops"/> is false.
     /// </remarks>
-    event Action<ContentDragPayload, int, int>? AssetDropped;
+    /// <remarks>
+    /// The scope rides along because it is read from the modifier keys AT THE
+    /// DROP: asking the shell to remember what the last DragOver said would be
+    /// a second copy of a value that changes while the gesture is in flight.
+    /// </remarks>
+    event Action<ContentDragPayload, int, int, MaterialDropScope>? AssetDropped;
 
     /// <summary>
     /// Raised on the UI thread with the asset currently being dragged over this
@@ -120,7 +126,7 @@ public interface IEngineViewport
     /// would be painted and invisible.
     /// </para>
     /// </remarks>
-    event Action<ContentDragPayload?>? AssetDragChanged;
+    event Action<AssetDragState?>? AssetDragChanged;
 
     /// <summary>
     /// Whether this viewport is a drop target at all.

@@ -36,6 +36,9 @@ public partial class PropertiesPanel : UserControl
         ColorPicker.ColorChanged += OnPickerColorChanged;
         ColorPicker.CommitRequested += OnPickerCommit;
         ColorPicker.CancelRequested += OnPickerCancel;
+
+        AssetPicker.Picked += OnAssetPicked;
+        AssetPicker.Cancelled += OnAssetPickerCancelled;
     }
 
     /// <summary>Raised when Escape ends an edit, so the host can take focus back.</summary>
@@ -414,6 +417,74 @@ public partial class PropertiesPanel : UserControl
 
         if (_colorCancelled) EscapePressed?.Invoke();
         _colorCancelled = false;
+    }
+
+    // ─── The asset picker ────────────────────────────────
+
+    private PropertyRowModel? _assetRow;
+    private bool _assetCancelled;
+
+    /// <summary>
+    /// Opens the picker over the row that was pressed.
+    /// </summary>
+    /// <remarks>
+    /// <b>The catalogue is rebuilt here, at the open.</b> A picker offering a
+    /// list from whenever the project was loaded would not show the material
+    /// somebody just wrote, and the walk is a few hundred file names.
+    /// </remarks>
+    private void OnAssetCellPressed(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control control ||
+            FindRow(control) is not { } row ||
+            !row.IsAsset)
+        {
+            return;
+        }
+
+        if ((DataContext as ShellModel)?.Assets is not { } catalog)
+        {
+            // No project, no files to offer. Refusing in place beats opening an
+            // empty list that looks like a broken control.
+            return;
+        }
+
+        _assetRow = row;
+        _assetCancelled = false;
+
+        catalog.Rebuild(RootFor(catalog));
+        AssetPicker.Open(catalog, AssetCatalog.KindFor(row.AssetKind), row.AssetPath);
+
+        AssetPopup.PlacementTarget = control;
+        AssetPopup.IsOpen = true;
+    }
+
+    // The catalogue knows its own root from the last rebuild; asking it back is
+    // what keeps this panel from being a second place that knows where a
+    // project's assets live.
+    private static string? RootFor(AssetCatalog catalog) => catalog.Root;
+
+    private void OnAssetPicked(string contentPath)
+    {
+        if (_assetRow is { } row)
+            row.PickAsset(contentPath);
+
+        AssetPopup.IsOpen = false;
+    }
+
+    private void OnAssetPickerCancelled()
+    {
+        _assetCancelled = true;
+        AssetPopup.IsOpen = false;
+    }
+
+    private void OnAssetPopupClosed(object? sender, EventArgs e)
+    {
+        _assetRow = null;
+
+        // Escape here means the same as Escape in a field: abandon, and give the
+        // keyboard back to the viewport rather than leaving it in a closed popup.
+        if (_assetCancelled) EscapePressed?.Invoke();
+        _assetCancelled = false;
     }
 
     private static PropertyRowModel? FindRow(Control? from)

@@ -138,16 +138,26 @@ public sealed class ContentDragTests
     }
 
     [Fact]
-    public void Only_a_model_can_be_placed_yet_and_everything_else_is_told_so()
+    public void A_model_and_a_material_can_both_be_placed()
     {
-        // A texture or a material dropped into the scene is a reasonable thing
-        // to try and there is nothing to do with it yet. Answered with a
-        // sentence naming the file rather than with a cursor, because the "no
+        // Two kinds behind one predicate, and two different gestures behind
+        // that: a model becomes a node at the point under the pointer, a
+        // material becomes the surface of the face under it. They share this
+        // answer because the only question here is whether letting go would do
+        // anything, which the overlay and the drop both have to agree about.
+        AssetDropPolicy.CanPlace(ContentKind.Model).ShouldBeTrue();
+        AssetDropPolicy.CanPlace(ContentKind.Material).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Everything_else_is_refused_with_a_sentence_naming_the_file()
+    {
+        // Answered with a sentence rather than with a cursor, because the "no
         // entry" pointer says the shell did not understand the gesture when in
         // fact it understood it perfectly.
         foreach (ContentKind kind in new[]
         {
-            ContentKind.Texture, ContentKind.Material, ContentKind.Shader, ContentKind.Other,
+            ContentKind.Texture, ContentKind.Shader, ContentKind.Other,
         })
         {
             AssetDropPolicy.CanPlace(kind).ShouldBeFalse();
@@ -160,8 +170,24 @@ public sealed class ContentDragTests
             refusal.ShouldContain("thing.dat");
         }
 
-        AssetDropPolicy.CanPlace(ContentKind.Model).ShouldBeTrue();
         AssetDropPolicy.CanPlace(ContentKind.Folder).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_texture_is_refused_by_naming_the_material_to_drop_instead()
+    {
+        // The near miss: somebody dragging a .png onto a wall is asking for
+        // exactly what a material drop does, and a refusal reading "only models
+        // and materials can be dropped" tells them nothing about which of the
+        // two files in front of them is which.
+        var texture = new ContentDragPayload(ContentKind.Texture, "Textures/brick.png", "brick.png");
+
+        string? refusal = AssetDropPolicy.Refuse(
+            texture, hasSession: true, viewportAcceptsDrops: true);
+
+        refusal.ShouldNotBeNull();
+        refusal.ShouldContain("brick.png");
+        refusal.ShouldContain("material");
     }
 
     private static ContentDragPayload Model() =>

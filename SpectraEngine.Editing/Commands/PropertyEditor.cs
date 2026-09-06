@@ -1,10 +1,12 @@
-﻿using SpectraEngine.Core.Bsp;
+﻿using SpectraEngine.Core.Assets;
+using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Inspection;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Undo;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
 using System.Text;
 
@@ -156,6 +158,11 @@ public static class PropertyEditor
         PropertyId.BrushKind => BuildBrushKind(node, edit),
         PropertyId.BrushOperation => BuildBrushOperation(node, edit),
         PropertyId.BrushSize => BuildBrushSize(node, edit),
+        PropertyId.BrushMaterial => BuildBrushMaterial(node, edit),
+        PropertyId.FaceMaterial or PropertyId.FaceAlignment
+            or PropertyId.FaceUScale or PropertyId.FaceVScale
+            or PropertyId.FaceUOffset or PropertyId.FaceVOffset
+            or PropertyId.FaceRotation => BuildFace(node, edit),
         PropertyId.LightKind or PropertyId.LightColor or PropertyId.LightIntensity
             or PropertyId.LightRange or PropertyId.LightEnabled
             or PropertyId.LightInnerAngle or PropertyId.LightOuterAngle
@@ -507,6 +514,141 @@ public static class PropertyEditor
 
     private static bool IsUsable(float value) => float.IsFinite(value) && value > 0f;
 
+    /// <summary>Paints every face of a brush.</summary>
+    /// <remarks>
+    /// <b>An empty path is the engine default, not a refusal.</b> "None" is a
+    /// real answer in the picker: it puts the surface back to the neutral one,
+    /// which is what an unnamed face draws with.
+    /// </remarks>
+    private static IEditorCommand? BuildBrushMaterial(SceneNode node, PropertyEdit edit)
+    {
+        if (node.Brush is not { } brush) return null;
+        if (!TryResolveMaterial(edit.Text, out MaterialRef material)) return null;
+
+        Brush next = brush.WithAllFacesMaterial(material);
+
+        // Reference identity IS the change detector downstream, so an edit that
+        // changed nothing must not produce a new instance.
+        return ReferenceEquals(next, brush) ? null : SetBrushCommand.Capture(node, next);
+    }
+
+    /// <summary>Edits one face of one brush, addressed by its plane index.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The plane index rides in the KEY</b>, which is the same mechanism an
+    /// entity keyvalue uses for the same reason: one <see cref="PropertyId"/>
+    /// covers a family of rows that are told apart by a string.
+    /// </para>
+    /// <para>
+    /// <b>Edited in WORLD space and stored in local.</b> A rotation somebody
+    /// asks for is about the normal they can see, and the stored axes are
+    /// brush-local; the round trip is exact for the rigid matrices brush
+    /// placements are required to have.
+    /// </para>
+    /// </remarks>
+    private static IEditorCommand? BuildFace(SceneNode node, PropertyEdit edit)
+    {
+        if (node.Brush is not { } brush) return null;
+
+        if (!int.TryParse(edit.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out int planeIndex))
+            return null;
+
+        if (planeIndex < 0 || planeIndex >= brush.FaceSurfaces.Count) return null;
+
+        FaceSurface local = brush.FaceSurfaces[planeIndex];
+
+        if (edit.Id == PropertyId.FaceMaterial)
+        {
+            if (!TryResolveMaterial(edit.Text, out MaterialRef material)) return null;
+
+            FaceSurface painted = local.WithMaterial(material);
+            return painted.Equals(local) ? null : SetBrushCommand.Capture(
+                node, brush.WithFaceSurface(planeIndex, painted));
+        }
+
+        Matrix4x4 world = node.WorldMatrix;
+        if (!Matrix4x4.Invert(world, out Matrix4x4 inverse)) return null;
+
+        Vector3 normal = FaceAxes.WorldNormal(brush.LocalPlanes[planeIndex], world);
+        FaceSurface current = local.Transformed(world);
+        FaceSurface edited;
+
+        switch (edit.Id)
+        {
+            case PropertyId.FaceAlignment:
+                edited = string.Equals(edit.Text, "Face", StringComparison.Ordinal)
+                    ? FaceAxes.AlignedToFace(in current, normal)
+                    : FaceAxes.AlignedToWorld(in current);
+                break;
+
+            case PropertyId.FaceRotation:
+                if (!float.IsFinite(edit.Number)) return null;
+                edited = FaceAxes.WithRotation(in current, normal, edit.Number);
+                break;
+
+            // A scale of zero divides by it at UV time, and FaceSurface's own
+            // constructor throws on one. Refused HERE, before anything is
+            // built, because a throw from inside Do leaves the transaction open
+            // and the scene half-edited.
+            case PropertyId.FaceUScale:
+                if (!IsUsableScale(edit.Number)) return null;
+                edited = current.WithAxes(
+                    current.UAxis, current.VAxis, current.UOffset, current.VOffset,
+                    edit.Number, current.VScale);
+                break;
+
+            case PropertyId.FaceVScale:
+                if (!IsUsableScale(edit.Number)) return null;
+                edited = current.WithAxes(
+                    current.UAxis, current.VAxis, current.UOffset, current.VOffset,
+                    current.UScale, edit.Number);
+                break;
+
+            case PropertyId.FaceUOffset:
+                if (!float.IsFinite(edit.Number)) return null;
+                edited = current.WithAxes(
+                    current.UAxis, current.VAxis, edit.Number, current.VOffset,
+                    current.UScale, current.VScale);
+                break;
+
+            case PropertyId.FaceVOffset:
+                if (!float.IsFinite(edit.Number)) return null;
+                edited = current.WithAxes(
+                    current.UAxis, current.VAxis, current.UOffset, edit.Number,
+                    current.UScale, current.VScale);
+                break;
+
+            default:
+                return null;
+        }
+
+        FaceSurface back = edited.Transformed(inverse);
+        return back.Equals(local) ? null : SetBrushCommand.Capture(
+            node, brush.WithFaceSurface(planeIndex, back));
+    }
+
+    private static bool IsUsableScale(float value) => float.IsFinite(value) && value > 0f;
+
+    // A path this process cannot name is refused rather than guessed at: the
+    // registry interns whatever it is handed, so a rooted or escaping path would
+    // become a material reference nothing can ever resolve.
+    private static bool TryResolveMaterial(string? path, out MaterialRef material)
+    {
+        material = MaterialRef.Default;
+
+        if (string.IsNullOrWhiteSpace(path)) return true;
+
+        try
+        {
+            material = MaterialRegistry.Intern(ContentRoot.NormalizeRelativePath(path));
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
     private static string NameOf(PropertyId id) => id switch
     {
         PropertyId.NodeName => "Rename",
@@ -516,6 +658,11 @@ public static class PropertyEditor
         PropertyId.BrushKind => "Convert Brush",
         PropertyId.BrushOperation => "Brush Operation",
         PropertyId.BrushSize => "Resize",
+        PropertyId.BrushMaterial => "Material",
+        PropertyId.FaceMaterial => "Face Material",
+        PropertyId.FaceAlignment or PropertyId.FaceUScale or PropertyId.FaceVScale
+            or PropertyId.FaceUOffset or PropertyId.FaceVOffset
+            or PropertyId.FaceRotation => "Face Texture",
         PropertyId.EntityKeyvalue => "Entity Property",
         _ => "Light",
     };

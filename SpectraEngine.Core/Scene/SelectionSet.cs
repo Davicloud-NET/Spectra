@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace SpectraEngine.Core.Scene;
@@ -69,6 +69,63 @@ public sealed class SelectionSet
     /// </summary>
     public event Action? SelectionChanged;
 
+    /// <summary>Raised when the picked face changes.</summary>
+    public event Action? FaceChanged;
+
+    /// <summary>The node whose face is picked, or null.</summary>
+    public SceneNode? FaceNode { get; private set; }
+
+    /// <summary>
+    /// Which of <see cref="FaceNode"/>'s brush planes is picked, or -1.
+    /// </summary>
+    public int FacePlane { get; private set; } = -1;
+
+    /// <summary>
+    /// Picks one face of the sole selected brush.
+    /// </summary>
+    /// <remarks>
+    /// <b>Selection state, not editor state.</b> A picked face is a narrowing of
+    /// what is selected, so it belongs beside the selection and is cleared by
+    /// every change to it; kept anywhere else it would survive a selection
+    /// change and address a plane on a brush nobody is looking at.
+    /// </remarks>
+    /// <returns>False when there is not exactly one brush selected, or the index is out of range.</returns>
+    public bool SelectFace(SceneNode node, int planeIndex)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        if (Count != 1 || !ReferenceEquals(Items[0], node)) return false;
+        if (node.Brush is not { } brush) return false;
+        if (planeIndex < 0 || planeIndex >= brush.LocalPlanes.Count) return false;
+
+        if (ReferenceEquals(FaceNode, node) && FacePlane == planeIndex) return true;
+
+        FaceNode = node;
+        FacePlane = planeIndex;
+        FaceChanged?.Invoke();
+        return true;
+    }
+
+    /// <summary>Drops the picked face.</summary>
+    public void ClearFace()
+    {
+        if (FaceNode is null && FacePlane < 0) return;
+
+        FaceNode = null;
+        FacePlane = -1;
+        FaceChanged?.Invoke();
+    }
+
+    // Every selection change clears the picked face FIRST, then reports. One
+    // funnel rather than six call sites, because a face left over from the
+    // previous selection addresses a plane on a brush that is no longer
+    // selected.
+    private void RaiseChanged()
+    {
+        ClearFace();
+        SelectionChanged?.Invoke();
+    }
+
     /// <summary>True when the node is currently selected.</summary>
     public bool Contains(SceneNode node) => _membership.Contains(node);
 
@@ -87,7 +144,7 @@ public sealed class SelectionSet
         _membership.Clear();
         _items.Add(node);
         _membership.Add(node);
-        SelectionChanged?.Invoke();
+        RaiseChanged();
     }
 
     /// <summary>
@@ -102,7 +159,7 @@ public sealed class SelectionSet
             return;
 
         _items.Add(node);
-        SelectionChanged?.Invoke();
+        RaiseChanged();
     }
 
     /// <summary>
@@ -123,7 +180,7 @@ public sealed class SelectionSet
             _membership.Remove(node);
             _items.Remove(node);
         }
-        SelectionChanged?.Invoke();
+        RaiseChanged();
     }
 
     /// <summary>
@@ -139,7 +196,7 @@ public sealed class SelectionSet
             return;
 
         _items.Remove(node);
-        SelectionChanged?.Invoke();
+        RaiseChanged();
     }
 
     // --- Batched operations --------------------------------------------------
@@ -231,7 +288,7 @@ public sealed class SelectionSet
             _items.Add(_scratchItems[i]);
             _membership.Add(_scratchItems[i]);
         }
-        SelectionChanged?.Invoke();
+        RaiseChanged();
     }
 
     // Order-sensitive, because Items promises a stable order that editor UI
@@ -257,7 +314,7 @@ public sealed class SelectionSet
 
         _items.Clear();
         _membership.Clear();
-        SelectionChanged?.Invoke();
+        RaiseChanged();
     }
 
     private void OnNodeRemoved(SceneNode node) => Deselect(node);

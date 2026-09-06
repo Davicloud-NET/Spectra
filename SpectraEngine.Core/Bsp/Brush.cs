@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using SpectraEngine.Core.Assets;
@@ -45,6 +45,12 @@ public sealed class Brush
 
     private readonly Plane[] _localPlanes;
     private readonly Polygon[] _localFaces;
+
+    // Which entry of _localFaces belongs to each PLANE, or -1 for a plane every
+    // other plane clipped away. LocalFaces is compacted and FaceSurfaces is not,
+    // so without this map the two are indexed differently and a caller holding a
+    // plane index has no way to reach the polygon it produced.
+    private readonly int[] _faceIndexByPlane;
     private readonly FaceSurface[] _faceSurfaces;
 
     public Brush(IReadOnlyList<Plane> localPlanes)
@@ -110,7 +116,7 @@ public sealed class Brush
         float seedExtent = ComputeSeedExtent(_localPlanes);
         Polygon?[] facesByPlane = BuildFaces(_localPlanes, _faceSurfaces, seedExtent);
         RejectUnboundedVolume(_localPlanes, _faceSurfaces, facesByPlane, seedExtent, nameof(localPlanes));
-        _localFaces = CollectFaces(facesByPlane);
+        _localFaces = CollectFaces(facesByPlane, out _faceIndexByPlane);
 
         if (_localFaces.Length == 0)
             throw new ArgumentException(
@@ -131,6 +137,7 @@ public sealed class Brush
     {
         _localPlanes = source._localPlanes;
         _localFaces = source._localFaces;
+        _faceIndexByPlane = source._faceIndexByPlane;
         _faceSurfaces = source._faceSurfaces;
         LocalBounds = source.LocalBounds;
         Transform = source.Transform;
@@ -306,6 +313,67 @@ public sealed class Brush
         ArgumentOutOfRangeException.ThrowIfNegative(planeIndex);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(planeIndex, _faceSurfaces.Length);
         return WithFaceSurface(planeIndex, _faceSurfaces[planeIndex].WithMaterial(material));
+    }
+
+    /// <summary>
+    /// The polygon plane <paramref name="planeIndex"/> produced, when it
+    /// produced one.
+    /// </summary>
+    /// <remarks>
+    /// <b>False is a normal answer, not an error.</b> A plane can be clipped
+    /// entirely away by the others and still be a legitimate part of the
+    /// definition, so it has a face SURFACE and no face: a caller drawing the
+    /// picked face simply draws nothing, which is what the viewport shows.
+    /// </remarks>
+    public bool TryGetPlaneFace(int planeIndex, out Polygon face)
+    {
+        if (planeIndex < 0 || planeIndex >= _faceIndexByPlane.Length)
+        {
+            face = default!;
+            return false;
+        }
+
+        int index = _faceIndexByPlane[planeIndex];
+        if (index < 0)
+        {
+            face = default!;
+            return false;
+        }
+
+        face = _localFaces[index];
+        return true;
+    }
+
+    /// <summary>
+    /// Returns a copy of this brush with every face wearing
+    /// <paramref name="material"/>, or this brush when they all already do.
+    /// </summary>
+    /// <remarks>
+    /// <b>The same instance when nothing changes, like <see cref="WithOperation"/>.</b>
+    /// Every change detector downstream compares brush REFERENCES, so returning
+    /// a fresh instance for a no-op edit would invalidate this brush's carve,
+    /// recompile its chunk and upload a mesh identical to the one already there.
+    /// </remarks>
+    public Brush WithAllFacesMaterial(MaterialRef material)
+    {
+        bool changed = false;
+        for (int i = 0; i < _faceSurfaces.Length; i++)
+        {
+            if (!_faceSurfaces[i].Material.Equals(material))
+            {
+                changed = true;
+                break;
+            }
+        }
+
+        if (!changed) return this;
+
+        var faces = new FaceSurface[_faceSurfaces.Length];
+        for (int i = 0; i < faces.Length; i++)
+            faces[i] = _faceSurfaces[i].WithMaterial(material);
+
+        // Operation rides along for the reason WithFaceSurface states.
+        return new Brush(_localPlanes, Transform, faces, Operation);
     }
 
     /// <summary>
@@ -519,14 +587,24 @@ public sealed class Brush
         return faces;
     }
 
-    private static Polygon[] CollectFaces(Polygon?[] facesByPlane)
+    private static Polygon[] CollectFaces(Polygon?[] facesByPlane, out int[] faceIndexByPlane)
     {
         var faces = new List<Polygon>(facesByPlane.Length);
-        foreach (Polygon? face in facesByPlane)
+        faceIndexByPlane = new int[facesByPlane.Length];
+
+        for (int i = 0; i < facesByPlane.Length; i++)
         {
-            if (face is not null)
-                faces.Add(face);
+            Polygon? face = facesByPlane[i];
+            if (face is null)
+            {
+                faceIndexByPlane[i] = -1;
+                continue;
+            }
+
+            faceIndexByPlane[i] = faces.Count;
+            faces.Add(face);
         }
+
         return faces.ToArray();
     }
 

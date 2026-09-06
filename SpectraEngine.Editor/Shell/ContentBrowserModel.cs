@@ -411,14 +411,9 @@ public sealed class ContentBrowserModel : ObservableObject
     /// <summary>The decoded width of a preview, in pixels.</summary>
     public const int ThumbnailWidth = 96;
 
-    private static ContentKind Classify(string path) => Path.GetExtension(path).ToLowerInvariant() switch
-    {
-        ".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp" => ContentKind.Texture,
-        ".spectramat" => ContentKind.Material,
-        ".obj" or ".gltf" or ".glb" or ".fbx" or ".mtl" => ContentKind.Model,
-        ".spectrashade" => ContentKind.Shader,
-        _ => ContentKind.Other,
-    };
+    // The table lives in ContentClassifier: the picker and the drag payload ask
+    // the same question and a second copy of it would drift.
+    private static ContentKind Classify(string path) => ContentClassifier.Classify(path);
 
     private static string FormatSize(string path)
     {

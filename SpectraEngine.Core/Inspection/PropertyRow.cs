@@ -58,6 +58,33 @@ public enum PropertyId
     // row, and (Id, Key) is the identity every comparison of rows has to use.
     EntityClassname,
     EntityKeyvalue,
+
+    /// <summary>Every face of a brush at once.</summary>
+    BrushMaterial,
+
+    /// <summary>Which face is picked, shown and not edited.</summary>
+    FaceIndex,
+
+    /// <summary>The picked face's material.</summary>
+    FaceMaterial,
+
+    /// <summary>Whether the picked face projects from the world or its own plane.</summary>
+    FaceAlignment,
+
+    /// <summary>World units per texture repeat across the picked face.</summary>
+    FaceUScale,
+
+    /// <summary>World units per texture repeat down the picked face.</summary>
+    FaceVScale,
+
+    /// <summary>Texture repeats of horizontal shift on the picked face.</summary>
+    FaceUOffset,
+
+    /// <summary>Texture repeats of vertical shift on the picked face.</summary>
+    FaceVOffset,
+
+    /// <summary>How far the picked face's texture is turned, in degrees.</summary>
+    FaceRotation,
 }
 
 /// <summary>How a row is edited.</summary>
@@ -69,6 +96,25 @@ public enum PropertyId
 /// vocabulary an entity property panel will need, which is why it is worth
 /// fixing now rather than growing one control at a time.
 /// </remarks>
+/// <summary>Which kind of file an asset row names.</summary>
+public enum AssetKind
+{
+    /// <summary>Not an asset row.</summary>
+    None,
+
+    /// <summary>A <c>.spectramat</c>.</summary>
+    Material,
+
+    /// <summary>An image.</summary>
+    Texture,
+
+    /// <summary>A model file.</summary>
+    Model,
+
+    /// <summary>A sound.</summary>
+    Sound,
+}
+
 public enum PropertyKind
 {
     /// <summary>Shown, never edited: an id, a resolved asset path.</summary>
@@ -91,6 +137,17 @@ public enum PropertyKind
 
     /// <summary>One of a fixed set of names.</summary>
     Choice,
+
+    /// <summary>
+    /// A path into the project's content, chosen from a picker.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not a Choice, because the options are the PROJECT's rather than this
+    /// build's.</b> A choice row's list is a shared static array the engine
+    /// declares; an asset row's list is however many files somebody put in a
+    /// folder, which is a search rather than a dropdown.
+    /// </remarks>
+    Asset,
 }
 
 /// <summary>
@@ -213,6 +270,16 @@ public readonly record struct PropertyRow
     /// </remarks>
     public string Help { get; init; }
 
+    /// <summary>Which kind of content an <see cref="PropertyKind.Asset"/> row names.</summary>
+    public AssetKind Asset { get; init; }
+
+    /// <summary>
+    /// A short state worth showing beside the value, or empty: <c>missing</c>
+    /// for a path nothing resolves, <c>mixed (3 materials)</c> for a
+    /// disagreement the value itself cannot express.
+    /// </summary>
+    public string Note { get; init; }
+
     /// <summary>
     /// How many of the selected nodes carry this property at all.
     /// </summary>
@@ -281,6 +348,17 @@ public readonly record struct PropertyRow
 
     internal static PropertyRow OfFlag(string group, string name, PropertyId id, bool value, string key = "") =>
         new() { Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.Boolean, Flag = value, Unit = "", Choices = [], PresentCount = 1, SelectionCount = 1 };
+
+    /// <summary>A row naming a file in the project.</summary>
+    internal static PropertyRow OfAsset(
+        string group, string name, PropertyId id, string path, AssetKind kind,
+        string note = "", string key = "") =>
+        new()
+        {
+            Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.Asset,
+            Text = path, Unit = "", Choices = [], Asset = kind, Note = note,
+            PresentCount = 1, SelectionCount = 1,
+        };
 
     internal static PropertyRow OfChoice(
         string group, string name, PropertyId id, string value, IReadOnlyList<string> choices,

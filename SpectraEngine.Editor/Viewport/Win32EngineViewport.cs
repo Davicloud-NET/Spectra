@@ -2,6 +2,7 @@
 using Avalonia.Platform;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Hosting;
+using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Viewport.Windows;
 using System;
@@ -79,7 +80,7 @@ public sealed class Win32EngineViewport : NativeControlHost, IEngineViewport
     /// worse than one that cannot.
     /// </remarks>
 #pragma warning disable CS0067
-    public event Action<ContentDragPayload, int, int>? AssetDropped;
+    public event Action<ContentDragPayload, int, int, MaterialDropScope>? AssetDropped;
 #pragma warning restore CS0067
 
     /// <inheritdoc/>
@@ -91,7 +92,7 @@ public sealed class Win32EngineViewport : NativeControlHost, IEngineViewport
     /// a frame and a label somewhere no pixel of them could reach.
     /// </remarks>
 #pragma warning disable CS0067
-    public event Action<ContentDragPayload?>? AssetDragChanged;
+    public event Action<AssetDragState?>? AssetDragChanged;
 #pragma warning restore CS0067
 
     /// <summary>

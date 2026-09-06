@@ -285,6 +285,16 @@
       <Setter Property="Margin" Value="0,4,0,0" />
     </Style>
 
+    <!-- Muted and smaller than the verdict above it: this is the second thing
+         to read, and it is present on every accepting material drag rather
+         than only when something is wrong. -->
+    <Style Selector="Border.dropchip TextBlock.drophint">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Margin" Value="0,3,0,0" />
+    </Style>
+
     <!-- TextBox.field.inline moved to Theme/Controls.axaml when the snap field
          moved onto the ribbon: a collapsed ribbon flies its page out in a
          popup, which is a separate visual root, and a Window.Styles rule does
@@ -971,16 +981,14 @@
                         HorizontalAlignment="Center" Margin="0,16,0,0">
                   <StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                      <!-- Two glyphs with one visible, rather than a converter:
-                           the icon is half of how the accepting and refusing
-                           arms are told apart, since they share a hue by
-                           design. A mesh is what would land; a warning is what
-                           the palette means by the same amber when nothing
-                           will. -->
-                      <Path Classes="icon dropicon" Data="{StaticResource IconMesh}"
-                            IsVisible="{Binding DropAccepts}" />
-                      <Path Classes="icon dropicon" Data="{StaticResource IconWarning}"
-                            IsVisible="{Binding !DropAccepts}" />
+                      <!-- ONE glyph, named by the prompt: the icon is half of
+                           how the arms are told apart, since they share a hue
+                           by design, and there are three of them now (a mesh
+                           that would land, a material that would be painted, a
+                           warning when nothing will). Two Paths with negated
+                           visibility could carry two; a third would make it a
+                           chain nobody can read. -->
+                      <Path Classes="icon dropicon" Data="{Binding DropIcon}" />
                       <TextBlock Classes="dropheadline" Text="{Binding DropHeadline}" />
                       <TextBlock Classes="dropsubject" Text="{Binding DropSubject}"
                                  IsVisible="{Binding DropAccepts}" />
@@ -994,6 +1002,12 @@
                          behind the pointer. -->
                     <TextBlock Classes="dropreason" Text="{Binding DropReason}"
                                IsVisible="{Binding !DropAccepts}" />
+
+                    <!-- What exactly would be covered, and the key that widens
+                         it. A modifier whose effect is only visible after the
+                         drop is a modifier nobody uses twice. -->
+                    <TextBlock Classes="drophint" Text="{Binding DropHint}"
+                               IsVisible="{Binding DropHasHint}" />
                   </StackPanel>
                 </Border>
               </Border>

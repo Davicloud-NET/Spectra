@@ -1066,7 +1066,12 @@ public sealed class SceneEditorHost : ISceneEditor
         // Between the context overlays and the manipulator, in that order: an
         // outline says what a press would act on, a handle says what a press
         // WILL do, and the handle has to be the one on top.
-        Selection.Draw(output, _scene, _scene.Camera, _viewportSize, _viewport.HoveredNode);
+        Selection.Draw(output, _scene, _scene.Camera, _viewportSize, new OutlineFocus(
+            _viewport.HoveredNode,
+            _viewport.HoveredPlaneIndex,
+            _materialDrag,
+            _scene.Selection.FaceNode,
+            _scene.Selection.FacePlane));
 
         _viewport.Draw(output, _viewportSize);
 
@@ -1703,6 +1708,234 @@ public sealed class SceneEditorHost : ISceneEditor
         }
 
         return new ModelInsertReport(contentPath, node.Id, name, unresolved, null);
+    }
+
+    /// <summary>
+    /// Paints the brush face under the pointer, or the whole brush.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A drop never changes the selection</b>, which is the difference
+    /// between painting five blocks in a sweep and painting five blocks while
+    /// ending up with only the last one selected. An insert selects because the
+    /// node did not exist a moment ago; a paint changes something that was
+    /// already there and that the user may still have selected on purpose.
+    /// </para>
+    /// <para>
+    /// <b>The failed-material cache is forgotten first.</b> A material named
+    /// while its file was missing is cached AS the default material under its
+    /// own key and stays that way for the rest of the session, so somebody who
+    /// writes the <c>.spectramat</c> and then assigns it would get the default
+    /// with every log line reading healthy.
+    /// </para>
+    /// </remarks>
+    /// <param name="contentPath">The material, or empty for the engine default.</param>
+    /// <param name="viewportPoint">Where the drop landed, or null for the view centre.</param>
+    /// <param name="scope">One face or the whole brush.</param>
+    public MaterialAssignReport AssignMaterial(
+        string contentPath, Vector2? viewportPoint, MaterialDropScope scope)
+    {
+        contentPath ??= string.Empty;
+
+        if (RefuseEdit("Assign material"))
+        {
+            return MaterialAssignReport.RefusedBecause(
+                contentPath,
+                IsSuspended ? "play mode owns the scene" : "a manipulation is in progress");
+        }
+
+        _viewport.Reset();
+
+        if (!TryFindSurface(viewportPoint, out SceneRaycastHit hit))
+            return MaterialAssignReport.RefusedBecause(contentPath, "nothing is under the pointer");
+
+        if (hit.Node.Brush is not { } brush || hit.PlaneIndex < 0)
+        {
+            return MaterialAssignReport.RefusedBecause(
+                contentPath, $"'{hit.Node.Name}' is a mesh, and only brush faces take a material");
+        }
+
+        if (!TryInternMaterial(contentPath, out MaterialRef material))
+            return MaterialAssignReport.RefusedBecause(contentPath, "that is not a content-relative path");
+
+        Brush next = scope == MaterialDropScope.Brush
+            ? brush.WithAllFacesMaterial(material)
+            : brush.WithFaceMaterial(hit.PlaneIndex, material);
+
+        int faces = CountChangedFaces(brush, next);
+        string? unresolved = DescribeMissingMaterial(contentPath);
+
+        if (faces == 0)
+        {
+            // Reference identity is what invalidates the carve and the part-mesh
+            // caches downstream, so a command carrying an equal brush would
+            // recompile the world to produce the picture it already had.
+            _logger.LogDebug("Assign material '{Path}': '{Node}' already wears it", contentPath, hit.Node.Name);
+            return new MaterialAssignReport(
+                contentPath, hit.Node.Id, hit.Node.Name, 0, brush.FaceSurfaces.Count, null, unresolved);
+        }
+
+        _undo.BeginTransaction(scope == MaterialDropScope.Brush ? "Material" : "Face Material");
+        try
+        {
+            _undo.Execute(SetBrushCommand.Capture(hit.Node, next));
+        }
+        finally
+        {
+            _undo.CommitTransaction();
+        }
+
+        _logger.LogInformation(
+            "Assign material '{Path}' to {Faces} face(s) of '{Node}' (undo {UndoDepth})",
+            contentPath, faces, hit.Node.Name, _undo.UndoCount);
+
+        return new MaterialAssignReport(
+            contentPath, hit.Node.Id, hit.Node.Name, faces, brush.FaceSurfaces.Count, null, unresolved);
+    }
+
+    /// <summary>
+    /// Paints every selected brush, whole, in one history entry.
+    /// </summary>
+    /// <remarks>
+    /// The route with no pointer to aim with: a face cannot be named without
+    /// one, so this is always whole-brush and says so in its message.
+    /// </remarks>
+    public MaterialAssignReport AssignMaterialToSelection(string contentPath)
+    {
+        contentPath ??= string.Empty;
+
+        if (RefuseEdit("Assign material"))
+        {
+            return MaterialAssignReport.RefusedBecause(
+                contentPath,
+                IsSuspended ? "play mode owns the scene" : "a manipulation is in progress");
+        }
+
+        if (!TryInternMaterial(contentPath, out MaterialRef material))
+            return MaterialAssignReport.RefusedBecause(contentPath, "that is not a content-relative path");
+
+        List<IEditorCommand> commands = [];
+        int faces = 0;
+        int faceCount = 0;
+        int brushes = 0;
+        string lastName = string.Empty;
+
+        foreach (SceneNode node in _scene.Selection.Items)
+        {
+            if (node.Brush is not { } brush) continue;
+
+            brushes++;
+            lastName = node.Name;
+            faceCount += brush.FaceSurfaces.Count;
+
+            Brush next = brush.WithAllFacesMaterial(material);
+            int changed = CountChangedFaces(brush, next);
+            if (changed == 0) continue;
+
+            faces += changed;
+            commands.Add(SetBrushCommand.Capture(node, next));
+        }
+
+        if (brushes == 0)
+        {
+            return MaterialAssignReport.RefusedBecause(
+                contentPath, "no block is selected. Select one, then assign a material to it");
+        }
+
+        string name = brushes == 1 ? lastName : $"{brushes} blocks";
+        string? unresolved = DescribeMissingMaterial(contentPath);
+
+        if (commands.Count == 0)
+        {
+            return new MaterialAssignReport(
+                contentPath, Guid.Empty, name, 0, faceCount, null, unresolved);
+        }
+
+        _undo.BeginTransaction("Material");
+        try
+        {
+            foreach (IEditorCommand command in commands)
+                _undo.Execute(command);
+        }
+        finally
+        {
+            _undo.CommitTransaction();
+        }
+
+        _logger.LogInformation(
+            "Assign material '{Path}' to {Faces} face(s) across {Brushes} block(s) (undo {UndoDepth})",
+            contentPath, faces, brushes, _undo.UndoCount);
+
+        return new MaterialAssignReport(contentPath, Guid.Empty, name, faces, faceCount, null, unresolved);
+    }
+
+    /// <summary>
+    /// Says that a material is being dragged over the viewport, so the outline
+    /// can show what letting go would paint.
+    /// </summary>
+    /// <remarks>
+    /// <b>Set once per gesture, never per pointer move.</b> A drag raises its
+    /// hover event several hundred times carrying one answer; the POSITION
+    /// travels through the ordinary input path instead, which is what gives the
+    /// editor a hover during a drag with no second latch to keep in step.
+    /// </remarks>
+    public void SetMaterialDrag(MaterialDropScope? scope) => _materialDrag = scope;
+
+    /// <summary>What a material drag over the viewport would paint, or null.</summary>
+    public MaterialDropScope? MaterialDrag => _materialDrag;
+
+    private MaterialDropScope? _materialDrag;
+
+    // A path this process cannot name is refused rather than interned: the
+    // registry takes whatever it is handed, so a rooted or escaping path would
+    // become a material reference nothing can resolve, written into a map.
+    private static bool TryInternMaterial(string contentPath, out MaterialRef material)
+    {
+        material = MaterialRef.Default;
+
+        if (contentPath.Length == 0) return true;
+
+        try
+        {
+            material = MaterialRegistry.Intern(ContentRoot.NormalizeRelativePath(contentPath));
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static int CountChangedFaces(Brush before, Brush after)
+    {
+        if (ReferenceEquals(before, after)) return 0;
+
+        int changed = 0;
+        int count = Math.Min(before.FaceSurfaces.Count, after.FaceSurfaces.Count);
+        for (int i = 0; i < count; i++)
+        {
+            if (!before.FaceSurfaces[i].Material.Equals(after.FaceSurfaces[i].Material))
+                changed++;
+        }
+
+        return changed;
+    }
+
+    // One stat per assignment, on the render thread, which is nothing next to
+    // the recompile the assignment itself causes. The row's own note comes from
+    // the asset manager's cache instead, because that runs per publish.
+    private string? DescribeMissingMaterial(string contentPath)
+    {
+        if (contentPath.Length == 0) return null;
+
+        if (_scene.Assets is not { } assets)
+            return "the scene has no asset manager attached";
+
+        assets.ForgetFailedMaterial(contentPath);
+
+        return assets.Content.Exists(contentPath)
+            ? null
+            : $"{contentPath} is not in the content root";
     }
 
     /// <summary>

@@ -12,7 +12,7 @@
   <Border Classes="palette">
     <DockPanel>
       <TextBox x:Name="Query" DockPanel.Dock="Top" Classes="field"
-               Watermark="Type a command" />
+               PlaceholderText="Type a command" />
       <!-- How much was hidden. Twelve rows with no count looks identical
            whether twelve matched or thirty did, and the other eighteen were
            unreachable by any means the user could see. -->

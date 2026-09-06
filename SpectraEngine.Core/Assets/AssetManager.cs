@@ -306,6 +306,84 @@ public sealed partial class AssetManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether this material path is known not to resolve.
+    /// </summary>
+    /// <remarks>
+    /// <b>Answered from the CACHE, never from the disk.</b> The inspector asks
+    /// this per publish, and a filesystem probe there would be a stat per face
+    /// per frame inside the snapshot path. It therefore reports what has been
+    /// LEARNED: a path whose load fell back, or one normalisation refused.
+    /// A material that has never been asked for reports false, which is right -
+    /// nothing is known to be wrong with it.
+    /// </remarks>
+    public bool IsMaterialMissing(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath)) return false;
+
+        string key;
+        try
+        {
+            key = ContentRoot.NormalizeRelativePath(relativePath);
+        }
+        catch (ArgumentException)
+        {
+            // A path that cannot even be normalised is missing in the only
+            // sense that matters: nothing will ever resolve it.
+            return true;
+        }
+
+        lock (_materialSync)
+        {
+            if (_unusableMaterialPaths.Contains(key)) return true;
+
+            return _materials.TryGetValue(key, out Material? material)
+                && ReferenceEquals(material, _defaultMaterial);
+        }
+    }
+
+    /// <summary>
+    /// Forgets that a material path failed, so the next load reads the disk.
+    /// </summary>
+    /// <remarks>
+    /// <b>A failed load is cached as the fallback, which makes it permanent.</b>
+    /// Authoring the file afterwards changes nothing for the rest of the
+    /// session, and the editor is exactly where somebody authors one. Called
+    /// before an assignment so that a material created a moment ago resolves.
+    /// Render thread.
+    /// </remarks>
+    /// <returns>Whether an entry was actually dropped.</returns>
+    public bool ForgetFailedMaterial(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath)) return false;
+
+        string key;
+        try
+        {
+            key = ContentRoot.NormalizeRelativePath(relativePath);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        lock (_materialSync)
+        {
+            bool forgotten = _unusableMaterialPaths.Remove(key);
+
+            // Only an entry that IS the fallback: a real material cached here is
+            // shared with everything already drawing it.
+            if (_materials.TryGetValue(key, out Material? material) &&
+                ReferenceEquals(material, _defaultMaterial))
+            {
+                _materials.Remove(key);
+                forgotten = true;
+            }
+
+            return forgotten;
+        }
+    }
+
     /// <summary>Number of materials currently cached. Any thread.</summary>
     public int MaterialCount
     {
