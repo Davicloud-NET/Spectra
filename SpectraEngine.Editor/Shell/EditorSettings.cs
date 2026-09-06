@@ -193,6 +193,19 @@ public sealed class EditorSettings
     /// </remarks>
     public bool RibbonExpanded => _ribbonExpanded;
 
+    private ContentViewMode _contentView = ContentViewMode.Grid;
+    private DateTime _contentRecordedUtc = DateTime.MinValue;
+
+    /// <summary>
+    /// Whether the content browser draws tiles or rows.
+    /// </summary>
+    /// <remarks>
+    /// Grid by default, because the first thing anybody opens the browser for is
+    /// a texture and the picture is the information. Somebody working in a
+    /// folder of shaders switches once and expects it to stay switched.
+    /// </remarks>
+    public ContentViewMode ContentView => _contentView;
+
     private WorkspacePreset _workspacePreset = WorkspacePreset.Compact;
     private double _drawerHeight = WorkspaceLayout.DefaultDrawerHeight;
     private DateTime _workspaceRecordedUtc = DateTime.MinValue;
@@ -236,6 +249,16 @@ public sealed class EditorSettings
 
         _diagnosticsReadouts = shown;
         _diagnosticsRecordedUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>Records how the content browser is being viewed.</summary>
+    public void SetContentView(ContentViewMode mode)
+    {
+        if (_contentView == mode)
+            return;
+
+        _contentView = mode;
+        _contentRecordedUtc = DateTime.UtcNow;
     }
 
     /// <summary>Records the pin state for next time.</summary>
@@ -399,6 +422,12 @@ public sealed class EditorSettings
             _diagnosticsReadouts = onDisk._diagnosticsReadouts;
             _diagnosticsRecordedUtc = onDisk._diagnosticsRecordedUtc;
         }
+
+        if (onDisk._contentRecordedUtc > _contentRecordedUtc)
+        {
+            _contentView = onDisk._contentView;
+            _contentRecordedUtc = onDisk._contentRecordedUtc;
+        }
     }
 
     private void Write(Utf8JsonWriter writer)
@@ -422,6 +451,11 @@ public sealed class EditorSettings
         writer.WriteString("preset", WorkspaceLayout.NameOf(_workspacePreset));
         writer.WriteNumber("drawerHeight", _drawerHeight);
         writer.WriteString("recordedUtc", _workspaceRecordedUtc.ToString("O"));
+        writer.WriteEndObject();
+
+        writer.WriteStartObject("content");
+        writer.WriteString("viewMode", ContentViewNames.NameOf(_contentView));
+        writer.WriteString("recordedUtc", _contentRecordedUtc.ToString("O"));
         writer.WriteEndObject();
 
         writer.WriteStartObject("diagnostics");
@@ -462,6 +496,10 @@ public sealed class EditorSettings
             else if (reader.ValueTextEquals("workspace"))
             {
                 ReadWorkspace(ref reader);
+            }
+            else if (reader.ValueTextEquals("content"))
+            {
+                ReadContent(ref reader);
             }
             else if (reader.ValueTextEquals("diagnostics"))
             {
@@ -664,6 +702,49 @@ public sealed class EditorSettings
 
         _diagnosticsReadouts = readouts;
         _diagnosticsRecordedUtc = recorded;
+    }
+
+    /// <summary>
+    /// Reads the content block, falling back rather than failing the file.
+    /// </summary>
+    /// <remarks>
+    /// A view word this build does not know reads as the grid, for the reason
+    /// the viewport block falls back to auto: a settings file written by a newer
+    /// shell must lose the setting it cannot read rather than every setting
+    /// beside it.
+    /// </remarks>
+    private void ReadContent(ref Utf8JsonReader reader)
+    {
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException("'content' must be an object.");
+
+        ContentViewMode mode = ContentViewMode.Grid;
+        DateTime recorded = DateTime.MinValue;
+
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            if (reader.ValueTextEquals("viewMode"))
+            {
+                reader.Read();
+                if (!ContentViewNames.TryParse(reader.GetString(), out mode))
+                    mode = ContentViewMode.Grid;
+            }
+            else if (reader.ValueTextEquals("recordedUtc"))
+            {
+                reader.Read();
+                DateTime.TryParse(
+                    reader.GetString(), null,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out recorded);
+            }
+            else
+            {
+                reader.Read();
+                reader.Skip();
+            }
+        }
+
+        _contentView = mode;
+        _contentRecordedUtc = recorded;
     }
 
     private void ReadRecentProjects(ref Utf8JsonReader reader)

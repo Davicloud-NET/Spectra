@@ -27,33 +27,122 @@
     </ContextMenu>
   </UserControl.Resources>
 
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
 
-    <!-- The path row: up, where you are, and a refresh. There is no file
-         watcher behind this pane, so the refresh is the honest answer rather
-         than a listing that silently goes stale. -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="8,6,8,6" ColumnSpacing="6">
+    <!-- Search first, because a project with a few hundred assets is faster to
+         type at than to walk. A query replaces the folder view rather than
+         filtering it: "where are the bricks" is not "which file in THIS folder
+         is called brick", and a filter would report nothing for a file one
+         level up. -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,6,8,4" ColumnSpacing="6">
       <Button Grid.Column="0" Classes="ghost" Name="UpButton" Click="OnUpClicked"
               IsEnabled="{Binding Content.CanGoUp}" ToolTip.Tip="Up one folder">
         <Path Classes="icon" Data="{StaticResource IconArrowUp}" />
       </Button>
 
-      <TextBlock Grid.Column="1" Classes="value" VerticalAlignment="Center"
-                 TextTrimming="CharacterEllipsis"
-                 Text="{Binding Content.Breadcrumb}" />
+      <TextBox Grid.Column="1" Classes="field" Name="SearchBox"
+               PlaceholderText="Search the project"
+               Text="{Binding Content.Query, Mode=TwoWay}"
+               KeyDown="OnSearchKeyDown" />
 
-      <Button Grid.Column="2" Classes="ghost" Click="OnRefreshClicked" ToolTip.Tip="Re-read this folder">
+      <Button Grid.Column="2" Classes="ghost" Click="OnViewModeClicked"
+              ToolTip.Tip="Switch between tiles and rows">
+        <Path Classes="icon" Data="{StaticResource IconList}" />
+      </Button>
+
+      <Button Grid.Column="3" Classes="ghost" Click="OnRefreshClicked"
+              ToolTip.Tip="Walk the project again">
         <Path Classes="icon" Data="{StaticResource IconRefresh}" />
       </Button>
     </Grid>
 
-    <TextBlock Grid.Row="1" Classes="prose" Margin="12,4,12,0"
+    <!-- The kind filters, and where you are. Chips rather than a dropdown: four
+         values, all worth one click, and the lit one says the answer without
+         being opened. -->
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,*" Margin="8,0,8,6" ColumnSpacing="8">
+      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="3">
+        <Button Classes="chip" Classes.active="{Binding Content.IsFilterAll}"
+                Content="All" Tag="All" Click="OnFilterClicked" />
+        <Button Classes="chip" Classes.active="{Binding Content.IsFilterTextures}"
+                Content="Textures" Tag="Textures" Click="OnFilterClicked" />
+        <Button Classes="chip" Classes.active="{Binding Content.IsFilterMaterials}"
+                Content="Materials" Tag="Materials" Click="OnFilterClicked" />
+        <Button Classes="chip" Classes.active="{Binding Content.IsFilterModels}"
+                Content="Models" Tag="Models" Click="OnFilterClicked" />
+      </StackPanel>
+
+      <!-- Every segment is a button, because the path is also the way back up:
+           a breadcrumb you cannot click is a label. Hidden while searching,
+           where the list is not a folder and the path would be a lie. -->
+      <ItemsControl Grid.Column="1" ItemsSource="{Binding Content.Breadcrumbs}"
+                    IsVisible="{Binding !Content.IsSearching}"
+                    HorizontalAlignment="Right">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="shell:BreadcrumbSegment">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="/" Classes="micro" VerticalAlignment="Center" Margin="1,0" />
+              <Button Classes="ghost crumb" Content="{Binding Label}"
+                      Tag="{Binding FullPath}" Click="OnCrumbClicked" />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Grid>
+
+    <TextBlock Grid.Row="2" Classes="prose" Margin="12,4,12,0"
                Foreground="{StaticResource SpectraTextMuted}"
                IsVisible="{Binding !Content.HasContent}"
                Text="{Binding Content.EmptyMessage}" />
 
-    <ScrollViewer Grid.Row="1" IsVisible="{Binding Content.HasContent}"
-                  HorizontalScrollBarVisibility="Disabled">
+    <!-- The list, which VIRTUALISES: a ListBox over a VirtualizingStackPanel
+         realises the rows on screen and no others, which is why it is the mode
+         with no cap. Stock Avalonia has no virtualising wrap panel, so the grid
+         below is capped instead. -->
+    <ListBox Grid.Row="2" Name="ListRows" Classes="contentlist"
+             ItemsSource="{Binding Content.Entries}"
+             SelectionChanged="OnListSelectionChanged"
+             DoubleTapped="OnEntryActivated">
+      <ListBox.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.And}">
+          <Binding Path="Content.HasContent" />
+          <Binding Path="Content.IsListView" />
+        </MultiBinding>
+      </ListBox.IsVisible>
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="shell:ContentEntry">
+          <Grid ColumnDefinitions="20,*,Auto,Auto" ColumnSpacing="8"
+                ContextMenu="{StaticResource ContentMenu}">
+            <Panel Grid.Column="0" Width="20" Height="16">
+              <Path Classes="icon" IsVisible="{Binding !HasThumbnail}"
+                    Stroke="{Binding KindBrush}" Data="{Binding Icon}" />
+              <Image Source="{Binding Thumbnail}" IsVisible="{Binding HasThumbnail}"
+                     Stretch="Uniform" />
+            </Panel>
+            <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       FontSize="{StaticResource SpectraFontSmall}" />
+            <TextBlock Grid.Column="2" Text="{Binding FolderLabel}" Classes="micro"
+                       VerticalAlignment="Center" MaxWidth="140"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="3" Text="{Binding SizeLabel}" Classes="micro"
+                       VerticalAlignment="Center" MinWidth="52" TextAlignment="Right" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+      <ScrollViewer.IsVisible>
+        <MultiBinding Converter="{x:Static BoolConverters.And}">
+          <Binding Path="Content.HasContent" />
+          <Binding Path="Content.IsGridView" />
+        </MultiBinding>
+      </ScrollViewer.IsVisible>
       <ItemsControl ItemsSource="{Binding Content.Entries}" Margin="6,0,6,8">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
@@ -94,6 +183,13 @@
                            MaxWidth="80" />
                 <TextBlock Text="{Binding SizeLabel}" Classes="micro"
                            TextAlignment="Center" HorizontalAlignment="Center" />
+                <!-- Where it is, on a search result only: two projects in three
+                     have a brick, and a flat result list has nothing else to
+                     tell them apart. -->
+                <TextBlock Text="{Binding FolderLabel}" Classes="micro"
+                           IsVisible="{Binding FolderLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           TextAlignment="Center" HorizontalAlignment="Center"
+                           MaxWidth="80" TextTrimming="CharacterEllipsis" />
               </StackPanel>
             </Border>
           </DataTemplate>
@@ -101,13 +197,29 @@
       </ItemsControl>
     </ScrollViewer>
 
+    <!-- What was left out, or what the index is doing. A capped list with no
+         count looks exactly like a complete one, and a blank pane during a walk
+         looks like a project with nothing in it. -->
+    <TextBlock Grid.Row="3" Classes="micro" Margin="10,2"
+               Text="{Binding Content.ResultNote}"
+               IsVisible="{Binding Content.ResultNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+               TextWrapping="Wrap" />
+
     <!-- What the selection IS, in the engine's own name for it. A tile shows a
          picture and a file name; this says the content-relative path, which is
          what a material writes down and what a map records. -->
-    <Border Grid.Row="2" Classes="detailstrip" IsVisible="{Binding Content.HasSelected}">
-      <TextBlock Classes="value" Text="{Binding Content.SelectedDetails}"
-                 Foreground="{StaticResource SpectraTextMuted}"
-                 TextTrimming="CharacterEllipsis" />
+    <Border Grid.Row="4" Classes="detailstrip" IsVisible="{Binding Content.HasSelected}">
+      <StackPanel>
+        <TextBlock Classes="value" Text="{Binding Content.SelectedDetails}"
+                   Foreground="{StaticResource SpectraTextMuted}"
+                   TextTrimming="CharacterEllipsis" />
+        <!-- What the FILE says, read from its own header rather than by
+             decoding it. Absent rather than blank while the read is in
+             flight. -->
+        <TextBlock Classes="micro" Text="{Binding Content.SelectedExtra}"
+                   IsVisible="{Binding Content.SelectedExtra, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                   TextTrimming="CharacterEllipsis" />
+      </StackPanel>
     </Border>
   </Grid>
 
@@ -133,6 +245,32 @@
          selected-looking under the pointer. -->
     <Style Selector="Border.tile.selected">
       <Setter Property="Background" Value="{StaticResource SpectraRowSelected}" />
+    </Style>
+
+    <!-- A crumb is a word you press, not a control: no fill at rest, and the
+         path reads as one string until the pointer is over a segment. -->
+    <Style Selector="Button.crumb">
+      <Setter Property="Padding" Value="3,1" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+    </Style>
+    <Style Selector="Button.crumb:pointerover">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+    </Style>
+
+    <!-- Dense flat rows, the same idiom as the scene tree: a list of names is a
+         list, and a bordered tile per row costs three times the height for no
+         more information. -->
+    <Style Selector="ListBox.contentlist">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="4,0" />
+    </Style>
+    <Style Selector="ListBox.contentlist ListBoxItem">
+      <Setter Property="Padding" Value="6,2" />
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
     </Style>
 
     <Style Selector="Border.detailstrip">

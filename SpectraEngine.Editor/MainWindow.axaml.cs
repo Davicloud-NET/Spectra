@@ -278,6 +278,16 @@ public partial class MainWindow : Window
         _shell.Content = new ContentBrowserModel(_loggerFactory.CreateLogger<ContentBrowserModel>());
         _shell.Assets = new AssetCatalog(_loggerFactory.CreateLogger<AssetCatalog>());
 
+        // The view is the user's and survives a restart; the change is saved
+        // when they make it rather than at shutdown, because a shell that
+        // crashed would otherwise forget it.
+        _shell.Content.ViewMode = _settings.ContentView;
+        _shell.Content.ViewChanged += mode =>
+        {
+            _settings.SetContentView(mode);
+            _settings.Save(_logger);
+        };
+
         _contentView = new ContentPanel();
         _contentView.EntryActivated += OnContentActivated;
         _contentView.RevealRequested += entry => RevealInExplorer(entry.FullPath);
@@ -1751,9 +1761,40 @@ public partial class MainWindow : Window
             return;
         }
 
+        // A subject that looks like an asset is one: the problem list carries
+        // the content-relative path a warning named, and the browser can
+        // navigate to it. Anything else is a message, which is still better
+        // than a row that does nothing when it is clicked.
+        if (entry.HasSubject && LooksLikeContentPath(entry.Subject))
+        {
+            RevealInContent(entry.Subject);
+            return;
+        }
+
         if (entry.HasSubject)
             _shell.SetMessage(entry.Subject);
     }
+
+    /// <summary>
+    /// Shows a content-relative path in the browser, opening the panel first.
+    /// </summary>
+    /// <remarks>
+    /// The panel may be in the bottom drawer, which may be closed: revealing
+    /// into a hidden pane is the same as doing nothing, with the extra cost of
+    /// looking as though something happened.
+    /// </remarks>
+    private void RevealInContent(string contentPath)
+    {
+        ShowToolInDrawer(ContentTool);
+        _shell.Content?.Reveal(contentPath);
+    }
+
+    // A content path has a forward-slash shape and an extension; a log subject
+    // that is a class name, an id or a sentence has neither.
+    private static bool LooksLikeContentPath(string subject) =>
+        subject.Contains('/', StringComparison.Ordinal) &&
+        Path.HasExtension(subject) &&
+        !subject.Contains(' ', StringComparison.Ordinal);
 
     private void OnShowConsolePanel(object? sender, RoutedEventArgs e)
     {

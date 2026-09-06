@@ -4,6 +4,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
+using SpectraEngine.Core.Assets;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -79,6 +80,28 @@ public sealed class ContentEntry : ObservableObject
 
     /// <summary>The file's own name without its extension.</summary>
     public string Stem => System.IO.Path.GetFileNameWithoutExtension(Name);
+
+    /// <summary>
+    /// The content-relative path, or empty for a folder.
+    /// </summary>
+    /// <remarks>
+    /// Carried on the row rather than derived where it is needed, because the
+    /// browser is the only thing that knows the root and a second derivation
+    /// somewhere else is a fifth spelling of asset identity.
+    /// </remarks>
+    public string ContentPath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Where this file is, content-relative, shown beside a search result.
+    /// </summary>
+    /// <remarks>
+    /// A search is flat and crosses the whole project, so two files called
+    /// "brick" are one row apart with nothing to tell them apart but this.
+    /// </remarks>
+    public string FolderLabel { get; init; } = string.Empty;
+
+    /// <summary>When this file last changed, for keying a decoded preview.</summary>
+    public long MtimeTicks { get; init; }
 
     /// <summary>A word for this kind, for the details strip.</summary>
     public string KindLabel => Kind switch
@@ -158,12 +181,35 @@ public sealed class ContentEntry : ObservableObject
 /// </remarks>
 public sealed class ContentBrowserModel : ObservableObject
 {
+    /// <summary>How many search results one query shows.</summary>
+    /// <remarks>
+    /// A cap rather than the whole project, because a texture folder is
+    /// unbounded and a list nobody can reach the end of is a search box with
+    /// extra scrolling. The footer says how many were hidden, because a capped
+    /// list with no count looks exactly like a complete one.
+    /// </remarks>
+    public const int MaxSearchResults = 200;
+
+    /// <summary>How many tiles the grid draws before it asks for the list.</summary>
+    /// <remarks>
+    /// <b>The grid does not virtualise and the list does.</b> Stock Avalonia has
+    /// no virtualising wrap panel, so a folder of four thousand textures would
+    /// realise four thousand tiles; the cap is what keeps that from happening,
+    /// and the footer names the way out rather than silently truncating.
+    /// </remarks>
+    public const int GridCap = 400;
+
     private readonly ILogger _logger;
+    private readonly ContentIndex _index;
     private string? _root;
     private string _currentPath = string.Empty;
     private string _breadcrumb = string.Empty;
     private bool _hasContent;
     private string _emptyMessage = "No project is open.";
+    private string _query = string.Empty;
+    private ContentFilter _filter = ContentFilter.All;
+    private ContentViewMode _viewMode = ContentViewMode.Grid;
+    private string _resultNote = string.Empty;
 
     // Bumped on every navigation, so a decode that lands after the user has
     // moved on is dropped rather than writing a thumbnail into a row that is
@@ -171,7 +217,110 @@ public sealed class ContentBrowserModel : ObservableObject
     // sequence ticket, and for the same reason.
     private int _generation;
 
-    public ContentBrowserModel(ILogger logger) => _logger = logger;
+    public ContentBrowserModel(ILogger logger)
+    {
+        _logger = logger;
+        _index = new ContentIndex(logger);
+
+        // One reader, two views: the folder listing and the search both come off
+        // the index, so a rename cannot show up in one and not the other.
+        _index.Changed += Relist;
+        _index.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(ContentIndex.IsWalking) or nameof(ContentIndex.Warning))
+                Raise(nameof(ResultNote));
+        };
+    }
+
+    /// <summary>The index behind both views, for the picker that shares it.</summary>
+    public ContentIndex Index => _index;
+
+    /// <summary>What is being searched for, across the whole project.</summary>
+    /// <remarks>
+    /// <b>A query replaces the folder view rather than filtering it.</b> Somebody
+    /// typing "brick" is asking where the bricks are, not which of the files in
+    /// this one folder is called brick; a filter over the current folder answers
+    /// a question nobody asked and reports nothing when the file is one level up.
+    /// </remarks>
+    public string Query
+    {
+        get => _query;
+        set
+        {
+            if (!Set(ref _query, value ?? string.Empty)) return;
+
+            Raise(nameof(IsSearching));
+            Relist();
+        }
+    }
+
+    /// <summary>Whether the list is a search result rather than a folder.</summary>
+    public bool IsSearching => _query.Length > 0;
+
+    /// <summary>Which kinds are listed.</summary>
+    public ContentFilter Filter
+    {
+        get => _filter;
+        set
+        {
+            if (!Set(ref _filter, value)) return;
+
+            Raise(nameof(IsFilterAll));
+            Raise(nameof(IsFilterTextures));
+            Raise(nameof(IsFilterMaterials));
+            Raise(nameof(IsFilterModels));
+            Relist();
+        }
+    }
+
+    public bool IsFilterAll => _filter == ContentFilter.All;
+    public bool IsFilterTextures => _filter == ContentFilter.Textures;
+    public bool IsFilterMaterials => _filter == ContentFilter.Materials;
+    public bool IsFilterModels => _filter == ContentFilter.Models;
+
+    /// <summary>Tiles or dense rows.</summary>
+    /// <remarks>
+    /// <b>A grid for pictures and a list for everything else, and the choice is
+    /// the user's.</b> A texture's picture IS the information, which is the one
+    /// case where a tile beats a row; a folder of shaders in a grid is a wall of
+    /// identical glyphs. The list also virtualises, so it is the mode for a big
+    /// folder whatever is in it.
+    /// </remarks>
+    public ContentViewMode ViewMode
+    {
+        get => _viewMode;
+        set
+        {
+            if (!Set(ref _viewMode, value)) return;
+
+            Raise(nameof(IsGridView));
+            Raise(nameof(IsListView));
+            ViewChanged?.Invoke(_viewMode);
+            Relist();
+        }
+    }
+
+    public bool IsGridView => _viewMode == ContentViewMode.Grid;
+    public bool IsListView => _viewMode == ContentViewMode.List;
+
+    /// <summary>Raised when the user changes the view, so it can be saved.</summary>
+    public event Action<ContentViewMode>? ViewChanged;
+
+    /// <summary>
+    /// What was left out, or what the index is doing. Empty when neither.
+    /// </summary>
+    public string ResultNote
+    {
+        get
+        {
+            if (_index.IsWalking) return "Indexing...";
+            if (_index.Warning is { Length: > 0 } warning) return warning;
+            return _resultNote;
+        }
+    }
+
+    /// <summary>The path from the root to here, as clickable segments.</summary>
+    public ObservableCollection<BreadcrumbSegment> Breadcrumbs { get; } = [];
 
     /// <summary>The entries in the current folder, folders first.</summary>
     public ObservableCollection<ContentEntry> Entries { get; } = [];
@@ -222,8 +371,68 @@ public sealed class ContentBrowserModel : ObservableObject
     public void SetRoot(string? assetsPath)
     {
         _root = assetsPath;
-        Navigate(assetsPath);
+        _query = string.Empty;
+        Raise(nameof(Query));
+        Raise(nameof(IsSearching));
+
+        _currentPath = assetsPath ?? string.Empty;
+
+        // BEFORE the index is pointed anywhere, and the order is the whole of
+        // it. This call fills the pane in the meantime, so it is never blank
+        // with no message; the walk publishes its own listing when it lands. In
+        // the other order the two overlap - the walk can finish while this one
+        // is still adding rows - and two writers on one ObservableCollection is
+        // an IndexOutOfRangeException from inside a list control rather than
+        // anything that names itself.
+        Relist();
+
+        _index.SetRoot(assetsPath);
     }
+
+    /// <summary>Navigates to a folder, clearing any query.</summary>
+    public void NavigateTo(string folderFullPath)
+    {
+        if (string.IsNullOrEmpty(folderFullPath)) return;
+
+        _currentPath = folderFullPath;
+        _query = string.Empty;
+        Raise(nameof(Query));
+        Raise(nameof(IsSearching));
+
+        Select(null);
+        Relist();
+    }
+
+    /// <summary>
+    /// Navigates to the folder holding a content-relative path and selects it.
+    /// </summary>
+    /// <remarks>
+    /// How "Reveal in Content" works, and how a picker sends somebody to the
+    /// file they just assigned. It clears the query, because a reveal into a
+    /// filtered list would show the file and hide its neighbours.
+    /// </remarks>
+    public void Reveal(string contentPath)
+    {
+        if (_root is null || string.IsNullOrWhiteSpace(contentPath)) return;
+
+        string full = Path.Combine(
+            _root, contentPath.Replace('/', Path.DirectorySeparatorChar));
+
+        NavigateTo(Path.GetDirectoryName(full) ?? _root);
+
+        foreach (ContentEntry entry in Entries)
+        {
+            if (string.Equals(entry.FullPath, full, StringComparison.OrdinalIgnoreCase))
+            {
+                Select(entry);
+                RevealScrolled?.Invoke(entry);
+                return;
+            }
+        }
+    }
+
+    /// <summary>Raised when a reveal selected a row, so the panel can scroll to it.</summary>
+    public event Action<ContentEntry>? RevealScrolled;
 
     /// <summary>Goes up one level, if there is one.</summary>
     public void GoUp()
@@ -231,17 +440,17 @@ public sealed class ContentBrowserModel : ObservableObject
         if (!CanGoUp)
             return;
 
-        Navigate(Path.GetDirectoryName(_currentPath));
+        NavigateTo(Path.GetDirectoryName(_currentPath) ?? string.Empty);
     }
 
-    /// <summary>Re-reads the current folder.</summary>
-    public void Refresh() => Navigate(_currentPath);
+    /// <summary>Walks the project again and re-lists.</summary>
+    public void Refresh() => _index.Refresh();
 
     /// <summary>Descends into <paramref name="entry"/> if it is a folder.</summary>
     public void Open(ContentEntry entry)
     {
         if (entry.IsFolder)
-            Navigate(entry.FullPath);
+            NavigateTo(entry.FullPath);
     }
 
     private ContentEntry? _selected;
@@ -296,87 +505,270 @@ public sealed class ContentBrowserModel : ObservableObject
         if (entry is not null) entry.IsSelected = true;
 
         Selected = entry;
+
+        SelectedExtra = string.Empty;
+        if (entry is not null) _ = DescribeSelectionAsync(entry, ++_detailGeneration);
     }
 
-    private void Navigate(string? path)
+    private string _selectedExtra = string.Empty;
+    private int _detailGeneration;
+
+    /// <summary>
+    /// What the file itself says: a texture's size, a material's shader and
+    /// textures. Empty until the read lands, and empty when it cannot.
+    /// </summary>
+    /// <remarks>
+    /// <b>Read in the background and never by decoding.</b> A texture's
+    /// dimensions are in the first bytes of its header (<see cref="ImageHeader"/>)
+    /// and a material is a small text file, so this is two open-and-read calls;
+    /// decoding a 4K image to learn two numbers would cost 32 MB for a line of
+    /// text. A read that lands after the selection moved on is dropped by
+    /// generation, the same ticket the thumbnails use.
+    /// </remarks>
+    public string SelectedExtra
+    {
+        get => _selectedExtra;
+        private set => Set(ref _selectedExtra, value);
+    }
+
+    private async Task DescribeSelectionAsync(ContentEntry entry, int generation)
+    {
+        string text = entry.Kind switch
+        {
+            ContentKind.Texture => await Task.Run(() => DescribeTexture(entry.FullPath)).ConfigureAwait(true),
+            ContentKind.Material => await Task.Run(() => DescribeMaterial(entry.FullPath)).ConfigureAwait(true),
+            _ => string.Empty,
+        };
+
+        if (Volatile.Read(ref _detailGeneration) != generation) return;
+
+        SelectedExtra = text;
+    }
+
+    private static string DescribeTexture(string fullPath) =>
+        ImageHeader.TryReadFile(fullPath, out int width, out int height)
+            ? $"{width} x {height}"
+            : string.Empty;
+
+    private string DescribeMaterial(string fullPath)
+    {
+        try
+        {
+            MaterialDefinition definition = MaterialParser.ParseFile(fullPath);
+
+            string shader = definition.ShaderName is { Length: > 0 } named
+                ? named
+                : MaterialParser.BuiltInShaderName;
+
+            // The parser is forward-compatible by design: an unknown key warns
+            // rather than throwing, and that warning is invisible everywhere
+            // else in the shell. Saying it here is the whole reason a details
+            // strip is worth having for a material.
+            if (definition.Warnings.Count > 0)
+                return $"shader {shader}  ({definition.Warnings.Count} warning(s) in this file)";
+
+            return definition.Textures.Count == 0
+                ? $"shader {shader}  (no textures)"
+                : $"shader {shader}  {definition.Textures.Count} texture(s)";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException)
+        {
+            _logger.LogDebug(ex, "Could not describe {Path}", fullPath);
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the list from the index: this folder, or the whole project when
+    /// there is a query.
+    /// </summary>
+    /// <remarks>
+    /// <b>The collection is rebuilt rather than patched, and that is a
+    /// deliberate difference from the scene tree.</b> The tree is patched
+    /// because it holds a user's expansion state and scroll position across
+    /// thousands of rows that mostly do not change; a content listing changes
+    /// wholesale on every navigation and every keystroke of a query, so a diff
+    /// would be a diff of two unrelated lists.
+    /// </remarks>
+    private void Relist()
     {
         // Every in-flight decode is now stale.
         int generation = ++_generation;
 
-        // And so is the selection: the entry it named is about to leave the
-        // list, and a details strip describing a file nobody can see is worse
-        // than an empty one.
-        Select(null);
-
         Entries.Clear();
-        _currentPath = path ?? string.Empty;
         Raise(nameof(CanGoUp));
+        RebuildBreadcrumbs();
 
-        if (string.IsNullOrEmpty(path))
+        if (_root is null)
         {
             Breadcrumb = string.Empty;
             HasContent = false;
             EmptyMessage = "No project is open.";
+            _resultNote = string.Empty;
+            Raise(nameof(ResultNote));
             return;
         }
 
-        Breadcrumb = _root is null
-            ? path
-            : "Assets" + path[_root.Length..].Replace(Path.DirectorySeparatorChar, '/');
+        Breadcrumb = _currentPath.StartsWith(_root, StringComparison.OrdinalIgnoreCase)
+            ? "Assets" + _currentPath[_root.Length..].Replace(Path.DirectorySeparatorChar, '/')
+            : _currentPath;
 
-        if (!Directory.Exists(path))
-        {
-            HasContent = false;
-            EmptyMessage = $"{Breadcrumb} does not exist on disk.";
-            return;
-        }
+        List<ContentIndexEntry> rows = IsSearching ? Search() : _index.InFolder(_currentPath);
 
-        try
+        int shown = 0;
+        int cap = ViewMode == ContentViewMode.Grid ? GridCap : int.MaxValue;
+
+        foreach (ContentIndexEntry row in rows)
         {
-            // Folders first, then files, each alphabetically. Not by date or by
-            // kind: a person looking for a file knows its name, and any other
-            // order means hunting.
-            foreach (string dir in Directory.EnumerateDirectories(path).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+            if (!Admits(row.Kind)) continue;
+            if (shown >= cap) break;
+
+            var entry = new ContentEntry
             {
-                Entries.Add(new ContentEntry
-                {
-                    Name = Path.GetFileName(dir),
-                    FullPath = dir,
-                    Kind = ContentKind.Folder,
-                    SizeLabel = string.Empty,
-                });
-            }
+                Name = row.Name,
+                FullPath = row.FullPath,
+                Kind = row.Kind,
+                SizeLabel = FormatBytes(row.Bytes),
+                ContentPath = row.ContentPath,
+                FolderLabel = FolderLabelFor(row),
+                MtimeTicks = row.MtimeTicks,
+            };
 
-            foreach (string file in Directory.EnumerateFiles(path).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
-            {
-                ContentKind kind = Classify(file);
-                var entry = new ContentEntry
-                {
-                    Name = Path.GetFileName(file),
-                    FullPath = file,
-                    Kind = kind,
-                    SizeLabel = FormatSize(file),
-                };
+            Entries.Add(entry);
+            shown++;
 
-                Entries.Add(entry);
-
-                if (kind == ContentKind.Texture)
-                    _ = LoadThumbnailAsync(entry, generation);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // A folder the editor cannot read is a report, not a crash: the
-            // browser is a convenience and the project still opens without it.
-            _logger.LogWarning(ex, "Could not list {Path}", path);
-            HasContent = false;
-            EmptyMessage = $"Could not read {Breadcrumb}.";
-            return;
+            if (row.Kind == ContentKind.Texture)
+                _ = LoadThumbnailAsync(entry, generation);
         }
 
         HasContent = Entries.Count > 0;
-        EmptyMessage = "This folder is empty.";
+
+        EmptyMessage = IsSearching
+            ? "Nothing in this project matches."
+            : _index.Count == 0 ? "This project has no assets yet." : "This folder is empty.";
+
+        int hidden = CountAdmitted(rows) - shown;
+        _resultNote = hidden <= 0
+            ? string.Empty
+            : ViewMode == ContentViewMode.Grid && !IsSearching
+                ? $"Showing {shown} of {shown + hidden}. Switch to the list to see them all."
+                : $"Showing {shown} of {shown + hidden}. Keep typing to narrow it.";
+
+        Raise(nameof(ResultNote));
     }
+
+    private int CountAdmitted(List<ContentIndexEntry> rows)
+    {
+        int count = 0;
+        foreach (ContentIndexEntry row in rows)
+        {
+            if (Admits(row.Kind)) count++;
+        }
+
+        return count;
+    }
+
+    private bool Admits(ContentKind kind) => _filter switch
+    {
+        // A folder is navigation rather than content, so it survives every
+        // filter: hiding it would make a filtered view a dead end.
+        _ when kind == ContentKind.Folder => !IsSearching,
+
+        ContentFilter.All => true,
+        ContentFilter.Textures => kind == ContentKind.Texture,
+        ContentFilter.Materials => kind == ContentKind.Material,
+        ContentFilter.Models => kind == ContentKind.Model,
+        _ => true,
+    };
+
+    /// <summary>
+    /// The best matches across the whole project, ranked.
+    /// </summary>
+    /// <remarks>
+    /// <b>A name match outranks a path match by a fixed margin.</b> Somebody
+    /// typing "brick" means the file called brick, not every file in a folder
+    /// that happens to contain those letters; but a path match still beats no
+    /// match, because folders are how people organise. The same rule the asset
+    /// picker uses, and the same scorer, so a file found in one is found in the
+    /// other.
+    /// </remarks>
+    private List<ContentIndexEntry> Search()
+    {
+        List<(ContentIndexEntry Row, int Score)> matches = [];
+
+        foreach (ContentIndexEntry row in _index.Entries)
+        {
+            if (row.Kind == ContentKind.Folder) continue;
+
+            int score = CommandScore.Of(row.Name, _query);
+            if (score == CommandScore.NoMatch)
+            {
+                int path = CommandScore.Of(row.ContentPath, _query);
+                if (path == CommandScore.NoMatch) continue;
+                score = path - 8;
+            }
+
+            matches.Add((row, score));
+        }
+
+        matches.Sort(static (a, b) =>
+        {
+            int byScore = b.Score.CompareTo(a.Score);
+            return byScore != 0
+                ? byScore
+                : string.CompareOrdinal(a.Row.ContentPath, b.Row.ContentPath);
+        });
+
+        List<ContentIndexEntry> rows = [];
+        foreach ((ContentIndexEntry row, _) in matches)
+        {
+            if (rows.Count >= MaxSearchResults) break;
+            rows.Add(row);
+        }
+
+        return rows;
+    }
+
+    private string FolderLabelFor(ContentIndexEntry row)
+    {
+        // Only a search needs it: in a folder view every row shares the folder
+        // the breadcrumb already names, and repeating it on each tile is noise.
+        if (!IsSearching || row.ContentPath.Length == 0) return string.Empty;
+
+        int slash = row.ContentPath.LastIndexOf('/');
+        return slash > 0 ? row.ContentPath[..slash] : "Assets";
+    }
+
+    private void RebuildBreadcrumbs()
+    {
+        Breadcrumbs.Clear();
+
+        if (_root is null) return;
+
+        Breadcrumbs.Add(new BreadcrumbSegment("Assets", _root));
+
+        if (!_currentPath.StartsWith(_root, StringComparison.OrdinalIgnoreCase)) return;
+
+        string rest = _currentPath[_root.Length..].Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (rest.Length == 0) return;
+
+        string walked = _root;
+        foreach (string part in rest.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            walked = Path.Combine(walked, part);
+            Breadcrumbs.Add(new BreadcrumbSegment(part, walked));
+        }
+    }
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        < 0 => string.Empty,
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):0.#} MB",
+    };
 
     private async Task LoadThumbnailAsync(ContentEntry entry, int generation)
     {
@@ -411,25 +803,4 @@ public sealed class ContentBrowserModel : ObservableObject
     /// <summary>The decoded width of a preview, in pixels.</summary>
     public const int ThumbnailWidth = 96;
 
-    // The table lives in ContentClassifier: the picker and the drag payload ask
-    // the same question and a second copy of it would drift.
-    private static ContentKind Classify(string path) => ContentClassifier.Classify(path);
-
-    private static string FormatSize(string path)
-    {
-        try
-        {
-            long bytes = new FileInfo(path).Length;
-            return bytes switch
-            {
-                < 1024 => $"{bytes} B",
-                < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
-                _ => $"{bytes / (1024.0 * 1024.0):0.#} MB",
-            };
-        }
-        catch (IOException)
-        {
-            return string.Empty;
-        }
-    }
 }

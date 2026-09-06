@@ -350,4 +350,45 @@ public sealed class EditorSettingsTests
 
         settings.DrawerHeight.ShouldBe(WorkspaceLayout.DefaultDrawerHeight);
     }
+    // --- The content block ---------------------------------------------------
+
+    [Fact]
+    public void The_content_view_defaults_to_the_grid_and_round_trips()
+    {
+        string path = TempPath();
+
+        var settings = new EditorSettings();
+        settings.ContentView.ShouldBe(ContentViewMode.Grid);
+
+        settings.SetContentView(ContentViewMode.List);
+        settings.Save(path, NullLogger.Instance);
+
+        EditorSettings.Load(path, NullLogger.Instance).ContentView.ShouldBe(ContentViewMode.List);
+    }
+
+    [Fact]
+    public void An_unknown_view_word_reads_as_the_grid()
+    {
+        string path = TempPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+        // A settings file written by a newer shell must lose the setting it
+        // cannot read rather than every setting beside it.
+        File.WriteAllText(
+            path,
+            "{ \"content\": { \"viewMode\": \"gallery\", " +
+            "\"recordedUtc\": \"2026-09-06T00:00:00.0000000Z\" } }");
+
+        EditorSettings.Load(path, NullLogger.Instance).ContentView.ShouldBe(ContentViewMode.Grid);
+    }
+
+    [Fact]
+    public void A_file_with_no_content_block_reads_as_the_grid()
+    {
+        string path = TempPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "{ }");
+
+        EditorSettings.Load(path, NullLogger.Instance).ContentView.ShouldBe(ContentViewMode.Grid);
+    }
 }

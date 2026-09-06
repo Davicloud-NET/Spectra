@@ -2,6 +2,7 @@
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Editor.Shell;
 using System.IO;
+using System.Threading.Tasks;
 using System.Linq;
 
 namespace SpectraEngine.Editor.Tests;
@@ -219,6 +220,18 @@ public sealed class ContentSelectionTests
         return (browser, root);
     }
 
+    // The listing comes off an index walked in the background, so a test that
+    // read Entries straight after SetRoot would be reading the empty list that
+    // fills the pane while the walk runs. Awaiting is what the panel does not
+    // have to do, because the index publishes to it when the walk lands.
+    private static async Task<(ContentBrowserModel Browser, string Root)> WalkedRig()
+    {
+        (ContentBrowserModel browser, string root) = Rig();
+        await browser.Index.Walking;
+        browser.NavigateTo(root);
+        return (browser, root);
+    }
+
     [Fact]
     public void Nothing_is_selected_until_something_is()
     {
@@ -232,9 +245,9 @@ public sealed class ContentSelectionTests
     }
 
     [Fact]
-    public void The_strip_names_the_file_the_way_the_engine_does()
+    public async Task The_strip_names_the_file_the_way_the_engine_does()
     {
-        (ContentBrowserModel browser, string root) = Rig();
+        (ContentBrowserModel browser, string root) = await WalkedRig();
         try
         {
             browser.Open(browser.Entries.Single(e => e.IsFolder));
@@ -255,13 +268,14 @@ public sealed class ContentSelectionTests
     }
 
     [Fact]
-    public void Selecting_another_entry_deselects_the_first()
+    public async Task Selecting_another_entry_deselects_the_first()
     {
-        (ContentBrowserModel browser, string root) = Rig();
+        (ContentBrowserModel browser, string root) = await WalkedRig();
         try
         {
             File.WriteAllText(Path.Combine(root, "Materials", "floor.spectramat"), "shader = lit");
             browser.Refresh();
+            await browser.Index.Walking;
             browser.Open(browser.Entries.Single(e => e.IsFolder));
 
             ContentEntry first = browser.Entries[0];
@@ -277,11 +291,11 @@ public sealed class ContentSelectionTests
     }
 
     [Fact]
-    public void Navigating_away_clears_the_selection()
+    public async Task Navigating_away_clears_the_selection()
     {
         // The entry it named has left the list, and a strip describing a file
         // nobody can see is worse than an empty one.
-        (ContentBrowserModel browser, string root) = Rig();
+        (ContentBrowserModel browser, string root) = await WalkedRig();
         try
         {
             ContentEntry folder = browser.Entries.Single(e => e.IsFolder);

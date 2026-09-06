@@ -75,6 +75,71 @@ public partial class ContentPanel : UserControl
 
     private void OnRefreshClicked(object? sender, RoutedEventArgs e) => Model?.Refresh();
 
+    private void OnCrumbClicked(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Tag is string path)
+            Model?.NavigateTo(path);
+    }
+
+    /// <summary>
+    /// Switches the kind filter from the chip's own tag.
+    /// </summary>
+    /// <remarks>
+    /// <b>A hand-written table, never <c>Enum.Parse</c>.</b> Reflection over
+    /// enum names is exactly what trimming removes, so a published build would
+    /// fail here having worked in every debug run - the same discipline the
+    /// console's verb table and the gizmo shortcuts follow.
+    /// </remarks>
+    private void OnFilterClicked(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { } model || (sender as Control)?.Tag is not string tag) return;
+
+        model.Filter = tag switch
+        {
+            "Textures" => ContentFilter.Textures,
+            "Materials" => ContentFilter.Materials,
+            "Models" => ContentFilter.Models,
+            _ => ContentFilter.All,
+        };
+    }
+
+    private void OnViewModeClicked(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { } model) return;
+
+        model.ViewMode = model.ViewMode == ContentViewMode.Grid
+            ? ContentViewMode.List
+            : ContentViewMode.Grid;
+    }
+
+    /// <summary>
+    /// Escape clears the query and gives the keyboard back.
+    /// </summary>
+    /// <remarks>
+    /// A search box with no way out but selecting its text and deleting it is
+    /// the one control in a panel that can trap somebody: every other field in
+    /// this shell abandons on Escape and this one has to agree with them.
+    /// </remarks>
+    private void OnSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || Model is not { } model) return;
+
+        if (model.Query.Length > 0)
+        {
+            model.Query = string.Empty;
+            e.Handled = true;
+        }
+    }
+
+    // The list control reports its own selection, which is the same selection
+    // the tiles set by hand: one model property either way, so the details strip
+    // cannot disagree with whichever view is on screen.
+    private void OnListSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox { SelectedItem: ContentEntry entry })
+            Model?.Select(entry);
+    }
+
     private void OnEntryActivated(object? sender, TappedEventArgs e)
     {
         if (sender is not Control { DataContext: ContentEntry entry })
