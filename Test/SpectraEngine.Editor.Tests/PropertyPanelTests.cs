@@ -734,4 +734,66 @@ public sealed class PropertyPanelTests
         Assert.True(row.HasRejection);
         Assert.Contains("y", row.Rejection);
     }
+
+    [Fact]
+    public void A_picker_drag_writes_the_whole_colour_every_time()
+    {
+        // The picker writes through the scrub path, so a drag is many edits
+        // inside ONE gesture rather than many gestures. Each carries the whole
+        // vector: a colour has no axes to leave alone.
+        var rig = new Rig();
+        rig.Publish(new PropertyRow
+        {
+            Group = "Light", Name = "Color", Id = PropertyId.LightColor, Kind = PropertyKind.Color,
+            Vector = new Vector3(1f, 1f, 1f), Choices = [], PresentCount = 1, SelectionCount = 1,
+        });
+
+        PropertyRowModel row = rig.Row(PropertyId.LightColor);
+        rig.Panel.BeginGesture("Color");
+        row.ScrubColor(new Vector3(0.5f, 0.25f, 0.125f));
+        row.ScrubColor(new Vector3(0.6f, 0.25f, 0.125f));
+        rig.Panel.EndGesture(commit: true);
+
+        Assert.Equal(2, rig.Edits.Count);
+        Assert.All(rig.Edits, e => Assert.Equal(PropertyAxes.All, e.Axes));
+        Assert.Equal(new Vector3(0.6f, 0.25f, 0.125f), rig.Edits[1].Vector);
+
+        Assert.Equal(["Color"], rig.GesturesOpened);
+        Assert.Equal([true], rig.GesturesClosed);
+    }
+
+    [Fact]
+    public void A_picker_drag_shows_its_colour_without_waiting_for_the_engine()
+    {
+        // The swatch and the hex follow the pointer: waiting for the echo would
+        // make the picker lag the drag by a publish.
+        var rig = new Rig();
+        rig.Publish(new PropertyRow
+        {
+            Group = "Light", Name = "Color", Id = PropertyId.LightColor, Kind = PropertyKind.Color,
+            Vector = Vector3.One, Choices = [], PresentCount = 1, SelectionCount = 1,
+        });
+
+        PropertyRowModel row = rig.Row(PropertyId.LightColor);
+        row.ScrubColor(Vector3.Zero);
+
+        Assert.Equal("#000000", row.Hex);
+    }
+
+    [Fact]
+    public void A_mixed_colour_row_offers_the_picker_a_NaN_to_open_on()
+    {
+        var rig = new Rig();
+        rig.Publish(2, new PropertyRow
+        {
+            Group = "Light", Name = "Color", Id = PropertyId.LightColor, Kind = PropertyKind.Color,
+            Vector = Vector3.One, Choices = [], PresentCount = 2, SelectionCount = 2,
+            MixedAxes = PropertyAxes.All,
+        });
+
+        PropertyRowModel row = rig.Row(PropertyId.LightColor);
+
+        Assert.True(row.IsColorMixed);
+        Assert.True(float.IsNaN(row.ColorLinear.X));
+    }
 }

@@ -29,7 +29,14 @@ namespace SpectraEngine.Editor.Shell;
 /// </remarks>
 public partial class PropertiesPanel : UserControl
 {
-    public PropertiesPanel() => InitializeComponent();
+    public PropertiesPanel()
+    {
+        InitializeComponent();
+
+        ColorPicker.ColorChanged += OnPickerColorChanged;
+        ColorPicker.CommitRequested += OnPickerCommit;
+        ColorPicker.CancelRequested += OnPickerCancel;
+    }
 
     /// <summary>Raised when Escape ends an edit, so the host can take focus back.</summary>
     public event Action? EscapePressed;
@@ -338,6 +345,77 @@ public partial class PropertiesPanel : UserControl
     /// Bounded by the ItemsControl that produced the rows, so a control outside
     /// a row returns null instead of walking to the window.
     /// </remarks>
+    // --- The colour picker ---------------------------------------------------
+    //
+    // The swatch was an inert Border with a tooltip, so choosing a warmer light
+    // meant knowing a hex code or leaving the editor. The picker rides the
+    // property gesture the numeric scrubs already use, which is what makes a
+    // whole drag one undo entry rather than sixty.
+
+    private PropertyRowModel? _colorRow;
+    private bool _colorChanged;
+    private bool _colorCancelled;
+
+    private void OnSwatchPressed(object? sender, PointerPressedEventArgs e)
+    {
+        // Left only: Avalonia raises this for every button, and a right-press on
+        // its way to a context menu must not open a gesture that then writes
+        // colours for as long as it is held.
+        if (sender is not Control control ||
+            !e.GetCurrentPoint(control).Properties.IsLeftButtonPressed ||
+            FindRow(control) is not { } row ||
+            (DataContext as ShellModel)?.Properties is not { } panel)
+        {
+            return;
+        }
+
+        _colorRow = row;
+        _colorChanged = false;
+        _colorCancelled = false;
+
+        ColorPicker.Open(row.ColorLinear);
+        if (row.Fields.Count > 0) row.Fields[0].BeginScrub();
+        panel.BeginGesture("Color");
+
+        ColorPopup.PlacementTarget = control;
+        ColorPopup.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void OnPickerColorChanged(System.Numerics.Vector3 linear)
+    {
+        if (_colorRow is not { } row) return;
+
+        _colorChanged = true;
+        row.ScrubColor(linear);
+    }
+
+    private void OnPickerCommit() => ColorPopup.IsOpen = false;
+
+    private void OnPickerCancel()
+    {
+        _colorCancelled = true;
+        ColorPopup.IsOpen = false;
+    }
+
+    private void OnColorPopupClosed(object? sender, EventArgs e)
+    {
+        if (_colorRow is not { } row) return;
+
+        if (row.Fields.Count > 0) row.Fields[0].EndScrub();
+
+        // Light dismiss is a COMMIT, the way a click outside a field commits it.
+        // Escape is the only cancel, and a picker closed without a movement
+        // records nothing at all.
+        (DataContext as ShellModel)?.Properties?.EndGesture(_colorChanged && !_colorCancelled);
+
+        _colorRow = null;
+        _colorChanged = false;
+
+        if (_colorCancelled) EscapePressed?.Invoke();
+        _colorCancelled = false;
+    }
+
     private static PropertyRowModel? FindRow(Control? from)
     {
         for (Visual? v = from; v is not null; v = v.GetVisualParent())

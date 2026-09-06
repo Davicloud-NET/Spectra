@@ -1,0 +1,81 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="using:SpectraEngine.Editor.Shell"
+             x:Class="SpectraEngine.Editor.Shell.ColorPickerView"
+             x:DataType="shell:ColorPickerModel">
+
+  <!--
+    A saturation/value square over a hue strip, which is the whole of what a
+    colour picker needs and the only part of one anybody uses.
+
+    Three stacked fills rather than a shader: the hue underneath, white to
+    transparent across, black up from the bottom. That is the standard
+    construction and it composites to the same thing.
+  -->
+
+  <Border Classes="picker">
+    <StackPanel Spacing="8">
+
+      <Panel x:Name="Square" Width="184" Height="120" Cursor="Cross"
+             PointerPressed="OnSquarePressed"
+             PointerMoved="OnSquareMoved"
+             PointerReleased="OnPointerDone">
+        <Border Background="{Binding HueBrush}" CornerRadius="2" />
+        <Border Background="{StaticResource SpectraSaturationRamp}" CornerRadius="2" />
+        <Border Background="{StaticResource SpectraValueRamp}" CornerRadius="2" />
+
+        <!-- The marker never takes the pointer: a drag that started on it must
+             keep reaching the square underneath. -->
+        <Canvas IsHitTestVisible="False">
+          <Ellipse x:Name="SquareMarker" Width="10" Height="10"
+                   Stroke="White" StrokeThickness="1.5" />
+        </Canvas>
+      </Panel>
+
+      <Panel x:Name="Strip" Width="184" Height="12" Cursor="Hand"
+             PointerPressed="OnStripPressed"
+             PointerMoved="OnStripMoved"
+             PointerReleased="OnPointerDone">
+        <Border Background="{StaticResource SpectraHueRamp}" CornerRadius="2" />
+        <Canvas IsHitTestVisible="False">
+          <Border x:Name="StripMarker" Width="3" Height="12"
+                  Background="White" CornerRadius="1" />
+        </Canvas>
+      </Panel>
+
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+        <Border Grid.Column="0" Classes="swatch" Background="{Binding PreviewBrush}" />
+        <Border Grid.Column="1" Classes="cell">
+          <TextBox x:Name="HexBox" Classes="cellfield" TextAlignment="Left" Padding="6,0"
+                   KeyDown="OnHexKeyDown" LostFocus="OnHexBlurred"
+                   ToolTip.Tip="Written in sRGB, stored as linear light." />
+        </Border>
+      </Grid>
+    </StackPanel>
+  </Border>
+
+  <UserControl.Styles>
+    <Style Selector="Border.picker">
+      <Setter Property="Background" Value="{StaticResource SpectraBgRaised}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusFloat}" />
+      <Setter Property="Padding" Value="10" />
+      <Setter Property="BoxShadow" Value="0 8 24 0 #40000000" />
+    </Style>
+    <Style Selector="Border.swatch">
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+    </Style>
+    <Style Selector="Border.cell">
+      <Setter Property="Background" Value="{StaticResource SpectraBgInput}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+      <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

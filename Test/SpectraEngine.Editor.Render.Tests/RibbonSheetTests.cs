@@ -150,6 +150,38 @@ public sealed class RibbonSheetTests(RibbonSession session)
         });
     }
 
+    [Fact]
+    public void The_colour_picker_rasterises_into_a_sheet()
+    {
+        // A gradient square and a hue strip are the two things in this shell
+        // that are drawn rather than laid out, so a sheet is the only way to
+        // see that they drew at all.
+        session.On(() =>
+        {
+            var picker = new SpectraEngine.Editor.Shell.ColorPickerView();
+            picker.Open(SpectraEngine.Editor.Shell.ColorMath.SrgbToLinear(
+                new System.Numerics.Vector3(0.85f, 0.35f, 0.15f)));
+
+            var window = new Window { Content = picker, SizeToContent = SizeToContent.WidthAndHeight };
+            window.SetRenderScaling(2.0);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+            WriteableBitmap? frame = window.GetLastRenderedFrame();
+            frame.ShouldNotBeNull();
+
+            Directory.CreateDirectory(OutputDirectory);
+            frame.Save(Path.Combine(OutputDirectory, "picker@2x.png"), quality: null);
+
+            // A gradient square has to draw MANY colours. Eight would pass over
+            // three flat rectangles, which is exactly the failure worth
+            // catching here.
+            DistinctColours(frame).ShouldBeGreaterThan(64);
+            window.Close();
+        });
+    }
+
     /// <summary>Puts the model into the state the sheet is named for.</summary>
     private static Action<ShellModel>? Drive(string state) => state switch
     {

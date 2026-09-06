@@ -153,6 +153,45 @@ public sealed class PropertyRowModel : ObservableObject
     /// <summary>What this row accepts, for the message when it did not.</summary>
     public string Expected => PropertyLimits.Expected(Id, Kind);
 
+    /// <summary>
+    /// This row's colour in linear light, or a NaN vector when the selection
+    /// disagrees.
+    /// </summary>
+    /// <remarks>
+    /// What the picker opens on. NaN rather than a nullable, because that is
+    /// already how a mixed colour travels through this row.
+    /// </remarks>
+    public Vector3 ColorLinear => _color;
+
+    /// <summary>Whether the selection disagrees about this colour.</summary>
+    public bool IsColorMixed => float.IsNaN(_color.X);
+
+    /// <summary>
+    /// Writes a colour from the picker, the way a scrub writes a number.
+    /// </summary>
+    /// <remarks>
+    /// <b>Through the scrub guard, for the reason a numeric drag uses it.</b>
+    /// The picker writes faster than the engine publishes, so without it every
+    /// refresh would put a value one or two publishes stale back into the hex
+    /// box and the swatch would fight the pointer. The swatch is refreshed here
+    /// directly so it follows the drag rather than waiting for the echo.
+    /// </remarks>
+    internal void ScrubColor(Vector3 linear)
+    {
+        if (Kind != PropertyKind.Color || Fields.Count == 0) return;
+
+        Fields[0].SetScrubText(ToHex(linear));
+        RefreshColor(linear);
+
+        Apply(IsEntityKeyvalue
+            ? new PropertyEdit
+            {
+                Id = Id, Key = Key, Axes = PropertyAxes.All,
+                Text = KeyvalueWire.FormatColor(linear),
+            }
+            : new PropertyEdit { Id = Id, Axes = PropertyAxes.All, Vector = linear });
+    }
+
     /// <summary>The unit the value is measured in, or empty.</summary>
     public string Unit { get; }
 

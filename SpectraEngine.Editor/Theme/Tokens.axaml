@@ -224,6 +224,32 @@
   <Color x:Key="SpectraAccentWashColor">#38E8474A</Color>
   <Color x:Key="SpectraModeWashColor">#38E5A93F</Color>
 
+  <!-- ─── Colour picker ramps ───────────────────────────────────────────
+       The one place in this file whose values are NOT a palette choice: a hue
+       wheel is a hue wheel, and a saturation ramp is white to transparent. A
+       theme swap must leave these alone, which is why they say so here.
+
+       Every alpha is in the COLOUR, per the rule above, and the transparent end
+       of the saturation ramp is transparent WHITE rather than Transparent -
+       which is transparent BLACK and would walk the ramp through grey. -->
+  <LinearGradientBrush x:Key="SpectraHueRamp" StartPoint="0%,0%" EndPoint="100%,0%">
+    <GradientStop Offset="0" Color="#FFFF0000" />
+    <GradientStop Offset="0.1667" Color="#FFFFFF00" />
+    <GradientStop Offset="0.3333" Color="#FF00FF00" />
+    <GradientStop Offset="0.5" Color="#FF00FFFF" />
+    <GradientStop Offset="0.6667" Color="#FF0000FF" />
+    <GradientStop Offset="0.8333" Color="#FFFF00FF" />
+    <GradientStop Offset="1" Color="#FFFF0000" />
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="SpectraSaturationRamp" StartPoint="0%,0%" EndPoint="100%,0%">
+    <GradientStop Offset="0" Color="#FFFFFFFF" />
+    <GradientStop Offset="1" Color="#00FFFFFF" />
+  </LinearGradientBrush>
+  <LinearGradientBrush x:Key="SpectraValueRamp" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Offset="0" Color="#00000000" />
+    <GradientStop Offset="1" Color="#FF000000" />
+  </LinearGradientBrush>
+
   <SolidColorBrush x:Key="SpectraRowHover" Color="#12FFFFFF" />
   <SolidColorBrush x:Key="SpectraRowSelected" Color="{DynamicResource SpectraAccentWashColor}" />
   <SolidColorBrush x:Key="SpectraControlHover" Color="#14FFFFFF" />

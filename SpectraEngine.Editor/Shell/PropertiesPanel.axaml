@@ -437,7 +437,8 @@
                              last good colour back. -->
                         <Grid Grid.Column="1" ColumnDefinitions="Auto,*"
                               IsVisible="{Binding IsColor}">
-                          <Border Grid.Column="0" Classes="swatch"
+                          <Border Grid.Column="0" Classes="swatch" Cursor="Hand"
+                                  PointerPressed="OnSwatchPressed"
                                   Background="{Binding Swatch}" Margin="0,0,5,0"
                                   ToolTip.Tip="{Binding Hex}" />
                           <ItemsControl Grid.Column="1" ItemsSource="{Binding Fields}">
@@ -629,5 +630,18 @@
       </StackPanel>
       </StackPanel>
     </ScrollViewer>
+
+    <!-- ONE picker for the panel, moved to whichever swatch opened it.
+
+         A Popup because it is the only surface in this shell that may cross the
+         viewport: on Windows a popup is a real OS window, so it composites over
+         a native child, where anything drawn in this window's own layer would
+         be painted and thrown away. Light dismiss COMMITS, which is what a
+         click outside means everywhere else in this panel; Escape is the only
+         cancel. -->
+    <Popup x:Name="ColorPopup" Placement="BottomEdgeAlignedLeft"
+           IsLightDismissEnabled="True" Closed="OnColorPopupClosed">
+      <shell:ColorPickerView x:Name="ColorPicker" />
+    </Popup>
   </DockPanel>
 </UserControl>
