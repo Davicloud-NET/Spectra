@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
+             x:Class="SpectraEngine.Editor.Shell.EntityPickerView">
+
+  <!--
+    The entities a wire can aim at: the three runtime tokens, then everything in
+    the scene, searchable.
+
+    THE SAME SHAPE AS THE ASSET PICKER, deliberately. Both answer "which of these
+    many things", both are opened from a "..." beside a text box, and both keep
+    the box: a wildcard and a runtime token are legal targets no list can offer,
+    so the picker FILLS the field rather than replacing it. Somebody who has used
+    the command palette once already knows the keyboard here.
+  -->
+  <Border Classes="palette" Width="260">
+    <DockPanel>
+      <TextBox x:Name="Query" DockPanel.Dock="Top" Classes="field"
+               PlaceholderText="Search this scene" />
+
+      <TextBlock x:Name="Footer" DockPanel.Dock="Bottom" Classes="palettefoot"
+                 IsVisible="False" TextWrapping="Wrap" />
+
+      <ListBox x:Name="Rows" Classes="palettelist" MaxHeight="300">
+        <ListBox.ItemTemplate>
+          <DataTemplate DataType="shell:EntityPickerRow">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Text="{Binding Name}" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" />
+              <!-- The class, because a level has a dozen things called door1
+                   through door12 and the useful question is which is which. -->
+              <TextBlock Grid.Column="1" Classes="palettechord" Text="{Binding ClassName}"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                         MaxWidth="110" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+  </Border>
+</UserControl>

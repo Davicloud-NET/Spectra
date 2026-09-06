@@ -625,3 +625,221 @@ public sealed class EntityWiringPanelTests
         Should.NotThrow(() => panel.Wiring.Add());
     }
 }
+
+/// <summary>
+/// The target picker and the input dropdown behind it.
+/// </summary>
+/// <remarks>
+/// <b>The input list needs exactly ONE exact match, and that arithmetic is the
+/// whole feature.</b> A wildcard aims at several classes, two entities may share
+/// a name (which is legal and means something), and a runtime token names
+/// whatever the level picks while it runs. In every one of those the class is
+/// not known, so there is nothing honest to list and a dropdown that guessed
+/// would offer inputs half the targets do not have.
+/// </remarks>
+public sealed class WiringTargetPickerTests
+{
+    private static EntitySchemaCatalog Catalog(params EntitySchema[] schemas) =>
+        EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(schemas));
+
+    private static EntitySchema Relay(params string[] inputs) =>
+        new("logic_relay", inputs: inputs, outputs: ["OnTrigger"]);
+
+    private static readonly EntityTargetInfo[] Scene =
+    [
+        new("relay", "logic_relay"),
+        new("timer", "logic_timer"),
+    ];
+
+    [Fact]
+    public void A_target_resolving_to_one_known_class_offers_its_inputs()
+    {
+        EntitySchemaCatalog catalog = Catalog(Relay("Trigger", "Enable", "Disable"));
+
+        IReadOnlyList<string> inputs = ConnectionRowModel.InputsFor("relay", Scene, catalog);
+
+        inputs.Count.ShouldBe(3);
+        inputs.ShouldContain("Trigger");
+    }
+
+    [Fact]
+    public void The_list_is_the_schemas_own_instance()
+    {
+        EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
+
+        IReadOnlyList<string> first = ConnectionRowModel.InputsFor("relay", Scene, catalog);
+        IReadOnlyList<string> again = ConnectionRowModel.InputsFor("relay", Scene, catalog);
+
+        // Never a fresh list per refresh: replacing a bound item source makes
+        // the control discard its selection, and a binding will not re-push a
+        // value it has already pushed, so the dropdown would sit permanently
+        // blank over a model that knows the answer.
+        ReferenceEquals(first, again).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Two_entities_sharing_a_name_offer_nothing()
+    {
+        EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
+
+        EntityTargetInfo[] twins =
+        [
+            new("door", "logic_relay"),
+            new("door", "logic_timer"),
+        ];
+
+        // Legal, and it means the wire fires at BOTH: offering one of their
+        // input lists would be a guess about which.
+        ConnectionRowModel.InputsFor("door", twins, catalog).Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void A_wildcard_offers_nothing()
+    {
+        EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
+
+        ConnectionRowModel.InputsFor("rel*", Scene, catalog).Count.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("!self")]
+    [InlineData("!activator")]
+    [InlineData("!caller")]
+    public void A_runtime_token_offers_nothing(string token)
+    {
+        EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
+
+        // It names whatever the level chooses while it runs, so there is no
+        // class to read inputs from until then.
+        ConnectionRowModel.InputsFor(token, Scene, catalog).Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void A_class_this_build_has_no_schema_for_offers_nothing()
+    {
+        EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
+
+        EntityTargetInfo[] unknown = [new("thing", "from_another_game")];
+
+        ConnectionRowModel.InputsFor("thing", unknown, catalog).Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void A_target_naming_nothing_offers_nothing()
+    {
+        EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
+
+        ConnectionRowModel.InputsFor("nobody", Scene, catalog).Count.ShouldBe(0);
+        ConnectionRowModel.InputsFor("", Scene, catalog).Count.ShouldBe(0);
+        ConnectionRowModel.InputsFor("relay", Scene, null).Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void The_picker_offers_the_runtime_tokens_before_the_scene()
+    {
+        var model = new EntityWiringModel((_, _) => { })
+        {
+            Schemas = Catalog(Relay("Trigger")),
+        };
+
+        model.Apply(new EntityPanelInfo
+        {
+            NodeId = Guid.NewGuid(),
+            ClassName = "logic_timer",
+            IsKnown = true,
+            Outputs = ["OnTimer"],
+            Connections =
+            [
+                new EntityConnectionInfo(
+                    new EntityConnection("OnTimer", "relay", "Trigger", "", 0f, EntityConnection.Infinite),
+                    TargetResolves: true),
+            ],
+            Targets = Scene,
+        });
+
+        ConnectionRowModel row = model.Rows[0];
+
+        // The three tokens are the runtime's own vocabulary and name nothing in
+        // the scene, so a list sorted with the entities would bury exactly the
+        // three somebody reaching for a picker has never seen.
+        row.TargetChoices[0].ShouldBe("!self");
+        row.TargetChoices[1].ShouldBe("!activator");
+        row.TargetChoices[2].ShouldBe("!caller");
+        row.TargetChoices.ShouldContain("relay");
+        row.TargetChoices.ShouldContain("timer");
+
+        row.HasInputChoices.ShouldBeTrue();
+        row.InputChoices.ShouldContain("Trigger");
+    }
+
+    [Fact]
+    public void Retyping_the_target_changes_which_inputs_are_offered()
+    {
+        var model = new EntityWiringModel((_, _) => { })
+        {
+            Schemas = Catalog(Relay("Trigger")),
+        };
+
+        model.Apply(new EntityPanelInfo
+        {
+            NodeId = Guid.NewGuid(),
+            ClassName = "logic_timer",
+            IsKnown = true,
+            Outputs = ["OnTimer"],
+            Connections =
+            [
+                new EntityConnectionInfo(
+                    new EntityConnection("OnTimer", "relay", "Trigger", "", 0f, EntityConnection.Infinite),
+                    TargetResolves: true),
+            ],
+            Targets = Scene,
+        });
+
+        ConnectionRowModel row = model.Rows[0];
+        row.HasInputChoices.ShouldBeTrue();
+
+        // The two cells are read in one gesture, so the answer must not wait for
+        // the next publish: a dropdown still offering the previous target's
+        // inputs is a list of verbs the new one does not have.
+        row.TargetField.BeginEdit();
+        row.TargetField.Text = "rel*";
+        row.TargetField.Commit();
+
+        row.InputChoices.Count.ShouldBe(0);
+        row.HasInputChoices.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Picking_a_target_writes_it_through_the_fields_own_commit()
+    {
+        List<IReadOnlyList<EntityConnection>> posted = [];
+
+        var model = new EntityWiringModel((_, wires) => posted.Add(wires))
+        {
+            Schemas = Catalog(Relay("Trigger")),
+        };
+
+        model.Apply(new EntityPanelInfo
+        {
+            NodeId = Guid.NewGuid(),
+            ClassName = "logic_timer",
+            IsKnown = true,
+            Outputs = ["OnTimer"],
+            Connections =
+            [
+                new EntityConnectionInfo(
+                    new EntityConnection("OnTimer", "", "", "", 0f, EntityConnection.Infinite),
+                    TargetResolves: false),
+            ],
+            Targets = Scene,
+        });
+
+        model.Rows[0].PickTarget("relay");
+
+        // ONE post, carrying the whole list: a pick and a typed name take the
+        // same route, so the commit contract and the one-post-per-change rule
+        // are not two implementations.
+        posted.Count.ShouldBe(1);
+        posted[0][0].TargetName.ShouldBe("relay");
+    }
+}

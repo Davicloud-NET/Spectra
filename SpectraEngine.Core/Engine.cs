@@ -295,7 +295,7 @@ public sealed class Engine
     // when the selection is one entity that actually carries wiring, which is a
     // rare interactive state; giving it a home here keeps that case off the
     // render thread's allocation budget entirely.
-    private readonly List<string> _snapshotTargetNames = [];
+    private readonly List<Inspection.EntityTargetInfo> _snapshotTargetNames = [];
 
     /// <summary>
     /// The selected entity's wiring, or null when the selection is not exactly

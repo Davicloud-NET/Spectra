@@ -148,6 +148,18 @@ public enum PropertyKind
     /// folder, which is a search rather than a dropdown.
     /// </remarks>
     Asset,
+
+    /// <summary>
+    /// The name of an entity in this scene, chosen from a picker.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not a Choice, and not an Asset either.</b> A choice's list is fixed by
+    /// the build; an asset's is the project's files; a target's is the SCENE's
+    /// own entities, which change as somebody builds the level. It is also the
+    /// one of the three whose free text is genuinely useful - a wildcard, or a
+    /// runtime token - so the picker fills the box rather than replacing it.
+    /// </remarks>
+    Target,
 }
 
 /// <summary>
@@ -333,6 +345,9 @@ public readonly record struct PropertyRow
     // entity rows pass one.
     internal static PropertyRow ReadOnly(string group, string name, PropertyId id, string text, string key = "") =>
         new() { Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.ReadOnlyText, Text = text, Unit = "", Choices = [], PresentCount = 1, SelectionCount = 1 };
+
+    internal static PropertyRow OfTarget(string group, string name, PropertyId id, string text, string key = "") =>
+        new() { Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.Target, Text = text, Unit = "", Choices = [], PresentCount = 1, SelectionCount = 1 };
 
     internal static PropertyRow OfText(string group, string name, PropertyId id, string text, string key = "") =>
         new() { Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.Text, Text = text, Unit = "", Choices = [], PresentCount = 1, SelectionCount = 1 };

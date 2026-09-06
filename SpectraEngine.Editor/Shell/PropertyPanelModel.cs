@@ -67,7 +67,7 @@ public sealed class PropertyRowModel : ObservableObject
                 new PropertyFieldModel(Id, PropertyAxes.Y, "y", CommitField),
                 new PropertyFieldModel(Id, PropertyAxes.Z, "z", CommitField),
             ],
-            PropertyKind.Number or PropertyKind.Text =>
+            PropertyKind.Number or PropertyKind.Text or PropertyKind.Target =>
                 [new PropertyFieldModel(Id, PropertyAxes.All, string.Empty, CommitField)
                     { Unit = row.Unit ?? string.Empty }],
             _ => [],
@@ -289,6 +289,14 @@ public sealed class PropertyRowModel : ObservableObject
     /// <summary>A one-cell value that fits beside its label.</summary>
     public bool IsScalar => Kind is PropertyKind.Number or PropertyKind.Text;
 
+    /// <summary>Whether the selection can be picked from at all.</summary>
+    /// <remarks>
+    /// A picker needs ONE entity selected, because the list it offers comes off
+    /// the selected node's own capture: a multi-selection publishes none, and a
+    /// button that opened an empty list would look broken rather than refused.
+    /// </remarks>
+    public bool CanPickTarget => IsTarget && !IsPartial && _selectionCount <= 1;
+
     /// <summary>The starting value of each cell, captured when a drag begins.</summary>
     /// <remarks>
     /// <b>Per cell, because a drag on the row's LABEL is a uniform delta and
@@ -306,6 +314,33 @@ public sealed class PropertyRowModel : ObservableObject
 
     /// <summary>A file chosen from the project, shown as a name and a button.</summary>
     public bool IsAsset => Kind == PropertyKind.Asset;
+
+    /// <summary>
+    /// An entity name, typed or picked.
+    /// </summary>
+    /// <remarks>
+    /// <b>A text box with a picker beside it, never a dropdown.</b> A wildcard,
+    /// a runtime token and a name typed before the entity exists are all legal
+    /// values no list can offer, and a control that could not show its own value
+    /// would render blank and write that blank back on the first touch.
+    /// </remarks>
+    public bool IsTarget => Kind == PropertyKind.Target;
+
+    /// <summary>Writes a picked entity name through the field's commit path.</summary>
+    public void PickTarget(string name)
+    {
+        if (!IsTarget || Fields.Count == 0 || string.IsNullOrEmpty(name)) return;
+
+        PropertyFieldModel field = Fields[0];
+        // BeginEdit first, because Commit is the END of an edit and returns
+        // early without one - a pick that only assigned the text would show the
+        // new name and post nothing. SetScrubText is the wrong door too: it
+        // writes the LIVE value as well, so the commit would compare the new
+        // name against itself and record no change.
+        field.BeginEdit();
+        field.Text = name;
+        field.Commit();
+    }
 
     /// <summary>Which kind of file this row's picker offers.</summary>
     public AssetKind AssetKind { get; }
@@ -547,6 +582,7 @@ public sealed class PropertyRowModel : ObservableObject
                 break;
 
             case PropertyKind.Text:
+            case PropertyKind.Target:
                 Fields[0].Refresh(row.Text, row.IsMixed);
                 break;
 
@@ -978,7 +1014,23 @@ public sealed class PropertyPanelModel : ObservableObject
     /// built with the window and a catalogue exists only once a session does.
     /// </para>
     /// </remarks>
-    public EntitySchemaCatalog? Schemas { get; set; }
+    public EntitySchemaCatalog? Schemas
+    {
+        get => _schemas;
+        set
+        {
+            _schemas = value;
+
+            // Forwarded rather than read through a back-reference: the wiring
+            // model answers "what inputs does this target's class declare",
+            // which is the same question this catalogue answers for the badge,
+            // and two ways of reaching one catalogue is how they end up being
+            // two catalogues.
+            Wiring.Schemas = value;
+        }
+    }
+
+    private EntitySchemaCatalog? _schemas;
 
     /// <summary>Opens one history entry to hold a drag across a field.</summary>
     internal void BeginGesture(string name) => _beginGesture(name);

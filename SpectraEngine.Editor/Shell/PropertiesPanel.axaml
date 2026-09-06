@@ -521,6 +521,27 @@
                                   ToolTip.Tip="{Binding Help}"
                                   HorizontalAlignment="Stretch" />
 
+                        <!-- A target: a text box, because a wildcard and a
+                             runtime token are legal values no list can offer,
+                             with a picker beside it for the common case. -->
+                        <Grid Grid.Column="1" ColumnDefinitions="*,Auto"
+                              IsVisible="{Binding IsTarget}">
+                          <Border Grid.Column="0" Classes="cell"
+                                  Classes.invalid="{Binding HasRejection}">
+                            <TextBox DataContext="{Binding Fields[0]}"
+                                     Classes="cellfield" TextAlignment="Left" Padding="6,0"
+                                     Text="{Binding Text, Mode=TwoWay}"
+                                     PlaceholderText="entity name"
+                                     GotFocus="OnPropertyFieldFocused"
+                                     LostFocus="OnPropertyFieldBlurred"
+                                     KeyDown="OnPropertyFieldKeyDown" />
+                          </Border>
+                          <Button Grid.Column="1" Classes="seg" Content="..." Margin="4,0,0,0"
+                                  IsEnabled="{Binding CanPickTarget}"
+                                  Click="OnPickRowTargetPressed"
+                                  ToolTip.Tip="Pick an entity in this scene." />
+                        </Grid>
+
                         <!-- An asset: the file's stem, a note when something
                              is wrong with it, and the whole cell opens the
                              picker. The path is in the tooltip, because
@@ -585,6 +606,12 @@
                    IsVisible="{Binding Properties.Wiring.IsEmpty}"
                    Text="Nothing wired yet." />
 
+        <!-- What the picker left out. Said once for the panel rather than per
+             row, because it is a fact about the scene. -->
+        <TextBlock Classes="micro" TextWrapping="Wrap"
+                   Text="{Binding Properties.Wiring.TargetsNote}"
+                   IsVisible="{Binding Properties.Wiring.TargetsTruncated}" />
+
         <ItemsControl ItemsSource="{Binding Properties.Wiring.Rows}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="shell:ConnectionRowModel">
@@ -627,7 +654,12 @@
                        models and not bound strings: one commit contract, one
                        implementation of "a focused box stops taking
                        refreshes". -->
-                  <Grid ColumnDefinitions="52,*">
+                  <!-- The target stays a TEXT BOX with a picker beside it,
+                       never a dropdown: a wildcard and a runtime token are
+                       legal values no list can offer, and a control that could
+                       not show its own value would render blank and then write
+                       that blank back. -->
+                  <Grid ColumnDefinitions="52,*,Auto">
                     <TextBlock Grid.Column="0" Classes="wirelabel" Text="Target" />
                     <Border Grid.Column="1" Classes="cell" DataContext="{Binding TargetField}">
                       <TextBox x:DataType="shell:PropertyFieldModel"
@@ -638,12 +670,25 @@
                                LostFocus="OnPropertyFieldBlurred"
                                KeyDown="OnPropertyFieldKeyDown" />
                     </Border>
+                    <Button Grid.Column="2" Classes="seg" Content="..." Margin="4,0,0,0"
+                            Click="OnPickTargetPressed"
+                            ToolTip.Tip="Pick an entity in this scene." />
                   </Grid>
 
                   <Grid ColumnDefinitions="52,*">
                     <TextBlock Grid.Column="0" Classes="wirelabel" Text="Input" />
-                    <Border Grid.Column="1" Classes="cell" DataContext="{Binding InputField}">
-                      <TextBox x:DataType="shell:PropertyFieldModel"
+                    <!-- A DROPDOWN when the target resolves to one entity of a
+                         class this build knows, and a text box otherwise: two
+                         entities sharing a name, a wildcard or a runtime token
+                         all leave the class unknown, and a list guessed from
+                         one of them would offer inputs the others do not have. -->
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding InputChoices}"
+                              SelectedItem="{Binding Input, Mode=TwoWay}"
+                              IsVisible="{Binding HasInputChoices}"
+                              HorizontalAlignment="Stretch" />
+                    <Border Grid.Column="1" Classes="cell"
+                            IsVisible="{Binding !HasInputChoices}">
+                      <TextBox DataContext="{Binding InputField}"
                                Classes="cellfield" TextAlignment="Left" Padding="6,0"
                                Text="{Binding Text, Mode=TwoWay}"
                                PlaceholderText="input to send"
@@ -712,6 +757,13 @@
          be painted and thrown away. Light dismiss COMMITS, which is what a
          click outside means everywhere else in this panel; Escape is the only
          cancel. -->
+    <!-- The entity picker, which shares the asset picker's list and keyboard:
+         somebody who has used one already knows the other. -->
+    <Popup x:Name="TargetPopup" Placement="BottomEdgeAlignedLeft"
+           IsLightDismissEnabled="True">
+      <shell:EntityPickerView x:Name="TargetPicker" />
+    </Popup>
+
     <!-- The asset picker, a Popup for the same airspace reason the colour one
          is: a real OS window is the only surface that may cross a native-child
          viewport, and this panel can be docked anywhere. -->

@@ -658,9 +658,35 @@ public static class NodeInspector
                     EntityGroup, label, PropertyId.EntityKeyvalue, value,
                     ChoiceTokensOf(descriptor.Choices), key: key);
 
-            // Everything else is text in v1: a targetname, a node reference, an
-            // asset path and a flag word all want a widget of their own, and a
-            // wrong widget over a right string is worse than a plain field.
+            // A name in this scene, picked from what is actually there. The row
+            // is still TEXT underneath, because a wildcard and a runtime token
+            // are legal values a picker cannot offer: the picker fills the box
+            // rather than replacing it.
+            //
+            // TargetName ONLY. A NodeRef's wire form is a hyphenated GUID rather
+            // than a name, so the same picker over it would write a value the
+            // reader refuses - and it would look right, because the name it
+            // wrote is the name of the node the user chose. It stays text until
+            // it has a picker that writes ids.
+            case KeyvalueType.TargetName:
+                return PropertyRow.OfTarget(EntityGroup, label, PropertyId.EntityKeyvalue, value, key);
+
+            // A file in this project, picked the way a brush's material is.
+            case KeyvalueType.AssetMaterial:
+                return PropertyRow.OfAsset(
+                    EntityGroup, label, PropertyId.EntityKeyvalue, value, AssetKind.Material, key: key);
+
+            case KeyvalueType.AssetTexture:
+                return PropertyRow.OfAsset(
+                    EntityGroup, label, PropertyId.EntityKeyvalue, value, AssetKind.Texture, key: key);
+
+            case KeyvalueType.AssetModel:
+                return PropertyRow.OfAsset(
+                    EntityGroup, label, PropertyId.EntityKeyvalue, value, AssetKind.Model, key: key);
+
+            // AssetSound stays text: the content browser has no sound kind, so
+            // its picker would open on an empty list. Named here rather than
+            // left to be discovered from an empty dropdown.
             default:
                 return PropertyRow.OfText(EntityGroup, label, PropertyId.EntityKeyvalue, value, key);
         }

@@ -39,6 +39,9 @@ public partial class PropertiesPanel : UserControl
 
         AssetPicker.Picked += OnAssetPicked;
         AssetPicker.Cancelled += OnAssetPickerCancelled;
+
+        TargetPicker.Picked += OnTargetPicked;
+        TargetPicker.Cancelled += OnTargetPickerCancelled;
     }
 
     /// <summary>Raised when Escape ends an edit, so the host can take focus back.</summary>
@@ -417,6 +420,73 @@ public partial class PropertiesPanel : UserControl
 
         if (_colorCancelled) EscapePressed?.Invoke();
         _colorCancelled = false;
+    }
+
+    // ─── The target picker ───────────────────────────────
+
+    private ConnectionRowModel? _targetRow;
+    private bool _targetCancelled;
+
+    private void OnPickTargetPressed(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not ConnectionRowModel row) return;
+        if ((DataContext as ShellModel)?.Properties?.Wiring is not { } wiring) return;
+
+        _targetRow = row;
+        _targetCancelled = false;
+
+        TargetPicker.Open(wiring.Targets, wiring.TargetsTruncated, row.TargetField.Text);
+
+        TargetPopup.PlacementTarget = (Control)sender!;
+        TargetPopup.IsOpen = true;
+    }
+
+    private PropertyRowModel? _targetPropertyRow;
+
+    /// <summary>
+    /// Opens the same picker over a keyvalue row whose declared type is a
+    /// target name.
+    /// </summary>
+    /// <remarks>
+    /// The same list and the same keyboard as the wiring one: a schema that
+    /// declares a <c>TargetName</c> is asking the identical question, and two
+    /// pickers over one question would drift about which entities count.
+    /// </remarks>
+    private void OnPickRowTargetPressed(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control control || FindRow(control) is not { } row || !row.IsTarget) return;
+        if ((DataContext as ShellModel)?.Properties?.Wiring is not { } wiring) return;
+
+        _targetPropertyRow = row;
+        _targetRow = null;
+
+        TargetPicker.Open(wiring.Targets, wiring.TargetsTruncated, row.Fields[0].Text);
+
+        TargetPopup.PlacementTarget = control;
+        TargetPopup.IsOpen = true;
+    }
+
+    private void OnTargetPicked(string name)
+    {
+        _targetRow?.PickTarget(name);
+        _targetPropertyRow?.PickTarget(name);
+
+        TargetPopup.IsOpen = false;
+        _targetRow = null;
+        _targetPropertyRow = null;
+    }
+
+    private void OnTargetPickerCancelled()
+    {
+        _targetCancelled = true;
+        TargetPopup.IsOpen = false;
+        _targetRow = null;
+        _targetPropertyRow = null;
+
+        // Escape here means the same as Escape in a field: abandon, and give the
+        // keyboard back rather than leaving it in a closed popup.
+        EscapePressed?.Invoke();
+        _targetCancelled = false;
     }
 
     // ─── The asset picker ────────────────────────────────

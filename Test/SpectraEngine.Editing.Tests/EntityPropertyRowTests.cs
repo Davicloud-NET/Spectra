@@ -1,4 +1,4 @@
-using SpectraEngine.Core.Entities;
+﻿using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Inspection;
 using SpectraEngine.Core.Scene;
 using System.Collections.Generic;
@@ -142,8 +142,18 @@ public sealed class EntityPropertyRowTests
     [InlineData(KeyvalueType.Angles, "0 90 0", PropertyKind.Vector3)]
     [InlineData(KeyvalueType.Color, "1 0.5 0", PropertyKind.Color)]
     [InlineData(KeyvalueType.String, "hello", PropertyKind.Text)]
-    [InlineData(KeyvalueType.TargetName, "door", PropertyKind.Text)]
-    [InlineData(KeyvalueType.AssetModel, "Models/x.obj", PropertyKind.Text)]
+    [InlineData(KeyvalueType.TargetName, "door", PropertyKind.Target)]
+    // A NodeRef is a hyphenated GUID on the wire rather than a name, so the
+    // name picker would write a value the reader refuses while looking exactly
+    // right: it stays text until it has a picker that writes ids.
+    [InlineData(KeyvalueType.NodeRef, "0f8fad5b-d9cb-469f-a165-70867728950e", PropertyKind.Text)]
+    [InlineData(KeyvalueType.AssetModel, "Models/x.obj", PropertyKind.Asset)]
+    [InlineData(KeyvalueType.AssetMaterial, "Materials/x.spectramat", PropertyKind.Asset)]
+    [InlineData(KeyvalueType.AssetTexture, "Textures/x.png", PropertyKind.Asset)]
+
+    // A sound has no browser kind yet, so its picker would open on an empty
+    // list: it stays text until the content browser can classify one.
+    [InlineData(KeyvalueType.AssetSound, "Sounds/x.wav", PropertyKind.Text)]
     [InlineData(KeyvalueType.Flags, "3", PropertyKind.Text)]
     [InlineData(KeyvalueType.Vec2, "1 2", PropertyKind.Text)]
     public void A_declared_type_picks_the_editor(KeyvalueType type, string value, PropertyKind kind)
@@ -152,6 +162,20 @@ public sealed class EntityPropertyRowTests
             new EntitySchema("thing", keyvalues: [Kv("p", type)]));
 
         Row(Describe(Placed("thing", ("p", value)), catalog), "p").Kind.ShouldBe(kind);
+    }
+
+    [Theory]
+    [InlineData(KeyvalueType.AssetModel, AssetKind.Model)]
+    [InlineData(KeyvalueType.AssetMaterial, AssetKind.Material)]
+    [InlineData(KeyvalueType.AssetTexture, AssetKind.Texture)]
+    public void An_asset_row_says_which_kind_of_file_it_wants(KeyvalueType type, AssetKind kind)
+    {
+        // The picker opens on one kind, so a row that carried the wrong one
+        // would offer a list of files this key cannot hold.
+        EntitySchemaCatalog catalog = Catalog(
+            new EntitySchema("thing", keyvalues: [Kv("p", type)]));
+
+        Row(Describe(Placed("thing", ("p", "x")), catalog), "p").Asset.ShouldBe(kind);
     }
 
     [Fact]

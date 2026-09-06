@@ -176,6 +176,107 @@ public sealed class ConnectionRowModel : ObservableObject
     /// </remarks>
     public bool HasOutputChoices => Declares(_outputChoices, _output);
 
+    private IReadOnlyList<EntityTargetInfo> _targets = [];
+    private IReadOnlyList<string> _targetChoices = [];
+    private IReadOnlyList<string> _inputChoices = [];
+    private bool _targetsTruncated;
+
+    /// <summary>
+    /// What the target picker offers: the three runtime tokens, then every
+    /// entity in the scene.
+    /// </summary>
+    /// <remarks>
+    /// <b>The tokens FIRST, because they are the ones nobody can guess.</b>
+    /// <c>!self</c>, <c>!activator</c> and <c>!caller</c> are the runtime's own
+    /// vocabulary and are not names of anything in the scene, so a list sorted
+    /// with the entities would bury them; they are also the three a person
+    /// reaching for a picker is most likely to have never seen.
+    /// </remarks>
+    public IReadOnlyList<string> TargetChoices => _targetChoices;
+
+    /// <summary>Whether the scene has more entities than the picker lists.</summary>
+    public bool TargetsTruncated => _targetsTruncated;
+
+    /// <summary>What to say about a capped list, or empty.</summary>
+    public string TargetsNote => _targetsTruncated
+        ? $"Showing the first {EntityPanelInfo.MaxTargets} entities. Type a name to reach the rest."
+        : string.Empty;
+
+    /// <summary>
+    /// The inputs the TARGET's class declares, when there is exactly one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Exactly ONE exact match, and the arithmetic is the whole rule.</b> A
+    /// wildcard aims at several classes; two entities may share a name, which is
+    /// legal and means something; a runtime token names whatever is chosen while
+    /// the level runs. In every one of those the class is not known, so there is
+    /// nothing honest to list, and a dropdown that guessed would offer inputs
+    /// half the targets do not have.
+    /// </para>
+    /// <para>
+    /// It is the schema's OWN list instance, never widened by the authored
+    /// value, for the reason <see cref="OutputChoices"/> gives at length:
+    /// replacing an item source makes the control discard its selection and a
+    /// binding will not re-push a value it has already pushed, so the dropdown
+    /// would sit permanently blank over a model that knows the answer.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> InputChoices => _inputChoices;
+
+    /// <summary>
+    /// Whether this wire's input can be PICKED, so the row shows a dropdown.
+    /// </summary>
+    public bool HasInputChoices => Declares(_inputChoices, _input);
+
+    /// <summary>
+    /// The dropdown's value, when there is one.
+    /// </summary>
+    /// <remarks>
+    /// The twin of <see cref="Output"/>, with the same empty refusal and for the
+    /// same reason: replacing an item source delivers an empty assignment here
+    /// that looks exactly like a click, and taking it would post a wire with no
+    /// input at all.
+    /// </remarks>
+    public string Input
+    {
+        get => _input;
+        set
+        {
+            if (_applyingRefresh || string.IsNullOrEmpty(value))
+                return;
+
+            if (_input == value) return;
+
+            _input = value;
+            Raise();
+            InputField.Refresh(value, mixed: false);
+            Raise(nameof(HasInputChoices));
+            _changed();
+        }
+    }
+
+    /// <summary>Writes a picked target through the field's own commit path.</summary>
+    /// <remarks>
+    /// Through the FIELD rather than straight into the model, so a pick and a
+    /// typed name take the same route: the panel's commit contract, the warning
+    /// recompute and the one-post-per-change rule all live there.
+    /// </remarks>
+    public void PickTarget(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return;
+
+        PropertyFieldModel field = TargetField;
+        // BeginEdit first, because Commit is the END of an edit and returns
+        // early without one - a pick that only assigned the text would show the
+        // new name and post nothing. SetScrubText is the wrong door too: it
+        // writes the LIVE value as well, so the commit would compare the new
+        // name against itself and record no change.
+        field.BeginEdit();
+        field.Text = name;
+        field.Commit();
+    }
+
     /// <summary>Whether anything in the scene answers to this wire's target.</summary>
     public bool TargetResolves
     {
@@ -215,7 +316,12 @@ public sealed class ConnectionRowModel : ObservableObject
         new(_output, _target, _input, _parameter, _delay, _times);
 
     /// <summary>Takes a fresh value from a published snapshot.</summary>
-    internal void Refresh(EntityConnectionInfo info, IReadOnlyList<string> declared)
+    internal void Refresh(
+        EntityConnectionInfo info,
+        IReadOnlyList<string> declared,
+        IReadOnlyList<EntityTargetInfo> targets,
+        bool targetsTruncated,
+        EntitySchemaCatalog? schemas)
     {
         EntityConnection wire = info.Wire;
 
@@ -253,6 +359,90 @@ public sealed class ConnectionRowModel : ObservableObject
         TimesField.Refresh(FormatTimes(wire.TimesToFire), mixed: false);
 
         TargetResolves = info.TargetResolves;
+
+        RefreshTargets(targets, targetsTruncated);
+        RefreshInputs(schemas);
+    }
+
+    // Rebuilt only when the TARGET LIST INSTANCE changed, which the engine
+    // reuses across publishes when nothing structural happened: the guard is
+    // what keeps a dropdown from discarding its selection thirty times a second
+    // while somebody is looking at it.
+    private void RefreshTargets(IReadOnlyList<EntityTargetInfo> targets, bool truncated)
+    {
+        if (ReferenceEquals(_targets, targets) && _targetsTruncated == truncated) return;
+
+        _targets = targets;
+        _targetsTruncated = truncated;
+
+        var choices = new List<string>(targets.Count + 3)
+        {
+            TargetNameIndex.SelfToken,
+            TargetNameIndex.ActivatorToken,
+            TargetNameIndex.CallerToken,
+        };
+
+        for (int i = 0; i < targets.Count; i++)
+            choices.Add(targets[i].Name);
+
+        _targetChoices = choices;
+        Raise(nameof(TargetChoices));
+        Raise(nameof(TargetsTruncated));
+        Raise(nameof(TargetsNote));
+    }
+
+    private void RefreshInputs(EntitySchemaCatalog? schemas)
+    {
+        _schemas = schemas;
+
+        IReadOnlyList<string> inputs = InputsFor(_target, _targets, schemas);
+
+        bool wasPickable = HasInputChoices;
+
+        if (!ReferenceEquals(_inputChoices, inputs))
+        {
+            _inputChoices = inputs;
+            Raise(nameof(InputChoices));
+        }
+
+        if (wasPickable != HasInputChoices)
+            Raise(nameof(HasInputChoices));
+    }
+
+    /// <summary>
+    /// The inputs a target's class declares, or an empty list.
+    /// </summary>
+    /// <remarks>
+    /// Static and pure, because this is the rule the whole feature turns on and
+    /// it is the one part a test can hold without a shell.
+    /// </remarks>
+    internal static IReadOnlyList<string> InputsFor(
+        string target,
+        IReadOnlyList<EntityTargetInfo> targets,
+        EntitySchemaCatalog? schemas)
+    {
+        if (schemas is null || string.IsNullOrEmpty(target)) return [];
+
+        // A token names whatever the runtime picks and a wildcard names several
+        // things, so neither has a class to read inputs from.
+        if (target[0] == '!' || target[^1] == '*') return [];
+
+        string? className = null;
+        for (int i = 0; i < targets.Count; i++)
+        {
+            if (!string.Equals(targets[i].Name, target, StringComparison.Ordinal)) continue;
+
+            // A second match means two entities share the name, which is legal
+            // and means something: the wire fires at both, and offering one of
+            // their input lists would be a guess about which.
+            if (className is not null) return [];
+
+            className = targets[i].ClassName;
+        }
+
+        if (className is null) return [];
+
+        return schemas.TryGetSchema(className, out EntitySchema? schema) ? schema.Inputs : [];
     }
 
     private static bool Declares(IReadOnlyList<string> declared, string output)
@@ -282,14 +472,30 @@ public sealed class ConnectionRowModel : ObservableObject
     {
         _target = typed;
         Raise(nameof(TargetWarning));
+
+        // Retyping the target changes which class the input list comes from, and
+        // the answer must not wait for the next publish: the two cells are read
+        // in one gesture, and a dropdown still offering the previous target's
+        // inputs is a list of verbs the new one does not have.
+        RefreshInputs(_schemas);
+
         _changed();
     }
 
     private void CommitInput(PropertyFieldModel field, string typed)
     {
+        if (_input == typed) return;
+
         _input = typed;
+        Raise(nameof(Input));
+
+        // Typing a name the class DOES declare flips this row from the text box
+        // back to the dropdown, exactly as the output cell does.
+        Raise(nameof(HasInputChoices));
         _changed();
     }
+
+    private EntitySchemaCatalog? _schemas;
 
     private void CommitParameter(PropertyFieldModel field, string typed)
     {
@@ -362,7 +568,11 @@ public sealed class ConnectionRowModel : ObservableObject
     }
 
     /// <summary>Seeds a brand new row, for the Add button.</summary>
-    internal void Seed(IReadOnlyList<string> declared)
+    internal void Seed(
+        IReadOnlyList<string> declared,
+        IReadOnlyList<EntityTargetInfo> targets,
+        bool targetsTruncated,
+        EntitySchemaCatalog? schemas)
     {
         Refresh(
             new EntityConnectionInfo(
@@ -370,7 +580,7 @@ public sealed class ConnectionRowModel : ObservableObject
                     declared.Count > 0 ? declared[0] : string.Empty,
                     string.Empty, string.Empty, string.Empty, 0f, EntityConnection.Infinite),
                 TargetResolves: false),
-            declared);
+            declared, targets, targetsTruncated, schemas);
     }
 }
 
@@ -416,6 +626,30 @@ public sealed class EntityWiringModel : ObservableObject
     private bool _hasEntity;
     private bool _isKnown = true;
     private IReadOnlyList<string> _outputs = [];
+    private IReadOnlyList<EntityTargetInfo> _targets = [];
+    private bool _targetsTruncated;
+
+    /// <summary>Every entity a wire could aim at, for the picker.</summary>
+    public IReadOnlyList<EntityTargetInfo> Targets => _targets;
+
+    /// <summary>Whether the scene has more than the list carries.</summary>
+    public bool TargetsTruncated => _targetsTruncated;
+
+    /// <summary>What to say about a capped list, or empty.</summary>
+    public string TargetsNote => _targetsTruncated
+        ? $"This scene has more than {EntityPanelInfo.MaxTargets} entities; the picker shows the first of them."
+        : string.Empty;
+
+    /// <summary>
+    /// What this session can describe, for the target's input list.
+    /// </summary>
+    /// <remarks>
+    /// Assigned by the panel that owns this, which is the one thing holding the
+    /// session's single catalogue: a second one built here would answer a
+    /// different question the day a project ships a <c>.sentdef</c> this build
+    /// has no C# for.
+    /// </remarks>
+    public EntitySchemaCatalog? Schemas { get; set; }
 
     internal EntityWiringModel(Action<Guid, IReadOnlyList<EntityConnection>> apply) => _apply = apply;
 
@@ -488,6 +722,8 @@ public sealed class EntityWiringModel : ObservableObject
         HasEntity = true;
         IsKnown = info.IsKnown;
         _outputs = info.Outputs;
+        _targets = info.Targets;
+        _targetsTruncated = info.TargetsTruncated;
 
         if (_pending is not null)
         {
@@ -527,7 +763,7 @@ public sealed class EntityWiringModel : ObservableObject
             return;
 
         var row = new ConnectionRowModel(Post);
-        row.Seed(_outputs);
+        row.Seed(_outputs, _targets, _targetsTruncated, Schemas);
         Rows.Add(row);
         Raise(nameof(IsEmpty));
         Post();
@@ -574,7 +810,7 @@ public sealed class EntityWiringModel : ObservableObject
             Rows.Add(new ConnectionRowModel(Post));
 
         for (int i = 0; i < wires.Count; i++)
-            Rows[i].Refresh(wires[i], _outputs);
+            Rows[i].Refresh(wires[i], _outputs, _targets, _targetsTruncated, Schemas);
 
         if (countChanged)
             Raise(nameof(IsEmpty));

@@ -1,4 +1,4 @@
-using SpectraEngine.Core.Entities;
+﻿using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 using System;
 using System.Collections.Generic;
@@ -34,6 +34,17 @@ namespace SpectraEngine.Core.Inspection;
 /// statically and are therefore reported as resolving.
 /// </param>
 public readonly record struct EntityConnectionInfo(EntityConnection Wire, bool TargetResolves);
+
+/// <summary>One entity a wire could aim at.</summary>
+/// <remarks>
+/// <b>The class travels with the name, because a name alone is not enough to
+/// pick with.</b> A level has a dozen things called "door1" through "door12"
+/// and the useful question is which of them is the trigger; the class is what
+/// answers it, and it is already known at the moment the name is collected.
+/// </remarks>
+/// <param name="Name">The node's name, which IS its targetname.</param>
+/// <param name="ClassName">What it is, as the map records it.</param>
+public readonly record struct EntityTargetInfo(string Name, string ClassName);
 
 /// <summary>
 /// What a wiring panel needs about the selected entity: the class it names,
@@ -104,6 +115,24 @@ public sealed class EntityPanelInfo
     public IReadOnlyList<EntityConnectionInfo> Connections { get; init; } = [];
 
     /// <summary>
+    /// Every entity in the scene a wire could aim at, in walk order.
+    /// </summary>
+    /// <remarks>
+    /// <b>The same walk that decides whether a wire resolves.</b> Two walks
+    /// would mean a picker offering a name the resolve check calls dead, which
+    /// is the worst possible pair of answers: the list says the target exists
+    /// and the warning beside it says it does not.
+    /// </remarks>
+    public IReadOnlyList<EntityTargetInfo> Targets { get; init; } = [];
+
+    /// <summary>Whether the scene has more entities than the list carries.</summary>
+    /// <remarks>
+    /// Said out loud rather than left as a short list: a capped picker with no
+    /// note looks exactly like a project with that many entities in it.
+    /// </remarks>
+    public bool TargetsTruncated { get; init; }
+
+    /// <summary>
     /// Describes <paramref name="node"/>'s entity payload, or null when it
     /// carries none.
     /// </summary>
@@ -119,17 +148,17 @@ public sealed class EntityPanelInfo
     /// (every target then reports as unresolved, which is the honest answer
     /// when there is nothing to resolve against).
     /// </param>
-    /// <param name="nameScratch">
+    /// <param name="targetScratch">
     /// A list the caller owns, reused across publishes. The walk that fills it
     /// is the one part of this that is proportional to the scene rather than to
-    /// the entity, so it runs only when there is a wire to check and allocates
-    /// nothing when the caller brings its own buffer.
+    /// the entity, so a caller that brings its own buffer allocates nothing but
+    /// the published array.
     /// </param>
     public static EntityPanelInfo? Capture(
         SceneNode node,
         EntitySchemaCatalog? schemas,
         Scene.Scene? scene,
-        List<string>? nameScratch = null)
+        List<EntityTargetInfo>? targetScratch = null)
     {
         ArgumentNullException.ThrowIfNull(node);
 
@@ -140,30 +169,21 @@ public sealed class EntityPanelInfo
         bool known = schemas is not null && schemas.TryGetSchema(entity.ClassName, out schema);
         IReadOnlyList<string> outputs = known && schema is not null ? schema.Outputs : [];
 
-        List<EntityConnection> wires = entity.Connections;
-        if (wires.Count == 0)
-        {
-            return new EntityPanelInfo
-            {
-                NodeId = node.Id,
-                ClassName = entity.ClassName,
-                IsKnown = known,
-                Outputs = outputs,
-                Connections = [],
-            };
-        }
-
-        // The scan is gated on there being a wire at all, because it is the
-        // only part of a publish that walks the whole graph. A selection of one
-        // entity carrying no wiring - which is most of them - costs nothing.
-        List<string> names = nameScratch ?? [];
-        names.Clear();
+        // ONE walk, and it is what both the picker and the resolve check read.
+        // It runs whenever an entity is selected rather than only when there is
+        // a wire, because the picker is offered on an entity with no wiring at
+        // all - which is what somebody adding their first one has.
+        List<EntityTargetInfo> targets = targetScratch ?? [];
+        targets.Clear();
+        bool truncated = false;
         if (scene is not null)
-            CollectEntityNames(scene.Root, names);
+            CollectTargets(scene, targets, out truncated);
+
+        List<EntityConnection> wires = entity.Connections;
 
         var described = new EntityConnectionInfo[wires.Count];
         for (int i = 0; i < wires.Count; i++)
-            described[i] = new EntityConnectionInfo(wires[i], Resolves(wires[i].TargetName, names));
+            described[i] = new EntityConnectionInfo(wires[i], Resolves(wires[i].TargetName, targets));
 
         return new EntityPanelInfo
         {
@@ -172,7 +192,52 @@ public sealed class EntityPanelInfo
             IsKnown = known,
             Outputs = outputs,
             Connections = described,
+            Targets = targets.ToArray(),
+            TargetsTruncated = truncated,
         };
+    }
+
+    /// <summary>How many entities one capture will list.</summary>
+    /// <remarks>
+    /// A cap rather than the whole scene, because a level's entity count is
+    /// unbounded and a dropdown nobody can reach the end of is a search box
+    /// with extra scrolling. The panel says how many were left out.
+    /// </remarks>
+    public const int MaxTargets = 2000;
+
+    /// <summary>
+    /// Every entity in the scene, as a name and a class.
+    /// </summary>
+    /// <remarks>
+    /// <b>Entity-carrying nodes only, because that is what the runtime
+    /// resolves.</b> <c>TargetNameIndex</c> lists entities and nothing else, so
+    /// a wire aimed at a plain brush node named "door" delivers to nothing, and
+    /// a picker that offered it would be inviting somebody to write exactly the
+    /// dead wire the warning beside it exists to catch.
+    /// </remarks>
+    public static void CollectTargets(Scene.Scene scene, List<EntityTargetInfo> into, out bool truncated)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(into);
+
+        truncated = false;
+        Walk(scene.Root, into, ref truncated);
+
+        static void Walk(SceneNode node, List<EntityTargetInfo> into, ref bool truncated)
+        {
+            if (into.Count >= MaxTargets)
+            {
+                truncated = true;
+                return;
+            }
+
+            if (node.Entity is { } entity)
+                into.Add(new EntityTargetInfo(node.Name, entity.ClassName));
+
+            IReadOnlyList<SceneNode> children = node.Children;
+            for (int i = 0; i < children.Count; i++)
+                Walk(children[i], into, ref truncated);
+        }
     }
 
     /// <summary>
@@ -186,7 +251,7 @@ public sealed class EntityPanelInfo
     /// A <c>!</c> form names an entity chosen while the level runs, so there is
     /// nothing here that could disprove it and it reports as resolving.
     /// </remarks>
-    private static bool Resolves(string? target, List<string> names)
+    private static bool Resolves(string? target, List<EntityTargetInfo> names)
     {
         if (string.IsNullOrEmpty(target))
             return false;
@@ -203,7 +268,7 @@ public sealed class EntityPanelInfo
             ReadOnlySpan<char> prefix = target.AsSpan(0, target.Length - 1);
             for (int i = 0; i < names.Count; i++)
             {
-                if (names[i].AsSpan().StartsWith(prefix, StringComparison.Ordinal))
+                if (names[i].Name.AsSpan().StartsWith(prefix, StringComparison.Ordinal))
                     return true;
             }
 
@@ -212,31 +277,11 @@ public sealed class EntityPanelInfo
 
         for (int i = 0; i < names.Count; i++)
         {
-            if (string.Equals(names[i], target, StringComparison.Ordinal))
+            if (string.Equals(names[i].Name, target, StringComparison.Ordinal))
                 return true;
         }
 
         return false;
     }
 
-    /// <summary>
-    /// Appends the name of every node in the subtree that carries an entity.
-    /// </summary>
-    /// <remarks>
-    /// <b>Entity-carrying nodes only, because that is what the runtime
-    /// resolves.</b> <c>TargetNameIndex</c> lists entities and nothing else, so
-    /// a wire aimed at a plain brush node named "door" delivers to nothing -
-    /// and a check that counted every node would call that wire healthy and
-    /// then let it fail silently at run time, which is the exact failure this
-    /// flag exists to catch.
-    /// </remarks>
-    private static void CollectEntityNames(SceneNode node, List<string> into)
-    {
-        if (node.Entity is not null)
-            into.Add(node.Name);
-
-        IReadOnlyList<SceneNode> children = node.Children;
-        for (int i = 0; i < children.Count; i++)
-            CollectEntityNames(children[i], into);
-    }
 }
