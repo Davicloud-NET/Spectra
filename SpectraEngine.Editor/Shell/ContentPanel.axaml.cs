@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -51,6 +51,25 @@ public partial class ContentPanel : UserControl
 
     private ContentBrowserModel? Model =>
         (DataContext as ShellModel)?.Content;
+
+    /// <summary>Raised when a row's menu asks for the file on disk.</summary>
+    /// <remarks>
+    /// An intent, like <see cref="EntryActivated"/>: opening a shell window is
+    /// the window's business, and this panel is used headlessly in tests.
+    /// </remarks>
+    public event Action<ContentEntry>? RevealRequested;
+
+    private void OnMenuInsert(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is ContentEntry entry)
+            EntryActivated?.Invoke(entry);
+    }
+
+    private void OnMenuReveal(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is ContentEntry entry)
+            RevealRequested?.Invoke(entry);
+    }
 
     private void OnUpClicked(object? sender, RoutedEventArgs e) => Model?.GoUp();
 
@@ -128,6 +147,13 @@ public partial class ContentPanel : UserControl
 
     private void OnTilePointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        // A press that never became a drag is a click, and a click selects.
+        // Measured the same way the drag threshold is, because these are the
+        // two readings of one gesture and a second definition of "moved" would
+        // let both fire.
+        if (_pressedEntry is { } entry && !_dragInProgress)
+            Model?.Select(entry);
+
         _pressedEntry = null;
         _pressEvent = null;
     }

@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -67,6 +67,29 @@ public sealed class ContentEntry : ObservableObject
 
     /// <summary>Whether a decoded preview is available.</summary>
     public bool HasThumbnail => _thumbnail is not null;
+
+    private bool _isSelected;
+
+    /// <summary>Whether this is the entry the details strip describes.</summary>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        internal set => Set(ref _isSelected, value);
+    }
+
+    /// <summary>The file's own name without its extension.</summary>
+    public string Stem => System.IO.Path.GetFileNameWithoutExtension(Name);
+
+    /// <summary>A word for this kind, for the details strip.</summary>
+    public string KindLabel => Kind switch
+    {
+        ContentKind.Folder => "folder",
+        ContentKind.Texture => "texture",
+        ContentKind.Material => "material",
+        ContentKind.Model => "model",
+        ContentKind.Shader => "shader",
+        _ => "file",
+    };
 
     public bool IsFolder => Kind == ContentKind.Folder;
 
@@ -221,10 +244,69 @@ public sealed class ContentBrowserModel : ObservableObject
             Navigate(entry.FullPath);
     }
 
+    private ContentEntry? _selected;
+
+    /// <summary>The entry the details strip describes, or null.</summary>
+    public ContentEntry? Selected
+    {
+        get => _selected;
+        private set
+        {
+            if (!Set(ref _selected, value)) return;
+
+            Raise(nameof(HasSelected));
+            Raise(nameof(SelectedDetails));
+        }
+    }
+
+    /// <summary>Whether anything is selected.</summary>
+    public bool HasSelected => _selected is not null;
+
+    /// <summary>
+    /// One line about the selection: what it is, where it is and how big.
+    /// </summary>
+    /// <remarks>
+    /// <b>The content-relative path, not the absolute one.</b> That string is
+    /// what a material writes down, what a map records and what the pack hashes
+    /// its id from, so it is the name this file HAS as far as the engine is
+    /// concerned. The absolute path is a fact about this machine.
+    /// </remarks>
+    public string SelectedDetails
+    {
+        get
+        {
+            if (_selected is not { } entry) return string.Empty;
+
+            string path = TryDescribe(entry, out ContentDragPayload? payload)
+                ? payload.ContentPath
+                : entry.Name;
+
+            return entry.SizeLabel.Length > 0
+                ? $"{entry.KindLabel}  {path}  {entry.SizeLabel}"
+                : $"{entry.KindLabel}  {path}";
+        }
+    }
+
+    /// <summary>Selects one entry, or clears the selection with null.</summary>
+    public void Select(ContentEntry? entry)
+    {
+        if (ReferenceEquals(_selected, entry)) return;
+
+        if (_selected is { } previous) previous.IsSelected = false;
+        if (entry is not null) entry.IsSelected = true;
+
+        Selected = entry;
+    }
+
     private void Navigate(string? path)
     {
         // Every in-flight decode is now stale.
         int generation = ++_generation;
+
+        // And so is the selection: the entry it named is about to leave the
+        // list, and a details strip describing a file nobody can see is worse
+        // than an empty one.
+        Select(null);
 
         Entries.Clear();
         _currentPath = path ?? string.Empty;

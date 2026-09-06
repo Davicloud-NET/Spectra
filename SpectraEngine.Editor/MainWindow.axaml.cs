@@ -277,6 +277,7 @@ public partial class MainWindow : Window
 
         _contentView = new ContentPanel();
         _contentView.EntryActivated += OnContentActivated;
+        _contentView.RevealRequested += entry => RevealInExplorer(entry.FullPath);
         SetToolContent(ContentTool, _contentView);
 
         _outputView = new OutputPanel();
@@ -1790,18 +1791,48 @@ public partial class MainWindow : Window
     /// that opens the folder. Dragging into the 3D view waits on the composited
     /// viewport: Avalonia's drag events cannot reach a native child window.
     /// </remarks>
+    /// <summary>A file was double-clicked in the content browser.</summary>
+    /// <remarks>
+    /// <b>A model is PLACED, and it always could have been.</b> This used to say
+    /// placement was not built and open the folder instead, which had stopped
+    /// being true the moment a drag could drop one into the viewport: the
+    /// placement is <c>SceneEditorHost.InsertModel</c>, it takes an optional
+    /// pixel, and a null one means the centre of the view. The DRAG needs a
+    /// composited viewport because a native child cannot take an OLE drop; a
+    /// double-click needs nothing, so it works in either.
+    /// </remarks>
     private void OnContentActivated(ContentEntry entry)
     {
-        if (entry.Kind == ContentKind.Model)
+        if (entry.Kind != ContentKind.Model)
         {
-            // SAY SO rather than doing something adjacent. Inserting a block
-            // and calling it a model would be the worst available answer: the
-            // user asked for one thing, got another, and the message explaining
-            // that is a status line they may not be looking at.
-            _shell.SetWarning($"Placing {entry.Name} in the scene is not built yet; opened its folder instead.");
+            // Everything else selects and describes itself. Revealing on a
+            // double-click sent people out to Explorer for the ordinary act of
+            // looking at what they clicked; it is a context-menu verb now.
+            _shell.Content?.Select(entry);
+            return;
         }
 
-        RevealInExplorer(entry.FullPath);
+        if (_session is not { } session)
+        {
+            _shell.SetWarning("Open a project before inserting a model.");
+            return;
+        }
+
+        if (_shell.Content is not { } browser || !browser.TryDescribe(entry, out ContentDragPayload? payload))
+        {
+            // The same refusal the drag makes at its own source, for the same
+            // reason: a path this engine cannot name is not something to hand
+            // three threads down and discover there.
+            _shell.SetWarning($"{entry.Name} is not inside this project's Assets folder.");
+            return;
+        }
+
+        // Null point: the centre of the view. The report comes back on the
+        // render thread, like every other document callback.
+        session.InsertModel(
+            payload.ContentPath,
+            null,
+            report => Dispatcher.UIThread.Post(() => ReportModelInsert(report)));
     }
 
     // --- Splitters -----------------------------------------------------------

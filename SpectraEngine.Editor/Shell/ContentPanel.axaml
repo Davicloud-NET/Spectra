@@ -16,7 +16,18 @@
     decorated rows, not about tiles that show something.
   -->
 
-  <Grid RowDefinitions="Auto,*">
+  <UserControl.Resources>
+    <!-- Shared by every tile: one menu instance, the shape the scene tree's
+         row menu already uses. Revealing on disk moved HERE from the
+         double-click, which now does the ordinary thing instead. -->
+    <ContextMenu x:Key="ContentMenu" x:DataType="shell:ContentEntry">
+      <MenuItem Header="Insert into scene" Click="OnMenuInsert"
+                IsVisible="{Binding !IsFolder}" />
+      <MenuItem Header="Show in Explorer" Click="OnMenuReveal" />
+    </ContextMenu>
+  </UserControl.Resources>
+
+  <Grid RowDefinitions="Auto,*,Auto">
 
     <!-- The path row: up, where you are, and a refresh. There is no file
          watcher behind this pane, so the refresh is the honest answer rather
@@ -52,7 +63,9 @@
 
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="shell:ContentEntry">
-            <Border Classes="tile" DoubleTapped="OnEntryActivated"
+            <Border Classes="tile" Classes.selected="{Binding IsSelected}"
+                    DoubleTapped="OnEntryActivated"
+                    ContextMenu="{StaticResource ContentMenu}"
                     ToolTip.Tip="{Binding Name}">
               <StackPanel Width="88" Margin="0,6">
 
@@ -87,6 +100,15 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
     </ScrollViewer>
+
+    <!-- What the selection IS, in the engine's own name for it. A tile shows a
+         picture and a file name; this says the content-relative path, which is
+         what a material writes down and what a map records. -->
+    <Border Grid.Row="2" Classes="detailstrip" IsVisible="{Binding Content.HasSelected}">
+      <TextBlock Classes="value" Text="{Binding Content.SelectedDetails}"
+                 Foreground="{StaticResource SpectraTextMuted}"
+                 TextTrimming="CharacterEllipsis" />
+    </Border>
   </Grid>
 
   <UserControl.Styles>
@@ -104,6 +126,19 @@
     </Style>
     <Style Selector="Border.tile:pointerover">
       <Setter Property="Background" Value="{StaticResource SpectraRowHover}" />
+    </Style>
+
+    <!-- Selection is the ACCENT, which in this shell means selection and
+         nothing else. Declared after the hover rule so a selected tile stays
+         selected-looking under the pointer. -->
+    <Style Selector="Border.tile.selected">
+      <Setter Property="Background" Value="{StaticResource SpectraRowSelected}" />
+    </Style>
+
+    <Style Selector="Border.detailstrip">
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
     </Style>
   </UserControl.Styles>
 </UserControl>

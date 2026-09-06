@@ -1,6 +1,8 @@
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Editor.Shell;
 using System.IO;
+using System.Linq;
 
 namespace SpectraEngine.Editor.Tests;
 
@@ -164,4 +166,107 @@ public sealed class ContentDragTests
 
     private static ContentDragPayload Model() =>
         new(ContentKind.Model, "Models/crate.obj", "crate.obj");
+}
+
+/// <summary>
+/// Selecting a file in the content browser, and what the strip then says about
+/// it.
+/// </summary>
+/// <remarks>
+/// <b>Double-clicking a model used to say placement was not built and open a
+/// folder in Explorer.</b> That had stopped being true the moment a drag could
+/// drop one into the viewport; the placement verb takes an optional pixel and a
+/// null one means the centre of the view, so a double-click needs nothing the
+/// drag needs. Everything that is not a model selects instead, which is what
+/// this covers.
+/// </remarks>
+public sealed class ContentSelectionTests
+{
+    private static (ContentBrowserModel Browser, string Root) Rig()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "SpectraContentTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "Materials"));
+        File.WriteAllText(Path.Combine(root, "Materials", "wall.spectramat"), "shader = lit");
+
+        var browser = new ContentBrowserModel(NullLogger.Instance);
+        browser.SetRoot(root);
+        return (browser, root);
+    }
+
+    [Fact]
+    public void Nothing_is_selected_until_something_is()
+    {
+        (ContentBrowserModel browser, string root) = Rig();
+        try
+        {
+            Assert.False(browser.HasSelected);
+            Assert.Equal(string.Empty, browser.SelectedDetails);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void The_strip_names_the_file_the_way_the_engine_does()
+    {
+        (ContentBrowserModel browser, string root) = Rig();
+        try
+        {
+            browser.Open(browser.Entries.Single(e => e.IsFolder));
+            ContentEntry material = browser.Entries.Single(e => e.Kind == ContentKind.Material);
+
+            browser.Select(material);
+
+            Assert.True(browser.HasSelected);
+            Assert.True(material.IsSelected);
+
+            // The CONTENT-relative path, because that is the name this file has
+            // as far as a material, a map or a pack id is concerned. An
+            // absolute path is a fact about this machine.
+            Assert.Contains("Materials/wall.spectramat", browser.SelectedDetails);
+            Assert.Contains("material", browser.SelectedDetails);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void Selecting_another_entry_deselects_the_first()
+    {
+        (ContentBrowserModel browser, string root) = Rig();
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "Materials", "floor.spectramat"), "shader = lit");
+            browser.Refresh();
+            browser.Open(browser.Entries.Single(e => e.IsFolder));
+
+            ContentEntry first = browser.Entries[0];
+            ContentEntry second = browser.Entries[1];
+
+            browser.Select(first);
+            browser.Select(second);
+
+            Assert.False(first.IsSelected);
+            Assert.True(second.IsSelected);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public void Navigating_away_clears_the_selection()
+    {
+        // The entry it named has left the list, and a strip describing a file
+        // nobody can see is worse than an empty one.
+        (ContentBrowserModel browser, string root) = Rig();
+        try
+        {
+            ContentEntry folder = browser.Entries.Single(e => e.IsFolder);
+            browser.Open(folder);
+            browser.Select(browser.Entries[0]);
+            Assert.True(browser.HasSelected);
+
+            browser.GoUp();
+
+            Assert.False(browser.HasSelected);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 }
