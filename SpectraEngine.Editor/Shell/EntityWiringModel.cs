@@ -1,4 +1,4 @@
-using SpectraEngine.Core.Entities;
+﻿using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Inspection;
 using System;
 using System.Collections.Generic;
@@ -250,7 +250,7 @@ public sealed class ConnectionRowModel : ObservableObject
         InputField.Refresh(wire.Input, mixed: false);
         ParameterField.Refresh(wire.Parameter, mixed: false);
         DelayField.Refresh(PropertyFieldModel.Format(wire.Delay), mixed: false);
-        TimesField.Refresh(wire.TimesToFire.ToString(CultureInfo.InvariantCulture), mixed: false);
+        TimesField.Refresh(FormatTimes(wire.TimesToFire), mixed: false);
 
         TargetResolves = info.TargetResolves;
     }
@@ -306,7 +306,7 @@ public sealed class ConnectionRowModel : ObservableObject
         // into the past is not a shorter delay, it is a different bug.
         if (!PropertyFieldModel.TryParseNumber(typed, out float value) || value < 0f)
         {
-            field.Revert();
+            field.Reject("Not applied: expected a delay of 0 or more seconds.");
             return;
         }
 
@@ -314,11 +314,42 @@ public sealed class ConnectionRowModel : ObservableObject
         _changed();
     }
 
+    /// <summary>What an unlimited fire count is called on screen.</summary>
+    /// <remarks>
+    /// <b>A word rather than the sentinel.</b> The file stores -1 because
+    /// <c>EntityConnection.Infinite</c> is -1, and showing that asked every
+    /// reader to know it: a wire that fires forever read as a wire with a
+    /// negative count, which is either a bug or a number nobody can explain.
+    /// The value written is still the canonical -1.
+    /// </remarks>
+    public const string ForeverLabel = "Forever";
+
+    /// <summary>The fire count as it is shown.</summary>
+    public static string FormatTimes(int timesToFire) =>
+        timesToFire < 0 ? ForeverLabel : timesToFire.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>Reads a typed fire count, in either spelling.</summary>
+    /// <remarks>
+    /// The word is accepted in any case, because a field that displays
+    /// "Forever" and refuses "forever" is a field that punishes retyping what
+    /// it just showed.
+    /// </remarks>
+    public static bool TryParseTimes(string typed, out int timesToFire)
+    {
+        if (string.Equals(typed?.Trim(), ForeverLabel, StringComparison.OrdinalIgnoreCase))
+        {
+            timesToFire = EntityConnection.Infinite;
+            return true;
+        }
+
+        return int.TryParse(typed, NumberStyles.Integer, CultureInfo.InvariantCulture, out timesToFire);
+    }
+
     private void CommitTimes(PropertyFieldModel field, string typed)
     {
-        if (!int.TryParse(typed, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+        if (!TryParseTimes(typed, out int value))
         {
-            field.Revert();
+            field.Reject($"Not applied: expected a whole number, or {ForeverLabel}.");
             return;
         }
 

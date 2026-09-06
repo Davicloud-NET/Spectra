@@ -575,4 +575,163 @@ public sealed class PropertyPanelTests
         row.IsPartial.ShouldBeTrue();
         row.PartialLabel.ShouldBe("3 of 5");
     }
+
+    // --- refusals -----------------------------------------------------------
+    //
+    // An unusable value always reverted, and always in silence: the box put the
+    // old number back and nothing said why, which reads as the keyboard having
+    // eaten the input. The scene was never at risk; the sentence was missing.
+
+    private static PropertyRow Number(PropertyId id, string name, float value) =>
+        new()
+        {
+            Group = "Light", Name = name, Id = id, Kind = PropertyKind.Number,
+            Number = value, Choices = [], PresentCount = 1, SelectionCount = 1,
+        };
+
+    [Fact]
+    public void An_unparseable_number_reverts_and_says_what_was_expected()
+    {
+        var rig = new Rig();
+        rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 40f));
+
+        PropertyFieldModel cell = rig.Row(PropertyId.LightIntensity).Fields[0];
+        cell.BeginEdit();
+        cell.Text = "abc";
+        cell.Commit();
+
+        Assert.Empty(rig.Edits);
+        Assert.Equal("40", cell.Text);
+        Assert.True(cell.HasRejection);
+        Assert.Contains("a number", cell.Rejection);
+    }
+
+    [Fact]
+    public void A_value_the_editor_would_refuse_is_refused_before_it_is_posted()
+    {
+        // Light.Range throws rather than clamps, so a posted zero would be
+        // dropped on the render thread and reverted by the next publish with
+        // nothing anywhere saying why. It never leaves the panel now.
+        var rig = new Rig();
+        rig.Publish(Number(PropertyId.LightRange, "Range", 8f));
+
+        PropertyFieldModel cell = rig.Row(PropertyId.LightRange).Fields[0];
+        cell.BeginEdit();
+        cell.Text = "0";
+        cell.Commit();
+
+        Assert.Empty(rig.Edits);
+        Assert.Contains("greater than 0", cell.Rejection);
+        Assert.Contains("Range", cell.Rejection);
+    }
+
+    [Fact]
+    public void An_intensity_of_zero_is_accepted_because_the_editor_accepts_it()
+    {
+        var rig = new Rig();
+        rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 40f));
+
+        PropertyFieldModel cell = rig.Row(PropertyId.LightIntensity).Fields[0];
+        cell.BeginEdit();
+        cell.Text = "0";
+        cell.Commit();
+
+        Assert.Single(rig.Edits);
+        Assert.False(cell.HasRejection);
+    }
+
+    [Fact]
+    public void A_bad_hex_says_what_a_colour_looks_like()
+    {
+        var rig = new Rig();
+        rig.Publish(new PropertyRow
+        {
+            Group = "Light", Name = "Color", Id = PropertyId.LightColor, Kind = PropertyKind.Color,
+            Vector = new Vector3(1f, 1f, 1f), Choices = [], PresentCount = 1, SelectionCount = 1,
+        });
+
+        PropertyFieldModel cell = rig.Row(PropertyId.LightColor).Fields[0];
+        cell.BeginEdit();
+        cell.Text = "#80";
+        cell.Commit();
+
+        Assert.Empty(rig.Edits);
+        Assert.Contains("#RRGGBB", cell.Rejection);
+    }
+
+    [Fact]
+    public void A_rejection_clears_on_the_next_keystroke()
+    {
+        var rig = new Rig();
+        rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 40f));
+
+        PropertyFieldModel cell = rig.Row(PropertyId.LightIntensity).Fields[0];
+        cell.BeginEdit();
+        cell.Text = "abc";
+        cell.Commit();
+        Assert.True(cell.HasRejection);
+
+        // Typing is the answer to the refusal.
+        cell.BeginEdit();
+        cell.Text = "4";
+        Assert.False(cell.HasRejection);
+    }
+
+    [Fact]
+    public void A_rejection_survives_a_republish_of_the_same_value()
+    {
+        // The engine republishes at 30Hz. Clearing on every publish would erase
+        // the message within a frame of it appearing.
+        var rig = new Rig();
+        rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 40f));
+
+        PropertyFieldModel cell = rig.Row(PropertyId.LightIntensity).Fields[0];
+        cell.BeginEdit();
+        cell.Text = "abc";
+        cell.Commit();
+
+        rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 40f));
+        Assert.True(cell.HasRejection);
+
+        // But a value that really moved makes the message stale.
+        rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 12f));
+        Assert.False(cell.HasRejection);
+    }
+
+    [Fact]
+    public void Escape_clears_a_rejection_with_the_edit()
+    {
+        var rig = new Rig();
+        rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 40f));
+
+        PropertyFieldModel cell = rig.Row(PropertyId.LightIntensity).Fields[0];
+        cell.BeginEdit();
+        cell.Text = "abc";
+        cell.Commit();
+
+        cell.Revert();
+
+        Assert.False(cell.HasRejection);
+        Assert.Equal("40", cell.Text);
+    }
+
+    [Fact]
+    public void The_row_reports_its_first_refused_cell()
+    {
+        // A vector is three cells and one reason line: three lines under one
+        // row would be three times the layout shift for one mistake.
+        var rig = new Rig();
+        rig.Publish(Vector(PropertyId.Position, new Vector3(1f, 2f, 3f)));
+
+        PropertyRowModel row = rig.Row(PropertyId.Position);
+        Assert.False(row.HasRejection);
+
+        PropertyFieldModel y = row.Fields[1];
+        y.BeginEdit();
+        y.Text = "up a bit";
+        y.Commit();
+
+        Assert.True(row.HasRejection);
+        Assert.Contains("y", row.Rejection);
+    }
 }

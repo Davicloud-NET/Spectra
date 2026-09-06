@@ -73,6 +73,12 @@
     <Style Selector="TextBlock.axis.z"><Setter Property="Foreground" Value="{StaticResource SpectraAxisZ}" /></Style>
 
     <!-- One cell: the axis letter and its field, in one sunken capsule. -->
+    <Style Selector="TextBlock.rejection">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextDanger}" />
+      <Setter Property="Margin" Value="0,1,0,3" />
+    </Style>
+
     <Style Selector="Border.cell">
       <Setter Property="Background" Value="{StaticResource SpectraBgInput}" />
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
@@ -80,6 +86,17 @@
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
       <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
     </Style>
+    <!-- A refused cell, in the danger colour rather than the accent: the
+         accent means selection in this shell and nothing else. The BORDER
+         only, so nothing moves - Fluent's own focus treatment grows a second
+         pixel and shifts the row, which this panel already refuses. -->
+    <Style Selector="Border.cell.invalid">
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderDanger}" />
+    </Style>
+    <Style Selector="Border.cell.invalid:pointerover">
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderDanger}" />
+    </Style>
+
     <Style Selector="Border.cell:pointerover">
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
     </Style>
@@ -308,6 +325,15 @@
                   <DataTemplate x:DataType="shell:PropertyRowModel">
                     <StackPanel Margin="12,0,12,0">
 
+                      <!-- Why the last commit was not applied. Present only
+                           after a refusal, never on focus or hover: the rows
+                           below shift once, at the moment the user has just
+                           been told no, which is the one moment a shift is
+                           information rather than noise. -->
+                      <TextBlock Classes="rejection" Text="{Binding Rejection}"
+                                 IsVisible="{Binding HasRejection}"
+                                 TextWrapping="Wrap" />
+
                       <!-- ___ Vector: label line, then three cells ___ -->
                       <StackPanel IsVisible="{Binding IsVector}" Margin="0,2,0,4">
                         <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,3">
@@ -339,7 +365,7 @@
                           </ItemsControl.ItemsPanel>
                           <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="shell:PropertyFieldModel">
-                              <Border Classes="cell" Margin="0,0,4,0">
+                              <Border Classes="cell" Classes.invalid="{Binding HasRejection}" Margin="0,0,4,0">
                                 <Grid ColumnDefinitions="Auto,*">
                                   <TextBlock Grid.Column="0" Classes="axis"
                                              Classes.x="{Binding IsX}"
@@ -386,7 +412,7 @@
                                       IsVisible="{Binding IsScalar}">
                           <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="shell:PropertyFieldModel">
-                              <Border Classes="cell">
+                              <Border Classes="cell" Classes.invalid="{Binding HasRejection}">
                                 <Grid ColumnDefinitions="*,Auto">
                                   <TextBox Grid.Column="0" Classes="cellfield"
                                            Text="{Binding Text, Mode=TwoWay}"
@@ -417,7 +443,7 @@
                           <ItemsControl Grid.Column="1" ItemsSource="{Binding Fields}">
                             <ItemsControl.ItemTemplate>
                               <DataTemplate x:DataType="shell:PropertyFieldModel">
-                                <Border Classes="cell">
+                                <Border Classes="cell" Classes.invalid="{Binding HasRejection}">
                                   <TextBox Classes="cellfield" TextAlignment="Left" Padding="6,0"
                                            Text="{Binding Text, Mode=TwoWay}"
                                            PlaceholderText="mixed"

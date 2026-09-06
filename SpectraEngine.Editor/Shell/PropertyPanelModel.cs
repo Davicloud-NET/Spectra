@@ -57,6 +57,22 @@ public sealed class PropertyRowModel : ObservableObject
                     { Unit = row.Unit ?? string.Empty }],
             _ => [],
         };
+
+        // The row re-raises its cells' refusals, so one line under the row can
+        // bind to the row rather than every template needing to reach into a
+        // particular cell.
+        foreach (PropertyFieldModel field in Fields)
+        {
+            field.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(PropertyFieldModel.Rejection)
+                    or nameof(PropertyFieldModel.HasRejection))
+                {
+                    Raise(nameof(Rejection));
+                    Raise(nameof(HasRejection));
+                }
+            };
+        }
     }
 
     public PropertyId Id { get; }
@@ -108,6 +124,34 @@ public sealed class PropertyRowModel : ObservableObject
     public PropertyKind Kind { get; }
     public IReadOnlyList<string> Choices { get; }
     public IReadOnlyList<PropertyFieldModel> Fields { get; }
+
+    /// <summary>
+    /// The first cell's refusal, or empty. Shown as one line under the row.
+    /// </summary>
+    /// <remarks>
+    /// <b>Per ROW rather than per cell, because a vector is three cells and one
+    /// line.</b> Three reason lines under one row would be three times the
+    /// layout shift for one mistake, and the message already names the axis it
+    /// is about.
+    /// </remarks>
+    public string Rejection
+    {
+        get
+        {
+            foreach (PropertyFieldModel cell in Fields)
+            {
+                if (cell.HasRejection) return cell.Rejection;
+            }
+
+            return string.Empty;
+        }
+    }
+
+    /// <summary>Whether any cell in this row is showing a refusal.</summary>
+    public bool HasRejection => Rejection.Length > 0;
+
+    /// <summary>What this row accepts, for the message when it did not.</summary>
+    public string Expected => PropertyLimits.Expected(Id, Kind);
 
     /// <summary>The unit the value is measured in, or empty.</summary>
     public string Unit { get; }
@@ -429,14 +473,33 @@ public sealed class PropertyRowModel : ObservableObject
                 break;
 
             case PropertyKind.Number:
-                if (!PropertyFieldModel.TryParseNumber(typed, out float number)) { field.Revert(); return; }
+                if (!PropertyFieldModel.TryParseNumber(typed, out float number))
+                {
+                    field.Reject($"Not applied: expected {Expected}.");
+                    return;
+                }
+
+                // Refused HERE rather than by the editor, using the editor's own
+                // rule: a value Light's setter throws on would otherwise be
+                // posted, dropped on the render thread, and reverted by the next
+                // publish with nothing anywhere saying why.
+                if (!IsEntityKeyvalue && PropertyLimits.Refusal(Id, number) is { } why)
+                {
+                    field.Reject($"Not applied: {Name} must be {why}.");
+                    return;
+                }
+
                 Apply(IsEntityKeyvalue
                     ? new PropertyEdit { Id = Id, Key = Key, Text = KeyvalueWire.Format(number) }
                     : new PropertyEdit { Id = Id, Number = number });
                 break;
 
             case PropertyKind.Color:
-                if (!TryParseHex(typed, out Vector3 rgb)) { field.Revert(); return; }
+                if (!TryParseHex(typed, out Vector3 rgb))
+                {
+                    field.Reject("Not applied: expected #RRGGBB.");
+                    return;
+                }
                 Apply(IsEntityKeyvalue
                     ? new PropertyEdit
                     {
@@ -447,7 +510,11 @@ public sealed class PropertyRowModel : ObservableObject
                 break;
 
             case PropertyKind.Vector3:
-                if (!PropertyFieldModel.TryParseNumber(typed, out float component)) { field.Revert(); return; }
+                if (!PropertyFieldModel.TryParseNumber(typed, out float component))
+                {
+                    field.Reject($"Not applied: expected {Expected} for {field.Label}.");
+                    return;
+                }
 
                 // One axis per cell, so typing into y is a bulk edit that leaves
                 // every node's own x and z alone.

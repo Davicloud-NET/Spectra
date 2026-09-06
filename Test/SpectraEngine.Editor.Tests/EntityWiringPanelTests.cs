@@ -1,4 +1,4 @@
-using SpectraEngine.Core.Entities;
+﻿using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Inspection;
 using SpectraEngine.Editing.Commands;
 using SpectraEngine.Editor.Shell;
@@ -365,6 +365,68 @@ public sealed class EntityWiringPanelTests
 
         rig.Posts.ShouldBeEmpty();
         delay.Text.ShouldBe("2");
+    }
+
+    [Fact]
+    public void The_infinite_sentinel_is_shown_as_a_word()
+    {
+        // The file stores -1 because EntityConnection.Infinite is -1, and
+        // showing that asked every reader to know it: a wire that fires forever
+        // read as a wire with a negative count.
+        var rig = new Rig();
+        rig.Publish(Info(wires: Resolved(Wire(times: EntityConnection.Infinite))));
+
+        rig.Wiring.Rows[0].TimesField.Text.ShouldBe(ConnectionRowModel.ForeverLabel);
+    }
+
+    [Fact]
+    public void Typing_the_word_posts_the_sentinel_in_any_case()
+    {
+        // A field that displays "Forever" and refuses "forever" punishes
+        // retyping what it just showed.
+        var rig = new Rig();
+        rig.Publish(Info(wires: Resolved(Wire(times: 4))));
+
+        PropertyFieldModel times = rig.Wiring.Rows[0].TimesField;
+        times.BeginEdit();
+        times.Text = "forever";
+        times.Commit();
+
+        rig.LastPost[0].TimesToFire.ShouldBe(EntityConnection.Infinite);
+    }
+
+    [Fact]
+    public void A_word_that_is_not_the_label_is_refused_with_the_format()
+    {
+        var rig = new Rig();
+        rig.Publish(Info(wires: Resolved(Wire(times: 4))));
+
+        PropertyFieldModel times = rig.Wiring.Rows[0].TimesField;
+        times.BeginEdit();
+        times.Text = "lots";
+        times.Commit();
+
+        times.HasRejection.ShouldBeTrue();
+        times.Rejection.ShouldContain(ConnectionRowModel.ForeverLabel);
+        times.Text.ShouldBe("4");
+    }
+
+    [Fact]
+    public void A_negative_delay_is_refused_and_says_why()
+    {
+        // The queue keys on a fire time, so a wire scheduled into the past is
+        // not a shorter delay, it is a different bug.
+        var rig = new Rig();
+        rig.Publish(Info(wires: Resolved(Wire(delay: 1.5f))));
+
+        PropertyFieldModel delay = rig.Wiring.Rows[0].DelayField;
+        delay.BeginEdit();
+        delay.Text = "-2";
+        delay.Commit();
+
+        delay.HasRejection.ShouldBeTrue();
+        delay.Rejection.ShouldContain("0 or more");
+        delay.Text.ShouldBe("1.5");
     }
 
     [Fact]

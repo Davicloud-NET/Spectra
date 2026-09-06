@@ -105,7 +105,47 @@ public sealed class PropertyFieldModel : ObservableObject
     public string Text
     {
         get => _text;
-        set => Set(ref _text, value);
+        set
+        {
+            if (!Set(ref _text, value)) return;
+
+            // Typing is the answer to a refusal, so the message goes as soon as
+            // it arrives. Guarded on _isEditing, or a refresh writing the live
+            // value back would clear a message the user has not read yet.
+            if (_isEditing) Rejection = string.Empty;
+        }
+    }
+
+    private string _rejection = string.Empty;
+
+    /// <summary>
+    /// Why the last commit was not applied, or empty.
+    /// </summary>
+    /// <remarks>
+    /// <b>An unparseable value used to revert in silence.</b> The box put the
+    /// old number back and nothing said why, which reads as the keyboard having
+    /// dropped the input rather than as a refusal. The scene was always safe;
+    /// what was missing was the sentence.
+    /// </remarks>
+    public string Rejection
+    {
+        get => _rejection;
+        private set
+        {
+            if (Set(ref _rejection, value)) Raise(nameof(HasRejection));
+        }
+    }
+
+    /// <summary>Whether this cell is showing a refusal.</summary>
+    public bool HasRejection => _rejection.Length > 0;
+
+    /// <summary>
+    /// Refuses the typed value, puts the live one back and says why.
+    /// </summary>
+    public void Reject(string reason)
+    {
+        Revert();
+        Rejection = reason;
     }
 
     /// <summary>
@@ -136,6 +176,14 @@ public sealed class PropertyFieldModel : ObservableObject
     /// <summary>Takes a fresh value, unless this cell is being edited.</summary>
     public void Refresh(string live, bool mixed)
     {
+        // A refusal stands until the VALUE moves, not until the next publish:
+        // the engine republishes at 30Hz and clearing on every one would erase
+        // the message within a frame of it appearing. When the value really
+        // does change - a gizmo drag, another editor - the message is about a
+        // number that is no longer there, so it goes.
+        if (!string.Equals(live, _live, StringComparison.Ordinal))
+            Rejection = string.Empty;
+
         _live = live;
         IsMixed = mixed;
 
@@ -202,8 +250,14 @@ public sealed class PropertyFieldModel : ObservableObject
         }
 
         if (string.Equals(typed, _live, StringComparison.Ordinal) && !_isMixed)
+        {
+            Rejection = string.Empty;
             return;
+        }
 
+        // Cleared BEFORE the commit runs, so a handler that refuses can set its
+        // own message and have it survive.
+        Rejection = string.Empty;
         _commit(this, typed);
     }
 
@@ -212,6 +266,7 @@ public sealed class PropertyFieldModel : ObservableObject
     {
         _isEditing = false;
         Text = _isMixed ? string.Empty : _live;
+        Rejection = string.Empty;
     }
 
     /// <summary>

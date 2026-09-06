@@ -145,6 +145,11 @@
   <SolidColorBrush x:Key="SpectraAccentRest" Color="{DynamicResource SpectraAccentRestColor}" />
   <SolidColorBrush x:Key="SpectraTextDanger" Color="{DynamicResource SpectraTextDangerColor}" />
 
+  <!-- The same red as the error text, as a BORDER. A refused field is edged
+       rather than filled: a filled one reads as a selection, and the accent is
+       the only thing in this shell that means that. -->
+  <SolidColorBrush x:Key="SpectraBorderDanger" Color="{DynamicResource SpectraTextDangerColor}" />
+
   <!-- ___ Mode ____________________________________________
        STATE, not selection: the live gizmo tool, snap on, the dirty dot, a
        non-default chip, and every warning. 7.0:1 on panel, so it reads as a lit

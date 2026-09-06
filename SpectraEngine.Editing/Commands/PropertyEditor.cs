@@ -333,8 +333,11 @@ public static class PropertyEditor
         // command carrying one of those would throw from inside Do, halfway
         // through a transaction, so it is refused here where nothing has been
         // written yet.
-        if (next.Intensity < 0f || !float.IsFinite(next.Intensity)) return null;
-        if (!IsUsable(next.Range)) return null;
+        // Through PropertyLimits, so the panel's message and this refusal are
+        // one rule: two hand-written copies would agree exactly until one of
+        // them was corrected.
+        if (PropertyLimits.Refusal(PropertyId.LightIntensity, next.Intensity) is not null) return null;
+        if (PropertyLimits.Refusal(PropertyId.LightRange, next.Range) is not null) return null;
         if (!float.IsFinite(next.Color.X) || !float.IsFinite(next.Color.Y) || !float.IsFinite(next.Color.Z))
             return null;
 
