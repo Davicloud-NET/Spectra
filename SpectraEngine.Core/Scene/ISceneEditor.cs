@@ -198,6 +198,28 @@ public interface ISceneEditor
     string GridModeName { get; }
 
     /// <summary>
+    /// What the pointer would do right now, as one of a closed vocabulary:
+    /// <c>suspended</c>, <c>fly</c>, <c>look</c>, <c>orbit</c>, <c>pan</c>,
+    /// <c>drag-manipulate</c>, <c>drag-move</c>, <c>drag-box</c>,
+    /// <c>hover-handle</c>, <c>hover-object</c>, <c>hover-empty</c>, <c>idle</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>From the editor rather than guessed at by the shell, because it has to
+    /// follow the same arbitration the CURSOR does.</b> Whether a press will
+    /// manipulate, select-and-move or box-select is decided by one function
+    /// weighing the camera's claim, the gizmo's hit test and the pick; a second
+    /// answer computed from published fields would disagree with the pointer in
+    /// exactly the cases the arbitration exists to settle.
+    /// </para>
+    /// <para>
+    /// An interned constant, like every other string on this interface: it is
+    /// read once per snapshot and must not allocate.
+    /// </para>
+    /// </remarks>
+    string InteractionStateName { get; }
+
+    /// <summary>
     /// True while a gesture is in flight: a manipulator drag, a marquee, or a
     /// value being scrubbed in a property panel.
     /// </summary>

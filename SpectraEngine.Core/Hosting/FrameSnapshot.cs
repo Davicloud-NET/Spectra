@@ -211,6 +211,12 @@ public sealed class FrameSnapshot
     public int PlaceholderBoundCount { get; init; }
 
     /// <summary>
+    /// What the pointer would do right now. See
+    /// <see cref="Scene.ISceneEditor.InteractionStateName"/> for the vocabulary.
+    /// </summary>
+    public string? InteractionStateName { get; init; }
+
+    /// <summary>
     /// Mean time the render thread spent waiting for the shared target's key
     /// since the last snapshot, in milliseconds. Zero on a windowed surface.
     /// </summary>

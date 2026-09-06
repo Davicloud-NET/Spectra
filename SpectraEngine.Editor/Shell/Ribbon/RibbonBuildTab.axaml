@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
              x:Class="SpectraEngine.Editor.Shell.Ribbon.RibbonBuildTab"
@@ -93,7 +93,7 @@
                   ToolTip.Tip="A lit panel flat on the surface you are looking at, parented to it.">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <Path Classes="icon kind-light" Data="{StaticResource IconSurfaceLight}" />
-              <TextBlock Text="Panel" VerticalAlignment="Center" />
+              <TextBlock Text="Light panel" VerticalAlignment="Center" />
             </StackPanel>
           </Button>
           <Button Classes="rsmall" Tag="insert.group" Click="OnRibbonItemClick"

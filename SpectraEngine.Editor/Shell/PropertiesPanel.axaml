@@ -462,9 +462,14 @@
                                   IsVisible="{Binding IsBoolean}"
                                   VerticalAlignment="Center" />
 
-                        <ComboBox Grid.Column="1" ItemsSource="{Binding Choices}"
-                                  SelectedItem="{Binding Choice, Mode=TwoWay}"
+                        <!-- Bound to the WORDS, which commit the tokens beside
+                             them: a brush's kind is stored and written as
+                             "World" and is called a Block by everything a
+                             person reads. -->
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding ChoiceLabels}"
+                                  SelectedItem="{Binding ChoiceLabel, Mode=TwoWay}"
                                   IsVisible="{Binding IsChoice}"
+                                  ToolTip.Tip="{Binding Help}"
                                   HorizontalAlignment="Stretch" />
 
                         <TextBlock Grid.Column="1" Text="{Binding ReadOnlyText}"

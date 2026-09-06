@@ -247,7 +247,7 @@ public static class RibbonLayout
                     RibbonItemSize.Large),
                 new RibbonItem("insert.light", "Light", ShellVerb.Of(InsertKind.PointLight),
                     RibbonItemSize.Large),
-                new RibbonItem("insert.panel", "Panel", ShellVerb.Of(InsertKind.SurfaceLight)),
+                new RibbonItem("insert.panel", "Light panel", ShellVerb.Of(InsertKind.SurfaceLight)),
                 new RibbonItem("insert.group", "Group", ShellVerb.Of(InsertKind.Group)),
 
                 // THE ONE SPLIT BUTTON, and the only Office idiom on this

@@ -796,4 +796,84 @@ public sealed class PropertyPanelTests
         Assert.True(row.IsColorMixed);
         Assert.True(float.IsNaN(row.ColorLinear.X));
     }
+
+    // --- the words on a choice ----------------------------------------------
+
+    [Fact]
+    public void A_choice_shows_its_word_and_commits_its_token()
+    {
+        // A brush's kind is stored, parsed and written as "World"; the word for
+        // it in an editor is "Block". Renaming the token would touch the map
+        // format and every authored file.
+        var rig = new Rig();
+        rig.Publish(new PropertyRow
+        {
+            Group = "Brush", Name = "Kind", Id = PropertyId.BrushKind, Kind = PropertyKind.Choice,
+            Text = "World", Choices = ["World", "Part"], ChoiceLabels = ["Block", "Part"],
+            Help = "Block: fused into the level.", PresentCount = 1, SelectionCount = 1,
+        });
+
+        PropertyRowModel row = rig.Row(PropertyId.BrushKind);
+        Assert.Equal("Block", row.ChoiceLabel);
+        Assert.Equal(["Block", "Part"], row.ChoiceLabels);
+        Assert.True(row.HasHelp);
+
+        row.ChoiceLabel = "Part";
+
+        PropertyEdit edit = Assert.Single(rig.Edits);
+        Assert.Equal("Part", edit.Text);
+    }
+
+    [Fact]
+    public void Picking_a_word_writes_the_token_that_is_not_the_word()
+    {
+        var rig = new Rig();
+        rig.Publish(new PropertyRow
+        {
+            Group = "Brush", Name = "Operation", Id = PropertyId.BrushOperation,
+            Kind = PropertyKind.Choice, Text = "Additive",
+            Choices = ["Additive", "Subtractive"], ChoiceLabels = ["Adds solid", "Cuts solid"],
+            PresentCount = 1, SelectionCount = 1,
+        });
+
+        rig.Row(PropertyId.BrushOperation).ChoiceLabel = "Cuts solid";
+
+        Assert.Equal("Subtractive", Assert.Single(rig.Edits).Text);
+    }
+
+    [Fact]
+    public void A_row_with_no_labels_shows_its_tokens()
+    {
+        // Every choice row written before labels existed, and the entity
+        // keyvalue rows, which deliberately show the wire tokens.
+        var rig = new Rig();
+        rig.Publish(Choice(PropertyId.LightKind, "Point", "Point", "Spot"));
+
+        PropertyRowModel row = rig.Row(PropertyId.LightKind);
+        Assert.Equal("Point", row.ChoiceLabel);
+        Assert.Equal(row.Choices, row.ChoiceLabels);
+        Assert.False(row.HasHelp);
+    }
+
+    [Fact]
+    public void A_refresh_does_not_post_a_word_back()
+    {
+        var rig = new Rig();
+        rig.Publish(new PropertyRow
+        {
+            Group = "Brush", Name = "Kind", Id = PropertyId.BrushKind, Kind = PropertyKind.Choice,
+            Text = "World", Choices = ["World", "Part"], ChoiceLabels = ["Block", "Part"],
+            PresentCount = 1, SelectionCount = 1,
+        });
+
+        rig.Publish(new PropertyRow
+        {
+            Group = "Brush", Name = "Kind", Id = PropertyId.BrushKind, Kind = PropertyKind.Choice,
+            Text = "Part", Choices = ["World", "Part"], ChoiceLabels = ["Block", "Part"],
+            PresentCount = 1, SelectionCount = 1,
+        });
+
+        Assert.Empty(rig.Edits);
+        Assert.Equal("Part", rig.Row(PropertyId.BrushKind).ChoiceLabel);
+    }
 }

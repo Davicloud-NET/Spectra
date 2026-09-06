@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 
 using SpectraEngine.Editor.Shell.Ribbon;
 
@@ -44,7 +44,10 @@ public sealed class RibbonWidthTests(RibbonSession session)
         // Both steppers stack inside the field's own row.
         RibbonControlKind.Stepper => 0.0,
 
-        _ => item.Size == RibbonItemSize.Large ? 64.0 : 96.0,
+        // 112 rather than 96 since "Light panel" replaced "Panel": a small row
+        // is a 16px glyph and its words, and the model has to bound the widest
+        // of them. The measurement below is what caught it.
+        _ => item.Size == RibbonItemSize.Large ? 64.0 : 112.0,
     };
 
     [Theory]

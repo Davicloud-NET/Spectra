@@ -60,6 +60,20 @@ public static class NodeInspector
     /// </remarks>
     private static readonly ConditionalWeakTable<object, string[]> ChoiceTokenCache = new();
 
+    // The WORDS, beside the tokens. World and Additive are what the map format
+    // and the commands say; Block and "Adds solid" are what a person reading a
+    // panel can act on. See PropertyRow.ChoiceLabels for why these are two
+    // lists rather than a rename.
+    private static readonly string[] BrushKindLabels = ["Block", "Part"];
+    private static readonly string[] BrushOperationLabels = ["Adds solid", "Cuts solid"];
+
+    private const string BrushKindHelp =
+        "Block: fused into the level and carved by cuts. Part: moves freely and never fuses.";
+
+    private const string BrushOperationHelp =
+        "Adds solid: makes geometry. Cuts solid: carves a hole out of the blocks it overlaps; " +
+        "a cut on a part does nothing at all.";
+
     private static readonly string[] BrushKindChoices = ["World", "Part"];
     private static readonly string[] BrushOperationChoices = ["Additive", "Subtractive"];
     private static readonly string[] LightKindChoices =
@@ -277,12 +291,13 @@ public static class NodeInspector
         // decides whether it adds solid or removes it.
         into.Add(PropertyRow.OfChoice(
             BrushGroup, "Kind", PropertyId.BrushKind,
-            node.BrushKind == BrushKind.Part ? "Part" : "World", BrushKindChoices));
+            node.BrushKind == BrushKind.Part ? "Part" : "World",
+            BrushKindChoices, BrushKindLabels, BrushKindHelp));
 
         into.Add(PropertyRow.OfChoice(
             BrushGroup, "Operation", PropertyId.BrushOperation,
             brush.Operation == BrushOperation.Subtractive ? "Subtractive" : "Additive",
-            BrushOperationChoices));
+            BrushOperationChoices, BrushOperationLabels, BrushOperationHelp));
 
         // Size rather than the planes: a plane list is the truth and is not
         // something anybody types. The bounds are what a resize gesture already
@@ -499,7 +514,7 @@ public static class NodeInspector
                 // first edit would write a display name into the map.
                 return PropertyRow.OfChoice(
                     EntityGroup, label, PropertyId.EntityKeyvalue, value,
-                    ChoiceTokensOf(descriptor.Choices), key);
+                    ChoiceTokensOf(descriptor.Choices), key: key);
 
             // Everything else is text in v1: a targetname, a node reference, an
             // asset path and a flag word all want a widget of their own, and a

@@ -349,6 +349,7 @@ public sealed class ShellModel : ObservableObject
             Raise(nameof(IsResizeActive));
             Raise(nameof(SnapUnitLabel));
             Raise(nameof(SnapSummary));
+            RefreshGestureHint();
             GizmoModeChanged?.Invoke();
         }
     }
@@ -537,6 +538,7 @@ public sealed class ShellModel : ObservableObject
             {
                 Raise(nameof(SnapUnitLabel));
                 Raise(nameof(SnapSummary));
+                RefreshGestureHint();
             }
         }
     }
@@ -1254,6 +1256,26 @@ public sealed class ShellModel : ObservableObject
         set => Set(ref _viewportMaximised, value);
     }
 
+    private string _interactionState = string.Empty;
+    private string _gestureHint = string.Empty;
+
+    /// <summary>
+    /// What the mouse and the modifiers do right now.
+    /// </summary>
+    /// <remarks>
+    /// Recomputed only when one of its three inputs moved, because it is read
+    /// from a snapshot that arrives up to 120 times a second while a drag is
+    /// live and the answer changes a handful of times in a session.
+    /// </remarks>
+    public string GestureHint
+    {
+        get => _gestureHint;
+        private set => Set(ref _gestureHint, value);
+    }
+
+    private void RefreshGestureHint() =>
+        GestureHint = GestureHints.For(_interactionState, _gizmoMode, _snapEnabled);
+
     /// <summary>Whether the status bar shows the engine counters.</summary>
     /// <remarks>
     /// <b>Off by default.</b> Node count, compile count, viewport size and frame
@@ -1434,6 +1456,13 @@ public sealed class ShellModel : ObservableObject
             DebugLayerActive = snapshot.DebugLayerActive;
             DebugLayerErrors = snapshot.DebugLayerErrorCount;
             PlaceholderBoundCount = snapshot.PlaceholderBoundCount;
+
+            string interaction = snapshot.InteractionStateName ?? string.Empty;
+            if (!string.Equals(interaction, _interactionState, StringComparison.Ordinal))
+            {
+                _interactionState = interaction;
+                RefreshGestureHint();
+            }
 
             // Everything below that goes through an OptimisticValue is reported
             // BY the engine and possibly still pending FROM the user; Apply is

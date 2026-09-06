@@ -335,6 +335,57 @@ public sealed class SceneEditorHost : ISceneEditor
         _ => "auto",
     };
 
+    // The vocabulary, as constants: this is read once per snapshot and a
+    // formatted string there would be per-publish garbage forever.
+    private const string SuspendedState = "suspended";
+    private const string FlyState = "fly";
+    private const string LookState = "look";
+    private const string OrbitState = "orbit";
+    private const string PanState = "pan";
+    private const string DragManipulateState = "drag-manipulate";
+    private const string DragMoveState = "drag-move";
+    private const string DragBoxState = "drag-box";
+    private const string HoverHandleState = "hover-handle";
+    private const string HoverObjectState = "hover-object";
+    private const string HoverEmptyState = "hover-empty";
+    private const string IdleState = "idle";
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <b>The order is the arbitration's own order.</b> Suspension first because
+    /// nothing else applies while play mode owns the scene; then the camera,
+    /// which claims the pointer before any tool sees it; then a live drag; then
+    /// what a press would do. Read any other way and the hint would advertise a
+    /// gesture the next click will not perform.
+    /// </remarks>
+    public string InteractionStateName
+    {
+        get
+        {
+            if (IsSuspended) return SuspendedState;
+            if (!_editorNavigation) return FlyState;
+
+            if (_camera.IsFreeLooking) return LookState;
+            if (_camera.IsOrbiting) return OrbitState;
+            if (_camera.IsPanning) return PanState;
+
+            switch (_viewport.DragMode)
+            {
+                case ViewportDragMode.Manipulate: return DragManipulateState;
+                case ViewportDragMode.SelectAndMove: return DragMoveState;
+                case ViewportDragMode.BoxSelect: return DragBoxState;
+            }
+
+            return _viewport.HoverMode switch
+            {
+                ViewportDragMode.Manipulate => HoverHandleState,
+                ViewportDragMode.SelectAndMove => HoverObjectState,
+                ViewportDragMode.BoxSelect => HoverEmptyState,
+                _ => IdleState,
+            };
+        }
+    }
+
     /// <inheritdoc/>
     public int UndoDepth => _undo.UndoCount;
 

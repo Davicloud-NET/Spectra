@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using Silk.NET.Maths;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Scene;
@@ -608,5 +608,42 @@ public sealed class SceneEditorHostCommandTests
         host.Apply(EditorCameraCommand.FrameSelection);
 
         scene.Camera.Position.ShouldBe(before);
+    }
+
+    [Fact]
+    public void The_interaction_state_names_are_interned_constants()
+    {
+        // Read once per snapshot at up to 120Hz while a drag is live. A
+        // formatted string here is per-publish garbage forever.
+        var scene = new Scene("Test");
+        SceneEditorHost host = NewHost(scene);
+
+        string first = host.InteractionStateName;
+        string second = host.InteractionStateName;
+
+        ReferenceEquals(first, second).ShouldBeTrue();
+        first.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void A_suspended_editor_reports_suspended_whatever_else_is_true()
+    {
+        // Play mode owns the scene, so nothing a tool would do applies. First in
+        // the order for that reason.
+        var scene = new Scene("Test");
+        SceneEditorHost host = NewHost(scene);
+        host.Suspend();
+
+        host.InteractionStateName.ShouldBe("suspended");
+    }
+
+    [Fact]
+    public void The_fly_camera_is_its_own_state()
+    {
+        var scene = new Scene("Test");
+        SceneEditorHost host = NewHost(scene);
+        host.Apply(EditorHostCommand.ToggleNavigation);
+
+        host.InteractionStateName.ShouldBe("fly");
     }
 }

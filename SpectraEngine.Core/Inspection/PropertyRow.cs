@@ -190,6 +190,30 @@ public readonly record struct PropertyRow
     public IReadOnlyList<string> Choices { get; init; }
 
     /// <summary>
+    /// The words shown for <see cref="Choices"/>, index for index.
+    /// </summary>
+    /// <remarks>
+    /// <b>Display and wire are different strings, and conflating them is a
+    /// migration nobody can afford.</b> A brush's kind is stored, parsed and
+    /// written as <c>World</c>; the word for it in an editor is <c>Block</c>.
+    /// Renaming the token would touch the map format, the command that parses
+    /// it and every authored file; keeping one list and showing another costs a
+    /// parallel array. Defaults to <see cref="Choices"/>, so every existing row
+    /// shows exactly what it always did.
+    /// </remarks>
+    public IReadOnlyList<string> ChoiceLabels { get; init; }
+
+    /// <summary>
+    /// One line explaining what this row's choices mean, or empty.
+    /// </summary>
+    /// <remarks>
+    /// Two of this engine's most consequential words are Block and Part, and
+    /// which is which is not guessable from either. The tooltip is where that
+    /// gets said without spending a panel row on it.
+    /// </remarks>
+    public string Help { get; init; }
+
+    /// <summary>
     /// How many of the selected nodes carry this property at all.
     /// </summary>
     /// <remarks>
@@ -259,6 +283,7 @@ public readonly record struct PropertyRow
         new() { Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.Boolean, Flag = value, Unit = "", Choices = [], PresentCount = 1, SelectionCount = 1 };
 
     internal static PropertyRow OfChoice(
-        string group, string name, PropertyId id, string value, IReadOnlyList<string> choices, string key = "") =>
-        new() { Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.Choice, Text = value, Unit = "", Choices = choices, PresentCount = 1, SelectionCount = 1 };
+        string group, string name, PropertyId id, string value, IReadOnlyList<string> choices,
+        IReadOnlyList<string>? labels = null, string help = "", string key = "") =>
+        new() { Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.Choice, Text = value, Unit = "", Choices = choices, ChoiceLabels = labels ?? choices, Help = help, PresentCount = 1, SelectionCount = 1 };
 }

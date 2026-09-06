@@ -1161,30 +1161,43 @@
           </StackPanel>
           <TextBlock Classes="value" Text="{Binding SelectionLabel}" MinWidth="104"
                      Foreground="{StaticResource SpectraTextEmphasis}" />
+
+          <!-- What the mouse and the modifiers do RIGHT NOW. The one thing a
+               status bar can teach somebody who will never read documentation,
+               and the space it needs was being spent on five engine counters.
+               The camera readout that used to sit here is on the header chip
+               beside the viewport, which is where its effect happens. -->
           <Border Classes="groupsep" />
-          <TextBlock Classes="label" Text="camera" Margin="0,0,6,0" />
-          <TextBlock Classes="value" Text="{Binding Navigation}" MinWidth="96"
-                     ToolTip.Tip="Which camera drives the viewport  (F7)" />
-          <Border Classes="groupsep" />
-          <TextBlock Classes="value" Text="{Binding NodeCountLabel}"
-                     Foreground="{StaticResource SpectraTextMuted}" MinWidth="70"
-                     ToolTip.Tip="Nodes in the scene" />
-          <Border Classes="groupsep" />
-          <!-- The engine's heartbeat: this ticks while a drag recompiles the
-               level underneath the cursor, which is the cheapest honest proof
-               there is a compiler under the picture. -->
-          <TextBlock Classes="label" Text="compiles" Margin="0,0,6,0" />
-          <TextBlock Classes="value" Text="{Binding CompileCount}"
-                     Foreground="{StaticResource SpectraTextMuted}" MinWidth="40"
-                     ToolTip.Tip="Static-world recompiles this session" />
-          <Border Classes="groupsep" />
-          <TextBlock Classes="label" Text="viewport" Margin="0,0,6,0" />
-          <TextBlock Classes="value" Text="{Binding ViewportLabel}"
-                     Foreground="{StaticResource SpectraTextMuted}" MinWidth="66" />
-          <Border Classes="groupsep" />
-          <TextBlock Classes="value frametime" Classes.overbudget="{Binding FrameTimeOverBudget}"
-                     Text="{Binding FpsLabel}" MinWidth="58"
-                     ToolTip.Tip="{Binding FrameTimeLabel}" />
+          <TextBlock Classes="value" Text="{Binding GestureHint}" MinWidth="240"
+                     Foreground="{StaticResource SpectraTextMuted}" />
+
+          <!-- The engine's instruments, off by default. Node and compile counts
+               are for somebody working on the engine; for somebody building a
+               level they are five numbers where the current gesture should be.
+               The separators live INSIDE the panel so they disappear with it. -->
+          <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center"
+                      IsVisible="{Binding ShowDiagnostics}">
+            <Border Classes="groupsep" />
+            <TextBlock Classes="value" Text="{Binding NodeCountLabel}"
+                       Foreground="{StaticResource SpectraTextMuted}" MinWidth="70"
+                       ToolTip.Tip="Nodes in the scene" />
+            <Border Classes="groupsep" />
+            <!-- The engine's heartbeat: this ticks while a drag recompiles the
+                 level underneath the cursor, which is the cheapest honest proof
+                 there is a compiler under the picture. -->
+            <TextBlock Classes="label" Text="compiles" Margin="0,0,6,0" />
+            <TextBlock Classes="value" Text="{Binding CompileCount}"
+                       Foreground="{StaticResource SpectraTextMuted}" MinWidth="40"
+                       ToolTip.Tip="Static-world recompiles this session" />
+            <Border Classes="groupsep" />
+            <TextBlock Classes="label" Text="viewport" Margin="0,0,6,0" />
+            <TextBlock Classes="value" Text="{Binding ViewportLabel}"
+                       Foreground="{StaticResource SpectraTextMuted}" MinWidth="66" />
+            <Border Classes="groupsep" />
+            <TextBlock Classes="value frametime" Classes.overbudget="{Binding FrameTimeOverBudget}"
+                       Text="{Binding FpsLabel}" MinWidth="58"
+                       ToolTip.Tip="{Binding FrameTimeLabel}" />
+          </StackPanel>
 
           <!-- How long the render thread spent waiting for this window to hand
                the shared texture back. Hidden until it is worth reading, and it

@@ -32,6 +32,17 @@ public sealed class PropertyRowModel : ObservableObject
         Kind = row.Kind;
         Unit = row.Unit ?? string.Empty;
         Choices = row.Choices;
+        ChoiceLabels = row.ChoiceLabels ?? row.Choices;
+        Help = row.Help ?? string.Empty;
+
+        // A mismatched pair would silently pour one choice's word into another
+        // choice's slot, which is the shape of defect the (Id, Key) row identity
+        // already exists to prevent one level up.
+        if (ChoiceLabels.Count != Choices.Count)
+        {
+            throw new InvalidOperationException(
+                $"Row '{row.Name}' has {Choices.Count} choices and {ChoiceLabels.Count} labels.");
+        }
         Apply = apply;
 
         Fields = Kind switch
@@ -123,6 +134,61 @@ public sealed class PropertyRowModel : ObservableObject
     public string Name { get; }
     public PropertyKind Kind { get; }
     public IReadOnlyList<string> Choices { get; }
+
+    /// <summary>The words shown for <see cref="Choices"/>, index for index.</summary>
+    public IReadOnlyList<string> ChoiceLabels { get; }
+
+    /// <summary>One line explaining the choices, for the row's tooltip.</summary>
+    public string Help { get; }
+
+    /// <summary>Whether there is anything to explain.</summary>
+    public bool HasHelp => Help.Length > 0;
+
+    /// <summary>
+    /// The dropdown's own value: a WORD, which commits the token beside it.
+    /// </summary>
+    /// <remarks>
+    /// The dropdown binds here rather than to <see cref="Choice"/> so what the
+    /// user picks and what the map records can differ. A word that is not in
+    /// the list is treated as a token, which is what a row whose labels are its
+    /// tokens produces.
+    /// </remarks>
+    public string ChoiceLabel
+    {
+        get
+        {
+            int index = IndexOfChoice(_choice);
+            return index >= 0 ? ChoiceLabels[index] : _choice;
+        }
+
+        set
+        {
+            if (_applyingRefresh || string.IsNullOrEmpty(value)) return;
+
+            int index = IndexOfLabel(value);
+            Choice = index >= 0 ? Choices[index] : value;
+        }
+    }
+
+    private int IndexOfChoice(string value)
+    {
+        for (int i = 0; i < Choices.Count; i++)
+        {
+            if (string.Equals(Choices[i], value, StringComparison.Ordinal)) return i;
+        }
+
+        return -1;
+    }
+
+    private int IndexOfLabel(string label)
+    {
+        for (int i = 0; i < ChoiceLabels.Count; i++)
+        {
+            if (string.Equals(ChoiceLabels[i], label, StringComparison.Ordinal)) return i;
+        }
+
+        return -1;
+    }
     public IReadOnlyList<PropertyFieldModel> Fields { get; }
 
     /// <summary>
@@ -402,6 +468,11 @@ public sealed class PropertyRowModel : ObservableObject
                 _applyingRefresh = true;
                 Choice = row.IsMixed ? string.Empty : row.Text;
                 _applyingRefresh = false;
+
+                // The dropdown binds to the WORD, so it has to hear about it
+                // too; the guard above is what stops that echoing back as a
+                // pick.
+                Raise(nameof(ChoiceLabel));
                 break;
 
             default:
