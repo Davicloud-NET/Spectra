@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Silk.NET.Input;
 using SpectraEngine.Core.Input;
@@ -305,10 +305,20 @@ public sealed class InputSubmissionTests
     [Fact]
     public void A_silk_key_the_engine_does_not_name_becomes_unknown()
     {
-        // Rather than a nearby value: a keypad digit that mapped to the number
-        // row would fire the tool bound to that digit.
-        SilkInputKeys.ToInputKey(Key.Keypad7).ShouldBe(InputKey.Unknown);
         SilkInputKeys.ToInputKey(Key.F20).ShouldBe(InputKey.Unknown);
+        SilkInputKeys.ToInputKey(Key.KeypadEqual).ShouldBe(InputKey.Unknown);
+    }
+
+    [Fact]
+    public void The_keypad_digits_are_their_own_keys_and_not_the_number_row()
+    {
+        // The views are bound to the keypad precisely so the number row stays
+        // free for the tools: a keypad 7 arriving as Number7 would fire whatever
+        // that digit binds, which is how a plan view becomes a tool switch.
+        SilkInputKeys.ToInputKey(Key.Keypad7).ShouldBe(InputKey.Keypad7);
+        SilkInputKeys.ToInputKey(Key.Keypad7).ShouldNotBe(InputKey.Number7);
+        SilkInputKeys.ToInputKey(Key.Keypad0).ShouldBe(InputKey.Keypad0);
+        SilkInputKeys.ToInputKey(Key.Keypad9).ShouldBe(InputKey.Keypad9);
     }
 
     [Fact]

@@ -906,6 +906,37 @@
                     <Path Classes="chipcaret" Data="{StaticResource CaretDown}" />
                   </StackPanel>
                 </Button>
+                <!-- Which of the seven views is live. A flyout rather than a
+                     cycle, because seven values are too many to step through
+                     and the lit radio says the answer without being opened. -->
+                <Button Classes="chip" Height="22"
+                        ToolTip.Tip="Which way the camera is looking.  Numpad 7, 1, 3">
+                  <Button.Flyout>
+                    <MenuFlyout>
+                      <MenuItem Header="Perspective" ToggleType="Radio" InputGesture="NumPad5"
+                                IsChecked="{Binding IsViewPerspective, Mode=OneWay}" Click="OnViewPerspectiveClicked" />
+                      <Separator />
+                      <MenuItem Header="Top" ToggleType="Radio" InputGesture="NumPad7"
+                                IsChecked="{Binding IsViewTop, Mode=OneWay}" Click="OnViewTopClicked" />
+                      <MenuItem Header="Bottom" ToggleType="Radio" InputGesture="Ctrl+NumPad7"
+                                IsChecked="{Binding IsViewBottom, Mode=OneWay}" Click="OnViewBottomClicked" />
+                      <MenuItem Header="Front" ToggleType="Radio" InputGesture="NumPad1"
+                                IsChecked="{Binding IsViewFront, Mode=OneWay}" Click="OnViewFrontClicked" />
+                      <MenuItem Header="Back" ToggleType="Radio" InputGesture="Ctrl+NumPad1"
+                                IsChecked="{Binding IsViewBack, Mode=OneWay}" Click="OnViewBackClicked" />
+                      <MenuItem Header="Right" ToggleType="Radio" InputGesture="NumPad3"
+                                IsChecked="{Binding IsViewRight, Mode=OneWay}" Click="OnViewRightClicked" />
+                      <MenuItem Header="Left" ToggleType="Radio" InputGesture="Ctrl+NumPad3"
+                                IsChecked="{Binding IsViewLeft, Mode=OneWay}" Click="OnViewLeftClicked" />
+                    </MenuFlyout>
+                  </Button.Flyout>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Classes="chipsubject" Text="View" />
+                    <TextBlock Classes="chipvalue" Text="{Binding ViewName}" />
+                    <Path Classes="chipcaret" Data="{StaticResource CaretDown}" />
+                  </StackPanel>
+                </Button>
+
                 <Button Classes="chip" Height="22" Click="OnToggleNavigationClicked"
                         ToolTip.Tip="Which camera drives the viewport.  F7">
                   <StackPanel Orientation="Horizontal" Spacing="6">

@@ -75,8 +75,23 @@ public sealed class Win32KeyTests
     [Fact]
     public void A_key_the_engine_does_not_name_is_unknown_rather_than_nearby()
     {
-        // Keypad 7 mapping to the number row would fire whatever tool 7 binds.
-        Win32Keys.ToInputKey(0x67, Plain).ShouldBe(InputKey.Unknown);
+        // 0x87 is reserved and 0x6A is the keypad's multiply, which the engine
+        // has no name for: both must be Unknown rather than the nearest key the
+        // arithmetic could reach.
         Win32Keys.ToInputKey(0x87, Plain).ShouldBe(InputKey.Unknown);
+        Win32Keys.ToInputKey(0x6A, Plain).ShouldBe(InputKey.Unknown);
+    }
+
+    [Theory]
+    [InlineData(0x60, InputKey.Keypad0)]
+    [InlineData(0x67, InputKey.Keypad7)]
+    [InlineData(0x69, InputKey.Keypad9)]
+    public void The_keypad_maps_by_range_and_not_onto_the_number_row(int virtualKey, InputKey expected)
+    {
+        // VK_NUMPAD0 through VK_NUMPAD9 are contiguous, like the other two rows.
+        // Landing on the number row instead would fire whatever tool that digit
+        // binds, which is how a plan view becomes a tool switch.
+        Win32Keys.ToInputKey(virtualKey, Plain).ShouldBe(expected);
+        Win32Keys.ToInputKey(0x67, Plain).ShouldNotBe(InputKey.Number7);
     }
 }

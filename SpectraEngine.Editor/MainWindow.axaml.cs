@@ -1796,6 +1796,39 @@ public partial class MainWindow : Window
         Path.HasExtension(subject) &&
         !subject.Contains(' ', StringComparison.Ordinal);
 
+    // --- The view presets ----------------------------------------------------
+    //
+    // Seven SET verbs through the one dispatcher every other control uses, each
+    // telling the shell what it asked for so the arrival is not reported as the
+    // surprise an unrequested return to perspective is.
+
+    private void OnViewPerspectiveClicked(object? sender, RoutedEventArgs e) =>
+        RunViewPreset(EditorCameraCommand.ViewPerspective, "Perspective");
+
+    private void OnViewTopClicked(object? sender, RoutedEventArgs e) =>
+        RunViewPreset(EditorCameraCommand.ViewTop, "Top");
+
+    private void OnViewBottomClicked(object? sender, RoutedEventArgs e) =>
+        RunViewPreset(EditorCameraCommand.ViewBottom, "Bottom");
+
+    private void OnViewFrontClicked(object? sender, RoutedEventArgs e) =>
+        RunViewPreset(EditorCameraCommand.ViewFront, "Front");
+
+    private void OnViewBackClicked(object? sender, RoutedEventArgs e) =>
+        RunViewPreset(EditorCameraCommand.ViewBack, "Back");
+
+    private void OnViewRightClicked(object? sender, RoutedEventArgs e) =>
+        RunViewPreset(EditorCameraCommand.ViewRight, "Right");
+
+    private void OnViewLeftClicked(object? sender, RoutedEventArgs e) =>
+        RunViewPreset(EditorCameraCommand.ViewLeft, "Left");
+
+    private void RunViewPreset(EditorCameraCommand command, string name)
+    {
+        _shell.ExpectViewName(name);
+        OnShellVerb(ShellVerb.Of(command));
+    }
+
     private void OnShowConsolePanel(object? sender, RoutedEventArgs e)
     {
         ShowToolInDrawer(ConsoleTool);

@@ -1,4 +1,4 @@
-using SpectraEngine.Core.Bsp;
+﻿using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Gizmos;
@@ -535,6 +535,11 @@ public sealed class EditorCameraController
     /// </summary>
     public void ApplyFreeLook(Vector2 pixelDelta)
     {
+        // Looking around is only defined for a perspective camera, and refusing
+        // it would teach that the view is stuck. Leaving is the answer, and the
+        // status line says so once.
+        if (View != EditorViewPreset.Perspective) SetView(EditorViewPreset.Perspective);
+
         TargetYaw += pixelDelta.X * LookSensitivity;
         TargetPitch = Math.Clamp(TargetPitch - pixelDelta.Y * LookSensitivity, -PitchLimit, PitchLimit);
         NormalizeYaw();
@@ -550,6 +555,8 @@ public sealed class EditorCameraController
     /// </summary>
     public void ApplyOrbit(Vector2 pixelDelta)
     {
+        if (View != EditorViewPreset.Perspective) SetView(EditorViewPreset.Perspective);
+
         TargetYaw += pixelDelta.X * OrbitSensitivity;
         TargetPitch = Math.Clamp(TargetPitch - pixelDelta.Y * OrbitSensitivity, -PitchLimit, PitchLimit);
         // Keep both angles in the same turn so a long session cannot walk the
@@ -794,8 +801,67 @@ public sealed class EditorCameraController
     {
         EditorCameraCommand.FrameSelection => FrameSelection(),
         EditorCameraCommand.FrameAll => FrameAll(),
+
+        EditorCameraCommand.ViewPerspective => SetView(EditorViewPreset.Perspective),
+        EditorCameraCommand.ViewTop => SetView(EditorViewPreset.Top),
+        EditorCameraCommand.ViewBottom => SetView(EditorViewPreset.Bottom),
+        EditorCameraCommand.ViewFront => SetView(EditorViewPreset.Front),
+        EditorCameraCommand.ViewBack => SetView(EditorViewPreset.Back),
+        EditorCameraCommand.ViewRight => SetView(EditorViewPreset.Right),
+        EditorCameraCommand.ViewLeft => SetView(EditorViewPreset.Left),
+
         _ => false,
     };
+
+    /// <summary>Which view this camera is showing.</summary>
+    public EditorViewPreset View { get; private set; } = EditorViewPreset.Perspective;
+
+    /// <summary>
+    /// Switches to one of the seven views.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It SNAPS, it does not glide.</b> Every other camera move in this class
+    /// is damped, and a yaw swinging ninety degrees under an orthographic
+    /// projection does not read as a camera turning: parallel projection has no
+    /// convergence to sell the rotation, so the picture shears like a drawing
+    /// being sheared. The one place damping is wrong is the one place the
+    /// picture is not a photograph.
+    /// </para>
+    /// <para>
+    /// <b>Distance is the single zoom state across both projections</b>, so
+    /// framing carries over: the orthographic height is derived from it in
+    /// <c>WriteCamera</c>, which is what makes switching to a plan view show the
+    /// same amount of world rather than an arbitrary amount.
+    /// </para>
+    /// </remarks>
+    /// <returns>Whether anything changed.</returns>
+    public bool SetView(EditorViewPreset preset)
+    {
+        if (View == preset) return false;
+
+        View = preset;
+
+        if (EditorViewPresets.IsOrthographic(preset))
+        {
+            TargetYaw = EditorViewPresets.YawOf(preset);
+
+            // Assigned past the clamp, deliberately: a top view needs exactly
+            // the vertical pitch the clamp exists to keep the ordinary basis
+            // away from, and Camera.SetVerticalView is what builds a basis
+            // there.
+            TargetPitch = EditorViewPresets.PitchOf(preset);
+        }
+        else
+        {
+            TargetPitch = Math.Clamp(TargetPitch, -PitchLimit, PitchLimit);
+        }
+
+        NormalizeYaw();
+        TargetPosition = TargetFocus - (TargetForward() * TargetDistance);
+        SnapToTarget();
+        return true;
+    }
 
     // --- Direct control ------------------------------------------------------
 
@@ -981,11 +1047,39 @@ public sealed class EditorCameraController
 
     private void WriteCamera()
     {
+        bool orthographic = EditorViewPresets.IsOrthographic(View);
+        Camera.ProjectionKind = orthographic
+            ? CameraProjectionKind.Orthographic
+            : CameraProjectionKind.Perspective;
+
         // Angles first: the camera recomputes its basis on assignment, and it is
         // that basis the rest of the frame reads.
-        Camera.Yaw = Yaw;
-        Camera.Pitch = Pitch;
-        Camera.Position = Position;
+        if (View is EditorViewPreset.Top or EditorViewPreset.Bottom)
+        {
+            Camera.SetVerticalView(View == EditorViewPreset.Top, Yaw);
+        }
+        else
+        {
+            Camera.Yaw = Yaw;
+            Camera.Pitch = Pitch;
+        }
+
+        // The eye sits AT the focus under orthographic, and the slab is
+        // symmetric about it, so geometry on both sides renders: a plan view
+        // whose eye was pulled back would clip away everything between it and
+        // the floor, which is every ceiling in the level.
+        Camera.Position = orthographic ? Focus : Position;
+
+        if (orthographic)
+        {
+            // Derived from the distance rather than stored beside it, so one
+            // zoom state serves both projections and framing carries across a
+            // switch. The formula is what a perspective camera would span at
+            // that distance, which is what makes the switch look like a change
+            // of projection rather than a jump.
+            Camera.OrthographicHeight =
+                2f * Distance * MathF.Tan(Camera.FieldOfView * 0.5f);
+        }
     }
 
     // The forward axis of the TARGET pose. Every gesture works in target space,
@@ -996,18 +1090,15 @@ public sealed class EditorCameraController
         return forward;
     }
 
-    // The same basis construction Camera.RecomputeBasis uses. Duplicated rather
-    // than read back off the camera because the target pose has not been written
-    // to it yet — and writing a provisional pose just to read the basis would
-    // dirty the camera's matrices twice a frame.
+    // The camera's own basis, asked for without writing a provisional pose into
+    // it: the target has not been applied yet, and assigning one just to read
+    // the basis back would dirty its matrices twice a frame. It used to be a
+    // COPY of that construction, which is two expressions of one basis that
+    // drift where nothing fails - and at the poles the copy produced NaN while
+    // the camera handled it, which is exactly the vertical view this now has.
     private static void Basis(float yaw, float pitch, out Vector3 forward, out Vector3 right)
     {
-        float cosPitch = MathF.Cos(pitch);
-        forward = Vector3.Normalize(new Vector3(
-            MathF.Cos(yaw) * cosPitch,
-            MathF.Sin(pitch),
-            MathF.Sin(yaw) * cosPitch));
-        right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
+        Camera.BasisFor(yaw, pitch, out forward, out right, out _);
     }
 
     // Slides both angles by the same multiple of a full turn, which leaves the

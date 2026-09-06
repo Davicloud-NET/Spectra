@@ -1,4 +1,4 @@
-namespace SpectraEngine.Core.Input;
+﻿namespace SpectraEngine.Core.Input;
 
 /// <summary>
 /// The engine's own keyboard vocabulary: physical keys, named by what is
@@ -42,6 +42,14 @@ public enum InputKey
     // ─── Digits (the number row, not the keypad) ─────────────
     Number0, Number1, Number2, Number3, Number4,
     Number5, Number6, Number7, Number8, Number9,
+
+    // ─── The keypad ──────────────────────────────────────────
+    // Separate values from the number row, because the two are separate keys:
+    // an editor binds the views to the keypad precisely so the number row stays
+    // free for the tools, and collapsing them would make Ctrl+1 insert a block
+    // and switch to a view at once.
+    Keypad0, Keypad1, Keypad2, Keypad3, Keypad4,
+    Keypad5, Keypad6, Keypad7, Keypad8, Keypad9,
 
     // ─── Function row ────────────────────────────────────────
     F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,

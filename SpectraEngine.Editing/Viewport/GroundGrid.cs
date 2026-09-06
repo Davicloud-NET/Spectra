@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Numerics;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Editing.Cameras;
 
 namespace SpectraEngine.Editing.Viewport;
 
@@ -166,7 +167,23 @@ public sealed class GroundGrid
     /// <param name="camera">The viewport camera.</param>
     /// <param name="increment">The live translate snap, in world units.</param>
     /// <param name="viewportHeight">Viewport height in pixels, for the coarsening rule.</param>
-    public void Draw(DebugDraw output, Camera camera, float increment, float viewportHeight)
+    public void Draw(DebugDraw output, Camera camera, float increment, float viewportHeight) =>
+        Draw(output, camera, increment, viewportHeight, GridPlane.Ground);
+
+    /// <summary>
+    /// Draws the grid on one of the three world planes.
+    /// </summary>
+    /// <remarks>
+    /// <b>A grid seen edge-on is one row of pixels, which is worse than none.</b>
+    /// A front view looking at the floor grid sees a line; the question the grid
+    /// answers - what will this snap to - is the same in every view, so the grid
+    /// moves to the plane the view is looking at rather than being switched off.
+    /// The axis roles are a TABLE rather than three copies of this method: the
+    /// mistakes here are transpositions, and a transposed axis draws a grid that
+    /// looks perfectly ordinary on the wrong plane.
+    /// </remarks>
+    public void Draw(
+        DebugDraw output, Camera camera, float increment, float viewportHeight, GridPlane plane)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(camera);
@@ -182,7 +199,24 @@ public sealed class GroundGrid
         // rather than from the origin, so the grid follows the user across an
         // unbounded world instead of being a patch they can walk off.
         Vector3 eye = camera.Position;
-        float height = MathF.Max(MathF.Abs(eye.Y), 1f);
+
+        // Which world axes are IN the plane, and which one is across it. Ground
+        // is x and z about y, which is what every caller before this had.
+        (int uAxis, int vAxis, int nAxis) = plane switch
+        {
+            GridPlane.Front => (0, 1, 2),
+            GridPlane.Side => (2, 1, 0),
+            _ => (0, 2, 1),
+        };
+
+        // Under an orthographic projection the eye sits AT the focus, so its
+        // distance from the plane is zero and would coarsen the grid to its
+        // finest level at every zoom. The height the viewport spans is the
+        // honest measure of how much world a pixel is worth there, and it is
+        // the same number every other screen-space size on that path uses.
+        float height = camera.ProjectionKind == CameraProjectionKind.Orthographic
+            ? MathF.Max(camera.OrthographicHeight, 1f)
+            : MathF.Max(MathF.Abs(Component(eye, nAxis)), 1f);
 
         // A grid sized for a walk-around view is a postage stamp from a hundred
         // metres up, so the extent grows with the camera's height. Capped, or a
@@ -200,8 +234,8 @@ public sealed class GroundGrid
         // re-centre makes is invisible because the lines it adds and removes
         // sit past the fade's end, at zero alpha.
         float major = cell * MajorEvery;
-        float centerX = MathF.Floor(eye.X / major) * major;
-        float centerZ = MathF.Floor(eye.Z / major) * major;
+        float centerU = MathF.Floor(Component(eye, uAxis) / major) * major;
+        float centerV = MathF.Floor(Component(eye, vAxis) / major) * major;
 
         int steps = (int)MathF.Ceiling(radius / cell);
 
@@ -222,33 +256,60 @@ public sealed class GroundGrid
         // steps — clamped to the drawn reach only when the cap shrank the
         // patch, or lines would end mid-fade in a visible square edge.
         float fadeRadius = MathF.Min(radius, reach);
-        output.FadeCenter = new Vector3(eye.X, 0f, eye.Z);
+        output.FadeCenter = OnPlane(uAxis, vAxis, Component(eye, uAxis), Component(eye, vAxis));
         output.FadeStart = fadeRadius * FadeStartFraction;
         output.FadeEnd = fadeRadius * FadeEndFraction;
         output.Opacity = Opacity;
 
         for (int i = -steps; i <= steps; i++)
         {
-            float x = centerX + (i * cell);
-            float z = centerZ + (i * cell);
+            float u = centerU + (i * cell);
+            float v = centerV + (i * cell);
 
             // Whether a line is major is decided by its ABSOLUTE world position,
             // never by its index from the camera. Indexing from the camera makes
             // the bright lines change which world coordinates they sit on every
             // time the patch re-centres, so the grid appears to breathe.
-            bool majorX = IsMultiple(x, major);
-            bool majorZ = IsMultiple(z, major);
+            bool majorU = IsMultiple(u, major);
+            bool majorV = IsMultiple(v, major);
 
-            output.Line(new Vector3(x, 0f, centerZ - reach), new Vector3(x, 0f, centerZ + reach),
-                majorX ? MajorColor : MinorColor);
-            output.Line(new Vector3(centerX - reach, 0f, z), new Vector3(centerX + reach, 0f, z),
-                majorZ ? MajorColor : MinorColor);
+            output.Line(
+                OnPlane(uAxis, vAxis, u, centerV - reach),
+                OnPlane(uAxis, vAxis, u, centerV + reach),
+                majorU ? MajorColor : MinorColor);
+
+            output.Line(
+                OnPlane(uAxis, vAxis, centerU - reach, v),
+                OnPlane(uAxis, vAxis, centerU + reach, v),
+                majorV ? MajorColor : MinorColor);
 
             DrawnLastDraw += 2;
         }
 
-        DrawAxes(output, centerX, centerZ, reach);
+        DrawAxes(output, uAxis, vAxis, centerU, centerV, reach);
         DrawnLastDraw += 2;
+    }
+
+    private static float Component(Vector3 value, int axis) => axis switch
+    {
+        0 => value.X,
+        1 => value.Y,
+        _ => value.Z,
+    };
+
+    // A point in the plane, from its two in-plane coordinates. The third is
+    // zero, which is what makes the grid a plane THROUGH THE ORIGIN in the
+    // front and side views: a grid floating at the camera's own depth would
+    // move whenever the camera did, and the plane an author is measuring
+    // against is the world's.
+    private static Vector3 OnPlane(int uAxis, int vAxis, float u, float v)
+    {
+        Vector3 point = Vector3.Zero;
+
+        if (uAxis == 0) point.X = u; else if (uAxis == 1) point.Y = u; else point.Z = u;
+        if (vAxis == 0) point.X = v; else if (vAxis == 1) point.Y = v; else point.Z = v;
+
+        return point;
     }
 
     /// <summary>
@@ -307,14 +368,31 @@ public sealed class GroundGrid
     // crossed a threshold; with the per-pixel fade an axis far from the camera
     // simply renders at zero alpha, which is the same answer with no edge, for
     // the cost of two lines.
-    private static void DrawAxes(DebugDraw output, float centerX, float centerZ, float reach)
+    private static void DrawAxes(
+        DebugDraw output, int uAxis, int vAxis, float centerU, float centerV, float reach)
     {
-        var xColor = new Vector3(0.30f, 0.020f, 0.020f);
-        var zColor = new Vector3(0.020f, 0.035f, 0.28f);
+        // The hue follows the AXIS rather than the row, so x is red and z is
+        // blue whichever plane the grid is on: the axis letters in the inspector
+        // and the gizmo arrows in the viewport wear the same three colours, and
+        // a grid that recoloured them per view would make those three answers
+        // into six.
+        output.Line(
+            OnPlane(uAxis, vAxis, centerU - reach, 0f),
+            OnPlane(uAxis, vAxis, centerU + reach, 0f),
+            AxisColor(uAxis));
 
-        output.Line(new Vector3(centerX - reach, 0f, 0f), new Vector3(centerX + reach, 0f, 0f), xColor);
-        output.Line(new Vector3(0f, 0f, centerZ - reach), new Vector3(0f, 0f, centerZ + reach), zColor);
+        output.Line(
+            OnPlane(uAxis, vAxis, 0f, centerV - reach),
+            OnPlane(uAxis, vAxis, 0f, centerV + reach),
+            AxisColor(vAxis));
     }
+
+    private static Vector3 AxisColor(int axis) => axis switch
+    {
+        0 => new Vector3(0.30f, 0.020f, 0.020f),
+        1 => new Vector3(0.020f, 0.26f, 0.030f),
+        _ => new Vector3(0.020f, 0.035f, 0.28f),
+    };
 
     // Whole-multiple test with a tolerance proportional to the spacing, because
     // the coordinates are accumulated floats and an exact equality here would

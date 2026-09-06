@@ -210,6 +210,7 @@ public sealed class Engine
                 NavigationModeName = editor?.NavigationModeName,
                 GridModeName = editor?.GridModeName,
                 InteractionStateName = editor?.InteractionStateName,
+                ViewName = editor?.ViewName,
                 CameraPosition = _sceneManager.ActiveScene?.Camera.Position ?? default,
                 UndoDepth = editor?.UndoDepth ?? 0,
                 RedoDepth = editor?.RedoDepth ?? 0,

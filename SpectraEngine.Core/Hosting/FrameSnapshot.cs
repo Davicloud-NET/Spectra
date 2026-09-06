@@ -217,6 +217,18 @@ public sealed class FrameSnapshot
     public string? InteractionStateName { get; init; }
 
     /// <summary>
+    /// Which view the editor camera is showing. See
+    /// <see cref="Scene.ISceneEditor.ViewName"/> for the vocabulary.
+    /// </summary>
+    /// <remarks>
+    /// Snapshot-followed with no optimistic hold, exactly like the grid chip:
+    /// looking around LEAVES an orthographic view, so the shell's guess about
+    /// which view is live would be wrong the moment somebody right-dragged, and
+    /// a control lit against the engine is worse than one a frame behind it.
+    /// </remarks>
+    public string? ViewName { get; init; }
+
+    /// <summary>
     /// Mean time the render thread spent waiting for the shared target's key
     /// since the last snapshot, in milliseconds. Zero on a windowed surface.
     /// </summary>

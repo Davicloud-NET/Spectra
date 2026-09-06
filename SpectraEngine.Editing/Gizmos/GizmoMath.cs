@@ -1,4 +1,4 @@
-using SpectraEngine.Core.Scene;
+﻿using SpectraEngine.Core.Scene;
 using System;
 using System.Numerics;
 
@@ -67,6 +67,16 @@ public static class GizmoMath
         if (viewportHeight <= 0f)
             return 0f; // A not-yet-sized viewport has no pixels to scale to.
 
+        // The ONE projection-aware choke point in the engine's screen-space
+        // sizing. Under an orthographic projection nothing converges, so a
+        // pixel is worth the same in world units everywhere: the height the
+        // viewport spans divided by its pixels, with the depth ignored. A gizmo
+        // that kept the perspective formula in a plan view would shrink toward
+        // the focus plane and grow behind it, which reads as handles that
+        // change size when the camera has not moved.
+        if (camera.ProjectionKind == CameraProjectionKind.Orthographic)
+            return camera.OrthographicHeight / viewportHeight;
+
         return 2f * viewDepth * MathF.Tan(camera.FieldOfView * 0.5f) / viewportHeight;
     }
 
@@ -77,7 +87,17 @@ public static class GizmoMath
     public static float ViewDepth(Camera camera, Vector3 point)
     {
         ArgumentNullException.ThrowIfNull(camera);
-        return Vector3.Dot(point - camera.Position, camera.Forward);
+
+        float depth = Vector3.Dot(point - camera.Position, camera.Forward);
+
+        // An orthographic camera's slab is symmetric about the eye, so a point
+        // BEHIND it is still in view - and every caller here treats a negative
+        // depth as "behind the camera, do not draw". Measuring from the slab's
+        // near face keeps that predicate meaning "outside the view", which is
+        // the question those callers are actually asking.
+        return camera.ProjectionKind == CameraProjectionKind.Orthographic
+            ? depth + camera.FarPlane
+            : depth;
     }
 
     /// <summary>

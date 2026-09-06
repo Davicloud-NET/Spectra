@@ -220,6 +220,19 @@ public interface ISceneEditor
     string InteractionStateName { get; }
 
     /// <summary>
+    /// Which view the editor camera is showing: "Perspective", "Top", "Bottom",
+    /// "Front", "Back", "Right" or "Left".
+    /// </summary>
+    /// <remarks>
+    /// <b>A word rather than an enum, for the reason every other string on this
+    /// seam is one</b>: Core cannot name a type the editing assembly declares,
+    /// and the dependency runs that way precisely so no gizmo or camera code
+    /// reaches a shipped game binary. Interned by the implementation, because it
+    /// crosses the snapshot on every publish.
+    /// </remarks>
+    string ViewName { get; }
+
+    /// <summary>
     /// True while a gesture is in flight: a manipulator drag, a marquee, or a
     /// value being scrubbed in a property panel.
     /// </summary>

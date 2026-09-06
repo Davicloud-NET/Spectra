@@ -52,6 +52,9 @@ public partial class KeyboardReferenceWindow : Window
             new("F", "Frame the selection."),
             new("Shift + F", "Frame everything."),
             new("F7", "Switch between the editor camera and the engine fly camera."),
+            new("Numpad 7, 1, 3", "Top, front and right views, looking straight on with no perspective."),
+            new("Ctrl + Numpad 7, 1, 3", "Bottom, back and left."),
+            new("Numpad 5", "Back to perspective. Looking around or orbiting also does."),
         ]),
 
         new("Selecting", [

@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Silk.NET.Maths;
 using Silk.NET.Windowing;
 using SpectraEngine.Core.Assets.Sources;
@@ -1497,7 +1497,7 @@ public abstract class Renderer
         SetDepthBias(map.RasterBias);
         try
         {
-            for (int cascade = 0; cascade < map.CascadeCount; cascade++)
+            for (int cascade = 0; cascade < map.FittedCascadeCount; cascade++)
             {
                 (int x, int y, int size) = map.TileAt(cascade);
                 SetPassViewport(x, y, size, size);
@@ -2060,7 +2060,7 @@ public abstract class Renderer
 
         _lightPass
             .SetUniform("uShadowLightIndex", casting ? shadowLightIndex : -1)
-            .SetUniform("uCascadeCount", map?.CascadeCount ?? 0)
+            .SetUniform("uCascadeCount", map?.FittedCascadeCount ?? 0)
             .SetUniform("uShadowStrength", casting ? ShadowStrength : 0f)
             .SetUniform("uShadowTexel", map?.TexelSize ?? 0f)
             .SetUniform("uShadowDepthBias", map?.CompareBias ?? 0f)

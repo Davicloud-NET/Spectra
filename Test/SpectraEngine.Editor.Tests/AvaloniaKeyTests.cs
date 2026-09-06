@@ -1,4 +1,4 @@
-using Avalonia.Input;
+﻿using Avalonia.Input;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Editor.Viewport;
 using System.Linq;
@@ -56,6 +56,20 @@ public sealed class AvaloniaKeyTests
             ("D7", "Number7"),
             ("D8", "Number8"),
             ("D9", "Number9"),
+
+            // The keypad is the second range they disagree about, and it is
+            // written out for the same reason: the views are bound to 7, 1 and
+            // 3, so an off-by-one shows the wrong plan rather than nothing.
+            ("NumPad0", "Keypad0"),
+            ("NumPad1", "Keypad1"),
+            ("NumPad2", "Keypad2"),
+            ("NumPad3", "Keypad3"),
+            ("NumPad4", "Keypad4"),
+            ("NumPad5", "Keypad5"),
+            ("NumPad6", "Keypad6"),
+            ("NumPad7", "Keypad7"),
+            ("NumPad8", "Keypad8"),
+            ("NumPad9", "Keypad9"),
 
             ("Return", "Enter"),
             ("Back", "Backspace"),
@@ -177,9 +191,26 @@ public sealed class AvaloniaKeyTests
     [Fact]
     public void A_key_the_engine_does_not_name_is_unknown_rather_than_nearby()
     {
-        AvaloniaKeys.ToInputKey(Key.NumPad7).ShouldBe(InputKey.Unknown);
         AvaloniaKeys.ToInputKey(Key.F20).ShouldBe(InputKey.Unknown);
         AvaloniaKeys.ToInputKey(Key.None).ShouldBe(InputKey.Unknown);
+
+        // The keypad's own operators, which the engine has no name for. Their
+        // digits DO have names now and are checked below.
+        AvaloniaKeys.ToInputKey(Key.Multiply).ShouldBe(InputKey.Unknown);
+        AvaloniaKeys.ToInputKey(Key.Divide).ShouldBe(InputKey.Unknown);
+    }
+
+    [Theory]
+    [InlineData(Key.NumPad0, InputKey.Keypad0)]
+    [InlineData(Key.NumPad7, InputKey.Keypad7)]
+    [InlineData(Key.NumPad9, InputKey.Keypad9)]
+    public void The_keypad_maps_by_range(Key key, InputKey expected)
+    {
+        // Its own row, never the number row: the views are bound to the keypad
+        // precisely so 1 to 4 stay free for the tools and the inserts, and a
+        // keypad 7 arriving as Number7 would fire whichever of those it binds.
+        AvaloniaKeys.ToInputKey(key).ShouldBe(expected);
+        AvaloniaKeys.ToInputKey(Key.NumPad7).ShouldNotBe(InputKey.Number7);
     }
 
     [Fact]

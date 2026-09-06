@@ -1163,7 +1163,9 @@ public sealed class SceneEditorHost : ISceneEditor
             ? _gizmos.Scale.Snap.Increment
             : _gizmos.Translate.Snap.Increment;
 
-        Grid.Draw(output, _scene.Camera, increment, _viewportSize.Y);
+        Grid.Draw(
+            output, _scene.Camera, increment, _viewportSize.Y,
+            EditorViewPresets.GridPlaneOf(_camera.View));
     }
 
     // --- Navigation keyboard -------------------------------------------------
@@ -1274,18 +1276,70 @@ public sealed class SceneEditorHost : ISceneEditor
                 _gizmos.Apply(binding.Command);
         }
 
-        // The camera verbs are a table of one, so asking by the literal name
-        // costs nothing and keeps the binding where the editing layer documents
-        // it rather than duplicated here.
-        if (_input.WasKeyPressed(InputKey.F) &&
-            EditorCameraShortcuts.TryResolve("F", modifiers, out EditorCameraCommand cameraCommand))
+        // Every camera binding resolves through EditorCameraShortcuts by NAME,
+        // so the table the editing layer documents is the table that runs.
+        // Named here rather than enumerated, because reflecting over an enum to
+        // find the keys is what trimming removes.
+        foreach ((InputKey key, string name) in CameraKeyCandidates)
         {
+            if (!_input.WasKeyPressed(key)) continue;
+            if (!EditorCameraShortcuts.TryResolve(name, modifiers, out EditorCameraCommand cameraCommand))
+                continue;
+
+            // A view preset while the look button is held would fight the
+            // gesture: the camera is being turned by the pointer, and switching
+            // projection mid-drag leaves the drag writing angles into a view
+            // that has none. The keyboard reference says looking around leaves
+            // a plan view, which is the other half of the same rule.
+            if (IsViewPreset(cameraCommand) && IsLookButtonHeld())
+            {
+                _logger.LogDebug("View preset {Command} ignored while the look button is held", cameraCommand);
+                continue;
+            }
+
             _camera.Apply(cameraCommand);
+            break;
         }
     }
 
+    // The keys any camera binding can use, with the names the shortcut table
+    // spells them by.
+    private static readonly (InputKey Key, string Name)[] CameraKeyCandidates =
+    [
+        (InputKey.F, "F"),
+        (InputKey.Keypad7, "Keypad7"),
+        (InputKey.Keypad1, "Keypad1"),
+        (InputKey.Keypad3, "Keypad3"),
+        (InputKey.Keypad5, "Keypad5"),
+    ];
+
+    private static bool IsViewPreset(EditorCameraCommand command) => command
+        is EditorCameraCommand.ViewPerspective
+        or EditorCameraCommand.ViewTop or EditorCameraCommand.ViewBottom
+        or EditorCameraCommand.ViewFront or EditorCameraCommand.ViewBack
+        or EditorCameraCommand.ViewRight or EditorCameraCommand.ViewLeft;
+
+    /// <summary>Which view the editor camera is showing, for the status bar.</summary>
+    /// <remarks>
+    /// Interned by <c>EditorViewPresets.NameOf</c>, because this crosses the
+    /// frame snapshot on every publish and a fresh string per publish is
+    /// render-thread garbage for a label that rarely changes.
+    /// </remarks>
+    public string ViewName => EditorViewPresets.NameOf(_camera.View);
+
     private void ToggleNavigation()
     {
+        // The fly camera writes a yaw, a pitch and a position and knows nothing
+        // about a projection, so handing it an orthographic camera leaves a
+        // plan view being flown through - a picture with no convergence that
+        // moves like a game camera. Leaving is the answer, and it is logged
+        // because it is a change the user did not ask for.
+        if (_camera.View != EditorViewPreset.Perspective)
+        {
+            _camera.SetView(EditorViewPreset.Perspective);
+            _logger.LogInformation("Left the orthographic view: the fly camera is perspective only");
+        }
+
         _editorNavigation = !_editorNavigation;
 
         if (_editorNavigation)

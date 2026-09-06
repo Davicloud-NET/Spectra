@@ -1,10 +1,13 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using Silk.NET.Maths;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Editing.Cameras;
 using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editing.Viewport;
+using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
@@ -209,5 +212,130 @@ public sealed class GridVisibilityTests
         for (int i = 0; i < 6; i++)
             host.Update(0.05);
         host.Grid.Opacity.ShouldBe(0f);
+    }
+}
+
+/// <summary>
+/// Which plane the grid is drawn on, and what decides its spacing there.
+/// </summary>
+/// <remarks>
+/// <b>A grid seen edge-on is one row of pixels, which is worse than none.</b> A
+/// front view looking at the floor grid sees a line, so the grid moves to the
+/// plane the view is looking at rather than being switched off: the question it
+/// answers, what will this snap to, is the same in every view.
+/// </remarks>
+public sealed class GridPlaneTests
+{
+    private static Camera Ortho(EditorViewPreset preset, float height)
+    {
+        var camera = new Camera
+        {
+            AspectRatio = 16f / 9f,
+            ProjectionKind = CameraProjectionKind.Orthographic,
+            OrthographicHeight = height,
+            Position = new Vector3(3f, 7f, -4f),
+        };
+
+        if (preset is EditorViewPreset.Top or EditorViewPreset.Bottom)
+            camera.SetVerticalView(preset == EditorViewPreset.Top, EditorViewPresets.YawOf(preset));
+        else
+        {
+            camera.Yaw = EditorViewPresets.YawOf(preset);
+            camera.Pitch = EditorViewPresets.PitchOf(preset);
+        }
+
+        return camera;
+    }
+
+    private static DebugDraw DrawOn(GridPlane plane, Camera camera, float increment = 1f)
+    {
+        var grid = new GroundGrid();
+        var output = new DebugDraw();
+
+        grid.Draw(output, camera, increment, viewportHeight: 720f, plane);
+        return output;
+    }
+
+    [Fact]
+    public void A_front_view_draws_the_grid_on_the_xy_plane()
+    {
+        DebugDraw output = DrawOn(GridPlane.Front, Ortho(EditorViewPreset.Front, 20f));
+
+        output.VertexCount.ShouldBeGreaterThan(0);
+
+        // Every vertex has z = 0: the grid is the plane through the ORIGIN, not
+        // one floating at the camera's own depth, which would move whenever the
+        // camera did and could not be measured against.
+        foreach (Vector3 vertex in Vertices(output))
+            vertex.Z.ShouldBe(0f, 1e-4f);
+    }
+
+    [Fact]
+    public void A_side_view_draws_the_grid_on_the_yz_plane()
+    {
+        DebugDraw output = DrawOn(GridPlane.Side, Ortho(EditorViewPreset.Right, 20f));
+
+        foreach (Vector3 vertex in Vertices(output))
+            vertex.X.ShouldBe(0f, 1e-4f);
+    }
+
+    [Fact]
+    public void A_top_view_draws_the_grid_on_the_floor()
+    {
+        DebugDraw output = DrawOn(GridPlane.Ground, Ortho(EditorViewPreset.Top, 20f));
+
+        foreach (Vector3 vertex in Vertices(output))
+            vertex.Y.ShouldBe(0f, 1e-4f);
+    }
+
+    [Fact]
+    public void A_top_view_coarsens_by_the_orthographic_height_and_not_the_eye()
+    {
+        var grid = new GroundGrid();
+
+        // The eye sits AT the focus under orthographic, so its distance from the
+        // plane is zero: measured that way the grid would sit at its finest
+        // level at every zoom, and a plan view of a whole level would be a
+        // solid field of lines.
+        Camera near = Ortho(EditorViewPreset.Top, 20f);
+        grid.Draw(new DebugDraw(), near, 1f, 720f, GridPlane.Ground);
+        float fine = grid.CellSizeLastDraw;
+
+        Camera far = Ortho(EditorViewPreset.Top, 4000f);
+        grid.Draw(new DebugDraw(), far, 1f, 720f, GridPlane.Ground);
+        float coarse = grid.CellSizeLastDraw;
+
+        fine.ShouldBeGreaterThan(0f);
+        coarse.ShouldBeGreaterThan(fine);
+    }
+
+    [Fact]
+    public void The_old_call_still_draws_on_the_floor()
+    {
+        // The overload without a plane is what every perspective caller uses,
+        // and it must keep meaning exactly what it meant.
+        var grid = new GroundGrid();
+        var output = new DebugDraw();
+        var camera = new Camera { Position = new Vector3(0f, 12f, 0f), AspectRatio = 16f / 9f };
+
+        grid.Draw(output, camera, 1f, 720f);
+
+        foreach (Vector3 vertex in Vertices(output))
+            vertex.Y.ShouldBe(0f, 1e-4f);
+    }
+
+    private static List<Vector3> Vertices(DebugDraw output)
+    {
+        // Copied out rather than yielded from the span: an iterator method
+        // cannot hold a ref struct across a yield, and the grids here are a few
+        // hundred lines.
+        var vertices = new List<Vector3>(output.VertexCount);
+        ReadOnlySpan<float> data = output.Vertices;
+        int stride = data.Length / System.Math.Max(output.VertexCount, 1);
+
+        for (int i = 0; i + 2 < data.Length; i += stride)
+            vertices.Add(new Vector3(data[i], data[i + 1], data[i + 2]));
+
+        return vertices;
     }
 }

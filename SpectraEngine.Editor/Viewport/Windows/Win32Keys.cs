@@ -53,6 +53,12 @@ internal static class Win32Keys
         if (virtualKey is >= '0' and <= '9')
             return InputKey.Number0 + (virtualKey - '0');
 
+        // VK_NUMPAD0 through VK_NUMPAD9, contiguous like the other two rows.
+        // Separate from the number row on purpose: the OS reports them as
+        // different keys and the editor binds them to different verbs.
+        if (virtualKey is >= 0x60 and <= 0x69)
+            return InputKey.Keypad0 + (virtualKey - 0x60);
+
         return virtualKey switch
         {
             0x70 => InputKey.F1,

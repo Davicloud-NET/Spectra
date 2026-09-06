@@ -162,6 +162,17 @@ public static class CommandTable
         // ─── View ────────────────────────────────────────
         new("Frame the selection", ShellVerb.Of(EditorCameraCommand.FrameSelection), CommandNeeds.Selection, "F", ["focus"]),
         new("Frame everything", ShellVerb.Of(EditorCameraCommand.FrameAll), CommandNeeds.None, "Shift+F"),
+
+        // The seven views. Reachable here as well as on the keypad, because a
+        // laptop keyboard has no keypad at all and a verb with one route on
+        // hardware not everybody has is a verb half the users cannot reach.
+        new("View: perspective", ShellVerb.Of(EditorCameraCommand.ViewPerspective), CommandNeeds.Session, "Numpad 5", ["camera"]),
+        new("View: top", ShellVerb.Of(EditorCameraCommand.ViewTop), CommandNeeds.Session, "Numpad 7", ["plan", "orthographic"]),
+        new("View: bottom", ShellVerb.Of(EditorCameraCommand.ViewBottom), CommandNeeds.Session, "Ctrl+Numpad 7", ["orthographic"]),
+        new("View: front", ShellVerb.Of(EditorCameraCommand.ViewFront), CommandNeeds.Session, "Numpad 1", ["elevation", "orthographic"]),
+        new("View: back", ShellVerb.Of(EditorCameraCommand.ViewBack), CommandNeeds.Session, "Ctrl+Numpad 1", ["orthographic"]),
+        new("View: right", ShellVerb.Of(EditorCameraCommand.ViewRight), CommandNeeds.Session, "Numpad 3", ["side", "orthographic"]),
+        new("View: left", ShellVerb.Of(EditorCameraCommand.ViewLeft), CommandNeeds.Session, "Ctrl+Numpad 3", ["side", "orthographic"]),
         new("Camera: editor or fly", ShellVerb.Of(EditorHostCommand.ToggleNavigation), CommandNeeds.None, "F7"),
         new("Ground grid: during move and resize", ShellVerb.Of(EditorHostCommand.GridAuto)),
         new("Ground grid: always", ShellVerb.Of(EditorHostCommand.GridOn)),

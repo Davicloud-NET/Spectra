@@ -94,7 +94,15 @@ public sealed class ShadowMap : IDisposable
     public int CascadeCount
     {
         get => _cascadeCount;
-        set => _cascadeCount = Math.Clamp(value, 1, MaxCascades);
+        set
+        {
+            _cascadeCount = Math.Clamp(value, 1, MaxCascades);
+
+            // Clamped now rather than at the next Fit: the spans above are read
+            // between the two, and one longer than the setting would hand the
+            // shader a slot nothing has fitted.
+            FittedCascadeCount = Math.Min(FittedCascadeCount, _cascadeCount);
+        }
     }
 
     /// <summary>
@@ -202,13 +210,13 @@ public sealed class ShadowMap : IDisposable
     /// is upside down or offset in depth on exactly one backend, which produces
     /// no error anywhere.
     /// </remarks>
-    public ReadOnlySpan<Matrix4x4> WorldToShadow => _worldToShadow.AsSpan(0, _cascadeCount);
+    public ReadOnlySpan<Matrix4x4> WorldToShadow => _worldToShadow.AsSpan(0, FittedCascadeCount);
 
     /// <summary>
     /// Per cascade: the atlas quadrant as (u, v, scale), plus that cascade's
     /// world texel size in w, which is what scales the normal offset.
     /// </summary>
-    public ReadOnlySpan<Vector4> CascadeRects => _rects.AsSpan(0, _cascadeCount);
+    public ReadOnlySpan<Vector4> CascadeRects => _rects.AsSpan(0, FittedCascadeCount);
 
     /// <summary>One texel of a cascade, in that cascade's own 0..1 space. The filter kernel's step.</summary>
     public float TexelSize => 1f / TileResolution;
@@ -217,7 +225,7 @@ public sealed class ShadowMap : IDisposable
     public float WorldTexelSize => _rects[0].W;
 
     /// <summary>World-space texel size of the coarsest fitted cascade. Diagnostics.</summary>
-    public float CoarsestWorldTexelSize => _rects[_cascadeCount - 1].W;
+    public float CoarsestWorldTexelSize => _rects[FittedCascadeCount - 1].W;
 
     /// <summary>The atlas rectangle cascade <paramref name="cascade"/> is drawn into, in texels.</summary>
     public (int X, int Y, int Size) TileAt(int cascade)
@@ -239,16 +247,40 @@ public sealed class ShadowMap : IDisposable
 
         float near = camera.NearPlane;
         float far = MathF.Min(Distance, camera.FarPlane);
+
+        // An orthographic camera's slab is symmetric about the eye, so its
+        // "near" is behind it: fitting from the near plane forward would leave
+        // everything between the eye and the focus plane out of every cascade,
+        // which in a top view is every roof in the level. The range is
+        // therefore centred on the eye, and the cost is stated rather than
+        // hidden: a plan view gets one coarser fit around the focus plane
+        // instead of four graded ones, which is right for a view somebody is
+        // measuring in rather than playing in. The perspective path is
+        // untouched, bit for bit.
+        if (camera.ProjectionKind == CameraProjectionKind.Orthographic)
+        {
+            near = -Distance * 0.5f;
+            far = Distance * 0.5f;
+        }
+
         if (far <= near) return false;
 
+        // ONE cascade in a plan view, and the trade is stated rather than
+        // discovered: cascades exist to spend texels where perspective puts
+        // them, and a parallel projection has no near and far to grade between.
+        // Four slices of one slab would be four fits of nearly the same box.
+        int cascades = camera.ProjectionKind == CameraProjectionKind.Orthographic
+            ? 1
+            : _cascadeCount;
+
         Span<float> splits = stackalloc float[MaxCascades];
-        ComputeSplits(near, far, _cascadeCount, SplitBlend, splits);
+        ComputeSplits(near, far, cascades, SplitBlend, splits);
 
         Matrix4x4 ndcToTexture = NdcToShadowTexture(
             _renderer.DepthToNdcZ, _renderer.TargetOriginIsTopLeft);
 
         float sliceNear = near;
-        for (int i = 0; i < _cascadeCount; i++)
+        for (int i = 0; i < cascades; i++)
         {
             float sliceFar = splits[i];
 
@@ -274,8 +306,26 @@ public sealed class ShadowMap : IDisposable
             sliceNear = sliceFar;
         }
 
+        // Published rather than left implicit, and everything downstream reads
+        // it: the depth pass draws this many tiles, the light pass is told this
+        // many, and the two spans below stop here. Leaving the configured count
+        // in place would let the shader pick a slot still holding the fit from
+        // before the view changed, which shadows part of the screen against a
+        // box nowhere near it.
+        FittedCascadeCount = cascades;
         return true;
     }
+
+    /// <summary>
+    /// How many cascades the last <see cref="Fit"/> actually produced.
+    /// </summary>
+    /// <remarks>
+    /// Usually <see cref="CascadeCount"/>. An orthographic camera fits ONE:
+    /// cascades exist to spend texels where perspective puts them, and a
+    /// parallel projection has no near and far to grade between, so four slices
+    /// of one slab would be four fits of nearly the same box.
+    /// </remarks>
+    public int FittedCascadeCount { get; private set; } = MaxCascades;
 
     /// <summary>
     /// Where each cascade ends, from <paramref name="near"/> to
@@ -283,11 +333,27 @@ public sealed class ShadowMap : IDisposable
     /// </summary>
     internal static void ComputeSplits(float near, float far, int count, float blend, Span<float> splits)
     {
+        // The logarithmic term is undefined for a near at or below zero -
+        // Pow of a negative base is NaN, and a NaN split fits a light matrix
+        // full of NaNs that renders a black frame with nothing reporting a
+        // problem. An orthographic slab is centred on the eye and its near IS
+        // negative, so that arm falls back to uniform, which is the right
+        // distribution there anyway: parallel projection has no foreshortening
+        // for a logarithmic split to compensate for.
+        bool logarithmicUsable = near > 0f && far > 0f;
+
         for (int i = 1; i <= count; i++)
         {
             float fraction = i / (float)count;
-            float logarithmic = near * MathF.Pow(far / near, fraction);
             float uniform = near + (far - near) * fraction;
+
+            if (!logarithmicUsable)
+            {
+                splits[i - 1] = uniform;
+                continue;
+            }
+
+            float logarithmic = near * MathF.Pow(far / near, fraction);
             splits[i - 1] = blend * logarithmic + (1f - blend) * uniform;
         }
 
@@ -405,12 +471,20 @@ public sealed class ShadowMap : IDisposable
         Vector3 right = camera.Right;
         Vector3 up = camera.Up;
 
+        // An orthographic camera's view is a BOX rather than a wedge, so the
+        // slice's half extents are the same at both ends and come from the
+        // height the viewport spans. The corners are otherwise built the same
+        // way, which is what keeps the snap, the margin and the light-space
+        // anchoring below untouched.
+        bool orthographic = camera.ProjectionKind == CameraProjectionKind.Orthographic;
+        float orthoHalfHeight = camera.OrthographicHeight * 0.5f;
+
         Span<Vector3> corners = stackalloc Vector3[8];
         int c = 0;
         for (int end = 0; end < 2; end++)
         {
             float distance = end == 0 ? near : far;
-            float halfHeight = distance * tanHalfFov;
+            float halfHeight = orthographic ? orthoHalfHeight : distance * tanHalfFov;
             float halfWidth = halfHeight * camera.AspectRatio;
             Vector3 middle = position + forward * distance;
 

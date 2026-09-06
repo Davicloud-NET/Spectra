@@ -1,4 +1,4 @@
-using SpectraEngine.Core.Input;
+﻿using SpectraEngine.Core.Input;
 using System.Collections.Generic;
 
 namespace SpectraEngine.Editing.Cameras;
@@ -44,6 +44,35 @@ public static class EditorCameraShortcuts
                     : EditorCameraCommand.FrameSelection;
                 return true;
 
+            // The KEYPAD, and the reason is what is left over: the number row's
+            // 2, 3 and 4 are the Studio tool row and Ctrl+1 to Ctrl+4 insert,
+            // while the letters are tools or are claimed by a driving camera.
+            // Blender's numpad layout is also the one every user arriving from
+            // another editor already has in their hands.
+            case "KEYPAD7":
+                command = (modifiers & KeyModifiers.Control) != 0
+                    ? EditorCameraCommand.ViewBottom
+                    : EditorCameraCommand.ViewTop;
+                return true;
+
+            case "KEYPAD1":
+                command = (modifiers & KeyModifiers.Control) != 0
+                    ? EditorCameraCommand.ViewBack
+                    : EditorCameraCommand.ViewFront;
+                return true;
+
+            case "KEYPAD3":
+                command = (modifiers & KeyModifiers.Control) != 0
+                    ? EditorCameraCommand.ViewLeft
+                    : EditorCameraCommand.ViewRight;
+                return true;
+
+            // A SET verb rather than a toggle, for the reason every other verb
+            // this shell posts is one: a control displays which view is live.
+            case "KEYPAD5":
+                command = EditorCameraCommand.ViewPerspective;
+                return true;
+
             default:
                 command = default;
                 return false;
@@ -68,5 +97,12 @@ public static class EditorCameraShortcuts
     [
         new("F", EditorCameraCommand.FrameSelection),
         new("Shift+F", EditorCameraCommand.FrameAll),
+        new("Keypad5", EditorCameraCommand.ViewPerspective),
+        new("Keypad7", EditorCameraCommand.ViewTop),
+        new("Ctrl+Keypad7", EditorCameraCommand.ViewBottom),
+        new("Keypad1", EditorCameraCommand.ViewFront),
+        new("Ctrl+Keypad1", EditorCameraCommand.ViewBack),
+        new("Keypad3", EditorCameraCommand.ViewRight),
+        new("Ctrl+Keypad3", EditorCameraCommand.ViewLeft),
     ];
 }

@@ -619,6 +619,64 @@ public sealed class ShellModel : ObservableObject
     /// <summary>The grid mode as the header chip's value word.</summary>
     public string GridModeLabel => _gridMode;
 
+    private string _viewName = "Perspective";
+
+    /// <summary>Which view the editor camera is showing.</summary>
+    public string ViewName => _viewName;
+
+    public bool IsViewPerspective => _viewName == "Perspective";
+    public bool IsViewTop => _viewName == "Top";
+    public bool IsViewBottom => _viewName == "Bottom";
+    public bool IsViewFront => _viewName == "Front";
+    public bool IsViewBack => _viewName == "Back";
+    public bool IsViewRight => _viewName == "Right";
+    public bool IsViewLeft => _viewName == "Left";
+
+    /// <summary>
+    /// Follows the engine, with no optimistic hold.
+    /// </summary>
+    /// <remarks>
+    /// <b>An unrequested return to perspective is REPORTED</b>, because it is
+    /// the one camera change somebody did not ask for: looking around or
+    /// orbiting leaves a plan view, which is the right behaviour and is
+    /// invisible if the chip simply changes. Saying it once, and only when the
+    /// shell had not asked, is what turns a surprise into a rule somebody
+    /// learns.
+    /// </remarks>
+    private void ApplyViewName(string name)
+    {
+        if (_viewName == name) return;
+
+        bool wasOrthographic = _viewName != "Perspective";
+        _viewName = name;
+
+        Raise(nameof(ViewName));
+        Raise(nameof(IsViewPerspective));
+        Raise(nameof(IsViewTop));
+        Raise(nameof(IsViewBottom));
+        Raise(nameof(IsViewFront));
+        Raise(nameof(IsViewBack));
+        Raise(nameof(IsViewRight));
+        Raise(nameof(IsViewLeft));
+
+        if (wasOrthographic && name == "Perspective" && _expectedView != "Perspective")
+        {
+            SetMessage(
+                "Left the orthographic view: looking around returns to perspective. " +
+                "Numpad 7, 1 and 3 go back.");
+        }
+
+        if (_expectedView == name) _expectedView = null;
+    }
+
+    private string? _expectedView;
+
+    /// <summary>
+    /// Says the shell asked for this view, so its arrival is not reported as a
+    /// surprise.
+    /// </summary>
+    public void ExpectViewName(string name) => _expectedView = name;
+
     private void ApplyGridMode(string mode)
     {
         if (_gridMode == mode)
@@ -1538,6 +1596,7 @@ public sealed class ShellModel : ObservableObject
 
             Navigation = snapshot.NavigationModeName ?? "-";
             ApplyGridMode(snapshot.GridModeName ?? "auto");
+            ApplyViewName(snapshot.ViewName ?? "Perspective");
 
             _playOpt.Apply(snapshot.IsPlaying);
             IsPlaying = _playOpt.Value;

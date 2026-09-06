@@ -1,4 +1,4 @@
-namespace SpectraEngine.Editing.Cameras;
+﻿namespace SpectraEngine.Editing.Cameras;
 
 /// <summary>
 /// One navigation verb the viewport camera understands, resolved from the
@@ -18,4 +18,15 @@ public enum EditorCameraCommand
 
     /// <summary>Fit every spatial node in the scene in view.</summary>
     FrameAll,
+
+    // Appended, and SET verbs rather than a cycle: a control displays which view
+    // is live, and a toggle sent against a snapshot one publish stale lands on
+    // the wrong one exactly when somebody clicks fastest.
+    ViewPerspective,
+    ViewTop,
+    ViewBottom,
+    ViewFront,
+    ViewBack,
+    ViewRight,
+    ViewLeft,
 }

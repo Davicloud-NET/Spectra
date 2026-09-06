@@ -1,4 +1,4 @@
-using Avalonia.Input;
+﻿using Avalonia.Input;
 using SpectraEngine.Core.Input;
 using AvaloniaKeyModifiers = Avalonia.Input.KeyModifiers;
 using EngineKeyModifiers = SpectraEngine.Core.Input.KeyModifiers;
@@ -47,6 +47,8 @@ internal static class AvaloniaKeys
             return InputKey.Number0 + (key - Key.D0);
         if (key is >= Key.F1 and <= Key.F12)
             return InputKey.F1 + (key - Key.F1);
+        if (key is >= Key.NumPad0 and <= Key.NumPad9)
+            return InputKey.Keypad0 + (key - Key.NumPad0);
 
         return key switch
         {

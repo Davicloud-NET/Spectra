@@ -1,4 +1,4 @@
-using Silk.NET.Input;
+﻿using Silk.NET.Input;
 
 namespace SpectraEngine.Core.Input;
 
@@ -62,6 +62,17 @@ internal static class SilkInputKeys
         Key.Number7 => InputKey.Number7,
         Key.Number8 => InputKey.Number8,
         Key.Number9 => InputKey.Number9,
+
+        Key.Keypad0 => InputKey.Keypad0,
+        Key.Keypad1 => InputKey.Keypad1,
+        Key.Keypad2 => InputKey.Keypad2,
+        Key.Keypad3 => InputKey.Keypad3,
+        Key.Keypad4 => InputKey.Keypad4,
+        Key.Keypad5 => InputKey.Keypad5,
+        Key.Keypad6 => InputKey.Keypad6,
+        Key.Keypad7 => InputKey.Keypad7,
+        Key.Keypad8 => InputKey.Keypad8,
+        Key.Keypad9 => InputKey.Keypad9,
 
         Key.F1 => InputKey.F1,
         Key.F2 => InputKey.F2,

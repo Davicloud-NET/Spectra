@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Numerics;
 
 namespace SpectraEngine.Core.Scene;
@@ -129,6 +129,114 @@ public sealed class Camera
         }
     }
 
+    private CameraProjectionKind _projectionKind = CameraProjectionKind.Perspective;
+    private float _orthographicHeight = 10f;
+
+    /// <summary>
+    /// Whether this camera projects perspective or orthographic.
+    /// </summary>
+    /// <remarks>
+    /// <b>A plan view is a different PROJECTION, not a distant perspective one.</b>
+    /// Backing a perspective camera far off and narrowing its field of view gets
+    /// close and is never right: parallel walls still converge, so a wall a
+    /// person is trying to align by eye is a fraction of a degree off and the
+    /// number they read off the screen is not the number in the file.
+    /// </remarks>
+    public CameraProjectionKind ProjectionKind
+    {
+        get => _projectionKind;
+        set
+        {
+            if (_projectionKind == value) return;
+
+            _projectionKind = value;
+            _projectionDirty = true;
+            _viewProjectionDirty = true;
+        }
+    }
+
+    /// <summary>
+    /// How many world units the viewport's HEIGHT spans, orthographic only.
+    /// </summary>
+    /// <remarks>
+    /// The zoom of a plan view, and the one number every screen-space size on
+    /// this path derives from. A value at or below zero keeps the previous one
+    /// rather than throwing: this is written from the render thread every frame,
+    /// and a throw there ends the session over a number a controller can simply
+    /// decline to apply.
+    /// </remarks>
+    public float OrthographicHeight
+    {
+        get => _orthographicHeight;
+        set
+        {
+            if (!float.IsFinite(value) || value <= 0f || value == _orthographicHeight) return;
+
+            _orthographicHeight = value;
+            _projectionDirty = true;
+            _viewProjectionDirty = true;
+        }
+    }
+
+    /// <summary>
+    /// Points the camera straight down or straight up, which the pitch clamp
+    /// cannot express.
+    /// </summary>
+    /// <remarks>
+    /// <b>The clamp exists because the ordinary basis collapses at the poles</b>:
+    /// crossing a vertical forward with world up gives a zero right vector and
+    /// every derived axis becomes NaN. A top view needs exactly that pitch, so
+    /// the basis is built from the YAW instead, which is what decides which way
+    /// north points on the screen.
+    /// </remarks>
+    public void SetVerticalView(bool lookingDown, float yaw)
+    {
+        _yaw = yaw;
+        _pitch = lookingDown ? -PitchLimitVertical : PitchLimitVertical;
+
+        BasisFor(_yaw, _pitch, out Vector3 forward, out Vector3 right, out Vector3 up);
+        Forward = forward;
+        Right = right;
+        Up = up;
+
+        _viewDirty = true;
+        _viewProjectionDirty = true;
+    }
+
+    /// <summary>Exactly vertical, for the two views that need it.</summary>
+    private const float PitchLimitVertical = MathF.PI * 0.5f;
+
+    /// <summary>
+    /// The orthonormal basis for a yaw and a pitch, including the vertical case.
+    /// </summary>
+    /// <remarks>
+    /// Shared with <c>EditorCameraController</c>, which used to carry its own
+    /// copy: two expressions of one basis drift exactly where nothing fails, and
+    /// the way that presents is a gizmo whose handles point somewhere other than
+    /// the axes the camera is showing.
+    /// </remarks>
+    public static void BasisFor(float yaw, float pitch, out Vector3 forward, out Vector3 right, out Vector3 up)
+    {
+        float cosPitch = MathF.Cos(pitch);
+        forward = Vector3.Normalize(new Vector3(
+            MathF.Cos(yaw) * cosPitch,
+            MathF.Sin(pitch),
+            MathF.Sin(yaw) * cosPitch));
+
+        // At the poles the world-up cross collapses to zero and every axis
+        // derived from it becomes NaN, so the screen frame comes from the yaw.
+        if (MathF.Abs(MathF.Sin(pitch)) >= 1f - 1e-6f)
+        {
+            up = new Vector3(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
+            right = Vector3.Normalize(Vector3.Cross(forward, up));
+            up = Vector3.Normalize(Vector3.Cross(right, forward));
+            return;
+        }
+
+        right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
+        up = Vector3.Normalize(Vector3.Cross(right, forward));
+    }
+
     public Matrix4x4 View
     {
         get
@@ -148,8 +256,18 @@ public sealed class Camera
         {
             if (_projectionDirty)
             {
-                _projection = Matrix4x4.CreatePerspectiveFieldOfView(
-                    _fieldOfView, _aspectRatio, _nearPlane, _farPlane);
+                // A SLAB symmetric about the eye, rather than a box starting at
+                // the near plane. The controller puts the eye at the focus under
+                // orthographic, so geometry on both sides of the focus plane has
+                // to render: a box from the eye forward would clip away
+                // everything between the camera and what it is looking at, which
+                // in a top view is the ceiling of every room. Depth is linear
+                // here, so a range this wide costs nothing in precision.
+                _projection = _projectionKind == CameraProjectionKind.Orthographic
+                    ? Matrix4x4.CreateOrthographic(
+                        _orthographicHeight * _aspectRatio, _orthographicHeight, -_farPlane, _farPlane)
+                    : Matrix4x4.CreatePerspectiveFieldOfView(
+                        _fieldOfView, _aspectRatio, _nearPlane, _farPlane);
                 _projectionDirty = false;
             }
             return _projection;
@@ -172,13 +290,10 @@ public sealed class Camera
 
     private void RecomputeBasis()
     {
-        var cosPitch = MathF.Cos(_pitch);
-        Forward = Vector3.Normalize(new Vector3(
-            MathF.Cos(_yaw) * cosPitch,
-            MathF.Sin(_pitch),
-            MathF.Sin(_yaw) * cosPitch));
-        Right = Vector3.Normalize(Vector3.Cross(Forward, Vector3.UnitY));
-        Up = Vector3.Normalize(Vector3.Cross(Right, Forward));
+        BasisFor(_yaw, _pitch, out Vector3 forward, out Vector3 right, out Vector3 up);
+        Forward = forward;
+        Right = right;
+        Up = up;
         _viewDirty = true;
         _viewProjectionDirty = true;
     }
