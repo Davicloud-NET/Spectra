@@ -44,7 +44,6 @@ public sealed class RawCopyRule : IRule
     /// <inheritdoc/>
     public void Cook(IRuleContext context)
     {
-        byte[] payload = context.Read(context.SourcePath);
-        context.Emit(context.SourcePath, payload, PackEntryKind.Raw);
+        context.Copy(context.SourcePath, context.SourcePath, PackEntryKind.Raw);
     }
 }

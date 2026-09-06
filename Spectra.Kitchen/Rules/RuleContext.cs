@@ -1,4 +1,6 @@
 using Spectra.Kitchen.Cooking;
+using Spectra.Kitchen.Cache;
+using Spectra.Kitchen.Packs;
 using Spectra.Kitchen.Diagnostics;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Packs;
@@ -7,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Hashing;
+using System.Threading;
 
 namespace Spectra.Kitchen.Rules;
 
@@ -42,6 +45,8 @@ public sealed class RuleContext : IRuleContext
     private readonly Dictionary<string, int> _dependencyIndex = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<RuleEmission> _emissions = [];
     private readonly List<CookDiagnostic> _diagnostics = [];
+    private readonly ContentStore? _emissionStore;
+    private readonly CancellationToken _cancellationToken;
 
     /// <summary>
     /// Creates the context for one rule run over <paramref name="sourcePath"/>.
@@ -70,7 +75,9 @@ public sealed class RuleContext : IRuleContext
         CookProfile profile,
         IReadOnlyList<GraphicsBackend>? targets = null,
         int audioSampleRate = CookSettings.DefaultAudioSampleRate,
-        bool keepBrushSource = false)
+        bool keepBrushSource = false,
+        ContentStore? emissionStore = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(contentRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
@@ -81,6 +88,8 @@ public sealed class RuleContext : IRuleContext
         Targets = targets ?? CookSettings.DefaultTargets;
         AudioSampleRate = audioSampleRate;
         KeepBrushSource = keepBrushSource;
+        _emissionStore = emissionStore;
+        _cancellationToken = cancellationToken;
     }
 
     /// <inheritdoc/>
@@ -177,7 +186,26 @@ public sealed class RuleContext : IRuleContext
     /// <inheritdoc/>
     public void Emit(string outputPath, ReadOnlySpan<byte> payload, PackEntryKind kind = PackEntryKind.Raw)
     {
-        _emissions.Add(new RuleEmission(Normalize(outputPath), kind, payload.ToArray()));
+        _cancellationToken.ThrowIfCancellationRequested();
+        PackPayload stored = _emissionStore is null ? PackPayload.FromBytes(payload.ToArray()) : _emissionStore.PutPayload(payload);
+        _emissions.Add(new RuleEmission(Normalize(outputPath), kind, stored));
+    }
+
+    public void Copy(string sourcePath, string outputPath, PackEntryKind kind = PackEntryKind.Raw)
+    {
+        if (_emissionStore is null) { Emit(outputPath, Read(sourcePath), kind); return; }
+        _cancellationToken.ThrowIfCancellationRequested();
+        string normalized = Normalize(sourcePath);
+        PackPayload payload;
+        try { payload = _emissionStore.PutFile(ToFullPath(normalized), _cancellationToken); }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            Record(normalized, RuleDependencyKind.ProbeMissing, UInt128.Zero);
+            throw new RuleInputMissingException(normalized, SourcePath);
+        }
+        Record(normalized, RuleDependencyKind.Read, payload.Hash);
+        _emissions.Add(new RuleEmission(Normalize(outputPath), kind, payload));
+        _cancellationToken.ThrowIfCancellationRequested();
     }
 
     /// <inheritdoc/>

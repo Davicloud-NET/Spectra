@@ -96,10 +96,10 @@ public sealed class StatCache
                 return true;
             }
 
-            byte[] bytes;
+            Spectra.Kitchen.Packs.PackPayload payload;
             try
             {
-                bytes = File.ReadAllBytes(fullPath);
+                payload = Spectra.Kitchen.Packs.PackPayload.FromFile(fullPath);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -111,7 +111,7 @@ public sealed class StatCache
             }
 
             _rehashes++;
-            hash = XxHash128.HashToUInt128(bytes);
+            hash = payload.Hash;
             _entries[contentPath] = new Entry(ticks, length, hash);
             _dirty = true;
             return true;

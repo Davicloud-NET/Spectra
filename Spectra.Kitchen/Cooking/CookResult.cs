@@ -14,7 +14,7 @@ namespace Spectra.Kitchen.Cooking;
 /// is far cheaper to notice here than as a patch that will not apply.
 /// </param>
 /// <param name="Length">Uncompressed byte count.</param>
-public readonly record struct CookedOutput(string Path, UInt128 AssetId, UInt128 ContentHash, int Length);
+public readonly record struct CookedOutput(string Path, UInt128 AssetId, UInt128 ContentHash, long Length);
 
 /// <summary>What one rule run produced, kept for the manifest and for a verify.</summary>
 /// <param name="SourcePath">The authored asset.</param>

@@ -7,6 +7,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 namespace Spectra.Kitchen.Packs;
 
@@ -40,12 +41,13 @@ namespace Spectra.Kitchen.Packs;
 /// are entropy-dense and compressing them forfeits the zero-copy read the whole
 /// container exists for.</para>
 /// </remarks>
-public sealed class PackWriter
+public sealed class PackWriter : IDisposable
 {
     // Insertion order, kept until Write sorts a copy. Sorting in place would make
     // Write mutate the writer, and Write has to be callable twice and answer the
     // same bytes both times.
     private readonly List<PendingEntry> _entries = [];
+    private readonly List<string> _temporaryPayloads = [];
 
     private readonly bool _includeNameTable;
     private readonly uint _packSequence;
@@ -130,8 +132,35 @@ public sealed class PackWriter
             PackAssetId.FromNormalized(normalized),
             kind,
             codec,
-            stored,
+            PackPayload.FromBytes(stored),
             (ulong)payload.Length));
+    }
+
+    /// <summary>Adds an immutable file payload without loading it into an array.</summary>
+    public void AddFile(string contentPath, PackEntryKind kind, string path, PackCodec codec = PackCodec.None) =>
+        Add(contentPath, kind, PackPayload.FromFile(path), codec);
+
+    public void Add(string contentPath, PackEntryKind kind, PackPayload payload, PackCodec codec = PackCodec.None)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        if (kind == PackEntryKind.Tombstone) throw new ArgumentException("Use AddTombstone for a deletion.", nameof(kind));
+        string normalized = ContentRoot.NormalizeRelativePath(contentPath);
+        PackPayload stored = payload;
+        if (codec == PackCodec.Deflate)
+        {
+            string temporary = Path.Combine(Path.GetTempPath(), "spectra-deflate-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                using (var output = File.Create(temporary))
+                using (var compressor = new DeflateStream(output, CompressionLevel.Optimal)) payload.CopyTo(compressor);
+                stored = PackPayload.FromFile(temporary);
+                _temporaryPayloads.Add(temporary);
+            }
+            catch { File.Delete(temporary); throw; }
+        }
+        else if (codec != PackCodec.None)
+            throw new NotSupportedException($"Pack codec {codec} is not implemented for '{normalized}'.");
+        _entries.Add(new(normalized, PackAssetId.FromNormalized(normalized), kind, codec, stored, (ulong)payload.Length));
     }
 
     /// <summary>
@@ -147,15 +176,27 @@ public sealed class PackWriter
             PackAssetId.FromNormalized(normalized),
             PackEntryKind.Tombstone,
             PackCodec.None,
-            [],
+            PackPayload.FromBytes([]),
             0));
     }
 
     /// <summary>Writes the pack to <paramref name="path"/>.</summary>
     public void WriteToFile(string path)
     {
-        using FileStream stream = File.Create(path);
-        Write(stream);
+        WriteToFile(path, CancellationToken.None);
+    }
+
+    public void WriteToFile(string path, CancellationToken cancellationToken)
+    {
+        string temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (FileStream stream = File.Create(temporary))
+            { Write(stream, cancellationToken); stream.Flush(flushToDisk: true); }
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally { File.Delete(temporary); }
     }
 
     /// <summary>
@@ -166,9 +207,12 @@ public sealed class PackWriter
     /// <exception cref="InvalidOperationException">
     /// Two entries share an asset id, or the pack exceeds a field's range.
     /// </exception>
-    public void Write(Stream stream)
+    public void Write(Stream stream) => Write(stream, CancellationToken.None);
+
+    public void Write(Stream stream, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(stream);
+        cancellationToken.ThrowIfCancellationRequested();
         PackFormat.RequireLittleEndian();
 
         PendingEntry[] sorted = SortAndCheckForCollisions();
@@ -270,7 +314,7 @@ public sealed class PackWriter
                     $"{payloadOffsets[i]} but the writer is at {region.Position}.");
             }
 
-            region.Write(sorted[i].Stored);
+            sorted[i].Stored.CopyTo(region, cancellationToken);
             region.WriteZeros(PackFormat.AlignUp(region.Position, PackFormat.PayloadAlignment) - region.Position);
         }
 
@@ -397,23 +441,33 @@ public sealed class PackWriter
         UInt128 AssetId,
         PackEntryKind Kind,
         PackCodec Codec,
-        byte[] Stored,
+        PackPayload Stored,
         ulong UncompressedSize);
 
     // Everything past the header, written to the stream and fed to the digest in
     // one place: a second call site that wrote without hashing would produce a
     // file that fails its own verification, which reads as corruption.
-    private sealed class RegionWriter(Stream stream, long startOffset)
+    private sealed class RegionWriter(Stream stream, long startOffset) : Stream
     {
         private readonly PackDigest.Accumulator _digest = new();
 
-        public long Position { get; private set; } = startOffset;
+        private long _position = startOffset;
+        public override long Position { get => _position; set => throw new NotSupportedException(); }
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => _position;
+        public override void Flush() => stream.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => Write(buffer.AsSpan(offset, count));
 
-        public void Write(ReadOnlySpan<byte> bytes)
+        public override void Write(ReadOnlySpan<byte> bytes)
         {
             stream.Write(bytes);
             _digest.Append(bytes);
-            Position += bytes.Length;
+            _position += bytes.Length;
         }
 
         public void WriteZeros(long count)
@@ -432,5 +486,11 @@ public sealed class PackWriter
         }
 
         public UInt128 Digest() => _digest.Finish();
+    }
+
+    public void Dispose()
+    {
+        foreach (string path in _temporaryPayloads) File.Delete(path);
+        _temporaryPayloads.Clear();
     }
 }

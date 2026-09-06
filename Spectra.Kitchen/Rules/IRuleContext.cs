@@ -137,6 +137,9 @@ public interface IRuleContext
     /// </param>
     void Emit(string outputPath, ReadOnlySpan<byte> payload, PackEntryKind kind = PackEntryKind.Raw);
 
+    /// <summary>Records and copies a source without materializing it when the host supports file payloads.</summary>
+    void Copy(string sourcePath, string outputPath, PackEntryKind kind = PackEntryKind.Raw) => Emit(outputPath, Read(sourcePath), kind);
+
     /// <summary>Reports a diagnostic against this rule.</summary>
     /// <remarks>
     /// Buffered per rule and flushed in rule order by the session. Writing

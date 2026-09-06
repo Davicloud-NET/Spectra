@@ -66,6 +66,7 @@ public sealed class CookCache
     private readonly CookGraph _graph;
     private readonly StatCache _stat;
     private readonly ContentStore _store;
+    internal ContentStore PayloadStore => _store;
 
     private int _hits;
     private int _misses;
@@ -149,7 +150,7 @@ public sealed class CookCache
         for (int i = 0; i < generation.Outputs.Count; i++)
         {
             CachedOutput output = generation.Outputs[i];
-            if (!_store.TryGet(output.ContentHash, out byte[] payload))
+            if (!_store.TryGetPayload(output.ContentHash, out var payload) || payload.Length != output.Length)
             {
                 // A payload that has left the store is a miss, not a failure. The
                 // rule runs, emits the same bytes, and Put restores the entry, so
@@ -189,8 +190,8 @@ public sealed class CookCache
         for (int i = 0; i < emissions.Count; i++)
         {
             RuleEmission emission = emissions[i];
-            UInt128 hash = _store.Put(emission.Payload);
-            outputs[i] = new CachedOutput(emission.Path, emission.Kind, hash, emission.Payload.Length);
+            var payload = _store.PutPayload(emission.Content);
+            outputs[i] = new CachedOutput(emission.Path, emission.Kind, payload.Hash, payload.Length);
         }
 
         UInt128 key = CookCacheKey.Compute(

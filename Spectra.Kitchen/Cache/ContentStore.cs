@@ -3,6 +3,8 @@ using System.Globalization;
 using System.IO;
 using System.IO.Hashing;
 using System.Threading;
+using System.Buffers;
+using Spectra.Kitchen.Packs;
 
 namespace Spectra.Kitchen.Cache;
 
@@ -84,7 +86,7 @@ public sealed class ContentStore
             using (FileStream stream = File.Create(temp))
                 stream.Write(payload);
 
-            File.Move(temp, full, overwrite: true);
+            Publish(temp, full, hash, payload.Length);
         }
         catch
         {
@@ -93,6 +95,72 @@ public sealed class ContentStore
         }
 
         return hash;
+    }
+
+    public PackPayload PutPayload(ReadOnlySpan<byte> payload)
+    {
+        UInt128 hash = Put(payload);
+        return PackPayload.KnownFile(PathOf(hash), payload.Length, hash);
+    }
+
+    public PackPayload PutPayload(PackPayload payload, CancellationToken cancellationToken = default)
+    {
+        string full = PathOf(payload.Hash);
+        if (string.Equals(full, payload.FilePath, StringComparison.OrdinalIgnoreCase)) return payload;
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        string temp = full + ".t" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (var stream = File.Create(temp)) payload.CopyTo(stream, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            Publish(temp, full, payload.Hash, payload.Length);
+        }
+        finally { TryDelete(temp); }
+        return PackPayload.KnownFile(full, payload.Length, payload.Hash);
+    }
+
+    /// <summary>Spools and hashes a source in one pass, publishing under its final content hash.</summary>
+    public PackPayload PutFile(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var source = PackPayload.OpenFile(sourcePath);
+        Directory.CreateDirectory(_casRoot);
+        string temp = Path.Combine(_casRoot, ".source-" + Guid.NewGuid().ToString("N"));
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(128 * 1024);
+        try
+        {
+            var hasher = new XxHash128();
+            long length = 0;
+            using (var output = File.Create(temp))
+            {
+                int count;
+                while ((count = source.Read(buffer)) != 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var block = buffer.AsSpan(0, count);
+                    hasher.Append(block); output.Write(block); length += count;
+                }
+            }
+            UInt128 hash = hasher.GetCurrentHashAsUInt128();
+            string full = PathOf(hash);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            cancellationToken.ThrowIfCancellationRequested();
+            Publish(temp, full, hash, length);
+            return PackPayload.KnownFile(full, length, hash);
+        }
+        finally { ArrayPool<byte>.Shared.Return(buffer); TryDelete(temp); }
+    }
+
+    public bool TryGetPayload(UInt128 hash, out PackPayload payload)
+    {
+        try
+        {
+            payload = PackPayload.FromFile(PathOf(hash));
+            if (payload.Hash == hash) return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        payload = null!;
+        return false;
     }
 
     /// <summary>
@@ -131,6 +199,25 @@ public sealed class ContentStore
         // this way, so a person can grep one string in both places.
         string name = hash.ToString("X32", CultureInfo.InvariantCulture);
         return Path.Combine(_casRoot, name[..ShardLength], name[ShardLength..]);
+    }
+
+    private static void Publish(string temporary, string destination, UInt128 hash, long length)
+    {
+        try { File.Move(temporary, destination, overwrite: true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Another worker/process may publish this identical CAS entry while
+            // Windows completes a replacement. Accept only verified bytes.
+            bool identical = false;
+            try
+            {
+                var current = PackPayload.FromFile(destination);
+                identical = current.Length == length && current.Hash == hash;
+            }
+            catch (Exception read) when (read is IOException or UnauthorizedAccessException) { }
+            if (!identical) throw;
+            TryDelete(temporary);
+        }
     }
 
     private static void TryDelete(string path)

@@ -11,7 +11,7 @@ namespace Spectra.Kitchen.Cache;
 /// <param name="Kind">The pack entry kind the rule asked for.</param>
 /// <param name="ContentHash">Its name in the <see cref="ContentStore"/>.</param>
 /// <param name="Length">Uncompressed byte count, so a manifest can be rebuilt without the payload.</param>
-public readonly record struct CachedOutput(string Path, PackEntryKind Kind, UInt128 ContentHash, int Length);
+public readonly record struct CachedOutput(string Path, PackEntryKind Kind, UInt128 ContentHash, long Length);
 
 /// <summary>One remembered run of one rule: what it was keyed as, and what it emitted.</summary>
 /// <param name="Key">The <see cref="CookCacheKey"/> that run was made under.</param>
@@ -83,7 +83,7 @@ public sealed record CookGraphRecord(
 public sealed class CookGraph
 {
     private const uint Magic = 0x52474353; // "SCGR" little-endian
-    private const uint FormatVersion = 1;
+    private const uint FormatVersion = 2;
 
     /// <summary>How many past runs of one rule are remembered.</summary>
     public const int GenerationsKept = 4;
@@ -263,7 +263,7 @@ public sealed class CookGraph
                     CacheBytes.Str(bytes, output.Path);
                     bytes.Add((byte)output.Kind);
                     CacheBytes.U128(bytes, output.ContentHash);
-                    CacheBytes.U32(bytes, (uint)output.Length);
+                    CacheBytes.U64(bytes, (ulong)output.Length);
                 }
             }
         }
@@ -306,7 +306,7 @@ public sealed class CookGraph
                     string path = reader.Str();
                     var kind = (PackEntryKind)reader.U8();
                     UInt128 hash = reader.U128();
-                    int length = checked((int)reader.U32());
+                    long length = checked((long)reader.U64());
                     outputs[i] = new CachedOutput(path, kind, hash, length);
                 }
 

@@ -10,6 +10,7 @@ using System.IO;
 using System.IO.Hashing;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace Spectra.Kitchen.Cooking;
 
@@ -94,12 +95,15 @@ public sealed class CookSession
     public string CacheDirectory => Path.Combine(_layout.Root, CookCache.DirectoryName);
 
     /// <summary>Runs the cook.</summary>
-    public CookResult Run()
+    public CookResult Run() => Run(CancellationToken.None);
+
+    public CookResult Run(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var diagnostics = new CookDiagnosticLog(_settings.Strict);
         var assets = new List<CookedAsset>();
         var emitted = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var writer = new PackWriter();
+        using var writer = new PackWriter();
         var looseFiles = new List<RuleEmission>();
 
         long payloadBytes = 0;
@@ -118,6 +122,7 @@ public sealed class CookSession
         }
 
         CookCache? cache = OpenCache(diagnostics);
+        using var spool = new PayloadSpool(cache?.PayloadStore);
 
         // The work list is built whole, in walk order, before anything runs: every
         // ordering promise this class makes is an index into it - an outcome slot,
@@ -164,7 +169,7 @@ public sealed class CookSession
         // rule does declare one, the list is sorted into level order and this
         // becomes a loop over ranges, and none of the ordering rules below, which
         // are what the byte-identity oracles rest on, has to move.
-        RunLevel(cache, work, outcomes, 0, work.Length, workers);
+        RunLevel(cache, spool.Store, work, outcomes, 0, work.Length, workers, cancellationToken);
 
         for (int i = 0; i < work.Length; i++)
         {
@@ -201,15 +206,15 @@ public sealed class CookSession
                 emitted.Add(emission.Path, item.File.ContentPath);
 
                 if (_settings.Loose) looseFiles.Add(emission);
-                else writer.Add(emission.Path, emission.Kind, emission.Payload);
+                else writer.Add(emission.Path, emission.Kind, emission.Content);
 
                 outputs.Add(new CookedOutput(
                     emission.Path,
                     PackAssetId.FromNormalized(emission.Path),
-                    XxHash128.HashToUInt128(emission.Payload),
-                    emission.Payload.Length));
+                    emission.Content.Hash,
+                    emission.Content.Length));
 
-                payloadBytes += emission.Payload.Length;
+                payloadBytes += emission.Content.Length;
                 entryCount++;
             }
 
@@ -231,8 +236,8 @@ public sealed class CookSession
             return Finish(assets, diagnostics, cache, null, 0, 0, workers);
 
         string? output = _settings.Loose
-            ? WriteLoose(looseFiles, diagnostics)
-            : WritePack(writer, diagnostics);
+            ? WriteLoose(looseFiles, diagnostics, cancellationToken)
+            : WritePack(writer, diagnostics, cancellationToken);
 
         if (output is null || diagnostics.Failed)
             return Finish(assets, diagnostics, cache, null, 0, 0, workers);
@@ -268,11 +273,12 @@ public sealed class CookSession
     // byte.
     private void RunLevel(
         CookCache? cache,
+        ContentStore payloadStore,
         WorkItem[] work,
         RuleOutcome[] outcomes,
         int start,
         int count,
-        int workers)
+        int workers, CancellationToken cancellationToken)
     {
         if (count == 0) return;
 
@@ -280,11 +286,11 @@ public sealed class CookSession
         // second implementation of the level is a second thing to keep in step, and
         // the oracle that -j1 and -jN produce one pack would then be comparing two
         // code paths instead of proving one.
-        var options = new ParallelOptions { MaxDegreeOfParallelism = workers };
+        var options = new ParallelOptions { MaxDegreeOfParallelism = workers, CancellationToken = cancellationToken };
 
         try
         {
-            Parallel.For(start, start + count, options, i => outcomes[i] = RunOne(cache, work[i]));
+            Parallel.For(start, start + count, options, i => outcomes[i] = RunOne(cache, payloadStore, work[i], cancellationToken));
         }
         catch (AggregateException ex) when (ex.InnerExceptions.Count == 1)
         {
@@ -301,7 +307,7 @@ public sealed class CookSession
     // touches is either immutable (the settings, the rule) or its own (the
     // context); the cache is the one shared thing, and it is safe for the workers
     // by construction rather than by this method's care.
-    private RuleOutcome RunOne(CookCache? cache, WorkItem item)
+    private RuleOutcome RunOne(CookCache? cache, ContentStore payloadStore, WorkItem item, CancellationToken cancellationToken)
     {
         if (cache is not null &&
             cache.TryReplay(item.ContentRoot, item.File.ContentPath, item.Rule, _settings, out CachedRun? replay))
@@ -317,7 +323,7 @@ public sealed class CookSession
             _settings.Profile,
             _settings.Targets,
             _settings.AudioSampleRate,
-            _settings.KeepBrushSource);
+            _settings.KeepBrushSource, payloadStore, cancellationToken);
         CookDiagnostic? failure = null;
 
         try
@@ -401,7 +407,7 @@ public sealed class CookSession
         }
     }
 
-    private string? WritePack(PackWriter writer, CookDiagnosticLog diagnostics)
+    private string? WritePack(PackWriter writer, CookDiagnosticLog diagnostics, CancellationToken cancellationToken)
     {
         string packPath = Path.Combine(
             OutputDirectory, Path.GetFileNameWithoutExtension(_layout.ManifestPath) + PackExtension);
@@ -409,7 +415,7 @@ public sealed class CookSession
         try
         {
             Directory.CreateDirectory(OutputDirectory);
-            writer.WriteToFile(packPath);
+            writer.WriteToFile(packPath, cancellationToken);
             return packPath;
         }
         catch (InvalidOperationException ex)
@@ -427,7 +433,7 @@ public sealed class CookSession
         }
     }
 
-    private string? WriteLoose(List<RuleEmission> emissions, CookDiagnosticLog diagnostics)
+    private string? WriteLoose(List<RuleEmission> emissions, CookDiagnosticLog diagnostics, CancellationToken cancellationToken)
     {
         try
         {
@@ -438,7 +444,7 @@ public sealed class CookSession
                     OutputDirectory, emission.Path.Replace('/', Path.DirectorySeparatorChar));
 
                 Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-                File.WriteAllBytes(full, emission.Payload);
+                AtomicOutput.Write(full, stream => emission.Content.CopyTo(stream, cancellationToken), cancellationToken);
             }
 
             return OutputDirectory;
@@ -461,9 +467,8 @@ public sealed class CookSession
             string? directory = Path.GetDirectoryName(Path.GetFullPath(_settings.ManifestPath));
             if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
-            File.WriteAllBytes(
-                _settings.ManifestPath,
-                CookManifest.Write(_layout.Project.Name, _settings.Profile, assets));
+            AtomicOutput.Write(_settings.ManifestPath, stream =>
+                stream.Write(CookManifest.Write(_layout.Project.Name, _settings.Profile, assets)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
