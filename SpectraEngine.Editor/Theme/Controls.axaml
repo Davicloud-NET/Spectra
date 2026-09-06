@@ -1512,6 +1512,12 @@
        the SystemAccentColor this theme overrides - which is a different, louder
        answer to "this row is selected" than the scene tree three panels away
        gives to the same question. -->
+  <Style Selector="TextBlock.palettefoot">
+    <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
+    <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+    <Setter Property="Margin" Value="8,4,8,2" />
+  </Style>
+
   <Style Selector="ListBox.palettelist ListBoxItem:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource SpectraRowHover}" />
   </Style>

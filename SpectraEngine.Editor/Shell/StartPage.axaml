@@ -257,7 +257,7 @@
                            VerticalAlignment="Center" />
                 <!-- The path is a VALUE, so it wears mono: it is the thing
                      that tells two same-named projects apart. -->
-                <TextBlock Grid.Column="1" Text="{Binding Path}"
+                <TextBlock Grid.Column="1" Text="{Binding Location}"
                            FontFamily="{StaticResource SpectraFontMono}"
                            FontSize="{StaticResource SpectraFontSmall}"
                            Foreground="{StaticResource SpectraTextMuted}"

@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
              x:Class="SpectraEngine.Editor.Shell.CommandPaletteView">
@@ -13,6 +13,11 @@
     <DockPanel>
       <TextBox x:Name="Query" DockPanel.Dock="Top" Classes="field"
                Watermark="Type a command" />
+      <!-- How much was hidden. Twelve rows with no count looks identical
+           whether twelve matched or thirty did, and the other eighteen were
+           unreachable by any means the user could see. -->
+      <TextBlock x:Name="Footer" DockPanel.Dock="Bottom" Classes="palettefoot"
+                 IsVisible="False" />
       <ListBox x:Name="Rows" Classes="palettelist" MaxHeight="320">
         <ListBox.ItemTemplate>
           <DataTemplate DataType="shell:ShellCommand">

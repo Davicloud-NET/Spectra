@@ -14,7 +14,13 @@ namespace SpectraEngine.Editor.Shell;
 /// <param name="Name">The project's display name.</param>
 /// <param name="Path">The project folder, shown in full so two same-named projects tell apart.</param>
 /// <param name="OpenedLabel">When it was last opened, as a short phrase.</param>
-public sealed record RecentProjectRow(RecentProject Source, string Name, string Path, string OpenedLabel);
+/// <param name="Location">
+/// Where it is, shortened from the LEFT. A path trimmed from the right loses
+/// the folder that names the project, which is the only part of it worth
+/// reading.
+/// </param>
+public sealed record RecentProjectRow(
+    RecentProject Source, string Name, string Path, string Location, string OpenedLabel);
 
 /// <summary>
 /// The launch experience: recent projects, and the three ways to get something
@@ -70,8 +76,17 @@ public partial class StartPage : UserControl
         ArgumentNullException.ThrowIfNull(recents);
 
         _all.Clear();
-        foreach (RecentProject recent in recents)
-            _all.Add(new RecentProjectRow(recent, recent.Name, recent.Path, OpenedLabel(recent.OpenedUtc)));
+
+        // Computed for the whole list at once, because telling two same-named
+        // projects apart is a question about the LIST rather than about either
+        // row on its own.
+        IReadOnlyList<string> locations = RecentLocation.Locations(recents);
+        for (int i = 0; i < recents.Count; i++)
+        {
+            RecentProject recent = recents[i];
+            _all.Add(new RecentProjectRow(
+                recent, recent.Name, recent.Path, locations[i], OpenedLabel(recent.OpenedUtc)));
+        }
 
         ApplyFilter();
     }

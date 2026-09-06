@@ -86,7 +86,9 @@ public sealed class RibbonSheetTests(RibbonSession session)
         {
             var palette = new SpectraEngine.Editor.Shell.CommandPaletteView();
             palette.RowList.ItemsSource =
-                CommandTable.Search("in", hasSelection: true, isPlaying: false);
+                CommandTable.Search("in", new CommandContext(
+                    HasSelection: true, IsPlaying: false, HasSession: true,
+                    HasProject: true, RibbonExpanded: true, CanPlay: true)).Rows;
             palette.RowList.SelectedIndex = 0;
             palette.QueryBox.Text = "in";
 

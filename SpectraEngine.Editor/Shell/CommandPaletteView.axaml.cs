@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 
 namespace SpectraEngine.Editor.Shell;
 
@@ -23,4 +23,7 @@ public partial class CommandPaletteView : UserControl
 
     /// <summary>The list of matching commands.</summary>
     public ListBox RowList => Rows;
+
+    /// <summary>The line saying how many matches are not shown.</summary>
+    public TextBlock FooterLabel => Footer;
 }

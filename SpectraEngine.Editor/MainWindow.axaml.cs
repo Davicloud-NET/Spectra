@@ -2229,12 +2229,24 @@ public partial class MainWindow : Window
 
     private void RefreshPalette()
     {
-        IReadOnlyList<ShellCommand> rows =
-            CommandTable.Search(Palette.QueryBox.Text ?? string.Empty, _shell.HasSelection, _shell.IsPlaying);
+        CommandSearchResult result =
+            CommandTable.Search(Palette.QueryBox.Text ?? string.Empty, PaletteContext());
 
-        Palette.RowList.ItemsSource = rows;
-        Palette.RowList.SelectedIndex = rows.Count > 0 ? 0 : -1;
+        Palette.RowList.ItemsSource = result.Rows;
+        Palette.RowList.SelectedIndex = result.Rows.Count > 0 ? 0 : -1;
+
+        Palette.FooterLabel.Text = result.FooterLabel;
+        Palette.FooterLabel.IsVisible = result.FooterLabel.Length > 0;
     }
+
+    /// <summary>What the shell can do right now, for the palette's gate.</summary>
+    private CommandContext PaletteContext() => new(
+        _shell.HasSelection,
+        _shell.IsPlaying,
+        _shell.HasSession,
+        _document.HasProject,
+        _ribbon.Expanded,
+        _shell.CanPlay);
 
     private void OnPaletteQueryChanged(object? sender, TextChangedEventArgs e) => RefreshPalette();
 
@@ -2323,9 +2335,13 @@ public partial class MainWindow : Window
             ReturnKeyboardToEngine();
     }
 
-    private void OnRibbonPinClicked(object? sender, RoutedEventArgs e)
+    private void OnRibbonPinClicked(object? sender, RoutedEventArgs e) =>
+        SetRibbonExpanded(!_ribbon.Expanded);
+
+    /// <summary>Shows the active page, or the tab strip alone.</summary>
+    private void SetRibbonExpanded(bool expanded)
     {
-        _ribbon = RibbonSurface.SetExpanded(_ribbon, !_ribbon.Expanded);
+        _ribbon = RibbonSurface.SetExpanded(_ribbon, expanded);
         ApplyRibbonState();
 
         // A surface whose size resets every launch is a preference nobody
@@ -2334,6 +2350,48 @@ public partial class MainWindow : Window
         _settings.Save(_logger);
 
         ReturnKeyboardToEngine();
+    }
+
+    /// <summary>Runs a document verb by calling the menu's own handler.</summary>
+    /// <remarks>
+    /// <b>The handler, not a copy of it.</b> Every one of these confirms unsaved
+    /// work or opens a picker, and a palette that reimplemented any of that
+    /// would be a second document path free to forget the confirmation.
+    /// </remarks>
+    private void RunDocumentVerb(DocumentVerb verb, RoutedEventArgs args)
+    {
+        // A half-typed field commits first, exactly as a document chord does:
+        // saving without the value just typed reports success and loses it.
+        CommitFocusedEdit();
+
+        switch (verb)
+        {
+            case DocumentVerb.NewProject: OnNewProjectClicked(this, args); break;
+            case DocumentVerb.OpenProject: OnOpenProjectClicked(this, args); break;
+            case DocumentVerb.CloseProject: OnCloseProjectClicked(this, args); break;
+            case DocumentVerb.NewLevel: OnNewMapClicked(this, args); break;
+            case DocumentVerb.OpenLevel: OnOpenMapClicked(this, args); break;
+            case DocumentVerb.Save: OnSaveClicked(this, args); break;
+            case DocumentVerb.SaveAs: OnSaveAsClicked(this, args); break;
+            case DocumentVerb.ValidateCooked: OnValidateCookedClicked(this, args); break;
+            case DocumentVerb.Exit: Close(); break;
+        }
+    }
+
+    /// <summary>Brings one panel to the front.</summary>
+    private void ShowPanel(PanelId panel, RoutedEventArgs args)
+    {
+        switch (panel)
+        {
+            case PanelId.Scene: ShowTool(SceneTool); break;
+            case PanelId.Levels: ShowTool(MapsTool); break;
+            case PanelId.Properties: ShowTool(PropertiesTool); break;
+            case PanelId.Content: ShowTool(ContentTool); break;
+            case PanelId.Output: ShowTool(OutputTool); break;
+            case PanelId.Problems: ShowTool(ProblemsTool); break;
+            case PanelId.Console: OnShowConsolePanel(this, args); break;
+            case PanelId.KeyboardReference: OnKeyboardReferenceClicked(this, args); break;
+        }
     }
 
     /// <summary>The flyout was light-dismissed by a click outside it.</summary>
@@ -2479,12 +2537,31 @@ public partial class MainWindow : Window
                 if (ResolveEntityClass() is { } className)
                     _session?.InsertEntity(className);
                 break;
+
+            case ShellVerbKind.Document:
+                RunDocumentVerb(verb.Document, args);
+                break;
+
+            case ShellVerbKind.Play:
+                RequestPlay(verb.Play == PlayVerb.Play);
+                break;
+
+            case ShellVerbKind.Panel:
+                ShowPanel(verb.Panel, args);
+                break;
+
+            case ShellVerbKind.Ribbon:
+                SetRibbonExpanded(verb.Ribbon == RibbonVerb.Expand);
+                break;
         }
 
         // The field is the one ribbon control whose whole contract is focus, so
         // a verb that ever reached it must not yank the keyboard out of the box
         // the user just clicked into.
-        if (verb.Kind != ShellVerbKind.SnapIncrement)
+        // A panel verb is excluded too: the console focuses its own input and
+        // the keyboard reference is a window, so handing the keyboard back to
+        // the viewport would take it straight off whatever just opened.
+        if (verb.Kind is not (ShellVerbKind.SnapIncrement or ShellVerbKind.Panel))
             ReturnKeyboardToEngine();
     }
 
@@ -2622,12 +2699,19 @@ public partial class MainWindow : Window
     // (play mode on a scene with no character, an edit while a gesture is
     // open) still wins within about a tenth of a second, visibly.
 
-    private void OnPlayClicked(object? sender, RoutedEventArgs e)
+    private void OnPlayClicked(object? sender, RoutedEventArgs e) => RequestPlay(!_shell.IsPlaying);
+
+    /// <summary>Enters or leaves play mode.</summary>
+    /// <remarks>
+    /// A SET verb, so the palette's two rows and the one button share it: the
+    /// button computes the state it wants from what it is showing, and the
+    /// palette's rows name theirs outright.
+    /// </remarks>
+    private void RequestPlay(bool wanted)
     {
         if (_session is not { } session)
             return;
 
-        bool wanted = !_shell.IsPlaying;
         _shell.RequestPlaying(wanted);
         session.Host.RequestPlayMode(wanted);
     }

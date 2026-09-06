@@ -56,6 +56,149 @@ public enum ShellVerbKind
     /// half places the last one used and its caret opens the list.
     /// </remarks>
     InsertEntity,
+
+    /// <summary>
+    /// A document verb: a project, a level, a save. See <see cref="DocumentVerb"/>.
+    /// </summary>
+    /// <remarks>
+    /// <b>These are the window's own, not the editor's</b>, which is why they
+    /// were the last to reach the palette: everything else here resolves to an
+    /// enum some other assembly already declared, and a document verb resolves
+    /// to a menu handler in this file's own window. Naming them anyway is what
+    /// makes "save" reachable by typing it.
+    /// </remarks>
+    Document,
+
+    /// <summary>Enter or leave play mode. See <see cref="PlayVerb"/>.</summary>
+    Play,
+
+    /// <summary>Show one panel. See <see cref="PanelId"/>.</summary>
+    Panel,
+
+    /// <summary>Collapse or expand the ribbon. See <see cref="RibbonVerb"/>.</summary>
+    Ribbon,
+
+    /// <summary>
+    /// A workspace verb: the preset, the drawer, maximise. See
+    /// <see cref="WorkspaceCommand"/>.
+    /// </summary>
+    Workspace,
+}
+
+/// <summary>A verb about the project or the level, rather than the scene.</summary>
+public enum DocumentVerb
+{
+    /// <summary>Create a project.</summary>
+    NewProject,
+
+    /// <summary>Open a project.</summary>
+    OpenProject,
+
+    /// <summary>Close the open project.</summary>
+    CloseProject,
+
+    /// <summary>Start a fresh level.</summary>
+    NewLevel,
+
+    /// <summary>Open a level bundle.</summary>
+    OpenLevel,
+
+    /// <summary>Save the open level.</summary>
+    Save,
+
+    /// <summary>Save the open level somewhere else.</summary>
+    SaveAs,
+
+    /// <summary>Cook the project and check the pack.</summary>
+    ValidateCooked,
+
+    /// <summary>Close the editor.</summary>
+    Exit,
+}
+
+/// <summary>
+/// Play mode, as a pair of SET verbs.
+/// </summary>
+/// <remarks>
+/// Two rows rather than one toggle, for the reason every other two-way choice
+/// in this shell is a pair: a toggle sent against a stale snapshot flips the
+/// wrong way exactly when somebody clicks fastest.
+/// </remarks>
+public enum PlayVerb
+{
+    /// <summary>Enter play mode.</summary>
+    Play,
+
+    /// <summary>Leave play mode.</summary>
+    Stop,
+}
+
+/// <summary>A panel the window can bring to the front.</summary>
+public enum PanelId
+{
+    /// <summary>The scene tree.</summary>
+    Scene,
+
+    /// <summary>The project's levels.</summary>
+    Levels,
+
+    /// <summary>The inspector.</summary>
+    Properties,
+
+    /// <summary>The content browser.</summary>
+    Content,
+
+    /// <summary>The output history.</summary>
+    Output,
+
+    /// <summary>The standing problems.</summary>
+    Problems,
+
+    /// <summary>The console.</summary>
+    Console,
+
+    /// <summary>The keyboard reference window.</summary>
+    KeyboardReference,
+}
+
+/// <summary>The ribbon's two states, as SET verbs.</summary>
+public enum RibbonVerb
+{
+    /// <summary>Show the tab strip alone.</summary>
+    Collapse,
+
+    /// <summary>Show the active page.</summary>
+    Expand,
+}
+
+/// <summary>
+/// A verb about how the window is arranged, rather than about the level.
+/// </summary>
+public enum WorkspaceCommand
+{
+    /// <summary>Give the viewport the whole window.</summary>
+    MaximiseViewport,
+
+    /// <summary>Put the panels back.</summary>
+    RestoreWorkspace,
+
+    /// <summary>The compact arrangement.</summary>
+    UseCompactWorkspace,
+
+    /// <summary>The roomy arrangement.</summary>
+    UseExpandedWorkspace,
+
+    /// <summary>Show the bottom panel.</summary>
+    OpenBottomDrawer,
+
+    /// <summary>Hide the bottom panel.</summary>
+    CloseBottomDrawer,
+
+    /// <summary>Show the engine counters in the status bar.</summary>
+    ShowDiagnostics,
+
+    /// <summary>Hide them.</summary>
+    HideDiagnostics,
 }
 
 /// <summary>
@@ -108,7 +251,12 @@ public readonly record struct ShellVerb(
     EditorCameraCommand Camera,
     InsertKind Insert,
     DebugVisualization Debug,
-    ShellToggle Toggle)
+    ShellToggle Toggle,
+    DocumentVerb Document = default,
+    PlayVerb Play = default,
+    PanelId Panel = default,
+    RibbonVerb Ribbon = default,
+    WorkspaceCommand Workspace = default)
 {
     /// <summary>A host verb: history, a structural edit, a grid mode.</summary>
     public static ShellVerb Of(EditorHostCommand command) =>
@@ -141,4 +289,24 @@ public readonly record struct ShellVerb(
     /// <summary>Place an entity of whichever class the session last used.</summary>
     public static ShellVerb InsertEntity() =>
         new(ShellVerbKind.InsertEntity, default, default, default, default, default, default);
+
+    /// <summary>A document verb.</summary>
+    public static ShellVerb Of(DocumentVerb verb) =>
+        new(ShellVerbKind.Document, default, default, default, default, default, default, Document: verb);
+
+    /// <summary>Play or stop.</summary>
+    public static ShellVerb Of(PlayVerb verb) =>
+        new(ShellVerbKind.Play, default, default, default, default, default, default, Play: verb);
+
+    /// <summary>Show a panel.</summary>
+    public static ShellVerb Of(PanelId panel) =>
+        new(ShellVerbKind.Panel, default, default, default, default, default, default, Panel: panel);
+
+    /// <summary>Collapse or expand the ribbon.</summary>
+    public static ShellVerb Of(RibbonVerb verb) =>
+        new(ShellVerbKind.Ribbon, default, default, default, default, default, default, Ribbon: verb);
+
+    /// <summary>A workspace verb.</summary>
+    public static ShellVerb Of(WorkspaceCommand command) =>
+        new(ShellVerbKind.Workspace, default, default, default, default, default, default, Workspace: command);
 }
