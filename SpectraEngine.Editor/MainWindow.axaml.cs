@@ -171,6 +171,12 @@ public partial class MainWindow : Window
 
         DataContext = _shell;
 
+        // The strip is a control of its own so the render suite can measure it,
+        // which means its verbs come back as intents rather than as handlers on
+        // this class: everything they need - the session, the current state, the
+        // optimistic holds - lives here and would have had to travel with them.
+        HeaderStrip.Activated += OnHeaderAction;
+
         // The neutral place focus can land when a field must blur before a
         // document chord runs — see CommitFocusedEdit.
         Focusable = true;
@@ -1827,6 +1833,41 @@ public partial class MainWindow : Window
     {
         _shell.ExpectViewName(name);
         OnShellVerb(ShellVerb.Of(command));
+    }
+
+    /// <summary>
+    /// Routes the viewport header's intents to the verbs the window already
+    /// dispatches.
+    /// </summary>
+    /// <remarks>
+    /// One switch rather than sixteen handlers moved onto the strip: the
+    /// optimistic values, the session check and the expected-view bookkeeping
+    /// all live here and would have had to travel with them.
+    /// </remarks>
+    private void OnHeaderAction(HeaderAction action)
+    {
+        switch (action)
+        {
+            case HeaderAction.ToggleNavigation: _session?.Post(EditorHostCommand.ToggleNavigation); break;
+
+            case HeaderAction.GridAuto: _session?.Post(EditorHostCommand.GridAuto); break;
+            case HeaderAction.GridOn: _session?.Post(EditorHostCommand.GridOn); break;
+            case HeaderAction.GridOff: _session?.Post(EditorHostCommand.GridOff); break;
+
+            case HeaderAction.ViewPerspective: RunViewPreset(EditorCameraCommand.ViewPerspective, "Perspective"); break;
+            case HeaderAction.ViewTop: RunViewPreset(EditorCameraCommand.ViewTop, "Top"); break;
+            case HeaderAction.ViewBottom: RunViewPreset(EditorCameraCommand.ViewBottom, "Bottom"); break;
+            case HeaderAction.ViewFront: RunViewPreset(EditorCameraCommand.ViewFront, "Front"); break;
+            case HeaderAction.ViewBack: RunViewPreset(EditorCameraCommand.ViewBack, "Back"); break;
+            case HeaderAction.ViewRight: RunViewPreset(EditorCameraCommand.ViewRight, "Right"); break;
+            case HeaderAction.ViewLeft: RunViewPreset(EditorCameraCommand.ViewLeft, "Left"); break;
+
+            case HeaderAction.DebugWireframe: RequestDebug(DebugVisualization.Wireframe, !_shell.DebugWireframe); break;
+            case HeaderAction.DebugVertices: RequestDebug(DebugVisualization.Vertices, !_shell.DebugVertices); break;
+            case HeaderAction.DebugAabbs: RequestDebug(DebugVisualization.Aabbs, !_shell.DebugAabbs); break;
+            case HeaderAction.DebugNormals: RequestDebug(DebugVisualization.Normals, !_shell.DebugNormals); break;
+            case HeaderAction.DebugSceneGraph: RequestDebug(DebugVisualization.SceneGraph, !_shell.DebugSceneGraph); break;
+        }
     }
 
     private void OnShowConsolePanel(object? sender, RoutedEventArgs e)

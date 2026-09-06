@@ -1,0 +1,183 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
+             x:Class="SpectraEngine.Editor.Shell.ViewportHeaderStrip"
+             x:DataType="shell:ShellModel">
+
+  <!--
+    A control of its own rather than markup inside the window, for the reason
+    the ribbon pages are: the render suite can construct and MEASURE the real
+    thing. This strip is the narrowest crowded row in the shell - at the
+    compact workspace's own minimum the viewport cell is 644px wide - and every
+    stage adds a chip to it, so "does it still fit" has to be an assertion
+    rather than a screenshot somebody took once.
+
+    A strip declared inline would have to be declared a second time to be
+    rendered, and a second declaration is what every convention test in this
+    shell exists to prevent.
+  -->
+    <Border Height="28"
+            Background="{StaticResource SpectraBgApp}"
+            BorderBrush="{StaticResource SpectraBorderStrong}"
+            BorderThickness="0,0,0,1"
+            Padding="6,0">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <!-- Which pipeline is drawing, ON the view it draws. The only
+               passive display used to live in the inspector's EMPTY
+               state, so it vanished the moment anything was selected.
+               The two-way binding and its snapshot guard already
+               existed; the View menu radio stays as the second route. -->
+          <ComboBox Width="106" Height="22" MinHeight="22" Padding="8,0"
+                    FontSize="{StaticResource SpectraFontSmall}"
+                    ItemsSource="{Binding PipelineNames}"
+                    SelectedItem="{Binding PipelineName}"
+                    ToolTip.Tip="Rendering pipeline" />
+          <Button Classes="chip" Height="22"
+                  ToolTip.Tip="When the ground grid shows. Auto means during move and resize.">
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                <MenuItem Header="During move and resize" ToggleType="Radio"
+                          IsChecked="{Binding GridAuto, Mode=OneWay}" Click="OnGridAutoClicked" />
+                <MenuItem Header="Always" ToggleType="Radio"
+                          IsChecked="{Binding GridOn, Mode=OneWay}" Click="OnGridOnClicked" />
+                <MenuItem Header="Off" ToggleType="Radio"
+                          IsChecked="{Binding GridOff, Mode=OneWay}" Click="OnGridOffClicked" />
+              </MenuFlyout>
+            </Button.Flyout>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Classes="chipsubject" Text="Grid" />
+              <TextBlock Classes="chipvalue" Text="{Binding GridModeLabel}" />
+              <Path Classes="chipcaret" Data="{StaticResource CaretDown}" />
+            </StackPanel>
+          </Button>
+          <!-- Which of the seven views is live. A flyout rather than a
+               cycle, because seven values are too many to step through
+               and the lit radio says the answer without being opened. -->
+          <Button Classes="chip" Height="22"
+                  ToolTip.Tip="Which way the camera is looking.  Numpad 7, 1, 3">
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="Perspective" ToggleType="Radio" InputGesture="NumPad5"
+                          IsChecked="{Binding IsViewPerspective, Mode=OneWay}" Click="OnViewPerspectiveClicked" />
+                <Separator />
+                <MenuItem Header="Top" ToggleType="Radio" InputGesture="NumPad7"
+                          IsChecked="{Binding IsViewTop, Mode=OneWay}" Click="OnViewTopClicked" />
+                <MenuItem Header="Bottom" ToggleType="Radio" InputGesture="Ctrl+NumPad7"
+                          IsChecked="{Binding IsViewBottom, Mode=OneWay}" Click="OnViewBottomClicked" />
+                <MenuItem Header="Front" ToggleType="Radio" InputGesture="NumPad1"
+                          IsChecked="{Binding IsViewFront, Mode=OneWay}" Click="OnViewFrontClicked" />
+                <MenuItem Header="Back" ToggleType="Radio" InputGesture="Ctrl+NumPad1"
+                          IsChecked="{Binding IsViewBack, Mode=OneWay}" Click="OnViewBackClicked" />
+                <MenuItem Header="Right" ToggleType="Radio" InputGesture="NumPad3"
+                          IsChecked="{Binding IsViewRight, Mode=OneWay}" Click="OnViewRightClicked" />
+                <MenuItem Header="Left" ToggleType="Radio" InputGesture="Ctrl+NumPad3"
+                          IsChecked="{Binding IsViewLeft, Mode=OneWay}" Click="OnViewLeftClicked" />
+              </MenuFlyout>
+            </Button.Flyout>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Classes="chipsubject" Text="View" />
+              <TextBlock Classes="chipvalue" Text="{Binding ViewName}" />
+              <Path Classes="chipcaret" Data="{StaticResource CaretDown}" />
+            </StackPanel>
+          </Button>
+
+          <Button Classes="chip" Height="22" Click="OnToggleNavigationClicked"
+                  ToolTip.Tip="Which camera drives the viewport.  F7">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Classes="chipsubject" Text="Camera" />
+              <TextBlock Classes="chipvalue" Text="{Binding NavigationChipLabel}" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <!-- ONE chip past two overlays, and the threshold is MEASURED: five
+               chips want about 340px on a strip that has 141 to spare at the
+               narrowest viewport the compact workspace can produce. Collapsed
+               rather than clipped, because a chip that scrolled off the end
+               would take the only thing on screen saying WHY the picture looks
+               wrong with it, which is the entire reason these exist. -->
+          <Button Classes="overlaychip" IsVisible="{Binding OverlaysCollapsed}"
+                  ToolTip.Tip="Debug overlays are on. Click to see which.">
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="Wireframe" InputGesture="F1" ToggleType="CheckBox"
+                          IsChecked="{Binding DebugWireframe, Mode=OneWay}" Click="OnDebugWireClicked" />
+                <MenuItem Header="CSG vertices" InputGesture="F2" ToggleType="CheckBox"
+                          IsChecked="{Binding DebugVertices, Mode=OneWay}" Click="OnDebugVerticesClicked" />
+                <MenuItem Header="Bounds" InputGesture="F3" ToggleType="CheckBox"
+                          IsChecked="{Binding DebugAabbs, Mode=OneWay}" Click="OnDebugAabbsClicked" />
+                <MenuItem Header="Face normals" InputGesture="F4" ToggleType="CheckBox"
+                          IsChecked="{Binding DebugNormals, Mode=OneWay}" Click="OnDebugNormalsClicked" />
+                <MenuItem Header="Node axes" InputGesture="F5" ToggleType="CheckBox"
+                          IsChecked="{Binding DebugSceneGraph, Mode=OneWay}" Click="OnDebugSceneGraphClicked" />
+              </MenuFlyout>
+            </Button.Flyout>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <TextBlock Text="{Binding OverlayCountLabel}" />
+              <Path Classes="chipcaret" Data="{StaticResource CaretDown}" />
+            </StackPanel>
+          </Button>
+
+          <Button Classes="overlaychip" Click="OnDebugWireClicked"
+                  ToolTip.Tip="Wireframe overlay is on. Click to turn it off.  F1">
+            <Button.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="DebugWireframe" />
+                <Binding Path="OverlaysExpanded" />
+              </MultiBinding>
+            </Button.IsVisible>
+            <TextBlock Text="wire" />
+          </Button>
+          <Button Classes="overlaychip" Click="OnDebugVerticesClicked"
+                  ToolTip.Tip="CSG vertex markers are on. Click to turn them off.  F2">
+            <Button.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="DebugVertices" />
+                <Binding Path="OverlaysExpanded" />
+              </MultiBinding>
+            </Button.IsVisible>
+            <TextBlock Text="verts" />
+          </Button>
+          <Button Classes="overlaychip" Click="OnDebugAabbsClicked"
+                  ToolTip.Tip="Bounds overlay is on. Click to turn it off.  F3">
+            <Button.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="DebugAabbs" />
+                <Binding Path="OverlaysExpanded" />
+              </MultiBinding>
+            </Button.IsVisible>
+            <TextBlock Text="bounds" />
+          </Button>
+          <Button Classes="overlaychip" Click="OnDebugNormalsClicked"
+                  ToolTip.Tip="Face normals are on. Click to turn them off.  F4">
+            <Button.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="DebugNormals" />
+                <Binding Path="OverlaysExpanded" />
+              </MultiBinding>
+            </Button.IsVisible>
+            <TextBlock Text="normals" />
+          </Button>
+          <Button Classes="overlaychip" Click="OnDebugSceneGraphClicked"
+                  ToolTip.Tip="Node axes are on. Click to turn them off.  F5">
+            <Button.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="DebugSceneGraph" />
+                <Binding Path="OverlaysExpanded" />
+              </MultiBinding>
+            </Button.IsVisible>
+            <TextBlock Text="axes" />
+          </Button>
+          <!-- Where am I: the one instrument every engine editor's
+               status surface carries. Mono, fixed width, one decimal,
+               so it reads as an instrument and never jitters. -->
+          <TextBlock Classes="value" Foreground="{StaticResource SpectraTextMuted}"
+                     Text="{Binding CameraPositionLabel}" MinWidth="132"
+                     TextAlignment="Right" Margin="6,0,0,0"
+                     ToolTip.Tip="Camera position, in world units" />
+        </StackPanel>
+      </Grid>
+    </Border>
+</UserControl>

@@ -247,4 +247,44 @@ public sealed class RibbonSheetTests(RibbonSession session)
 
         return Path.Combine(dir?.FullName ?? AppContext.BaseDirectory, "artifacts", "ribbon");
     }
+    [Fact]
+    public void The_viewport_header_rasterises_into_a_sheet()
+    {
+        // Whether four chips, a dropdown and a monospace readout read as one row
+        // or as a jumble is a question for a person. What the width tests can
+        // say is that it fits; what nothing here can say is whether it looks
+        // like an instrument panel, so the sheet is where that gets looked at.
+        session.On(() =>
+        {
+            var model = new SpectraEngine.Editor.Shell.ShellModel { HasSession = true };
+            model.ApplySnapshot(new SpectraEngine.Core.Hosting.FrameSnapshot
+            {
+                ViewName = "Top",
+                GridModeName = "auto",
+                NavigationModeName = "editor freelook",
+                PipelineNames = ["Deferred", "Forward", "Wireframe"],
+                PipelineName = "Deferred",
+                DebugFlags = SpectraEngine.Core.Scene.DebugVisualization.Wireframe,
+                CameraPosition = new System.Numerics.Vector3(12.5f, 8f, -140.25f),
+            });
+
+            var strip = new SpectraEngine.Editor.Shell.ViewportHeaderStrip { DataContext = model };
+            var window = new Window { Content = strip, Width = 700, Height = 28 };
+            window.SetRenderScaling(2.0);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+            WriteableBitmap? frame = window.GetLastRenderedFrame();
+            frame.ShouldNotBeNull();
+
+            Directory.CreateDirectory(OutputDirectory);
+            frame.Save(Path.Combine(OutputDirectory, "header@2x.png"), quality: null);
+
+            // Something drew. A blank sheet is what a strip whose bindings all
+            // resolved against the wrong DataContext produces, and Avalonia
+            // raises nothing for a failed binding.
+            DistinctColours(frame).ShouldBeGreaterThan(8);
+        });
+    }
 }

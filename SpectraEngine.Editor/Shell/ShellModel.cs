@@ -456,6 +456,56 @@ public sealed class ShellModel : ObservableObject
         RedoDepth = redo;
     }
 
+    /// <summary>How many overlays are shown one chip at a time.</summary>
+    /// <remarks>
+    /// <b>Measured, not chosen.</b> The strip has to fit 644px - the viewport's
+    /// width in the compact workspace at the window's own minimum - and five
+    /// chips want about 340px on a row with 141 to spare. Two is what fits, so
+    /// two is the threshold.
+    /// </remarks>
+    public const int MaxOverlayChips = 2;
+
+    /// <summary>How many debug overlays are latched.</summary>
+    public int OverlayCount { get; private set; }
+
+    /// <summary>
+    /// Whether the overlays are shown as ONE chip rather than one each.
+    /// </summary>
+    /// <remarks>
+    /// <b>Collapsed rather than clipped, because a chip that scrolled off the
+    /// end would take the only thing on screen saying WHY the picture looks
+    /// wrong with it.</b> A fat-fingered F1 leaves a wireframe viewport and
+    /// nothing else to explain it, which is the entire reason these chips
+    /// exist: the answer to five of them is one chip that still says so, never
+    /// silence.
+    /// </remarks>
+    public bool OverlaysCollapsed => OverlayCount > MaxOverlayChips;
+
+    /// <summary>Whether each latched overlay gets its own chip.</summary>
+    public bool OverlaysExpanded => OverlayCount is > 0 and <= MaxOverlayChips;
+
+    /// <summary>"3 overlays", for the collapsed chip.</summary>
+    public string OverlayCountLabel =>
+        OverlayCount == 1 ? "1 overlay" : $"{OverlayCount} overlays";
+
+    private void RefreshOverlayCount()
+    {
+        int count = 0;
+        if (DebugWireframe) count++;
+        if (DebugVertices) count++;
+        if (DebugAabbs) count++;
+        if (DebugNormals) count++;
+        if (DebugSceneGraph) count++;
+
+        if (OverlayCount == count) return;
+
+        OverlayCount = count;
+        Raise(nameof(OverlayCount));
+        Raise(nameof(OverlaysCollapsed));
+        Raise(nameof(OverlaysExpanded));
+        Raise(nameof(OverlayCountLabel));
+    }
+
     private void SetDebugFlags(DebugVisualization flags)
     {
         if (_debugFlags == flags)
@@ -467,6 +517,8 @@ public sealed class ShellModel : ObservableObject
         Raise(nameof(DebugAabbs));
         Raise(nameof(DebugNormals));
         Raise(nameof(DebugSceneGraph));
+
+        RefreshOverlayCount();
     }
 
     /// <summary>
@@ -595,13 +647,36 @@ public sealed class ShellModel : ObservableObject
         get => _navigation;
         private set
         {
-            if (Set(ref _navigation, value))
-                Raise(nameof(NavigationMenuLabel));
+            if (!Set(ref _navigation, value)) return;
+
+            Raise(nameof(NavigationMenuLabel));
+            Raise(nameof(NavigationChipLabel));
         }
     }
 
     /// <summary>The View menu's wording for the camera toggle.</summary>
     public string NavigationMenuLabel => $"Camera: {_navigation}";
+
+    /// <summary>
+    /// The first word of it, for the header chip.
+    /// </summary>
+    /// <remarks>
+    /// <b>The strip is the narrowest crowded row in the shell and this chip was
+    /// the widest thing on it.</b> "editor freelook" and "fly camera" differ in
+    /// their first word and agree in their second, so the first word carries the
+    /// whole distinction; the full phrase stays in the tooltip and in the menu,
+    /// where there is room for it. Measured: the resting strip wanted 706px
+    /// against the 644px the compact workspace gives a viewport at the window's
+    /// own minimum, and this is most of the difference.
+    /// </remarks>
+    public string NavigationChipLabel
+    {
+        get
+        {
+            int space = _navigation.IndexOf(' ');
+            return space > 0 ? _navigation[..space] : _navigation;
+        }
+    }
 
     // The engine's answer, snapshot-followed with no optimistic hold: the menu
     // is closed by the time the echo lands, so there is nothing to flicker.
