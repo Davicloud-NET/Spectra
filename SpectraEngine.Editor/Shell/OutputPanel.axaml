@@ -17,7 +17,7 @@
 
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,6" ColumnSpacing="6">
       <TextBlock Grid.Column="0" Classes="label" VerticalAlignment="Center"
-                 Text="{Binding Output.ProblemSummary}" />
+                 Text="{Binding Output.HistoryLabel}" />
       <Button Grid.Column="1" Classes="ghost" Click="OnClearClicked" ToolTip.Tip="Clear the output">
         <Path Classes="icon" Data="{StaticResource IconClear}" />
       </Button>
@@ -27,7 +27,7 @@
       <ItemsControl ItemsSource="{Binding Output.Entries}" Margin="0,0,0,6">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="shell:OutputEntry">
-            <Grid ColumnDefinitions="Auto,*" Margin="8,0" ColumnSpacing="8">
+            <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,0" ColumnSpacing="8">
               <!-- Top-aligned for wrapped messages, nudged 2 so the 11px mono
                    time and the 12px sans first line share a baseline instead
                    of sitting a ragged pixel apart in every row. -->
@@ -38,6 +38,12 @@
               <TextBlock Grid.Column="1" Classes="line" Text="{Binding Text}"
                          Foreground="{Binding SeverityBrush}"
                          TextWrapping="Wrap" />
+              <!-- A repeated line grows this instead of a row, so a compile
+                   warning every frame stays one line that says how many. -->
+              <TextBlock Grid.Column="2" Classes="value" VerticalAlignment="Top"
+                         Margin="0,2,0,0"
+                         Foreground="{StaticResource SpectraTextDisabled}"
+                         Text="{Binding CountLabel}" />
             </Grid>
           </DataTemplate>
         </ItemsControl.ItemTemplate>

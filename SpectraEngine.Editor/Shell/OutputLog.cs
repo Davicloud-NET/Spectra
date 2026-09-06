@@ -22,12 +22,58 @@ public enum OutputSeverity
     Command,
 }
 
-/// <summary>One line in the output.</summary>
-/// <param name="Severity">How loud it is.</param>
-/// <param name="Text">What happened.</param>
-/// <param name="TimeLabel">When, as <c>HH:mm:ss</c>.</param>
-public sealed record OutputEntry(OutputSeverity Severity, string Text, string TimeLabel)
+/// <summary>One line in the output, and how many times it has been said.</summary>
+/// <remarks>
+/// <b>A class rather than a record now, because a repeat updates in place.</b>
+/// A background compile can report the same line every frame, and five hundred
+/// identical rows push everything else out of a bounded history while telling
+/// the reader nothing the first one did not.
+/// </remarks>
+public sealed class OutputEntry : ObservableObject
 {
+    private int _count = 1;
+    private string _timeLabel;
+
+    internal OutputEntry(OutputSeverity severity, string text, string timeLabel)
+    {
+        Severity = severity;
+        Text = text;
+        _timeLabel = timeLabel;
+    }
+
+    /// <summary>How loud it is.</summary>
+    public OutputSeverity Severity { get; }
+
+    /// <summary>What happened.</summary>
+    public string Text { get; }
+
+    /// <summary>When it was last said, as <c>HH:mm:ss</c>.</summary>
+    public string TimeLabel
+    {
+        get => _timeLabel;
+        private set => Set(ref _timeLabel, value);
+    }
+
+    /// <summary>How many times this line has been said in a row.</summary>
+    public int Count
+    {
+        get => _count;
+        private set
+        {
+            if (Set(ref _count, value)) Raise(nameof(CountLabel));
+        }
+    }
+
+    /// <summary>"x12" once it has repeated, else empty.</summary>
+    public string CountLabel =>
+        _count > 1 ? "x" + _count.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
+
+    internal void Repeat(string timeLabel)
+    {
+        TimeLabel = timeLabel;
+        Count++;
+    }
+
     /// <summary>Whether this line should carry the error colour.</summary>
     public bool IsError => Severity == OutputSeverity.Error;
 
@@ -98,8 +144,7 @@ public sealed class OutputLog : ObservableObject
         get => _errorCount;
         private set
         {
-            if (Set(ref _errorCount, value))
-                Raise(nameof(ProblemSummary));
+            Set(ref _errorCount, value);
         }
     }
 
@@ -109,24 +154,20 @@ public sealed class OutputLog : ObservableObject
         get => _warningCount;
         private set
         {
-            if (Set(ref _warningCount, value))
-                Raise(nameof(ProblemSummary));
+            Set(ref _warningCount, value);
         }
     }
 
-    /// <summary>A one-line count for the panel header and the status bar.</summary>
-    public string ProblemSummary => (_errorCount, _warningCount) switch
-    {
-        (0, 0) => "no problems",
-        (0, 1) => "1 warning",
-        (0, var w) => $"{w} warnings",
-        (1, 0) => "1 error",
-        (var e, 0) => $"{e} errors",
-        (1, 1) => "1 error, 1 warning",
-        (var e, 1) => $"{e} errors, 1 warning",
-        (1, var w) => $"1 error, {w} warnings",
-        var (e, w) => $"{e} errors, {w} warnings",
-    };
+    /// <summary>What this panel is, and how full it is.</summary>
+    /// <remarks>
+    /// <b>It used to answer "are there problems", and it could not.</b> This log
+    /// is bounded, so its error count falls back to zero as failures scroll out
+    /// of the buffer: enough chatter after a broken material and the header said
+    /// "no problems" over a level that was still broken. That question belongs
+    /// to <see cref="ProblemList"/>, which keeps standing conditions rather than
+    /// recent lines. This header says what it can actually see.
+    /// </remarks>
+    public string HistoryLabel => $"Shell output, {Entries.Count} of {Capacity} lines";
 
     /// <summary>Raised after an entry is appended, so a view can scroll to it.</summary>
     public event Action<OutputEntry>? Appended;
@@ -139,7 +180,24 @@ public sealed class OutputLog : ObservableObject
 
         // Wall-clock rather than a frame number: the reader is a person
         // correlating this against something they just did.
-        var entry = new OutputEntry(severity, text, DateTime.Now.ToString("HH:mm:ss"));
+        string time = DateTime.Now.ToString("HH:mm:ss");
+
+        // A repeat of the line already at the bottom grows a count instead of a
+        // row. Compared against the LAST entry only: two lines alternating are
+        // two conditions and still get two rows, which is stated here because
+        // the cheaper-looking "search the whole log" would merge them.
+        if (Entries.Count > 0)
+        {
+            OutputEntry last = Entries[^1];
+            if (last.Severity == severity && string.Equals(last.Text, text, StringComparison.Ordinal))
+            {
+                last.Repeat(time);
+                Appended?.Invoke(last);
+                return;
+            }
+        }
+
+        var entry = new OutputEntry(severity, text, time);
 
         while (Entries.Count >= Capacity)
         {
@@ -153,6 +211,7 @@ public sealed class OutputLog : ObservableObject
         }
 
         Entries.Add(entry);
+        Raise(nameof(HistoryLabel));
 
         if (severity == OutputSeverity.Error)
             ErrorCount++;
@@ -168,5 +227,6 @@ public sealed class OutputLog : ObservableObject
         Entries.Clear();
         ErrorCount = 0;
         WarningCount = 0;
+        Raise(nameof(HistoryLabel));
     }
 }

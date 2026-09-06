@@ -1,0 +1,82 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="using:SpectraEngine.Editor.Shell"
+             x:Class="SpectraEngine.Editor.Shell.ProblemsPanel"
+             x:DataType="shell:ShellModel"
+             Background="{StaticResource SpectraBgPanel}">
+
+  <!--
+    What is wrong right now, one row per condition.
+
+    The Output tab's geometry and face, deliberately: these are the same kind of
+    rows about the same kinds of events, and two log-shaped panels that set
+    their text differently read as two products. What differs is the CONTENT -
+    a standing condition with a count, rather than a line that was said once.
+  -->
+
+  <Grid RowDefinitions="Auto,*">
+
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,6" ColumnSpacing="6">
+      <TextBlock Grid.Column="0" Classes="label" VerticalAlignment="Center"
+                 Text="{Binding Problems.Summary}" />
+      <Button Grid.Column="1" Classes="ghost" Click="OnClearClicked"
+              ToolTip.Tip="Clear the list. A condition that is still true will report itself again.">
+        <Path Classes="icon" Data="{StaticResource IconClear}" />
+      </Button>
+    </Grid>
+
+    <!-- The empty state says what empty MEANS, because "no problems" over a
+         blank panel is exactly the claim this whole panel exists to make
+         honestly. -->
+    <TextBlock Grid.Row="1" Classes="prose" Margin="12,4,12,0"
+               Foreground="{StaticResource SpectraTextMuted}"
+               IsVisible="{Binding !Problems.HasProblems}"
+               Text="Nothing is reporting a problem. Warnings and errors from the engine and from the editor land here and stay until they are fixed or dismissed." />
+
+    <ScrollViewer Grid.Row="1" Name="Scroller" HorizontalScrollBarVisibility="Disabled"
+                  IsVisible="{Binding Problems.HasProblems}">
+      <ItemsControl ItemsSource="{Binding Problems.Entries}" Margin="0,0,0,6">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="shell:ProblemEntry">
+            <Border Classes="row" DoubleTapped="OnEntryActivated"
+                    ToolTip.Tip="{Binding Subject}">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,0" ColumnSpacing="8">
+                <TextBlock Grid.Column="0" Classes="value" VerticalAlignment="Top"
+                           Margin="0,2,0,0"
+                           Foreground="{StaticResource SpectraTextDisabled}"
+                           Text="{Binding TimeLabel}" />
+                <TextBlock Grid.Column="1" Classes="line" Text="{Binding Message}"
+                           Foreground="{Binding SeverityBrush}"
+                           TextWrapping="Wrap" />
+                <TextBlock Grid.Column="2" Classes="value" VerticalAlignment="Top"
+                           Margin="0,2,0,0"
+                           Foreground="{StaticResource SpectraTextDisabled}"
+                           Text="{Binding CountLabel}" />
+                <Button Grid.Column="3" Classes="ghost" Click="OnDismissClicked"
+                        VerticalAlignment="Top"
+                        ToolTip.Tip="Dismiss. It comes back if the condition is reported again.">
+                  <Path Classes="icon" Data="{StaticResource IconClear}" />
+                </Button>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid>
+
+  <UserControl.Styles>
+    <!-- The Output tab's own type rules, for the reason in the header comment. -->
+    <Style Selector="TextBlock.line">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontBase}" />
+      <Setter Property="LineHeight" Value="16" />
+    </Style>
+    <Style Selector="Border.row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="0,1" />
+    </Style>
+    <Style Selector="Border.row:pointerover">
+      <Setter Property="Background" Value="{StaticResource SpectraRowHover}" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

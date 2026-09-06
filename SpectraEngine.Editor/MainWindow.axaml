@@ -427,6 +427,9 @@
               <MenuItem Header="Output" Click="OnShowOutputPanel">
                 <MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconWarning}" /></MenuItem.Icon>
               </MenuItem>
+              <MenuItem Header="Problems" Click="OnShowProblemsPanel">
+                <MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconWarning}" /></MenuItem.Icon>
+              </MenuItem>
               <MenuItem Header="Console" InputGesture="OemTilde" Click="OnShowConsolePanel" />
             </MenuItem>
             <Separator />
@@ -998,6 +1001,7 @@
               <dm:ToolDock Id="BottomToolDock" Alignment="Top" Proportion="1">
                 <dm:Tool x:Name="ContentTool" Id="Content" Title="Content" CanClose="True" CanPin="False" />
                 <dm:Tool x:Name="OutputTool" Id="Output" Title="Output" CanClose="True" CanPin="False" />
+                <dm:Tool x:Name="ProblemsTool" Id="Problems" Title="Problems" CanClose="True" CanPin="False" />
                 <dm:Tool x:Name="ConsoleTool" Id="Console" Title="Console" CanClose="True" CanPin="False" />
               </dm:ToolDock>
             </dm:ProportionalDock>
@@ -1084,6 +1088,25 @@
                        Foreground="{StaticResource SpectraWarning}" />
             <Border Classes="groupsep" Margin="4,0" />
           </StackPanel>
+
+          <!-- What is wrong right now, and the way into the list of it. A
+               count that is only visible with a panel open is a count nobody
+               sees; this one stands in the bar and opens the panel. -->
+          <Button Classes="ghost" Focusable="False" Padding="0" Margin="0"
+                  Background="Transparent" BorderThickness="0"
+                  IsVisible="{Binding Problems.HasProblems}"
+                  Click="OnShowProblemsPanel"
+                  ToolTip.Tip="{Binding Problems.Summary}">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <Path Classes="icon" Width="13" Height="13" Stretch="Uniform"
+                    RenderTransform="none"
+                    Data="{StaticResource IconWarning}"
+                    Stroke="{StaticResource SpectraWarning}" StrokeThickness="1.3" />
+              <TextBlock Classes="value" Text="{Binding Problems.CountLabel}"
+                         Foreground="{StaticResource SpectraWarning}" />
+              <Border Classes="groupsep" Margin="4,0" />
+            </StackPanel>
+          </Button>
 
           <!-- Missing content, standing for the same reason as the two above.
                A reference that will not resolve draws the magenta checker and

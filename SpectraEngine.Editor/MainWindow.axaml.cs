@@ -87,6 +87,7 @@ public partial class MainWindow : Window
 
     private ContentPanel? _contentView;
     private OutputPanel? _outputView;
+    private ProblemsPanel? _problemsView;
     private ConsolePanel? _consoleView;
     private ConsoleCommands? _console;
 
@@ -280,6 +281,17 @@ public partial class MainWindow : Window
 
         _outputView = new OutputPanel();
         SetToolContent(OutputTool, _outputView);
+
+        _problemsView = new ProblemsPanel();
+        _problemsView.EntryActivated += OnProblemActivated;
+        SetToolContent(ProblemsTool, _problemsView);
+
+        // The engine's own log starts arriving HERE, not at construction: the
+        // relay queues everything written before this and delivers it in one
+        // hop, so the lines from startup are not lost for being early.
+        Program.LogRelay.LineArrived += OnEngineLogLine;
+        Program.LogRelay.LinesDropped += OnEngineLinesDropped;
+        Program.LogRelay.Attach(work => Dispatcher.UIThread.Post(work, DispatcherPriority.Background));
 
         _consoleView = new ConsolePanel();
         _consoleView.CommandSubmitted += OnConsoleCommand;
@@ -985,7 +997,7 @@ public partial class MainWindow : Window
 
     /// <summary>Every tool in the window that is not the viewport.</summary>
     private Dock.Model.Avalonia.Controls.Tool[] PanelTools =>
-        [MapsTool, SceneTool, PropertiesTool, ContentTool, OutputTool, ConsoleTool];
+        [MapsTool, SceneTool, PropertiesTool, ContentTool, OutputTool, ProblemsTool, ConsoleTool];
 
     /// <summary>
     /// A composited viewport that was already running has stopped working.
@@ -1140,6 +1152,11 @@ public partial class MainWindow : Window
         // search nobody typed into it.
         _shell.ClearFilter();
         _shell.ApplySnapshot(FrameSnapshot.Empty);
+
+        // Every standing problem was about this project's content or this
+        // session's engine; carried into the start page they would describe
+        // something that is no longer open.
+        _shell.Problems.Clear();
 
         EditorView.IsVisible = false;
         StartView.IsVisible = true;
@@ -1656,6 +1673,57 @@ public partial class MainWindow : Window
 
     private void OnShowOutputPanel(object? sender, RoutedEventArgs e) => ShowTool(OutputTool);
 
+    private void OnShowProblemsPanel(object? sender, RoutedEventArgs e) => ShowTool(ProblemsTool);
+
+    /// <summary>One engine log line, on the UI thread.</summary>
+    /// <remarks>
+    /// <b>Both destinations, and they are not the same claim.</b> The line goes
+    /// into the history because it was said; a warning or an error also becomes
+    /// a standing problem because it is still true. A resolution line does the
+    /// opposite: it clears the problems about its subject, and only reports
+    /// itself when it actually cleared one, so a texture that reloads for
+    /// ordinary reasons does not narrate itself.
+    /// </remarks>
+    private void OnEngineLogLine(EngineLogLine line)
+    {
+        if (line.IsResolution)
+        {
+            if (_shell.Problems.Resolve(line.Subject) > 0)
+                _shell.Output.Append(OutputSeverity.Info, line.Message);
+            return;
+        }
+
+        _shell.Output.Append(line.Severity, line.Message);
+        _shell.Problems.Report(line.Severity, line.Template, line.Message, line.Subject);
+    }
+
+    /// <summary>The relay fell behind and lost lines.</summary>
+    /// <remarks>
+    /// Reported in both places rather than swallowed: a diagnostic channel that
+    /// quietly drops its busiest moment is the failure this whole path exists to
+    /// stop, and the moment it drops lines is exactly when something is wrong.
+    /// </remarks>
+    private void OnEngineLinesDropped(int count)
+    {
+        string text = $"{count} engine log line(s) were dropped because the shell fell behind. " +
+            "The run log has them all.";
+        _shell.Output.Append(OutputSeverity.Warning, text);
+        _shell.Problems.Report(OutputSeverity.Warning, "Engine log lines dropped", text);
+    }
+
+    /// <summary>A problem row was double-clicked.</summary>
+    private void OnProblemActivated(ProblemEntry entry)
+    {
+        if (entry.HasNode)
+        {
+            _session?.Select(entry.NodeId);
+            return;
+        }
+
+        if (entry.HasSubject)
+            _shell.SetMessage(entry.Subject);
+    }
+
     private void OnShowConsolePanel(object? sender, RoutedEventArgs e)
     {
         ShowTool(ConsoleTool);
@@ -1824,16 +1892,27 @@ public partial class MainWindow : Window
         {
             CookedValidationReport report = await Task.Run(() => CookedValidation.Run(project));
 
+            // The previous run's verdict is about a pack that has just been
+            // rebuilt, so it goes before this one's is recorded.
+            _shell.Problems.ClearScope(ProblemScope.Cook);
+
             foreach (CookDiagnostic diagnostic in report.Diagnostics)
             {
-                _shell.Output.Append(
-                    diagnostic.Severity switch
-                    {
-                        CookDiagnosticSeverity.Error => OutputSeverity.Error,
-                        CookDiagnosticSeverity.Warning => OutputSeverity.Warning,
-                        _ => OutputSeverity.Info,
-                    },
-                    diagnostic.ToBuildLine("scook"));
+                OutputSeverity severity = diagnostic.Severity switch
+                {
+                    CookDiagnosticSeverity.Error => OutputSeverity.Error,
+                    CookDiagnosticSeverity.Warning => OutputSeverity.Warning,
+                    _ => OutputSeverity.Info,
+                };
+
+                string line = diagnostic.ToBuildLine("scook");
+                _shell.Output.Append(severity, line);
+
+                // Keyed on the diagnostic's own id, so twenty textures missing
+                // one shader are twenty rows and one texture reported twice is
+                // one. Info records nothing, which the problem list enforces.
+                _shell.Problems.Report(
+                    severity, $"Cook {diagnostic.Id}", line, diagnostic.File ?? string.Empty, ProblemScope.Cook);
             }
 
             if (report.Succeeded) _shell.SetMessage(report.Summary);
@@ -1958,6 +2037,40 @@ public partial class MainWindow : Window
 
     // Marshalled back deliberately: EditorSession runs its completion on the
     // RENDER thread, which is the whole point of that contract.
+    /// <summary>
+    /// Turns a map's load report into standing problems.
+    /// </summary>
+    /// <remarks>
+    /// <b>One row per missing thing, not one row for the sentence.</b> The
+    /// message line can only say "3 nodes lost their mesh"; these rows name
+    /// them, and they stay until the level is closed rather than until the next
+    /// thing overwrites the status bar.
+    /// </remarks>
+    private void RecordMapProblems(MapLoadReport? report)
+    {
+        if (report is null) return;
+
+        foreach (string node in report.UnresolvedMeshes)
+        {
+            _shell.Problems.Report(
+                OutputSeverity.Warning,
+                "Map: a mesh node loaded without its model",
+                $"{node} loaded without its model and draws nothing.",
+                node,
+                ProblemScope.Map);
+        }
+
+        foreach (string wire in report.UnresolvedTargets)
+        {
+            _shell.Problems.Report(
+                OutputSeverity.Warning,
+                "Map: a connection names a target this level does not have",
+                $"{wire} names a target this level does not have.",
+                wire,
+                ProblemScope.Map);
+        }
+    }
+
     private void ReportModelInsert(ModelInsertReport report)
     {
         // Three outcomes and three voices. A refusal is a warning because
@@ -1967,7 +2080,19 @@ public partial class MainWindow : Window
         if (report.Refused is not null)
             _shell.SetWarning(report.Describe());
         else if (report.Unresolved is not null)
+        {
             _shell.SetError(report.Describe());
+
+            // A node IS in the scene and in the history, drawing nothing. That
+            // outlives the status line by definition.
+            _shell.Problems.Report(
+                OutputSeverity.Error,
+                "A model was placed as an empty node",
+                report.Describe(),
+                report.ContentPath,
+                ProblemScope.Map,
+                report.NodeId);
+        }
         else
             _shell.SetMessage(report.Describe());
     }
@@ -2887,6 +3012,11 @@ public partial class MainWindow : Window
 
             _document.MarkOpened(bundlePath);
             ResetDirtyBaseline();
+
+            // The previous level's problems go with the previous level: they
+            // were about nodes and assets that are no longer in the scene.
+            _shell.Problems.ClearScope(ProblemScope.Map);
+            RecordMapProblems(report);
 
             // A map that names a model this project does not have still loads,
             // with that node standing where it belongs and drawing nothing. It

@@ -1203,6 +1203,17 @@ public sealed class ShellModel : ObservableObject
     public OutputLog Output { get; } = new();
 
     /// <summary>
+    /// What is wrong right now, as distinct from what has been said.
+    /// </summary>
+    /// <remarks>
+    /// <b>Separate from <see cref="Output"/> because they answer different
+    /// questions.</b> The log is bounded and its counts fall back to zero as
+    /// lines scroll away, so it can only report what was recently said; this
+    /// keeps one row per standing condition until something ends it.
+    /// </remarks>
+    public ProblemList Problems { get; } = new();
+
+    /// <summary>
     /// The project's assets, browsed. Assigned by the window, which is the only
     /// thing that knows where a project's content root is.
     /// </summary>

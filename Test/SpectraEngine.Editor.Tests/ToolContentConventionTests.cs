@@ -1,4 +1,4 @@
-namespace SpectraEngine.Editor.Tests;
+﻿namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
 /// Guards the rule that a dock tool's content and its DataContext are assigned
@@ -75,8 +75,8 @@ public sealed class ToolContentConventionTests
             at += "SetToolContent(".Length;
         }
 
-        // Seven tools plus the declaration itself.
-        calls.ShouldBe(8,
+        // Eight tools plus the declaration itself.
+        calls.ShouldBe(9,
             "every dock tool in the window goes through the pairing; a new tool must join it");
     }
 

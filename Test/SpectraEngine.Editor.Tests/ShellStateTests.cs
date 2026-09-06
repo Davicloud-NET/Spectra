@@ -139,7 +139,55 @@ public sealed class OutputLogTests
 
         Assert.Equal(2, log.ErrorCount);
         Assert.Equal(1, log.WarningCount);
-        Assert.Equal("2 errors, 1 warning", log.ProblemSummary);
+    }
+
+    [Fact]
+    public void The_header_says_what_it_is_and_never_claims_no_problems()
+    {
+        // It used to answer "are there problems" off a BOUNDED history, so
+        // enough chatter after a failure turned the header back to "no
+        // problems" over a project that was still broken. That question moved
+        // to ProblemList; this header may only describe itself.
+        var log = new OutputLog();
+        Assert.DoesNotContain("problem", log.HistoryLabel, StringComparison.OrdinalIgnoreCase);
+
+        log.Append(OutputSeverity.Error, "the save failed");
+        Assert.DoesNotContain("problem", log.HistoryLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("1 of", log.HistoryLabel);
+    }
+
+    [Fact]
+    public void A_repeated_line_grows_a_count_instead_of_a_row()
+    {
+        // A compile that warns every frame must not push the whole history out
+        // of the buffer with five hundred copies of one sentence.
+        var log = new OutputLog();
+
+        log.Append(OutputSeverity.Warning, "a texture is missing");
+        log.Append(OutputSeverity.Warning, "a texture is missing");
+        log.Append(OutputSeverity.Warning, "a texture is missing");
+
+        OutputEntry only = Assert.Single(log.Entries);
+        Assert.Equal(3, only.Count);
+        Assert.Equal("x3", only.CountLabel);
+
+        // Counted once, because it is one condition.
+        Assert.Equal(1, log.WarningCount);
+    }
+
+    [Fact]
+    public void Two_lines_alternating_stay_two_rows()
+    {
+        // Only the LAST entry is compared, so an alternating pair is two
+        // conditions and keeps two rows. Stated because merging them would
+        // hide which one came back.
+        var log = new OutputLog();
+
+        log.Append(OutputSeverity.Warning, "first");
+        log.Append(OutputSeverity.Warning, "second");
+        log.Append(OutputSeverity.Warning, "first");
+
+        Assert.Equal(3, log.Entries.Count);
     }
 
     [Fact]

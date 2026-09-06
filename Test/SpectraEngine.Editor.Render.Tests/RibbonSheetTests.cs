@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Media.Imaging;
@@ -101,6 +101,49 @@ public sealed class RibbonSheetTests(RibbonSession session)
 
             Directory.CreateDirectory(OutputDirectory);
             frame.Save(Path.Combine(OutputDirectory, "palette@2x.png"), quality: null);
+
+            DistinctColours(frame).ShouldBeGreaterThan(8);
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void The_problems_panel_rasterises_into_a_sheet()
+    {
+        // The other new visible surface of this pass. It is the panel that says
+        // whether anything is wrong, so shipping one nobody had looked at would
+        // be the same mistake it was written to fix.
+        session.On(() =>
+        {
+            var model = new ShellModel();
+            model.Problems.Report(
+                SpectraEngine.Editor.Shell.OutputSeverity.Error,
+                "Material {Path} is unreadable",
+                "Materials/wall.spectramat could not be read.",
+                "Materials/wall.spectramat");
+            model.Problems.Report(
+                SpectraEngine.Editor.Shell.OutputSeverity.Warning,
+                "Map: a mesh node loaded without its model",
+                "Signpost loaded without its model and draws nothing.",
+                "Signpost");
+            model.Problems.Report(
+                SpectraEngine.Editor.Shell.OutputSeverity.Warning,
+                "Map: a mesh node loaded without its model",
+                "Signpost loaded without its model and draws nothing.",
+                "Signpost");
+
+            var panel = new SpectraEngine.Editor.Shell.ProblemsPanel { DataContext = model };
+            var window = new Window { Content = panel, Width = 520, Height = 200 };
+            window.SetRenderScaling(2.0);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+            WriteableBitmap? frame = window.GetLastRenderedFrame();
+            frame.ShouldNotBeNull();
+
+            Directory.CreateDirectory(OutputDirectory);
+            frame.Save(Path.Combine(OutputDirectory, "problems@2x.png"), quality: null);
 
             DistinctColours(frame).ShouldBeGreaterThan(8);
             window.Close();
