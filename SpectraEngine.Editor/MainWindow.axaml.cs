@@ -86,6 +86,7 @@ public partial class MainWindow : Window
     private int _pumpPosted;
 
     private ContentPanel? _contentView;
+    private Dock.Model.Avalonia.Factory _dockFactory = new();
     private OutputPanel? _outputView;
     private ProblemsPanel? _problemsView;
     private ConsolePanel? _consoleView;
@@ -214,7 +215,8 @@ public partial class MainWindow : Window
         // the right one. The centre dock is the fourth and joins the same one,
         // or a composited viewport could be dragged nowhere and nothing could
         // be dragged beside it.
-        var dockFactory = new Dock.Model.Avalonia.Factory();
+        _dockFactory = new Dock.Model.Avalonia.Factory();
+        Dock.Model.Avalonia.Factory dockFactory = _dockFactory;
         LeftDock.Factory = dockFactory;
         RightDock.Factory = dockFactory;
         BottomDock.Factory = dockFactory;
@@ -445,6 +447,11 @@ public partial class MainWindow : Window
 
         // The third route onto every verb, on a cheap key, and it never moves.
         AddChord(Key.P, KeyModifiers.Control, TogglePalette);
+
+        // Beside the viewport route, because focus may be in a tree row or a
+        // property field, where the viewport's own router never sees the key.
+        AddChord(Key.F11, KeyModifiers.None, () => OnShellChord(ShellChord.MaximiseViewport));
+        AddChord(Key.OemTilde, KeyModifiers.Control, () => OnShellChord(ShellChord.ToggleBottomDrawer));
 
         // Drop a project or a level folder anywhere on the window. The engine's
         // viewport is a native child and never sees Avalonia's drag events, so
@@ -896,9 +903,13 @@ public partial class MainWindow : Window
         _shell.HasSession = true;
         RefreshDocumentIdentity();
 
-        // The pane goes to its home BEFORE the viewport control attaches, so the
-        // first surface is created at the size it will actually be rather than
-        // at whatever the other home measured.
+        // The workspace lands BEFORE the placement, for the same reason the
+        // placement lands before the control attaches: the first surface must be
+        // created at the size it will actually be, and a preset applied
+        // afterwards would resize the swap chain on the first frame.
+        ApplyWorkspace(_settings.WorkspacePreset);
+        _shell.ShowDiagnostics = _settings.DiagnosticsReadouts;
+
         ApplyPlacement(placement);
 
         // Attach last: creating the native child is what eventually raises
@@ -1151,6 +1162,10 @@ public partial class MainWindow : Window
         // left alone, a stale "3 selected / undo 12" keeps verbs enabled on
         // the start page and the next session's tree opens pre-filtered by a
         // search nobody typed into it.
+        // A maximised viewport left standing would hide every panel behind a
+        // start page that has none.
+        RestoreWorkspace();
+
         _shell.ClearFilter();
         _shell.ApplySnapshot(FrameSnapshot.Empty);
 
@@ -1666,15 +1681,21 @@ public partial class MainWindow : Window
 
     private void OnShowScenePanel(object? sender, RoutedEventArgs e) => ShowTool(SceneTool);
 
-    private void OnShowMapsPanel(object? sender, RoutedEventArgs e) => ShowTool(MapsTool);
+    private void OnShowMapsPanel(object? sender, RoutedEventArgs e)
+    {
+        // The compact workspace has no Levels dock, so asking for the panel is
+        // asking for the dock back.
+        SetLevelsDocked(true);
+        ShowTool(MapsTool);
+    }
 
     private void OnShowPropertiesPanel(object? sender, RoutedEventArgs e) => ShowTool(PropertiesTool);
 
-    private void OnShowContentPanel(object? sender, RoutedEventArgs e) => ShowTool(ContentTool);
+    private void OnShowContentPanel(object? sender, RoutedEventArgs e) => ShowToolInDrawer(ContentTool);
 
-    private void OnShowOutputPanel(object? sender, RoutedEventArgs e) => ShowTool(OutputTool);
+    private void OnShowOutputPanel(object? sender, RoutedEventArgs e) => ShowToolInDrawer(OutputTool);
 
-    private void OnShowProblemsPanel(object? sender, RoutedEventArgs e) => ShowTool(ProblemsTool);
+    private void OnShowProblemsPanel(object? sender, RoutedEventArgs e) => ShowToolInDrawer(ProblemsTool);
 
     /// <summary>One engine log line, on the UI thread.</summary>
     /// <remarks>
@@ -1727,7 +1748,7 @@ public partial class MainWindow : Window
 
     private void OnShowConsolePanel(object? sender, RoutedEventArgs e)
     {
-        ShowTool(ConsoleTool);
+        ShowToolInDrawer(ConsoleTool);
 
         // The caret goes into the line, because a console you have to click
         // into after asking for it is a console you stop using.
@@ -2384,11 +2405,11 @@ public partial class MainWindow : Window
         switch (panel)
         {
             case PanelId.Scene: ShowTool(SceneTool); break;
-            case PanelId.Levels: ShowTool(MapsTool); break;
+            case PanelId.Levels: OnShowMapsPanel(this, args); break;
             case PanelId.Properties: ShowTool(PropertiesTool); break;
-            case PanelId.Content: ShowTool(ContentTool); break;
-            case PanelId.Output: ShowTool(OutputTool); break;
-            case PanelId.Problems: ShowTool(ProblemsTool); break;
+            case PanelId.Content: ShowToolInDrawer(ContentTool); break;
+            case PanelId.Output: ShowToolInDrawer(OutputTool); break;
+            case PanelId.Problems: ShowToolInDrawer(ProblemsTool); break;
             case PanelId.Console: OnShowConsolePanel(this, args); break;
             case PanelId.KeyboardReference: OnKeyboardReferenceClicked(this, args); break;
         }
@@ -2552,6 +2573,10 @@ public partial class MainWindow : Window
 
             case ShellVerbKind.Ribbon:
                 SetRibbonExpanded(verb.Ribbon == RibbonVerb.Expand);
+                break;
+
+            case ShellVerbKind.Workspace:
+                RunWorkspaceVerb(verb.Workspace);
                 break;
         }
 
@@ -2841,6 +2866,21 @@ public partial class MainWindow : Window
             case ShellChord.InsertCut: _session?.Insert(InsertKind.SubtractiveBrush); break;
             case ShellChord.InsertLight: _session?.Insert(InsertKind.PointLight); break;
             case ShellChord.OpenPalette: TogglePalette(); break;
+
+            // Read from the shell rather than posted blind: this state is the
+            // window's own and is synchronous, so a key-side toggle cannot be
+            // stale. The verbs underneath stay SET.
+            case ShellChord.MaximiseViewport:
+                RunWorkspaceVerb(_shell.IsViewportMaximised
+                    ? WorkspaceCommand.RestoreWorkspace
+                    : WorkspaceCommand.MaximiseViewport);
+                break;
+
+            case ShellChord.ToggleBottomDrawer:
+                RunWorkspaceVerb(_shell.IsDrawerOpen
+                    ? WorkspaceCommand.CloseBottomDrawer
+                    : WorkspaceCommand.OpenBottomDrawer);
+                break;
         }
     }
 

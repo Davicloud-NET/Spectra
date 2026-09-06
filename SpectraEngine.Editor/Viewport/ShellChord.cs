@@ -26,6 +26,20 @@
 /// </remarks>
 public enum ShellChord
 {
+    /// <summary>
+    /// F11: give the viewport the whole window, or put the panels back.
+    /// </summary>
+    /// <remarks>
+    /// <b>The one chord here that needs no modifier</b>, because it is not a
+    /// letter and cannot be confused with a movement key. F11 is also free: the
+    /// engine's own F11 toggles a window-mode latch that only the standalone
+    /// window's pump reads, and a hosted engine never consumes it.
+    /// </remarks>
+    MaximiseViewport,
+
+    /// <summary>Ctrl+backtick: show or hide the bottom region.</summary>
+    ToggleBottomDrawer,
+
     /// <summary>Ctrl+N.</summary>
     NewMap,
 

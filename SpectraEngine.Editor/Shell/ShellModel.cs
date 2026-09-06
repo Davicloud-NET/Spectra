@@ -1213,6 +1213,60 @@ public sealed class ShellModel : ObservableObject
     /// </remarks>
     public ProblemList Problems { get; } = new();
 
+    private WorkspacePreset _workspacePreset = WorkspacePreset.Compact;
+    private bool _drawerOpen;
+    private bool _viewportMaximised;
+    private bool _showDiagnostics;
+
+    /// <summary>
+    /// How the window is arranged. Shell state, so no optimistic hold: there is
+    /// no engine echo to wait for.
+    /// </summary>
+    public WorkspacePreset WorkspacePreset
+    {
+        get => _workspacePreset;
+        set
+        {
+            if (!Set(ref _workspacePreset, value)) return;
+
+            Raise(nameof(IsCompactWorkspace));
+            Raise(nameof(IsExpandedWorkspace));
+        }
+    }
+
+    /// <summary>Whether the compact arrangement is live.</summary>
+    public bool IsCompactWorkspace => _workspacePreset == WorkspacePreset.Compact;
+
+    /// <summary>Whether the roomy one is.</summary>
+    public bool IsExpandedWorkspace => _workspacePreset == WorkspacePreset.Expanded;
+
+    /// <summary>Whether the bottom region is showing.</summary>
+    public bool IsDrawerOpen
+    {
+        get => _drawerOpen;
+        set => Set(ref _drawerOpen, value);
+    }
+
+    /// <summary>Whether the viewport has the whole window.</summary>
+    public bool IsViewportMaximised
+    {
+        get => _viewportMaximised;
+        set => Set(ref _viewportMaximised, value);
+    }
+
+    /// <summary>Whether the status bar shows the engine counters.</summary>
+    /// <remarks>
+    /// <b>Off by default.</b> Node count, compile count, viewport size and frame
+    /// rate are instruments for somebody working on the engine; for somebody
+    /// building a level they are five numbers in the space where the current
+    /// gesture should be.
+    /// </remarks>
+    public bool ShowDiagnostics
+    {
+        get => _showDiagnostics;
+        set => Set(ref _showDiagnostics, value);
+    }
+
     /// <summary>
     /// The project's assets, browsed. Assigned by the window, which is the only
     /// thing that knows where a project's content root is.

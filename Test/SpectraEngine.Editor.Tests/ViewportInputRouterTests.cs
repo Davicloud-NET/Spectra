@@ -1,4 +1,4 @@
-using SpectraEngine.Core.Input;
+﻿using SpectraEngine.Core.Input;
 using SpectraEngine.Editor.Viewport;
 
 namespace SpectraEngine.Editor.Tests;
@@ -485,6 +485,41 @@ public sealed class ViewportInputRouterTests
 
         _chords.ShouldBeEmpty();
         _sink.Events.ShouldHaveSingleItem().Key.ShouldBe(key);
+    }
+
+    [Fact]
+    public void F11_is_claimed_without_a_modifier()
+    {
+        // The one chord on this table that needs none: it is not a letter, so
+        // it cannot be confused with a movement key, and the engine's own F11
+        // toggles a window-mode latch only the standalone window reads.
+        _router.OnKeyDown(InputKey.F11, KeyModifiers.None).ShouldBeTrue();
+
+        _chords.ShouldHaveSingleItem().ShouldBe(ShellChord.MaximiseViewport);
+        _sink.Events.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void The_drawer_chord_needs_control_and_the_bare_key_does_not()
+    {
+        // A bare backtick already shows the console, and taking it would break
+        // that for nothing.
+        _router.OnKeyDown(InputKey.GraveAccent, KeyModifiers.None).ShouldBeFalse();
+        _chords.ShouldBeEmpty();
+
+        _router.OnKeyDown(InputKey.GraveAccent, KeyModifiers.Control).ShouldBeTrue();
+        _chords.ShouldHaveSingleItem().ShouldBe(ShellChord.ToggleBottomDrawer);
+    }
+
+    [Fact]
+    public void F11_during_a_freelook_goes_to_the_engine_like_every_other_chord()
+    {
+        // The cursor-lock stand-down covers the whole table, not just the
+        // letters: while a camera is driving, the viewport keeps its keys.
+        _router.ApplyCursorMode(CursorMode.Locked);
+
+        _router.OnKeyDown(InputKey.F11, KeyModifiers.None).ShouldBeFalse();
+        _chords.ShouldBeEmpty();
     }
 
     [Fact]

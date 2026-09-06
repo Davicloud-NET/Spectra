@@ -124,27 +124,39 @@ internal sealed class ViewportInputRouter
 
     // The chord table. Keys are the engine's own, not a platform's virtual-key
     // codes, so a second host inherits the table rather than transcribing it.
-    private static ShellChord? ShellChordFor(InputKey key, KeyModifiers modifiers) => key switch
+    private static ShellChord? ShellChordFor(InputKey key, KeyModifiers modifiers)
     {
-        InputKey.N => Viewport.ShellChord.NewMap,
-        InputKey.O => Viewport.ShellChord.OpenMap,
-        InputKey.S => (modifiers & KeyModifiers.Shift) != 0
-            ? Viewport.ShellChord.SaveMapAs
-            : Viewport.ShellChord.SaveMap,
+        // The Control requirement lives HERE now rather than at the call site,
+        // because not every shell chord wants one: a letter must have it or an
+        // ordinary movement key would fire a dialog, and F11 must not, because
+        // it is not a letter and nothing else claims it.
+        bool control = (modifiers & KeyModifiers.Control) != 0;
+
+        return key switch
+        {
+            InputKey.F11 => Viewport.ShellChord.MaximiseViewport,
+            InputKey.GraveAccent when control => Viewport.ShellChord.ToggleBottomDrawer,
+
+            InputKey.N when control => Viewport.ShellChord.NewMap,
+            InputKey.O when control => Viewport.ShellChord.OpenMap,
+            InputKey.S when control => (modifiers & KeyModifiers.Shift) != 0
+                ? Viewport.ShellChord.SaveMapAs
+                : Viewport.ShellChord.SaveMap,
 
         // The number row only. A keypad digit is deliberately absent: an insert
         // is not a thing anyone reaches for with their right hand while the left
         // is on the movement keys, and claiming those keys would take them away
         // from the engine for nothing.
-        InputKey.Number1 => Viewport.ShellChord.InsertBlock,
-        InputKey.Number2 => Viewport.ShellChord.InsertPart,
-        InputKey.Number3 => Viewport.ShellChord.InsertCut,
-        InputKey.Number4 => Viewport.ShellChord.InsertLight,
+            InputKey.Number1 when control => Viewport.ShellChord.InsertBlock,
+            InputKey.Number2 when control => Viewport.ShellChord.InsertPart,
+            InputKey.Number3 when control => Viewport.ShellChord.InsertCut,
+            InputKey.Number4 when control => Viewport.ShellChord.InsertLight,
 
-        InputKey.P => Viewport.ShellChord.OpenPalette,
+            InputKey.P when control => Viewport.ShellChord.OpenPalette,
 
-        _ => null,
-    };
+            _ => null,
+        };
+    }
 
     // --- Pointer -------------------------------------------------------------
 
@@ -296,9 +308,7 @@ internal sealed class ViewportInputRouter
     /// </remarks>
     internal bool OnKeyDown(InputKey key, KeyModifiers modifiers)
     {
-        if (!_cursorLocked
-            && (modifiers & KeyModifiers.Control) != 0
-            && ShellChordFor(key, modifiers) is { } chord)
+        if (!_cursorLocked && ShellChordFor(key, modifiers) is { } chord)
         {
             ShellChord?.Invoke(chord);
             return true;

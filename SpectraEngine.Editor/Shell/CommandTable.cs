@@ -209,6 +209,24 @@ public static class CommandTable
             CommandNeeds.Session | CommandNeeds.RibbonExpanded, "Ctrl+F1"),
         new("Expand the ribbon", ShellVerb.Of(RibbonVerb.Expand),
             CommandNeeds.Session | CommandNeeds.RibbonCollapsed, "Ctrl+F1"),
+
+        // ─── The workspace ───────────────────────────────
+        new("Maximise viewport", ShellVerb.Of(WorkspaceCommand.MaximiseViewport),
+            CommandNeeds.Session, "F11", ["fullscreen", "full screen"]),
+        new("Restore workspace", ShellVerb.Of(WorkspaceCommand.RestoreWorkspace),
+            CommandNeeds.Session, "F11", ["unmaximise", "show panels"]),
+        new("Workspace: compact", ShellVerb.Of(WorkspaceCommand.UseCompactWorkspace),
+            CommandNeeds.Session),
+        new("Workspace: expanded", ShellVerb.Of(WorkspaceCommand.UseExpandedWorkspace),
+            CommandNeeds.Session),
+        new("Bottom panel: open", ShellVerb.Of(WorkspaceCommand.OpenBottomDrawer),
+            CommandNeeds.Session, "Ctrl+`"),
+        new("Bottom panel: close", ShellVerb.Of(WorkspaceCommand.CloseBottomDrawer),
+            CommandNeeds.Session),
+        new("Diagnostics readouts: show", ShellVerb.Of(WorkspaceCommand.ShowDiagnostics),
+            CommandNeeds.Session, "", ["counters", "fps"]),
+        new("Diagnostics readouts: hide", ShellVerb.Of(WorkspaceCommand.HideDiagnostics),
+            CommandNeeds.Session),
     ];
 
     /// <summary>

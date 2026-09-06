@@ -412,6 +412,28 @@
                  neither hide a panel nor discover that panels were a concept:
                  the dock chrome's close button was the only route, and closing
                  one was then permanent. -->
+            <!-- How the window is arranged. Two presets rather than a pile of
+                 sliders: the question people actually have is "give me room to
+                 work" or "show me everything". -->
+            <MenuItem Header="Workspace">
+              <MenuItem Header="Compact" ToggleType="Radio"
+                        IsChecked="{Binding IsCompactWorkspace, Mode=OneWay}"
+                        Click="OnUseCompactWorkspace" />
+              <MenuItem Header="Expanded" ToggleType="Radio"
+                        IsChecked="{Binding IsExpandedWorkspace, Mode=OneWay}"
+                        Click="OnUseExpandedWorkspace" />
+              <Separator />
+              <MenuItem Header="Maximise viewport" InputGesture="F11"
+                        Click="OnToggleMaximiseViewport" />
+              <MenuItem Header="Bottom panel" InputGesture="Ctrl+OemTilde"
+                        ToggleType="CheckBox"
+                        IsChecked="{Binding IsDrawerOpen, Mode=OneWay}"
+                        Click="OnToggleBottomDrawer" />
+              <MenuItem Header="Diagnostics readouts" ToggleType="CheckBox"
+                        IsChecked="{Binding ShowDiagnostics, Mode=OneWay}"
+                        Click="OnToggleDiagnostics" />
+            </MenuItem>
+
             <MenuItem Header="Panels">
               <MenuItem Header="Scene" Click="OnShowScenePanel">
                 <MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconGroup}" /></MenuItem.Icon>
@@ -735,11 +757,11 @@
                    viewport and the most inviting glyph in the header is a trap.
                    Beside a composited pane the flyout draws correctly, so it
                    comes back. -->
-              <dm:ToolDock Id="MapsDock" Alignment="Top" Proportion="0.085">
+              <dm:ToolDock x:Name="MapsDock" Id="MapsDock" Alignment="Top" Proportion="0.085">
                 <dm:Tool x:Name="MapsTool" Id="Maps" Title="Levels" CanClose="False" CanPin="False" />
               </dm:ToolDock>
-              <dm:ProportionalDockSplitter />
-              <dm:ToolDock Id="SceneDock" Alignment="Left" Proportion="0.89">
+              <dm:ProportionalDockSplitter x:Name="MapsSplitter" />
+              <dm:ToolDock x:Name="SceneDock" Id="SceneDock" Alignment="Left" Proportion="0.89">
                 <dm:Tool x:Name="SceneTool" Id="Scene" Title="Scene" CanClose="False" CanPin="False" />
               </dm:ToolDock>
             </dm:ProportionalDock>
@@ -761,7 +783,7 @@
              hit-test - a symmetric -4 margin made the grab area 5px, not 9,
              exactly while a session was live. Drag events hold the ink hot,
              because a fast drag leaves the band mid-gesture. -->
-        <GridSplitter Grid.Column="1" Grid.RowSpan="3" ResizeDirection="Columns" Cursor="SizeWestEast"
+        <GridSplitter x:Name="LeftSplitter" Grid.Column="1" Grid.RowSpan="3" ResizeDirection="Columns" Cursor="SizeWestEast"
                       Width="9" Margin="-7,0,-1,0" PointerEntered="OnSplitterEntered"
                       PointerExited="OnSplitterExited"
                       DragStarted="OnSplitterDragStarted" DragCompleted="OnSplitterDragCompleted"
@@ -801,7 +823,7 @@
                        FloatingWindowHostMode="Native"
                        DefaultDockable="{Binding #CenterLayout}">
             <dm:ProportionalDock x:Name="CenterLayout" Id="CenterLayout" Orientation="Vertical">
-              <dm:ToolDock Id="ViewportDock" Alignment="Top" Proportion="1">
+              <dm:ToolDock x:Name="ViewportDock" Id="ViewportDock" Alignment="Top" Proportion="1">
                 <!-- CanClose stays false in both placements: there is no Window
                      menu and no reopen verb, so a closed viewport is a session
                      with a running engine and no way to see it. CanPin is
@@ -981,7 +1003,7 @@
 
         <!-- The bottom region's own splitter. Rows, not columns, and it carries
              the same ink-plus-hit-area treatment as the vertical pair. -->
-        <GridSplitter Grid.Column="2" Grid.Row="1" ResizeDirection="Rows" Cursor="SizeNorthSouth"
+        <GridSplitter x:Name="BottomSplitter" Grid.Column="2" Grid.Row="1" ResizeDirection="Rows" Cursor="SizeNorthSouth"
                       Height="9" Margin="0,-1,0,-7" PointerEntered="OnSplitterEntered"
                       PointerExited="OnSplitterExited"
                       DragStarted="OnSplitterDragStarted" DragCompleted="OnSplitterDragCompleted"
@@ -1008,7 +1030,7 @@
           </dm:RootDock>
         </dock:DockControl>
 
-        <GridSplitter Grid.Column="3" Grid.RowSpan="3" ResizeDirection="Columns" Cursor="SizeWestEast"
+        <GridSplitter x:Name="RightSplitter" Grid.Column="3" Grid.RowSpan="3" ResizeDirection="Columns" Cursor="SizeWestEast"
                       Width="9" Margin="-1,0,-7,0" PointerEntered="OnSplitterEntered"
                       PointerExited="OnSplitterExited"
                       DragStarted="OnSplitterDragStarted" DragCompleted="OnSplitterDragCompleted"

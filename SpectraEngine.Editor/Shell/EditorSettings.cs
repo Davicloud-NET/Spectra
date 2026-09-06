@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Serialization;
 using SpectraEngine.Editor.Viewport;
 using System;
@@ -193,6 +193,51 @@ public sealed class EditorSettings
     /// </remarks>
     public bool RibbonExpanded => _ribbonExpanded;
 
+    private WorkspacePreset _workspacePreset = WorkspacePreset.Compact;
+    private double _drawerHeight = WorkspaceLayout.DefaultDrawerHeight;
+    private DateTime _workspaceRecordedUtc = DateTime.MinValue;
+
+    /// <summary>How the window is arranged. Compact by default.</summary>
+    public WorkspacePreset WorkspacePreset => _workspacePreset;
+
+    /// <summary>How tall the bottom drawer opens.</summary>
+    public double DrawerHeight => _drawerHeight;
+
+    /// <summary>Records the arrangement for next time.</summary>
+    public void SetWorkspacePreset(WorkspacePreset preset)
+    {
+        if (_workspacePreset == preset) return;
+
+        _workspacePreset = preset;
+        _workspaceRecordedUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>Records the drawer height after a drag.</summary>
+    public void SetDrawerHeight(double height)
+    {
+        // A height that is not a usable number would come back as a drawer
+        // nobody can open; keeping the old one is the honest degrade.
+        if (!double.IsFinite(height) || height < 0 || _drawerHeight == height) return;
+
+        _drawerHeight = height;
+        _workspaceRecordedUtc = DateTime.UtcNow;
+    }
+
+    private bool _diagnosticsReadouts;
+    private DateTime _diagnosticsRecordedUtc = DateTime.MinValue;
+
+    /// <summary>Whether the status bar shows the engine counters.</summary>
+    public bool DiagnosticsReadouts => _diagnosticsReadouts;
+
+    /// <summary>Records the choice for next time.</summary>
+    public void SetDiagnosticsReadouts(bool shown)
+    {
+        if (_diagnosticsReadouts == shown) return;
+
+        _diagnosticsReadouts = shown;
+        _diagnosticsRecordedUtc = DateTime.UtcNow;
+    }
+
     /// <summary>Records the pin state for next time.</summary>
     public void SetRibbonExpanded(bool expanded)
     {
@@ -236,6 +281,11 @@ public sealed class EditorSettings
             // surface can do is the right one to fall back to.
             settings._ribbonExpanded = true;
             settings._ribbonRecordedUtc = DateTime.MinValue;
+            settings._workspacePreset = WorkspacePreset.Compact;
+            settings._drawerHeight = WorkspaceLayout.DefaultDrawerHeight;
+            settings._workspaceRecordedUtc = DateTime.MinValue;
+            settings._diagnosticsReadouts = false;
+            settings._diagnosticsRecordedUtc = DateTime.MinValue;
         }
 
         return settings;
@@ -336,6 +386,19 @@ public sealed class EditorSettings
             _ribbonExpanded = onDisk._ribbonExpanded;
             _ribbonRecordedUtc = onDisk._ribbonRecordedUtc;
         }
+
+        if (onDisk._workspaceRecordedUtc > _workspaceRecordedUtc)
+        {
+            _workspacePreset = onDisk._workspacePreset;
+            _drawerHeight = onDisk._drawerHeight;
+            _workspaceRecordedUtc = onDisk._workspaceRecordedUtc;
+        }
+
+        if (onDisk._diagnosticsRecordedUtc > _diagnosticsRecordedUtc)
+        {
+            _diagnosticsReadouts = onDisk._diagnosticsReadouts;
+            _diagnosticsRecordedUtc = onDisk._diagnosticsRecordedUtc;
+        }
     }
 
     private void Write(Utf8JsonWriter writer)
@@ -353,6 +416,17 @@ public sealed class EditorSettings
         writer.WriteStartObject("ribbon");
         writer.WriteBoolean("expanded", _ribbonExpanded);
         writer.WriteString("recordedUtc", _ribbonRecordedUtc.ToString("O"));
+        writer.WriteEndObject();
+
+        writer.WriteStartObject("workspace");
+        writer.WriteString("preset", WorkspaceLayout.NameOf(_workspacePreset));
+        writer.WriteNumber("drawerHeight", _drawerHeight);
+        writer.WriteString("recordedUtc", _workspaceRecordedUtc.ToString("O"));
+        writer.WriteEndObject();
+
+        writer.WriteStartObject("diagnostics");
+        writer.WriteBoolean("readouts", _diagnosticsReadouts);
+        writer.WriteString("recordedUtc", _diagnosticsRecordedUtc.ToString("O"));
         writer.WriteEndObject();
 
         writer.WriteStartArray("recentProjects");
@@ -384,6 +458,14 @@ public sealed class EditorSettings
             else if (reader.ValueTextEquals("viewport"))
             {
                 ReadViewport(ref reader);
+            }
+            else if (reader.ValueTextEquals("workspace"))
+            {
+                ReadWorkspace(ref reader);
+            }
+            else if (reader.ValueTextEquals("diagnostics"))
+            {
+                ReadDiagnostics(ref reader);
             }
             else if (reader.ValueTextEquals("ribbon"))
             {
@@ -503,6 +585,85 @@ public sealed class EditorSettings
 
         _ribbonExpanded = expanded;
         _ribbonRecordedUtc = recorded;
+    }
+
+    private void ReadWorkspace(ref Utf8JsonReader reader)
+    {
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException("'workspace' must be an object.");
+
+        WorkspacePreset preset = WorkspacePreset.Compact;
+        double drawer = WorkspaceLayout.DefaultDrawerHeight;
+        DateTime recorded = DateTime.MinValue;
+
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            if (reader.ValueTextEquals("preset"))
+            {
+                reader.Read();
+
+                // An unknown word from a newer shell reads as compact rather
+                // than failing the whole file, which is how every other setting
+                // here degrades.
+                WorkspaceLayout.TryParse(reader.GetString(), out preset);
+            }
+            else if (reader.ValueTextEquals("drawerHeight"))
+            {
+                reader.Read();
+                drawer = reader.GetDouble();
+            }
+            else if (reader.ValueTextEquals("recordedUtc"))
+            {
+                reader.Read();
+                DateTime.TryParse(
+                    reader.GetString(), null,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out recorded);
+            }
+            else
+            {
+                reader.Read();
+                reader.Skip();
+            }
+        }
+
+        _workspacePreset = preset;
+        _drawerHeight = double.IsFinite(drawer) && drawer >= 0
+            ? drawer
+            : WorkspaceLayout.DefaultDrawerHeight;
+        _workspaceRecordedUtc = recorded;
+    }
+
+    private void ReadDiagnostics(ref Utf8JsonReader reader)
+    {
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException("'diagnostics' must be an object.");
+
+        bool readouts = false;
+        DateTime recorded = DateTime.MinValue;
+
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            if (reader.ValueTextEquals("readouts"))
+            {
+                reader.Read();
+                readouts = reader.GetBoolean();
+            }
+            else if (reader.ValueTextEquals("recordedUtc"))
+            {
+                reader.Read();
+                DateTime.TryParse(
+                    reader.GetString(), null,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out recorded);
+            }
+            else
+            {
+                reader.Read();
+                reader.Skip();
+            }
+        }
+
+        _diagnosticsReadouts = readouts;
+        _diagnosticsRecordedUtc = recorded;
     }
 
     private void ReadRecentProjects(ref Utf8JsonReader reader)

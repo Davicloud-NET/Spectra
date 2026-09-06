@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Viewport;
 using System;
@@ -264,5 +264,90 @@ public sealed class EditorSettingsTests
 
         loaded.Mode.ShouldBe(ViewportMode.Auto);
         loaded.GreenSessions.ShouldBe(3);
+    }
+
+    // --- the workspace block -------------------------------------------------
+
+    [Fact]
+    public void The_workspace_defaults_to_compact()
+    {
+        // The whole point of the preset: a fresh install gives the viewport the
+        // room rather than the panels.
+        var settings = new EditorSettings();
+
+        settings.WorkspacePreset.ShouldBe(WorkspacePreset.Compact);
+        settings.DrawerHeight.ShouldBe(WorkspaceLayout.DefaultDrawerHeight);
+        settings.DiagnosticsReadouts.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_workspace_block_round_trips()
+    {
+        string path = TempPath();
+        var settings = new EditorSettings();
+        settings.SetWorkspacePreset(WorkspacePreset.Expanded);
+        settings.SetDrawerHeight(212);
+        settings.SetDiagnosticsReadouts(true);
+
+        settings.Save(path, NullLogger.Instance);
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+
+        loaded.WorkspacePreset.ShouldBe(WorkspacePreset.Expanded);
+        loaded.DrawerHeight.ShouldBe(212);
+        loaded.DiagnosticsReadouts.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_file_with_no_workspace_block_reads_as_compact()
+    {
+        // Every settings file written before this existed.
+        string path = TempPath();
+        var settings = new EditorSettings();
+        settings.TouchProject(@"C:\Games\Alpha", "Alpha", DateTime.UtcNow);
+        settings.Save(path, NullLogger.Instance);
+
+        string json = File.ReadAllText(path);
+        json.ShouldContain("workspace");
+
+        File.WriteAllText(path, json.Replace("workspace", "somethingelse"));
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+
+        loaded.WorkspacePreset.ShouldBe(WorkspacePreset.Compact);
+        loaded.RecentProjects.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void The_workspace_block_merges_by_recency_like_every_other_one()
+    {
+        // Two shells open at once: the one that chose last wins, whole block at
+        // a time, so a preset and its drawer height cannot come from different
+        // sessions.
+        string path = TempPath();
+
+        var first = new EditorSettings();
+        first.SetWorkspacePreset(WorkspacePreset.Expanded);
+        first.SetDrawerHeight(300);
+        first.Save(path, NullLogger.Instance);
+
+        var second = EditorSettings.Load(path, NullLogger.Instance);
+        second.WorkspacePreset.ShouldBe(WorkspacePreset.Expanded);
+
+        // An older opinion must not overwrite it.
+        var stale = new EditorSettings();
+        stale.Save(path, NullLogger.Instance);
+
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+        loaded.WorkspacePreset.ShouldBe(WorkspacePreset.Expanded);
+        loaded.DrawerHeight.ShouldBe(300);
+    }
+
+    [Fact]
+    public void A_drawer_height_that_is_not_a_number_is_refused()
+    {
+        var settings = new EditorSettings();
+        settings.SetDrawerHeight(double.NaN);
+        settings.SetDrawerHeight(-40);
+
+        settings.DrawerHeight.ShouldBe(WorkspaceLayout.DefaultDrawerHeight);
     }
 }

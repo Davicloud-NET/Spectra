@@ -261,6 +261,20 @@ public sealed class RibbonLayoutTests
                     ShellToggles.CommandFor(item.Verb.Toggle, on: true)
                         .ShouldNotBe(ShellToggles.CommandFor(item.Verb.Toggle, on: false), item.Id);
                     break;
+
+                case ShellVerbKind.Document:
+                case ShellVerbKind.Play:
+                case ShellVerbKind.Panel:
+                case ShellVerbKind.Ribbon:
+                case ShellVerbKind.Workspace:
+                    // SHELL VERBS STAY OFF THE RIBBON. Every kind above names an
+                    // enum some other assembly declared, which is what the
+                    // roster's compile-time weld is worth; these five resolve to
+                    // handlers in the window itself. They belong to the menus and
+                    // the palette, and a switch with no arm for them would let one
+                    // onto a page silently.
+                    throw new Xunit.Sdk.XunitException(
+                        $"{item.Id} carries a shell verb; those belong to the menus and the palette");
             }
         }
     }
