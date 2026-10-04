@@ -1318,7 +1318,7 @@ public sealed unsafe class D3D11Renderer : Renderer
                 // No clamp: a caster edge-on to the light casts no shadow anyway.
                 DepthBiasClamp = 0f,
                 SlopeScaledDepthBias = bias.SlopeScaled,
-                DepthClipEnable = 1,
+                DepthClipEnable = !bias.ClampDepth,
                 ScissorEnable = 0,
                 MultisampleEnable = 0,
                 AntialiasedLineEnable = 0,

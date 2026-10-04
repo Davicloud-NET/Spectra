@@ -11,9 +11,12 @@ namespace SpectraEngine.Graphics.Tests;
 /// <summary>
 /// A lone sphere must not shadow itself along its terminator.
 /// </summary>
-// The fix is the slope-scaled raster bias, which has to cover the PCF filter's
-// whole footprint. Widening the filter without raising the bias brings the
-// artifact back. Receiver-plane depth bias was tried and made it worse.
+// Two things stop it: the lookup is lifted off the surface along its normal,
+// and the depth pass pushes stored depth back. The lift does most of it here.
+// Widening the filter without raising them brings the artifact back.
+// Receiver-plane depth bias was tried and made it worse.
+// ShadowCascadeGlTests pulls the other way: it fails when the bias is so large
+// that a shadow leaves its caster.
 //
 // The G-buffer is sized to the window, not the frame target, so these tests
 // drive the framebuffer latch to keep the two matched.
@@ -78,9 +81,9 @@ public sealed class ShadowCurvedReceiverGlTests
 
             (int worstX, int worstY, int worstDrop) = WorstDarkening(on, off, ConvergedSize);
 
-            // Tolerance for the filter straddling the terminator and 8-bit
-            // rounding. Acne is a far bigger drop.
-            worstDrop.ShouldBeLessThan(24,
+            // A few levels for 8-bit rounding on another driver. Acne is a
+            // far bigger drop.
+            worstDrop.ShouldBeLessThan(10,
                 $"a lone sphere darkened by {worstDrop} at ({worstX}, {worstY}) when shadows were " +
                 "turned on; nothing in the scene can cast onto it, so that darkening is the sphere " +
                 "shadowing itself");

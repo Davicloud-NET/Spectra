@@ -43,6 +43,9 @@ public sealed class D3D12PsoKeyTests
         Assert.NotEqual(Key(bias: DepthBias.None), Key(bias: new DepthBias(2000, 2.5f)));
         Assert.NotEqual(Key(bias: new DepthBias(2000, 2.5f)), Key(bias: new DepthBias(2000, 3f)));
         Assert.NotEqual(Key(bias: new DepthBias(2000, 2.5f)), Key(bias: new DepthBias(3000, 2.5f)));
+
+        // Depth clipping is in the rasterizer state too.
+        Assert.NotEqual(Key(bias: new DepthBias(2000, 2.5f)), Key(bias: new DepthBias(2000, 2.5f, ClampDepth: true)));
     }
 
     [Theory]

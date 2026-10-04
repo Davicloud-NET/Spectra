@@ -21,6 +21,7 @@ public sealed class ShadowMap : IDisposable
     private readonly Renderer _renderer;
     private readonly RenderTarget _target;
     private readonly Matrix4x4[] _lightViewProjection = new Matrix4x4[MaxCascades];
+    private readonly Matrix4x4[] _casterVolume = new Matrix4x4[MaxCascades];
     private readonly Matrix4x4[] _worldToShadow = new Matrix4x4[MaxCascades];
     private readonly Vector4[] _rects = new Vector4[MaxCascades];
     private int _cascadeCount = MaxCascades;
@@ -39,6 +40,7 @@ public sealed class ShadowMap : IDisposable
         for (int i = 0; i < MaxCascades; i++)
         {
             _lightViewProjection[i] = Matrix4x4.Identity;
+            _casterVolume[i] = Matrix4x4.Identity;
             _worldToShadow[i] = Matrix4x4.Identity;
         }
     }
@@ -90,27 +92,54 @@ public sealed class ShadowMap : IDisposable
     public float SplitStart { get; set; } = 2.5f;
 
     /// <summary>
-    /// The rasterizer's depth offset while the map is drawn. This is the acne fix.
+    /// How far toward the light a caster can be from a cascade and still cast
+    /// into it.
     /// </summary>
-    // The slope term has to cover the PCF filter's whole footprint, not one texel.
-    // Smallest value with no self-shadowing, measured: radius up to 0.8 needs 6,
-    // 1.2 needs 8, 2 needs 10, 3 needs 14. Raise it when FilterRadius is widened.
-    public DepthBias RasterBias { get; set; } = new(Constant: 2000, SlopeScaled: 8f);
+    // The cascade's own depth range stays short, for precision. Casters past
+    // its front are drawn with depth clamped, flat on that front.
+    public float CasterReach { get; set; } = 500f;
+
+    /// <summary>
+    /// The rasterizer's depth offset while the map is drawn. It pushes a
+    /// caster's stored depth away from the light, so it is also how far a
+    /// shadow starts from the thing that casts it.
+    /// </summary>
+    // Half of the acne fix. NormalOffset is the other half and costs no gap,
+    // so this one is kept small: at a slope of 8 a sheet's shadow began seven
+    // texels from the sheet. Both were measured at FilterRadius 1.2. A wider
+    // filter needs more of both.
+    public DepthBias RasterBias { get; set; } = new(Constant: 2000, SlopeScaled: 2.5f);
+
+    /// <summary>
+    /// How far off a surface its shadow is looked up, along the surface's
+    /// normal, in texels of the chosen cascade. Full at a grazing light, none
+    /// for a surface facing it.
+    /// </summary>
+    // Lifts the lookup clear of the surface's own stored depth, so a surface
+    // does not shade itself. Unlike RasterBias it leaves casters where they are.
+    public float NormalOffset { get; set; } = 2.5f;
 
     /// <summary>
     /// Radius of the PCF tap circle, in texels of the chosen cascade. The fetch
-    /// count does not depend on it. See <see cref="RasterBias"/> before widening.
+    /// count does not depend on it. See <see cref="RasterBias"/> and
+    /// <see cref="NormalOffset"/> before widening.
     /// </summary>
     public float FilterRadius { get; set; } = 1.2f;
 
     /// <summary>
-    /// Constant subtracted from the compared depth, for what <see cref="RasterBias"/> misses.
-    /// Raising it detaches shadows from their casters.
+    /// Constant subtracted from the compared depth, for what <see cref="RasterBias"/>
+    /// and <see cref="NormalOffset"/> miss. Raising it detaches shadows from their casters.
     /// </summary>
     public float CompareBias { get; set; } = 0.0002f;
 
     /// <summary>World-to-light-clip for one cascade, for the depth pass to draw with.</summary>
     public Matrix4x4 LightViewProjectionAt(int cascade) => _lightViewProjection[cascade];
+
+    /// <summary>
+    /// The volume to cull one cascade's casters against: the cascade's own,
+    /// extended <see cref="CasterReach"/> toward the light.
+    /// </summary>
+    public Matrix4x4 CasterVolumeAt(int cascade) => _casterVolume[cascade];
 
     /// <summary>
     /// Per cascade: world position to a lookup in that cascade's own 0..1 space,
@@ -187,13 +216,14 @@ public sealed class ShadowMap : IDisposable
             float overlappedNear = i == 0 ? sliceNear : sliceNear * 0.96f;
 
             if (!TryFitLightMatrix(
-                    camera, lightDirection, overlappedNear, sliceFar, TileResolution,
-                    out Matrix4x4 lightViewProjection, out float worldTexel))
+                    camera, lightDirection, overlappedNear, sliceFar, TileResolution, CasterReach,
+                    out Matrix4x4 lightViewProjection, out Matrix4x4 casterVolume, out float worldTexel))
             {
                 return false;
             }
 
             _lightViewProjection[i] = lightViewProjection;
+            _casterVolume[i] = casterVolume;
             _worldToShadow[i] = lightViewProjection * _renderer.ClipZCorrection * ndcToTexture;
 
             (int x, int y, int size) = TileAt(i);
@@ -248,10 +278,26 @@ public sealed class ShadowMap : IDisposable
         float far,
         int resolution,
         out Matrix4x4 lightViewProjection,
+        out float worldTexelSize) =>
+        TryFitLightMatrix(
+            camera, lightDirection, near, far, resolution, casterReach: 0f,
+            out lightViewProjection, out _, out worldTexelSize);
+
+    // casterVolume is the same box with its front casterReach nearer the light.
+    internal static bool TryFitLightMatrix(
+        Camera camera,
+        Vector3 lightDirection,
+        float near,
+        float far,
+        int resolution,
+        float casterReach,
+        out Matrix4x4 lightViewProjection,
+        out Matrix4x4 casterVolume,
         out float worldTexelSize)
     {
         ArgumentNullException.ThrowIfNull(camera);
         lightViewProjection = Matrix4x4.Identity;
+        casterVolume = Matrix4x4.Identity;
         worldTexelSize = 0f;
 
         if (lightDirection.LengthSquared() < 1e-12f) return false;
@@ -291,6 +337,10 @@ public sealed class ShadowMap : IDisposable
             zNear, zFar);
 
         lightViewProjection = lightView * lightProjection;
+        casterVolume = lightView * Matrix4x4.CreateOrthographicOffCenter(
+            snappedX - radius, snappedX + radius,
+            snappedY - radius, snappedY + radius,
+            zNear - MathF.Max(casterReach, 0f), zFar);
         worldTexelSize = diameter / resolution;
         return true;
     }

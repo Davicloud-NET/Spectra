@@ -330,7 +330,11 @@ public class OpenGLRenderer : Renderer
     protected override void ApplyDepthBias(DepthBias bias)
     {
         GL gl = _gl!;
-        if (bias.IsZero)
+
+        if (bias.ClampDepth) gl.Enable(EnableCap.DepthClamp);
+        else gl.Disable(EnableCap.DepthClamp);
+
+        if (bias.Constant == 0 && bias.SlopeScaled == 0f)
         {
             gl.Disable(EnableCap.PolygonOffsetFill);
             return;

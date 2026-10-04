@@ -74,6 +74,9 @@ shader DeferredLight {
 
         // PCF tap circle radius, in texels of the chosen cascade.
         float uShadowFilterRadius;
+
+        // How far off the surface the lookup is lifted, in the same texels.
+        float uShadowNormalOffset;
     }
 
     // Parallel vec4 arrays, not a struct array: a struct array does nothing on
@@ -347,16 +350,18 @@ shader DeferredLight {
         return Math.Mix(Math.Mix(s00, s10, weight.x), Math.Mix(s01, s11, weight.x), weight.y);
     }
 
-    // 1 fully lit, 0 fully shadowed.
-    float ShadowFactor(vec3 world, vec2 pixel) {
+    // 1 fully lit, 0 fully shadowed. n is the surface's normal and l points
+    // at the light.
+    float ShadowFactor(vec3 world, vec3 n, vec3 l, vec2 pixel) {
         if (uShadowStrength <= 0.0) {
             return 1.0;
         }
 
-        // The filter reaches this far from the point: the tap circle, then a
-        // texel and a half for the bilinear taps. A point nearer than that to a
-        // cascade's edge is left to the next cascade, which holds it whole.
-        float reach = (uShadowFilterRadius + 1.5) * uShadowTexel;
+        // The filter reaches this far from the point: the lookup's offset, the
+        // tap circle, then a texel and a half for the bilinear taps. A point
+        // nearer than that to a cascade's edge is left to the next cascade,
+        // which holds it whole.
+        float reach = (uShadowNormalOffset + uShadowFilterRadius + 1.5) * uShadowTexel;
 
         // First (sharpest) cascade containing the point. Past the last
         // cascade the point is lit.
@@ -380,9 +385,13 @@ shader DeferredLight {
 
         vec4 rect = uCascadeRects[chosen];
 
-        // No normal offset: it shifts the shadow sideways by a different
-        // amount per face. The depth pass's slope-scaled raster bias handles acne.
-        vec4 coords = uWorldToShadow[chosen] * vec4(world, 1.0);
+        // Looked up a little off the surface, along its normal: the further
+        // the surface leans from the light, the nearer its own stored depth is
+        // to the tap next door. The other cure is pushing every caster's depth
+        // back, and that opens a gap between a caster and its shadow.
+        float facing = Math.Clamp(Math.Dot(n, l), 0.0, 1.0);
+        float lift = uShadowNormalOffset * rect.w * Math.Sqrt(1.0 - facing * facing);
+        vec4 coords = uWorldToShadow[chosen] * vec4(world + n * lift, 1.0);
         vec3 s = coords.xyz / coords.w;
 
         float reference = s.z - uShadowDepthBias;
@@ -455,7 +464,8 @@ shader DeferredLight {
 
             float shadow = 1.0;
             if (i == uShadowLightIndex) {
-                shadow = ShadowFactor(world, pixel);
+                // Only a directional light casts, and its position is its travel.
+                shadow = ShadowFactor(world, n, Math.Normalize(-posRange.xyz), pixel);
             }
 
             total = total + lit * colorType.rgb * shadow;

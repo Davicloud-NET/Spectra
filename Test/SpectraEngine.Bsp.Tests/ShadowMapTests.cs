@@ -2,6 +2,7 @@
 using System.Numerics;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
+using static SpectraEngine.Bsp.Tests.SpatialTestHelpers;
 
 namespace SpectraEngine.Bsp.Tests;
 
@@ -107,6 +108,51 @@ public sealed class ShadowMapTests
         fromNearPlane[0].ShouldBeLessThan(3f);
         fromStart[0].ShouldBeGreaterThan(6f);
         fromStart[3].ShouldBe(60f, 1e-4f);
+    }
+
+    [Fact]
+    public void A_caster_far_toward_the_light_is_kept_for_the_cascade_it_shades()
+    {
+        // A cascade's own box ends a short way above what it shades, so the
+        // top of a tower is outside it. The box casters are culled against
+        // reaches back toward the light.
+        Camera camera = MakeCamera(new Vector3(0f, 2f, 10f), Vector3.Zero);
+        ShadowMap.TryFitLightMatrix(
+            camera, -Vector3.UnitY, Near, 6f, Resolution, casterReach: 500f,
+            out Matrix4x4 own, out Matrix4x4 reaching, out _).ShouldBeTrue();
+
+        Vector3 inView = camera.Position + (camera.Forward * 3f);
+
+        var scene = new Scene("Test");
+        SceneNode low = CreateMeshNode(scene.Root, "low", inView);
+        SceneNode high = CreateMeshNode(scene.Root, "high", inView + new Vector3(0f, 300f, 0f));
+
+        var view = new RenderView();
+        scene.BuildShadowView(own, view);
+        view.Items.Count.ShouldBe(1, "the cascade's own box does not reach the high caster");
+        view.Items[0].Mesh.ShouldBeSameAs(low.MeshRenderer!.Mesh);
+
+        scene.BuildShadowView(reaching, view);
+        view.Items.Count.ShouldBe(2);
+        view.Items.ShouldContain(item => ReferenceEquals(item.Mesh, high.MeshRenderer!.Mesh));
+    }
+
+    [Fact]
+    public void The_caster_volume_is_no_wider_than_the_cascade()
+    {
+        // Reaching sideways too would draw casters that cannot shade it.
+        Camera camera = MakeCamera(new Vector3(0f, 2f, 10f), Vector3.Zero);
+        ShadowMap.TryFitLightMatrix(
+            camera, -Vector3.UnitY, Near, 6f, Resolution, casterReach: 500f,
+            out Matrix4x4 own, out Matrix4x4 reaching, out _).ShouldBeTrue();
+
+        foreach (Vector3 point in new[] { new Vector3(3f, 0f, 4f), new Vector3(-40f, 1f, 9f), new Vector3(0f, 5f, -70f) })
+        {
+            Vector4 a = Vector4.Transform(point, own);
+            Vector4 b = Vector4.Transform(point, reaching);
+            b.X.ShouldBe(a.X, 1e-4f);
+            b.Y.ShouldBe(a.Y, 1e-4f);
+        }
     }
 
     private static float TexelX(Vector3 world, in Matrix4x4 lightViewProjection)

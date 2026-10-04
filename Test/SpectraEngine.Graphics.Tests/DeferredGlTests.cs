@@ -107,8 +107,8 @@ public sealed class DeferredGlTests
     [Fact]
     public void A_lit_surface_with_nothing_over_it_is_not_shadowed_by_itself()
     {
-        // Shadow acne. Grazing light is the worst case; this fails without
-        // ShadowMap.RasterBias.
+        // Shadow acne. Grazing light is the worst case; this fails with
+        // neither ShadowMap.RasterBias nor ShadowMap.NormalOffset.
         bool restore = _fixture.Renderer.ShadowsEnabled;
         try
         {

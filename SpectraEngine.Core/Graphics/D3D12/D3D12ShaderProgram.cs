@@ -409,7 +409,7 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
                     // Unclamped: a caster edge-on to the light shades nothing anyway.
                     DepthBiasClamp = 0f,
                     SlopeScaledDepthBias = bias.SlopeScaled,
-                    DepthClipEnable = 1,
+                    DepthClipEnable = !bias.ClampDepth,
                     MultisampleEnable = 0,
                     AntialiasedLineEnable = 0,
                     ForcedSampleCount = 0,

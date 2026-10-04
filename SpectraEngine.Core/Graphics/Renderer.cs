@@ -986,8 +986,8 @@ public abstract class Renderer
 
         BeginPass(map.Target, PassClear.DepthOnly);
 
-        // Slope-scaled raster bias is what fixes acne.
-        SetDepthBias(map.RasterBias);
+        // Clamped, so a caster in front of a cascade's volume still lands in it.
+        SetDepthBias(map.RasterBias with { ClampDepth = true });
         try
         {
             for (int cascade = 0; cascade < map.FittedCascadeCount; cascade++)
@@ -997,8 +997,9 @@ public abstract class Renderer
 
                 Matrix4x4 lightViewProjection = map.LightViewProjectionAt(cascade);
 
-                // Culled per cascade against the light, not the camera.
-                scene.BuildShadowView(lightViewProjection, _shadowView);
+                // Culled per cascade against the light, not the camera, and
+                // with the volume reaching back toward the light.
+                scene.BuildShadowView(map.CasterVolumeAt(cascade), _shadowView);
 
                 Matrix4x4 lightClip = lightViewProjection * ClipZCorrection;
 
@@ -1403,6 +1404,7 @@ public abstract class Renderer
             .SetUniform("uShadowTexel", map?.TexelSize ?? 0f)
             .SetUniform("uShadowDepthBias", map?.CompareBias ?? 0f)
             .SetUniform("uShadowFilterRadius", map?.FilterRadius ?? 1f)
+            .SetUniform("uShadowNormalOffset", map?.NormalOffset ?? 0f)
             .SetUniform("uTargetSize", new Vector2(PassSize.X, PassSize.Y))
             // Not PassSize: the G-buffer follows the window, the pass may not.
             // The shader snaps its reads to G-buffer texel centres.
@@ -1540,6 +1542,7 @@ public abstract class Renderer
         shader.SetUniform("uShadowTexel", map?.TexelSize ?? 0f);
         shader.SetUniform("uShadowDepthBias", map?.CompareBias ?? 0f);
         shader.SetUniform("uShadowFilterRadius", map?.FilterRadius ?? 1f);
+        shader.SetUniform("uShadowNormalOffset", map?.NormalOffset ?? 0f);
         shader.SetUniform("uWorldToShadow", map is not null ? map.WorldToShadow : IdentityCascades);
         shader.SetUniform("uCascadeRects", map is not null ? map.CascadeRects : EmptyCascadeRects);
         if ((map?.Depth ?? _unshadowed) is { } shadowTexture)
