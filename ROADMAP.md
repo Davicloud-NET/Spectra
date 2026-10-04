@@ -2,7 +2,7 @@
 
 > One dependency-ordered plan for the whole vision: *a Roblox-style edit experience with Source-grade robustness, on a scene-graph spine, with more rendering and custom shaders.*
 > Sizes are relative (**S / M / L**), not calendar estimates. Every milestone is independently shippable and independently verifiable.
-> Read `CLAUDE.md` first — it holds the architecture decisions and the pillars this roadmap must never break.
+> Read `AGENTS.md` first. It holds the rules this roadmap must never break. The reasoning behind them is in `docs/archive/architecture-notes-2026-10.md`, which is what later mentions of `CLAUDE.md` in this file refer to.
 >
 > **Companion documents — eleven, and this is the whole set.** Six own an arc of milestone ids that interleaves with the arcs below and is referenced here by id rather than restated; the other five are a survey, a product thesis, a mapping, a guardrail catalogue and a rule set, and own no milestones. **Start with the first one.**
 >

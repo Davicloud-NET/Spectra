@@ -204,7 +204,7 @@ registry. The one exception is the NativeAOT publish, which shells out to
 
 ## Design principles
 
-The full set lives in [CLAUDE.md](CLAUDE.md). The load-bearing ones:
+The full set lives in [AGENTS.md](AGENTS.md). The main ones:
 
 - **The scene graph is the spine.** Brushes are nodes. The compiled world is
   derived data, never authored.
