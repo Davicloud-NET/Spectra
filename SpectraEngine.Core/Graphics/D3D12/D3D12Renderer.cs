@@ -927,7 +927,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
         if (perDraw == 0) return;
 
-        long draws = (long)view.Items.Count + view.WorldItems.Count + DescriptorReserveSlackDraws;
+        long draws = (long)view.Items.Count + view.WorldItems.Count + Outlines.Count + DescriptorReserveSlackDraws;
         ulong required = (ulong)draws * perDraw;
 
         _srvRingCapacity = EnsureRingCapacity(

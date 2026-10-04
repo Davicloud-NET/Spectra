@@ -124,6 +124,11 @@ public sealed class SceneEditorHost : ISceneEditor
         _renderer = renderer;
         _input = input;
 
+        // One orange for the silhouette and for the face loops drawn as lines.
+        Selection.Silhouettes = new OutlineMeshes(renderer);
+        renderer.Outlines.SelectedColor = SelectionOutline.SelectedColor;
+        renderer.Outlines.HoveredColor = SelectionOutline.SelectedColor;
+
         _undo = new UndoStack(scene);
         _gizmos = new GizmoController(scene, _undo);
         _gizmos.Scale.Logger = loggerFactory.CreateLogger<ScaleGizmo>();
@@ -731,6 +736,7 @@ public sealed class SceneEditorHost : ISceneEditor
         _camera.SuspendNavigation();
         _scene.Selection.Clear();
         _undo.Clear();
+        Selection.Silhouettes?.Release();
 
         ResetGridFade();
     }

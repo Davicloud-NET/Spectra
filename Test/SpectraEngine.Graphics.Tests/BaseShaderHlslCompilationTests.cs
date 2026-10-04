@@ -22,6 +22,7 @@ public sealed unsafe class BaseShaderHlslCompilationTests
         nameof(BaseShaders.PostResolve),
         nameof(BaseShaders.GBufferFill),
         nameof(BaseShaders.DeferredLight),
+        nameof(BaseShaders.OutlineMask),
     ];
 
     [Theory]
@@ -35,6 +36,7 @@ public sealed unsafe class BaseShaderHlslCompilationTests
             nameof(BaseShaders.PostResolve) => BaseShaders.PostResolve,
             nameof(BaseShaders.GBufferFill) => BaseShaders.GBufferFill,
             nameof(BaseShaders.DeferredLight) => BaseShaders.DeferredLight,
+            nameof(BaseShaders.OutlineMask) => BaseShaders.OutlineMask,
             _ => throw new ArgumentOutOfRangeException(nameof(shaderName)),
         };
 

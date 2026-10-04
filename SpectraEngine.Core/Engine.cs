@@ -808,6 +808,7 @@ public sealed class Engine
 
                 _renderer.DebugDraw.Clear();
                 _renderer.WorldLines.Clear();
+                _renderer.Outlines.Clear();
                 if (_sceneManager.ActiveScene is { } scene)
                 {
                     // Depth-tested lines: a ground grid is occluded by the floor.

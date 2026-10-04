@@ -40,7 +40,7 @@ public sealed class BaseShaderResourceTests
     public void Every_declared_file_name_reads_as_source()
     {
         // The count ties the accessors below to FileNames: add one, add both.
-        BaseShaders.FileNames.Count.ShouldBe(9);
+        BaseShaders.FileNames.Count.ShouldBe(10);
 
         foreach (string source in new[]
                  {
@@ -53,6 +53,7 @@ public sealed class BaseShaderResourceTests
                      BaseShaders.ShadowDepth,
                      BaseShaders.WorldLine,
                      BaseShaders.WorldLineBlend,
+                     BaseShaders.OutlineMask,
                  })
         {
             source.ShouldNotBeNullOrWhiteSpace();

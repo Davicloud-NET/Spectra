@@ -564,9 +564,24 @@ public abstract class Renderer
         _resolveShader ??= CreateBaseShader(BaseShaders.PostResolveFileName);
         _resolvePass ??= new PostPass(_resolveShader);
 
+        // Its own pass, so before the resolve's opens: passes do not nest.
+        RenderTarget? mask = scene is not null ? DrawOutlineMask(scene.Camera) : null;
+
+        // With no mask the sampler still needs a texture, and the shader is
+        // told not to read it.
+        Texture maskTexture = mask?.ColorTexture ?? source;
+        float step = Outlines.Width;
+
         _resolvePass
-            .SetUniform("uExposure", Exposure)
-            .SetTexture("uSource", 0, source);
+            .SetUniform("uResolve", new Vector4(Exposure, mask is null ? 0f : 1f, 0f, 0f))
+            .SetUniform("uOutlineStep", mask is null
+                ? Vector4.Zero
+                : new Vector4(step / mask.Width, step / mask.Height, 0f, 0f))
+            .SetUniform("uOutlineSelected", new Vector4(Outlines.SelectedColor, 1f))
+            .SetUniform("uOutlineHovered", new Vector4(
+                Outlines.HoveredColor, Math.Clamp(Outlines.HoveredStrength, 0f, 1f)))
+            .SetTexture("uSource", 0, source)
+            .SetTexture("uOutlineMask", 1, maskTexture);
 
         // No clear: the triangle covers every pixel.
         BeginPass(output, PassClear.Keep);
@@ -585,6 +600,83 @@ public abstract class Renderer
     }
 
     /// <summary>
+    /// The meshes to outline this frame. Cleared by the engine every frame.
+    /// </summary>
+    public OutlineList Outlines { get; } = new();
+
+    /// <summary>
+    /// Whether <see cref="Outlines"/> is drawn. The outline is part of the
+    /// tone-mapping resolve, so it needs <see cref="HdrEnabled"/>.
+    /// </summary>
+    public bool SupportsOutlines => HdrEnabled;
+
+    private RenderTarget? _outlineMask;
+    private ShaderProgram? _outlineShader;
+    private PostPass? _outlineClearPass;
+
+    // Draws every queued mesh's silhouette into the mask: red for selected,
+    // green for hovered. Null when there is nothing to outline.
+    //
+    // The mask has its own depth buffer and nothing else is in it, so the
+    // silhouette is the whole object even where the scene hides part of it.
+    private RenderTarget? DrawOutlineMask(Scene.Camera camera)
+    {
+        if (Outlines.Count == 0) return null;
+
+        Vector2D<int> size = FramebufferSize;
+        if (size.X <= 0 || size.Y <= 0) return null;
+
+        // Created and sized before the pass opens, never inside it.
+        _outlineShader ??= CreateBaseShader(BaseShaders.OutlineMaskFileName);
+        _outlineClearPass ??= new PostPass(_outlineShader);
+        Mesh triangle = EnsureFullscreenTriangle();
+        if (_outlineMask is null)
+            _outlineMask = CreateRenderTarget(new RenderTargetDesc(size.X, size.Y));
+        else
+            _outlineMask.Resize(size.X, size.Y);
+
+        ShaderProgram shader = _outlineShader;
+        Matrix4x4 viewProjection = camera.View * camera.Projection * ClipZCorrection;
+        IReadOnlyList<OutlineItem> items = Outlines.Items;
+
+        _outlineClearPass
+            .SetUniform("uModel", Matrix4x4.Identity)
+            .SetUniform("uViewProjection", Matrix4x4.Identity)
+            .SetUniform("uMaskColor", Vector4.Zero);
+
+        BeginPass(_outlineMask, PassClear.DepthOnly);
+        try
+        {
+            // The colour is cleared by a draw, not by the pass. A D3D12 target
+            // is created with one optimised clear colour, the sky, and clearing
+            // to any other warns every frame.
+            DrawFullscreen(_outlineClearPass, triangle);
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                OutlineItem item = items[i];
+                Vector4 channel = item.Group == OutlineGroup.Selected
+                    ? new Vector4(1f, 0f, 0f, 1f)
+                    : new Vector4(0f, 1f, 0f, 1f);
+
+                // Per draw, in this order: D3D flushes staged uniforms on Use.
+                if (BindsProgramBeforeUniforms) shader.Use();
+                shader.SetUniform("uModel", item.World);
+                shader.SetUniform("uViewProjection", viewProjection);
+                shader.SetUniform("uMaskColor", channel);
+                if (!BindsProgramBeforeUniforms) shader.Use();
+                item.Mesh.Draw();
+            }
+        }
+        finally
+        {
+            EndPass();
+        }
+
+        return _outlineMask;
+    }
+
+    /// <summary>
     /// Draws <paramref name="geometry"/> with <paramref name="pass"/>'s program
     /// and values, with depth testing off and solid fill.
     /// </summary>
@@ -592,6 +684,10 @@ public abstract class Renderer
     protected abstract void DrawFullscreen(PostPass pass, Mesh geometry);
 
     internal void ResolveForTest(Texture source, RenderTarget? output) => ResolveTo(source, output, null);
+
+    // With a scene, the resolve also draws the outline mask and the overlay.
+    internal void ResolveForTest(Texture source, RenderTarget? output, Scene.Scene scene) =>
+        ResolveTo(source, output, scene);
 
     internal Mesh EnsureFullscreenTriangleForTest() => EnsureFullscreenTriangle();
 
@@ -634,10 +730,12 @@ public abstract class Renderer
             ? _orientationQuadTopHalf ??= CreateOrientationQuad(coverage)
             : _orientationQuadFull ??= CreateOrientationQuad(coverage);
 
-        // Exposure fixed at 1 so the measurement does not depend on the run's.
+        // Exposure fixed at 1 so the measurement does not depend on the run's,
+        // and no outline: the mask sampler just needs something bound.
         _orientationPass
-            .SetUniform("uExposure", 1f)
-            .SetTexture("uSource", 0, source);
+            .SetUniform("uResolve", new Vector4(1f, 0f, 0f, 0f))
+            .SetTexture("uSource", 0, source)
+            .SetTexture("uOutlineMask", 1, source);
 
         BeginOutOfFrameCommands();
         try
@@ -725,6 +823,15 @@ public abstract class Renderer
             DestroyRenderTarget(_sceneTarget);
             _sceneTarget = null;
         }
+
+        if (_outlineMask is not null)
+        {
+            DestroyRenderTarget(_outlineMask);
+            _outlineMask = null;
+        }
+
+        _outlineShader = null;
+        _outlineClearPass = null;
 
         _gbuffer?.Dispose();
         _gbuffer = null;

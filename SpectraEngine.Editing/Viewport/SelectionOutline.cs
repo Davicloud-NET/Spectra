@@ -10,19 +10,23 @@ using SpectraEngine.Editing.Hosting;
 namespace SpectraEngine.Editing.Viewport;
 
 /// <summary>
-/// Outlines the selection in each node's own shape: brush edges, an oriented
-/// mesh box, or a cross for a group.
+/// Outlines the selection and the hovered node. With <see cref="Silhouettes"/>
+/// set, each node's silhouette goes to the renderer's outline pass. Without it,
+/// or on a renderer that draws no outlines, the edges are drawn as lines.
 /// </summary>
 public sealed class SelectionOutline
 {
     /// <summary>Selected, at full weight.</summary>
-    public static readonly Vector3 SelectedColor = new(1f, 0.50f, 0.12f);
+    public static readonly Vector3 SelectedColor = new(1f, 0.34f, 0.03f);
 
     /// <summary>Hovered: the same hue, lower value.</summary>
-    public static readonly Vector3 HoverColor = new(0.42f, 0.21f, 0.05f);
+    public static readonly Vector3 HoverColor = new(0.42f, 0.14f, 0.012f);
 
     /// <summary>Whether the outline draws at all.</summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>Where silhouettes go. Null draws lines instead.</summary>
+    public OutlineMeshes? Silhouettes { get; set; }
 
     /// <summary>
     /// How many nodes may be outlined in full before the pass falls back to
@@ -57,8 +61,15 @@ public sealed class SelectionOutline
         DrawnLastDraw = 0;
         SkippedLastDraw = 0;
 
+        // Every frame, even when disabled, so brush meshes nothing asks for are freed.
+        OutlineMeshes? shapes = Silhouettes is { Supported: true } ? Silhouettes : null;
+        shapes?.BeginFrame();
+
         if (!Enabled)
+        {
+            shapes?.EndFrame();
             return;
+        }
 
         IReadOnlyList<SceneNode> selection = scene.Selection.Items;
         SceneNode? hovered = focus.Hovered;
@@ -79,7 +90,7 @@ public sealed class SelectionOutline
         }
         else if (hovered is not null && !selection.Contains(hovered))
         {
-            DrawNode(output, scene, camera, viewportSize, hovered, HoverColor);
+            DrawNode(output, scene, camera, viewportSize, hovered, HoverColor, shapes, OutlineGroup.Hovered);
         }
 
         for (int i = 0; i < selection.Count; i++)
@@ -101,7 +112,10 @@ public sealed class SelectionOutline
                 ReferenceEquals(focus.PickedFaceNode, node) &&
                 node.Brush is not null;
 
-            DrawNode(output, scene, camera, viewportSize, node, picked ? HoverColor : SelectedColor);
+            DrawNode(
+                output, scene, camera, viewportSize, node,
+                picked ? HoverColor : SelectedColor,
+                shapes, picked ? OutlineGroup.Hovered : OutlineGroup.Selected);
 
             if (picked && node.Brush is { } pickedBrush)
                 DrawFaceLoop(output, pickedBrush, node.WorldMatrix, focus.PickedFacePlane, SelectedColor);
@@ -130,6 +144,8 @@ public sealed class SelectionOutline
             if (any)
                 output.Box(lo, hi, SelectedColor * 0.4f);
         }
+
+        shapes?.EndFrame();
     }
 
     /// <summary>
@@ -157,8 +173,21 @@ public sealed class SelectionOutline
     }
 
     private static void DrawNode(
-        DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize, SceneNode node, Vector3 color)
+        DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize, SceneNode node, Vector3 color,
+        OutlineMeshes? shapes, OutlineGroup group)
     {
+        if (shapes is not null)
+        {
+            if (shapes.TryAdd(node, group))
+                return;
+
+            // A group has no shape of its own: outline what is in it, and
+            // mark where its pivot is.
+            shapes.AddSubtree(node, group);
+            DrawPivot(output, camera, viewportSize, node, color);
+            return;
+        }
+
         if (node.Brush is { } brush)
         {
             PartBrushOverlay.DrawBrushEdges(output, brush, node.WorldMatrix, color);
@@ -173,15 +202,22 @@ public sealed class SelectionOutline
             return;
         }
 
-        // A group, or a mesh with no bounds: a cross at the origin, sized in
-        // screen space so it is visible from any distance.
-        float depth = MathF.Max(GizmoMath.ViewDepth(camera, node.WorldPosition), 0.01f);
-        float size = GroupCrossPixels * GizmoMath.WorldPerPixel(camera, viewportSize.Y, depth);
-        output.Cross(node.WorldPosition, MathF.Max(size, 0.01f), color);
+        // A group, or a mesh with no bounds.
+        DrawPivot(output, camera, viewportSize, node, color);
 
         // Plus the subtree's extent, faint.
         if (scene.TryGetWorldBounds(node, out Aabb bounds))
             output.Box(bounds.Min, bounds.Max, color * 0.4f);
+    }
+
+    // A cross at the node's origin, sized in screen space so it is visible
+    // from any distance.
+    private static void DrawPivot(
+        DebugDraw output, Camera camera, Vector2 viewportSize, SceneNode node, Vector3 color)
+    {
+        float depth = MathF.Max(GizmoMath.ViewDepth(camera, node.WorldPosition), 0.01f);
+        float size = GroupCrossPixels * GizmoMath.WorldPerPixel(camera, viewportSize.Y, depth);
+        output.Cross(node.WorldPosition, MathF.Max(size, 0.01f), color);
     }
 
     /// <summary>Draws the twelve edges of a local box transformed by <paramref name="world"/>.</summary>

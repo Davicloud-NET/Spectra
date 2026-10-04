@@ -47,6 +47,9 @@ public static class BaseShaders
     /// <summary>File name of the world line's deferred, blended half.</summary>
     public const string WorldLineBlendFileName = "WorldLineBlend.spectrashade";
 
+    /// <summary>File name of the outline mask pass.</summary>
+    public const string OutlineMaskFileName = "OutlineMask.spectrashade";
+
     // MSBuild's resource name for Graphics\BaseShaders\<file>. Exact name, not
     // a suffix match, which an unrelated file could satisfy.
     private const string ResourcePrefix = "SpectraEngine.Core.Graphics.BaseShaders.";
@@ -63,6 +66,7 @@ public static class BaseShaders
         ShadowDepthFileName,
         WorldLineFileName,
         WorldLineBlendFileName,
+        OutlineMaskFileName,
     ];
 
     private static int _hotReloadStateLogged;
@@ -94,6 +98,9 @@ public static class BaseShaders
 
     /// <summary>The world line's deferred half: blended after the light pass, depth tested in the shader.</summary>
     public static string WorldLineBlend => ReadEmbedded(WorldLineBlendFileName);
+
+    /// <summary>The outline mask pass: a mesh's silhouette in one flat colour.</summary>
+    public static string OutlineMask => ReadEmbedded(OutlineMaskFileName);
 
 
     /// <summary>
@@ -150,6 +157,9 @@ public static class BaseShaders
 
     /// <summary>Source-file path for <see cref="WorldLineBlend"/>, if locatable on disk.</summary>
     public static string? WorldLineBlendPath => TryResolveSourcePath(WorldLineBlendFileName);
+
+    /// <summary>Source-file path for <see cref="OutlineMask"/>, if locatable on disk.</summary>
+    public static string? OutlineMaskPath => TryResolveSourcePath(OutlineMaskFileName);
 
     /// <summary>
     /// Opens the embedded source for <paramref name="fileName"/> (a bare file
