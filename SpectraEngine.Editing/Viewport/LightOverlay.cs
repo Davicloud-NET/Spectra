@@ -11,14 +11,16 @@ namespace SpectraEngine.Editing.Viewport;
 /// Draws an icon for every light, and the shape of each selected one.
 /// </summary>
 // Lights have no mesh and are not in the spatial index (that would make them
-// collidable), so the icon is the only thing to see or click.
+// collidable), so the icon is the only thing to see or click. It has to say
+// three things without being selected: what kind of light, which way it
+// points, and what colour it is.
 public sealed class LightOverlay
 {
     /// <summary>
     /// The icon's radius in screen pixels. <see cref="LightPicking"/> picks at
     /// the same radius.
     /// </summary>
-    public const float IconPixels = 9f;
+    public const float IconPixels = 12f;
 
     /// <summary>Whether the overlay draws at all.</summary>
     public bool Enabled { get; set; } = true;
@@ -36,7 +38,11 @@ public sealed class LightOverlay
     public int SkippedLastDraw { get; private set; }
 
     private const int RingSegments = 32;
-    private const float DisabledDim = 0.28f;
+    private const int IconRingSegments = 12;
+    private const float DisabledDim = 0.32f;
+
+    // Drawn under each stroke, so an icon reads over sky, floor or a lit wall.
+    private static readonly Vector3 Backing = new(0.02f, 0.02f, 0.025f);
 
     /// <summary>Draws an icon per light, plus the selected lights' shapes.</summary>
     /// <param name="output">The depth-off overlay buffer.</param>
@@ -71,12 +77,15 @@ public sealed class LightOverlay
             if (radius <= 0f)
                 continue;
 
-            // The light's own colour; grey when switched off.
-            Vector3 colour = light.Enabled
-                ? Vector3.Max(light.Color, new Vector3(0.25f))
-                : new Vector3(DisabledDim);
+            var pen = new IconPen(camera, at, radius, IconColour(light));
 
-            DrawIcon(output, at, radius, colour, camera);
+            // Every backing line first, or one stroke's backing crosses out
+            // the colour of the stroke before it.
+            pen.Backing = true;
+            DrawIcon(output, node, light, in pen);
+            pen.Backing = false;
+            DrawIcon(output, node, light, in pen);
+
             DrawnLastDraw++;
         }
 
@@ -90,28 +99,169 @@ public sealed class LightOverlay
         }
     }
 
-    // An octagon with spokes, billboarded to the camera.
-    private static void DrawIcon(DebugDraw output, Vector3 at, float radius, Vector3 colour, Camera camera)
+    // The light's hue at full strength, so a dim lamp still shows its colour.
+    // Grey when switched off.
+    private static Vector3 IconColour(Light light)
     {
-        Vector3 right = camera.Right * radius;
-        Vector3 up = camera.Up * radius;
+        if (!light.Enabled)
+            return new Vector3(DisabledDim);
 
-        const int Points = 8;
-        Vector3 previous = at + right;
+        float peak = MathF.Max(light.Color.X, MathF.Max(light.Color.Y, light.Color.Z));
+        return peak > 1e-4f ? Vector3.Max(light.Color / peak, new Vector3(0.18f)) : Vector3.One;
+    }
 
-        for (int i = 1; i <= Points; i++)
+    // What an icon is drawn with: the screen plane at the light, one pixel's
+    // world size there, and which of the two passes is running.
+    private struct IconPen(Camera camera, Vector3 at, float radius, Vector3 colour)
+    {
+        public readonly Vector3 At = at;
+        public readonly Vector3 Right = camera.Right;
+        public readonly Vector3 Up = camera.Up;
+        public readonly Vector3 Toward = Vector3.Normalize(Vector3.Cross(camera.Right, camera.Up));
+        public readonly float Radius = radius;
+        public readonly float Pixel = radius / IconPixels;
+        public readonly Vector3 Colour = colour;
+        public bool Backing;
+    }
+
+    private static void DrawIcon(DebugDraw output, SceneNode node, Light light, in IconPen pen)
+    {
+        Basis(node, out Vector3 forward, out Vector3 right, out Vector3 up);
+
+        switch (light.Kind)
         {
-            float angle = i * (MathF.Tau / Points);
-            Vector3 current = at + (right * MathF.Cos(angle)) + (up * MathF.Sin(angle));
-            output.Line(previous, current, colour);
+            // A sun: a disc with three arrows running the way the light travels.
+            case LightKind.Directional:
+            {
+                IconRing(output, in pen, pen.At, pen.Right, pen.Up, pen.Radius * 0.5f);
+
+                Vector3 side = AcrossScreen(in pen, forward) * (pen.Radius * 0.62f);
+                Vector3 from = pen.At + (forward * pen.Radius * 0.85f);
+                IconArrow(output, in pen, from, from + (forward * pen.Radius * 2.6f), forward);
+                IconArrow(output, in pen, from + side, from + side + (forward * pen.Radius * 1.9f), forward);
+                IconArrow(output, in pen, from - side, from - side + (forward * pen.Radius * 1.9f), forward);
+                break;
+            }
+
+            // A bulb: a disc with rays in every direction.
+            case LightKind.Point:
+            {
+                IconRing(output, in pen, pen.At, pen.Right, pen.Up, pen.Radius * 0.45f);
+
+                for (int i = 0; i < 8; i++)
+                {
+                    float angle = i * (MathF.Tau / 8);
+                    Vector3 ray = (pen.Right * MathF.Cos(angle)) + (pen.Up * MathF.Sin(angle));
+                    Stroke(output, in pen, pen.At + (ray * pen.Radius * 0.68f), pen.At + (ray * pen.Radius));
+                }
+
+                break;
+            }
+
+            // A cone from the lamp, as wide as its outer angle within reason.
+            case LightKind.Spot:
+            {
+                float half = Math.Clamp(light.OuterAngle, 12f, 42f) * (MathF.PI / 180f);
+                float length = pen.Radius * 2.8f;
+                Vector3 mouth = pen.At + (forward * length);
+                float mouthRadius = length * MathF.Tan(half);
+
+                IconRing(output, in pen, mouth, right, up, mouthRadius);
+                for (int i = 0; i < 4; i++)
+                {
+                    float angle = (i * (MathF.Tau / 4)) + (MathF.PI / 4f);
+                    Vector3 rim = mouth + (((right * MathF.Cos(angle)) + (up * MathF.Sin(angle))) * mouthRadius);
+                    Stroke(output, in pen, pen.At, rim);
+                }
+
+                IconRing(output, in pen, pen.At, pen.Right, pen.Up, pen.Radius * 0.22f);
+                break;
+            }
+
+            // The panel in its own plane, with an arrow out of the side that
+            // lights. An area light is one-sided, so the arrow is the point.
+            case LightKind.Rect:
+            {
+                float longest = MathF.Max(MathF.Max(light.Width, light.Height), 1e-4f);
+                Vector3 halfWidth = right * pen.Radius * MathF.Max(light.Width / longest, 0.35f);
+                Vector3 halfHeight = up * pen.Radius * MathF.Max(light.Height / longest, 0.35f);
+
+                Vector3 a = pen.At - halfWidth - halfHeight;
+                Vector3 b = pen.At + halfWidth - halfHeight;
+                Vector3 c = pen.At + halfWidth + halfHeight;
+                Vector3 d = pen.At - halfWidth + halfHeight;
+
+                Stroke(output, in pen, a, b);
+                Stroke(output, in pen, b, c);
+                Stroke(output, in pen, c, d);
+                Stroke(output, in pen, d, a);
+                IconArrow(output, in pen, pen.At, pen.At + (forward * pen.Radius * 2.2f), forward);
+                break;
+            }
+
+            case LightKind.Disc:
+            {
+                IconRing(output, in pen, pen.At, right, up, pen.Radius);
+                IconArrow(output, in pen, pen.At, pen.At + (forward * pen.Radius * 2.2f), forward);
+                break;
+            }
+        }
+    }
+
+    // A unit vector across the screen at right angles to a world direction, so
+    // parallel arrows stay side by side whichever way the light points.
+    private static Vector3 AcrossScreen(in IconPen pen, Vector3 direction)
+    {
+        Vector3 across = Vector3.Cross(direction, pen.Toward);
+        return across.LengthSquared() > 1e-6f ? Vector3.Normalize(across) : pen.Right;
+    }
+
+    private static void IconRing(DebugDraw output, in IconPen pen, Vector3 centre, Vector3 u, Vector3 v, float radius)
+    {
+        Vector3 previous = centre + (u * radius);
+
+        for (int i = 1; i <= IconRingSegments; i++)
+        {
+            float angle = i * (MathF.Tau / IconRingSegments);
+            Vector3 current = centre + (u * radius * MathF.Cos(angle)) + (v * radius * MathF.Sin(angle));
+            Stroke(output, in pen, previous, current);
             previous = current;
         }
+    }
 
-        for (int i = 0; i < 4; i++)
+    private static void IconArrow(DebugDraw output, in IconPen pen, Vector3 from, Vector3 tip, Vector3 direction)
+    {
+        Stroke(output, in pen, from, tip);
+
+        Vector3 barb = AcrossScreen(in pen, direction) * (pen.Radius * 0.28f);
+        Vector3 neck = tip - (direction * pen.Radius * 0.5f);
+        Stroke(output, in pen, tip, neck + barb);
+        Stroke(output, in pen, tip, neck - barb);
+    }
+
+    // One stroke of an icon. The debug lane draws hairlines, so the colour is
+    // two lines a pixel apart, and the backing is one either side of those.
+    private static void Stroke(DebugDraw output, in IconPen pen, Vector3 a, Vector3 b)
+    {
+        // At right angles to the stroke as it lies on screen.
+        Vector3 along = b - a;
+        float x = Vector3.Dot(along, pen.Right);
+        float y = Vector3.Dot(along, pen.Up);
+        float length = MathF.Sqrt((x * x) + (y * y));
+
+        Vector3 across = length > 1e-6f
+            ? ((pen.Right * -y) + (pen.Up * x)) * (pen.Pixel / length)
+            : pen.Right * pen.Pixel;
+
+        if (pen.Backing)
         {
-            float angle = (i * (MathF.Tau / 4)) + (MathF.PI / 4f);
-            Vector3 direction = (right * MathF.Cos(angle)) + (up * MathF.Sin(angle));
-            output.Line(at + (direction * 0.9f), at + (direction * 1.7f), colour);
+            output.Line(a + (across * 1.5f), b + (across * 1.5f), Backing);
+            output.Line(a - (across * 1.5f), b - (across * 1.5f), Backing);
+        }
+        else
+        {
+            output.Line(a + (across * 0.5f), b + (across * 0.5f), pen.Colour);
+            output.Line(a - (across * 0.5f), b - (across * 0.5f), pen.Colour);
         }
     }
 
