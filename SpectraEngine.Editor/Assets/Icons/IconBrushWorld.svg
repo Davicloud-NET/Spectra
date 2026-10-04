@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<!-- Tabler Icons "cube", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor">
-  <!-- A block: a cube resting on the ground line it fuses into. The baseline is
-       the whole distinction from a part, and it is on the silhouette. -->
-  <path d="M3,5.4 L8,2.6 L13,5.4 L13,10 L8,12.8 L3,10 Z M3,5.4 L8,8.2 L13,5.4 M8,8.2 L8,12.8 M2.5,13.5 L13.5,13.5" />
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 14 10.672 v -5.345 a 1.32 1.32 0 0 0 -0.667 -1.145 l -4.667 -2.672 a 1.344 1.344 0 0 0 -1.333 0 l -4.667 2.672 c -0.413 0.237 -0.667 0.673 -0.667 1.145 v 5.345 c 0 0.473 0.254 0.909 0.667 1.145 l 4.667 2.672 a 1.344 1.344 0 0 0 1.333 0 l 4.667 -2.672 c 0.413 -0.237 0.667 -0.673 0.667 -1.145" />
+  <path d="M 8 14.667 v -6.667" />
+  <path d="M 8 8 l 5.82 -3.36" />
+  <path d="M 2.18 4.64 l 5.82 3.36" />
 </svg>

@@ -5,7 +5,8 @@
     Dock.Avalonia's chrome, pointed at the Spectra palette. Dock looks these up
     with DynamicResource and Application.Resources outranks its own dictionary.
     Values are Tokens.axaml brushes only, no literal colours.
-    Active tab: raised surface plus a 2px accent indicator, not an accent fill.
+    A tool's header is a band lighter than the panel under it. The open tab
+    is filled like the panel, so it reads as joined to it.
   -->
 
   <StaticResource x:Key="DockApplicationAccentBrushLow" ResourceKey="SpectraAccentRest" />
@@ -14,22 +15,27 @@
   <SolidColorBrush x:Key="DockApplicationAccentForegroundBrush" Color="#FFFFFF" />
   <StaticResource x:Key="DockApplicationAccentBrushIndicator" ResourceKey="SpectraAccent" />
 
-  <StaticResource x:Key="DockThemeBorderLowBrush" ResourceKey="SpectraBorderStrong" />
+  <StaticResource x:Key="DockThemeBorderLowBrush" ResourceKey="SpectraBorderSoft" />
+  <StaticResource x:Key="DockBorderStrongBrush" ResourceKey="SpectraBorderSoft" />
+  <StaticResource x:Key="DockBorderSubtleBrush" ResourceKey="SpectraBorderSoft" />
+  <StaticResource x:Key="DockSeparatorBrush" ResourceKey="SpectraBorderSoft" />
   <StaticResource x:Key="DockThemeBackgroundBrush" ResourceKey="SpectraBgPanel" />
   <StaticResource x:Key="DockThemeAccentBrush" ResourceKey="SpectraAccent" />
   <StaticResource x:Key="DockThemeForegroundBrush" ResourceKey="SpectraTextBody" />
   <StaticResource x:Key="DockThemeControlBackgroundBrush" ResourceKey="SpectraBgPanel" />
 
-  <StaticResource x:Key="DockSurfaceHeaderBrush" ResourceKey="SpectraBgPanel" />
+  <StaticResource x:Key="DockSurfaceHeaderBrush" ResourceKey="SpectraBgRaised" />
   <StaticResource x:Key="DockSurfaceHeaderActiveBrush" ResourceKey="SpectraBgRaised" />
+  <StaticResource x:Key="DockSurfacePanelBrush" ResourceKey="SpectraBgPanel" />
 
-  <StaticResource x:Key="DockSplitterIdleBrush" ResourceKey="SpectraBorderStrong" />
+  <StaticResource x:Key="DockSplitterIdleBrush" ResourceKey="SpectraBorderSoft" />
   <StaticResource x:Key="DockSplitterHoverBrush" ResourceKey="SpectraAccent" />
   <StaticResource x:Key="DockSplitterDragBrush" ResourceKey="SpectraAccent" />
 
   <StaticResource x:Key="DockTabHoverBackgroundBrush" ResourceKey="SpectraControlHover" />
-  <StaticResource x:Key="DockTabActiveBackgroundBrush" ResourceKey="SpectraBgRaised" />
-  <StaticResource x:Key="DockTabActiveIndicatorBrush" ResourceKey="SpectraAccent" />
+  <StaticResource x:Key="DockTabBackgroundBrush" ResourceKey="SpectraBgRaised" />
+  <StaticResource x:Key="DockTabActiveBackgroundBrush" ResourceKey="SpectraBgPanel" />
+  <StaticResource x:Key="DockTabActiveIndicatorBrush" ResourceKey="SpectraBgPanel" />
   <StaticResource x:Key="DockTabForegroundBrush" ResourceKey="SpectraTextMuted" />
   <StaticResource x:Key="DockTabSelectedForegroundBrush" ResourceKey="SpectraTextEmphasis" />
   <StaticResource x:Key="DockTabActiveForegroundBrush" ResourceKey="SpectraTextEmphasis" />
@@ -41,7 +47,7 @@
   <StaticResource x:Key="DockToolChromeIconBrush" ResourceKey="SpectraTextMuted" />
 
   <StaticResource x:Key="DockTargetIndicatorBrush" ResourceKey="SpectraAccent" />
-  <StaticResource x:Key="DockDocumentContentBorderBrush" ResourceKey="SpectraBorderStrong" />
+  <StaticResource x:Key="DockDocumentContentBorderBrush" ResourceKey="SpectraBorderSoft" />
 
   <x:Double x:Key="DockFontSizeNormal">12</x:Double>
 

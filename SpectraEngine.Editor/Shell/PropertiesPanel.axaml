@@ -84,7 +84,7 @@
 
     <!-- A note is a warning: amber, never the accent. -->
     <Style Selector="Border.notebadge">
-      <Setter Property="Background" Value="{StaticResource SpectraControlChecked}" />
+      <Setter Property="Background" Value="{StaticResource SpectraModeWash}" />
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
       <Setter Property="Padding" Value="4,0" />
       <Setter Property="Margin" Value="5,0,0,0" />
@@ -95,9 +95,10 @@
       <Setter Property="Foreground" Value="{StaticResource SpectraMode}" />
     </Style>
 
+    <!-- A value cell is a well: darker than the panel, with a light edge. -->
     <Style Selector="Border.cell">
       <Setter Property="Background" Value="{StaticResource SpectraBgInput}" />
-      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderInput}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
       <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
@@ -112,7 +113,7 @@
     </Style>
 
     <Style Selector="Border.cell:pointerover">
-      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderInputHover}" />
     </Style>
 
     <!-- The field inside a cell draws no border of its own. -->
@@ -173,10 +174,10 @@
     </Style>
 
     <!-- Kind chip: Block, Part, Cut, Light, Mesh. -->
+    <!-- A label, not a button, so no outline. -->
     <Style Selector="Border.kindchip">
-      <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
-      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
-      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Background" Value="{StaticResource SpectraBgRaised}" />
+      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
       <Setter Property="Padding" Value="6,1" />
       <Setter Property="VerticalAlignment" Value="Center" />
@@ -184,12 +185,30 @@
 
     <!-- Standing warning about the selection, in its own slot under the header. -->
     <Style Selector="Border.classwarn">
-      <Setter Property="Background" Value="{StaticResource SpectraControlChecked}" />
+      <Setter Property="Background" Value="{StaticResource SpectraModeWash}" />
       <Setter Property="BorderBrush" Value="{StaticResource SpectraWarning}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
       <Setter Property="Padding" Value="8,5" />
       <Setter Property="Margin" Value="12,8,12,0" />
+    </Style>
+
+    <!-- A section starts with a band, and every row under it ends in a rule,
+         so each property reads as its own strip. -->
+    <Style Selector="Border.sectionband">
+      <Setter Property="Background" Value="{StaticResource SpectraBgRaised}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Height" Value="26" />
+      <Setter Property="Padding" Value="12,0" />
+    </Style>
+    <Style Selector="Border.sectionband TextBlock.sectionhead">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+    </Style>
+    <Style Selector="Border.proprow">
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Padding" Value="12,4,12,4" />
     </Style>
 
     <Style Selector="Border.swatch">
@@ -300,18 +319,20 @@
                   IsVisible="{Binding Properties.HasSelection}">
       <!-- Property groups and the Outputs section scroll together. -->
       <StackPanel>
-      <ItemsControl ItemsSource="{Binding Properties.Groups}" Margin="0,2,0,0">
+      <ItemsControl ItemsSource="{Binding Properties.Groups}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="shell:PropertyGroupModel">
-            <StackPanel Margin="0,10,0,0">
+            <StackPanel>
 
-              <TextBlock Classes="sectionhead" Text="{Binding Name}"
-                         Margin="12,0,12,5" IsVisible="{Binding HasName}" />
+              <Border Classes="sectionband" IsVisible="{Binding HasName}">
+                <TextBlock Classes="sectionhead" Text="{Binding Name}" />
+              </Border>
 
               <ItemsControl ItemsSource="{Binding Rows}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="shell:PropertyRowModel">
-                    <StackPanel Margin="12,0,12,0">
+                    <Border Classes="proprow">
+                    <StackPanel>
 
                       <!-- Why the last commit was refused. -->
                       <TextBlock Classes="rejection" Text="{Binding Rejection}"
@@ -490,6 +511,7 @@
                                    ToolTip.Tip="{Binding ReadOnlyText}" />
                       </Grid>
                     </StackPanel>
+                    </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>

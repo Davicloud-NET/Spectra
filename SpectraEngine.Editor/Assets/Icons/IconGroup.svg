@@ -1,38 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<!-- Tabler Icons "folder", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor">
-  <!-- Inline geometry, not a font and not image files. An icon font is one more
-       asset to ship, to fall back from and to get wrong at 125% DPI; these are a
-       dozen path strings that scale exactly and tint with a brush.
-       TWO RULES, AND THE FIRST ONE USED TO BE BROKEN IN A WAY NOBODY COULD SEE.
-       1. EVERY GLYPH'S INK FILLS THE SAME BOX: 2.5 to 13.5 on both axes, centred
-       on (8,8). This file always claimed the glyphs shared a 16x16 grid, and
-       they did - but `Path` was drawing them with `Stretch="Uniform"`, which
-       normalises each geometry to ITS OWN ink bounds and throws the shared grid
-       away. A glyph whose ink measured 9 units rendered 1.33x, one measuring 7
-       rendered 1.78x, and the play triangle grew 29% when it became the stop
-       square. Eleven unlabelled outlines at four different optical sizes are
-       not eleven icons, they are a grey texture, which is exactly what the
-       toolbar had become. The style now draws with `Stretch="None"` so the
-       authored coordinates ARE the rendered ones - and the geometries below are
-       normalised as well, so the row survives either setting.
-       2. KINDS ARE TOLD APART BY SILHOUETTE, NEVER BY INTERIOR STROKES. At 16px
-       with a 1.5 stroke, two shapes with the same outline and different insides
-       are the same shape. The three brush kinds used to be exactly that; they
-       are now a cube on the ground (block: fused into the level), a free cube
-       (part), and a cube with a hole through it (cut).
-       All stroked at 1.5 with round caps and joins, except the play/stop pair,
-       which is filled because that pair is filled everywhere in the world - and
-       whose two glyphs are drawn to the same optical area so the button does not
-       change weight when a run starts.
-       -->
-       <!-- ___ Node kinds ______________________________________
-       Each says what the thing IS at 16px, which rules out detail: a cube reads
-       as a cube, a bulb as a bulb, and anything finer becomes noise. -->
-       <!-- A folder, for a node that is only a parent. -->
-  <path d="M2.5,12.5 L2.5,3.5 L6.5,3.5 L8,5.5 L13.5,5.5 L13.5,12.5 Z" />
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 3.333 2.667 h 2.667 l 2 2 h 4.667 a 1.333 1.333 0 0 1 1.333 1.333 v 5.333 a 1.333 1.333 0 0 1 -1.333 1.333 h -9.333 a 1.333 1.333 0 0 1 -1.333 -1.333 v -7.333 a 1.333 1.333 0 0 1 1.333 -1.333" />
 </svg>

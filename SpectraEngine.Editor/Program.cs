@@ -1,4 +1,5 @@
 ﻿using Avalonia;
+using Avalonia.Media;
 using Serilog;
 using SpectraEngine.Entities;
 using System;
@@ -51,7 +52,7 @@ internal static class Program
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
             .UsePlatformDetect()
-            // Embedded font: the type scale is tuned for Inter's hinting at 11-13px.
-            .WithInterFont()
+            // The default too, so a floated panel's window gets the same face.
+            .With(new FontManagerOptions { DefaultFamilyName = "avares://SpectraEngine.Editor/Assets/Fonts#IBM Plex Sans" })
             .LogToTrace();
 }

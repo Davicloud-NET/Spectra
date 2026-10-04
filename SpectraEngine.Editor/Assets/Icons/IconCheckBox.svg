@@ -15,5 +15,5 @@
        The mark is a SEPARATE geometry from its container rather than a second
        version of it, so lighting one is a brush moving on one element and the
        two can never disagree about where the box is. -->
-  <path d="M3,3 L13,3 L13,13 L3,13 Z" />
+  <path d="M4.5,1.5 L11.5,1.5 A3,3 0 0 1 14.5,4.5 L14.5,11.5 A3,3 0 0 1 11.5,14.5 L4.5,14.5 A3,3 0 0 1 1.5,11.5 L1.5,4.5 A3,3 0 0 1 4.5,1.5 Z" />
 </svg>

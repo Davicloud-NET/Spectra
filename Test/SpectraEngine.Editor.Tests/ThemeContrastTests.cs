@@ -12,10 +12,10 @@ namespace SpectraEngine.Editor.Tests;
 // Tokens.axaml is parsed as text: this project has no Avalonia.
 public sealed class ThemeContrastTests
 {
-    // WCAG AA for text at 13px and below.
+    // WCAG AA for text at 12px.
     private const double BodyMinimum = 4.5;
 
-    // Above AA on purpose: muted text carries the section headings.
+    // Above AA on purpose, on the two surfaces most muted text sits on.
     private const double MutedMinimum = 4.8;
 
     private static Dictionary<string, (double R, double G, double B)> Colors()
@@ -83,8 +83,13 @@ public sealed class ThemeContrastTests
     [Theory]
     [InlineData("SpectraTextEmphasisColor", "SpectraBgPanelColor")]
     [InlineData("SpectraTextEmphasisColor", "SpectraBgAppColor")]
+    [InlineData("SpectraTextEmphasisColor", "SpectraBgRibbonColor")]
+    [InlineData("SpectraTextEmphasisColor", "SpectraBgRaisedColor")]
     [InlineData("SpectraTextBodyColor", "SpectraBgPanelColor")]
     [InlineData("SpectraTextBodyColor", "SpectraBgAppColor")]
+    [InlineData("SpectraTextBodyColor", "SpectraBgRibbonColor")]
+    [InlineData("SpectraTextBodyColor", "SpectraBgRaisedColor")]
+    [InlineData("SpectraTextBodyColor", "SpectraBgControlColor")]
     public void Body_text_clears_the_standard_on_every_surface_it_is_read_on(
         string text, string background)
     {
@@ -101,14 +106,35 @@ public sealed class ThemeContrastTests
             MutedMinimum, $"muted on {background}");
     }
 
-    [Fact]
-    public void The_danger_colour_is_readable_as_TEXT_and_the_accent_is_not()
+    [Theory]
+    [InlineData("SpectraBgRibbonColor")]
+    [InlineData("SpectraBgRaisedColor")]
+    public void Muted_text_still_clears_the_standard_on_the_lighter_surfaces(string background)
     {
-        // The accent failing as body text is why a separate danger colour exists.
+        // Ribbon group captions and header bands are muted text on these.
+        Ratio("SpectraTextMutedColor", background).ShouldBeGreaterThanOrEqualTo(
+            BodyMinimum, $"muted on {background}");
+    }
+
+    [Fact]
+    public void The_danger_colour_is_readable_as_text()
+    {
         Ratio("SpectraTextDangerColor", "SpectraBgPanelColor")
             .ShouldBeGreaterThanOrEqualTo(BodyMinimum);
+        Ratio("SpectraTextDangerColor", "SpectraBgAppColor")
+            .ShouldBeGreaterThanOrEqualTo(BodyMinimum);
+    }
 
-        Ratio("SpectraAccentColor", "SpectraBgPanelColor")
+    [Fact]
+    public void White_is_readable_on_the_fills_it_is_put_on_and_not_on_the_bright_accent()
+    {
+        // The bright accent failing under white text is why AccentRest exists.
+        Ratio("SpectraTextOnAccentColor", "SpectraAccentRestColor")
+            .ShouldBeGreaterThanOrEqualTo(BodyMinimum);
+        Ratio("SpectraTextOnAccentColor", "SpectraPlayFillColor")
+            .ShouldBeGreaterThanOrEqualTo(BodyMinimum);
+
+        Ratio("SpectraTextOnAccentColor", "SpectraAccentColor")
             .ShouldBeLessThan(BodyMinimum);
     }
 
@@ -124,19 +150,47 @@ public sealed class ThemeContrastTests
     {
         Dictionary<string, (double R, double G, double B)> colors = Colors();
 
-        // Pressable surfaces are lighter than the panel, inputs are darker.
         double window = Luminance(colors["SpectraBgWindowColor"]);
-        double app = Luminance(colors["SpectraBgAppColor"]);
         double panel = Luminance(colors["SpectraBgPanelColor"]);
+        double ribbon = Luminance(colors["SpectraBgRibbonColor"]);
         double raised = Luminance(colors["SpectraBgRaisedColor"]);
         double control = Luminance(colors["SpectraBgControlColor"]);
+        double hover = Luminance(colors["SpectraBgControlHoverColor"]);
+        double pressed = Luminance(colors["SpectraBgControlActiveColor"]);
         double input = Luminance(colors["SpectraBgInputColor"]);
 
-        app.ShouldBeGreaterThan(window);
-        panel.ShouldBeGreaterThan(app);
-        raised.ShouldBeGreaterThan(panel);
-        control.ShouldBeGreaterThan(raised);
+        // The ground is darkest, so the gaps between panels read as gaps.
+        panel.ShouldBeGreaterThan(window);
+        ribbon.ShouldBeGreaterThan(panel);
+        raised.ShouldBeGreaterThan(ribbon);
 
+        // A key is lighter than both surfaces it sits on, lighter still under
+        // the pointer, and darker than either when pressed.
+        control.ShouldBeGreaterThan(ribbon);
+        hover.ShouldBeGreaterThan(control);
+        pressed.ShouldBeLessThan(panel);
+
+        // A well is darker than anything it sits in.
         input.ShouldBeLessThan(panel);
+    }
+
+    [Fact]
+    public void A_key_is_outlined_dark_and_a_well_light()
+    {
+        // A resting control with an outline lighter than its fill is what a
+        // hovered one looks like, so every button looked lit.
+        Dictionary<string, (double R, double G, double B)> colors = Colors();
+
+        Luminance(colors["SpectraBorderControlColor"])
+            .ShouldBeLessThan(Luminance(colors["SpectraBgControlColor"]));
+        Luminance(colors["SpectraBorderControlColor"])
+            .ShouldBeLessThan(Luminance(colors["SpectraBgPanelColor"]));
+
+        Luminance(colors["SpectraBorderInputColor"])
+            .ShouldBeGreaterThan(Luminance(colors["SpectraBgInputColor"]));
+
+        // The group divider is the opposite of the tray seams beside it.
+        Luminance(colors["SpectraRibbonRuleColor"])
+            .ShouldBeGreaterThan(Luminance(colors["SpectraBgRibbonColor"]));
     }
 }

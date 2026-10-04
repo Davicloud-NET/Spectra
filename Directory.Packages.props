@@ -28,7 +28,6 @@
     <PackageVersion Include="Avalonia" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.1" />
-    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.1" />
     <!--
       Headless platform plus real Skia for the editor render suite. Skia is
       already a transitive dependency of Avalonia.Desktop; it is listed because

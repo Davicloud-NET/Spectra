@@ -110,9 +110,12 @@
       <Setter Property="RenderTransform" Value="rotate(90deg)" />
     </Style>
 
+    <!-- Each row is a strip: a rule under it and a faint fill on every other
+         one, so it is clear where one row's hit area ends. -->
     <Style Selector="Border.row">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
       <Setter Property="Height" Value="{StaticResource SpectraTreeRowHeight}" />
       <!-- Fill only. Nothing that changes at pointer-move rate gets a ramp. -->
       <Setter Property="Transitions">
@@ -129,7 +132,7 @@
          inside its bounds, so the label would shift under a drag.
          No transition: it moves at pointer rate and a ramp would smear it. -->
     <Style Selector="Border.dropink">
-      <Setter Property="BorderBrush" Value="{StaticResource SpectraAccent}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraTextEmphasis}" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
       <Setter Property="IsHitTestVisible" Value="False" />
@@ -143,34 +146,15 @@
     <Style Selector="Border.row.dropafter Border.dropink">
       <Setter Property="BorderThickness" Value="0,0,0,2" />
     </Style>
+    <!-- Before the hover and selected rules, which win on order. -->
+    <Style Selector="ListBoxItem:nth-child(2n) Border.row">
+      <Setter Property="Background" Value="{StaticResource SpectraRowAlternate}" />
+    </Style>
     <Style Selector="Border.row:pointerover">
       <Setter Property="Background" Value="{StaticResource SpectraRowHover}" />
     </Style>
     <Style Selector="Border.row.selected">
       <Setter Property="Background" Value="{StaticResource SpectraRowSelected}" />
-    </Style>
-
-    <!-- Animate scale and opacity, not Width: Width is layout and would
-         re-measure the virtualised rows. -->
-    <Style Selector="Border.selbar">
-      <Setter Property="Background" Value="{StaticResource SpectraAccent}" />
-      <Setter Property="Opacity" Value="0" />
-      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
-      <Setter Property="RenderTransform" Value="scaleY(0.3)" />
-      <Setter Property="Transitions">
-        <Transitions>
-          <DoubleTransition Property="Opacity"
-                            Duration="{StaticResource SpectraMotionBase}"
-                            Easing="{StaticResource SpectraEaseOut}" />
-          <TransformOperationsTransition Property="RenderTransform"
-                                         Duration="{StaticResource SpectraMotionBase}"
-                                         Easing="{StaticResource SpectraEaseOut}" />
-        </Transitions>
-      </Setter>
-    </Style>
-    <Style Selector="Border.row.selected Border.selbar">
-      <Setter Property="Opacity" Value="1" />
-      <Setter Property="RenderTransform" Value="scaleY(1)" />
     </Style>
 
     <Style Selector="TextBlock.rowname">
@@ -180,7 +164,24 @@
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
     <Style Selector="Border.row.selected TextBlock.rowname">
-      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextOnAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Border.row.selected Button.chevron Path">
+      <Setter Property="Stroke" Value="{StaticResource SpectraTextOnAccent}" />
+    </Style>
+
+    <!-- The kind glyph is drawn twice. The tint is a bound local value, which
+         no style can override, so a selected row shows the white twin. -->
+    <Style Selector="Path.kindsel">
+      <Setter Property="Stroke" Value="{StaticResource SpectraTextOnAccent}" />
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Border.row.selected Path.kindsel">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="Border.row.selected Path.kindtint">
+      <Setter Property="IsVisible" Value="False" />
     </Style>
     <!-- Filtered-out rows are dimmed, not hidden, so the hierarchy keeps its shape. -->
     <Style Selector="Border.row.dim TextBlock.rowname">
@@ -199,10 +200,10 @@
       <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
     </Style>
     <Style Selector="TextBox.field.nomatch /template/ Border#PART_BorderElement">
-      <Setter Property="BorderBrush" Value="{StaticResource SpectraAccent}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderDanger}" />
     </Style>
     <Style Selector="TextBlock.value.nomatch">
-      <Setter Property="Foreground" Value="{StaticResource SpectraAccent}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextDanger}" />
     </Style>
 
     <Style Selector="TextBox.renamebox">
@@ -244,7 +245,7 @@
          Say it in words. -->
     <Border DockPanel.Dock="Top" Margin="8,0,8,6" Padding="8,6"
             Background="{StaticResource SpectraBgInput}"
-            BorderBrush="{StaticResource SpectraBorderSoft}"
+            BorderBrush="{StaticResource SpectraBorderInput}"
             BorderThickness="1"
             CornerRadius="{StaticResource SpectraRadiusControl}"
             IsVisible="{Binding HasNoMatches}">
@@ -266,8 +267,9 @@
              AutoScrollToSelectedItem="False"
              SelectionChanged="OnTreeSelectionChanged"
              Background="Transparent"
-             BorderThickness="0"
-             Padding="0,2,0,4"
+             BorderBrush="{StaticResource SpectraBorderSoft}"
+             BorderThickness="0,1,0,0"
+             Padding="0"
              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
       <ListBox.ItemsPanel>
         <ItemsPanelTemplate>
@@ -290,7 +292,6 @@
                   DoubleTapped="OnRowDoubleTapped">
             <Panel>
               <Grid ColumnDefinitions="2,*">
-                <Border Grid.Column="0" Classes="selbar" Margin="0,3" CornerRadius="1" />
                 <Grid Grid.Column="1" ColumnDefinitions="14,Auto,*"
                       Margin="{Binding Depth, Converter={StaticResource DepthIndent}}">
                   <Button Grid.Column="0" Classes="chevron"
@@ -299,11 +300,12 @@
                           Click="OnChevronClicked" PointerPressed="OnChevronPressed">
                     <Path Data="{StaticResource IconChevronRight}" />
                   </Button>
-                  <Path Grid.Column="1" Classes="icon"
+                  <Path Grid.Column="1" Classes="icon kindtint"
                         Data="{Binding Kind, Converter={StaticResource KindIcon}}"
                         Stroke="{Binding Kind, Converter={StaticResource KindTint}}"
-                        Width="15" Height="15"
-                        RenderTransform="scale(1.05)"
+                        Margin="2,0,0,0" />
+                  <Path Grid.Column="1" Classes="icon kindsel"
+                        Data="{Binding Kind, Converter={StaticResource KindIcon}}"
                         Margin="2,0,0,0" />
                   <TextBlock Grid.Column="2" Classes="rowname" Text="{Binding Name}" Margin="6,0,4,0"
                              IsVisible="{Binding !IsRenaming}"

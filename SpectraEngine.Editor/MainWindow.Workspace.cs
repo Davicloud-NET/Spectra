@@ -57,7 +57,7 @@ public partial class MainWindow
 
         EditorView.RowDefinitions[2].MinHeight = open ? 90 : 0;
         EditorView.RowDefinitions[2].Height = new GridLength(open ? height : 0);
-        EditorView.RowDefinitions[1].Height = new GridLength(open ? 1 : 0);
+        EditorView.RowDefinitions[1].Height = new GridLength(open ? WorkspaceLayout.Gutter : 0);
 
         BottomDock.IsVisible = open;
         BottomSplitter.IsVisible = open;
@@ -131,6 +131,7 @@ public partial class MainWindow
 
         SetColumn(0, new GridLength(0), 0);
         SetColumn(4, new GridLength(0), 0);
+        SetGutters(0);
         SetBottomDrawer(false);
 
         LeftDock.IsVisible = false;
@@ -155,6 +156,7 @@ public partial class MainWindow
 
         SetColumn(0, before.Left.Length, before.Left.Min);
         SetColumn(4, before.Right.Length, before.Right.Min);
+        SetGutters(WorkspaceLayout.Gutter);
 
         LeftDock.IsVisible = true;
         RightDock.IsVisible = true;
@@ -169,6 +171,13 @@ public partial class MainWindow
         ApplyRibbonState();
 
         _shell.IsViewportMaximised = false;
+    }
+
+    // The gaps either side of the viewport column.
+    private void SetGutters(double width)
+    {
+        EditorView.ColumnDefinitions[1].Width = new GridLength(width);
+        EditorView.ColumnDefinitions[3].Width = new GridLength(width);
     }
 
     private void SetColumn(int index, GridLength width, double min)

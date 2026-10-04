@@ -151,6 +151,8 @@ public partial class MainWindow : Window
         StartView.RecentProjectRevealRequested += recent => RevealInExplorer(recent.Path);
         RefreshRecents();
 
+        MoveToolTabsAbove();
+
         // One factory for every dock control, assigned before the window attaches.
         // With none, DockControl.Initialize bails and the docks render empty; with
         // one per control, a panel can't be dragged from one dock to another.
@@ -659,6 +661,19 @@ public partial class MainWindow : Window
     // The only place a tool's content may be assigned. Dock gives the content
     // presenter its own DataContext (the Tool) and a float leaves this window's
     // tree, so the DataContext is set here too. A failed binding reports nothing.
+    private static bool _toolTabsMoved;
+
+    // Dock docks a tool dock's tab strip under its content, inline in its
+    // template, so no style can move it. Above the content matches the ribbon.
+    private static void MoveToolTabsAbove()
+    {
+        if (_toolTabsMoved)
+            return;
+        _toolTabsMoved = true;
+        LoadedEvent.AddClassHandler<Dock.Avalonia.Controls.ToolTabStrip>(
+            (strip, _) => DockPanel.SetDock(strip, Avalonia.Controls.Dock.Top));
+    }
+
     private void SetToolContent(Dock.Model.Avalonia.Controls.Tool tool, Control content)
     {
         content.DataContext = _shell;
@@ -1820,14 +1835,18 @@ public partial class MainWindow : Window
         _applyingRibbonState = true;
         try
         {
+            RibbonBodyHost host = RibbonSurface.HostFor(_ribbon);
+
+            // A tab is drawn joined to its page, so with no page showing no tab is lit.
             foreach (Control child in RibbonTabs.Children)
             {
                 child.Classes.Set(
                     "active",
-                    child.Tag is string id && string.Equals(id, _ribbon.ActiveTabId, StringComparison.Ordinal));
+                    host != RibbonBodyHost.None
+                    && child.Tag is string id
+                    && string.Equals(id, _ribbon.ActiveTabId, StringComparison.Ordinal));
             }
 
-            RibbonBodyHost host = RibbonSurface.HostFor(_ribbon);
             _ribbonPages.TryGetValue(_ribbon.ActiveTabId, out RibbonTabView? page);
 
             // A control has one parent: clear the old host before assigning the new.

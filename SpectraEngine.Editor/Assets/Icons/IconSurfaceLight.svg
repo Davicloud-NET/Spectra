@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<!-- Tabler Icons "lamp", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor">
-  <!-- A surface light: a lit panel flush on a surface, washing downward. It
-       needs its own glyph rather than borrowing the bulb, because the two sit
-       side by side in the ribbon's Insert group and two identical silhouettes
-       in one row are one shape, not two - which is rule 2 at the top of this
-       file. -->
-  <path d="M2.5,2.5 L13.5,2.5 L13.5,5.5 L2.5,5.5 Z M4.5,7.6 L4.5,13.5 M8,7.6 L8,13.5 M11.5,7.6 L11.5,13.5" />
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 6 13.333 h 4" />
+  <path d="M 8 13.333 v -5.333" />
+  <path d="M 3.333 8 h 9.333 l -2.667 -5.333 h -4 l -2.667 5.333" />
 </svg>

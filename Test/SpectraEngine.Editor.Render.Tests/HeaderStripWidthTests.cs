@@ -21,7 +21,7 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
     {
         WorkspaceMetrics metrics = WorkspaceLayout.For(WorkspacePreset.Compact);
         (double width, _) = WorkspaceLayout.ViewportCell(
-            metrics, 1180, 640, new WorkspaceChrome(Vertical: 241, Horizontal: 6));
+            metrics, 1180, 640, new WorkspaceChrome(Vertical: 224, Horizontal: 32));
 
         return width;
     }
@@ -45,7 +45,7 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
     {
         WorkspaceMetrics metrics = WorkspaceLayout.For(WorkspacePreset.Compact);
         (double width, _) = WorkspaceLayout.ViewportCell(
-            metrics, 1480, 920, new WorkspaceChrome(Vertical: 241, Horizontal: 6));
+            metrics, 1480, 920, new WorkspaceChrome(Vertical: 224, Horizontal: 32));
 
         return width;
     }

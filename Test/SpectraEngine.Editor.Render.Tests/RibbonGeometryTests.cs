@@ -15,10 +15,10 @@ namespace SpectraEngine.Editor.Render.Tests;
 [Collection(RibbonSessionCollection.Name)]
 public sealed class RibbonGeometryTests(RibbonSession session)
 {
-    // Large glyphs fill 3.5..28.5 of a 32 box, plus the 1.6 stroke.
-    private const double NominalLargeInk = 26.6;
+    // Tabler ink spans about 3..21 of its 24 box, plus the 1.5 stroke.
+    private const double NominalLargeInk = 18.5;
 
-    private const double LargeInkTolerance = 4.0;
+    private const double LargeInkTolerance = 3.5;
 
     /// <summary>Both ribbon pages, by roster id.</summary>
     public static TheoryData<string> Pages => [RibbonLayout.DefaultTabId, RibbonLayout.ViewTabId];
@@ -63,9 +63,8 @@ public sealed class RibbonGeometryTests(RibbonSession session)
     [MemberData(nameof(Pages))]
     public void Every_large_glyph_is_drawn_to_one_optical_size(string tabId)
     {
-        // The tolerance is loose because the shipped set is uneven: most glyphs
-        // are 26.6 square, but Part is 30.3 tall, Light 24.6 and Cut 25.1.
-        // Tighten to about a pixel once the artwork is normalised.
+        // Tabler draws inside 3..21 of its 24 box, but not every glyph fills
+        // it: the tolerance covers the narrow and the short ones.
         session.On(() =>
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId);

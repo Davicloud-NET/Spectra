@@ -27,12 +27,10 @@ public static class RibbonHarness
             // same advance, so widths measured under it mean nothing.
             .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
             .UseSkia()
-            // Same embedded face as Program.cs.
-            .WithInterFont()
-            // The mono stack names Cascadia Mono and Consolas, which no Linux
-            // runner has. Pin the fallback so it is not whatever fontconfig returns.
+            // Same embedded face and default as Program.cs. Pinning the default
+            // also keeps a fallback from being whatever fontconfig returns.
             .With(new FontManagerOptions
             {
-                DefaultFamilyName = "avares://Avalonia.Fonts.Inter/Assets#Inter",
+                DefaultFamilyName = "avares://SpectraEngine.Editor/Assets/Fonts#IBM Plex Sans",
             });
 }

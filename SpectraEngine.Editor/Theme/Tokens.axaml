@@ -7,69 +7,84 @@
     All of the shell's colours, sizes, radii and durations. No literals elsewhere.
 
     - Borders and lines are solid hex. An alpha hairline changes colour over
-      each surface it crosses. Alpha is for hover and selection fills only.
+      each surface it crosses. Alpha is for hover fills only.
     - Text colour is a colour, not an opacity on white: that breaks Windows
       subpixel rendering.
-    - Things you press are lighter than the panel, things you type into are darker.
+    - Things you press are a step lighter than their surface and outlined dark.
+      Things you type into are darker than it and outlined light.
+    - A resting control never gets a light outline: that is what hover looks like.
+    - No gradients. The colour picker ramps are the only ones.
     - Brushes are solid brushes over a DynamicResource colour, so a theme swap
       re-tints them in place and consumers can keep StaticResource.
   -->
 
-  <!-- Ground. Mid-dark, not near-black: the chrome sits beside a bright
-       viewport and state changes on near-black don't read on a monitor.
-       Warm-neutral because the accent is warm. -->
-  <Color x:Key="SpectraBgWindowColor">#131011</Color>
-  <Color x:Key="SpectraBgAppColor">#1A1718</Color>
-  <Color x:Key="SpectraBgPanelColor">#242021</Color>
-  <Color x:Key="SpectraBgRaisedColor">#2E2A2B</Color>
+  <!-- Surfaces, darkest first. Window is the ground that shows in the gaps
+       between panels. Raised is header bands and popups. -->
+  <Color x:Key="SpectraBgWindowColor">#0D0E10</Color>
+  <Color x:Key="SpectraBgAppColor">#0D0E10</Color>
+  <Color x:Key="SpectraBgPanelColor">#202226</Color>
+  <Color x:Key="SpectraBgRibbonColor">#26292E</Color>
+  <Color x:Key="SpectraBgRaisedColor">#2B2E33</Color>
 
   <SolidColorBrush x:Key="SpectraBgWindow" Color="{DynamicResource SpectraBgWindowColor}" />
   <SolidColorBrush x:Key="SpectraBgApp" Color="{DynamicResource SpectraBgAppColor}" />
   <SolidColorBrush x:Key="SpectraBgPanel" Color="{DynamicResource SpectraBgPanelColor}" />
+  <SolidColorBrush x:Key="SpectraBgRibbon" Color="{DynamicResource SpectraBgRibbonColor}" />
   <SolidColorBrush x:Key="SpectraBgRaised" Color="{DynamicResource SpectraBgRaisedColor}" />
 
-  <!-- Control is lighter than the panel, input darker. -->
-  <Color x:Key="SpectraBgControlColor">#383335</Color>
-  <Color x:Key="SpectraBgControlHoverColor">#433D3F</Color>
-  <Color x:Key="SpectraBgControlActiveColor">#4E4749</Color>
-  <Color x:Key="SpectraBgInputColor">#161314</Color>
+  <!-- A key at rest, hovered and pressed, and the well a field sits in. -->
+  <Color x:Key="SpectraBgControlColor">#2B2E34</Color>
+  <Color x:Key="SpectraBgControlHoverColor">#383C43</Color>
+  <Color x:Key="SpectraBgControlActiveColor">#1C1E22</Color>
+  <Color x:Key="SpectraBgInputColor">#101113</Color>
 
   <SolidColorBrush x:Key="SpectraBgControl" Color="{DynamicResource SpectraBgControlColor}" />
   <SolidColorBrush x:Key="SpectraBgControlHover" Color="{DynamicResource SpectraBgControlHoverColor}" />
   <SolidColorBrush x:Key="SpectraBgControlActive" Color="{DynamicResource SpectraBgControlActiveColor}" />
   <SolidColorBrush x:Key="SpectraBgInput" Color="{DynamicResource SpectraBgInputColor}" />
 
-  <!-- Borders are lighter than the surface they edge. -->
-  <Color x:Key="SpectraBorderSoftColor">#322D2F</Color>
-  <Color x:Key="SpectraBorderStrongColor">#3F393B</Color>
-  <Color x:Key="SpectraBorderControlColor">#4C4547</Color>
+  <!-- Soft: rules between rows. Strong: a panel outline. Control: the dark
+       seam round a key. Input: the light edge of a well. RibbonRule: the
+       divider between ribbon groups, light so it differs from the seams. -->
+  <Color x:Key="SpectraBorderSoftColor">#16171A</Color>
+  <Color x:Key="SpectraBorderStrongColor">#363A40</Color>
+  <Color x:Key="SpectraBorderControlColor">#121316</Color>
+  <Color x:Key="SpectraBorderInputColor">#444951</Color>
+  <Color x:Key="SpectraBorderInputHoverColor">#5A606A</Color>
+  <Color x:Key="SpectraRibbonRuleColor">#4A4F58</Color>
 
   <SolidColorBrush x:Key="SpectraBorderSoft" Color="{DynamicResource SpectraBorderSoftColor}" />
   <SolidColorBrush x:Key="SpectraBorderStrong" Color="{DynamicResource SpectraBorderStrongColor}" />
   <SolidColorBrush x:Key="SpectraBorderControl" Color="{DynamicResource SpectraBorderControlColor}" />
+  <SolidColorBrush x:Key="SpectraBorderInput" Color="{DynamicResource SpectraBorderInputColor}" />
+  <SolidColorBrush x:Key="SpectraBorderInputHover" Color="{DynamicResource SpectraBorderInputHoverColor}" />
+  <SolidColorBrush x:Key="SpectraRibbonRule" Color="{DynamicResource SpectraRibbonRuleColor}" />
 
   <!-- Frame between the chrome and the render. -->
   <SolidColorBrush x:Key="SpectraViewportBezel" Color="{DynamicResource SpectraBgWindowColor}" />
 
-  <!-- Text. Contrast on the panel: emphasis 13.4:1, body 8.3:1, muted 4.8:1.
-       Muted carries section headings, so it has to pass AA.
+  <!-- Text. Muted carries captions on the ribbon and on header bands, so it
+       has to pass AA there too, not only on the panel.
        Disabled also draws filter-dimmed tree rows, so it must stay visible. -->
-  <Color x:Key="SpectraTextEmphasisColor">#EFECED</Color>
-  <Color x:Key="SpectraTextBodyColor">#C2BBBD</Color>
-  <Color x:Key="SpectraTextMutedColor">#958D8F</Color>
-  <Color x:Key="SpectraTextDisabledColor">#6A6365</Color>
+  <Color x:Key="SpectraTextEmphasisColor">#E9EAEC</Color>
+  <Color x:Key="SpectraTextBodyColor">#BDC0C5</Color>
+  <Color x:Key="SpectraTextMutedColor">#979BA4</Color>
+  <Color x:Key="SpectraTextDisabledColor">#646870</Color>
+  <!-- Text and glyphs on an accent or play fill. -->
+  <Color x:Key="SpectraTextOnAccentColor">#FFFFFF</Color>
 
   <SolidColorBrush x:Key="SpectraTextEmphasis" Color="{DynamicResource SpectraTextEmphasisColor}" />
   <SolidColorBrush x:Key="SpectraTextBody" Color="{DynamicResource SpectraTextBodyColor}" />
   <SolidColorBrush x:Key="SpectraTextMuted" Color="{DynamicResource SpectraTextMutedColor}" />
   <SolidColorBrush x:Key="SpectraTextDisabled" Color="{DynamicResource SpectraTextDisabledColor}" />
+  <SolidColorBrush x:Key="SpectraTextOnAccent" Color="{DynamicResource SpectraTextOnAccentColor}" />
 
-  <!-- Accent means selection: selected rows, the row bar, drop indicators,
-       focus, one primary button. Never a panel or toolbar fill.
-       AccentRest is the fill under white text: white on #E8474A is 4.0:1 and
-       fails AA. TextDanger is the error text colour for the same reason. -->
-  <Color x:Key="SpectraAccentColor">#E8474A</Color>
-  <Color x:Key="SpectraAccentRestColor">#C8353A</Color>
+  <!-- Accent means selected or switched on: a selected row, the live tool,
+       a ticked box, focus, the primary button. Never a panel fill.
+       AccentRest is the fill under white text: white on #3D7EF0 is 3.9:1 and
+       fails AA. -->
+  <Color x:Key="SpectraAccentColor">#3D7EF0</Color>
+  <Color x:Key="SpectraAccentRestColor">#2F6DE0</Color>
   <Color x:Key="SpectraTextDangerColor">#FF6E6B</Color>
 
   <SolidColorBrush x:Key="SpectraAccent" Color="{DynamicResource SpectraAccentColor}" />
@@ -79,37 +94,41 @@
   <!-- A refused field gets a border, not a fill. A fill reads as selection. -->
   <SolidColorBrush x:Key="SpectraBorderDanger" Color="{DynamicResource SpectraTextDangerColor}" />
 
-  <!-- Mode means state: the live tool, snap on, the dirty dot, a non-default chip.
+  <!-- Mode means "look here": play mode, a latched overlay, the dirty dot, a
+       chip showing a non-default value, a drop target.
        Warning shares the colour on purpose; its icon and place tell it apart. -->
   <Color x:Key="SpectraModeColor">#E5A93F</Color>
   <SolidColorBrush x:Key="SpectraMode" Color="{DynamicResource SpectraModeColor}" />
   <SolidColorBrush x:Key="SpectraWarning" Color="{DynamicResource SpectraModeColor}" />
 
-  <!-- The accent is red, so destructive actions are a ghost with a red border,
-       never a red fill. -->
+  <!-- PlayFill is the Play button, dark enough for white text. -->
   <Color x:Key="SpectraSuccessColor">#5DBE7A</Color>
+  <Color x:Key="SpectraPlayFillColor">#27804D</Color>
+  <Color x:Key="SpectraPlayFillHoverColor">#2E9259</Color>
   <Color x:Key="SpectraInfoColor">#6E9FDE</Color>
   <SolidColorBrush x:Key="SpectraSuccess" Color="{DynamicResource SpectraSuccessColor}" />
   <SolidColorBrush x:Key="SpectraInfo" Color="{DynamicResource SpectraInfoColor}" />
+  <SolidColorBrush x:Key="SpectraPlayFill" Color="{DynamicResource SpectraPlayFillColor}" />
+  <SolidColorBrush x:Key="SpectraPlayFillHover" Color="{DynamicResource SpectraPlayFillHoverColor}" />
 
   <!-- Fluent takes SystemAccentColor from Windows personalisation, so any stock
        control we haven't restyled would use the user's taskbar colour.
        The six shades have no references in this repo. Fluent's templates read
        them; don't delete them as dead. -->
-  <Color x:Key="SystemAccentColor">#C8353A</Color>
-  <Color x:Key="SystemAccentColorDark1">#B22F33</Color>
-  <Color x:Key="SystemAccentColorDark2">#8E2529</Color>
-  <Color x:Key="SystemAccentColorDark3">#6B1C1F</Color>
-  <Color x:Key="SystemAccentColorLight1">#E8474A</Color>
-  <Color x:Key="SystemAccentColorLight2">#EE6C6E</Color>
-  <Color x:Key="SystemAccentColorLight3">#F49092</Color>
+  <Color x:Key="SystemAccentColor">#2F6DE0</Color>
+  <Color x:Key="SystemAccentColorDark1">#2960C8</Color>
+  <Color x:Key="SystemAccentColorDark2">#214D9F</Color>
+  <Color x:Key="SystemAccentColorDark3">#193A78</Color>
+  <Color x:Key="SystemAccentColorLight1">#3D7EF0</Color>
+  <Color x:Key="SystemAccentColorLight2">#6497F3</Color>
+  <Color x:Key="SystemAccentColorLight3">#8BB1F6</Color>
 
   <!-- Transient fills. Alpha goes in the colour, never on the brush opacity:
        a brush transition interpolates colour and opacity separately and the
        renderer multiplies them, so a fade in overshoots to about 3.5x the fill.
        The two washes repeat their hue as a literal. Change them together with
        SpectraAccentColor and SpectraModeColor. -->
-  <Color x:Key="SpectraAccentWashColor">#38E8474A</Color>
+  <Color x:Key="SpectraAccentWashColor">#383D7EF0</Color>
   <Color x:Key="SpectraModeWashColor">#38E5A93F</Color>
 
   <!-- Colour picker ramps. Not palette values; a theme swap leaves them alone.
@@ -134,107 +153,65 @@
   </LinearGradientBrush>
 
   <SolidColorBrush x:Key="SpectraRowHover" Color="#12FFFFFF" />
-  <SolidColorBrush x:Key="SpectraRowSelected" Color="{DynamicResource SpectraAccentWashColor}" />
+  <SolidColorBrush x:Key="SpectraRowSelected" Color="{DynamicResource SpectraAccentRestColor}" />
+  <!-- Every other row of a list, so rows read as separate strips. -->
+  <SolidColorBrush x:Key="SpectraRowAlternate" Color="#07FFFFFF" />
   <SolidColorBrush x:Key="SpectraControlHover" Color="#14FFFFFF" />
   <SolidColorBrush x:Key="SpectraControlPressed" Color="#21FFFFFF" />
-  <SolidColorBrush x:Key="SpectraControlChecked" Color="{DynamicResource SpectraModeWashColor}" />
+  <SolidColorBrush x:Key="SpectraControlChecked" Color="{DynamicResource SpectraAccentRestColor}" />
+  <SolidColorBrush x:Key="SpectraModeWash" Color="{DynamicResource SpectraModeWashColor}" />
 
   <!-- Drop-target wash over the viewport. A third of SpectraControlChecked's
        alpha: over the whole render the chip's alpha would be a colour cast. -->
   <Color x:Key="SpectraDropWashColor">#12E5A93F</Color>
   <SolidColorBrush x:Key="SpectraDropWash" Color="{DynamicResource SpectraDropWashColor}" />
 
-  <!-- Depth gradients for the ribbon. Never put a gradient on a transitioned
-       property: how Avalonia animates between two gradients is undocumented.
-       Depth is a static layer; a sheen fades by its element's opacity.
-       RibbonDepthConventionTests checks this. -->
-
-  <!-- Ribbon body: lighter at the tab strip, chrome ground at the bottom. -->
-  <LinearGradientBrush x:Key="SpectraRibbonBodyFill" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#1F1B1C" />
-    <GradientStop Offset="1" Color="#181516" />
-  </LinearGradientBrush>
-
-  <!-- Sheen for a raised large button. Two stops at 0.5, one transparent white
-       and one transparent black: a single stop would grey the ramp.
-       Large buttons only; across a 22px row it is a flat wash. -->
-  <LinearGradientBrush x:Key="SpectraSheenRaised" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#16FFFFFF" />
-    <GradientStop Offset="0.44" Color="#05FFFFFF" />
-    <GradientStop Offset="0.5" Color="#00FFFFFF" />
-    <GradientStop Offset="0.5" Color="#00000000" />
-    <GradientStop Offset="1" Color="#1A000000" />
-  </LinearGradientBrush>
-
-  <!-- Pressed: the raised sheen mirrored vertically. -->
-  <LinearGradientBrush x:Key="SpectraSheenSunken" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#24000000" />
-    <GradientStop Offset="0.5" Color="#00000000" />
-    <GradientStop Offset="0.5" Color="#00FFFFFF" />
-    <GradientStop Offset="1" Color="#10FFFFFF" />
-  </LinearGradientBrush>
-
-  <!-- Rim: one step either side of SpectraBorderControl (#4C4547). -->
-  <LinearGradientBrush x:Key="SpectraBevelRaised" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#5C5456" />
-    <GradientStop Offset="1" Color="#3A3436" />
-  </LinearGradientBrush>
-
-  <!-- Divider between ribbon groups. SpectraBorderStrong, faded at both ends. -->
-  <LinearGradientBrush x:Key="SpectraGroupRule" StartPoint="0%,0%" EndPoint="0%,100%">
-    <GradientStop Offset="0" Color="#003F393B" />
-    <GradientStop Offset="0.22" Color="#FF3F393B" />
-    <GradientStop Offset="0.78" Color="#FF3F393B" />
-    <GradientStop Offset="1" Color="#003F393B" />
-  </LinearGradientBrush>
-
-  <!-- Axis colours: the gizmo handles' hues (GizmoColors), desaturated. At
-       full strength X is too close to the accent red. -->
-  <SolidColorBrush x:Key="SpectraAxisX" Color="#D9635F" />
-  <SolidColorBrush x:Key="SpectraAxisY" Color="#74B863" />
-  <SolidColorBrush x:Key="SpectraAxisZ" Color="#6F9BDB" />
+  <!-- Axis colours: the gizmo handles' hues (GizmoColors), desaturated. -->
+  <SolidColorBrush x:Key="SpectraAxisX" Color="#F0706A" />
+  <SolidColorBrush x:Key="SpectraAxisY" Color="#7CCB6E" />
+  <SolidColorBrush x:Key="SpectraAxisZ" Color="#6FA4F2" />
 
   <!-- Node-kind tints. Saturated only for kinds that draw nothing in the
        viewport or need finding fast: light, subtractive brush, entity. -->
-  <SolidColorBrush x:Key="SpectraKindGroup" Color="#958D8F" />
-  <SolidColorBrush x:Key="SpectraKindMesh" Color="#BDB6B8" />
-  <SolidColorBrush x:Key="SpectraKindBrushWorld" Color="#8FB4E2" />
-  <SolidColorBrush x:Key="SpectraKindBrushPart" Color="#5FCECE" />
-  <SolidColorBrush x:Key="SpectraKindBrushSubtractive" Color="#CE8DE0" />
-  <SolidColorBrush x:Key="SpectraKindLight" Color="#E9CA4C" />
-  <!-- Lighter and less saturated than SpectraSuccess, which is the play glyph's. -->
-  <SolidColorBrush x:Key="SpectraKindEntity" Color="#7FC58F" />
+  <SolidColorBrush x:Key="SpectraKindGroup" Color="#979BA4" />
+  <SolidColorBrush x:Key="SpectraKindMesh" Color="#C3C6CB" />
+  <SolidColorBrush x:Key="SpectraKindBrushWorld" Color="#7FB4FF" />
+  <SolidColorBrush x:Key="SpectraKindBrushPart" Color="#6FD3B8" />
+  <SolidColorBrush x:Key="SpectraKindBrushSubtractive" Color="#E58BD8" />
+  <SolidColorBrush x:Key="SpectraKindLight" Color="#F2C75C" />
+  <SolidColorBrush x:Key="SpectraKindEntity" Color="#B9A5FF" />
 
   <!-- Fonts. $Default is Avalonia's fallback; CSS generics like "monospace"
        resolve to nothing.
        Mono is for values (numbers, paths, key names), set 1px smaller than the
        sans next to it. -->
-  <FontFamily x:Key="SpectraFontUi">avares://Avalonia.Fonts.Inter/Assets#Inter, Segoe UI Variable Text, Segoe UI, $Default</FontFamily>
-  <FontFamily x:Key="SpectraFontMono">Cascadia Mono, Consolas, $Default</FontFamily>
+  <FontFamily x:Key="SpectraFontUi">avares://SpectraEngine.Editor/Assets/Fonts#IBM Plex Sans, Segoe UI Variable Text, Segoe UI, $Default</FontFamily>
+  <FontFamily x:Key="SpectraFontMono">avares://SpectraEngine.Editor/Assets/Fonts#IBM Plex Mono, Cascadia Mono, Consolas, $Default</FontFamily>
 
-  <!-- Type scale, base 13. No 700 weight at 13px on dark: it blooms.
+  <!-- Type scale, base 12. No 700 weight at this size on dark: it blooms.
        Micro is for tertiary labels, not section headings. -->
   <x:Double x:Key="SpectraFontMicro">10</x:Double>
   <x:Double x:Key="SpectraFontSmall">11</x:Double>
   <x:Double x:Key="SpectraFontSecondary">12</x:Double>
-  <x:Double x:Key="SpectraFontBase">13</x:Double>
+  <x:Double x:Key="SpectraFontBase">12</x:Double>
   <x:Double x:Key="SpectraFontTitle">14</x:Double>
   <x:Double x:Key="SpectraFontDisplay">16</x:Double>
 
   <!-- Fixed heights, not padding-derived, so rows stack cleanly at 125% and
        150% DPI. -->
   <x:Double x:Key="SpectraTreeRowHeight">24</x:Double>
-  <x:Double x:Key="SpectraFieldHeight">26</x:Double>
+  <x:Double x:Key="SpectraFieldHeight">24</x:Double>
   <x:Double x:Key="SpectraControlHeight">28</x:Double>
   <x:Double x:Key="SpectraToolbarButtonSize">28</x:Double>
-  <x:Double x:Key="SpectraMenuBarHeight">32</x:Double>
+  <x:Double x:Key="SpectraMenuBarHeight">36</x:Double>
   <x:Double x:Key="SpectraToolbarHeight">40</x:Double>
   <x:Double x:Key="SpectraStatusBarHeight">26</x:Double>
 
-  <!-- Radii: controls nearly square, floating surfaces rounded. Docked edges
-       get none. -->
-  <CornerRadius x:Key="SpectraRadiusControl">2</CornerRadius>
-  <CornerRadius x:Key="SpectraRadiusFloat">6</CornerRadius>
+  <!-- Radii. Tile is a panel or the ribbon; Float is a popup. -->
+  <CornerRadius x:Key="SpectraRadiusControl">4</CornerRadius>
+  <CornerRadius x:Key="SpectraRadiusFloat">7</CornerRadius>
+  <CornerRadius x:Key="SpectraRadiusTile">7</CornerRadius>
+  <CornerRadius x:Key="SpectraRadiusTray">5</CornerRadius>
 
   <!-- Motion. Interaction transitions are 130ms at most. Only the view swap
        and the reveal scroll may run longer. No overshoot easings (Back, Bounce,

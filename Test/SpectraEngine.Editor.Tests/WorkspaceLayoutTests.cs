@@ -4,9 +4,10 @@ namespace SpectraEngine.Editor.Tests;
 
 public sealed class WorkspaceLayoutTests
 {
-    // Measured from the running window. Vertical: menu row, ribbon, viewport
-    // header, status bar, bezel. Horizontal: two 1px splitter columns plus bezel.
-    private static readonly WorkspaceChrome Chrome = new(Vertical: 241, Horizontal: 6);
+    // Measured from the running window with a composited viewport, the larger
+    // of the two. Vertical: top row, ribbon, panel header, viewport header,
+    // status bar, bezel. Horizontal: window margins, both gutters, tile edges.
+    private static readonly WorkspaceChrome Chrome = new(Vertical: 224, Horizontal: 32);
 
     [Fact]
     public void Compact_at_the_window_minimum_still_leaves_a_usable_viewport()
@@ -15,7 +16,8 @@ public sealed class WorkspaceLayoutTests
 
         (double width, double height) = WorkspaceLayout.ViewportCell(metrics, 1180, 640, Chrome);
 
-        width.ShouldBeGreaterThanOrEqualTo(640);
+        // 618 since the panels became tiles with gaps between them.
+        width.ShouldBeGreaterThanOrEqualTo(610);
         height.ShouldBeGreaterThanOrEqualTo(300);
     }
 
@@ -52,7 +54,7 @@ public sealed class WorkspaceLayoutTests
     {
         double clamped = WorkspaceLayout.ClampDrawerHeight(160, 300);
 
-        clamped.ShouldBe(300 - WorkspaceLayout.ViewportMinHeight - 1);
+        clamped.ShouldBe(300 - WorkspaceLayout.ViewportMinHeight - WorkspaceLayout.Gutter);
         clamped.ShouldBeLessThan(160);
     }
 

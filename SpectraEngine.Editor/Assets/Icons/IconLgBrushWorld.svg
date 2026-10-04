@@ -1,30 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"
-     fill="none" stroke="currentColor">
-  <!-- ___ The large set ___________________________________
-       A SECOND SIZE, ON ITS OWN 32x32 GRID, ink filling 3.5 to 28.5 - the same
-       proportion of its box that the small set reaches after its shared 1.2
-       scale, authored directly rather than authored small and scaled, because
-       a second shared scale factor is a second thing that can drift from the
-       first. Path.icon-lg therefore carries no transform at all.
-       RULE 2 AT THE TOP OF THIS FILE IS NOT BEING BROKEN - ITS OWN PREMISE
-       EXPIRES HERE. It reads "at 16px with a 1.5 stroke, two shapes with the
-       same outline and different insides are the same shape", and that is why
-       the small cubes are told apart by a ground line rather than by anything
-       within them. At 32px with the same stroke, interior detail is legible:
-       a bore really can be drilled through a block, a bulb can have a filament
-       and a frame can have something inside it. So these are new drawings
-       rather than the small ones enlarged, which is the only reason a large
-       button is worth having - an outline scaled to twice its size is a bigger
-       outline, not a better icon.
-       Only the twelve verbs that earn a large button are here. Everything else
-       in the ribbon stays on the 16px set, which is untouched. -->
-       <!-- A block: a cube resting on the ground it fuses into, with a panel on its
-       top face. The ground rule runs PAST the cube on both sides, because what
-       a block does is join the level rather than sit on it. -->
-  <path d="M5,9 L16,3.5 L27,9 L27,21.5 L16,27 L5,21.5 Z M5,9 L16,14.5 L27,9 M16,14.5 L16,27 M16,6.5 L21,9 L16,11.5 L11,9 Z M3.5,28.5 L28.5,28.5" />
+<!-- Tabler Icons "cube", MIT. See LICENSE-tabler.txt. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M21 16.008v-8.018a1.98 1.98 0 0 0 -1 -1.717l-7 -4.008a2.016 2.016 0 0 0 -2 0l-7 4.008c-.619 .355 -1 1.01 -1 1.718v8.018c0 .709 .381 1.363 1 1.717l7 4.008a2.016 2.016 0 0 0 2 0l7 -4.008c.619 -.355 1 -1.01 1 -1.718" />
+  <path d="M12 22v-10" />
+  <path d="M12 12l8.73 -5.04" />
+  <path d="M3.27 6.96l8.73 5.04" />
 </svg>

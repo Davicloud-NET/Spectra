@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<!-- Tabler Icons "arrows-move", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor">
-  <!-- ___ Tools ___________________________________________
-       Move is a four-way arrow, rotate an arc with a head, size a box growing
-       out of its corner: the same three ideas every 3D tool has used for thirty
-       years, and not a place to be original. -->
-  <path d="M8,2.5 L8,13.5 M2.5,8 L13.5,8 M8,2.5 L5.8,4.9 M8,2.5 L10.2,4.9 M8,13.5 L5.8,11.1 M8,13.5 L10.2,11.1 M2.5,8 L4.9,5.8 M2.5,8 L4.9,10.2 M13.5,8 L11.1,5.8 M13.5,8 L11.1,10.2" />
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 12 6 l 2 2 l -2 2" />
+  <path d="M 10 8 h 4" />
+  <path d="M 4 6 l -2 2 l 2 2" />
+  <path d="M 2 8 h 4" />
+  <path d="M 6 12 l 2 2 l 2 -2" />
+  <path d="M 8 10 v 4" />
+  <path d="M 10 4 l -2 -2 l -2 2" />
+  <path d="M 8 2 v 4" />
 </svg>

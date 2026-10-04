@@ -1,13 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<!-- Tabler Icons "arrow-back-up", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor">
-  <!-- ___ History and structure ___________________________
-       Undo and redo used to be authored from y=5 to y=15 while their
-       neighbours ran 2 to 14, so they sat two pixels low in a row of otherwise
-       centred glyphs. Both are on the shared box now. -->
-  <path d="M5.8,3.8 L2.5,7.1 L5.8,10.4 M2.5,7.1 L9.5,7.1 A3.2,3.2 0 0 1 9.5,13.5 L7.2,13.5" />
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 6 9.333 l -2.667 -2.667 l 2.667 -2.667" />
+  <path d="M 3.333 6.667 h 7.333 a 2.667 2.667 0 1 1 0 5.333 h -0.667" />
 </svg>

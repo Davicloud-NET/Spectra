@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<!-- Placeholder for a kind with no glyph of its own. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor">
-  <!-- Nothing at all: an empty transform. -->
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
   <path d="M8,2.5 L8,13.5 M2.5,8 L13.5,8" />
 </svg>

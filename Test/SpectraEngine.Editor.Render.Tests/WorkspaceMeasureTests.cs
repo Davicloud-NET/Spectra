@@ -14,11 +14,12 @@ namespace SpectraEngine.Editor.Render.Tests;
 [Collection(RibbonSessionCollection.Name)]
 public sealed class WorkspaceMeasureTests(RibbonSession session)
 {
-    private static readonly WorkspaceChrome Chrome = new(Vertical: 241, Horizontal: 6);
+    private static readonly WorkspaceChrome Chrome = new(Vertical: 224, Horizontal: 32);
 
-    // The model's horizontal chrome (6) includes the two 1px splitter columns.
-    // The grid has those itself, so only the bezel is subtracted here.
-    private const double BezelOnly = 4;
+    // The model's horizontal chrome (32) includes the two gutter columns. The
+    // grid has those itself, so only what is outside it is subtracted here:
+    // the window margins, the tile edges and the bezel.
+    private const double OutsideGrid = 32 - (2 * WorkspaceLayout.Gutter);
 
     [Theory]
     [InlineData(WorkspacePreset.Compact, 1180, 640)]
@@ -65,14 +66,14 @@ public sealed class WorkspaceMeasureTests(RibbonSession session)
     {
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition(metrics.LeftWidth, GridUnitType.Pixel) { MinWidth = 180 });
-        grid.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Pixel));
+        grid.ColumnDefinitions.Add(new ColumnDefinition(WorkspaceLayout.Gutter, GridUnitType.Pixel));
         grid.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star) { MinWidth = WorkspaceLayout.ViewportMinWidth });
-        grid.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Pixel));
+        grid.ColumnDefinitions.Add(new ColumnDefinition(WorkspaceLayout.Gutter, GridUnitType.Pixel));
         grid.ColumnDefinitions.Add(new ColumnDefinition(metrics.RightWidth, GridUnitType.Pixel) { MinWidth = 220 });
 
         double drawer = metrics.DrawerOpen ? metrics.DrawerHeight : 0;
         grid.RowDefinitions.Add(new RowDefinition(1, GridUnitType.Star) { MinHeight = WorkspaceLayout.ViewportMinHeight });
-        grid.RowDefinitions.Add(new RowDefinition(metrics.DrawerOpen ? 1 : 0, GridUnitType.Pixel));
+        grid.RowDefinitions.Add(new RowDefinition(metrics.DrawerOpen ? WorkspaceLayout.Gutter : 0, GridUnitType.Pixel));
         grid.RowDefinitions.Add(new RowDefinition(drawer, GridUnitType.Pixel));
 
         var cell = new Border();
@@ -80,7 +81,7 @@ public sealed class WorkspaceMeasureTests(RibbonSession session)
         Grid.SetRow(cell, 0);
         grid.Children.Add(cell);
 
-        // Client area minus the chrome outside the grid: menu row, ribbon,
+        // Client area minus the chrome outside the grid: top row, ribbon,
         // header strip, status bar.
         var window = new Window
         {
@@ -90,8 +91,8 @@ public sealed class WorkspaceMeasureTests(RibbonSession session)
         };
 
         window.Show();
-        grid.Measure(new Size(width - BezelOnly, height - Chrome.Vertical));
-        grid.Arrange(new Rect(0, 0, width - BezelOnly, height - Chrome.Vertical));
+        grid.Measure(new Size(width - OutsideGrid, height - Chrome.Vertical));
+        grid.Arrange(new Rect(0, 0, width - OutsideGrid, height - Chrome.Vertical));
         Dispatcher.UIThread.RunJobs();
 
         (double Width, double Height) measured = (cell.Bounds.Width, cell.Bounds.Height);

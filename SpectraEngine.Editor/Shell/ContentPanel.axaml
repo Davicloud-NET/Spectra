@@ -145,10 +145,10 @@
                 <!-- Glyph and picture share a footprint so tiles do not reflow
                      as thumbnails land. -->
                 <Panel Height="58" Margin="0,0,0,4">
-                  <!-- Uniform and no transform, unlike other icons: with
-                       Stretch=None the 16px ink sits off-centre in a 22px box. -->
+                  <!-- Uniform, unlike other icons: with Stretch=None the 16px
+                       ink sits off-centre in a 22px box. -->
                   <Path Classes="icon" Width="22" Height="22"
-                        Stretch="Uniform" RenderTransform="none"
+                        Stretch="Uniform"
                         IsVisible="{Binding !HasThumbnail}"
                         Stroke="{Binding KindBrush}"
                         Data="{Binding Icon}" />

@@ -40,7 +40,7 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="TextBlock.statusmsg.errormsg">
-      <Setter Property="Foreground" Value="{StaticResource SpectraAccent}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextDanger}" />
     </Style>
 
     <!-- A class, not a local Foreground, which would outrank .overbudget.
@@ -52,40 +52,53 @@
       <Setter Property="Foreground" Value="{StaticResource SpectraWarning}" />
     </Style>
 
-    <!-- Play: green to start (red means selected here, and would read as
-         record), accent to stop. The disabled rule comes last so it wins. -->
+    <!-- Play: a green fill. While playing it is a plain key with an amber
+         stop glyph. The disabled rules come last so they win. -->
     <Style Selector="Button.playbtn">
-      <Setter Property="Height" Value="{StaticResource SpectraControlHeight}" />
+      <Setter Property="Height" Value="26" />
       <Setter Property="MinWidth" Value="62" />
-      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="Padding" Value="12,0,14,0" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusTray}" />
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
-      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextOnAccent}" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.playbtn /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
+      <Setter Property="Background" Value="{StaticResource SpectraPlayFill}" />
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusTray}" />
     </Style>
     <Style Selector="Button.playbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource SpectraBgControlHover}" />
+      <Setter Property="Background" Value="{StaticResource SpectraPlayFillHover}" />
     </Style>
     <!-- The label needs its own rule: the global TextBlock style beats a
          Foreground inherited from the button. -->
     <Style Selector="Button.playbtn TextBlock">
-      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextOnAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style Selector="Button.playbtn Path.playglyph">
-      <Setter Property="Fill" Value="{StaticResource SpectraSuccess}" />
-      <Setter Property="Stroke" Value="{StaticResource SpectraSuccess}" />
+      <Setter Property="Fill" Value="{StaticResource SpectraTextOnAccent}" />
+      <Setter Property="Stroke" Value="{StaticResource SpectraTextOnAccent}" />
+    </Style>
+    <Style Selector="Button.playbtn.playing /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
+    </Style>
+    <Style Selector="Button.playbtn.playing:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControlHover}" />
+    </Style>
+    <Style Selector="Button.playbtn.playing TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
     </Style>
     <Style Selector="Button.playbtn Path.stopglyph">
-      <Setter Property="Fill" Value="{StaticResource SpectraAccent}" />
-      <Setter Property="Stroke" Value="{StaticResource SpectraAccent}" />
+      <Setter Property="Fill" Value="{StaticResource SpectraMode}" />
+      <Setter Property="Stroke" Value="{StaticResource SpectraMode}" />
+    </Style>
+    <Style Selector="Button.playbtn:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
     </Style>
     <Style Selector="Button.playbtn:disabled Path">
       <Setter Property="Fill" Value="{StaticResource SpectraTextDisabled}" />
@@ -98,8 +111,8 @@
       <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
     </Style>
 
-    <!-- Mode colour on the command bar during play, so the greyed Insert
-         cluster reads as suspended, not broken. -->
+    <!-- Mode colour round the ribbon during play, so the greyed Insert
+         group reads as suspended, not broken. -->
     <Style Selector="Border.cmdbar">
       <Setter Property="Transitions">
         <Transitions>
@@ -222,12 +235,11 @@
 
   <Grid RowDefinitions="Auto,Auto,*,Auto">
 
-    <!-- Menu row. Play sits at the far right so it never moves and stays
-         visible when the ribbon collapses. -->
-    <Border Grid.Row="0"
-            Height="{StaticResource SpectraMenuBarHeight}"
-            Background="{StaticResource SpectraBgApp}">
-      <Grid ColumnDefinitions="Auto,*,Auto">
+    <!-- Top row: menus, the ribbon's page tabs, the document, history and
+         Play. Everything a collapsed ribbon must not hide lives here.
+         ZIndex: the open tab hangs a pixel over the ribbon page below. -->
+    <Border x:Name="RibbonStrip" Grid.Row="0" Classes="ribbonstrip" ZIndex="1">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto">
 
         <!-- 6 + the Menu's 4 padding = x 10, the left rail the other bars use. -->
         <Menu Grid.Column="0" VerticalAlignment="Center" Margin="6,0,0,0">
@@ -311,7 +323,7 @@
             <Separator />
             <MenuItem Header="Frame in viewport" InputGesture="F" Click="OnFrameClicked" IsEnabled="{Binding HasSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconFrame}" /></MenuItem.Icon></MenuItem>
             <!-- Beside Frame selection, not under View: keep the pair together. -->
-            <MenuItem Header="Frame everything" InputGesture="Shift+F" Click="OnFrameAllClicked"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconLgFrameAll}" /></MenuItem.Icon></MenuItem>
+            <MenuItem Header="Frame everything" InputGesture="Shift+F" Click="OnFrameAllClicked"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconFrameAll}" /></MenuItem.Icon></MenuItem>
           </MenuItem>
 
           <MenuItem Header="_View" IsEnabled="{Binding HasSession}">
@@ -393,8 +405,16 @@
           </MenuItem>
         </Menu>
 
+        <!-- Page tabs, filled in code from RibbonLayout.Tabs. Bottom-aligned
+             and one pixel low, so the open tab covers the page's top border. -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,-1"
+                    VerticalAlignment="Bottom" IsVisible="{Binding HasSession}">
+          <Border Classes="groupsep" Margin="0,0,10,0" />
+          <StackPanel x:Name="RibbonTabs" Orientation="Horizontal" Spacing="3" />
+        </StackPanel>
+
         <!-- Shown with no session open, in place of the document cluster. -->
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8"
                     VerticalAlignment="Center" Margin="0,0,10,0"
                     IsVisible="{Binding !HasSession}">
           <Border Width="10" Height="10"
@@ -406,8 +426,8 @@
                      Foreground="{StaticResource SpectraTextMuted}" />
         </StackPanel>
 
-        <!-- Level name, project, and the unsaved dot. -->
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
+        <!-- Project and level, the unsaved dot, history, the ribbon pin, Play. -->
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8"
                     VerticalAlignment="Center" Margin="0,0,10,0"
                     IsVisible="{Binding HasSession}">
           <TextBlock Classes="docproject" Text="{Binding ProjectName}"
@@ -419,9 +439,25 @@
                   VerticalAlignment="Center"
                   IsVisible="{Binding IsDocumentDirty}"
                   ToolTip.Tip="Unsaved changes" />
-          <!-- Margin 2: the parent's Spacing="8" already adds to it. -->
-          <Border Classes="groupsep" Margin="2,0" />
-          <Button Classes="playbtn" Click="OnPlayClicked"
+          <Border Classes="cluster" Margin="4,0,0,0">
+            <StackPanel Orientation="Horizontal">
+              <!-- Tag is the roster id; RibbonLayoutTests reads it. -->
+              <Button Classes="seg" Width="28" Padding="0" Tag="history.undo" Focusable="False" Click="OnRibbonStripClick"
+                      IsEnabled="{Binding CanUndo}" ToolTip.Tip="{Binding UndoTip}">
+                <Path Classes="icon" Data="{StaticResource IconUndo}" />
+              </Button>
+              <Border Classes="segsep" />
+              <Button Classes="seg" Width="28" Padding="0" Tag="history.redo" Focusable="False" Click="OnRibbonStripClick"
+                      IsEnabled="{Binding CanRedo}" ToolTip.Tip="{Binding RedoTip}">
+                <Path Classes="icon" Data="{StaticResource IconRedo}" />
+              </Button>
+            </StackPanel>
+          </Border>
+          <!-- The pin: one geometry, rotated per state. -->
+          <Button x:Name="RibbonPin" Classes="tool ribbonpin" Click="OnRibbonPinClicked">
+            <Path Classes="icon" Data="{StaticResource IconChevronRight}" />
+          </Button>
+          <Button Classes="playbtn" Classes.playing="{Binding IsPlaying}" Click="OnPlayClicked"
                   IsEnabled="{Binding CanPlay}" ToolTip.Tip="{Binding PlayTip}">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <Panel Width="16" Height="16">
@@ -437,80 +473,40 @@
       </Grid>
     </Border>
 
-    <!-- Command ribbon. Collapsible, two pages (Build, View). The roster is
+    <!-- The ribbon page. Collapsible, two pages (Build, View). The roster is
          RibbonLayout: every control's Tag is its roster id, no verb is on two
-         pages, and RibbonLayoutTests enforces both.
+         pages, and RibbonLayoutTests enforces both. -->
+    <Panel Grid.Row="1" Margin="6,0" IsVisible="{Binding HasSession}">
 
-         Undo and redo sit on the tab strip and Play in the menu row, so a
-         collapsed ribbon never hides them. -->
-    <Border Grid.Row="1" Classes="cmdbar" Classes.playing="{Binding IsPlaying}"
-            Background="{StaticResource SpectraBgApp}"
-            BorderBrush="{StaticResource SpectraBorderStrong}"
-            BorderThickness="0,1"
-            IsVisible="{Binding HasSession}">
-      <Grid RowDefinitions="Auto,Auto">
+      <!-- The page while pinned open. One live instance per page, moved
+           between this host and the flyout's. -->
+      <Border x:Name="RibbonBody" Classes="ribbonbody cmdbar" Classes.playing="{Binding IsPlaying}">
+        <ContentControl x:Name="RibbonInlineHost" />
+      </Border>
 
-        <!-- The tab strip. Collapsed, this row is the whole ribbon. -->
-        <Border x:Name="RibbonStrip" Grid.Row="0" Classes="ribbonstrip">
-          <Grid ColumnDefinitions="Auto,*,Auto">
-
-            <!-- Filled in code from RibbonLayout.Tabs. -->
-            <StackPanel x:Name="RibbonTabs" Grid.Column="0" Orientation="Horizontal"
-                        Spacing="2" VerticalAlignment="Center" />
-
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
-                        VerticalAlignment="Center">
-              <Border Classes="cluster">
-                <StackPanel Orientation="Horizontal">
-                  <!-- Tag is the roster id; RibbonLayoutTests reads it. -->
-                  <Button Classes="seg" Width="26" Padding="0" Tag="history.undo" Focusable="False" Click="OnRibbonStripClick"
-                          IsEnabled="{Binding CanUndo}" ToolTip.Tip="{Binding UndoTip}">
-                    <Path Classes="icon" Data="{StaticResource IconUndo}" />
-                  </Button>
-                  <Border Classes="segsep" />
-                  <Button Classes="seg" Width="26" Padding="0" Tag="history.redo" Focusable="False" Click="OnRibbonStripClick"
-                          IsEnabled="{Binding CanRedo}" ToolTip.Tip="{Binding RedoTip}">
-                    <Path Classes="icon" Data="{StaticResource IconRedo}" />
-                  </Button>
-                </StackPanel>
-              </Border>
-              <!-- The pin: one geometry, rotated per state. -->
-              <Button x:Name="RibbonPin" Classes="tool ribbonpin" Click="OnRibbonPinClicked">
-                <Path Classes="icon" Data="{StaticResource IconChevronRight}" />
-              </Button>
-            </StackPanel>
-          </Grid>
+      <!-- The page while collapsed. A popup, because only a real OS window
+           may cross a native viewport. The dismissing click does not pass
+           through, so clicking the open tab closes it once. -->
+      <Popup x:Name="RibbonFlyout"
+             PlacementTarget="{Binding #RibbonStrip}"
+             Placement="BottomEdgeAlignedLeft"
+             HorizontalOffset="6"
+             IsLightDismissEnabled="True">
+        <Border Classes="ribbonflyout">
+          <ContentControl x:Name="RibbonFlyoutHost" />
         </Border>
+      </Popup>
 
-        <!-- The page while pinned open. One live instance per page, moved
-             between this host and the flyout's. -->
-        <Border x:Name="RibbonBody" Grid.Row="1" Classes="ribbonbody">
-          <ContentControl x:Name="RibbonInlineHost" />
-        </Border>
-
-        <!-- The page while collapsed. A popup, because only a real OS window
-             may cross a native viewport. The dismissing click does not pass
-             through, so clicking the open tab closes it once. -->
-        <Popup x:Name="RibbonFlyout" Grid.Row="0"
-               PlacementTarget="{Binding #RibbonStrip}"
-               Placement="BottomEdgeAlignedLeft"
-               IsLightDismissEnabled="True">
-          <Border Classes="ribbonflyout">
-            <ContentControl x:Name="RibbonFlyoutHost" />
-          </Border>
-        </Popup>
-
-        <!-- Command palette. A popup for the same reason as the flyout.
-             Anchored to the strip so it does not cover the scene. -->
-        <Popup x:Name="CommandPalettePopup" Grid.Row="0"
-               PlacementTarget="{Binding #RibbonStrip}"
-               Placement="BottomEdgeAlignedLeft"
-               HorizontalOffset="120"
-               IsLightDismissEnabled="True">
-          <shell:CommandPaletteView x:Name="Palette" />
-        </Popup>
-      </Grid>
-    </Border>
+      <!-- Command palette. A popup for the same reason as the flyout.
+           Anchored to the top row so it does not cover the scene. -->
+      <Popup x:Name="CommandPalettePopup"
+             PlacementTarget="{Binding #RibbonStrip}"
+             Placement="BottomEdgeAlignedLeft"
+             HorizontalOffset="120"
+             IsLightDismissEnabled="True">
+        <shell:CommandPaletteView x:Name="Palette" />
+      </Popup>
+    </Panel>
 
     <!-- Start page or editor. Switched in code: the viewport must leave the
          tree before the editor view hides. -->
@@ -522,20 +518,20 @@
            composited session moves the viewport into the centre dock. -->
       <!-- Left and right span the full height; the bottom region sits under
            the viewport only. -->
-      <Grid x:Name="EditorView" IsVisible="False">
+      <Grid x:Name="EditorView" IsVisible="False" Margin="6,7,6,0">
 
         <!-- Long form: min sizes have no shorthand, and without them a column
-             can be dragged to zero width. -->
+             can be dragged to zero width. The 7s are WorkspaceLayout.Gutter. -->
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="288" MinWidth="180" />
-          <ColumnDefinition Width="1" />
+          <ColumnDefinition Width="7" />
           <ColumnDefinition Width="*" MinWidth="360" />
-          <ColumnDefinition Width="1" />
+          <ColumnDefinition Width="7" />
           <ColumnDefinition Width="308" MinWidth="220" />
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
           <RowDefinition Height="*" MinHeight="200" />
-          <RowDefinition Height="1" />
+          <RowDefinition Height="7" />
           <RowDefinition Height="236" MinHeight="90" />
         </Grid.RowDefinitions>
 
@@ -543,7 +539,8 @@
              the centre cell that only a composited session shows. A native
              viewport never docks: re-parenting destroys its HWND and the
              session. -->
-        <dock:DockControl x:Name="LeftDock" Grid.Column="0" Grid.RowSpan="3"
+        <Border Classes="tile" Grid.Column="0" Grid.RowSpan="3" IsVisible="{Binding #LeftDock.IsVisible}">
+        <dock:DockControl x:Name="LeftDock"
                           InitializeLayout="True" InitializeFactory="True">
           <!-- Native floats on every root. A managed float is drawn in this
                window's layer and vanishes behind a native viewport. -->
@@ -567,18 +564,17 @@
             </dm:ProportionalDock>
           </dm:RootDock>
         </dock:DockControl>
+        </Border>
 
-        <!-- Splitter: 1px of ink, 9px hit area. Do not set Background here; a
-             local value outranks the style's :pointerover rule. The ink's
-             hover class is set from code. -->
-        <!-- The hit band leans away from the viewport: a native child takes
-             the mouse, so the part over its cell never hit-tests. -->
+        <!-- Splitter: the whole gap between two panels. Do not set Background
+             here; a local value outranks the style's :pointerover rule. The
+             line that shows on hover is the ink below, lit from code. -->
         <GridSplitter x:Name="LeftSplitter" Grid.Column="1" Grid.RowSpan="3" ResizeDirection="Columns" Cursor="SizeWestEast"
-                      Width="9" Margin="-7,0,-1,0" PointerEntered="OnSplitterEntered"
+                      PointerEntered="OnSplitterEntered"
                       PointerExited="OnSplitterExited"
                       DragStarted="OnSplitterDragStarted" DragCompleted="OnSplitterDragCompleted"
                       Tag="{Binding #LeftSplitInk}" />
-        <Border x:Name="LeftSplitInk" Grid.Column="1" Grid.RowSpan="3" Width="1" Classes="splitink"
+        <Border x:Name="LeftSplitInk" Grid.Column="1" Grid.RowSpan="3" Width="3" CornerRadius="1.5" Classes="splitink"
                 HorizontalAlignment="Center" />
 
         <!-- The viewport pane lives in one of two places per session. Native:
@@ -588,7 +584,8 @@
 
              Same factory as the other docks, or panels cannot be dragged
              between regions. Hidden until a composited session asks for it. -->
-        <dock:DockControl x:Name="CenterDock" Grid.Column="2" Grid.Row="0" IsVisible="False"
+        <Border Classes="tile" Grid.Column="2" Grid.Row="0" IsVisible="{Binding #CenterDock.IsVisible}">
+        <dock:DockControl x:Name="CenterDock" IsVisible="False"
                           InitializeLayout="True" InitializeFactory="True">
           <dm:RootDock x:Name="CenterRoot" Id="CenterRoot" IsCollapsable="False"
                        FloatingWindowHostMode="Native"
@@ -602,6 +599,7 @@
             </dm:ProportionalDock>
           </dm:RootDock>
         </dock:DockControl>
+        </Border>
 
         <!-- The pane: header strip plus bezel, one control so the header
              travels with the viewport into a dock or float. -->
@@ -615,7 +613,7 @@
           <!-- The bezel is the padding ring; with no padding the background
                never shows. MinWidth: a zero-width swap chain may not recover,
                and a floated pane has no column minimum behind it. -->
-          <Border Grid.Row="1" MinWidth="360" Padding="2"
+          <Border Grid.Row="1" MinWidth="360" Padding="1"
                   Background="{StaticResource SpectraViewportBezel}">
             <!-- Code inserts the viewport control at index 0, so the overlay
                  below ends up last in the list and draws on top. -->
@@ -649,22 +647,25 @@
 
         <!-- The bottom region's splitter. -->
         <GridSplitter x:Name="BottomSplitter" Grid.Column="2" Grid.Row="1" ResizeDirection="Rows" Cursor="SizeNorthSouth"
-                      Height="9" Margin="0,-1,0,-7" PointerEntered="OnSplitterEntered"
+                      PointerEntered="OnSplitterEntered"
                       PointerExited="OnSplitterExited"
                       DragStarted="OnSplitterDragStarted" DragCompleted="OnSplitterDragCompleted"
                       Tag="{Binding #BottomSplitInk}" />
-        <Border x:Name="BottomSplitInk" Grid.Column="2" Grid.Row="1" Height="1" Classes="splitink"
+        <Border x:Name="BottomSplitInk" Grid.Column="2" Grid.Row="1" Height="3" CornerRadius="1.5" Classes="splitink"
                 VerticalAlignment="Center" />
 
         <!-- Same factory as the other docks, or panels cannot be dragged
              between regions. -->
-        <dock:DockControl x:Name="BottomDock" Grid.Column="2" Grid.Row="2"
+        <Border Classes="tile" Grid.Column="2" Grid.Row="2" IsVisible="{Binding #BottomDock.IsVisible}">
+        <dock:DockControl x:Name="BottomDock"
                           InitializeLayout="True" InitializeFactory="True">
           <dm:RootDock x:Name="BottomRoot" Id="BottomRoot" IsCollapsable="False"
                        FloatingWindowHostMode="Native"
                        DefaultDockable="{Binding #BottomLayout}">
             <dm:ProportionalDock x:Name="BottomLayout" Id="BottomLayout" Orientation="Horizontal">
-              <dm:ToolDock Id="BottomToolDock" Alignment="Top" Proportion="1">
+              <!-- No header: with several tools the tab strip already names
+                   the open one, and it is the drag handle too. -->
+              <dm:ToolDock Id="BottomToolDock" Alignment="Top" Proportion="1" GripMode="Hidden">
                 <dm:Tool x:Name="ContentTool" Id="Content" Title="Content" CanClose="True" CanPin="False" />
                 <dm:Tool x:Name="OutputTool" Id="Output" Title="Output" CanClose="True" CanPin="False" />
                 <dm:Tool x:Name="ProblemsTool" Id="Problems" Title="Problems" CanClose="True" CanPin="False" />
@@ -673,16 +674,18 @@
             </dm:ProportionalDock>
           </dm:RootDock>
         </dock:DockControl>
+        </Border>
 
         <GridSplitter x:Name="RightSplitter" Grid.Column="3" Grid.RowSpan="3" ResizeDirection="Columns" Cursor="SizeWestEast"
-                      Width="9" Margin="-1,0,-7,0" PointerEntered="OnSplitterEntered"
+                      PointerEntered="OnSplitterEntered"
                       PointerExited="OnSplitterExited"
                       DragStarted="OnSplitterDragStarted" DragCompleted="OnSplitterDragCompleted"
                       Tag="{Binding #RightSplitInk}" />
-        <Border x:Name="RightSplitInk" Grid.Column="3" Grid.RowSpan="3" Width="1" Classes="splitink"
+        <Border x:Name="RightSplitInk" Grid.Column="3" Grid.RowSpan="3" Width="3" CornerRadius="1.5" Classes="splitink"
                 HorizontalAlignment="Center" />
 
-        <dock:DockControl x:Name="RightDock" Grid.Column="4" Grid.RowSpan="3"
+        <Border Classes="tile" Grid.Column="4" Grid.RowSpan="3" IsVisible="{Binding #RightDock.IsVisible}">
+        <dock:DockControl x:Name="RightDock"
                           InitializeLayout="True" InitializeFactory="True">
           <dm:RootDock x:Name="RightRoot" Id="RightRoot" IsCollapsable="False"
                        FloatingWindowHostMode="Native"
@@ -694,6 +697,7 @@
             </dm:ProportionalDock>
           </dm:RootDock>
         </dock:DockControl>
+        </Border>
       </Grid>
     </Panel>
 
@@ -702,17 +706,13 @@
     <Border Grid.Row="3"
             Height="{StaticResource SpectraStatusBarHeight}"
             Background="{StaticResource SpectraBgApp}"
-            BorderBrush="{StaticResource SpectraBorderStrong}"
-            BorderThickness="0,1,0,0"
-            Padding="10,0">
+            Padding="12,0">
       <Grid ColumnDefinitions="*,Auto">
 
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <!-- RenderTransform none: opts this explicitly sized glyph out of
-               the icon class's 1.2x scale. -->
           <Path Classes="icon" Width="13" Height="13" Data="{StaticResource IconWarning}"
-                Stroke="{StaticResource SpectraAccent}" StrokeThickness="1.3"
-                Stretch="Uniform" RenderTransform="none" IsVisible="{Binding IsError}" />
+                Stroke="{StaticResource SpectraTextDanger}" StrokeThickness="1.3"
+                Stretch="Uniform" IsVisible="{Binding IsError}" />
           <TextBlock Classes="statusmsg" Classes.errormsg="{Binding IsError}"
                      Text="{Binding Message}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
@@ -724,7 +724,6 @@
                       IsVisible="{Binding HasWorldDefect}"
                       ToolTip.Tip="{Binding WorldDefectTip}">
             <Path Classes="icon" Width="13" Height="13" Stretch="Uniform"
-                  RenderTransform="none"
                   Data="{StaticResource IconWarning}"
                   Stroke="{StaticResource SpectraWarning}" StrokeThickness="1.3" />
             <TextBlock Classes="value" Text="level not rebuilding"
@@ -738,7 +737,6 @@
                       IsVisible="{Binding HasDebugLayerErrors}"
                       ToolTip.Tip="{Binding DebugLayerTip}">
             <Path Classes="icon" Width="13" Height="13" Stretch="Uniform"
-                  RenderTransform="none"
                   Data="{StaticResource IconWarning}"
                   Stroke="{StaticResource SpectraWarning}" StrokeThickness="1.3" />
             <TextBlock Classes="value" Text="{Binding DebugLayerLabel}"
@@ -747,14 +745,14 @@
           </StackPanel>
 
           <!-- Standing problem count; opens the Problems panel. -->
-          <Button Classes="ghost" Focusable="False" Padding="0" Margin="0"
+          <!-- Width NaN: a ghost button is square by default and would clip this. -->
+          <Button Classes="ghost" Focusable="False" Padding="0" Margin="0" Width="NaN"
                   Background="Transparent" BorderThickness="0"
                   IsVisible="{Binding Problems.HasProblems}"
                   Click="OnShowProblemsPanel"
                   ToolTip.Tip="{Binding Problems.Summary}">
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
               <Path Classes="icon" Width="13" Height="13" Stretch="Uniform"
-                    RenderTransform="none"
                     Data="{StaticResource IconWarning}"
                     Stroke="{StaticResource SpectraWarning}" StrokeThickness="1.3" />
               <TextBlock Classes="value" Text="{Binding Problems.CountLabel}"
@@ -769,7 +767,6 @@
                       IsVisible="{Binding HasPlaceholderBound}"
                       ToolTip.Tip="{Binding PlaceholderBoundTip}">
             <Path Classes="icon" Width="13" Height="13" Stretch="Uniform"
-                  RenderTransform="none"
                   Data="{StaticResource IconWarning}"
                   Stroke="{StaticResource SpectraWarning}" StrokeThickness="1.3" />
             <TextBlock Classes="value" Text="{Binding PlaceholderBoundLabel}"

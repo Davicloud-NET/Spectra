@@ -1,13 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<!-- Tabler Icons "arrow-up", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor">
-  <!-- The content browser's pair. Up is a chevron plus a bar, not a bare arrow:
-       a bare arrow in a path row reads as "back", and back and up are different
-       journeys through a folder tree. Refresh is a three-quarter ring with one
-       head, which is the shape every tool uses for it. -->
-  <path d="M8,13 L8,4.5 M4.5,8 L8,4.5 L11.5,8 M3.5,2.5 L12.5,2.5" />
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 8 3.333 l 0 9.333" />
+  <path d="M 12 7.333 l -4 -4" />
+  <path d="M 4 7.333 l 4 -4" />
 </svg>

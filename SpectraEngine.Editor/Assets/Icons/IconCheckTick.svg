@@ -5,5 +5,5 @@
      viewBox becomes a transform, so nothing here is ever rewritten. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
      fill="none" stroke="currentColor">
-  <path d="M5,8.2 L7.2,10.6 L11.2,5.4" />
+  <path d="M4.6,8.3 L7,10.9 L11.6,5.2" />
 </svg>

@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<!-- Tabler Icons "folder-open", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor">
-  <path d="M2.5,12.5 L2.5,3.5 L6.5,3.5 L8,5.5 L13.5,5.5 L13.5,12.5 Z M5,8.5 L11,8.5" />
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 3.333 12.667 l 1.838 -4.901 a 0.667 0.667 0 0 1 0.624 -0.433 h 8.205 a 0.667 0.667 0 0 1 0.657 0.776 l -0.664 3.474 a 1.333 1.333 0 0 1 -1.309 1.083 h -9.351 a 1.333 1.333 0 0 1 -1.333 -1.333 v -7.333 a 1.333 1.333 0 0 1 1.333 -1.333 h 2.667 l 2 2 h 4.667 a 1.333 1.333 0 0 1 1.333 1.333 v 1.333" />
 </svg>

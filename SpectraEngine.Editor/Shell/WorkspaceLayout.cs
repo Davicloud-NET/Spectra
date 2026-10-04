@@ -26,8 +26,8 @@ public readonly record struct WorkspaceMetrics(
     bool LevelsDocked);
 
 /// <summary>What the viewport cell does not get, measured from a real window.</summary>
-/// <param name="Vertical">Menu row, ribbon, header strip, status bar, bezel.</param>
-/// <param name="Horizontal">Both splitters and the bezel, without the columns.</param>
+/// <param name="Vertical">Top row, ribbon, header strip, status bar, bezel.</param>
+/// <param name="Horizontal">Window margins, both gutters and the bezel, without the columns.</param>
 public readonly record struct WorkspaceChrome(double Vertical, double Horizontal);
 
 /// <summary>
@@ -40,6 +40,9 @@ public static class WorkspaceLayout
 
     /// <summary>The viewport row's minimum.</summary>
     public const double ViewportMinHeight = 200;
+
+    /// <summary>The gap between two panels. The splitter fills it.</summary>
+    public const double Gutter = 7;
 
     /// <summary>How tall the bottom drawer opens by default.</summary>
     public const double DefaultDrawerHeight = 220;
@@ -57,7 +60,7 @@ public static class WorkspaceLayout
         in WorkspaceMetrics metrics, double windowWidth, double windowHeight, in WorkspaceChrome chrome)
     {
         double width = windowWidth - metrics.LeftWidth - metrics.RightWidth - chrome.Horizontal;
-        double drawer = metrics.DrawerOpen ? metrics.DrawerHeight + 1 : 0;
+        double drawer = metrics.DrawerOpen ? metrics.DrawerHeight + Gutter : 0;
         double height = windowHeight - chrome.Vertical - drawer;
 
         return (Math.Max(width, 0), Math.Max(height, 0));
@@ -67,7 +70,7 @@ public static class WorkspaceLayout
     /// The drawer height that leaves the viewport its minimum.
     /// </summary>
     public static double ClampDrawerHeight(double wanted, double rowsAvailable) =>
-        Math.Max(0, Math.Min(wanted, rowsAvailable - ViewportMinHeight - 1));
+        Math.Max(0, Math.Min(wanted, rowsAvailable - ViewportMinHeight - Gutter));
 
     /// <summary>The preset's name, for settings and for the menu.</summary>
     public static string NameOf(WorkspacePreset preset) =>

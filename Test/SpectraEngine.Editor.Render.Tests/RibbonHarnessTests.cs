@@ -30,9 +30,9 @@ public sealed class RibbonHarnessTests(RibbonSession session)
         session.On(() =>
         {
             FontManager.Current
-                .TryGetGlyphTypeface(new Typeface("avares://Avalonia.Fonts.Inter/Assets#Inter"), out var face)
-                .ShouldBeTrue("the embedded Inter must resolve, or every measurement here is against another face");
-            face.FamilyName.ShouldBe("Inter");
+                .TryGetGlyphTypeface(new Typeface("avares://SpectraEngine.Editor/Assets/Fonts#IBM Plex Sans"), out var face)
+                .ShouldBeTrue("the embedded IBM Plex Sans must resolve, or every measurement here is against another face");
+            face.FamilyName.ShouldBe("IBM Plex Sans");
         });
     }
 

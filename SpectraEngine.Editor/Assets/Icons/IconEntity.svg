@@ -1,15 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Spectra editor icon. Swap this file to change the glyph; the build
-     turns every .svg in this folder into the resource the shell binds.
-     The path data is copied VERBATIM and the width/height against the
-     viewBox becomes a transform, so nothing here is ever rewritten. -->
+<!-- Tabler Icons "diamond", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor">
-  <!-- An entity: a diamond. Deliberately the only glyph in the set that is not
-       a cube, a sphere, a folder, a bulb or a cross - an entity has no shape of
-       its own to draw, so the mark has to be an abstract one, and a diamond is
-       what every level editor since Quake has used for a point entity. It is
-       told apart by silhouette alone, which is the rule: no dot, no wire stub,
-       nothing inside it. -->
-  <path d="M8,2.5 L13.5,8 L8,13.5 L2.5,8 Z" />
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 4 3.333 h 8 l 2 3.333 l -5.667 6.333 a 0.467 0.467 0 0 1 -0.667 0 l -5.667 -6.333 l 2 -3.333" />
+  <path d="M 6.667 8 l -1.333 -1.467 l 0.4 -0.667" />
 </svg>
