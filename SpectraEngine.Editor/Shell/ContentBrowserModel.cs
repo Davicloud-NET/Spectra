@@ -426,11 +426,15 @@ public sealed class ContentBrowserModel : ObservableObject
         Selected = entry;
 
         SelectedExtra = string.Empty;
-        if (entry is not null) _ = DescribeSelectionAsync(entry, ++_detailGeneration);
+        if (entry is not null)
+            Describing = Task.WhenAll(Describing, DescribeSelectionAsync(entry, ++_detailGeneration));
     }
 
     private string _selectedExtra = string.Empty;
     private int _detailGeneration;
+
+    /// <summary>The selection's file reads in flight, or a completed task.</summary>
+    public Task Describing { get; private set; } = Task.CompletedTask;
 
     /// <summary>
     /// What the file itself says: a texture's size, a material's shader and

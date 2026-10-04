@@ -171,8 +171,17 @@ public sealed class ContentSelectionTests
         return (browser, root);
     }
 
+    // Select reads the file on the pool, and an open file cannot be deleted.
+    // The walk is waited for too, so nothing is still listing the folder.
+    private static async Task RemoveRig(ContentBrowserModel browser, string root)
+    {
+        await browser.Index.Walking;
+        await browser.Describing;
+        Directory.Delete(root, recursive: true);
+    }
+
     [Fact]
-    public void Nothing_is_selected_until_something_is()
+    public async Task Nothing_is_selected_until_something_is()
     {
         (ContentBrowserModel browser, string root) = Rig();
         try
@@ -180,7 +189,7 @@ public sealed class ContentSelectionTests
             Assert.False(browser.HasSelected);
             Assert.Equal(string.Empty, browser.SelectedDetails);
         }
-        finally { Directory.Delete(root, recursive: true); }
+        finally { await RemoveRig(browser, root); }
     }
 
     [Fact]
@@ -200,7 +209,7 @@ public sealed class ContentSelectionTests
             Assert.Contains("Materials/wall.spectramat", browser.SelectedDetails);
             Assert.Contains("material", browser.SelectedDetails);
         }
-        finally { Directory.Delete(root, recursive: true); }
+        finally { await RemoveRig(browser, root); }
     }
 
     [Fact]
@@ -223,7 +232,7 @@ public sealed class ContentSelectionTests
             Assert.False(first.IsSelected);
             Assert.True(second.IsSelected);
         }
-        finally { Directory.Delete(root, recursive: true); }
+        finally { await RemoveRig(browser, root); }
     }
 
     [Fact]
@@ -241,6 +250,6 @@ public sealed class ContentSelectionTests
 
             Assert.False(browser.HasSelected);
         }
-        finally { Directory.Delete(root, recursive: true); }
+        finally { await RemoveRig(browser, root); }
     }
 }
