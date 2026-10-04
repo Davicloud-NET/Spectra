@@ -173,8 +173,8 @@ public sealed class PipelineCompareProbe
             _logger.LogError(
                 "Pipeline compare on {Backend}: FAIL - {Reading}. At ({X}, {Y}) deferred is " +
                 "({DeferredR}, {DeferredG}, {DeferredB}) and forward is ({ForwardR}, {ForwardG}, {ForwardB}). " +
-                "Lit.spectrashade and DeferredLight.spectrashade carry the same lighting twice; one of them " +
-                "changed, or the forward draw uploads a different value.",
+                "The two shaders share their lighting text, so look at what each is given: the uniforms " +
+                "DrawLit uploads against DrawDeferredLightPass, and what the G-buffer stores.",
                 renderer.Backend, reading, x, y,
                 deferred[i], deferred[i + 1], deferred[i + 2],
                 forward[i], forward[i + 1], forward[i + 2]);

@@ -69,9 +69,47 @@ public sealed class LightShapeGlTests
         static bool Close(int a, int b) => System.Math.Abs(a - b) <= 6;
     }
 
+    [Theory]
+    [InlineData(LightKind.Rect, "Deferred")]
+    [InlineData(LightKind.Rect, "Forward")]
+    [InlineData(LightKind.Disc, "Deferred")]
+    [InlineData(LightKind.Disc, "Forward")]
+    public void What_a_panel_lays_on_a_rough_wall_does_not_follow_the_camera(LightKind kind, string pipeline)
+    {
+        // One spot on the wall, seen from the left and from the right. Lit
+        // from the point the mirror ray lands on, the two readings part.
+        var spot = new Vector3(1.5f, 0f, WallFace);
+        var left = new Vector3(-2.6f, 0f, 1.5f);
+        var right = new Vector3(2.6f, 0f, 1.5f);
+
+        int fromLeft = Render(BuildPanelScene(kind, spot + left, spot), pipeline).R;
+        int fromRight = Render(BuildPanelScene(kind, spot + right, spot), pipeline).R;
+        int unlit = Render(BuildPanelScene(kind, spot + left, spot, facingWall: false), pipeline).R;
+
+        fromLeft.ShouldBeGreaterThan(unlit + 20, "the panel has to light the spot, or there is nothing to compare");
+        System.Math.Abs(fromLeft - fromRight).ShouldBeLessThanOrEqualTo(4,
+            $"the spot reads {fromLeft} from the left and {fromRight} from the right");
+    }
+
+    [Theory]
+    [InlineData("Deferred")]
+    [InlineData("Forward")]
+    public void A_panel_mirrored_in_a_smooth_wall_is_dimmer_than_a_point_of_the_same_intensity(string pipeline)
+    {
+        // Square-on, the mirror ray lands on the lamp's centre either way. The
+        // panel's highlight is spread over the panel, the point's is not.
+        int point = Render(BuildMirrorScene(asPoint: true), pipeline).R;
+        int panel = Render(BuildMirrorScene(asPoint: false), pipeline).R;
+
+        point.ShouldBeLessThan(250, "a clipped reading compares nothing");
+        panel.ShouldBeLessThan(point - 15);
+    }
+
+    private const float WallFace = 0.25f;
+
     // Wall with its +z face at z = 0.25 and one lamp in front, square-on so
     // N, L and V agree.
-    private Scene BuildScene(out SceneNode lamp)
+    private Scene BuildScene(out SceneNode lamp, float roughness = 0.5f)
     {
         OpenGLRenderer renderer = _fixture.Renderer;
 
@@ -89,7 +127,7 @@ public sealed class LightShapeGlTests
         var material = new Material(renderer.DefaultShader);
         material
             .SetVector3("uBaseColor", new Vector3(0.8f, 0.8f, 0.8f))
-            .SetFloat("uRoughness", 0.5f)
+            .SetFloat("uRoughness", roughness)
             .SetFloat("uMetallic", 0f)
             .SetFloat("uAmbientOcclusion", 1f)
             .SetVector3("uEmissive", Vector3.Zero)
@@ -156,7 +194,56 @@ public sealed class LightShapeGlTests
         return scene;
     }
 
-    private (int R, int G, int B) Render(Scene scene)
+    // A wide panel one unit in front of a fully rough wall, and a camera
+    // looking at one spot on it. Rough, so the highlight is next to nothing.
+    private Scene BuildPanelScene(LightKind kind, Vector3 eye, Vector3 spot, bool facingWall = true)
+    {
+        Scene scene = BuildScene(out SceneNode lamp, roughness: 1f);
+        scene.Camera.Position = eye;
+        scene.Camera.LookAt(spot);
+
+        lamp.LocalTransform = lamp.LocalTransform with
+        {
+            Rotation = Light.RotationForDirection(facingWall ? -Vector3.UnitZ : Vector3.UnitZ),
+        };
+
+        lamp.Light = new Light
+        {
+            Kind = kind,
+            Color = Vector3.One,
+            Intensity = 2f,
+            Range = 8f,
+            Width = 4f,
+            Height = 0.5f,
+            Radius = 2f,
+        };
+
+        return scene;
+    }
+
+    private Scene BuildMirrorScene(bool asPoint)
+    {
+        Scene scene = BuildScene(out SceneNode lamp, roughness: 0.25f);
+
+        lamp.LocalTransform = lamp.LocalTransform with
+        {
+            Rotation = Light.RotationForDirection(-Vector3.UnitZ),
+        };
+
+        lamp.Light = new Light
+        {
+            Kind = asPoint ? LightKind.Point : LightKind.Rect,
+            Color = Vector3.One,
+            Intensity = 1f,
+            Range = 3f,
+            Width = 1f,
+            Height = 1f,
+        };
+
+        return scene;
+    }
+
+    private (int R, int G, int B) Render(Scene scene, string pipeline = "Deferred")
     {
         OpenGLRenderer renderer = _fixture.Renderer;
 
@@ -166,7 +253,7 @@ public sealed class LightShapeGlTests
 
         try
         {
-            renderer.TrySelectPipeline("Deferred").ShouldBeTrue();
+            renderer.TrySelectPipeline(pipeline).ShouldBeTrue();
             renderer.ProbeTarget = probe;
 
             scene.BuildRenderView(scene.Camera, view);

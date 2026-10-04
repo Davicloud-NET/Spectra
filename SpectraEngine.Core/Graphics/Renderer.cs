@@ -1476,8 +1476,7 @@ public abstract class Renderer
     /// What <see cref="RenderShadowMap"/> returned for this frame, or -1 for no shadow.
     /// </param>
     // The forward and wireframe pipelines of all three backends draw through
-    // this. Forward and deferred have to come out the same picture, and six
-    // copies of this loop did not.
+    // this, so there is one upload to keep in step with DrawDeferredLightPass.
     //
     // The order is DrawGeometry's. A parameter a material leaves out keeps the
     // previous draw's value, so the order is part of the picture.

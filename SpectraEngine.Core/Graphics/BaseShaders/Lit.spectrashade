@@ -1,9 +1,6 @@
 // Built-in forward lit shader. Lights a surface the way the deferred light pass
-// lights a G-buffer pixel: Cook-Torrance, the same light shapes, the same shadow.
-//
-// SpectraShade has no include, so the lighting functions below are copies of
-// DeferredLight's. Change the two files together. PipelineParityGlTests renders
-// one scene through both paths and fails when they drift.
+// lights a G-buffer pixel: the lighting is the block the two files share.
+// PipelineParityGlTests renders one scene through both paths and compares them.
 
 struct VertexInput {
     [Location(0)] vec3 position;
@@ -116,7 +113,7 @@ shader Lit {
     [Fragment] [Target(0)]
     vec4 FragmentMain(FragmentInput input) {
         vec3 n = Math.Normalize(input.worldNormal);
-        vec3 worldPosition = input.worldPosition;
+        vec3 v = Math.Normalize(uCameraPosition - input.worldPosition);
 
         // The G-buffer keeps albedo, occlusion and metalness in eight bits,
         // which clamps them. Clamped here too, or a material that runs out of
@@ -126,73 +123,17 @@ shader Lit {
         float ao = Math.Clamp(uAmbientOcclusion, 0.0, 1.0);
         float metallic = Math.Clamp(uMetallic, 0.0, 1.0);
 
-        // Zero roughness makes the GGX denominator vanish.
-        float roughness = Math.Max(uRoughness, 0.04);
-
-        vec3 v = Math.Normalize(uCameraPosition - worldPosition);
-
-        // 4% reflectance for dielectrics; metals tint with albedo and have no diffuse.
-        vec3 f0 = Math.Mix(vec3(0.04, 0.04, 0.04), albedo, metallic);
-        vec3 diffuseColor = albedo * (1.0 - metallic);
-
-        vec3 ambient = Math.Mix(uAmbientGround, uAmbientSky, n.y * 0.5 + 0.5);
-        vec3 total = diffuseColor * ambient * uAmbient * ao;
-
         // The pixel being shaded, as the light pass counts them.
         vec2 ndc = input.clip.xy / input.clip.w;
         vec2 pixel = (ndc * uNdcToUv.xy + uNdcToUv.zw) * uTargetSize;
 
-        for (int i = 0; i < uLightCount; i = i + 1) {
-            vec4 posRange = uLightPositions[i];
-            vec4 colorType = uLightColors[i];
-            vec4 axis = uLightAxis[i];
-            vec4 tangent = uLightTangent[i];
-
-            vec3 radiance = colorType.rgb;
-            float type = colorType.w;
-
-            vec3 l = -posRange.xyz;
-            float attenuation = 1.0;
-
-            if (type > 0.5) {
-                // Area lights are lit from their representative point.
-                vec3 source = posRange.xyz;
-
-                if (type > 2.5) {
-                    source = AreaPoint(posRange.xyz, axis, tangent, type, worldPosition, n, v, roughness);
-                }
-
-                vec3 offset = source - worldPosition;
-                float distance = Math.Length(offset);
-                l = offset / Math.Max(distance, 0.0001);
-
-                // Distance is to the shape's closest point, not its centre, or
-                // a wide panel goes dark at its own ends.
-                float window = Math.Max(1.0 - distance / posRange.w, 0.0);
-                attenuation = window * window / (1.0 + distance * distance);
-
-                if (type > 1.5) {
-                    if (type < 2.5) {
-                        attenuation = attenuation * SpotFactor(axis, tangent, l);
-                    } else {
-                        // One-sided: a ceiling panel must not light the room above.
-                        attenuation = attenuation * Math.Max(Math.Dot(axis.xyz, -l), 0.0);
-                    }
-                }
-            }
-
-            l = Math.Normalize(l);
-
-            float shadow = 1.0;
-            if (i == uShadowLightIndex) {
-                shadow = ShadowFactor(worldPosition, pixel);
-            }
-
-            total = total + Shade(n, v, l, diffuseColor, f0, roughness) * radiance * attenuation * shadow;
-        }
-
-        return vec4(total + uEmissive, 1.0);
+        vec3 lit = Lighting(input.worldPosition, n, v, albedo, uRoughness, metallic, ao, pixel);
+        return vec4(lit + uEmissive, 1.0);
     }
+
+    // Shared lighting begins. From here to the end marker the text is the same
+    // in Lit and DeferredLight, because SpectraShade has no include.
+    // LightingSourceTests compares the two.
 
     // Cone falloff between the inner and outer half-angles, both passed as cosines.
     // -l: l points toward the light, the axis points the way the light travels.
@@ -209,27 +150,9 @@ shader Lit {
         return t * t;
     }
 
-    // Representative point: the point on the shape closest to the reflected
-    // view ray. One point serves both diffuse and specular, which saves a
-    // second BRDF evaluation per light.
-    vec3 AreaPoint(vec3 center, vec4 axis, vec4 tangent, float type, vec3 world, vec3 n, vec3 v, float roughness) {
-        vec3 r = Math.Reflect(-v, n);
-
-        // Intersect the reflection ray with the light's plane. Parallel or
-        // pointing away: fall back to the centre.
-        float denom = Math.Dot(r, axis.xyz);
-        if (Math.Abs(denom) < 0.0001) {
-            return center;
-        }
-
-        float t = Math.Dot(center - world, axis.xyz) / denom;
-        if (t < 0.0) {
-            return center;
-        }
-
-        vec3 hit = world + r * t;
-        vec3 local = hit - center;
-
+    // The point of a rect or disc nearest to a point in its plane.
+    vec3 AreaClamp(vec3 center, vec4 axis, vec4 tangent, float type, vec3 at) {
+        vec3 local = at - center;
         vec3 bitangent = Math.Cross(axis.xyz, tangent.xyz);
 
         float u = Math.Dot(local, tangent.xyz);
@@ -249,6 +172,133 @@ shader Lit {
         }
 
         return center + tangent.xyz * u + bitangent * vv;
+    }
+
+    // The point on a panel that diffuse light is taken from. It follows the
+    // surface and never the camera.
+    // Halfway between straight across to the panel's plane and straight out
+    // along the normal (Drobot, GPU Pro 5). The nearest point alone sits on the
+    // horizon of a floor the panel stands on, and leaves that floor dark.
+    vec3 AreaDiffusePoint(vec3 center, vec4 axis, vec4 tangent, float type, vec3 world, vec3 n, float height) {
+        // Keeps the first ray above the surface and the second heading for the plane.
+        float lean = 0.001 + Math.Clamp(Math.Dot(n, axis.xyz), 0.0, 1.0);
+        vec3 across = Math.Normalize(n * lean - axis.xyz);
+        vec3 along = Math.Normalize(n - axis.xyz * lean);
+        vec3 ray = across + along;
+
+        float approach = Math.Max(-Math.Dot(ray, axis.xyz), 0.0001);
+        return AreaClamp(center, axis, tangent, type, world + ray * (height / approach));
+    }
+
+    // The point on a panel that the highlight is taken from: where the mirror
+    // ray meets the panel's plane, pulled back onto the panel (Karis 2013).
+    vec3 AreaSpecularPoint(vec3 center, vec4 axis, vec4 tangent, float type, vec3 world, vec3 n, vec3 v, float height) {
+        vec3 r = Math.Reflect(-v, n);
+
+        // A ray along the plane or away from it never meets it. The floor on
+        // the divisor sends it far along the plane, onto the panel's far edge.
+        // Falling back to the centre puts a seam in the highlight.
+        float approach = Math.Max(-Math.Dot(r, axis.xyz), 0.0001);
+        return AreaClamp(center, axis, tangent, type, world + r * (height / approach));
+    }
+
+    // Inverse-square falloff to one point of a panel, faded to zero at the range.
+    float AreaFalloff(vec3 offset, vec3 facing, float range) {
+        float distance = Math.Length(offset);
+        float window = Math.Max(1.0 - distance / range, 0.0);
+
+        // One-sided: a ceiling panel must not light the room above.
+        float emitted = Math.Max(Math.Dot(facing, -offset) / Math.Max(distance, 0.0001), 0.0);
+
+        return window * window / (1.0 + distance * distance) * emitted;
+    }
+
+    // A highlight that holds its peak across the whole panel carries more light
+    // than the lamp has. Treat the lobe as widened by the panel's angular size
+    // and scale by the ratio of the two peaks (Karis 2013).
+    float AreaEnergy(vec3 center, vec4 axis, vec4 tangent, float type, vec3 world, float roughness) {
+        float a = roughness * roughness;
+        float reach = 0.5 / Math.Max(Math.Length(center - world), 0.0001);
+
+        if (type > 3.5) {
+            float disc = a / Math.Min(a + axis.w * reach, 1.0);
+            return disc * disc;
+        }
+
+        return (a / Math.Min(a + tangent.w * reach, 1.0)) * (a / Math.Min(a + axis.w * reach, 1.0));
+    }
+
+    // Schlick's Fresnel.
+    vec3 Fresnel(vec3 v, vec3 l, vec3 f0) {
+        vec3 h = Math.Normalize(v + l);
+        float vdoth = Math.Max(Math.Dot(v, h), 0.0);
+        float weight = Math.Pow(1.0 - vdoth, 5.0);
+        return f0 + (vec3(1.0, 1.0, 1.0) - f0) * weight;
+    }
+
+    // Lambert. Energy conservation: reflected light is not also diffused.
+    vec3 DiffuseTerm(vec3 n, vec3 v, vec3 l, vec3 diffuseColor, vec3 f0) {
+        float ndotl = Math.Max(Math.Dot(n, l), 0.0);
+        if (ndotl <= 0.0) {
+            return vec3(0.0, 0.0, 0.0);
+        }
+
+        vec3 kd = vec3(1.0, 1.0, 1.0) - Fresnel(v, l, f0);
+        return kd * diffuseColor / 3.14159265 * ndotl;
+    }
+
+    // Cook-Torrance: GGX, Smith height-correlated visibility, Schlick Fresnel.
+    vec3 SpecularTerm(vec3 n, vec3 v, vec3 l, vec3 f0, float roughness) {
+        float ndotl = Math.Max(Math.Dot(n, l), 0.0);
+        if (ndotl <= 0.0) {
+            return vec3(0.0, 0.0, 0.0);
+        }
+
+        float ndotv = Math.Max(Math.Dot(n, v), 0.0001);
+        vec3 h = Math.Normalize(v + l);
+        float ndoth = Math.Max(Math.Dot(n, h), 0.0);
+
+        // Perceptual roughness, squared (Disney).
+        float a = roughness * roughness;
+        float a2 = a * a;
+
+        // GGX normal distribution.
+        float denom = ndoth * ndoth * (a2 - 1.0) + 1.0;
+        float d = a2 / Math.Max(3.14159265 * denom * denom, 0.0000001);
+
+        // Height-correlated Smith visibility (Heitz 2014), already divided by
+        // 4 (N.L)(N.V). Keep the two sqrts: Schlick's k approximation puts a
+        // bright rim on smooth silhouettes.
+        float lambdaV = ndotl * Math.Sqrt(ndotv * ndotv * (1.0 - a2) + a2);
+        float lambdaL = ndotv * Math.Sqrt(ndotl * ndotl * (1.0 - a2) + a2);
+        float vis = 0.5 / Math.Max(lambdaV + lambdaL, 0.0000001);
+
+        return Fresnel(v, l, f0) * (d * vis) * ndotl;
+    }
+
+    // A rect or disc light. One point on the panel stands in for all of it,
+    // and diffuse and specular each take their own. The specular point follows
+    // the camera, so diffuse light taken from it slides across the wall as the
+    // view turns.
+    vec3 AreaLight(vec4 posRange, vec4 axis, vec4 tangent, float type, vec3 world, vec3 n, vec3 v, vec3 diffuseColor, vec3 f0, float roughness) {
+        vec3 center = posRange.xyz;
+
+        // How far in front of the panel. Nothing behind it is lit.
+        float height = Math.Dot(world - center, axis.xyz);
+        if (height <= 0.0) {
+            return vec3(0.0, 0.0, 0.0);
+        }
+
+        vec3 toDiffuse = AreaDiffusePoint(center, axis, tangent, type, world, n, height) - world;
+        vec3 toSpecular = AreaSpecularPoint(center, axis, tangent, type, world, n, v, height) - world;
+
+        vec3 diffuse = DiffuseTerm(n, v, Math.Normalize(toDiffuse), diffuseColor, f0)
+                     * AreaFalloff(toDiffuse, axis.xyz, posRange.w);
+        vec3 specular = SpecularTerm(n, v, Math.Normalize(toSpecular), f0, roughness)
+                      * AreaFalloff(toSpecular, axis.xyz, posRange.w)
+                      * AreaEnergy(center, axis, tangent, type, world, roughness);
+
+        return diffuse + specular;
     }
 
     // Clamp inside the cascade before the atlas offset, or a tap at the edge
@@ -273,7 +323,7 @@ shader Lit {
     }
 
     // 1 fully lit, 0 fully shadowed.
-    float ShadowFactor(vec3 worldPosition, vec2 pixel) {
+    float ShadowFactor(vec3 world, vec2 pixel) {
         if (uShadowStrength <= 0.0) {
             return 1.0;
         }
@@ -283,7 +333,7 @@ shader Lit {
         int chosen = -1;
         for (int k = 0; k < uCascadeCount; k = k + 1) {
             if (chosen < 0) {
-                vec4 probe = uWorldToShadow[k] * vec4(worldPosition, 1.0);
+                vec4 probe = uWorldToShadow[k] * vec4(world, 1.0);
                 vec3 p = probe.xyz / probe.w;
                 float inside = Math.Step(0.0, p.x) * Math.Step(p.x, 1.0)
                              * Math.Step(0.0, p.y) * Math.Step(p.y, 1.0)
@@ -302,7 +352,7 @@ shader Lit {
 
         // No normal offset: it shifts the shadow sideways by a different
         // amount per face. The depth pass's slope-scaled raster bias handles acne.
-        vec4 coords = uWorldToShadow[chosen] * vec4(worldPosition, 1.0);
+        vec4 coords = uWorldToShadow[chosen] * vec4(world, 1.0);
         vec3 s = coords.xyz / coords.w;
 
         float reference = s.z - uShadowDepthBias;
@@ -325,43 +375,64 @@ shader Lit {
         return Math.Mix(1.0, sum * 0.25, uShadowStrength);
     }
 
-    // Cook-Torrance specular plus Lambert diffuse.
-    vec3 Shade(vec3 n, vec3 v, vec3 l, vec3 diffuseColor, vec3 f0, float roughness) {
-        float ndotl = Math.Max(Math.Dot(n, l), 0.0);
-        if (ndotl <= 0.0) {
-            return vec3(0.0, 0.0, 0.0);
+    // Ambient and every light, for one surface point. pixel is where the point
+    // lands in the target. Only the shadow filter's dither reads it.
+    vec3 Lighting(vec3 world, vec3 n, vec3 v, vec3 albedo, float surfaceRoughness, float metallic, float ao, vec2 pixel) {
+        // Zero roughness makes the GGX denominator vanish.
+        float roughness = Math.Max(surfaceRoughness, 0.04);
+
+        // 4% reflectance for dielectrics; metals tint with albedo and have no diffuse.
+        vec3 f0 = Math.Mix(vec3(0.04, 0.04, 0.04), albedo, metallic);
+        vec3 diffuseColor = albedo * (1.0 - metallic);
+
+        vec3 ambient = Math.Mix(uAmbientGround, uAmbientSky, n.y * 0.5 + 0.5);
+        vec3 total = diffuseColor * ambient * uAmbient * ao;
+
+        for (int i = 0; i < uLightCount; i = i + 1) {
+            vec4 posRange = uLightPositions[i];
+            vec4 colorType = uLightColors[i];
+            vec4 axis = uLightAxis[i];
+            vec4 tangent = uLightTangent[i];
+
+            float type = colorType.w;
+            vec3 lit = vec3(0.0, 0.0, 0.0);
+
+            if (type > 2.5) {
+                lit = AreaLight(posRange, axis, tangent, type, world, n, v, diffuseColor, f0, roughness);
+            } else {
+                // A directional light's position is the way it travels.
+                vec3 l = -posRange.xyz;
+                float attenuation = 1.0;
+
+                if (type > 0.5) {
+                    vec3 offset = posRange.xyz - world;
+                    float distance = Math.Length(offset);
+                    l = offset / Math.Max(distance, 0.0001);
+
+                    // Inverse-square, faded to zero at the range. Squared so
+                    // the edge does not show as a ring.
+                    float window = Math.Max(1.0 - distance / posRange.w, 0.0);
+                    attenuation = window * window / (1.0 + distance * distance);
+
+                    if (type > 1.5) {
+                        attenuation = attenuation * SpotFactor(axis, tangent, l);
+                    }
+                }
+
+                l = Math.Normalize(l);
+                lit = (DiffuseTerm(n, v, l, diffuseColor, f0) + SpecularTerm(n, v, l, f0, roughness)) * attenuation;
+            }
+
+            float shadow = 1.0;
+            if (i == uShadowLightIndex) {
+                shadow = ShadowFactor(world, pixel);
+            }
+
+            total = total + lit * colorType.rgb * shadow;
         }
 
-        float ndotv = Math.Max(Math.Dot(n, v), 0.0001);
-        vec3 h = Math.Normalize(v + l);
-        float ndoth = Math.Max(Math.Dot(n, h), 0.0);
-        float vdoth = Math.Max(Math.Dot(v, h), 0.0);
-
-        // Perceptual roughness, squared (Disney).
-        float a = roughness * roughness;
-        float a2 = a * a;
-
-        // GGX normal distribution.
-        float denom = ndoth * ndoth * (a2 - 1.0) + 1.0;
-        float d = a2 / Math.Max(3.14159265 * denom * denom, 0.0000001);
-
-        // Height-correlated Smith visibility (Heitz 2014), already divided by
-        // 4 (N.L)(N.V). Keep the two sqrts: Schlick's k approximation puts a
-        // bright rim on smooth silhouettes.
-        float lambdaV = ndotl * Math.Sqrt(ndotv * ndotv * (1.0 - a2) + a2);
-        float lambdaL = ndotv * Math.Sqrt(ndotl * ndotl * (1.0 - a2) + a2);
-        float vis = 0.5 / Math.Max(lambdaV + lambdaL, 0.0000001);
-
-        // Schlick's Fresnel.
-        float fresnelWeight = Math.Pow(1.0 - vdoth, 5.0);
-        vec3 f = f0 + (vec3(1.0, 1.0, 1.0) - f0) * fresnelWeight;
-
-        vec3 specular = f * (d * vis);
-
-        // Energy conservation: reflected light is not also diffused.
-        vec3 kd = vec3(1.0, 1.0, 1.0) - f;
-        vec3 diffuse = kd * diffuseColor / 3.14159265;
-
-        return (diffuse + specular) * ndotl;
+        return total;
     }
+
+    // Shared lighting ends.
 }
