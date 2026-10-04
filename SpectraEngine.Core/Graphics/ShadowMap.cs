@@ -72,9 +72,26 @@ public sealed class ShadowMap : IDisposable
 
     /// <summary>
     /// How far from the camera shadows are drawn. Beyond it surfaces are lit but
-    /// never shadowed. Not the camera's far plane.
+    /// never shadowed. Not the camera's far plane. Shadows fade out over the
+    /// last <see cref="FadeRange"/> of it.
     /// </summary>
-    public float Distance { get; set; } = 60f;
+    // Every cascade's texel grows with this: the same four maps cover more.
+    public float Distance { get; set; } = 200f;
+
+    /// <summary>
+    /// How much of <see cref="Distance"/> shadows fade out over, at its far
+    /// end. 0.2 is the last fifth. 0 cuts them off.
+    /// </summary>
+    public float FadeRange { get; set; } = 0.2f;
+
+    /// <summary>
+    /// Where shadows end for the last <see cref="Fit"/>, as the shader takes
+    /// it: the distance from the camera, and one over the length of the fade.
+    /// </summary>
+    public Vector2 Fade { get; private set; } = Unfaded;
+
+    // Far enough that the fade never starts.
+    private static readonly Vector2 Unfaded = new(1e9f, 1f);
 
     /// <summary>
     /// How the range is divided between cascades: 0 splits it evenly, 1
@@ -192,6 +209,11 @@ public sealed class ShadowMap : IDisposable
         }
 
         if (far <= near) return false;
+
+        // A parallel view has no eye to measure a distance from.
+        Fade = camera.ProjectionKind == CameraProjectionKind.Orthographic
+            ? Unfaded
+            : new Vector2(far, 1f / MathF.Max(far * FadeRange, 1e-3f));
 
         // One cascade under a parallel projection: there is no foreshortening to grade.
         int cascades = camera.ProjectionKind == CameraProjectionKind.Orthographic

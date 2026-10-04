@@ -160,6 +160,68 @@ public sealed class ShadowCascadeGlTests
         }
     }
 
+    [Theory]
+    [InlineData("Deferred")]
+    [InlineData("Forward")]
+    public void A_shadow_fades_out_before_its_range_ends(string pipeline)
+    {
+        // A floor shaded all the way to the horizon, seen from high up. Where
+        // the shadow range ends the shade has to thin out, not stop at a line.
+        OpenGLRenderer renderer = _fixture.Renderer;
+        bool restoreShadows = renderer.ShadowsEnabled;
+
+        Scene scene = BuildShadedPlain(out Mesh cube, out Texture white);
+        try
+        {
+            // The range is the map's, and the map exists once a frame has drawn.
+            renderer.ShadowsEnabled = true;
+            Render(scene, pipeline, ShadowMap.MaxCascades);
+            float range = renderer.ShadowMap!.Distance;
+            renderer.ShadowMap.FadeRange.ShouldBe(0.2f, "the distances below are picked around a fade over the last fifth");
+
+            float height = scene.Camera.Position.Y;
+            Vector3 At(float fraction)
+            {
+                float reach = range * fraction;
+                return new Vector3(0f, 0f, MathF.Sqrt((reach * reach) - (height * height)));
+            }
+
+            scene.Camera.LookAt(At(0.9f));
+
+            byte[] on = Render(scene, pipeline, ShadowMap.MaxCascades);
+            renderer.ShadowsEnabled = false;
+            byte[] off = Render(scene, pipeline, ShadowMap.MaxCascades);
+
+            Matrix4x4 viewProjection = scene.Camera.View * scene.Camera.Projection;
+            int Read(byte[] pixels, float fraction)
+            {
+                Vector4 clip = Vector4.Transform(new Vector4(At(fraction), 1f), viewProjection);
+                int x = (int)(((clip.X / clip.W * 0.5f) + 0.5f) * Size);
+                int y = (int)(((clip.Y / clip.W * 0.5f) + 0.5f) * Size);
+                x.ShouldBeInRange(0, Size - 1);
+                y.ShouldBeInRange(0, Size - 1);
+                return pixels[((y * Size) + x) * 4];
+            }
+
+            int near = Read(on, 0.5f);
+            int before = Read(on, 0.7f);
+            int halfway = Read(on, 0.9f);
+            int past = Read(on, 1.05f);
+            string readings = $"{near} at half the range, {before} before the fade, {halfway} halfway through it, {past} past it";
+
+            near.ShouldBeLessThan(Read(off, 0.5f) - 40, $"the floor has to be shaded to begin with: {readings}");
+            Math.Abs(before - near).ShouldBeLessThanOrEqualTo(6, $"the fade must not start early: {readings}");
+            halfway.ShouldBeGreaterThan(before + 15, $"halfway through the fade the shade has thinned: {readings}");
+            halfway.ShouldBeLessThan(past - 15, $"and has not gone yet: {readings}");
+            Math.Abs(past - Read(off, 1.05f)).ShouldBeLessThanOrEqualTo(4, $"past the range nothing is shaded: {readings}");
+        }
+        finally
+        {
+            renderer.ShadowsEnabled = restoreShadows;
+            Release(cube, white);
+        }
+    }
+
     // The floor's reading, and what is brighter than it.
     private static (int Median, int Brightest, int At, int Bright) Shade(byte[] pixels)
     {
@@ -316,6 +378,21 @@ public sealed class ShadowCascadeGlTests
 
         slab(new Vector3(0f, -0.25f, 0f), Quaternion.Identity, new Vector3(400f, 0.5f, 400f));
         slab(new Vector3(0f, roofHeight + 0.25f, 0f), Quaternion.Identity, new Vector3(300f, 0.5f, 300f));
+        return scene;
+    }
+
+    // A plain shaded out to the horizon by a roof just over the camera, which
+    // looks down on it from sixty units up.
+    private Scene BuildShadedPlain(out Mesh cube, out Texture white)
+    {
+        Scene scene = NewScene(out cube, out Action<Vector3, Quaternion, Vector3> slab, out white);
+
+        const float Height = 60f;
+        scene.Camera.Position = new Vector3(0f, Height, 0f);
+        scene.Camera.LookAt(new Vector3(0f, 0f, 100f));
+
+        slab(new Vector3(0f, -0.25f, 0f), Quaternion.Identity, new Vector3(6000f, 0.5f, 6000f));
+        slab(new Vector3(0f, Height + 10.25f, 0f), Quaternion.Identity, new Vector3(4000f, 0.5f, 4000f));
         return scene;
     }
 

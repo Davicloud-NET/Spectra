@@ -77,6 +77,9 @@ shader DeferredLight {
 
         // How far off the surface the lookup is lifted, in the same texels.
         float uShadowNormalOffset;
+
+        // Where shadows end, as (distance from the camera, 1 / fade length).
+        vec2 uShadowFade;
     }
 
     // Parallel vec4 arrays, not a struct array: a struct array does nothing on
@@ -353,7 +356,14 @@ shader DeferredLight {
     // 1 fully lit, 0 fully shadowed. n is the surface's normal and l points
     // at the light.
     float ShadowFactor(vec3 world, vec3 n, vec3 l, vec2 pixel) {
-        if (uShadowStrength <= 0.0) {
+        // Shadows thin out toward the end of their range, or the last
+        // cascade's edge shows as a line across the ground. Measured from the
+        // camera's position, not along its view: turning the camera must not
+        // change a shadow.
+        float fade = Math.Clamp(
+            (uShadowFade.x - Math.Length(world - uCameraPosition)) * uShadowFade.y, 0.0, 1.0);
+        float strength = uShadowStrength * fade;
+        if (strength <= 0.0) {
             return 1.0;
         }
 
@@ -411,7 +421,7 @@ shader DeferredLight {
                   + CompareBilinear(s.xy + vec2(-spin.x, -spin.y), rect, reference)
                   + CompareBilinear(s.xy + vec2(spin.y, -spin.x), rect, reference);
 
-        return Math.Mix(1.0, sum * 0.25, uShadowStrength);
+        return Math.Mix(1.0, sum * 0.25, strength);
     }
 
     // Ambient and every light, for one surface point. pixel is where the point

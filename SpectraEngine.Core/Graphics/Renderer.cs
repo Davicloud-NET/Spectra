@@ -1405,6 +1405,7 @@ public abstract class Renderer
             .SetUniform("uShadowDepthBias", map?.CompareBias ?? 0f)
             .SetUniform("uShadowFilterRadius", map?.FilterRadius ?? 1f)
             .SetUniform("uShadowNormalOffset", map?.NormalOffset ?? 0f)
+            .SetUniform("uShadowFade", map?.Fade ?? Vector2.Zero)
             .SetUniform("uTargetSize", new Vector2(PassSize.X, PassSize.Y))
             // Not PassSize: the G-buffer follows the window, the pass may not.
             // The shader snaps its reads to G-buffer texel centres.
@@ -1543,6 +1544,7 @@ public abstract class Renderer
         shader.SetUniform("uShadowDepthBias", map?.CompareBias ?? 0f);
         shader.SetUniform("uShadowFilterRadius", map?.FilterRadius ?? 1f);
         shader.SetUniform("uShadowNormalOffset", map?.NormalOffset ?? 0f);
+        shader.SetUniform("uShadowFade", map?.Fade ?? Vector2.Zero);
         shader.SetUniform("uWorldToShadow", map is not null ? map.WorldToShadow : IdentityCascades);
         shader.SetUniform("uCascadeRects", map is not null ? map.CascadeRects : EmptyCascadeRects);
         if ((map?.Depth ?? _unshadowed) is { } shadowTexture)
