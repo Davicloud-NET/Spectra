@@ -140,7 +140,6 @@
     </Style>
     <Style Selector="Button.overlaychip TextBlock">
       <Setter Property="Foreground" Value="{StaticResource SpectraMode}" />
-      <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
     </Style>
 
@@ -198,7 +197,6 @@
     <!-- Mono: this is the content-relative path, a value. -->
     <Style Selector="Border.dropchip TextBlock.dropsubject">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
-      <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />

@@ -246,7 +246,7 @@
   <!-- Text roles. App-scoped: a floated panel leaves the main window's style
        scope. .value is a number, path or key name; .prose is a sentence. -->
   <Style Selector="TextBlock.value">
-    <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
+    <Setter Property="FontFeatures" Value="tnum" />
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
     <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
     <Setter Property="VerticalAlignment" Value="Center" />
@@ -348,7 +348,6 @@
   </Style>
 
   <Style Selector="MenuItem /template/ TextBlock#PART_InputGestureText">
-    <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
     <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
     <Setter Property="Margin" Value="24,0,2,0" />
@@ -611,7 +610,7 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
   <Style Selector="Button.chip TextBlock.chipvalue">
-    <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
     <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
     <Setter Property="VerticalAlignment" Value="Center" />
@@ -1174,7 +1173,6 @@
   </Style>
 
   <Style Selector="TextBlock.palettechord">
-    <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
     <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
     <Setter Property="Margin" Value="12,0,0,0" />
@@ -1203,13 +1201,15 @@
     <Setter Property="Background" Value="{StaticResource SpectraBgInput}" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
   </Style>
+  <!-- A ticked box is state, not selection, so it is amber like the ribbon's
+       checks and never the accent. -->
   <Style Selector="CheckBox:checked /template/ Border#NormalRectangle">
-    <Setter Property="Background" Value="{StaticResource SpectraAccentRest}" />
-    <Setter Property="BorderBrush" Value="{StaticResource SpectraAccent}" />
+    <Setter Property="Background" Value="{StaticResource SpectraBgInput}" />
+    <Setter Property="BorderBrush" Value="{StaticResource SpectraMode}" />
   </Style>
   <Style Selector="CheckBox /template/ Path#CheckGlyph">
-    <Setter Property="Stroke" Value="#FFFFFF" />
-    <Setter Property="Fill" Value="#FFFFFF" />
+    <Setter Property="Stroke" Value="{StaticResource SpectraMode}" />
+    <Setter Property="Fill" Value="{StaticResource SpectraMode}" />
   </Style>
 
   <Style Selector="ComboBox">

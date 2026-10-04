@@ -15,47 +15,19 @@
     </ContextMenu>
   </UserControl.Resources>
 
-  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
+  <Grid RowDefinitions="Auto,*,Auto,Auto">
 
-    <!-- A query searches the whole project and replaces the folder view. -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,6,8,4" ColumnSpacing="6">
+    <!-- One toolbar row. A second row left too little height for a tile. -->
+    <Grid Grid.Row="0" Name="Toolbar" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="8,6,8,6" ColumnSpacing="6">
       <Button Grid.Column="0" Classes="ghost" Name="UpButton" Click="OnUpClicked"
               IsEnabled="{Binding Content.CanGoUp}" ToolTip.Tip="Up one folder">
         <Path Classes="icon" Data="{StaticResource IconArrowUp}" />
       </Button>
 
-      <TextBox Grid.Column="1" Classes="field" Name="SearchBox"
-               PlaceholderText="Search the project"
-               Text="{Binding Content.Query, Mode=TwoWay}"
-               KeyDown="OnSearchKeyDown" />
-
-      <Button Grid.Column="2" Classes="ghost" Click="OnViewModeClicked"
-              ToolTip.Tip="Switch between tiles and rows">
-        <Path Classes="icon" Data="{StaticResource IconList}" />
-      </Button>
-
-      <Button Grid.Column="3" Classes="ghost" Click="OnRefreshClicked"
-              ToolTip.Tip="Walk the project again">
-        <Path Classes="icon" Data="{StaticResource IconRefresh}" />
-      </Button>
-    </Grid>
-
-    <Grid Grid.Row="1" ColumnDefinitions="Auto,*" Margin="8,0,8,6" ColumnSpacing="8">
-      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="3">
-        <Button Classes="chip" Classes.active="{Binding Content.IsFilterAll}"
-                Content="All" Tag="All" Click="OnFilterClicked" />
-        <Button Classes="chip" Classes.active="{Binding Content.IsFilterTextures}"
-                Content="Textures" Tag="Textures" Click="OnFilterClicked" />
-        <Button Classes="chip" Classes.active="{Binding Content.IsFilterMaterials}"
-                Content="Materials" Tag="Materials" Click="OnFilterClicked" />
-        <Button Classes="chip" Classes.active="{Binding Content.IsFilterModels}"
-                Content="Models" Tag="Models" Click="OnFilterClicked" />
-      </StackPanel>
-
       <!-- Hidden while searching: the results are not one folder. -->
       <ItemsControl Grid.Column="1" ItemsSource="{Binding Content.Breadcrumbs}"
                     IsVisible="{Binding !Content.IsSearching}"
-                    HorizontalAlignment="Right">
+                    VerticalAlignment="Center">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <StackPanel Orientation="Horizontal" />
@@ -71,16 +43,51 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
+
+      <!-- A query searches the whole project and replaces the folder view. -->
+      <TextBox Grid.Column="2" Classes="field" Name="SearchBox"
+               PlaceholderText="Search the project"
+               Text="{Binding Content.Query, Mode=TwoWay}"
+               KeyDown="OnSearchKeyDown" />
+
+      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="3">
+        <Button Classes="chip filter" Classes.active="{Binding Content.IsFilterAll}"
+                Tag="All" Click="OnFilterClicked">
+          <TextBlock Classes="chipsubject" Text="All" />
+        </Button>
+        <Button Classes="chip filter" Classes.active="{Binding Content.IsFilterTextures}"
+                Tag="Textures" Click="OnFilterClicked">
+          <TextBlock Classes="chipsubject" Text="Textures" />
+        </Button>
+        <Button Classes="chip filter" Classes.active="{Binding Content.IsFilterMaterials}"
+                Tag="Materials" Click="OnFilterClicked">
+          <TextBlock Classes="chipsubject" Text="Materials" />
+        </Button>
+        <Button Classes="chip filter" Classes.active="{Binding Content.IsFilterModels}"
+                Tag="Models" Click="OnFilterClicked">
+          <TextBlock Classes="chipsubject" Text="Models" />
+        </Button>
+      </StackPanel>
+
+      <Button Grid.Column="4" Classes="ghost" Click="OnViewModeClicked"
+              ToolTip.Tip="Switch between tiles and rows">
+        <Path Classes="icon" Data="{StaticResource IconList}" />
+      </Button>
+
+      <Button Grid.Column="5" Classes="ghost" Click="OnRefreshClicked"
+              ToolTip.Tip="Walk the project again">
+        <Path Classes="icon" Data="{StaticResource IconRefresh}" />
+      </Button>
     </Grid>
 
-    <TextBlock Grid.Row="2" Classes="prose" Margin="12,4,12,0"
+    <TextBlock Grid.Row="1" Classes="prose" Margin="12,4,12,0"
                Foreground="{StaticResource SpectraTextMuted}"
                IsVisible="{Binding !Content.HasContent}"
                Text="{Binding Content.EmptyMessage}" />
 
     <!-- The list virtualises, so it has no cap. Avalonia has no virtualising
          wrap panel, so the grid below is capped. -->
-    <ListBox Grid.Row="2" Name="ListRows" Classes="contentlist"
+    <ListBox Grid.Row="1" Name="ListRows" Classes="contentlist"
              ItemsSource="{Binding Content.Entries}"
              SelectionChanged="OnListSelectionChanged"
              DoubleTapped="OnEntryActivated">
@@ -113,7 +120,7 @@
       </ListBox.ItemTemplate>
     </ListBox>
 
-    <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled">
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
       <ScrollViewer.IsVisible>
         <MultiBinding Converter="{x:Static BoolConverters.And}">
           <Binding Path="Content.HasContent" />
@@ -168,12 +175,12 @@
     </ScrollViewer>
 
     <!-- Says when the grid was capped or the index is still walking. -->
-    <TextBlock Grid.Row="3" Classes="micro" Margin="10,2"
+    <TextBlock Grid.Row="2" Classes="micro" Margin="10,2"
                Text="{Binding Content.ResultNote}"
                IsVisible="{Binding Content.ResultNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                TextWrapping="Wrap" />
 
-    <Border Grid.Row="4" Classes="detailstrip" IsVisible="{Binding Content.HasSelected}">
+    <Border Grid.Row="3" Classes="detailstrip" IsVisible="{Binding Content.HasSelected}">
       <StackPanel>
         <TextBlock Classes="value" Text="{Binding Content.SelectedDetails}"
                    Foreground="{StaticResource SpectraTextMuted}"
@@ -207,13 +214,22 @@
       <Setter Property="Background" Value="{StaticResource SpectraRowSelected}" />
     </Style>
 
+    <!-- .ghost is a square icon button. A crumb is as wide as its word. -->
     <Style Selector="Button.crumb">
+      <Setter Property="Width" Value="NaN" />
       <Setter Property="Padding" Value="3,1" />
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
     </Style>
     <Style Selector="Button.crumb:pointerover">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+    </Style>
+
+    <Style Selector="Button.chip.filter.active /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControlActive}" />
+    </Style>
+    <Style Selector="Button.chip.filter.active TextBlock.chipsubject">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
     </Style>
 

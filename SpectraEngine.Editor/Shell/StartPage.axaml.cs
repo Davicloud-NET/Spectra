@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace SpectraEngine.Editor.Shell;
 
@@ -13,8 +14,9 @@ namespace SpectraEngine.Editor.Shell;
 /// <param name="Location">
 /// The folder, shortened from the left so the part naming the project survives.
 /// </param>
+/// <param name="IsMissing">The project's folder is no longer on disk.</param>
 public sealed record RecentProjectRow(
-    RecentProject Source, string Name, string Path, string Location, string OpenedLabel);
+    RecentProject Source, string Name, string Path, string Location, string OpenedLabel, bool IsMissing);
 
 /// <summary>
 /// The launch experience: recent projects, and the three ways to get something
@@ -62,8 +64,10 @@ public partial class StartPage : UserControl
         for (int i = 0; i < recents.Count; i++)
         {
             RecentProject recent = recents[i];
+            bool missing = !Directory.Exists(recent.Path) && !File.Exists(recent.Path);
             _all.Add(new RecentProjectRow(
-                recent, recent.Name, recent.Path, locations[i], OpenedLabel(recent.OpenedUtc)));
+                recent, recent.Name, recent.Path, locations[i],
+                missing ? "not found" : OpenedLabel(recent.OpenedUtc), missing));
         }
 
         ApplyFilter();

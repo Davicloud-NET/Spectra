@@ -42,7 +42,7 @@ public static class WorkspaceLayout
     public const double ViewportMinHeight = 200;
 
     /// <summary>How tall the bottom drawer opens by default.</summary>
-    public const double DefaultDrawerHeight = 160;
+    public const double DefaultDrawerHeight = 220;
 
     /// <summary>The numbers for a preset.</summary>
     public static WorkspaceMetrics For(WorkspacePreset preset) => preset switch

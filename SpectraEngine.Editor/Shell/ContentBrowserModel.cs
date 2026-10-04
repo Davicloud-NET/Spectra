@@ -224,8 +224,26 @@ public sealed class ContentBrowserModel : ObservableObject
         }
     }
 
-    public bool IsGridView => _viewMode == ContentViewMode.Grid;
-    public bool IsListView => _viewMode == ContentViewMode.List;
+    public bool IsGridView => _viewMode == ContentViewMode.Grid && !_isCramped;
+    public bool IsListView => _viewMode == ContentViewMode.List || _isCramped;
+
+    private bool _isCramped;
+
+    /// <summary>
+    /// True when the panel is too short to show a whole tile. Rows are shown
+    /// instead, whatever <see cref="ViewMode"/> says.
+    /// </summary>
+    public bool IsCramped
+    {
+        get => _isCramped;
+        set
+        {
+            if (!Set(ref _isCramped, value)) return;
+
+            Raise(nameof(IsGridView));
+            Raise(nameof(IsListView));
+        }
+    }
 
     /// <summary>Raised when the user changes the view, so it can be saved.</summary>
     public event Action<ContentViewMode>? ViewChanged;

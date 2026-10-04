@@ -28,7 +28,6 @@
 
     <!-- Unit, on the label line so it costs the cells no width. -->
     <Style Selector="TextBlock.rowunit">
-      <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
       <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
       <Setter Property="VerticalAlignment" Value="Center" />
@@ -228,6 +227,25 @@
 
   <DockPanel>
 
+    <!-- The popups come first: a DockPanel only stretches its last child,
+         and that has to be the scroll area. -->
+    <!-- The entity picker. -->
+    <Popup x:Name="TargetPopup" Placement="BottomEdgeAlignedLeft"
+           IsLightDismissEnabled="True">
+      <shell:EntityPickerView x:Name="TargetPicker" />
+    </Popup>
+
+    <!-- The asset picker. -->
+    <Popup x:Name="AssetPopup" Placement="BottomEdgeAlignedLeft"
+           IsLightDismissEnabled="True" Closed="OnAssetPopupClosed">
+      <shell:AssetPickerView x:Name="AssetPicker" />
+    </Popup>
+
+    <Popup x:Name="ColorPopup" Placement="BottomEdgeAlignedLeft"
+           IsLightDismissEnabled="True" Closed="OnColorPopupClosed">
+      <shell:ColorPickerView x:Name="ColorPicker" />
+    </Popup>
+
     <!-- Header: name and kind. -->
     <Border DockPanel.Dock="Top"
             BorderBrush="{StaticResource SpectraBorderSoft}"
@@ -250,7 +268,6 @@
         <Border Grid.Column="1" Classes="kindchip"
                 IsVisible="{Binding Properties.HasKind}">
           <TextBlock Text="{Binding Properties.HeaderKind}"
-                     FontFamily="{StaticResource SpectraFontMono}"
                      FontSize="{StaticResource SpectraFontMicro}"
                      Foreground="{StaticResource SpectraTextBody}" />
         </Border>
@@ -267,30 +284,16 @@
                  Foreground="{StaticResource SpectraTextBody}" />
     </Border>
 
-    <!-- Empty state: shows the level's numbers. -->
+    <!-- Empty state. -->
     <StackPanel DockPanel.Dock="Top" Margin="12,14,12,0" Spacing="10"
                 IsVisible="{Binding !Properties.HasSelection}">
       <TextBlock Classes="prose" TextWrapping="Wrap"
                  Foreground="{StaticResource SpectraTextMuted}"
                  Text="Select something in the viewport or the scene tree to edit it." />
 
-      <Border Height="1" Background="{StaticResource SpectraBorderSoft}" />
-
-      <TextBlock Classes="sectionhead" Text="This level" />
-      <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
-        <TextBlock Grid.Row="0" Grid.Column="0" Classes="rowlabel" Text="Objects" Width="86" />
-        <TextBlock Grid.Row="0" Grid.Column="1" Classes="value" Text="{Binding NodeCountLabel}" />
-        <TextBlock Grid.Row="1" Grid.Column="0" Classes="rowlabel" Text="Grid" Width="86" />
-        <TextBlock Grid.Row="1" Grid.Column="1" Classes="value" Text="{Binding SnapSummary}" />
-        <TextBlock Grid.Row="2" Grid.Column="0" Classes="rowlabel" Text="Renderer" Width="86" />
-        <TextBlock Grid.Row="2" Grid.Column="1" Classes="value" Text="{Binding PipelineName}" />
-      </Grid>
-
-      <Border Height="1" Background="{StaticResource SpectraBorderSoft}" />
-
       <TextBlock Classes="prose" TextWrapping="Wrap"
                  Foreground="{StaticResource SpectraTextMuted}"
-                 Text="Drag any axis letter beside a number to change it without typing. Help &gt; Keyboard reference lists everything else." />
+                 Text="Tip: drag the x, y or z beside a number to change it." />
     </StackPanel>
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
@@ -640,25 +643,5 @@
       </StackPanel>
       </StackPanel>
     </ScrollViewer>
-
-    <!-- One picker for the panel, moved to whichever swatch opened it.
-         The pickers are Popups: a popup is a real OS window, the only thing
-         that draws over a native-child viewport. -->
-    <!-- The entity picker. -->
-    <Popup x:Name="TargetPopup" Placement="BottomEdgeAlignedLeft"
-           IsLightDismissEnabled="True">
-      <shell:EntityPickerView x:Name="TargetPicker" />
-    </Popup>
-
-    <!-- The asset picker. -->
-    <Popup x:Name="AssetPopup" Placement="BottomEdgeAlignedLeft"
-           IsLightDismissEnabled="True" Closed="OnAssetPopupClosed">
-      <shell:AssetPickerView x:Name="AssetPicker" />
-    </Popup>
-
-    <Popup x:Name="ColorPopup" Placement="BottomEdgeAlignedLeft"
-           IsLightDismissEnabled="True" Closed="OnColorPopupClosed">
-      <shell:ColorPickerView x:Name="ColorPicker" />
-    </Popup>
   </DockPanel>
 </UserControl>

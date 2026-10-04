@@ -84,7 +84,6 @@
                            TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center" />
                 <TextBlock Grid.Column="2" Text="unlisted"
-                           FontFamily="{StaticResource SpectraFontMono}"
                            FontSize="{StaticResource SpectraFontMicro}"
                            Foreground="{StaticResource SpectraTextMuted}"
                            VerticalAlignment="Center"

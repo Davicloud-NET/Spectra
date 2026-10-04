@@ -17,6 +17,9 @@ public partial class ContentPanel : UserControl
     // during a move, so the press is kept.
     private const double DragThresholdPixels = 4.0;
 
+    // A tile with its name and size lines, plus the row's own margins.
+    private const double TileRowHeight = 112.0;
+
     private ContentEntry? _pressedEntry;
     private PointerPressedEventArgs? _pressEvent;
     private Point _pressPoint;
@@ -31,6 +34,16 @@ public partial class ContentPanel : UserControl
         AddHandler(PointerPressedEvent, OnTilePointerPressed, RoutingStrategies.Tunnel);
         AddHandler(PointerMovedEvent, OnTilePointerMoved, RoutingStrategies.Tunnel);
         AddHandler(PointerReleasedEvent, OnTilePointerReleased, RoutingStrategies.Tunnel);
+
+        SizeChanged += (_, _) => UpdateCramped();
+        DataContextChanged += (_, _) => UpdateCramped();
+    }
+
+    // Half a tile is worse than a row, so a short panel shows rows.
+    private void UpdateCramped()
+    {
+        if (Model is { } model && Bounds.Height > 0)
+            model.IsCramped = Bounds.Height - Toolbar.Bounds.Height < TileRowHeight;
     }
 
     /// <summary>
