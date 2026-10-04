@@ -5,16 +5,7 @@ using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The manager over a fake device: clip ownership, the two playback paths, the
-/// per-frame pump, and the disabled mode a machine with no sound card gets.
-/// </summary>
-/// <remarks>
-/// Real playback is a manual gate, like <c>--offscreen-probe</c>: CI has no
-/// sound card, and a test that needs one is a test that gets disabled. What is
-/// testable without a device is every decision the engine makes ABOUT the
-/// device, and that is what is here.
-/// </remarks>
+// Runs over a fake backend: CI has no sound card.
 public sealed class AudioManagerTests
 {
     private const int Rate = 48000;
@@ -31,14 +22,10 @@ public sealed class AudioManagerTests
         audio.DisabledReason.ShouldContain("no audio output device");
         audio.SourceCount.ShouldBe(0);
 
-        // One line, and at Warning rather than Error: a machine with no sound
-        // card still runs the engine, and an ERR here would fail every smoke
-        // gate that greps for one.
+        // Warning, not Error: the smoke gates grep for ERR.
         logger.MessagesAt(LogLevel.Warning).Count.ShouldBe(1);
         logger.MessagesAt(LogLevel.Error).ShouldBeEmpty();
 
-        // Everything below must be reachable without a device, because a game
-        // that guarded each call would be a game that forgot one.
         AudioClip? clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(1000));
         clip.ShouldBeNull();
 
@@ -55,8 +42,7 @@ public sealed class AudioManagerTests
         audio.Shutdown();
         audio.Dispose();
 
-        // The listener still reports what it was told, so a caller reading it
-        // back does not see the device's absence leak into its own state.
+        // The listener still reports what it was told.
         audio.ListenerPosition.ShouldBe(Vector3.One);
         audio.MasterGain.ShouldBe(0.5f);
         logger.MessagesAt(LogLevel.Error).ShouldBeEmpty(logger.Describe());
@@ -92,7 +78,6 @@ public sealed class AudioManagerTests
         voice.ShouldBeOfType<StaticVoice>();
         audio.ActiveVoiceCount.ShouldBe(1);
 
-        // Still going: the pump must not reclaim a source that is playing.
         audio.Update().ShouldBe(1);
 
         backend.Finish(voice.Source);
@@ -105,16 +90,13 @@ public sealed class AudioManagerTests
     [Fact]
     public void A_clip_with_loop_points_is_played_through_a_queue_rather_than_a_single_buffer()
     {
-        // The load-bearing behaviour of the whole stage: AL_LOOPING repeats the
-        // WHOLE buffer, so a clip with a region inside it cannot use a single
-        // static buffer at all. It has to arrive as a queue.
+        // AL_LOOPING repeats the whole buffer, so a loop region needs a queue.
         var backend = new FakeAudioBackend();
         var audio = NewManager(backend);
 
         AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(4000), new LoopRegion(1000, 3000))!;
 
-        // Nothing uploaded at create time: a looping clip keeps its CPU samples
-        // and feeds them to a queue instead.
+        // A looping clip keeps its samples on the CPU and uploads nothing yet.
         backend.Uploads.ShouldBeEmpty();
 
         AudioVoice voice = audio.Play(clip)!;
@@ -128,8 +110,7 @@ public sealed class AudioManagerTests
     [Fact]
     public void Destroying_a_clip_retires_the_voices_holding_its_buffer_first()
     {
-        // Deleting a buffer a source still has BOUND is an AL_INVALID_OPERATION
-        // that AL answers by leaving the buffer alive, so the leak is silent.
+        // AL refuses to delete a buffer a source still has bound, and it leaks.
         var backend = new FakeAudioBackend();
         var audio = NewManager(backend);
 
@@ -144,7 +125,7 @@ public sealed class AudioManagerTests
         backend.LiveBufferCount.ShouldBe(0);
         clip.IsDestroyed.ShouldBeTrue();
 
-        // A stale handle stops nothing and plays nothing.
+        // Stale handles do nothing.
         voice.Stop();
         audio.Play(clip).ShouldBeNull();
 
@@ -164,9 +145,7 @@ public sealed class AudioManagerTests
         backend.ListenerUp.ShouldBe(Vector3.UnitY);
         backend.ListenerVelocity.ShouldBe(new Vector3(0, 0, 4));
 
-        // A fader running slightly negative is an ordinary rounding result;
-        // silence is the obvious answer to it, and throwing would take out the
-        // frame that produced it.
+        // A fader can round slightly negative; clamp, don't throw.
         audio.MasterGain = -0.25f;
         audio.MasterGain.ShouldBe(0f);
         backend.ListenerGain.ShouldBe(0f);
@@ -210,8 +189,6 @@ public sealed class AudioManagerTests
         audio.Shutdown();
     }
 
-    // --- helpers -------------------------------------------------------------
-
     private static AudioManager NewManager(FakeAudioBackend backend, int sources = AudioManager.DefaultSourceCount)
     {
         var audio = new AudioManager(new CapturingLogger(), Supply(backend), sources);
@@ -236,7 +213,7 @@ public sealed class AudioManagerTests
             return false;
         };
 
-    /// <summary>A ramp rather than silence, so a test can tell one frame from another.</summary>
+    // A ramp, so frames differ.
     private static short[] Tone(int frames)
     {
         var pcm = new short[frames];

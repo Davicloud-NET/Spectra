@@ -11,70 +11,31 @@ using System.Threading.Tasks;
 
 namespace SpectraEngine.Editor.Viewport;
 
-/// <summary>
-/// One imported generation of the engine's shared colour target.
-/// </summary>
-/// <remarks>
-/// <b>The compositor half of the composited viewport, narrowed to what the pump
-/// actually does with it.</b> A real one wraps an
-/// <c>ICompositionImportedGpuImage</c> and a <c>CompositionDrawingSurface</c>;
-/// the interface exists so the pump's generation handling, its retirement and
-/// its acknowledgement can be proved with no GPU, no compositor and no window -
-/// which is the same reason <see cref="IViewportCursor"/> exists one layer
-/// across.
-/// </remarks>
+// One imported generation of the engine's shared colour target. An interface
+// so the pump can be tested with no GPU or compositor.
 internal interface ICompositedImage
 {
-    /// <summary>
-    /// Completes when the compositor has actually opened the shared resource.
-    /// </summary>
-    /// <remarks>
-    /// <b>Nothing may be drawn from this image before it completes</b> - the
-    /// compositor throws rather than waiting - and the handle it was imported
-    /// from may not be closed before it either, because the open runs on the
-    /// render thread and closing underneath it is a race with no diagnostic.
-    /// </remarks>
+    // Completes when the compositor has opened the shared resource. Don't draw
+    // from the image or close its source handle before then.
     Task ImportCompleted { get; }
 
-    /// <summary>
-    /// Takes the consumer's turn on the keyed mutex and snapshots the texture
-    /// into the surface: acquire <paramref name="acquireKey"/>, copy, release
-    /// <paramref name="releaseKey"/>.
-    /// </summary>
+    // The consumer's turn on the keyed mutex: acquire, snapshot the texture
+    // into the surface, release.
     Task UpdateAsync(uint acquireKey, uint releaseKey);
 
-    /// <summary>Releases the import. The surface keeps the last frame it took.</summary>
+    // The surface keeps the last frame it took.
     ValueTask DisposeAsync();
 }
 
-/// <summary>
-/// Creates imports. The compositor half of <see cref="CompositedFramePump"/>'s
-/// world.
-/// </summary>
 internal interface ICompositedImageSource : IAsyncDisposable
 {
-    /// <summary>Imports the shared texture named by an NT handle this process owns.</summary>
+    // ntHandle must be owned by this process.
     ICompositedImage Import(nint ntHandle, int width, int height);
 }
 
-/// <summary>
-/// One window of consumer-side pacing: how many turns this side took, and where
-/// the time between them went.
-/// </summary>
-/// <remarks>
-/// <b>The split is the whole value.</b> A hand-over rate below the display's
-/// refresh is either the compositor being late with its turn or this side being
-/// late re-issuing, and those have opposite fixes: the first is the producer
-/// holding the key across work it does not need the key for, the second is
-/// where the resume is scheduled. One number for the pair says only that the
-/// picture is slow, which is what the frame rate already said.
-/// </remarks>
-/// <param name="HandOvers">Turns completed in the window.</param>
-/// <param name="Seconds">The window's wall time.</param>
-/// <param name="CompositorAverageMs">Issue to the update completing, averaged.</param>
-/// <param name="CompositorPeakMs">The worst of those.</param>
-/// <param name="ResumeAverageMs">The update completing to the loop running again, averaged.</param>
-/// <param name="ResumePeakMs">The worst of those.</param>
+// One window of consumer-side pacing. Compositor time is issue to update
+// completed; resume time is update completed to the loop running again on the
+// UI thread. A low hand-over rate is one or the other, with opposite fixes.
 internal readonly record struct HandOverPacing(
     int HandOvers,
     double Seconds,
@@ -83,178 +44,42 @@ internal readonly record struct HandOverPacing(
     float ResumeAverageMs,
     float ResumePeakMs)
 {
-    /// <summary>Turns per second, which the producer's frame rate equals.</summary>
+    // The producer's frame rate equals this.
     internal double PerSecond => Seconds > 0.0 ? HandOvers / Seconds : 0.0;
 }
 
-/// <summary>
-/// Drives the composited viewport's picture: imports each generation of the
-/// engine's shared target, keeps taking the consumer's turn on the keyed mutex,
-/// and lets go of a retired generation once nothing is still reading it.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>The mutex is the clock, and that is the whole pacing design.</b> The
-/// producer acquires key 0, writes the frame and releases key 1; this side
-/// acquires key 1, snapshots and releases key 0. Neither can run twice in a
-/// row, so a self-rescheduling update loop settles at whichever side is slower
-/// - the compositor's vsync, in practice - without either side polling, timing
-/// or throttling. The engine's own acquire carries a short timeout and SKIPS
-/// its shared write rather than blocking, which is what makes a stopped pump
-/// safe on the producer's side.
-/// </para>
-/// <para>
-/// <b>What that clock COSTS is that this loop sets the engine's frame rate, so
-/// where its resume is scheduled is a rendering decision.</b> Measured with
-/// <c>--pacing-probe</c> against a real second device: the engine's frame rate
-/// equals this side's turn rate exactly, at every cadence - 61 fps at a turn
-/// every 16.7 ms, 40 at every 25 ms, 30 at every 33 ms - while the producer's
-/// own ceiling is about 2,600. The whole difference is the producer sitting in
-/// its acquire, which is why one late turn per frame is one dropped engine
-/// frame and not a fraction of one.
-/// </para>
-/// <para>
-/// <b>The re-issue is posted at <see cref="DispatcherPriority.Send"/> and the
-/// rest of the loop runs INSIDE that post</b>, never after awaiting it: awaiting
-/// an already-completed task continues synchronously on the awaiting thread, so
-/// a resume that has already run hands the loop back to the compositor's render
-/// thread and the next update throws from <c>Dispatcher.VerifyAccess</c>. That
-/// shipped once and faulted every composited session. See
-/// <see cref="IssueHandOver"/>.
-/// <b>Formerly: the hand-over was re-issued at <see cref="DispatcherPriority.Send"/>,
-/// and an ordinary <c>await</c> is what this fixes.</b> Avalonia completes the
-/// update's task from the compositor's own render thread with
-/// <c>RunContinuationsAsynchronously</c>, so a bare <c>await</c> hands the
-/// resume to <c>AvaloniaSynchronizationContext</c> - which posts at
-/// <c>DispatcherPriority.Default</c>, documented as "the lowest foreground
-/// dispatcher priority". The job that hands the engine its next turn was
-/// therefore the last thing in the whole application's queue: behind input,
-/// behind layout and render, behind everything the shell posts at Normal. With
-/// an idle queue that is invisible, which is exactly why this design measured
-/// 58 to 60 fps AT REST and dropped to about 40 the moment the shell had work
-/// to do every frame.
-/// </para>
-/// <para>
-/// <b><c>ConfigureAwait(false)</c> alone cannot do it, and that is a fact about
-/// Avalonia rather than a preference.</b> <c>UpdateWithKeyedMutexAsync</c>
-/// reaches <c>Compositor.PostServerJob</c>, which calls
-/// <c>Dispatcher.VerifyAccess()</c>, so the next update MUST be issued from the
-/// UI thread. The await leaves that thread and the resume brings it back at the
-/// top of the queue, which is the smallest change that removes the queue
-/// position from the loop's period. It does NOT make the pump preemptive: a UI
-/// job already running still has to finish.
-/// </para>
-/// <para>
-/// <b>It stops while hidden, deliberately.</b> A minimised window, a closed
-/// session or a viewport nobody can see has nothing to show, and an update loop
-/// left running would go on copying a full-screen texture per vsync for it. The
-/// producer answers a stopped consumer by timing out and carrying on, which it
-/// logs exactly once.
-/// </para>
-/// <para>
-/// <b>Generations, never handles.</b> A shared target is destroyed and rebuilt
-/// on every resize; the handle it is named by is a value the OS recycles, so
-/// the only thing that can be compared is the generation counter the renderer
-/// hands out. A new one means re-import; the same one means the picture on
-/// screen is already the right texture.
-/// </para>
-/// <para>
-/// <b>Retirement is what keeps a resize from being a crash.</b> The renderer
-/// holds a retired generation's resource until the consumer says it is done
-/// with it, because the consumer may be sampling it this instant and freeing it
-/// underneath produces no exception on either side. So a superseded import is
-/// disposed once its last update has finished - never while one is in flight -
-/// and only then is the generation acknowledged back to the renderer.
-/// </para>
-/// <para>
-/// <b>The pump owns the SOURCE, and that ownership is what makes a re-parent
-/// survivable.</b> The compositor half is one drawing surface every import
-/// snapshots into, and a viewport that is dragged into another dock tears its
-/// compositor objects down and builds fresh ones on the other side. Disposing
-/// that surface from the outside, at the moment of detach, means disposing it
-/// while a hand-over may still be inside the keyed-mutex bracket: the pending
-/// update faults, the pump reports a fault, and every re-dock becomes a session
-/// that says the composited viewport failed. So <see cref="Stop"/> takes the
-/// source with it and disposes it after the last import has settled, in the
-/// same order and for the same reason the imports themselves are held back.
-/// </para>
-/// <para>
-/// <b>Threading:</b> UI thread only, every member and every field. The
-/// compositor's import and update calls verify that themselves; the one place
-/// this loop leaves that thread is the await on a hand-over, and it is back on
-/// it before any field below is touched.
-/// </para>
-/// </remarks>
+// Drives the composited viewport's picture: imports each generation of the
+// engine's shared target, keeps taking the consumer's turn on the keyed mutex,
+// and releases a retired generation once nothing reads it.
+//
+// The mutex is the clock. The producer acquires key 0 and releases key 1; this
+// side acquires 1 and releases 0. So this loop's turn rate is the engine's
+// frame rate.
+//
+// Generations, not handles: the OS recycles handle values across resizes.
+//
+// A superseded import is disposed only after its last update finished, and
+// only then acknowledged to the renderer, which holds the resource until then.
+//
+// The pump owns the source and disposes it after the last import settled. A
+// re-dock stops this pump while a hand-over may still be in the mutex bracket.
+//
+// UI thread only.
 internal sealed class CompositedFramePump
 {
-    /// <summary>
-    /// How long one hand-over may take before the pump gives up scheduling
-    /// more.
-    /// </summary>
-    /// <remarks>
-    /// <b>Not a timeout on the acquire - there is no such thing here.</b> The
-    /// compositor waits on the keyed mutex ON ITS RENDER THREAD with an
-    /// effectively infinite deadline, so a producer that stops releasing the key
-    /// (a faulted render thread, a session torn down out of order) freezes the
-    /// whole UI and nothing anywhere says why. This cannot unblock that, and
-    /// does not pretend to: it stops the pump adding to it and puts one line in
-    /// the log naming the cause, which is the difference between a bug report
-    /// that can be acted on and "the editor hung".
-    /// </remarks>
+    // How long a hand-over may take before the pump stops scheduling more.
+    // Not an acquire timeout: the compositor waits on its render thread with
+    // no usable deadline. This only stops adding to it and logs the cause.
     internal static readonly TimeSpan UpdateWatchdog = TimeSpan.FromSeconds(2);
 
-    /// <summary>
-    /// How many hand-overs this side keeps outstanding at once.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Two, because one is not enough to fill the compositor's queue and the
-    /// gap is a whole refresh.</b> An update is a server job the compositor
-    /// picks up on its own tick. With a single hand-over in flight the next one
-    /// is not issued until the previous has completed and the loop is back on
-    /// the UI thread, which lands microseconds after the tick that completed it
-    /// - and about half the time that is microseconds too late for the tick
-    /// after, so that hand-over waits a whole refresh. Measured in a real
-    /// composited session, on d3d11 AND d3d12 alike: 40.5 hand-overs a second
-    /// at 24.7 ms each against a 16.7 ms refresh, with the resume hop itself
-    /// costing 0.1 ms. With a second update already queued the compositor never
-    /// idles: 60.5 a second at 16.5 ms, same machine, same scene, one constant
-    /// apart.
-    /// </para>
-    /// <para>
-    /// <b>The engine's frame rate IS this number</b>, because the producer
-    /// cannot start a frame until this side hands the key back, which
-    /// <c>--pacing-probe</c> measured as an exact equality at every cadence. So
-    /// this constant is a rendering decision wearing a scheduling costume.
-    /// </para>
-    /// <para>
-    /// <b>What the second one costs, stated rather than discovered.</b> Both
-    /// jobs snapshot the SAME shared texture, so the queued one acquires a
-    /// consumer key the producer has not released yet and the compositor's
-    /// render thread blocks for one producer frame - about 0.4 ms of render on
-    /// this machine, and however long a hitch lasts when the producer hitches.
-    /// The only thing that removes that coupling is a second shared texture, so
-    /// the queued job always targets the one the producer has already finished.
-    /// Not built: measured, the block is a fraction of a millisecond against a
-    /// refresh, and a ring costs a second full-size shared target plus per-slot
-    /// generations through the renderer, the snapshot and this pump.
-    /// </para>
-    /// <para>
-    /// <b>Never more than two, because depth is bought WITH latency.</b>
-    /// Throughput is depth over latency, so the same measurement that shows 60
-    /// hand-overs a second shows each one taking 33.2 ms rather than 24.7: the
-    /// picture is a refresh further behind the scene than it was. End to end
-    /// that is about 4 ms worse (a frame's own age plus half the gap to the
-    /// next one: 36.9 ms at one deep, 41.3 at two) and it buys an even 16.7 ms
-    /// cadence in place of one that alternated 16.7 and 33.3, which is the
-    /// judder that reads as lag. A third would buy no throughput at all - the
-    /// queue is already full at two - and would cost another whole refresh of
-    /// it.
-    /// </para>
-    /// </remarks>
+    // Hand-overs kept outstanding at once. One deep, the next update is issued
+    // just after the compositor tick that completed the last and often misses
+    // the following tick: measured 40 hand-overs/s against 60 at two.
+    // Costs a refresh of latency. Three buys nothing, the queue is full at two.
+    // Both jobs snapshot the same texture, so the second blocks the compositor
+    // for one producer frame.
     internal const int HandOverDepth = 2;
 
-    /// <summary>How much wall time one <see cref="HandOverPacing"/> window covers.</summary>
     internal static readonly TimeSpan PacingWindow = TimeSpan.FromSeconds(2);
 
     private static readonly long PacingWindowTicks =
@@ -276,28 +101,14 @@ internal sealed class CompositedFramePump
     private bool _looping;
     private bool _stalled;
 
-    // Imports that exist and have not finished being released. The source
-    // outlives every one of them, because each snapshots into its surface.
+    // Imports not yet fully released. The source outlives all of them.
     private int _outstanding;
     private bool _sourceReleased;
 
-    // When each outstanding hand-over was issued, oldest first. A QUEUE rather
-    // than one slot because HandOverDepth is greater than one: with a single
-    // field the second issue overwrites the first, so the watchdog measures the
-    // wrong hand-over and the pacing split charges one hand-over's wait to
-    // another. Server jobs run in order on the compositor's own thread, so
-    // these complete in the order they were issued.
+    // Issue time of each outstanding hand-over, oldest first. The compositor
+    // runs its jobs in order, so they complete in this order.
     private readonly Queue<long> _outstandingIssues = new();
 
-    // ---- Consumer-side pacing ----------------------------------------------
-    //
-    // The producer times its own acquire (Renderer.RecordSharedAcquireWait) and
-    // that number says only THAT it waited, never why. This is the other half:
-    // one hand-over splits into the compositor's own latency (issue to the
-    // update completing, which carries its tick, its copy and its own blocked
-    // acquire) and this side's resume hop (the completion to the loop running
-    // again on the UI thread). A hand-over rate below the display's is one or
-    // the other, and no instrument in the engine can tell them apart.
     private long _pacingWindowStart;
     private int _pacingSamples;
     private long _compositorTicks;
@@ -305,13 +116,9 @@ internal sealed class CompositedFramePump
     private long _resumeTicks;
     private long _resumePeakTicks;
 
-    /// <param name="onFault">
-    /// Raised once, on the UI thread, when the picture stops arriving and is not
-    /// going to start again - a hand-over that threw, or one the watchdog gave
-    /// up on. <b>What the caller may do with it is say so</b>: a viewport that
-    /// answered by swapping its hosting model mid-session would tear down a live
-    /// engine under the user's hands and leave two viewports in one log.
-    /// </param>
+    // onFault is raised once, on the UI thread, when the picture stops for good:
+    // a hand-over threw or the watchdog gave up. Report it; don't swap the
+    // viewport's hosting mode mid-session.
     internal CompositedFramePump(
         ICompositedImageSource source,
         Action<int> acknowledgeRelease,
@@ -330,53 +137,32 @@ internal sealed class CompositedFramePump
         _onFault = onFault;
         _logger = logger;
 
-        // The handle this side holds is its own duplicate, because Avalonia's
-        // importer does not take ownership and the renderer may retire its
-        // original at any resize. Injected so the pump's own logic is provable
-        // without a kernel object anywhere in sight.
+        // We duplicate the handle: Avalonia's importer takes no ownership and
+        // the renderer may retire its original at any resize.
         _duplicateHandle = duplicateHandle ?? Win32Interop.DuplicateForCaller;
         _closeHandle = closeHandle ?? (handle => Win32Interop.CloseHandle(handle));
 
-        // Send, which is the top of the dispatcher's ordering: the class
-        // remarks say why the default an await would use is the bottom of it.
-        // Injected for the same reason the two handle callbacks are - the whole
-        // loop is then provable with no dispatcher, no compositor and no window
-        // anywhere in sight.
+        // Send, not the Default priority an await would resume at. Default is
+        // behind input, layout and render, and this post paces the engine.
         _resumeOnUiThread = resumeOnUiThread
             ?? (action => Dispatcher.UIThread.Post(action, DispatcherPriority.Send));
     }
 
-    /// <summary>The generation currently on screen, or zero before the first import.</summary>
+    // Zero before the first import.
     internal int LiveGeneration => _live?.Generation ?? 0;
 
-    /// <summary>How many superseded imports are still waiting to be let go of.</summary>
     internal int RetiredCount => _retired.Count;
 
-    /// <summary>
-    /// Whether the compositor half has been let go of. See
-    /// <see cref="ReleaseSourceIfSettled"/>.
-    /// </summary>
     internal bool SourceReleased => _sourceReleased;
 
-    /// <summary>Whether an update loop is running.</summary>
     internal bool IsPumping => _looping;
 
-    /// <summary>
-    /// The last completed pacing window, or default before one has closed.
-    /// </summary>
+    // Default before the first window closes.
     internal HandOverPacing LastPacing { get; private set; }
 
-    /// <summary>
-    /// Whether the pump gave up on a hand-over that never completed. See
-    /// <see cref="UpdateWatchdog"/>.
-    /// </summary>
     internal bool IsStalled => _stalled;
 
-    /// <summary>
-    /// Takes whatever the engine's latest frame said about its shared target.
-    /// Cheap and idempotent for a generation already on screen, which is every
-    /// call but the handful that follow a resize.
-    /// </summary>
+    // Called with each frame's shared target. Imports on a new generation.
     internal void Observe(Renderer.SharedTargetHandle handle)
     {
         if (_stopped)
@@ -387,8 +173,6 @@ internal sealed class CompositedFramePump
 
         if (_live is { } live && live.Generation == handle.Generation)
         {
-            // The same texture as last time. The loop is already running against
-            // it; restarting one here is how a pump ends up with two.
             StartLoop();
             return;
         }
@@ -402,9 +186,8 @@ internal sealed class CompositedFramePump
         nint owned = _duplicateHandle(handle.NtHandle);
         if (owned == 0)
         {
-            // The producer's handle went away between the publish and here,
-            // which is a resize that outran the shell. Nothing to import and
-            // nothing to fix: the next generation is already on its way.
+            // A resize outran us and the handle is gone. The next generation
+            // is already on its way.
             _logger.LogWarning(
                 "Shared target generation {Generation} could not be duplicated; waiting for the next one.",
                 handle.Generation);
@@ -423,10 +206,7 @@ internal sealed class CompositedFramePump
         _ = AdoptAsync(import);
     }
 
-    /// <summary>
-    /// Whether the viewport can be seen. False stops the loop; true starts it
-    /// again if there is anything to show.
-    /// </summary>
+    // Hidden stops the loop. The producer then times out its acquire and carries on.
     internal void SetVisible(bool visible)
     {
         if (_visible == visible)
@@ -437,28 +217,10 @@ internal sealed class CompositedFramePump
             StartLoop();
     }
 
-    /// <summary>
-    /// Stops scheduling for good and lets go of every import, then of the
-    /// source they were snapshotting into.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Called while the engine is still running, never after it stops.</b>
-    /// An update already in flight is waiting on a key only the producer can
-    /// release; stopping the producer first leaves the compositor's render
-    /// thread waiting for a frame that will never come. The shell's teardown
-    /// clears the viewport's host - which lands here - before it stops the
-    /// session, and that order is the whole safety argument.
-    /// </para>
-    /// <para>
-    /// <b>A pump is stopped for a re-parent as well as for a teardown</b>, and
-    /// the two are the same call because they are the same requirement: this
-    /// pump is finished with, the producer is still there to answer whatever is
-    /// outstanding, and a fresh pump built on the other side of the move starts
-    /// from no import at all and re-imports the generation it is next told
-    /// about.
-    /// </para>
-    /// </remarks>
+    // Stops for good and releases every import, then the source.
+    // Call while the engine is still running: an update in flight waits on a
+    // key only the producer releases, and that wait is on the compositor's
+    // render thread. Used for a re-dock as well as for teardown.
     internal void Stop()
     {
         _stopped = true;
@@ -472,16 +234,12 @@ internal sealed class CompositedFramePump
         ReleaseSourceIfSettled();
     }
 
-    // --- The loop ------------------------------------------------------------
-
     private async Task AdoptAsync(Import import)
     {
         try
         {
-            // Before anything is drawn from it and before its handle is closed:
-            // the compositor opens the resource on its render thread, throws if
-            // asked to draw sooner, and racing the open with a CloseHandle has
-            // no diagnostic at all.
+            // The compositor opens the resource on its render thread. Drawing
+            // or closing the handle before that finishes is a race.
             await import.Image.ImportCompleted;
         }
         catch (Exception ex)
@@ -497,8 +255,7 @@ internal sealed class CompositedFramePump
         }
         finally
         {
-            // The duplicate has done its job either way: the compositor holds
-            // the resource through its own COM reference from here on.
+            // The compositor holds its own reference from here on.
             import.CloseHandle(_closeHandle);
         }
 
@@ -517,18 +274,8 @@ internal sealed class CompositedFramePump
         TopUp(live);
     }
 
-    /// <summary>
-    /// Issues hand-overs until <see cref="HandOverDepth"/> are outstanding, and
-    /// ends the loop when none are and none should be. <b>UI thread only.</b>
-    /// </summary>
-    /// <remarks>
-    /// <b>The stand-down check is here rather than inside the issue</b>, so one
-    /// place decides whether the loop goes on. It ends the loop only when
-    /// nothing is still in flight: a generation superseded while its second
-    /// hand-over was outstanding still owes that hand-over a completion, and
-    /// tearing the loop down around it would leave the retirement waiting for a
-    /// settle that never comes.
-    /// </remarks>
+    // Issues hand-overs up to HandOverDepth. Ends the loop only once nothing
+    // is in flight: a superseded import still owes its hand-overs a completion.
     private void TopUp(Import import)
     {
         while (import.UpdatesInFlight < HandOverDepth)
@@ -543,27 +290,10 @@ internal sealed class CompositedFramePump
         }
     }
 
-    /// <summary>
-    /// Issues one hand-over. <b>UI thread only.</b>
-    /// </summary>
-    /// <remarks>
-    /// <b>Not an async loop, and that is the whole point.</b> The obvious shape
-    /// is <c>while (...) await UpdateAsync(); await ResumeOnUiThread();</c>, and
-    /// it is wrong in a way that reads as correct: awaiting a task that is
-    /// ALREADY COMPLETE continues synchronously on the awaiting thread, so a
-    /// resume posted at <see cref="DispatcherPriority.Send"/> - which usually
-    /// runs before the caller reaches its await - hands the rest of the loop
-    /// back to the compositor's render thread rather than to the UI thread. The
-    /// next <c>UpdateAsync</c> then calls <c>Dispatcher.VerifyAccess</c> from
-    /// the wrong thread and the pump reports a fault on a viewport that is
-    /// working perfectly. Measured, in a real composited session.
-    /// <para>
-    /// So the continuation is not awaited at all: everything after the
-    /// hand-over runs INSIDE the posted action, where the thread is not in
-    /// question. The chain does not grow a stack, because each pass ends by
-    /// posting rather than by returning into its caller.
-    /// </para>
-    /// </remarks>
+    // Not an async loop. Awaiting an already completed resume continues on the
+    // compositor's render thread, and the next UpdateAsync then fails
+    // Dispatcher.VerifyAccess. Everything after the hand-over runs inside the
+    // posted action instead.
     private void IssueHandOver(Import import)
     {
         import.UpdatesInFlight++;
@@ -577,17 +307,13 @@ internal sealed class CompositedFramePump
         }
         catch (Exception ex)
         {
-            // Threw before a task existed, so there is nothing to continue from
-            // and this is already the UI thread. No completion instant either,
-            // which is what the null says.
+            // Threw synchronously, so we are still on the UI thread.
             CompleteHandOver(import, ExceptionDispatchInfo.Capture(ex), completedAt: null);
             return;
         }
 
-        // Stamped HERE, on whichever thread completed the update, because the
-        // whole point is to separate the wait before this instant from the hop
-        // after it. Taken inside the continuation and passed by value, so the
-        // post's own delay cannot be charged to the compositor.
+        // Stamp on the completing thread, before the post, so the post's delay
+        // counts as resume time and not compositor time.
         handOver.ContinueWith(
             finished =>
             {
@@ -599,12 +325,6 @@ internal sealed class CompositedFramePump
             TaskScheduler.Default);
     }
 
-    /// <summary>
-    /// Finishes one hand-over and issues the next. <b>UI thread only</b>, which
-    /// is structural: every path here arrives through
-    /// <see cref="_resumeOnUiThread"/> or from <see cref="IssueHandOver"/>
-    /// itself, which is UI-thread only in turn.
-    /// </summary>
     private void CompleteHandOver(Import import, ExceptionDispatchInfo? failure, long? completedAt)
     {
         long issuedAt = _outstandingIssues.Dequeue();
@@ -630,17 +350,6 @@ internal sealed class CompositedFramePump
             ? ExceptionDispatchInfo.Capture(aggregate.InnerException ?? aggregate)
             : null;
 
-    /// <summary>
-    /// Accounts for one completed hand-over and reports the window when it is
-    /// full. <b>UI thread only</b>, like everything else the loop touches.
-    /// </summary>
-    /// <remarks>
-    /// At Debug rather than Information: this is one line every
-    /// <see cref="PacingWindow"/> for as long as a composited session is open,
-    /// which at Information would be a standing wall in a log people read for
-    /// one-off events. The editor's minimum level is Debug, so it is in the
-    /// file either way.
-    /// </remarks>
     private void RecordPacing(long issuedAt, long completedAt)
     {
         long now = Stopwatch.GetTimestamp();
@@ -687,35 +396,14 @@ internal sealed class CompositedFramePump
     {
         _looping = false;
 
-        // A generation that replaced this one while its last hand-over was
-        // still in flight has been sitting with no loop behind it: the loop
-        // is per import, and the one that adopted the new import found this
-        // one still running and stood down.
+        // A newer import may have been adopted while this one's last hand-over
+        // was in flight. Its loop never started, so start it now.
         StartLoop();
     }
 
-    /// <summary>
-    /// Notices a hand-over that is never going to complete. Called once per
-    /// pass of the shell's pump, which keeps running when the render thread
-    /// does not.
-    /// </summary>
-    /// <remarks>
-    /// <b>This cannot unblock anything and does not pretend to.</b> See
-    /// <see cref="UpdateWatchdog"/>: the wait is on the compositor's own render
-    /// thread with no deadline worth the name, so all that is available is to
-    /// stop adding to it and to put the cause in the log. Polled from the UI
-    /// thread rather than raced against a timer per update, because a timer per
-    /// update is sixty allocations a second forever to catch something that
-    /// happens once.
-    /// <para>
-    /// <b>It now covers the resume as well as the hand-over</b>, because
-    /// <c>_updateStartedAt</c> is cleared after the loop is back on the UI
-    /// thread. That is deliberate and it is what the watchdog was always for:
-    /// what it reports is that the picture has stopped arriving, and a
-    /// dispatcher that never runs the resume stops it just as completely as a
-    /// producer that never releases the key.
-    /// </para>
-    /// </remarks>
+    // Polled from the shell's pump. Flags a hand-over that hasn't completed
+    // within UpdateWatchdog, resume hop included. Can't unblock it; it stops
+    // scheduling and logs.
     internal void CheckForStall()
     {
         if (_stalled || !_outstandingIssues.TryPeek(out long oldest))
@@ -736,8 +424,6 @@ internal sealed class CompositedFramePump
         _onFault?.Invoke();
     }
 
-    // --- Retirement ----------------------------------------------------------
-
     private void Retire(Import import)
     {
         import.Retired = true;
@@ -747,9 +433,8 @@ internal sealed class CompositedFramePump
 
     private void SettleIfRetired(Import import)
     {
-        // NEVER while a hand-over is still in flight. The compositor is inside
-        // the keyed-mutex bracket at that moment, and disposing the import from
-        // under it is the crash the whole retirement handshake exists to avoid.
+        // Not while a hand-over is in flight: the compositor is inside the
+        // keyed-mutex bracket and disposing under it crashes the driver.
         if (!import.Retired || import.UpdatesInFlight > 0)
             return;
 
@@ -772,33 +457,21 @@ internal sealed class CompositedFramePump
         }
         finally
         {
-            // In case the import never completed: the duplicate is this side's
-            // and closing it twice is refused rather than repeated.
+            // In case the import never completed. A second close is a no-op.
             import.CloseHandle(_closeHandle);
         }
 
-        // AFTER the import is gone, never before. The acknowledgement is what
-        // frees the renderer's resource, and it frees every generation at or
-        // below this one - which is exactly right, because a generation the
-        // shell never saw is a generation it never imported.
+        // Only after the import is gone: this frees the renderer's resource,
+        // for every generation at or below this one.
         _acknowledgeRelease(import.Generation);
 
         _outstanding--;
         ReleaseSourceIfSettled();
     }
 
-    /// <summary>
-    /// Lets go of the compositor half, once nothing is still reading through
-    /// it.
-    /// </summary>
-    /// <remarks>
-    /// <b>Only after <see cref="Stop"/>, and only with no import left.</b> The
-    /// drawing surface is what every hand-over snapshots into, so disposing it
-    /// with one outstanding is the same crash the per-import retirement exists
-    /// to avoid, one level up. A pump that never settles simply never releases
-    /// it, which is a leak the window's own teardown ends and is strictly better
-    /// than a free under a live bracket.
-    /// </remarks>
+    // Only after Stop and with no import left: every hand-over snapshots into
+    // the source's surface. A pump that never settles leaks it, which beats
+    // freeing it under a live mutex bracket.
     private void ReleaseSourceIfSettled()
     {
         if (!_stopped || _sourceReleased || _outstanding > 0)

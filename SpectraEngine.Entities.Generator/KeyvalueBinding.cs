@@ -2,13 +2,9 @@ using Microsoft.CodeAnalysis;
 
 namespace SpectraEngine.Entities.Generator;
 
-/// <summary>
-/// The C# types a keyvalue can be stored in, as a closed set this generator
-/// recognises.
-/// </summary>
+// The C# types a keyvalue can be stored in.
 internal enum ClrKind
 {
-    /// <summary>Nothing this generator can bind.</summary>
     Unknown = 0,
     Bool,
     Int,
@@ -21,17 +17,8 @@ internal enum ClrKind
     Guid,
 }
 
-/// <summary>
-/// One row of the binding table: a <c>KeyvalueType</c>, the C# type that carries
-/// it, and the <c>KeyvalueWire</c> method that reads it.
-/// </summary>
-/// <param name="Name">The <c>KeyvalueType</c> member name, for the emitted schema.</param>
-/// <param name="Value">Its frozen wire byte.</param>
-/// <param name="Clr">Which C# type carries it.</param>
-/// <param name="CSharpType">That type, spelled as the emitted code spells it.</param>
-/// <param name="Reader">
-/// The <c>KeyvalueWire</c> reader, or null when the wire form IS the value.
-/// </param>
+// Name is the KeyvalueType member name, Value its wire byte. Reader is the
+// KeyvalueWire method, or null when the wire form is the value.
 internal readonly record struct KeyvalueRow(
     string Name,
     byte Value,
@@ -39,31 +26,13 @@ internal readonly record struct KeyvalueRow(
     string CSharpType,
     string? Reader);
 
-/// <summary>
-/// The one table joining a <c>KeyvalueType</c> to the C# type that carries it
-/// and the <c>KeyvalueWire</c> method that reads it.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Hand-written, and it mirrors an enum this assembly cannot see.</b> The
-/// generator matches Core's attributes by metadata name and never references
-/// Core, so <c>KeyvalueType</c>'s numbering is transcribed here. That numbering
-/// is frozen and append-only for the same reason it is frozen there (it is a
-/// wire byte), so this table grows at the end and never renumbers.
-/// </para>
-/// <para>
-/// <b>Inference is one-way and deliberately narrow.</b> Nine C# types map to a
-/// primary <c>KeyvalueType</c> each; the kinds that SHARE a C# type -
-/// <c>Color</c> and <c>Angles</c> both live in a <c>Vector3</c>, every asset
-/// path and <c>TargetName</c> live in a <c>string</c> - have no inference at all
-/// and must be stated. Guessing between them would silently give a property
-/// panel a colour picker for a rotation, and there is nothing in the member's
-/// type to guess from.
-/// </para>
-/// </remarks>
+// Mirrors Core's KeyvalueType, which this assembly cannot reference. The
+// numbering is a wire byte: append only, never renumber.
+// Kinds that share a C# type (Color and Angles in a Vector3, asset paths and
+// TargetName in a string) are never inferred and must be stated.
 internal static class KeyvalueBinding
 {
-    /// <summary>The <c>KeyvalueType.NodeRef</c> value, whose empty form reads specially.</summary>
+    // KeyvalueType.NodeRef.
     public const byte NodeRefValue = 10;
 
     private static readonly KeyvalueRow[] Rows =
@@ -87,7 +56,6 @@ internal static class KeyvalueBinding
         new KeyvalueRow("Flags", 16, ClrKind.UInt, "uint", "TryParseFlags"),
     ];
 
-    /// <summary>The row for <paramref name="value"/>, or false when nothing names it.</summary>
     public static bool TryGet(byte value, out KeyvalueRow row)
     {
         for (int i = 0; i < Rows.Length; i++)
@@ -103,15 +71,11 @@ internal static class KeyvalueBinding
         return false;
     }
 
-    /// <summary>
-    /// The <c>KeyvalueType</c> a member of <paramref name="kind"/> gets when the
-    /// author states none, or false when nothing is inferred from it.
-    /// </summary>
+    // The KeyvalueType a member gets when the author states none.
     public static bool TryInfer(ClrKind kind, out KeyvalueRow row)
     {
-        // The FIRST row for the kind, which is why the table is ordered with each
-        // C# type's primary meaning ahead of its alternatives: Vec3 before Color
-        // and Angles, String before TargetName and the asset paths.
+        // First row for the kind wins, so the table lists each C# type's
+        // primary meaning first: Vec3 before Color, String before TargetName.
         for (int i = 0; i < Rows.Length; i++)
         {
             if (Rows[i].Clr == kind)
@@ -125,7 +89,6 @@ internal static class KeyvalueBinding
         return false;
     }
 
-    /// <summary>What C# type <paramref name="type"/> is, as far as a keyvalue is concerned.</summary>
     public static ClrKind Classify(ITypeSymbol type)
     {
         switch (type.SpecialType)
@@ -142,10 +105,7 @@ internal static class KeyvalueBinding
                 return ClrKind.String;
         }
 
-        // Compared by full name rather than by symbol identity: the transform
-        // holds no compilation to look the framework's own types up in, and a
-        // name is exactly as precise for four types that only the framework
-        // declares.
+        // By full name: the transform holds no compilation to look symbols up in.
         switch (type.ToDisplayString())
         {
             case "System.Numerics.Vector2":

@@ -22,19 +22,11 @@ public enum ContentViewMode
 }
 
 /// <summary>One clickable step of the path from the assets root to here.</summary>
-/// <param name="Label">The folder's own name, or "Assets" for the root.</param>
-/// <param name="FullPath">Where clicking it goes.</param>
 public readonly record struct BreadcrumbSegment(string Label, string FullPath);
 
-/// <summary>
-/// The words the content view's settings are written as.
-/// </summary>
-/// <remarks>
-/// <b>Hand-written both ways, and an unknown word falls back rather than
-/// failing the file.</b> Reflecting over an enum is what trimming removes, and a
-/// settings file written by a newer shell must lose the setting it cannot read
-/// rather than every setting beside it.
-/// </remarks>
+/// <summary>The words the content view's settings are written as.</summary>
+// Hand-written, not enum reflection (trimming). An unknown word falls back to
+// the grid so a newer shell's settings file still loads.
 public static class ContentViewNames
 {
     public static string NameOf(ContentViewMode mode) => mode switch

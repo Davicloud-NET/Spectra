@@ -5,40 +5,12 @@ using System;
 
 namespace SpectraEngine.Core.Graphics.D3D11;
 
-/// <summary>
-/// A dynamic D3D11 vertex buffer of per-instance data, plus the input layout
-/// that binds it alongside a mesh's own vertices.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>The combined input layout lives here rather than on the mesh</b>, and the
-/// reason is which of the two varies. Every mesh in the engine is created with
-/// <see cref="VertexAttribute.StandardLayout"/>, so a layout describing slot 0
-/// is the same object for all of them, which is why <c>D3D11Mesh</c> can already
-/// build one against the default shader and reuse it under every other shader.
-/// What is new is slot 1, and that is this buffer's own description of itself,
-/// so the combined layout is one object per instance layout rather than one per
-/// mesh.
-/// </para>
-/// <para>
-/// <b>Built against the signature of the program it will be DRAWN under, and
-/// that is not negotiable.</b> An earlier version built it against the default
-/// shader, reasoning that D3D permits a layout to declare elements the shader
-/// does not read. Creation did succeed; every instanced draw then failed with
-/// "the input stage requires Semantic/Index (TEXCOORD,3) as input, but it is not
-/// provided by the output stage". A layout is bound to the signature it was
-/// validated against, and permitted extra elements are not the same thing as a
-/// layout that carries them into another shader.
-/// </para>
-/// <para>
-/// <b>Dynamic, written by appending.</b> The frame's first write maps with
-/// <see cref="Map.WriteDiscard"/> so the driver can rename the whole allocation
-/// rather than wait for in-flight draws; later writes in the same frame map with
-/// <see cref="Map.WriteNoOverwrite"/> at their own offset, which is what lets
-/// several passes share one buffer without a later write changing what an
-/// earlier draw reads.
-/// </para>
-/// </remarks>
+// Dynamic vertex buffer of per-instance data, plus the input layout that binds
+// it in slot 1 beside a mesh's vertices in slot 0.
+//
+// The layout must be built against the vertex bytecode of the program the
+// buffer is drawn under. Built against another shader it creates fine and then
+// every instanced draw fails.
 internal sealed unsafe class D3D11InstanceBuffer : InstanceBuffer
 {
     private static readonly byte[] TexcoordSemantic =
@@ -49,12 +21,11 @@ internal sealed unsafe class D3D11InstanceBuffer : InstanceBuffer
     private ComPtr<ID3D11DeviceContext> _context;
     private bool _disposed;
 
-    /// <summary>Bytes between one instance and the next.</summary>
     internal uint Stride { get; }
 
     internal ID3D11Buffer* Buffer => (ID3D11Buffer*)_buffer.Handle;
 
-    /// <summary>The layout describing slot 0 (the mesh) and slot 1 (this buffer) together.</summary>
+    // Covers slot 0 (the mesh) and slot 1 (this buffer).
     internal ID3D11InputLayout* Layout => (ID3D11InputLayout*)_layout.Handle;
 
     internal D3D11InstanceBuffer(
@@ -119,8 +90,7 @@ internal sealed unsafe class D3D11InstanceBuffer : InstanceBuffer
                 offset += vertexAttributes[i].ComponentCount * sizeof(float);
             }
 
-            // Offsets restart at zero: they are byte offsets within the element's
-            // OWN slot, not within some concatenation of both buffers.
+            // Offsets are per slot.
             offset = 0;
             for (int i = 0; i < instanceAttributes.Length; i++)
             {
@@ -131,9 +101,8 @@ internal sealed unsafe class D3D11InstanceBuffer : InstanceBuffer
                     Format = FormatFor(instanceAttributes[i].ComponentCount),
                     InputSlot = VertexAttribute.InstanceSlot,
                     AlignedByteOffset = offset,
-                    // The two fields that ARE the feature. PerVertexData with a
-                    // step rate of zero here draws every instance on top of the
-                    // first, and reports nothing.
+                    // With PerVertexData and step 0 every instance draws on
+                    // top of the first, with no error.
                     InputSlotClass = InputClassification.PerInstanceData,
                     InstanceDataStepRate = 1,
                 };
@@ -162,13 +131,8 @@ internal sealed unsafe class D3D11InstanceBuffer : InstanceBuffer
     };
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The canonical dynamic-append pair: <see cref="Map.WriteDiscard"/> on a
-    /// frame's first write lets the driver rename the whole allocation, and
-    /// <see cref="Map.WriteNoOverwrite"/> afterwards promises it that earlier
-    /// ranges are untouched, so appending never renames away what a draw
-    /// already recorded against.
-    /// </remarks>
+    // WriteDiscard on the frame's first write, WriteNoOverwrite after, so an
+    // append never changes what an earlier draw reads.
     public override int Append(ReadOnlySpan<float> data, int instanceCount)
     {
         ValidateUpdate(data, instanceCount);
@@ -199,9 +163,6 @@ internal sealed unsafe class D3D11InstanceBuffer : InstanceBuffer
             return;
         _disposed = true;
 
-        // Through ComOwnership, which nulls the handle: each of these owns
-        // exactly one reference, so a second release would be an over-release
-        // rather than something a leak absorbs.
         ComOwnership.Release(ref _layout);
         ComOwnership.Release(ref _buffer);
         ComOwnership.Release(ref _context);

@@ -9,59 +9,33 @@ namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
 /// The composited viewport's frame pump: which generation is on screen, when a
-/// superseded one may be let go of, and what the renderer is told about it.
+/// superseded one may be released, and what the renderer is told about it.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Everything here fails silently in production.</b> A re-import that never
-/// happens is a viewport frozen on the previous size; an acknowledgement that
-/// never arrives pins a full-screen surface per step of a resize drag until a
-/// cap forces it out; and an import disposed while the compositor is inside the
-/// keyed-mutex bracket is a crash in a driver, with no managed stack and
-/// nothing to catch. None of the three raises anything on the way past.
-/// </para>
-/// <para>
-/// <b>The seam is what makes any of it reachable.</b> A real hand-over needs a
-/// compositor, a GPU and a window; the pump's own decisions need none of those,
-/// so the compositor half is an interface and the fake below completes its
-/// tasks on the test's own thread - continuations run inline, which makes the
-/// whole self-rescheduling loop deterministic instead of a race with the thread
-/// pool.
-/// </para>
-/// </remarks>
+// The fakes complete their tasks on the test's thread, so continuations run
+// inline and the self-rescheduling loop can be stepped.
 public sealed class CompositedFramePumpTests
 {
     private const nint ProducerHandle = 0x1000;
     private const int Width = 320;
     private const int Height = 240;
 
-    /// <summary>One import, driven entirely by the test.</summary>
     private sealed class FakeImage : ICompositedImage
     {
-        // The default, deliberately: without RunContinuationsAsynchronously a
-        // continuation runs INLINE on whichever thread completes the source,
-        // which here is the test's. That is what turns an async pump into
-        // something a test can step through.
+        // No RunContinuationsAsynchronously: continuations must run inline on
+        // the test's thread.
         private readonly TaskCompletionSource _import = new();
 
-        // A QUEUE, because CompositedFramePump.HandOverDepth keeps more than
-        // one hand-over outstanding. One slot silently ORPHANED the earlier
-        // task - the pump then waited forever on a completion no test could
-        // give it, while every assertion about counts still read plausibly.
-        // Completed oldest-first, which is how the compositor's own server jobs
-        // run.
+        // A queue: the pump keeps HandOverDepth hand-overs outstanding. A
+        // single slot would orphan the earlier task. Completed oldest first,
+        // like the compositor's server jobs.
         private readonly Queue<TaskCompletionSource> _updates = new();
 
         internal int Updates { get; private set; }
 
-        /// <summary>
-        /// Answers whether the pump is currently inside a UI-thread post.
-        /// Set by <see cref="FakeSource"/> so an update can record where it was
-        /// issued from.
-        /// </summary>
+        // Set by FakeSource so an update can record where it was issued from.
         internal Func<bool>? InsideResume { get; set; }
 
-        /// <summary>One entry per update: was it issued from inside a resume?</summary>
+        // One entry per update: was it issued from inside a resume?
         internal List<bool> UpdateSites { get; } = [];
 
         internal bool Disposed { get; private set; }
@@ -72,7 +46,6 @@ public sealed class CompositedFramePumpTests
 
         internal bool UpdateInFlight => _updates.Count > 0;
 
-        /// <summary>How many hand-overs this image has been given and not finished.</summary>
         internal int UpdatesInFlight => _updates.Count;
 
         public Task ImportCompleted => _import.Task;
@@ -104,11 +77,10 @@ public sealed class CompositedFramePumpTests
                 update.TrySetResult();
         }
 
-        /// <summary>Finishes every outstanding hand-over, oldest first.</summary>
         internal void CompleteAllUpdates()
         {
-            // Bounded rather than while-non-empty: completing one re-issues
-            // another inline, so draining to empty never terminates.
+            // Bounded: completing one re-issues another inline, so draining to
+            // empty never terminates.
             for (int outstanding = _updates.Count; outstanding > 0; outstanding--)
                 CompleteUpdate();
         }
@@ -130,10 +102,7 @@ public sealed class CompositedFramePumpTests
 
         internal FakeImage Latest => Images[^1];
 
-        /// <summary>
-        /// The real one disposes the drawing surface every import snapshots
-        /// into, which is why the pump may not do it under a live hand-over.
-        /// </summary>
+        // The real one disposes the drawing surface every import snapshots into.
         internal bool Disposed { get; private set; }
 
         public ICompositedImage Import(nint ntHandle, int width, int height)
@@ -153,11 +122,7 @@ public sealed class CompositedFramePumpTests
 
     private sealed class Rig
     {
-        /// <summary>
-        /// True while the rig is running a posted UI-thread action, which is
-        /// what stands in for "this is the UI thread" in a test with no
-        /// dispatcher of its own.
-        /// </summary>
+        // True while a posted action runs. Stands in for "on the UI thread".
         internal bool InsideResume { get; private set; }
 
         internal FakeSource Source { get; } = new();
@@ -166,28 +131,19 @@ public sealed class CompositedFramePumpTests
 
         internal List<nint> Closed { get; } = [];
 
-        /// <summary>How many times the loop asked to be resumed on the UI thread.</summary>
         internal int Resumes { get; private set; }
 
-        /// <summary>How many faults the pump raised.</summary>
         internal int Faults { get; private set; }
 
-        /// <summary>
-        /// Holds every resume instead of running it, so a test can stand where
-        /// the compositor's render thread stands: the hand-over is finished and
-        /// the loop has not been let back onto the UI thread yet.
-        /// </summary>
+        // Holds resumes instead of running them: the hand-over has finished
+        // but the loop is not back on the UI thread yet.
         internal bool HoldResumes { get; init; }
 
-        /// <summary>How many held resumes are waiting.</summary>
         internal int PendingResumes => _held.Count;
 
-        /// <summary>Lets the loop back onto the UI thread.</summary>
         internal void ReleaseResumes()
         {
-            // Draining rather than a foreach: a released resume runs the rest
-            // of the loop, which issues the next hand-over and can queue
-            // another one behind it.
+            // A released resume can queue another behind it.
             while (_held.Count > 0)
                 _held.Dequeue()();
         }
@@ -198,10 +154,8 @@ public sealed class CompositedFramePumpTests
 
         internal Rig()
         {
-            // The duplicate is a distinct value, because the whole point of
-            // duplicating is that this side stops depending on the producer's
-            // handle: a test that handed the same number back could not tell
-            // the two apart.
+            // The duplicate is a distinct value so tests can tell it from the
+            // producer's handle.
             Pump = new CompositedFramePump(
                 Source,
                 Acknowledged.Add,
@@ -210,10 +164,7 @@ public sealed class CompositedFramePumpTests
                 Closed.Add,
                 onFault: () => Faults++,
 
-                // Inline, which is what keeps the whole self-rescheduling loop
-                // steppable: the real one posts to Avalonia's dispatcher at the
-                // top of its queue, and a test with no dispatcher running would
-                // post into a queue nothing ever drains.
+                // Inline: no dispatcher runs here to drain a post.
                 resumeOnUiThread: action =>
                 {
                     Resumes++;
@@ -240,7 +191,7 @@ public sealed class CompositedFramePumpTests
         internal void Observe(int generation, nint handle = ProducerHandle) =>
             Pump.Observe(new Renderer.SharedTargetHandle(handle, Width, Height, generation));
 
-        /// <summary>Imports a generation and gets its update loop running.</summary>
+        // Imports a generation and gets its update loop running.
         internal FakeImage Adopt(int generation)
         {
             Observe(generation);
@@ -267,8 +218,7 @@ public sealed class CompositedFramePumpTests
         var rig = new Rig();
         rig.Observe(generation: 1);
 
-        // Closing sooner races the compositor's own open, which runs on its
-        // render thread and has no diagnostic for a handle vanishing under it.
+        // Closing sooner races the compositor's open on its render thread.
         rig.Closed.ShouldBeEmpty();
 
         rig.Source.Latest.CompleteImport();
@@ -281,9 +231,6 @@ public sealed class CompositedFramePumpTests
         var rig = new Rig();
         rig.Adopt(generation: 7);
 
-        // Observe runs once per pass of the shell's pump, which is hundreds of
-        // times a second: re-importing on each would build a fresh GPU image
-        // per pass for a texture that never changed.
         rig.Observe(7);
         rig.Observe(7);
 
@@ -296,10 +243,8 @@ public sealed class CompositedFramePumpTests
         var rig = new Rig();
         FakeImage image = rig.Adopt(generation: 1);
 
-        // The two sides invent nothing: the producer takes key 0 and releases
-        // key 1, so this side takes 1 and hands 0 back. Releasing the key you
-        // acquired instead deadlocks both sides on the following frame, with
-        // nothing anywhere reporting a disagreement.
+        // Producer takes key 0 and releases 1, so this side takes 1 and hands
+        // 0 back. Releasing the acquired key deadlocks both on the next frame.
         image.LastAcquireKey.ShouldBe((uint)Renderer.SharedConsumerKey);
         image.LastReleaseKey.ShouldBe((uint)Renderer.SharedProducerKey);
     }
@@ -310,7 +255,7 @@ public sealed class CompositedFramePumpTests
         var rig = new Rig();
         FakeImage image = rig.Adopt(generation: 1);
 
-        // Adopting fills the queue rather than issuing one: see HandOverDepth.
+        // Adopting fills the queue to HandOverDepth.
         image.Updates.ShouldBe(CompositedFramePump.HandOverDepth);
         image.CompleteUpdate();
         image.Updates.ShouldBe(CompositedFramePump.HandOverDepth + 1);
@@ -318,34 +263,13 @@ public sealed class CompositedFramePumpTests
         image.Updates.ShouldBe(CompositedFramePump.HandOverDepth + 2);
     }
 
-    /// <summary>
-    /// A finished hand-over is replaced at once, so one is always already
-    /// queued at the compositor.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>This is the whole of the composited viewport's frame rate.</b> An
-    /// update is a server job the compositor picks up on its own tick; with
-    /// only one in flight the next is not issued until the previous has
-    /// completed and the loop is back on the UI thread, which about half the
-    /// time is too late for the tick after and waits a whole refresh. Measured
-    /// in a real session, d3d11 and d3d12 alike: 40.5 hand-overs a second at
-    /// one deep, 60.5 at two, one constant apart.
-    /// </para>
-    /// <para>
-    /// <b>The count is asserted as a NUMBER and not only against the constant
-    /// itself</b>, which is the difference between this test biting and this
-    /// test agreeing with whatever the constant currently says. Written the
-    /// symbolic way it passed at a depth of one, where the thing it is named
-    /// for is exactly what has stopped being true. Two tests beside it do
-    /// notice a depth of one, but they notice it as a retirement that settled
-    /// one hand-over early; nothing but this says the queue has to be deeper
-    /// than the loop.
-    /// </para>
-    /// </remarks>
+    // With one hand-over in flight the next often misses the compositor's tick
+    // and waits a whole refresh: about 40 hand-overs a second against 60 at two.
     [Fact]
     public void The_queue_is_kept_full_so_the_compositor_never_idles()
     {
+        // Asserted as a number: comparing only against the constant would
+        // pass at a depth of one.
         CompositedFramePump.HandOverDepth.ShouldBeGreaterThan(1,
             "one hand-over in flight is one hand-over the compositor is waiting for, " +
             "and it idles a whole refresh about half the time");
@@ -376,9 +300,8 @@ public sealed class CompositedFramePumpTests
         rig.Pump.LiveGeneration.ShouldBe(2);
         rig.Pump.RetiredCount.ShouldBe(0);
 
-        // The RETIRED generation, never the live one. The renderer frees
-        // everything at or below the number it is given, so acknowledging the
-        // new one would free the resource the viewport is showing.
+        // The retired generation, not the live one: the renderer frees
+        // everything at or below the number it is given.
         rig.Acknowledged.ShouldBe([1]);
     }
 
@@ -391,17 +314,14 @@ public sealed class CompositedFramePumpTests
 
         rig.Observe(generation: 2);
 
-        // The compositor is inside the keyed-mutex bracket on this image right
-        // now. Disposing it here is the crash the whole retirement handshake
-        // exists to avoid, and the renderer must not be told it may free the
-        // resource either.
+        // The compositor is inside the keyed-mutex bracket on this image.
+        // Disposing it now crashes in the driver.
         first.Disposed.ShouldBeFalse();
         rig.Pump.RetiredCount.ShouldBe(1);
         rig.Acknowledged.ShouldBeEmpty();
 
-        // One of the two, so the claim is tested at the boundary it is about:
-        // a retired import owes a completion for every hand-over it was given,
-        // and settling on the first would free it under the second.
+        // Only one of the outstanding hand-overs: settling on the first would
+        // free the image under the second.
         first.CompleteUpdate();
         first.Disposed.ShouldBeFalse();
 
@@ -418,9 +338,8 @@ public sealed class CompositedFramePumpTests
         var rig = new Rig();
         FakeImage first = rig.Adopt(generation: 1);
 
-        // The new import adopts while the previous loop is still awaiting its
-        // last hand-over, so it finds one running and stands down. Nothing
-        // would ever start it again if the unwinding loop did not.
+        // The new import finds the old loop still running and stands down.
+        // The unwinding loop has to start it.
         FakeImage second = rig.Adopt(generation: 2);
         second.Updates.ShouldBe(0);
 
@@ -437,10 +356,8 @@ public sealed class CompositedFramePumpTests
         var rig = new Rig();
         FakeImage first = rig.Adopt(generation: 1);
 
-        // Two resizes inside one pass of the pump: generation 2 is never
-        // observed at all. The renderer releases at-or-below, so saying "done
-        // with 1" and then, on the next retirement, "done with 3" frees it -
-        // which is correct, because it was never imported.
+        // Two resizes in one pass: generation 2 is never observed. The renderer
+        // releases at-or-below, so the next acknowledgement frees it.
         rig.Adopt(generation: 3);
         first.CompleteAllUpdates();
 
@@ -470,9 +387,7 @@ public sealed class CompositedFramePumpTests
         var pump = new CompositedFramePump(
             source, _ => { }, NullLogger.Instance, _ => 0, _ => { });
 
-        // The producer retired its handle between the publish and here, which
-        // is a resize that outran the shell. There is nothing to import and
-        // nothing to fix; the next generation is already on its way.
+        // The producer retired its handle after publishing: a resize outran the shell.
         pump.Observe(new Renderer.SharedTargetHandle(ProducerHandle, Width, Height, 2));
 
         source.Images.ShouldBeEmpty();
@@ -500,10 +415,7 @@ public sealed class CompositedFramePumpTests
         int taken = image.Updates;
         rig.Pump.SetVisible(false);
 
-        // Every outstanding hand-over completes; nothing schedules another. A
-        // minimised window would otherwise copy a full-screen texture per
-        // vsync for something nobody can see. All of them, because the loop
-        // ends when the last one lands rather than when the first does.
+        // All of them: the loop ends when the last one lands.
         image.CompleteAllUpdates();
         image.Updates.ShouldBe(taken);
         rig.Pump.IsPumping.ShouldBeFalse();
@@ -538,15 +450,9 @@ public sealed class CompositedFramePumpTests
 
         rig.Pump.Stop();
 
-        // The shell clears the viewport's host before it stops the session, so
-        // the producer is still there to release the key this hand-over is
-        // waiting on. Disposing under it would not be waiting, it would be the
-        // crash.
+        // The producer is still there to release the key this hand-over waits on.
         image.Disposed.ShouldBeFalse();
 
-        // Every one of them: a stop that waited for the first hand-over and
-        // freed the image under the second would be the same crash, one queue
-        // slot along.
         image.CompleteUpdate();
         image.Disposed.ShouldBeFalse();
 
@@ -555,21 +461,8 @@ public sealed class CompositedFramePumpTests
         rig.Acknowledged.ShouldBe([1]);
     }
 
-    // --- The compositor half, which a re-parent takes with it ----------------
-
-    /// <summary>
-    /// The drawing surface goes with the pump, and not one instant sooner.
-    /// </summary>
-    /// <remarks>
-    /// <b>This is the defect a dockable viewport is most likely to ship
-    /// with.</b> The pane is detached and re-attached by every dock drag, and
-    /// the viewport used to dispose its drawing surface at the moment of
-    /// detach - which was safe while a detach only ever meant a session ending,
-    /// and is a disposal under a live keyed-mutex bracket once it can also mean
-    /// a re-dock. The pending hand-over then faults and the fault is reported as
-    /// the composited viewport having failed, on every re-dock, on a viewport
-    /// that is working perfectly.
-    /// </remarks>
+    // A dock drag detaches and re-attaches the pane. Disposing the surface at
+    // detach would be a disposal under a live keyed-mutex bracket.
     [Fact]
     public void The_source_is_released_only_after_the_last_hand_over_has_finished()
     {
@@ -590,9 +483,6 @@ public sealed class CompositedFramePumpTests
     [Fact]
     public void A_pump_that_never_imported_anything_releases_its_source_at_once()
     {
-        // A viewport detached before the first frame arrived: there is nothing
-        // to wait for, and leaving the surface alive would leak one per launch
-        // of a session that was closed immediately.
         var rig = new Rig();
 
         rig.Pump.Stop();
@@ -603,10 +493,7 @@ public sealed class CompositedFramePumpTests
     [Fact]
     public void A_superseded_generation_does_not_release_the_source_under_the_live_one()
     {
-        // A resize retires an import while the pump keeps running on the next
-        // one. The source outlives every import by construction, so settling a
-        // retired one must not take it: the live import is still snapshotting
-        // into that very surface.
+        // The live import still snapshots into the source's surface.
         var rig = new Rig();
         FakeImage first = rig.Adopt(generation: 1);
 
@@ -618,31 +505,19 @@ public sealed class CompositedFramePumpTests
         rig.Pump.LiveGeneration.ShouldBe(2);
     }
 
-    /// <summary>
-    /// The source waits for EVERY import, not merely for the live one.
-    /// </summary>
-    /// <remarks>
-    /// A detach that lands mid-resize has a retired generation still inside its
-    /// hand-over and a fresh one already imported. Releasing the surface when
-    /// the live import settles would free it under the retired one, which is
-    /// the same crash one level down and is invisible from either side.
-    /// </remarks>
     [Fact]
     public void The_source_waits_for_a_retired_import_as_well_as_the_live_one()
     {
         var rig = new Rig();
         FakeImage first = rig.Adopt(generation: 1);
 
-        // A resize: the second import is adopted while the first is still
-        // inside the hand-over it started.
+        // A detach mid-resize: the first import is still inside its hand-over.
         rig.Observe(generation: 2);
         FakeImage second = rig.Source.Latest;
         second.CompleteImport();
         first.UpdateInFlight.ShouldBeTrue();
 
-        // The live import settles immediately - it never got a loop of its own,
-        // because the first one's is still running - and the retired one does
-        // not.
+        // The live import never got a loop of its own, so it settles at once.
         rig.Pump.Stop();
         second.Disposed.ShouldBeTrue();
         rig.Source.Disposed.ShouldBeFalse();
@@ -654,16 +529,9 @@ public sealed class CompositedFramePumpTests
         rig.Acknowledged.ShouldBe([2, 1]);
     }
 
-    // --- Where the loop resumes ----------------------------------------------
-    //
-    // A hand-over's task is completed by the compositor on ITS OWN render
-    // thread, so everything after the await is on the wrong thread until the
-    // loop is posted back. Three things depend on that post: the next
-    // UpdateAsync (Avalonia verifies UI-thread access and throws otherwise),
-    // the retirement bookkeeping (UI-thread state), and the fault report (a
-    // shell handler). None of the three announces the mistake - a compositor
-    // call from the wrong thread is an exception in a task nobody awaits, and
-    // the other two are a data race - so each has a test.
+    // The compositor completes a hand-over on its own render thread. The next
+    // UpdateAsync, the retirement bookkeeping and the fault report all need
+    // the loop posted back to the UI thread first.
 
     [Fact]
     public void The_next_hand_over_waits_for_the_loop_to_be_resumed_on_the_ui_thread()
@@ -672,9 +540,6 @@ public sealed class CompositedFramePumpTests
         FakeImage image = rig.Adopt(generation: 1);
         image.Updates.ShouldBe(CompositedFramePump.HandOverDepth);
 
-        // Completed on the compositor's render thread. Issuing the next one
-        // from there reaches Compositor.PostServerJob, which verifies UI-thread
-        // access.
         image.CompleteUpdate();
         image.Updates.ShouldBe(CompositedFramePump.HandOverDepth);
         rig.PendingResumes.ShouldBe(1);
@@ -690,9 +555,6 @@ public sealed class CompositedFramePumpTests
         FakeImage first = rig.Adopt(generation: 1);
         rig.Observe(generation: 2);
 
-        // The bracket is over, so the dispose is safe - and it is UI-thread
-        // work, and so is the acknowledgement that frees the producer's
-        // resource. Neither may happen from the compositor's thread.
         first.CompleteAllUpdates();
         first.Disposed.ShouldBeFalse();
         rig.Acknowledged.ShouldBeEmpty();
@@ -723,9 +585,6 @@ public sealed class CompositedFramePumpTests
         var rig = new Rig();
         FakeImage image = rig.Adopt(generation: 1);
 
-        // One per completed hand-over and not one per frame: the post is the
-        // loop's own, so a second one per turn would be a second job in the
-        // dispatcher for nothing.
         rig.Resumes.ShouldBe(0);
         image.CompleteUpdate();
         rig.Resumes.ShouldBe(1);
@@ -733,27 +592,9 @@ public sealed class CompositedFramePumpTests
         rig.Resumes.ShouldBe(2);
     }
 
-    /// <summary>
-    /// Every hand-over after the first is issued from INSIDE the UI-thread
-    /// post, never after it has returned.
-    /// </summary>
-    /// <remarks>
-    /// <b>This is the test the four ordering tests beside it did not amount
-    /// to, and the defect it catches shipped.</b> The pump used to await a
-    /// TaskCompletionSource that the posted action completed, on the reasoning
-    /// that completing it inline would resume the loop inline on the UI thread.
-    /// That holds only when the awaiter has already attached: a resume posted
-    /// at the highest dispatcher priority usually runs FIRST, so the await saw
-    /// an already-completed task and continued synchronously on the thread it
-    /// was trying to leave. The next <c>UpdateAsync</c> then called
-    /// <c>Dispatcher.VerifyAccess</c> from the compositor's render thread and
-    /// the pump reported a fault on a viewport that was working perfectly.
-    /// <para>
-    /// The four tests beside this one all pass against that code, because they
-    /// assert that a resume HAPPENS and in what order, never where the work
-    /// after it runs. This asserts the latter, which is the actual invariant.
-    /// </para>
-    /// </remarks>
+    // The ordering tests above check that a resume happens. This checks where
+    // the work after it runs: awaiting a task the post completes can continue
+    // on the compositor's thread if the post ran before the awaiter attached.
     [Fact]
     public void Every_hand_over_after_the_first_is_issued_from_inside_the_UI_thread_post()
     {
@@ -765,9 +606,7 @@ public sealed class CompositedFramePumpTests
 
         image.Updates.ShouldBeGreaterThan(1, "the loop must have re-issued");
 
-        // The first HandOverDepth are issued by StartLoop, which the shell only
-        // ever calls on the UI thread; every later one is the loop re-issuing
-        // itself.
+        // The first HandOverDepth come from StartLoop, not from a resume.
         image.UpdateSites.Count.ShouldBe(image.Updates);
         image.UpdateSites.Skip(CompositedFramePump.HandOverDepth).ShouldAllBe(inside => inside,
             "a hand-over issued after the post returned is issued off the UI thread, " +

@@ -5,19 +5,11 @@
              x:DataType="shell:ShellModel"
              Background="{StaticResource SpectraBgPanel}">
 
-  <!-- The open project's maps: the manifest's order, then anything on disk
-       the manifest does not name, marked instead of silently adopted. A
-       panel rather than a menu, and not only for reachability: a menu's
-       dropdown would cross the viewport, where it is invisible.
-
-       Rows are dense and flat, the same idiom as the scene tree beneath it.
-       A bordered rounded tile per map is a card grid, which costs three times
-       the height and reads as a web page rather than a tool. -->
+  <!-- The project's maps in manifest order, then any on disk the manifest
+       does not name. -->
 
   <UserControl.Resources>
-    <!-- Shared by every row; DataContext arrives from the row that opened it.
-         Only verbs that work: "set as startup" disappears on the row that
-         already is, instead of sitting disabled. -->
+    <!-- Shared by every row; DataContext comes from the row that opened it. -->
     <ContextMenu x:Key="MapMenu" x:DataType="shell:ProjectMapRow">
       <MenuItem Header="Open" Click="OnMenuOpen" />
       <MenuItem Header="Set as startup map" Click="OnMenuSetStartup"
@@ -64,9 +56,7 @@
   </UserControl.Styles>
 
   <DockPanel>
-    <!-- No panel header: the dock's tool chrome already names this "Maps".
-         With no project open the pane cannot collapse (its dock reserves the
-         space), so it says why it is empty instead of being blank. -->
+    <!-- The dock reserves this pane's space even with no project open. -->
     <TextBlock DockPanel.Dock="Top" Margin="12,10" TextWrapping="Wrap"
                Text="No project open. Maps saved into a project's Maps folder are listed here."
                FontSize="{StaticResource SpectraFontSecondary}"
@@ -82,10 +72,7 @@
                     ContextMenu="{StaticResource MapMenu}"
                     ToolTip.Tip="{Binding RelativePath}">
               <Grid ColumnDefinitions="10,*,Auto" Margin="4,0,8,0">
-                <!-- The startup dot: which map the project boots. -->
-                <!-- 6x6 radius 3: the same true circle as the dirty dot. At
-                     5px with a 2px radius this was a rounded SQUARE beside a
-                     circle, two geometries for one idiom. -->
+                <!-- Startup map dot. 6x6 radius 3, same circle as the dirty dot. -->
                 <Border Grid.Column="0" Width="6" Height="6"
                         CornerRadius="3"
                         HorizontalAlignment="Left" VerticalAlignment="Center"

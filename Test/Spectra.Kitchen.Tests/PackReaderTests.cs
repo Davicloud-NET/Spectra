@@ -12,17 +12,9 @@ using System.Runtime.InteropServices;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The reader half of the container: what a mount refuses, what a lookup answers,
-/// and the lifetime rule that stops a span into a mapped view outliving the view.
+/// The pack reader: what a mount refuses, what a lookup answers, and the
+/// lifetime rule that stops a span outliving its mapped view.
 /// </summary>
-/// <remarks>
-/// The packs here are written by <see cref="PackWriter"/> rather than hand-built,
-/// which is the right direction for these tests and the wrong one for
-/// <see cref="PackWriterTests"/>: the writer is already pinned against a
-/// hand-written parse of the spec, so a reader checked against it is checked
-/// against the spec transitively. The corruption cases edit those bytes
-/// afterwards, where the second opinion is the digest rather than a second parser.
-/// </remarks>
 public class PackReaderTests : IDisposable
 {
     private readonly string _root = Path.Combine(
@@ -34,8 +26,7 @@ public class PackReaderTests : IDisposable
 
     public void Dispose()
     {
-        // Every source first: a mapped view keeps its file open, so a directory
-        // holding one cannot be deleted on Windows.
+        // Sources first: a mapped view keeps its file open on Windows.
         for (int i = _open.Count - 1; i >= 0; i--) _open[i].Dispose();
 
         try
@@ -44,8 +35,7 @@ public class PackReaderTests : IDisposable
         }
         catch (IOException)
         {
-            // A leaked mapping would land here, and failing the test on the
-            // cleanup rather than on the assertion helps nobody.
+            // A leaked mapping lands here. Don't fail the test on cleanup.
         }
 
         GC.SuppressFinalize(this);
@@ -54,10 +44,8 @@ public class PackReaderTests : IDisposable
     [Fact]
     public void Two_identical_mount_lists_produce_byte_identical_resolution()
     {
-        // The determinism oracle, in the same discipline the CSG ones follow: two
-        // installs assembled the same way must not merely serve the same bytes,
-        // they must agree about WHICH pack served them, or a patch that appears
-        // not to apply is indistinguishable from one that did.
+        // Same bytes is not enough: the two stacks must also agree on which pack
+        // served them.
         WriteBasePack();
         WritePatchPack();
         WriteModPack();
@@ -92,9 +80,6 @@ public class PackReaderTests : IDisposable
     [Fact]
     public void A_blob_stays_valid_while_its_handle_is_held_and_the_unmap_waits_for_the_last_reference()
     {
-        // Deterministic rather than timing based: the unmount is REQUESTED, and
-        // the two observations either side of the release are what prove it was
-        // deferred rather than merely slow.
         byte[] payload = Bytes(64, seed: 5);
         string path = WritePack("hold.spack", writer => writer.Add("Textures/held.png", PackEntryKind.Image, payload));
 
@@ -138,14 +123,11 @@ public class PackReaderTests : IDisposable
             first!.Length.ShouldBe(payload.Length);
             first.Span.ToArray().ShouldBe(payload);
 
-            // Two opens of one entry land on the same ADDRESS, which no copying
-            // reader can do: two pooled rents are two different buffers. That is
-            // the zero-copy claim stated as something a test can see.
+            // Zero-copy: two opens of one entry share an address.
             SameAddress(first.Span, second!.Span).ShouldBeTrue();
         }
 
-        // And the contrast, so the assertion above is not vacuously true of any
-        // reader: the fallback copies, so its two blobs are two buffers.
+        // Control: the stream fallback copies, so its two blobs differ.
         var streamed = Track(new StreamPackSource(NullLogger.Instance, path));
         streamed.TryOpen("Models/crate.smodel", out ContentBlob? copyA).ShouldBeTrue();
         streamed.TryOpen("Models/crate.smodel", out ContentBlob? copyB).ShouldBeTrue();
@@ -189,8 +171,7 @@ public class PackReaderTests : IDisposable
         source.TryOpen("Textures/absent.png", out ContentBlob? nothing).ShouldBeFalse();
         nothing.ShouldBeNull();
 
-        // A path no caller could ever have meant is a miss too, not an argument
-        // exception thrown into the middle of a frame.
+        // An escaping path is a miss too, not an ArgumentException.
         source.TryOpen("../outside.png", out ContentBlob? escaped).ShouldBeFalse();
         escaped.ShouldBeNull();
     }
@@ -221,8 +202,7 @@ public class PackReaderTests : IDisposable
         mapped.Message.ShouldContain("truncated");
         mapped.Message.ShouldContain(whole.Length.ToString());
 
-        // The header carries the size so truncation is caught from the file's own
-        // bytes, which is why the fallback catches it identically with no stat.
+        // The header carries the size, so the fallback catches it with no stat.
         Should.Throw<PackMountException>(() => new StreamPackSource(NullLogger.Instance, path))
             .Message.ShouldContain("truncated");
     }
@@ -249,8 +229,7 @@ public class PackReaderTests : IDisposable
         whole[at] ^= 0xFF;
         File.WriteAllBytes(path, whole);
 
-        // Caught at mount, not at the read that happens to want that entry: a pack
-        // whose bytes cannot be trusted must not become a source at all.
+        // Caught at mount, not at the read that wants that entry.
         Should.Throw<PackMountException>(() => new PackSource(NullLogger.Instance, path))
             .Message.ShouldContain("digest");
         Should.Throw<PackMountException>(() => new StreamPackSource(NullLogger.Instance, path))
@@ -277,7 +256,7 @@ public class PackReaderTests : IDisposable
 
         byte[] whole = File.ReadAllBytes(path);
         const ushort Demanded = 99;
-        whole[0x04] = (byte)Demanded;           // FormatVersion, so the pack stays self-consistent
+        whole[0x04] = (byte)Demanded;           // FormatVersion, kept consistent
         whole[0x05] = 0;
         whole[0x06] = (byte)Demanded;           // MinReaderVersion
         whole[0x07] = 0;
@@ -298,9 +277,7 @@ public class PackReaderTests : IDisposable
         whole[0x08] &= unchecked((byte)~(uint)PackFlags.EntriesSortedByAssetId);
         File.WriteAllBytes(path, whole);
 
-        // Refused rather than searched: a binary search over an unsorted table
-        // misses entries silently, which presents as content that is
-        // intermittently absent rather than as a corrupt file.
+        // A binary search over an unsorted table misses entries without an error.
         Should.Throw<PackMountException>(() => new PackSource(NullLogger.Instance, path))
             .Message.ShouldContain(nameof(PackFlags.EntriesSortedByAssetId));
     }
@@ -326,12 +303,10 @@ public class PackReaderTests : IDisposable
         stack.TryOpen("Textures/wall_brick.png", out ContentBlob? hidden).ShouldBeFalse();
         hidden.ShouldBeNull();
 
-        // The base pack still has it: a tombstone is a decision the stack makes,
-        // not an edit to the pack underneath.
+        // The base pack itself still has it.
         var beneath = Track(new PackSource(NullLogger.Instance, Path.Combine(_root, "base.spack")));
         beneath.Exists("Textures/wall_brick.png").ShouldBeTrue();
 
-        // Nothing else is touched, and the decision is on the record.
         stack.Exists("Textures/floor_tile.png").ShouldBeTrue();
         stack.Exists("Textures/mod_only.png").ShouldBeTrue();
 
@@ -557,8 +532,6 @@ public class PackReaderTests : IDisposable
         return disposable;
     }
 
-    // Deterministic content, so a byte comparison measures the reader rather than
-    // the payloads.
     private static byte[] Bytes(int length, int seed = 0)
     {
         var bytes = new byte[length];

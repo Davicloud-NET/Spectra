@@ -6,22 +6,9 @@ using System;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// The standalone path's <see cref="IRenderSurface"/>: a Silk.NET window,
-/// presented as nothing more than a handle, a context and a size.
+/// The standalone path's <see cref="IRenderSurface"/>: a Silk.NET window
+/// exposed as a handle, a context and a size.
 /// </summary>
-/// <remarks>
-/// <b>Deliberately the thinnest possible adapter.</b> Every property forwards,
-/// nothing is cached, and the resize event is passed straight through, so the
-/// standalone path behaves exactly as it did when the renderer took an
-/// <c>IWindow</c> directly. That equivalence is the point of introducing the
-/// seam this way: the refactor can be verified by "nothing changed" rather than
-/// by reasoning about what might have.
-/// <para>
-/// The window's title, cursor, fullscreen state and event pump stay with
-/// <c>Engine</c>, which is what actually owns them. None of them appears here,
-/// because none of them is something an embedded host would supply.
-/// </para>
-/// </remarks>
 public sealed class WindowRenderSurface : IRenderSurface
 {
     private readonly IWindow _window;
@@ -38,12 +25,7 @@ public sealed class WindowRenderSurface : IRenderSurface
     public event Action<Vector2D<int>>? Resized;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Reports <see cref="RenderSurfaceKind.None"/> rather than guessing when
-    /// the window exposes no native handle the engine knows: an OpenGL window on
-    /// any platform legitimately has none to offer, and the GL backend does not
-    /// ask.
-    /// </remarks>
+    // None is a normal answer: an OpenGL window may expose no native handle.
     public RenderSurfaceKind Kind
     {
         get
@@ -79,11 +61,7 @@ public sealed class WindowRenderSurface : IRenderSurface
     /// <inheritdoc/>
     public Vector2D<int> PixelSize => _window.FramebufferSize;
 
-    /// <summary>
-    /// The window behind this surface, for the engine code that legitimately
-    /// owns it: the title, the cursor, the window-mode latch and the event pump.
-    /// Nothing in <c>Graphics/</c> reads it.
-    /// </summary>
+    /// <summary>The window behind this surface, for the engine code that owns its title, cursor and event pump.</summary>
     public IWindow Window => _window;
 
     private void OnFramebufferResize(Vector2D<int> size) => Resized?.Invoke(size);

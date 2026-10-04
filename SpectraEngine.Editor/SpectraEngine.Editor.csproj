@@ -5,36 +5,18 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
-    <!--
-      Avalonia's XAML compiler runs over this project, so unsafe blocks are the
-      only thing that needs saying explicitly: the Win32 viewport window is
-      P/Invoke, and it is the one place in the shell that touches a handle.
-    -->
+    <!-- The Win32 viewport window is P/Invoke. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!--
-    The shell is a peer of the demo executable, not a layer above it: both are
-    HOSTS. It references the engine and the editing layer directly, because the
-    editor runs the engine in-process (ROADMAP §10) and there is no IPC
-    boundary to marshal across.
-  -->
+  <!-- The editor runs the engine in process, so it references it directly. -->
   <ItemGroup>
     <ProjectReference Include="..\SpectraEngine.Core\SpectraEngine.Core.csproj" />
     <ProjectReference Include="..\SpectraEngine.Editing\SpectraEngine.Editing.csproj" />
-    <!--
-      The built-in logic entities, so the shell's catalogue and its future
-      property panel see the same classes a game does.
-    -->
     <ProjectReference Include="..\SpectraEngine.Entities\SpectraEngine.Entities.csproj" />
     <ProjectReference Include="..\SpectraEngine.Physics.Box3D\SpectraEngine.Physics.Box3D.csproj" />
     <ProjectReference Include="..\SpectraShade.Compiler\SpectraShade.Compiler.csproj" />
-    <!--
-      The cook, hosted IN PROCESS. That is what the library split was for and
-      why the Kitchen is bound by AOT-safe dependencies regardless of its own
-      CLI: a cook that only runs out of process cannot back a Validate Cooked
-      action, and it could not back cooked-accurate preview either.
-    -->
+    <!-- The cook runs in process, for Validate Cooked. -->
     <ProjectReference Include="..\Spectra.Kitchen\Spectra.Kitchen.csproj" />
   </ItemGroup>
 
@@ -54,12 +36,7 @@
     <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
 
-  <!--
-    The interop probe creates real D3D11, D3D12 and D3D11On12 textures and asks
-    the compositor to import them, so the shell names these three directly. It
-    is host-side measurement rather than engine code: Core's Graphics folder is
-    under a convention test that bans naming a window, and the probe needs one.
-  -->
+  <!-- The interop probe creates D3D11, D3D12 and D3D11On12 textures itself. -->
   <ItemGroup>
     <PackageReference Include="Silk.NET.Direct3D11" />
     <PackageReference Include="Silk.NET.Direct3D12" />

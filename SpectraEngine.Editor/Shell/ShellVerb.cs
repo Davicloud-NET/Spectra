@@ -5,9 +5,7 @@ using SpectraEngine.Editing.Hosting;
 
 namespace SpectraEngine.Editor.Shell;
 
-/// <summary>
-/// Which family of existing verb a ribbon control resolves to.
-/// </summary>
+/// <summary>Which family of verb a shell control resolves to.</summary>
 public enum ShellVerbKind
 {
     /// <summary>Nothing. Never valid on a roster item.</summary>
@@ -39,34 +37,19 @@ public enum ShellVerbKind
 
     /// <summary>
     /// The snap increment field, through <c>SceneEditorHost.SetSnapIncrement</c>.
-    /// The one ribbon control whose verb carries a NUMBER rather than naming a
-    /// state, which is exactly why it is a field and not a button.
     /// </summary>
     SnapIncrement,
 
     /// <summary>
-    /// Place an entity, through <c>EditorSession.InsertEntity</c>.
+    /// Place an entity, through <c>EditorSession.InsertEntity</c>. Carries no
+    /// class: entity classes come from the project's <c>.sentdef</c>, so the
+    /// class is resolved from the session when the button is pressed.
     /// </summary>
-    /// <remarks>
-    /// <b>The one verb here that carries no payload and cannot.</b> Every other
-    /// kind names something this build knows at compile time; an entity class
-    /// comes from the project's own <c>.sentdef</c>, so the roster - which is
-    /// compile-time data - can name the CONTROL and not the class. The class is
-    /// session state, resolved when the button is pressed: the split's main
-    /// half places the last one used and its caret opens the list.
-    /// </remarks>
     InsertEntity,
 
     /// <summary>
     /// A document verb: a project, a level, a save. See <see cref="DocumentVerb"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>These are the window's own, not the editor's</b>, which is why they
-    /// were the last to reach the palette: everything else here resolves to an
-    /// enum some other assembly already declared, and a document verb resolves
-    /// to a menu handler in this file's own window. Naming them anyway is what
-    /// makes "save" reachable by typing it.
-    /// </remarks>
     Document,
 
     /// <summary>Enter or leave play mode. See <see cref="PlayVerb"/>.</summary>
@@ -116,14 +99,8 @@ public enum DocumentVerb
     Exit,
 }
 
-/// <summary>
-/// Play mode, as a pair of SET verbs.
-/// </summary>
-/// <remarks>
-/// Two rows rather than one toggle, for the reason every other two-way choice
-/// in this shell is a pair: a toggle sent against a stale snapshot flips the
-/// wrong way exactly when somebody clicks fastest.
-/// </remarks>
+/// <summary>Play mode, as a pair of set verbs.</summary>
+// Not a toggle: one sent against a stale snapshot flips the wrong way.
 public enum PlayVerb
 {
     /// <summary>Enter play mode.</summary>
@@ -161,7 +138,7 @@ public enum PanelId
     KeyboardReference,
 }
 
-/// <summary>The ribbon's two states, as SET verbs.</summary>
+/// <summary>The ribbon's two states, as set verbs.</summary>
 public enum RibbonVerb
 {
     /// <summary>Show the tab strip alone.</summary>
@@ -202,16 +179,9 @@ public enum WorkspaceCommand
 }
 
 /// <summary>
-/// A two-way choice the ribbon offers. Each resolves to one of a PAIR of
-/// existing idempotent verbs, chosen from the state the shell is displaying.
+/// A two-way choice the ribbon offers. Each resolves to one of a pair of
+/// set verbs, chosen from the state the shell is displaying.
 /// </summary>
-/// <remarks>
-/// <b>A pair of set verbs, never a toggle verb.</b> A toggle sent against a
-/// snapshot one publish stale flips the wrong way exactly when the user clicks
-/// fastest; a verb that names its target state cannot. The keyboard keeps the
-/// toggles, which is right, because a key press carries no displayed state to
-/// disagree with.
-/// </remarks>
 public enum ShellToggle
 {
     /// <summary>World or local drag axes.</summary>
@@ -224,26 +194,9 @@ public enum ShellToggle
     Snap,
 }
 
-/// <summary>
-/// Exactly one existing editor verb, named by a ribbon control.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>A closed union rather than a delegate or a string, because the roster is
-/// the thing the tests read.</b> The defect that killed the previous tab strip -
-/// two tabs carrying the same verbs - is only mechanically checkable if a verb
-/// is a VALUE that compares equal to itself across tabs, so this is a record
-/// struct and <c>RibbonLayoutTests</c> compares it. A click handler carrying a
-/// lambda would make the same defect invisible again.
-/// </para>
-/// <para>
-/// <b>Nothing here is a new verb.</b> Every case names a member of an enum that
-/// already existed and already had a keyboard route and a menu route; the
-/// ribbon is a third route onto the same <c>SceneEditorHost.Apply</c> surface,
-/// never a second command path. That is the property <c>ROADMAP.md</c>'s H4
-/// bullet asks to protect.
-/// </para>
-/// </remarks>
+/// <summary>One editor verb, named by a ribbon control or a palette row.</summary>
+// A value, not a delegate: RibbonLayoutTests compares verbs across tabs to
+// catch one verb sitting on two of them.
 public readonly record struct ShellVerb(
     ShellVerbKind Kind,
     EditorHostCommand Host,

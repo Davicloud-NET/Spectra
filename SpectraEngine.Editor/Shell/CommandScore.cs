@@ -4,18 +4,6 @@ namespace SpectraEngine.Editor.Shell;
 /// How well a typed query matches a command's name: a subsequence match, scored
 /// so that word starts and runs beat scattered letters.
 /// </summary>
-/// <remarks>
-/// <para>
-/// A pure type with no Avalonia in it, because the ranking is the half of a
-/// palette that is worth testing and the half that is easiest to get subtly
-/// wrong. "ib" should reach "Insert block" ahead of "Grid: alw<b>a</b>ys", and
-/// no amount of looking at a list tells you whether it does.
-/// </para>
-/// <para>
-/// Subsequence rather than substring, because a palette's whole value is that
-/// you type the letters you remember rather than a prefix you do not.
-/// </para>
-/// </remarks>
 public static class CommandScore
 {
     /// <summary>A query that matched nothing.</summary>
@@ -46,11 +34,8 @@ public static class CommandScore
                 continue;
             }
 
-            // A WORD START IS PREFERRED OVER THE NEAREST LETTER, because a
-            // greedy scan takes the wrong one: "fe" matched the e of "Frame"
-            // rather than the one starting "everything", so "Finer grid" beat
-            // "Frame everything" at its own initials. Falling back to the first
-            // occurrence keeps plain subsequences ("snap") working.
+            // Prefer a word start over the nearest letter: "fe" should take the
+            // e of "everything" in "Frame everything", not the e of "Frame".
             int found = IndexOf(candidate, wanted, at, wordStartOnly: true);
             if (found < 0)
             {
@@ -62,9 +47,6 @@ public static class CommandScore
                 return NoMatch;
             }
 
-            // A letter that starts a word is what a person actually remembers,
-            // so "ib" reaching "Insert block" has to beat the same two letters
-            // scattered through a longer name.
             bool startsWord = StartsWord(candidate, found);
             run = found == at ? run + 1 : 0;
 
@@ -76,8 +58,7 @@ public static class CommandScore
             at = found + 1;
         }
 
-        // A short name that matched is a better answer than a long one that
-        // matched the same way: "Undo" over "Insert an unlit decal".
+        // Shorter names win ties.
         return score - (candidate.Length / 8);
     }
 

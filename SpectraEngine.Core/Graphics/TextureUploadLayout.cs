@@ -2,16 +2,7 @@ using System;
 
 namespace SpectraEngine.Core.Graphics;
 
-/// <summary>
-/// The payload rearrangements the backends share on the way from a
-/// <see cref="TextureUploadDesc"/> to a GPU resource.
-/// </summary>
-/// <remarks>
-/// Three backends and one set of rules. Each of these was written twice before
-/// this file existed - the RGB expansion on both D3D backends, the tight repack
-/// nowhere at all because nothing had a padded pitch yet - and the second copy
-/// is where a fix does not land.
-/// </remarks>
+// Payload rearrangements the backends share when uploading a TextureUploadDesc.
 internal static class TextureUploadLayout
 {
     internal static void CopyRows(ReadOnlySpan<byte> source, int sourcePitch, Span<byte> destination,
@@ -30,23 +21,11 @@ internal static class TextureUploadLayout
             }
         }
     }
-    /// <summary>The bytes one level actually occupies when its rows are packed tight.</summary>
     internal static int TightLevelSize(TextureFormat format, in TextureMipDesc mip) =>
         TextureFormatInfo.RowCount(format, mip.Height) * TextureFormatInfo.TightRowPitch(format, mip.Width);
 
-    /// <summary>
-    /// One level's bytes with no padding between rows, copying only when the
-    /// declared pitch is not already the tight one.
-    /// </summary>
-    /// <remarks>
-    /// <b>OpenGL has nowhere to put a padded pitch for a compressed level.</b>
-    /// <c>glCompressedTexImage2D</c> takes a byte COUNT rather than a stride,
-    /// and the unpack state that would express one
-    /// (<c>GL_UNPACK_COMPRESSED_BLOCK_*</c>) is a different mechanism per
-    /// format that no other path here uses. Repacking is one rule for every
-    /// format and every level, and it costs nothing in the common case: a
-    /// tightly written file returns a slice of the payload with no copy at all.
-    /// </remarks>
+    // One level with no row padding. Copies only when the pitch is not already tight.
+    // For GL: glCompressedTexImage2D takes a byte count, not a stride.
     internal static ReadOnlySpan<byte> TightLevel(
         ReadOnlySpan<byte> payload, TextureFormat format, in TextureMipDesc mip, out byte[]? repacked)
     {
@@ -68,25 +47,8 @@ internal static class TextureUploadLayout
         return repacked;
     }
 
-    /// <summary>
-    /// Rewrites an <see cref="TextureFormat.Rgb8"/> payload as RGBA8, every
-    /// level tightly packed into ONE buffer.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// No API here has a 24-bit texture format, so this is not an optimisation
-    /// that could be skipped. One contiguous buffer rather than an array per
-    /// level so the whole upload still pins under a single <c>fixed</c>: D3D11
-    /// wants a pointer per subresource and D3D12 wants one base pointer, and
-    /// pinning a dozen separate arrays to serve either is a dozen chances to
-    /// let one go early.
-    /// </para>
-    /// <para>
-    /// Alpha is filled with 255. An RGB image has no coverage information, and
-    /// leaving the channel at zero makes every texel fully transparent, which
-    /// renders as nothing at all on any surface that reads alpha.
-    /// </para>
-    /// </remarks>
+    // Rgb8 to RGBA8, alpha 255: no backend has a 24-bit texture format.
+    // One buffer for every level, so the upload pins under a single fixed.
     internal static byte[] ExpandRgbToRgba(
         ReadOnlySpan<byte> payload, ReadOnlySpan<TextureMipDesc> mips, out TextureMipDesc[] expandedMips)
     {
@@ -123,10 +85,7 @@ internal static class TextureUploadLayout
         return expanded;
     }
 
-    /// <summary>
-    /// Packs a software-built mip chain into one buffer with tight pitches, so
-    /// it can be uploaded through the same per-mip path a cooked chain takes.
-    /// </summary>
+    // Packs a software-built mip chain into one buffer with tight pitches.
     internal static byte[] Flatten(
         TextureFormat format,
         System.Collections.Generic.IReadOnlyList<(byte[] Pixels, int Width, int Height)> levels,

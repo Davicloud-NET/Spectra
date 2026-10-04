@@ -7,78 +7,36 @@ using System.Numerics;
 namespace Spectra.Kitchen.Models;
 
 /// <summary>
-/// Where an external glTF buffer's bytes come from.
+/// Fetches an external glTF buffer by content-relative path. Returns null when
+/// nothing is there.
 /// </summary>
-/// <param name="contentPath">
-/// The buffer's URI, already joined against the model's own folder and
-/// normalised to a content-relative path.
-/// </param>
-/// <returns>The bytes, or null when nothing is there.</returns>
-/// <remarks>
-/// A delegate rather than a filesystem call inside the reader, because the ONE
-/// way a cook rule may reach a byte is <c>IRuleContext</c>: reading a sidecar
-/// <c>.bin</c> any other way would be an input the rule did not declare, and the
-/// dependency set would then be smaller than the accessed set - which is a stale
-/// artifact that looks correct.
-/// </remarks>
+// A delegate so a cook rule can route the read through its context and have
+// the sidecar recorded as a dependency.
 public delegate byte[]? GltfBufferResolver(string contentPath);
 
 /// <summary>
-/// A managed glTF 2.0 and GLB reader: JSON through <c>Utf8JsonReader</c>, binary
-/// through <c>BinaryPrimitives</c>, no reflection and no native library.
+/// A managed glTF 2.0 and GLB reader for the cook. Node transforms are applied to
+/// the vertices, V is flipped, and mirrored parts get their winding reversed.
+/// Anything outside the supported set is refused by name.
 /// </summary>
-/// <remarks>
-/// <para><b>Hand-rolled, and the reason is COOK DETERMINISM rather than
-/// dependency taste.</b> Assimp stays the runtime's loose-file importer and is
-/// measured to run under NativeAOT (<c>docs/spikes/2026-09-cook-dependency-spikes.md</c>),
-/// but it is a native library whose triangulation, welding and cache
-/// optimisation are version-dependent: cooked bytes would then depend on which
-/// machine cooked them, which is precisely what the three byte-identity oracles
-/// exist to catch and precisely what they would be worst at explaining. Every
-/// number this reader emits comes from the file's own bytes through arithmetic
-/// written here.</para>
-/// <para><b>What it does NOT do is guess.</b> A construct outside the supported
-/// set is refused by name - the mode number and its glTF spelling, the extension
-/// string, the component type - because the failure of guessing is not an
-/// exception: it is an accessor walked at a stride the file never meant, which
-/// produces a model that draws and is wrong. That is the same stance
-/// <c>SimageReader</c> takes, and for the same reason it uses an allowlist rather
-/// than a blocklist.</para>
-/// <para><b>The node hierarchy is BAKED into the vertices and is then gone.</b> A
-/// <c>.smodel</c> is one vertex buffer with no hierarchy section, so a transform
-/// has to be spent at cook time; a mesh two nodes reference becomes two
-/// submeshes, each already in the model's own space. That is what makes a cooked
-/// model's bounds the same box the loose importer computes for the whole
-/// hierarchy, and it is why a cooked prop instantiates as one node rather than as
-/// the subtree the source file drew.</para>
-/// <para><b>Two conversions are applied and both are properties of the SOURCE
-/// FORMAT rather than options.</b> glTF puts v = 0 at the top of an image and
-/// this engine samples v = 0 at the bottom, so v is flipped - the same flip
-/// <c>ModelImportOptions.FlipTextureV</c> exists for, applied here always because
-/// a glTF file always needs it. And a transform with a negative determinant
-/// mirrors, so its triangles have their winding reversed, or a mirrored part of a
-/// model renders inside out under backface culling with nothing reporting
-/// it.</para>
-/// </remarks>
+// Managed and not Assimp: a native importer's welding and reordering vary by
+// version, and cooked bytes must not depend on the machine that cooked them.
 public static class GltfReader
 {
-    /// <summary>The authored extensions this reader is asked for.</summary>
+    /// <summary>The JSON form's extension.</summary>
     public const string GltfExtension = ".gltf";
 
     /// <summary>The binary container's extension.</summary>
     public const string GlbExtension = ".glb";
 
-    // "glTF" little-endian, the GLB header's first four bytes.
+    // "glTF" little-endian.
     private const uint GlbMagic = 0x46546C67;
     private const uint GlbJsonChunk = 0x4E4F534A;
     private const uint GlbBinaryChunk = 0x004E4942;
     private const int GlbHeaderSize = 12;
     private const int GlbChunkHeaderSize = 8;
 
-    // Deep enough for any authored hierarchy and shallow enough that the walk
-    // below cannot overflow the stack on a file built to make it. A cycle is
-    // caught by the on-path marker instead; this catches the other shape, a
-    // legal chain a hundred thousand nodes long.
+    // Keeps the recursive walk from overflowing the stack on a very long chain.
     private const int MaxNodeDepth = 1024;
 
     private const int ComponentByte = 5120;
@@ -102,17 +60,10 @@ public static class GltfReader
     }
 
     /// <summary>
-    /// Reads one glTF or GLB.
+    /// Reads one glTF or GLB. Throws <see cref="GltfFormatException"/> for a file
+    /// it cannot carry.
     /// </summary>
-    /// <param name="file">The whole file.</param>
-    /// <param name="source">
-    /// What to call it in a message: a content path, so the same failure reads
-    /// the same way from a project folder and from anywhere else.
-    /// </param>
-    /// <param name="resolveBuffer">
-    /// How to fetch an external buffer, called with a content-relative path.
-    /// </param>
-    /// <exception cref="GltfFormatException">The file is not one this reader can carry.</exception>
+    /// <param name="source">The file's content path, used in messages and to resolve sibling buffers.</param>
     public static GltfModel Read(ReadOnlySpan<byte> file, string source, GltfBufferResolver resolveBuffer)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -127,13 +78,7 @@ public static class GltfReader
         return Build(document, source, buffers);
     }
 
-    // ---- container ---------------------------------------------------------
-
-    // A .gltf is JSON and a .glb is a 12-byte header over length-prefixed chunks.
-    // Discriminated by the magic rather than by the extension, because the
-    // extension is a name somebody typed and the magic is what the file IS - and
-    // a .glb saved as .gltf is an ordinary mistake whose symptom otherwise is a
-    // JSON parse failure at byte zero.
+    // Decided by the magic, not the extension: a .glb saved as .gltf is common.
     private static void SplitContainer(
         ReadOnlySpan<byte> file, string source, out ReadOnlySpan<byte> json, out ReadOnlySpan<byte> binary)
     {
@@ -175,9 +120,7 @@ public static class GltfReader
             uint type = BinaryPrimitives.ReadUInt32LittleEndian(file[(at + 4)..]);
             int body = at + GlbChunkHeaderSize;
 
-            // Subtraction rather than addition: body + length is exactly the
-            // arithmetic a corrupt file makes wrap, and a wrapped sum passes a
-            // naive bound and then reads past the end of the buffer.
+            // Subtract, don't add: body + length can wrap on a corrupt file.
             if (length > (uint)(end - body))
             {
                 throw new GltfFormatException(
@@ -196,9 +139,7 @@ public static class GltfReader
                 binary = payload;
             }
 
-            // Every chunk is 4-byte aligned, padding included. Advancing by the
-            // unpadded length reads the padding as the next chunk's header, which
-            // is a plausible-looking length and a garbage type.
+            // Chunks are padded to 4 bytes.
             at = body + (int)Align4(length);
         }
 
@@ -211,8 +152,6 @@ public static class GltfReader
 
     private static uint Align4(uint value) => (value + 3u) & ~3u;
 
-    // ---- what this reader will and will not carry --------------------------
-
     private static void RequireSupportedDocument(GltfDocument document, string source)
     {
         if (!document.AssetVersion.StartsWith("2.", StringComparison.Ordinal))
@@ -222,10 +161,7 @@ public static class GltfReader
                 $"'{source}' states asset version {stated}, and this reader implements glTF 2.0.");
         }
 
-        // extensionsRequired is the file's own declaration that something in it
-        // cannot be ignored - Draco compression, mesh quantization, a texture
-        // transform. Skipping one would produce geometry that is silently wrong,
-        // which is the whole class this reader refuses rather than guesses at.
+        // A required extension (Draco, quantization) changes how the data reads.
         if (document.ExtensionsRequired.Count > 0)
         {
             throw new GltfFormatException(
@@ -234,8 +170,6 @@ public static class GltfReader
                 "Re-export without them.");
         }
     }
-
-    // ---- buffers -----------------------------------------------------------
 
     private static byte[][] ResolveBuffers(
         GltfDocument document, string source, ReadOnlySpan<byte> binaryChunk, GltfBufferResolver resolveBuffer)
@@ -249,10 +183,7 @@ public static class GltfReader
 
             if (buffer.Uri is null)
             {
-                // Only buffer 0 of a GLB may omit its uri, and it is the BIN
-                // chunk. Copied rather than kept as a span, because everything
-                // below reads buffers as arrays and a cook is not in the business
-                // of shaving one copy off a file it is about to re-encode.
+                // Only buffer 0 of a GLB may omit its uri: it is the BIN chunk.
                 if (i != 0 || binaryChunk.IsEmpty)
                 {
                     throw new GltfFormatException(
@@ -311,31 +242,23 @@ public static class GltfReader
 
     /// <summary>
     /// Joins a glTF uri against the folder its model sits in, as a normalised
-    /// content path.
+    /// content path. Throws if the uri escapes the content root.
     /// </summary>
-    /// <remarks>
-    /// <b>Its own segment walk rather than
-    /// <c>ContentRoot.NormalizeRelativePath</c> alone</b>, because that function
-    /// refuses <c>..</c> outright and a glTF uri legitimately carries one: a
-    /// model in <c>Models/</c> naming <c>../Textures/x.png</c> is the ordinary
-    /// export. So the <c>..</c> is resolved HERE, against the model's own folder,
-    /// and an escape past the content root is then refused with the same words
-    /// the normaliser would have used.
-    /// </remarks>
+    // Resolves ".." itself: ContentRoot.NormalizeRelativePath refuses it, and
+    // "../Textures/x.png" is an ordinary export.
     public static string ResolveSiblingPath(string modelContentPath, string uri)
     {
         ArgumentNullException.ThrowIfNull(modelContentPath);
         ArgumentNullException.ThrowIfNull(uri);
 
-        // glTF uris are percent-encoded, so a file with a space in its name
-        // arrives as %20 and would otherwise be looked for under that name.
+        // glTF uris are percent-encoded.
         string decoded = Uri.UnescapeDataString(uri).Replace('\\', '/');
 
         var segments = new List<string>();
         foreach (string part in modelContentPath.Replace('\\', '/').Split('/'))
             segments.Add(part);
 
-        // The model's own file name, which is a sibling rather than a folder.
+        // Drop the model's file name.
         if (segments.Count > 0) segments.RemoveAt(segments.Count - 1);
 
         foreach (string part in decoded.Split('/'))
@@ -363,8 +286,6 @@ public static class GltfReader
         return ContentRoot.NormalizeRelativePath(string.Join('/', segments));
     }
 
-    // ---- geometry ----------------------------------------------------------
-
     private static GltfModel Build(GltfDocument document, string source, byte[][] buffers)
     {
         var submeshes = new List<GltfSubmesh>();
@@ -376,11 +297,8 @@ public static class GltfReader
         var min = new Vector3(float.PositiveInfinity);
         var max = new Vector3(float.NegativeInfinity);
 
-        // 0 unvisited, 1 on the current path. A node is returned to 0 when its
-        // subtree is done rather than marked finished, so a node two parents
-        // reference is emitted twice - which is what the file says - while a
-        // cycle, which is a node reached while still on the path, is refused
-        // before it can recurse forever.
+        // Cleared again when a subtree is done, so a node with two parents is
+        // emitted twice and only a real cycle is refused.
         var onPath = new bool[document.Nodes.Count];
 
         foreach (int root in RootNodes(document, source))
@@ -429,9 +347,7 @@ public static class GltfReader
             return document.Scenes[index];
         }
 
-        // No scene at all is legal glTF and means the document is a library
-        // rather than something to draw. Every node nothing claims as a child is
-        // then a root, which is the reading that loses no geometry.
+        // No scene is legal glTF. Treat every node that is nobody's child as a root.
         var claimed = new bool[document.Nodes.Count];
         for (int i = 0; i < document.Nodes.Count; i++)
         {
@@ -494,20 +410,9 @@ public static class GltfReader
         onPath[index] = false;
     }
 
-    /// <summary>
-    /// One node's transform, in the engine's row-vector convention.
-    /// </summary>
-    /// <remarks>
-    /// <b>The two spellings both need converting and they need converting
-    /// differently.</b> glTF stores a matrix COLUMN-major for column vectors, so
-    /// reading its sixteen floats into <c>Matrix4x4</c>'s row-major fields in
-    /// order is exactly the transpose the row-vector convention wants - no
-    /// explicit transpose, and writing one would undo it. The TRS form composes
-    /// as <c>T * R * S</c> for column vectors, which reverses to
-    /// <c>S * R * T</c> here. Getting either wrong puts a part of a model
-    /// somewhere nobody asked for, which is the classic symptom this repo already
-    /// records for the importer.
-    /// </remarks>
+    // Row-vector convention. glTF's T * R * S becomes S * R * T. Its matrix is
+    // column-major for column vectors, so reading the floats in order into
+    // Matrix4x4 is already the transpose needed; do not add one.
     private static Matrix4x4 LocalMatrix(GltfNodeJson node, string source, int index)
     {
         if (node.Matrix is not { } m) return
@@ -610,21 +515,14 @@ public static class GltfReader
                 "triangles.");
         }
 
-        // A transform whose determinant is negative mirrors, and a mirrored
-        // triangle keeps its index order while its geometric winding reverses -
-        // so it renders inside out under backface culling, with nothing anywhere
-        // reporting it.
+        // A negative determinant mirrors, which flips winding; indices are
+        // reversed below or the part renders inside out.
         bool mirrored = world.GetDeterminant() < 0f;
         Matrix4x4 normalMatrix = NormalMatrix(world);
 
         if (normals is null)
         {
-            // The glTF specification's own rule for a primitive with no normals:
-            // flat, per face. That needs one vertex per corner, so the primitive
-            // is expanded here rather than smoothed - smoothing would need a weld
-            // by position, which is the importer's business and would make the
-            // cooked model differ from the file for a reason the file did not
-            // state.
+            // glTF spec: no normals means flat shading, so one vertex per corner.
             return FlatShaded(positions, uvs, indices, name, primitive.Material ?? -1, world, mirrored);
         }
 
@@ -673,9 +571,7 @@ public static class GltfReader
         var min = new Vector3(float.PositiveInfinity);
         var max = new Vector3(float.NegativeInfinity);
 
-        // Outside the loop, because a stackalloc inside one is not freed per
-        // iteration: it accumulates for the whole call, which for a mesh of any
-        // size is a stack overflow rather than an exception.
+        // Outside the loop: a stackalloc in a loop is not freed per iteration.
         Span<Vector3> corner = stackalloc Vector3[3];
 
         for (int triangle = 0; triangle < indices.Length; triangle += 3)
@@ -688,9 +584,7 @@ public static class GltfReader
                     world);
             }
 
-            // Computed AFTER the transform, so it is the normal of the triangle
-            // as it actually sits, mirroring included, rather than the source
-            // normal pushed through a matrix.
+            // From the transformed corners.
             Vector3 face = Vector3.Cross(corner[1] - corner[0], corner[2] - corner[0]);
             face = face.LengthSquared() > 0f ? Vector3.Normalize(face) : Vector3.UnitY;
             if (mirrored) face = -face;
@@ -721,10 +615,7 @@ public static class GltfReader
         return new GltfSubmesh(name, material, vertices, expanded, min, max);
     }
 
-    // v = 0 is the BOTTOM of an image in this engine and the TOP in glTF, so
-    // every glTF UV needs this. Named rather than written inline at its two call
-    // sites, because a flip applied in one of them and not the other is a model
-    // whose flat-shaded primitives are mirrored and whose smooth ones are not.
+    // v = 0 is the bottom of an image here and the top in glTF.
     private static float FlipV(float v) => 1f - v;
 
     private static void ReverseWinding(uint[] indices)
@@ -733,10 +624,8 @@ public static class GltfReader
             (indices[i + 1], indices[i + 2]) = (indices[i + 2], indices[i + 1]);
     }
 
-    // The inverse transpose, which is what a normal transforms by under a
-    // non-uniform scale. A singular matrix has no inverse and also has no
-    // meaningful normals, so the transform itself stands in and the normalise
-    // below cleans up whatever comes out.
+    // Inverse transpose, for non-uniform scale. Falls back to the matrix
+    // itself when it is singular.
     private static Matrix4x4 NormalMatrix(Matrix4x4 world) =>
         Matrix4x4.Invert(world, out Matrix4x4 inverse) ? Matrix4x4.Transpose(inverse) : world;
 
@@ -762,8 +651,6 @@ public static class GltfReader
             $"'{source}' primitive '{name}' has {vertexCount} positions and {values.Length / components} " +
             $"{attribute} values. glTF requires every attribute of a primitive to have the same count.");
     }
-
-    // ---- accessors ---------------------------------------------------------
 
     private static float[] ReadFloatAccessor(
         GltfDocument document, string source, byte[][] buffers, int index, int components, string what)
@@ -829,9 +716,6 @@ public static class GltfReader
             ComponentUnsignedShort => 2,
             ComponentUnsignedInt => 4,
 
-            // An allowlist, not a blocklist. A signed index type is not a thing
-            // glTF permits, and reading one anyway would turn a negative value
-            // into a very large vertex index rather than into an error.
             _ => throw new GltfFormatException(
                 $"'{source}' accessor {index} has index component type " +
                 $"{DescribeComponentType(accessor.ComponentType)}. glTF allows unsigned byte, unsigned " +
@@ -894,12 +778,8 @@ public static class GltfReader
         return accessor;
     }
 
-    // Validates one accessor's whole span and hands back where its elements live.
-    // The stride is the bufferView's when it states one - an interleaved buffer is
-    // ordinary glTF - and the element's own size otherwise, and every bound is
-    // checked HERE, once, before the first read: a per-element check inside the
-    // two callers would be two copies of the arithmetic that decides whether this
-    // reader indexes past the end of a buffer.
+    // Bounds-checks an accessor's whole span before any element is read.
+    // Stride is the bufferView's if it states one (interleaved data).
     private static void LocateAccessor(
         GltfDocument document,
         string source,

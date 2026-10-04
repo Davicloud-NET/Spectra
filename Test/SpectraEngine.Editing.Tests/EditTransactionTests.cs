@@ -6,10 +6,8 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// Transaction semantics: a simulated multi-frame gizmo drag coalesces into a
-/// single undo entry that spans the whole gesture, a multi-node drag lands one
-/// composite entry, cancelling rolls the scene back and records nothing, and
-/// the history refuses undo/redo while a gesture is open.
+/// Undo transactions: a drag is one entry, cancel rolls back and records
+/// nothing, and undo/redo are refused while a transaction is open.
 /// </summary>
 public sealed class EditTransactionTests
 {
@@ -23,14 +21,12 @@ public sealed class EditTransactionTests
 
         SimulateDrag(stack, node, DragFrames);
 
-        // Sixty per-frame commands, one history entry.
         stack.Count.ShouldBe(1);
         stack.UndoCount.ShouldBe(1);
 
         node.LocalPosition.ShouldBe(new Vector3(DragFrames, 0f, 0f));
 
-        // And the entry spans the WHOLE gesture: the coalesced command kept the
-        // before-state captured on the grab frame, not the previous frame's.
+        // Undo goes back to the grab frame, not the previous frame.
         stack.Undo().ShouldBeTrue();
         node.LocalPosition.ShouldBe(Vector3.Zero);
         stack.CanUndo.ShouldBeFalse();
@@ -57,7 +53,6 @@ public sealed class EditTransactionTests
         }
         stack.CommitTransaction();
 
-        // One entry per gesture, holding one coalesced command per node.
         stack.Count.ShouldBe(1);
 
         stack.Undo().ShouldBeTrue();
@@ -80,7 +75,7 @@ public sealed class EditTransactionTests
         stack.Changed += () => fired++;
 
         stack.BeginTransaction("Move");
-        fired.ShouldBe(1); // opening flips CanUndo/CanRedo — UI must hear it
+        fired.ShouldBe(1); // opening flips CanUndo/CanRedo
 
         for (int frame = 1; frame <= 5; frame++)
             RecordFrame(stack, node, frame);
@@ -125,8 +120,6 @@ public sealed class EditTransactionTests
 
         stack.CancelTransaction();
 
-        // Escape during a drag: the scene is back where the grab started and
-        // the history never heard about the gesture.
         node.LocalPosition.ShouldBe(new Vector3(3f, 3f, 3f));
         stack.Count.ShouldBe(0);
         stack.CanUndo.ShouldBeFalse();
@@ -178,8 +171,7 @@ public sealed class EditTransactionTests
         RecordFrame(stack, node, 1f);
         stack.CommitTransaction();
 
-        // No composite wrapper for a one-node gesture — the command keeps its
-        // own name in the undo menu.
+        // No composite wrapper: the command keeps its own name.
         stack.UndoName.ShouldBe("Transform");
     }
 
@@ -192,8 +184,6 @@ public sealed class EditTransactionTests
         SimulateDrag(stack, node, 3);
         SimulateDrag(stack, node, 3);
 
-        // Two gestures, two entries — coalescing is scoped to the open
-        // transaction, never to committed history.
         stack.Count.ShouldBe(2);
     }
 
@@ -227,7 +217,6 @@ public sealed class EditTransactionTests
         Should.Throw<InvalidOperationException>(stack.Clear);
     }
 
-    // One drag: grab, N frames of live movement + recording, release.
     private static void SimulateDrag(UndoStack stack, SceneNode node, int frames)
     {
         stack.BeginTransaction("Move");
@@ -236,8 +225,8 @@ public sealed class EditTransactionTests
         stack.CommitTransaction();
     }
 
-    // One frame of a live drag: capture the before-state, move the node itself
-    // (the gizmo does this so the viewport updates immediately), then record.
+    // Like the gizmo: build the command first so it captures the before state,
+    // then move the node, then record.
     private static void RecordFrame(UndoStack stack, SceneNode node, float x)
     {
         var target = new Vector3(x, 0f, 0f);

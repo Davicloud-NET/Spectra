@@ -4,9 +4,7 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Entities;
 
 /// <summary>How an entity class is placed in a level.</summary>
-/// <remarks>
-/// Numbering is frozen: a schema record stores this as one byte. Append only.
-/// </remarks>
+// Stored as one byte in a schema record. Append only.
 public enum EntityPlacement : byte
 {
     /// <summary>A point in space: the node carries a transform and nothing else.</summary>
@@ -17,21 +15,14 @@ public enum EntityPlacement : byte
     /// </summary>
     Brush = 1,
 
-    /// <summary>
-    /// Logic only, with no position anybody looks at. Still a node, because
-    /// everything in this engine is a node, but its transform means nothing.
-    /// </summary>
+    /// <summary>Logic only. Still a node, but its transform means nothing.</summary>
     Abstract = 2,
 }
 
-/// <summary>Where an entity class was DEFINED.</summary>
-/// <remarks>
-/// <b>An editor badge, and nothing else.</b> Nothing in the engine branches on
-/// it: a Luau-defined class and a generated C# one produce the same
-/// <see cref="EntitySchema"/> and register into the same catalogue, which is the
-/// property that keeps the two producers from drifting. This exists so a person
-/// reading a property panel can tell which file to open.
-/// </remarks>
+/// <summary>
+/// Where an entity class was defined. An editor badge; nothing in the engine
+/// branches on it.
+/// </summary>
 public enum EntityOrigin : byte
 {
     /// <summary>Declared in the engine's own C#, through the entity attributes.</summary>
@@ -45,16 +36,10 @@ public enum EntityOrigin : byte
 }
 
 /// <summary>
-/// The closed widget vocabulary a <see cref="KeyvalueDescriptor"/> may ask for.
+/// The widgets a <see cref="KeyvalueDescriptor"/> may ask for. An unknown value
+/// is treated as <see cref="Auto"/>.
 /// </summary>
-/// <remarks>
-/// <b>Byte constants rather than an enum, because the descriptor's field is the
-/// wire byte itself.</b> An enum would have to be cast at every read and write
-/// of that field, and a cast is exactly where a value outside the vocabulary
-/// enters unnoticed. <see cref="IsDefined"/> is the one gate; a widget nobody
-/// recognises degrades to <see cref="Auto"/> rather than failing, because a
-/// property that cannot be shown is worse than one shown plainly.
-/// </remarks>
+// Byte constants, not an enum: the descriptor's field is the wire byte.
 public static class KeyvalueWidget
 {
     /// <summary>Let the editor choose from the declared <see cref="KeyvalueType"/>.</summary>
@@ -83,13 +68,8 @@ public static class KeyvalueWidget
 /// The bits of a <see cref="KeyvalueDescriptor.Flags"/> word that this engine
 /// assigns meaning to.
 /// </summary>
-/// <remarks>
-/// <b>Bits 3 to 7 are RESERVED and are not free.</b> Later work claims them
-/// (replication and per-property realm, in the format documents), so nothing may
-/// assign them a second meaning here. They are written zero and masked off on
-/// read: a definition produced by a newer tool must lose the bits this engine
-/// does not understand rather than acting on them by accident.
-/// </remarks>
+// Bits 3 to 7 are reserved for replication and per-property realm. Written
+// zero, masked off on read.
 public static class KeyvalueFlags
 {
     /// <summary>Shown, never edited.</summary>
@@ -105,10 +85,8 @@ public static class KeyvalueFlags
     public const uint DefinedMask = ReadOnly | HideInEditor | RequiresRestart;
 
     /// <summary>
-    /// Drops every bit this engine does not assign meaning to. Applied where a
-    /// descriptor is READ, never where one is written, because a writer that
-    /// never sets a reserved bit and a reader that never trusts one are two
-    /// different guarantees.
+    /// Drops every bit this engine does not assign meaning to. For reading a
+    /// descriptor, not for writing one.
     /// </summary>
     public static uint Mask(uint flags) => flags & DefinedMask;
 }
@@ -117,29 +95,14 @@ public static class KeyvalueFlags
 /// One editable property of an entity class: its name, how it is presented, and
 /// the bounds an editor enforces.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b><see cref="Default"/> is a STRING, never a typed value.</b> Keyvalues are
-/// string-typed on the wire, so a typed default would turn the editor's "is this
-/// still the default?" comparison into a conversion round trip that drifts
-/// silently: two values that format to the same text but compare unequal, or the
-/// reverse. Compare the text, and convert exactly once, at bind time.
-/// </para>
-/// <para>
-/// <b><see cref="Min"/> and <see cref="Max"/> use NaN for unbounded</b>, which
-/// means they are compared with <see cref="float.IsNaN(float)"/> and never with
-/// <c>==</c>: NaN is unequal to itself, so an equality test reports every bound
-/// as present and clamps every value against a NaN, which yields NaN.
-/// </para>
-/// </remarks>
 /// <param name="Name">The wire name, as it appears in a map file.</param>
 /// <param name="Display">The label an editor shows, or empty to use the name.</param>
 /// <param name="Tooltip">One sentence of help, or empty.</param>
-/// <param name="Default">The default VALUE, formatted as it would be written.</param>
-/// <param name="Type">What the value means. See <see cref="KeyvalueType"/>.</param>
+/// <param name="Default">The default value as map text. Compare as text.</param>
+/// <param name="Type">What the value means.</param>
 /// <param name="Widget">A <see cref="KeyvalueWidget"/> value.</param>
-/// <param name="Min">Lower bound, or NaN for unbounded.</param>
-/// <param name="Max">Upper bound, or NaN for unbounded.</param>
+/// <param name="Min">Lower bound, or NaN for unbounded. Test with <see cref="HasMin"/>, not ==.</param>
+/// <param name="Max">Upper bound, or NaN for unbounded. Test with <see cref="HasMax"/>, not ==.</param>
 /// <param name="Flags">A <see cref="KeyvalueFlags"/> bit set.</param>
 /// <param name="Choices">
 /// The permitted values for <see cref="KeyvalueType.Choices"/>, empty otherwise.
@@ -176,43 +139,12 @@ public readonly record struct KeyvalueDescriptor(
 }
 
 /// <summary>
-/// Everything an editor and a runtime know about one entity CLASS: its name, how
+/// Everything an editor and a runtime know about one entity class: its name, how
 /// it is placed, the properties it exposes, and the inputs and outputs it wires.
+/// The lists passed in are stored, not copied; do not mutate them afterwards.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>There is exactly one of these types, and every producer builds it.</b> A
-/// source generator emits one per attributed C# class; a Luau definition builds
-/// one through a host function; an exported schema file is read back into one.
-/// The editor's property panel and its wiring UI consume this and have no other
-/// input, which is what makes parity between the producers structural rather
-/// than something to keep checking.
-/// </para>
-/// <para>
-/// <b>Describes a class, never an instance.</b> What a placed entity actually
-/// carries is <see cref="EntityData"/>, and the two are deliberately not linked
-/// by a reference: a map may name a class this build has never heard of, and
-/// that map must still round-trip.
-/// </para>
-/// <para>
-/// <b>The lists are owned by the schema and must not be mutated afterwards.</b>
-/// They are stored rather than copied because the intended producer is a
-/// generator emitting static arrays once at start-up, and a defensive copy per
-/// class would allocate a second set of every entity definition in the game to
-/// protect against a caller that does not exist.
-/// </para>
-/// </remarks>
 public sealed class EntitySchema
 {
-    /// <param name="className">The wire name, as a map file spells it.</param>
-    /// <param name="displayName">The label an editor shows, or empty to use the class name.</param>
-    /// <param name="group">The category an editor files it under, or empty.</param>
-    /// <param name="placement">How the class is placed. See <see cref="EntityPlacement"/>.</param>
-    /// <param name="origin">Where it was defined. An editor badge; see <see cref="EntityOrigin"/>.</param>
-    /// <param name="keyvalues">The properties it exposes, in declaration order.</param>
-    /// <param name="inputs">The input names it accepts.</param>
-    /// <param name="outputs">The output names it fires.</param>
-    /// <exception cref="ArgumentException"><paramref name="className"/> is empty.</exception>
     public EntitySchema(
         string className,
         string displayName = "",
@@ -223,8 +155,6 @@ public sealed class EntitySchema
         IReadOnlyList<string>? inputs = null,
         IReadOnlyList<string>? outputs = null)
     {
-        // A class with no name cannot be registered, cannot be looked up, and
-        // cannot be written to a map: refused here rather than three layers down.
         ArgumentException.ThrowIfNullOrEmpty(className);
 
         ClassName = className;
@@ -252,10 +182,7 @@ public sealed class EntitySchema
     /// <summary>Where the class was defined. A badge; nothing branches on it.</summary>
     public EntityOrigin Origin { get; }
 
-    /// <summary>
-    /// The properties the class exposes, in DECLARATION order, which is the order
-    /// a panel lays them out and the order an exported schema writes them.
-    /// </summary>
+    /// <summary>The properties the class exposes, in declaration order.</summary>
     public IReadOnlyList<KeyvalueDescriptor> Keyvalues { get; }
 
     /// <summary>The input names the class accepts.</summary>

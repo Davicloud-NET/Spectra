@@ -13,54 +13,22 @@ namespace SpectraEngine.Core.Projects;
 /// </summary>
 public enum ContentMountProfile
 {
-    /// <summary>
-    /// Packs and nothing else. What a player's machine runs, and the only
-    /// configuration in which a cook is actually being tested.
-    /// </summary>
+    /// <summary>Packs and nothing else. What a player's machine runs.</summary>
     Shipped,
 
     /// <summary>
     /// The same packs with loose files at <see cref="PackMountBand.Loose"/>, so
-    /// an artist drops a PNG beside the cooked pack and it shadows the cooked
-    /// entry with no rebuild.
+    /// an edited file shadows the cooked entry with no rebuild.
     /// </summary>
     Dev,
 }
 
 /// <summary>
-/// A project's content stack, assembled from its packs: the thing an
+/// A project's content stack, assembled from its packs: what an
 /// <c>AssetManager</c> is handed instead of a folder.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Everything below this is a SOURCE SWAP, which is the whole point.</b> A
-/// pack's entries are keyed on the exact string
-/// <see cref="Assets.ContentRoot.NormalizeRelativePath"/> produces, so a texture
-/// named <c>Textures/wall.png</c> in a material is the same asset whether it
-/// came out of a folder or an archive - and nothing above this line has to know
-/// which. No second normalisation is introduced here for the same reason: two
-/// spellings of one identity is how a packed build silently resolves less
-/// content than a loose one.
-/// </para>
-/// <para>
-/// <b>Pure-pack forces hot reload OFF and says WHY.</b> A watcher needs a real
-/// filesystem path and <see cref="IContentSource.TryGetWatchPath"/> answers
-/// false for a pack, so hot reload would attach to nothing and go on claiming it
-/// was live. That silence is the failure this reports rather than commits: the
-/// reason travels on <see cref="HotReloadDisabledReason"/> and is logged once at
-/// mount, because the symptom of getting it wrong is that saving a texture stops
-/// doing anything and nothing anywhere says so.
-/// </para>
-/// <para>
-/// <b>The stack is flattened at mount, so it is a SNAPSHOT of what was there.</b>
-/// <see cref="PackMountStack"/> builds one dictionary from every source's
-/// enumeration rather than probing per lookup, which is what makes forty mods
-/// cost nothing per asset and what lets every shadowing decision be recorded
-/// where it is made. The consequence, stated rather than discovered: a loose file
-/// created AFTER the mount is not served until something remounts. Editing a file
-/// that already existed - which is what hot reload is for - is unaffected.
-/// </para>
-/// </remarks>
+// Flattened at mount: a loose file created afterwards is not served until a
+// remount. Editing an existing file still works.
 public sealed class ProjectContentMount : IDisposable
 {
     private readonly PackMountStack _packs;
@@ -101,8 +69,7 @@ public sealed class ProjectContentMount : IDisposable
     public bool HotReloadEnabled { get; }
 
     /// <summary>
-    /// Why hot reload is off, in a sentence, or null when it is on. Never left
-    /// null while <see cref="HotReloadEnabled"/> is false.
+    /// Why hot reload is off, or null when it is on.
     /// </summary>
     public string? HotReloadDisabledReason { get; }
 
@@ -117,10 +84,8 @@ public sealed class ProjectContentMount : IDisposable
     /// on.
     /// </summary>
     /// <exception cref="PackMountException">
-    /// A pack the project boots from is missing or is refused. Deliberately
-    /// fatal: a shipped game that quietly ran on whatever content it could still
-    /// reach would ship holes, and the loose fallback is a separate mode a host
-    /// asks for by not calling this at all.
+    /// A pack the project boots from is missing or is refused. There is no
+    /// fallback to loose files.
     /// </exception>
     public static ProjectContentMount Open(
         ILogger logger, ProjectLayout project, ContentMountProfile profile)
@@ -139,20 +104,13 @@ public sealed class ProjectContentMount : IDisposable
                 string path = packPaths[i];
                 if (!File.Exists(path))
                 {
-                    // Named with the cook command that would produce it: the
-                    // overwhelmingly common cause is a project that has never
-                    // been cooked, and "file not found" alone sends people
-                    // looking for a bug.
                     throw new PackMountException(
                         $"The project '{project.Project.Name}' boots from '{path}', which does not exist. "
                         + $"Cook it first (scook cook \"{project.Root}\"), or run without --pack to use loose files.");
                 }
 
-                // Manifest order IS mount order and later wins, so every pack
-                // sits in the base band and the stack's mount-order tie-break
-                // does the rest. A patch band exists for packs that declare
-                // themselves one; nothing here promotes a pack the author
-                // merely listed last.
+                // All in the base band: manifest order is mount order, later
+                // wins.
                 packs.Mount(new PackSource(logger, path, PackMountBand.Base));
             }
 
@@ -163,9 +121,8 @@ public sealed class ProjectContentMount : IDisposable
         }
         catch
         {
-            // A stack that never reached a caller has to unmap what it already
-            // mapped, or a mapped view is leaked for the process's life and the
-            // folder holding it cannot be deleted on Windows.
+            // Unmap what was already mapped, or the views leak and Windows
+            // keeps the folder locked.
             packs.Dispose();
             throw;
         }
@@ -189,17 +146,13 @@ public sealed class ProjectContentMount : IDisposable
         }
         else
         {
-            // Reported rather than silently no-opped. An asset manager with hot
-            // reload nominally on over a pure-pack stack attaches no watcher at
-            // all, so the only symptom is that saving a file stops doing
-            // anything, which reads as a broken editor rather than as a mode.
             logger.LogInformation("Hot reload OFF: {Reason}.", reason);
         }
 
         return new ProjectContentMount(packs, content, packPaths, profile, dev, reason);
     }
 
-    /// <summary>Unmounts every pack, and every mapped view with them.</summary>
+    /// <summary>Unmounts every pack and its mapped view.</summary>
     public void Dispose()
     {
         if (_disposed) return;

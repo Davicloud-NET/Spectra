@@ -7,19 +7,9 @@ using System.Linq;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// What a wiring panel is told about the selected entity, and why every part of
-/// it is computed here rather than in a shell.
+/// What a wiring panel is told about the selected entity: a copy of its data,
+/// with each wire's target checked against the live graph.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Two claims, and both fail silently.</b> The payload must be a COPY, or a
-/// panel holding a snapshot is reading a list the render thread rewrites on the
-/// next undo - which produces a correct-looking panel showing a wiring nobody
-/// authored. And a target's verdict must be computed against the LIVE graph, or
-/// a shell resolving it from a mirror up to a publish interval stale would flag
-/// a wire that works and pass one that does not.
-/// </para>
-/// </remarks>
 public sealed class EntityPanelInfoTests
 {
     private static EntitySchemaCatalog Catalog(params EntitySchema[] schemas) =>
@@ -44,14 +34,12 @@ public sealed class EntityPanelInfoTests
         return scene;
     }
 
-    // --- what is published ---------------------------------------------------
 
     [Fact]
     public void A_node_with_no_entity_publishes_nothing()
     {
-        // Not an empty panel: a plain brush has no wiring section at all, and a
-        // section that appeared for every node would offer an Add button that
-        // writes an entity payload onto geometry.
+        // No section at all, not an empty one: its Add button would write an
+        // entity payload onto geometry.
         var scene = NewScene(new SceneNode("plain"));
 
         EntityPanelInfo.Capture(scene.Root.Children[0], null, scene).ShouldBeNull();
@@ -77,9 +65,7 @@ public sealed class EntityPanelInfoTests
     [Fact]
     public void A_class_nothing_declares_still_publishes_its_wiring()
     {
-        // EntityData is strings precisely so a map authored against a game this
-        // build does not have round-trips. What is lost is the output list, and
-        // saying so is what lets a panel explain why its dropdowns are boxes.
+        // An unknown class keeps its data; only the schema's output list is missing.
         SceneNode mystery = Placed("mystery", "xyzzy_unknown", Wire("door"));
         Scene scene = NewScene(mystery);
 
@@ -95,9 +81,7 @@ public sealed class EntityPanelInfoTests
     [Fact]
     public void The_wires_are_published_in_the_authored_order()
     {
-        // Order round-trips through map.json, so nothing on the way to a panel
-        // may sort it: a panel that listed wires alphabetically would rewrite a
-        // region of somebody's file the first time they added one.
+        // Wire order round-trips through map.json, so nothing may sort it.
         SceneNode door = Placed(
             "door", "func_door",
             new EntityConnection("OnClose", "z", "B", "", 0f, -1),
@@ -109,15 +93,11 @@ public sealed class EntityPanelInfoTests
         info.Connections.Select(c => c.Wire.Output).ShouldBe(["OnClose", "OnOpen"]);
     }
 
-    // --- copies, not the live lists ------------------------------------------
 
     [Fact]
     public void The_published_wiring_is_a_copy_of_the_nodes_own_list()
     {
-        // The render thread starts mutating that node the instant the frame
-        // ends. A snapshot holding the live List would describe whatever the
-        // scene looks like when somebody finally reads it, which for a UI is
-        // some other frame entirely.
+        // The render thread mutates the node again once the frame ends.
         SceneNode door = Placed("door", "func_door", Wire("light1"));
         Scene scene = NewScene(door);
 
@@ -131,7 +111,6 @@ public sealed class EntityPanelInfoTests
         info.Connections[0].Wire.TargetName.ShouldBe("light1");
     }
 
-    // --- the target verdict --------------------------------------------------
 
     [Fact]
     public void A_target_naming_an_entity_in_the_scene_resolves()
@@ -145,9 +124,7 @@ public sealed class EntityPanelInfoTests
     [Fact]
     public void A_target_naming_nothing_is_flagged_and_KEPT()
     {
-        // Warn and keep, surfaced. The map loader keeps such a wire rather than
-        // dropping it, and a panel that removed one would be the single place a
-        // person's authored wiring silently disappeared.
+        // Flagged, not removed: the map loader keeps such a wire too.
         SceneNode door = Placed("door", "func_door", Wire("nobody"));
         Scene scene = NewScene(door);
 
@@ -162,10 +139,8 @@ public sealed class EntityPanelInfoTests
     [Fact]
     public void A_plain_node_of_the_right_name_does_not_resolve_a_target()
     {
-        // TargetNameIndex lists ENTITIES, so a wire aimed at a plain brush named
-        // "door" delivers to nothing. A check that counted every node would call
-        // that wire healthy and let it fail silently at run time, which is
-        // exactly the failure the flag exists to catch.
+        // TargetNameIndex lists entities only, so a wire aimed at a plain
+        // brush named "door" delivers to nothing.
         SceneNode relay = Placed("relay", "logic_relay", Wire("door"));
         Scene scene = NewScene(relay, new SceneNode("door"));
 
@@ -188,10 +163,8 @@ public sealed class EntityPanelInfoTests
     [Fact]
     public void The_runtime_forms_report_as_resolving_and_nothing_else_does()
     {
-        // !self, !activator and !caller name an entity chosen while the level
-        // runs, so there is nothing here that could disprove them. A form the
-        // runtime does NOT honour must not be waved through, or a dead wire is
-        // reported as live - which is worse than no check at all.
+        // !self, !activator and !caller resolve while the level runs, so they
+        // can't be checked here. Any other ! form is not honoured and must flag.
         SceneNode relay = Placed(
             "relay", "logic_relay",
             Wire("!self"), Wire("!activator"), Wire("!caller"), Wire("!nonsense"));
@@ -209,8 +182,6 @@ public sealed class EntityPanelInfoTests
     [Fact]
     public void An_empty_target_does_not_resolve()
     {
-        // A wire with no target goes nowhere, and saying so is the whole reason
-        // a freshly added row is flagged before anybody types into it.
         SceneNode relay = Placed("relay", "logic_relay", Wire(""));
         Scene scene = NewScene(relay);
 
@@ -229,9 +200,7 @@ public sealed class EntityPanelInfoTests
     [Fact]
     public void A_deeply_nested_entity_is_found_by_the_scan()
     {
-        // The scan is a subtree walk, not a pass over the root's children: a
-        // level puts its logic entities inside groups, and missing them would
-        // flag most of a map's wiring as broken.
+        // Levels keep their logic entities inside groups.
         SceneNode relay = Placed("relay", "logic_relay", Wire("buried"));
         var group = new SceneNode("group");
         var inner = new SceneNode("inner");
@@ -246,9 +215,7 @@ public sealed class EntityPanelInfoTests
     [Fact]
     public void With_no_scene_to_resolve_against_nothing_is_claimed_to_resolve()
     {
-        // The honest answer when there is nothing to check: an optimistic
-        // default would report every wire healthy in exactly the case where
-        // none of them could be verified.
+        // Nothing to check against, so no wire may be reported healthy.
         SceneNode door = Placed("door", "func_door", Wire("light1"));
 
         EntityPanelInfo.Capture(door, null, null)!.Connections[0].TargetResolves.ShouldBeFalse();

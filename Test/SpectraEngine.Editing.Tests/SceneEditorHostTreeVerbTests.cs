@@ -11,21 +11,9 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// The verbs a scene tree and a context menu drive: batch selection by id,
-/// per-node rename, drag-and-drop reparent, and point-addressed pick/insert.
+/// The verbs a scene tree and a context menu drive: selection by id, rename,
+/// reparent, and pick/insert at a viewport point.
 /// </summary>
-/// <remarks>
-/// <b>These exist because the tree holds ids, never nodes.</b> Every verb here
-/// resolves ids on the render thread at apply time, so a UI whose view of the
-/// graph is a frame or two behind can name a node that just left the scene and
-/// get a refusal instead of a crash. The reparent tests additionally pin the
-/// two silent-corruption traps of tree drags: a cycle (dropping a group onto
-/// its own child) must be filtered before any command runs, because
-/// <c>SceneNode.InsertChild</c> answers it with a throw that would poison an
-/// open transaction; and a same-parent move must adjust its index for the slot
-/// the node vacates, or every "drop below the next sibling" lands one row too
-/// far.
-/// </remarks>
 public sealed class SceneEditorHostTreeVerbTests
 {
     private static SceneEditorHost NewHost(Scene scene)
@@ -40,14 +28,10 @@ public sealed class SceneEditorHostTreeVerbTests
             new InputManager(NullLogger<InputManager>.Instance));
     }
 
-    // --- Batch selection -----------------------------------------------------
-
     [Fact]
     public void Selecting_a_set_of_ids_raises_one_selection_change()
     {
-        // One batch, not N single selects: the property panel unions the
-        // selection on every change event, so a Ctrl-click spree reported as a
-        // set must cost one union, not one per node.
+        // The property panel rebuilds on every change event.
         var scene = new Scene("Editor");
         SceneNode a = scene.Root.CreateChild("A");
         SceneNode b = scene.Root.CreateChild("B");
@@ -79,8 +63,6 @@ public sealed class SceneEditorHostTreeVerbTests
     [Fact]
     public void Replacing_with_nothing_resolvable_clears_the_selection()
     {
-        // The tree said "the selection is now this set"; if none of it exists
-        // any more, the honest answer is an empty selection, not the old one.
         var scene = new Scene("Editor");
         SceneNode a = scene.Root.CreateChild("A");
         SceneEditorHost host = NewHost(scene);
@@ -108,8 +90,6 @@ public sealed class SceneEditorHostTreeVerbTests
         scene.Selection.Items[0].ShouldBeSameAs(b);
     }
 
-    // --- Rename --------------------------------------------------------------
-
     [Fact]
     public void Rename_is_one_history_entry_and_undo_restores_the_old_name()
     {
@@ -130,10 +110,6 @@ public sealed class SceneEditorHostTreeVerbTests
     [Fact]
     public void Rename_trims_and_refuses_empty_unchanged_and_unknown()
     {
-        // An empty name is a row in the tree with nothing to click, and an
-        // unchanged one would fill the history with entries that undo to
-        // themselves - the same two refusals the property panel's Name field
-        // already makes.
         var scene = new Scene("Editor");
         SceneNode node = scene.Root.CreateChild("Kept");
         SceneEditorHost host = NewHost(scene);
@@ -147,8 +123,6 @@ public sealed class SceneEditorHostTreeVerbTests
         node.Name.ShouldBe("Spaced");
         host.UndoDepth.ShouldBe(depthBefore + 1);
     }
-
-    // --- Reparent ------------------------------------------------------------
 
     [Fact]
     public void Reparent_moves_under_the_new_parent_and_nothing_appears_to_move()
@@ -185,17 +159,14 @@ public sealed class SceneEditorHostTreeVerbTests
 
         node.Parent.ShouldBeSameAs(scene.Root);
         node.IndexInParent.ShouldBe(index, "sibling index is traversal order is placement order");
-        // Absolute-value commands make exact equality the right assertion.
+        // No tolerance: the command carries absolute values.
         node.LocalPosition.ShouldBe(new Vector3(5f, 0f, 0f));
     }
 
     [Fact]
     public void Dropping_a_node_onto_its_own_descendant_is_refused_not_thrown()
     {
-        // The ordinary slip of every tree drag. InsertChild answers it with a
-        // throw; reached from inside an open transaction that would leave the
-        // history open and the scene half-moved, so the verb must filter it
-        // out before any command runs.
+        // InsertChild throws on a cycle, which would be mid-transaction.
         var scene = new Scene("Editor");
         SceneNode parent = scene.Root.CreateChild("Parent");
         SceneNode child = parent.CreateChild("Child");
@@ -217,7 +188,7 @@ public sealed class SceneEditorHostTreeVerbTests
         SceneNode free = scene.Root.CreateChild("Free");
         SceneEditorHost host = NewHost(scene);
 
-        // Parent cannot legally move under its own child; Free can.
+        // Parent cannot move under its own child; Free can.
         host.ReparentByIds([parent.Id, free.Id], child.Id, -1);
 
         parent.Parent.ShouldBeSameAs(scene.Root);
@@ -227,9 +198,8 @@ public sealed class SceneEditorHostTreeVerbTests
     [Fact]
     public void Moving_a_node_later_under_its_own_parent_lands_where_the_drop_pointed()
     {
-        // Children A,B,C; "drop A below B" names index 2 in the list the user
-        // saw. A leaves slot 0 first, shifting B and C down, so inserting at
-        // the unadjusted index would put A after C instead.
+        // "Drop A below B" is index 2 in the list as shown. A vacates slot 0
+        // first, so the index has to be adjusted.
         var scene = new Scene("Editor");
         SceneNode a = scene.Root.CreateChild("A");
         SceneNode b = scene.Root.CreateChild("B");
@@ -243,15 +213,8 @@ public sealed class SceneEditorHostTreeVerbTests
         scene.Root.Children[2].ShouldBeSameAs(c);
     }
 
-    // --- Multi-node moves within one parent ----------------------------------
-    //
-    // The case with no oracle before this: every earlier reparent test moved
-    // one node, or moved several to a DIFFERENT parent (where the destination
-    // never held them, so applying the moves one at a time happens to be
-    // correct). Two siblings moving within one list is where the
-    // all-movers-vacated indices and the sequential application disagree, and
-    // sibling order is the static world's placement-slot order, so a wrong
-    // answer here rebuilds a level that is valid, different and bit-unequal.
+    // Several siblings moving within one parent. Sibling order is the static
+    // world's placement order, so a wrong order compiles a different level.
 
     private static string Order(SceneNode parent)
     {
@@ -280,10 +243,8 @@ public sealed class SceneEditorHostTreeVerbTests
     [Fact]
     public void Two_siblings_dropped_after_a_later_row_land_together_where_the_drop_pointed()
     {
-        // [A,B,C,D,E], drag A and B onto D's After edge (index 4). Both leave
-        // slots above the target first, so the block lands at 2: [C,D,A,B,E].
-        // Applying the two moves naively produced [C,A,D,B,E] - the pair split
-        // around the row the drop indicator was drawn on.
+        // Drag A and B onto D's After edge (index 4). Both vacate slots above
+        // the target, so the block lands at 2. One at a time gives C,A,D,B,E.
         (Scene scene, SceneEditorHost host, SceneNode[] nodes) = FiveSiblings();
 
         host.ReparentByIds([nodes[0].Id, nodes[1].Id], scene.Root.Id, 4);
@@ -294,10 +255,6 @@ public sealed class SceneEditorHostTreeVerbTests
     [Fact]
     public void Undo_of_a_multi_node_sibling_move_restores_the_authored_order_exactly()
     {
-        // The half that made undo not an inverse: restoring each node to its
-        // recorded index while the others still sat in their moved positions
-        // left two siblings permanently swapped, and no amount of redo/undo
-        // recovered the original order.
         (Scene scene, SceneEditorHost host, SceneNode[] nodes) = FiveSiblings();
 
         host.ReparentByIds([nodes[1].Id, nodes[3].Id], scene.Root.Id, 0);
@@ -306,7 +263,6 @@ public sealed class SceneEditorHostTreeVerbTests
         host.Apply(EditorHostCommand.Undo);
         Order(scene.Root).ShouldBe("A,B,C,D,E");
 
-        // And the cycle is stable rather than drifting one swap per pass.
         host.Apply(EditorHostCommand.Redo);
         Order(scene.Root).ShouldBe("B,D,A,C,E");
         host.Apply(EditorHostCommand.Undo);
@@ -316,9 +272,7 @@ public sealed class SceneEditorHostTreeVerbTests
     [Fact]
     public void A_multi_node_drop_reads_the_same_whichever_row_was_ctrl_clicked_first()
     {
-        // The ids arrive in SELECTION order, and sibling order is authored
-        // data: dropping the same two rows must not produce two different
-        // levels depending on which one the user happened to click first.
+        // The ids arrive in selection order.
         (Scene first, SceneEditorHost firstHost, SceneNode[] a) = FiveSiblings();
         firstHost.ReparentByIds([a[0].Id, a[1].Id], first.Root.Id, 3);
 
@@ -331,10 +285,7 @@ public sealed class SceneEditorHostTreeVerbTests
     [Fact]
     public void Dropping_a_row_onto_its_own_edge_records_nothing()
     {
-        // A few pixels of travel onto a row's own Before zone resolves to the
-        // arrangement the scene already has. Committing it would grow the
-        // history with an entry whose undo changes nothing, so the next Ctrl+Z
-        // appears dead and the user's real last edit needs two presses.
+        // A drop onto a row's own Before zone changes nothing.
         (Scene scene, SceneEditorHost host, SceneNode[] nodes) = FiveSiblings();
         int depthBefore = host.UndoDepth;
 
@@ -347,8 +298,6 @@ public sealed class SceneEditorHostTreeVerbTests
     [Fact]
     public void Moving_several_children_into_a_group_keeps_their_relative_order()
     {
-        // The cross-parent case was always correct; it is pinned so the
-        // two-pass application cannot regress it.
         (Scene scene, SceneEditorHost host, SceneNode[] nodes) = FiveSiblings();
         SceneNode group = scene.Root.CreateChild("Group");
         group.CreateChild("Existing");
@@ -359,16 +308,10 @@ public sealed class SceneEditorHostTreeVerbTests
         Order(scene.Root).ShouldBe("B,D,Group");
     }
 
-    // --- Refusals ------------------------------------------------------------
-
     [Fact]
     public void Editing_verbs_refuse_while_play_mode_owns_the_scene()
     {
-        // A shell gates its own surfaces on a snapshot up to a publish
-        // interval old, so a click landing in that window arrives here after
-        // play mode started. The editor knowing it is suspended is the only
-        // current answer; without it a context menu opened just before F8
-        // could delete geometry out from under a running session.
+        // The shell gates on a stale snapshot, so the host has to refuse too.
         var scene = new Scene("Editor");
         SceneNode node = scene.Root.CreateChild("Kept");
         SceneEditorHost host = NewHost(scene);
@@ -386,8 +329,6 @@ public sealed class SceneEditorHostTreeVerbTests
         node.Name.ShouldBe("Kept");
         host.UndoDepth.ShouldBe(0, "a refused verb records no history");
 
-        // ...and resuming hands the editor back, rather than needing a
-        // restart to become useful again.
         host.Resume();
         host.IsSuspended.ShouldBeFalse();
         host.RenameById(node.Id, "Renamed").ShouldBeTrue();
@@ -409,8 +350,6 @@ public sealed class SceneEditorHostTreeVerbTests
         scene.Selection.Items[0].ShouldBeSameAs(node, "a drop you cannot immediately act on is not a drop");
     }
 
-    // --- Point-addressed verbs (the viewport context menu) -------------------
-
     [Fact]
     public void Right_click_selection_retargets_to_an_unselected_hit_and_keeps_a_selected_one()
     {
@@ -427,8 +366,7 @@ public sealed class SceneEditorHostTreeVerbTests
         host.SelectAtPoint(centre);
         scene.Selection.Items[0].ShouldBeSameAs(plate, "an unselected hit becomes the selection");
 
-        // With the hit already in the selection, the set is kept whole - the
-        // menu about to open acts on all of it.
+        // The hit is already selected, so the whole set is kept for the menu.
         host.SelectByIds([plate.Id, other.Id]);
         host.SelectAtPoint(centre);
         scene.Selection.Count.ShouldBe(2);
@@ -437,8 +375,6 @@ public sealed class SceneEditorHostTreeVerbTests
     [Fact]
     public void Right_click_on_empty_space_keeps_the_selection()
     {
-        // The menu's verbs still need their subject: Studio and every IDE keep
-        // the selection on a background right-click.
         var scene = new Scene("Editor");
         SceneNode node = scene.Root.CreateChild("Kept");
         scene.Camera.Position = new Vector3(0f, 5f, 0f);
@@ -462,7 +398,7 @@ public sealed class SceneEditorHostTreeVerbTests
         scene.Camera.LookAt(new Vector3(0.5f, 1f, 0.5f));
         SceneEditorHost host = NewHost(scene);
 
-        // Snap off so the two landing spots compare by geometry, not by grid.
+        // Snap off, or both inserts could land on the same grid point.
         host.Apply(GizmoCommand.DisableSnap);
 
         host.Insert(InsertKind.WorldBrush);

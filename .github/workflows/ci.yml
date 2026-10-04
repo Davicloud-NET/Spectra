@@ -1,16 +1,8 @@
-# Continuous integration for Spectra Engine.
+# Two hosts because NativeAOT cannot cross-compile, so an AOT break on one
+# platform is invisible from the other.
 #
-# WHY TWO HOSTS RATHER THAN ONE. .NET NativeAOT cannot cross-compile: ILC emits
-# object code for the host architecture and then hands it to the host's own
-# linker (MSVC link.exe on Windows, clang/lld on Linux). So an AOT regression on
-# one platform is completely invisible from the other, and the publish gate has
-# to be duplicated per host rather than run once and assumed to generalise. The
-# same is true of the trim/AOT analysers' input set, which differs with the
-# runtime pack that gets restored.
-#
-# Test projects run via `dotnet run --project Test/<name>`, NEVER `dotnet test`:
-# they are xUnit v3 on Microsoft.Testing.Platform and each test project is its
-# own executable.
+# Tests run with `dotnet run --project Test/<name>`, not `dotnet test`
+# (xUnit v3 on Microsoft.Testing.Platform).
 
 name: CI
 
@@ -20,8 +12,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A superseded push has nothing to prove. Cancels in-flight runs for the same
-# ref, never for a different one.
+# Cancel in-flight runs for the same ref.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -32,11 +23,8 @@ env:
 
 jobs:
 
-  # ---------------------------------------------------------------------------
-  # 1. Windows: full solution build plus every suite that can run on a hosted
-  #    runner. This is the reference job, because Windows is the only host where
-  #    the whole solution compiles (see the VSIX note in test-linux).
-  # ---------------------------------------------------------------------------
+  # Full solution build plus every suite a hosted runner can run. Windows is
+  # the only host where the whole solution compiles.
   test-windows:
     name: Test (Windows)
     runs-on: windows-latest
@@ -44,10 +32,7 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
         with:
-          # The Box3D submodule is fetched but deliberately NOT built here: the
-          # native build is a separate concern (native/build-box3d.ps1, CMake and
-          # MSVC) and is out of scope for this pass. Fetching the source costs
-          # little and keeps the checkout honest about what the repo contains.
+          # Box3D is fetched but not built here.
           submodules: recursive
 
       - name: Set up .NET
@@ -55,8 +40,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # global.json pins only the test runner, not an SDK band, so the version
-      # actually selected is worth printing when a build starts behaving oddly.
+      # global.json does not pin an SDK band, so print what was picked.
       - name: Report SDK
         run: dotnet --info
 
@@ -75,15 +59,11 @@ jobs:
       - name: SpectraEngine.Editor.Tests
         run: dotnet run --project Test/SpectraEngine.Editor.Tests
 
-      # The one suite that brings up an Avalonia platform. Headless windowing,
-      # so no display and no GPU, but real Skia and real text metrics: the
-      # measurements are worthless under the headless stub typeface, whose every
-      # glyph has the same advance.
+      # Headless Avalonia with real Skia. No display or GPU needed.
       - name: SpectraEngine.Editor.Render.Tests
         run: dotnet run --project Test/SpectraEngine.Editor.Render.Tests
 
-      # The sheets a person looks at. if: always() because a failed measurement
-      # is exactly when somebody wants to see the picture.
+      # always(): a failed measurement is when the picture is wanted.
       - name: Ribbon sheets
         if: always()
         uses: actions/upload-artifact@v4
@@ -92,11 +72,7 @@ jobs:
           path: artifacts/ribbon/
           if-no-files-found: ignore
 
-      # The physics suite runs, but only half of it can: 26 of its 53 tests are
-      # guarded by File.Exists(box3d.dll) beside the test binary and skip
-      # themselves when the native library was never built. That is a real gap
-      # rather than a clean pass, so it is stated in the summary below instead of
-      # being left to whoever reads the skip count.
+      # Tests that need box3d.dll skip themselves; the next step reports that.
       - name: SpectraEngine.Physics.Tests
         run: dotnet run --project Test/SpectraEngine.Physics.Tests
 
@@ -118,21 +94,11 @@ jobs:
             'What did not: every test that steps a real Box3D world.'
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
-      # -----------------------------------------------------------------------
-      # The OpenGL suite needs a real driver, which a hosted runner does not
-      # have. PROBE rather than assume, and probe with the suite's OWN collection
-      # fixture: it creates the same window and GL 3.3 core context the full run
-      # needs, so the probe cannot disagree with the thing it is gating.
+      # The GL suite needs a real driver. Probe by running one class of the suite,
+      # which creates the same GL 3.3 context the full run needs. Don't probe the
+      # OpenGLDrivers registry key: it is absent on machines whose driver works.
       #
-      # An earlier attempt probed the OpenGLDrivers ICD registry key instead.
-      # That was WRONG and is recorded so nobody reinvents it: the key is absent
-      # on a developer machine whose driver works perfectly, so it reported "no
-      # GL" and would have silently skipped a suite that passes 150 tests.
-      #
-      # No --no-build: Spectra.slnx excludes this project from the Debug solution
-      # build (`<Build Solution="Debug|*" Project="false" />`), so `dotnet build`
-      # above did not produce it and dotnet run has to.
-      # -----------------------------------------------------------------------
+      # No --no-build: Spectra.slnx leaves this project out of the Debug build.
       - name: Probe for a usable OpenGL driver
         id: glprobe
         shell: pwsh
@@ -153,8 +119,6 @@ jobs:
         if: steps.glprobe.outputs.available == 'true'
         run: dotnet run --project Test/SpectraEngine.Graphics.Tests
 
-      # A silently skipped suite is worse than a failing one, so the skip is an
-      # annotation AND a summary block naming exactly what stopped being checked.
       - name: Say loudly that the graphics suite was skipped
         if: steps.glprobe.outputs.available != 'true'
         shell: pwsh
@@ -186,18 +150,13 @@ jobs:
             'or move this job to a self-hosted runner with a GPU.'
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
-  # ---------------------------------------------------------------------------
-  # 2. Linux: the suites that are genuinely headless. All five run against a
-  #    GPU-free fake renderer or no renderer at all.
-  # ---------------------------------------------------------------------------
+  # The headless suites.
   test-linux:
     name: Test (Linux)
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        # No submodules: nothing in this job builds native code, and the ABI
-        # manifest the physics suite reads (native/box3d-abi.manifest) is a
-        # committed repo file rather than submodule content.
+        # No submodules: nothing here builds native code.
         uses: actions/checkout@v4
 
       - name: Set up .NET
@@ -205,15 +164,8 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # NOT `dotnet build` on the solution. SpectraShade.VSIX targets net472 and
-      # imports $(VsSDKInstall)\Microsoft.VsSDK.targets, whose tooling is nine
-      # Windows executables inside the Microsoft.VSSDK.BuildTools package, so the
-      # solution as a whole cannot build here. Everything else in it can, and is
-      # listed explicitly so that a project added later is a visible omission
-      # rather than a silent one.
-      #
-      # Excluded from this list, and why:
-      #   SpectraShade.VSIX  net472 + the Windows-only VS SDK targets, as above.
+      # Not the solution: SpectraShade.VSIX is net472 and needs the Windows-only
+      # VS SDK targets. Add new projects to this list by hand.
       - name: Build the cross-platform projects
         run: |
           dotnet build SpectraEngine.Core
@@ -228,37 +180,7 @@ jobs:
           dotnet build Spectra.Kitchen.CLI
           dotnet build Benchmarks/CsgBench
 
-      # The five headless suites. Determined by reading the projects, not by
-      # guessing:
-      #   Compiler.Tests  lexer/parser/analyzer/codegen over string and file
-      #                   fixtures. No engine, no renderer.
-      #   Bsp.Tests       drives the scene through FakeRenderer.cs, the headless
-      #                   Renderer whose GPU entry points do nothing.
-      #   Editing.Tests   drives tools through StubRenderer.cs, whose GPU entry
-      #                   points THROW, so a test that grew a graphics dependency
-      #                   would fail rather than quietly acquire one. The
-      #                   Silk.NET types it names are managed enums and
-      #                   interfaces; no device or window is ever created.
-      #   Editor.Tests    the shell's pure pieces only, per that project's own
-      #                   csproj comment: scene tree replay, property panel
-      #                   commit policy, document state, the virtual-key table.
-      #                   It never initialises an Avalonia platform, on any OS,
-      #                   which is what makes it display-independent here - and
-      #                   is why the render suite beside it is a project of its
-      #                   own rather than more tests in this one.
-      #   Editor.Render.  the only suite that DOES initialise one, and it is
-      #   Tests           display-independent for a different reason: headless
-      #                   windowing, so no X server and no GPU, with real Skia
-      #                   for text metrics. One apt package, libfontconfig1,
-      #                   which libSkiaSharp links against.
-      #   Physics.Tests   the native half self-skips (see the Windows job); what
-      #                   remains is managed struct layout against the committed
-      #                   manifest plus pure hull maths.
-      #
-      # Excluded, and why:
-      #   Graphics.Tests  needs a real GL driver and a real window. Probed for on
-      #                   Windows, where a self-hosted GPU runner could supply
-      #                   one; on a hosted Linux runner there is nothing to probe.
+      # Graphics.Tests is not here: it needs a real GL driver and window.
       - name: SpectraShade.Compiler.Tests
         run: dotnet run --project Test/SpectraShade.Compiler.Tests
 
@@ -271,11 +193,8 @@ jobs:
       - name: SpectraEngine.Editor.Tests
         run: dotnet run --project Test/SpectraEngine.Editor.Tests
 
-      # libSkiaSharp.so carries a hard DT_NEEDED on libfontconfig.so.1, and
-      # ubuntu-latest has it - but "works today on the hosted image" is exactly
-      # the assumption this repo probes rather than makes. Without it the
-      # failure reads "Unable to load shared library 'libSkiaSharp'", which
-      # names Skia and not fontconfig.
+      # Usually on the image already. Without it the error names libSkiaSharp,
+      # not fontconfig.
       - name: fontconfig, which libSkiaSharp links against
         run: sudo apt-get install -y --no-install-recommends libfontconfig1
 
@@ -285,32 +204,14 @@ jobs:
       - name: SpectraEngine.Physics.Tests
         run: dotnet run --project Test/SpectraEngine.Physics.Tests
 
-      # Here as well as in the cooked-pack job below, and the second host is the
-      # point: a pack is hashed by content, so a text asset checking out as CRLF
-      # on one runner and LF on the other gives the two hosts different bytes for
-      # one commit. The .gitattributes rules exist to stop that, and this suite -
-      # which cooks the engine's own Assets and verifies the result - is what
-      # would notice if one of them was ever dropped.
+      # Also runs on Windows. The second host catches a text asset checking out
+      # CRLF on one runner and LF on the other, which changes pack hashes.
       - name: Spectra.Kitchen.Tests
         run: dotnet run --project Test/Spectra.Kitchen.Tests
 
-  # ---------------------------------------------------------------------------
-  # 3. The cooked-content gate: export a project from the demo, cook it, verify
-  #    the pack, then run the asset-facing suite against cooked packs.
-  #
-  #    WHY THIS IS A JOB OF ITS OWN. Every other suite here resolves content out
-  #    of the loose tree, which is the editor's workflow and is precisely why a
-  #    material naming a texture nobody cooked looks perfectly fine in all of
-  #    them: the loose file is mounted above the pack and answers. Only a run
-  #    with the pack mounted ALONE, and strict, can see what a shipped build
-  #    sees. That is what `scook verify` does and what the Kitchen suite pins.
-  #
-  #    WINDOWS ONLY, because the export half needs a graphics device: the scene
-  #    it writes out does not exist until the render thread has built its meshes
-  #    and textures, so unlike `--export-entity-schema` there is no headless form
-  #    of the question. The cook and the verify halves are platform-free and run
-  #    inside the Kitchen suite on both hosts already.
-  # ---------------------------------------------------------------------------
+  # Export a project from the demo, cook it, verify the pack. Every other job
+  # resolves loose files, so only this one sees what a shipped build sees.
+  # Windows only: the export needs a graphics device.
   cooked-windows:
     name: Cooked pack gate (Windows)
     runs-on: windows-latest
@@ -326,25 +227,13 @@ jobs:
       - name: Build
         run: dotnet build
 
-      # ----------------------------------------------------------------------
-      # --exit-after-save is what makes this runnable unattended at all: the
-      # demo is an interactive session and would otherwise sit at its window
-      # forever, which in CI is not a slow step, it is a job that never ends.
-      # The switch shuts the session down on the first published frame, by which
-      # point the export is already on disk (it is written during the scene
-      # load).
+      # --exit-after-save ends the demo after one frame; the export is on disk
+      # by then.
       #
-      # continue-on-error, and the reason is specific rather than defensive: the
-      # demo host installs Box3D physics unconditionally and box3d.dll is build
-      # output of the pinned submodule, which no job here builds - so the render
-      # thread throws DllNotFoundException AFTER the export lands and the process
-      # exits non-zero having done its job. The next step decides on the artifact
-      # rather than on the exit code, which is the honest test either way.
+      # continue-on-error: the demo needs box3d.dll, which no job builds, so it
+      # exits non-zero after the export lands. The next step checks the artifact.
       #
-      # The timeout is the real guard. A hosted runner with no usable device can
-      # hang inside device creation, and a step that hangs burns the whole job's
-      # budget with nothing to show.
-      # ----------------------------------------------------------------------
+      # The timeout guards a runner that hangs in device creation.
       - name: Export a project from the demo
         id: export
         continue-on-error: true
@@ -365,9 +254,7 @@ jobs:
             Write-Host 'The demo produced no project on this runner.'
           }
 
-      # Both of these are allowed to go red, and that is the point of the job:
-      # from here on nothing needs a GPU, so a failure is about the content or
-      # the cooker rather than about the runner.
+      # No GPU needed from here on, so these two may fail the job.
       - name: Cook the exported project
         if: steps.exported.outputs.available == 'true'
         run: dotnet run --project Spectra.Kitchen.CLI -- cook ${{ runner.temp }}/CookGate --no-color
@@ -376,8 +263,6 @@ jobs:
         if: steps.exported.outputs.available == 'true'
         run: dotnet run --project Spectra.Kitchen.CLI -- verify ${{ runner.temp }}/CookGate/cooked/Demo.spack --no-color
 
-      # The pack's own row list, into the run summary. It costs one command and
-      # it is what a bug report about a missing asset gets pasted from.
       - name: Record what is in the pack
         if: steps.exported.outputs.available == 'true'
         shell: pwsh
@@ -387,9 +272,6 @@ jobs:
             Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           '```' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
-      # A silently skipped half is worse than a failing one, so the skip is an
-      # annotation AND a summary block naming exactly what stopped being checked
-      # and what still is.
       - name: Say loudly that the export half was skipped
         if: steps.exported.outputs.available != 'true'
         shell: pwsh
@@ -411,41 +293,14 @@ jobs:
             'library. What did not: the demo scene, its exported project layout, and the CLI itself.'
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
-      # Always, export or no export. This is the asset-facing suite run against
-      # cooked packs rather than against the loose tree: it cooks real content,
-      # mounts the result alone and strict, and holds both halves of the
-      # loud-cooker / soft-runtime asymmetry in one test so that neither can be
-      # "fixed" to match the other.
+      # Runs whether or not the export worked.
       - name: Spectra.Kitchen.Tests
         run: dotnet run --project Test/Spectra.Kitchen.Tests
 
-  # ---------------------------------------------------------------------------
-  # 4. The determinism suite: every oracle that says a cook is a PURE FUNCTION,
-  #    run under one name on both hosts.
-  #
-  #    WHY THIS IS A JOB OF ITS OWN, and it is a reporting reason rather than a
-  #    coverage one. Every test here also runs inside Spectra.Kitchen.Tests in
-  #    the two jobs above, so nothing new is being checked; what is new is that a
-  #    failure arrives as "Cook determinism" instead of as one red name among
-  #    three hundred and forty. These oracles fail for a reason no other test in
-  #    the repo fails for - a dictionary iteration order, a scheduling leak, a
-  #    plane an ulp out of place - and the first thing whoever reads the run
-  #    needs to know is which KIND of failure it is.
-  #
-  #    BOTH HOSTS, because per-host reproducibility is exactly what is claimed:
-  #    docs/formats-and-pipeline.md 4.3 records that the audio resampler defers
-  #    to the platform's libm, so cross-host byte identity of cooked audio is
-  #    unproven while every other cooked artifact keeps the stronger claim. Two
-  #    hosts each proving determinism against themselves is the honest form of
-  #    that, and it is also what would catch a .gitattributes rule being dropped:
-  #    a text asset checking out CRLF on one runner and LF on the other gives the
-  #    two hosts different bytes for one commit.
-  #
-  #    The trait is the suite. `-trait "Suite=Determinism"` is the xUnit v3
-  #    runner's own filter, the same mechanism the OpenGL probe above uses with
-  #    -class, and it is a marker on the CLASS so that a new oracle joins by
-  #    being written rather than by somebody remembering to list it here.
-  # ---------------------------------------------------------------------------
+  # The cook determinism oracles under their own job name. They also run inside
+  # Spectra.Kitchen.Tests above; this job exists so a failure is reported as a
+  # determinism failure. Each host proves determinism against itself only:
+  # cooked audio is not byte-identical across hosts (platform libm).
   determinism:
     name: Cook determinism (${{ matrix.os }})
     strategy:
@@ -462,20 +317,14 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # Only what the suite needs. The two-process oracles drive the real scook
-      # binary through Process.Start and SKIP themselves when it is not beside
-      # the test assembly, so building the CLI is what makes this job prove
-      # anything at all - a green run over four skipped oracles is exactly the
-      # silently-weakened gate this workflow refuses everywhere else.
+      # The CLI must be built: the two-process oracles spawn scook and skip
+      # themselves when it is missing.
       - name: Build the cook and its tests
         run: |
           dotnet build Spectra.Kitchen.CLI
           dotnet build Test/Spectra.Kitchen.Tests
 
-      # A SKIP here is a gate that stopped gating, so it is failed on rather than
-      # left in the log. These are the only tests in the repo that can self-skip
-      # on a missing build output, and the shape of that failure is the one this
-      # workflow refuses everywhere else: a green run with the oracles unrun.
+      # A skipped oracle fails the job.
       - name: Determinism oracles
         shell: pwsh
         run: |
@@ -492,10 +341,7 @@ jobs:
             exit 1
           }
 
-  # ---------------------------------------------------------------------------
-  # 5. Windows AOT publish. The engine ships NativeAOT, so this is the gate that
-  #    catches a reflection pattern the ordinary build tolerates.
-  # ---------------------------------------------------------------------------
+  # Catches reflection patterns the ordinary build tolerates.
   aot-windows:
     name: AOT publish (Windows)
     runs-on: windows-latest
@@ -508,18 +354,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # DO NOT DELETE THIS STEP. The ilcompiler shells out to the MSVC linker
-      # through its own findvcvarsall.bat, and vcvarsall.bat calls vswhere.exe
-      # UNQUALIFIED. With the VS Installer directory off PATH, the batch file's
-      # error text is captured as the linker path and the publish dies with
-      #
-      #   error MSB3073: The command ""'vswhere.exe' is not recognized as an
-      #   internal or external command,;operable program or batch file.;
-      #   ...\link.exe" @"...\link.rsp"" exited with code 123
-      #
-      # which says nothing about the code and sends people looking in the wrong
-      # place. Reproduced verbatim on a developer machine and fixed by exactly
-      # this line. GITHUB_PATH prepends for every later step in the job.
+      # Keep this step. vcvarsall.bat calls vswhere.exe unqualified; with the VS
+      # Installer directory off PATH the publish dies with
+      # "MSB3073 ... 'vswhere.exe' is not recognized ... exited with code 123".
       - name: Put the VS Installer directory on PATH
         shell: pwsh
         run: |
@@ -530,24 +367,15 @@ jobs:
           }
           Add-Content -Path $env:GITHUB_PATH -Value $installer
 
-      # NO -p:PublishAot=true. It is redundant (the three projects that want it
-      # set it themselves) and it is worse than redundant: a command-line -p: is a
-      # GLOBAL property that reaches every project in the graph, including
-      # SpectraEngine.Entities.Generator, which targets netstandard2.0 because a
-      # Roslyn analyzer must. The SDK then refuses the whole publish with
-      # NETSDK1207 naming the generator, which is not where anything is wrong, and
-      # UndefineProperties cannot save it because the failure happens during
-      # restore. These four steps were written before the generator existed and
-      # would every one of them have failed on the first run of this workflow.
+      # No -p:PublishAot=true. The projects set it themselves, and as a global
+      # property it reaches the netstandard2.0 generator and fails restore with
+      # NETSDK1207.
       - name: Publish SpectraEngine.Executable (win-x64)
         run: dotnet publish SpectraEngine.Executable -c Release -r win-x64
 
       - name: Publish SpectraShade.Compiler.CLI (win-x64)
         run: dotnet publish SpectraShade.Compiler.CLI -c Release -r win-x64
 
-  # ---------------------------------------------------------------------------
-  # 6. Linux AOT publish. Same two binaries, the other toolchain.
-  # ---------------------------------------------------------------------------
   aot-linux:
     name: AOT publish (Linux)
     runs-on: ubuntu-latest
@@ -560,25 +388,13 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # NativeAOT on Linux links with clang and needs the zlib headers, which is
-      # the Linux counterpart of the Windows job's MSVC linker dependency. Both
-      # are usually present on ubuntu-latest; naming them means a runner image
-      # that drops one fails at apt time with a clear message rather than inside
-      # ILC.
+      # NativeAOT on Linux links with clang and needs the zlib headers.
       - name: Install the NativeAOT prerequisites
         run: |
           sudo apt-get update
           sudo apt-get install -y clang zlib1g-dev
 
-      # NO -p:PublishAot=true. It is redundant (the three projects that want it
-      # set it themselves) and it is worse than redundant: a command-line -p: is a
-      # GLOBAL property that reaches every project in the graph, including
-      # SpectraEngine.Entities.Generator, which targets netstandard2.0 because a
-      # Roslyn analyzer must. The SDK then refuses the whole publish with
-      # NETSDK1207 naming the generator, which is not where anything is wrong, and
-      # UndefineProperties cannot save it because the failure happens during
-      # restore. These four steps were written before the generator existed and
-      # would every one of them have failed on the first run of this workflow.
+      # No -p:PublishAot=true, as in the Windows job.
       - name: Publish SpectraEngine.Executable (linux-x64)
         run: dotnet publish SpectraEngine.Executable -c Release -r linux-x64
 

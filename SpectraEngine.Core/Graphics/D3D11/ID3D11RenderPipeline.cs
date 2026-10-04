@@ -3,9 +3,8 @@ using System;
 namespace SpectraEngine.Core.Graphics.D3D11;
 
 /// <summary>
-/// A swappable rendering strategy for the D3D11 backend. Mirrors
-/// <c>IOpenGLRenderPipeline</c>: pipelines own per-frame work (clear, scene
-/// walk, post-passes); the renderer owns GPU resources and pipeline lifecycle.
+/// A rendering strategy for the D3D11 backend. Pipelines do the per-frame
+/// work; the renderer owns GPU resources and the pipelines' lifetime.
 /// </summary>
 public interface ID3D11RenderPipeline : IDisposable
 {

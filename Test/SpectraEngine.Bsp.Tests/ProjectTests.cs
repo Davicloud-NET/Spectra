@@ -15,15 +15,6 @@ namespace SpectraEngine.Bsp.Tests;
 /// A game project is a folder of text with a manifest at its root, and the
 /// manifest round-trips byte for byte like every other authored document.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The point of the manifest is that maps are plural.</b> A game is made of
-/// levels, and until something named them there was nowhere to say which ones
-/// exist or which one boots. Everything else in the file - display defaults,
-/// backends - is there because a shipped game has to come up without a command
-/// line.
-/// </para>
-/// </remarks>
 public sealed class ProjectTests
 {
     private const string Canonical = """
@@ -45,9 +36,7 @@ public sealed class ProjectTests
         }
         """;
 
-    // A project that has never been cooked names no packs at all, which is the
-    // overwhelmingly common shape and the one a newly bound member is most
-    // likely to start writing an empty array into.
+    // Never cooked, so no 'packs' member. The writer must not add an empty one.
     private const string WithoutPacks = """
         {
           "spectraproject": 1,
@@ -60,10 +49,8 @@ public sealed class ProjectTests
         }
         """;
 
-    // 'packs' between two members this engine still carries: 'input' anchored to
-    // 'maps' before it, 'settings' anchored to 'packs' after it. Byte identity
-    // over this file is the only thing that can say where a BOUND 'packs' is
-    // emitted, because a preserved one reproduces its own position for free.
+    // 'packs' sits between two carried members ('input', 'settings'), so byte
+    // identity here pins where the bound 'packs' is written.
     private const string PacksBetweenCarriedMembers = """
         {
           "spectraproject": 1,
@@ -81,8 +68,6 @@ public sealed class ProjectTests
           "display": {"width":1280,"height":720,"vsync":true,"mode":"windowed"}
         }
         """;
-
-    // -- the document --------------------------------------------------------
 
     [Fact]
     public void A_canonical_manifest_survives_a_read_and_a_write_byte_for_byte()
@@ -118,23 +103,17 @@ public sealed class ProjectTests
     [Fact]
     public void Packs_are_bound_in_manifest_order_and_the_carried_members_keep_their_places()
     {
-        // Order is the mod and patch story: the mount stack resolves a path to
-        // the LAST source that serves it, so a list read out of order silently
-        // stops a patch applying.
+        // Order matters: the last pack serving a path wins, which is how a patch applies.
         SpectraProject project = ProjectReader.Read(Utf8(PacksBetweenCarriedMembers));
 
         project.Packs.ShouldBe(["cooked/MyGame.spack", "cooked/Patch1.spack"]);
 
-        // And 'packs' has left the preserved arm entirely, which is what the
-        // byte-identity case above is actually proving about its anchor.
         project.Unknown.Select(member => member.Name).ShouldBe(["input", "settings"]);
     }
 
     [Fact]
     public void A_project_that_names_no_packs_writes_no_packs_member()
     {
-        // Not tidiness: the round trip has to be exact for a file that predates
-        // the member, and an empty array is a value somebody set on purpose.
         SpectraProject project = ProjectReader.Read(Utf8(WithoutPacks));
 
         project.Packs.ShouldBeEmpty();
@@ -163,9 +142,6 @@ public sealed class ProjectTests
     [Fact]
     public void A_member_with_nothing_to_bind_to_is_carried()
     {
-        // 'input' and 'settings' are specified and there is nothing in the tree
-        // to bind them to, so decoding them would produce values that mean
-        // nothing. Same three-tier rule the map uses.
         SpectraProject project = ProjectReader.Read(Utf8(PacksBetweenCarriedMembers));
 
         project.Unknown.Count.ShouldBe(2);
@@ -176,8 +152,6 @@ public sealed class ProjectTests
     [Fact]
     public void A_manifest_that_names_an_unknown_backend_is_refused()
     {
-        // Never a fall-through to a default. A mistyped 'd3d1' silently becoming
-        // OpenGL would ship a game rendering through a path nobody tested.
         var thrown = Should.Throw<ProjectFormatException>(() => ProjectReader.Read(Utf8("""
             {
               "spectraproject": 1,
@@ -229,8 +203,6 @@ public sealed class ProjectTests
             """))).Message.ShouldContain("9");
     }
 
-    // -- the folder ----------------------------------------------------------
-
     [Fact]
     public void A_created_project_has_the_canonical_layout_and_reopens()
     {
@@ -243,8 +215,7 @@ public sealed class ProjectTests
         Directory.Exists(created.ScriptsPath).ShouldBeTrue();
         File.Exists(Path.Combine(temp.Path, ".gitignore")).ShouldBeTrue();
 
-        // The .gitattributes rule is what stops a Windows checkout rewriting
-        // every map bundle underneath the person editing it.
+        // Stops a Windows checkout converting map bundles to CRLF.
         File.ReadAllText(Path.Combine(temp.Path, ".gitattributes"))
             .ShouldContain("**/*.smap/** text eol=lf");
 
@@ -256,8 +227,6 @@ public sealed class ProjectTests
     [Fact]
     public void A_project_opens_from_its_folder_as_well_as_its_file()
     {
-        // Both are what a person means: double-clicking gives the file, dragging
-        // a folder or typing a path gives the directory.
         using var temp = new TemporaryFolder();
         ProjectLayout.Create(temp.Path, "MyGame");
 
@@ -267,8 +236,6 @@ public sealed class ProjectTests
     [Fact]
     public void A_folder_with_two_projects_in_it_is_refused_rather_than_guessed_at()
     {
-        // Which project a folder IS is not something to guess, and the guess
-        // would be alphabetical.
         using var temp = new TemporaryFolder();
         ProjectLayout.Create(temp.Path, "Alpha");
         File.WriteAllText(Path.Combine(temp.Path, "Beta.spectraproj"), "{}");
@@ -290,9 +257,6 @@ public sealed class ProjectTests
     [Fact]
     public void Scaffolding_never_clobbers_a_file_that_is_already_there()
     {
-        // These become the user's files the moment the folder exists, and a
-        // scaffold that overwrites a hand-edited .gitignore is one nobody runs
-        // twice.
         using var temp = new TemporaryFolder();
         Directory.CreateDirectory(temp.Path);
         File.WriteAllText(Path.Combine(temp.Path, ".gitignore"), "# mine");
@@ -301,8 +265,6 @@ public sealed class ProjectTests
 
         File.ReadAllText(Path.Combine(temp.Path, ".gitignore")).ShouldBe("# mine");
     }
-
-    // -- maps in a project ---------------------------------------------------
 
     [Fact]
     public void Map_discovery_finds_bundles_on_disk_in_a_stable_order()
@@ -313,7 +275,7 @@ public sealed class ProjectTests
         foreach (string name in new[] { "Zeta", "Alpha", "Mid" })
             MapBundle.Save(Path.Combine(project.MapsPath, name + MapFormat.BundleExtension), new MapDocument());
 
-        // A folder that is not a bundle must not be mistaken for one.
+        // Named like a bundle but holds no map.json.
         Directory.CreateDirectory(Path.Combine(project.MapsPath, "NotAMap.smap"));
 
         project.DiscoverMaps().ShouldBe(
@@ -349,8 +311,6 @@ public sealed class ProjectTests
         map.Nodes[0].Brush.ShouldNotBeNull();
     }
 
-    // -- helpers -------------------------------------------------------------
-
     private static byte[] Utf8(string text) =>
         Encoding.UTF8.GetBytes(text.ReplaceLineEndings("\n") + "\n");
 
@@ -364,10 +324,9 @@ public sealed class ProjectTests
 
         public void Dispose()
         {
-            // DirectoryNotFoundException is an IOException, so one clause covers
-            // both the "never created" and the "still locked" cases.
+            // Also catches DirectoryNotFoundException when nothing was created.
             try { Directory.Delete(Path, recursive: true); }
-            catch (IOException) { /* a temp directory that outlives the run is not a failure */ }
+            catch (IOException) { /* leftover temp dir is fine */ }
         }
     }
 }

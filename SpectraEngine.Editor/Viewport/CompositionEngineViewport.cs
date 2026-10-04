@@ -18,48 +18,11 @@ using System.Threading.Tasks;
 
 namespace SpectraEngine.Editor.Viewport;
 
-/// <summary>
-/// The pane the engine renders into, as a picture the compositor draws rather
-/// than as a window that draws itself.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is the end of airspace.</b> The native child composites above
-/// everything Avalonia draws, and that single fact is behind every layout limit
-/// the shell has: no overlays over the 3D view, no split views, no dockable
-/// viewport, no drag-and-drop into the scene. Here the engine's frame arrives
-/// as an imported texture on an ordinary composition visual, so it is a control
-/// like any other - it can be clipped, layered under, animated, docked and
-/// floated, and the rules that kept the rest of the shell out of its rectangle
-/// stop applying to it.
-/// </para>
-/// <para>
-/// <b>Nothing about the frame goes through the UI framework even so.</b> The
-/// engine still owns its device, its render thread and its pipeline; what
-/// changes is only the last step, where a present becomes a resolve into a
-/// shared keyed-mutex texture and the compositor takes the picture from there.
-/// The mutex is what paces the two sides, so neither polls the other.
-/// </para>
-/// <para>
-/// <b>Windows only, and for a different reason than the native child's.</b> The
-/// import is a D3D11 shared NT handle, which is a Windows concept, and the
-/// cursor lock is <c>ClipCursor</c>. Both are real work to port and neither is
-/// faked.
-/// </para>
-/// <para>
-/// <b>The input path is the same one, deliberately.</b> Every decision about
-/// what a press MEANS lives in <see cref="ViewportInputRouter"/>, which names
-/// no platform and no UI framework; this class translates Avalonia's events
-/// into router calls and implements <see cref="IViewportCursor"/> for it, which
-/// is exactly the shape the Win32 window has. Two viewports that arbitrated a
-/// right-click differently would be an editor whose gestures depended on its
-/// layout.
-/// </para>
-/// <para>
-/// <b>Threading:</b> UI thread only. Avalonia's compositor import and update
-/// calls verify that themselves.
-/// </para>
-/// </remarks>
+// The composited viewport: the engine resolves into a shared keyed-mutex
+// texture and the compositor draws it on an ordinary composition visual, so
+// the pane is a normal control with no airspace limits.
+// Windows only (D3D11 shared NT handle, ClipCursor). UI thread only.
+// Input goes through ViewportInputRouter, same as the Win32 viewport.
 internal sealed class CompositionEngineViewport : Control, IEngineViewport, IViewportCursor
 {
     private readonly ILogger _logger;
@@ -79,30 +42,22 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     private IPointer? _pointer;
     private bool _releasingCapture;
 
-    // The asset hovering over this pane and what letting go would cover, so
-    // AssetDragChanged is raised on a change rather than per pointer move.
+    // Last reported drag state, so AssetDragChanged fires only on a change.
     private AssetDragState? _dragState;
 
-    // Where the pointer was the last time a drag event moved it, in dips. A
-    // drag delivers no PointerMoved at all, so this is the only thing feeding
-    // the editor a hover while one is in flight.
+    // In dips. A drag delivers no PointerMoved, so this feeds the editor's
+    // hover while one is in flight.
     private Point? _lastDragPoint;
 
-    // Whether the shell has a surface from this viewport with an engine on it,
-    // and whether the shell has said the viewport is finished. Two bits, and the
-    // distinction between them is the whole of what makes this viewport
-    // dockable, so they live in a type with a test on them rather than as fields
-    // nothing without a GPU can reach.
+    // Tracks published vs shut down, which is what tells a re-parent from a
+    // teardown.
     private readonly ViewportSurfaceLifetime _lifetime = new();
 
-    // What the last layout pass left behind, so a move, a resize and a DPI
-    // change are one comparison each rather than three subscriptions.
+    // Geometry as of the last layout pass.
     private PixelPoint _originOnScreen;
     private Size _sizeInDips;
     private double _scaling = 1.0;
 
-    // The cursor last handed to Avalonia, so the shape is written on a change
-    // rather than per pump.
     private StandardCursorType? _shownCursor;
     private bool _cursorHidden;
 
@@ -115,25 +70,17 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         _onUnavailable = onUnavailable;
         _onFailure = onFailure;
 
-        // Unlike a NativeControlHost, this really is focusable, which is what
-        // makes FocusEngine a plain Focus() here and a Win32 SetFocus there.
         Focusable = true;
 
         _router = new ViewportInputRouter(this);
         _router.ShellChord += chord => ShellChord?.Invoke(chord);
         _router.ContextMenuRequested += (x, y) => ContextMenuRequested?.Invoke(x, y);
 
-        // TUNNEL, not bubble, and this is the whole reason the keyboard reaches
-        // the engine at all. Alt opens the window menu, Tab moves focus and the
-        // arrows drive navigation, all from handlers that run while the event is
-        // still on its way down; a bubbling handler sees what is left over.
+        // Tunnel: Alt, Tab and the arrows are eaten by handlers that run
+        // before a bubbling one would see them.
         AddHandler(KeyDownEvent, OnTunnelKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnTunnelKeyUp, RoutingStrategies.Tunnel);
 
-        // The end of airspace, spent. A native child is a window the OS routes
-        // input to and Avalonia never sees a drag over it at all; this pane is
-        // an ordinary control, so it can be a drop target exactly like the
-        // scene tree already is.
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnAssetDragOver);
         AddHandler(DragDrop.DragLeaveEvent, OnAssetDragLeave);
@@ -174,15 +121,11 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         {
             _host = value;
 
-            // EngineHost is not itself an IInputSink (it owns one), so the
-            // router is handed an adapter rather than the host: the router must
-            // be constructible in a test with no engine at all.
             _router.Sink = value is null ? null : new EngineHostSink(value);
 
-            // Clearing the host is the shell's teardown, and it happens BEFORE
-            // the session stops. That order is load-bearing: an update already
-            // in flight is waiting on a keyed-mutex key only the producer can
-            // release, so the producer has to outlive the pump.
+            // The shell clears the host before it stops the session. The pump
+            // must stop first: an in-flight update waits on a key only the
+            // producer can release.
             if (value is null)
                 _pump?.Stop();
         }
@@ -192,14 +135,8 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     public void FocusEngine() => Focus();
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The composited viewport does three things in the shell's once-a-pass
-    /// slot rather than one, and they belong together: the engine's cursor
-    /// request, the shared target it is currently writing into, and the check
-    /// for a hand-over that is never going to finish. All three are the same
-    /// kind of thing - render-thread state a UI thread has to act on - and a
-    /// second entry point for them would be a second thing to remember to call.
-    /// </remarks>
+    // Also feeds the pump the current shared target and checks for a stalled
+    // hand-over.
     public void PumpCursorMode()
     {
         if (_host is not { } host)
@@ -209,46 +146,25 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         host.ApplyPendingCursorMode();
         ApplyCursorShape(host);
 
-        // LastSnapshot rather than a subscription: it is a reference to an
-        // immutable object the render thread publishes, so reading it here is
-        // free, allocates nothing and cannot tear. A generation the shell has
-        // already imported costs the pump one comparison.
         if (host.LastSnapshot.SharedTarget is { } shared)
             _pump?.Observe(shared);
 
         _pump?.CheckForStall();
     }
 
-    // --- Lifetime ------------------------------------------------------------
-
     /// <inheritdoc/>
-    /// <remarks>
-    /// <b>This runs again every time the pane is dragged into another dock or
-    /// out into a float window</b>, which is the whole difference between a
-    /// dockable viewport and a pinned one. Everything here is therefore written
-    /// to be true the second time as well: the top level and the window are
-    /// re-read because a float is a different window with a different
-    /// compositor, and the compositor half is rebuilt from scratch because a
-    /// visual belongs to the compositor that made it. What is NOT redone is the
-    /// surface: the engine is still running against it, still resolving into
-    /// its shared target, and has no idea any of this happened.
-    /// </remarks>
+    // Runs again on every re-dock or float. The window and the compositor half
+    // are rebuilt (a float is another window); the surface is not, the engine
+    // is still rendering into it.
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
 
         _topLevel = TopLevel.GetTopLevel(this);
 
-        // The window, not the top level: deactivation is a WINDOW event, and it
-        // is the half of focus loss that Avalonia's own focus never reports.
-        // The window state is here for the same reason - a minimised window's
-        // controls keep their layout bounds, so nothing about the LAYOUT ever
-        // says the viewport cannot be seen.
-        //
-        // PositionChanged is the third, and it is the one nothing else would
-        // report: a window that MOVES re-lays out nothing at all, so the pane's
-        // screen origin changes with no layout pass behind it and a live cursor
-        // lock keeps differencing against where the pane used to be.
+        // Three things layout never reports: deactivation (alt-tab leaves
+        // Avalonia focus where it was), minimise (bounds are kept), and a
+        // window move (screen origin changes with no layout pass).
         _window = _topLevel as Window;
         if (_window is { } window)
         {
@@ -262,46 +178,23 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
 
         _ = InitializeAsync();
 
-        // A re-parent, not the first attach: the keyboard went wherever the
-        // dock drag left it, and a viewport that came back with no focus takes
-        // every tool key with it until somebody clicks in the scene.
+        // Re-parent: take the keyboard back, or the tool keys are dead until
+        // somebody clicks in the scene.
         if (_lifetime.IsPublished)
             Focus();
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <para>
-    /// <b>A detach is a RE-PARENT until the shell says otherwise, and getting
-    /// that backwards is the one defect a dockable viewport is most likely to
-    /// ship with.</b> Dragging the pane into another dock detaches and
-    /// re-attaches the control; answered as a teardown it raises
-    /// <see cref="SurfaceDestroying"/>, the shell stops the engine, the
-    /// re-attach publishes a fresh surface and a SECOND session is built on it -
-    /// a new scene, an empty undo history, and the level gone, with nothing
-    /// anywhere reporting an error. So the surface is published exactly once per
-    /// session and <see cref="Shutdown"/> is the only thing that ends it.
-    /// </para>
-    /// <para>
-    /// <b>What genuinely does go is the compositor half</b>, because a
-    /// composition visual belongs to the compositor that created it and a float
-    /// is a different window. The pump takes the drawing surface with it, for
-    /// the ordering reason written on <c>CompositedFramePump.Stop</c>: disposing
-    /// it here would dispose it under whatever hand-over was in flight, and the
-    /// fault that produced would be reported as the composited viewport
-    /// failing, on every re-dock.
-    /// </para>
-    /// </remarks>
+    // A detach is a re-parent unless Shutdown was called. Treating it as a
+    // teardown would stop the engine and build a second session on re-attach.
+    // Only the compositor half goes; the pump owns the drawing surface and
+    // releases it after the last hand-over settles.
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         LayoutUpdated -= OnLayoutUpdated;
 
-        // FIRST, while the window is still known. Releasing the lock unfences
-        // the pointer and teleports it back to where the press happened, and
-        // that restore point is a CLIENT position: with the top level already
-        // forgotten there is nothing to map it through, so the cursor would be
-        // put at those numbers read as screen coordinates - a pointer thrown
-        // into the corner of the display every time a session closes mid-look.
+        // First, while the top level is still known: the unlock restores the
+        // cursor to a client position that needs it to map to the screen.
         _router.ApplyCursorMode(CursorMode.Normal);
 
         if (_window is { } window)
@@ -311,26 +204,19 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
             window.PositionChanged -= OnWindowPositionChanged;
         }
 
-        // Only when the shell has said this viewport is finished. The engine has
-        // to be off the surface by the time this returns, exactly as the native
-        // child's teardown demands and for the mirror-image reason - there the
-        // driver would be handed a dead window, here the pump would be left
-        // waiting on a key nothing is going to release.
+        // True only after Shutdown. The engine must be off the surface when
+        // this returns.
         if (_lifetime.Detached())
             SurfaceDestroying?.Invoke();
 
-        // Stopped either way: this pump's compositor objects are about to stop
-        // being reachable, and a re-parent builds a fresh one on the other side.
-        // Safe on the re-parent path precisely because the producer is still
-        // running and will answer whatever hand-over is outstanding.
+        // Stopped on a re-parent too; the re-attach builds a fresh pump.
         _pump?.Stop();
         _pump = null;
 
         ElementComposition.SetElementChildVisual(this, null);
         _visual = null;
 
-        // NOT disposed here: ownership went to the pump with Stop, which lets go
-        // of it once no import is still snapshotting into it.
+        // Not disposed here: the pump owns it after Stop.
         _drawingSurface = null;
 
         _window = null;
@@ -342,32 +228,17 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     /// <inheritdoc/>
     public void Shutdown()
     {
-        // A viewport that never reached the tree, or one the shell is closing
-        // while it is floated: the surface is published once and ended once, and
-        // the detach that follows must not be able to end it a second time.
         if (_lifetime.Shutdown())
             SurfaceDestroying?.Invoke();
 
         _pump?.Stop();
 
-        // Closing a session while a drag is in flight is unlikely and entirely
-        // reachable (Ctrl+W is a window chord, and a drag does not stop the
-        // keyboard). The overlay belongs to the pane, so it goes with it.
+        // A session can be closed mid-drag from the keyboard.
         ReportDrag(null);
     }
 
-    /// <summary>
-    /// Negotiates the compositor's GPU interop and publishes the surface.
-    /// </summary>
-    /// <remarks>
-    /// <b>Asynchronous by construction, which is why failure is a callback
-    /// rather than a return value.</b> The interop is settled with the render
-    /// backend the window is attached to, and there is no synchronous form of
-    /// that question - so a machine that cannot composite is discovered after
-    /// the control is already in the tree, and saying so out loud is the
-    /// difference between an editor with a blank pane and an editor with a
-    /// reason in the status bar.
-    /// </remarks>
+    // Negotiates the compositor's GPU interop and publishes the surface.
+    // The interop query is async, so failure is reported through a callback.
     private async Task InitializeAsync()
     {
         try
@@ -396,9 +267,7 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
                 return;
             }
 
-            // Detached again while the interop was being negotiated: the pane
-            // was closed, and publishing a surface now would start an engine
-            // against a control that is no longer anywhere.
+            // Detached while the interop was being negotiated.
             if (_topLevel is null)
                 return;
 
@@ -414,11 +283,8 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
                 _logger,
                 onFault: OnPumpFaulted);
 
-            // The engine is started ONCE per session. A re-parent has rebuilt
-            // everything above it and disturbed nothing below: the renderer has
-            // gone on resolving into its shared target throughout, its own
-            // acquire timing out and skipping while there was no consumer, and
-            // the fresh pump imports whatever generation the next frame names.
+            // The surface is published once per session. After a re-parent the
+            // fresh pump just imports the generation the next frame names.
             switch (_lifetime.Attached())
             {
                 case ViewportAttach.Publish:
@@ -441,8 +307,6 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         }
         catch (Exception ex)
         {
-            // The driver under this is exactly the unknown, so a failure here
-            // reports rather than taking the shell down with it.
             _logger.LogError(ex, "The composited viewport could not be set up");
             Unavailable($"the composited viewport could not be set up: {ex.Message}");
         }
@@ -454,85 +318,33 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         _onUnavailable?.Invoke(
             $"The composited viewport is not available here: {reason} Relaunch with --viewport=native.");
 
-        // A session that was already running when this happened did not merely
-        // fail to start: it stopped showing a picture, which is the one thing
-        // the green history exists to count. Without this a viewport that
-        // re-attached into a window whose compositor refused it would still be
-        // recorded as a clean session and go on earning the flip to composition.
+        // A running session that lost its picture is not a green session.
         if (_lifetime.IsPublished)
             _onFailure?.Invoke(ViewportChoiceReason.FirstUpdateFaulted);
     }
 
-    /// <summary>
-    /// The window moved on screen. Layout reports nothing at all for this.
-    /// </summary>
-    /// <remarks>
-    /// <b>The gap <see cref="OnLayoutUpdated"/> structurally cannot see.</b> A
-    /// window that is dragged, snapped, moved by a keyboard chord or shifted by
-    /// a display change re-lays out none of its contents, so every bound in the
-    /// tree is unchanged and the pane's SCREEN origin is not - which is exactly
-    /// the value a live cursor lock differences against.
-    /// </remarks>
+    // A window move triggers no layout pass.
     private void OnWindowPositionChanged(object? sender, PixelPointEventArgs e) => ReadGeometry();
 
-    /// <summary>
-    /// The hand-over stopped while the session was running.
-    /// </summary>
-    /// <remarks>
-    /// <b>Reported and nothing else, deliberately.</b> Swapping to the native
-    /// child here would tear down a live engine, destroy every GPU resource it
-    /// owns and rebuild the pane under whatever the user was in the middle of -
-    /// and would leave two hosting models in one session's log, which is a bug
-    /// report nobody can write. The session stays where it is, says what
-    /// happened, and names the switch that avoids it next time.
-    /// </remarks>
+    // Report only. Swapping to the native child here would tear down a live
+    // engine.
     private void OnPumpFaulted() => _onFailure?.Invoke(ViewportChoiceReason.FirstUpdateFaulted);
 
-    /// <summary>
-    /// Tells the engine a retired shared-target generation may be freed.
-    /// </summary>
-    /// <remarks>
-    /// <b>Through the host's own latch, which is where every piece of engine
-    /// state a UI drives goes.</b> The resource is the render thread's and is
-    /// held precisely because this side might still have been sampling it, so
-    /// the answer is applied over there, in the frame's once-a-pass slot,
-    /// rather than by anybody touching a renderer from here. A host that has
-    /// already been cleared simply never hears it, and the renderer frees
-    /// everything on shutdown anyway.
-    /// </remarks>
+    // Tells the engine a retired shared-target generation may be freed. Goes
+    // through the host's latch; the resource belongs to the render thread.
     private void AcknowledgeRelease(int generation) =>
         _host?.NotifySharedTargetReleased(generation);
 
-    // --- Geometry ------------------------------------------------------------
-
     /// <inheritdoc/>
-    /// <remarks>
-    /// <b>A fill is what makes a control hit-testable.</b> Avalonia hit-tests
-    /// against what a visual actually drew, so a viewport that painted nothing
-    /// would render the scene perfectly and never receive a click - the same
-    /// failure, from the opposite direction, that made the shell create its own
-    /// native child in the first place. Transparent rather than a colour,
-    /// because the bezel behind it already owns the pixels and inventing one
-    /// here would put a literal colour outside the theme.
-    /// </remarks>
+    // Avalonia hit-tests what a visual drew, so paint a transparent fill or
+    // the pane never gets a click.
     public override void Render(DrawingContext context) =>
         context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
 
     private void OnLayoutUpdated(object? sender, EventArgs e) => ReadGeometry();
 
-    /// <summary>
-    /// Picks up a move, a resize or a scaling change, whichever happened.
-    /// </summary>
-    /// <remarks>
-    /// <b>One place, because they are one question asked three ways</b> - and
-    /// because the move is the one nothing else would notice. The cursor lock
-    /// pins the pointer at a SCREEN point derived from the viewport's centre,
-    /// so a pane that slides sideways under a live freelook leaves the anchor
-    /// pointing at where it used to be and the very next mouse move hands the
-    /// engine the whole displacement as one frame of look. The native child
-    /// could not reach that state; a composited one can be re-laid-out under a
-    /// held button by anything on the window.
-    /// </remarks>
+    // Picks up a move, a resize or a scaling change. The move matters because
+    // the cursor lock's anchor is a screen point.
     private void ReadGeometry()
     {
         if (_topLevel is null)
@@ -548,8 +360,7 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         }
         catch (InvalidOperationException)
         {
-            // Between attach and the first layout there is no root to measure
-            // against. The next pass answers.
+            // No root yet between attach and the first layout.
             return;
         }
 
@@ -581,19 +392,8 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
             UpdateVisibility();
     }
 
-    /// <summary>
-    /// Whether there is any point taking the next frame.
-    /// </summary>
-    /// <remarks>
-    /// <b>Two conditions, because neither implies the other and the second one
-    /// is invisible to layout.</b> A pane collapsed to nothing has no bounds;
-    /// a MINIMISED window's controls keep theirs exactly, so a viewport nobody
-    /// can see goes on being laid out at its full size and looks, to every
-    /// signal a control has, like it is on screen. Measured: without the window
-    /// state the pump kept copying a full-screen texture per vsync for a
-    /// minimised editor, and the producer kept rendering full frames to feed
-    /// it.
-    /// </remarks>
+    // Bounds alone are not enough: a minimised window's controls keep theirs,
+    // and the pump would go on copying frames nobody sees.
     private void UpdateVisibility()
     {
         bool onScreen = Bounds.Width > 0
@@ -603,29 +403,17 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         _pump?.SetVisible(onScreen);
     }
 
-    // --- Pointer -------------------------------------------------------------
-
     /// <inheritdoc/>
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         _pointer = e.Pointer;
 
-        // THE STUCK-OVERLAY GUARD, and it is here rather than anywhere else
-        // because this is the only event that PROVES a drag is over. An OLE drag
-        // loop owns the pointer for its whole duration and delivers drag events
-        // instead of pointer ones, so an ordinary move cannot be raised until it
-        // has ended - by a drop, by Escape, or by a cancel that leaves no leave
-        // behind. DragLeave is the ordinary path and it is not guaranteed; a
-        // frame and a label left painted over the picture with no gesture behind
-        // them is a viewport that looks broken and has no verb to clear it.
-        // Free when there is nothing to clear: one reference comparison.
+        // An OLE drag delivers no pointer moves, so getting one means any drag
+        // is over. DragLeave is not guaranteed; this clears a stuck overlay.
         ReportDrag(null);
 
-        // INTERMEDIATE points, not just the current one. A pointer moving fast
-        // between two UI frames arrives as one event carrying the whole path,
-        // and a handler that reads only the last position loses every bit of
-        // travel in between - which a freelook feels as a camera that drifts
-        // behind the hand and a marquee feels as a rubber band that skips.
+        // A fast move is one event carrying the whole path. Reading only the
+        // last position loses the travel in between.
         var path = e.GetIntermediatePoints(this);
         if (path.Count > 0)
         {
@@ -660,15 +448,10 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
             return;
         }
 
-        // Focus follows the click, because a viewport that responds to the
-        // mouse while every shortcut goes to the panel beside it is the exact
-        // half-working state the native child's SetFocus exists to avoid.
         Focus();
 
-        // The position first: the router's right-press arbitration measures
-        // travel from where the press happened, and a press whose position
-        // arrived only with the following move would start it in the wrong
-        // place.
+        // Position first: the router measures right-click travel from where
+        // the press happened.
         SubmitMove(e.GetPosition(this));
         _router.OnPointerDown(button);
 
@@ -706,56 +489,29 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <b>A capture can be taken away without focus moving</b> - a touch
-    /// cancelled by the system, another control grabbing the pointer, a drag
-    /// leaving for a different window - and the release that ended the press is
-    /// then never coming. The gesture is cancelled with balanced button
-    /// releases rather than with the release-everything event a focus loss
-    /// uses, because the keyboard was not lost and dropping the held movement
-    /// keys would stop a freelook that is still perfectly valid.
-    /// </remarks>
+    // The keyboard is still here, so the router gets balanced button releases
+    // and not the release-everything focus event.
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
-        // Except when this side let go on purpose: releasing a capture raises
-        // this event, so without the guard every ordinary button release would
-        // cancel the gesture it just finished.
+        // Releasing the capture ourselves raises this event too.
         if (!_releasingCapture)
             _router.OnPointerCaptureLost();
 
         base.OnPointerCaptureLost(e);
     }
 
-    // --- Asset drop ----------------------------------------------------------
-
-    /// <remarks>
-    /// <b>Claimed for any asset payload, model or not, and the refusal is a
-    /// sentence rather than a cursor.</b> Setting <c>None</c> for a texture
-    /// would stop the drop, which stops the <see cref="AssetDropped"/> event,
-    /// which leaves the user with a "no entry" pointer and nothing anywhere
-    /// saying why - and "only models can be dropped yet" is exactly the thing
-    /// worth saying. The shell decides and reports through
-    /// <see cref="Shell.AssetDropPolicy"/>; this side only decides that the
-    /// gesture belongs to the viewport, which is why the event is claimed
-    /// (<c>Handled</c>) and the window's own file-drop handler never sees it.
-    /// </remarks>
+    // Claimed for every asset payload, droppable or not: the shell refuses in
+    // words through AssetDropPolicy, which a "no entry" cursor cannot.
     private void OnAssetDragOver(object? sender, DragEventArgs e)
     {
         if (e.DataTransfer.TryGetValue(ContentDrag.Format) is not { } payload)
             return;
 
-        // What the overlay draws. Set here rather than only on DragEnter,
-        // because a drag that begins INSIDE this pane (the browser floated over
-        // it, which docking now allows) can produce its first event here.
+        // A drag can start inside this pane, so there may be no DragEnter.
         ReportDrag(new AssetDragState(payload, ScopeOf(e.KeyModifiers)));
 
-        // AND the position, through the ordinary input path. Avalonia delivers
-        // no PointerMoved during an OLE drag, so without this the editor has no
-        // idea where the pointer is and cannot outline the face about to be
-        // painted; feeding the router is what gives it one with no second
-        // latch to keep in step. Not OnPointerMoved, deliberately: that method
-        // is also the guard that decides a stuck overlay is over, and calling
-        // it here would clear the very overlay this event is drawing.
+        // No PointerMoved arrives during an OLE drag, so feed the position to
+        // the router here. Not through OnPointerMoved, which clears the overlay.
         Point position = e.GetPosition(this);
         if (_lastDragPoint != position)
         {
@@ -763,28 +519,19 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
             SubmitMove(position);
         }
 
-        // Copy, not Move: the file stays where it is and the scene gains a
-        // reference to it.
         e.DragEffects = DragDropEffects.Copy;
         e.Handled = true;
     }
 
-    /// <remarks>
-    /// <b>Not claimed (<c>Handled</c>), unlike its two siblings.</b> Leaving is
-    /// not a gesture this viewport owns the outcome of - the pane the pointer
-    /// moved ONTO needs the same event to answer for itself, and a leave
-    /// swallowed here would make the scene tree stop showing its own drop line
-    /// after a drag had once crossed the viewport.
-    /// </remarks>
+    // Not marked Handled: the pane the pointer moved onto needs the event too.
     private void OnAssetDragLeave(object? sender, RoutedEventArgs e)
     {
         _lastDragPoint = null;
         ReportDrag(null);
     }
 
-    // Ctrl widens a material drop from the face under the pointer to the whole
-    // block. Read at every event rather than latched, because the modifier can
-    // be pressed and released mid-gesture and the prompt has to follow it.
+    // Ctrl widens a material drop from one face to the whole block. Read per
+    // event: the modifier can change mid-drag.
     private static MaterialDropScope ScopeOf(Avalonia.Input.KeyModifiers modifiers) =>
         modifiers.HasFlag(Avalonia.Input.KeyModifiers.Control) ? MaterialDropScope.Brush : MaterialDropScope.Face;
 
@@ -795,34 +542,19 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
 
         e.Handled = true;
 
-        // Before the drop is reported, not after: the shell's handler runs the
-        // insert and writes a line to the status bar, and an overlay still
-        // saying "drop to place" over the result would outlive the gesture that
-        // asked for it.
+        // Clear the overlay before the shell handles the drop.
         ReportDrag(null);
 
-        // The SAME conversion a press goes through, so a drop and a click on one
-        // pixel aim at one pixel. A high-DPI pane's dips are not its framebuffer
-        // pixels, and the insert ray is cast in the latter.
+        // Framebuffer pixels, same conversion as a press.
         (int x, int y) = ToPixels(e.GetPosition(this));
         AssetDropped?.Invoke(payload, x, y, ScopeOf(e.KeyModifiers));
     }
 
-    /// <summary>
-    /// Publishes what is being dragged over this pane, on a change only.
-    /// </summary>
-    /// <remarks>
-    /// <b>The guard is not an optimisation.</b> <c>DragOver</c> arrives per
-    /// pointer move, and every one of them carries the payload the gesture
-    /// started with; raised unguarded this would re-evaluate the overlay's
-    /// bindings a few hundred times per crossing, for a frame and a label that
-    /// never change - the same churn the shell's pump was fixed for.
-    /// </remarks>
+    // DragOver fires per pointer move with the same answer, so only a change
+    // is raised.
     private void ReportDrag(AssetDragState? state)
     {
-        // Value equality, not reference: DragOver builds a fresh state per
-        // pointer move and every one of them is equal to the last unless the
-        // file or the modifier changed.
+        // Record value equality: DragOver builds a fresh state each time.
         if (_dragState == state)
             return;
 
@@ -830,17 +562,12 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         AssetDragChanged?.Invoke(state);
     }
 
-    // --- Keyboard and focus --------------------------------------------------
-
     private void OnTunnelKeyDown(object? sender, KeyEventArgs e)
     {
         _router.OnKeyDown(AvaloniaKeys.ToInputKey(e.Key), AvaloniaKeys.ToModifiers(e.KeyModifiers));
 
-        // Claimed whether or not the router wanted it, which is what the native
-        // child's window procedure does by construction: while the viewport has
-        // focus the engine is the keyboard's owner, and a key left to bubble
-        // would reach a menu accelerator or the focus navigator instead of the
-        // scene the user is looking at.
+        // Always handled: while the viewport has focus the engine owns the
+        // keyboard, as with the native child.
         e.Handled = true;
     }
 
@@ -852,19 +579,9 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
 
     private void OnViewportLostFocus(object? sender, RoutedEventArgs e) => _router.OnFocusLost();
 
-    /// <summary>
-    /// The window went to the background with the viewport still focused.
-    /// </summary>
-    /// <remarks>
-    /// <b>Both this and <see cref="OnLostFocus"/>, because neither implies the
-    /// other.</b> Alt-tabbing away leaves Avalonia's focus exactly where it
-    /// was, so a viewport that only listened for lost focus would keep a
-    /// captured cursor and a held button across the switch, with no event
-    /// anywhere that would ever lift them.
-    /// </remarks>
+    // Alt-tab leaves Avalonia's focus where it was, so LostFocus alone would
+    // keep the cursor locked and buttons held.
     private void OnWindowDeactivated(object? sender, EventArgs e) => _router.OnFocusLost();
-
-    // --- Cursor --------------------------------------------------------------
 
     private void ApplyCursorShape(EngineHost host)
     {
@@ -889,8 +606,6 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         return cursor;
     }
 
-    // --- IViewportCursor -----------------------------------------------------
-
     /// <inheritdoc/>
     ViewportSize IViewportCursor.ClientSize
     {
@@ -906,12 +621,8 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     {
         get
         {
-            // Half of SM_CXDRAG, because the metric is the full width of the
-            // rectangle and the travel is measured from its centre. In the
-            // viewport's own scaling, so a click may wander the same physical
-            // distance on a 200% display as on a 100% one - and read per press
-            // rather than cached, since a window can be dragged between
-            // monitors between one press and the next.
+            // Half of SM_CXDRAG: the metric is the rectangle's full width and
+            // travel is measured from its centre.
             const int fallback = 4;
 
             try
@@ -922,8 +633,7 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
             }
             catch (EntryPointNotFoundException)
             {
-                // Pre-1607 Windows has no per-DPI metrics; the constant is what
-                // the metric returns at 100% anyway.
+                // Pre-1607 Windows has no per-DPI metrics.
                 return fallback;
             }
         }
@@ -937,10 +647,8 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
 
         try
         {
-            // The router works in framebuffer pixels and Avalonia in logical
-            // units, so the trip out goes through the scaling and the trip back
-            // does not: PointToScreen already answers in physical screen
-            // pixels, which is what SetCursorPos and ClipCursor want.
+            // Router pixels to dips on the way in. PointToScreen already
+            // returns physical screen pixels.
             PixelPoint screen = this.PointToScreen(
                 new Point(client.X / _scaling, client.Y / _scaling));
             return new ViewportPoint(screen.X, screen.Y);
@@ -982,7 +690,7 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         }
         catch (InvalidOperationException)
         {
-            // No visual root to measure against; there is nothing to fence.
+            // No visual root, nothing to fence.
         }
     }
 
@@ -1004,13 +712,8 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <b>Avalonia's capture, not Win32's.</b> The composited viewport lives
-    /// inside somebody else's window, and taking the OS capture on that HWND
-    /// would fight the framework that already owns the pointer for it.
-    /// Releasing raises <c>PointerCaptureLost</c>, which is why the guard is
-    /// here rather than in the handler alone.
-    /// </remarks>
+    // Avalonia's capture, not Win32's: the HWND belongs to the framework.
+    // Releasing raises PointerCaptureLost, hence _releasingCapture.
     void IViewportCursor.SetPointerCapture(bool captured)
     {
         if (_pointer is not { } pointer)
@@ -1033,21 +736,15 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
         }
     }
 
-    // --- Plumbing ------------------------------------------------------------
-
     private (int X, int Y) ToPixels(Point dips) =>
         ((int)Math.Round(dips.X * _scaling), (int)Math.Round(dips.Y * _scaling));
 
-    // The host owns an input sink rather than being one, and the router must not
-    // name EngineHost at all: it is constructed in tests against a recorder.
+    // Adapter so the router never names EngineHost; tests give it a recorder.
     private sealed class EngineHostSink(EngineHost host) : IInputSink
     {
         public void Submit(in InputEvent input) => host.SubmitInput(in input);
     }
 
-    /// <summary>
-    /// The real compositor behind <see cref="CompositedFramePump"/>'s seam.
-    /// </summary>
     private sealed class CompositorImageSource(
         ICompositionGpuInterop interop, CompositionDrawingSurface surface) : ICompositedImageSource
     {
@@ -1061,32 +758,20 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
                     Width = width,
                     Height = height,
 
-                    // The engine's shared resource is UNORM with an sRGB view
-                    // over it, so the bytes on the way out are already encoded
-                    // and this names the layout rather than a colour space.
+                    // The shared resource is UNORM under an sRGB view, so the
+                    // bytes are already sRGB-encoded.
                     Format = PlatformGraphicsExternalImageFormat.R8G8B8A8UNorm,
 
-                    // A D3D render target's first row is its top one, unlike a
-                    // GL framebuffer's. Getting this wrong flips the picture
-                    // rather than failing anything.
+                    // D3D render targets are top-left origin. Wrong here flips
+                    // the picture without failing anything.
                     TopLeftOrigin = true,
                 });
 
             return new CompositorImage(image, surface);
         }
 
-        /// <summary>
-        /// Lets go of the drawing surface every import snapshots into.
-        /// </summary>
-        /// <remarks>
-        /// <b>The pump calls this, and only once its last import has settled.</b>
-        /// The viewport used to dispose the surface itself at the moment it left
-        /// the visual tree, which was safe while a detach only ever meant a
-        /// session ending and is not once the pane can be dragged into another
-        /// dock: there the disposal lands under whatever hand-over was still in
-        /// flight, the pending update faults, and the fault is reported as the
-        /// composited viewport having failed.
-        /// </remarks>
+        // Called by the pump once its last import has settled. Disposing the
+        // surface earlier faults a hand-over still in flight.
         public ValueTask DisposeAsync()
         {
             surface.Dispose();

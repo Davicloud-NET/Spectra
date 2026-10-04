@@ -5,29 +5,12 @@ using System.Collections.Generic;
 namespace SpectraEngine.Editing.Gizmos;
 
 /// <summary>
-/// What every manipulator's snapping has in common: whether it is on, how big
-/// one step is, the preset ladder that step is chosen from, and the modifier
-/// key that inverts the setting for the duration of a gesture.
+/// Snapping shared by every manipulator: on or off, the step size, the preset
+/// ladder, and the modifier that inverts the setting for one gesture.
+/// Render thread only.
 /// </summary>
-/// <remarks>
-/// <b>The quantity differs per tool, the policy does not.</b> A move snaps a
-/// world-unit position, a rotate snaps degrees, a resize snaps a world-unit size
-/// change — but "hold Alt to invert", "the ladder clamps at both ends", "an
-/// increment typed into a panel enters the ladder at its nearest rung" and
-/// "exact halves round away from zero" are one behaviour that users learn once.
-/// Subclasses supply the default and the ladder and add whatever unit-specific
-/// helper they need (<see cref="GridSnapSettings.SnapMasked"/>,
-/// <see cref="AngleSnapSettings.SnapRadians"/>); nothing else is duplicated.
-/// <para>
-/// All three units are absolute quantities of the thing being edited, never a
-/// multiplier: an increment a UI puts in a box has to mean the same thing at
-/// every object size, which is precisely what <see cref="ResizeSnapSettings"/>
-/// stopped doing when it quantised a scale factor.
-/// </para>
-/// <para>
-/// <b>Threading:</b> render thread only, like the tools that read it.
-/// </para>
-/// </remarks>
+// The increment is always an absolute quantity of the thing edited (units,
+// degrees, size), never a multiplier, so it means the same at every object size.
 public abstract class SnapSettings
 {
     private readonly float[] _increments;
@@ -35,8 +18,7 @@ public abstract class SnapSettings
 
     /// <summary>
     /// Creates settings starting at <paramref name="defaultIncrement"/> with the
-    /// ladder <paramref name="increments"/> (ascending; copied, so the caller's
-    /// array cannot be mutated out from under the ladder).
+    /// ascending ladder <paramref name="increments"/>, which is copied.
     /// </summary>
     protected SnapSettings(float defaultIncrement, params float[] increments)
     {
@@ -50,15 +32,13 @@ public abstract class SnapSettings
 
     /// <summary>
     /// Whether snapping applies by default. <see cref="ToggleModifier"/> inverts
-    /// this per gesture, so a user who works snapped can drop to free movement —
-    /// and a user who works free can snap — without leaving the drag.
+    /// this per gesture.
     /// </summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// The step size, in whatever unit the subclass documents. Must be positive;
-    /// the setter throws otherwise, because a zero or negative step would divide
-    /// by zero (or mirror the quantity) inside <see cref="SnapScalar"/>.
+    /// The step size, in the subclass's unit. Must be positive; the setter
+    /// throws otherwise.
     /// </summary>
     public float Increment
     {
@@ -72,22 +52,17 @@ public abstract class SnapSettings
 
     /// <summary>
     /// The modifier that inverts <see cref="Enabled"/> while held.
-    /// <see cref="KeyModifiers.None"/> disables the override entirely.
+    /// <see cref="KeyModifiers.None"/> disables the override.
     /// </summary>
-    /// <remarks>
-    /// Alt by default, and the same key for all three tools: Shift and Control
-    /// are already spoken for by add-to-selection and toggle-selection, and Alt
-    /// is the free-movement modifier in both Hammer and Roblox Studio.
-    /// </remarks>
+    // Alt: Shift and Control are taken by the selection modifiers.
     public KeyModifiers ToggleModifier { get; set; } = KeyModifiers.Alt;
 
     /// <summary>The selectable increments, ascending. <see cref="CyclePreset"/> walks this ladder.</summary>
     public IReadOnlyList<float> Increments => _increments;
 
     /// <summary>
-    /// Whether snapping applies given the modifiers held right now:
-    /// <see cref="Enabled"/>, inverted while <see cref="ToggleModifier"/> is
-    /// held.
+    /// Whether snapping applies with these modifiers held: <see cref="Enabled"/>,
+    /// inverted while <see cref="ToggleModifier"/> is down.
     /// </summary>
     public bool IsActiveWith(KeyModifiers held)
     {
@@ -97,8 +72,7 @@ public abstract class SnapSettings
 
     /// <summary>
     /// Rounds one value to the nearest multiple of <see cref="Increment"/>.
-    /// Exact halves round away from zero, so the ladder stays symmetric about
-    /// zero.
+    /// Halves round away from zero.
     /// </summary>
     public float SnapScalar(float value) =>
         MathF.Round(value / _increment, MidpointRounding.AwayFromZero) * _increment;
@@ -106,14 +80,9 @@ public abstract class SnapSettings
     /// <summary>
     /// Steps <see cref="Increment"/> along <see cref="Increments"/> by
     /// <paramref name="direction"/> rungs (negative for finer, positive for
-    /// coarser) and returns the new value.
+    /// coarser) and returns the new value. An increment that is not a preset
+    /// starts from its nearest rung, and the ends clamp.
     /// </summary>
-    /// <remarks>
-    /// A current increment that is not itself a preset — one typed into a
-    /// property panel — enters the ladder at its nearest rung rather than being
-    /// rejected, and the ends clamp instead of wrapping so a repeated keypress
-    /// settles at the coarsest or finest step.
-    /// </remarks>
     public float CyclePreset(int direction)
     {
         int index = NearestIncrementIndex(_increment) + direction;
@@ -121,10 +90,7 @@ public abstract class SnapSettings
         return _increment;
     }
 
-    /// <summary>
-    /// Selects <see cref="Increments"/>[<paramref name="index"/>] as the current
-    /// increment — the direct binding behind a snap-size menu or number key.
-    /// </summary>
+    /// <summary>Selects <see cref="Increments"/>[<paramref name="index"/>] as the current increment.</summary>
     public void SelectPreset(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
@@ -132,10 +98,8 @@ public abstract class SnapSettings
         Increment = _increments[index];
     }
 
-    // Nearest in RATIO, not in absolute difference, because every ladder here is
-    // roughly geometric: 3.0 sits closer to 4 (a factor of 1.33) than to 2 (a
-    // factor of 1.5), while by absolute distance it is exactly one away from
-    // both and the choice would come down to enumeration order.
+    // Nearest by ratio, since the ladders are roughly geometric: 3 is closer
+    // to 4 than to 2, though it is one away from both.
     private int NearestIncrementIndex(float increment)
     {
         int best = 0;

@@ -9,16 +9,8 @@ using System.Threading;
 
 namespace SpectraEngine.Entities.Generator;
 
-/// <summary>
-/// The TRANSFORM stage: turns one attributed class into an
-/// <see cref="EntityModel"/> and drops every symbol on the way out.
-/// </summary>
-/// <remarks>
-/// <b>Nothing this method touches may escape it.</b> The whole point of the
-/// stage is that the symbols end here: everything the emitter needs is copied
-/// into strings and primitives, so a later run comparing two models compares
-/// values rather than object identity.
-/// </remarks>
+// The transform stage: one attributed class to an EntityModel. No symbol may
+// escape into the model.
 internal static class EntityModelFactory
 {
     private const string EntityAttribute = "SpectraEngine.Core.Entities.SpectraEntityAttribute";
@@ -27,13 +19,9 @@ internal static class EntityModelFactory
     private const string OutputAttribute = "SpectraEngine.Core.Entities.EntityOutputAttribute";
     private const string InputContext = "SpectraEngine.Core.Entities.EntityInputContext";
 
-    /// <summary>The metadata name the syntax provider matches on.</summary>
     public const string EntityAttributeMetadataName = EntityAttribute;
 
-    /// <summary>
-    /// The one name a keyvalue may not take, because <c>SceneNode.Name</c>
-    /// already is it.
-    /// </summary>
+    // SceneNode.Name already is the targetname.
     public const string ReservedName = "targetname";
 
     public static EntityModel? Create(GeneratorAttributeSyntaxContext context, CancellationToken token)
@@ -79,9 +67,6 @@ internal static class EntityModelFactory
 
             if (TryFindAttribute(member, OutputAttribute, out _))
             {
-                // The member's own NAME is the output's name, so nothing else on
-                // it is read: there is no second spelling for the two to disagree
-                // about.
                 outputs.Add(member.Name);
             }
 
@@ -120,9 +105,7 @@ internal static class EntityModelFactory
         LocationInfo? location = LocationInfo.From(member);
         string name = FirstStringArgument(attribute);
 
-        // Case-insensitively, because a keyvalue spelled TargetName is a
-        // different key on the wire and the same idea to every person who reads
-        // it; the confusion is the damage, not the byte comparison.
+        // Case-insensitive: TargetName would read as the same thing to a person.
         if (string.Equals(name, ReservedName, StringComparison.OrdinalIgnoreCase))
         {
             diagnostics.Add(
@@ -196,10 +179,7 @@ internal static class EntityModelFactory
         List<InputModel> inputs,
         List<DiagnosticInfo> diagnostics)
     {
-        // One shape, not two. A parameterless form would read better at the four
-        // or five inputs that ignore their context and would then need a second
-        // emission path forever, and the context is where the activator, the
-        // caller and the parameter live, which most inputs eventually want.
+        // One shape only. A parameterless form would need a second emission path.
         bool valid = method.MethodKind == MethodKind.Ordinary
             && !method.IsStatic
             && !method.IsGenericMethod
@@ -256,9 +236,7 @@ internal static class EntityModelFactory
     private static string NamedString(AttributeData attribute, string name) =>
         TryGetNamed(attribute, name, out TypedConstant value) && value.Value is string text ? text : "";
 
-    // Absent means "the author wrote nothing", which is not the same fact as
-    // "the author wrote the default": the attribute's own documentation says so,
-    // and inference depends on telling them apart.
+    // Absent is not the same as the default: type inference needs to tell them apart.
     private static byte NamedByte(AttributeData attribute, string name, byte fallback) =>
         TryGetNamed(attribute, name, out TypedConstant value) ? ToByte(value) : fallback;
 
@@ -281,14 +259,7 @@ internal static class EntityModelFactory
         _ => "Point",
     };
 
-    /// <summary>
-    /// A label for a wire name: <c>logic_relay</c> becomes <c>Logic Relay</c>.
-    /// </summary>
-    /// <remarks>
-    /// Underscore-separated, title-cased and nothing else. It never guesses at
-    /// word boundaries inside a run of letters, because a wrong guess is a label
-    /// nobody can search for.
-    /// </remarks>
+    // logic_relay becomes "Logic Relay". Splits on underscores only.
     private static string HumanName(string wireName)
     {
         if (wireName.Length == 0)

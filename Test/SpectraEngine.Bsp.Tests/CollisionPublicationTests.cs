@@ -29,8 +29,7 @@ public sealed class CollisionPublicationTests
         source.WorldSelections.ShouldBe(selections);
         source.Revision.ShouldBe(revision);
 
-        // A nearby edit followed by a remote one must not disappear behind
-        // only the most recent publication's bounds.
+        // A nearby edit must not get lost behind a later remote publication.
         PublishMove(local, scene, renderer);
         PublishMove(remote, scene, renderer);
         source.BeginTick(volume, default);

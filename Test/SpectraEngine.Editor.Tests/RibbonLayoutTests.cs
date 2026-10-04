@@ -14,36 +14,14 @@ using System.Text.RegularExpressions;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// The ribbon's roster, and the three findings that retired the previous tab
-/// strip.
+/// The ribbon's roster: no verb on two tabs, Insert on the first page, every
+/// page worth switching to, and the markup matching the roster.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The old Home / Model / View strip was killed by three things: two of its
-/// pages carried the same six verbs, Frame was written out three times, and
-/// Insert - the one thing a first session needs - sat on the tab nobody
-/// opened. The owner reopened the decision, so this file is where each of
-/// those stops being a warning in a comment and becomes something that fails a
-/// build.
-/// </para>
-/// <para>
-/// <b>None of this needs a window.</b> The roster is data and the collapse
-/// machine is a pure function over a value, which is exactly why they were
-/// built that way: a duplicate verb hidden inside two click handlers would be
-/// invisible to every test that could be written.
-/// </para>
-/// </remarks>
 public sealed class RibbonLayoutTests
 {
-    // ─── Finding 1: no verb on two tabs ──────────────────
-
     [Fact]
     public void No_verb_appears_on_more_than_one_tab()
     {
-        // THE TEST THIS WHOLE DESIGN EXISTS FOR. A ShellVerb is a value, so
-        // this is a set comparison rather than a review habit; the previous
-        // strip's Home and Model pages carried six verbs each way and nothing
-        // anywhere said so.
         var seen = new Dictionary<ShellVerb, string>();
         var offenders = new List<string>();
 
@@ -71,9 +49,7 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void A_verb_that_must_always_be_reachable_is_on_no_tab()
     {
-        // A collapse can hide every page, so anything whose ABSENCE is
-        // dangerous cannot be tab-scoped. Undo is the recovery verb for the
-        // destructive verbs the Build page carries.
+        // A collapsed ribbon hides every page, and undo must stay reachable.
         var onTabs = new HashSet<ShellVerb>(
             RibbonLayout.Tabs.SelectMany(RibbonLayout.ItemsOf).Select(i => i.Verb));
 
@@ -88,10 +64,6 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void Undo_and_redo_are_the_always_visible_pair()
     {
-        // Play is outside this surface entirely, in the menu row's far corner,
-        // so the ribbon's own always-visible list is exactly the history pair.
-        // Written down because a later stage adding a third entry should have
-        // to justify it here.
         RibbonLayout.AlwaysVisible.Select(i => i.Verb).ShouldBe(
         [
             ShellVerb.Of(EditorHostCommand.Undo),
@@ -102,8 +74,7 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void Every_item_id_is_unique_across_the_whole_roster()
     {
-        // Ids are what the markup carries and what the click handler resolves,
-        // so two items sharing one would make a control post the other's verb.
+        // The click handler resolves a control by id.
         List<string> ids =
         [
             .. RibbonLayout.AlwaysVisible.Select(i => i.Id),
@@ -116,8 +87,6 @@ public sealed class RibbonLayoutTests
             .ShouldBeEmpty();
     }
 
-    // ─── Finding 2: Insert is not buried ─────────────────
-
     [Fact]
     public void Insert_is_the_first_group_of_the_tab_a_session_opens_on()
     {
@@ -128,9 +97,6 @@ public sealed class RibbonLayoutTests
             "Insert",
             "the previous strip put the one thing a first session needs on the tab nobody opened");
 
-        // And every insert verb the shell offers on the ribbon is in it,
-        // rather than scattered so that only some of them are on the first
-        // page somebody sees.
         foreach (RibbonTab tab in RibbonLayout.Tabs)
         {
             foreach (RibbonItem item in RibbonLayout.ItemsOf(tab))
@@ -146,24 +112,16 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void A_session_opens_on_the_default_tab_however_the_last_one_ended()
     {
-        // The pin persists; the page does not. A shell that reopened on View
-        // would start every session with Insert hidden behind a click, which is
-        // finding 2 arriving by another route.
+        // The pin persists, the page does not: reopening on View would hide Insert.
         RibbonSurface.Create(expanded: true).ActiveTabId.ShouldBe(RibbonLayout.DefaultTabId);
         RibbonSurface.Create(expanded: false).ActiveTabId.ShouldBe(RibbonLayout.DefaultTabId);
     }
 
-    // ─── Finding 3: switching does something ─────────────
-
     [Fact]
     public void Every_tab_carries_enough_to_be_worth_switching_to()
     {
-        // THE FLOOR IS EIGHT CONTROLS IN THREE GROUPS, and the number is
-        // argued rather than picked: fewer than three groups is a cluster, and
-        // a cluster belongs beside another cluster on one row rather than
-        // behind a click - which is precisely what the single command bar this
-        // replaced already was. A page that cannot clear this is the retired
-        // strip's thin third page.
+        // Floor: eight controls in three groups. Less than that fits on one row
+        // and does not need a tab.
         foreach (RibbonTab tab in RibbonLayout.Tabs)
         {
             IReadOnlyList<RibbonItem> items = RibbonLayout.ItemsOf(tab);
@@ -179,10 +137,7 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void Two_tabs_is_the_count_and_a_third_has_to_argue_for_itself()
     {
-        // Deliberately pinned. The verbs this shell has fill two pages
-        // properly; a third would have to be padded out of the document verbs
-        // the File menu already owns, and a thin page is the retired strip
-        // again. A later stage adding one changes this line and states why.
+        // Pinned on purpose. A third tab changes this line and says why.
         RibbonLayout.Tabs.Count.ShouldBe(2);
         RibbonLayout.Tabs.Select(t => t.Id).ShouldBe([RibbonLayout.DefaultTabId, RibbonLayout.ViewTabId]);
     }
@@ -190,9 +145,7 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void The_two_pages_divide_on_a_real_axis()
     {
-        // Build changes the level; View changes only how you look at it. Said
-        // as a property: nothing on the View page is an insert or a structural
-        // edit, and nothing on the Build page is a camera verb or an overlay.
+        // Build changes the level, View changes how it is looked at.
         RibbonTab view = RibbonLayout.FindTab(RibbonLayout.ViewTabId)!;
         RibbonTab build = RibbonLayout.FindTab(RibbonLayout.DefaultTabId)!;
 
@@ -212,8 +165,6 @@ public sealed class RibbonLayoutTests
             item.Verb.Kind.ShouldNotBe(ShellVerbKind.Debug, item.Id);
         }
     }
-
-    // ─── Every control resolves to an existing verb ──────
 
     [Fact]
     public void Every_ribbon_control_names_a_verb_the_editor_already_has()
@@ -243,8 +194,7 @@ public sealed class RibbonLayoutTests
                     break;
 
                 case ShellVerbKind.Debug:
-                    // A single declared flag, never a combination: the button
-                    // toggles exactly one overlay and its lit state reads one.
+                    // One flag, not a combination.
                     Enum.IsDefined(item.Verb.Debug).ShouldBeTrue(item.Id);
                     item.Verb.Debug.ShouldNotBe(DebugVisualization.None, item.Id);
                     break;
@@ -252,12 +202,6 @@ public sealed class RibbonLayoutTests
                 case ShellVerbKind.Toggle:
                     Enum.IsDefined(item.Verb.Toggle).ShouldBeTrue(item.Id);
 
-                    // BOTH DIRECTIONS, spelled out, because the table this
-                    // replaced returned a positional pair and read as its own
-                    // inverse: "the verb it posts when the choice is OFF" would
-                    // have posted UseWorldOrientation while already in world.
-                    // The old test asserted the pair was distinct and defined,
-                    // which an inversion passes.
                     ShellToggles.CommandFor(item.Verb.Toggle, on: true)
                         .ShouldNotBe(ShellToggles.CommandFor(item.Verb.Toggle, on: false), item.Id);
                     break;
@@ -267,12 +211,7 @@ public sealed class RibbonLayoutTests
                 case ShellVerbKind.Panel:
                 case ShellVerbKind.Ribbon:
                 case ShellVerbKind.Workspace:
-                    // SHELL VERBS STAY OFF THE RIBBON. Every kind above names an
-                    // enum some other assembly declared, which is what the
-                    // roster's compile-time weld is worth; these five resolve to
-                    // handlers in the window itself. They belong to the menus and
-                    // the palette, and a switch with no arm for them would let one
-                    // onto a page silently.
+                    // Shell verbs resolve to window handlers and stay off the ribbon.
                     throw new Xunit.Sdk.XunitException(
                         $"{item.Id} carries a shell verb; those belong to the menus and the palette");
             }
@@ -282,10 +221,6 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void Every_tab_says_what_it_is_for()
     {
-        // The tabs were the only controls on this surface with no tooltip, and
-        // they carry the one thing a new user has to understand about it. Roster
-        // data rather than a string in BuildRibbon, so the strip still cannot
-        // say anything the roster does not know.
         foreach (RibbonTab tab in RibbonLayout.Tabs)
         {
             tab.Summary.ShouldNotBeNullOrWhiteSpace($"{tab.Id} should say what it is for");
@@ -299,10 +234,7 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void The_ribbon_can_be_collapsed_from_the_keyboard()
     {
-        // The surface takes no KeyTips - Alt belongs to the five menus, see
-        // RibbonLayout's remarks - so this is its only keyboard route, and a
-        // refusal that leaves NO route is a different decision from one that
-        // leaves the standard one.
+        // No KeyTips (Alt belongs to the menus), so this is the only keyboard route.
         string window = File.ReadAllText(
             Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml.cs"));
 
@@ -314,12 +246,7 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void The_always_visible_pair_dispatches_through_the_roster()
     {
-        // Undo and redo carried a Tag only so the test above could find them on
-        // the strip; their Click went straight to the handler, so FindItem was
-        // never asked and AlwaysVisible's verbs were never dispatched at all.
-        // Change either entry to any other verb and the buttons still did undo
-        // and redo, with every test green - which is a verb living in a click
-        // handler, the one thing this roster exists to refuse.
+        // A Click wired straight to a handler would ignore the roster's verb.
         string window = File.ReadAllText(
             Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml"));
 
@@ -334,14 +261,7 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void A_two_way_choice_posts_the_verb_for_the_state_it_is_ENTERING()
     {
-        // THE DIRECTION, WHICH IS THE HALF THAT WAS UNTESTABLE. The table this
-        // replaced returned a positional (WhenOff, WhenOn) pair whose own doc
-        // read it backwards, and the only assertion on it was that the two
-        // differed - which an inversion passes, shipping three controls that do
-        // nothing the first time they are clicked.
-        //
-        // "On" is the NON-DEFAULT half: local axes, Classic handles, snapping
-        // enabled.
+        // "On" is the non-default half: local axes, Classic handles, snapping.
         ShellToggles.CommandFor(ShellToggle.Axes, on: true).ShouldBe(GizmoCommand.UseLocalOrientation);
         ShellToggles.CommandFor(ShellToggle.Axes, on: false).ShouldBe(GizmoCommand.UseWorldOrientation);
         ShellToggles.CommandFor(ShellToggle.Handles, on: true).ShouldBe(GizmoCommand.UseClassicStyle);
@@ -353,10 +273,7 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void A_two_way_choice_is_never_resolved_in_a_click_handler()
     {
-        // WHAT MAKES "EXPRESSED ONCE" A FACT RATHER THAN A WISH. The window
-        // legitimately still names FinerSnap, CoarserSnap and the three tool
-        // verbs, so this is an assertion about the six idempotent halves of the
-        // two-way choices and nothing wider.
+        // Only these six. The window may still name FinerSnap, CoarserSnap and the tool verbs.
         string window = File.ReadAllText(
             Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml.cs"));
 
@@ -377,18 +294,12 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void There_is_exactly_one_snap_increment_field()
     {
-        // The one control whose verb carries a NUMBER rather than naming a
-        // state. Two of them would be the three boxes labelled mv / rot / sz
-        // this shell already retired once.
         AllItems().Count(i => i.Verb.Kind == ShellVerbKind.SnapIncrement).ShouldBe(1);
     }
 
     [Fact]
     public void There_is_exactly_one_split_button_and_it_places_an_entity()
     {
-        // A split button is the one control here with two hit regions, and the
-        // arrangement only stays legible while there is one of them: a row of
-        // them turns a caret from "this one is different" into decoration.
         List<RibbonItem> splits = AllItems()
             .Where(i => i.Kind == RibbonControlKind.Split)
             .ToList();
@@ -401,22 +312,12 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void The_entity_class_list_is_not_in_the_roster()
     {
-        // THE ONE PLACE THE ROSTER DELIBERATELY DOES NOT NAME WHAT A CONTROL
-        // DOES. Every other verb here names something this build knows at
-        // compile time; an entity class comes from the project's own .sentdef,
-        // so the split names the CONTROL and its caret's entries are built at
-        // open time from the live session's parsed catalogue.
-        //
-        // That is a real weakening of "the roster is the single source of
-        // truth", so it is written down as a test rather than left in a
-        // comment: exactly one item may carry a verb with no payload, and no
-        // item may name a class.
+        // Entity classes come from the project's .sentdef at runtime, so the
+        // roster names the control only. One payload-free verb, no class names.
         AllItems()
             .Count(i => i.Verb.Kind == ShellVerbKind.InsertEntity)
             .ShouldBe(1, "the class is session state, so only the control is in the roster");
 
-        // The built-in classes, which are what a roster entry would most
-        // plausibly have been written as.
         foreach (string className in new[] { "logic_relay", "logic_timer", "math_counter" })
         {
             AllItems()
@@ -429,19 +330,13 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void The_splits_caret_carries_no_tag_of_its_own()
     {
-        // It opens a list rather than posting a verb, so it is not a roster
-        // entry - and the page's validator only inspects controls that have a
-        // Tag, which is what lets the split be two Buttons under one id. A Tag
-        // on the caret would make the page draw an id twice and refuse the
-        // window, which is the right failure and worth pinning the shape of.
+        // The caret opens a list and posts no verb. The page validator only
+        // looks at tagged controls, which lets the split be two Buttons under one id.
         string markup = File.ReadAllText(Path.Combine(RibbonFolder(), "RibbonBuildTab.axaml"));
 
         int splitStart = markup.IndexOf("Classes=\"rsplit\"", StringComparison.Ordinal);
         splitStart.ShouldBeGreaterThan(-1, "the split button should be drawn");
 
-        // The container is a StackPanel because the caret sits BESIDE the main
-        // half rather than under it; see Button.rsplitcaret in Controls.axaml
-        // for why a foot band could not align its label with its neighbours.
         int splitEnd = markup.IndexOf("</StackPanel>", splitStart, StringComparison.Ordinal);
         string split = markup[splitStart..splitEnd];
 
@@ -453,9 +348,6 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void Finding_an_item_by_its_id_is_how_a_click_resolves()
     {
-        // The click handler's only input is the control's Tag, so an id the
-        // roster does not know must resolve to nothing rather than to
-        // something.
         RibbonLayout.FindItem("insert.block")!.Verb.ShouldBe(ShellVerb.Of(InsertKind.WorldBrush));
         RibbonLayout.FindItem("history.undo")!.Verb.ShouldBe(ShellVerb.Of(EditorHostCommand.Undo));
         RibbonLayout.FindItem("camera.frameall")!.Verb.ShouldBe(ShellVerb.Of(EditorCameraCommand.FrameAll));
@@ -463,11 +355,7 @@ public sealed class RibbonLayoutTests
         RibbonLayout.FindItem(null).ShouldBeNull();
     }
 
-    // ─── The roster against what is actually drawn ───────
-
-    // Which markup file draws which page. Mirrors the window's own page table;
-    // a tab with no entry here fails the test below rather than going
-    // unchecked.
+    // Which markup file draws which page. A tab missing here fails the test below.
     private static readonly (string TabId, string File)[] PageFiles =
     [
         (RibbonLayout.DefaultTabId, "RibbonBuildTab.axaml"),
@@ -477,12 +365,8 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void Every_page_draws_exactly_the_controls_its_roster_promises()
     {
-        // The runtime half of this refuses the window at construction; this is
-        // the CI half, which reads the same fact out of the sources without an
-        // Avalonia application. Both directions matter and they fail
-        // differently: a tagged control the roster has never heard of is a
-        // button that does nothing, and a roster entry with no control is a
-        // verb the tests above believe is on screen and is not.
+        // The page also checks this at construction. This is the same check
+        // from the sources, with no Avalonia application.
         RibbonLayout.Tabs.Select(t => t.Id)
             .ShouldBe(PageFiles.Select(p => p.TabId), "every tab needs a markup file listed here");
 
@@ -505,8 +389,7 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void The_always_visible_pair_is_drawn_on_the_strip_itself()
     {
-        // Not on a page, and therefore not in a page file: the strip lives in
-        // the window, which is what makes it survive a collapse.
+        // The strip lives in the window, so it survives a collapse.
         string window = File.ReadAllText(Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml"));
         List<string> pageTags =
         [
@@ -520,21 +403,11 @@ public sealed class RibbonLayoutTests
         }
     }
 
-    // ─── The size hierarchy, and the width it costs ──────
-    //
-    // A PAGE'S MEASURED WIDTH MOVED TO RibbonWidthTests, in the render suite,
-    // together with the arithmetic model that stands in for it. The model was
-    // always a claim about itself - "deliberately generous per item" - and a
-    // project with no Avalonia could never check it. Beside a real layout pass
-    // it can: the measurement is the truth, the model is the fast bound, and a
-    // test now holds that the bound bounds.
+    // Page widths are measured in the render suite (RibbonWidthTests).
 
     [Fact]
     public void Every_page_leads_with_a_large_control()
     {
-        // A page whose first group is all small rows has no headline, which is
-        // the state the whole surface was in before the hierarchy existed: the
-        // eye lands somewhere arbitrary and the page reads as a list.
         foreach (RibbonTab tab in RibbonLayout.Tabs)
         {
             tab.Groups[0].Items
@@ -546,18 +419,8 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void A_large_label_cannot_wrap_to_a_third_line()
     {
-        // Button.rbig is 64 wide and wraps to two lines of 13 inside its 66,
-        // and MaxLines is 2 - so a third line is not clipped visibly, it is
-        // silently dropped.
-        //
-        // THE NUMBER LIVES IN RibbonLayout.LargeLabelLimit, because it used to
-        // live here and in two comments that both still said twelve.
-        //
-        // THIS IS A PROXY, and the fact it stands in for is measured elsewhere:
-        // RibbonLabelTests lays the label out on a real text engine and fails
-        // if a single word breaks. This one fails FIRST, and "'Everything!' is
-        // 11 characters" is a better message for somebody about to type a
-        // label than a line-break position.
+        // MaxLines is 2, so a third line is dropped without any visible clip.
+        // A character count is a proxy; RibbonLabelTests measures the real layout.
         var offenders = new List<string>();
 
         foreach (RibbonItem item in AllItems().Where(i => i.Size == RibbonItemSize.Large))
@@ -573,15 +436,8 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void Every_control_wears_the_class_its_declared_kind_requires()
     {
-        // THE SECOND HALF OF THE WELD. The Tag check above refuses a control
-        // the roster has never heard of and a roster entry with no control;
-        // between those two a page could still draw ANY control it liked under
-        // a valid id. A check row rendered as a plain button looks finished,
-        // posts the right verb and has no lit state at all - which is a control
-        // that lies about what the engine is doing.
-        //
-        // The runtime half refuses the window at construction. This is the CI
-        // half, reading the same fact out of the sources.
+        // The Tag check allows any control under a valid id. A check row drawn
+        // as a plain button posts the right verb and never lights.
         var offenders = new List<string>();
 
         foreach ((string tabId, string file) in PageFiles)
@@ -603,13 +459,8 @@ public sealed class RibbonLayoutTests
     [Fact]
     public void A_lit_control_is_bound_to_something_that_lights_it()
     {
-        // A Toggle, a Check and a Radio all exist to SHOW a state, and every
-        // one of them in this shell is a Button wearing Classes.active rather
-        // than a real ToggleButton - the deliberate refusal recorded in
-        // Controls.axaml, because a two-way toggle bound to engine state
-        // flickers when the snapshot corrects it. The cost of that choice is
-        // that forgetting the binding is silent: the control works, posts its
-        // verb, and never lights.
+        // These are Buttons wearing Classes.active, not ToggleButtons, so a
+        // forgotten binding still posts its verb and never lights.
         var offenders = new List<string>();
 
         foreach ((string tabId, string file) in PageFiles)
@@ -633,17 +484,7 @@ public sealed class RibbonLayoutTests
         offenders.ShouldBeEmpty("a Toggle, Check or Radio must bind Classes.active");
     }
 
-    /// <summary>
-    /// The whole opening tag of the element carrying <paramref name="id"/>, as
-    /// text.
-    /// </summary>
-    /// <remarks>
-    /// Crude, and deliberately so: parsing XAML properly would pull in the
-    /// framework this project does not reference, and every claim these tests
-    /// make is about text a person reads. A tag is taken from the element's
-    /// <c>&lt;</c> to its first <c>&gt;</c>, which is enough because every
-    /// ribbon control opens on one element and closes later.
-    /// </remarks>
+    // The opening tag of the element carrying the id, as text. Not a XAML parse.
     private static string ElementFor(string markup, string id)
     {
         int tag = markup.IndexOf($"Tag=\"{id}\"", StringComparison.Ordinal);
@@ -656,7 +497,6 @@ public sealed class RibbonLayoutTests
         return markup[open..close];
     }
 
-    /// <summary>The class list on the element carrying <paramref name="id"/>.</summary>
     private static IReadOnlyList<string> ClassesOn(string markup, string id)
     {
         Match m = Regex.Match(ElementFor(markup, id), "Classes=\"([^\"]*)\"");
@@ -680,8 +520,6 @@ public sealed class RibbonLayoutTests
     private static string RibbonFolder() =>
         Path.Combine(SourceRoot(), "SpectraEngine.Editor", "Shell", "Ribbon");
 
-    // The same walk ContentRoot uses: the nearest ancestor holding a solution
-    // file is the repo root. These tests only ever run out of the repo.
     private static string SourceRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -697,15 +535,8 @@ public sealed class RibbonLayoutTests
 }
 
 /// <summary>
-/// The collapse state machine, and the one thing about it that is persisted.
+/// The ribbon's collapse state machine, and the pin state it persists.
 /// </summary>
-/// <remarks>
-/// Four transitions over a value, because every interesting case is a
-/// COMBINATION: clicking the active tab means "switch page" while expanded and
-/// "put that page away" while collapsed, expanding must not leave a flyout
-/// behind it, and a command invoked out of a flyout closes it. None of that is
-/// reachable from a test if it lives as three booleans inside a window.
-/// </remarks>
 public sealed class RibbonSurfaceTests
 {
     [Fact]
@@ -750,8 +581,6 @@ public sealed class RibbonSurfaceTests
     [Fact]
     public void Clicking_the_tab_that_is_already_flown_out_puts_it_away()
     {
-        // The only way a keyboard-free user closes a flyout without invoking
-        // something.
         RibbonSurfaceState state = RibbonSurface.Create(expanded: false);
         state = RibbonSurface.SelectTab(state, RibbonLayout.DefaultTabId);
         state = RibbonSurface.SelectTab(state, RibbonLayout.DefaultTabId);
@@ -773,8 +602,6 @@ public sealed class RibbonSurfaceTests
     [Fact]
     public void An_unknown_tab_id_changes_nothing()
     {
-        // A stale control must not leave the strip pointing at a page that
-        // does not exist, which would put the body host on a null page.
         RibbonSurfaceState state = RibbonSurface.Create(expanded: true);
         RibbonSurface.SelectTab(state, "retired").ShouldBe(state);
         RibbonSurface.SelectTab(state, null).ShouldBe(state);
@@ -795,9 +622,6 @@ public sealed class RibbonSurfaceTests
     [Fact]
     public void Setting_the_pin_is_idempotent_because_it_is_a_set_verb()
     {
-        // The same rule every displayed state in this shell follows: a toggle
-        // sent against a stale view flips the wrong way exactly when the user
-        // clicks fastest.
         RibbonSurfaceState state = RibbonSurface.Create(expanded: true);
         RibbonSurface.SetExpanded(RibbonSurface.SetExpanded(state, true), true).ShouldBe(state);
     }
@@ -840,7 +664,6 @@ public sealed class RibbonSurfaceTests
         EditorSettings reloaded = EditorSettings.Load(path, NullLogger.Instance);
         reloaded.RibbonExpanded.ShouldBeFalse();
 
-        // And a session built from it still opens on the page carrying Insert.
         RibbonSurfaceState state = RibbonSurface.Create(reloaded.RibbonExpanded);
         state.Expanded.ShouldBeFalse();
         state.ActiveTabId.ShouldBe(RibbonLayout.DefaultTabId);
@@ -849,9 +672,6 @@ public sealed class RibbonSurfaceTests
     [Fact]
     public void A_settings_file_that_never_heard_of_the_ribbon_opens_it()
     {
-        // Open is the conservative fallback: a collapsed ribbon read out of a
-        // file this build cannot make sense of would hide the command surface
-        // with no explanation on screen.
         string dir = Path.Combine(Path.GetTempPath(), "spectra-tests", Path.GetRandomFileName());
         Directory.CreateDirectory(dir);
         string path = Path.Combine(dir, "editor.json");

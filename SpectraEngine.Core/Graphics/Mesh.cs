@@ -6,48 +6,35 @@ using SpectraEngine.Core.Bsp;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// Base class for renderer-owned mesh resources. Subclasses own the GPU
-/// handles; the base can also keep a CPU-side copy of positions, normals and
-/// indices so debug visualisations, bounds queries and raycasts work without
-/// round-tripping through the GPU. The copy is opt-in per creation; see
-/// <see cref="MeshCpuAccess"/> for which meshes want it and which must not
-/// pay for it.
+/// Base class for renderer-owned meshes. Can keep a CPU copy of positions,
+/// normals and indices for picking, bounds and debug drawing; see
+/// <see cref="MeshCpuAccess"/>.
 /// </summary>
 public abstract class Mesh : IDisposable
 {
     public uint IndexCount { get; protected set; }
 
-    /// <summary>
-    /// Per-vertex positions in the mesh's local frame. Empty when the mesh was
-    /// created with <see cref="MeshCpuAccess.None"/>.
-    /// </summary>
+    /// <summary>Local-space positions. Empty without CPU access.</summary>
     public IReadOnlyList<Vector3> Positions { get; protected set; } = [];
 
-    /// <summary>Per-vertex normals; empty if the mesh was created without a normal attribute or without CPU access.</summary>
+    /// <summary>Per-vertex normals. Empty without CPU access or a normal attribute.</summary>
     public IReadOnlyList<Vector3> Normals { get; protected set; } = [];
 
-    /// <summary>The index buffer, three entries per triangle. Empty without CPU access.</summary>
+    /// <summary>Indices, three per triangle. Empty without CPU access.</summary>
     public IReadOnlyList<uint> Indices { get; protected set; } = [];
 
-    /// <summary>AABB enclosing the mesh's vertices in its local frame. Computed for every mesh, CPU access or not.</summary>
+    /// <summary>Local-space bounds. Computed for every mesh, CPU access or not.</summary>
     public Aabb LocalBounds { get; protected set; }
 
     /// <summary>
-    /// Whether <see cref="LocalBounds"/> describes real geometry. True once
-    /// <see cref="InitializeCpuData"/> saw at least one position, whatever the
-    /// CPU-access mode; false on a mesh with no position stream, whose default
-    /// bounds mean nothing. Consumers deciding whether the bounds are usable
-    /// must read THIS, not <see cref="Positions"/>: a GPU-only mesh has valid
-    /// bounds and empty arrays, and inferring one from the other is how a
-    /// correctly measured mesh ends up culled against a placeholder box.
+    /// Whether <see cref="LocalBounds"/> describes real geometry. Check this, not
+    /// <see cref="Positions"/>: a GPU-only mesh has valid bounds and empty arrays.
     /// </summary>
     public bool HasLocalBounds { get; protected set; }
 
     /// <summary>
-    /// Computes <see cref="LocalBounds"/> straight off the interleaved upload
-    /// stream and, only under <see cref="MeshCpuAccess.Retained"/>,
-    /// materialises <see cref="Positions"/>/<see cref="Normals"/>/<see cref="Indices"/>.
-    /// One implementation for every backend, called from each Create path.
+    /// Computes <see cref="LocalBounds"/> from the interleaved vertex data and,
+    /// under <see cref="MeshCpuAccess.Retained"/>, keeps the CPU copy.
     /// </summary>
     protected void InitializeCpuData(
         ReadOnlySpan<float> vertices,
@@ -55,8 +42,7 @@ public abstract class Mesh : IDisposable
         ReadOnlySpan<VertexAttribute> attributes,
         MeshCpuAccess cpuAccess)
     {
-        // Positions live at location 0 and normals at location 1 by the
-        // engine's layout convention; other attributes are ignored here.
+        // Layout convention: position at location 0, normal at 1.
         int stride = 0;
         int positionOffset = -1;
         int normalOffset = -1;
@@ -108,12 +94,7 @@ public abstract class Mesh : IDisposable
         }
     }
 
-    /// <summary>
-    /// Removes this mesh from the creating renderer's tracking list; the
-    /// renderer hands it over at creation time and <see cref="Renderer.DestroyMesh"/>
-    /// invokes it exactly once. Unsynchronized on purpose: resource creation
-    /// and destruction both happen on the render thread.
-    /// </summary>
+    // Removes this mesh from its renderer's tracking list. Render thread only.
     internal Action? Unregister { get; set; }
 
     internal void SetCpuViews(IReadOnlyList<Vector3> positions, IReadOnlyList<Vector3> normals, IReadOnlyList<uint> indices)
@@ -140,32 +121,11 @@ public abstract class Mesh : IDisposable
     }
 
     /// <summary>
-    /// Draws this mesh <paramref name="instanceCount"/> times, with per-instance
-    /// attributes read from <paramref name="instances"/>.
+    /// Draws this mesh <paramref name="instanceCount"/> times with per-instance
+    /// attributes from <paramref name="instances"/>. The bound shader must
+    /// declare those attributes. A count of zero draws nothing.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The bound shader must declare the instance attributes</b>, or the
-    /// hardware feeds them nothing and every instance lands on top of the first.
-    /// That is a picture rather than an error on all three backends, which is
-    /// why the compiler reports a shader's inputs (see
-    /// <see cref="VertexAttribute.FromShaderInputs"/>) instead of leaving the
-    /// layout to be agreed by hand.
-    /// </para>
-    /// <para>
-    /// A count of zero draws nothing and is not an error: a batch can be culled
-    /// to empty between being formed and being submitted, and making the caller
-    /// guard every call is how one site forgets.
-    /// </para>
-    /// </remarks>
-    /// <param name="instances">The buffer holding per-instance attributes.</param>
-    /// <param name="instanceCount">How many instances to draw.</param>
-    /// <param name="firstInstance">
-    /// Index of the first instance to read, so several batches can share one
-    /// upload. D3D takes this natively as a start location; GL 3.3 has no
-    /// <c>BaseInstance</c> at all (that is 4.2), so the GL backend expresses it
-    /// by re-pointing the attributes at the right byte offset instead.
-    /// </param>
+    /// <param name="firstInstance">Index of the first instance to read, so several batches can share one upload.</param>
     public abstract void DrawInstanced(InstanceBuffer instances, int instanceCount, int firstInstance = 0);
 
     public abstract void Dispose();

@@ -6,45 +6,24 @@ using System.Text;
 
 namespace Spectra.Kitchen.Tests;
 
-/// <summary>
-/// Hand-written glTF 2.0 documents, one triangle each, with a knob per thing the
-/// reader is meant to refuse.
-/// </summary>
-/// <remarks>
-/// <para><b>Written from the glTF specification rather than through
-/// <see cref="Models.GltfReader"/> or any exporter</b>, for the reason
-/// <c>TempProject.Wav</c> gives one format over: a reader checked against a
-/// fixture built by its own code proves the two agree rather than that either is
-/// right, and every failure in this area is a misread buffer rather than an
-/// exception.</para>
-/// <para><b>The triangle is asymmetric on every axis and its UVs are not its
-/// positions.</b> A fixture that is the same shape flipped, mirrored or
-/// transposed makes four different bugs look identical - the same argument the
-/// texture orientation probe already records - and equal position and UV values
-/// would hide an accessor read at the wrong offset entirely.</para>
-/// </remarks>
+// Hand-written glTF 2.0 documents, one triangle each, with a parameter per thing
+// the reader should refuse. Written from the glTF spec, not through GltfReader,
+// so the reader is not checked against its own code.
 internal static class GltfFixture
 {
-    /// <summary>The material name every fixture declares unless told otherwise.</summary>
     public const string MaterialName = "FixtureSurface";
 
-    // (x, y, z) per corner. Distinct on all three axes and none of them zero
-    // twice, so a component swap moves a number rather than nothing.
+    // Asymmetric on every axis, so a component swap changes a number.
     private static readonly float[] Positions = [0f, 0f, 0f, 2f, 0f, 0.5f, 0f, 3f, 1.5f];
 
-    // Not the face normal, deliberately: the reader must carry what the file
-    // says rather than recompute it, and a fixture whose normals happen to equal
-    // the cross product cannot tell the two apart.
+    // Not the face normal: the reader must carry the file's, not recompute.
     private static readonly float[] Normals = [0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f];
 
-    // v values away from 0 and 1 on two corners, because the engine flips v and
-    // 1 - 0 is 1, which is the other corner's value: a fixture of only zeros and
-    // ones cannot tell a flip from a swap.
+    // v away from 0 and 1, so a flip and a swap give different numbers.
     private static readonly float[] Uvs = [0.25f, 0.75f, 1f, 0.75f, 0.25f, 0.125f];
 
     private static readonly ushort[] Indices = [0, 1, 2];
 
-    /// <summary>The tightly packed buffer every fixture below indexes into.</summary>
     public static byte[] Buffer()
     {
         var bytes = new byte[BufferLength];
@@ -77,10 +56,9 @@ internal static class GltfFixture
         return bytes;
     }
 
-    /// <summary>Positions in the order the buffer holds them.</summary>
     public static ReadOnlySpan<float> ExpectedPositions => Positions;
 
-    /// <summary>UVs as written in the file, i.e. BEFORE the engine's v flip.</summary>
+    // As written in the file, before the engine's v flip.
     public static ReadOnlySpan<float> AuthoredUvs => Uvs;
 
     private const int PositionOffset = 0;
@@ -89,9 +67,7 @@ internal static class GltfFixture
     private const int IndexOffset = 96;
     private const int BufferLength = 102;
 
-    /// <summary>
-    /// One triangle, everything default, with the buffer inline as a data uri.
-    /// </summary>
+    // By default the buffer is inline as a data uri.
     public static string Json(
         string materialName = MaterialName,
         int mode = 4,
@@ -168,16 +144,10 @@ internal static class GltfFixture
         return json.ToString();
     }
 
-    /// <summary>The same document with its buffer left to the GLB binary chunk.</summary>
+    // No buffer uri: the buffer is the GLB binary chunk.
     public static string GlbJson() => Json(bufferUri: string.Empty);
 
-    /// <summary>Wraps a document and its buffer in the GLB container.</summary>
-    /// <remarks>
-    /// Chunks are 4-byte aligned and the padding is NOT counted in the chunk's
-    /// own length, which is the one part of the container a hand-written writer
-    /// usually gets wrong: without it the next chunk's header is read out of the
-    /// padding, as a plausible length and a garbage type.
-    /// </remarks>
+    // Wraps a document and its buffer in a GLB. Chunks are 4-byte aligned.
     public static byte[] Glb(string json, byte[] binary, uint version = 2, int declaredLengthDelta = 0)
     {
         byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
@@ -195,9 +165,7 @@ internal static class GltfFixture
         BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(16), 0x4E4F534A);
         jsonBytes.CopyTo(file, 20);
 
-        // JSON pads with SPACES and BIN with zeros, per the specification. A
-        // reader that trimmed on its own would accept either; the fixture writes
-        // what a conforming exporter writes.
+        // Spec: JSON pads with spaces, BIN with zeros.
         for (int i = 20 + jsonBytes.Length; i < 20 + jsonPadded; i++) file[i] = 0x20;
 
         if (binary.Length > 0)
@@ -216,8 +184,7 @@ internal static class GltfFixture
     private static string DataUri(byte[] bytes) =>
         "data:application/octet-stream;base64," + Convert.ToBase64String(bytes);
 
-    // Invariant, because a fixture whose numbers parse on one machine and not on
-    // another is the worst kind of test failure to receive.
+    // Invariant culture: JSON needs a dot.
     private static string Numbers(float[] values) =>
         string.Join(", ", Array.ConvertAll(values, v => v.ToString("R", CultureInfo.InvariantCulture)));
 }

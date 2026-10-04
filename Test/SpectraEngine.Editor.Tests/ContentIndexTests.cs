@@ -7,22 +7,10 @@ using System.IO;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// The index behind both content views: what one walk finds, and what one
+/// The index behind both content views: what a walk finds, and what a
 /// filesystem change does to it.
 /// </summary>
-/// <remarks>
-/// <b>ONE reader, two views, and this is the test that says the second one is
-/// not a second reader.</b> Enumerating the directory for the folder view and
-/// indexing for the search would disagree the first time somebody renamed a
-/// file: the folder shows the new name because it just listed, the search shows
-/// the old one because nothing told it, and neither reports a problem.
-///
-/// The watcher itself is not tested. It needs a real filesystem, real timing and
-/// a real dispatcher; what a test can hold is that a create appears, a rename
-/// moves rather than duplicating, and a delete disappears - which is why
-/// <c>ApplyChange</c> is public, the same reason <c>AssetManager</c>'s own
-/// change notification is.
-/// </remarks>
+// The watcher itself is not tested: changes go in through ApplyChange.
 public sealed class ContentIndexTests : IDisposable
 {
     private readonly string _root =
@@ -59,9 +47,7 @@ public sealed class ContentIndexTests : IDisposable
     private string Full(string relative) =>
         Path.Combine(_root, relative.Replace('/', Path.DirectorySeparatorChar));
 
-    // The real walk, awaited: seeding by hand would test the seeding. Awaiting
-    // is also what makes the change tests deterministic, since a walk landing
-    // underneath one would replace the very list it is asserting about.
+    // Awaited, or a walk landing mid-test replaces the list under assertion.
     private static async System.Threading.Tasks.Task<ContentIndex> WalkedAsync(string root)
     {
         var index = new ContentIndex(NullLogger.Instance);
@@ -93,8 +79,6 @@ public sealed class ContentIndexTests : IDisposable
 
         folder.Kind.ShouldBe(ContentKind.Folder);
 
-        // A folder is navigation rather than content: it has no identity in the
-        // engine, so carrying a path for it would be inventing one.
         folder.ContentPath.ShouldBe("");
         folder.Bytes.ShouldBe(-1);
     }
@@ -142,9 +126,6 @@ public sealed class ContentIndexTests : IDisposable
             Full("Materials/wall2.spectramat"),
             Full("Materials/wall.spectramat"));
 
-        // Both halves: the new name is there AND the old one is gone. An index
-        // that only added would show a file that does not exist, which is the
-        // exact failure a second reader produces.
         Find(index, "wall2.spectramat").ShouldNotBeNull();
         Missing(index, "wall.spectramat");
     }

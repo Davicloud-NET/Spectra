@@ -12,36 +12,11 @@ namespace Spectra.Kitchen.Cache;
 /// The content-addressed store of cooked payloads:
 /// <c>.spectra-cook/cas/&lt;2 hex&gt;/&lt;30 hex&gt;</c>.
 /// </summary>
-/// <remarks>
-/// <para><b>A payload's name IS its hash</b>, so two rules that emit identical
-/// bytes share one file and a re-cook that produces what is already there writes
-/// nothing. That is also what makes a hit checkable: the store can verify what it
-/// hands back against the name it was found under, which no timestamp-keyed cache
-/// can do.</para>
-/// <para><b>Uncompressed, deliberately.</b> The pack writer decides a payload's
-/// codec, and storing a compressed form here would make the cache's contents
-/// depend on a pack-level choice that is not in the cache key. It would also
-/// forfeit the property above, since the entry's name is a hash of the COOKED
-/// bytes.</para>
-/// <para><b>Two hex characters of shard.</b> Not for lookup speed, which a
-/// filesystem gives for free, but because a single directory of a hundred thousand
-/// entries is slow to list and hostile to every tool a person would point at it.
-/// </para>
-/// <para><b>A write is a temp file plus a rename, and a read re-hashes.</b> The
-/// two together are what stop a cook that was killed mid-write from being served
-/// as a hit forever: the rename is atomic, so a partial file never acquires the
-/// name, and if one somehow does the read reports a miss and the rule re-runs.
-/// Re-hashing costs a pass over bytes that were just read from disk, against a
-/// wrong artifact shipping, which is not a trade worth thinking about twice.</para>
-/// <para><b>It holds no lock, and that is the stronger answer rather than the
-/// lazier one.</b> The scheduler stores payloads from N workers, but the design
-/// above already survives concurrent writers: a temp file per writer, an atomic
-/// rename onto a name that is a hash of the bytes being written, and a read that
-/// verifies what it got. That survives two <c>scook</c> PROCESSES sharing one
-/// project's cache, which no lock taken in this one could, and it means the disk
-/// write - the slowest thing in a cook that is hitting its cache - is not
-/// serialised behind the graph.</para>
-/// </remarks>
+// A payload is named by the hash of its uncompressed cooked bytes; the pack
+// writer picks the codec later. Writes are temp file plus atomic rename and
+// reads re-hash, so a killed cook cannot leave a bad entry that gets served.
+// No lock: that scheme already survives concurrent writers and other scook
+// processes sharing the cache.
 public sealed class ContentStore
 {
     private const string CasFolder = "cas";
@@ -74,9 +49,7 @@ public sealed class ContentStore
 
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
 
-        // Always written rather than skipped when the name exists: skipping would
-        // leave a corrupt entry (which TryGet reports as a miss) corrupt forever,
-        // so the rule would re-run on every cook and never repair the store.
+        // Write even when the name exists, so a corrupt entry gets repaired.
         string temp = full + ".t" +
             Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + "-" +
             Interlocked.Increment(ref _tempCounter).ToString(CultureInfo.InvariantCulture);
@@ -195,8 +168,7 @@ public sealed class ContentStore
     /// <summary>The path a payload with this hash is stored at.</summary>
     public string PathOf(UInt128 hash)
     {
-        // Upper-case hex throughout the cooker: the manifest prints ids and hashes
-        // this way, so a person can grep one string in both places.
+        // Upper-case hex, same as the manifest, so one grep finds both.
         string name = hash.ToString("X32", CultureInfo.InvariantCulture);
         return Path.Combine(_casRoot, name[..ShardLength], name[ShardLength..]);
     }
@@ -228,8 +200,7 @@ public sealed class ContentStore
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A leaked temp file costs disk and nothing else; failing a cook on
-            // its own cleanup would cost the artifact.
+            // A leaked temp file only costs disk. Don't fail the cook over it.
         }
     }
 }

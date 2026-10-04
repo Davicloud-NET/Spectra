@@ -5,13 +5,9 @@
              RequestedThemeVariant="Dark">
 
   <!--
-    Dark is not a preference here, it is the only variant. There is no light
-    palette and no switcher: a level editor sits beside a 3D viewport all day,
-    and every token in Theme/Tokens.axaml is chosen against a near-black ground.
-
-    Tokens are Resources, the control rules are Styles. Order matters in both:
-    Fluent goes first so its own keys exist to be overridden, and Tokens before
-    Icons and Controls because both reference tokens by StaticResource.
+    Dark only; there is no light palette.
+    Order matters: Fluent first so its keys can be overridden, Tokens before
+    Icons and Controls, which reference tokens by StaticResource.
   -->
 
   <Application.Resources>
@@ -19,9 +15,8 @@
       <ResourceDictionary.MergedDictionaries>
         <ResourceInclude Source="avares://SpectraEngine.Editor/Theme/Tokens.axaml" />
         <ResourceInclude Source="avares://SpectraEngine.Editor/Theme/Icons.axaml" />
-        <!-- After Tokens, whose brushes it aliases: re-points Dock.Avalonia's
-             semantic keys at the Spectra palette. Application.Resources
-             outranks the theme's own dictionary at DynamicResource time. -->
+        <!-- After Tokens, whose brushes it aliases. Application.Resources
+             outranks Dock's own theme dictionary at DynamicResource time. -->
         <ResourceInclude Source="avares://SpectraEngine.Editor/Theme/DockTokens.axaml" />
       </ResourceDictionary.MergedDictionaries>
     </ResourceDictionary>
@@ -29,8 +24,7 @@
 
   <Application.Styles>
     <FluentTheme />
-    <!-- Dock's chrome, before Controls.axaml so the shell's own styles win
-         where they overlap. -->
+    <!-- Before Controls.axaml, so the shell's styles win where they overlap. -->
     <dockFluent:DockFluentTheme />
     <StyleInclude Source="avares://SpectraEngine.Editor/Theme/Controls.axaml" />
   </Application.Styles>

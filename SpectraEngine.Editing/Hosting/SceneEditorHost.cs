@@ -20,82 +20,26 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Hosting;
 
 /// <summary>
-/// The demo's editor: everything needed to turn the running engine into a
-/// manipulable viewport — an <see cref="EditorInputFrame"/> built per frame from
-/// the live input manager and the renderer's framebuffer latch, the viewport's
-/// pick/gizmo/marquee arbitration, an orbit camera, an undo history, and the
-/// keyboard that drives them.
+/// The engine's scene editor: the per-frame input snapshot, the viewport's
+/// pick/gizmo/marquee arbitration, the editor camera, the undo history and the
+/// keyboard that drives them. Render thread only.
 /// </summary>
-/// <remarks>
-/// <b>This class is the whole of the host seam.</b> It is the only type in the
-/// process that names both a keyboard and <c>SpectraEngine.Editing</c>: the
-/// editing assembly carries no keyboard vocabulary at all (see
-/// <see cref="GizmoShortcuts"/>), so somebody has to resolve a physical key into
-/// a <see cref="GizmoCommand"/>, and that somebody is the host. Re-hosting the
-/// viewport in the Avalonia shell means writing a sibling of this class — the
-/// tools, the history and the arbitration below the seam are untouched.
-/// <para>
-/// The keys it names are <see cref="InputKey"/>, the engine's own vocabulary,
-/// so this host no longer references a windowing backend either: the shell
-/// translates its own key events into the same enum and every binding here
-/// works unchanged behind it.
-/// </para>
-/// <para>
-/// <b>Two navigation models, one toggle.</b> The default is the editor's own
-/// Roblox-Studio-shaped navigation: hold the right mouse button and the cursor
-/// locks and hides, the mouse looks around in place, and W/A/S/D/Q/E fly.
-/// <see cref="NavigationToggleKey"/> hands the camera back to the engine's
-/// original <c>FlyCameraController</c>, which is still there and still works.
-/// <see cref="Update"/> returns whether the editor drove the camera this frame,
-/// and the engine parks the fly camera exactly on the frames it did. The toggle
-/// only chooses the camera — picking, manipulation and box select run in both
-/// modes.
-/// </para>
-/// <para>
-/// <b>The movement keys are only fed to the camera while the look button is
-/// held</b>, which is both what the requirement asks for ("hold right click to
-/// lock mouse and wasd to move") and what resolves the one genuine keyboard
-/// conflict in this host: <c>W</c> means "move tool" to the manipulator and
-/// "forward" to a camera, and <c>E</c> is claimed by both the rotate tool and
-/// the rise/fall pair. Gating movement on the button means the letter row keeps
-/// meaning "switch tool" whenever you are not actually flying, so nothing had to
-/// be given up. The engine's fly camera reads the keyboard directly and cannot
-/// be gated that way, so while <em>it</em> is driving the conflicting letter-row
-/// tool bindings stand down as before (the 2/3/4 row keeps working in both).
-/// </para>
-/// <para>
-/// <b>Key names are resolved once, not per frame.</b> The shortcut tables match
-/// on key <em>names</em>, which would mean a <c>ToString()</c> allocation per
-/// key per frame if it were done in the loop. The bindings are therefore
-/// resolved in the constructor into a flat array, and the per-frame path is an
-/// array walk over already-decided verbs — so a steady-state frame with no
-/// keypress allocates nothing at all.
-/// </para>
-/// <para>
-/// <b>Threading:</b> render thread only, like the scene it edits and the
-/// <see cref="DebugDraw"/> it fills. It is constructed on the render thread too
-/// (from <c>SceneManager.EditorFactory</c>, inside the scene load).
-/// </para>
-/// </remarks>
+// Camera movement keys are fed to the editor camera only while the look button
+// is held, so W/E mean "switch tool" the rest of the time. The engine's fly
+// camera reads the keyboard itself, so while it drives, the conflicting
+// letter-row tool keys stand down.
 public sealed class SceneEditorHost : ISceneEditor
 {
-    /// <summary>Toggles between the editor's freelook camera and the engine's fly camera.</summary>
     private const InputKey NavigationToggleKey = InputKey.F7;
 
-    // Ctrl+T, echoing Hammer's Ctrl+T (tie to entity) — the nearest thing in
-    // that editor to "change what this brush fundamentally is". A Control chord
-    // deliberately, so the bare letter row stays free for tool switching.
+    // With Control held, so the bare letter stays free for tool switching.
     private const InputKey BrushKindToggleKey = InputKey.T;
 
-    // Interned labels for ISceneEditor.NavigationModeName — the stats line that
-    // reads it is otherwise allocation-free, so this must never be a formatted
-    // enum.
+    // Constants, not formatted enums: the stats line reading these must not allocate.
     private const string EditorNavigationLabel = "editor freelook";
     private const string FlyCameraNavigationLabel = "fly camera";
 
-    // Candidate manipulator keys, offered to the editing layer's own default
-    // table. Anything it does not recognise is silently dropped, so this list
-    // can stay a superset of whatever the defaults happen to bind today.
+    // Offered to the editing layer's default table; unrecognised keys are dropped.
     private static readonly InputKey[] GizmoKeyCandidates =
     [
         InputKey.W, InputKey.E, InputKey.R,
@@ -103,9 +47,7 @@ public sealed class SceneEditorHost : ISceneEditor
         InputKey.X, InputKey.Y, InputKey.G, InputKey.LeftBracket, InputKey.RightBracket,
     ];
 
-    // Keys a camera owns while it is driving. Only the overlap with
-    // GizmoKeyCandidates matters (today: W and E), but listing the whole set
-    // keeps the conflict rule honest if either table grows.
+    // Keys a camera owns while it is driving.
     private static readonly InputKey[] CameraKeys =
     [
         InputKey.W, InputKey.A, InputKey.S, InputKey.D, InputKey.Q, InputKey.E,
@@ -125,74 +67,46 @@ public sealed class SceneEditorHost : ISceneEditor
     private readonly GizmoBinding[] _gizmoBindings;
     private readonly IEditorFrameProbe? _probe;
 
-    // Editor-only, and deliberately not in Core: a shipped game has no reason
-    // to outline its own parts, and this assembly is the one that never gets
-    // linked into one.
     private readonly PartBrushOverlay _partOutlines = new();
 
-    // Subtractive brushes render nothing at all, so this pass is not an
-    // affordance — it is the only way one can be seen.
+    // Subtractive brushes render nothing, so this is the only way to see one.
     private readonly SubtractiveBrushOverlay _negativeOutlines = new();
 
-    /// <summary>The ground grid and the world axes, drawn depth-TESTED.</summary>
+    /// <summary>The ground grid and the world axes, drawn depth-tested.</summary>
     public GroundGrid Grid { get; } = new();
 
     /// <summary>
     /// When the grid shows. <see cref="Viewport.GridMode.Auto"/> by default:
-    /// during move and resize gestures, when the squares on the floor are the
-    /// squares the object will land on, and faded out the rest of the time.
+    /// only during move and resize gestures.
     /// </summary>
     public GridMode GridMode { get; set; } = GridMode.Auto;
 
-    // The grid's fade envelope: 0..1, ramped toward where GridMode says it
-    // should be and written into Grid.Opacity each frame. A ramp rather than a
-    // cut because a full-viewport lattice appearing in one frame is an EVENT
-    // in peripheral vision (the same mechanism the shell's motion system is
-    // built on), and the thing it announces — "a drag started" — the user
-    // already knows.
+    // 0..1 fade written into Grid.Opacity each frame, so the grid does not pop.
     private float _gridOpacity;
 
-    // In faster than out: the grid is information at the moment a drag starts
-    // and mere afterglow at the moment it ends, so it arrives promptly and
-    // takes its leave without flashing.
     private const float GridFadeInSeconds = 0.10f;
     private const float GridFadeOutSeconds = 0.25f;
 
-    /// <summary>The corner axis widget, drawn depth-OFF like the manipulators.</summary>
+    /// <summary>The corner axis widget, drawn on top like the manipulators.</summary>
     public AxisCompass Compass { get; } = new();
 
-    /// <summary>What is selected, and what the cursor is over.</summary>
+    /// <summary>The outline of what is selected and what the cursor is over.</summary>
     public SelectionOutline Selection { get; } = new();
 
     /// <summary>Every light's icon, and the selected lights' shapes.</summary>
     public LightOverlay Lights { get; } = new();
 
-    /// <summary>The light's own handles: reach and aim.</summary>
+    /// <summary>The handles for a light's shape and aim.</summary>
     public LightGizmo LightGizmo { get; }
 
-    // Last frame's framebuffer latch, kept so Draw can size the marquee without
-    // asking the renderer a second time.
     private Vector2 _viewportSize;
 
-    // The SHAPE seam, beside the lock. Held as the interface rather than the
-    // manager for the same reason the camera holds ICursorLock: the editing
-    // layer must never see a window, and a test can hand it a fake.
     private readonly ICursorShape _cursorShape;
     private CursorShape _lastCursorShape = CursorShape.Arrow;
     private bool _editorNavigation = true;
 
-    /// <summary>
-    /// Builds an editor over a freshly loaded scene.
-    /// </summary>
-    /// <param name="loggerFactory">Used for this host's log and its tools'.</param>
-    /// <param name="scene">The scene to edit; supplies the camera and the selection.</param>
-    /// <param name="renderer">Supplies the framebuffer latch the viewport is sized from.</param>
-    /// <param name="input">The live input manager the per-frame snapshot is built from.</param>
-    /// <param name="probe">
-    /// Optional per-frame instrumentation the host hangs off this editor, or
-    /// null for none, which is the ordinary case. See
-    /// <see cref="IEditorFrameProbe"/>.
-    /// </param>
+    /// <summary>Builds an editor over a freshly loaded scene.</summary>
+    /// <param name="probe">Optional per-frame instrumentation, see <see cref="IEditorFrameProbe"/>.</param>
     public SceneEditorHost(
         ILoggerFactory loggerFactory,
         Scene scene,
@@ -212,21 +126,10 @@ public sealed class SceneEditorHost : ISceneEditor
 
         _undo = new UndoStack(scene);
         _gizmos = new GizmoController(scene, _undo);
-        // The resize tool's one diagnostic: a target with no measurable size
-        // cannot honour a world-unit increment and says so instead of quietly
-        // behaving like a factor drag.
         _gizmos.Scale.Logger = loggerFactory.CreateLogger<ScaleGizmo>();
-        // The input manager is the engine's ICursorLock: the camera asks for a
-        // locked cursor from here (the render thread) and the main thread
-        // applies it during its event pump. Handing over the interface rather
-        // than the manager is what keeps the editing layer from ever seeing a
-        // window.
         _camera = new EditorCameraController(scene) { CursorLock = input };
         _cursorShape = input;
-        // The light tool shares the MOVE tool's snap ladder rather than owning a
-        // fourth: a range is a length, so it belongs on the same grid as a
-        // position, and a second ladder could drift out of step with the one
-        // drawn on the floor.
+        // Shares the move and rotate ladders: a range is a length, a cone an angle.
         LightGizmo = new LightGizmo(scene, _undo)
         {
             Snap = _gizmos.Translate.Snap,
@@ -241,8 +144,7 @@ public sealed class SceneEditorHost : ISceneEditor
         _inputSource = new EngineEditorInputSource(input, renderer);
         _gizmoBindings = BuildGizmoBindings();
 
-        // Seed the viewport size before the first frame so a pick that happens
-        // on frame one is not measured against a zero-sized viewport.
+        // Seeded so a pick on frame one has a real viewport size.
         renderer.GetFramebufferSize(out int width, out int height);
         _viewportSize = new Vector2(width, height);
 
@@ -267,15 +169,6 @@ public sealed class SceneEditorHost : ISceneEditor
     public int SelectionCount => _scene.Selection.Count;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Interned literals, never a formatted enum: see <see cref="ISceneEditor"/>.
-    /// <para>
-    /// Carries the manipulator STYLE as well, because the two styles disagree
-    /// about what a resize holds still and about how many handles there are, and
-    /// a smoke run reading "resize" alone cannot tell which one it got. One
-    /// interned literal per combination, so the stats line stays allocation-free.
-    /// </para>
-    /// </remarks>
     public string GizmoModeName => _gizmos.Mode switch
     {
         GizmoMode.Rotate => "rotate",
@@ -295,13 +188,8 @@ public sealed class SceneEditorHost : ISceneEditor
     public bool SnapEnabled => _gizmos.SnapEnabled;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The viewport's own drag mode covers all three viewport gestures at once
-    /// (manipulate, select-and-move, marquee), which is exactly the arbitration
-    /// that type exists to own - asking the gizmo controller separately would
-    /// be a second answer to one question. The property gesture is the other
-    /// half: an inspector scrub moves the object without the viewport knowing.
-    /// </remarks>
+    // The property gesture counts: an inspector scrub moves the object without
+    // the viewport knowing.
     public bool IsInteracting =>
         _viewport.DragMode != ViewportDragMode.None || _propertyGestureOpen;
 
@@ -323,11 +211,9 @@ public sealed class SceneEditorHost : ISceneEditor
     public float ResizeSnapIncrement => _gizmos.Scale.Snap.Increment;
 
     /// <inheritdoc/>
-    /// <remarks>Interned literals, never a formatted enum — see <see cref="ISceneEditor"/>.</remarks>
     public string NavigationModeName => _editorNavigation ? EditorNavigationLabel : FlyCameraNavigationLabel;
 
     /// <inheritdoc/>
-    /// <remarks>Interned literals, never a formatted enum — see <see cref="ISceneEditor"/>.</remarks>
     public string GridModeName => GridMode switch
     {
         GridMode.On => "on",
@@ -335,8 +221,7 @@ public sealed class SceneEditorHost : ISceneEditor
         _ => "auto",
     };
 
-    // The vocabulary, as constants: this is read once per snapshot and a
-    // formatted string there would be per-publish garbage forever.
+    // Constants: read once per snapshot, so no formatting.
     private const string SuspendedState = "suspended";
     private const string FlyState = "fly";
     private const string LookState = "look";
@@ -351,13 +236,7 @@ public sealed class SceneEditorHost : ISceneEditor
     private const string IdleState = "idle";
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <b>The order is the arbitration's own order.</b> Suspension first because
-    /// nothing else applies while play mode owns the scene; then the camera,
-    /// which claims the pointer before any tool sees it; then a live drag; then
-    /// what a press would do. Read any other way and the hint would advertise a
-    /// gesture the next click will not perform.
-    /// </remarks>
+    // Same order as the press arbitration: suspension, camera, live drag, hover.
     public string InteractionStateName
     {
         get
@@ -398,10 +277,7 @@ public sealed class SceneEditorHost : ISceneEditor
         _renderer.GetFramebufferSize(out int width, out int height);
         if (width <= 0 || height <= 0)
         {
-            // Minimized. There is no viewport to hit-test against, and every
-            // ray through a zero-sized one is undefined — so abandon whatever
-            // gesture was live rather than resuming it later against a viewport
-            // that changed underneath it.
+            // Minimized: no viewport to hit-test, so abandon any live gesture.
             _viewport.Reset();
             return _editorNavigation;
         }
@@ -412,41 +288,18 @@ public sealed class SceneEditorHost : ISceneEditor
 
         EditorInputFrame frame = _inputSource.CaptureFrame((float)deltaTime, CaptureNavigation());
 
-        // BEFORE the viewport, and standing down on the very frame a press could
-        // claim the pointer — both halves matter. The self-test deliberately
-        // leaves its subject node displaced for the whole compile watch, so a
-        // viewport update that ran first would let a gizmo grab CAPTURE that
-        // displaced transform as the drag's start; the self-test would then see
-        // a non-idle viewport in the same frame, restore the node underneath the
-        // live gesture, and the drag would jump a unit and commit — and undo —
-        // to a position the user never authored. Asking the frame whether a
-        // press is arriving, rather than asking the viewport what it did with
-        // one, is what closes that window: the node is back at rest before
-        // anything can capture it.
-        //
-        // The self-test borrows and hands back the camera within its own call,
-        // so running it first costs nothing: the camera controller writes the
-        // pose afterwards either way.
+        // The probe runs before the viewport and is told "not idle" on the frame
+        // a press arrives. The self-test leaves its node displaced while it
+        // waits for a compile; a gizmo grab must not capture that as its start.
         bool viewportIdle =
             _viewport.DragMode == ViewportDragMode.None && !frame.WasPressed(_viewport.DragButton);
         _probe?.Update(deltaTime, _viewportSize, viewportIdle);
 
-        // Escape arrives as the cancel flag rather than as a GizmoCommand: it
-        // has to reach the marquee as well as the manipulator, and Update is the
-        // one call that routes it to whichever owns the pointer.
+        // Escape is a cancel flag, not a GizmoCommand: it must reach the marquee too.
         bool escape = _input.WasKeyPressed(InputKey.Escape);
         _viewport.Update(in frame, escape);
 
-        // AND WITH NOTHING TO CANCEL, IT CLEARS THE SELECTION. The keyboard
-        // reference has promised that since it was written and nothing did it:
-        // the only Selection.Clear on a user gesture was a click on empty space,
-        // and EditorHostCommand.ClearSelection - implemented, and deliberately
-        // exempt from RefuseEdit so it stays safe while play owns the scene -
-        // was posted by nothing at all.
-        //
-        // Gated on the same idle predicate the probe uses, so Escape still means
-        // "abandon this drag" while one is live and only falls through to the
-        // selection when there is no drag to abandon.
+        // With no drag to cancel, Escape clears the selection.
         if (escape && viewportIdle && _scene.Selection.Count > 0)
             ClearSelection();
         UpdateCursorShape();
@@ -456,12 +309,8 @@ public sealed class SceneEditorHost : ISceneEditor
         return _editorNavigation;
     }
 
-    // Whether a gesture the grid is the ladder for is live: a move or resize
-    // drag through the transform gizmo, an object following the cursor after a
-    // select-and-move press THAT HAS ACTUALLY TRAVELLED, or a light's length
-    // handle (range and extents snap on the move grid; angles are degrees and
-    // get nothing from it). A rotate drag deliberately shows no grid — it
-    // would read as a 15-unit lattice beside a tool snapping in degrees.
+    // Gestures that snap on the move grid: move and resize drags, a
+    // select-and-move that has travelled, a light's length handle. Not rotate.
     private bool MoveGestureLive => _viewport.DragMode switch
     {
         ViewportDragMode.SelectAndMove => _selectMoveTravelled,
@@ -471,11 +320,8 @@ public sealed class SceneEditorHost : ISceneEditor
         _ => false,
     };
 
-    // SelectAndMove is entered on the PRESS, before any travel — a plain click
-    // to select something holds it for ~100 ms, and an envelope keyed on the
-    // mode alone pulses the full-viewport lattice on the single most common
-    // viewport gesture. A handle grab is different: grabbing a handle IS
-    // announcing a drag, so Manipulate shows the grid immediately.
+    // SelectAndMove starts on the press, so a plain click would flash the grid.
+    // Wait for real travel. A handle grab shows it at once.
     private const float SelectMoveTravelPixels = 4f;
     private Vector2 _selectMoveAnchor;
     private bool _selectMoveAnchorValid;
@@ -524,34 +370,18 @@ public sealed class SceneEditorHost : ISceneEditor
         Grid.Opacity = _gridOpacity;
     }
 
-    // --- Driving the editor from somewhere other than the keyboard -----------
-    //
-    // Every verb below was reachable only as a key chord. A shell with a
-    // toolbar needs the same ones, and synthesising key presses to reach them
-    // would be a second input path free to drift from the real one; these are
-    // the SAME calls HandleShortcuts makes.
-    //
-    // Render thread only, like everything else here. A UI thread arrives
-    // through EngineHost.EnqueueCommand.
+    // The verbs below are the same calls HandleShortcuts makes. A UI thread
+    // reaches them through EngineHost.EnqueueCommand.
 
     /// <summary>
     /// Whether the editor has handed the frame away (play mode). While true,
-    /// every verb that would change the scene refuses and says so.
+    /// every verb that would change the scene refuses and logs it.
     /// </summary>
-    /// <remarks>
-    /// <b>The authoritative half of a gate a UI cannot hold.</b> A shell's
-    /// play-mode state comes from a published snapshot up to a publish
-    /// interval old, so a click in that window enqueues an edit that arrives
-    /// here mid-play; a menu already open when play starts can keep sending
-    /// them indefinitely. Checking on this side is the only place the answer
-    /// is current.
-    /// </remarks>
+    // A shell's own play-mode state is a snapshot old, so the check has to be here.
     public bool IsSuspended { get; private set; }
 
-    // One refusal for every mutating verb: suspended (play mode owns the
-    // scene) or mid-drag (a gizmo transaction is open, and transactions do not
-    // nest). Never silent — a verb that does nothing reads as a broken
-    // binding, which is why every caller of this logs through it.
+    // Gate for every mutating verb: play mode, or an open transaction
+    // (transactions do not nest).
     private bool RefuseEdit(string label, bool allowPropertyGesture = false)
     {
         if (IsSuspended)
@@ -566,13 +396,8 @@ public sealed class SceneEditorHost : ISceneEditor
             return true;
         }
 
-        // A property gesture owns an open transaction for as long as a pointer
-        // is held, and a pointer capture does not block the keyboard: Ctrl+1
-        // during a drag would insert a block INTO the drag's transaction, and
-        // releasing without having moved cancels that transaction and rolls the
-        // insert back - the object appears, is selected, and vanishes, with no
-        // history entry and no message. Same rule as a gizmo drag, for the same
-        // reason.
+        // A pointer capture does not block the keyboard. An insert during a
+        // scrub would join the scrub's transaction and be rolled back with it.
         if (_propertyGestureOpen && !allowPropertyGesture)
         {
             _logger.LogDebug("{Label}: refused, a property gesture is in progress", label);
@@ -582,16 +407,11 @@ public sealed class SceneEditorHost : ISceneEditor
         return false;
     }
 
-    /// <summary>
-    /// Runs one host verb: history, a structural edit, or a mode toggle.
-    /// </summary>
+    /// <summary>Runs one host verb: history, a structural edit, or a mode toggle.</summary>
     public void Apply(EditorHostCommand command)
     {
-        // The view-state verbs are not scene edits and stay live: navigation
-        // is the editor's own camera, clearing a selection is how a play
-        // session should start, and the grid mode changes what is DRAWN, not
-        // what is authored — refusing it mid-drag would gate the one moment a
-        // user reaches for it.
+        // Navigation, clear-selection and grid mode are not scene edits, so
+        // they stay live in play mode and mid-drag.
         if (command is not (EditorHostCommand.ToggleNavigation or EditorHostCommand.ClearSelection
                 or EditorHostCommand.GridAuto or EditorHostCommand.GridOn or EditorHostCommand.GridOff) &&
             RefuseEdit(command.ToString()))
@@ -624,15 +444,9 @@ public sealed class SceneEditorHost : ISceneEditor
     public bool Apply(GizmoCommand command) => _gizmos.Apply(command);
 
     /// <summary>
-    /// Sets one tool's snap increment — the payload-carrying sibling of the
-    /// snap verbs, for a field a user types a number into.
+    /// Sets one tool's snap increment. A non-positive or non-finite value is
+    /// refused and logged.
     /// </summary>
-    /// <remarks>
-    /// Refused before anything is written, the property panel's rule: a
-    /// non-positive or non-finite increment would throw from inside
-    /// <see cref="SnapSettings.Increment"/> on the render thread, and clamping
-    /// instead would set a number nobody asked for and report nothing.
-    /// </remarks>
     public void SetSnapIncrement(GizmoMode tool, float increment)
     {
         if (!float.IsFinite(increment) || increment <= 0f)
@@ -646,9 +460,7 @@ public sealed class SceneEditorHost : ISceneEditor
         _gizmos.SetSnapIncrement(tool, increment);
     }
 
-    /// <summary>
-    /// Runs one camera verb, such as framing the selection.
-    /// </summary>
+    /// <summary>Runs one camera verb, such as framing the selection.</summary>
     public void Apply(EditorCameraCommand command) => _camera.Apply(command);
 
     /// <summary>
@@ -656,17 +468,9 @@ public sealed class SceneEditorHost : ISceneEditor
     /// selection. An id the scene does not have clears the selection under
     /// <see cref="SelectionUpdate.Replace"/> and is otherwise ignored.
     /// </summary>
-    /// <remarks>
-    /// <b>This is how a tree view selects.</b> A shell holds ids and never
-    /// nodes, so resolving one is the engine's job, on the thread that owns the
-    /// graph. An id that no longer resolves is ordinary rather than
-    /// exceptional: a UI's view of the scene is a frame or two behind, so it
-    /// can genuinely ask for a node that has just been deleted.
-    /// </remarks>
     public void SelectById(Guid nodeId, SelectionUpdate mode = SelectionUpdate.Replace)
     {
-        // A selection change under a live gesture would leave the manipulator
-        // holding a capture of nodes it is no longer editing.
+        // A live gesture holds a capture of the old selection.
         _viewport.Reset();
 
         if (!_scene.TryFindById(nodeId, out SceneNode? node))
@@ -685,16 +489,11 @@ public sealed class SceneEditorHost : ISceneEditor
     }
 
     /// <summary>
-    /// Selects a whole set of ids in one operation — how a multi-select tree
-    /// view reports its selection. Ids the scene no longer has are skipped;
-    /// under <see cref="SelectionUpdate.Replace"/> the selection becomes
-    /// exactly the resolvable set, empty included.
+    /// Selects a set of ids in one operation, raising one change event. Ids
+    /// the scene no longer has are skipped; under
+    /// <see cref="SelectionUpdate.Replace"/> the selection becomes the
+    /// resolvable set, empty included.
     /// </summary>
-    /// <remarks>
-    /// One batch, not N <see cref="SelectById"/> calls: the selection raises
-    /// one change event and the property panel unions once, instead of N
-    /// times for a Ctrl-click spree reported as a set.
-    /// </remarks>
     public void SelectByIds(IReadOnlyList<Guid> nodeIds, SelectionUpdate mode = SelectionUpdate.Replace)
     {
         ArgumentNullException.ThrowIfNull(nodeIds);
@@ -716,19 +515,10 @@ public sealed class SceneEditorHost : ISceneEditor
     /// (writing nothing) for an unknown id, an empty name after trimming, or a
     /// name the node already has.
     /// </summary>
-    /// <remarks>
-    /// The per-node sibling of the property panel's bulk
-    /// <see cref="PropertyId.NodeName"/> edit, for the tree's in-place rename:
-    /// the tree names exactly the row being edited, while the panel writes to
-    /// whatever is selected when the edit lands.
-    /// </remarks>
     public bool RenameById(Guid nodeId, string name)
     {
-        // The same refusal its sibling verbs carry. Without it a rename
-        // committed by the blur that a gizmo grab itself causes (clicking a
-        // handle moves focus off the rename box) opens a transaction inside
-        // the drag's own, which throws, is caught by the command drain, and
-        // logs at Error while the typed name is dropped.
+        // Grabbing a gizmo handle blurs the rename box, which commits the
+        // rename inside the drag's transaction. Refuse instead of throwing.
         if (RefuseEdit("Rename"))
             return false;
 
@@ -750,7 +540,6 @@ public sealed class SceneEditorHost : ISceneEditor
     /// <summary>
     /// Moves nodes, addressed by id, under a new parent at the given index
     /// (<c>-1</c> appends), keeping world transforms, as one history entry.
-    /// What a tree drag-and-drop lands on.
     /// </summary>
     public void ReparentByIds(IReadOnlyList<Guid> nodeIds, Guid newParentId, int insertIndex)
     {
@@ -776,8 +565,6 @@ public sealed class SceneEditorHost : ISceneEditor
 
         if (!StructuralEditor.TryReparent(_scene, _undo, nodes, newParent, insertIndex))
         {
-            // Never a silent no-op: a drop that does nothing reads as a broken
-            // gesture, so say why nothing moved.
             _logger.LogInformation(
                 "Reparent: nothing to move ({Count} node(s) in, target '{Parent}')",
                 nodes.Count, newParent.Name);
@@ -790,20 +577,15 @@ public sealed class SceneEditorHost : ISceneEditor
     }
 
     /// <summary>
-    /// Selects whatever is under the given viewport point, the way a left-click
-    /// pick would, unless it is already part of the selection — the
-    /// right-click-before-a-context-menu rule every editor shares: clicking a
-    /// selected object keeps the set (the menu acts on all of it), clicking an
-    /// unselected one retargets to it, and clicking empty space keeps the
-    /// selection so the menu's verbs still have their subject.
+    /// Retargets the selection for a right-click before a context menu: an
+    /// unselected object under the point becomes the selection, while a
+    /// selected object or empty space leaves the selection as it is.
     /// </summary>
     public void SelectAtPoint(Vector2 viewportPoint)
     {
         if (_viewportSize.X <= 0f || _viewportSize.Y <= 0f)
             return;
 
-        // A right-click that beat the shell's play-mode gate must not reach
-        // into a scene somebody is walking around in.
         if (IsSuspended)
             return;
 
@@ -811,13 +593,8 @@ public sealed class SceneEditorHost : ISceneEditor
 
         Ray3 ray = _scene.Camera.ScreenPointToRay(viewportPoint, _viewportSize);
 
-        // The PICK's reach, read from the one controller that owns it, never
-        // the insert clamp. They are different questions: an insert 300 units
-        // away is useless, while an object 300 units away is ordinary in an
-        // open world and left-clickable. Reusing the insert's 200 units here
-        // made a right-click past it silently keep the previous selection,
-        // which is indistinguishable from the empty-space rule and puts the
-        // menu's Delete on the wrong object.
+        // The pick's reach, not the insert clamp: a far object is still
+        // clickable, and a miss here would leave Delete on the wrong object.
         if (!_scene.Raycast(
                 in ray, out SceneRaycastHit hit, SceneQueryFilter.EditorPicking, _viewport.PickDistance))
         {
@@ -833,21 +610,15 @@ public sealed class SceneEditorHost : ISceneEditor
     /// <inheritdoc/>
     public void Suspend()
     {
-        // Both halves are needed. Reset abandons the gesture and rolls back
-        // whatever it had moved, so no half-drag lands in the history; suspending
-        // the camera releases the cursor lock it may be holding, which is what
-        // would otherwise fight the character controller's lock request for as
-        // long as play mode lasted.
+        // Roll back any open gesture, and release the camera's cursor lock so
+        // it does not fight the character controller's.
         _viewport.Reset();
         _camera.SuspendNavigation();
         ResetGridFade();
         IsSuspended = true;
     }
 
-    // The envelope freezes while suspended (the engine stops calling Update but
-    // keeps calling DrawWorld), so a grid that was mid-gesture at F8 would
-    // otherwise come back at near-full opacity on the first frame after Resume,
-    // announcing a gesture from before the play session.
+    // Update stops while suspended, so the fade would freeze mid-gesture.
     private void ResetGridFade()
     {
         _gridOpacity = 0f;
@@ -858,24 +629,13 @@ public sealed class SceneEditorHost : ISceneEditor
     public void Resume() => IsSuspended = false;
 
     /// <summary>
-    /// Applies a property-panel edit to the current selection.
+    /// Applies a property-panel edit to the selection as it is when the edit
+    /// runs, which may be newer than the one the UI saw.
     /// </summary>
-    /// <returns>How many nodes actually changed.</returns>
-    /// <remarks>
-    /// <b>The selection is read HERE, not passed in.</b> A UI's view of the
-    /// selection is a frame or two behind, so an edit carrying its own node
-    /// list would occasionally write to nodes the user had already deselected.
-    /// The panel says which property and which value; which objects that means
-    /// is the editor's answer, given at the moment the edit runs.
-    /// </remarks>
+    /// <returns>How many nodes changed.</returns>
     public int ApplyProperty(PropertyEdit edit)
     {
-        // Same gate as every other edit: a property field committed by the
-        // blur that entering play mode causes must not write into a running
-        // session, and a bulk edit opens a transaction that cannot nest inside
-        // a live drag.
-        // The one caller exempt from the gesture gate: these ARE the gesture's
-        // own edits.
+        // Exempt from the gesture gate: these are the gesture's own edits.
         if (RefuseEdit("Property edit", allowPropertyGesture: true))
             return 0;
 
@@ -883,36 +643,17 @@ public sealed class SceneEditorHost : ISceneEditor
     }
 
     /// <summary>
-    /// Replaces the wiring on one entity node, as one undoable entry.
+    /// Replaces the wiring on one entity node, as one undoable entry. A list
+    /// equal to the stored one records nothing.
     /// </summary>
     /// <returns>True when something was written.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>Addressed by ID, not by "the selection", and that is the one place
-    /// this differs from <see cref="ApplyProperty"/>.</b> A property edit
-    /// writes one named value, so resolving the selection here - a frame or two
-    /// ahead of the panel - is harmless. A connection edit replaces a whole
-    /// list, so landing on a node the user has since also selected would
-    /// overwrite that node's entire wiring with another node's. The panel was
-    /// built from a published <c>EntityPanelInfo</c> carrying the node's id, so
-    /// the id is what travels back.
-    /// </para>
-    /// <para>
-    /// <b>A list equal to the one already stored records nothing</b>, exactly
-    /// as an unchanged rename does: the panel commits on Enter and on losing
-    /// focus, so tabbing through a wire's fields is ordinary and must not fill
-    /// the history with entries that undo to themselves.
-    /// </para>
-    /// </remarks>
-    /// <param name="nodeId">The node whose entity is being wired.</param>
     /// <param name="connections">The wires it should carry, in authored order.</param>
+    // By id, unlike ApplyProperty: this replaces a whole list, so landing on a
+    // newer selection would overwrite another node's wiring.
     public bool ApplyEntityConnections(Guid nodeId, IReadOnlyList<EntityConnection> connections)
     {
         ArgumentNullException.ThrowIfNull(connections);
 
-        // The gesture exemption is the same one property edits get: a wiring
-        // edit made while a property gesture is open joins that transaction
-        // rather than being refused for it.
         if (RefuseEdit("Entity wiring", allowPropertyGesture: true))
             return false;
 
@@ -927,8 +668,7 @@ public sealed class SceneEditorHost : ISceneEditor
 
         var command = SetEntityConnectionsCommand.Capture(node, connections);
 
-        // Inside a gesture the caller owns the transaction, and opening a
-        // second one here would throw rather than nest.
+        // Inside a gesture the caller owns the transaction.
         bool ownTransaction = !_propertyGestureOpen;
         if (ownTransaction)
             _undo.BeginTransaction("Entity Wiring");
@@ -941,32 +681,16 @@ public sealed class SceneEditorHost : ISceneEditor
         return true;
     }
 
-    // Whether a continuous property gesture owns the transaction right now.
     private bool _propertyGestureOpen;
 
     /// <summary>
-    /// Opens one history entry to hold a continuous property gesture, such as
-    /// a drag across a numeric field.
+    /// Opens one history entry for a continuous property gesture, such as a
+    /// drag across a numeric field. Edits that arrive while it is open join it.
     /// </summary>
     /// <returns>
-    /// True when the gesture was opened. False means the editor refused it, and
-    /// the caller must not go on to emit edits or call
-    /// <see cref="EndPropertyGesture"/>.
+    /// False when the editor refused; the caller must then not emit edits or
+    /// call <see cref="EndPropertyGesture"/>.
     /// </returns>
-    /// <remarks>
-    /// <para>
-    /// <b>The same shape a gizmo drag already uses</b>, and for the same
-    /// reason: one user gesture is one undo entry, whatever the pointer did in
-    /// between. Every <see cref="PropertyEdit"/> that arrives while this is
-    /// open joins the entry rather than starting its own.
-    /// </para>
-    /// <para>
-    /// <b>Refusal is reported rather than thrown</b>, because the caller is a
-    /// pointer handler in a UI: a press that lands in the publish interval
-    /// between play mode starting and the panel hearing about it is ordinary,
-    /// not exceptional, and it must simply do nothing.
-    /// </para>
-    /// </remarks>
     public bool BeginPropertyGesture(string name)
     {
         if (_propertyGestureOpen || RefuseEdit("Property gesture"))
@@ -981,11 +705,6 @@ public sealed class SceneEditorHost : ISceneEditor
     /// Closes a gesture opened by <see cref="BeginPropertyGesture"/>, keeping
     /// what it did or rolling it back.
     /// </summary>
-    /// <remarks>
-    /// <b>Cancelling has to roll back rather than simply stop recording</b>, or
-    /// an abandoned drag would leave the scene holding the last value the
-    /// pointer happened to pass over with no history entry to take it back.
-    /// </remarks>
     public void EndPropertyGesture(bool commit)
     {
         if (!_propertyGestureOpen)
@@ -1001,71 +720,30 @@ public sealed class SceneEditorHost : ISceneEditor
 
     /// <summary>
     /// Resets the editor after the scene's graph has been replaced wholesale,
-    /// as a map load does.
+    /// as a map load does: rolls back any open gesture and clears the selection
+    /// and the history, which all refer to the old graph.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A lifecycle hook, deliberately not an <c>EditorHostCommand</c>.</b>
-    /// Every other way a UI drives this host is a verb a key chord also uses,
-    /// which is what keeps the two from drifting. This is not one of those: no
-    /// user presses "the scene was replaced", and dressing it up as a verb
-    /// would put something on the command enum that must never be bound to a
-    /// key.
-    /// </para>
-    /// <para>
-    /// <b>All three parts are needed, and each fails silently on its own.</b>
-    /// An open gesture is manipulating nodes that are about to leave the graph,
-    /// so it is rolled back first. The selection holds live <c>SceneNode</c>
-    /// references, and one that outlives its scene keeps a detached subtree
-    /// alive and draws a highlight around nothing. And the history addresses
-    /// nodes by id in the old graph, where <c>Undo</c> no-ops on a missing
-    /// target rather than failing, so the user would press Ctrl+Z and watch
-    /// nothing happen.
-    /// </para>
-    /// </remarks>
     public void OnSceneReplaced()
     {
-        // The gesture rollback WITHOUT the suspension latch, and the difference
-        // is the whole editor.
-        //
-        // This used to call Suspend(), which does these two things and then
-        // sets IsSuspended - a flag only ExitPlayMode ever clears. So opening a
-        // map left the editor permanently refusing every mutating verb: insert,
-        // delete, duplicate, group, rename and every property edit answered
-        // "refused, play mode owns the scene" at Debug level and did nothing,
-        // in an editor nobody was playing. Whether it bit depended on a race
-        // between this queued command and the editor factory (an editor that
-        // did not exist yet took the null-conditional and survived), which is
-        // why the shell worked on some launches and was inert on others - the
-        // hardest kind of fault to report, and the reason it stood.
-        //
-        // Not latching also preserves a suspension that IS real: a scene
-        // replaced while play mode owns it stays suspended, because nothing
-        // here writes the flag in either direction.
+        // Not Suspend(): that sets IsSuspended, which only leaving play mode
+        // clears, and the editor would refuse every edit after a map load.
         _viewport.Reset();
         _camera.SuspendNavigation();
         _scene.Selection.Clear();
         _undo.Clear();
 
-        // A gesture the old scene was mid-way through must not leave its grid
-        // fading over the new one.
         ResetGridFade();
     }
 
     /// <inheritdoc/>
     public void Draw(DebugDraw output)
     {
-        // Part outlines first, manipulators over them: a gizmo is what the user
-        // is aiming at, an outline is context, and both share the depth-off
-        // line pass so neither hides behind the geometry it describes.
+        // Draw order: context outlines, selection, manipulator handles, compass.
         _partOutlines.Draw(output, _scene);
         _negativeOutlines.Draw(output, _scene);
         Lights.Draw(output, _scene, _scene.Camera, _viewportSize);
         LightGizmo.Draw(output, _viewportSize);
 
-        // Between the context overlays and the manipulator, in that order: an
-        // outline says what a press would act on, a handle says what a press
-        // WILL do, and the handle has to be the one on top.
         Selection.Draw(output, _scene, _scene.Camera, _viewportSize, new OutlineFocus(
             _viewport.HoveredNode,
             _viewport.HoveredPlaneIndex,
@@ -1075,37 +753,16 @@ public sealed class SceneEditorHost : ISceneEditor
 
         _viewport.Draw(output, _viewportSize);
 
-        // Last, so nothing in the scene overlay can be mistaken for part of it,
-        // and because it is the one thing here that is not about the scene at
-        // all: it says which way you are facing.
         Compass.Draw(output, _scene.Camera, _viewportSize);
     }
 
-    /// <summary>
-    /// Tells the host what the pointer should look like, from what the viewport
-    /// is currently doing.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Derived from the arbitration rather than set at each gesture's
-    /// start.</b> Every gesture would otherwise have to remember to put the
-    /// cursor back, and the one that forgets leaves a grab cursor over an empty
-    /// viewport with nothing to attribute it to. Reading the live drag mode and
-    /// the hover means the shape cannot get out of step with what a press would
-    /// actually do, because both come from the same answer.
-    /// </para>
-    /// <para>
-    /// <b>A selectable object gets an ARROW, not a hand.</b> The outline is the
-    /// affordance; a hand cursor over 3D geometry reads as a hyperlink, which
-    /// is the single most web-flavoured thing a viewport can do.
-    /// </para>
-    /// </remarks>
+    // Derived each frame from the drag mode and the hover, so the cursor
+    // always matches what a press would do. A selectable object gets an arrow;
+    // the outline is the affordance.
     private void UpdateCursorShape()
     {
-        // The camera FIRST, because it owns the pointer whenever it is
-        // gesturing and the viewport's drag mode is None throughout. A freelook
-        // is excluded on purpose: it locks the cursor, so there is no shape to
-        // show and asking for one would fight the lock.
+        // Camera first: it owns the pointer while the drag mode is still None.
+        // Not freelook, which locks the cursor.
         if (_camera.IsNavigating && !_camera.IsFreeLooking)
         {
             Request(CursorShape.SizeAll);
@@ -1118,8 +775,6 @@ public sealed class SceneEditorHost : ISceneEditor
             ViewportDragMode.SelectAndMove => CursorShape.Grabbing,
             ViewportDragMode.BoxSelect => CursorShape.Crosshair,
 
-            // Not dragging. A handle under the cursor is the only thing that
-            // says "you can pick this up"; everything else is an arrow.
             _ => _viewport.HoverMode == ViewportDragMode.Manipulate
                 ? CursorShape.Grab
                 : IsSuspended ? CursorShape.No : CursorShape.Arrow,
@@ -1141,21 +796,12 @@ public sealed class SceneEditorHost : ISceneEditor
     /// <inheritdoc/>
     public void DrawWorld(DebugDraw output)
     {
-        // Nothing while play mode owns the scene. The engine stops calling
-        // Update during play but keeps calling this, so the fade envelope is
-        // frozen at whatever it held when play began - without the gate a grid
-        // that was mid-gesture at F8 stays painted on the floor for the whole
-        // session, in front of a person who asked to walk the level.
+        // The engine keeps calling this during play, with the fade frozen.
         if (IsSuspended)
             return;
 
-        // The grid's spacing is the ladder of the gesture it is up FOR: the
-        // move grid ordinarily, and the RESIZE step during a resize drag —
-        // the two are separate SnapSettings a UI can split, and auto mode
-        // summoning 1-unit squares for a face stepping in 0.25-unit
-        // increments would be wrong at exactly the moment the grid appears.
-        // Never the rotate tool's: a rotate snap is in degrees and would
-        // silently reinterpret the grid as a 15-unit lattice.
+        // Spacing follows the live gesture: the resize step during a resize
+        // drag, the move step otherwise. Never the rotate step, which is degrees.
         bool resizing = _viewport.DragMode == ViewportDragMode.Manipulate
             && !LightGizmo.IsDragging
             && _gizmos.Mode == GizmoMode.Scale;
@@ -1168,20 +814,8 @@ public sealed class SceneEditorHost : ISceneEditor
             EditorViewPresets.GridPlaneOf(_camera.View));
     }
 
-    // --- Navigation keyboard -------------------------------------------------
-
-    /// <summary>
-    /// This frame's movement axis, resolved from the host's own keys — the
-    /// Roblox-Studio set: W/A/S/D across the ground plane, Q/E down and up, with
-    /// Space/Ctrl as the second binding for the same pair, and Shift to boost.
-    /// </summary>
-    /// <remarks>
-    /// <b>Only while the look button is held</b>, so the letter row keeps its
-    /// tool meanings the rest of the time (see the type remarks). Returns the
-    /// idle axis when the fly camera is driving instead — the engine's
-    /// controller reads the same keys itself, and feeding both would double
-    /// every step.
-    /// </remarks>
+    // Idle unless the look button is held, and while the fly camera drives:
+    // it reads the same keys itself.
     private EditorNavigationInput CaptureNavigation()
     {
         if (!_editorNavigation || !IsLookButtonHeld())
@@ -1197,13 +831,8 @@ public sealed class SceneEditorHost : ISceneEditor
             boost: _input.IsKeyDown(InputKey.ShiftLeft) || _input.IsKeyDown(InputKey.ShiftRight));
     }
 
-    // The one place this host maps the camera's look button back onto a physical
-    // button, so the gate on the movement keys and the gate on the letter-row
-    // tool bindings cannot drift apart.
     private bool IsLookButtonHeld() =>
         (_input.PointerButtonsDown & _camera.FreeLookButton) == _camera.FreeLookButton;
-
-    // --- Keyboard ------------------------------------------------------------
 
     private void HandleShortcuts()
     {
@@ -1212,21 +841,13 @@ public sealed class SceneEditorHost : ISceneEditor
 
         KeyModifiers modifiers = _input.Modifiers;
 
-        // Control chords are handled first and never fall through to a bare-key
-        // verb: Ctrl+Z must not also be read as "Z", and no bare key the editor
-        // binds is meant to fire while Control is held.
+        // Control chords never fall through to a bare-key verb.
         if ((modifiers & KeyModifiers.Control) != 0)
         {
             bool shift = (modifiers & KeyModifiers.Shift) != 0;
 
-            // Ctrl doubles as a camera's DESCEND key, so a chord whose letter
-            // is also a movement key would fire off ordinary flying — Ctrl+A
-            // is descend-plus-strafe-left, Ctrl+D descend-plus-strafe-right.
-            // Exactly those chords stand down while movement keys are feeding
-            // a camera (editor freelook only while the look button is held;
-            // the fly camera whenever it drives, because it reads the keyboard
-            // itself), the same rule the letter-row tool bindings follow.
-            // Chords on letters no camera reads stay live throughout.
+            // Ctrl is also a camera's descend key, so Ctrl+A and Ctrl+D are
+            // ordinary flying while a camera reads the movement keys.
             bool movementClaimed = !_editorNavigation || IsLookButtonHeld();
 
             if (_input.WasKeyPressed(InputKey.Z))
@@ -1265,10 +886,6 @@ public sealed class SceneEditorHost : ISceneEditor
         {
             GizmoBinding binding = _gizmoBindings[i];
 
-            // While the editor camera drives, movement keys are only forwarded
-            // to it during a look (see the type remarks), so the letter row is
-            // free the rest of the time. The engine's fly camera reads the
-            // keyboard itself and cannot be gated, so it takes the whole set.
             if (binding.ConflictsWithCamera && (!_editorNavigation || IsLookButtonHeld()))
                 continue;
 
@@ -1276,21 +893,15 @@ public sealed class SceneEditorHost : ISceneEditor
                 _gizmos.Apply(binding.Command);
         }
 
-        // Every camera binding resolves through EditorCameraShortcuts by NAME,
-        // so the table the editing layer documents is the table that runs.
-        // Named here rather than enumerated, because reflecting over an enum to
-        // find the keys is what trimming removes.
+        // Resolved by name through a hand-written table: reflecting over the
+        // key enum would not survive trimming.
         foreach ((InputKey key, string name) in CameraKeyCandidates)
         {
             if (!_input.WasKeyPressed(key)) continue;
             if (!EditorCameraShortcuts.TryResolve(name, modifiers, out EditorCameraCommand cameraCommand))
                 continue;
 
-            // A view preset while the look button is held would fight the
-            // gesture: the camera is being turned by the pointer, and switching
-            // projection mid-drag leaves the drag writing angles into a view
-            // that has none. The keyboard reference says looking around leaves
-            // a plan view, which is the other half of the same rule.
+            // Switching projection mid-look would fight the look gesture.
             if (IsViewPreset(cameraCommand) && IsLookButtonHeld())
             {
                 _logger.LogDebug("View preset {Command} ignored while the look button is held", cameraCommand);
@@ -1302,8 +913,6 @@ public sealed class SceneEditorHost : ISceneEditor
         }
     }
 
-    // The keys any camera binding can use, with the names the shortcut table
-    // spells them by.
     private static readonly (InputKey Key, string Name)[] CameraKeyCandidates =
     [
         (InputKey.F, "F"),
@@ -1320,20 +929,12 @@ public sealed class SceneEditorHost : ISceneEditor
         or EditorCameraCommand.ViewRight or EditorCameraCommand.ViewLeft;
 
     /// <summary>Which view the editor camera is showing, for the status bar.</summary>
-    /// <remarks>
-    /// Interned by <c>EditorViewPresets.NameOf</c>, because this crosses the
-    /// frame snapshot on every publish and a fresh string per publish is
-    /// render-thread garbage for a label that rarely changes.
-    /// </remarks>
     public string ViewName => EditorViewPresets.NameOf(_camera.View);
 
     private void ToggleNavigation()
     {
-        // The fly camera writes a yaw, a pitch and a position and knows nothing
-        // about a projection, so handing it an orthographic camera leaves a
-        // plan view being flown through - a picture with no convergence that
-        // moves like a game camera. Leaving is the answer, and it is logged
-        // because it is a change the user did not ask for.
+        // The fly camera knows nothing about projection, so leave a plan view
+        // first, and log it since the user did not ask for that.
         if (_camera.View != EditorViewPreset.Perspective)
         {
             _camera.SetView(EditorViewPreset.Perspective);
@@ -1344,18 +945,13 @@ public sealed class SceneEditorHost : ISceneEditor
 
         if (_editorNavigation)
         {
-            // Adopt whatever pose the fly camera left behind, so the toggle
-            // never teleports the view: the editor camera takes the current
-            // position and angles and puts its focus a fixed distance ahead.
+            // Take over the fly camera's pose so the view does not jump.
             _camera.AdoptCamera();
             _viewport.CameraController = _camera;
         }
         else
         {
-            // Handing navigation back mid-gesture would leave the editor camera
-            // chasing a target the fly camera is simultaneously walking away
-            // from — and, worse, holding a cursor lock nothing would ever
-            // release. Suspending does both jobs.
+            // Ends any live camera gesture and releases its cursor lock.
             _camera.SuspendNavigation();
             _viewport.CameraController = null;
         }
@@ -1363,20 +959,10 @@ public sealed class SceneEditorHost : ISceneEditor
         _logger.LogInformation("Navigation: {Mode} ({Key} toggles)", NavigationModeName, NavigationToggleKey);
     }
 
-    // Ctrl+T: convert the selected brushes between world geometry and parts —
-    // the one edit that changes whether a brush is admitted to the fused static
-    // world, and therefore the one a user must perform deliberately rather than
-    // discover by dragging something somewhere.
-    //
-    // A mixed selection NORMALISES rather than flipping each node
-    // independently: "toggle" on a set means the whole set ends up the same
-    // way, and per-node flipping would leave a selection the user can never get
-    // back into one state. If anything in it is still world geometry, the whole
-    // selection becomes parts; only an all-part selection converts back.
+    // A mixed selection normalises instead of flipping per node: if any brush
+    // is world geometry, all become parts; only an all-part selection converts back.
     private void ToggleSelectionBrushKind()
     {
-        // Mid-gesture the manipulator is holding an open transaction, and a
-        // conversion inside it would land in the drag's undo entry.
         _viewport.Reset();
 
         IReadOnlyList<SceneNode> selected = _scene.Selection.Items;
@@ -1406,8 +992,6 @@ public sealed class SceneEditorHost : ISceneEditor
 
         if (commands.Count == 0)
         {
-            // Never a silent no-op: "I pressed the key and nothing happened" is
-            // indistinguishable from a broken binding.
             _logger.LogInformation(
                 "Convert brush: nothing to convert ({Selected} selected, {Skipped} without a brush)",
                 selected.Count, skipped);
@@ -1424,26 +1008,16 @@ public sealed class SceneEditorHost : ISceneEditor
             name, commands.Count, skipped);
     }
 
-    // Duplicate, delete, group and ungroup all have the same shape: snapshot the
-    // selection, refuse mid-gesture, run one verb, say what happened.
     private void RunStructuralEdit(
         string label, Func<Scene, UndoStack, IReadOnlyList<SceneNode>, bool> operation)
     {
-        // A structural edit inside a gizmo drag would open a transaction while
-        // one is already open, which does not nest and throws. It would also be
-        // meaningless: the gesture is still deciding where the thing it is
-        // holding ends up. Play mode is refused for its own reason: the scene
-        // belongs to whoever is walking around in it.
         if (RefuseEdit(label))
             return;
 
-        // Copied because every one of these verbs rewrites the selection, and
-        // SelectionSet.Items is the live list.
+        // Copied: these verbs rewrite the selection, and Items is the live list.
         var selection = new List<SceneNode>(_scene.Selection.Items);
         if (!operation(_scene, _undo, selection))
         {
-            // Never a silent no-op, for the same reason the brush-kind convert
-            // is not: a key that does nothing reads as a broken binding.
             _logger.LogInformation("{Label}: nothing to act on ({Selected} selected)", label, selection.Count);
             return;
         }
@@ -1453,73 +1027,38 @@ public sealed class SceneEditorHost : ISceneEditor
             label, selection.Count, _scene.Selection.Count, _undo.UndoCount, _undo.RedoCount);
     }
 
-    // --- Insert --------------------------------------------------------------
-
-    // A fresh brush is 2x2x2: big enough to grab a Studio handle on, small
-    // enough that a doorway does not vanish the moment a hole lands in a wall.
+    // A fresh brush is 2x2x2.
     private const float InsertHalfExtent = 1f;
 
-    // How far ahead an insert lands when the centre ray hits nothing: close
-    // enough to be inside the working view, far enough that it is not inside
-    // the camera.
+    // How far ahead an insert lands when the ray hits nothing.
     private const float InsertFallbackDistance = 12f;
 
-    // How far the centre ray looks for a surface before giving up.
     private const float InsertRayReach = 200f;
 
     /// <summary>
     /// Creates one thing where the user is looking, as one history entry, and
-    /// selects it.
+    /// selects it. It rests on the surface under the aim point, snapped to the
+    /// move grid when snapping is on, or a fixed distance ahead on a miss.
     /// </summary>
-    /// <remarks>
-    /// <b>Placement is the centre-of-view ray against the static world</b>,
-    /// which is what Studio trained everyone to expect: the new thing rests on
-    /// the surface in the middle of the screen, pushed out along the surface
-    /// normal so it sits flush rather than buried, and falls back to a fixed
-    /// distance ahead when the ray hits nothing. The position snaps to the
-    /// move grid when snapping is on, so inserted geometry starts life
-    /// aligned instead of needing a corrective nudge.
-    /// <para>
-    /// Render thread only, like every other verb; a UI arrives through
-    /// <c>EngineHost.EnqueueCommand</c>.
-    /// </para>
-    /// </remarks>
-    /// <param name="kind">What to create.</param>
-    /// <param name="viewportPoint">
-    /// Where to aim, in viewport pixels; null means the centre of the view.
-    /// A viewport context menu passes the right-click position, so "insert
-    /// here" means where the menu was opened rather than where the camera
-    /// happens to point.
-    /// </param>
+    /// <param name="viewportPoint">Where to aim, in viewport pixels; null means the centre of the view.</param>
     public void Insert(InsertKind kind, Vector2? viewportPoint = null)
     {
         if (RefuseEdit("Insert"))
             return;
 
-        // Any OTHER live gesture — a marquee mid-sweep — is abandoned before
-        // the insert rewrites the selection under it, the same rule
-        // SelectById follows.
         _viewport.Reset();
 
         float clearance = kind switch
         {
-            // A light AT a surface lights half of nothing.
             InsertKind.PointLight => 1.5f,
 
-            // A SURFACE light sits on the surface, barely clear of it. It is
-            // one-sided and faces away from the wall, so unlike a point light
-            // there is no half of its output to lose; the millimetre of
-            // clearance only keeps it out of the z-fighting the coincident
-            // plane would otherwise cause with the overlay drawn on it.
+            // One-sided and facing out, so it can sit on the surface; the gap
+            // only avoids z-fighting with its overlay.
             InsertKind.SurfaceLight => 0.01f,
 
-            // Centre ON the surface, half-buried: a hole resting flush shares
-            // only the boundary plane with the solid, and the carve treats a
-            // resting negative as a no-op by design — it would sit on an
-            // intact floor cutting nothing, forever.
+            // Half-buried: a hole resting flush on a solid carves nothing.
             InsertKind.SubtractiveBrush => 0f,
 
-            // A group is a point; it marks the spot rather than resting on it.
             InsertKind.Group => 0f,
 
             _ => InsertHalfExtent,
@@ -1528,26 +1067,17 @@ public sealed class SceneEditorHost : ISceneEditor
 
         SceneNode node = BuildInsert(kind);
 
-        // A surface light needs the hit's FACE, not just a point: its normal is
-        // the direction the panel faces, and the node that owns the surface is
-        // the parent it belongs to. Everything else places from a point alone,
-        // which is why this is the one kind that asks a second question.
         SceneNode parent = _scene.Root;
 
         if (kind == InsertKind.SurfaceLight && TryFindSurface(viewportPoint, out SceneRaycastHit surface))
         {
             parent = surface.Node;
 
-            // RotationForDirection takes the direction the light TRAVELS, and a
-            // face normal points OUT of the solid - so travel is +normal.
-            // Backwards gives a panel shining into the wall it is mounted on:
-            // silent, dark, and precisely what that method's remarks exist to
-            // prevent.
+            // RotationForDirection takes the direction light travels, which is
+            // out of the solid: +normal. Backwards shines into the wall.
             Quaternion facing = Light.RotationForDirection(surface.Normal);
 
-            // Placed in the PARENT's space, because it is about to become the
-            // parent's child: a world position assigned to LocalPosition would
-            // be offset by wherever the wall happens to be.
+            // In the parent's space, since it becomes the parent's child.
             Matrix4x4 toLocal = InverseOf(parent.WorldMatrix);
             Vector3 world = position;
 
@@ -1564,8 +1094,6 @@ public sealed class SceneEditorHost : ISceneEditor
             node.LocalPosition = position;
         }
 
-        // Appended at the end of its parent, which is where a person expects a
-        // new thing to show up in the tree.
         _undo.Execute(new AddNodesCommand(
             [new NodePlacement(node, parent.Id, parent.Children.Count)])
         {
@@ -1581,36 +1109,9 @@ public sealed class SceneEditorHost : ISceneEditor
 
     /// <summary>
     /// Creates one entity of <paramref name="className"/> where the user is
-    /// looking, as one history entry, and selects it.
+    /// looking, as one history entry, and selects it. The node is named after
+    /// the class and starts with no keyvalues.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A payload-carrying verb rather than an <see cref="InsertKind"/>
-    /// member</b>, for the same reason <c>SetSnapIncrement</c> is a method: the
-    /// kinds are a closed vocabulary the engine decides, and which entity
-    /// classes exist is a fact about the game, read out of a <c>.sentdef</c> at
-    /// runtime. A kind per class cannot be written down here at all.
-    /// </para>
-    /// <para>
-    /// <b>The keyvalues start EMPTY, and that is the omit-at-default rule the
-    /// map format already keeps.</b> The panel shows the schema's declared
-    /// defaults for keys nobody has authored, and
-    /// <c>PropertyEditor.BuildEntityKeyvalue</c> records nothing for a commit
-    /// that produces the value the entity already effectively has - so a key
-    /// appears in the file exactly when somebody changed it. Seeding every
-    /// declared default here would write the whole schema into every map, and
-    /// a later change to a default would then reach no level ever saved.
-    /// </para>
-    /// <para>
-    /// <b>The name is the classname, because the name IS the targetname.</b>
-    /// There is no second identity to invent one from, and duplicates are legal
-    /// and MEAN something - <c>TargetNameIndex</c> documents firing at a name
-    /// as firing every match, which is how a level says "all the lights in this
-    /// room". Auto-numbering would also make this one insert behave unlike the
-    /// other six, which all produce nodes named "Part", "Hole", "Light" or
-    /// "Group" however many already exist.
-    /// </para>
-    /// </remarks>
     /// <param name="className">The class to place. Blank is refused.</param>
     /// <param name="viewportPoint">Where to aim, in viewport pixels; null is the view centre.</param>
     public void InsertEntity(string className, Vector2? viewportPoint = null)
@@ -1618,10 +1119,6 @@ public sealed class SceneEditorHost : ISceneEditor
         if (RefuseEdit("Insert entity"))
             return;
 
-        // A class with no name cannot be resolved by any catalogue and would
-        // save as an entity nothing can bind. Refused rather than placed,
-        // because the alternative is a node that looks like an entity in the
-        // tree and is not one anywhere else.
         if (string.IsNullOrWhiteSpace(className))
         {
             _logger.LogWarning("Insert entity: refused, no class name");
@@ -1630,10 +1127,10 @@ public sealed class SceneEditorHost : ISceneEditor
 
         _viewport.Reset();
 
-        // A point, like a group: an entity carries no geometry, so there is no
-        // half extent to lift it clear of the surface it was aimed at.
         Vector3 position = FindInsertPosition(0f, viewportPoint);
 
+        // Keyvalues stay empty: a key belongs in the map only once somebody
+        // changes it, or a later change to a schema default reaches no saved level.
         var node = new SceneNode(className)
         {
             Entity = new EntityData(className),
@@ -1655,50 +1152,14 @@ public sealed class SceneEditorHost : ISceneEditor
 
     /// <summary>
     /// Places one model file where the pointer was, as one history entry, and
-    /// selects it.
+    /// selects it. A model that cannot be resolved still places an empty node,
+    /// with the reason in the report. The file's own root translation is
+    /// discarded; its rotation and scale survive.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The payload-carrying sibling of <see cref="Insert"/>, and it rides the
-    /// same placement machinery on purpose.</b> The centre-or-cursor ray, the
-    /// scene-wide pick that sees parts and meshes as well as the compiled world,
-    /// the snap along the surface followed by the clearance, the single undo
-    /// entry and the selection afterwards are all one implementation - so a
-    /// model dropped from the content browser lands exactly where a block
-    /// inserted from the menu would, and neither can drift from the other.
-    /// </para>
-    /// <para>
-    /// <b>A model that cannot be resolved still places a node</b>, with no
-    /// renderer and a line in the returned <see cref="ModelInsertReport"/>. That
-    /// is <c>MapSceneBinder.AttachMesh</c>'s rule, and it is the right one here
-    /// for a second reason: a drop that ended in silence is indistinguishable
-    /// from a drag the shell never received, so the one gesture with no
-    /// keyboard equivalent would be the one with no failure report.
-    /// </para>
-    /// <para>
-    /// <b>The import is SYNCHRONOUS, and that is a deliberate frame hitch.</b>
-    /// <c>AssetManager.RequestModel</c> would return a handle with no meshes on
-    /// it, and the node would then have to be attached empty and mutated a few
-    /// frames later - which is either a second history entry or a silent write
-    /// behind the user's undo. One entry that costs one long frame is the
-    /// trade; the same one the map loader already takes.
-    /// </para>
-    /// <para>
-    /// <b>The model file's own root TRANSLATION is discarded</b>, because a drop
-    /// says where the thing goes. Its rotation and scale survive. A glTF whose
-    /// scene root sits a hundred units off the origin would otherwise land a
-    /// hundred units from the cursor, which reads as the drop having missed.
-    /// </para>
-    /// </remarks>
-    /// <param name="contentPath">
-    /// The model, as a path relative to the content root - the same identity
-    /// every other layer uses. A path that escapes the root is refused by
-    /// <c>ContentRoot.NormalizeRelativePath</c> and reported, never resolved.
-    /// </param>
-    /// <param name="viewportPoint">
-    /// Where to aim, in viewport pixels; null means the centre of the view.
-    /// </param>
-    /// <returns>What was placed, and why it has no geometry if it has none.</returns>
+    /// <param name="contentPath">The model, as a path relative to the content root.</param>
+    /// <param name="viewportPoint">Where to aim, in viewport pixels; null means the centre of the view.</param>
+    // The import is synchronous: attaching meshes a few frames later would be
+    // a second history entry or a write behind the user's undo.
     public ModelInsertReport InsertModel(string contentPath, Vector2? viewportPoint = null)
     {
         if (string.IsNullOrWhiteSpace(contentPath))
@@ -1716,19 +1177,14 @@ public sealed class SceneEditorHost : ISceneEditor
 
         _viewport.Reset();
 
-        // The FILE's name, not the model's own root name. A dropped asset is
-        // recognised in the tree by what was dragged, and an importer's root
-        // node is routinely called "RootNode" or nothing at all.
+        // The file's name: an importer's root is often "RootNode" or unnamed.
         string name = Path.GetFileNameWithoutExtension(contentPath);
         if (string.IsNullOrEmpty(name))
             name = contentPath;
 
         string? unresolved = TryBuildModelNode(contentPath, name, out SceneNode node);
 
-        // Zeroed BEFORE the measurement, because the clearance below is
-        // measured from wherever the subtree currently sits and the position is
-        // assigned to the same field afterwards. Leaving the file's own root
-        // translation in would measure one placement and apply another.
+        // Zeroed before RestClearance measures the subtree from where it sits.
         node.LocalPosition = Vector3.Zero;
 
         Vector3 normal = TryFindSurface(viewportPoint, out SceneRaycastHit surface)
@@ -1754,9 +1210,6 @@ public sealed class SceneEditorHost : ISceneEditor
         }
         else
         {
-            // Warning rather than Error: the level is intact and the node is
-            // exactly where it was asked for. It is a content problem, and the
-            // report carries it to whoever made the gesture.
             _logger.LogWarning(
                 "Insert model '{Path}': placed without geometry ({Reason})", contentPath, unresolved);
         }
@@ -1765,27 +1218,11 @@ public sealed class SceneEditorHost : ISceneEditor
     }
 
     /// <summary>
-    /// Paints the brush face under the pointer, or the whole brush.
+    /// Paints the brush face under the pointer, or the whole brush. Does not
+    /// change the selection.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A drop never changes the selection</b>, which is the difference
-    /// between painting five blocks in a sweep and painting five blocks while
-    /// ending up with only the last one selected. An insert selects because the
-    /// node did not exist a moment ago; a paint changes something that was
-    /// already there and that the user may still have selected on purpose.
-    /// </para>
-    /// <para>
-    /// <b>The failed-material cache is forgotten first.</b> A material named
-    /// while its file was missing is cached AS the default material under its
-    /// own key and stays that way for the rest of the session, so somebody who
-    /// writes the <c>.spectramat</c> and then assigns it would get the default
-    /// with every log line reading healthy.
-    /// </para>
-    /// </remarks>
     /// <param name="contentPath">The material, or empty for the engine default.</param>
     /// <param name="viewportPoint">Where the drop landed, or null for the view centre.</param>
-    /// <param name="scope">One face or the whole brush.</param>
     public MaterialAssignReport AssignMaterial(
         string contentPath, Vector2? viewportPoint, MaterialDropScope scope)
     {
@@ -1821,9 +1258,7 @@ public sealed class SceneEditorHost : ISceneEditor
 
         if (faces == 0)
         {
-            // Reference identity is what invalidates the carve and the part-mesh
-            // caches downstream, so a command carrying an equal brush would
-            // recompile the world to produce the picture it already had.
+            // No command: a new Brush instance would recompile the world for nothing.
             _logger.LogDebug("Assign material '{Path}': '{Node}' already wears it", contentPath, hit.Node.Name);
             return new MaterialAssignReport(
                 contentPath, hit.Node.Id, hit.Node.Name, 0, brush.FaceSurfaces.Count, null, unresolved);
@@ -1847,13 +1282,7 @@ public sealed class SceneEditorHost : ISceneEditor
             contentPath, hit.Node.Id, hit.Node.Name, faces, brush.FaceSurfaces.Count, null, unresolved);
     }
 
-    /// <summary>
-    /// Paints every selected brush, whole, in one history entry.
-    /// </summary>
-    /// <remarks>
-    /// The route with no pointer to aim with: a face cannot be named without
-    /// one, so this is always whole-brush and says so in its message.
-    /// </remarks>
+    /// <summary>Paints every selected brush, whole, in one history entry.</summary>
     public MaterialAssignReport AssignMaterialToSelection(string contentPath)
     {
         contentPath ??= string.Empty;
@@ -1925,14 +1354,9 @@ public sealed class SceneEditorHost : ISceneEditor
 
     /// <summary>
     /// Says that a material is being dragged over the viewport, so the outline
-    /// can show what letting go would paint.
+    /// can show what letting go would paint. Null ends the drag. The pointer
+    /// position arrives through the ordinary input path.
     /// </summary>
-    /// <remarks>
-    /// <b>Set once per gesture, never per pointer move.</b> A drag raises its
-    /// hover event several hundred times carrying one answer; the POSITION
-    /// travels through the ordinary input path instead, which is what gives the
-    /// editor a hover during a drag with no second latch to keep in step.
-    /// </remarks>
     public void SetMaterialDrag(MaterialDropScope? scope) => _materialDrag = scope;
 
     /// <summary>What a material drag over the viewport would paint, or null.</summary>
@@ -1940,9 +1364,8 @@ public sealed class SceneEditorHost : ISceneEditor
 
     private MaterialDropScope? _materialDrag;
 
-    // A path this process cannot name is refused rather than interned: the
-    // registry takes whatever it is handed, so a rooted or escaping path would
-    // become a material reference nothing can resolve, written into a map.
+    // The registry interns whatever it is given, so a rooted or escaping path
+    // must be refused here or it ends up in a map as an unresolvable reference.
     private static bool TryInternMaterial(string contentPath, out MaterialRef material)
     {
         material = MaterialRef.Default;
@@ -1975,9 +1398,6 @@ public sealed class SceneEditorHost : ISceneEditor
         return changed;
     }
 
-    // One stat per assignment, on the render thread, which is nothing next to
-    // the recompile the assignment itself causes. The row's own note comes from
-    // the asset manager's cache instead, because that runs per publish.
     private string? DescribeMissingMaterial(string contentPath)
     {
         if (contentPath.Length == 0) return null;
@@ -1985,6 +1405,8 @@ public sealed class SceneEditorHost : ISceneEditor
         if (_scene.Assets is not { } assets)
             return "the scene has no asset manager attached";
 
+        // A failed load is cached as the default material for the session;
+        // the file may have been written since.
         assets.ForgetFailedMaterial(contentPath);
 
         return assets.Content.Exists(contentPath)
@@ -1992,20 +1414,8 @@ public sealed class SceneEditorHost : ISceneEditor
             : $"{contentPath} is not in the content root";
     }
 
-    /// <summary>
-    /// Builds the subtree for a model, or an empty node plus the reason it is
-    /// empty. Never throws and never returns null.
-    /// </summary>
-    /// <remarks>
-    /// The catch list is <c>MapSceneBinder.AttachMesh</c>'s, with one addition
-    /// that matters here and cannot arise there: an
-    /// <see cref="ArgumentException"/> is what
-    /// <c>ContentRoot.NormalizeRelativePath</c> throws for a rooted path or one
-    /// carrying <c>..</c>, which is exactly what a drag payload built from an
-    /// absolute filesystem path would produce. Refusing it here means a
-    /// mis-built payload reports itself rather than reaching outside the
-    /// project.
-    /// </remarks>
+    // Returns the reason the node is empty, or null. ArgumentException is in
+    // the catch list for a rooted or ".." path from a badly built drag payload.
     private string? TryBuildModelNode(string contentPath, string name, out SceneNode node)
     {
         if (_scene.Assets is not { } assets)
@@ -2035,32 +1445,15 @@ public sealed class SceneEditorHost : ISceneEditor
         }
     }
 
-    /// <summary>
-    /// How far along <paramref name="normal"/> a detached subtree has to be
-    /// pushed for its lowest point to sit on the surface it was aimed at.
-    /// </summary>
-    /// <remarks>
-    /// <b>Measured through <see cref="GizmoSelectionBounds"/>, which is the one
-    /// definition of "this node has a measurable shape" in the whole editor.</b>
-    /// A second measurement here would let a model be big enough to rest flush
-    /// and too small to put a handle on, which is the exact drift that method's
-    /// remarks already refuse for the resize tool.
-    /// <para>
-    /// The result is signed, and it has to be: a model whose pivot is above its
-    /// own geometry rests flush by sinking, and clamping at zero would leave it
-    /// floating by however far the author put the pivot up. A pivot already at
-    /// the base measures zero and costs nothing, which is the common case.
-    /// </para>
-    /// </remarks>
+    // How far along the normal a detached subtree must move for its lowest
+    // point to rest on the surface. Signed: a pivot above its own geometry
+    // sinks, so do not clamp at zero.
     private static float RestClearance(SceneNode root, Vector3 normal)
     {
         var nodes = new List<SceneNode>();
         Collect(root, nodes);
 
-        // Any tangent will do - only the normal's own component is read - but
-        // the frame has to be orthonormal for TryMeasure's projection to mean
-        // what it says, so the tangent is taken from whichever world axis the
-        // normal is least aligned with.
+        // Any tangent works as long as the frame is orthonormal.
         Vector3 seed = MathF.Abs(normal.Y) > 0.9f ? Vector3.UnitX : Vector3.UnitY;
         Vector3 tangent = Vector3.Normalize(Vector3.Cross(seed, normal));
         Vector3 bitangent = Vector3.Cross(normal, tangent);
@@ -2080,18 +1473,13 @@ public sealed class SceneEditorHost : ISceneEditor
 
     private Vector3 FindInsertPosition(float clearance, Vector2? viewportPoint)
     {
-        // A degenerate viewport (minimised) has no centre ray worth casting;
-        // fall back to straight ahead of the camera.
         if (_viewportSize.X <= 0f || _viewportSize.Y <= 0f)
             return SnapAllAxes(_scene.Camera.Position + _scene.Camera.Forward * InsertFallbackDistance);
 
         Ray3 ray = _scene.Camera.ScreenPointToRay(viewportPoint ?? _viewportSize * 0.5f, _viewportSize);
 
-        // The same query PICKING uses — part brushes and meshes included —
-        // so the insert lands on the surface the user is looking at, not on
-        // whatever compiled world geometry happens to be behind it. A ray
-        // through the static world alone passes straight through a platform
-        // built of parts and buries the new thing underneath it.
+        // The picking query, parts and meshes included. The static world alone
+        // would let the ray pass through a platform built of parts.
         if (!_scene.Raycast(in ray, out SceneRaycastHit hit, SceneQueryFilter.EditorPicking, InsertRayReach))
             return SnapAllAxes(ray.PointAt(InsertFallbackDistance));
 
@@ -2099,26 +1487,17 @@ public sealed class SceneEditorHost : ISceneEditor
         SnapSettings snap = _gizmos.Translate.Snap;
         if (snap.Enabled)
         {
-            // Grid-align ALONG the surface only: the snapped point is
-            // re-projected back onto the hit plane, so a coarse grid can
-            // neither bury the insert in the surface nor float it off —
-            // both of which snapping all three axes after the clearance
-            // could do, by up to half an increment.
+            // Snap, then project back onto the hit plane, so a coarse grid
+            // can neither bury the insert nor float it.
             var snapped = new Vector3(
                 snap.SnapScalar(point.X), snap.SnapScalar(point.Y), snap.SnapScalar(point.Z));
             snapped += hit.Normal * Vector3.Dot(point - snapped, hit.Normal);
             point = snapped;
         }
 
-        // Clearance after the snap, for the same reason.
         return point + hit.Normal * clearance;
     }
 
-    // The surface the insert ray hits, for the one kind that needs the face
-    // rather than the point. Deliberately a second cast rather than a return
-    // value threaded through FindInsertPosition: every other kind wants only a
-    // position, and widening that method's contract for one caller would make
-    // four call sites carry a value they ignore.
     private bool TryFindSurface(Vector2? viewportPoint, out SceneRaycastHit hit)
     {
         hit = default;
@@ -2130,10 +1509,8 @@ public sealed class SceneEditorHost : ISceneEditor
         return _scene.Raycast(in ray, out hit, SceneQueryFilter.EditorPicking, InsertRayReach);
     }
 
-    // A world matrix with no scale is invertible by construction, but a scaled
-    // parent is legal for a mesh node - so the failure is answered with the
-    // identity rather than an exception, which places the light at the parent's
-    // origin instead of throwing out of an insert.
+    // A mesh parent may carry a degenerate scale; fall back to identity
+    // instead of throwing out of an insert.
     private static Matrix4x4 InverseOf(Matrix4x4 world) =>
         Matrix4x4.Invert(world, out Matrix4x4 inverse) ? inverse : Matrix4x4.Identity;
 
@@ -2165,21 +1542,15 @@ public sealed class SceneEditorHost : ISceneEditor
             }
 
             case InsertKind.SubtractiveBrush:
-                // World kind, never part: a subtractive part carves nothing
-                // and draws nothing — the inert pairing the engine counts
-                // rather than throws on.
+                // World kind: a subtractive part carves nothing and draws nothing.
                 return new SceneNode("Hole")
                 {
                     Brush = Brush.CreateBox(-half, half).WithOperation(BrushOperation.Subtractive),
                 };
 
             case InsertKind.SurfaceLight:
-                // The extents are a FIXED default, deliberately not fitted to
-                // the face. A face polygon is derived data that changes on
-                // every carve, so auto-fitting would put a light inside the
-                // pipeline Scene.StaticWorld is kept pure of - and would
-                // silently resize itself the next time somebody cut a doorway
-                // through the same wall.
+                // Fixed extents, not fitted to the face: the face polygon is
+                // derived and changes with every carve.
                 return new SceneNode("Panel")
                 {
                     Light = new Light
@@ -2213,13 +1584,8 @@ public sealed class SceneEditorHost : ISceneEditor
         }
     }
 
-    // Top-level nodes only — see the verb's own remarks for why the whole
-    // graph would be the wrong selection three different ways.
     private void SelectAll()
     {
-        // A selection change under a live gesture would leave the manipulator
-        // holding a capture of nodes it is no longer editing — the same rule
-        // SelectById follows.
         _viewport.Reset();
 
         _scene.Selection.Clear();
@@ -2236,10 +1602,8 @@ public sealed class SceneEditorHost : ISceneEditor
 
     private void Undo()
     {
-        // A history step in the middle of a gesture would interleave with the
-        // edit in progress — the stack refuses it outright while a transaction
-        // is open — so abandon the gesture first, which also restores whatever
-        // it had moved so far.
+        // The stack refuses a step while a transaction is open, so abandon
+        // any live gesture first.
         _viewport.Reset();
         if (_undo.Undo())
             _logger.LogInformation("Undo '{Name}' (undo {UndoDepth} / redo {RedoDepth})", _undo.RedoName, _undo.UndoCount, _undo.RedoCount);
@@ -2252,9 +1616,8 @@ public sealed class SceneEditorHost : ISceneEditor
             _logger.LogInformation("Redo '{Name}' (undo {UndoDepth} / redo {RedoDepth})", _undo.UndoName, _undo.UndoCount, _undo.RedoCount);
     }
 
-    // Resolves every candidate key through the editing layer's default table
-    // once, at construction. Keys the table does not bind are dropped rather
-    // than mapped to a fallback: an unbound key must stay unbound.
+    // Resolved once at construction: the table matches on key names, and
+    // ToString per key per frame would allocate.
     private static GizmoBinding[] BuildGizmoBindings()
     {
         var bindings = new List<GizmoBinding>(GizmoKeyCandidates.Length);
@@ -2269,8 +1632,5 @@ public sealed class SceneEditorHost : ISceneEditor
         return [.. bindings];
     }
 
-    // One pre-resolved keyboard binding. ConflictsWithCamera marks the keys a
-    // camera claims while it is driving, which must therefore stop meaning
-    // "switch tool" for as long as it does.
     private readonly record struct GizmoBinding(InputKey Key, GizmoCommand Command, bool ConflictsWithCamera);
 }

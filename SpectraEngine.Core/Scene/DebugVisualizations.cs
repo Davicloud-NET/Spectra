@@ -15,7 +15,7 @@ public enum DebugVisualization
     /// <summary>Draw every static-world triangle and every scene-graph mesh triangle as line edges.</summary>
     Wireframe = 1 << 0,
 
-    /// <summary>Small cross at every CSG polygon vertex — surfaces T-junction welds and snap effects.</summary>
+    /// <summary>Small cross at every CSG polygon vertex. Shows T-junction welds and snap effects.</summary>
     Vertices = 1 << 1,
 
     /// <summary>Wireframe boxes around brush world AABBs and scene-graph mesh bounds.</summary>
@@ -30,9 +30,7 @@ public enum DebugVisualization
 
 /// <summary>
 /// Pushes debug primitives describing a scene's static world into a
-/// <see cref="DebugDraw"/> for the renderer to flush. Each visualisation walks
-/// the same <see cref="CsgWorld"/> data the engine renders normally — no
-/// auxiliary structures.
+/// <see cref="DebugDraw"/> for the renderer to flush.
 /// </summary>
 public static class DebugVisualizations
 {
@@ -44,8 +42,7 @@ public static class DebugVisualizations
     private static readonly Vector3 AxisYColor = new(0.25f, 1f, 0.25f);
     private static readonly Vector3 AxisZColor = new(0.35f, 0.55f, 1f);
     private static readonly Vector3 HierarchyColor = new(0.6f, 0.6f, 0.8f);
-    // Magenta: unused by any opt-in visualisation, so a selected node stays
-    // recognisable even with every debug flag enabled at once.
+    // Magenta: no other visualisation uses it.
     private static readonly Vector3 SelectionColor = new(1f, 0.3f, 0.9f);
     private const float VertexCrossSize = 0.04f;
     private const float NormalArrowLength = 0.25f;
@@ -81,15 +78,8 @@ public static class DebugVisualizations
     }
 
     /// <summary>
-    /// Outlines every selected node's world AABB. Deliberately NOT part of
-    /// <see cref="Draw"/>'s flag-gated visualisations: selection feedback is
-    /// editor UI, so the engine calls this every frame regardless of debug
-    /// flags. Bounds come from the scene's spatial index — the same boxes
-    /// culling and raycasts use (brush world bounds for brush nodes, mesh
-    /// bounds for mesh nodes, their union for both) — rather than being
-    /// recomputed here. A selected non-spatial node (a pure group) has no
-    /// bounds and gets a small cross at its origin instead. With nothing
-    /// selected this is a zero-iteration loop — effectively free.
+    /// Outlines every selected node's world AABB, independent of the debug
+    /// flags. A node with no bounds gets a small cross at its origin.
     /// </summary>
     public static void DrawSelectionHighlight(DebugDraw output, Scene scene)
     {
@@ -106,8 +96,7 @@ public static class DebugVisualizations
 
     private static void DrawCsgWireframe(DebugDraw output, CsgWorld world)
     {
-        // Triangulate each polygon (fan from vertex 0) and emit every edge,
-        // so what you see is exactly what the rasteriser sees.
+        // Fan from vertex 0, the same triangles the rasteriser gets.
         foreach (Polygon poly in world.Surfaces)
         {
             foreach ((Vector3 a, Vector3 b, Vector3 c) in poly.Triangulate())
@@ -157,9 +146,8 @@ public static class DebugVisualizations
 
     private static void DrawBrushAabbs(DebugDraw output, CsgWorld world)
     {
-        // Placements, not Brush.WorldBounds: the compiled world was carved at
-        // the snapshot transforms, which a live (still-moving) brush node's
-        // own Transform no longer reflects.
+        // Placements, not Brush.WorldBounds: the world was carved at the
+        // snapshot transforms, and a live node may have moved since.
         foreach (BrushPlacement placement in world.Placements)
         {
             Aabb b = placement.WorldBounds;
@@ -227,7 +215,6 @@ public static class DebugVisualizations
             Matrix4x4 world = node.WorldMatrix;
             Vector3 origin = node.WorldPosition;
 
-            // Basis vectors transformed as directions (ignoring translation).
             Vector3 right = Vector3.TransformNormal(Vector3.UnitX, world) * NodeAxisLength;
             Vector3 up = Vector3.TransformNormal(Vector3.UnitY, world) * NodeAxisLength;
             Vector3 forward = Vector3.TransformNormal(Vector3.UnitZ, world) * NodeAxisLength;
@@ -236,7 +223,6 @@ public static class DebugVisualizations
             output.Line(origin, origin + up, AxisYColor);
             output.Line(origin, origin + forward, AxisZColor);
 
-            // Parent → child line: makes the hierarchy visible at a glance.
             if (node.Parent is not null)
                 output.Line(node.Parent.WorldPosition, origin, HierarchyColor);
         }

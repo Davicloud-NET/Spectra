@@ -9,17 +9,12 @@ using System.Threading;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// Watches SpectraShade source files on disk and, when one changes, recompiles
-/// it through <see cref="IShaderCompiler"/> and reapplies it to the
-/// <see cref="ShaderProgram"/> that was created from it — keeping the program's
-/// object identity stable so every <see cref="Material"/> referencing it picks
-/// up the new code automatically.
+/// Watches shader source files and recompiles a changed one into the
+/// <see cref="ShaderProgram"/> created from it, so materials holding that
+/// program pick up the new code.
 /// </summary>
-/// <remarks>
-/// File events arrive on a thread-pool thread; GL calls have to run on the
-/// render thread. The watcher therefore only enqueues paths, and <see cref="PumpPendingReloads"/>
-/// must be drained once per frame on the renderer's thread.
-/// </remarks>
+// File events arrive on a pool thread and only enqueue paths. The render
+// thread drains them through PumpPendingReloads once per frame.
 public sealed class ShaderHotReloader : IDisposable
 {
     private readonly ILogger _logger;
@@ -37,18 +32,15 @@ public sealed class ShaderHotReloader : IDisposable
     }
 
     /// <summary>
-    /// Registers <paramref name="program"/> for reloads sourced from
-    /// <paramref name="absolutePath"/>. Last registration wins: registering a
-    /// path again replaces the previous registration, so only the most recently
-    /// registered program receives reloads for that file.
+    /// Registers <paramref name="program"/> for reloads from
+    /// <paramref name="absolutePath"/>. Registering a path again replaces the
+    /// earlier program.
     /// </summary>
     public void Register(string absolutePath, ShaderProgram program)
     {
         string normalized = Path.GetFullPath(absolutePath);
 
-        // Replace-with-dispose: overwriting the dictionary entry alone would
-        // leak the previous FileSystemWatcher (native buffer + watcher thread
-        // work) and leave it raising events for a program we no longer track.
+        // Dispose the old watcher, or it leaks and keeps raising events.
         if (_watchers.TryGetValue(normalized, out Registration previous))
         {
             previous.Watcher.Dispose();
@@ -66,13 +58,10 @@ public sealed class ShaderHotReloader : IDisposable
         _logger.LogInformation("Watching shader source: {Path}", normalized);
     }
 
-    /// <summary>
-    /// Drains the pending-reload queue and applies each change. Must be called
-    /// on the render thread (touches GL through the shader program).
-    /// </summary>
+    /// <summary>Applies every pending reload. Render thread only.</summary>
     public void PumpPendingReloads()
     {
-        // Coalesce — saves often trigger multiple Changed events for one file.
+        // One save often raises several Changed events.
         HashSet<string>? seen = null;
         while (_pending.TryDequeue(out string? path))
         {
@@ -91,8 +80,7 @@ public sealed class ShaderHotReloader : IDisposable
 
     private void TryReload(string path, ShaderProgram program)
     {
-        // Editors often hold a brief write lock — retry once on transient
-        // sharing-violation rather than dropping the reload.
+        // Editors hold a brief write lock while saving, hence the retry.
         string source;
         try
         {

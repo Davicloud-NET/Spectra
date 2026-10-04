@@ -3,10 +3,8 @@ using System;
 namespace SpectraEngine.Core.Input;
 
 /// <summary>
-/// Backend-neutral modifier-key set. Left and right physical keys collapse into
-/// one flag — editor bindings care that Shift is held, not which Shift — and,
-/// like <see cref="PointerButtons"/>, the type names no Silk.NET input enum so
-/// that backend-free layers can consume it.
+/// Modifier keys held, independent of the windowing backend. Left and right
+/// physical keys collapse into one flag.
 /// </summary>
 [Flags]
 public enum KeyModifiers

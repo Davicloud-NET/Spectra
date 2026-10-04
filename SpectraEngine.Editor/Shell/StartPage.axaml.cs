@@ -10,14 +10,8 @@ namespace SpectraEngine.Editor.Shell;
 /// One recent project as the start page shows it: the record, plus the labels
 /// the row binds.
 /// </summary>
-/// <param name="Source">The stored entry, handed back on activation.</param>
-/// <param name="Name">The project's display name.</param>
-/// <param name="Path">The project folder, shown in full so two same-named projects tell apart.</param>
-/// <param name="OpenedLabel">When it was last opened, as a short phrase.</param>
 /// <param name="Location">
-/// Where it is, shortened from the LEFT. A path trimmed from the right loses
-/// the folder that names the project, which is the only part of it worth
-/// reading.
+/// The folder, shortened from the left so the part naming the project survives.
 /// </param>
 public sealed record RecentProjectRow(
     RecentProject Source, string Name, string Path, string Location, string OpenedLabel);
@@ -26,19 +20,8 @@ public sealed record RecentProjectRow(
 /// The launch experience: recent projects, and the three ways to get something
 /// open. Shown instead of the editor until a session exists.
 /// </summary>
-/// <remarks>
-/// <b>Deliberately dumb.</b> It raises events and renders a list; every real
-/// decision — pickers, dialogs, session lifetimes, settings writes — belongs
-/// to the window, which owns the storage provider and the engine. A page that
-/// opened projects itself would be a second copy of that logic, one modal
-/// dialog away from drifting.
-/// <para>
-/// <b>The filter is the page's own state, not the shell's.</b> It narrows a
-/// list of at most a handful of rows that nothing else in the app displays, so
-/// putting it on <c>ShellModel</c> beside the scene filter would be a second
-/// meaning for the same word in the same session.
-/// </para>
-/// </remarks>
+// Only raises events and renders a list. Pickers, dialogs and session
+// lifetimes belong to the window.
 public partial class StartPage : UserControl
 {
     /// <summary>The user asked to create a project.</summary>
@@ -59,9 +42,6 @@ public partial class StartPage : UserControl
     /// <summary>The user asked to see a recent project in the OS file browser.</summary>
     public event Action<RecentProject>? RecentProjectRevealRequested;
 
-    // Everything known, and the subset the filter admits. Kept apart so
-    // typing never loses entries: the filter is a view, and clearing it must
-    // bring the rest back without asking the shell to re-read its settings.
     private readonly List<RecentProjectRow> _all = [];
     private readonly List<RecentProjectRow> _shown = [];
 
@@ -70,16 +50,14 @@ public partial class StartPage : UserControl
         InitializeComponent();
     }
 
-    /// <summary>Rebuilds the recent list. Cheap: it is at most ten rows.</summary>
+    /// <summary>Rebuilds the recent list.</summary>
     public void ShowRecents(IReadOnlyList<RecentProject> recents)
     {
         ArgumentNullException.ThrowIfNull(recents);
 
         _all.Clear();
 
-        // Computed for the whole list at once, because telling two same-named
-        // projects apart is a question about the LIST rather than about either
-        // row on its own.
+        // Whole list at once: same-named projects need longer paths to differ.
         IReadOnlyList<string> locations = RecentLocation.Locations(recents);
         for (int i = 0; i < recents.Count; i++)
         {
@@ -91,8 +69,6 @@ public partial class StartPage : UserControl
         ApplyFilter();
     }
 
-    // "today", "yesterday", or the date: precise enough to pick between two
-    // projects, short enough not to become the row's loudest text.
     private static string OpenedLabel(DateTime openedUtc)
     {
         if (openedUtc == DateTime.MinValue)
@@ -116,9 +92,6 @@ public partial class StartPage : UserControl
         _shown.Clear();
         foreach (RecentProjectRow row in _all)
         {
-            // Name OR path: half of telling two projects apart is where they
-            // live, so a filter that only searched names would be useless for
-            // exactly the case a filter exists for.
             if (query.Length == 0 ||
                 row.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 row.Path.Contains(query, StringComparison.OrdinalIgnoreCase))
@@ -127,28 +100,19 @@ public partial class StartPage : UserControl
             }
         }
 
-        // Assigned rather than patched: at most ten rows, rebuilt only when
-        // the settings change or a key is typed, and nothing here has scroll
-        // or selection worth preserving across a filter change.
+        // _shown is a plain List, so null first to make the ListBox re-read it.
         RecentList.ItemsSource = null;
         RecentList.ItemsSource = _shown;
 
         RecentList.IsVisible = _shown.Count > 0;
 
-        // Every piece of chrome here is sized to what it has to show. Headings
-        // appear once there is a column's worth of rows to head; the filter
-        // appears once the list is longer than a glance; the empty state
-        // replaces the whole thing rather than sitting above a void.
         ColumnHeadings.IsVisible = _shown.Count > 1;
         FilterBox.IsVisible = _all.Count > 4;
         EmptyState.IsVisible = _shown.Count == 0;
         EmptyActions.IsVisible = _all.Count == 0;
         FirstRunHelp.IsVisible = _all.Count == 0;
 
-        // The empty state stands in for two different situations and has to
-        // say which: a first launch, and a filter that matched nothing. The
-        // body knew; the heading was a literal reading "Nothing open yet.",
-        // which over a filter miss tells the user their projects are gone.
+        // Two empty states: a first launch, and a filter that matched nothing.
         bool firstRun = _all.Count == 0;
         EmptyTitle.Text = firstRun ? "Nothing open yet." : "No match.";
         EmptyLabel.Text = firstRun
@@ -167,8 +131,6 @@ public partial class StartPage : UserControl
                 e.Handled = true;
                 break;
 
-            // Down out of the box and Enter both hand over to the list, so a
-            // filter-then-open is one uninterrupted keyboard gesture.
             case Key.Down when _shown.Count > 0:
                 RecentList.SelectedIndex = 0;
                 RecentList.Focus();
@@ -200,8 +162,7 @@ public partial class StartPage : UserControl
                 e.Handled = true;
                 break;
 
-            // Forgetting an entry, not deleting a project: the list is the
-            // only thing this touches, which is why it needs no confirmation.
+            // Only forgets the list entry, so no confirmation.
             case Key.Delete:
                 RecentProjectForgotten?.Invoke(row.Source);
                 e.Handled = true;
@@ -213,8 +174,7 @@ public partial class StartPage : UserControl
     private void OnOpenProjectClicked(object? sender, RoutedEventArgs e) => OpenProjectRequested?.Invoke();
     private void OnOpenMapClicked(object? sender, RoutedEventArgs e) => OpenMapRequested?.Invoke();
 
-    // Menu handlers read the row from the item's DataContext, inherited from
-    // the row the shared menu was opened over.
+    // The shared menu inherits DataContext from the row it was opened over.
     private static RecentProjectRow? MenuRow(object? sender) =>
         (sender as Control)?.DataContext as RecentProjectRow;
 

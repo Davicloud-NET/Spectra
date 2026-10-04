@@ -8,29 +8,11 @@ using System.Numerics;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The chain nothing else in this suite covers end to end:
-/// <b>sibling index → traversal order → placement order → compiled geometry.</b>
+/// Sibling index decides traversal order, which decides placement order, which
+/// decides the compiled geometry.
 /// </summary>
-/// <remarks>
-/// Every determinism oracle here builds a literal <c>BrushPlacement[]</c> and
-/// calls <c>CsgWorld.Build</c> directly, which is exactly the right shape for
-/// proving that identical placements give identical floats. None of them goes
-/// through the scene graph, so none of them can see the step that decides what
-/// those placements ARE: <c>Scene</c> walks the graph in child-list order and
-/// appends one placement per admitted brush, so a node that comes back from an
-/// undo at a different sibling index shifts every later slot.
-/// <para>
-/// That is why <c>SceneNode.InsertChild</c> exists at all. <c>AddChild</c> only
-/// appends, so a delete-then-undo built on it would rebuild a level that is
-/// valid, different, and bit-unequal to the one that was there, and the whole
-/// existing oracle suite would stay green while it happened.
-/// </para>
-/// <para>
-/// The geometry assertion below is meaningful precisely because the placement
-/// oracles already establish that identical placement lists give bit-identical
-/// output; this suite's job is the step before that.
-/// </para>
-/// </remarks>
+// The other determinism tests build BrushPlacement[] by hand and never go
+// through the scene graph, so they can't see a node returning at the wrong index.
 public sealed class StructuralOrderTests
 {
     [Fact]
@@ -42,8 +24,7 @@ public sealed class StructuralOrderTests
         (float[] Vertices, uint[] Indices) before = Compile(scene);
         Guid[] orderBefore = PlacementOrder(scene);
 
-        // Take out a middle sibling and put it back exactly where it was, which
-        // is what RemoveNodesCommand and its undo do to the graph.
+        // What RemoveNodesCommand and its undo do to the graph.
         SceneNode removed = nodes[2];
         int index = removed.IndexInParent;
         index.ShouldBe(2);
@@ -61,11 +42,8 @@ public sealed class StructuralOrderTests
     [Fact]
     public void Appending_the_same_sibling_back_puts_it_in_a_different_placement_slot()
     {
-        // The negative half, and the reason InsertChild is not a convenience.
-        // Asserted on the placement ORDER rather than on the float arrays,
-        // because whether a given reordering also changes the geometry depends
-        // on which brushes overlap: the order is the mechanism, and the
-        // placement oracles own the step from order to floats.
+        // Asserts on placement order, not floats: whether a reorder changes the
+        // geometry depends on which brushes overlap.
         var scene = new Scene("Structural");
         SceneNode[] nodes = BuildOverlappingRow(scene, count: 5);
         Guid[] orderBefore = PlacementOrder(scene);
@@ -93,8 +71,7 @@ public sealed class StructuralOrderTests
         order[1].ShouldBe(clone.Id);
         order[2].ShouldBe(nodes[1].Id);
 
-        // ...and the clone carries its own brush instance, which is what buys it
-        // its own carve-cache slot instead of colliding with the original's.
+        // Own brush instance: the carve cache keys on reference identity.
         clone.Brush.ShouldNotBeSameAs(nodes[1].Brush);
         clone.Brush!.LocalBounds.Min.ShouldBe(nodes[1].Brush!.LocalBounds.Min);
         clone.Brush.LocalBounds.Max.ShouldBe(nodes[1].Brush.LocalBounds.Max);
@@ -103,10 +80,6 @@ public sealed class StructuralOrderTests
     [Fact]
     public void Insert_maintains_the_subtree_counters_exactly_as_append_does()
     {
-        // InsertChild is a third writer of the counter lanes (AdjustSubtreeBrushCounts
-        // is documented as their only writer, reached from attach and detach), so
-        // it has to move them identically or the rigidity and dirtying questions
-        // both start lying.
         var scene = new Scene("Structural");
         SceneNode group = scene.Root.CreateChild("Group");
 
@@ -135,8 +108,7 @@ public sealed class StructuralOrderTests
     [Fact]
     public void Attaching_a_node_under_itself_or_its_own_descendant_is_refused()
     {
-        // A cycle does not surface here: it surfaces as a hang the first time
-        // anything walks the graph, which is every frame.
+        // A cycle would hang the next graph walk.
         var scene = new Scene("Structural");
         SceneNode parent = scene.Root.CreateChild("Parent");
         SceneNode child = parent.CreateChild("Child");
@@ -145,12 +117,11 @@ public sealed class StructuralOrderTests
         Should.Throw<ArgumentException>(() => child.AddChild(parent));
         Should.Throw<ArgumentException>(() => child.InsertChild(0, parent));
 
-        // The legal direction still works, and is a reorder rather than a cycle.
+        // Parent taking its own child again is a reorder, not a cycle.
         parent.InsertChild(0, child).ShouldBeSameAs(child);
     }
 
-    // A row of unit boxes each overlapping its neighbour, so the carve genuinely
-    // has to order them against each other rather than treating them as isolated.
+    // Each box overlaps its neighbour, so the carve has to order them.
     private static SceneNode[] BuildOverlappingRow(Scene scene, int count)
     {
         var nodes = new SceneNode[count];
@@ -165,8 +136,7 @@ public sealed class StructuralOrderTests
         return nodes;
     }
 
-    // The ids of the admitted brush nodes in the order the snapshot walk finds
-    // them, which IS the order their placements are appended in.
+    // Traversal order is the order placements are appended in.
     private static Guid[] PlacementOrder(Scene scene) =>
         [.. scene.Root.Traverse().Where(n => n.IsStaticWorldBrush).Select(n => n.Id)];
 

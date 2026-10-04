@@ -4,43 +4,17 @@ using System.Numerics;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// Conversion between sRGB-encoded and linear colour values.
+/// Converts colours typed as numbers between sRGB and linear. Textures and
+/// render targets convert in hardware and do not go through this.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Lighting is arithmetic, and arithmetic needs linear numbers.</b> A pixel
-/// in a PNG is not a quantity of light: it is a display code, mapped through the
-/// sRGB transfer function so that the 256 available codes are spent where a
-/// human eye can tell them apart. Averaging two such codes, or multiplying one
-/// by a cosine, produces a number that means nothing. So every colour entering
-/// the shader is decoded to linear first, all the shading happens there, and the
-/// result is encoded back on the way to the display.
-/// </para>
-/// <para>
-/// <b>Almost none of that conversion happens here.</b> Texture decode and
-/// display encode are done by the sampler and the render target, in hardware,
-/// which is both free and more correct than a shader could be: hardware decodes
-/// <i>before</i> filtering, so a bilinear tap and a mip level are averages of
-/// light rather than averages of display codes. This class exists for the
-/// handful of colours that arrive as numbers rather than as texels, and those
-/// are the ones a person typed: a <c>color</c> in a <c>.spectramat</c>, and the
-/// clear colour.
-/// </para>
-/// <para>
-/// <b>The piecewise curve, not <c>pow(2.2)</c>.</b> The two agree in the
-/// midtones and diverge badly near black, which is exactly where banding is
-/// visible and where hardware and this code must agree or a texel and a typed
-/// colour will not match.
-/// </para>
-/// </remarks>
+// The piecewise sRGB curve, not pow(2.2): it has to match what the hardware
+// does near black.
 public static class ColorSpace
 {
-    /// <summary>Decodes one sRGB-encoded channel value in 0..1 to linear.</summary>
-    /// <remarks>
-    /// Values outside 0..1 pass through the same formula rather than being
-    /// clamped: the curve is monotonic and well-defined either side, and an
-    /// authored colour above 1 is a deliberate over-bright, not an error.
-    /// </remarks>
+    /// <summary>
+    /// Decodes one sRGB-encoded channel value to linear. Values outside 0..1
+    /// are not clamped.
+    /// </summary>
     public static float SrgbToLinear(float value) =>
         value <= 0.04045f
             ? value / 12.92f
@@ -61,45 +35,25 @@ public static class ColorSpace
         new(LinearToSrgb(color.X), LinearToSrgb(color.Y), LinearToSrgb(color.Z));
 
     /// <summary>
-    /// Decodes an RGBA colour from sRGB to linear, <b>leaving alpha alone</b>.
+    /// Decodes an RGBA colour from sRGB to linear. Alpha is not converted.
     /// </summary>
-    /// <remarks>
-    /// Alpha is coverage, not light. It is stored linearly even inside an sRGB
-    /// texture format, and running it through the curve would make every
-    /// half-transparent surface the wrong transparency.
-    /// </remarks>
     public static Vector4 SrgbToLinear(Vector4 color) =>
         new(SrgbToLinear(color.X), SrgbToLinear(color.Y), SrgbToLinear(color.Z), color.W);
 }
 
 /// <summary>
-/// The colours the backends clear to, in <b>linear</b> values.
+/// The colours the backends clear to, in linear values. Linear because a
+/// clear into an sRGB target is encoded by the target.
 /// </summary>
-/// <remarks>
-/// <para>
-/// One definition for all three backends. Each used to carry its own literal,
-/// and the numbers were only equal by inspection; converting them to linear
-/// three separate times is exactly the kind of edit where one of them gets
-/// missed and a backend quietly renders a different sky.
-/// </para>
-/// <para>
-/// <b>These are linear because the render target encodes.</b> Both the D3D
-/// <c>ClearRenderTargetView</c> path and GL's <c>glClear</c> apply the sRGB
-/// transfer function on the way into an sRGB target, so handing them the
-/// display code would encode it twice and wash the background out.
-/// </para>
-/// </remarks>
 public static class ClearColors
 {
     /// <summary>
-    /// Cornflower blue, the engine's empty-scene background since the first
-    /// frame it ever drew. <c>#6495ED</c> as a display colour.
+    /// The empty-scene background: cornflower blue, <c>#6495ED</c> as a display colour.
     /// </summary>
     public static readonly Vector4 Sky = ColorSpace.SrgbToLinear(new Vector4(0.392f, 0.584f, 0.929f, 1f));
 
     /// <summary>
-    /// Black, for the wireframe pipeline's contrast background. Identical in
-    /// both spaces, which is why this one needed no conversion.
+    /// Black, the wireframe pipeline's background.
     /// </summary>
     public static readonly Vector4 Wireframe = new(0f, 0f, 0f, 1f);
 }

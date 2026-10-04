@@ -4,15 +4,8 @@ using SpectraEngine.Core.Bsp;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The brush-list overloads of <see cref="Csg.Carve(IReadOnlyList{Brush})"/>
-/// and <see cref="CsgWorld.Build(IReadOnlyList{Brush})"/> are documented as
-/// pure conveniences over the <see cref="BrushPlacement"/> overloads: carving
-/// a brush at a snapshot transform must be indistinguishable from carving it
-/// at its own <see cref="Brush.Transform"/>. That equivalence is what lets the
-/// async static-world compile hand an immutable placement snapshot to a
-/// background thread and still produce exactly the world the live brushes
-/// describe — so it is pinned here bit-for-bit, together with the determinism
-/// the swap-compare logic in tests (and future editor diffing) relies on.
+/// Carving a brush at a <see cref="BrushPlacement"/> snapshot transform must
+/// match carving it at its own <see cref="Brush.Transform"/>, bit for bit.
 /// </summary>
 public sealed class PlacementEquivalenceTests
 {
@@ -24,7 +17,7 @@ public sealed class PlacementEquivalenceTests
         Polygon[] viaTransforms = Csg.Carve(brushes);
         Polygon[] viaPlacements = Csg.Carve(placements);
 
-        viaTransforms.ShouldNotBeEmpty(); // guard against a vacuous comparison
+        viaTransforms.ShouldNotBeEmpty();
         ShouldBeIdenticalSurfaces(viaTransforms, viaPlacements);
     }
 
@@ -48,9 +41,7 @@ public sealed class PlacementEquivalenceTests
     [Fact]
     public void Building_the_same_placements_twice_is_deterministic()
     {
-        // The carve parallelises per brush and the welder per polygon, but both
-        // write index-addressed slots, so scheduling must never reorder output.
-        // The mesh arrays are the render-facing artefact — compare those.
+        // Carve and weld run in parallel; scheduling must not reorder output.
         (_, BrushPlacement[] placements) = CreateEquivalentSets();
 
         CsgWorld first = CsgWorld.Build(placements);
@@ -64,14 +55,8 @@ public sealed class PlacementEquivalenceTests
         secondIndices.SequenceEqual(firstIndices).ShouldBeTrue();
     }
 
-    // One translated box and one yaw-rotated box overlapping it: enough to push
-    // both translation and rotation through the transform plumbing, with a real
-    // carve (not just pass-through faces) happening in the overlap.
-    //
-    // The placement set deliberately uses *fresh* Brush instances whose own
-    // Transform stays at the CreateBox default: if the placement overload ever
-    // read Brush.Transform instead of the placement matrix, every brush would
-    // land at the origin and the outputs would visibly diverge.
+    // The placement set uses fresh brushes with a default Transform: a placement
+    // overload that read Brush.Transform would land everything at the origin.
     private static (Brush[] Brushes, BrushPlacement[] Placements) CreateEquivalentSets()
     {
         Matrix4x4[] transforms =
@@ -95,9 +80,7 @@ public sealed class PlacementEquivalenceTests
     private static Brush CreateCentredUnitBox() =>
         Brush.CreateBox(new Vector3(-1f, -1f, -1f), new Vector3(1f, 1f, 1f));
 
-    // Bit-exact comparison on purpose: both paths run the same code over the
-    // same float inputs, so any drift indicates a real divergence (an extra
-    // transform application, a reordered carve) rather than FP noise.
+    // Bit-exact: both paths run the same code over the same floats.
     private static void ShouldBeIdenticalSurfaces(IReadOnlyList<Polygon> expected, IReadOnlyList<Polygon> actual)
     {
         actual.Count.ShouldBe(expected.Count);

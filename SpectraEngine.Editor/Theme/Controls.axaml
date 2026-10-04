@@ -2,48 +2,18 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!--
-    Styles, not full ControlThemes, everywhere it is possible.
+    Styles over Fluent's templates plus overrides of its resource keys. No full
+    ControlThemes where a style will do.
 
-    A ControlTheme replaces a control's template outright, which means owning
-    every part, every state and every visual-state transition Fluent already
-    got right. Styling the existing template plus overriding Fluent's own
-    resource keys reaches the same look with a fraction of the surface area
-    that can rot when the framework moves. The one thing this cannot restyle is
-    the tree's expander chevron, whose theme Fluent binds with StaticResource
-    from inside its own template; that is a deliberate, visible thing to live
-    with rather than a reason to retemplate everything around it.
-
-    THE SHAPE OF THE COMMAND BAR IS A ROW OF RAISED CLUSTERS. A cluster is one
-    bordered capsule holding the controls that belong to one decision - the
-    three tools, the four insert verbs, the undo pair. Grouping is then a thing
-    you can see rather than a hairline you have to notice, the segments inside a
-    cluster can be flat without losing their affordance (the capsule is the
-    raised object), and the row reads as instrumentation instead of as eleven
-    loose glyphs with dividers between some of them.
-
-    EVERY STATE CHANGE RAMPS, AND EVERY DURATION COMES FROM A TOKEN. See the
-    motion block at the foot of Tokens.axaml for the budget and the exclusions.
-    Two implementation notes that belong here rather than there:
-
-    - ENTER AND EXIT SHARE ONE DURATION. Leaving faster than arriving is the
-      usual advice and it is right, but expressing it means re-declaring the
-      Transitions setter inside the :pointerover style and relying on the order
-      Avalonia applies and REVERTS setters when a style frame deactivates,
-      which is not a guarantee it makes. A 55ms exit that is sometimes 90 is a
-      coin flip, not a choice, so the exit token exists and is spent only where
-      the two ends are separate properties.
-
-    - A TRANSITION GOES ON THE PART THAT ACTUALLY CHANGES. Putting a
-      BrushTransition on Button.Background when the fill is set on the template
-      ContentPresenter animates a property nothing renders, which produces no
-      error and no motion.
+    - Enter and exit share one duration. A faster exit would mean re-declaring
+      Transitions inside :pointerover, and Avalonia doesn't guarantee the order
+      setters revert in.
+    - A transition goes on the part that changes. Button fills are set on the
+      template's ContentPresenter, so the transition goes there too.
   -->
 
-  <!-- ___ Fluent key overrides _____________________________
-       These win before any selector runs, because the templates resolve them
-       dynamically. Neutralising the tree's own selection visuals matters most:
-       the row draws its own from model state, and Fluent's would sit
-       underneath it as a second, differently-shaped highlight. -->
+  <!-- Fluent key overrides. The tree row draws its own selection, so Fluent's
+       is made transparent. -->
   <Styles.Resources>
     <SolidColorBrush x:Key="TreeViewItemBackground" Color="Transparent" />
     <SolidColorBrush x:Key="TreeViewItemBackgroundPointerOver" Color="Transparent" />
@@ -54,15 +24,10 @@
     <SolidColorBrush x:Key="TreeViewItemBorderBrushSelected" Color="Transparent" />
     <SolidColorBrush x:Key="TreeViewItemBorderBrushPointerOver" Color="Transparent" />
     <Thickness x:Key="TreeViewItemBorderThemeThickness">0</Thickness>
-    <!-- Aliased to the token, so the dense-row height cannot fork again. -->
     <StaticResource x:Key="TreeViewItemMinHeight" ResourceKey="SpectraTreeRowHeight" />
 
-    <!-- The dropdown list. Fluent paints a selected ComboBoxItem with the
-         machine's own accent, which on this machine is purple: opening the
-         pipeline list put a band of Windows personalisation colour in the
-         middle of the palette. Named explicitly here as well as through
-         SystemAccentColor, because these three keys are what the template
-         actually reads. -->
+    <!-- Fluent paints a selected ComboBoxItem with the system accent. These
+         keys are what its template reads. -->
     <StaticResource x:Key="ComboBoxItemBackgroundSelected" ResourceKey="SpectraControlChecked" />
     <StaticResource x:Key="ComboBoxItemBackgroundSelectedPointerOver" ResourceKey="SpectraControlChecked" />
     <StaticResource x:Key="ComboBoxItemBackgroundSelectedDisabled" ResourceKey="SpectraControlChecked" />
@@ -78,19 +43,11 @@
     <StaticResource x:Key="ComboBoxBorderBrush" ResourceKey="SpectraBorderControl" />
     <StaticResource x:Key="ComboBoxBorderBrushPointerOver" ResourceKey="SpectraBorderControl" />
     <StaticResource x:Key="ComboBoxForeground" ResourceKey="SpectraTextEmphasis" />
-    <!-- The two pressed keys the block above missed: pressing the dropdown or
-         an item flashed Fluent's stock fills, the same family as the lavender
-         leak this block was written to stop. -->
     <StaticResource x:Key="ComboBoxBorderBrushPressed" ResourceKey="SpectraBorderControl" />
     <StaticResource x:Key="ComboBoxItemBackgroundPressed" ResourceKey="SpectraControlPressed" />
 
-    <!-- Menu highlights. Fluent paints a hovered item INSIDE an open menu by
-         setting its PART_LayoutRoot fill from these keys at trigger priority,
-         which beats anything set on the CONTROL - so the authored hover styles
-         below only ever showed on a closed top-level item, and every dropdown
-         and context-menu row highlighted in the stock fill with an instant
-         swap where the bar's items ramp. Same mechanism, same fix, as the
-         ComboBox family above. -->
+    <!-- Inside an open menu Fluent fills PART_LayoutRoot from these keys at
+         trigger priority, which beats a style on the MenuItem itself. -->
     <StaticResource x:Key="MenuFlyoutItemBackgroundPointerOver" ResourceKey="SpectraControlHover" />
     <StaticResource x:Key="MenuFlyoutItemBackgroundPressed" ResourceKey="SpectraControlPressed" />
     <SolidColorBrush x:Key="MenuFlyoutItemBackgroundDisabled" Color="Transparent" />
@@ -99,12 +56,8 @@
     <StaticResource x:Key="MenuFlyoutItemForegroundPressed" ResourceKey="SpectraTextEmphasis" />
     <StaticResource x:Key="MenuFlyoutPresenterBackground" ResourceKey="SpectraBgRaised" />
 
-    <!-- Text fields. Fluent's focused state swaps PART_BorderElement's fill
-         to stock colours AND grows a 2px bottom border (1,1,1,2), which is a
-         real 1px layout shift on every focus - the snap box, the filter, the
-         rename box, every dialog input nudged its own text the moment the
-         caret arrived. Overridden at the source so every text box keeps the
-         authored geometry and palette without a per-site part style. -->
+    <!-- Fluent's focused text box grows a 2px bottom border, a 1px layout
+         shift on every focus. Keep it at 1. -->
     <Thickness x:Key="TextControlBorderThemeThickness">1</Thickness>
     <Thickness x:Key="TextControlBorderThemeThicknessFocused">1</Thickness>
     <StaticResource x:Key="TextControlBackgroundPointerOver" ResourceKey="SpectraBgInput" />
@@ -123,10 +76,8 @@
     <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
   </Style>
 
-  <!-- ___ The icon contract ________________________________
-       ONE place decides how a glyph is drawn, and it draws at the authored
-       coordinates. See the header of Icons.axaml for why Uniform was a defect
-       rather than a convenience. -->
+  <!-- Stretch None: Uniform scales each glyph to its own ink bounds and loses
+       the shared 16 grid. -->
   <Style Selector="Path.icon">
     <Setter Property="Width" Value="16" />
     <Setter Property="Height" Value="16" />
@@ -138,18 +89,10 @@
     <Setter Property="Fill" Value="Transparent" />
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="HorizontalAlignment" Value="Center" />
-    <!-- The glyphs are authored with 11 units of ink in a 16 box; the icon
-         sets everyone recognises (Lucide, Feather, Phosphor) sit nearer 80% of
-         their box, and at 69% these read as undersized beside 12px text. One
-         render transform scales ALL of them by the same factor, which is the
-         whole point of putting them on a shared grid: a per-glyph fix would be
-         Stretch="Uniform" again under another name. Stroke is authored at 1.3
-         so it lands at 1.56 after the scale. -->
+    <!-- Glyphs fill 69% of their box, so one shared scale for all of them.
+         Stroke 1.3 lands at 1.56 after it. -->
     <Setter Property="RenderTransformOrigin" Value="50%,50%" />
     <Setter Property="RenderTransform" Value="scale(1.2)" />
-    <!-- The single cheapest line in the motion system: a glyph that warms up
-         under the cursor is the thing that makes a dense row of them feel
-         alive, and it costs one transition on a property already being set. -->
     <Setter Property="Transitions">
       <Transitions>
         <BrushTransition Property="Stroke"
@@ -159,10 +102,6 @@
     </Setter>
   </Style>
 
-  <!-- A glyph that names a KIND wears that kind's tint, everywhere it appears.
-       The node-kind palette existed from the first pass and was spent in
-       exactly one place - a 15px tree glyph - which is why four insert buttons
-       in a row read as four grey outlines. -->
   <Style Selector="Path.icon.kind-world">
     <Setter Property="Stroke" Value="{StaticResource SpectraKindBrushWorld}" />
   </Style>
@@ -184,8 +123,7 @@
   <Style Selector="Path.icon.kind-group">
     <Setter Property="Stroke" Value="{StaticResource SpectraKindGroup}" />
   </Style>
-  <!-- Disabled outranks kind: a verb you cannot use must not look like the
-       liveliest thing in the cluster. -->
+  <!-- Disabled outranks the kind tint. -->
   <Style Selector="Button:disabled Path.icon.kind-world,
                    Button:disabled Path.icon.kind-part,
                    Button:disabled Path.icon.kind-cut,
@@ -193,16 +131,8 @@
     <Setter Property="Stroke" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
 
-  <!-- THE SECOND SIZE, and the whole reason a ribbon can have large buttons at
-       all. Its geometries are authored on their own 32 box (Icons.axaml), so
-       this carries NO RenderTransform: the small set's shared scale(1.2) is a
-       correction for glyphs drawn at 69% of their box, and applying a second
-       shared factor here would be a second thing to keep in step with the
-       first. A .icon-lg is not a .icon and does not wear that class.
-
-       Stroke 1.6 against the small set's effective 1.56, so the two sizes read
-       at the same weight rather than the large one looking spindly - a glyph at
-       twice the size wants slightly more than twice nothing. -->
+  <!-- Large icons are authored on their own 32 box, so no scale here.
+       Stroke 1.6 matches the small set's effective 1.56. -->
   <Style Selector="Path.icon-lg">
     <Setter Property="Width" Value="32" />
     <Setter Property="Height" Value="32" />
@@ -249,15 +179,8 @@
     <Setter Property="Stroke" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
 
-  <!-- The lit half of a check row or a radio row: a mark drawn over its own
-       container, resting at the mode amber with ZERO ALPHA so lighting it
-       moves a colour rather than adding an element. That is the ribbon tab's
-       own idiom one size down, and it is why the box and the mark are separate
-       geometries - one element changes, and the two can never disagree about
-       where the box is.
-
-       Filled rather than stroked for the dot, because a 2.4-radius circle
-       stroked at 1.3 is a ring. -->
+  <!-- Check or radio mark. Rests at the mode amber with zero alpha so the
+       transition only moves alpha. The dot is filled: stroked it is a ring. -->
   <Style Selector="Path.mark">
     <Setter Property="Width" Value="16" />
     <Setter Property="Height" Value="16" />
@@ -291,8 +214,6 @@
     <Setter Property="Stroke" Value="Transparent" />
     <Setter Property="Fill" Value="{StaticResource SpectraMode}" />
   </Style>
-  <!-- The empty container the mark sits in. Muted at rest so an unticked row
-       is quieter than a ticked one before the mark is even considered. -->
   <Style Selector="Path.markbox">
     <Setter Property="Width" Value="16" />
     <Setter Property="Height" Value="16" />
@@ -322,14 +243,8 @@
     <Setter Property="Stroke" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
 
-  <!-- ___ Text roles ______________________________________
-       App-scoped rather than window-scoped, because the dockable panels use
-       these and a floated panel leaves the main window's style scope.
-
-       .value is a MEASUREMENT - a number, a path, a key name. .label names one.
-       .prose is a sentence, and it is set in the UI face: the status bar used
-       to render whole sentences in 11px Cascadia Mono, which is the single most
-       machine-made typographic choice a tool can make. -->
+  <!-- Text roles. App-scoped: a floated panel leaves the main window's style
+       scope. .value is a number, path or key name; .prose is a sentence. -->
   <Style Selector="TextBlock.value">
     <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
@@ -347,15 +262,6 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
-  <!-- A section heading: BODY SIZE, weight carrying the emphasis, sentence
-       case, separated from what it names by space rather than by a rule.
-
-       It used to be 10px letter-spaced uppercase muted, which is the marketing
-       eyebrow - the single most web-flavoured typographic move in the shell.
-       Every tool in this category sets its section headings at or near body
-       size and lets weight do the work: "Transform" beats "T R A N S F O R M",
-       and the uppercase form is also measurably slower to read because it
-       destroys word shape. -->
   <Style Selector="TextBlock.sectionhead">
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
     <Setter Property="FontWeight" Value="SemiBold" />
@@ -363,20 +269,13 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
-  <!-- The tertiary label SpectraFontMicro still exists for: a unit, a count, a
-       caption under a value. Never a heading and never a control label. -->
+  <!-- A unit, a count, a caption. Not a heading or a control label. -->
   <Style Selector="TextBlock.micro">
     <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
     <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
-  <!-- ___ Menus ___________________________________________
-       Five real menus, and every verb in the shell appears in one of them with
-       its shortcut printed beside it. That is affordable now because an
-       Avalonia popup on Windows is a real OS window: it composites ABOVE the
-       viewport's native child, exactly as a context menu does, so a menu is no
-       longer confined to the width of the panel it opens over. -->
   <Style Selector="Menu">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Padding" Value="4,0" />
@@ -412,17 +311,12 @@
     <Setter Property="MinHeight" Value="28" />
   </Style>
 
-  <!-- ___ Popup surfaces __________________________________
-       The raised-overlay treatment every floating surface gets: raised
-       surface, strong 1px border, the 5px radius reserved for things that
-       float above the window. -->
   <Style Selector="ContextMenu">
     <Setter Property="Background" Value="{StaticResource SpectraBgRaised}" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderStrong}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusFloat}" />
-    <!-- 4, not 3: at a 3px inset a hovered first item's 2px-radius fill can
-         poke into the popup's 5px corner; at 4 it cannot. -->
+    <!-- 4, not 3: at 3 a hovered first item's fill pokes into the rounded corner. -->
     <Setter Property="Padding" Value="4" />
   </Style>
 
@@ -431,9 +325,6 @@
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderStrong}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusFloat}" />
-    <!-- The five main menus' dropdowns inherited Fluent's presenter padding
-         while context menus declared their own - two popup kinds, two edge
-         geometries. One number, and the same clip-proof 4 as above. -->
     <Setter Property="Padding" Value="4" />
   </Style>
 
@@ -456,8 +347,6 @@
     <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
   </Style>
 
-  <!-- The gesture column: a VALUE, so it wears mono like every other value in
-       the shell, one point down and muted so the verb stays the loud half. -->
   <Style Selector="MenuItem /template/ TextBlock#PART_InputGestureText">
     <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
@@ -465,10 +354,7 @@
     <Setter Property="Margin" Value="24,0,2,0" />
   </Style>
 
-  <!-- A menu item's glyph. Muted, and one step smaller than a toolbar glyph:
-       here it is a reminder of which button in the command row does the same
-       thing, not the thing being pointed at, so it must not out-weigh the word
-       beside it. -->
+  <!-- Menu glyphs: muted and unscaled, so the word stays the louder half. -->
   <Style Selector="Path.menuicon">
     <Setter Property="Stroke" Value="{StaticResource SpectraTextMuted}" />
     <Setter Property="RenderTransform" Value="scale(1.0)" />
@@ -486,8 +372,7 @@
     <Setter Property="Margin" Value="6,3" />
   </Style>
 
-  <!-- ___ Clusters ________________________________________
-       The raised capsule that holds one group of command-bar controls. -->
+  <!-- Raised capsule holding one group of command-bar controls. -->
   <Style Selector="Border.cluster">
     <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
@@ -497,17 +382,14 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
-  <!-- The 1px rule BETWEEN segments of one cluster. Inside a capsule, so it is
-       the soft border rather than the control border. -->
+  <!-- Rule between segments of one cluster. -->
   <Style Selector="Border.segsep">
     <Setter Property="Width" Value="1" />
     <Setter Property="Background" Value="{StaticResource SpectraBorderControl}" />
     <Setter Property="Margin" Value="0" />
   </Style>
 
-  <!-- A rule BETWEEN clusters, in the status bar and anywhere else two runs of
-       values meet. One implementation: the box-drawing character this used to
-       be sits at 1.35:1 against the panel and spends 20px saying nothing. -->
+  <!-- Rule between clusters or runs of values. -->
   <Style Selector="Border.groupsep">
     <Setter Property="Width" Value="1" />
     <Setter Property="Height" Value="14" />
@@ -516,10 +398,7 @@
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
-  <!-- ___ Segment buttons _________________________________
-       Flat inside their capsule: the capsule is the raised object, so a second
-       fill per segment would be a box inside a box. State is carried by the
-       glyph and by one checked fill. -->
+  <!-- Segment buttons: flat inside their capsule. -->
   <Style Selector="Button.seg">
     <Setter Property="Height" Value="26" />
     <Setter Property="MinWidth" Value="0" />
@@ -533,10 +412,8 @@
     <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
   </Style>
   <Style Selector="Button.seg /template/ ContentPresenter#PART_ContentPresenter">
-      <!-- #00FFFFFF, never Transparent. Transparent is #00000000, so a fade
-           to a translucent WHITE walks the RGB channels from black to white
-           and the fill passes through grey on the way in. Same hue at zero
-           alpha means the transition moves one number. -->
+      <!-- #00FFFFFF, not Transparent (transparent black): a fade to a
+           translucent white would pass through grey. -->
     <Setter Property="Background" Value="#00FFFFFF" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
@@ -560,29 +437,15 @@
   <Style Selector="Button.seg:pointerover Path.icon">
     <Setter Property="Stroke" Value="{StaticResource SpectraTextEmphasis}" />
   </Style>
-  <!-- The LABEL needs its own rule everywhere a state recolours text: the
-       global TextBlock Foreground style is Style priority, which beats the
-       value a TextBlock would otherwise inherit from its button - so the
-       Foreground setters on the button itself recolour nothing, silently.
-       Half a button changing (glyph warms, word does not) is exactly what
-       "hover effects feel buggy" looks like. -->
+  <!-- Labels need their own rule per state: the global TextBlock Foreground
+       style beats the value inherited from the button. -->
   <Style Selector="Button.seg:pointerover TextBlock">
     <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
   </Style>
 
-  <!-- The live tool, in the MODE colour rather than the accent. Red means "you
-       selected this"; amber means "the machine is in this state". They were one
-       colour, so a lit Move button and a selected tree row were the same signal
-       and the window read as monochrome plus one.
-
-       Still a CLASS rather than a ToggleButton's own checked state, and the
-       reason has been extended rather than replaced: a toggle flips itself on
-       click and is then corrected a frame later by the engine's snapshot, which
-       reads as a flicker. What was missing was the other half - a class bound
-       one way has no local opinion at all, which is why the button used to sit
-       dark for up to 65ms after the click. ShellModel now holds a BOUNDED local
-       opinion (OptimisticValue) and defers to the engine when it disagrees, so
-       the class lights on the click and the engine still wins. -->
+  <!-- Lit state, in the mode colour. A class bound one way, not a ToggleButton:
+       a toggle flips itself on click and the engine's snapshot then corrects
+       it, which flickers. -->
   <Style Selector="Button.seg.active /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{StaticResource SpectraControlChecked}" />
   </Style>
@@ -605,15 +468,12 @@
   <Style Selector="Button.seg:disabled">
     <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
-  <!-- After the hover and active rules, so a disabled label can never be
-       out-shone by them - the same ordering the kind-tint rules rely on. -->
+  <!-- Must come after the hover and active rules so disabled wins. -->
   <Style Selector="Button.seg:disabled TextBlock">
     <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
 
-  <!-- ___ Standalone icon button __________________________
-       For the few controls that are not part of a group: raised on its own,
-       because it has no capsule to belong to. -->
+  <!-- Standalone icon button, raised on its own. -->
   <Style Selector="Button.tool">
     <Setter Property="Width" Value="{StaticResource SpectraToolbarButtonSize}" />
     <Setter Property="Height" Value="{StaticResource SpectraToolbarButtonSize}" />
@@ -660,8 +520,7 @@
     <Setter Property="Stroke" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
 
-  <!-- A borderless icon button, for places that already sit inside a bordered
-       container (the filter row's clear, a panel header's action). -->
+  <!-- Borderless icon button, for use inside a bordered container. -->
   <Style Selector="Button.ghost">
     <Setter Property="Width" Value="{StaticResource SpectraFieldHeight}" />
     <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
@@ -673,10 +532,8 @@
     <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
   <Style Selector="Button.ghost /template/ ContentPresenter#PART_ContentPresenter">
-      <!-- #00FFFFFF, never Transparent. Transparent is #00000000, so a fade
-           to a translucent WHITE walks the RGB channels from black to white
-           and the fill passes through grey on the way in. Same hue at zero
-           alpha means the transition moves one number. -->
+      <!-- #00FFFFFF, not Transparent (transparent black): a fade to a
+           translucent white would pass through grey. -->
     <Setter Property="Background" Value="#00FFFFFF" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
@@ -701,11 +558,7 @@
     <Setter Property="Stroke" Value="{StaticResource SpectraTextEmphasis}" />
   </Style>
 
-  <!-- ___ Mode chips ______________________________________
-       A two-way CHOICE is not an on/off toggle, and lighting an icon for one
-       says the wrong thing: "world" is not the enabled state of "local". A chip
-       shows its SUBJECT and its VALUE together - a bare "Studio" in a box is a
-       word with nothing to attach it to - and clicking swaps the value. -->
+  <!-- Mode chip: a two-way choice shown as subject plus current value. -->
   <Style Selector="Button.chip">
     <Setter Property="Height" Value="{StaticResource SpectraControlHeight}" />
     <Setter Property="Padding" Value="8,0" />
@@ -734,12 +587,8 @@
   <Style Selector="Button.chip:pressed /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
   </Style>
-  <!-- A chip that OPENS something wears a caret; a chip that toggles does
-       not. The Grid chip is the only flyout-bearing chip in the shell and it
-       was pixel-identical to the three that toggle on click, so there was no
-       way to tell a menu from a switch without pressing it. Explicitly sized
-       and RenderTransform="none", because this is a one-off affordance rather
-       than a member of the 16x16 icon set. -->
+  <!-- A chip that opens a flyout wears a caret. Not part of the 16x16 icon
+       set, so it is sized here and opts out of the icon scale. -->
   <Style Selector="Button.chip Path.chipcaret">
     <Setter Property="Width" Value="8" />
     <Setter Property="Height" Value="6" />
@@ -774,52 +623,26 @@
     <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
 
-  <!-- A chip whose value is NOT the default is state the user set, and it says
-       so in the mode colour. Without this the only way to notice that handles
-       are on Classic is to read the word. -->
   <Style Selector="Button.chip.nondefault TextBlock.chipvalue">
     <Setter Property="Foreground" Value="{StaticResource SpectraMode}" />
   </Style>
 
-  <!-- A chip on a ribbon row, which is 26 tall rather than the command
-       height. A style setter, never a Height attribute at the call site: a
-       local value outranks every style, and this shell has already lost two
-       hover states to exactly that. Declared after Button.chip so it wins the
-       tie on order. -->
+  <!-- Chip on a ribbon row. Must come after Button.chip to win on order. -->
   <Style Selector="Button.chip.compact">
     <Setter Property="Focusable" Value="False" />
     <Setter Property="Height" Value="26" />
   </Style>
 
-  <!-- ___ The ribbon ______________________________________
-       APP-SCOPED, and that is load-bearing rather than tidiness: a collapsed
-       ribbon flies its page out in a POPUP, which on Windows is a real OS
-       window with its own visual root, so a rule declared in Window.Styles
-       would style the page inline and not style it flown out. Everything the
-       ribbon draws is therefore here.
-
-       THE STRIP WAS RETIRED ONCE AND IS BACK BY DECISION. See RibbonLayout for
-       the three findings that killed it and what now prevents each. -->
-
-  <!-- The tab strip: the one part of the surface a collapse never takes away,
-       so it also carries undo, redo and the pin. -->
+  <!-- Ribbon styles live here, not in Window.Styles: a collapsed ribbon shows
+       its page in a popup, which has its own visual root. -->
   <Style Selector="Border.ribbonstrip">
     <Setter Property="Height" Value="{StaticResource SpectraMenuBarHeight}" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Padding" Value="10,0" />
   </Style>
 
-  <!-- An active tab is NEITHER selection NOR machine state, which is the
-       question the palette has already had to answer once. Dock's own tabs in
-       this window answer it as a raised surface plus a 2px accent indicator -
-       DockTokens.axaml says so in as many words - and a window that answered
-       "which page am I on" two different ways would be worse than a 2px rule
-       spent on the accent. So: the tab that is open is RAISED out of the strip
-       and underlined at the edge it opens onto; the accent is a hairline, never
-       a fill, and the budget holds.
-
-       The resting bottom border is the same 2px at zero alpha, so lighting it
-       moves a colour rather than the layout. -->
+  <!-- Active tab: raised surface plus a 2px accent underline, same as Dock's
+       tabs. The resting border is the same 2px at zero alpha, so no layout shift. -->
   <Style Selector="Button.ribbontab">
     <Setter Property="Focusable" Value="False" />
     <Setter Property="Height" Value="26" />
@@ -834,8 +657,6 @@
     <Setter Property="HorizontalContentAlignment" Value="Center" />
   </Style>
   <Style Selector="Button.ribbontab /template/ ContentPresenter#PART_ContentPresenter">
-    <!-- #00FFFFFF, never Transparent: a fade to a translucent white from
-         transparent BLACK walks the hue through grey. -->
     <Setter Property="Background" Value="#00FFFFFF" />
     <Setter Property="BorderBrush" Value="#00E8474A" />
     <Setter Property="BorderThickness" Value="0,0,0,2" />
@@ -857,10 +678,6 @@
   <Style Selector="Button.ribbontab:pressed /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{StaticResource SpectraControlPressed}" />
   </Style>
-  <!-- The word needs its own rule beside every state that recolours text: the
-       global bare-TextBlock Foreground style beats the value a label would
-       inherit from its button, so the setters above recolour nothing on their
-       own. Half a control changing is what "hover feels buggy" looks like. -->
   <Style Selector="Button.ribbontab:pointerover TextBlock">
     <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
   </Style>
@@ -875,13 +692,9 @@
     <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
   </Style>
 
-  <!-- The pin. A chevron pointing up puts the page away; pointing down brings
-       it back, which is the one rotation this shell animates - it answers a
-       click, so it is interaction motion and sits inside the 130ms budget.
-       TransformOperationsTransition, never TransformTransition, for a value
-       that parses as rotate(); and the icon's own Stroke transition has to be
-       re-declared here, because assigning Transitions replaces the collection
-       rather than adding to it. -->
+  <!-- Pin chevron. TransformOperationsTransition, not TransformTransition,
+       for a rotate() value. The Stroke transition is repeated because setting
+       Transitions replaces the collection. -->
   <Style Selector="Button.ribbonpin">
     <Setter Property="Focusable" Value="False" />
   </Style>
@@ -902,15 +715,8 @@
     <Setter Property="RenderTransform" Value="rotate(90deg) scale(1.2)" />
   </Style>
 
-  <!-- The page itself. Chrome, so it sits on the chrome ground rather than the
-       panel one: the picture stays the brightest thing in the window.
-
-       IT DOES NOT ANIMATE ITS HEIGHT, and that is a decision rather than an
-       omission. This row sizes the viewport, so a 130ms height ramp is eight
-       swap-chain resizes per collapse on a composited session and eight child
-       window moves on a native one - the same reasoning that keeps every
-       transition off the drag path. The motion budget is spent on the tabs and
-       the pin, where it costs nothing. -->
+  <!-- Ribbon page. No height animation: this row sizes the viewport, so a
+       ramp would resize the swap chain every frame of it. -->
   <Style Selector="Border.ribbonbody">
     <Setter Property="Background" Value="{StaticResource SpectraRibbonBodyFill}" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderStrong}" />
@@ -918,71 +724,32 @@
     <Setter Property="Padding" Value="8,5,8,3" />
   </Style>
 
-  <!-- A GROUP IS NO LONGER A BOX, and dropping the box is the single change
-       that stops this surface reading as grey blobs. It used to be the command
-       bar's cluster grown to two rows: a filled, bordered capsule per group, on
-       the argument that the capsule is what says the things inside it are
-       pressable. That argument was answered rather than ignored - what says a
-       large button is pressable is that it is a 32px glyph over a word and that
-       it lifts under the cursor, which is how every ribbon since 2007 has done
-       it. Four filled rounded rectangles in a row were four grey blobs, and
-       they were the literal ones.
-
-       A ribbon group in Office is delimited by a rule and a caption. So this is
-       a plain stack now: content, then the caption under it, with a
-       Border.ribbonrule between neighbours. -->
+  <!-- Ribbon group: content over a caption, no box. Border.ribbonrule sits
+       between neighbours. -->
   <Style Selector="StackPanel.ribbongroup">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Margin" Value="5,0" />
     <Setter Property="VerticalAlignment" Value="Top" />
   </Style>
 
-  <!-- Every group's content row, whatever is in it. The MinHeight is what puts
-       all four captions on one line: the Snap group is a check row over a field
-       and is naturally shorter than a row of large buttons, and without a floor
-       its caption would sit twenty pixels above its neighbours'. -->
+  <!-- MinHeight keeps every group's caption on one line. -->
   <Style Selector="StackPanel.rrow">
     <Setter Property="MinHeight" Value="66" />
     <Setter Property="VerticalAlignment" Value="Top" />
   </Style>
 
-  <!-- A column of small rows beside the large buttons: three of 22 against one
-       of 66, which is the arithmetic the whole hierarchy is built on.
-
-       CENTRED, AND THAT IS A CORRECTION. This was Top, on the reasoning that a
-       column of two should not float in the middle of a row of fours - but a
-       large button centres its own icon and label inside its 66
-       (StackPanel.rbigstack), so a top-aligned column of two put its first row
-       at y=0 while the cube beside it started at y=9.5, and its last row ended
-       22px above the button's label. Measured on the Build page, four of five
-       columns were short: Insert 44, Transform 54, Arrange 44 and 44, all
-       hanging from the top of a 66 row. Centring puts a column of two at
-       11..55 against a large button's content at 9.5..56.5, which is the
-       alignment the arithmetic always intended.
-
-       A GROUP WHOSE COLUMNS DIFFER IN LENGTH MUST NOT USE THIS: centring two
-       columns of three and two rows aligns neither to the other. Those wear
-       .ragged. -->
+  <!-- Column of small rows, three of 22 against a large button's 66.
+       Centred, because a large button centres its own content. Columns of
+       unequal length in one group use .ragged instead. -->
   <Style Selector="StackPanel.rcol">
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Margin" Value="2,0,0,0" />
   </Style>
 
-  <!-- Columns of UNEQUAL length in one group, which must share a top edge with
-       each other rather than each centring on its own. The Overlays group is
-       the only one: three checks beside two, and centring the short one would
-       put its rows halfway between the tall one's. -->
   <Style Selector="StackPanel.rcol.ragged">
     <Setter Property="VerticalAlignment" Value="Top" />
   </Style>
 
-  <!-- The caption NAMES the box above it, exactly as the status bar's labels
-       name their values, so it is a label: sentence case, label size, muted.
-       Never letter-spaced uppercase - a ribbon group caption is the single
-       place a designer reaches for small caps, and uppercase destroys the word
-       shape a reader recognises before reading any letters. Centred, which is
-       the one place this shell centres a label: it belongs to the box above it
-       rather than starting a column. -->
   <Style Selector="TextBlock.ribbongroupcaption">
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
     <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
@@ -990,36 +757,13 @@
     <Setter Property="Margin" Value="0,3,0,0" />
   </Style>
 
-  <!-- ___ The ribbon's control family _____________________
-       AN OFFICE RIBBON IS A SIZE HIERARCHY BEFORE IT IS ANYTHING ELSE, and the
-       first version of this surface had none: thirty controls, all Button.seg
-       at 26px, so "insert a block" and "toggle the wireframe overlay" were the
-       same object at the same weight and nothing on the surface said what it
-       was for. That is most of what "it reads as grey blobs" was pointing at.
-       These classes are the hierarchy - one large form, one small form, and the
-       four variants the small form needs to be a check, a radio, a stepper or
-       half of a split.
+  <!-- Ribbon controls: one large form and one small form.
+       Gradients are only used by Border.sheen, Border.ribbonrule and
+       Border.ribbonbody, and none of those transitions a brush.
+       RibbonDepthConventionTests enforces it. -->
 
-       DEPTH LIVES ON ONE ELEMENT, Border.sheen, and only where it can be seen.
-       The stock Button template renders a single ContentPresenter, so a static
-       gradient layer above the fill and below the content has to be a real
-       child; that costs two extra elements per button, which buys a readable
-       curve across 66px and buys nothing at all across 22 - four gradient stops
-       in twenty-two pixels is a flat wash. So a large button is fill plus sheen
-       plus a bevelled rim, and a small row is a fill, exactly like Button.seg
-       beside it. The same argument twice, applied consistently.
-
-       That split is also what keeps the gradient rule cheap to enforce. Every
-       gradient in the shell is named by Border.sheen, Border.ribbonrule or
-       Border.ribbonbody and by nothing else, none of those three transitions a
-       brush, and RibbonDepthConventionTests holds all three claims from the
-       sources - so no gradient can reach a BrushTransition by any route. -->
-
-  <!-- The depth layer. Non-interactive, so it never sits between the pointer
-       and the button it decorates. It fades in on Opacity, which is ONE
-       interpolated quantity and therefore cannot reproduce the multiply
-       overshoot Tokens.axaml records; the gradient swap under a press is
-       deliberately instant, because a press should be. -->
+  <!-- Depth layer of a large button. Fades on opacity; the gradient swap on
+       press is instant. -->
   <Style Selector="Border.sheen">
     <Setter Property="Background" Value="{StaticResource SpectraSheenRaised}" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBevelRaised}" />
@@ -1049,21 +793,10 @@
     <Setter Property="Opacity" Value="0" />
   </Style>
 
-  <!-- THE LARGE BUTTON. 64 x 66: a 32px glyph over two lines of 13, which is
-       the shape every ribbon since 2007 has used. The width is MEASURED
-       rather than chosen: at 58 the word "Everything" broke mid-word to
-       "Everythin / g", which is the one wrap TextWrapping cannot make look
-       deliberate, because a single word longer than the line has no word
-       boundary to break at. 64 holds ten characters with two to spare.
-
-       The fill is on the ContentPresenter and the rim is on the sheen, so the
-       one transitioned property here is a solid Background. -->
-    <!-- REFUSES THE KEYBOARD. See MainWindow.ReturnKeyboardToEngine: the tool
-         chords run through the ENGINE keymap, which fires only while the
-         viewport holds focus, so a ribbon control that takes it kills W, E, R,
-         Delete, Ctrl+D and the rest until the user clicks back in the scene. It
-         also stops Space re-invoking the button that was just clicked, which is
-         how pressing Space after Delete deleted a second node. -->
+  <!-- Large button, 64 x 66: a 32px glyph over two lines of label. 64 is the
+       narrowest that fits a ten-character word without a mid-word break.
+       Not focusable: the tool keys go through the engine keymap, which only
+       fires while the viewport has focus. Same for the other ribbon classes. -->
   <Style Selector="Button.rbig">
     <Setter Property="Focusable" Value="False" />
     <Setter Property="Width" Value="64" />
@@ -1102,17 +835,13 @@
     <Setter Property="Background" Value="{StaticResource SpectraControlChecked}" />
   </Style>
 
-  <!-- The content stack. 3 top and bottom of the 66, leaving exactly 32 of
-       glyph, 2 of gap and 26 of label. -->
   <Style Selector="Button.rbig StackPanel.rbigstack">
     <Setter Property="Margin" Value="2,3" />
     <Setter Property="Spacing" Value="2" />
     <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
-  <!-- Two lines, centred, and the wrap is the reason a large label is capped
-       by RibbonLayout.LargeLabelLimit in the roster's own tests: a third line
-       has nowhere
-       to go and MaxLines would silently eat it. -->
+  <!-- Two lines at most. RibbonLayout.LargeLabelLimit caps the label so
+       MaxLines never eats a third. -->
   <Style Selector="Button.rbig TextBlock">
     <Setter Property="TextAlignment" Value="Center" />
     <Setter Property="TextWrapping" Value="Wrap" />
@@ -1121,11 +850,6 @@
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
     <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
   </Style>
-  <!-- The label needs its own selector beside every state that recolours text:
-       the global bare-TextBlock Foreground rule beats what a label would
-       inherit from its button, so the Foreground setters above recolour
-       nothing on their own. Half a control changing is what "the hover feels
-       buggy" looks like. -->
   <Style Selector="Button.rbig:pointerover TextBlock">
     <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
   </Style>
@@ -1141,18 +865,12 @@
   <Style Selector="Button.rbig:disabled TextBlock">
     <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
-  <!-- A press drops the content one pixel, which is the oldest tell a raised
-       key has and the one thing on this surface that says the button went
-       DOWN rather than merely changing colour. Not on any drag path, so the
-       motion rules leave it alone; instant, because a press is. -->
+  <!-- A press drops the content one pixel. -->
   <Style Selector="Button.rbig:pressed StackPanel.rbigstack">
     <Setter Property="Margin" Value="2,4,2,2" />
   </Style>
 
-  <!-- THE SMALL ROW. 22px, a 16px glyph and a word, three to a column against
-       the large button's 66. Flat, like Button.seg beside it: the bevel and
-       the sheen would both be invisible at this height and cost two elements
-       each to be invisible with. -->
+  <!-- Small row, 22px. Flat: a sheen would not show at this height. -->
   <Style Selector="Button.rsmall">
     <Setter Property="Focusable" Value="False" />
     <Setter Property="Height" Value="22" />
@@ -1209,20 +927,10 @@
     <Setter Property="Stroke" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
 
-  <!-- A CHECK ROW and a RADIO ROW are a small row wearing a mark, and the
-       classes carry no geometry of their own: what they are FOR is that the
-       roster declares the kind and the page's validator can check the control
-       wears it, so a Check quietly drawn as a plain button refuses the window
-       rather than shipping a row whose lit state nobody wired.
-
-       Neither is a CheckBox or a RadioButton, and that is the same refusal
-       Button.seg makes above: a two-way toggle bound to engine state flickers
-       when the snapshot corrects it. The exclusivity of a radio column is a
-       property of three set-verbs, not of the controls. -->
-  <!-- A TOGGLE: a large button that shows which of a set is running. Like
-       rcheck and rradio it carries no geometry - Button.rbig.active already
-       lights it - and exists so the roster can declare the kind and both
-       validators can require the class. -->
+  <!-- rtoggle, rcheck and rradio carry almost no styling. They exist so the
+       ribbon validator can check a control wears the class its roster kind
+       requires. Buttons, not CheckBox or RadioButton, for the same flicker
+       reason as Button.seg. -->
   <Style Selector="Button.rtoggle">
     <Setter Property="Focusable" Value="False" />
   </Style>
@@ -1234,10 +942,7 @@
     <Setter Property="Padding" Value="2,0" />
   </Style>
 
-  <!-- The stepper pair beside the snap field: two 11px halves of one 22px
-       control, so the column they sit in is the same height as every other
-       row. One caret geometry, rotated, so up and down cannot drift in
-       weight - the pin's own trick. -->
+  <!-- Stepper pair beside the snap field: two 11px halves of a 22px row. -->
   <Style Selector="Button.rspin">
     <Setter Property="Focusable" Value="False" />
     <Setter Property="Width" Value="18" />
@@ -1299,29 +1004,9 @@
     <Setter Property="Stroke" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
 
-  <!-- THE SPLIT BUTTON: one control, two hit regions, divided by a hairline -
-       the only Office idiom on this surface that cannot be faked with what was
-       already here.
-
-       THE CARET IS BESIDE THE BUTTON RATHER THAN UNDER IT, AND THAT IS A
-       CORRECTION MEASURED ON THE RENDER. A foot band cannot be made to align:
-       a large button centres 53px of content in its 66, which puts every
-       neighbour's icon at 9.5 and its label at 43.5..56.5, so a main half of
-       50 with a top-aligned stack put this one's icon at 3 and its label at
-       37 - SEVEN PIXELS above every button beside it, on the one control in
-       the group that is meant to look like the others. The block this replaces
-       said the foot band "keeps the line every large button stands on"; it had
-       compared top-in-50 against centre-in-50 rather than against the
-       neighbours. Nor can the band simply move down: the label's own ink ends
-       at 56.5, so a hairline at the foot draws through the word.
-
-       Beside it, the main half is an ORDINARY Button.rbig with no override at
-       all, so it cannot drift from its neighbours again, and the divider is a
-       vertical hairline that crosses nothing. It is also the shape WinUI's own
-       SplitButton takes, which is the closer family than Office here.
-
-       Two real Buttons, so each half gets its own hover and its own tooltip;
-       the container is a plain StackPanel and does nothing. -->
+  <!-- Split button: an ordinary Button.rbig with a caret button beside it.
+       The caret is beside, not under: a foot band puts the label 7px above
+       its neighbours' and a hairline there cuts through the word. -->
   <Style Selector="StackPanel.rsplit">
     <Setter Property="Height" Value="66" />
     <Setter Property="Background" Value="Transparent" />
@@ -1329,11 +1014,8 @@
   <Style Selector="Button.rsplitcaret">
     <Setter Property="Focusable" Value="False" />
     <Setter Property="Height" Value="66" />
-    <!-- Narrow, because it buys its width out of the page's headroom: the
-         Build page measures 1098 against a 1180 floor, and this is 12 of it.
-         Stated rather than left to Stretch, which would give a Shape's own
-         geometry the left edge to draw from - the defect that put this
-         caret 28px from its glyph the first time. -->
+    <!-- Explicit width: left to Stretch, the caret path draws from the left
+         edge. Narrow because the Build page has little width to spare. -->
     <Setter Property="Width" Value="12" />
     <Setter Property="MinWidth" Value="0" />
     <Setter Property="Padding" Value="0" />
@@ -1363,37 +1045,25 @@
     <Setter Property="Background" Value="{StaticResource SpectraControlPressed}" />
   </Style>
 
-  <!-- The divider between two groups, and it fades at both ends because a
-       hairline that stops dead reads as a piece of a box somebody failed to
-       finish. This is what replaces the capsule each group used to wear: a
-       ribbon group in Office is delimited by a rule and a caption, not by a
-       frame, and the capsules WERE the grey blobs. -->
+  <!-- Divider between two ribbon groups. -->
   <Style Selector="Border.ribbonrule">
     <Setter Property="Width" Value="1" />
     <Setter Property="Background" Value="{StaticResource SpectraGroupRule}" />
     <Setter Property="Margin" Value="2,1,2,18" />
   </Style>
 
-  <!-- The flown-out page. A floating surface, so it is properly rounded and
-       carries a real border: it is the only part of the ribbon that ever
-       crosses the viewport, and it may only because a popup is a real OS
-       window. -->
+  <!-- The ribbon page when shown in the collapsed ribbon's popup. -->
   <Style Selector="Border.ribbonflyout">
     <Setter Property="Background" Value="{StaticResource SpectraBgApp}" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderStrong}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusFloat}" />
-    <!-- The inline page takes its padding from Border.ribbonbody; flown out it
-         has to bring its own, or the first group is butted against the frame. -->
+    <!-- Inline, the padding comes from Border.ribbonbody. -->
     <Setter Property="Padding" Value="10,6,10,6" />
   </Style>
 
-  <!-- ___ Text input ______________________________________
-       Sunken, per rule 3 in Tokens.axaml. One recipe, three sizes.
-
-       A field being typed into gets an accent border AND drops its fill: on a
-       near-black panel the caret alone is not a state anyone notices, and the
-       panel refreshes about thirty times a second behind it. -->
+  <!-- Text input: darker than the panel. Focus gets an accent border and a
+       darker fill. -->
   <Style Selector="TextBox.field">
     <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
     <Setter Property="MinHeight" Value="{StaticResource SpectraFieldHeight}" />
@@ -1412,9 +1082,7 @@
   <Style Selector="TextBox.field /template/ Border#PART_BorderElement">
     <Setter Property="Background" Value="{StaticResource SpectraBgInput}" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
-    <!-- The BORDER ramps, the fill does not: a field's focus edge appearing
-         over 90ms reads as the field waking up, while a fill that fades under a
-         caret you are already typing into reads as a repaint. -->
+    <!-- Only the border ramps. A fill fading under the caret reads as a repaint. -->
     <Setter Property="Transitions">
       <Transitions>
         <BrushTransition Property="BorderBrush"
@@ -1436,8 +1104,7 @@
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
   </Style>
 
-  <!-- A numeric cell: mono, and the digits sit at the RIGHT so a column of them
-       lines up on the decimal instead of on the minus sign. -->
+  <!-- Numeric cell: right-aligned so a column lines up on the decimal. -->
   <Style Selector="TextBox.field.num">
     <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
@@ -1450,35 +1117,15 @@
     <Setter Property="TextAlignment" Value="Right" />
   </Style>
 
-  <!-- A field on the RIBBON'S ROW HEIGHT: 22 rather than SpectraFieldHeight's
-       26, because the ribbon's small row is 22 and the stepper pair beside this
-       one is documented above as "two 11px halves of one 22px control, so the
-       column they sit in is the same height as every other row". A 26px box in
-       that column is the one thing in the group off the rhythm, and it reads as
-       a hole rather than a field.
-
-       IT KEEPS ITS RESTING BORDER, and that is a correction rather than an
-       omission. This block used to drop the border on the reasoning that "the
-       capsule around it already draws one" - and the ribbon then retired the
-       capsules (see StackPanel.ribbongroup). On the flat ground that left, a
-       borderless sunken box does not read as somewhere you type, so
-       TextBox.field's own soft edge and accent focus ring stand.
-
-       APP-SCOPED rather than window-scoped, because its one consumer - the
-       ribbon's snap increment - can end up inside the collapsed ribbon's
-       flyout, which is a popup and therefore a separate visual root that a
-       Window.Styles rule does not reach. -->
+  <!-- Field on the ribbon's 22px row (the snap increment). App-scoped
+       because it can end up in the ribbon's popup. -->
   <Style Selector="TextBox.field.inline">
     <Setter Property="Height" Value="22" />
     <Setter Property="MinHeight" Value="22" />
     <Setter Property="Padding" Value="5,0" />
   </Style>
 
-  <!-- ___ Command palette _________________________________
-       A float, so it takes the float radius and the strong border every other
-       floating surface here takes. Wider than it looks like it needs: the rows
-       carry a chord on the right, and a palette that wraps a command name is
-       one nobody reads. -->
+  <!-- Command palette. Wide enough for a name plus its chord on one line. -->
   <Style Selector="Border.palette">
     <Setter Property="Width" Value="520" />
     <Setter Property="Background" Value="{StaticResource SpectraBgApp}" />
@@ -1502,22 +1149,14 @@
     <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
   </Style>
 
-  <!-- ON THE TEMPLATE PART, because Fluent paints a ListBoxItem's states on its
-       own ContentPresenter at trigger priority: setting Background on the ITEM
-       reaches the presenter only at TemplateBinding priority and loses, which is
-       the documented trap that left menu items and text boxes in stock fills.
-
-       And a QUIET fill rather than the accent one. Left alone, the selected row
-       arrived as a full-strength brand-red bar - Fluent's stock selection over
-       the SystemAccentColor this theme overrides - which is a different, louder
-       answer to "this row is selected" than the scene tree three panels away
-       gives to the same question. -->
   <Style Selector="TextBlock.palettefoot">
     <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
     <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
     <Setter Property="Margin" Value="8,4,8,2" />
   </Style>
 
+  <!-- Set on the template part: Fluent paints item states on its own
+       ContentPresenter at trigger priority. Same quiet fill as the scene tree. -->
   <Style Selector="ListBox.palettelist ListBoxItem:pointerover /template/ ContentPresenter">
     <Setter Property="Background" Value="{StaticResource SpectraRowHover}" />
   </Style>
@@ -1534,9 +1173,6 @@
     <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
   </Style>
 
-  <!-- The chord, muted and mono: it is a VALUE, and this shell reserves mono
-       for values. Printing it beside the name is the whole reason a palette
-       teaches the keyboard rather than replacing it. -->
   <Style Selector="TextBlock.palettechord">
     <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
     <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
@@ -1544,10 +1180,7 @@
     <Setter Property="Margin" Value="12,0,0,0" />
   </Style>
 
-  <!-- ___ Checkbox ________________________________________
-       Fluent's stock box is 20px with a system-accent fill; at 20 it is the
-       tallest thing in a 24px inspector row and it arrives in whatever colour
-       the machine's personalisation settings chose. -->
+  <!-- Checkbox. Fluent's stock box is 20px, too tall for a 24px inspector row. -->
   <Style Selector="CheckBox">
     <Setter Property="MinHeight" Value="0" />
     <Setter Property="Padding" Value="0" />
@@ -1560,10 +1193,8 @@
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
     <Setter Property="BorderThickness" Value="1" />
   </Style>
-  <!-- Pinned per state: the stateless rule above is Style priority and loses
-       to Fluent's unchecked :pointerover/:pressed part triggers, so hovering
-       an unchecked box flashed the stock fill. The row's own hover is the
-       affordance; the box holds still. -->
+  <!-- Repeated per state: the rule above loses to Fluent's :pointerover and
+       :pressed part triggers. -->
   <Style Selector="CheckBox:pointerover /template/ Border#NormalRectangle">
     <Setter Property="Background" Value="{StaticResource SpectraBgInput}" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
@@ -1581,7 +1212,6 @@
     <Setter Property="Fill" Value="#FFFFFF" />
   </Style>
 
-  <!-- ___ Combo ___________________________________________ -->
   <Style Selector="ComboBox">
     <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
     <Setter Property="MinHeight" Value="{StaticResource SpectraFieldHeight}" />
@@ -1600,10 +1230,8 @@
     <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
   </Style>
 
-  <!-- ___ Page buttons ____________________________________
-       The one filled-accent button in the shell, and the fill is
-       SpectraAccentRest rather than the brand red: white on #E33A3A is 4.3:1
-       and fails AA at 13px. The brighter red is the hover, not the rest. -->
+  <!-- The one filled-accent button. Rests on SpectraAccentRest: white on the
+       brighter accent fails AA. -->
   <Style Selector="Button.primary">
     <Setter Property="Height" Value="32" />
     <Setter Property="MinWidth" Value="150" />
@@ -1632,10 +1260,8 @@
   <Style Selector="Button.primary:pointerover">
     <Setter Property="Foreground" Value="#FFFFFF" />
   </Style>
-  <!-- String Content materialises as a plain TextBlock, which the global
-       TextBlock style then paints body-grey at Style priority - the filled
-       accent button was showing ~2.8:1 grey-on-red instead of the white the
-       AA rationale in Tokens.axaml is built on. -->
+  <!-- String content becomes a TextBlock, which the global TextBlock style
+       would paint body grey. -->
   <Style Selector="Button.primary TextBlock">
     <Setter Property="Foreground" Value="#FFFFFF" />
   </Style>
@@ -1680,9 +1306,6 @@
     <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
   </Style>
 
-  <!-- ___ Scrollbars ______________________________________
-       Fluent's default light thumb on a near-black panel is the single
-       loudest "stock theme" tell in the window. -->
   <Style Selector="ScrollBar:vertical">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Width" Value="10" />
@@ -1701,33 +1324,21 @@
   <Style Selector="ScrollBar /template/ Thumb:pointerover">
     <Setter Property="Background" Value="#3AFFFFFF" />
   </Style>
-  <!-- Without this Fluent's :pressed trigger wins mid-drag - the thumb went
-       stock exactly while the user was staring at it. -->
+  <!-- Without this Fluent's :pressed trigger wins mid-drag. -->
   <Style Selector="ScrollBar /template/ Thumb:pressed">
     <Setter Property="Background" Value="#50FFFFFF" />
   </Style>
 
-  <!-- ___ Splitter ________________________________________
-       A hairline whose HIT AREA is wider than its ink. The old one was a 1px
-       target: the style changed colour on hover, which nobody ever saw, because
-       landing on a one-pixel column is not something a hand does.
-
-       AND THEN NOBODY SAW THE WIDE ONE EITHER. The splitters in MainWindow set
-       Background="Transparent" inline to make the wide band hit-testable, and a
-       local value outranks a style trigger, so this :pointerover rule has never
-       fired since the day the wide target was introduced - on the two controls
-       in the window a user drags most. The transparent fill now comes from the
-       base style below, where the trigger can beat it, and the visible ink is a
-       separate 1px child so the hit area and the line can differ. -->
+  <!-- Splitter: hit area wider than its ink. The transparent fill is set here,
+       not inline on the control, because a local value outranks style
+       triggers. The visible line is a separate 1px child. -->
   <Style Selector="GridSplitter">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="MinWidth" Value="0" />
   </Style>
 
-  <!-- The ink. IsHitTestVisible is False so the wide splitter behind it still
-       gets the pointer; the .hot class is written by the splitter's own
-       enter/exit and drag events, because a child cannot see its parent's
-       pseudo-classes from a selector. -->
+  <!-- .hot is set from the splitter's pointer and drag events in code: a
+       child can't select on its parent's pseudo-classes. -->
   <Style Selector="Border.splitink">
     <Setter Property="Background" Value="{StaticResource SpectraBorderStrong}" />
     <Setter Property="IsHitTestVisible" Value="False" />
@@ -1743,7 +1354,6 @@
     <Setter Property="Background" Value="{StaticResource SpectraAccent}" />
   </Style>
 
-  <!-- ___ Tree ____________________________________________ -->
   <Style Selector="TreeView">
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
@@ -1757,11 +1367,7 @@
     <Setter Property="BorderThickness" Value="0" />
   </Style>
 
-  <!-- ___ Focus ___________________________________________
-       Fluent's stock adorner is a hard white rectangle, which on a near-black
-       row reads as a rendering fault and is the single loudest "default theme"
-       tell left in the window. It is replaced rather than removed: keyboard
-       focus has to remain visible, it just has to belong to this palette. -->
+  <!-- Focus ring in the accent, replacing Fluent's white rectangle. -->
   <Style Selector="TreeViewItem">
     <Setter Property="FocusAdorner">
       <FocusAdornerTemplate>
@@ -1783,21 +1389,11 @@
     </Setter>
   </Style>
 
-  <!-- A pressed toolbar button keeps its own focus ring off: a ring drawn
-       around a segment inside a capsule is a rectangle inside a rectangle one
-       pixel apart, which reads as a rendering fault rather than as focus. -->
+  <!-- No ring on a segment: it would sit one pixel inside the capsule's border. -->
   <Style Selector="Button.seg">
     <Setter Property="FocusAdorner" Value="{x:Null}" />
   </Style>
 
-  <!-- ___ Tooltips ________________________________________
-       An overlay, so it is the one thing here allowed to look raised: a
-       lighter surface and a real border, since a drop shadow on near-black
-       is invisible and the usual compensation (a 40px blur) reads as a
-       smudge.
-
-       A tooltip is PROSE plus a key name, so it is set in the UI face and the
-       shortcut inside it wears mono. -->
   <Style Selector="ToolTip">
     <Setter Property="Background" Value="{StaticResource SpectraBgRaised}" />
     <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderStrong}" />

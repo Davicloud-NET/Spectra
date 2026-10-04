@@ -8,43 +8,17 @@ using SpectraEngine.Core.Maps.Compiled;
 namespace Spectra.Kitchen.Maps;
 
 /// <summary>
-/// Emits one section's body into the file, having already declared how long it
-/// will be.
+/// Writes one section's body. Must write the number of bytes that was declared.
 /// </summary>
-/// <param name="stream">Where the body goes. Write exactly the declared number of bytes.</param>
 public delegate void ScmapSectionBodyWriter(Stream stream);
 
 /// <summary>
-/// Writes a <c>.scmap</c> container: the header, the section table and the section
-/// bodies, with nothing above the container in it.
+/// Writes a <c>.scmap</c> container: the header, the section table and the
+/// section bodies.
 /// </summary>
-/// <remarks>
-/// <para><b>Writers live in this assembly and only here</b>, so no shipped game
-/// binary carries map-baking code. The engine's side of the format is the format
-/// types and the reader, in <c>SpectraEngine.Core.Maps.Compiled</c>, and they
-/// share every constant: a size or an offset spelled twice is the failure this
-/// whole family of formats already records.</para>
-/// <para><b>A section declares its length and then writes it, and the writer
-/// checks both statements.</b> That shape is not incidental: a chunk mesh blob is
-/// the biggest thing in a compiled map and wants to be streamed out of the
-/// compiled artifacts rather than materialised whole in a byte array first, so the
-/// size has to be knowable before the bytes exist. Two statements can disagree, so
-/// every section boundary is asserted twice, once that the stream is where the
-/// layout said it would be and once that the body wrote what it declared, and both
-/// refusals NAME THE SECTION. A file whose sections landed one byte off parses
-/// into different numbers than it was written from, with an arbitrary symptom
-/// somewhere else entirely.</para>
-/// <para><b>Padding is written, never seeked over.</b> A seek past the end of a
-/// stream leaves the gap holding whatever the filesystem gives back, which on most
-/// filesystems is zeros and on none of them is a promise. Byte identity between
-/// two cooks is the property this format is graded on, and an unwritten gap is how
-/// it fails in a way that is very hard to bisect.</para>
-/// <para><b>Two four-character codes are refused by name.</b> <c>RGNI</c> and
-/// <c>BMDL</c> are reserved with no producer, and a cook that emitted either would
-/// spend a code the format has already promised to something else. The refusal is
-/// here rather than in a review comment because the reader treats both as unknown
-/// sections and steps over them, so nothing downstream would ever notice.</para>
-/// </remarks>
+// A section declares its size before its bytes exist, so a large body can be
+// streamed. Write checks every section against the layout. Padding is written
+// as zeros, never seeked over.
 public sealed class ScmapWriter
 {
     private readonly List<PendingSection> _sections = [];
@@ -53,14 +27,10 @@ public sealed class ScmapWriter
     private readonly uint _mapFormatVersion;
 
     /// <summary>Creates a writer.</summary>
-    /// <param name="flags">What optional content the cook put in the file.</param>
-    /// <param name="sourceMapDigest">
-    /// <c>XxHash128</c> of the source bundle's canonical enumeration. See
-    /// <see cref="MapBundleDigest"/>.
-    /// </param>
+    /// <param name="sourceMapDigest">See <see cref="MapBundleDigest"/>.</param>
     /// <param name="mapFormatVersion">
-    /// The authored map grammar the bake read. Informational: a load never gates
-    /// on it, because the authored map is not present at runtime.
+    /// The authored map format version the bake read. Informational; a load does
+    /// not check it.
     /// </param>
     public ScmapWriter(ScmapFlags flags, UInt128 sourceMapDigest, uint mapFormatVersion)
     {
@@ -69,14 +39,10 @@ public sealed class ScmapWriter
         _mapFormatVersion = mapFormatVersion;
     }
 
-    /// <summary>How many sections have been added.</summary>
+    /// <summary>Number of sections added.</summary>
     public int Count => _sections.Count;
 
     /// <summary>Adds a section whose body is already in hand.</summary>
-    /// <remarks>
-    /// Expressed through the declaring overload rather than beside it, so there is
-    /// one write path and the assert covers both ways in.
-    /// </remarks>
     public void AddSection(uint kind, ReadOnlySpan<byte> body)
     {
         byte[] copy = body.ToArray();
@@ -85,14 +51,14 @@ public sealed class ScmapWriter
 
     /// <summary>
     /// Adds a section that declares its length now and writes its bytes later.
+    /// Throws for a reserved code or one already added.
     /// </summary>
-    /// <exception cref="ArgumentException">The code is reserved, or already added.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">The declared size is negative.</exception>
     public void AddSection(uint kind, long bodySize, ScmapSectionBodyWriter write)
     {
         ArgumentNullException.ThrowIfNull(write);
         ArgumentOutOfRangeException.ThrowIfNegative(bodySize);
 
+        // A reader skips unknown codes, so nothing downstream would catch these.
         if (kind == ScmapFormat.RegionIndexSection || kind == ScmapFormat.BrushModelSection)
         {
             throw new ArgumentException(
@@ -121,14 +87,9 @@ public sealed class ScmapWriter
     }
 
     /// <summary>
-    /// Writes the file. Leaves the writer unchanged, so a second call produces
-    /// byte-identical output.
+    /// Writes the file. Can be called again for identical output. Throws if a
+    /// section writes a different number of bytes than it declared.
     /// </summary>
-    /// <exception cref="PlatformNotSupportedException">The machine is big-endian.</exception>
-    /// <exception cref="InvalidOperationException">
-    /// A section did not land where the layout put it, or wrote a different number
-    /// of bytes than it declared.
-    /// </exception>
     public void Write(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
@@ -171,11 +132,7 @@ public sealed class ScmapWriter
             region.Write(sectionBytes);
         }
 
-        // The table is a whole number of 32-byte records after a 64-byte header,
-        // so this gap is always zero today. It is written anyway, because the
-        // layout is what decides where the first section starts and a writer that
-        // assumed the two agreed would be the second expression of that
-        // arithmetic.
+        // Zero bytes today; the layout decides where the first section starts.
         long firstBody = _sections.Count > 0 ? layout.OffsetAt(0) : layout.TotalSize;
         region.WriteZeros(firstBody - region.Position);
 
@@ -219,16 +176,7 @@ public sealed class ScmapWriter
 
     private readonly record struct PendingSection(uint Kind, long BodySize, ScmapSectionBodyWriter Write);
 
-    /// <summary>
-    /// The stream a section body writes into: a forwarding wrapper that counts.
-    /// </summary>
-    /// <remarks>
-    /// A wrapper rather than <c>stream.Position</c>, because the destination is
-    /// not required to be seekable and a cook that worked against a file and threw
-    /// against a pipe would be a difference nobody would find until CI. Counting
-    /// here is also what lets the writer measure a body a producer wrote directly,
-    /// which is the whole point of the declaring overload.
-    /// </remarks>
+    // Counts bytes itself: the destination stream may not be seekable.
     private sealed class RegionStream(Stream inner) : Stream
     {
         private static readonly byte[] Zeros = new byte[ScmapFormat.PayloadAlignment];

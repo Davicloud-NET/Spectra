@@ -7,8 +7,6 @@ namespace SpectraEngine.Core.Graphics.D3D11;
 
 internal sealed unsafe class D3D11Mesh : Mesh
 {
-    // Allocated once; the semantic strings are immutable interned UTF-8 spans
-    // so InputElementDesc can hold pointers to them across the layout call.
     private static readonly byte[] TexcoordSemantic = new byte[] { (byte)'T', (byte)'E', (byte)'X', (byte)'C', (byte)'O', (byte)'O', (byte)'R', (byte)'D', 0 };
 
     private readonly ComPtr<ID3D11Buffer> _vertexBuffer;
@@ -17,7 +15,6 @@ internal sealed unsafe class D3D11Mesh : Mesh
     private readonly uint _stride;
     private bool _disposed;
 
-    // Cached for the immediate context, set in Create.
     private readonly ComPtr<ID3D11DeviceContext> _context;
 
     private D3D11Mesh(
@@ -57,8 +54,7 @@ internal sealed unsafe class D3D11Mesh : Mesh
             for (int i = 0; i < attributes.Length; i++)
                 stride += attributes[i].ComponentCount * sizeof(float);
 
-            // GetImmediateContext hands out a counted reference like any Create*
-            // call, so it is Own'd (not wrapped) and released by Dispose below.
+            // GetImmediateContext returns a counted reference.
             ID3D11DeviceContext* ctxPtr = null;
             ((ID3D11Device*)device.Handle)->GetImmediateContext(&ctxPtr);
             ctx = ComOwnership.Own(ctxPtr);
@@ -101,8 +97,7 @@ internal sealed unsafe class D3D11Mesh : Mesh
         ReadOnlySpan<VertexAttribute> attributes,
         ReadOnlyMemory<byte> vsBytecode)
     {
-        // SpectraShade's HLSL generator emits vertex inputs as TEXCOORD0..N,
-        // where N is the attribute's Location. Match that exactly here.
+        // SpectraShade emits vertex inputs as TEXCOORDn, n being the Location.
         Span<InputElementDesc> elements = stackalloc InputElementDesc[attributes.Length];
 
         fixed (byte* semName = TexcoordSemantic)
@@ -177,8 +172,7 @@ internal sealed unsafe class D3D11Mesh : Mesh
 
         var ctx = (ID3D11DeviceContext*)_context.Handle;
 
-        // Two buffers into two slots, described by the instance buffer's
-        // combined layout rather than this mesh's slot-0-only one.
+        // Uses the instance buffer's two-slot layout, not this mesh's.
         ID3D11Buffer** buffers = stackalloc ID3D11Buffer*[2];
         buffers[0] = (ID3D11Buffer*)_vertexBuffer.Handle;
         buffers[1] = d3d.Buffer;
@@ -192,10 +186,8 @@ internal sealed unsafe class D3D11Mesh : Mesh
         ctx->IASetPrimitiveTopology(D3DPrimitiveTopology.D3D11PrimitiveTopologyTrianglelist);
         ctx->DrawIndexedInstanced(range.IndexCount, (uint)instanceCount, range.FirstIndex, range.BaseVertex, (uint)firstInstance);
 
-        // Slot 1 is left bound, which is harmless for a draw that ignores it but
-        // not for the debug layer: an input layout naming only slot 0 with a
-        // stale buffer still bound is a warning per draw into the same info
-        // queue the engine reads for real errors.
+        // Unbind slot 1. Left bound, the debug layer warns on every later
+        // non-instanced draw.
         ID3D11Buffer* none = null;
         uint zero = 0;
         ctx->IASetVertexBuffers(VertexAttribute.InstanceSlot, 1, &none, &zero, &zero);
@@ -205,10 +197,6 @@ internal sealed unsafe class D3D11Mesh : Mesh
     {
         if (_disposed) return;
         _disposed = true;
-        // Every one of these owns exactly one reference (see ComOwnership), so
-        // disposing here is what actually frees the GPU memory — and it has to
-        // happen, because the static-world recompile destroys and recreates
-        // chunk meshes continuously while brushes are edited.
         _inputLayout.Dispose();
         _indexBuffer.Dispose();
         _vertexBuffer.Dispose();

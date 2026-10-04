@@ -5,37 +5,15 @@
              x:DataType="shell:ShellModel">
 
   <!--
-    THE BUILD PAGE: everything that changes the level, and nothing that changes
-    only how you look at it. That is the axis the two pages divide on, and it is
-    what makes switching between them worth a click.
+    Build page: everything that changes the level.
 
-    A SIZE HIERARCHY, WHICH THE FIRST VERSION OF THIS PAGE HAD NONE OF. Twenty
-    controls, all Button.seg at 26px, so "insert a block" and "step the snap
-    increment" were the same object at the same weight and nothing on the
-    surface said what it was for. Now: the things a level is MADE of get large
-    buttons with a 32px glyph, and everything that operates on what is already
-    there is a small row beside them, three to a column. That is Office's own
-    arrangement and it is the whole point of a ribbon over a toolbar.
-
-    NO CAPSULES. Each group used to be a raised box; a ribbon group in Office is
-    delimited by a rule and a caption, not by a frame, and the capsules were
-    exactly the grey blobs the surface was reported as. What says a large button
-    is pressable now is that it is a 32px glyph over a word, and that it lifts
-    under the cursor.
-
-    Every control's Tag is its roster id and one handler resolves it, so no verb
-    lives in a click handler. The page checks its own tree against RibbonLayout
-    at construction - both that the ids match AND that each control wears the
-    class its declared kind requires, so a check row quietly drawn as a plain
-    button refuses the window rather than shipping with no lit state.
+    Each control's Tag is its roster id. The page checks its tree against
+    RibbonLayout at construction: ids, and the class each control kind requires.
   -->
 
   <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
 
-    <!-- FIRST GROUP OF THE DEFAULT PAGE, and that placement is deliberate: a
-         new user's first question is how to put something in the world. The
-         four large glyphs wear the node-kind tints, which is the first time
-         that palette has been spent anywhere but a 15px tree glyph. -->
+    <!-- Insert stays the first group of the default page. A test holds it. -->
     <StackPanel Classes="ribbongroup">
       <StackPanel Classes="rrow" Orientation="Horizontal" Spacing="1">
         <Button Classes="rbig" Tag="insert.block" Click="OnRibbonItemClick"
@@ -86,7 +64,6 @@
           </Panel>
         </Button>
 
-        <!-- The two that place something INTO one of the four beside them. -->
         <StackPanel Classes="rcol">
           <Button Classes="rsmall" Tag="insert.panel" Click="OnRibbonItemClick"
                   IsEnabled="{Binding !IsPlaying}"
@@ -105,10 +82,8 @@
             </StackPanel>
           </Button>
         </StackPanel>
-        <!-- THE SPLIT BUTTON. Two real Buttons in one frame, divided by the
-             caret band's own top hairline, so each half gets its own hover and
-             its own tooltip. Only the main half carries a Tag: the caret names
-             no verb, it opens a list, and the roster describes verbs. -->
+        <!-- Split button: two Buttons. Only the main half carries a Tag. The
+             caret opens a list and posts no verb, so the validator skips it. -->
         <StackPanel Classes="rsplit" Orientation="Horizontal">
           <Button Classes="rbig" Tag="insert.entity"
                   x:Name="EntityInsert" Click="OnRibbonItemClick"
@@ -133,11 +108,8 @@
 
     <Border Classes="ribbonrule" />
 
-    <!-- The live tool is the most-read state on this surface, so it takes the
-         second set of large buttons and lights amber like every other "this one
-         is running" in the shell. The two-way choices stay chips showing their
-         current word: "world" is not the enabled state of "local", so a lit
-         icon could not say which of the two is current. -->
+    <!-- Two-way choices are chips showing the current word, not lit icons:
+         "world" is not the on state of "local". -->
     <StackPanel Classes="ribbongroup">
       <StackPanel Classes="rrow" Orientation="Horizontal" Spacing="1">
         <Button Classes="rbig rtoggle" Tag="tool.move" Classes.active="{Binding IsMoveActive}"
@@ -197,9 +169,6 @@
 
     <Border Classes="ribbonrule" />
 
-    <!-- A check row over a field with a stepper pair, which is Office's spinner
-         and is what these two verbs have always been: [ and ] step one number,
-         and two arrows against the box holding it say so without a word. -->
     <StackPanel Classes="ribbongroup">
       <StackPanel Classes="rrow" Orientation="Horizontal">
         <StackPanel Classes="rcol">
@@ -220,8 +189,7 @@
                      ToolTip.Tip="Grid size for the live tool. [ and ] step it." />
             <TextBlock Classes="label" Text="{Binding SnapUnitLabel}" MinWidth="20"
                        VerticalAlignment="Center" />
-            <!-- Coarser is up and finer is down, which is which way the NUMBER
-                 goes rather than which way the grid feels. -->
+            <!-- Up is coarser: it follows the number, not the grid density. -->
             <StackPanel VerticalAlignment="Center">
               <Button Classes="rspin up" Tag="snap.coarser" Click="OnRibbonItemClick"
                       ToolTip.Tip="Step every snap increment one rung coarser.  ]">
@@ -240,10 +208,6 @@
 
     <Border Classes="ribbonrule" />
 
-    <!-- The four verbs that LEFT the one-row bar because they were four
-         anonymous glyphs in a row. Duplicate leads at full size because it is
-         the one of the five somebody reaches for repeatedly; the other four
-         pair up, destructive beside destructive. -->
     <StackPanel Classes="ribbongroup">
       <StackPanel Classes="rrow" Orientation="Horizontal" Spacing="1">
         <Button Classes="rbig" Tag="edit.duplicate" Click="OnRibbonItemClick"

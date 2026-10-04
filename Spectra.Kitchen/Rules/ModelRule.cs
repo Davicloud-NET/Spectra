@@ -10,82 +10,18 @@ namespace Spectra.Kitchen.Rules;
 
 /// <summary>
 /// Turns an authored glTF or GLB into a <c>.smodel</c>: one vertex buffer, one
-/// index buffer, submeshes as index ranges, materials named by path.
+/// index buffer, submeshes as index ranges, materials named by path. Node
+/// transforms are baked into the vertices, so the cooked model has no hierarchy.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>What this buys at runtime is that a shipped game imports nothing.</b> A
-/// loose model costs a JSON parse, an accessor walk per attribute, a
-/// de-interleave, a triangulation and - through <c>ModelImporter</c> - a 5.8 MB
-/// native library in the payload; the cooked form arrives as the exact float
-/// array <c>CreateMesh</c> takes, already in the engine's own layout, already in
-/// the model's own space. What it does not buy is a copy-free upload: see
-/// <c>CookedModelData</c> for why the loader still gathers per submesh, and for
-/// what would remove that.
-/// </para>
-/// <para>
-/// <b>The node hierarchy is spent at cook time and the model comes out
-/// FLAT.</b> A <c>.smodel</c> has one vertex buffer and no hierarchy section, so
-/// each node's accumulated transform is baked into the vertices it places and a
-/// mesh two nodes reference becomes two submeshes. The cooked model's bounds are
-/// then the same box the loose importer computes over its whole hierarchy, and
-/// the visible difference is that instantiating a cooked prop produces one node
-/// rather than the subtree the source file drew. That is stated rather than
-/// hidden, because it is the one thing about a cooked model that is not simply
-/// the loose one arriving faster.
-/// </para>
-/// <para>
-/// <b>A material reference is a PATH the cook resolved, and a model that names
-/// no authored material says so.</b> <c>SUBM</c> stores a logical asset path, so
-/// the only thing a cooked submesh can point at is a <c>.spectramat</c> that
-/// exists - and an exporter writes its surface inline, as a base colour texture
-/// and a factor, which the format has no field for. The lookup is
-/// <see cref="ModelMaterialOverride"/>, the SAME function
-/// <c>AssetManager</c> asks at load, so a cooked reference and a loose override
-/// cannot be two different files. What is missing is reported as SC3002, soft,
-/// because the author's model is valid and the limitation is the format's.
-/// </para>
-/// <para>
-/// <b>Every read and every probe goes through <see cref="IRuleContext"/>,
-/// sidecar buffers included.</b> A <c>.gltf</c> beside a <c>.bin</c> is the
-/// ordinary export, and reading that <c>.bin</c> any other way would be an input
-/// the rule did not declare - so the dependency set would be smaller than the
-/// accessed set, and editing the geometry would not re-cook the model. The
-/// material probes are recorded for the mirror reason: authoring the
-/// <c>.spectramat</c> that was missing has to re-cook exactly the models that
-/// looked for it.
-/// </para>
-/// <para>
-/// <b>A file the reader refuses is reported and emits nothing.</b> Falling back
-/// to a raw copy would be worse than failing: the pack would carry a broken glTF
-/// under a path the engine resolves, a shipped build would hand it to an importer
-/// it does not link, and the build log would say a model cooked.
-/// </para>
-/// </remarks>
 public sealed class ModelRule : IRule
 {
     /// <inheritdoc/>
     public RuleKind Kind => RuleKind.Model;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Raise this whenever the bytes this rule emits for one source can change: a
-    /// different vertex layout, a change to the container, a different rule for
-    /// which node transforms are baked. <c>EngineInfo.ModelFormatVersion</c> and
-    /// <c>GeometryFormatVersion</c> are not covered by it - a reader enforces
-    /// those instead.
-    /// </remarks>
     public int Version => 1;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// None, and it is a real answer. Geometry does not vary with the profile:
-    /// there is no search here, no quality knob and nothing to trade, so
-    /// declaring the profile would re-cook a project's whole prop library on a
-    /// <c>--profile fast</c> run for bytes that cannot differ. It does not vary
-    /// with the target list either, since a vertex buffer is the same buffer on
-    /// every backend.
-    /// </remarks>
     public CookSettingKeys SettingsRead => CookSettingKeys.None;
 
     /// <summary>Whether <paramref name="contentPath"/> is a model this rule cooks.</summary>
@@ -137,11 +73,6 @@ public sealed class ModelRule : IRule
             for (int at = 0; at < submesh.Indices.Length; at++)
                 indices.Add(submesh.Indices[at] + vertexBase);
 
-            // Every submesh is a contiguous run of both buffers, which is not a
-            // property the FORMAT promises and is what makes the loader's slice
-            // exact rather than merely correct. Recorded here rather than
-            // asserted at load, where a file another cooker wrote would fail an
-            // assertion it never agreed to.
             submeshes.Add(new SmodelSubmeshSpec(
                 start,
                 (uint)submesh.Indices.Length,
@@ -160,10 +91,7 @@ public sealed class ModelRule : IRule
         }
         catch (ArgumentException ex)
         {
-            // The writer measures everything it is handed against the format's
-            // own limits, so this is the reader producing something the container
-            // cannot hold. Reported rather than thrown, because a cook must name
-            // the asset that broke rather than stopping at SC1004.
+            // Report, don't throw, so the diagnostic names the asset.
             context.Report(CookDiagnostic.Error(
                 CookDiagnosticCodes.ModelEncodeFailed,
                 $"'{context.SourcePath}' produced a model the container cannot hold: {ex.Message}",
@@ -175,17 +103,13 @@ public sealed class ModelRule : IRule
         context.Emit(ModelContentPath.CookedPathFor(context.SourcePath), cooked, PackEntryKind.Model);
     }
 
-    // The rule's own view of a sidecar buffer. Probed before the read rather than
-    // catching the miss, because RuleInputMissingException is how a rule STOPS
-    // and this one wants to report SC3001 naming the buffer instead. Both calls
-    // record, and the context folds the pair into one dependency.
+    // Sidecar .bin. Probe first so a miss returns null and the reader can name
+    // the buffer, where Read would throw.
     private static byte[]? ReadBuffer(IRuleContext context, string contentPath) =>
         context.Probe(contentPath) ? context.Read(contentPath) : null;
 
-    // One path per material slot, index-aligned with the file's own table. Only
-    // slots a submesh actually draws with are looked up: an exporter routinely
-    // emits materials nothing references, and reporting those as unauthored would
-    // ask an author to write files for surfaces that are not in the model.
+    // Index-aligned with the file's material table. Only slots a submesh draws
+    // with are looked up: exporters often emit materials nothing references.
     private static string?[] ResolveMaterials(IRuleContext context, GltfModel model)
     {
         var paths = new string?[model.Materials.Count];

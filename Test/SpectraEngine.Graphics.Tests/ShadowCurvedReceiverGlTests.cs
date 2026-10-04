@@ -9,88 +9,14 @@ using System.Numerics;
 namespace SpectraEngine.Graphics.Tests;
 
 /// <summary>
-/// A lone sphere must not shadow itself along its terminator, and the harness
-/// discipline that measuring it depends on.
+/// A lone sphere must not shadow itself along its terminator.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>An earlier version of this file measured ITSELF, and the defect it found
-/// that way turned out to be a real one.</b> The G-buffer is sized to the WINDOW
-/// and deliberately never follows the frame target (following it resizes the
-/// G-buffer mid-command-list, which on D3D12 releases a resource the open list
-/// still references). A deferred render into a differently sized target
-/// therefore read a depth measured at one sample position while reconstructing
-/// along the ray of another, which slid the world position along the surface and
-/// produced false self-shadowing of <b>369 at a 96 probe, 207 at 128, 420 at 256
-/// and 489 at 512, all against a 64x64 G-buffer</b>, where a matched pair read
-/// 45. The light pass now snaps its G-buffer reads to a texel centre and derives
-/// clip-space xy from that same point, which is exactly a no-op when the sizes
-/// match; both sizes now measure 0. The tests still drive the framebuffer latch,
-/// because a measurement that lets the two drift is not measuring the renderer.
-/// </para>
-/// <para>
-/// <b>The defect this was written for, measured with the two matched.</b> Worst
-/// darkening of a lone sphere, shadows on against off, before the fix: <b>45 at
-/// 64, 66 at 128, 90 at 256, 102 at 512 and 102 at 1024</b> - it converges, so
-/// 102 of a possible 765 was the artifact's true size rather than a sampling
-/// accident. The shape was a thin arc along the terminator, a few pixels wide,
-/// which is what the report of mottling on the demo's PBR spheres looked like.
-/// </para>
-/// <para>
-/// <b>THE FIX: the slope-scaled raster bias has to cover the FILTER'S
-/// FOOTPRINT, and the value it shipped with covered one texel.</b> A tap does
-/// not compare the receiver against its own texel but against one up to
-/// <c>FilterRadius</c> away plus the texel the bilinear weighting straddles, so
-/// the bias must span the depth change across all of that. The smallest slope
-/// term leaving zero false self-shadowing, swept against filter radius: radius
-/// 0, 0.4 and 0.8 need 6; radius 1.2 (the default) needs 8; radius 2 needs 10;
-/// radius 3 needs 14. The shipped 2.5 was below what even a zero-radius filter
-/// needs. <b>Widening the filter without raising the bias brings this straight
-/// back</b>, which is why the two are documented against each other on
-/// <c>ShadowMap.RasterBias</c>.
-/// </para>
-/// <para>
-/// <b>The depth pass is innocent.</b> <c>ShadowStrength = 0</c> makes
-/// <c>ShadowFactor</c> return 1.0 on its first line while the depth pass still
-/// runs in full, and that reads a drop of 0 at every size. The whole effect is in
-/// the lookup.
-/// </para>
-/// <para>
-/// <b>The filter sweep is the evidence for the mechanism.</b> Worst darkening
-/// against <c>FilterRadius</c> at the shipped bias: 45, 45, 69, 102, 162, 258 at
-/// radius 0, 0.4, 0.8, 1.2, 2 and 3. A wider filter reaches further across a
-/// grazing surface and the artifact grows with it, monotonically. An earlier
-/// sweep appeared to show the opposite and was used to rule this out; it was
-/// taken on the mismatched harness above and measured nothing.
-/// </para>
-/// <para>
-/// <b>What the lookup is doing, established by replaying it on the CPU against
-/// the real depth atlas and the real matrices</b> (that analysis touches no
-/// G-buffer, so the harness fault above does not reach it). Sampling the exact
-/// triangles of the sphere, at points on facets whose own plane faces the light
-/// and which are therefore present in the map: a SINGLE-TEXEL comparison is
-/// clean at all 2080 of them, and the filter's own neighbourhood falsely shadows
-/// <b>243</b>, worst factor 0.526. So the tap offset is the mechanism, not the
-/// bias.
-/// </para>
-/// <para>
-/// <b>Receiver-plane depth bias is the textbook answer and it did NOT work
-/// here.</b> Implemented for real (screen-space derivatives of world position,
-/// solved for the receiver's depth gradient, applied per tap; it needed
-/// <c>Math.Ddx</c>/<c>Math.Ddy</c> added to SpectraShade) and measured at 512
-/// with the G-buffer matched, it made the artifact WORSE at every useful
-/// setting: 102 with the correction disabled, then 120, 171 and 219 as the
-/// gradient clamp was raised, and only 57 at a clamp of 0.5. Flipping the sign
-/// was uniformly and monotonically worse, which confirms the derivation pointed
-/// the right way. The reason it overshoots is curvature: at 512 one screen pixel
-/// spans about 0.46 shadow texels while the taps sit 1.2 texels out, so a plane
-/// fitted over a one-pixel baseline is extrapolated well past where a curved,
-/// grazing surface still resembles that plane. On the CPU, the same correction
-/// taken from the exact FACET plane removes all 243, and taken from the smooth
-/// shading normal leaves 34 - so the technique is sound and the estimator is
-/// what fails.
-/// </para>
-/// </remarks>
+// The fix is the slope-scaled raster bias, which has to cover the PCF filter's
+// whole footprint. Widening the filter without raising the bias brings the
+// artifact back. Receiver-plane depth bias was tried and made it worse.
+//
+// The G-buffer is sized to the window, not the frame target, so these tests
+// drive the framebuffer latch to keep the two matched.
 [Collection(GlRendererCollection.Name)]
 public sealed class ShadowCurvedReceiverGlTests
 {
@@ -98,25 +24,14 @@ public sealed class ShadowCurvedReceiverGlTests
 
     public ShadowCurvedReceiverGlTests(GlRendererFixture fixture) => _fixture = fixture;
 
-    // The sphere fills the frame, so a band of pixels either side of the
-    // terminator is many pixels wide rather than a handful.
+    // Fills the frame, so the terminator band is many pixels wide.
     private const float Radius = 0.45f;
 
-    // Where the artifact stops growing with resolution. Below this a measurement
-    // understates it: the same scene reads 45 at 64 and 102 from 512 up.
+    // The artifact stops growing with resolution here. Smaller sizes understate it.
     private const int ConvergedSize = 512;
 
-    /// <summary>
-    /// The invariant every measurement in this file stands on, asserted rather
-    /// than assumed.
-    /// </summary>
-    /// <remarks>
-    /// This is the one test here that passes today, and it exists because the
-    /// trap it guards cost a whole investigation: if the G-buffer ever stops
-    /// following the framebuffer latch, the two oracles below silently go back
-    /// to measuring resampling instead of the renderer, and they would still
-    /// produce a plausible-looking number while doing it.
-    /// </remarks>
+    // The other two tests depend on this: with the sizes mismatched they would
+    // measure resampling and still print a plausible number.
     [Fact]
     public void The_gbuffer_follows_the_framebuffer_latch()
     {
@@ -144,11 +59,8 @@ public sealed class ShadowCurvedReceiverGlTests
     [Fact]
     public void A_lit_sphere_is_not_shadowed_by_itself()
     {
-        // The oracle: render the same sphere with shadows on and off, and
-        // compare a block straddling the terminator. A correct shadow map
-        // changes nothing on a lone convex receiver, because there is nothing
-        // else in the scene to cast onto it and its own far side is dark by
-        // Lambert rather than by occlusion.
+        // A lone convex receiver has nothing to cast onto it, so shadows on
+        // and off must match.
         OpenGLRenderer renderer = _fixture.Renderer;
         bool restoreShadows = renderer.ShadowsEnabled;
         renderer.GetFramebufferSize(out int restoreWidth, out int restoreHeight);
@@ -166,10 +78,8 @@ public sealed class ShadowCurvedReceiverGlTests
 
             (int worstX, int worstY, int worstDrop) = WorstDarkening(on, off, ConvergedSize);
 
-            // A tolerance rather than equality: the shadow term multiplies in at
-            // ShadowStrength wherever the filter straddles the terminator, and
-            // the tone-mapped 8-bit read has its own wobble. Acne is a drop far
-            // outside that.
+            // Tolerance for the filter straddling the terminator and 8-bit
+            // rounding. Acne is a far bigger drop.
             worstDrop.ShouldBeLessThan(24,
                 $"a lone sphere darkened by {worstDrop} at ({worstX}, {worstY}) when shadows were " +
                 "turned on; nothing in the scene can cast onto it, so that darkening is the sphere " +
@@ -220,11 +130,8 @@ public sealed class ShadowCurvedReceiverGlTests
         }
     }
 
-    // --- scene ---------------------------------------------------------------
-
-    // One convex receiver, one grazing sun, nothing else. The camera looks along
-    // the light so the terminator runs across the visible face rather than
-    // hiding on the far side.
+    // One sphere, one sun. The camera is placed so the terminator crosses
+    // the visible face.
     private Scene BuildScene(Mesh mesh, SpectraEngine.Core.Graphics.Texture white)
     {
         OpenGLRenderer renderer = _fixture.Renderer;
@@ -238,8 +145,7 @@ public sealed class ShadowCurvedReceiverGlTests
         {
             Position = Vector3.Zero,
             Rotation = Quaternion.Identity,
-            // The demo's own sphere size: Primitives.Sphere is radius 0.5 and
-            // SceneManager scales it 0.9.
+            // The demo's sphere size: radius 0.5 scaled by 0.9.
             Scale = new Vector3(Radius * 2f),
         };
         node.MeshRenderer = new MeshRenderer(mesh, new Material(renderer.DefaultShader)
@@ -251,10 +157,8 @@ public sealed class ShadowCurvedReceiverGlTests
             .SetFloat("uShadingModel", 0f)
             .SetTexture("uDiffuse", 0, white));
 
-        // The DEMO'S OWN sun direction, because the artifact was reported on the
-        // demo. A more grazing light puts the whole visible hemisphere into the
-        // failing band, which reproduces something louder than the defect and
-        // would pass the moment the defect alone was fixed.
+        // The demo's sun direction, where the artifact was seen. A more
+        // grazing light reproduces something louder than that defect.
         var sun = scene.Root.CreateChild("Sun");
         sun.LocalRotation = Light.RotationForDirection(new Vector3(-0.35f, -0.85f, -0.4f));
         sun.Light = new Light
@@ -266,8 +170,6 @@ public sealed class ShadowCurvedReceiverGlTests
 
         return scene;
     }
-
-    // --- rendering -----------------------------------------------------------
 
     private int[,] RenderBlock(int size)
     {
@@ -299,10 +201,6 @@ public sealed class ShadowCurvedReceiverGlTests
         {
             renderer.ProbeTarget = null;
             renderer.DestroyRenderTarget(probe);
-            // Destroyed rather than leaked: this runs several times per test,
-            // and a mesh and texture per render is the kind of drift that makes
-            // a later measurement disagree with an earlier one for no visible
-            // reason.
             renderer.DestroyMesh(mesh);
             renderer.DestroyTexture(white);
             while (renderer.CurrentPipelineName != restorePipeline)
@@ -338,9 +236,8 @@ public sealed class ShadowCurvedReceiverGlTests
         return luma;
     }
 
-    // The largest drop anywhere the surface is still meaningfully lit. Pixels
-    // that are already dark with shadows OFF are skipped: the far side of the
-    // sphere is unlit by Lambert, and a shadow term there proves nothing.
+    // Largest drop where the surface is lit. Pixels already dark with
+    // shadows off are skipped.
     private static (int X, int Y, int Drop) WorstDarkening(int[,] on, int[,] off, int size)
     {
         int worst = 0, worstX = -1, worstY = -1;

@@ -6,44 +6,14 @@ namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
 /// Pairs a <see cref="ShaderProgram"/> with the per-surface parameters used to
-/// draw it. Parameters are stored as typed maps and pushed to the shader in
-/// <see cref="Apply"/>.
+/// draw it. Usually loaded from a <c>.spectramat</c> file, or built in code
+/// with the fluent setters.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Materials are usually loaded from a <c>.spectramat</c> file through
-/// <see cref="Assets.AssetManager.LoadMaterial"/> (see
-/// <see cref="Assets.MaterialParser"/> for the format); building one in code
-/// with the fluent setters is equally valid and is what the built-in fallback
-/// material does.
-/// </para>
-/// <para>
-/// <b>Shader binding order.</b> <see cref="Apply"/> assumes the owning shader is
-/// the one the caller is about to draw with, but deliberately does not call
-/// <see cref="ShaderProgram.Use"/> itself: the OpenGL pipelines bind first and
-/// then set uniforms, while the D3D pipelines stage uniforms into a constant
-/// buffer that <c>Use</c> flushes, so they set first and bind afterwards. That
-/// divergence lives in the pipelines on purpose — do not "fix" it here.
-/// </para>
-/// <para>
-/// <b>Every parameter the shader reads must be set here.</b> <see cref="Apply"/>
-/// pushes exactly what this material declares and nothing else, and uniform
-/// state survives between draws on every backend (OpenGL keeps it on the program
-/// object; the D3D backends keep a persistent constant-buffer shadow). A
-/// parameter this material omits therefore keeps whatever the previously drawn
-/// material left in it — and on the first draw of a frame keeps the backend's
-/// zero initialisation, which for a colour means the surface renders black.
-/// Materials built by <see cref="Assets.AssetManager"/> are seeded with the
-/// built-in shader's parameters before the file's own are applied, so an
-/// omission in a <c>.spectramat</c> is safe; a material built in code against a
-/// custom shader has to set that shader's parameters itself.
-/// </para>
-/// <para>
-/// <b>Cost.</b> Applying a material is allocation-free: every map is enumerated
-/// through a struct enumerator, and a texture binding resolves with a field
-/// read. It runs once per draw call, every frame.
-/// </para>
-/// </remarks>
+// Apply does not call ShaderProgram.Use. GL binds first and then sets uniforms,
+// D3D sets first and Use flushes, so the pipelines own the order.
+// Uniform state survives between draws, so a parameter a material leaves out
+// keeps the previous draw's value. A material built in code must set every
+// parameter its shader reads.
 public sealed class Material
 {
     private readonly Dictionary<string, float> _floats = new();
@@ -52,38 +22,25 @@ public sealed class Material
     private readonly Dictionary<string, Vector4> _vec4 = new();
     private readonly Dictionary<string, TextureBinding> _textures = new();
 
-    /// <summary>
-    /// Creates a material drawn with <paramref name="shader"/>. Null is allowed
-    /// and means "not drawable yet" — the fallback material is built before a
-    /// renderer (and therefore before any shader) exists, and a material whose
-    /// shader failed to resolve must still be a usable object rather than a null
-    /// reference waiting to be dereferenced in the draw loop.
-    /// </summary>
+    /// <summary>Creates a material drawn with <paramref name="shader"/>. Null means not drawable yet.</summary>
     public Material(ShaderProgram? shader)
     {
         Shader = shader;
     }
 
-    /// <summary>
-    /// The program this material draws with, or null when none could be
-    /// resolved — pipelines skip such an item instead of throwing mid-frame.
-    /// Assigned by the asset manager once a renderer is attached.
-    /// </summary>
+    /// <summary>The program this material draws with. Pipelines skip a material with none.</summary>
     public ShaderProgram? Shader { get; internal set; }
 
-    /// <summary>Human-readable name, used in logs and (later) editor UI.</summary>
+    /// <summary>Name for logs and editor UI.</summary>
     public string Name { get; set; } = "unnamed";
 
-    /// <summary>
-    /// Content-root-relative path this material was loaded from, or null when it
-    /// was built in code.
-    /// </summary>
+    /// <summary>Content-relative path this material was loaded from, or null when built in code.</summary>
     public string? SourcePath { get; internal set; }
 
-    /// <summary>Number of scalar/vector parameters this material pushes.</summary>
+    /// <summary>Number of scalar and vector parameters.</summary>
     public int ParameterCount => _floats.Count + _vec2.Count + _vec3.Count + _vec4.Count;
 
-    /// <summary>Number of sampler slots this material binds.</summary>
+    /// <summary>Number of sampler slots bound.</summary>
     public int TextureCount => _textures.Count;
 
     public Material SetFloat(string name, float value) { _floats[name] = value; return this; }
@@ -92,10 +49,8 @@ public sealed class Material
     public Material SetVector4(string name, Vector4 value) { _vec4[name] = value; return this; }
 
     /// <summary>
-    /// Binds <paramref name="texture"/> to the named sampler on
-    /// <paramref name="unit"/>. The exact instance is pinned — use the
-    /// <see cref="SetTexture(string, int, Assets.TextureAsset)"/> overload for
-    /// anything the asset manager may swap underneath you.
+    /// Binds this exact texture to the named sampler. Use the
+    /// <see cref="Assets.TextureAsset"/> overload for anything the asset manager may swap.
     /// </summary>
     public Material SetTexture(string name, int unit, Texture texture)
     {
@@ -104,10 +59,8 @@ public sealed class Material
     }
 
     /// <summary>
-    /// Binds an asset handle to the named sampler on <paramref name="unit"/>.
-    /// Resolved at <see cref="Apply"/> time, so the material follows the handle
-    /// through its placeholder-to-loaded swap and through hot-reloads instead of
-    /// pinning whichever texture happened to be current here.
+    /// Binds an asset handle to the named sampler. Resolved at <see cref="Apply"/>
+    /// time, so the material follows async loads and hot reloads.
     /// </summary>
     public Material SetTexture(string name, int unit, Assets.TextureAsset asset)
     {
@@ -116,16 +69,9 @@ public sealed class Material
     }
 
     /// <summary>
-    /// How many sampler slots are bound DIRECTLY to <paramref name="texture"/>.
+    /// How many sampler slots are bound directly to <paramref name="texture"/>.
+    /// Slots bound through an asset handle are not counted.
     /// </summary>
-    /// <remarks>
-    /// <b>Direct bindings only, and that is the point.</b> A slot bound through
-    /// a <see cref="Assets.TextureAsset"/> follows that handle through its
-    /// placeholder-to-loaded swap, so it is the handle's own state that says
-    /// whether it is standing on a failure; a slot bound to a raw texture has
-    /// nobody else to ask. The asset manager counts the two separately for that
-    /// reason. Returns 0 for null.
-    /// </remarks>
     public int CountBindingsTo(Texture? texture)
     {
         if (texture is null) return 0;
@@ -139,22 +85,17 @@ public sealed class Material
         return count;
     }
 
-    /// <summary>Reads back a scalar parameter set on this material.</summary>
     public bool TryGetFloat(string name, out float value) => _floats.TryGetValue(name, out value);
 
-    /// <summary>Reads back a 2-vector parameter set on this material.</summary>
     public bool TryGetVector2(string name, out Vector2 value) => _vec2.TryGetValue(name, out value);
 
-    /// <summary>Reads back a 3-vector parameter set on this material.</summary>
     public bool TryGetVector3(string name, out Vector3 value) => _vec3.TryGetValue(name, out value);
 
-    /// <summary>Reads back a 4-vector parameter set on this material.</summary>
     public bool TryGetVector4(string name, out Vector4 value) => _vec4.TryGetValue(name, out value);
 
     /// <summary>
-    /// Reads back a sampler binding: the unit it occupies and the texture it
-    /// currently resolves to. Render thread only — resolving an asset handle
-    /// reads <see cref="Assets.TextureAsset.Texture"/>.
+    /// Reads back a sampler binding: its unit and the texture it currently
+    /// resolves to. Render thread only.
     /// </summary>
     public bool TryGetTexture(string name, out int unit, [MaybeNullWhen(false)] out Texture texture)
     {
@@ -170,22 +111,10 @@ public sealed class Material
         return false;
     }
 
-    /// <summary>
-    /// Drops every sampler binding. Used when the textures behind them are about
-    /// to be destroyed (asset-manager teardown), so nothing keeps resolving to a
-    /// disposed GPU object.
-    /// </summary>
+    // Called before the textures behind the bindings are destroyed.
     internal void ClearTextures() => _textures.Clear();
 
-    /// <summary>
-    /// Uploads this material's parameters to the (already bound, or about to be
-    /// bound — see the type's remarks) shader. No-op without a shader.
-    /// </summary>
-    /// <remarks>
-    /// Only what this material declares is written; a parameter it never set
-    /// keeps the value the previous draw left in the shader. See the type's
-    /// remarks for why every material has to carry a full parameter set.
-    /// </remarks>
+    /// <summary>Uploads this material's parameters to its own shader. No-op without one.</summary>
     public void Apply()
     {
         if (Shader is not { } shader) return;
@@ -193,30 +122,10 @@ public sealed class Material
     }
 
     /// <summary>
-    /// Uploads this material's parameters to <paramref name="shader"/> instead
-    /// of to its own, for a pass that decides the program rather than letting
-    /// the material choose it.
+    /// Uploads this material's parameters to <paramref name="shader"/> instead of
+    /// its own, for a pass that picks the program (the deferred geometry pass).
+    /// Names the shader does not declare are ignored.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>This is what lets one <c>.spectramat</c> file feed both the forward
-    /// and the deferred path.</b> A deferred geometry pass draws everything with
-    /// one G-buffer-writing program, so the material's own
-    /// <see cref="Shader"/> is not the one being filled, but its parameters
-    /// still are, and they are stored as a name-to-value map precisely so a
-    /// second program can take the subset it declares.
-    /// </para>
-    /// <para>
-    /// Unknown names are ignored on all three backends, so a material carrying
-    /// parameters for both programs writes each of them exactly where it is
-    /// understood and nowhere else. The corollary is that this can only ADD
-    /// values: a parameter the target program declares and this material never
-    /// set keeps whatever the previous draw left in it, which is the same
-    /// hazard <see cref="Apply"/> has and the reason
-    /// <see cref="Assets.AssetManager"/> seeds every material with the built-in
-    /// parameter set.
-    /// </para>
-    /// </remarks>
     public void ApplyTo(ShaderProgram shader)
     {
         foreach (var (name, value) in _floats) shader.SetUniform(name, value);
@@ -226,8 +135,7 @@ public sealed class Material
         foreach (var (name, binding) in _textures) shader.SetTexture(name, binding.Unit, binding.Resolve());
     }
 
-    // Exactly one of Direct/Asset is set. A struct, and Resolve is a field read,
-    // so following an asset handle costs nothing per draw call.
+    // One of Direct/Asset is set.
     private readonly record struct TextureBinding(int Unit, Texture? Direct, Assets.TextureAsset? Asset)
     {
         public Texture Resolve() => Asset is not null ? Asset.Texture : Direct!;

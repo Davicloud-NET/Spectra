@@ -7,18 +7,9 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The entity runtime as the engine hosts it: the activation phases seen from
-/// outside, the fixed step the tick takes, and the play-mode boundary the world
-/// lives inside.
+/// The entity world as <see cref="SceneManager"/> hosts it: started at play
+/// entry, stopped at play exit and on a scene replace.
 /// </summary>
-/// <remarks>
-/// <b>The engine loop itself is not reachable from here</b> - it owns a window,
-/// a render thread and a graphics context - so what these pin is the seam it
-/// drives: <see cref="SceneManager.StartEntityWorld"/> at play entry,
-/// <see cref="SceneManager.StopEntityWorld"/> at play exit, and
-/// <see cref="SceneManager.OnSceneReplaced"/> from the shell's map open, which
-/// runs inside a queued command on that same thread.
-/// </remarks>
 public sealed class EntityHostingTests
 {
     private const float Tick = 1f / 60f;
@@ -26,11 +17,8 @@ public sealed class EntityHostingTests
     [Fact]
     public void Every_entity_spawns_before_any_of_them_activates()
     {
-        // THE PHASE ORDER, asserted directly rather than through an effect.
-        // Collapse the two walks into one and the first node's activate runs
-        // before the last node has spawned, so an entity that depends on
-        // another's spawn work sees a half-built world - intermittently,
-        // depending on where in the tree the two of them sit.
+        // Two walks: with one, the first node activates before the last
+        // has spawned.
         var log = new List<string>();
         var scene = new Scene("Entities");
         EntityRuntime.Place(scene.Root, "a", "lifecycle");
@@ -54,10 +42,8 @@ public sealed class EntityHostingTests
     [Fact]
     public void A_tick_advances_world_time_by_exactly_the_step_it_is_given()
     {
-        // The engine ticks this from inside the fixed loop with the FIXED delta,
-        // never the frame delta: the heap is keyed on absolute fire times, so a
-        // world advanced by whatever the last frame happened to cost makes when
-        // a door opens a function of how fast the machine is.
+        // Ticked with the fixed delta, not the frame delta: the heap is keyed
+        // on absolute fire times.
         var scene = new Scene("Entities");
         var world = new EntityWorld(scene, new CapturingLogger(), new EntityCatalog());
         world.Activate();
@@ -76,8 +62,6 @@ public sealed class EntityHostingTests
         Scene scene = manager.ActiveScene.ShouldNotBeNull();
         EntityRuntime.Place(scene.Root, "door", "lifecycle");
 
-        // Nothing runs in an editing session: the instances are a projection of
-        // the authored data, and the data is what the editor edits.
         manager.EntityWorld.ShouldBeNull();
 
         manager.StartEntityWorld();
@@ -97,11 +81,8 @@ public sealed class EntityHostingTests
     [Fact]
     public void Opening_a_map_while_play_mode_is_running_tears_the_entity_world_down()
     {
-        // THE LEAK THIS EXISTS FOR. The shell's map open runs inside a queued
-        // command on the render thread and replaces the live scene's graph in
-        // place; a world left standing across that holds entities bound to
-        // nodes that are no longer in any scene, and the next test shows what
-        // the index then does with them.
+        // A map open replaces the graph in place. A world left running holds
+        // entities bound to nodes that are in no scene.
         var log = new List<string>();
         SceneManager manager = Hosted(log);
         Scene scene = manager.ActiveScene.ShouldNotBeNull();
@@ -110,8 +91,7 @@ public sealed class EntityHostingTests
         manager.StartEntityWorld();
         EntityWorld world = manager.EntityWorld.ShouldNotBeNull();
 
-        // What EditorSession.OpenMap does, in its order: the runtime lets go
-        // first, then the graph is replaced.
+        // Same order as EditorSession.OpenMap: stop the runtime, then replace.
         manager.OnSceneReplaced();
         MapSceneBinder.ApplyTo(MapSceneBinder.FromScene(scene), scene);
 
@@ -121,8 +101,7 @@ public sealed class EntityHostingTests
         world.Index.ShouldBeNull();
         log[^1].ShouldBe("remove:door");
 
-        // The reloaded node carries the SAME id and is a different object. A
-        // world that was still listening would have been handed it.
+        // The reloaded node has the same id and is a different object.
         SceneNode reloaded = scene.Root.Children[^1];
         reloaded.Id.ShouldBe(authored.Id);
         ReferenceEquals(reloaded, authored).ShouldBeFalse();
@@ -131,12 +110,9 @@ public sealed class EntityHostingTests
     [Fact]
     public void A_world_kept_across_a_map_load_is_rebound_onto_the_new_nodes()
     {
-        // The hazard itself, pinned so that the teardown above cannot be
-        // deleted as housekeeping. Node ids survive a map load - that is what
-        // makes commands and undo work across one - so the target-name index's
-        // own NodeAdded handler recognises every stale entity and repoints it
-        // at the fresh node: last map's think times, fire counts and wiring,
-        // running over this map's scene, with nothing reporting it.
+        // Why the teardown matters: node ids survive a map load, so the
+        // target-name index repoints every stale entity at the fresh node and
+        // last map's state runs over this map's scene.
         var log = new List<string>();
         var scene = new Scene("Entities");
         SceneNode authored = EntityRuntime.Place(scene.Root, "door", "lifecycle");
@@ -151,15 +127,12 @@ public sealed class EntityHostingTests
         ReferenceEquals(reloaded, authored).ShouldBeFalse();
         ReferenceEquals(entity.Node, reloaded).ShouldBeTrue();
 
-        // And it never spawned into the new scene, which is the part that makes
-        // this a silent fault rather than a visible one.
+        // It never spawned into the new scene, so nothing reports it.
         log.ShouldBe(new[] { "spawn:door", "activate:door" });
     }
 
-    // A scene manager with a real active scene, built the way the editor shell
-    // boots one. The catalogue is scoped rather than left to
-    // EntityCatalog.Shared, which freezes on its first read and would make test
-    // order load-bearing.
+    // Own catalogue: EntityCatalog.Shared freezes on first read, which would
+    // make the tests order-dependent.
     private static SceneManager Hosted(List<string> log)
     {
         var manager = new SceneManager(NullLogger<SceneManager>.Instance)

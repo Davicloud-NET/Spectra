@@ -4,36 +4,8 @@
              x:Class="SpectraEngine.Editor.Shell.Ribbon.RibbonViewTab"
              x:DataType="shell:ShellModel">
 
-  <!--
-    THE VIEW PAGE: everything that changes how you LOOK at the level and
-    nothing that changes the level.
-
-    That is the axis the two pages divide on, and it is what makes switching
-    between them worth a click: not one verb is shared, and the ten controls
-    here replace twenty completely different ones. The previous tab strip died
-    partly of the opposite - two of its three pages carried the same six verbs.
-
-    SIX OF THESE TEN WERE REACHABLE ONLY FROM A MENU, and one from nothing at
-    all: Frame everything is a verb the editor camera has always had with no
-    control anywhere in the shell. The five overlays are the ones worth having
-    here most - a latched overlay is a viewport that looks broken to whoever
-    fat-fingered F1, and until now the only switch was four levels into a menu.
-
-    THE ICONS COME BACK HERE, AS MARKS RATHER THAN AS PICTURES. This page
-    carried no glyphs at all in its first version, and the reasoning was right:
-    five ambiguous 16px outlines in one row are a grey texture rather than five
-    icons. A box with a tick in it is not an ambiguous outline - it says on or
-    off, and leaves the word beside it to say which overlay. The grid's three
-    modes are rings and a dot for the same reason and one more: a ring says one
-    of these, a box says any of these, and that difference is the only thing on
-    screen that tells a reader the grid has one answer and the overlays have
-    five independent ones.
-
-    The page is deliberately roomier than Build. Word's View tab is too - what
-    a view page has to say is genuinely smaller than what a build page does, and
-    padding it out of the File menu is how the retired tab strip got its third
-    page.
-  -->
+  <!-- View page: changes how you look at the level, never the level.
+       Every Tag is a roster id in RibbonLayout. -->
 
   <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
 
@@ -67,17 +39,10 @@
 
     <Border Classes="ribbonrule" />
 
-    <!-- Three SET verbs, never a cycle: a cycle sent against a snapshot one
-         publish stale lands on the wrong mode exactly when the user clicks
-         fastest. The lit one follows the engine's echo.
-
-         A radio COLUMN rather than a dropdown, and the difference is what is
-         visible at rest: three modes, one lit, all three readable without
-         opening anything. A chip reading "auto" hides the fact that there are
-         two other answers. The exclusivity is a property of the three verbs,
-         never of the controls - which is also why these are Buttons wearing
-         Classes.active and not RadioButtons, since a two-way toggle bound to
-         engine state flickers when the snapshot corrects it. -->
+    <!-- Three set verbs, not a cycle: a cycle against a stale snapshot lands
+         on the wrong mode. Buttons with Classes.active, not RadioButtons: a
+         two-way toggle bound to engine state flickers when the snapshot
+         corrects it. -->
     <StackPanel Classes="ribbongroup">
       <StackPanel Classes="rrow" Orientation="Horizontal">
         <StackPanel Classes="rcol">
@@ -119,7 +84,6 @@
 
     <Border Classes="ribbonrule" />
 
-    <!-- Office's Show group: independent switches, three to a column. -->
     <StackPanel Classes="ribbongroup">
       <StackPanel Classes="rrow" Orientation="Horizontal" Spacing="1">
         <StackPanel Classes="rcol ragged">

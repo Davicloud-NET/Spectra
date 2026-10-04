@@ -5,16 +5,9 @@ using System.Text.Json;
 
 namespace Spectra.Kitchen.Models;
 
-// The glTF 2.0 JSON, parsed into flat lists and nothing more. It is a separate
-// step from building geometry for one structural reason: glTF's references are
-// indices into arrays that may appear in ANY order, so a mesh can name accessor
-// 7 four kilobytes before "accessors" is written, and a forward-only reader
-// cannot resolve as it goes. Collect first, resolve second.
-//
-// Every list here is index-aligned with the file's own, including entries
-// nothing references, because an index read out of the file must always mean
-// what the file said it meant - the same rule ModelData keeps for its material
-// table.
+// The glTF 2.0 JSON parsed into flat lists. glTF arrays can appear in any
+// order, so references are resolved in a second step, not while parsing.
+// Every list is index-aligned with the file's own.
 internal sealed class GltfDocument
 {
     public string AssetVersion = string.Empty;
@@ -32,18 +25,13 @@ internal sealed class GltfDocument
     public bool HasSkins;
     public bool HasAnimations;
 
-    /// <summary>
-    /// Parses the JSON chunk. <paramref name="source"/> only names the file in a
-    /// message.
-    /// </summary>
+    // source only names the file in messages.
     public static GltfDocument Parse(ReadOnlySpan<byte> json, string source)
     {
         var document = new GltfDocument();
         var reader = new Utf8JsonReader(json, new JsonReaderOptions
         {
-            // Neither is legal glTF and both are ordinary in hand-edited files.
-            // Tolerating them costs nothing, and refusing them would be this
-            // reader inventing a rule about a file it can read perfectly well.
+            // Not legal glTF, but common in hand-edited files.
             AllowTrailingCommas = true,
             CommentHandling = JsonCommentHandling.Skip,
         });
@@ -76,18 +64,11 @@ internal sealed class GltfDocument
                     case "textures": document.ReadTextures(ref reader, source); break;
                     case "images": document.ReadImages(ref reader, source); break;
 
-                    // Presence only. Both are designed sections of .smodel that
-                    // v1 does not write, so what matters here is being able to
-                    // SAY they were dropped rather than parsing them.
+                    // Presence only, so the cook can report them as dropped.
                     case "skins": document.HasSkins = true; reader.Skip(); break;
                     case "animations": document.HasAnimations = true; reader.Skip(); break;
 
-                    // Cameras, samplers, extensions, extras and anything a later
-                    // spec adds. Stepping over an unknown member is the same
-                    // forward-compatibility stance the map codec takes, and it is
-                    // safe HERE and not for extensionsRequired precisely because
-                    // that member is the file's own declaration that something it
-                    // carries cannot be ignored.
+                    // Cameras, samplers, extras, anything newer.
                     default: reader.Skip(); break;
                 }
             }
@@ -187,11 +168,8 @@ internal sealed class GltfDocument
                     case "type": accessor.Type = ReadOptionalString(ref reader) ?? string.Empty; break;
                     case "normalized": accessor.Normalized = reader.TokenType == JsonTokenType.True; break;
 
-                    // Recorded rather than parsed. A sparse accessor is a base
-                    // array plus an override list, and a reader that ignored the
-                    // overrides would produce a model missing exactly the
-                    // displacements somebody added them for - geometry that is
-                    // silently wrong, which is the one outcome worth refusing.
+                    // Recorded so the reader can refuse it: ignoring the overrides
+                    // would give wrong geometry.
                     case "sparse": accessor.Sparse = true; reader.Skip(); break;
 
                     default: reader.Skip(); break;
@@ -245,10 +223,7 @@ internal sealed class GltfDocument
                     case "material": primitive.Material = ReadInt(ref reader, source, "primitive.material"); break;
                     case "mode": primitive.Mode = ReadInt(ref reader, source, "primitive.mode"); break;
 
-                    // Morph targets. Named as dropped rather than refused: the
-                    // base mesh is exactly what the file says it is at rest, and
-                    // a prop that also happens to carry blend shapes is still a
-                    // prop.
+                    // Morph targets are dropped, not refused: the base mesh is still valid.
                     case "targets": primitive.HasMorphTargets = true; reader.Skip(); break;
 
                     default: reader.Skip(); break;
@@ -434,21 +409,12 @@ internal sealed class GltfDocument
                 else reader.Skip();
             }
 
-            // An image with no uri lives in a bufferView, which nothing here
-            // resolves: it would be a texture the cook has no path to name, and
-            // this field only ever makes a diagnostic actionable.
+            // Null uri: the image is embedded in a bufferView, which is not resolved.
             ImageUris.Add(uri);
         }
     }
 
-    // ---- primitives of the parse ------------------------------------------
-
-    // Steps to the next element of an array the reader is sitting on the
-    // StartArray of, and answers false at its end. Written as one function
-    // because the alternative is a hand-rolled depth counter in each of the eight
-    // array readers above, and eight copies of a bracket-matching loop is eight
-    // chances to leave the reader one token out of step - which does not throw,
-    // it reads the next member's value as this member's.
+    // Steps to the next element of the array the reader is on. False at its end.
     private static bool NextElement(ref Utf8JsonReader reader, string source, string what)
     {
         if (!reader.Read())
@@ -519,10 +485,7 @@ internal sealed class GltfDocument
 
     private static int ReadInt(ref Utf8JsonReader reader, string source, string what)
     {
-        // Strict, and worth being strict: glTF states these are integers, and a
-        // reader that accepted 1.0 and truncated would silently accept a file
-        // whose indices are written by something that does not know what it is
-        // producing.
+        // glTF says integer. 1.0 is refused, not truncated.
         if (reader.TokenType != JsonTokenType.Number || !reader.TryGetInt32(out int value))
         {
             throw new GltfFormatException(
@@ -532,10 +495,8 @@ internal sealed class GltfDocument
         return value;
     }
 
-    // Null is a legal way to write "no value" and GetString answers null for it;
-    // anything else is a type error rather than an absent member, and throwing
-    // InvalidOperationException out of a reader whose whole contract is
-    // GltfFormatException is what this exists to prevent.
+    // GetString throws InvalidOperationException on a non-string token; callers
+    // expect GltfFormatException only.
     private static string? ReadOptionalString(ref Utf8JsonReader reader) =>
         reader.TokenType is JsonTokenType.String or JsonTokenType.Null ? reader.GetString() : null;
 
@@ -583,9 +544,7 @@ internal sealed class GltfPrimitiveJson
     public int? Indices;
     public int? Material;
 
-    // 4 is TRIANGLES, and it is the glTF default for a primitive that omits the
-    // member. Defaulted here rather than at the use site, so an omitted mode and
-    // a written 4 are the same value from the moment it is parsed.
+    // 4 is TRIANGLES, the glTF default when the member is omitted.
     public int Mode = 4;
 
     public bool HasMorphTargets;
@@ -608,10 +567,7 @@ internal sealed class GltfNodeJson
     public Quaternion Rotation = Quaternion.Identity;
     public Vector3 Scale = Vector3.One;
 
-    // Whether any of the three TRS members was written. glTF forbids a node
-    // carrying both a matrix and a TRS component, and the two disagree about the
-    // same node whenever it happens, so the reader refuses rather than picking
-    // one and producing a model placed somewhere nobody asked for.
+    // glTF forbids a node with both a matrix and TRS; the reader refuses one.
     public bool HasTrs;
 }
 

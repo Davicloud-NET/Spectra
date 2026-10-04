@@ -1,7 +1,6 @@
-// NestedReturns.spectrashade — exercises return statements nested inside
-// control flow in both stages, plus a non-identifier (helper call) return
-// value in the vertex stage. GLSL stage entries compile to void main(), so
-// every one of these returns must lower to output assignments + bare return.
+// Returns nested in control flow in both stages, plus a helper-call return
+// value. GLSL entries are void main(), so each return must lower to output
+// assignments and a bare return.
 
 struct VertexInput {
     [Location(0)] vec3 position;

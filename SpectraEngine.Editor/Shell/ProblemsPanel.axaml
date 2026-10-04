@@ -5,14 +5,7 @@
              x:DataType="shell:ShellModel"
              Background="{StaticResource SpectraBgPanel}">
 
-  <!--
-    What is wrong right now, one row per condition.
-
-    The Output tab's geometry and face, deliberately: these are the same kind of
-    rows about the same kinds of events, and two log-shaped panels that set
-    their text differently read as two products. What differs is the CONTENT -
-    a standing condition with a count, rather than a line that was said once.
-  -->
+  <!-- Same row geometry and type as the Output tab. Keep the two in step. -->
 
   <Grid RowDefinitions="Auto,*">
 
@@ -25,9 +18,6 @@
       </Button>
     </Grid>
 
-    <!-- The empty state says what empty MEANS, because "no problems" over a
-         blank panel is exactly the claim this whole panel exists to make
-         honestly. -->
     <TextBlock Grid.Row="1" Classes="prose" Margin="12,4,12,0"
                Foreground="{StaticResource SpectraTextMuted}"
                IsVisible="{Binding !Problems.HasProblems}"
@@ -66,7 +56,6 @@
   </Grid>
 
   <UserControl.Styles>
-    <!-- The Output tab's own type rules, for the reason in the header comment. -->
     <Style Selector="TextBlock.line">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontBase}" />
       <Setter Property="LineHeight" Value="16" />

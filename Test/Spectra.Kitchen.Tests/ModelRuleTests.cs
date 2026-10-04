@@ -24,22 +24,6 @@ namespace Spectra.Kitchen.Tests;
 /// The model cook end to end: a glTF in a project folder, a <c>.smodel</c> in a
 /// pack, and a prop the engine loads out of it.
 /// </summary>
-/// <remarks>
-/// <para><b>The acceptance test is the last one in the file and it is the point
-/// of the stage.</b> Every other test here proves one link - the reader parses,
-/// the writer writes, the rule reports - and a slice can pass all of them and
-/// still hand the wrong material to the wrong submesh, because what joins them is
-/// a STRING: the material path the cook resolved by name and the path the loader
-/// asks its stack for. So the same prop is loaded twice, once out of the repo's
-/// own loose <c>Assets/</c> through the native importer and once out of a cooked
-/// pack with nothing loose mounted, and the two are compared.</para>
-/// <para><b>Triangles are compared as a SET, quantised, because the two paths are
-/// not required to agree on vertex order.</b> The importer joins identical
-/// vertices and reorders triangles for cache locality; the cook does neither.
-/// What must agree is the geometry and which material it wears, which is what a
-/// canonicalised triangle set says and a vertex-for-vertex comparison would
-/// refuse for the wrong reason.</para>
-/// </remarks>
 public class ModelRuleTests
 {
     private const string Model = "Models/fixture.gltf";
@@ -57,8 +41,7 @@ public class ModelRuleTests
         CookResult cook = Cook(project);
         cook.Succeeded.ShouldBeTrue(Describe(cook.Diagnostics));
 
-        // The authored .gltf is NOT also copied into the pack: shipping both
-        // would double every prop in the build for content nothing reads.
+        // The authored .gltf is not copied into the pack as well.
         Read(cook, Model).ShouldBeNull();
 
         byte[] cooked = Read(cook, "Models/fixture.smodel").ShouldNotBeNull();
@@ -76,9 +59,7 @@ public class ModelRuleTests
 
         CookResult cook = Cook(project);
 
-        // Soft by default: the author's model is valid and the limitation is the
-        // cooked format's, so refusing the build over it would blame the wrong
-        // party.
+        // Soft by default: the model is valid, the limit is the cooked format's.
         cook.Succeeded.ShouldBeTrue(Describe(cook.Diagnostics));
 
         CookDiagnostic warning = cook.Diagnostics.Single(d => d.Id.ToString() == "SC3002");
@@ -86,8 +67,7 @@ public class ModelRuleTests
         warning.Message.ShouldContain(GltfFixture.MaterialName);
         warning.Message.ShouldContain(MaterialPath);
 
-        // And it says what the file itself described, which is what makes
-        // authoring the material a thing somebody can actually do.
+        // Names the texture the file described, so the material can be authored.
         warning.Message.ShouldContain("../Textures/fixture.png");
 
         byte[] cooked = Read(cook, "Models/fixture.smodel").ShouldNotBeNull();
@@ -122,9 +102,7 @@ public class ModelRuleTests
         refused.Message.ShouldContain("mode 5");
         refused.Message.ShouldContain("TRIANGLE_STRIP");
 
-        // No pack at all, which is the whole point: a raw copy would put a broken
-        // glTF under a path the engine resolves and the log would say a model
-        // cooked.
+        // No pack: a raw copy would ship a broken glTF under a path the engine resolves.
         cook.OutputPath.ShouldBeNull();
     }
 
@@ -146,11 +124,8 @@ public class ModelRuleTests
     [Fact]
     public void A_sidecar_buffer_and_a_material_probe_are_both_recorded_dependencies()
     {
-        // The rule reaches a byte only through the context, so its DECLARED
-        // dependency set is its ACCESSED set. Both halves matter: without the
-        // .bin, editing the geometry does not re-cook the model; without the
-        // material probe, authoring the .spectramat that was missing does not
-        // re-cook the models that looked for it.
+        // Without the .bin an edited buffer does not re-cook the model. Without
+        // the probe, authoring the missing .spectramat does not either.
         using var project = new TempProject();
         project.WriteAsset(Model, GltfFixture.Json(bufferUri: "fixture.bin"));
         project.WriteAsset("Models/fixture.bin", GltfFixture.Buffer());
@@ -168,11 +143,8 @@ public class ModelRuleTests
     [Fact]
     public void A_glb_cooks_to_the_same_bytes_as_the_json_it_wraps()
     {
-        // In two PROJECTS rather than two files in one, and that is the cook
-        // telling the truth rather than a workaround: both spellings emit
-        // Models/fixture.smodel, and one content path is one asset, so a project
-        // holding both is an entry collision (SC9002). What is being asserted is
-        // that the container is not part of the identity of what came out of it.
+        // Two projects: both spellings emit Models/fixture.smodel, so one project
+        // holding both is a collision (SC9002).
         using var json = new TempProject("FromJson");
         json.WriteAsset(Model, GltfFixture.Json());
 
@@ -191,9 +163,6 @@ public class ModelRuleTests
     [Fact]
     public void Two_models_that_would_land_on_one_cooked_path_are_a_collision()
     {
-        // The corollary, said out loud because it is the one thing a project
-        // mixing the spellings will hit: sign.gltf and sign.glb are two assets
-        // whose cooked path is the same string, and a pack cannot hold both.
         using var project = new TempProject();
         project.WriteAsset(Model, GltfFixture.Json());
         project.WriteAsset("Models/fixture.glb", GltfFixture.Glb(GltfFixture.GlbJson(), GltfFixture.Buffer()));
@@ -205,17 +174,10 @@ public class ModelRuleTests
             .Message.ShouldContain("Models/fixture.smodel");
     }
 
-    // ---- the verifier's 3xxx arm --------------------------------------------
-
     [Fact]
     public void A_cooked_model_whose_material_is_not_in_the_pack_is_refused_by_the_verifier()
     {
-        // Written by hand rather than cooked, for the reason PackVerifierTests
-        // gives one band over: the cook now declines to produce this, which IS
-        // the property, so the fixture has to make a pack the cook never would.
-        // The claim here is about the ARTIFACT, and it covers the case a cook
-        // structurally cannot see - two rules each succeeding while the entry one
-        // of them needed never reaches the file.
+        // Pack written by hand: the cook refuses to produce one like this.
         using var project = new TempProject();
         string pack = Path.Combine(project.Root, "hole.spack");
 
@@ -240,7 +202,7 @@ public class ModelRuleTests
         string pack = Path.Combine(project.Root, "broken.spack");
 
         byte[] model = OneTriangle(null);
-        model[0x04] = 0xEE;   // a format version this build does not implement
+        model[0x04] = 0xEE;   // unknown format version
 
         var writer = new PackWriter();
         writer.Add("Models/prop.smodel", PackEntryKind.Model, model);
@@ -266,14 +228,13 @@ public class ModelRuleTests
 
         result.Succeeded.ShouldBeTrue(Describe(result.Diagnostics));
 
-        // One from the model's submesh and one from the material's texture slot,
-        // so a verify that stopped resolving either would show up here as a
-        // number rather than as a pass.
+        // One from the model's submesh, one from the material's texture slot.
         result.ReferencesChecked.ShouldBe(2);
     }
 
-    // ---- the acceptance test -------------------------------------------------
-
+    // Loads the same prop loose (native importer) and cooked, then compares
+    // quantised triangle sets per material. The two paths need not agree on
+    // vertex order: the importer welds and reorders, the cook does neither.
     [Fact]
     public void The_cooked_prop_wears_the_same_materials_on_the_same_triangles_as_the_loose_import()
     {
@@ -292,8 +253,7 @@ public class ModelRuleTests
         using ProjectContentMount mount = ProjectContentMount.Open(
             NullLogger.Instance, project.Layout, ContentMountProfile.Shipped);
 
-        // Nothing loose is mounted, so the authored .gltf is unreachable and the
-        // model can only be served by the .smodel the cook emitted.
+        // Nothing loose is mounted, so only the .smodel can serve the model.
         mount.Content.Exists(Signpost).ShouldBeFalse();
 
         using var cookedAssets = new AssetManager(
@@ -309,33 +269,26 @@ public class ModelRuleTests
 
         looseAssets.IsModelCooked(Signpost).ShouldBeFalse();
 
-        // glTF puts v = 0 at the top and the engine samples v = 0 at the bottom,
-        // so the loose importer needs telling and the cook does it always. This
-        // is the option the demo passes for the same file.
+        // FlipTextureV off: Assimp already converts glTF's UV origin, so the
+        // option would flip it back. Same options the demo passes.
         ModelAsset loose = looseAssets.LoadModel(
             Signpost, ModelImportOptions.Default with { FlipTextureV = false });
 
         Dictionary<string, List<string>> cookedByMaterial = ByMaterial(cooked);
         Dictionary<string, List<string>> looseByMaterial = ByMaterial(loose);
 
-        // The assignment itself: the same material names, and two of them rather
-        // than one, or a cook that resolved everything to the default material
-        // would compare equal to a loose import that did the same.
+        // Two names, not one: both paths falling back to the default material
+        // would otherwise compare equal.
         cookedByMaterial.Keys.Order(StringComparer.Ordinal)
             .ShouldBe(looseByMaterial.Keys.Order(StringComparer.Ordinal));
         cookedByMaterial.Count.ShouldBe(2);
         cookedByMaterial.Keys.ShouldContain("PostWood");
         cookedByMaterial.Keys.ShouldContain("SignFace");
 
-        // And the geometry each material actually covers, so a cook that swapped
-        // the two submeshes' materials would fail here rather than pass the line
-        // above.
+        // Catches a cook that swapped the two submeshes' materials.
         foreach ((string material, List<string> triangles) in cookedByMaterial)
             triangles.ShouldBe(looseByMaterial[material], $"material '{material}'");
 
-        // The cooked model's own box, which feeds Mesh.LocalBounds and the BVH
-        // with no vertex walk, is the box the loose importer computes over its
-        // whole hierarchy.
         cooked.LocalBounds.Min.X.ShouldBe(loose.LocalBounds.Min.X, 1e-3f);
         cooked.LocalBounds.Max.Y.ShouldBe(loose.LocalBounds.Max.Y, 1e-3f);
 
@@ -343,12 +296,8 @@ public class ModelRuleTests
         looseAssets.ReleaseGraphicsResources();
     }
 
-    // ---- helpers -------------------------------------------------------------
-
-    // Every triangle a model draws, in the model's own space, grouped by the name
-    // of the material it wears. The loose import's node transforms are applied
-    // here because the cook has already baked its own into the vertices - which
-    // is the one structural difference between the two paths.
+    // Triangles in model space, grouped by material name. Node transforms are
+    // applied here because the cook has already baked its own into the vertices.
     private static Dictionary<string, List<string>> ByMaterial(ModelAsset asset)
     {
         ModelData data = asset.Data.ShouldNotBeNull();
@@ -397,22 +346,16 @@ public class ModelRuleTests
 
         normal = normal.LengthSquared() > 0f ? Vector3.Normalize(normal) : normal;
 
-        // Two decimals, because the two paths compose the node transform
-        // differently and agree to about a millionth: a grid ten thousand times
-        // coarser than the disagreement cannot straddle, and it is still four
-        // hundred times finer than the closest two distinct coordinates in this
-        // fixture. Invariant, or a comparison would pass on one machine's locale
-        // and fail on another's.
+        // Two decimals: the paths agree to about 1e-6, and the fixture's
+        // coordinates are far coarser than 0.01. Invariant culture, or the
+        // comparison depends on the machine's locale.
         return string.Create(CultureInfo.InvariantCulture,
             $"{position.X:F2},{position.Y:F2},{position.Z:F2}|" +
             $"{normal.X:F2},{normal.Y:F2},{normal.Z:F2}|" +
             $"{mesh.Vertices[at + 6]:F2},{mesh.Vertices[at + 7]:F2}");
     }
 
-    // Rotated so the smallest corner comes first, which makes the string
-    // independent of which corner the file happened to start at while keeping the
-    // winding - a canonicalisation that sorted the three corners would call a
-    // triangle and its mirror image the same triangle.
+    // Rotates the smallest corner first. Sorting instead would lose the winding.
     private static string Canonical(string a, string b, string c)
     {
         if (string.CompareOrdinal(b, a) < 0 && string.CompareOrdinal(b, c) <= 0) return $"{b};{c};{a}";
@@ -452,8 +395,7 @@ public class ModelRuleTests
         using (blob) return blob.Span.ToArray();
     }
 
-    // A minimal but genuinely valid .smodel, written by the real writer, so the
-    // verifier tests are about the verifier rather than about hand-built bytes.
+    // A valid .smodel from the real writer.
     private static byte[] OneTriangle(string? material)
     {
         var vertices = new float[3 * 8];

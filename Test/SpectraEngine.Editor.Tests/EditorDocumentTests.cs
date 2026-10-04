@@ -8,17 +8,8 @@ using System.IO;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// What the shell has open, and whether it has been edited since it was last
-/// written.
+/// What the shell has open, and whether it has been edited since the last save.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Pure, which is why it gets tests at all.</b> The rest of the file menu is
-/// dialogs and a render-thread command queue; this is the part that decides
-/// whether somebody is warned before their work is thrown away, and it decides
-/// it with no window, no dispatcher and no GPU.
-/// </para>
-/// </remarks>
 public sealed class EditorDocumentTests
 {
     [Fact]
@@ -36,8 +27,6 @@ public sealed class EditorDocumentTests
     [Fact]
     public void The_map_label_is_the_bundle_folder_rather_than_the_file_inside_it()
     {
-        // A map IS a folder. Showing the document file would name map.json for
-        // every level anybody ever opens.
         var document = new EditorDocument();
 
         document.MarkOpened(Path.Combine("C:", "Games", "MyGame", "Maps", "Lobby.smap"));
@@ -48,9 +37,8 @@ public sealed class EditorDocumentTests
     [Fact]
     public void A_trailing_separator_does_not_swallow_the_bundle_name()
     {
-        // A folder picker can hand back a path with a trailing separator, and
-        // GetFileNameWithoutExtension on that returns an empty string - which
-        // would title the window with nothing at all.
+        // A folder picker can return a trailing separator, and
+        // GetFileNameWithoutExtension on that is empty.
         var document = new EditorDocument();
 
         document.MarkOpened(Path.Combine("C:", "Games", "Maps", "Arena.smap") + Path.DirectorySeparatorChar);
@@ -74,9 +62,6 @@ public sealed class EditorDocumentTests
     [Fact]
     public void Opening_and_starting_a_new_map_both_leave_the_document_clean()
     {
-        // Neither is an edit. A load that left the document dirty would warn
-        // about discarding work on the very next action, which trains people to
-        // dismiss the warning that matters.
         var document = new EditorDocument();
         document.MarkDirty();
 
@@ -104,9 +89,6 @@ public sealed class EditorDocumentTests
     [Fact]
     public void The_title_changes_notify_so_the_window_can_follow_it()
     {
-        // The window binds nothing here: it subscribes and assigns. Without the
-        // notification the title would be written once at startup and then be
-        // wrong for the rest of the session.
         var document = new EditorDocument();
         var raised = new List<string?>();
         ((INotifyPropertyChanged)document).PropertyChanged += (_, e) => raised.Add(e.PropertyName);
@@ -130,13 +112,9 @@ public sealed class EditorDocumentTests
         raised.ShouldBeEmpty("marking an already-dirty document must not churn the binding layer");
     }
 
-    // --- projects -----------------------------------------------------------
-
     [Fact]
     public void A_map_inside_the_project_gets_a_project_relative_path()
     {
-        // The manifest holds project-relative paths, and that is the form a map
-        // has to be listed in.
         using var temp = new TemporaryFolder();
         ProjectLayout project = ProjectLayout.Create(temp.Path, "MyGame");
 
@@ -150,9 +128,7 @@ public sealed class EditorDocumentTests
     [Fact]
     public void A_map_outside_the_project_has_no_project_relative_path()
     {
-        // Opening a bundle from somewhere else is perfectly legal and must not
-        // be listed in the manifest as though it belonged: a relative path that
-        // escapes the folder breaks the moment the project moves.
+        // A relative path that escapes the project breaks when the project moves.
         using var temp = new TemporaryFolder();
         using var elsewhere = new TemporaryFolder();
         ProjectLayout project = ProjectLayout.Create(temp.Path, "MyGame");
@@ -191,8 +167,6 @@ public sealed class EditorDocumentTests
     [Fact]
     public void Opening_a_project_leaves_the_open_map_alone()
     {
-        // The two are independent: a bundle can be open without a project, and
-        // a project can be opened while one is.
         using var temp = new TemporaryFolder();
         ProjectLayout project = ProjectLayout.Create(temp.Path, "MyGame");
 

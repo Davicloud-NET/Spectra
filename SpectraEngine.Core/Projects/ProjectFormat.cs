@@ -10,15 +10,13 @@ namespace SpectraEngine.Core.Projects;
 /// </summary>
 public static class ProjectFormat
 {
-    /// <summary>Extension of the project manifest, and the project's double-clickable identity.</summary>
+    /// <summary>Extension of the project manifest.</summary>
     public const string Extension = ".spectraproj";
 
-    /// <summary>Per-user project state, gitignored and never load-bearing.</summary>
+    /// <summary>Suffix of per-user project state. Gitignored.</summary>
     public const string UserStateSuffix = ".user";
 
-    // --- the canonical folder layout ----------------------------------------
-
-    /// <summary>The content root, unchanged from what <c>ContentRoot</c> already resolves.</summary>
+    /// <summary>The content root.</summary>
     public const string AssetsFolder = "Assets";
 
     /// <summary>Where map bundles live.</summary>
@@ -27,10 +25,8 @@ public static class ProjectFormat
     /// <summary>Project-level shared script modules.</summary>
     public const string ScriptsFolder = "Scripts";
 
-    /// <summary>Cook output. Derived, gitignored, never authored.</summary>
+    /// <summary>Cook output. Derived and gitignored.</summary>
     public const string CookedFolder = "cooked";
-
-    // --- members -------------------------------------------------------------
 
     public const string FormatVersionMember = "spectraproject";
     public const string MinimumReadableMember = "minimumReadableVersion";
@@ -49,17 +45,7 @@ public static class ProjectFormat
     public const string VsyncMember = "vsync";
     public const string ModeMember = "mode";
 
-    // --- closed vocabularies -------------------------------------------------
-
-    /// <summary>
-    /// Backend names, matching what the demo's command line already accepts.
-    /// </summary>
-    /// <remarks>
-    /// <b>The same spellings on purpose.</b> A person who has typed
-    /// <c>d3d11</c> at a prompt should not discover the file wants
-    /// <c>Direct3D11</c>; two vocabularies for one concept is how a config file
-    /// becomes something you have to look up.
-    /// </remarks>
+    // Same spellings as the command line.
     internal static string ToWire(GraphicsBackend backend) => backend switch
     {
         GraphicsBackend.OpenGL => "opengl",

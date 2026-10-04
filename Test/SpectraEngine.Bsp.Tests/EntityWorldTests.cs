@@ -4,10 +4,7 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The tick's total order, the runaway containment, and the rule that the
-/// runtime never writes back into what the author wrote.
-/// </summary>
+/// <summary>Tick ordering, the dispatch budget, and authored data staying untouched.</summary>
 public sealed class EntityWorldTests
 {
     private const float Tick = 1f / 60f;
@@ -15,13 +12,7 @@ public sealed class EntityWorldTests
     [Fact]
     public void Two_events_due_at_the_same_time_dispatch_in_the_order_they_were_scheduled()
     {
-        // THE DETERMINISM PIN. Equal fire times are the common case, not the
-        // corner: every wire on one output at zero delay is due at the same
-        // instant. Without the monotonic sequence as the tiebreak, the heap's
-        // own array layout decides, which changes with the insertion pattern -
-        // so a level would behave differently for a reason nothing on screen
-        // could ever explain. The targets are named to defeat an accidental
-        // alphabetical order: authored order is beta then alpha.
+        // Wired beta then alpha so alphabetical order can't pass by accident.
         var log = new List<string>();
         var scene = new Scene("Entities");
         SceneNode source = EntityRuntime.Place(scene.Root, "source", "recorder");
@@ -43,8 +34,6 @@ public sealed class EntityWorldTests
     [Fact]
     public void A_later_authored_wire_with_no_delay_still_arrives_before_an_earlier_one_that_waits()
     {
-        // Time beats sequence; sequence only breaks a tie in time. Stated as its
-        // own test because the pair of rules is what makes the order total.
         var log = new List<string>();
         var scene = new Scene("Entities");
         SceneNode source = EntityRuntime.Place(scene.Root, "source", "recorder");
@@ -71,10 +60,6 @@ public sealed class EntityWorldTests
     [Fact]
     public void A_zero_delay_mutual_relay_trips_the_dispatch_budget_and_the_error_names_the_target()
     {
-        // Two relays pointed at each other is three clicks to build and is an
-        // infinite loop inside ONE tick: the render thread never returns and
-        // there is nothing on screen to say why. The budget is what turns that
-        // into a bug report.
         var log = new List<string>();
         var logger = new CapturingLogger();
         var scene = new Scene("Entities");
@@ -96,13 +81,11 @@ public sealed class EntityWorldTests
         world.LastTickDispatchCount.ShouldBe(64);
 
         string error = logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem();
-        // The cascade alternates, so with a budget of 64 the event that could
-        // not be dispatched is the 65th, which is aimed at relay_b.
+        // The cascade alternates, so the 65th event is aimed at relay_b.
         error.ShouldContain("relay_b");
         error.ShouldContain("OnTrigger");
 
-        // The runaway is DROPPED rather than left queued: a level with one bad
-        // relay keeps running, and the error is not repeated every tick forever.
+        // The runaway is dropped, not requeued: no repeat error next tick.
         world.DiscardedEventCount.ShouldBeGreaterThan(0);
         world.Tick(Tick);
         world.DispatchBudgetTripCount.ShouldBe(1);
@@ -112,9 +95,6 @@ public sealed class EntityWorldTests
     [Fact]
     public void An_unknown_classname_becomes_a_placeholder_that_keeps_every_keyvalue_and_wire()
     {
-        // The whole point of string-typed keyvalues: a map authored against a
-        // game this build does not have still loads, still shows in the tree and
-        // still re-saves byte for byte.
         var scene = new Scene("Entities");
         SceneNode node = EntityRuntime.Place(scene.Root, "mystery", "func_nothing_here");
         node.Entity!.SetValue("speed", "100");
@@ -137,9 +117,6 @@ public sealed class EntityWorldTests
     [Fact]
     public void A_placeholder_refuses_inputs_and_says_so_once_per_classname()
     {
-        // Once per class, never once per attempt: a missing class is usually a
-        // whole game's worth of entities, and a relay pointed at one fires on a
-        // timer.
         var scene = new Scene("Entities");
         SceneNode source = EntityRuntime.Place(scene.Root, "source", "func_nothing_here");
         SceneNode target = EntityRuntime.Place(scene.Root, "target", "func_nothing_here");
@@ -162,9 +139,6 @@ public sealed class EntityWorldTests
     [Fact]
     public void A_keyvalue_nothing_can_parse_warns_and_leaves_the_default_standing()
     {
-        // A loaded map may legally carry a string nothing can read - authored
-        // against another build, or hand-edited - and a throw here takes down
-        // the load of an entire level over one field.
         var log = new List<string>();
         var logger = new CapturingLogger();
         var scene = new Scene("Entities");
@@ -185,9 +159,6 @@ public sealed class EntityWorldTests
     [Fact]
     public void Exhausting_a_wires_fire_count_never_touches_the_authored_data()
     {
-        // Decrementing TimesToFire on EntityData is document corruption that
-        // survives to the next save, and it is invisible until somebody diffs
-        // the map.
         var log = new List<string>();
         var scene = new Scene("Entities");
         SceneNode source = EntityRuntime.Place(scene.Root, "source", "recorder");
@@ -209,7 +180,6 @@ public sealed class EntityWorldTests
         output.FiresLeftAt(0).ShouldBe(0);
         output.LiveWireCount.ShouldBe(0);
 
-        // The authored value, untouched.
         source.Entity!.Connections[0].TimesToFire.ShouldBe(1);
     }
 
@@ -239,9 +209,7 @@ public sealed class EntityWorldTests
     [Fact]
     public void Activation_wires_every_target_before_the_first_spawn_runs()
     {
-        // The phases, asserted from the outside: an entity that fires an output
-        // in OnSpawn reaches a target whose own node comes LATER in traversal
-        // order, which a single-pass activate could not do.
+        // The target comes later in traversal order than the entity firing at it.
         var log = new List<string>();
         var scene = new Scene("Entities");
         SceneNode source = EntityRuntime.Place(scene.Root, "source", "spawner");
@@ -271,8 +239,7 @@ public sealed class EntityWorldTests
 
         var entity = world.Entities.ShouldHaveSingleItem().ShouldBeOfType<CountingThinkEntity>();
         entity.SetNextThink(1f);
-        // The reschedule leaves the first entry in the heap; the serial is what
-        // stops it thinking twice.
+        // The first entry stays in the heap; it must not think twice.
         entity.SetNextThink(0.5f);
 
         for (int i = 0; i < 35; i++)
@@ -303,7 +270,7 @@ public sealed class EntityWorldTests
         world.Entities.ShouldBeEmpty();
         world.Index.ShouldBeNull();
 
-        // Unsubscribed: a rename after deactivation must reach nothing.
+        // A rename after deactivation must reach nothing.
         Should.NotThrow(() => node.Name = "renamed after");
     }
 

@@ -7,43 +7,24 @@ using System.Buffers.Binary;
 namespace Spectra.Kitchen.Audio;
 
 /// <summary>
-/// Writes a <c>.saudio</c>: the 48-byte header <see cref="SaudioFormat"/>
-/// declares, an optional seek table, then interleaved PCM16.
+/// Writes a <c>.saudio</c>: the <see cref="SaudioFormat"/> header, an optional
+/// seek table, then interleaved PCM16.
 /// </summary>
-/// <remarks>
-/// <para><b>The layout comes from <see cref="SaudioFormat"/> and is not spelled
-/// again here.</b> A writer that computes an offset from its own running cursor
-/// and a reader that recomputes it from a literal agree exactly until one of
-/// them is edited, and then disagree as a read into the middle of somebody
-/// else's bytes rather than as an exception.</para>
-/// <para><b>Every reserved byte is zero-filled deliberately.</b> A managed array
-/// arrives zeroed, so this costs nothing and buys the thing the pack writer
-/// already learned the hard way: an unzeroed field picks up whatever was in the
-/// buffer and turns the byte-identity oracle red in a way that is very hard to
-/// bisect, because the bytes differ in a field nothing reads.</para>
-/// <para><b>The seek table rides with the streaming flag or not at all.</b> The
-/// reader refuses either one without the other, so this is where the pair is
-/// kept honest: a caller asking for streaming gets a table, and a caller who did
-/// not ask gets neither.</para>
-/// </remarks>
+// Offsets come from SaudioFormat only. Reserved bytes must stay zero or two
+// cooks stop being byte-identical.
 public static class SaudioWriter
 {
     /// <summary>
-    /// Writes one cooked sound.
+    /// Writes one cooked sound. Throws <see cref="ArgumentException"/> for input
+    /// the format cannot hold.
     /// </summary>
     /// <param name="format">Rate and channel count of <paramref name="pcm"/>.</param>
     /// <param name="pcm">Interleaved PCM16. Length must be a whole number of frames.</param>
     /// <param name="loop">The region to repeat, or <see cref="LoopRegion.None"/>.</param>
     /// <param name="positional">Whether the sound is meant to be placed in the world.</param>
     /// <param name="framesPerSeekEntry">
-    /// Frames between seek points; zero writes a resident file with no seek table
-    /// and no streaming flag.
+    /// Frames between seek points. Zero writes no seek table and no streaming flag.
     /// </param>
-    /// <exception cref="ArgumentException">
-    /// The inputs describe a file this format cannot hold. Thrown rather than
-    /// clamped, because every one of these is a cooker bug and a clamped one
-    /// ships a sound that is merely wrong.
-    /// </exception>
     public static byte[] Write(
         AudioFormat format,
         ReadOnlySpan<short> pcm,
@@ -93,10 +74,7 @@ public static class SaudioWriter
         SaudioFlags flags = SaudioFlags.None;
         if (streaming) flags |= SaudioFlags.Streaming;
 
-        // Positional intent is a claim only a MONO file can make good on: OpenAL
-        // plays a stereo buffer unpositioned whatever any flag says, so setting
-        // the bit on one would put a promise in the file that no driver keeps.
-        // The rule warns about the pairing; this refuses to record it.
+        // Mono only: OpenAL never spatialises a stereo buffer.
         if (positional && format.Channels == 1) flags |= SaudioFlags.PositionalIntent;
 
         BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(SaudioFormat.MagicOffset), SaudioFormat.Magic);
@@ -112,9 +90,7 @@ public static class SaudioWriter
         file[SaudioFormat.ChannelsOffset] = (byte)format.Channels;
         file[SaudioFormat.ChannelLayoutOffset] = (byte)SaudioFormat.LayoutFor(format.Channels);
 
-        // ReservedOffset stays zero. Not asserted on read - a v2 that spends
-        // those two bytes raises the format version, which the reader refuses
-        // before it ever looks at them.
+        // ReservedOffset stays zero.
 
         BinaryPrimitives.WriteUInt64LittleEndian(file.AsSpan(SaudioFormat.FrameCountOffset), (ulong)frames);
         BinaryPrimitives.WriteUInt64LittleEndian(
@@ -145,9 +121,7 @@ public static class SaudioWriter
             }
         }
 
-        // Written sample by sample rather than by casting the span, so the file
-        // is little-endian on every host rather than on the hosts that happen to
-        // be. The reader's own cast documents the mirror of this.
+        // Per sample, not a span cast, so the file is little-endian on any host.
         Span<byte> payload = file.AsSpan(dataOffset, payloadBytes);
         for (int i = 0; i < pcm.Length; i++)
             BinaryPrimitives.WriteInt16LittleEndian(payload[(i * 2)..], pcm[i]);

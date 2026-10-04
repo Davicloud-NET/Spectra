@@ -1,14 +1,8 @@
 namespace SpectraEngine.Core.Graphics.Shaders;
 
-/// <summary>
-/// Compiles SpectraShade (.spectrashade) source into a multi-pipeline compiled shader.
-/// The compiler produces data for all requested backends in one pass.
-/// </summary>
+/// <summary>Compiles SpectraShade (.spectrashade) source for one or more backends.</summary>
 public interface IShaderCompiler
 {
-    /// <summary>
-    /// Compiles SpectraShade source code to a <see cref="CompiledShaderFile"/>
-    /// containing output for the specified backends.
-    /// </summary>
+    /// <summary>Compiles the source for every backend in <paramref name="targets"/>.</summary>
     CompiledShaderFile Compile(string source, ReadOnlySpan<GraphicsBackend> targets);
 }

@@ -5,22 +5,9 @@ using System;
 
 namespace SpectraEngine.Core.Graphics.D3D11;
 
-/// <summary>
-/// A texture bound as both a render target and a shader resource, with an
-/// optional depth-stencil buffer.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>The hazard here is that the colour attachment is bound twice.</b> A
-/// material that sampled this target last frame left its SRV in a pixel-shader
-/// slot; binding the same resource as a render target while that SRV is live is
-/// a read-write conflict. D3D11 resolves it by silently unbinding the SRV and
-/// logging a debug-layer warning, so the picture is usually right and the
-/// warning is usually ignored. <see cref="D3D11Renderer"/> nulls the slots
-/// explicitly at <c>BeginPass</c> instead, because "usually" is not a contract
-/// and the same mistake on D3D12 is a corrupt read rather than a warning.
-/// </para>
-/// </remarks>
+// A texture usable as both render target and shader resource, with optional depth.
+// The renderer nulls the pixel-shader SRV slots at BeginPass so the colour
+// attachment is never bound as input and output at once.
 internal sealed unsafe class D3D11RenderTarget : RenderTarget
 {
     private readonly ComPtr<ID3D11Device> _device;
@@ -57,7 +44,7 @@ internal sealed unsafe class D3D11RenderTarget : RenderTarget
 
     public override Texture? DepthTexture => _depth;
 
-    /// <summary>The colour attachment as this backend sees it, for the shared handle and its keyed mutex.</summary>
+    // For the shared handle and its keyed mutex.
     internal D3D11Texture? Color => _color;
 
     public override void Resize(int width, int height)
@@ -67,12 +54,7 @@ internal sealed unsafe class D3D11RenderTarget : RenderTarget
         if (width <= 0 || height <= 0)
             throw new ArgumentOutOfRangeException(nameof(width), $"Render target size must be positive; got {width}x{height}.");
 
-        // Refused HERE as well as inside ReplaceStorage, and not because one
-        // guard is unreliable: a no-op resize returns above without touching the
-        // texture at all, so this is the only place that can say why a caller
-        // asking for a genuinely different size is wrong before any of the views
-        // have been released. See RenderTarget's remarks on where the
-        // identity-survives-a-resize guarantee stops.
+        // Checked before any view is released.
         if (Desc.Sharing != RenderTargetSharing.None)
         {
             throw new InvalidOperationException(
@@ -81,8 +63,8 @@ internal sealed unsafe class D3D11RenderTarget : RenderTarget
         }
 
         ReleaseViews();
-        // Swaps the resource and the SRV inside the existing wrapper, so every
-        // material sampling this target survives the resize.
+        // Storage is swapped inside the existing Texture objects, so materials
+        // sampling this target stay valid.
         _color?.ReplaceStorage(_device, width, height);
         _depth?.ReplaceDepthStorage(_device, width, height);
         Allocate(width, height);
@@ -97,11 +79,8 @@ internal sealed unsafe class D3D11RenderTarget : RenderTarget
             ID3D11RenderTargetView* rtv = null;
             var rtvDesc = new RenderTargetViewDesc
             {
-                // The VIEW's format, which is the resource's own everywhere but
-                // on a shared attachment: there the resource is UNORM so an
-                // outside importer does not decode a second time, and the sRGB
-                // encode lives on this view. Measured legal on this machine;
-                // see D3D11Texture.CreateRenderTargetTexture.
+                // Differs from the resource format on a shared attachment: the
+                // resource is UNORM and the sRGB encode is on this view.
                 Format = _color.RtvFormat,
                 ViewDimension = RtvDimension.Texture2D,
             };
@@ -112,9 +91,7 @@ internal sealed unsafe class D3D11RenderTarget : RenderTarget
 
         if (_depth is not null)
         {
-            // An explicit desc, because the resource is typeless: a null desc
-            // means "the resource's own format", and R32_TYPELESS is not a
-            // depth format the runtime will accept for a DSV.
+            // Explicit desc: the resource is R32_TYPELESS, which a DSV cannot use.
             var dsvDesc = new DepthStencilViewDesc
             {
                 Format = Silk.NET.DXGI.Format.FormatD32Float,
@@ -133,9 +110,7 @@ internal sealed unsafe class D3D11RenderTarget : RenderTarget
 
     private void ReleaseViews()
     {
-        // ComOwnership, not Dispose: with one reference instead of two, a second
-        // release is an over-release rather than something a leak absorbs. See
-        // ComOwnership for the whole rule.
+        // Release, not Dispose: this runs on resize and again on Dispose.
         ComOwnership.Release(ref _dsv);
         ComOwnership.Release(ref _rtv);
     }

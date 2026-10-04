@@ -8,23 +8,13 @@ namespace Spectra.Kitchen.Cooking;
 /// <summary>One cooked output, with the two hashes a manifest diff needs.</summary>
 /// <param name="Path">Content-relative path the engine resolves it by.</param>
 /// <param name="AssetId">The pack id: <c>XxHash128</c> of that path.</param>
-/// <param name="ContentHash">
-/// <c>XxHash128</c> of the cooked bytes. This is what a CI diff compares: an
-/// output hash that moved when no input hash did is a determinism failure, and it
-/// is far cheaper to notice here than as a patch that will not apply.
-/// </param>
+/// <param name="ContentHash"><c>XxHash128</c> of the cooked bytes.</param>
 /// <param name="Length">Uncompressed byte count.</param>
 public readonly record struct CookedOutput(string Path, UInt128 AssetId, UInt128 ContentHash, long Length);
 
 /// <summary>What one rule run produced, kept for the manifest and for a verify.</summary>
-/// <param name="SourcePath">The authored asset.</param>
-/// <param name="Rule">Which rule cooked it.</param>
-/// <param name="RuleVersion">That rule's version at cook time; part of the cache key.</param>
-/// <param name="Dependencies">
-/// Everything the rule touched, MISSES INCLUDED. The misses are the half that
-/// makes an incremental cook correct rather than merely fast.
-/// </param>
-/// <param name="Outputs">What it emitted.</param>
+/// <param name="RuleVersion">That rule's version at cook time.</param>
+/// <param name="Dependencies">Everything the rule touched, misses included.</param>
 public sealed record CookedAsset(
     string SourcePath,
     RuleKind Rule,
@@ -35,12 +25,6 @@ public sealed record CookedAsset(
     /// <summary>
     /// Whether this asset was answered from the cook cache rather than cooked.
     /// </summary>
-    /// <remarks>
-    /// <b>It is in the manifest because a reviewer has to be able to tell.</b> The
-    /// bytes are identical either way, which is the whole promise; what a skip
-    /// changes is which run actually produced them, and that is exactly the
-    /// question asked when a cached artifact turns out to be wrong.
-    /// </remarks>
     public bool FromCache { get; init; }
 }
 
@@ -55,12 +39,6 @@ public sealed class CookResult
     /// <summary>
     /// Diagnostics in rule order, which is the order they must be printed in.
     /// </summary>
-    /// <remarks>
-    /// Buffered per rule and flushed in rule order rather than written as they
-    /// happen, because the whole diagnostic contract is that each line is
-    /// IDE-parseable and N workers writing to one stream tear lines apart. That
-    /// makes the buffering a correctness requirement of the output format.
-    /// </remarks>
     public required IReadOnlyList<CookDiagnostic> Diagnostics { get; init; }
 
     /// <summary>The pack that was written, or the loose tree's root, or null when nothing was.</summary>
@@ -84,14 +62,10 @@ public sealed class CookResult
     /// <summary>Assets whose rule had to run while the cache was on.</summary>
     public int CacheMisses { get; init; }
 
-    /// <summary>How many workers the cook actually ran at; zero when it scheduled nothing.</summary>
-    /// <remarks>
-    /// <b>What was used, never what was asked for.</b> It is
-    /// <see cref="CookSettings.Jobs"/> clamped by how much there was to cook, so a
-    /// <c>-j8</c> over three assets reports three: a tool that echoes the request
-    /// back is a tool that cannot be used to find out what happened, and "why is
-    /// -j16 no faster" is exactly the question this number exists to answer.
-    /// </remarks>
+    /// <summary>
+    /// How many workers the cook ran at: <see cref="CookSettings.Jobs"/> clamped
+    /// to the amount of work. Zero when it scheduled nothing.
+    /// </summary>
     public int Workers { get; init; }
 
     /// <summary>Whether the cook produced its artifact.</summary>

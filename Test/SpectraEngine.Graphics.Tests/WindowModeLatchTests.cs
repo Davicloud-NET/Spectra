@@ -5,18 +5,12 @@ using System.Collections.Generic;
 namespace SpectraEngine.Graphics.Tests;
 
 /// <summary>
-/// The borderless-fullscreen latch, headless. A real fullscreen transition
-/// needs a compositor and a GPU, but everything that made the old Alt+Enter
-/// path a crash is decision logic: who may touch the window, when the request
-/// is applied, and what geometry the way back restores.
+/// The borderless-fullscreen latch, headless: who may touch the window, when
+/// the request is applied, and what geometry the way back restores.
 /// </summary>
 public sealed class WindowModeLatchTests
 {
-    /// <summary>
-    /// A window that records what was done to it and in which order — the
-    /// order is load-bearing (un-maximize, then undecorate, then move), so the
-    /// tests assert on it rather than only on the end state.
-    /// </summary>
+    // Records calls in order. The order matters: un-maximize, undecorate, move.
     private sealed class FakeWindow : IWindowModeTarget
     {
         private WindowRect _bounds = new(120, 80, 1280, 720);
@@ -90,8 +84,7 @@ public sealed class WindowModeLatchTests
 
         latch.RequestWindowMode(WindowMode.BorderlessFullscreen);
 
-        // The request is visible; the window is untouched. This IS the fix:
-        // the requester runs on the render thread and may not reshape a window.
+        // The requester may be on the render thread, which must not reshape a window.
         latch.RequestedWindowMode.ShouldBe(WindowMode.BorderlessFullscreen);
         latch.WindowMode.ShouldBe(WindowMode.Windowed);
         window.Log.ShouldBeEmpty();
@@ -113,8 +106,7 @@ public sealed class WindowModeLatchTests
         window.Decorated.ShouldBeFalse();
         window.Bounds.ShouldBe(new WindowRect(-1920, 0, 1920, 1080));
 
-        // Border before geometry: dropping the frame changes the client area,
-        // so sizing first would leave the window off by the frame thickness.
+        // Border before geometry: dropping the frame changes the client area.
         window.Log.ShouldBe(["decorated=False", "bounds=-1920,0,1920x1080"]);
     }
 
@@ -145,8 +137,7 @@ public sealed class WindowModeLatchTests
         latch.RequestWindowMode(WindowMode.BorderlessFullscreen);
         latch.ApplyPendingWindowMode(window);
 
-        // Un-maximize FIRST: a maximized window ignores an explicit
-        // position/size, so the move would silently not happen.
+        // Un-maximize first: a maximized window ignores an explicit position and size.
         window.Log[0].ShouldBe("maximized=False");
         window.IsMaximized.ShouldBeFalse();
         window.Decorated.ShouldBeFalse();
@@ -196,8 +187,7 @@ public sealed class WindowModeLatchTests
         latch.RequestWindowMode(WindowMode.BorderlessFullscreen);
         latch.ApplyPendingWindowMode(window).ShouldBeNull();
 
-        // Refused, and the request is reset — otherwise every pass of the event
-        // pump would retry it forever.
+        // The request is reset, or the event pump would retry it every pass.
         latch.WindowMode.ShouldBe(WindowMode.Windowed);
         latch.RequestedWindowMode.ShouldBe(WindowMode.Windowed);
         window.Log.ShouldBeEmpty();

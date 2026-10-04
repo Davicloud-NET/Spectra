@@ -9,31 +9,15 @@ using System.Numerics;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// <see cref="SmodelWriter"/> against the reader that has to load what it wrote,
-/// and against a transcription of the format specification that shares no code
-/// with either.
+/// <see cref="SmodelWriter"/> against the engine's reader, and against
+/// <see cref="HandBuiltSmodel"/>, a transcription of the format spec that
+/// shares no code with either.
 /// </summary>
-/// <remarks>
-/// <para><b>Two oracles, because a round trip alone cannot see the failure this
-/// format names.</b> A writer verified only against its own reader proves the two
-/// agree, not that either is right: a field reordered in
-/// <c>SmodelSubmesh</c> moves in both at once and every round trip stays green.
-/// <see cref="HandBuiltSmodel"/> is the independent side - every offset, width
-/// and constant in it is a literal from <c>docs/formats-and-pipeline.md</c> 2.3 -
-/// so the byte comparison below is what a layout regression actually looks
-/// like.</para>
-/// <para><b>The round trip is still wanted</b>, because the reader validates far
-/// more than the bytes say: alignment, the flag against the section table, the
-/// stamped layout id against <c>VTXL</c>, every submesh range against
-/// <c>IBUF</c>. A file that passes it has passed all of those.</para>
-/// </remarks>
 public class SmodelCodecTests
 {
     private const string Material = "Materials/fixture.spectramat";
 
-    // Two triangles sharing a vertex, so an index range and a vertex slice are
-    // not the same thing and a submesh that copied the wrong one still has a
-    // plausible count.
+    // Two triangles sharing vertices, so an index range is not a vertex slice.
     private static readonly float[] Vertices = Interleave(
         [
             new Vector3(0f, 0f, 0f),
@@ -71,8 +55,7 @@ public class SmodelCodecTests
         model.Submeshes[0].IndexCount.ShouldBe(3u);
         model.GetName(model.Submeshes[0].MaterialNameOffset).ShouldBe(Material);
 
-        // Absent is a sentinel rather than zero, because zero is the first name
-        // record's legitimate offset.
+        // A sentinel, not zero: zero is the first name record's offset.
         model.Submeshes[1].HasMaterial.ShouldBeFalse();
         model.Submeshes[1].MaterialNameOffset.ShouldBe(SmodelFormat.NameOffsetAbsent);
 
@@ -84,9 +67,6 @@ public class SmodelCodecTests
     [Fact]
     public void Bounds_are_computed_per_submesh_from_the_vertices_its_own_indices_name()
     {
-        // Not from the whole buffer, and not from the caller: a box that
-        // disagrees with the geometry it describes culls a model that is on
-        // screen, and nothing anywhere reports it.
         byte[] file = SmodelWriter.Write(
             Vertices,
             Indices,
@@ -122,8 +102,7 @@ public class SmodelCodecTests
 
         model.Submeshes[0].MaterialNameOffset.ShouldBe(model.Submeshes[1].MaterialNameOffset);
 
-        // The whole blob is one length-prefixed record: sharing is what makes a
-        // material reference a path rather than an inline description.
+        // The whole blob is one length-prefixed record.
         model.Names.Length.ShouldBe(sizeof(ushort) + Material.Length);
     }
 
@@ -155,10 +134,7 @@ public class SmodelCodecTests
     [Fact]
     public void A_model_past_sixteen_bit_indices_says_so_in_its_flags_and_its_buffer()
     {
-        // The width is derived from the vertex COUNT, and the flag is written
-        // from the same decision that sized the buffer - the reader refuses a
-        // file where the two disagree, because that is a buffer read at the wrong
-        // element size.
+        // Index width follows the vertex count, not the largest index used.
         int vertexCount = SmodelWriter.MaxVertexCountForIndex16 + 1;
         var vertices = new float[vertexCount * 8];
         for (int v = 0; v < vertexCount; v++) vertices[v * 8] = v;
@@ -171,8 +147,7 @@ public class SmodelCodecTests
         model.Index32.ShouldBeTrue();
         model.IndexAt(2).ShouldBe((uint)(vertexCount - 1));
 
-        // And one vertex fewer still fits, which is what makes the boundary a
-        // decision rather than a coincidence.
+        // One vertex fewer still fits in 16 bits.
         var smaller = new float[SmodelWriter.MaxVertexCountForIndex16 * 8];
         SmodelReader.Read(
             SmodelWriter.Write(smaller, [0, 1, 2], [new SmodelSubmeshSpec(0, 3, null)]),
@@ -182,10 +157,7 @@ public class SmodelCodecTests
     [Fact]
     public void Every_section_starts_on_the_payload_alignment()
     {
-        // Asserted on the FILE rather than trusted of the writer: the whole
-        // reason the format is laid out this way is that VBUF, IBUF and the
-        // collision plane array are reinterpreted in place, and an unaligned
-        // start is a plane straddling a boundary.
+        // VBUF, IBUF and the collision planes are cast in place.
         byte[] file = SmodelWriter.Write(Vertices, Indices, [new SmodelSubmeshSpec(0, 6, Material)]);
 
         uint sections = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(0x0C));
@@ -212,8 +184,6 @@ public class SmodelCodecTests
         BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(0x0C)).ShouldBe(4u);
         SmodelReader.Read(file, "Models/plain.smodel").Names.IsEmpty.ShouldBeTrue();
     }
-
-    // ---- what the writer refuses -------------------------------------------
 
     [Fact]
     public void An_index_past_the_vertex_buffer_is_refused()
@@ -250,8 +220,8 @@ public class SmodelCodecTests
             vertices[v * 8] = positions[v].X;
             vertices[(v * 8) + 1] = positions[v].Y;
             vertices[(v * 8) + 2] = positions[v].Z;
-            vertices[(v * 8) + 5] = 1f;                 // a unit normal, so nothing is all zero
-            vertices[(v * 8) + 6] = v * 0.25f;          // and a uv that varies per vertex
+            vertices[(v * 8) + 5] = 1f;                 // unit normal
+            vertices[(v * 8) + 6] = v * 0.25f;          // uv varies per vertex
         }
 
         return vertices;

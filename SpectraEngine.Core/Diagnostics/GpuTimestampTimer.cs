@@ -2,12 +2,12 @@ using System;
 
 namespace SpectraEngine.Core.Diagnostics;
 
-/// <summary>Completed GPU work only. Values are milliseconds, never CPU submission time.</summary>
+/// <summary>GPU time of the last completed sample, in milliseconds.</summary>
 public readonly record struct GpuProfileSnapshot(bool Available, long Frame, double Total,
     double Shadows, double Geometry, double Lighting, double Resolve);
 
-/// <summary>Bounded asynchronous query ownership shared by the three backends.
-/// A busy ring drops instrumentation instead of waiting or reusing live queries.</summary>
+// A ring of async timestamp queries, shared by the three backends. When the
+// ring is full the frame goes unmeasured; it never waits or reuses a live query.
 internal abstract class GpuTimestampTimer : IDisposable
 {
     protected const int Slots = 8, Marks = 64;

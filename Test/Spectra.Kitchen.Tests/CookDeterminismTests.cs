@@ -7,50 +7,27 @@ using System.Text;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The three cook oracles: two clean cooks, a cached cook against a clean one, and
-/// <c>-j1</c> against <c>-jN</c>, each producing one artifact byte for byte.
+/// Byte identity of two clean cooks, a cached cook against a clean one, and
+/// <c>-j1</c> against <c>-jN</c>.
 /// </summary>
-/// <remarks>
-/// <para><b>Through the scook BINARY rather than through <c>CookSession</c>, and
-/// that is the whole reason this is a separate file.</b> .NET randomises the
-/// string hash seed per PROCESS, so a dictionary iteration order that leaked into
-/// a cooked byte would be stable inside one test host and different between two
-/// runs of the tool - which is the failure somebody reports as "CI says the pack
-/// changed and nothing changed". An in-process comparison cannot see that class of
-/// bug at all, because both cooks would share the seed.</para>
-/// <para><b>The fixture is sized so the parallel oracle is not vacuous.</b> Thirty
-/// six assets across four folders at sizes spanning four orders of magnitude,
-/// arranged so that neither the walk order nor the size order is the completion
-/// order. Three identical small files finish in the order the workers were handed
-/// them, and would pass just as happily with the outcome array replaced by a list
-/// appended to as each rule returned.</para>
-/// <para><b>The MANIFEST is compared beside the pack wherever it can be.</b> A pack
-/// sorts its entries by asset id, so it absorbs a scheduling leak in the very place
-/// one would first show up; the manifest is written in walk order and absorbs
-/// nothing. The cached oracle is the one that cannot compare manifests, because a
-/// <c>skipped</c> member appearing on every asset there is the point rather than a
-/// difference.</para>
-/// </remarks>
+// Runs the scook binary, not CookSession: the string hash seed is per process,
+// so an in-process comparison cannot see a hash-order leak.
+// The manifest is compared too where possible. The pack sorts by asset id and
+// would hide a scheduling leak; the manifest is in walk order.
 [Trait("Suite", "Determinism")]
 public class CookDeterminismTests
 {
     private const int AssetCount = 36;
 
-    // Images in WriteFixtureWithImages, counted so the cache oracle's own
-    // assertion cannot drift from the fixture.
+    // Counts of what WriteFixtureWithImages adds.
     private const int ImageCount = 3;
-
-    // And the one material over them, counted for the same reason.
     private const int MaterialCount = 1;
-
-    // And the one model that wears it.
     private const int ModelCount = 1;
 
     private static readonly string[] Folders = ["Textures", "Models", "Materials", "Audio"];
 
-    // Out of step with the folder cycle deliberately: four folders and six sizes
-    // means an asset's size does not follow from where it sits in the walk, so the
-    // order rules finish in is neither of the two orders the cook writes in.
+    // Six sizes against four folders, so completion order is neither walk
+    // order nor size order.
     private static readonly int[] Sizes = [24, 262_144, 1_024, 65_536, 96, 8_192];
 
     [Fact]
@@ -64,9 +41,6 @@ public class CookDeterminismTests
         CookRun first = Cook(project, "clean-a", "--no-cache");
         CookRun second = Cook(project, "clean-b", "--no-cache");
 
-        // Nothing in a cook may depend on a clock, on a path on the cooking
-        // machine, on the order a directory listing came back in, or on a hash seed
-        // this process happened to be given.
         second.Pack.ShouldBe(first.Pack);
         second.Manifest.ShouldBe(first.Manifest);
     }
@@ -79,14 +53,11 @@ public class CookDeterminismTests
         using var project = new TempProject();
         WriteFixtureWithImages(project);
 
-        // The first run fills .spectra-cook/ as a side effect; the second is the
-        // one under test.
+        // The first run fills .spectra-cook/.
         CookRun clean = Cook(project, "cold");
         CookRun cached = Cook(project, "warm");
 
-        // Asserted rather than assumed: without this the oracle silently degrades
-        // into a second copy of the one above the moment anything stops the cache
-        // hitting, and it would keep passing.
+        // Without this, a cache that never hits still passes.
         cached.Stdout.ShouldContain($"{AssetCount + ImageCount + MaterialCount + ModelCount} from cache");
 
         cached.Pack.ShouldBe(clean.Pack);
@@ -103,8 +74,7 @@ public class CookDeterminismTests
         CookRun serial = Cook(project, "j1", "--no-cache", "-j", "1");
         CookRun parallel = Cook(project, "j8", "--no-cache", "-j", "8");
 
-        // The same assertion: a run that quietly clamped to one worker would agree
-        // with -j1 for the least interesting reason there is.
+        // A run clamped to one worker would agree with -j1 trivially.
         parallel.Stdout.ShouldContain("8 workers");
         serial.Stdout.ShouldNotContain("workers");
 
@@ -122,12 +92,8 @@ public class CookDeterminismTests
 
         CookRun parallel = Cook(project, "paired", "--no-cache", "-j", "8");
 
-        // The manifest is the one artifact carrying the cook's OWN order rather
-        // than the container's: a pack sorts its entries by asset id, so a result
-        // that landed in the wrong slot reaches a reader as a byte difference to
-        // bisect rather than as the thing it is. Under a raw copy an asset's source
-        // path, the input it read and the output it emitted are one string, so a
-        // record naming two is a worker's answer applied to somebody else's asset.
+        // For a raw copy the source, input and output paths are one string, so a
+        // record naming two is a result paired with the wrong asset.
         string[] records = ManifestRecords(parallel.Manifest);
         records.Length.ShouldBe(AssetCount);
 
@@ -141,13 +107,10 @@ public class CookDeterminismTests
             sources.Add(paths[0]);
         }
 
-        // And in walk order, which is ordinal ascending by content path.
+        // Walk order is ordinal ascending by content path.
         sources.ShouldBe([.. sources.Order(StringComparer.Ordinal)]);
     }
 
-    // Sizes and folders both cycle, at lengths that share no factor with each
-    // other, so a big asset and a small one sit next to each other everywhere in
-    // the walk rather than in runs.
     private static void WriteFixture(TempProject project)
     {
         for (int i = 0; i < AssetCount; i++)
@@ -158,15 +121,8 @@ public class CookDeterminismTests
         }
     }
 
-    // The same fixture plus real images, for the three BYTE-IDENTITY oracles.
-    //
-    // Block compression is the one step in a cook that SEARCHES rather than
-    // transcribes, and the search is measurably sensitive to the instruction-set
-    // baseline (docs/spikes/2026-09-cook-dependency-spikes.md), so a determinism
-    // oracle with no image in it measures the easy half. It is deliberately not in
-    // the PAIRING fixture: that test reads a record's three paths and asserts they
-    // are one string, which is true of a raw copy and false of an image, whose
-    // output is the .simage beside its source.
+    // Adds images, a material and a model for the byte-identity oracles. Not
+    // used by the pairing test: only a raw copy has one path for all three.
     private static void WriteFixtureWithImages(TempProject project)
     {
         WriteFixture(project);
@@ -174,31 +130,19 @@ public class CookDeterminismTests
         for (int i = 0; i < ImageCount; i++)
             project.WriteAsset($"Textures/tile_{i}.png", TempProject.Png(16, 16, seed: (byte)(i * 40)));
 
-        // One real material over one of those textures, so the oracles cover a
-        // rule that READS a second asset. Its record carries an input the asset's
-        // own path is not, which is why it joins this fixture and not the pairing
-        // one, whose whole assertion is that a raw copy's three paths are one
-        // string.
+        // A rule that reads a second asset.
         project.WriteAsset(
             "Materials/tile.spectramat",
             "shader = lit\ntexture uDiffuse = Textures/tile_0.png, linearmipmap, repeat\n");
 
-        // A model, so the oracles cover the one rule whose output is FLOATS laid
-        // out by arithmetic this repo wrote. Every other cooked artifact here is
-        // bytes copied or bytes an encoder produced; a vertex buffer is a matrix
-        // composition and a walk, which is the shape a scheduling or ordering
-        // leak would show up in. Its material is the one authored above, so it
-        // reports nothing and is therefore cacheable - a model with a diagnostic
-        // is never cached, and the cached oracle would then be measuring one
-        // asset fewer than it thinks.
+        // Uses the material above so it reports nothing: a model with a
+        // diagnostic is never cached, which would break the cached count.
         project.WriteAsset("Models/prop.gltf", GltfFixture.Json(materialName: "tile"));
     }
 
     private static CookRun Cook(TempProject project, string label, params string[] extra)
     {
-        // Every run gets its own output folder and its own manifest, both OUTSIDE
-        // the content root: written under Assets/ they would become content the
-        // next cook walks, and each run would cook the one before it.
+        // Outside Assets/, or the next cook would walk this run's output.
         string output = Path.Combine(project.Root, label);
         string manifest = Path.Combine(project.Root, label + "-manifest.json");
 
@@ -211,17 +155,13 @@ public class CookDeterminismTests
         return new CookRun(run.Stdout, File.ReadAllBytes(pack), File.ReadAllBytes(manifest));
     }
 
-    // Read back by scanning rather than by parsing the document: the manifest's own
-    // shape has its own tests, and what is wanted here is the order the records
-    // were written in and which paths ended up on one record. One asset per LINE is
-    // what makes that readable at all.
+    // The manifest writes one asset per line.
     private static string[] ManifestRecords(byte[] manifest) =>
         [.. Encoding.UTF8.GetString(manifest)
             .Split('\n')
             .Where(static line => line.Contains("\"rule\":\"", StringComparison.Ordinal))];
 
-    // Every path named on one record, in the order it was written: the asset's own
-    // first, then its inputs, then its outputs.
+    // The asset's own path first, then inputs, then outputs.
     private static string[] PathsIn(string record)
     {
         const string Opening = "\"path\":\"";

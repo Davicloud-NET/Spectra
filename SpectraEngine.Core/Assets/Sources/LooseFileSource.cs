@@ -7,29 +7,16 @@ using System.IO;
 namespace SpectraEngine.Core.Assets.Sources;
 
 /// <summary>
-/// Content served from a folder of loose files — the engine's <c>Assets</c>
-/// directory, and the only source that exists today.
+/// Content served from a folder of loose files, such as a project's <c>Assets</c>
+/// directory. The only source that can supply a hot-reload watch path.
 /// </summary>
-/// <remarks>
-/// <para>This is the filesystem path the asset manager used to walk inline,
-/// moved behind the seam rather than rewritten: the same normalisation, the same
-/// read-with-retry, the same treatment of a missing file as a plain miss.</para>
-/// <para><b>It is the only source that can supply a watch path</b>, which is what
-/// makes hot-reload a property of loose content rather than a feature the rest
-/// of the engine has to reason about. A packed archive answers false and is
-/// simply not watched.</para>
-/// <para><b>Thread-safe by having no mutable state.</b> Every member resolves a
-/// path and touches the filesystem, so any number of threads may call it at
-/// once.</para>
-/// </remarks>
 public sealed class LooseFileSource : IContentSource
 {
     private readonly ILogger _logger;
 
     /// <summary>
     /// Creates a source over <paramref name="rootPath"/>. The folder need not
-    /// exist: a build with no content resolves every path to a miss rather than
-    /// failing to construct.
+    /// exist; every path is then a miss.
     /// </summary>
     public LooseFileSource(ILogger logger, string rootPath, int priority = 0)
     {
@@ -61,16 +48,12 @@ public sealed class LooseFileSource : IContentSource
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            // Deleted between the probe and the open. That is a miss, not a
-            // fault, and logging it would put a line in front of the caller's
-            // own "not found, using the fallback" one.
+            // Deleted between the probe and the open: a plain miss, not logged.
             return false;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Present but unreadable: the caller degrades exactly as it would
-            // for a miss, so this line is the only place the difference between
-            // the two is ever recorded.
+            // Unreadable is treated as a miss. The log line is the only record of the difference.
             _logger.LogWarning("Could not read content '{Path}' from {Source}: {Message}", path, this, ex.Message);
             return false;
         }
@@ -116,9 +99,7 @@ public sealed class LooseFileSource : IContentSource
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A folder that vanished or refused access mid-walk yields what was
-            // found so far: enumeration feeds tools, and half a listing beats a
-            // dialog with a stack trace in it.
+            // Keep what was found so far.
             _logger.LogWarning("Enumerating '{Prefix}' in {Source} stopped early: {Message}", prefix, this, ex.Message);
         }
     }
@@ -126,10 +107,8 @@ public sealed class LooseFileSource : IContentSource
     /// <inheritdoc/>
     public override string ToString() => $"loose files @ {RootPath}";
 
-    // Content paths are normalised (and rejected) by ContentRoot, which is what
-    // stops '..' and a rooted path from reaching outside this folder. A path
-    // this source cannot resolve is a miss, never an exception: every caller
-    // above is in the middle of deciding between real content and a fallback.
+    // ContentRoot rejects '..' and rooted paths, which keeps reads inside this folder.
+    // An unresolvable path is a miss, never an exception.
     private bool TryResolve(string path, out string absolute)
     {
         if (!string.IsNullOrEmpty(path))

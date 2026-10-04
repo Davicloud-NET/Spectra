@@ -8,27 +8,9 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The demo's obstacle course, walked headlessly by the real mover over the
-/// real compiled world.
+/// The demo's obstacle course, walked by the real mover over the compiled
+/// world. Fails when a tuning default moves and part of the level stops working.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>These test the CONTENT, which nothing else does.</b>
-/// <see cref="CharacterMoverTests"/> builds one-box worlds to pin the mover's
-/// behaviour; these build the actual course a person is going to walk and ask
-/// whether it works. Both kinds are needed and they fail differently: a mover
-/// regression breaks the first set, and a course authored a hair too tight, too
-/// tall or too steep breaks only this one — silently, as a door you cannot fit
-/// through or a stair you cannot climb, which is exactly the kind of thing that
-/// gets discovered by a human twenty minutes into playing.
-/// </para>
-/// <para>
-/// Every assertion is about a number that was chosen in
-/// <see cref="DemoPlayArea"/> against a tuning default. If a tuning default
-/// moves, these are the tests that say which parts of the level stopped being
-/// usable.
-/// </para>
-/// </remarks>
 public sealed class DemoPlayAreaTests
 {
     private const float Dt = PhysicsDefaults.FixedDeltaTime;
@@ -39,8 +21,6 @@ public sealed class DemoPlayAreaTests
     private const float South = MathF.PI / 2f;
     private const float North = -MathF.PI / 2f;
 
-    // --- The ground the whole course stands on -------------------------------
-
     [Fact]
     public void The_spawn_point_is_standing_on_solid_ground()
     {
@@ -50,9 +30,7 @@ public sealed class DemoPlayAreaTests
 
         Assert.True(state.Grounded, "the character should be standing at the spawn point");
 
-        // A resting character sits exactly one skin width above the surface, by
-        // contract: the sweep stops where separation equals SkinWidth, so the
-        // mover never has to do backoff arithmetic of its own.
+        // A resting character sits one skin width above the surface.
         Assert.Equal(course.Tuning.SkinWidth, state.Position.Y, 4);
     }
 
@@ -62,7 +40,7 @@ public sealed class DemoPlayAreaTests
         var course = new Course();
         CharacterState state = course.Settle(course.Spawn(), 10);
 
-        // West from the spawn is the boundary, four units away.
+        // The west boundary is four units from the spawn.
         state = course.Walk(state, West, 120);
 
         Assert.True(state.Position.X > 130.5f,
@@ -70,11 +48,8 @@ public sealed class DemoPlayAreaTests
         Assert.True(state.Grounded, "the character should still be on the floor at the wall");
     }
 
-    // --- Stairs: two must climb, one must refuse ------------------------------
-    //
-    // All three staircases climb 2.0 over 4.0 of run and differ only in rise, so
-    // these three tests together bracket StepHeight rather than merely sampling
-    // near it.
+    // All three staircases climb 2.0 over 4.0 of run and differ only in rise,
+    // so together they bracket StepHeight.
 
     [Theory]
     [InlineData(-8f, "gentle (0.25 rise)")]
@@ -99,9 +74,6 @@ public sealed class DemoPlayAreaTests
 
         state = course.Walk(state, East, 150);
 
-        // A 0.50 riser against a 0.45 step height: the first one must stop the
-        // character dead. It may ride up nothing at all, so the assertion is that
-        // it never reaches the second tread.
         Assert.True(state.Position.Y < 0.5f,
             $"a 0.50 riser exceeds the 0.45 step height and must not be climbable, " +
             $"but the character reached y={state.Position.Y:0.000}");
@@ -116,18 +88,14 @@ public sealed class DemoPlayAreaTests
     {
         var course = new Course();
 
-        // A flat control run beside the stairs, over the same number of ticks.
-        // Comparing against a measured baseline rather than a written-down speed
-        // is what keeps this test true when WalkSpeed or the tick rate changes.
+        // Flat control run, measured so the test survives a WalkSpeed or tick
+        // rate change.
         (float flatTravel, float flatStep) = course.MeasureRun(new Vector3(133f, 0.05f, 14f), 90);
         (float stairTravel, float stairStep) = course.MeasureRun(new Vector3(133f, 0.05f, z), 90);
 
-        // THE BUG THIS PINS: the step probe used to advance a full capsule radius
-        // in the tick it fired — five ticks of walking, teleported, once per
-        // riser. It climbed a 0.5-tread staircase at two and a half times walking
-        // speed in visible lurches. The probe only ever needed to advance far
-        // enough for the down sweep to land on a WALKABLE part of the ledge's
-        // edge, which is r(1 - sin(slopeLimit)) and about a fifth as far.
+        // The step probe must advance only r(1 - sin(slopeLimit)), enough for
+        // the down sweep to land on a walkable part of the ledge. A full
+        // capsule radius per riser is a visible lurch.
         Assert.True(stairTravel < flatTravel * 1.25f,
             $"climbing the {description} staircase covered {stairTravel:0.000} horizontally where flat " +
             $"ground covered {flatTravel:0.000} — the step probe is carrying the character forward");
@@ -137,14 +105,12 @@ public sealed class DemoPlayAreaTests
             $"{flatStep:0.000} — that is a visible lurch, not a step");
     }
 
-    // --- The doorway: the reason the source is a plane set --------------------
-
     [Fact]
     public void The_terrace_doorway_can_be_walked_through()
     {
         var course = new Course();
 
-        // On the terrace, west of the wall, lined up with the opening.
+        // On the terrace, west of the wall, in line with the opening.
         CharacterState state = course.Settle(Course.SpawnAt(new Vector3(141.5f, 2.05f, 0f)), 20);
         Assert.True(state.Grounded, "the character should be standing on the terrace");
 
@@ -164,8 +130,7 @@ public sealed class DemoPlayAreaTests
 
         state = course.Walk(state, East, 90);
 
-        // The wall's west face is at x = 143.3; a 0.35 radius plus a skin stops
-        // the centre a shade before it.
+        // Wall's west face is at x = 143.3; the capsule radius is 0.35.
         Assert.True(state.Position.X < 143.0f,
             $"the wall beside the opening must block, but the character reached x={state.Position.X:0.000}");
     }
@@ -175,13 +140,11 @@ public sealed class DemoPlayAreaTests
     {
         var course = new Course();
 
-        // Inside the tunnel, which is 2.2 tall with a subtractive brush's cavity
-        // wall above it rather than open sky.
+        // The tunnel is 2.2 tall, cut by a subtractive brush.
         CharacterState state = course.Settle(Course.SpawnAt(new Vector3(146f, 2.05f, 8f)), 20);
         Assert.True(state.Grounded, "the character should be standing inside the tunnel");
 
-        // Jump: 1.2 of jump height against 0.4 of headroom means the ceiling has
-        // to stop it. Without one, the character sails up through the block.
+        // 1.2 of jump height against 0.4 of headroom.
         state = course.Step(state, East, jump: true);
         for (int i = 0; i < 40; i++)
             state = course.Step(state, East);
@@ -190,8 +153,6 @@ public sealed class DemoPlayAreaTests
             $"the tunnel ceiling must stop a jump inside it, but the character reached " +
             $"y={state.Position.Y:0.000}");
     }
-
-    // --- Ramps: two must walk, one must refuse --------------------------------
 
     [Theory]
     [InlineData(-17f, 25)]
@@ -228,11 +189,8 @@ public sealed class DemoPlayAreaTests
         var course = new Course();
         CharacterState state = course.Settle(Course.SpawnAt(new Vector3(150f, 0.05f, -13f)), 10);
 
-        // Walk up and over the 40 degree ramp, checking every tick from the
-        // moment the top is reached. A ground snap that gates on downward
-        // velocity throws the character into the air exactly here — you arrive
-        // at the crest with a real upward velocity, which is the case that looks
-        // fine on flat ground and fails on every ramp in the level.
+        // The character reaches the crest with upward velocity. A ground snap
+        // that only fires on downward velocity launches it here.
         float highest = 0f;
         bool everAirborneOnTop = false;
 
@@ -240,10 +198,8 @@ public sealed class DemoPlayAreaTests
         {
             state = course.Step(state, East, forward: 1f);
 
-            // The window is the platform's own surface: before 156 the character
-            // is still on the ramp, and after 161 it is approaching the platform's
-            // east edge at 162, where leaving the ground is simply what walking
-            // off a ledge does.
+            // Only the platform top: still on the ramp before 156, and past
+            // 161 it walks off the east edge at 162.
             if (state.Position.X < 156f || state.Position.X > 161f)
                 continue;
 
@@ -259,15 +215,12 @@ public sealed class DemoPlayAreaTests
         Assert.True(highest > 1.9f, "the character never reached the platform at all");
     }
 
-    // --- The chasm -----------------------------------------------------------
-
     [Fact]
     public void The_chasm_goes_all_the_way_through_the_floor()
     {
         var course = new Course();
 
-        // Dropped in from above. There is no bottom: the cut runs past the
-        // slab's underside, so this must keep falling rather than land.
+        // Dropped in from above. The cut runs past the slab's underside.
         CharacterState state = Course.SpawnAt(new Vector3(153.5f, 2f, 10f));
         state = course.Settle(state, 180);
 
@@ -282,8 +235,7 @@ public sealed class DemoPlayAreaTests
     {
         var course = new Course();
 
-        // Run-up on the floor east of the terrace, heading for the chasm's west
-        // lip at x = 152.
+        // Run-up toward the chasm's west lip at x = 152.
         CharacterState state = course.Settle(Course.SpawnAt(new Vector3(148.5f, 0.05f, 10f)), 10);
 
         bool jumped = false;
@@ -302,17 +254,13 @@ public sealed class DemoPlayAreaTests
         Assert.True(state.Grounded, "the character should have landed on the far side");
     }
 
-    // --- The part brush -------------------------------------------------------
-
     [Fact]
     public void The_part_brush_platform_is_solid()
     {
         var course = new Course();
 
-        // Dropped onto the part platform, whose top is at y = 1.0. It is the only
-        // geometry in the course that reaches the mover through the live spatial
-        // index rather than the compiled world — if that lane is broken, this
-        // falls through to the floor at y = 0.
+        // Platform top is at y = 1.0. It is the only geometry here that
+        // reaches the mover through the spatial index, not the compiled world.
         CharacterState state = Course.SpawnAt(new Vector3(164f, 3f, -3f));
         state = course.Settle(state, 120);
 
@@ -320,18 +268,13 @@ public sealed class DemoPlayAreaTests
         Assert.Equal(1f + course.Tuning.SkinWidth, state.Position.Y, 4);
     }
 
-    // --- The floor has no holes in it -----------------------------------------
-
     [Fact]
     public void No_direction_walked_from_the_spawn_leaves_the_world()
     {
         var course = new Course();
 
-        // Sixteen headings, three hundred ticks each: five seconds of walking in
-        // every direction from the spawn. Nothing here asserts where you end up —
-        // the point is that you never end up falling, which is what an unnoticed
-        // gap between two brushes produces and what no amount of staring at the
-        // level in an editor reveals.
+        // Sixteen headings, five seconds each. A gap between two brushes
+        // shows up as a fall.
         for (int i = 0; i < 16; i++)
         {
             float yaw = i * MathF.Tau / 16f;
@@ -341,10 +284,7 @@ public sealed class DemoPlayAreaTests
             {
                 state = course.Step(state, yaw, forward: 1f);
 
-                // The chasm is the one authored way out of the world, and
-                // walking into it is the correct outcome rather than a hole
-                // nobody meant to leave. Stop this heading there instead of
-                // pretending the fall is a failure.
+                // The chasm is the one authored way out of the world.
                 if (InsideChasm(state.Position))
                     break;
 
@@ -354,8 +294,6 @@ public sealed class DemoPlayAreaTests
             }
         }
     }
-
-    // --- The region cache -----------------------------------------------------
 
     [Fact]
     public void Walking_does_not_rebuild_the_world_lane_every_tick()
@@ -368,10 +306,7 @@ public sealed class DemoPlayAreaTests
 
         int rebuilds = course.Source.WorldLaneRebuilds - afterSettle;
 
-        // Five seconds of walking covers about 22 units, which is inside one
-        // region margin — so at most a couple of rebuilds. A count that tracks
-        // the tick count means the region is not holding and every tick is
-        // paying an O(region) rebuild it should be amortising over thousands.
+        // Five seconds of walking is about 22 units, inside one region margin.
         Assert.True(rebuilds <= 2,
             $"the world lane was rebuilt {rebuilds} times over 300 ticks of walking");
     }
@@ -380,7 +315,6 @@ public sealed class DemoPlayAreaTests
         position.X > 151.5f && position.X < 155.5f &&
         position.Z > 1.5f && position.Z < 18.5f;
 
-    /// <summary>The real play area, compiled, with a mover driven over it.</summary>
     private sealed class Course
     {
         private readonly Scene _scene = new("PlayAreaTest");
@@ -425,7 +359,7 @@ public sealed class DemoPlayAreaTests
             return state;
         }
 
-        /// <summary>Walks east and reports total travel plus the biggest single-tick advance.</summary>
+        // Walks east; returns total travel and the biggest single-tick advance.
         public (float Travel, float BiggestStep) MeasureRun(Vector3 feet, int ticks)
         {
             CharacterState state = Settle(CharacterState.AtFeet(feet), 10);

@@ -3,38 +3,22 @@ using System;
 
 namespace SpectraEngine.Core.Graphics.OpenGL;
 
-/// <summary>
-/// A GL buffer of per-instance attributes, plus the layout describing it.
-/// </summary>
-/// <remarks>
-/// <b>The layout travels with the buffer because GL binds it into the VAO, not
-/// into the draw call.</b> D3D takes the input layout at draw time and the
-/// buffer separately; GL has no equivalent, so a mesh has to wire this buffer's
-/// attribute pointers into its own vertex array before it can draw from it. The
-/// mesh does that once per buffer it meets (see
-/// <c>OpenGLMesh.DrawInstanced</c>), which is why the attributes have to be
-/// reachable from here rather than passed per draw.
-/// </remarks>
+// Carries its attribute layout: GL binds attribute pointers into the mesh's
+// VAO, so OpenGLMesh needs them when it wires this buffer in.
 internal sealed class OpenGLInstanceBuffer : InstanceBuffer
 {
     private readonly GL _gl;
     private bool _disposed;
 
-    /// <summary>The GL buffer name, for the mesh wiring its attribute pointers.</summary>
     internal uint Handle { get; }
 
-    /// <summary>The per-instance attributes, in the order they were declared.</summary>
     internal VertexAttribute[] Attributes { get; }
 
-    /// <summary>Bytes between one instance's data and the next.</summary>
+    // In bytes.
     internal uint Stride { get; }
 
-    /// <summary>
-    /// Bumped on every reallocation. A mesh caches which buffer it has already
-    /// wired into its vertex array, and a name alone is not enough to key that
-    /// on: GL reuses buffer names, so a freed buffer and a fresh one can share
-    /// one and the mesh would skip rewiring against different storage.
-    /// </summary>
+    // Unique per buffer. Meshes key their VAO wiring on this because GL
+    // reuses buffer names.
     internal uint Generation { get; }
 
     private static uint _nextGeneration = 1;
@@ -52,8 +36,6 @@ internal sealed class OpenGLInstanceBuffer : InstanceBuffer
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, Handle);
         unsafe
         {
-            // Allocated empty and filled by Update. DynamicDraw because it is
-            // rewritten every frame by construction.
             gl.BufferData(
                 BufferTargetARB.ArrayBuffer,
                 (nuint)(capacityInstances * Stride),
@@ -64,12 +46,8 @@ internal sealed class OpenGLInstanceBuffer : InstanceBuffer
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Orphaning belongs here rather than in <see cref="Append"/>: handing the
-    /// driver a fresh allocation lets it keep serving in-flight draws from the
-    /// old one instead of stalling, but doing it per append would also throw
-    /// away everything earlier appends in the same frame wrote.
-    /// </remarks>
+    // Orphan once per frame so the driver does not stall on in-flight draws.
+    // Not per append: that would drop the frame's earlier appends.
     protected override unsafe void OnBeginFrame()
     {
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, Handle);

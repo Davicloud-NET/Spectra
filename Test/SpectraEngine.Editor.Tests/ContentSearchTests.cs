@@ -8,15 +8,8 @@ using System.Threading.Tasks;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// Searching a project, filtering it by kind, and finding the way back up.
+/// Searching a project, filtering it by kind, and navigating back up.
 /// </summary>
-/// <remarks>
-/// <b>A query REPLACES the folder view rather than filtering it.</b> Somebody
-/// typing "brick" is asking where the bricks are, not which of the files in this
-/// one folder is called brick: a filter over the current folder answers a
-/// question nobody asked, and reports nothing at all when the file is one level
-/// up.
-/// </remarks>
 public sealed class ContentSearchTests : IDisposable
 {
     private readonly string _root =
@@ -55,9 +48,8 @@ public sealed class ContentSearchTests : IDisposable
         browser.SetRoot(_root);
         await browser.Index.Walking;
 
-        // The walk lands after SetRoot returns, so the list it filled is the
-        // one from before it: re-listing is what the index's own Changed event
-        // does in the app, and there is no dispatcher here to deliver it.
+        // Re-list after the walk. In the app the index's Changed event does
+        // this, but no dispatcher delivers it here.
         browser.NavigateTo(_root);
         return browser;
     }
@@ -89,8 +81,6 @@ public sealed class ContentSearchTests : IDisposable
 
         List<string> names = NamesOf(browser);
 
-        // Both of them, from two different folders, neither of which is the one
-        // the browser is sitting in.
         names.ShouldContain("brick.png");
         names.ShouldContain("wall_brick.spectramat");
         browser.IsSearching.ShouldBeTrue();
@@ -104,8 +94,6 @@ public sealed class ContentSearchTests : IDisposable
 
         browser.Entries.Count.ShouldBe(1);
 
-        // A flat result list has nothing else to tell two files of the same name
-        // apart, which most projects have.
         browser.Entries[0].FolderLabel.ShouldBe("Textures/dev");
     }
 
@@ -150,8 +138,7 @@ public sealed class ContentSearchTests : IDisposable
         ContentBrowserModel browser = await BrowserAsync();
         browser.Filter = ContentFilter.Textures;
 
-        // Hiding the folders would make a filtered view a dead end: there would
-        // be no way to reach the textures one folder down.
+        // Without folders a filtered view is a dead end.
         NamesOf(browser).ShouldContain("Textures");
     }
 

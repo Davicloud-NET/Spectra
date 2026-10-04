@@ -4,58 +4,30 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Bsp;
 
 /// <summary>
-/// The sparse spatial partition of a compiled static world into
-/// <see cref="ChunkCoord.CellSize"/> cells: a dictionary keyed by integer cell
-/// coordinates, holding a <see cref="WorldChunk"/> for every cell at least one
-/// brush's inflated AABB touches. Sparse means no world extents — negative and
-/// arbitrarily distant coordinates cost the same as cells at the origin, which
-/// is what makes brushes placeable anywhere (open-world pillar).
+/// Sparse grid of <see cref="WorldChunk"/> cells for a compiled static world,
+/// keyed by cell coordinate. No world extents. Immutable once built.
 /// </summary>
-/// <remarks>
-/// The partitioning substrate of the chunked compile: <see cref="CsgWorld"/>
-/// builds it from the carved per-brush surfaces, the per-cell snap+weld
-/// (<see cref="ChunkWelder"/>, W2) consumes its residency data and attaches
-/// each cell's welded surfaces, the per-cell BSP stage
-/// (<see cref="ChunkBspBuilder"/>, W3) attaches each cell's tree, and the
-/// per-chunk mesh stage (W4) will consume those. Immutable once the world
-/// build that created it returns, so any number of threads may read it.
-/// </remarks>
 public sealed class ChunkGrid
 {
     /// <summary>
-    /// How far a brush's world AABB is inflated before its cell coverage is
-    /// computed: <c>2 * max(Polygon.Epsilon, VertexSnapper.GridSize)</c>.
-    /// PINNED alongside <see cref="ChunkCoord.CellSize"/>. Rationale: geometry
-    /// within one epsilon of a cell boundary can weld to (or snap onto)
-    /// vertices on the far side, so any brush that close to a boundary must be
-    /// resident in both cells for per-cell welds to see every candidate vertex
-    /// a global weld would; twice the larger tolerance covers a snap
-    /// displacement followed by a weld test. Do not change without documenting
-    /// why — the W2 weld-equivalence oracle depends on this band being wide
-    /// enough.
+    /// How far a brush's world AABB is inflated before its cell coverage is computed.
     /// </summary>
+    // Geometry within an epsilon of a cell boundary can snap or weld to vertices
+    // on the far side, so such a brush must be resident in both cells. Twice the
+    // larger tolerance covers a snap followed by a weld test. Narrowing this
+    // breaks per-cell weld equivalence with a global weld.
     public const float WeldBand = 2f * (Polygon.Epsilon >= VertexSnapper.GridSize ? Polygon.Epsilon : VertexSnapper.GridSize);
 
-    // The lookup structure is layered so an incremental compile can derive a
-    // grid without re-inserting every cell (an O(world) dictionary build —
-    // exactly the fixed cost the open-world pillar forbids): `_base` is a full
-    // dictionary SHARED with ancestor grids (immutable — never written after
-    // its own build), and `_overlay` holds this grid's cumulative deltas since
-    // the base was built (null value = the cell was removed). A full build has
-    // no overlay; a patched grid clones its parent's small overlay and adds
-    // the edit's cells; when the overlay outgrows a fraction of the base it is
-    // compacted into a fresh flat dictionary (amortized O(1) per edit).
+    // Layered lookup so a patch never re-inserts every cell. _base is shared with
+    // ancestor grids and never written after its build. _overlay holds the deltas
+    // since then (null value = cell removed) and is compacted once it grows.
     private readonly Dictionary<ChunkCoord, WorldChunk> _base;
     private readonly Dictionary<ChunkCoord, WorldChunk?>? _overlay;
     private readonly PagedArray<WorldChunk> _orderedChunks;
 
-    // Conservative bounding box of the occupied cells, in cell coordinates
-    // (inclusive), valid only while Count > 0. Exact for full builds;
-    // patched grids only ever GROW it (recomputing an exact box after a cell
-    // removal would be an O(cells) sweep per edit — the fixed cost the
-    // open-world pillar forbids). A superset is safe for its one consumer,
-    // the ray walk's termination clip: cells outside it are guaranteed
-    // unoccupied, cells inside are simply looked up.
+    // Inclusive cell bounds, valid while Count > 0. Exact after a full build;
+    // patches only grow it, since shrinking needs an O(cells) sweep. A superset
+    // is fine: it is only used to prove a region empty.
     private readonly ChunkCoord _cellMin;
     private readonly ChunkCoord _cellMax;
 
@@ -73,11 +45,8 @@ public sealed class ChunkGrid
     }
 
     /// <summary>
-    /// A conservative (possibly grown, never shrunk-below-actual) bounding box
-    /// of the occupied cells in cell coordinates, inclusive on both ends.
-    /// False when the grid is empty. Every occupied cell lies inside the box;
-    /// the box may cover unoccupied cells after removals (see the field
-    /// comment) — callers may only use it to prove a region is EMPTY.
+    /// Inclusive cell bounds containing every occupied cell; false when the grid is empty.
+    /// May be larger than the occupied set, so only use it to prove a region empty.
     /// </summary>
     public bool TryGetCellBounds(out ChunkCoord min, out ChunkCoord max)
     {
@@ -102,7 +71,7 @@ public sealed class ChunkGrid
         return new(chunks, null, PagedArray<WorldChunk>.From(ordered), _cellMin, _cellMax);
     }
 
-    /// <summary>Collects resident placement indices from intersecting cells. Caller owns scratch.</summary>
+    // Adds the residents of every cell the bounds touch. Caller owns the set.
     internal void CollectResidents(in Aabb bounds, HashSet<int> results)
     {
         if (Count == 0) return;
@@ -147,37 +116,27 @@ public sealed class ChunkGrid
     }
 
     /// <summary>
-    /// Every occupied chunk, sorted ascending by <see cref="ChunkCoord"/>
-    /// (lexicographic X → Y → Z). This is the enumeration consumers must use
-    /// whenever order matters — combining per-cell results into an ordered
-    /// whole, or comparing two grids — because dictionary order is an
-    /// implementation detail. Sorted once at build time, so reading it is free.
+    /// Every occupied chunk in ascending <see cref="ChunkCoord"/> order.
+    /// Use this whenever order matters.
     /// </summary>
     public IReadOnlyList<WorldChunk> OrderedChunks => _orderedChunks;
 
-    /// <summary>
-    /// The brush's world AABB inflated by <see cref="WeldBand"/> — the box
-    /// whose cell coverage defines the brush's residency footprint.
-    /// </summary>
+    /// <summary>The brush's world AABB inflated by <see cref="WeldBand"/>.</summary>
     public static Aabb InflatedBounds(in BrushPlacement placement) =>
         placement.WorldBounds.Expanded(WeldBand);
 
     /// <summary>
-    /// The single cell that OWNS the placement (holds its render surfaces):
-    /// the cell containing the center of the inflated world AABB. Always a
-    /// member of <see cref="ComputeFootprint"/>'s result — the center of a box
-    /// lies inside the box.
+    /// The one cell that holds the placement's render surfaces: the cell
+    /// containing the centre of its inflated AABB.
     /// </summary>
     public static ChunkCoord OwnerCell(in BrushPlacement placement) =>
         ChunkCoord.FromPosition(InflatedBounds(placement).Center);
 
     /// <summary>
-    /// Every cell the placement is resident in: all cells its inflated world
-    /// AABB touches. Sorted ascending by construction (X outer, Y middle, Z
-    /// inner matches <see cref="ChunkCoord.CompareTo"/>), so footprints of
-    /// equal placements are element-wise identical — the property the scene's
-    /// dirty-cell diffing relies on.
+    /// Every cell the placement's inflated AABB touches, in ascending order.
     /// </summary>
+    // Loop nesting matches ChunkCoord.CompareTo. Dirty-cell diffing compares
+    // footprints element by element.
     public static ChunkCoord[] ComputeFootprint(in BrushPlacement placement)
     {
         Aabb inflated = InflatedBounds(placement);
@@ -197,13 +156,8 @@ public sealed class ChunkGrid
         return cells;
     }
 
-    /// <summary>
-    /// Buckets every placement (and its carved surfaces) into the sparse grid:
-    /// each placement becomes resident in every cell of its footprint and
-    /// owned — surfaces included — by its owner cell. Placements are visited
-    /// in index order, making every chunk's index lists ascending and the
-    /// whole build a deterministic function of its inputs.
-    /// </summary>
+    // Placements are visited in index order, so every chunk's index lists
+    // come out ascending.
     internal static ChunkGrid Build(IReadOnlyList<BrushPlacement> placements, IReadOnlyList<Polygon[]> perBrushSurfaces)
     {
         var chunks = new Dictionary<ChunkCoord, WorldChunk>();
@@ -236,15 +190,12 @@ public sealed class ChunkGrid
 
         var ordered = new WorldChunk[chunks.Count];
         chunks.Values.CopyTo(ordered, 0);
-        // Coord is unique per chunk, so this sort has no equal keys and its
-        // instability cannot introduce nondeterminism.
+        // Coords are unique, so the unstable sort is still deterministic.
         Array.Sort(ordered, static (a, b) => a.Coord.CompareTo(b.Coord));
         (ChunkCoord cellMin, ChunkCoord cellMax) = ComputeCellBounds(ordered);
         return new ChunkGrid(chunks, overlay: null, PagedArray<WorldChunk>.From(ordered), cellMin, cellMax);
     }
 
-    // Exact cell-coordinate bounds of the occupied cells (full builds only —
-    // patched grids grow their parent's box instead, see the field comment).
     private static (ChunkCoord Min, ChunkCoord Max) ComputeCellBounds(IReadOnlyList<WorldChunk> chunks)
     {
         if (chunks.Count == 0)
@@ -265,23 +216,13 @@ public sealed class ChunkGrid
         return (new ChunkCoord(minX, minY, minZ), new ChunkCoord(maxX, maxY, maxZ));
     }
 
-    /// <summary>
-    /// Derives a grid from <paramref name="previous"/> with the given cells
-    /// replaced, added, or (null chunk) removed — the incremental compile's
-    /// grid construction, O(changes + cells-as-one-memcpy) instead of a full
-    /// re-bucketing. <paramref name="changes"/> must be sorted ascending by
-    /// coordinate with no duplicates; every non-removed entry must be a fresh
-    /// <see cref="WorldChunk"/> (the previous grid's chunks stay live in the
-    /// previous world and are never mutated). <paramref name="previous"/> is
-    /// read-only here and remains fully valid.
-    /// </summary>
+    // Derives a grid with cells replaced, added or (null chunk) removed.
+    // changes: ascending by coord, no duplicates, and every chunk fresh, since
+    // the previous grid's chunks are still live. previous is left untouched.
     internal static ChunkGrid Patch(ChunkGrid previous, IReadOnlyList<(ChunkCoord Coord, WorldChunk? Chunk)> changes)
     {
-        // Splice the ordered enumeration. The steady-state edit (chunks
-        // replaced in place, no cell added or removed) derives by paged
-        // copy-on-write — O(changed pages), nothing proportional to the cell
-        // count. Cell insertions/removals re-pack via binary-searched block
-        // copies — memcpy-cheap, and rare next to in-place edits.
+        // Replace-only edits go through paged copy-on-write, O(changed pages).
+        // Added or removed cells re-pack with block copies.
         PagedArray<WorldChunk> prevOrdered = previous._orderedChunks;
         int sizeDelta = 0;
         bool replaceOnly = true;
@@ -319,10 +260,7 @@ public sealed class ChunkGrid
             ordered = PagedArray<WorldChunk>.From(packed);
         }
 
-        // Cell bounds: grow the parent's box over the added cells. A previously
-        // empty grid (Count == 0) contributes no box, so the first added cell
-        // seeds it. Removals deliberately never shrink it (see the field
-        // comment on _cellMin).
+        // Grow the box over added cells. Removals never shrink it.
         ChunkCoord cellMin = previous._cellMin;
         ChunkCoord cellMax = previous._cellMax;
         bool hasBounds = previous.Count > 0;
@@ -342,10 +280,8 @@ public sealed class ChunkGrid
                 Math.Max(cellMax.X, coord.X), Math.Max(cellMax.Y, coord.Y), Math.Max(cellMax.Z, coord.Z));
         }
 
-        // Layered lookup: clone the (small) parent overlay, apply the changes,
-        // compact into a flat dictionary once the overlay stops being small —
-        // the one amortized O(cells) step, paid every ~base/8 edits, which
-        // also caps the lookup cost at exactly two probes forever.
+        // Clone the small parent overlay and apply the changes. Past ~base/8
+        // entries it is compacted, the one amortized O(cells) step.
         Dictionary<ChunkCoord, WorldChunk?> overlay = previous._overlay is not null
             ? new Dictionary<ChunkCoord, WorldChunk?>(previous._overlay)
             : [];
@@ -357,8 +293,7 @@ public sealed class ChunkGrid
             var flat = new Dictionary<ChunkCoord, WorldChunk>(ordered.Count);
             foreach (WorldChunk chunk in ordered)
                 flat.Add(chunk.Coord, chunk);
-            // Compaction visits every cell anyway, so take the opportunity to
-            // re-tighten the conservative box for free.
+            // Already visiting every cell, so tighten the box too.
             (ChunkCoord exactMin, ChunkCoord exactMax) = ComputeCellBounds(ordered);
             return new ChunkGrid(flat, overlay: null, ordered, exactMin, exactMax);
         }
@@ -381,21 +316,13 @@ public sealed class ChunkGrid
         return lo;
     }
 
-    /// <summary>
-    /// Attaches each placement's snapped+welded surfaces to its owner cell,
-    /// in placement order — the same visitation order the owned carve buckets
-    /// were filled in, so <see cref="WorldChunk.WeldedSurfaces"/> and
-    /// <see cref="WorldChunk.Surfaces"/> stay per-brush aligned. Called once
-    /// by the world assembly after the per-cell weld; the chunks are immutable
-    /// from then on.
-    /// </summary>
+    // Placement order matches Build's, which keeps WeldedSurfaces and Surfaces
+    // aligned per brush. Called once after the per-cell weld.
     internal void AttachWeldedSurfaces(IReadOnlyList<BrushPlacement> placements, Polygon[][] weldedPerBrush)
     {
         for (int i = 0; i < placements.Count; i++)
         {
             BrushPlacement placement = placements[i];
-            // The owner cell is always occupied — the grid build created a
-            // chunk for every footprint cell of every placement.
             if (TryGet(OwnerCell(in placement), out WorldChunk chunk))
                 chunk.AddWeldedSurfaces(weldedPerBrush[i]);
         }

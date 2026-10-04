@@ -10,18 +10,9 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// Lights can be seen and picked in the viewport, which they could not be at
-/// all: they carry no mesh and no brush, and the scene deliberately keeps them
-/// out of the spatial index, so a lamp was findable only by name in the tree
-/// and a marquee dragged across one CLEARED the selection.
+/// Picking and marquee-selecting lights by their viewport icon. Lights are not
+/// in the spatial index.
 /// </summary>
-/// <remarks>
-/// <b>The marquee cases carry their own oracle</b>, computed from the camera's
-/// view-projection and the icon's documented pixel radius and sharing nothing
-/// with <see cref="BoxSelectQuery"/>'s implementation. Extending the cases
-/// without extending the oracle would prove only that the code agrees with
-/// itself, which is the failure mode the box-select suite was built to avoid.
-/// </remarks>
 public sealed class LightSelectionTests
 {
     private static ViewportHarness BuildLitScene(params Vector3[] positions)
@@ -39,14 +30,10 @@ public sealed class LightSelectionTests
             harness.Scene.Root.AddChild(node);
         }
 
-        // Looking down -Z from a little way back, so every lamp is comfortably
-        // in front of the eye plane and the projection is well defined.
         harness.Scene.Camera.Position = new Vector3(0f, 0f, 12f);
         harness.Scene.Camera.LookAt(Vector3.Zero);
         return harness;
     }
-
-    // --- Clicking ------------------------------------------------------------
 
     [Fact]
     public void A_ray_through_a_lamps_icon_finds_it()
@@ -69,8 +56,6 @@ public sealed class LightSelectionTests
     {
         ViewportHarness harness = BuildLitScene(Vector3.Zero);
 
-        // The far corner: the lamp projects to the centre, and the icon is nine
-        // pixels.
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(
             new Vector2(4f, 4f), harness.ViewportSize);
 
@@ -106,9 +91,7 @@ public sealed class LightSelectionTests
         ViewportHarness harness = BuildLitScene(Vector3.Zero);
         Camera camera = harness.Scene.Camera;
 
-        // The pick radius has to grow with distance in WORLD units for the icon
-        // to stay the same size in pixels, which is the whole reason it is
-        // computed rather than fixed. Twice as far, twice as big.
+        // Twice as far, twice the world radius.
         float near = LightPicking.WorldRadius(camera, harness.ViewportSize, Vector3.Zero);
         float far = LightPicking.WorldRadius(camera, harness.ViewportSize, new Vector3(0f, 0f, -12f));
 
@@ -127,8 +110,6 @@ public sealed class LightSelectionTests
             out _, out _).ShouldBeFalse();
     }
 
-    // --- Marquee -------------------------------------------------------------
-
     [Theory]
     [InlineData(BoxSelectMode.Intersect)]
     [InlineData(BoxSelectMode.Contain)]
@@ -140,8 +121,7 @@ public sealed class LightSelectionTests
             new Vector3(4f, -2f, 0f),
             new Vector3(-1f, -3f, 0f));
 
-        // Deliberately cutting through the middle of the field rather than
-        // around it, so containment and intersection disagree.
+        // Cuts through the field so Contain and Intersect disagree.
         var rect = ScreenRect.FromCorners(new Vector2(220f, 180f), new Vector2(560f, 430f));
 
         var actual = new List<SceneNode>();
@@ -161,9 +141,6 @@ public sealed class LightSelectionTests
             new Vector3(0f, 0f, 0f),
             new Vector3(3f, 0f, 0f));
 
-        // The whole viewport. Before lights were pickable this returned an
-        // empty list, and the marquee then CLEARED the selection - the specific
-        // behaviour that reads as the marquee being broken.
         var rect = ScreenRect.FromCorners(Vector2.Zero, harness.ViewportSize);
 
         var actual = new List<SceneNode>();
@@ -192,17 +169,11 @@ public sealed class LightSelectionTests
         var actual = new List<SceneNode>();
         BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, actual);
 
-        // It is already in the spatial index through its brush; adding it again
-        // for its light would put the same node in the selection twice, which
-        // an additive Ctrl-drag would then toggle straight back out.
+        // Already in the spatial index through its brush.
         actual.Count.ShouldBe(1);
     }
 
-    /// <summary>
-    /// The independent answer: project each lamp's origin with the camera's own
-    /// view-projection, build the icon rectangle from the documented pixel
-    /// radius, and compare.
-    /// </summary>
+    // Independent of BoxSelectQuery: projects each lamp and tests the icon rect.
     private static SceneNode[] Oracle(ViewportHarness harness, in ScreenRect rect, BoxSelectMode mode)
     {
         Matrix4x4 viewProjection = harness.Scene.Camera.GetViewProjection();

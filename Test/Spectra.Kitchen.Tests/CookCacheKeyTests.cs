@@ -8,18 +8,9 @@ using System.Text;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The composition of a cache key, field by field.
+/// What goes into a cook cache key, field by field. Layout is checked on the
+/// canonical stream, since a moved hash does not say which field moved it.
 /// </summary>
-/// <remarks>
-/// <para><b>A key is a hash, so "the key moved" says nothing about WHICH field
-/// moved it.</b> These tests therefore read the canonical stream directly where
-/// the layout is being asserted, and only fall back to comparing keys where what
-/// is under test is that one field participates at all.</para>
-/// <para><b>The properties here are the ones whose failure is silent.</b> A field
-/// left out of the key does not throw, does not warn and does not produce a wrong
-/// picture: it produces a cache that answers "unchanged, skip it" about something
-/// that changed, which surfaces days later as an artifact nobody can explain.</para>
-/// </remarks>
 public class CookCacheKeyTests
 {
     private static readonly RuleDependency[] OneRead =
@@ -43,13 +34,7 @@ public class CookCacheKeyTests
     {
         UInt128 baseline = Key(RuleKind.RawCopy, 1, CookSettingKeys.None, new CookSettings());
 
-        // The version is the only thing that invalidates a cached artifact when a
-        // rule's CODE changes, so a rule whose output moved without it serves the
-        // old bytes forever and nothing anywhere reports it.
         Key(RuleKind.RawCopy, 2, CookSettingKeys.None, new CookSettings()).ShouldNotBe(baseline);
-
-        // The kind's numbers are append-only for exactly this reason: renumbering
-        // one makes every artifact past it a cache hit for a different rule.
         Key(RuleKind.Image, 1, CookSettingKeys.None, new CookSettings()).ShouldNotBe(baseline);
     }
 
@@ -64,9 +49,7 @@ public class CookCacheKeyTests
         RuleDependency changed = a with { ContentHash = (UInt128)99 };
         Key([changed, b]).ShouldNotBe(baseline);
 
-        // Declared order, never sorted. A sort would hide a rule whose access
-        // order became scheduling-dependent, which is the one thing the whole
-        // byte-identity discipline exists to catch.
+        // Not sorted: a sort would hide a rule whose read order varies by schedule.
         Key([b, a]).ShouldNotBe(baseline);
     }
 
@@ -79,10 +62,6 @@ public class CookCacheKeyTests
         UInt128 missed = Key([source, new(Texture, RuleDependencyKind.ProbeMissing, UInt128.Zero)]);
         UInt128 found = Key([source, new(Texture, RuleDependencyKind.ProbeFound, UInt128.Zero)]);
 
-        // The pin the whole design exists for, at the level of the key itself: a
-        // miss lives in the trailing missing-probe list and a hit lives in the
-        // inputs, so appearing where a rule looked changes BOTH counts and no
-        // arrangement of the bytes can reproduce the recorded key.
         found.ShouldNotBe(missed);
     }
 
@@ -96,15 +75,11 @@ public class CookCacheKeyTests
         UInt128 readsProfileUnderFast = Key(RuleKind.Map, 1, CookSettingKeys.Profile, fast);
         readsProfileUnderFast.ShouldNotBe(readsProfileUnderShip);
 
-        // And nothing else. A raw copy is the same bytes at every quality, so
-        // hashing the whole settings block into every key would re-copy a
-        // project's entire content tree the moment somebody switched profile.
         UInt128 ignoresProfileUnderShip = Key(RuleKind.RawCopy, 1, CookSettingKeys.None, ship);
         UInt128 ignoresProfileUnderFast = Key(RuleKind.RawCopy, 1, CookSettingKeys.None, fast);
         ignoresProfileUnderFast.ShouldBe(ignoresProfileUnderShip);
 
-        // The declaration is what selects, not the setting's presence: a rule that
-        // reads the script source mode is untouched by a profile switch too.
+        // A rule that declares only ScriptSource ignores a profile switch too.
         var strip = new CookSettings { Profile = CookProfile.Fast, ScriptSource = ScriptSourceMode.Strip };
         Key(RuleKind.Script, 1, CookSettingKeys.ScriptSource, fast)
             .ShouldBe(Key(RuleKind.Script, 1, CookSettingKeys.ScriptSource, ship));
@@ -126,9 +101,7 @@ public class CookCacheKeyTests
             ManifestPath = "cook.json",
         };
 
-        // A rule may not declare any of these, so no declaration can reach them.
-        // They decide how a cook is scheduled, where it is written and in what
-        // container, and a cached payload is legitimately shared across all of it.
+        // Scheduling and output settings. No rule can declare these.
         Key(RuleKind.Map, 1, AllSettingKeys, everythingElse)
             .ShouldBe(Key(RuleKind.Map, 1, AllSettingKeys, plain));
     }
@@ -143,10 +116,7 @@ public class CookCacheKeyTests
         (token.StartsWith("jit;", StringComparison.Ordinal) ||
          token.StartsWith("aot;", StringComparison.Ordinal)).ShouldBeTrue(token);
 
-        // Measured, not assumed: the cook-dependency spike encoded one PNG with
-        // one encoder and one set of settings and got two different BC7 payloads
-        // on either side of the AVX2 boundary, visually equivalent and byte
-        // different. A key without this hands one host the other host's artifact.
+        // BC7 output differs byte for byte with and without AVX2.
         byte[] stream = Stream(RuleKind.Image, 1, CookSettingKeys.None, new CookSettings());
         IndexOf(stream, Encoding.UTF8.GetBytes(token)).ShouldBeGreaterThanOrEqualTo(0);
     }
@@ -156,8 +126,6 @@ public class CookCacheKeyTests
     {
         byte[] stream = Stream(RuleKind.Map, 1, CookSettingKeys.None, new CookSettings());
 
-        // Named in the stream rather than folded into one number, so a cache that
-        // failed to invalidate can be read rather than bisected.
         foreach (string tool in new[] { "encoder", "shaderFormat", "mapFormat", "geometryFormat", "packFormat", "isa" })
             IndexOf(stream, Encoding.UTF8.GetBytes(tool)).ShouldBeGreaterThanOrEqualTo(0, tool);
     }

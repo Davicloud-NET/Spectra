@@ -5,18 +5,9 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// Mode and orientation switching: which tool is live, that switching away from
-/// a half-finished gesture abandons it cleanly, and that the world/local toggle
-/// really re-aims the handles.
-/// </summary>
-/// <remarks>
-/// <b>The leak this suite exists to catch is an orphaned undo transaction.</b>
-/// Transactions do not nest, so a tool abandoned mid-drag would leave one open
-/// and the next tool's first grab would throw — a bug that only shows up when a
-/// user presses E while still holding the mouse, which is exactly the moment
-/// nobody tests by hand.
-/// </remarks>
+/// <summary>Gizmo mode and orientation switching, including a switch in the middle of a drag.</summary>
+// Undo transactions do not nest: a tool abandoned mid-drag must close its own,
+// or the next tool's first grab throws.
 public sealed class GizmoModeSwitchingTests
 {
     private const float Tolerance = 1e-4f;
@@ -38,7 +29,7 @@ public sealed class GizmoModeSwitchingTests
     public void Each_mode_verb_selects_its_tool(GizmoCommand command, GizmoMode expected)
     {
         var harness = GizmoHarness.ThreeQuarterView();
-        harness.Gizmos.Mode = GizmoMode.Rotate; // somewhere other than the default
+        harness.Gizmos.Mode = GizmoMode.Rotate; // not the default
 
         harness.Gizmos.Apply(command);
 
@@ -83,7 +74,7 @@ public sealed class GizmoModeSwitchingTests
         float length = harness.GeometryAt(Vector3.Zero).AxisLength;
         harness.Grab(Vector3.UnitX * (length * 0.8f)).ShouldBe(GizmoUpdateResult.DragBegan);
         harness.DragBy(Vector3.UnitX * 5f);
-        node.LocalPosition.X.ShouldBeGreaterThan(1f); // really moved
+        node.LocalPosition.X.ShouldBeGreaterThan(1f);
 
         harness.Gizmos.Mode = GizmoMode.Rotate;
 
@@ -117,8 +108,6 @@ public sealed class GizmoModeSwitchingTests
     [Fact]
     public void The_next_tool_can_open_its_own_transaction_immediately()
     {
-        // The regression this whole suite is named for: an orphaned transaction
-        // would make the very next grab throw, because transactions do not nest.
         var harness = GizmoHarness.ThreeQuarterView();
         SceneNode node = harness.AddSelectedNode(Vector3.Zero);
 
@@ -136,8 +125,6 @@ public sealed class GizmoModeSwitchingTests
     [Fact]
     public void Switching_orientation_mid_drag_abandons_the_gesture_too()
     {
-        // Same hazard, different door: a constraint re-aimed under the cursor
-        // would drag the selection somewhere the user never pointed.
         var harness = GizmoHarness.ThreeQuarterView();
         SceneNode node = harness.AddSelectedNode(Vector3.Zero);
         harness.Translate.Snap.Enabled = false;
@@ -177,13 +164,13 @@ public sealed class GizmoModeSwitchingTests
         SceneNode node = harness.AddSelectedNode(Vector3.Zero);
         node.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f);
 
-        harness.Hover(new Vector3(50f, 50f, 50f)); // off the gizmo; just builds geometry
+        harness.Hover(new Vector3(50f, 50f, 50f)); // off the gizmo, only builds geometry
         harness.Gizmo.Geometry.AxisX.ShouldBeCloseTo(Vector3.UnitX, Tolerance);
 
         harness.Gizmos.Orientation = GizmoOrientation.Local;
         harness.Hover(new Vector3(50f, 50f, 50f));
 
-        // A quarter turn about +y takes the node's own +x onto world −z.
+        // A quarter turn about +y takes local +x onto world -z.
         harness.Gizmo.Geometry.AxisX.ShouldBeCloseTo(-Vector3.UnitZ, Tolerance);
         harness.Gizmo.Geometry.AxisY.ShouldBeCloseTo(Vector3.UnitY, Tolerance);
     }
@@ -193,7 +180,7 @@ public sealed class GizmoModeSwitchingTests
     {
         var harness = GizmoHarness.ThreeQuarterView();
         SceneNode node = harness.AddSelectedNode(Vector3.Zero);
-        // A quarter turn about +z takes the node's own +x onto world +y.
+        // A quarter turn about +z takes local +x onto world +y.
         node.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f);
         harness.Gizmos.Orientation = GizmoOrientation.Local;
         harness.Translate.Snap.Enabled = false;
@@ -214,8 +201,8 @@ public sealed class GizmoModeSwitchingTests
     [Fact]
     public void A_local_snapped_drag_quantises_the_displacement_along_the_local_axis()
     {
-        // There is no absolute world grid to land on in a rotated frame, so the
-        // local mode snaps the TRAVEL instead of the destination.
+        // A rotated frame has no world grid to land on, so local mode snaps
+        // the travel, not the destination.
         var harness = GizmoHarness.ThreeQuarterView();
         SceneNode node = harness.AddSelectedNode(new Vector3(0.3f, 0f, 0f));
         node.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f);
@@ -231,9 +218,7 @@ public sealed class GizmoModeSwitchingTests
         harness.DragBy(localX * 2.4f);
         harness.Release();
 
-        // Exactly two units of travel along local x (world +y), and the off-axis
-        // sub-grid offset the node started with is preserved rather than
-        // quantised away — an absolute world snap would have pulled x to 0.
+        // The 0.3 the node started with survives; a world snap would pull x to 0.
         node.LocalPosition.ShouldBeCloseTo(new Vector3(0.3f, 2f, 0f), 1e-2f);
     }
 
@@ -244,7 +229,7 @@ public sealed class GizmoModeSwitchingTests
         SceneNode node = harness.AddSelectedNode(Vector3.Zero);
         harness.Translate.Snap.Enabled = false;
 
-        harness.Gizmos.Apply(GizmoCommand.Cancel).ShouldBeFalse(); // nothing to cancel
+        harness.Gizmos.Apply(GizmoCommand.Cancel).ShouldBeFalse();
 
         float length = harness.GeometryAt(Vector3.Zero).AxisLength;
         harness.Grab(Vector3.UnitZ * (length * 0.8f));
@@ -274,8 +259,6 @@ public sealed class GizmoModeSwitchingTests
         harness.Undo.IsTransactionOpen.ShouldBeFalse();
     }
 
-    // --- Shortcuts -----------------------------------------------------------
-
     [Theory]
     [InlineData("W", GizmoCommand.UseTranslate)]
     [InlineData("E", GizmoCommand.UseRotate)]
@@ -299,8 +282,7 @@ public sealed class GizmoModeSwitchingTests
     [InlineData("w")]
     public void Key_names_are_matched_across_the_spellings_hosts_actually_use(string key)
     {
-        // A Silk-hosted viewport says "Number2", WinUI says "Number2", a raw
-        // character host says "2" — all the same key to the person pressing it.
+        // Hosts name the same key differently: "Number2", "D2", "2".
         GizmoShortcuts.TryResolve(key, out _).ShouldBeTrue();
     }
 
@@ -315,7 +297,6 @@ public sealed class GizmoModeSwitchingTests
     [Fact]
     public void Every_documented_default_actually_resolves_to_what_it_claims()
     {
-        // Keeps the help-overlay table and the resolver from drifting apart.
         foreach ((string key, GizmoCommand expected) in GizmoShortcuts.Defaults)
         {
             GizmoShortcuts.TryResolve(key, out GizmoCommand command).ShouldBeTrue(key);

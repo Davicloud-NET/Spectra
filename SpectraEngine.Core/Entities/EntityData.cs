@@ -5,26 +5,11 @@ namespace SpectraEngine.Core.Entities;
 
 /// <summary>
 /// What a placed entity carries: the class it names, the keyvalues authored on
-/// it, and the wires leaving its outputs. The fourth payload a
-/// <c>SceneNode</c> can hold, beside a mesh renderer, a brush and a light.
+/// it, and the wires leaving its outputs. Mutable, so a duplicated node needs
+/// its own <see cref="Clone"/>.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>It names a class; it does not reference a schema.</b> An
-/// <see cref="EntitySchema"/> may not exist for
-/// <see cref="ClassName"/> - the map may have been authored against a game this
-/// build does not have - and that map must still load, round-trip and save. So
-/// the class name is text, resolved by whatever catalogue is running, and an
-/// unresolved one costs the entity its behaviour and nothing else.
-/// </para>
-/// <para>
-/// <b>Mutable, like <c>Light</c> and unlike <c>Brush</c>.</b> Nothing derived is
-/// keyed on its identity, so editing a keyvalue is an ordinary property write
-/// and costs no recompile. That is also exactly why <see cref="Clone"/> exists:
-/// a duplicate that shared this would have its keyvalues edited by every edit to
-/// the original.
-/// </para>
-/// </remarks>
+// The class is a name, not a schema reference: a map authored against a game
+// this build doesn't have must still load and save.
 public sealed class EntityData
 {
     /// <summary>An entity carrying no class yet.</summary>
@@ -46,31 +31,18 @@ public sealed class EntityData
     public string ClassName { get; set; } = "";
 
     /// <summary>
-    /// The authored keyvalues, name to value, in AUTHORED ORDER.
+    /// The authored keyvalues, name to value, in authored order. Names match
+    /// ordinally.
     /// </summary>
-    /// <remarks>
-    /// <b>An ordered list, deliberately not a dictionary.</b> Member order has to
-    /// round-trip byte-identically through the map format - a person edits
-    /// <c>map.json</c> in a text editor and the engine must not reshuffle their
-    /// file on the next save - and a dictionary's iteration order is exactly the
-    /// determinism sin this repo refuses everywhere else it appears. A level's
-    /// entity carries a handful of keyvalues, so the linear scan
-    /// <see cref="TryGetValue"/> does is cheaper than the hash anyway.
-    /// <para>
-    /// Names are matched ORDINALLY. A case-folding rule would need a culture to
-    /// fold in, and the same file would then mean different things on different
-    /// machines.
-    /// </para>
-    /// </remarks>
+    // A list, not a dictionary: member order must round-trip through the map
+    // file byte for byte.
     public List<KeyValuePair<string, string>> Keyvalues { get; } = [];
 
     /// <summary>The wires leaving this entity's outputs, in authored order.</summary>
     public List<EntityConnection> Connections { get; } = [];
 
     /// <summary>
-    /// Reads the value authored for <paramref name="name"/>. The first match
-    /// wins, which is what a reader that preserves a hand-written duplicate has
-    /// to do: the alternative is silently dropping one of the two.
+    /// Reads the value authored for <paramref name="name"/>. The first match wins.
     /// </summary>
     public bool TryGetValue(string name, out string value)
     {
@@ -88,14 +60,9 @@ public sealed class EntityData
     }
 
     /// <summary>
-    /// Writes <paramref name="name"/>, replacing the existing entry IN PLACE
-    /// when there is one and appending otherwise.
+    /// Writes <paramref name="name"/>, replacing an existing entry in place so
+    /// it keeps its position in the file, and appending otherwise.
     /// </summary>
-    /// <remarks>
-    /// In place, because the order is the file's order: removing and re-adding
-    /// would move an edited keyvalue to the end of the object and rewrite a
-    /// region of the file nobody touched.
-    /// </remarks>
     public void SetValue(string name, string value)
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -114,13 +81,6 @@ public sealed class EntityData
     }
 
     /// <summary>An independent copy carrying the same class, keyvalues and wires.</summary>
-    /// <remarks>
-    /// <b>This is why a duplicated node gets its own instance.</b> Everything
-    /// inside is a string or a value type, so copying the two lists is a full
-    /// copy; what would NOT be independent is sharing the lists themselves, which
-    /// is precisely the failure a shared <c>Light</c> would have had - editing
-    /// the duplicate edits the original, with nothing anywhere to say why.
-    /// </remarks>
     public EntityData Clone()
     {
         var copy = new EntityData(ClassName);

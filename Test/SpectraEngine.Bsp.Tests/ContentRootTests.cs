@@ -2,12 +2,7 @@ using SpectraEngine.Core.Assets;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Content-root resolution and the path normalisation that produces asset cache
-/// keys. The test run is itself a developer build, so
-/// <see cref="ContentRoot.Path"/> must land on the repo's Assets folder — the
-/// same rule that lets shader hot-reload find its sources.
-/// </summary>
+/// <summary>Content root resolution and asset path normalisation.</summary>
 public sealed class ContentRootTests
 {
     [Fact]
@@ -21,8 +16,7 @@ public sealed class ContentRootTests
         Path.IsPathRooted(root).ShouldBeTrue();
         Directory.Exists(root).ShouldBeTrue($"content root '{root}' should exist");
 
-        // The repo Assets folder, not the copy beside the test binary: the
-        // latter sits under bin/, which the source root never does.
+        // The repo folder, not the copy under bin/ beside the test binary.
         root.Replace('\\', '/').ShouldNotContain("/bin/");
         File.Exists(Path.Combine(root, "Textures", "dev_grid.png")).ShouldBeTrue();
     }
@@ -30,8 +24,6 @@ public sealed class ContentRootTests
     [Fact]
     public void Resolution_is_cached_so_repeated_reads_do_not_rewalk_the_tree()
     {
-        // Reference equality: the same interned string instance comes back,
-        // which is only true if the walk ran once and the result was cached.
         ReferenceEquals(ContentRoot.Path, ContentRoot.Path).ShouldBeTrue();
     }
 
@@ -66,7 +58,6 @@ public sealed class ContentRootTests
         Path.IsPathRooted(absolute).ShouldBeTrue();
         File.Exists(absolute).ShouldBeTrue();
         absolute.ShouldStartWith(ContentRoot.Path);
-        // Both spellings of the same asset must land on the same file.
         ContentRoot.ResolveAbsolute(ContentRoot.Path, "Textures/dev_grid.png").ShouldBe(absolute);
     }
 }

@@ -5,10 +5,8 @@ using System.Collections.Generic;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// <see cref="CompositeCommand"/> ordering: children run forward on Do and in
-/// reverse on Undo (the only order that survives commands whose effects depend
-/// on each other), and the child list is copied at construction so a caller's
-/// scratch buffer can be reused.
+/// <see cref="CompositeCommand"/>: children run forward on Do, in reverse on
+/// Undo, and the child list is copied at construction.
 /// </summary>
 public sealed class CompositeCommandTests
 {

@@ -36,19 +36,8 @@ namespace SpectraEngine.Editor;
 /// The shell window: the start page, the tabbed command bar, the docked
 /// panels around a pinned viewport, and the status bar.
 /// </summary>
-/// <remarks>
-/// <b>Everything crossing between the two threads crosses here, and only in two
-/// directions.</b> The engine publishes immutable snapshots, which the UI thread
-/// reads; the UI thread posts commands, which the render thread runs. Nothing
-/// in this window ever touches a <c>Scene</c>, a <c>SceneNode</c> or the
-/// renderer.
-/// <para>
-/// <b>The pump is not decoration.</b> A cursor lock is window-thread work that
-/// the engine asks for from the render thread, exactly as it is in the
-/// standalone path, so the shell needs a slot of its own to apply it in.
-/// <see cref="DispatcherTimer"/> at roughly display rate is that slot.
-/// </para>
-/// </remarks>
+// The UI thread reads published snapshots and posts commands; it never touches
+// a Scene, a SceneNode or the renderer.
 public partial class MainWindow : Window
 {
     private readonly ILoggerFactory _loggerFactory;
@@ -57,32 +46,18 @@ public partial class MainWindow : Window
     private readonly ShellModel _shell = new();
     private readonly EditorDocument _document = new();
 
-    // Every published snapshot, not just the newest. The engine's contract is
-    // that a structural change rides the NEXT snapshot out and is then gone, so
-    // a shell that keeps only the latest silently drops graph edits: the very
-    // first snapshot carries the "you have nothing, rebuild" flag, and losing
-    // exactly that one leaves a tree view permanently showing four nodes of a
-    // 257-node scene with nothing anywhere reporting a problem. Measured, not
-    // hypothesised.
+    // Every snapshot is queued, not just the newest: a structural change rides
+    // one snapshot and is then gone, so sampling the latest drops graph edits.
     private readonly ConcurrentQueue<FrameSnapshot> _published = new();
 
-    // Bounded like the engine's own change log, and for the same reason: a
-    // stalled UI thread must not turn into unbounded growth on the render
-    // thread's publish path.
-    //
-    // SIZED FOR THE FASTER OF THE TWO PUBLISH RATES. The host raises its rate
-    // to about 120Hz while a gesture is in flight, so a bound stated in COUNT
-    // means something different depending on what the user is doing: 240 was
-    // eight seconds at rest and under two while dragging - and dragging is
-    // exactly when a shell is most likely to fall behind. Five seconds at the
-    // interactive rate, half a minute at rest.
+    // Bounded so a stalled UI thread can't grow the queue forever. About five
+    // seconds at the 120Hz interactive publish rate, half a minute at rest.
     private const int MaxQueuedSnapshots = 600;
     private int _queuedSnapshots;
     private volatile bool _droppedSnapshots;
 
-    // Set on the render thread when a snapshot is published, cleared on the UI
-    // thread as the pump begins. One post per UI frame however many snapshots
-    // arrive inside it.
+    // Set on the render thread per publish, cleared when the pump starts:
+    // one post per UI frame.
     private int _pumpPosted;
 
     private ContentPanel? _contentView;
@@ -97,71 +72,46 @@ public partial class MainWindow : Window
     private IRenderSurface? _surface;
     private FrameSnapshot _latest = FrameSnapshot.Empty;
 
-    // The last snapshot the pump fully applied, so the 8 ms watchdog — which
-    // exists only for the cursor-mode latch — stops re-applying an unchanged
-    // one. Reference identity is the right comparison: the engine publishes a
-    // fresh instance per snapshot.
+    // Lets the watchdog timer skip a snapshot it already applied. Compared by
+    // reference: the engine publishes a fresh instance each time.
     private FrameSnapshot _lastApplied = FrameSnapshot.Empty;
     private bool _stopping;
     private int _lastUndoDepth;
     private int _lastRedoDepth;
 
-    // The per-user shell state: today, the recent projects the start page
-    // shows. Loaded once; written whenever a project is opened or created.
     private readonly EditorSettings _settings;
 
-    // The live viewport control, created when a session launches and removed
-    // when it closes: a native child's window and a composited viewport's
-    // imported texture both live exactly as long as the control is in the
-    // visual tree, so "no session" and "no viewport control" are the same state
-    // on purpose.
+    // Exists only while a session does: a native child window and a composited
+    // viewport's imported texture both live as long as the control is in the tree.
     private IEngineViewport? _viewport;
 
-    // Where the viewport pane is living right now. Reset at every session close
-    // so a launch always starts from the same place, whichever way the last one
-    // went.
     private ViewportPlacement _placement = ViewportPlacement.PinnedCell;
 
-    // The viewport tool's content for the window's whole life; the pane moves
-    // into it for a composited session and back out at the close. A Border
-    // rather than the pane itself, so Dock is never handed a content change
-    // after its layout is built.
+    // The viewport tool's content for the window's life; the pane moves in and
+    // out of it, so Dock never sees a content change after its layout is built.
     private readonly Border _viewportDockHost = new();
 
-    // Where the pane sits among the editor grid's children, so a session that
-    // docked it puts it back in its own slot rather than on top of everything.
     private readonly int _viewportPaneIndex;
 
-    // What the next OnSurfaceCreated should build: the project (if any), the
-    // asset content root, and the map to open once the engine is up. Set by
-    // LaunchSession, consumed by the surface callback.
+    // Set by LaunchSession, consumed by OnSurfaceCreated.
     private sealed record SessionLaunch(ProjectLayout? Project, string? ContentRoot, string? OpenMapPath);
     private SessionLaunch? _pendingLaunch;
 
-    // The live panels, one instance each for the window's whole life. Fields
-    // rather than XAML names, because their dock tools would template XAML
-    // children instead of keeping an instance.
+    // Fields rather than XAML names: a dock tool would template XAML children
+    // instead of keeping one instance.
     private readonly ScenePanel _sceneView;
     private readonly PropertiesPanel _propertiesView;
     private readonly MapsPanel _mapsView;
 
-    // ─── The ribbon ──────────────────────────────────────
-    //
-    // One live instance per page for the window's whole life, moved between
-    // the inline host and the flyout's rather than rebuilt: a page carries an
-    // event-wired snap field and a DataContext, and a template would rebuild
-    // both on every collapse.
+    // One live instance per ribbon page, moved between the inline host and the
+    // flyout rather than rebuilt.
     private readonly RibbonBuildTab _buildTab = new();
     private readonly RibbonViewTab _viewTab = new();
     private readonly Dictionary<string, RibbonTabView> _ribbonPages = new(StringComparer.Ordinal);
 
-    // The collapse state machine's current value. Pure transitions live in
-    // RibbonSurface; this window holds the value and mirrors it into controls.
     private RibbonSurfaceState _ribbon;
 
-    // Applying the state closes the popup, which raises Closed, which would
-    // apply the state again. One flag rather than a subtler dance, because the
-    // re-entry is real and its symptom is a flyout that will not open.
+    // Applying the state closes the popup, whose Closed would apply it again.
     private bool _applyingRibbonState;
 
     /// <summary>Creates the window and wires the viewport's lifetime to the engine's.</summary>
@@ -171,14 +121,9 @@ public partial class MainWindow : Window
 
         DataContext = _shell;
 
-        // The strip is a control of its own so the render suite can measure it,
-        // which means its verbs come back as intents rather than as handlers on
-        // this class: everything they need - the session, the current state, the
-        // optimistic holds - lives here and would have had to travel with them.
         HeaderStrip.Activated += OnHeaderAction;
 
-        // The neutral place focus can land when a field must blur before a
-        // document chord runs — see CommitFocusedEdit.
+        // Somewhere for focus to land when a field must blur (CommitFocusedEdit).
         Focusable = true;
 
         _loggerFactory = new SerilogLoggerFactory(Serilog.Log.Logger, dispose: false);
@@ -186,10 +131,7 @@ public partial class MainWindow : Window
 
         _settings = EditorSettings.Load(_logger);
 
-        // --viewport= is a preference rather than a one-run override: there is
-        // no UI for this yet, so the switch is the only way to say it, and a
-        // switch whose effect vanished on the next launch would mean typing it
-        // forever. --viewport=auto is how it is put back.
+        // --viewport= is persisted, not a one-run override; there is no UI for it.
         if (ViewportModePolicy.RequestedMode(Program.StartupArgs) is { } requestedViewport)
         {
             _settings.SetViewportMode(requestedViewport);
@@ -201,8 +143,6 @@ public partial class MainWindow : Window
 
         VersionLabel.Text = SpectraEngine.Core.EngineInfo.VersionString;
 
-        // The start page raises intents; the window owns every consequence,
-        // because it owns the storage provider, the dialogs and the session.
         StartView.NewProjectRequested += () => _ = CreateProjectFlowAsync();
         StartView.OpenProjectRequested += () => _ = OpenProjectFlowAsync();
         StartView.OpenMapRequested += () => _ = OpenLooseMapFlowAsync();
@@ -211,16 +151,9 @@ public partial class MainWindow : Window
         StartView.RecentProjectRevealRequested += recent => RevealInExplorer(recent.Path);
         RefreshRecents();
 
-        // ONE factory, shared by every dock control, assigned before the
-        // window attaches. All three clauses are load-bearing: without any
-        // factory, DockControl.Initialize returns before InitLayout and the
-        // dock columns render EMPTY with every docking gesture dead (proven
-        // with a headless repro against the shipped package); with one
-        // factory per control, a drag's target list is that factory's own
-        // DockControls, so a panel could never cross from the left dock to
-        // the right one. The centre dock is the fourth and joins the same one,
-        // or a composited viewport could be dragged nowhere and nothing could
-        // be dragged beside it.
+        // One factory for every dock control, assigned before the window attaches.
+        // With none, DockControl.Initialize bails and the docks render empty; with
+        // one per control, a panel can't be dragged from one dock to another.
         _dockFactory = new Dock.Model.Avalonia.Factory();
         Dock.Model.Avalonia.Factory dockFactory = _dockFactory;
         LeftDock.Factory = dockFactory;
@@ -228,28 +161,14 @@ public partial class MainWindow : Window
         BottomDock.Factory = dockFactory;
         CenterDock.Factory = dockFactory;
 
-        // The viewport tool's content is a Border this window owns for its whole
-        // life, and the PANE moves in and out of it. Dock never sees a content
-        // change, which is the same reason every other tool's content is
-        // assigned once as a live instance: a Tool whose Content is reassigned
-        // after its layout has been built is a shape nothing here has tested,
-        // and the failure mode of guessing wrong is a blank pane with a running
-        // engine behind it.
         SetToolContent(ViewportTool, _viewportDockHost);
         _viewportPaneIndex = EditorView.Children.IndexOf(ViewportPane);
 
-        // The resting layout, written rather than assumed: XAML sets CanPin on
-        // the six panel tools and the viewport tool has no attribute to set, so
-        // without this the one tool nobody may pin beside a native child would
-        // be the only one offering the glyph.
+        // The viewport tool has no XAML attribute for CanPin, so set it here.
         ApplyPlacement(ViewportPlacement.PinnedCell);
 
-        // The panels are built HERE and handed to the dock tools as live
-        // controls: the dock's builder returns a Control content instance
-        // as-is, so one event-wired panel survives every re-dock and float.
-        // DataContext is set explicitly rather than inherited, because a
-        // floated panel leaves this window's logical tree and inherited
-        // bindings would go quietly null.
+        // Panels are handed to the dock tools as live controls, so one wired
+        // instance survives every re-dock and float.
         _sceneView = new ScenePanel
         {
             Logger = _loggerFactory.CreateLogger<ScenePanel>(),
@@ -275,18 +194,10 @@ public partial class MainWindow : Window
         };
         SetToolContent(MapsTool, _mapsView);
 
-        // ─── The bottom region ────────────────────────────
-        //
-        // The three panels an editor is expected to have and this one did not:
-        // somewhere to see the project's files, somewhere its diagnostics
-        // survive being replaced, and a line to type a verb into.
-
         _shell.Content = new ContentBrowserModel(_loggerFactory.CreateLogger<ContentBrowserModel>());
         _shell.Assets = new AssetCatalog(_loggerFactory.CreateLogger<AssetCatalog>());
 
-        // The view is the user's and survives a restart; the change is saved
-        // when they make it rather than at shutdown, because a shell that
-        // crashed would otherwise forget it.
+        // Saved on change, not at shutdown, so a crash doesn't lose it.
         _shell.Content.ViewMode = _settings.ContentView;
         _shell.Content.ViewChanged += mode =>
         {
@@ -306,9 +217,7 @@ public partial class MainWindow : Window
         _problemsView.EntryActivated += OnProblemActivated;
         SetToolContent(ProblemsTool, _problemsView);
 
-        // The engine's own log starts arriving HERE, not at construction: the
-        // relay queues everything written before this and delivers it in one
-        // hop, so the lines from startup are not lost for being early.
+        // Attach delivers everything the relay queued since startup.
         Program.LogRelay.LineArrived += OnEngineLogLine;
         Program.LogRelay.LinesDropped += OnEngineLinesDropped;
         Program.LogRelay.Attach(work => Dispatcher.UIThread.Post(work, DispatcherPriority.Background));
@@ -317,10 +226,7 @@ public partial class MainWindow : Window
         _consoleView.CommandSubmitted += OnConsoleCommand;
         SetToolContent(ConsoleTool, _consoleView);
 
-        // Every entry resolves to a verb a button or a key chord also sends,
-        // which is what keeps the console from being a second path into the
-        // editor. The lambdas return false when there is no session, and the
-        // console says so rather than appearing to have worked.
+        // Each lambda returns false with no session, so the console can say so.
         _console = new ConsoleCommands(
             postHost: command => _session is { } s && Post(() => s.Post(command)),
             postGizmo: command => _session is { } s && Post(() => s.Post(command)),
@@ -340,25 +246,14 @@ public partial class MainWindow : Window
             return true;
         }
 
-        // The title is the only place the shell says what is open and whether
-        // it is saved, so it follows the document rather than being set once.
         _document.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(EditorDocument.Title))
                 RefreshDocumentIdentity();
 
-            // The content browser is fixed to the OPEN PROJECT's assets folder,
-            // exactly as the session's content root is: opening a different
-            // project is a different content root, and a browser still showing
-            // the previous one would offer files this scene cannot resolve.
             if (args.PropertyName is nameof(EditorDocument.Project))
             {
                 _shell.Content?.SetRoot(_document.Project?.AssetsPath);
-
-                // Walked here rather than on every picker open: a project change
-                // is the only thing that can invalidate the whole list, and a
-                // file added since is picked up by the rebuild the picker does
-                // when it opens.
                 _shell.Assets?.Rebuild(_document.Project?.AssetsPath);
             }
         };
@@ -371,24 +266,16 @@ public partial class MainWindow : Window
             commit => _session?.EndPropertyGesture(commit),
             OnEntityConnectionsEdit);
 
-        // The pipeline dropdown's user choice, forwarded as a request. Wired
-        // once: the session is resolved when the event fires, so it follows
-        // whichever session is live.
         _shell.PipelineRequested += name => _session?.Host.RequestPipeline(name);
 
-        // The ribbon carries ONE snap field, and it belongs to whichever tool
-        // is live, so a tool switch has to re-read the increment into it.
-        // Without this the box keeps showing the previous tool's number beside
-        // the new tool's unit, which is a worse lie than showing nothing.
+        // The one snap field shows the live tool's increment, so re-read it on
+        // a tool switch.
         _shell.GizmoModeChanged += () => RefreshSnapField(_latest);
 
         BuildRibbon();
 
-        // Document chords as real key bindings, so they also work while an
-        // Avalonia control has focus - the tree, the filter, a property field.
-        // The viewport intercepts the same four itself (ShellChord), because
-        // while IT has focus Avalonia sees no keyboard at all; two routes, one
-        // handler each, is what makes Ctrl+S work everywhere.
+        // Document chords. The viewport intercepts the same ones (ShellChord):
+        // while a native child has focus Avalonia sees no keyboard at all.
         KeyBindings.Add(new KeyBinding
         {
             Gesture = new KeyGesture(Key.N, KeyModifiers.Control),
@@ -410,16 +297,8 @@ public partial class MainWindow : Window
             Command = new RelayCommand(() => { CommitFocusedEdit(); OnSaveAsClicked(this, new RoutedEventArgs()); }),
         });
 
-        // History, window-wide. The engine keymap owns Ctrl+Z only while the
-        // native viewport has focus, and the tree owns it only while the tree
-        // does, which left the chord dead in the property panel and the maps
-        // list - the two places a person is most likely to have just made the
-        // edit they want back. A focused field commits first, so undo takes
-        // back the value that was typed rather than the one before it.
-        //
-        // Not blocked while a field is focused: a TextBox handles Ctrl+Z for
-        // its own text and marks the event handled, so its editing history
-        // still wins where it should.
+        // Window-wide undo/redo. A focused field commits first so undo takes back
+        // the typed value. A TextBox still handles Ctrl+Z for its own text.
         KeyBindings.Add(new KeyBinding
         {
             Gesture = new KeyGesture(Key.Z, KeyModifiers.Control),
@@ -436,88 +315,48 @@ public partial class MainWindow : Window
             Command = new RelayCommand(() => { CommitFocusedEdit(); _session?.Post(EditorHostCommand.Redo); }),
         });
 
-        // Insert, window-wide - and intercepted in the viewport as well
-        // (ShellChord), because those are the two halves of one shortcut. The
-        // engine keymap has no chord for an insert, so a window binding alone
-        // would fire only while an Avalonia control had focus: that is, only
-        // while the user was NOT looking at the place they wanted to insert
-        // into. Two routes, one handler each, exactly as the document chords
-        // do it.
+        // Insert chords, also intercepted in the viewport (ShellChord).
         AddChord(Key.D1, KeyModifiers.Control, () => _session?.Insert(InsertKind.WorldBrush));
         AddChord(Key.D2, KeyModifiers.Control, () => _session?.Insert(InsertKind.PartBrush));
         AddChord(Key.D3, KeyModifiers.Control, () => _session?.Insert(InsertKind.SubtractiveBrush));
         AddChord(Key.D4, KeyModifiers.Control, () => _session?.Insert(InsertKind.PointLight));
 
-        // Mode verbs, window-wide, for the same reason the document chords are:
-        // the engine only sees the keyboard while its native child window holds
-        // focus, so F8 did nothing whenever a tree row or a property field had
-        // been clicked - while the button's own tooltip went on promising it.
-        // Neither of these is a scene edit, so both are safe from anywhere.
+        // Window-wide too: the engine keymap only sees keys while the viewport has focus.
         AddChord(Key.F8, KeyModifiers.None, () => _session?.Host.RequestPlayMode(!_latest.IsPlaying));
         AddChord(Key.F, KeyModifiers.None, () => _session?.Post(EditorCameraCommand.FrameSelection));
         AddChord(Key.F, KeyModifiers.Shift, () => _session?.Post(EditorCameraCommand.FrameAll));
         AddChord(Key.A, KeyModifiers.Control, () => _session?.Post(EditorHostCommand.SelectAll));
 
-        // The View menu has printed this gesture since the console panel was
-        // written and nothing bound it, so the shell's one cheap key opened
-        // nothing. OemTilde joins the printable set above for the same reason
-        // the letters are in it: a backtick typed into a rename box must not
-        // open a panel.
         AddChord(Key.OemTilde, KeyModifiers.None, () => OnShowConsolePanel(this, new RoutedEventArgs()));
 
-        // Office's own chord for exactly this, and it collides with nothing
-        // here. It is also the ribbon's ONLY keyboard route, deliberately: see
-        // RibbonLayout's remarks for why the surface takes no KeyTips.
+        // Office's chord for collapsing the ribbon; its only keyboard route.
         AddChord(Key.F1, KeyModifiers.Control, () => OnRibbonPinClicked(this, new RoutedEventArgs()));
 
-        // The third route onto every verb, on a cheap key, and it never moves.
         AddChord(Key.P, KeyModifiers.Control, TogglePalette);
 
-        // Beside the viewport route, because focus may be in a tree row or a
-        // property field, where the viewport's own router never sees the key.
         AddChord(Key.F11, KeyModifiers.None, () => OnShellChord(ShellChord.MaximiseViewport));
         AddChord(Key.OemTilde, KeyModifiers.Control, () => OnShellChord(ShellChord.ToggleBottomDrawer));
 
-        // Drop a project or a level folder anywhere on the window. The engine's
-        // viewport is a native child and never sees Avalonia's drag events, so
-        // the drop target is the window itself and the chrome around the
-        // viewport is where it lands.
+        // The window is the drop target: a native viewport never sees Avalonia
+        // drag events.
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DropEvent, OnDrop);
 
-        // A WATCHDOG, not the clock the shell runs on. The pump is driven by
-        // the engine publishing (OnFrameCompleted posts one), so it does work
-        // when and only when there is work; this catches the one thing that is
-        // not snapshot-driven - the cursor-mode latch, where landing 33ms late
-        // is a visible jump at the start of every freelook - and keeps the
-        // shell alive if publishing ever stops.
-        //
-        // 8ms is a real 8ms only because TimerResolution asks for it. Left
-        // alone, Windows rounds an 8ms timer up to 15.6 and reports success.
-        //
-        // Normal outranks Render in Avalonia's priority order, so a value the
-        // pump writes reaches the screen in the SAME frame rather than the
-        // next. (This is the opposite of the WPF ordering people expect, and
-        // getting it wrong costs a whole frame.)
+        // Watchdog. The pump normally runs off OnFrameCompleted; this timer
+        // covers the cursor-mode latch, which is not snapshot-driven.
+        // 8ms is real only while TimerResolution is held; otherwise Windows
+        // rounds it to 15.6. Normal outranks Render in Avalonia (unlike WPF),
+        // so what the pump writes shows in the same frame.
         _pump = new DispatcherTimer(
             TimeSpan.FromMilliseconds(8), DispatcherPriority.Normal, OnPump);
 
-        // The one frame customisation this shell makes: paint the OS caption to
-        // match the window instead of the user's accent colour. It is a DWM
-        // attribute rather than a custom title bar, so it costs nothing in
-        // hit-testing, keeps Aero Snap and the maximise flyout, and simply does
-        // nothing on Windows versions that do not know the attribute.
         Opened += (_, _) =>
         {
             DarkCaption.Apply(this, _logger);
 
-            // The interop probe runs INSTEAD of opening anything, because it is
-            // a measurement of this machine rather than a feature: it needs a
-            // real compositor (there is no headless form of the question) and
-            // it must not compete with an engine session for the GPU while it
-            // asks. The window closes itself when it is done, so the switch can
-            // be run from a script on five machines.
+            // The interop probe runs instead of opening a session, so it doesn't
+            // compete with an engine for the GPU. It closes the window itself.
             if (InteropProbe.Requested(Program.StartupArgs))
             {
                 _ = RunInteropProbeAsync();
@@ -534,39 +373,17 @@ public partial class MainWindow : Window
         }
         else
         {
-            // The status bar exists before a session does, and an empty strip
-            // along the bottom of a launcher is 26 pixels of nothing. One line
-            // saying what to do next costs the same space.
             _shell.SetMessage("Open a project to start building, or drop one on this window.");
         }
     }
 
-    /// <summary>
-    /// Adds one window-level chord that commits any focused field first.
-    /// </summary>
-    /// <remarks>
-    /// The commit is not optional. A key binding fires with focus still in
-    /// whatever box the user was typing in, so without it Ctrl+S writes the
-    /// bundle WITHOUT the number just typed and then reports "Saved", and F8
-    /// enters play mode leaving a half-typed value in a field that is about to
-    /// stop taking refreshes.
-    /// </remarks>
+    // Adds a window-level chord. It commits any focused field first, so Ctrl+S
+    // doesn't save without the value just typed.
     private void AddChord(Key key, KeyModifiers modifiers, Action run)
     {
-        // A window-level binding on a PRINTABLE key with no modifier fires even
-        // while a text box has focus: Avalonia's TextBox marks KeyDown handled
-        // only for caret and editing keys, so an ordinary letter bubbles to the
-        // window and the binding runs. Typing "Floor" into a rename box would
-        // therefore commit the half-typed name on the "F" (CommitFocusedEdit
-        // blurs, which commits) and frame the selection, and the same letter
-        // would break every filter search containing it. Function keys carry no
-        // such risk, which is why the guard is on the key rather than on the
-        // binding.
-        // SHIFT COUNTS AS NO MODIFIER HERE, because a capital letter is what a
-        // person types. The guard used to test for None alone, so a window-level
-        // Shift+F would have fired on the F of "Floor" typed into a rename box -
-        // committing the half-typed name and framing the selection, which is the
-        // exact defect this comment describes, one modifier over.
+        // TextBox only handles caret and editing keys, so a printable key bubbles
+        // to the window binding. Stand down while a text box has focus. Shift
+        // counts as no modifier: a capital letter is still typing.
         bool printable = modifiers is KeyModifiers.None or KeyModifiers.Shift
             && (key is >= Key.A and <= Key.Z || key is >= Key.D0 and <= Key.D9
                 || key is Key.OemTilde);
@@ -585,17 +402,6 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>
-    /// Mirrors the document's identity onto the shell model and the OS title.
-    /// </summary>
-    /// <remarks>
-    /// <b>The title names the app once and the level once.</b> It used to be
-    /// "<c>{map} - {project} - Spectra Editor</c>" unconditionally, which on
-    /// the common case of a project whose startup level shares its name renders
-    /// "Demo - Demo - Spectra Editor", and with nothing open at all renders
-    /// "untitled - no project - Spectra Editor": two placeholders and a product
-    /// name, describing a window that is showing a launcher.
-    /// </remarks>
     private void RefreshDocumentIdentity()
     {
         string project = _document.Project?.Project.Name ?? string.Empty;
@@ -613,17 +419,7 @@ public partial class MainWindow : Window
             : $"{_document.MapLabel}{mark} - {project} - Spectra Editor";
     }
 
-    /// <summary>
-    /// Fills the View menu's Renderer submenu from the pipelines the running
-    /// backend actually offers.
-    /// </summary>
-    /// <remarks>
-    /// Built in code rather than templated, because a generated
-    /// <c>MenuItem</c> container gives no place to hang a click handler, and
-    /// because which pipelines exist is a property of the renderer that
-    /// started rather than of the shell. Radio-checked: this is a choice of
-    /// one, and a list of checkboxes would suggest otherwise.
-    /// </remarks>
+    // Fills the Renderer submenu from the pipelines the running backend offers.
     private void RefreshRendererMenu()
     {
         RendererMenu.Items.Clear();
@@ -645,14 +441,8 @@ public partial class MainWindow : Window
         RendererMenu.IsEnabled = RendererMenu.Items.Count > 0;
     }
 
-    /// <summary>
-    /// Opens whatever a startup argument names: a manifest, a project folder,
-    /// or a loose map bundle. First match wins; backend switches are skipped.
-    /// </summary>
-    /// <remarks>
-    /// This is what makes a <c>.spectraproj</c> double-clickable once the OS
-    /// association exists, and it costs nothing until then.
-    /// </remarks>
+    // Opens the first startup argument that names a manifest, a project folder
+    // or a map bundle.
     private void OpenFromStartupArgs()
     {
         foreach (string arg in Program.StartupArgs)
@@ -671,16 +461,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Opens whatever a path names, if it names anything this shell can open.
-    /// </summary>
-    /// <returns>True when the path was recognised and a launch has started.</returns>
-    /// <remarks>
-    /// <b>One classifier, two callers.</b> The rules are the same whether a
-    /// path arrives on the command line or under a dropped file, and writing
-    /// them twice is how a manifest becomes double-clickable but not
-    /// droppable.
-    /// </remarks>
+    // Shared by the command line and drag-and-drop. True when a launch started.
     private bool TryOpenPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -712,23 +493,7 @@ public partial class MainWindow : Window
         return false;
     }
 
-    /// <summary>
-    /// Takes a project or a level dropped onto the window.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The gesture people try first.</b> Everything this shell opens is a
-    /// FOLDER, and the only routes in were a modal folder picker and a command
-    /// line - while the classification a drop needs was already written for
-    /// startup arguments.
-    /// </para>
-    /// <para>
-    /// <b>Guarded by the same unsaved check every other open goes through</b>,
-    /// and refused outright while a run is in progress: a drop is easy to make
-    /// by accident and replacing the scene under a character somebody is
-    /// walking around in is not a thing to do on one gesture.
-    /// </para>
-    /// </remarks>
+    // Opens a project or level dropped onto the window. Refused during play.
     private async Task DropAsync(IEnumerable<Avalonia.Platform.Storage.IStorageItem> items)
     {
         if (_latest.IsPlaying)
@@ -743,8 +508,7 @@ public partial class MainWindow : Window
             if (string.IsNullOrEmpty(path))
                 continue;
 
-            // Classified BEFORE the unsaved-work prompt, so dropping something
-            // unopenable does not first ask about discarding work.
+            // Classify before the unsaved-work prompt.
             bool openable = (File.Exists(path)
                     && path.EndsWith(ProjectFormat.Extension, StringComparison.OrdinalIgnoreCase))
                 || (Directory.Exists(path)
@@ -764,27 +528,12 @@ public partial class MainWindow : Window
         _shell.SetError("That is not a Spectra project or level folder.");
     }
 
-    // --- Engine lifetime -----------------------------------------------------
-
-    /// <summary>
-    /// Creates the viewport control and switches to the editor view; the
-    /// engine session itself is built when the native surface arrives.
-    /// </summary>
-    /// <remarks>
-    /// <b>The view switches before the child attaches</b>, so the viewport is
-    /// laid out at its real size and the first swap chain is not built against
-    /// a collapsed cell. From the attach onwards the airspace rule applies:
-    /// nothing Avalonia draws may cross the viewport's cell.
-    /// </remarks>
+    // Creates the viewport and switches to the editor view. The engine session
+    // is built when the surface arrives.
     private void LaunchSession(SessionLaunch launch)
     {
         if (_viewport is not null || _launchInFlight)
         {
-            // Callers close the running session first; stacking two engines
-            // over one window is never what anyone meant. The in-flight flag
-            // covers the gap the machine measurement opens: for as long as the
-            // compositor is being asked, there is no viewport yet and the field
-            // above would let a second launch through.
             _logger.LogWarning("A session is already running; ignoring the launch request");
             return;
         }
@@ -800,38 +549,19 @@ public partial class MainWindow : Window
         _ = LaunchSessionAsync(launch);
     }
 
-    // True from the moment a launch is asked for until its viewport is in the
-    // tree. See LaunchSession.
+    // Covers the gap while the compositor is being measured and no viewport
+    // exists yet.
     private bool _launchInFlight;
 
-    // What the machine turned out to be, for the session that is running now.
-    // Read again when it closes, because the colour verdict and the machine's
-    // identity are both part of whether the session counted as green.
+    // Read again when the session closes, to decide whether it counted as green.
     private ViewportCapabilities _sessionCapabilities = ViewportCapabilities.NotMeasured;
     private bool _sessionIsComposited;
     private bool _sessionFaulted;
     private int _sessionDebugLayerErrors;
 
-    /// <summary>
-    /// Chooses the viewport, measuring the machine first when the choice
-    /// depends on it, and then launches.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The rehearsal import happens BEFORE the session is constructed, and
-    /// that ordering is the whole reason this is asynchronous.</b> A compositor
-    /// that is going to refuse the engine's texture must be discovered while
-    /// nothing is running against it: found afterwards, it is an engine with a
-    /// render thread, a device and a scene behind a pane that will never show a
-    /// frame, torn down out of the order the keyed-mutex hand-over requires.
-    /// </para>
-    /// <para>
-    /// <b>Nothing here may throw into the caller.</b> Every failure has the same
-    /// answer - the native child, with the reason said out loud - because a
-    /// launch that reported a driver problem by not opening an editor would be
-    /// the silent fallback this stage exists to remove.
-    /// </para>
-    /// </remarks>
+    // Picks the viewport kind, then launches. The rehearsal import runs before
+    // the session exists, so a compositor that refuses the texture is found
+    // with no engine running. Must not throw: any failure falls back to native.
     private async Task LaunchSessionAsync(SessionLaunch launch)
     {
         ViewportDecision decision = new(
@@ -854,15 +584,9 @@ public partial class MainWindow : Window
             decision = ViewportModePolicy.Decide(preference, capabilities, backend);
             _sessionCapabilities = capabilities;
 
-            // AFTER the decision and whichever way it went, but only with a
-            // machine that was actually measured. After, because a count earned
-            // on another adapter or driver is exactly what produces the
-            // AdapterChanged and DriverChanged reasons and must still be there
-            // to produce them; whichever way it went, because leaving a stale
-            // count on disk would report the same change forever instead of
-            // starting the run again. An unmeasured launch is skipped, or it
-            // would overwrite a real history with empty strings, which reads
-            // afterwards as an adapter that changed.
+            // Rebase after the decision: the old count is what produces the
+            // AdapterChanged/DriverChanged reasons. Skipped when nothing was
+            // measured, or empty strings would overwrite a real history.
             if (capabilities.AdapterLuid.Length > 0)
             {
                 _settings.RebaseViewport(capabilities.AdapterLuid, capabilities.DriverVersion);
@@ -878,11 +602,8 @@ public partial class MainWindow : Window
             _launchInFlight = false;
         }
 
-        // Named in the log whichever way it went, and so is the layout that
-        // follows from it. A composited pane and a native child render the same
-        // picture, so a fallback nobody announced only shows up weeks later as
-        // an overlay that mysteriously does not draw - and a pane that silently
-        // got the pinned layout shows up as a tab that refuses to be dragged.
+        // Always log the choice: both viewports render the same picture, so a
+        // fallback is otherwise invisible.
         ViewportPlacement placement = ViewportLayout.For(decision);
 
         _logger.LogInformation(
@@ -908,19 +629,13 @@ public partial class MainWindow : Window
         viewport.SurfaceCreated += OnSurfaceCreated;
         viewport.SurfaceDestroying += OnSurfaceDestroying;
 
-        // The viewport hands up the document chords it intercepted, because
-        // while it has focus the OS gives it the keyboard and Avalonia never
-        // sees the menu accelerators at all.
         viewport.ShellChord += OnShellChord;
         viewport.ContextMenuRequested += OnViewportContextMenu;
         viewport.AssetDropped += OnViewportAssetDropped;
         viewport.AssetDragChanged += OnViewportAssetDragChanged;
         _viewport = viewport;
 
-        // A one-millisecond timer for as long as a session is open. Without it
-        // the 8ms pump silently becomes 15.6ms, which is most of the shell's
-        // worst-case lag; with it the start page and a closed editor still cost
-        // nothing.
+        // Held for the session only; a raised timer rate costs battery.
         TimerResolution.Acquire(_logger);
 
         StartView.IsVisible = false;
@@ -928,73 +643,31 @@ public partial class MainWindow : Window
         _shell.HasSession = true;
         RefreshDocumentIdentity();
 
-        // The workspace lands BEFORE the placement, for the same reason the
-        // placement lands before the control attaches: the first surface must be
-        // created at the size it will actually be, and a preset applied
-        // afterwards would resize the swap chain on the first frame.
+        // Workspace and placement before the control attaches, so the first
+        // surface is created at its real size.
         ApplyWorkspace(_settings.WorkspacePreset);
         _shell.ShowDiagnostics = _settings.DiagnosticsReadouts;
 
         ApplyPlacement(placement);
 
-        // Attach last: creating the native child is what eventually raises
-        // SurfaceCreated, and everything above must be in place by then. The
-        // engine focus makes the tool keys live from the first frame instead
-        // of after a first click into the scene.
-        // Index 0, so the drop overlay declared in the markup stays LAST in the
-        // list and therefore on top. Children.Add would put the picture over
-        // the overlay and nothing would report it.
+        // Attach last: it leads to SurfaceCreated, which needs everything above.
+        // Index 0 keeps the drop overlay from the markup on top.
         ViewportHost.Children.Insert(0, viewport.Control);
         viewport.FocusEngine();
     }
 
-    /// <summary>
-    /// Moves the viewport pane between its two homes and sets what the dock
-    /// tools may do.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The pane is one control and it is moved, never duplicated.</b> Avalonia
-    /// refuses a control with two parents, so it leaves the old home first; the
-    /// pinned home is the editor grid itself, where its <c>Grid.Column</c> and
-    /// <c>Grid.Row</c> ride on the control and survive the round trip, so
-    /// putting it back is an <c>Add</c> and nothing else.
-    /// </para>
-    /// <para>
-    /// <b>CanPin travels with the placement because it IS the airspace rule.</b>
-    /// Dock draws a pinned flyout in this window's own Avalonia layer, which a
-    /// native child composites over, so beside one the pin glyph is an invitation
-    /// to make a panel invisible. Beside a composited pane the flyout draws like
-    /// anything else, so it comes back - on every tool, not only on the viewport,
-    /// because the constraint was never about the viewport's own header.
-    /// </para>
-    /// </remarks>
-
-    /// <summary>
-    /// Hands a dock tool its live content control, and its DataContext with it.
-    /// </summary>
-    /// <remarks>
-    /// <b>One call sets both, because setting only one is not an error anywhere
-    /// and the symptom is a pane of blank controls.</b> Dock supplies a tool's
-    /// content presenter with its own DataContext (the <c>Tool</c>), and a
-    /// floated tool leaves this window's logical tree entirely, so a content
-    /// control that relies on inheritance resolves every binding against an
-    /// object carrying none of the properties it names. Avalonia reports
-    /// nothing for that: a failed binding leaves the target property at its own
-    /// default, so <c>Text</c> goes empty, an <c>ItemsSource</c> goes empty, and
-    /// <b><c>IsVisible</c> stays TRUE</b>, which is how the viewport header
-    /// strip came to show every debug overlay chip at once while every value
-    /// beside them was blank. Six panels set the DataContext inline and the
-    /// seventh host, added when the viewport became dockable, did not; the two
-    /// assignments live in one place now so a future tool cannot have one
-    /// without the other.
-    /// </remarks>
+    // The only place a tool's content may be assigned. Dock gives the content
+    // presenter its own DataContext (the Tool) and a float leaves this window's
+    // tree, so the DataContext is set here too. A failed binding reports nothing.
     private void SetToolContent(Dock.Model.Avalonia.Controls.Tool tool, Control content)
     {
         content.DataContext = _shell;
         tool.Content = content;
     }
 
+    // Moves the viewport pane between the grid cell and the dock tool. CanPin
+    // follows the placement: a pinned flyout draws in this window's own layer,
+    // which a native child composites over.
     private void ApplyPlacement(ViewportPlacement placement)
     {
         ViewportPlacementRules rules = ViewportLayout.RulesFor(placement);
@@ -1010,12 +683,8 @@ public partial class MainWindow : Window
             {
                 _viewportDockHost.Child = null;
 
-                // Back at the index it was declared at, never appended. A Grid
-                // draws its children in list order, and the splitters below the
-                // pane in the XAML overhang into its cell by a pixel on purpose
-                // - appended, the pane would be painted over the top of that
-                // overhang and take a strip of the grab area with it, on a
-                // control whose hit band has already been tuned twice.
+                // Back at its declared index: appended, it would paint over the
+                // splitters that overhang into its cell.
                 if (!EditorView.Children.Contains(ViewportPane))
                     EditorView.Children.Insert(_viewportPaneIndex, ViewportPane);
             }
@@ -1032,37 +701,19 @@ public partial class MainWindow : Window
             tool.CanPin = rules.CanPin;
     }
 
-    /// <summary>Every tool in the window that is not the viewport.</summary>
     private Dock.Model.Avalonia.Controls.Tool[] PanelTools =>
         [MapsTool, SceneTool, PropertiesTool, ContentTool, OutputTool, ProblemsTool, ConsoleTool];
 
-    /// <summary>
-    /// A composited viewport that was already running has stopped working.
-    /// </summary>
-    /// <remarks>
-    /// <b>An error and a way out, never a hot swap.</b> Rebuilding the pane as a
-    /// native child would tear down a live engine, destroy every GPU resource it
-    /// owns and reshape the window under whatever the user was in the middle of,
-    /// and it would leave one session's log describing two viewports - a bug
-    /// report nobody can write. So the session says what happened and names the
-    /// switch that avoids it, and the history remembers that this one was not
-    /// green.
-    /// </remarks>
+    // A running composited viewport failed. Report it; never hot-swap to a
+    // native child, which would tear down the live engine.
     private void OnViewportFailed(ViewportChoiceReason reason)
     {
         _sessionFaulted = true;
         _shell.SetError($"The composited viewport failed: {ViewportModePolicy.Describe(reason)}.");
     }
 
-    /// <summary>
-    /// Folds the session that is ending into the composited history.
-    /// </summary>
-    /// <remarks>
-    /// <b>Only a session that actually composited is recorded</b>, because a
-    /// native one says nothing either way about the composited path. Green is
-    /// three conditions and the third is the one that would be forgotten:
-    /// see <see cref="ViewportModePolicy.IsSessionGreen"/>.
-    /// </remarks>
+    // Folds the ending session into the composited history. Native sessions
+    // say nothing about the composited path and are not recorded.
     private void RecordSessionOutcome()
     {
         if (!_sessionIsComposited)
@@ -1088,44 +739,29 @@ public partial class MainWindow : Window
         _sessionIsComposited = false;
     }
 
-    /// <summary>
-    /// Tears the session and its viewport down and returns to the start page.
-    /// Callers have already confirmed any unsaved work.
-    /// </summary>
+    // Tears the session down and returns to the start page. Callers have
+    // already confirmed any unsaved work.
     private void CloseSessionView()
     {
         if (_viewport is not { } viewport)
             return;
 
-        // Before the teardown, while the counters still describe the session
-        // that ran.
+        // While the counters still describe this session.
         RecordSessionOutcome();
 
-        // FIRST, and this is what tells a composited viewport that the detach
-        // about to happen is the end rather than a re-dock. Without it the two
-        // are indistinguishable from inside the control, and a dock drag would
-        // stop the engine and build a second session on the re-attach - a new
-        // scene, an empty history and the level gone, with nothing reporting an
-        // error. The native child answers this with nothing at all: its surface
-        // IS the HWND and the destroy below is what ends it.
+        // Shutdown first: it tells a composited viewport the coming detach is
+        // the end and not a re-dock.
         viewport.Shutdown();
 
-        // The child leaves the tree: destroying the native window raises
-        // SurfaceDestroying, which stops the engine before the HWND dies. The
-        // explicit stop after it covers a viewport that never got a surface.
+        // Removing a native child raises SurfaceDestroying, which stops the
+        // engine. The explicit stop covers a viewport that never got a surface.
         ViewportHost.Children.Remove(viewport.Control);
         StopSession();
 
-        // A drag in flight when a session closes leaves a prompt behind, and
-        // the next session would open with a frame painted over its first
-        // frame. The viewport clears it on its own Shutdown too; this is the
-        // half that covers a viewport that never reached the tree.
         _shell.DropPrompt = ViewportDropPrompt.None;
 
-        // The engine those requests were aimed at is gone: an unconfirmed tool
-        // pick would otherwise still be pending when the next project opens,
-        // and its first snapshots would be ignored - a fresh session showing
-        // the previous session's tool, on a scene that never had it.
+        // Pending optimistic values would make the next session ignore its
+        // first snapshots.
         _shell.ResetOptimisticState();
         TimerResolution.Release();
 
@@ -1138,18 +774,11 @@ public partial class MainWindow : Window
         _viewport = null;
         _pendingLaunch = null;
 
-        // The pane comes home BEFORE the floats are closed, so a viewport that
-        // was floated is back in this window rather than inside a window that is
-        // about to be destroyed. Back to pinned whichever way the session went,
-        // because the next one decides its own layout from its own measurement
-        // and a leftover docked pane would be a native child in a tool.
+        // Pane home before the floats close, so it is not inside a window that
+        // is about to be destroyed.
         ApplyPlacement(ViewportPlacement.PinnedCell);
 
-        // A panel floated into its own OS window is not inside EditorView, so
-        // hiding the grid would leave it standing over the start page showing
-        // a dead session's data. Every root closes its own windows - all four,
-        // because a viewport dragged out of the centre dock leaves its float
-        // exactly as a properties panel does.
+        // Floated panels are OS windows outside EditorView; close them too.
         LeftRoot.ExitWindows?.Execute(null);
         RightRoot.ExitWindows?.Execute(null);
         BottomRoot.ExitWindows?.Execute(null);
@@ -1158,12 +787,7 @@ public partial class MainWindow : Window
         _tree = null;
         _shell.Tree = null;
 
-        // The classes belonged to the session's catalogue: left standing, the
-        // start page's Object menu would offer entities for a project that is
-        // closed, and the next project's menu would open showing the previous
-        // one's classes until its own session came up.
-        // A class name from one project's .sentdef means nothing in the next,
-        // and a remembered one would survive into a window that cannot place it.
+        // Entity classes belong to the closed project's catalogue.
         _lastEntityClass = null;
         _shell.SetEntityClasses(null);
         RefreshEntityInsertTip();
@@ -1172,10 +796,8 @@ public partial class MainWindow : Window
 
         _shell.HasSession = false;
 
-        // The ribbon hides with the session, but its FLYOUT is a popup and
-        // does not: a page left flown out would hang over the start page as a
-        // floating strip of verbs that no longer reach anything. It closes
-        // rather than collapsing, so the pin state a user chose survives.
+        // The ribbon flyout is a popup and would not hide with the session.
+        // Dismiss keeps the user's pin state.
         _ribbon = RibbonSurface.Dismiss(_ribbon);
         ApplyRibbonState();
 
@@ -1183,20 +805,12 @@ public partial class MainWindow : Window
         _shell.HasProject = false;
         _shell.ProjectMaps.Clear();
 
-        // The readouts and the filter describe a scene that no longer exists;
-        // left alone, a stale "3 selected / undo 12" keeps verbs enabled on
-        // the start page and the next session's tree opens pre-filtered by a
-        // search nobody typed into it.
-        // A maximised viewport left standing would hide every panel behind a
-        // start page that has none.
         RestoreWorkspace();
 
+        // An empty snapshot clears the readouts so no verb stays enabled.
         _shell.ClearFilter();
         _shell.ApplySnapshot(FrameSnapshot.Empty);
 
-        // Every standing problem was about this project's content or this
-        // session's engine; carried into the start page they would describe
-        // something that is no longer open.
         _shell.Problems.Clear();
 
         EditorView.IsVisible = false;
@@ -1213,25 +827,14 @@ public partial class MainWindow : Window
 
             var session = new EditorSession(_loggerFactory, ResolveBackend(), launch?.ContentRoot);
 
-            // Input is armed before the engine starts: the host exists from
-            // construction, so a click during the first frames reaches a real
-            // state machine rather than being dropped.
+            // Input armed before the engine starts, so early clicks are not dropped.
             _viewport!.Host = session.Host;
             session.Host.FrameCompleted += OnFrameCompleted;
 
-            // The list binds to the model's flat row projection through the
-            // shell model; assigning ItemsSource here would replace that binding
-            // with the hierarchy it was flattened FROM, which shows exactly the
-            // top-level nodes and never changes again.
             _tree = new SceneTreeModel(session.Host, _loggerFactory.CreateLogger<SceneTreeModel>());
             _shell.Tree = _tree;
 
-            // The session's PARSED catalogue, and the same instance the render
-            // thread stamps every scene with - so the Insert menu offers what
-            // the panel can describe, and neither can drift from the .sentdef
-            // the other read. The insert lambda resolves the session when the
-            // entry is chosen rather than capturing it, exactly as every other
-            // verb in this window does.
+            // The same catalogue instance the render thread stamps scenes with.
             _shell.SetEntityClasses(EntityInsertMenu.Build(session.EntitySchemas));
             RefreshEntityInsertTip();
             if (_shell.Properties is { } panel)
@@ -1245,9 +848,8 @@ public partial class MainWindow : Window
             _session = session;
             _pump.Start();
 
-            // The engine is up on a baseplate; whatever should really be open
-            // goes through the ordinary map path, so a broken bundle reports
-            // instead of silently falling back.
+            // The engine boots on a baseplate; the real map opens through the
+            // ordinary path so a broken bundle is reported.
             if (launch?.OpenMapPath is { } mapPath)
             {
                 OpenMapAt(mapPath);
@@ -1256,10 +858,7 @@ public partial class MainWindow : Window
             {
                 _document.MarkNew();
 
-                // The greeting must not stomp a standing failure: a missing
-                // startup map was reported moments ago, and overwriting it
-                // with "New baseplate scene" hides the one line that explains
-                // why the level is not on screen.
+                // Don't overwrite a failure that was just reported.
                 if (!_shell.IsError)
                 {
                     _shell.SetMessage(_document.HasProject
@@ -1273,35 +872,24 @@ public partial class MainWindow : Window
             _logger.LogCritical(ex, "The editor session could not start");
             _shell.SetError($"The engine could not start: {ex.Message}");
 
-            // Rolled back to the start page, not left half-open: without this
-            // the shell sits in the editor view with HasSession true and no
-            // session behind it, where every enabled verb silently does
-            // nothing and LaunchSession's own guard refuses a retry. Posted,
-            // because this handler runs during the native child's attach and
-            // tearing the child out from inside its own attach is asking the
-            // framework a question nobody needs answered.
+            // Back to the start page. Posted: this runs during the native
+            // child's attach, and removing it from inside that is not safe.
             Dispatcher.UIThread.Post(CloseSessionView);
         }
     }
 
     private void OnSurfaceDestroying()
     {
-        // Before the window goes, never after: the render thread owns the swap
-        // chain presenting into it.
+        // Stop before the window goes: the render thread presents into it.
         StopSession();
     }
 
-    // Set once the typed confirmation has been given, so the programmatic
-    // Close that follows it is not asked again.
+    // Stops the Close that follows a confirmation from asking again.
     private bool _closeConfirmed;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The close button gets the same typed confirmation every menu route
-    /// gets: it is the one gesture people reach for fastest, and the undo
-    /// history goes with the scene. The dialog is async and window closing is
-    /// not, so a dirty close is cancelled, asked, and re-issued.
-    /// </remarks>
+    // The dialog is async and closing is not, so a dirty close is cancelled,
+    // asked, and re-issued.
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         if (_document.IsDirty && !_closeConfirmed)
@@ -1311,16 +899,10 @@ public partial class MainWindow : Window
         }
         else
         {
-            // Before the stop, while the counters still describe the session
-            // that ran. Closing the window is how most sessions actually end,
-            // so recording only in CloseSessionView would mean the history
-            // almost never moved.
+            // Most sessions end here, not in CloseSessionView.
             RecordSessionOutcome();
 
-            // The same signal CloseSessionView gives, for the same reason: a
-            // composited viewport treats every detach as a re-parent unless it
-            // has been told otherwise, and the window going away is the one
-            // detach that is not.
+            // Tells a composited viewport this detach is final.
             _viewport?.Shutdown();
             StopSession();
         }
@@ -1346,9 +928,6 @@ public partial class MainWindow : Window
         if (_viewport is { } viewport)
             viewport.Host = null;
 
-        // Detached, not merely ignored: the surface outlives this subscription
-        // by exactly as long as the window takes to tear down, and a resize
-        // arriving in that gap would reach a shell that has stopped.
         if (_surface is { } surface)
         {
             surface.Resized -= OnViewportResized;
@@ -1360,9 +939,7 @@ public partial class MainWindow : Window
         _session.Dispose();
         _session = null;
 
-        // Per-session UI state, reset so nothing leaks into the next session:
-        // the snapshot queue is this session's history, and the dirty baseline
-        // and the panel's reveal gates describe a scene that no longer exists.
+        // Reset per-session state so nothing leaks into the next one.
         _latest = FrameSnapshot.Empty;
         _lastApplied = FrameSnapshot.Empty;
         while (_published.TryDequeue(out _))
@@ -1375,21 +952,15 @@ public partial class MainWindow : Window
         _stopping = false;
     }
 
-    // --- The two crossings ---------------------------------------------------
-
-    // Raised ON the render thread, inside the engine's frame. Everything here
-    // must be cheap and must not touch a control: the snapshot is queued and the
-    // UI reads it from its own pump, which is the shape the host documents.
+    // Runs on the render thread inside the engine's frame. Must be cheap and
+    // must not touch a control.
     private void OnFrameCompleted(FrameSnapshot snapshot)
     {
-        // The newest one always wins for the readouts, which want current
-        // values rather than a history.
         _latest = snapshot;
 
         if (Interlocked.Increment(ref _queuedSnapshots) > MaxQueuedSnapshots)
         {
-            // Reported rather than silently discarded: the tree rebuilds from
-            // the live graph instead of continuing to look correct.
+            // Flag the drop so the tree rebuilds from the live graph.
             Interlocked.Decrement(ref _queuedSnapshots);
             _droppedSnapshots = true;
             return;
@@ -1397,16 +968,8 @@ public partial class MainWindow : Window
 
         _published.Enqueue(snapshot);
 
-        // PHASE-LOCK. Without this the shell's timer beats against the
-        // engine's publish clock, so a snapshot landing just after a tick waits
-        // a whole tick for no reason and the wait is different every time -
-        // which the eye reads as unreliability rather than as latency. Posting
-        // makes the two ends meet: the UI does its work as soon as there is
-        // work, and never wakes up when there is none.
-        //
-        // Coalesced, because several snapshots can be published inside one UI
-        // frame while a gesture is in flight and the pump drains all of them in
-        // one pass anyway.
+        // Post a pump per publish so the UI doesn't wait on its own timer.
+        // Coalesced: the pump drains every queued snapshot in one pass.
         if (Interlocked.Exchange(ref _pumpPosted, 1) != 0)
             return;
 
@@ -1416,9 +979,7 @@ public partial class MainWindow : Window
         }
         catch (InvalidOperationException)
         {
-            // The dispatcher has shut down under us: the window is closing and
-            // this snapshot has nowhere to go. Not an error, and not something
-            // the render thread should hear about.
+            // Dispatcher already shut down: the window is closing.
             Interlocked.Exchange(ref _pumpPosted, 0);
         }
     }
@@ -1427,12 +988,9 @@ public partial class MainWindow : Window
     {
         Interlocked.Exchange(ref _pumpPosted, 0);
 
-        // The cursor first: a freelook that started this frame should capture
-        // before anything else looks at the pointer.
         _viewport?.PumpCursorMode();
 
-        // Drained, never sampled: each snapshot's change list is a batch that
-        // exists once.
+        // Drain every snapshot: each change list exists once.
         while (_published.TryDequeue(out FrameSnapshot? queued))
         {
             Interlocked.Decrement(ref _queuedSnapshots);
@@ -1450,36 +1008,20 @@ public partial class MainWindow : Window
         if (ReferenceEquals(snapshot, FrameSnapshot.Empty))
             return;
 
-        // The watchdog timer lands here ~125 times a second, and it exists for
-        // exactly one thing: the cursor-mode latch, already pumped above. A
-        // snapshot this pump has applied before has nothing new to say, so the
-        // full apply (selection sync, the whole property panel, the snap
-        // field) runs only when a NEW snapshot arrived — without this gate the
-        // shell re-applied the same snapshot four times over per publish,
-        // which is idle UI-thread work at its purest.
+        // The watchdog ticks ~125 times a second; only a new snapshot gets the
+        // full apply.
         if (ReferenceEquals(snapshot, _lastApplied))
             return;
         _lastApplied = snapshot;
 
-        // The high-water mark rather than the latest value, because the count is
-        // cumulative for the session and a composited session's greenness is a
-        // claim about the whole of it. These are the COUNTED errors, which on a
-        // composited D3D12 surface already exclude the one forgiven
-        // ReflectSharedProperties message per bridge wrap.
         if (snapshot.DebugLayerErrorCount > _sessionDebugLayerErrors)
             _sessionDebugLayerErrors = snapshot.DebugLayerErrorCount;
 
-        // Selection is a state rather than a history, so it is applied once
-        // from the newest snapshot instead of once per drained one; the panel
-        // owns the sync guards and the reveal choreography.
+        // Selection is state, not history: applied once, from the newest.
         _sceneView.SyncSelection(snapshot);
         TrackDirty(snapshot);
 
-        // A menu opened in the moment before play mode was reported would
-        // otherwise stand over a running session for as long as the user left
-        // it there, sending edits at a scene somebody is walking around in.
-        // The engine refuses those now; this is what stops the menu being on
-        // screen at all.
+        // Close a context menu that was open when play started.
         if (snapshot.IsPlaying && _viewportMenu is { IsOpen: true } menu)
             menu.Close();
 
@@ -1489,9 +1031,6 @@ public partial class MainWindow : Window
         _shell.ApplySnapshot(snapshot);
         RefreshSnapField(snapshot);
 
-        // Rebuilt only when the answer changed. A MenuItem collection rebuilt
-        // at the publish rate is UI-thread garbage for a surface nobody is
-        // looking at, and the menu is re-read every time it opens anyway.
         if (pipelineCountBefore != _shell.PipelineNames.Count
             || !string.Equals(pipelineBefore, _shell.PipelineName, StringComparison.Ordinal))
         {
@@ -1499,24 +1038,12 @@ public partial class MainWindow : Window
         }
     }
 
-    // --- Snap increment field ------------------------------------------------
-    //
-    // ONE box with the property panel's commit contract: a focused field stops
-    // taking refreshes, Enter and blur commit, Escape reverts, and unparseable
-    // or non-positive text reverts rather than sticking. Plain code-behind over
-    // the control, like the scroll offsets: the state is one float and a focus
-    // flag, and a model would be ceremony.
-    //
-    // ONE rather than three, because the three were labelled "mv", "rot" and
-    // "sz" and asked the reader to hold a mapping from abbreviation to tool in
-    // their head, for a tool they had already chosen. The box holds the live
-    // tool's increment, and the unit beside it says which unit that is.
+    // The snap field follows the property panel's commit contract: Enter and
+    // blur commit, Escape reverts, bad text reverts.
 
     private void RefreshSnapField(FrameSnapshot snapshot)
     {
-        // A focused field is being typed into; writing the published value
-        // back would delete characters as they arrive, which reads as a broken
-        // keyboard. The blur or Enter that ends the edit commits it.
+        // Don't overwrite a field somebody is typing into.
         TextBox box = _buildTab.SnapField;
         if (box.IsFocused)
             return;
@@ -1567,60 +1094,24 @@ public partial class MainWindow : Window
 
     private void CommitSnapField(TextBox box)
     {
-        // Refused before anything is posted, the panel's rule: zero and
-        // negative would throw inside the setting on the render thread, and
-        // clamping would write a number nobody asked for.
+        // Zero or negative would throw on the render thread; refuse it here.
         if (PropertyFieldModel.TryParseNumber(box.Text ?? string.Empty, out float value) && value > 0f)
             _session?.SetSnapIncrement(LiveSnapTool, value);
         else
             RevertSnapField(box);
     }
 
-    /// <summary>
-    /// Commits whatever editable field currently holds keyboard focus, by
-    /// blurring it, before a document chord runs.
-    /// </summary>
-    /// <remarks>
-    /// The menu route gets this for free — clicking File moves focus, the
-    /// field's LostFocus commits — but a key binding fires with focus still in
-    /// the box, so Ctrl+S would write the bundle WITHOUT the value the user
-    /// just typed while reporting "Saved". One blur closes the gap for the
-    /// property fields and the snap fields alike, on their own commit paths.
-    /// </remarks>
+    // Blurs a focused text box so its LostFocus commit runs before a chord acts.
     private void CommitFocusedEdit()
     {
-        // Blur by taking focus, not by a ClearFocus API (Avalonia 12 has
-        // none): the window is made focusable in the constructor exactly so
-        // it can be the neutral place focus lands, which raises the field's
-        // LostFocus and runs its commit.
+        // Avalonia 12 has no ClearFocus; the window takes focus instead.
         if (FocusManager?.GetFocusedElement() is TextBox)
             Focus();
     }
 
-    /// <summary>
-    /// Hands the keyboard back to the engine after a ribbon control took it.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>THE RIBBON USED TO EAT EVERY TOOL KEY.</b> W, E, R, 2, 3, 4, X, Y, G,
-    /// the bracket pair, Escape, Ctrl+D, Delete, Ctrl+G, Ctrl+Shift+G and
-    /// Ctrl+T all run through the ENGINE keymap, which only fires while the
-    /// viewport holds the keyboard - they are not window key bindings. So one
-    /// click on the ribbon killed all of them until the user clicked back in
-    /// the scene, and the ribbon's own tooltips advertise exactly those chords.
-    /// The viewport context menu has done this since it was written
-    /// (<c>menu.Closed</c>); the ribbon simply never did.
-    /// </para>
-    /// <para>
-    /// <b>The blur comes first, and it is not optional.</b> Ribbon controls
-    /// refuse focus now (<c>Focusable="False"</c> on their classes), so a click
-    /// on one no longer blurs the snap field on its way past - and that blur is
-    /// what used to commit a typed increment. Without this call the field keeps
-    /// focus, <c>RefreshSnapField</c> goes on standing down because
-    /// <c>box.IsFocused</c>, and the box shows a number the engine never
-    /// received, for as long as the session lasts.
-    /// </para>
-    /// </remarks>
+    // Tool keys go through the engine keymap, which only fires while the
+    // viewport has the keyboard. Commit first: ribbon controls don't take
+    // focus, so nothing else blurs the snap field.
     private void ReturnKeyboardToEngine()
     {
         CommitFocusedEdit();
@@ -1629,10 +1120,7 @@ public partial class MainWindow : Window
 
     private void RevertSnapField(TextBox box)
     {
-        // Before the first snapshot there is nothing published to revert TO,
-        // and formatting FrameSnapshot.Empty's zeros into the box would show
-        // an increment the engine never had; the editor's defaults are the
-        // honest resting value.
+        // Before the first snapshot, fall back to the editor's default increments.
         FrameSnapshot latest = _latest;
         GizmoMode tool = LiveSnapTool;
         float value = ReferenceEquals(latest, FrameSnapshot.Empty)
@@ -1641,15 +1129,8 @@ public partial class MainWindow : Window
         box.Text = PropertyFieldModel.Format(value);
     }
 
-    /// <summary>
-    /// Which tool the command bar's snap field is currently editing.
-    /// </summary>
-    /// <remarks>
-    /// Read from the shell model rather than from the snapshot, because the
-    /// model is what the unit label beside the box is bound to: taking the two
-    /// from different sources is how a field ends up showing degrees under a
-    /// move tool for one publish interval.
-    /// </remarks>
+    // From the shell model, not the snapshot: the unit label binds to the model
+    // and the two must agree.
     private GizmoMode LiveSnapTool => _shell.GizmoMode switch
     {
         "rotate" => GizmoMode.Rotate,
@@ -1657,24 +1138,9 @@ public partial class MainWindow : Window
         _ => GizmoMode.Translate,
     };
 
-    /// <summary>
-    /// Marks the document edited when the undo history has moved at all.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Any movement, rather than a comparison against the depth at save
-    /// time.</b> Depth alone cannot tell the two apart: undo one entry, then
-    /// make a different edit, and the depth returns to what it was with entirely
-    /// different content behind it. So this errs towards dirty, which costs a
-    /// redundant write, instead of towards clean, which costs the work.
-    /// </para>
-    /// <para>
-    /// The history is the right signal because it is the only thing that moves
-    /// for an edit and stays still for everything else: the demo scene animates
-    /// a brush every frame, the world recompiles hundreds of times a second,
-    /// and neither goes through a command.
-    /// </para>
-    /// </remarks>
+    // Any movement of the undo history marks the document dirty. Comparing
+    // against the depth at save time is not enough: undo one, make a different
+    // edit, and the depth is the same over different content.
     private void TrackDirty(FrameSnapshot snapshot)
     {
         if (snapshot.UndoDepth == _lastUndoDepth && snapshot.RedoDepth == _lastRedoDepth)
@@ -1685,31 +1151,20 @@ public partial class MainWindow : Window
         _document.MarkDirty();
     }
 
-    // Raised on the UI thread by the viewport's own window procedure, beside
-    // the renderer's size latch rather than instead of it.
     private void OnViewportResized(Vector2D<int> size)
     {
         _shell.SetViewportSize(size.X, size.Y);
         _logger.LogDebug("Viewport resized to {Width}x{Height}", size.X, size.Y);
     }
 
-    // --- Panels --------------------------------------------------------------
-    //
-    // "Show" rather than "toggle": a menu entry that hides a panel the user is
-    // looking at, because they picked it from a list to find it, is the same
-    // set-versus-toggle mistake the command bar already avoids. Closing is the
-    // dock chrome's own X, which is where a user looks for it.
-    //
-    // The dock's factory is what actually moves a dockable, and asking it to
-    // set the active dockable is enough: a tool that was closed is still in the
-    // layout, so making it active brings it back into view.
+    // Panel menu entries show, never toggle. A closed tool is still in the
+    // layout, so making it active brings it back.
 
     private void OnShowScenePanel(object? sender, RoutedEventArgs e) => ShowTool(SceneTool);
 
     private void OnShowMapsPanel(object? sender, RoutedEventArgs e)
     {
-        // The compact workspace has no Levels dock, so asking for the panel is
-        // asking for the dock back.
+        // The compact workspace has no Levels dock.
         SetLevelsDocked(true);
         ShowTool(MapsTool);
     }
@@ -1722,15 +1177,8 @@ public partial class MainWindow : Window
 
     private void OnShowProblemsPanel(object? sender, RoutedEventArgs e) => ShowToolInDrawer(ProblemsTool);
 
-    /// <summary>One engine log line, on the UI thread.</summary>
-    /// <remarks>
-    /// <b>Both destinations, and they are not the same claim.</b> The line goes
-    /// into the history because it was said; a warning or an error also becomes
-    /// a standing problem because it is still true. A resolution line does the
-    /// opposite: it clears the problems about its subject, and only reports
-    /// itself when it actually cleared one, so a texture that reloads for
-    /// ordinary reasons does not narrate itself.
-    /// </remarks>
+    // A resolution line clears the problems about its subject and is only
+    // logged when it cleared one.
     private void OnEngineLogLine(EngineLogLine line)
     {
         if (line.IsResolution)
@@ -1744,12 +1192,6 @@ public partial class MainWindow : Window
         _shell.Problems.Report(line.Severity, line.Template, line.Message, line.Subject);
     }
 
-    /// <summary>The relay fell behind and lost lines.</summary>
-    /// <remarks>
-    /// Reported in both places rather than swallowed: a diagnostic channel that
-    /// quietly drops its busiest moment is the failure this whole path exists to
-    /// stop, and the moment it drops lines is exactly when something is wrong.
-    /// </remarks>
     private void OnEngineLinesDropped(int count)
     {
         string text = $"{count} engine log line(s) were dropped because the shell fell behind. " +
@@ -1758,7 +1200,6 @@ public partial class MainWindow : Window
         _shell.Problems.Report(OutputSeverity.Warning, "Engine log lines dropped", text);
     }
 
-    /// <summary>A problem row was double-clicked.</summary>
     private void OnProblemActivated(ProblemEntry entry)
     {
         if (entry.HasNode)
@@ -1767,10 +1208,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        // A subject that looks like an asset is one: the problem list carries
-        // the content-relative path a warning named, and the browser can
-        // navigate to it. Anything else is a message, which is still better
-        // than a row that does nothing when it is clicked.
         if (entry.HasSubject && LooksLikeContentPath(entry.Subject))
         {
             RevealInContent(entry.Subject);
@@ -1781,32 +1218,16 @@ public partial class MainWindow : Window
             _shell.SetMessage(entry.Subject);
     }
 
-    /// <summary>
-    /// Shows a content-relative path in the browser, opening the panel first.
-    /// </summary>
-    /// <remarks>
-    /// The panel may be in the bottom drawer, which may be closed: revealing
-    /// into a hidden pane is the same as doing nothing, with the extra cost of
-    /// looking as though something happened.
-    /// </remarks>
     private void RevealInContent(string contentPath)
     {
         ShowToolInDrawer(ContentTool);
         _shell.Content?.Reveal(contentPath);
     }
 
-    // A content path has a forward-slash shape and an extension; a log subject
-    // that is a class name, an id or a sentence has neither.
     private static bool LooksLikeContentPath(string subject) =>
         subject.Contains('/', StringComparison.Ordinal) &&
         Path.HasExtension(subject) &&
         !subject.Contains(' ', StringComparison.Ordinal);
-
-    // --- The view presets ----------------------------------------------------
-    //
-    // Seven SET verbs through the one dispatcher every other control uses, each
-    // telling the shell what it asked for so the arrival is not reported as the
-    // surprise an unrequested return to perspective is.
 
     private void OnViewPerspectiveClicked(object? sender, RoutedEventArgs e) =>
         RunViewPreset(EditorCameraCommand.ViewPerspective, "Perspective");
@@ -1831,19 +1252,11 @@ public partial class MainWindow : Window
 
     private void RunViewPreset(EditorCameraCommand command, string name)
     {
+        // So the shell doesn't report the view change as unrequested.
         _shell.ExpectViewName(name);
         OnShellVerb(ShellVerb.Of(command));
     }
 
-    /// <summary>
-    /// Routes the viewport header's intents to the verbs the window already
-    /// dispatches.
-    /// </summary>
-    /// <remarks>
-    /// One switch rather than sixteen handlers moved onto the strip: the
-    /// optimistic values, the session check and the expected-view bookkeeping
-    /// all live here and would have had to travel with them.
-    /// </remarks>
     private void OnHeaderAction(HeaderAction action)
     {
         switch (action)
@@ -1873,9 +1286,6 @@ public partial class MainWindow : Window
     private void OnShowConsolePanel(object? sender, RoutedEventArgs e)
     {
         ShowToolInDrawer(ConsoleTool);
-
-        // The caret goes into the line, because a console you have to click
-        // into after asking for it is a console you stop using.
         _consoleView?.FocusInput();
     }
 
@@ -1889,23 +1299,11 @@ public partial class MainWindow : Window
     {
         await InteropProbe.RunAsync(this, _logger);
 
-        // Long enough for the log to flush and for a human running it by hand
-        // to read the console; short enough to be scriptable.
+        // Time for the log to flush.
         await Task.Delay(TimeSpan.FromMilliseconds(500));
         Close();
     }
 
-    // --- The bottom region ---------------------------------------------------
-
-    /// <summary>
-    /// Runs one console line and prints both halves.
-    /// </summary>
-    /// <remarks>
-    /// <b>The command is echoed before it runs, and the reply after.</b> A
-    /// console that printed only replies makes a scrollback nobody can read
-    /// back: three "nothing is open" lines in a row say nothing about which
-    /// three commands produced them.
-    /// </remarks>
     private void OnConsoleCommand(string line)
     {
         _shell.Output.Append(OutputSeverity.Command, "> " + line);
@@ -1925,34 +1323,12 @@ public partial class MainWindow : Window
             _shell.Output.Append(result.Severity, result.Reply);
     }
 
-    /// <summary>
-    /// A file was double-clicked in the content browser.
-    /// </summary>
-    /// <remarks>
-    /// <b>A model inserts; everything else is revealed on disk.</b> Dropping a
-    /// texture or a material into the viewport needs a target face and a
-    /// material assignment, neither of which the editor has a verb for yet -
-    /// and a double-click that silently did nothing would be worse than one
-    /// that opens the folder. Dragging into the 3D view waits on the composited
-    /// viewport: Avalonia's drag events cannot reach a native child window.
-    /// </remarks>
-    /// <summary>A file was double-clicked in the content browser.</summary>
-    /// <remarks>
-    /// <b>A model is PLACED, and it always could have been.</b> This used to say
-    /// placement was not built and open the folder instead, which had stopped
-    /// being true the moment a drag could drop one into the viewport: the
-    /// placement is <c>SceneEditorHost.InsertModel</c>, it takes an optional
-    /// pixel, and a null one means the centre of the view. The DRAG needs a
-    /// composited viewport because a native child cannot take an OLE drop; a
-    /// double-click needs nothing, so it works in either.
-    /// </remarks>
+    // Double-click in the content browser: a model is placed at the view
+    // centre, a material paints the selection, anything else is selected.
     private void OnContentActivated(ContentEntry entry)
     {
         if (entry.Kind is not (ContentKind.Model or ContentKind.Material))
         {
-            // Everything else selects and describes itself. Revealing on a
-            // double-click sent people out to Explorer for the ordinary act of
-            // looking at what they clicked; it is a context-menu verb now.
             _shell.Content?.Select(entry);
             return;
         }
@@ -1965,17 +1341,10 @@ public partial class MainWindow : Window
 
         if (_shell.Content is not { } browser || !browser.TryDescribe(entry, out ContentDragPayload? payload))
         {
-            // The same refusal the drag makes at its own source, for the same
-            // reason: a path this engine cannot name is not something to hand
-            // three threads down and discover there.
             _shell.SetWarning($"{entry.Name} is not inside this project's Assets folder.");
             return;
         }
 
-        // A material has no point to aim at from here, so it paints what is
-        // SELECTED, whole. The face gesture needs a pointer and is the drag; a
-        // double-click that painted "whichever face happens to be under the
-        // view centre" would be a different thing every time.
         if (entry.Kind == ContentKind.Material)
         {
             _shell.Content?.Select(entry);
@@ -1985,40 +1354,26 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Null point: the centre of the view. The report comes back on the
-        // render thread, like every other document callback.
+        // Null point means the view centre. The report arrives on the render thread.
         session.InsertModel(
             payload.ContentPath,
             null,
             report => Dispatcher.UIThread.Post(() => ReportModelInsert(report)));
     }
 
-    // --- Splitters -----------------------------------------------------------
-    //
-    // The hover lives on the INK, not on the splitter, and it is driven from
-    // code rather than from a selector, for two reasons that compound. The
-    // splitter is nine pixels wide so it can be grabbed by a hand; the line a
-    // user sees is one pixel, and a nine-pixel accent band appearing under the
-    // cursor is a different control from the one that is there. And a child
-    // cannot read its parent's pseudo-classes from a selector at all, so
-    // ".splitink" has no way to know the splitter above it is hovered.
-    //
-    // The ink is reached through Tag rather than by name because there are two
-    // of these and there will be a third the moment the bottom region lands.
+    // Splitter hover is set from code on the 1px ink child (in Tag): a child
+    // can't read its parent's pseudo-classes from a selector.
 
     private static void OnSplitterEntered(object? sender, PointerEventArgs e) =>
         SetSplitterHot(sender, hot: true);
 
     private void OnSplitterExited(object? sender, PointerEventArgs e)
     {
-        // Not while dragging: a fast drag leaves the nine-pixel band and the
-        // exit would revert the accent exactly while the user is pulling it.
+        // A fast drag leaves the hit band; stay hot until the drag ends.
         if (!ReferenceEquals(sender, _draggingSplitter))
             SetSplitterHot(sender, hot: false);
     }
 
-    // The drag pins the hot class for its whole duration; the pointer is
-    // often far outside the band by the time the gesture ends.
     private object? _draggingSplitter;
 
     private void OnSplitterDragStarted(object? sender, VectorEventArgs e)
@@ -2039,8 +1394,6 @@ public partial class MainWindow : Window
             ink.Classes.Set("hot", hot);
     }
 
-    // --- Driving the editor --------------------------------------------------
-
     private void OnSnapFinerClicked(object? sender, RoutedEventArgs e) =>
         _session?.Post(GizmoCommand.FinerSnap);
 
@@ -2050,25 +1403,8 @@ public partial class MainWindow : Window
     private void OnKeyboardReferenceClicked(object? sender, RoutedEventArgs e) =>
         _ = new KeyboardReferenceWindow().ShowDialog(this);
 
-    /// <summary>
-    /// Cooks the open project and checks the pack resolves with nothing else
-    /// mounted.
-    /// </summary>
-    /// <remarks>
-    /// <para><b>This is the only view of the game the editor cannot otherwise
-    /// give.</b> A session resolves loose files above the pack, which is the
-    /// whole editor workflow and is exactly why a texture the cook never produced
-    /// looks perfectly correct in this window right up until somebody plays a
-    /// shipped build.</para>
-    /// <para><b>Off the UI thread, and it names no scene.</b> The cook reads the
-    /// project folder and writes <c>cooked/</c>; nothing in it may touch the
-    /// graph, so there is no <c>EnqueueCommand</c> here and there should never
-    /// be one.</para>
-    /// <para><b>Every diagnostic goes to the output log, one line each.</b> The
-    /// status line is last-writer-wins and a validation run legitimately produces
-    /// dozens of findings, so putting them there would show whichever happened to
-    /// be last and destroy the rest.</para>
-    /// </remarks>
+    // Cooks the open project and verifies the pack with nothing else mounted.
+    // Runs off the UI thread and touches no scene, so no EnqueueCommand.
     private async void OnValidateCookedClicked(object? sender, RoutedEventArgs e)
     {
         if (_document.Project is not { } project || _shell.IsValidatingCooked)
@@ -2081,8 +1417,6 @@ public partial class MainWindow : Window
         {
             CookedValidationReport report = await Task.Run(() => CookedValidation.Run(project));
 
-            // The previous run's verdict is about a pack that has just been
-            // rebuilt, so it goes before this one's is recorded.
             _shell.Problems.ClearScope(ProblemScope.Cook);
 
             foreach (CookDiagnostic diagnostic in report.Diagnostics)
@@ -2097,9 +1431,6 @@ public partial class MainWindow : Window
                 string line = diagnostic.ToBuildLine("scook");
                 _shell.Output.Append(severity, line);
 
-                // Keyed on the diagnostic's own id, so twenty textures missing
-                // one shader are twenty rows and one texture reported twice is
-                // one. Info records nothing, which the problem list enforces.
                 _shell.Problems.Report(
                     severity, $"Cook {diagnostic.Id}", line, diagnostic.File ?? string.Empty, ProblemScope.Cook);
             }
@@ -2109,10 +1440,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            // Caught here rather than left to the dispatcher: an async void
-            // handler that throws takes the application down, and a validation
-            // run that failed for its own reasons is a message rather than a
-            // crash.
+            // An async void handler that throws takes the application down.
             _shell.SetError($"The cooked-content validation did not finish: {ex.Message}");
         }
         finally
@@ -2121,29 +1449,18 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <remarks>
-    /// <b>Two drags reach this handler and they mean opposite things.</b> A
-    /// FILE drag comes from outside the application and opens a project or a
-    /// level. An ASSET drag is one of this shell's own, and reaching the WINDOW
-    /// means no viewport claimed it: either it is over a panel, which is an
-    /// ordinary miss, or it is over a viewport that cannot take drops at all,
-    /// which is the case that has to be said out loud rather than answered with
-    /// a cursor.
-    /// </remarks>
+    // A file drag opens a project or level. An asset drag reaching the window
+    // means no viewport claimed it.
     private void OnDragOver(object? sender, DragEventArgs e)
     {
         if (e.DataTransfer.Contains(ContentDrag.Format))
         {
-            // Claimed only over the viewport's own rectangle, so a drop can land
-            // and be REFUSED IN WORDS. Everywhere else in the window an asset
-            // drag really is a miss, and the "no entry" pointer is the right
-            // answer there.
+            // Accept over the viewport rectangle so the drop can land and be
+            // refused with a message.
             e.DragEffects = IsOverViewport(e) ? DragDropEffects.Copy : DragDropEffects.None;
             return;
         }
 
-        // Copy rather than Move: nothing on disk is touched by opening, and a
-        // Move cursor over a file manager's own window promises otherwise.
         e.DragEffects = e.DataTransfer.Contains(DataFormat.File)
             ? DragDropEffects.Copy
             : DragDropEffects.None;
@@ -2153,9 +1470,7 @@ public partial class MainWindow : Window
     {
         if (e.DataTransfer.TryGetValue(ContentDrag.Format) is { } payload)
         {
-            // A composited viewport handled this itself and marked it handled,
-            // so anything arriving here is the refusal path. AssetDropPolicy
-            // knows which of the reasons it is.
+            // A composited viewport handles its own drops, so this is a refusal.
             _shell.SetWarning(
                 AssetDropPolicy.Refuse(payload, _session is not null, _viewport?.AcceptsAssetDrops ?? false)
                 ?? $"{payload.Name} was not dropped into the scene.");
@@ -2166,11 +1481,8 @@ public partial class MainWindow : Window
             _ = DropAsync(files);
     }
 
-    // Bounds rather than hit testing, because the answer must be the same over a
-    // native child: Avalonia hit-tests the NativeControlHost as an opaque
-    // rectangle and never learns anything about the HWND inside it, so asking
-    // where the pointer is relative to the control is the only question with a
-    // reliable answer on both paths.
+    // Bounds, not hit testing: Avalonia knows nothing about the HWND inside a
+    // NativeControlHost.
     private bool IsOverViewport(DragEventArgs e)
     {
         if (_viewport?.Control is not { } control || control.Bounds.Width <= 0 || control.Bounds.Height <= 0)
@@ -2181,18 +1493,8 @@ public partial class MainWindow : Window
             point.X < control.Bounds.Width && point.Y < control.Bounds.Height;
     }
 
-    /// <summary>
-    /// A model dropped into the viewport becomes a node, through the same
-    /// insert the Object menu uses.
-    /// </summary>
-    /// <remarks>
-    /// <b>The placement is not decided here and must never be.</b> The ray, the
-    /// pick that sees parts and meshes, the snap along the hit surface, the
-    /// single history entry and the selection afterwards all live in
-    /// <c>SceneEditorHost</c>, on the render thread, because they are decisions
-    /// about a scene graph this thread is a frame or two behind on. This handler
-    /// says which file and which pixel; the editor answers with what it did.
-    /// </remarks>
+    // Passes the file and the pixel on. Placement is decided by SceneEditorHost
+    // on the render thread; this thread's view of the scene is frames behind.
     private void OnViewportAssetDropped(
         ContentDragPayload payload, int x, int y, MaterialDropScope scope)
     {
@@ -2207,9 +1509,6 @@ public partial class MainWindow : Window
 
         var point = new System.Numerics.Vector2(x, y);
 
-        // Two kinds, two verbs, one gesture. Which face and how much of the
-        // brush are the editor's answers, from the same ray a click uses: this
-        // handler still only says which file and which pixel.
         if (payload.Kind == ContentKind.Material)
         {
             session.AssignMaterial(
@@ -2224,16 +1523,8 @@ public partial class MainWindow : Window
             report => Dispatcher.UIThread.Post(() => ReportModelInsert(report)));
     }
 
-    /// <summary>
-    /// Says what one material assignment did, in the voice its outcome earns.
-    /// </summary>
-    /// <remarks>
-    /// <b>Three voices, because the three outcomes need three different things
-    /// from the user.</b> A refusal means nothing happened and the gesture is
-    /// worth repeating; a missing file means the faces really were painted and
-    /// the answer is to write the material rather than to press Ctrl+Z; and a
-    /// plain success is a status line nobody has to act on.
-    /// </remarks>
+    // Refused: nothing happened (warning). Missing file: the faces were painted
+    // but the material doesn't exist (error). Otherwise a plain message.
     private void ReportMaterialAssign(MaterialAssignReport report)
     {
         string line = report.Describe();
@@ -2256,40 +1547,19 @@ public partial class MainWindow : Window
         _shell.SetMessage(line);
     }
 
-    /// <summary>
-    /// Draws the drop affordance over the picture, or takes it away.
-    /// </summary>
-    /// <remarks>
-    /// <b>The overlay's verdict is asked of the same policy the drop is, and
-    /// that is the whole of what makes it honest.</b> A frame drawn from any
-    /// other reasoning would be free to promise a placement that
-    /// <see cref="OnViewportAssetDropped"/> then refuses, and the moment it
-    /// would be discovered is the moment somebody let go of the mouse.
-    /// </remarks>
+    // Shows or clears the drop overlay. The prompt asks the same policy the
+    // drop does, so the two can't disagree.
     private void OnViewportAssetDragChanged(AssetDragState? state)
     {
         _shell.DropPrompt = ViewportDropPrompt.For(
             state?.Payload, _session is not null, _viewport?.AcceptsAssetDrops ?? false, state?.Scope ?? MaterialDropScope.Face);
 
-        // And the engine, so the outline can draw the face letting go would
-        // paint. Only a material asks for that: a model lands where the pointer
-        // is rather than on a surface, and lighting one up would promise a
-        // relationship the drop does not have.
+        // Only a material drag highlights the face under the pointer.
         _session?.SetMaterialDrag(
             state is { Payload.Kind: ContentKind.Material } ? state.Scope : null);
     }
 
-    // Marshalled back deliberately: EditorSession runs its completion on the
-    // RENDER thread, which is the whole point of that contract.
-    /// <summary>
-    /// Turns a map's load report into standing problems.
-    /// </summary>
-    /// <remarks>
-    /// <b>One row per missing thing, not one row for the sentence.</b> The
-    /// message line can only say "3 nodes lost their mesh"; these rows name
-    /// them, and they stay until the level is closed rather than until the next
-    /// thing overwrites the status bar.
-    /// </remarks>
+    // One standing problem per missing mesh or dead connection.
     private void RecordMapProblems(MapLoadReport? report)
     {
         if (report is null) return;
@@ -2317,18 +1587,12 @@ public partial class MainWindow : Window
 
     private void ReportModelInsert(ModelInsertReport report)
     {
-        // Three outcomes and three voices. A refusal is a warning because
-        // nothing happened and the gesture is worth repeating; an unresolved
-        // model is an ERROR because a node IS in the scene and in the history
-        // and somebody has to know it is empty; a clean insert is a message.
         if (report.Refused is not null)
             _shell.SetWarning(report.Describe());
         else if (report.Unresolved is not null)
         {
+            // An empty node is in the scene and the history, so this is an error.
             _shell.SetError(report.Describe());
-
-            // A node IS in the scene and in the history, drawing nothing. That
-            // outlives the status line by definition.
             _shell.Problems.Report(
                 OutputSeverity.Error,
                 "A model was placed as an empty node",
@@ -2341,18 +1605,7 @@ public partial class MainWindow : Window
             _shell.SetMessage(report.Describe());
     }
 
-    // --- The ribbon ----------------------------------------------------------
-
-    /// <summary>
-    /// Builds the tab strip from the roster, wires both pages, and applies the
-    /// persisted collapse state.
-    /// </summary>
-    /// <remarks>
-    /// <b>The strip is built from <see cref="RibbonLayout.Tabs"/> rather than
-    /// written in the markup</b>, so a page in the roster with no button, or a
-    /// button naming a page nobody built, cannot happen. Two buttons is nothing
-    /// to build by hand and it removes a whole class of drift for the price.
-    /// </remarks>
+    // Builds the tab strip from RibbonLayout.Tabs so it can't drift from the roster.
     private void BuildRibbon()
     {
         _ribbonPages[RibbonLayout.DefaultTabId] = _buildTab;
@@ -2366,9 +1619,8 @@ public partial class MainWindow : Window
                     $"The ribbon roster names a '{tab.Id}' page this window does not build.");
             }
 
-            // Explicitly, not inherited: a page spends part of its life inside
-            // a popup, which is a separate visual root, and the shell has been
-            // caught once already by a content host that assumed inheritance.
+            // Set explicitly: in the flyout the page sits under a separate
+            // visual root and inherits nothing.
             page.DataContext = _shell;
             page.Invoked += OnShellVerb;
 
@@ -2384,10 +1636,6 @@ public partial class MainWindow : Window
             RibbonTabs.Children.Add(button);
         }
 
-        // The snap field keeps its commit rule in this window - parse, refuse
-        // zero and negatives rather than clamping, revert anything
-        // unparseable, and stop taking refreshes while it has focus - so the
-        // page exposes the box and the handlers stay here.
         _buildTab.SnapField.GotFocus += OnSnapFieldFocused;
         _buildTab.SnapField.LostFocus += OnSnapFieldBlurred;
         _buildTab.SnapField.KeyDown += OnSnapFieldKeyDown;
@@ -2400,20 +1648,6 @@ public partial class MainWindow : Window
         ApplyRibbonState();
     }
 
-    // --- Command palette -----------------------------------------------------
-
-    /// <summary>
-    /// Opens the palette, or closes it if it is already open.
-    /// </summary>
-    /// <remarks>
-    /// <b>A THIRD ROUTE ONTO VERBS THAT ALREADY HAVE TWO</b>, which is what the
-    /// design doctrine this shell follows asks for and what CLAUDE.md has
-    /// recorded as owed since the ribbon landed. It is not a fourth command
-    /// path: every row carries a <see cref="ShellVerb"/> and goes through
-    /// <see cref="OnShellVerb"/>, the same dispatcher the ribbon uses, so a
-    /// command run from here cannot light a frame later than the same command
-    /// run from a button.
-    /// </remarks>
     private void TogglePalette()
     {
         if (CommandPalettePopup.IsOpen)
@@ -2426,17 +1660,13 @@ public partial class MainWindow : Window
         RefreshPalette();
         CommandPalettePopup.IsOpen = true;
 
-        // After the popup is open, or there is nothing to focus yet.
+        // Posted: the box can't take focus until the popup is open.
         Dispatcher.UIThread.Post(() => Palette.QueryBox.Focus(), DispatcherPriority.Input);
     }
 
     private void ClosePalette()
     {
         CommandPalettePopup.IsOpen = false;
-
-        // The line the menus already have and the ribbon just gained: the tool
-        // chords run through the engine keymap, which fires only while the
-        // viewport holds the keyboard.
         ReturnKeyboardToEngine();
     }
 
@@ -2452,7 +1682,6 @@ public partial class MainWindow : Window
         Palette.FooterLabel.IsVisible = result.FooterLabel.Length > 0;
     }
 
-    /// <summary>What the shell can do right now, for the palette's gate.</summary>
     private CommandContext PaletteContext() => new(
         _shell.HasSelection,
         _shell.IsPlaying,
@@ -2463,15 +1692,7 @@ public partial class MainWindow : Window
 
     private void OnPaletteQueryChanged(object? sender, TextChangedEventArgs e) => RefreshPalette();
 
-    /// <summary>
-    /// The palette's keyboard: the arrows move the list, Enter runs, Escape puts
-    /// it away.
-    /// </summary>
-    /// <remarks>
-    /// Handled on the query box rather than on the list, because the list never
-    /// takes focus: a palette where the arrows move the selection only after you
-    /// click into a second control is one you have to look at.
-    /// </remarks>
+    // Handled on the query box: the list never takes focus.
     private void OnPaletteKeyDown(object? sender, KeyEventArgs e)
     {
         int count = Palette.RowList.ItemCount;
@@ -2510,24 +1731,13 @@ public partial class MainWindow : Window
         if (Palette.RowList.SelectedItem is not ShellCommand command)
             return;
 
-        // Closed FIRST, so the verb lands with the keyboard already back on the
-        // viewport: several of these are tool changes whose next gesture is a
-        // key, and a palette that stays open over the result is one you have to
-        // dismiss before you can see what you did.
+        // Close first so the keyboard is back on the viewport when the verb lands.
         ClosePalette();
         OnShellVerb(command.Verb);
     }
 
-    /// <summary>
-    /// A control on the tab STRIP was clicked, rather than one on a page.
-    /// </summary>
-    /// <remarks>
-    /// Undo and redo live outside both pages, so they have no page to route
-    /// through - and until this existed they called their handlers directly and
-    /// their roster entries were decoration. <c>OnShellVerb</c> already sends
-    /// those two verbs to the same handlers, so this changes no behaviour and
-    /// makes the weld real.
-    /// </remarks>
+    // Undo and redo sit on the tab strip, outside both pages, and are routed
+    // through the roster like page controls.
     private void OnRibbonStripClick(object? sender, RoutedEventArgs e)
     {
         if (RibbonTabView.ItemOf(sender) is { } item)
@@ -2542,8 +1752,7 @@ public partial class MainWindow : Window
         _ribbon = RibbonSurface.SelectTab(_ribbon, tabId);
         ApplyRibbonState();
 
-        // Not while a page is flying out: that is a popup, and it wants the
-        // keyboard for its own light dismiss.
+        // An open flyout is a popup and needs the keyboard for light dismiss.
         if (RibbonSurface.HostFor(_ribbon) != RibbonBodyHost.Flyout)
             ReturnKeyboardToEngine();
     }
@@ -2551,30 +1760,21 @@ public partial class MainWindow : Window
     private void OnRibbonPinClicked(object? sender, RoutedEventArgs e) =>
         SetRibbonExpanded(!_ribbon.Expanded);
 
-    /// <summary>Shows the active page, or the tab strip alone.</summary>
     private void SetRibbonExpanded(bool expanded)
     {
         _ribbon = RibbonSurface.SetExpanded(_ribbon, expanded);
         ApplyRibbonState();
 
-        // A surface whose size resets every launch is a preference nobody
-        // keeps. The ACTIVE TAB deliberately does not go with it.
+        // Only the pin state is persisted, not the active tab.
         _settings.SetRibbonExpanded(_ribbon.Expanded);
         _settings.Save(_logger);
 
         ReturnKeyboardToEngine();
     }
 
-    /// <summary>Runs a document verb by calling the menu's own handler.</summary>
-    /// <remarks>
-    /// <b>The handler, not a copy of it.</b> Every one of these confirms unsaved
-    /// work or opens a picker, and a palette that reimplemented any of that
-    /// would be a second document path free to forget the confirmation.
-    /// </remarks>
+    // Calls the menu's own handlers so every confirmation still runs.
     private void RunDocumentVerb(DocumentVerb verb, RoutedEventArgs args)
     {
-        // A half-typed field commits first, exactly as a document chord does:
-        // saving without the value just typed reports success and loses it.
         CommitFocusedEdit();
 
         switch (verb)
@@ -2591,7 +1791,6 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Brings one panel to the front.</summary>
     private void ShowPanel(PanelId panel, RoutedEventArgs args)
     {
         switch (panel)
@@ -2607,12 +1806,8 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>The flyout was light-dismissed by a click outside it.</summary>
     private void OnRibbonFlyoutClosed(object? sender, EventArgs e)
     {
-        // Applying the state is what closed it; without this guard that
-        // re-entry writes the state a second time and the next tab click
-        // reads a value the machine never produced.
         if (_applyingRibbonState)
             return;
 
@@ -2620,10 +1815,6 @@ public partial class MainWindow : Window
         ApplyRibbonState();
     }
 
-    /// <summary>
-    /// Mirrors the state machine's value onto the controls: which tab is lit,
-    /// where the active page lives, and which way the pin points.
-    /// </summary>
     private void ApplyRibbonState()
     {
         _applyingRibbonState = true;
@@ -2639,8 +1830,7 @@ public partial class MainWindow : Window
             RibbonBodyHost host = RibbonSurface.HostFor(_ribbon);
             _ribbonPages.TryGetValue(_ribbon.ActiveTabId, out RibbonTabView? page);
 
-            // A control has one parent, so the loser is cleared before the
-            // winner is assigned - in that order, always.
+            // A control has one parent: clear the old host before assigning the new.
             if (host != RibbonBodyHost.Inline)
                 RibbonInlineHost.Content = null;
             if (host != RibbonBodyHost.Flyout)
@@ -2670,20 +1860,11 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// One ribbon control was clicked. Resolves to the verb the roster names
-    /// and hands it to the SAME handler a key chord and a menu item use.
-    /// </summary>
-    /// <remarks>
-    /// <b>Nothing here is a second command path.</b> Undo, redo, the tool
-    /// verbs and the three two-way choices go through the window's own
-    /// optimistic handlers rather than posting directly, or the ribbon would
-    /// light a frame later than the menu does for the same verb.
-    /// </remarks>
+    // Dispatcher for the ribbon and the palette. Undo, redo, the tool verbs and
+    // the two-way choices go through the optimistic handlers the menus use.
     private void OnShellVerb(ShellVerb verb)
     {
-        // A command posted out of a flown-out page closes the page, which is
-        // what makes a collapsed ribbon usable rather than sticky.
+        // A verb from a flown-out page closes the page.
         if (RibbonSurface.HostFor(_ribbon) == RibbonBodyHost.Flyout)
         {
             _ribbon = RibbonSurface.Invoke(_ribbon);
@@ -2738,15 +1919,11 @@ public partial class MainWindow : Window
                 break;
 
             case ShellVerbKind.SnapIncrement:
-                // The field commits through its own focus and Enter handlers;
-                // there is no click to answer.
+                // The field commits through its own focus and Enter handlers.
                 break;
 
             case ShellVerbKind.InsertEntity:
-                // The one verb whose target is resolved HERE rather than named
-                // by the roster: an entity class comes from the project, not
-                // from this build. Nothing at all when a project declares none,
-                // which the button's own IsEnabled has already said.
+                // The class comes from the project, so it is resolved at click time.
                 if (ResolveEntityClass() is { } className)
                     _session?.InsertEntity(className);
                 break;
@@ -2772,52 +1949,22 @@ public partial class MainWindow : Window
                 break;
         }
 
-        // The field is the one ribbon control whose whole contract is focus, so
-        // a verb that ever reached it must not yank the keyboard out of the box
-        // the user just clicked into.
-        // A panel verb is excluded too: the console focuses its own input and
-        // the keyboard reference is a window, so handing the keyboard back to
-        // the viewport would take it straight off whatever just opened.
+        // The snap field and the panels own their focus; don't take it back.
         if (verb.Kind is not (ShellVerbKind.SnapIncrement or ShellVerbKind.Panel))
             ReturnKeyboardToEngine();
     }
 
-    /// <summary>
-    /// The entity class the ribbon's split button places, which is whichever
-    /// one was chosen last.
-    /// </summary>
-    /// <remarks>
-    /// <b>Null means "the first the catalogue offers", never "none".</b> A
-    /// split button whose main half does nothing until you have used its caret
-    /// once is a button that is broken on first use and works afterwards, which
-    /// is the hardest kind of report to act on. Cleared when a session ends,
-    /// because a class name from one project's <c>.sentdef</c> means nothing in
-    /// the next.
-    /// </remarks>
+    // The class the split button's main half places. Null means the first
+    // class in the catalogue.
     private string? _lastEntityClass;
 
-    /// <summary>The entity class list the split button's caret opens.</summary>
     private MenuFlyout? _entityFlyout;
 
-    /// <summary>
-    /// Hangs the entity class list on the split button's caret and re-reads the
-    /// main half's tooltip.
-    /// </summary>
-    /// <remarks>
-    /// The flyout refills on OPEN rather than at construction, exactly as both
-    /// entity submenus do: this window outlives every session, and entries
-    /// built once would still offer the first project's classes in the third
-    /// project's window.
-    /// </remarks>
     private void WireEntitySplit()
     {
         _entityFlyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
 
-        // SHOWN FROM THE CLICK, never left to Button.Flyout. A Button opening
-        // its own Flyout is one line shorter and depends on the framework
-        // choosing to do it; filling the list first and then showing it is the
-        // order this needs anyway, since an empty MenuFlyout has nothing to
-        // draw and no way to say so.
+        // Shown from the click, not via Button.Flyout: the list is filled first.
         _buildTab.EntityCaretButton.Click += OnEntityCaretClicked;
         _entityFlyout.Closed += (_, _) => ReturnKeyboardToEngine();
 
@@ -2825,20 +1972,12 @@ public partial class MainWindow : Window
         Palette.QueryBox.KeyDown += OnPaletteKeyDown;
         Palette.RowList.Tapped += OnPaletteRowClicked;
 
-        // A light dismiss is a click somewhere else, and that click decides
-        // where focus goes - but the keyboard still has to come off a popup
-        // that is no longer there.
         CommandPalettePopup.Closed += (_, _) => ReturnKeyboardToEngine();
 
         RefreshEntityInsertTip();
     }
 
-    /// <summary>Opens the entity class list under the split button's caret.</summary>
-    /// <remarks>
-    /// Refilled at every open rather than once, exactly as both entity submenus
-    /// are: this window outlives every session, and entries built once would
-    /// still offer the first project's classes in the third project's window.
-    /// </remarks>
+    // Refilled at every open: the window outlives its sessions and their classes.
     private void OnEntityCaretClicked(object? sender, RoutedEventArgs e)
     {
         if (_entityFlyout is not { } flyout)
@@ -2849,16 +1988,7 @@ public partial class MainWindow : Window
             flyout.ShowAt(_buildTab.EntityCaretButton);
     }
 
-    /// <summary>
-    /// Names the class the split button's main half will place.
-    /// </summary>
-    /// <remarks>
-    /// The LABEL stays "Entity" and the class goes in the tooltip, which is
-    /// Office's own arrangement for a split button: the word names the family
-    /// and the caret names the member. A label that rewrote itself per class
-    /// would change width under the pointer and would wrap the moment somebody
-    /// shipped a long classname.
-    /// </remarks>
+    // The label stays "Entity"; the class goes in the tooltip.
     private void RefreshEntityInsertTip()
     {
         string? className = ResolveEntityClass();
@@ -2870,17 +2000,7 @@ public partial class MainWindow : Window
                 : $"Place a {className}. The arrow chooses a different class.");
     }
 
-    /// <summary>
-    /// Which class the main half places: the last one used, or the first the
-    /// catalogue offers.
-    /// </summary>
-    /// <remarks>
-    /// The last choice is checked against the LIVE catalogue rather than
-    /// trusted, because opening a second project replaces it: a remembered name
-    /// no longer in the list would post an insert the editor answers with a
-    /// placeholder, which is a real node in the scene and in the history for a
-    /// class nobody asked for.
-    /// </remarks>
+    // The last class used, if the live catalogue still has it, else the first.
     private string? ResolveEntityClass()
     {
         if (_lastEntityClass is { } remembered)
@@ -2903,27 +2023,12 @@ public partial class MainWindow : Window
     private void OnInsertSurfaceLightClicked(object? sender, RoutedEventArgs e) => _session?.Insert(InsertKind.SurfaceLight);
     private void OnInsertGroupClicked(object? sender, RoutedEventArgs e) => _session?.Insert(InsertKind.Group);
 
-    // ─── Set semantics, and a local opinion with a bound ──
-    //
-    // SET, never a toggle verb: a toggle sent against a snapshot one publish
-    // stale flips the wrong way exactly when the user clicks fastest, while
-    // re-requesting the state already shown is a no-op.
-    //
-    // And the shell shows the request IMMEDIATELY rather than waiting for the
-    // engine to echo it. Set semantics is exactly what makes that safe - a
-    // stale echo can only be an older value, never the opposite of what was
-    // asked for - and ShellModel bounds the wait, so an engine that refuses
-    // (play mode on a scene with no character, an edit while a gesture is
-    // open) still wins within about a tenth of a second, visibly.
+    // The shell posts set verbs, never toggles: a toggle against a stale
+    // snapshot flips the wrong way. The model shows the request at once and
+    // ShellModel bounds how long it waits for the engine's echo.
 
     private void OnPlayClicked(object? sender, RoutedEventArgs e) => RequestPlay(!_shell.IsPlaying);
 
-    /// <summary>Enters or leaves play mode.</summary>
-    /// <remarks>
-    /// A SET verb, so the palette's two rows and the one button share it: the
-    /// button computes the state it wants from what it is showing, and the
-    /// palette's rows name theirs outright.
-    /// </remarks>
     private void RequestPlay(bool wanted)
     {
         if (_session is not { } session)
@@ -2949,9 +2054,6 @@ public partial class MainWindow : Window
         if (_session is not { } session)
             return;
 
-        // The model first, so the tick shows the new state, then the engine.
-        // A debug toggle is the one of these the user watches while the menu is
-        // still OPEN, so its lag was the most visible of the lot.
         _shell.RequestDebugVisualization(flag, enabled);
         session.Host.RequestDebugVisualization(flag, enabled);
     }
@@ -2969,10 +2071,6 @@ public partial class MainWindow : Window
         session.Post(command);
     }
 
-    // The two chips carry a VALUE, so the click resolves to the value it wants
-    // rather than to "the other one". The toggle verbs still exist and are
-    // still what the keyboard sends; a shell posting one would be computing
-    // the answer from a snapshot it may already have superseded locally.
     private void OnOrientationClicked(object? sender, RoutedEventArgs e) =>
         ApplyTwoWayChoice(ShellToggle.Axes);
 
@@ -2982,16 +2080,7 @@ public partial class MainWindow : Window
     private void OnSnapClicked(object? sender, RoutedEventArgs e) =>
         ApplyTwoWayChoice(ShellToggle.Snap);
 
-    /// <summary>
-    /// Flips one two-way choice: shows the new half at once and posts the
-    /// idempotent verb that lands on it.
-    /// </summary>
-    /// <remarks>
-    /// One body for all three, and the pairing it uses lives in
-    /// <see cref="ShellToggles"/> rather than here. Three handlers each
-    /// recomputing "which verb reaches the other half" is how a table meant to
-    /// be the single expression of that ended up read only by a test.
-    /// </remarks>
+    // Shows the other half at once and posts the set verb that lands on it.
     private void ApplyTwoWayChoice(ShellToggle toggle)
     {
         if (_session is not { } session)
@@ -3041,8 +2130,6 @@ public partial class MainWindow : Window
     private void OnClearSelectionClicked(object? sender, RoutedEventArgs e) =>
         _session?.Post(EditorHostCommand.ClearSelection);
 
-    // --- Menu ----------------------------------------------------------------
-
     private void OnExitClicked(object? sender, RoutedEventArgs e) => Close();
 
     private void OnShellChord(ShellChord chord)
@@ -3059,9 +2146,7 @@ public partial class MainWindow : Window
             case ShellChord.InsertLight: _session?.Insert(InsertKind.PointLight); break;
             case ShellChord.OpenPalette: TogglePalette(); break;
 
-            // Read from the shell rather than posted blind: this state is the
-            // window's own and is synchronous, so a key-side toggle cannot be
-            // stale. The verbs underneath stay SET.
+            // Toggling is safe here: this state is the window's own and never stale.
             case ShellChord.MaximiseViewport:
                 RunWorkspaceVerb(_shell.IsViewportMaximised
                     ? WorkspaceCommand.RestoreWorkspace
@@ -3076,29 +2161,20 @@ public partial class MainWindow : Window
         }
     }
 
-    // --- Viewport context menu -----------------------------------------------
-
-    // Built once and reused; where it was opened, in framebuffer pixels, so
-    // "insert here" means the spot that was right-clicked rather than wherever
-    // the camera is pointing by the time the item is picked.
     private ContextMenu? _viewportMenu;
     private MenuItem? _viewportEntityMenu;
+
+    // Where the menu was opened, in framebuffer pixels, for "insert here".
     private System.Numerics.Vector2 _viewportMenuPoint;
 
-    /// <summary>
-    /// A right-click in the viewport that never became a freelook drag. The
-    /// menu itself is a real OS popup, which is the one kind of surface that
-    /// may legally cross the viewport (the NameDialog rule).
-    /// </summary>
+    // A right-click that never became a freelook drag. The menu is an OS
+    // popup, which may cross a native viewport.
     private void OnViewportContextMenu(int x, int y)
     {
         if (_session is null || _viewport is not { } viewport || _shell.IsPlaying)
             return;
 
-        // Retarget first, the rule every editor shares: an unselected object
-        // under the cursor becomes the selection, a selected one keeps the
-        // set, empty space changes nothing. By the time a human picks a menu
-        // item the render thread has long since applied it.
+        // Retarget the selection to what is under the cursor first.
         _viewportMenuPoint = new System.Numerics.Vector2(x, y);
         _session.SelectAtPoint(_viewportMenuPoint);
 
@@ -3125,28 +2201,15 @@ public partial class MainWindow : Window
             return item;
         }
 
-        // ONE vocabulary, everywhere. Block, part and cut are what the command
-        // row says, what the Object menu says and what the keyboard reference
-        // says, so they are what this says: the same five things went by two
-        // sets of names depending on which surface the user reached them
-        // through, which is how "world brush", "hole" and "part" become three
-        // concepts instead of three words for two.
         var insert = new MenuItem { Header = "Insert here" };
         insert.Items.Add(Item("Block", "Ctrl+D1", () => _session?.Insert(InsertKind.WorldBrush, _viewportMenuPoint)));
         insert.Items.Add(Item("Part", "Ctrl+D2", () => _session?.Insert(InsertKind.PartBrush, _viewportMenuPoint)));
         insert.Items.Add(Item("Cut", "Ctrl+D3", () => _session?.Insert(InsertKind.SubtractiveBrush, _viewportMenuPoint)));
         insert.Items.Add(Item("Light", "Ctrl+D4", () => _session?.Insert(InsertKind.PointLight, _viewportMenuPoint)));
 
-        // The one insert that genuinely wants the RIGHT-CLICK point rather than
-        // the view centre: it mounts on the surface under the cursor, so "here"
-        // is the whole gesture.
         insert.Items.Add(Item("Surface light", null, () => _session?.Insert(InsertKind.SurfaceLight, _viewportMenuPoint)));
         insert.Items.Add(Item("Empty group", null, () => _session?.Insert(InsertKind.Group, _viewportMenuPoint)));
 
-        // Entities go under their own submenu rather than into this list: the
-        // six above are a fixed vocabulary and the classes are a project's, so
-        // one flat list would grow without bound and put "Block" beside forty
-        // logic classes.
         _viewportEntityMenu = new MenuItem { Header = "Entity" };
         insert.Items.Add(_viewportEntityMenu);
 
@@ -3162,52 +2225,20 @@ public partial class MainWindow : Window
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Frame selection", "F", () => _session?.Post(EditorCameraCommand.FrameSelection)));
 
-        // The popup takes real focus, so closing it must hand the keyboard
-        // back to the engine's HWND or the tool keys go dead until a click.
+        // The popup took focus; hand the keyboard back or the tool keys go dead.
         menu.Closed += (_, _) => _viewport?.FocusEngine();
         return menu;
     }
 
-    /// <summary>
-    /// Refills the viewport menu's entity submenu, placing at the right-click
-    /// point.
-    /// </summary>
     private void RefreshViewportEntityItems() =>
         FillEntityMenu(_viewportEntityMenu, () => _viewportMenuPoint);
 
-    /// <summary>
-    /// Refills the Object menu's entity submenu, placing at the view centre.
-    /// </summary>
-    /// <remarks>
-    /// On <c>SubmenuOpened</c> rather than at construction, for the same reason
-    /// the viewport's is rebuilt per open: the window outlives every session,
-    /// and entries built once would still offer the first project's classes in
-    /// the third project's window.
-    /// </remarks>
+    // Refilled per open: the window outlives its sessions and their classes.
     private void OnInsertEntityMenuOpened(object? sender, RoutedEventArgs e) =>
         FillEntityMenu(InsertEntityMenu, static () => null);
 
-    /// <summary>
-    /// Rebuilds one entity submenu from the live session's classes, and hides
-    /// it when there are none.
-    /// </summary>
-    /// <remarks>
-    /// <b>Built in code, in ONE place, for both menus.</b> The alternative is
-    /// an <c>ItemsSource</c> plus an <c>ItemContainerTheme</c> deriving from
-    /// Fluent's own MenuItem theme, which this shell has no other instance of
-    /// and whose failure mode is a submenu of correctly-sized blank rows -
-    /// exactly the class of silent styling failure the shell's own notes on
-    /// Avalonia style priority are about. The context menu could not use that
-    /// route anyway, since it is assembled in code, so binding the other one
-    /// would be two mechanisms for one list.
-    /// </remarks>
-    /// <param name="submenu">The parent item to refill, or null before it exists.</param>
-    /// <param name="point">
-    /// Where an entry places, evaluated at CLICK time rather than captured
-    /// here: the viewport's point is written by the press that opened the menu,
-    /// and reading it while building would freeze the first right-click's
-    /// position into every later one.
-    /// </param>
+    // Rebuilds an entity submenu from the live classes; hidden when there are
+    // none. point is evaluated at click time, not captured while building.
     private void FillEntityMenu(MenuItem? submenu, Func<System.Numerics.Vector2?> point)
     {
         if (submenu is null)
@@ -3217,36 +2248,20 @@ public partial class MainWindow : Window
         FillEntityItems(submenu.Items, point);
     }
 
-    /// <summary>
-    /// Fills one list of menu entries, one per class the session can place.
-    /// </summary>
-    /// <remarks>
-    /// <b>Split out of the method above so the ribbon's split button is a THIRD
-    /// caller rather than a second mechanism.</b> The remarks on that method
-    /// are about exactly this: one list, built in one place, because two ways
-    /// of building it drift and the failure is a submenu that quietly stops
-    /// matching the other one. A MenuFlyout's items and a MenuItem's are the
-    /// same collection type, so the split costs nothing.
-    /// </remarks>
+    // Shared by both entity submenus and the ribbon's split button.
     private void FillEntityItems(ItemCollection items, Func<System.Numerics.Vector2?> point)
     {
         items.Clear();
 
         foreach (EntityInsertItem entry in _shell.EntityClasses)
         {
-            // The class NAME is captured, never the item, because the item's
-            // own ICommand carries the Object menu's placement and this may be
-            // the viewport's.
+            // Capture the name, not the item: the item's own command carries
+            // the Object menu's placement.
             string className = entry.ClassName;
             var item = new MenuItem { Header = entry.Display };
             ToolTip.SetTip(item, entry.Tip);
             item.Click += (_, _) =>
             {
-                // Remember it for the ribbon's split button. Choosing from ANY
-                // of these lists sets what the split places, which is what "the
-                // last one used" has to mean: a split button that only learned
-                // from its own caret would disagree with the menu the user just
-                // used.
                 _lastEntityClass = className;
                 RefreshEntityInsertTip();
                 _session?.InsertEntity(className, point());
@@ -3256,30 +2271,17 @@ public partial class MainWindow : Window
     }
 
 
-    /// <summary>
-    /// Queues one property edit onto the render thread.
-    /// </summary>
-    /// <remarks>
-    /// The panel says which property and which value; which nodes that means is
-    /// the editor's answer, given at the moment the edit runs. A UI's view of
-    /// the selection is a frame or two behind, so an edit carrying its own node
-    /// list would occasionally write to nodes the user had already deselected.
-    /// </remarks>
+    // The edit names a property and a value; the editor decides which nodes
+    // when it runs, because this thread's selection is a frame or two behind.
     private void OnPropertyEdit(PropertyEdit edit) => _session?.ApplyProperty(edit);
 
-    // Addressed by node id rather than by the selection, because a wiring edit
-    // replaces a whole list: see EditorSession.ApplyEntityConnections.
+    // By node id, not the selection: a wiring edit replaces a whole list.
     private void OnEntityConnectionsEdit(
         Guid nodeId, IReadOnlyList<SpectraEngine.Core.Entities.EntityConnection> connections) =>
         _session?.ApplyEntityConnections(nodeId, connections);
 
-    // --- File ----------------------------------------------------------------
-    //
-    // Every one of these runs the filesystem work on the UI thread and the
-    // SCENE work on the render thread, through EditorSession. That split is the
-    // whole contract: a map bundle is ordinary file I/O and belongs where the
-    // dialogs are, while the graph, the static-world compile and the GPU
-    // resources belong to the thread that owns the frame.
+    // File handlers: filesystem work on the UI thread, scene work on the
+    // render thread through EditorSession.
 
     private async void OnNewMapClicked(object? sender, RoutedEventArgs e)
     {
@@ -3292,11 +2294,8 @@ public partial class MainWindow : Window
 
         session.NewMap(name, error => Dispatcher.UIThread.Post(() =>
         {
-            // The session boundary guard: this callback was produced by the
-            // render thread of a PARTICULAR session, and by the time the post
-            // runs that session can be dead and another live. A stale post
-            // rebinding the fresh document is how the next Ctrl+S overwrites a
-            // different project's bundle.
+            // The session may have been replaced by the time this post runs. A
+            // stale callback must not rebind the new session's document.
             if (!ReferenceEquals(session, _session))
                 return;
 
@@ -3317,9 +2316,7 @@ public partial class MainWindow : Window
         if (_session is null) return;
         if (!await ConfirmDiscardAsync("opening another map")) return;
 
-        // A FOLDER picker, because a map bundle is a directory. Pointing a file
-        // picker at map.json would work and would then show the same file name
-        // for every level anybody ever opened.
+        // Folder picker: a map bundle is a directory.
         IReadOnlyList<IStorageFolder> picked = await StorageProvider.OpenFolderPickerAsync(
             new FolderPickerOpenOptions
             {
@@ -3345,9 +2342,7 @@ public partial class MainWindow : Window
 
         session.OpenMap(bundlePath, (report, error) => Dispatcher.UIThread.Post(() =>
         {
-            // See NewMap for the session boundary guard: a stale post from a
-            // torn-down session must not mark ITS bundle open on the document
-            // the next session is editing.
+            // Stale-session guard, as in OnNewMapClicked.
             if (!ReferenceEquals(session, _session))
                 return;
 
@@ -3360,37 +2355,25 @@ public partial class MainWindow : Window
             _document.MarkOpened(bundlePath);
             ResetDirtyBaseline();
 
-            // The previous level's problems go with the previous level: they
-            // were about nodes and assets that are no longer in the scene.
             _shell.Problems.ClearScope(ProblemScope.Map);
             RecordMapProblems(report);
 
-            // A map that names a model this project does not have still loads,
-            // with that node standing where it belongs and drawing nothing. It
-            // has to be said out loud, or the level looks subtly wrong with
-            // nothing anywhere explaining why.
             _shell.SetMessage(report?.Describe() is { } missing
                 ? $"Opened {_document.MapLabel}. {missing}"
                 : $"Opened {_document.MapLabel}");
         }));
     }
 
-    // --- Projects ------------------------------------------------------------
-    //
-    // A session per project, the way it is a window per project in every IDE:
-    // the asset content root is fixed at session birth, so opening a different
-    // project closes the running session and launches a fresh one over the new
-    // project's Assets folder. Every flow below confirms unsaved work BEFORE
-    // touching anything.
+    // One session per project: the content root is fixed when a session is
+    // built, so opening another project closes the session and launches a new one.
 
     private void OnNewProjectClicked(object? sender, RoutedEventArgs e) => _ = CreateProjectFlowAsync();
     private void OnOpenProjectClicked(object? sender, RoutedEventArgs e) => _ = OpenProjectFlowAsync();
 
     private async void OnCloseProjectClicked(object? sender, RoutedEventArgs e)
     {
-        // Guarded on the VIEWPORT, not the session: a session that failed to
-        // start leaves the viewport up with no session behind it, and this is
-        // the verb that has to work in exactly that state.
+        // Checks the viewport, not the session: a session that failed to start
+        // leaves a viewport with nothing behind it, and this must still work.
         if (_viewport is null) return;
         if (!await ConfirmDiscardAsync("closing the project")) return;
 
@@ -3422,11 +2405,8 @@ public partial class MainWindow : Window
         string root = Path.Combine(picked[0].Path.LocalPath, name);
         if (Directory.Exists(root) && Directory.EnumerateFileSystemEntries(root).Any())
         {
-            // Refused for ANY non-empty folder, not just one with a manifest:
-            // scaffolding adopts whatever it finds, so pointing "create" at an
-            // existing folder of files would quietly claim them as a project
-            // (and beside an existing manifest it writes a second one, which
-            // Open then refuses). Creating means creating.
+            // Any non-empty folder is refused: scaffolding would adopt its files,
+            // and a second manifest makes the folder unopenable.
             _shell.SetError($"'{root}' already exists and is not empty; open it as a project, or pick another name.");
             return;
         }
@@ -3456,16 +2436,12 @@ public partial class MainWindow : Window
         OpenProjectAt(picked[0].Path.LocalPath);
     }
 
-    /// <summary>
-    /// Repaints every surface the recents feed: the start page's cards and the
-    /// File menu's submenu. One method so the two can never disagree.
-    /// </summary>
+    // Updates the start page and the File menu's recents together.
     private void RefreshRecents()
     {
         StartView.ShowRecents(_settings.RecentProjects);
 
-        // Rebuild the submenu's dynamic items: everything before the pinned
-        // empty label / separator / clear entries declared in XAML.
+        // Remove only the dynamic items; the XAML ones stay.
         for (int i = RecentProjectsMenu.Items.Count - 1; i >= 0; i--)
         {
             if (RecentProjectsMenu.Items[i] is MenuItem { DataContext: RecentProject })
@@ -3507,11 +2483,6 @@ public partial class MainWindow : Window
         RefreshRecents();
     }
 
-    /// <summary>
-    /// Opens the OS file browser with the given file or folder selected. The
-    /// escape hatch every editor owes its users: the shell manages folders on
-    /// disk, and "where IS that" must never require retyping a path.
-    /// </summary>
     private void RevealInExplorer(string? path)
     {
         if (string.IsNullOrEmpty(path))
@@ -3536,9 +2507,7 @@ public partial class MainWindow : Window
 
         try
         {
-            // /select shows the item IN its parent rather than opening it,
-            // which for a map bundle (a folder) is the difference between
-            // "here it is" and being dropped inside it.
+            // /select shows the item in its parent instead of opening it.
             Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{full}\"")
             {
                 UseShellExecute = false,
@@ -3551,11 +2520,8 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Makes a map the project's startup map, through the same re-read-edit-save
-    /// discipline every manifest write uses: the file on disk is the author's,
-    /// and the copy in memory may be behind their hand edits.
-    /// </summary>
+    // Re-reads the manifest from disk before editing it: the copy in memory
+    // may be behind the author's hand edits.
     private void SetStartupMap(ProjectMapRow row)
     {
         if (_document.Project is not { } stale)
@@ -3573,9 +2539,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        // An unlisted map that becomes the startup map is listed as part of
-        // the same write: a manifest whose startupMap names a map its own
-        // list does not is a file that reads as a mistake.
+        // The startup map must also be in the manifest's list.
         if (!project.Project.Maps.Any(m => ManifestPathsEqual(m, row.RelativePath)))
             project.Project.Maps.Add(row.RelativePath);
 
@@ -3601,9 +2565,6 @@ public partial class MainWindow : Window
     {
         if (!Directory.Exists(recent.Path))
         {
-            // Forgotten rather than left to fail on every click: the folder
-            // moved or was deleted, and a card that errors forever is worse
-            // than one that says goodbye once.
             _settings.ForgetProject(recent.Path);
             _settings.Save(_logger);
             RefreshRecents();
@@ -3617,9 +2578,7 @@ public partial class MainWindow : Window
 
     private async Task OpenLooseMapFlowAsync()
     {
-        // The start page's third door: one bundle, no project. A level
-        // designer handed a folder should not have to scaffold a project to
-        // look at it.
+        // One bundle, no project.
         IReadOnlyList<IStorageFolder> picked = await StorageProvider.OpenFolderPickerAsync(
             new FolderPickerOpenOptions { Title = "Open map bundle", AllowMultiple = false });
         if (picked.Count == 0) return;
@@ -3635,7 +2594,6 @@ public partial class MainWindow : Window
         LaunchSession(new SessionLaunch(null, null, Path.GetFullPath(path)));
     }
 
-    /// <summary>Opens the project at a path, replacing any running session.</summary>
     private void OpenProjectAt(string path)
     {
         ProjectLayout layout;
@@ -3663,11 +2621,7 @@ public partial class MainWindow : Window
         _settings.Save(_logger);
         RefreshRecents();
 
-        // Opening a project opens its startup map, because a project with a
-        // level in it and an empty viewport is a state nobody asked for. A
-        // manifest naming a bundle that is not there is said out loud and the
-        // session still starts: the person who can fix the manifest needs the
-        // editor open to do it.
+        // A missing startup map is reported and the session still starts.
         string? mapToOpen = null;
         if (layout.Project.StartupMap is { Length: > 0 } startup)
         {
@@ -3682,10 +2636,7 @@ public partial class MainWindow : Window
         RefreshProjectMaps();
     }
 
-    /// <summary>
-    /// Rebuilds the maps panel: the manifest's list in the author's order,
-    /// then whatever is on disk that the manifest does not name.
-    /// </summary>
+    // The manifest's maps in the author's order, then unlisted ones found on disk.
     private void RefreshProjectMaps()
     {
         _shell.ProjectMaps.Clear();
@@ -3699,8 +2650,7 @@ public partial class MainWindow : Window
         _shell.HasProject = true;
         string? startup = project.Project.StartupMap;
 
-        // Keyed on the normalised form, so a hand-authored backslash spelling
-        // and the discovered forward-slash one are one row, not two.
+        // Normalised slashes, so a hand-written backslash path is the same row.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (string relative in project.Project.Maps)
@@ -3735,7 +2685,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Clicking the map that is already open must not discard-and-reload.
         if (_document.MapPath is { } current &&
             string.Equals(Path.GetFullPath(resolved), current, StringComparison.OrdinalIgnoreCase))
         {
@@ -3761,15 +2710,8 @@ public partial class MainWindow : Window
             SaveMapTo(target);
     }
 
-    /// <summary>
-    /// Asks where a level should be written, or null when the user backed out.
-    /// </summary>
-    /// <remarks>
-    /// A folder picker plus a name, because a level IS a folder: the platform
-    /// save dialogs name files, and pointing one at a directory bundle means
-    /// either lying about what is being created or depending on whether a
-    /// backend happens to touch the path it returns.
-    /// </remarks>
+    // A folder picker plus a name dialog: a level is a folder, and a save-file
+    // dialog names files. Null when the user backed out.
     private async Task<string?> PickSaveTargetAsync()
     {
         if (_session is null)
@@ -3796,15 +2738,7 @@ public partial class MainWindow : Window
 
     private void SaveMapTo(string bundlePath) => _ = SaveMapToAsync(bundlePath);
 
-    /// <summary>
-    /// Writes the level and reports whether it landed.
-    /// </summary>
-    /// <remarks>
-    /// <b>Awaitable because one caller has to know.</b> The unsaved-work prompt
-    /// offers Save, and "the user chose Save" is not the same as "the level was
-    /// saved": the write can fail, and proceeding anyway would discard the work
-    /// the user had just asked to keep, having told them it was safe.
-    /// </remarks>
+    // Awaitable because the unsaved-work prompt must know the save really landed.
     private Task<bool> SaveMapToAsync(string bundlePath)
     {
         if (_session is not { } session)
@@ -3814,7 +2748,7 @@ public partial class MainWindow : Window
 
         session.SaveMap(bundlePath, (report, error) => Dispatcher.UIThread.Post(() =>
         {
-            // See NewMap for the session boundary guard.
+            // Stale-session guard, as in OnNewMapClicked.
             if (!ReferenceEquals(session, _session))
                 return;
 
@@ -3830,10 +2764,7 @@ public partial class MainWindow : Window
 
             string manifestNote = UpdateManifestAfterSave();
 
-            // An incomplete save is still a save: the scene held something the
-            // format cannot name, such as a mesh built in code. Reported rather
-            // than silent, because the alternative is a map that quietly forgets
-            // a prop.
+            // The report lists what the format could not save, e.g. a mesh built in code.
             _shell.SetMessage(report?.Describe() is { } lost
                 ? $"Saved {_document.MapLabel}.{manifestNote} {lost}"
                 : $"Saved {_document.MapLabel}.{manifestNote}");
@@ -3841,25 +2772,13 @@ public partial class MainWindow : Window
             done.TrySetResult(true);
         }));
 
-        // A session torn down before the callback runs would leave this pending
-        // forever, and the prompt awaiting it with a modal already closed.
+        // If the session is torn down before the callback runs, this never completes.
         return done.Task;
     }
 
-    /// <summary>
-    /// Adds a just-saved map to the open project's manifest, and makes it the
-    /// startup map when the project had none. Returns a short note for the
-    /// status line, or an empty string when nothing applied.
-    /// </summary>
-    /// <remarks>
-    /// <b>This is the write-back half of the maps story.</b> The manifest is
-    /// the author's ordered list and what a cook bakes; a map saved into
-    /// <c>Maps/</c> and never listed would run in the editor and silently miss
-    /// the shipped game. A map saved OUTSIDE the project folder is legal and
-    /// deliberately not listed - <see cref="EditorDocument.MapPathWithinProject"/>
-    /// answers that. Removal stays a hand edit: the editor adds what you save
-    /// and never deletes an entry, because the manifest is the author's file.
-    /// </remarks>
+    // Lists a just-saved map in the project manifest and makes it the startup
+    // map if there is none. Returns a note for the status line. A map saved
+    // outside the project is not listed, and entries are never removed.
     private string UpdateManifestAfterSave()
     {
         if (_document.Project is not { } stale)
@@ -3868,13 +2787,8 @@ public partial class MainWindow : Window
         if (_document.MapPathWithinProject() is not { } relative)
             return string.Empty;
 
-        // Re-read from DISK and edit that, never the in-memory copy. The
-        // manifest is the author's file - the format's whole promise is that a
-        // person edits it in VS Code and the editor does not fight them - and
-        // writing the copy loaded at open time would silently revert every
-        // hand edit made since. Re-reading also makes a retry work after a
-        // failed write: the fresh read still lacks the entry, so it is added
-        // and saved again rather than assumed done.
+        // Re-read from disk and edit that. Writing the copy loaded at open
+        // time would revert every hand edit made since.
         ProjectLayout project;
         try
         {
@@ -3901,8 +2815,7 @@ public partial class MainWindow : Window
 
         try
         {
-            // A byte-identical manifest is left untouched by Save itself, so
-            // calling it when nothing changed costs a read and writes nothing.
+            // Save skips the write when the bytes are unchanged.
             project.Save();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -3912,8 +2825,6 @@ public partial class MainWindow : Window
             return string.Empty;
         }
 
-        // The shell adopts the fresh layout: the maps panel now reflects the
-        // file as it is, hand edits included.
         _document.SetProject(project);
         RefreshProjectMaps();
         return !listed
@@ -3921,21 +2832,11 @@ public partial class MainWindow : Window
             : string.Empty;
     }
 
-    // Manifest paths are authored text: the codec writes forward slashes but a
-    // hand edit legitimately arrives with backslashes or different case, and
-    // treating those as a different map duplicates the entry.
+    // A hand-edited manifest may use backslashes or different case.
     private static bool ManifestPathsEqual(string a, string b) =>
         string.Equals(a.Replace('\\', '/'), b.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Asks before throwing away unsaved work, and returns whether to go ahead.
-    /// </summary>
-    /// <remarks>
-    /// Typed confirmation rather than a Yes/No pair, because this is the one
-    /// dialog in the shell whose wrong answer destroys work that cannot be
-    /// recovered: the undo history goes with the scene. A button people learn
-    /// to dismiss without reading is exactly what should not guard it.
-    /// </remarks>
+    // Asks before unsaved work is thrown away. True means go ahead.
     private async Task<bool> ConfirmDiscardAsync(string what)
     {
         if (!_document.IsDirty) return true;
@@ -3945,26 +2846,13 @@ public partial class MainWindow : Window
         return choice switch
         {
             UnsavedChoice.Discard => true,
-
-            // Handled HERE rather than at each of the eight call sites, so
-            // every route that can discard work offers the same way to keep it
-            // and none of them can forget to.
             UnsavedChoice.Save => await SaveFromPromptAsync(),
-
             _ => false,
         };
     }
 
-    /// <summary>
-    /// Writes the level on the user's behalf from the unsaved-work prompt.
-    /// </summary>
-    /// <returns>
-    /// True when the level is on disk and the gesture that asked may continue.
-    /// </returns>
-    /// <remarks>
-    /// A level that has never been saved needs a target, and choosing one can
-    /// itself be cancelled - which means "no, go back", not "yes, discard".
-    /// </remarks>
+    // True only when the level is on disk. Cancelling the target picker means
+    // "go back", not "discard".
     private async Task<bool> SaveFromPromptAsync()
     {
         string? target = _document.MapPath ?? await PickSaveTargetAsync();
@@ -3978,25 +2866,19 @@ public partial class MainWindow : Window
         catch (IOException) { return null; }
     }
 
-    /// <summary>
-    /// Re-baselines the dirty tracker after a save or a load, so the history
-    /// movement those cause does not immediately mark the document dirty again.
-    /// </summary>
+    // After a save or load, so the history movement they cause doesn't mark
+    // the document dirty again.
     private void ResetDirtyBaseline()
     {
         _lastUndoDepth = _latest.UndoDepth;
         _lastRedoDepth = _latest.RedoDepth;
     }
 
-    // --- Startup -------------------------------------------------------------
-
     private GraphicsBackend ResolveBackend()
     {
         GraphicsBackend backend = ResolveRequestedBackend();
 
-        // Named explicitly and refused explicitly: an embedded GL surface needs
-        // its own context, and letting the renderer discover that would report
-        // it as a driver failure.
+        // Refused here by name; otherwise it surfaces as a driver failure.
         if (backend is GraphicsBackend.OpenGL)
         {
             throw new NotSupportedException(
@@ -4006,18 +2888,8 @@ public partial class MainWindow : Window
         return backend;
     }
 
-    /// <summary>
-    /// What the command line asked for, INCLUDING the backend the shell is going
-    /// to refuse.
-    /// </summary>
-    /// <remarks>
-    /// <b>Separate from <see cref="ResolveBackend"/> because the viewport
-    /// decision has to be able to name OpenGL.</b> Refusing it inside the
-    /// resolver means the only way to learn it was asked for is to catch the
-    /// exception, and a policy that reported "no compositor" for a request it
-    /// refuses by name would be exactly the silent fallback this whole stage
-    /// exists to prevent.
-    /// </remarks>
+    // Includes OpenGL, which ResolveBackend refuses: the viewport policy needs
+    // to name it.
     private static GraphicsBackend ResolveRequestedBackend()
     {
         foreach (string arg in Program.StartupArgs)

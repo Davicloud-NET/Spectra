@@ -5,25 +5,11 @@ using SpectraEngine.Core.Bsp;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The W2 oracle: the per-cell snap+weld (<c>ChunkWelder</c> +
-/// <see cref="CsgWeldCache"/>) must be semantically equivalent to the
-/// monolithic pipeline it replaced. Every equivalence test compares a chunked
-/// build against a reference built from the retained primitives — global
-/// <see cref="VertexSnapper.Snap"/> + global
-/// <see cref="TJunctionWelder.Weld(System.Collections.Generic.IReadOnlyList{Polygon})"/>
-/// over the full carve — three ways: the flat surface list bit-for-bit
-/// (placement order, vertex sequences, floats — the strongest form), the
-/// per-cell welded surfaces as an exact instance partition of that list, and
-/// an independent multiset of snapped lattice keys. The incremental tests then
-/// pin that cache-carrying recompiles are bit-identical to from-scratch
-/// compiles per cell, reuse actually happens, and BSP queries agree.
+/// Per-cell snap and weld must match a global <see cref="VertexSnapper.Snap"/>
+/// plus global weld over the full carve, bit for bit.
 /// </summary>
 public sealed class ChunkWeldEquivalenceTests
 {
-    // ------------------------------------------------------------------
-    // (a) Full-compile equivalence for representative worlds.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void Per_cell_weld_matches_the_global_pipeline_for_a_two_box_overlap_on_a_cell_border() =>
         AssertChunkedMatchesGlobal(TwoBoxOverlapOnBorder());
@@ -31,36 +17,22 @@ public sealed class ChunkWeldEquivalenceTests
     [Fact]
     public void Per_cell_weld_matches_the_global_pipeline_for_brushes_exactly_on_cell_boundaries()
     {
-        // Boundary-exact geometry is the weld band's reason to exist: faces
-        // and centers landing bitwise on x=32 / the (32,32,32) corner put
-        // vertices exactly where cell classification flips, so every candidate
-        // must be found across the border.
         BrushPlacement[] placements =
         [
-            // +x face exactly on the x=32 boundary plane.
+            // +x face on the x=32 boundary plane.
             new(Box(4f), Translation(28f, 16f, 16f)),
-            // Overlapping neighbour crossing that same border, carving the
-            // boundary-exact face for real.
+            // Overlapping neighbour crossing that border.
             new(Box(4f), Translation(33f, 17f, 16f)),
-            // Centered exactly on a cell corner: every face straddles cells.
+            // Centred on a cell corner.
             new(Box(4f), Translation(32f, 32f, 32f)),
-            // And its overlapping neighbour.
             new(Box(4f), Translation(35f, 34f, 33f)),
         ];
         AssertChunkedMatchesGlobal(placements);
     }
 
-    // A slab-with-overhanging-pillars structure straddling the x=32 border,
-    // at coordinates FOUND BY SEARCH to produce genuine cross-brush
-    // T-junction insertions there (at tidy integer coordinates the seam
-    // subdivisions coincide bitwise and the weld is a no-op; at generic
-    // floats, clip interpolation and snapping land fragment corners strictly
-    // inside neighbouring edges — the crack the welder exists to close). The
-    // three positions cover both directions of the dependency: one where the
-    // SLAB's fragments gain pillar vertices, two where PILLAR fragments gain
-    // slab vertices, with slab and pillars owned by cells on opposite sides
-    // of the border. Do not "clean up" these constants — their fractional
-    // parts are the fixture.
+    // Coordinates found by search: they produce cross-brush T-junction
+    // insertions on the x=32 border. Tidy integer positions make the weld a
+    // no-op, so don't round these.
     [Theory]
     [InlineData(31.168327f, 17.944384f, 14.90725f)]
     [InlineData(31.224281f, 15.108146f, 14.222553f)]
@@ -75,16 +47,11 @@ public sealed class ChunkWeldEquivalenceTests
             new(Box(1f), Translation(x, y + 1.5f, z - 3.5f)),
         ];
 
-        // The structure must straddle the border with a pillar wholly on the
-        // far side — the geometry the candidate band exists for.
         (x - 4f).ShouldBeLessThan(32f);
         (x + 4f).ShouldBeGreaterThan(32f);
 
-        // Guard against a vacuous fixture: some insertion must come from
-        // ANOTHER brush's vertices. Welding each brush against only its own
-        // snapped surfaces must diverge from the global weld — otherwise
-        // every T-vertex is intra-brush and the fixture proves nothing about
-        // candidate gathering.
+        // Guard against a vacuous fixture: welding each brush against only its
+        // own surfaces must differ from the global weld.
         Polygon[] snapped = VertexSnapper.Snap(Csg.Carve(placements));
         Polygon[] global = TJunctionWelder.Weld(snapped);
         var brushLocal = new List<Polygon>();
@@ -109,17 +76,14 @@ public sealed class ChunkWeldEquivalenceTests
         placements.Count.ShouldBe(200);
 
         CsgWorld world = AssertChunkedMatchesGlobal(placements);
-        // Guard against a vacuous pass: the scatter must genuinely spread the
-        // weld across many cells (negative coordinates included).
+        // Guard against a vacuous pass: the scatter must span many cells.
         world.Chunks.Count.ShouldBeGreaterThan(20);
     }
 
     [Fact]
     public void Per_cell_weld_matches_the_global_pipeline_for_a_dense_grid_world()
     {
-        // 6x6x6 size-2 cubes at spacing 1.8 (every axis-adjacent pair overlaps
-        // by 0.2), positioned so the block straddles the (32,32,32) cell
-        // corner — dense mutual carving right across cell borders.
+        // 6x6x6 size-2 cubes at spacing 1.8, straddling the (32,32,32) cell corner.
         var placements = new List<BrushPlacement>(216);
         for (int x = 0; x < 6; x++)
             for (int y = 0; y < 6; y++)
@@ -129,11 +93,6 @@ public sealed class ChunkWeldEquivalenceTests
 
         AssertChunkedMatchesGlobal(placements);
     }
-
-    // ------------------------------------------------------------------
-    // (b) Incremental correctness: recompiling through the carried caches is
-    // bit-identical to a from-scratch compile of the new placements, per cell.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void Moving_one_brush_and_recompiling_incrementally_matches_a_from_scratch_compile_per_cell()
@@ -150,7 +109,6 @@ public sealed class ChunkWeldEquivalenceTests
         CsgWorld incremental = CsgWorld.Build(edited, dirtyCells: null, first.CompileCache, first.WeldCache);
         CsgWorld scratch = CsgWorld.Build(edited);
 
-        // Flat list, mesh arrays, and every per-cell artifact, bit for bit.
         ShouldBeIdenticalSurfaces(scratch.Surfaces, incremental.Surfaces, "flat surfaces");
         ShouldHaveIdenticalChunkArtifacts(scratch, incremental);
         (float[] expectedVertices, uint[] expectedIndices) = scratch.BuildMesh();
@@ -158,24 +116,19 @@ public sealed class ChunkWeldEquivalenceTests
         actualVertices.SequenceEqual(expectedVertices).ShouldBeTrue("mesh vertices diverged");
         actualIndices.SequenceEqual(expectedIndices).ShouldBeTrue("mesh indices diverged");
 
-        // The edit must have stayed local: the moved pillar's structure (and
-        // any scatter neighbours) re-weld, the rest of the world reuses.
         CsgWeldStats stats = incremental.WeldStats.ShouldNotBeNull();
         stats.Total.ShouldBe(edited.Count);
         stats.Welded.ShouldBeGreaterThan(0);
         stats.Reused.ShouldBeGreaterThan(edited.Count / 2, "a one-brush edit re-welded most of the world");
 
-        // Spatial-query oracle: the BSPs must answer identically everywhere.
         ShouldAgreeOnSpatialQueries(scratch, incremental, seed: 0x0DDBA11DEADBEEFUL);
     }
 
     [Fact]
     public void Clean_cells_keep_their_previously_welded_surface_instances()
     {
-        // The border pair welds T-junctions across the x=32 cell border; the
-        // far box lives many cells away. Moving the far box must leave the
-        // pair's welded arrays untouched — the same Polygon instances, not
-        // merely equal ones.
+        // The far box lives many cells from the border pair. Moving it must
+        // leave the pair's welded Polygon instances as they are, not just equal.
         List<BrushPlacement> placements = [.. TwoBoxOverlapOnBorder(), new(Box(1f), Translation(200f, 16f, 16f))];
         CsgWorld first = CsgWorld.Build(placements, dirtyCells: null, previousCache: null, previousWeldCache: null);
 
@@ -187,10 +140,8 @@ public sealed class ChunkWeldEquivalenceTests
 
         CsgWorld incremental = CsgWorld.Build(edited, dirtyCells: null, first.CompileCache, first.WeldCache);
 
-        // Exactly the far box re-welded; the border pair reused.
         incremental.WeldStats.ShouldBe(new CsgWeldStats(Reused: 2, Welded: 1));
 
-        // The pair's welded surfaces are the previous compile's instances.
         for (int i = 0; i < 2; i++)
         {
             IReadOnlyList<Polygon> before = OwnerCellWeldedSurfaces(first, placements[i]);
@@ -200,14 +151,8 @@ public sealed class ChunkWeldEquivalenceTests
                 after[s].ShouldBeSameAs(before[s]);
         }
 
-        // And the reuse is still exactly what a from-scratch compile produces.
         ShouldBeIdenticalSurfaces(CsgWorld.Build(edited).Surfaces, incremental.Surfaces, "reuse vs scratch");
     }
-
-    // ------------------------------------------------------------------
-    // (c) The chunked-path random walk: the carve-cache walk's discipline,
-    // with BOTH caches chained exactly as the scene pump chains them.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void Twenty_random_moves_through_the_chunked_path_stay_bit_identical_and_reuse_welds()
@@ -215,8 +160,7 @@ public sealed class ChunkWeldEquivalenceTests
         List<BrushPlacement> placements = ScatteredWorld(structures: 25, seed: 0xBADC0DEBADC0DE01UL);
         CsgWorld incremental = CsgWorld.Build(placements, dirtyCells: null, previousCache: null, previousWeldCache: null);
 
-        // Fixed-seed LCG (same MMIX constants as CsgBench) so the move
-        // sequence is identical on every runtime and machine.
+        // Fixed-seed LCG so the move sequence is the same on every machine.
         ulong state = 0xC0FFEE0DDBA5EBA1UL;
         float NextFloat01()
         {
@@ -237,40 +181,30 @@ public sealed class ChunkWeldEquivalenceTests
             incremental = CsgWorld.Build(placements, dirtyCells: null, incremental.CompileCache, incremental.WeldCache);
             CsgWorld scratch = CsgWorld.Build(placements);
 
-            // Flat list AND per-cell artifacts, bit for bit, after every move.
             ShouldBeIdenticalSurfaces(scratch.Surfaces, incremental.Surfaces, $"move #{move}");
             ShouldHaveIdenticalChunkArtifacts(scratch, incremental);
 
-            // The walk must actually exercise weld reuse, not degrade to full
-            // re-welds that are trivially identical.
+            // Full re-welds would be trivially identical, so require reuse.
             CsgWeldStats stats = incremental.WeldStats.ShouldNotBeNull();
             stats.Reused.ShouldBeGreaterThan(0, $"no weld reuse at move #{move}");
             stats.Total.ShouldBe(placements.Count);
         }
     }
 
-    // ------------------------------------------------------------------
-    // Fixtures
-    // ------------------------------------------------------------------
-
-    // A cube of half-extent `h` centered on its local origin.
     private static Brush Box(float h) => Brush.CreateBox(new Vector3(-h), new Vector3(h));
 
     private static Matrix4x4 Translation(float x, float y, float z) => Matrix4x4.CreateTranslation(x, y, z);
 
     // Overlapping pair straddling the x=32 cell border: brush 0 owned by cell
-    // (0,0,0), brush 1 by (1,0,0), both resident in both — the minimal world
-    // where per-cell welding must reach across a border.
+    // (0,0,0), brush 1 by (1,0,0), both resident in both.
     private static BrushPlacement[] TwoBoxOverlapOnBorder() =>
     [
         new(Box(4f), Translation(29f, 16f, 16f)),
         new(Box(4f), Translation(35f, 18f, 16f)),
     ];
 
-    // `structures` four-part structures (a floor slab with three overlapping
-    // pillars, so every structure welds real T-junctions) scattered by a
-    // fixed-seed LCG over a ±160-unit region — spanning many cells, negative
-    // coordinates included, with structures frequently straddling borders.
+    // Four-part structures (a slab with three overlapping pillars, so each one
+    // welds real T-junctions) scattered by a fixed-seed LCG over ±160 units.
     private static List<BrushPlacement> ScatteredWorld(int structures, ulong seed)
     {
         ulong state = seed;
@@ -288,9 +222,8 @@ public sealed class ChunkWeldEquivalenceTests
                 (NextFloat01() - 0.5f) * 320f,
                 (NextFloat01() - 0.5f) * 320f);
 
-            // A fresh Brush instance per part: both caches key entries by
-            // brush reference (one entry per instance), so instance sharing
-            // would artificially serialise cache hits and mask reuse.
+            // Fresh Brush per part: both caches key on brush reference, so a
+            // shared instance would mask reuse.
             placements.Add(new BrushPlacement(
                 Brush.CreateBox(new Vector3(-4f, -1f, -4f), new Vector3(4f, 1f, 4f)),
                 Translation(p.X, p.Y, p.Z)));
@@ -301,13 +234,6 @@ public sealed class ChunkWeldEquivalenceTests
         return placements;
     }
 
-    // ------------------------------------------------------------------
-    // Assertions
-    // ------------------------------------------------------------------
-
-    // The monolithic reference pipeline, built from the retained primitives
-    // exactly as the pre-chunked compile ran: full carve, then global snap,
-    // then one global weld over everything.
     private static Polygon[] GlobalReference(IReadOnlyList<BrushPlacement> placements) =>
         TJunctionWelder.Weld(VertexSnapper.Snap(Csg.Carve(placements)));
 
@@ -315,17 +241,14 @@ public sealed class ChunkWeldEquivalenceTests
     {
         CsgWorld world = CsgWorld.Build(placements);
         Polygon[] global = GlobalReference(placements);
-        global.ShouldNotBeEmpty(); // guard against a vacuous comparison
+        global.ShouldNotBeEmpty();
 
-        // (1) The flat surface list IS the global pipeline's output — order,
-        // vertex sequences, and floats all bit-identical. (The per-cell union
-        // is cell-major rather than placement-major, so the ordered bit-
-        // identity claim is asserted here, on the placement-ordered flat list;
-        // the union is compared as a partition and a multiset below.)
+        // Ordered identity is checked on the flat list because the per-cell
+        // union is cell-major, not placement-major.
         ShouldBeIdenticalSurfaces(global, world.Surfaces, "flat vs global");
 
-        // (2) The per-cell welded surfaces partition the flat list exactly:
-        // the same Polygon instances, each under exactly one owner cell.
+        // The per-cell welded surfaces partition the flat list: same Polygon
+        // instances, each under one owner cell.
         var remaining = new HashSet<Polygon>(ReferenceEqualityComparer.Instance);
         foreach (Polygon poly in world.Surfaces)
             remaining.Add(poly).ShouldBeTrue("duplicate instance in the flat surface list");
@@ -336,8 +259,7 @@ public sealed class ChunkWeldEquivalenceTests
         }
         remaining.ShouldBeEmpty("flat surfaces missing from every per-cell union");
 
-        // (3) Belt and braces: the union also matches the global reference as
-        // a multiset of snapped lattice keys, independent of instance sharing.
+        // Same check by snapped lattice keys, independent of instance sharing.
         var union = new List<Polygon>();
         foreach (WorldChunk chunk in world.Chunks.OrderedChunks)
             union.AddRange(chunk.WeldedSurfaces);
@@ -361,9 +283,6 @@ public sealed class ChunkWeldEquivalenceTests
         }
     }
 
-    // Deterministic probe points and rays over the scatter region: identical
-    // surface lists must yield identical BSPs, so every answer — hit flags,
-    // points, normals, distances — is compared exactly.
     private static void ShouldAgreeOnSpatialQueries(CsgWorld expected, CsgWorld actual, ulong seed)
     {
         ulong state = seed;
@@ -398,8 +317,6 @@ public sealed class ChunkWeldEquivalenceTests
         }
     }
 
-    // The welded surfaces of the cell owning `placement` — the per-cell
-    // artifact reuse hands forward untouched.
     private static IReadOnlyList<Polygon> OwnerCellWeldedSurfaces(CsgWorld world, in BrushPlacement placement)
     {
         world.Chunks.TryGet(ChunkGrid.OwnerCell(in placement), out WorldChunk chunk)
@@ -407,9 +324,8 @@ public sealed class ChunkWeldEquivalenceTests
         return chunk.WeldedSurfaces;
     }
 
-    // Bit-exact comparison (same rationale as PlacementEquivalenceTests): both
-    // paths run the same weld code over the same float inputs, so any drift is
-    // a real divergence — a missed candidate or a stale reuse — not FP noise.
+    // Bit-exact, no tolerance: both paths run the same weld code over the
+    // same floats, so any drift is a real divergence.
     private static void ShouldBeIdenticalSurfaces(
         IReadOnlyList<Polygon> expected, IReadOnlyList<Polygon> actual, string context)
     {
@@ -423,10 +339,8 @@ public sealed class ChunkWeldEquivalenceTests
         }
     }
 
-    // Order-insensitive comparison keyed on the snap lattice: each surface
-    // becomes the string of its lattice-quantised vertex triples (welding
-    // preserves winding and start vertex, so no rotation canonicalisation is
-    // needed for equal pipelines).
+    // Welding keeps winding and start vertex, so the keys need no rotation
+    // canonicalisation.
     private static void ShouldBeEqualKeyMultisets(IReadOnlyList<Polygon> expected, IReadOnlyList<Polygon> actual)
     {
         Dictionary<string, int> expectedKeys = KeyMultiset(expected);

@@ -6,29 +6,9 @@ namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
 /// One editable cell: a whole row for a scalar, or one axis of a vector.
+/// Commits on Enter or blur, reverts on Escape or unparseable text, and takes
+/// no refreshes while it is being edited or scrubbed.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A focused field belongs to the person typing in it, and nothing else may
-/// write to it.</b> Rows refresh from a snapshot about thirty times a second,
-/// and a gizmo drag republishes the position on every one of them. A field that
-/// took each refresh would delete characters out from under somebody halfway
-/// through typing a number, which reads as a broken keyboard rather than as a
-/// panel doing what it was told.
-/// </para>
-/// <para>
-/// <b>The commit points are Enter and losing focus.</b> Committing per
-/// keystroke would push an undo entry per character and would apply "1" on the
-/// way to typing "10". Escape reverts, and it has to exist precisely because
-/// blur commits: without it there would be no way to abandon a half-typed value
-/// once the field has it.
-/// </para>
-/// <para>
-/// <b>Text that will not parse reverts rather than sticking.</b> The alternative
-/// is a field left holding something the scene does not contain, which then
-/// disagrees with the viewport until somebody notices.
-/// </para>
-/// </remarks>
 public sealed class PropertyFieldModel : ObservableObject
 {
     private readonly Action<PropertyFieldModel, string> _commit;
@@ -59,9 +39,7 @@ public sealed class PropertyFieldModel : ObservableObject
     /// <summary>Whether this cell has an axis letter to show.</summary>
     public bool HasLabel => Label.Length > 0;
 
-    // The three axis flags exist because a XAML class binding cannot compare
-    // strings, and the axis letter has to wear the same colour its arrow wears
-    // in the viewport.
+    // Axis flags for XAML class bindings, which cannot compare values.
 
     /// <summary>Whether this cell edits x.</summary>
     public bool IsX => Axis == PropertyAxes.X;
@@ -72,33 +50,15 @@ public sealed class PropertyFieldModel : ObservableObject
     /// <summary>Whether this cell edits z.</summary>
     public bool IsZ => Axis == PropertyAxes.Z;
 
-    /// <summary>
-    /// The unit to print inside a scalar cell, or empty.
-    /// </summary>
-    /// <remarks>
-    /// Copied down from the row rather than read up from it: the cell's
-    /// template binds against this model, and reaching back to a parent
-    /// DataContext from inside a nested ItemsControl is the kind of binding
-    /// that resolves to nothing and reports nothing when a template moves.
-    /// </remarks>
+    /// <summary>The unit to print inside a scalar cell, or empty.</summary>
+    // Copied from the row so the cell template never binds up to a parent DataContext.
     public string Unit { get; internal set; } = string.Empty;
 
     /// <summary>Whether there is a unit to print.</summary>
     public bool HasUnit => Unit.Length > 0;
 
-    /// <summary>
-    /// Whether clearing this cell means "make it empty" rather than "leave it
-    /// alone".
-    /// </summary>
-    /// <remarks>
-    /// <b>Off by default, because for every property row an empty box means
-    /// nothing was typed.</b> A mixed selection shows a blank field, and
-    /// committing that blank has to leave every node as it was - which is why
-    /// <see cref="Commit"/> reverts instead of writing. A wire's PARAMETER is
-    /// the case that breaks the rule: empty is a legal, common value ("send no
-    /// argument"), so a field that reverted it could never be cleared once
-    /// something had been typed into it.
-    /// </remarks>
+    // When set, committing an empty box writes the empty value instead of
+    // reverting. For a wire's parameter, where empty means "no argument".
     internal bool AllowsEmpty { get; init; }
 
     /// <summary>What the box shows.</summary>
@@ -109,24 +69,14 @@ public sealed class PropertyFieldModel : ObservableObject
         {
             if (!Set(ref _text, value)) return;
 
-            // Typing is the answer to a refusal, so the message goes as soon as
-            // it arrives. Guarded on _isEditing, or a refresh writing the live
-            // value back would clear a message the user has not read yet.
+            // Typing clears a refusal. A refresh writing the live value back must not.
             if (_isEditing) Rejection = string.Empty;
         }
     }
 
     private string _rejection = string.Empty;
 
-    /// <summary>
-    /// Why the last commit was not applied, or empty.
-    /// </summary>
-    /// <remarks>
-    /// <b>An unparseable value used to revert in silence.</b> The box put the
-    /// old number back and nothing said why, which reads as the keyboard having
-    /// dropped the input rather than as a refusal. The scene was always safe;
-    /// what was missing was the sentence.
-    /// </remarks>
+    /// <summary>Why the last commit was not applied, or empty.</summary>
     public string Rejection
     {
         get => _rejection;
@@ -139,9 +89,7 @@ public sealed class PropertyFieldModel : ObservableObject
     /// <summary>Whether this cell is showing a refusal.</summary>
     public bool HasRejection => _rejection.Length > 0;
 
-    /// <summary>
-    /// Refuses the typed value, puts the live one back and says why.
-    /// </summary>
+    /// <summary>Refuses the typed value, puts the live one back and says why.</summary>
     public void Reject(string reason)
     {
         Revert();
@@ -152,11 +100,6 @@ public sealed class PropertyFieldModel : ObservableObject
     /// Whether the selection disagrees about this cell, so the box shows
     /// nothing rather than one node's value.
     /// </summary>
-    /// <remarks>
-    /// Blank rather than the first node's number, because a number sitting in a
-    /// mixed field is a number somebody will read as the answer. The placeholder
-    /// says what it is instead.
-    /// </remarks>
     public bool IsMixed
     {
         get => _isMixed;
@@ -176,26 +119,17 @@ public sealed class PropertyFieldModel : ObservableObject
     /// <summary>Takes a fresh value, unless this cell is being edited.</summary>
     public void Refresh(string live, bool mixed)
     {
-        // A refusal stands until the VALUE moves, not until the next publish:
-        // the engine republishes at 30Hz and clearing on every one would erase
-        // the message within a frame of it appearing. When the value really
-        // does change - a gizmo drag, another editor - the message is about a
-        // number that is no longer there, so it goes.
+        // A refusal clears when the value moves, not on every publish, or the
+        // 30Hz refresh would erase it within a frame.
         if (!string.Equals(live, _live, StringComparison.Ordinal))
             Rejection = string.Empty;
 
         _live = live;
         IsMixed = mixed;
 
-        // The guard, and the whole reason this class exists.
-        //
-        // TWO flags, not one. A drag ends by clearing the guard on every cell
-        // of its row, because a vector drag writes all three - and if that were
-        // the same flag typing uses, a cell the user had typed into and not yet
-        // committed would be handed back to the refresh by a drag on its
-        // NEIGHBOUR, and the next publish would silently replace what they
-        // typed. The two states are genuinely independent: a pointer capture
-        // does not move keyboard focus.
+        // Two flags, not one: a vector drag ends by clearing the scrub guard
+        // on all three cells, and that must not hand a cell somebody is typing
+        // in back to the refresh.
         if (_isEditing || _isScrubbing)
             return;
 
@@ -209,13 +143,8 @@ public sealed class PropertyFieldModel : ObservableObject
     /// A drag across this cell's handle has started: refreshes stop landing
     /// here until <see cref="EndScrub"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>The same guard typing uses, for the same reason.</b> A drag writes
-    /// absolute values several times faster than the engine publishes, so
-    /// without it every refresh would put a value one or two publishes stale
-    /// back into the box and the number under the cursor would jitter
-    /// backwards while the object moved forwards.
-    /// </remarks>
+    // A drag writes faster than the engine publishes. Without the guard stale
+    // refreshes make the number jitter backwards.
     public void BeginScrub() => _isScrubbing = true;
 
     /// <summary>Shows a value written by a drag, without committing anything.</summary>
@@ -240,9 +169,7 @@ public sealed class PropertyFieldModel : ObservableObject
         _isEditing = false;
         string typed = Text.Trim();
 
-        // Nothing typed into a mixed field means "leave them all alone", which
-        // is what an empty box already showed. See AllowsEmpty for the one
-        // cell where an empty value is the value.
+        // Empty means "leave it alone" unless the cell allows an empty value.
         if (typed.Length == 0 && !AllowsEmpty)
         {
             Revert();
@@ -255,8 +182,7 @@ public sealed class PropertyFieldModel : ObservableObject
             return;
         }
 
-        // Cleared BEFORE the commit runs, so a handler that refuses can set its
-        // own message and have it survive.
+        // Clear before the commit, so a handler's own refusal survives.
         Rejection = string.Empty;
         _commit(this, typed);
     }
@@ -269,14 +195,7 @@ public sealed class PropertyFieldModel : ObservableObject
         Rejection = string.Empty;
     }
 
-    /// <summary>
-    /// Parses a number the way the panel writes one.
-    /// </summary>
-    /// <remarks>
-    /// Invariant culture, matching how the value was formatted into the box. A
-    /// culture-sensitive parse would read the panel's own "1.5" as fifteen
-    /// wherever a comma is the decimal separator.
-    /// </remarks>
+    /// <summary>Parses a number the way the panel writes one: invariant culture, finite only.</summary>
     public static bool TryParseNumber(string text, out float value) =>
         float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
         && float.IsFinite(value);

@@ -1,4 +1,4 @@
 namespace SpectraEngine.Core.Graphics;
 
-/// <summary>CPU-prepared mip chain, produced without a graphics context.</summary>
+// Mip chain prepared on the CPU, no graphics context needed.
 internal sealed record PreparedTextureData(TextureFormat Format, byte[] Payload, TextureMipDesc[] Mips);

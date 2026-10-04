@@ -8,54 +8,33 @@ namespace SpectraEngine.Core.Animation;
 /// <summary>One joint of a <see cref="Skeleton"/>.</summary>
 public readonly struct SkeletonBone
 {
-    /// <summary>The authored joint name — how an importer and a clip address this bone.</summary>
+    /// <summary>The authored joint name. Importers and clips address the bone by it.</summary>
     public required string Name { get; init; }
 
-    /// <summary>Index of the parent bone, or −1 for a root. Always LESS than this bone's own index.</summary>
+    /// <summary>Index of the parent bone, or -1 for a root. Always less than this bone's own index.</summary>
     public required int ParentIndex { get; init; }
 
-    /// <summary>The rest pose, in parent-bone space. What an unanimated bone wears.</summary>
+    /// <summary>The rest pose, in parent-bone space.</summary>
     public required Transform LocalBind { get; init; }
 
     /// <summary>
-    /// Mesh space → this bone's space, at the bind pose. Assimp calls it the
+    /// Mesh space to this bone's space, at the bind pose. Assimp calls it the
     /// offset matrix.
     /// </summary>
-    /// <remarks>
-    /// It is stored rather than derived because deriving it means inverting the
-    /// bind model matrix, and a bind pose with any non-uniform scale in it makes
-    /// that inversion lossy in exactly the joints where it shows.
-    /// </remarks>
+    // Stored, not derived: inverting a bind pose with non-uniform scale is lossy.
     public required Matrix4x4 InverseBindPose { get; init; }
 }
 
 /// <summary>
-/// A joint hierarchy, flattened into one array in topological order.
+/// A joint hierarchy, flattened into one array with every parent before its
+/// children. Immutable: one skeleton backs every instance of a character.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The order is the whole design, and it is enforced rather than assumed.</b>
-/// A parent always sits at a lower index than its children, so composing local
-/// transforms into model space is one forward pass over an array — no recursion,
-/// no visited set, no pointer chasing, and every bone's parent is already
-/// finished by the time it is read. The constructor refuses any other ordering,
-/// because a skeleton that violates it produces a pose that is subtly wrong in
-/// one limb rather than obviously wrong everywhere, and importers are perfectly
-/// capable of handing over an arbitrary order.
-/// </para>
-/// <para>
-/// <b>It is immutable and shareable.</b> One skeleton backs every instance of a
-/// character; what differs per instance is the <see cref="SkeletonPose"/>.
-/// </para>
-/// </remarks>
 public sealed class Skeleton
 {
     private readonly SkeletonBone[] _bones;
     private readonly Dictionary<string, int> _byName;
 
-    /// <summary>
-    /// Builds a skeleton from bones already in topological order.
-    /// </summary>
+    /// <summary>Builds a skeleton from bones already in topological order.</summary>
     /// <exception cref="ArgumentException">
     /// The list is empty, a parent index is out of range or not less than its
     /// child's, or two bones share a name.
@@ -91,10 +70,6 @@ public sealed class Skeleton
             if (string.IsNullOrEmpty(bone.Name))
                 throw new ArgumentException($"Bone {i} has no name; clips address bones by name.", nameof(bones));
 
-            // Duplicate names are refused rather than resolved to the first
-            // match: a clip binds to bones BY NAME, so an ambiguous name means a
-            // channel silently drives whichever joint the importer happened to
-            // emit first, which reads as one limb animating and its twin not.
             if (!_byName.TryAdd(bone.Name, i))
             {
                 throw new ArgumentException(

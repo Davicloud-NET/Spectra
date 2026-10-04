@@ -6,88 +6,52 @@ using System.Numerics;
 namespace SpectraEngine.Core.Bsp;
 
 /// <summary>
-/// A convex polygon lying on a single plane. Polygons are the faces of
-/// <see cref="Brush"/> solids and the primitives partitioned by the BSP builder.
-/// Vertices are wound counter-clockwise around <see cref="Surface"/>'s normal.
+/// A convex polygon on a single plane, wound counter-clockwise around
+/// <see cref="Surface"/>'s normal. Immutable.
 /// </summary>
 public sealed class Polygon
 {
     /// <summary>Distance tolerance for treating a vertex as lying on a plane.</summary>
     public const float Epsilon = 1e-4f;
 
-    // Vertex counts up to this hold per-vertex plane distances on the stack
-    // (classification and splitting sit in the hottest CSG loop, so a heap
-    // allocation per call is real cost). 128 floats is 512 bytes — trivial
-    // stack load, yet far above any realistic face after carving and welding;
-    // larger polygons fall back to a pooled array (rented/returned inside the
-    // call, so it never escapes). The stackalloc length is the exact vertex
-    // count, not this maximum: localsinit (no SkipLocalsInit in this solution)
-    // zero-initialises every stackalloc, so a fixed-size buffer would pay a
-    // mandatory 512-byte clear per call even for triangles.
+    // Up to this many distances go on the stack; larger faces rent from the
+    // pool. The stackalloc is sized to the vertex count, not this maximum,
+    // because every stackalloc is zeroed.
     private const int MaxStackDistances = 128;
 
     private readonly Vector3[] _vertices;
 
-    /// <summary>
-    /// Creates a polygon carrying the default face payload (engine default
-    /// material, world-aligned texture axes). Convenience for geometry-only
-    /// call sites — tests, debug shapes, and anything that predates per-face
-    /// surfaces.
-    /// </summary>
+    /// <summary>Creates a polygon with the default material and world-aligned texture axes.</summary>
     public Polygon(Vector3[] vertices, Plane surface)
         : this(vertices, surface, FaceSurface.Default)
     {
     }
 
-    /// <summary>
-    /// Creates a polygon on <paramref name="surface"/> wearing
-    /// <paramref name="face"/>. Every polygon-producing operation in the CSG
-    /// pipeline (split, transform, snap, weld, carve) propagates the payload
-    /// through this constructor, so a fragment always wears the material and
-    /// texture mapping of the brush face it came from.
-    /// </summary>
+    /// <summary>Creates a polygon on <paramref name="surface"/> wearing <paramref name="face"/>.</summary>
     public Polygon(Vector3[] vertices, Plane surface, FaceSurface face)
     {
         _vertices = vertices;
         Surface = surface;
         Face = face;
-        // Eager, not lazily cached: Csg.Carve's parallel per-placement workers
-        // evaluate Bounds on shared local-face polygons whenever one Brush
-        // instance backs several placements, and a lazily-written multi-word
-        // Aabb? cache can tear under that concurrency (a worker observing
-        // HasValue before Min/Max are fully written would carve against a
-        // garbage box). Computing here makes the polygon deeply immutable, so
-        // any number of threads may read it. The min/max scan is trivial next
-        // to the split/transform work that accompanies every construction.
+        // Not lazy: carve workers read Bounds on shared polygons in parallel,
+        // and a lazily written Aabb? can tear.
         Bounds = Aabb.FromPoints(vertices);
     }
 
     public IReadOnlyList<Vector3> Vertices => _vertices;
 
-    /// <summary>
-    /// The vertices as a span over the backing array. Prefer this in hot loops:
-    /// enumerating <see cref="Vertices"/> through the interface allocates an
-    /// enumerator per loop, a span enumerates allocation-free.
-    /// </summary>
+    /// <summary>The vertices as a span. Use this in hot loops; <see cref="Vertices"/> allocates an enumerator.</summary>
     public ReadOnlySpan<Vector3> VertexSpan => _vertices;
 
     public int VertexCount => _vertices.Length;
 
-    /// <summary>The plane this polygon lies on; preserved through splits.</summary>
+    /// <summary>The plane this polygon lies on.</summary>
     public Plane Surface { get; }
 
-    /// <summary>
-    /// The face payload — material reference and Hammer-style texture axes (see
-    /// <see cref="FaceSurface"/>). Preserved verbatim through splits, snapping
-    /// and welding (those change vertices, never what the face wears), and
-    /// mapped through the matrix by <see cref="Transformed"/>.
-    /// </summary>
+    /// <summary>The material and texture axes. Kept through splits, snapping and welding.</summary>
     public FaceSurface Face { get; }
 
-    /// <summary>
-    /// The polygon's axis-aligned bounding box, computed once at construction —
-    /// safe to read from any number of threads.
-    /// </summary>
+    /// <summary>The axis-aligned bounding box, computed at construction.</summary>
     public Aabb Bounds { get; }
 
     /// <summary>Classifies this polygon against a splitting plane.</summary>
@@ -100,9 +64,6 @@ public sealed class Polygon
             return ClassifyInto(splitter, distances);
         }
 
-        // Rare oversized face: rent scratch instead of allocating. The buffer
-        // never escapes this call; try/finally guarantees it goes back to the
-        // pool even if classification throws.
         float[] rented = ArrayPool<float>.Shared.Rent(count);
         try
         {
@@ -114,13 +75,10 @@ public sealed class Polygon
         }
     }
 
-    // Fills `distances` (one slot per vertex) with each vertex's signed
-    // distance to `splitter` and classifies from them — so Split can reuse
-    // the very same distances for interpolation instead of recomputing every
-    // dot product a second time.
+    // Leaves the per-vertex distances in the span so Split can reuse them.
     private PolygonClassification ClassifyInto(Plane splitter, Span<float> distances)
     {
-        // Many-sided faces amortise the SIMD setup cost; small faces stay scalar.
+        // SIMD setup only pays off on many-sided faces.
         if (_vertices.Length >= Vector<float>.Count * 2)
         {
             SimdPlane.SignedDistances(splitter, _vertices, distances);
@@ -145,15 +103,12 @@ public sealed class Polygon
     }
 
     /// <summary>
-    /// Splits this polygon by <paramref name="splitter"/> into the parts in front
-    /// of and behind the plane. An output is null when the polygon contributes
-    /// nothing to that side. Coplanar polygons are reported on the front side;
-    /// callers that care must classify separately.
+    /// Splits this polygon into the parts in front of and behind
+    /// <paramref name="splitter"/>. An output is null when nothing lies on that
+    /// side. A coplanar polygon is reported as front.
     /// </summary>
     public void Split(Plane splitter, out Polygon? front, out Polygon? back)
     {
-        // One distance computation feeds both the classification and the
-        // spanning interpolation below.
         int count = _vertices.Length;
         if (count <= MaxStackDistances)
         {
@@ -162,9 +117,6 @@ public sealed class Polygon
             return;
         }
 
-        // Rare oversized face: rent scratch instead of allocating. The buffer
-        // never escapes this call; try/finally guarantees it goes back to the
-        // pool even if a split throws.
         float[] rented = ArrayPool<float>.Shared.Rent(count);
         try
         {
@@ -189,10 +141,7 @@ public sealed class Polygon
 
         int count = _vertices.Length;
 
-        // Counting pass: determine each side's exact vertex count from the
-        // distances alone, so the result arrays below are allocated at final
-        // size — no List growth churn, no ToArray double copy. The conditions
-        // mirror the fill pass exactly, so the counts always match.
+        // Counting pass. Conditions must match the fill pass below.
         int frontCount = 0, backCount = 0;
         for (int i = 0; i < count; i++)
         {
@@ -208,10 +157,7 @@ public sealed class Polygon
             }
         }
 
-        // A side with fewer than three vertices contributes no polygon (same
-        // degenerate-sliver rule as before); skip its array entirely. These
-        // arrays are the results — exact-size and handed to the new Polygon,
-        // never pooled.
+        // Fewer than three vertices: a sliver, no polygon on that side.
         Vector3[]? frontVerts = frontCount >= 3 ? new Vector3[frontCount] : null;
         Vector3[]? backVerts = backCount >= 3 ? new Vector3[backCount] : null;
         int fi = 0, bi = 0;
@@ -226,7 +172,6 @@ public sealed class Polygon
             if (da >= -Epsilon && frontVerts is not null) frontVerts[fi++] = a;
             if (da <= Epsilon && backVerts is not null) backVerts[bi++] = a;
 
-            // Emit an intersection vertex only when the edge strictly crosses.
             if ((da > Epsilon && db < -Epsilon) || (da < -Epsilon && db > Epsilon))
             {
                 float t = da / (da - db);
@@ -236,11 +181,6 @@ public sealed class Polygon
             }
         }
 
-        // Both fragments inherit the parent's face payload unchanged: a split
-        // divides a face's area, never its material or its texture mapping —
-        // and because the mapping is expressed in world axes rather than in
-        // per-vertex UVs, the two halves stay perfectly continuous across the
-        // cut with no re-derivation at all.
         front = frontVerts is not null ? new Polygon(frontVerts, Surface, Face) : null;
         back = backVerts is not null ? new Polygon(backVerts, Surface, Face) : null;
     }
@@ -253,17 +193,9 @@ public sealed class Polygon
     }
 
     /// <summary>
-    /// Returns a new polygon with every vertex, the surface plane, and the face
-    /// payload transformed by <paramref name="transform"/>. Used to push a
-    /// brush's local-space fragments out into world coordinates.
+    /// Returns a new polygon with the vertices, the plane and the face mapped
+    /// through <paramref name="transform"/>.
     /// </summary>
-    /// <remarks>
-    /// The payload's texture-lock semantics live in
-    /// <see cref="FaceSurface.Transformed"/>: explicit axes rotate with the
-    /// brush and absorb the translation into their offsets (the texture stays
-    /// glued to the surface), while world-aligned faces pass through and
-    /// re-derive their projection from the transformed normal.
-    /// </remarks>
     public Polygon Transformed(Matrix4x4 transform)
     {
         var verts = new Vector3[_vertices.Length];
@@ -273,29 +205,11 @@ public sealed class Polygon
     }
 
     /// <summary>
-    /// Returns this polygon facing the other way: vertex order reversed
-    /// <em>and</em> surface plane negated, in one expression.
+    /// Returns this polygon facing the other way: vertex order reversed and
+    /// surface plane negated.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Both channels or neither — that is the entire point of this method
-    /// existing.</b> The two are genuinely independent downstream: winding
-    /// drives rasterization (<c>CsgWorld.BuildMeshArrays</c> fans triangles in
-    /// stored order and every forward pipeline culls back faces CCW-front),
-    /// while <see cref="Surface"/> drives the written per-vertex normal
-    /// <em>and</em> all BSP solidity. Flipping one without the other produces
-    /// two different wrong worlds — geometry that renders inside-out but reads
-    /// solid, or reads inverted but renders correctly — and both are the kind
-    /// of failure that shows up as "the renderer is broken".
-    /// </para>
-    /// <para>
-    /// This is the only function in the engine that can produce a reversed
-    /// polygon, which is what makes the half-flip unreachable rather than
-    /// merely unlikely. It is named <c>Flipped</c> and not <c>Reversed</c> for
-    /// the same reason: "reversed" names only the vertex order, which is
-    /// precisely the half of the job that must never be done alone.
-    /// </para>
-    /// </remarks>
+    // Always both. Winding drives culling, the plane drives normals and BSP
+    // solidity; flipping only one renders inside out or reads inverted.
     public Polygon Flipped()
     {
         int count = _vertices.Length;

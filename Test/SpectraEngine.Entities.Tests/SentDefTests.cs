@@ -6,24 +6,11 @@ using System.Text;
 
 namespace SpectraEngine.Entities.Tests;
 
-/// <summary>
-/// The <c>.sentdef</c> container: that two writes agree, that a read gives back
-/// what was written, and that the forward-compatibility mechanism actually
-/// works rather than merely existing.
-/// </summary>
-/// <remarks>
-/// <b>Most of these assert on BYTES rather than on behaviour, which is unusual
-/// here and deliberate.</b> This file is the one artifact two independent
-/// producers of an entity class have to agree on down to the byte, and every
-/// failure mode it has renders as "the editor showed the wrong property" three
-/// layers away from the cause. A round trip alone would pass with the layout
-/// entirely rearranged, as long as both halves rearranged together.
-/// </remarks>
+// Many tests assert on bytes: a round trip alone would pass with the layout
+// rearranged in both the writer and the reader.
 public sealed class SentDefTests
 {
-    // One class carrying every shape the format has: both bounds, one unbounded
-    // pair, a widget, a choice list with an empty display, a flag set, empty
-    // display and tooltip strings, inputs and outputs.
+    // Carries every shape the format has.
     private static EntitySchema Door(EntityOrigin origin = EntityOrigin.EngineCSharp) => new(
         "func_door",
         displayName: "Door",
@@ -48,7 +35,6 @@ public sealed class SentDefTests
         inputs: ["Open", "Close", "Toggle"],
         outputs: ["OnOpened", "OnClosed"]);
 
-    // The other extreme: a name and nothing else.
     private static EntitySchema Bare(string className) => new(className);
 
     [Fact]
@@ -82,13 +68,8 @@ public sealed class SentDefTests
     [Fact]
     public void A_catalogues_registration_order_never_reaches_the_bytes()
     {
-        // The real hazard this guards, and the reason the sort exists at all: the
-        // producer is a [ModuleInitializer] per class, and the order the loader
-        // runs those in is stable enough to look deterministic in a debug run and
-        // is not a guarantee. Two catalogues, opposite registration orders, one
-        // file - which is as close to a cross-PROCESS check as one process can
-        // get, the rest being carried by the sort being ordinal and by nothing in
-        // the layout reading a clock, a path or a hash-set's iteration order.
+        // Classes register from module initializers, whose order the loader
+        // does not guarantee.
         var forwards = new EntityCatalog();
         forwards.Add(Door(), static () => new PlaceholderEntity());
         forwards.Add(Bare("logic_auto"), static () => new PlaceholderEntity());
@@ -105,10 +86,7 @@ public sealed class SentDefTests
     [Fact]
     public void Classes_are_sorted_ordinally_which_is_not_the_order_a_culture_would_pick()
     {
-        // 'Z' is 0x5A and 'a' is 0x61, so ordinal puts the capital first; every
-        // culture-aware comparison this engine could pick up instead puts "apple"
-        // first. The whole point of stating the comparison is that a machine's
-        // locale must not decide the bytes.
+        // Ordinal puts 'Z' before 'a'; a culture comparison would not.
         EntitySchema[] written = SentDef.Read(SentDef.Write([Bare("apple"), Bare("Zebra")]));
 
         written.Select(schema => schema.ClassName).ShouldBe(["Zebra", "apple"]);
@@ -151,8 +129,7 @@ public sealed class SentDefTests
         locked.IsHiddenInEditor.ShouldBeTrue();
         locked.Max.ShouldBe(12.5f);
 
-        // Empty strings are a value, not an absence: they ride the one shared
-        // reference of 0 and must come back as "" rather than as null.
+        // Empty strings come back as "", not null.
         KeyvalueDescriptor movedir = copy.Keyvalues[1];
         movedir.Display.ShouldBe("");
         movedir.Tooltip.ShouldBe("");
@@ -171,16 +148,12 @@ public sealed class SentDefTests
     {
         KeyvalueDescriptor movedir = SentDef.Read(SentDef.Write([Door()]))[0].Keyvalues[1];
 
-        // float.IsNaN, never ==: NaN is unequal to itself, so an equality test
-        // reports every bound as present and then clamps against a NaN, which
-        // yields NaN. Asked here the way the engine asks it.
         float.IsNaN(movedir.Min).ShouldBeTrue();
         float.IsNaN(movedir.Max).ShouldBeTrue();
         movedir.HasMin.ShouldBeFalse();
         movedir.HasMax.ShouldBeFalse();
 
-        // And the other direction on the same descriptor, so "everything came
-        // back NaN" cannot pass this.
+        // A real bound too, so "everything came back NaN" cannot pass.
         KeyvalueDescriptor locked = SentDef.Read(SentDef.Write([Door()]))[0].Keyvalues[2];
         float.IsNaN(locked.Min).ShouldBeTrue();
         locked.HasMax.ShouldBeTrue();
@@ -204,8 +177,6 @@ public sealed class SentDefTests
     [Fact]
     public void An_empty_schema_set_writes_a_readable_file()
     {
-        // A game with no entity classes is a legal game, and a reader that
-        // needed at least one record would refuse its definition table.
         byte[] image = SentDef.Write([]);
 
         image.Length.ShouldBe(SentDef.HeaderSize + 2);
@@ -215,8 +186,6 @@ public sealed class SentDefTests
     [Fact]
     public void The_string_table_holds_a_reused_string_once()
     {
-        // Four classes filed under one group, each with a keyvalue of one name:
-        // eight references to two strings.
         EntitySchema[] schemas =
         [
             Pickup("game_pickup_a"), Pickup("game_pickup_b"), Pickup("game_pickup_c"), Pickup("game_pickup_d"),
@@ -243,9 +212,7 @@ public sealed class SentDefTests
     {
         byte[] image = SentDef.Write([Bare("logic_auto")]);
 
-        // Offset zero is the empty string by definition, so the table always
-        // opens with a zero-length record and every unset display, tooltip and
-        // default points at it.
+        // Offset zero is the empty string: the table opens with a zero-length record.
         BinaryPrimitives.ReadUInt16LittleEndian(StringTable(image)).ShouldBe((ushort)0);
 
         ReadOnlySpan<byte> record = image.AsSpan(SentDef.HeaderSize);
@@ -257,11 +224,7 @@ public sealed class SentDefTests
     [Fact]
     public void A_reader_skips_trailing_bytes_a_newer_writer_appended_and_lands_on_the_next_record()
     {
-        // The whole forward-compatibility mechanism, exercised rather than
-        // described. A newer writer appends a field to a type record and bumps
-        // its RecordSize; this build knows nothing about that field, and the
-        // record AFTER it must still parse - which it can only do by advancing
-        // by the declared size rather than by what it managed to read.
+        // The reader must advance by the declared RecordSize, not by what it parsed.
         byte[] original = SentDef.Write([Door(), Bare("zz_last")]);
         byte[] grown = AppendToFirstRecord(original, extra: 12);
 
@@ -269,14 +232,11 @@ public sealed class SentDefTests
 
         read.Length.ShouldBe(2);
 
-        // The first record is intact up to the fields this build knows...
         read[0].ClassName.ShouldBe("func_door");
         read[0].Keyvalues.Count.ShouldBe(3);
         read[0].Outputs.ShouldBe(["OnOpened", "OnClosed"]);
 
-        // ...and, the assertion that matters, so is the SECOND. Without the
-        // skip it would be parsed twelve bytes early, out of the middle of the
-        // first record's trailing field.
+        // Without the skip this record would be parsed twelve bytes early.
         read[1].ClassName.ShouldBe("zz_last");
         read[1].Keyvalues.ShouldBeEmpty();
     }
@@ -284,10 +244,7 @@ public sealed class SentDefTests
     [Fact]
     public void One_class_written_with_two_origins_differs_in_exactly_the_origin_byte()
     {
-        // Held in trust for D15: when a Luau definition of a class exists, this
-        // is the oracle that says the two producers agree. Written now against
-        // hand-built schemas so it is waiting rather than being invented
-        // alongside the thing it is supposed to check.
+        // Parity check for a future Luau producer of the same class.
         byte[] fromCSharp = SentDef.Write([Door(EntityOrigin.EngineCSharp)]);
         byte[] fromLuau = SentDef.Write([Door(EntityOrigin.Luau)]);
 
@@ -308,8 +265,7 @@ public sealed class SentDefTests
     [Fact]
     public void The_built_in_classes_round_trip_through_the_file_the_export_switch_writes()
     {
-        // The same call --export-entity-schema makes, over real generated
-        // schemas rather than hand-built ones.
+        // The call --export-entity-schema makes.
         byte[] image = SentDef.Write(BuiltinEntities.Schemas);
         EntitySchemaCatalog catalog = EntitySchemaCatalog.LoadFromSentDef(image);
 
@@ -324,8 +280,6 @@ public sealed class SentDefTests
         refire.HasMax.ShouldBeFalse();
     }
 
-    // --- the catalogue -----------------------------------------------------
-
     [Fact]
     public void The_catalogue_resolves_a_class_by_name_and_misses_on_one_it_never_saw()
     {
@@ -338,8 +292,6 @@ public sealed class SentDefTests
         catalog.TryGetSchema("func_door", out EntitySchema? door).ShouldBeTrue();
         door!.DisplayName.ShouldBe("Door");
 
-        // A miss is an ordinary answer: a level may name a class from a game
-        // whose definitions are not mounted, and that level still loads.
         catalog.TryGetSchema("game_pickup", out EntitySchema? missing).ShouldBeFalse();
         missing.ShouldBeNull();
         catalog.TryGetSchema(null, out _).ShouldBeFalse();
@@ -348,24 +300,15 @@ public sealed class SentDefTests
     [Fact]
     public void The_catalogue_has_no_public_constructor_so_bytes_are_the_only_way_in()
     {
-        // Structural, and this is what makes it structural rather than a habit:
-        // "the editor reads .sentdef and nothing else" only holds if there is no
-        // second door for an in-process host to walk through, which would let the
-        // two consumers drift with nothing failing.
         typeof(EntitySchemaCatalog)
             .GetConstructors(BindingFlags.Public | BindingFlags.Instance)
             .ShouldBeEmpty();
     }
 
-    // --- what the writer refuses -------------------------------------------
-
     [Fact]
     public void A_reserved_flag_bit_is_refused_at_the_write()
     {
-        // Bits 3 to 7 are claimed by designs that are not built. Refusing rather
-        // than masking is what makes the first real producer of them notice: a
-        // writer that dropped the bit silently would ship a file missing it while
-        // every parity test still passed.
+        // Bits 3 to 7 are reserved.
         var schema = new EntitySchema(
             "func_door",
             keyvalues:
@@ -395,8 +338,6 @@ public sealed class SentDefTests
         Should.Throw<ArgumentException>(() => SentDef.Write([schema]))
             .Message.ShouldContain("EntityPlacement");
     }
-
-    // --- what the reader refuses -------------------------------------------
 
     [Fact]
     public void An_image_shorter_than_a_header_is_refused()
@@ -430,9 +371,7 @@ public sealed class SentDefTests
     [Fact]
     public void A_header_size_below_the_fields_it_must_carry_is_refused()
     {
-        // The value the spec table used to state. Sixteen would put the first
-        // type record four bytes inside the header, which is exactly what this
-        // field exists to prevent.
+        // Sixteen puts the first type record four bytes inside the header.
         byte[] image = Mutate(
             SentDef.Write([Door()]),
             bytes => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(SentDef.HeaderSizeOffset), 16));
@@ -506,10 +445,6 @@ public sealed class SentDefTests
     [Fact]
     public void A_declared_count_larger_than_its_own_record_is_refused()
     {
-        // The mirror of the skip oracle. Trailing bytes a reader does not
-        // understand are skipped; content a record does not have room for is a
-        // refusal, because the alternative is reading the next record's bytes as
-        // this one's keyvalue.
         byte[] image = Mutate(
             SentDef.Write([Bare("logic_auto")]),
             bytes => BinaryPrimitives.WriteUInt16LittleEndian(
@@ -534,9 +469,7 @@ public sealed class SentDefTests
     [Fact]
     public void Two_records_claiming_one_class_name_are_refused()
     {
-        // Which is also the out-of-order refusal: the walk requires each class
-        // name to be strictly greater than the last, so a duplicate and a
-        // shuffled file fail the same check.
+        // Same check as out-of-order: names must be strictly ascending.
         byte[] image = SentDef.Write([Door(), Bare("zz_last")]);
         int firstSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(
             image.AsSpan(SentDef.HeaderSize + SentDef.TypeRecordSizeOffset));
@@ -563,14 +496,9 @@ public sealed class SentDefTests
             .Message.ShouldContain("KeyvalueType");
     }
 
-    // --- what the reader tolerates -----------------------------------------
-
     [Fact]
     public void A_flag_bit_this_build_cannot_honour_is_masked_off_on_read()
     {
-        // The other half of the writer's refusal: a file some other tool wrote
-        // may carry a bit this build has no meaning for, and dropping it is the
-        // only safe answer - you cannot honour what you cannot understand.
         byte[] image = Mutate(
             SentDef.Write([Door()]),
             bytes => BinaryPrimitives.WriteUInt32LittleEndian(
@@ -586,17 +514,12 @@ public sealed class SentDefTests
     [Fact]
     public void An_unrecognised_widget_degrades_to_auto_rather_than_failing()
     {
-        // KeyvalueWidget's own rule, honoured here: a property that cannot be
-        // shown the way it asked for is worse shown not at all than shown
-        // plainly, so an unknown widget is a fallback rather than a refusal.
         byte[] image = Mutate(
             SentDef.Write([Door()]),
             bytes => bytes[SentDef.HeaderSize + SentDef.TypeRecordFixedSize + 0x11] = 200);
 
         SentDef.Read(image)[0].Keyvalues[0].Widget.ShouldBe(KeyvalueWidget.Auto);
     }
-
-    // --- helpers -----------------------------------------------------------
 
     private static byte[] Mutate(byte[] image, Action<byte[]> edit)
     {
@@ -612,8 +535,7 @@ public sealed class SentDefTests
         return image.AsSpan(offset, size);
     }
 
-    // Counts whole length-prefixed records rather than raw text, so a substring
-    // of some other string cannot be mistaken for a second copy.
+    // Matches the length prefix too, so a substring of another string is not counted.
     private static int CountRecords(ReadOnlySpan<byte> table, string text)
     {
         int byteCount = Encoding.UTF8.GetByteCount(text);
@@ -631,10 +553,8 @@ public sealed class SentDefTests
         return found;
     }
 
-    // Plays a newer writer: splices bytes onto the end of the first type record
-    // and bumps its RecordSize by as much. The string table offset moves too,
-    // because everything after the record shifted - which is the header field
-    // that exists so it can.
+    // Imitates a newer writer: grows the first type record and its RecordSize,
+    // and shifts the string table offset to match.
     private static byte[] AppendToFirstRecord(byte[] image, int extra)
     {
         int recordSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(
@@ -646,9 +566,7 @@ public sealed class SentDefTests
         var grown = new byte[image.Length + extra];
         image.AsSpan(0, insertAt).CopyTo(grown);
 
-        // Deliberately not zeros: a reader that parsed the appended field rather
-        // than skipping it would come back with 0xABAB rather than something
-        // that could pass for a default.
+        // Not zeros: a parsed zero could pass for a default.
         grown.AsSpan(insertAt, extra).Fill(0xAB);
         image.AsSpan(insertAt).CopyTo(grown.AsSpan(insertAt + extra));
 

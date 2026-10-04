@@ -8,20 +8,7 @@ using System.Collections.Generic;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// Writing an entity keyvalue back: the command, and the property editor's arm
-/// over it.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Strings on both sides, which is why nothing here can refuse a write.</b>
-/// A keyvalue's wire form IS its value, so unlike a light there is no setter
-/// that can throw halfway through a transaction. What the tests below defend is
-/// the other end: that an undo puts the exact bytes back, that a key nobody
-/// authored does not gain a member, and that a per-axis edit leaves the tokens
-/// it did not touch alone.
-/// </para>
-/// </remarks>
+/// <summary>Writing an entity keyvalue: the command and the property editor path over it.</summary>
 public sealed class EntityKeyvalueEditTests
 {
     private static EntitySchemaCatalog Catalog(params EntitySchema[] schemas) =>
@@ -66,13 +53,9 @@ public sealed class EntityKeyvalueEditTests
     private static PropertyEdit Write(string key, string text, PropertyAxes axes = PropertyAxes.All) =>
         new() { Id = PropertyId.EntityKeyvalue, Key = key, Text = text, Axes = axes };
 
-    // --- the command ---------------------------------------------------------
-
     [Fact]
     public void Undo_restores_the_exact_string()
     {
-        // Bit for bit, not "the same number": absolute strings are what make an
-        // undo an inverse rather than a re-render.
         SceneNode node = Placed("thing", ("wait", "1.50"));
         var rig = new Rig(null, node);
 
@@ -89,9 +72,7 @@ public sealed class EntityKeyvalueEditTests
     [Fact]
     public void Undoing_an_added_key_removes_it_again()
     {
-        // A key the author never wrote is a member map.json does not have.
-        // Restoring it as "" would leave one behind that the format's
-        // byte-identical save/load/save promise then carries forever.
+        // Restoring it as "" would leave a member in map.json nobody wrote.
         SceneNode node = Placed("thing");
         var rig = new Rig(null, node);
 
@@ -105,8 +86,7 @@ public sealed class EntityKeyvalueEditTests
     [Fact]
     public void An_edited_key_keeps_its_place_in_the_authored_order()
     {
-        // Keyvalue order is the file's order; a remove-then-append would move an
-        // edited member to the end and rewrite a region nobody touched.
+        // Keyvalue order is the file's order.
         SceneNode node = Placed("thing", ("a", "1"), ("b", "2"), ("c", "3"));
         var rig = new Rig(null, node);
 
@@ -121,7 +101,7 @@ public sealed class EntityKeyvalueEditTests
     [Fact]
     public void A_missing_target_is_a_no_op_rather_than_a_throw()
     {
-        // History behind a still-undone delete legitimately names absent nodes.
+        // History behind an undone delete names absent nodes.
         var scene = new Scene("entities");
         var command = new SetEntityKeyvalueCommand(Guid.NewGuid(), "wait", "1", "2");
 
@@ -146,9 +126,6 @@ public sealed class EntityKeyvalueEditTests
     [Fact]
     public void Capturing_from_a_node_with_no_entity_is_refused_at_the_call()
     {
-        // The same guard SetLightCommand.Capture makes: a before-state of
-        // "absent" read off a node that has no payload at all would make an undo
-        // remove a key nothing ever stored.
         Should.Throw<InvalidOperationException>(
             () => SetEntityKeyvalueCommand.Capture(new SceneNode("plain"), "wait", "1"));
     }
@@ -156,13 +133,9 @@ public sealed class EntityKeyvalueEditTests
     [Fact]
     public void An_empty_key_is_refused_where_the_command_is_built()
     {
-        // A keyvalue with no name cannot be written to a map or looked up out of
-        // one, so it must never reach the payload under the empty string.
         Should.Throw<ArgumentException>(
             () => new SetEntityKeyvalueCommand(Guid.NewGuid(), "", "a", "b"));
     }
-
-    // --- coalescing ----------------------------------------------------------
 
     [Fact]
     public void A_drag_over_one_key_is_one_history_entry_spanning_the_gesture()
@@ -186,8 +159,6 @@ public sealed class EntityKeyvalueEditTests
     [Fact]
     public void A_drag_never_absorbs_an_edit_to_a_different_key()
     {
-        // Absorbing on the node id alone would let a drag swallow the second
-        // value and then silently replace it on its next frame.
         var first = new SetEntityKeyvalueCommand(Guid.NewGuid(), "speed", "1", "2");
         var other = new SetEntityKeyvalueCommand(first.NodeId, "range", "5", "6");
 
@@ -214,8 +185,6 @@ public sealed class EntityKeyvalueEditTests
         Stored(node, "b").ShouldBe("2");
     }
 
-    // --- recording nothing ---------------------------------------------------
-
     [Fact]
     public void An_edit_that_produces_the_stored_string_records_nothing()
     {
@@ -229,9 +198,8 @@ public sealed class EntityKeyvalueEditTests
     [Fact]
     public void Writing_the_declared_default_onto_an_absent_key_records_nothing()
     {
-        // The panel shows the default for a key nobody authored, so a blur that
-        // commits an untouched field must not be what makes a member appear -
-        // the map format writes one only when it differs from its default.
+        // The panel shows defaults for absent keys, so blurring an untouched
+        // field commits the default. That must not add the key to the map.
         EntitySchemaCatalog catalog = Catalog(
             new EntitySchema("thing", keyvalues: [Kv("speed", KeyvalueType.Float, "100")]));
 
@@ -276,14 +244,10 @@ public sealed class EntityKeyvalueEditTests
         node.Entity!.ClassName.ShouldBe("thing");
     }
 
-    // --- the per-axis merge --------------------------------------------------
-
     [Fact]
     public void A_per_axis_edit_leaves_the_other_components_spelled_as_they_were()
     {
-        // Not merely their VALUES: parsing "1.0 2 3" into a vector and writing it
-        // back through KeyvalueWire would silently rewrite the author's spelling,
-        // dirtying a line of their map file that nobody touched.
+        // Odd spellings on purpose: a parse and re-format would normalise them.
         SceneNode node = Placed("thing", ("offset", "1.0 2 +3"));
         var rig = new Rig(null, node);
 
@@ -306,8 +270,6 @@ public sealed class EntityKeyvalueEditTests
     [Fact]
     public void A_bulk_per_axis_edit_reaches_each_nodes_own_other_components()
     {
-        // The bulk edit that "put all of these on the floor" means: writing the
-        // whole vector back would stack the selection at one point.
         SceneNode a = Placed("thing", ("offset", "1 5 1"));
         SceneNode b = Placed("thing", ("offset", "2 6 2"));
         var rig = new Rig(null, a, b);
@@ -332,8 +294,6 @@ public sealed class EntityKeyvalueEditTests
     [Fact]
     public void A_value_with_no_three_components_takes_the_edit_whole()
     {
-        // A malformed value has no per-axis structure to preserve, and neither
-        // does an absent one, so both are simply overwritten.
         SceneNode malformed = Placed("thing", ("offset", "wide"));
         SceneNode absent = Placed("thing");
         var rig = new Rig(null, malformed, absent);

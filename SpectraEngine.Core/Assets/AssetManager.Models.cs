@@ -9,24 +9,12 @@ using System.IO;
 
 namespace SpectraEngine.Core.Assets;
 
-/// <summary>
-/// The model half of the asset manager: import, GPU upload, material
-/// resolution, and cache lifetime for <see cref="ModelAsset"/>.
-/// </summary>
-/// <remarks>
-/// Split into its own file rather than its own class because it shares the
-/// texture half's renderer, its upload pump, its content root and its degrade-
-/// don't-throw policy — a second type would have had to duplicate all four, and
-/// a second pump would have meant a second per-frame call site in the engine.
-/// </remarks>
+// Models: import, GPU upload, material resolution and cache lifetime.
 public sealed partial class AssetManager
 {
-    // Guards _models only. A third lock rather than reusing _materialSync:
-    // building a model's materials calls LoadMaterial, which takes that one.
+    // Not _materialSync: building a model's materials calls LoadMaterial, which takes that one.
     private readonly object _modelSync = new();
     private readonly Dictionary<string, ModelAsset> _models = new(StringComparer.OrdinalIgnoreCase);
-
-    // Background import -> render thread. Same shape as the texture queue.
 
     /// <summary>Number of model assets currently cached. Any thread.</summary>
     public int ModelCount
@@ -36,16 +24,10 @@ public sealed partial class AssetManager
 
     /// <summary>
     /// Loads a model synchronously: import and GPU upload both happen on the
-    /// calling thread, which must be the render thread. This is the load-time
-    /// path — use <see cref="RequestModel"/> for anything loaded while frames
-    /// are running. Returns the cached handle if the path is already loaded.
+    /// calling thread, which must be the render thread. Use
+    /// <see cref="RequestModel"/> for anything loaded while frames are running.
+    /// Returns the cached handle if the path is already loaded.
     /// </summary>
-    /// <remarks>
-    /// If an async request for the same path is still in flight, this imports
-    /// anyway and wins: it takes a newer ticket, so the background result is
-    /// dropped as stale when it lands. The caller asked for a model it can use
-    /// on the next line, and that is what it gets.
-    /// </remarks>
     /// <param name="relativePath">Path under the content root, e.g. <c>Models/crate.obj</c>.</param>
     /// <param name="options">Import tuning; ignored if the path is already cached.</param>
     /// <exception cref="InvalidOperationException">No renderer is attached.</exception>
@@ -58,10 +40,7 @@ public sealed partial class AssetManager
         ModelAsset asset = GetOrCreateModel(relativePath, options);
         if (asset.IsReady) return asset;
 
-        // Unlike the async path, a synchronous load reports its failure to the
-        // caller: it is load-time code that can still decide what to do about a
-        // missing prop, and swallowing it would leave an empty handle with no
-        // stack to explain it.
+        // A newer ticket than any in-flight async request, so that result is dropped as stale.
         long sequence = asset.NextRequestSequence();
         ModelData data = ReadModelThroughContent(asset);
         using var upload = new ModelJob(this, asset, sequence, data, null, async: false);
@@ -71,25 +50,18 @@ public sealed partial class AssetManager
     }
 
     /// <summary>
-    /// Requests a model asynchronously. Returns immediately with a handle that
-    /// is not yet ready; the file is imported on the thread pool and the GPU
-    /// meshes are created by the next <see cref="PumpPendingUploads"/>. Callable
-    /// from any thread, once <see cref="AttachRenderer"/> has run.
+    /// Requests a model asynchronously. Returns at once with a handle that is
+    /// not yet ready; the import runs on the thread pool and the GPU meshes are
+    /// created by a later <see cref="PumpPendingUploads"/>. Any thread, once
+    /// <see cref="AttachRenderer"/> has run. A failed import shows up on
+    /// <see cref="ModelAsset.Error"/>; asking again retries. Polling this while
+    /// an import is in flight is free.
     /// </summary>
-    /// <remarks>
-    /// <para>A failed import is reported through <see cref="ModelAsset.Error"/>
-    /// and a log line, never as an exception: by the time it fails, the caller
-    /// that asked is several frames gone. Asking again after a failure retries.</para>
-    /// <para>Calling this repeatedly for a model that is still importing is free
-    /// — at most one import per handle is ever in flight — so polling it from a
-    /// frame loop is a supported way to wait for one.</para>
-    /// </remarks>
     /// <exception cref="InvalidOperationException">No renderer is attached yet.</exception>
     public ModelAsset RequestModel(string relativePath, ModelImportOptions? options = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        // Same attachment proxy RequestTexture uses: _placeholder is the one
-        // piece of attach state published for cross-thread reads.
+        // _placeholder is the attach state that is safe to read cross-thread.
         if (_placeholder is null)
         {
             throw new InvalidOperationException(
@@ -105,9 +77,8 @@ public sealed partial class AssetManager
     }
 
     /// <summary>
-    /// Looks up an already-requested model without touching the disk. A hit does
-    /// not prove the model is usable — check <see cref="ModelAsset.IsReady"/>.
-    /// Any thread.
+    /// Looks up an already-requested model without touching the disk. A hit may
+    /// not be ready yet; check <see cref="ModelAsset.IsReady"/>. Any thread.
     /// </summary>
     public bool TryGetModel(string relativePath, [MaybeNullWhen(false)] out ModelAsset asset)
     {
@@ -117,9 +88,8 @@ public sealed partial class AssetManager
     }
 
     /// <summary>
-    /// Drops a model from the cache and destroys the GPU meshes it owns through
-    /// the creating renderer. Scene nodes still referencing those meshes must be
-    /// removed first — this does not hunt them down. Returns false if the path
+    /// Drops a model from the cache and destroys the GPU meshes it owns. Remove
+    /// scene nodes that reference those meshes first. Returns false if the path
     /// was not loaded. Render thread only.
     /// </summary>
     public bool UnloadModel(string relativePath)
@@ -131,9 +101,7 @@ public sealed partial class AssetManager
             if (!_models.Remove(key, out asset))
                 return false;
 
-            // The handle is off the cache, so no import can ever be applied to
-            // it again (ApplyImport drops results for evicted handles); leaving
-            // the flag set would advertise an import that will never land.
+            // Results for an evicted handle are dropped, so nothing is pending now.
             asset.ImportPending = false;
         }
 
@@ -142,35 +110,19 @@ public sealed partial class AssetManager
         return true;
     }
 
-    // ---- where a model's bytes come from ---------------------------------
-
     /// <summary>
     /// Whether the model at <paramref name="relativePath"/> would be served from
     /// a cooked <c>.smodel</c> rather than imported from its authored file.
     /// </summary>
-    /// <remarks>
-    /// For a host that wants to say which path a load took - a log line, an
-    /// editor badge, a test. It asks <see cref="ModelContentPath.Resolve"/>, the
-    /// same function the read asks, rather than probing for itself: a second
-    /// spelling of the redirection is the failure this whole content layer has
-    /// already paid for once.
-    /// </remarks>
     public bool IsModelCooked(string relativePath)
     {
         string key = ContentRoot.NormalizeRelativePath(relativePath);
         return ModelContentPath.IsCooked(ModelContentPath.Resolve(Content, key));
     }
 
-    // The model read, and the second of the two that FORK. Any thread: opening a
-    // blob, validating a .smodel and copying its arrays are all pure CPU, exactly
-    // like the image read beside it, which is what lets the async path run this on
-    // the thread pool.
-    //
-    // The asymmetry between the two arms is real and is documented on
-    // ModelContentPath: a cooked model is one self-contained payload and comes
-    // through the mounted stack, while an authored one is handed to a native
-    // importer that opens the FILE itself and follows the material library beside
-    // it, so it can only come from a folder.
+    // Any thread. A cooked model comes through the content stack. An authored
+    // one goes to the native importer, which opens the file itself, so it can
+    // only come from a folder.
     private ModelData ReadModelThroughContent(ModelAsset asset)
     {
         string resolved = ModelContentPath.Resolve(Content, asset.RelativePath);
@@ -179,18 +131,11 @@ public sealed partial class AssetManager
 
         using ContentBlob blob = OpenOrThrow(resolved);
 
-        // The span dies with the blob at the end of this statement, which is safe
-        // for exactly one reason: CookedModelData copies. A builder that handed a
-        // span onward would have made this blob's lifetime the model's, and
-        // unmapping a pack view under a live span is an access violation with no
-        // managed stack.
+        // Safe to dispose the blob here only because CookedModelData copies.
         return CookedModelData.Build(SmodelReader.Read(blob.Span, resolved), asset.RelativePath);
     }
 
-    // ---- pump ------------------------------------------------------------
-
-    // Claims the single in-flight import slot for this handle. False when one is
-    // already running, which is what makes RequestModel idempotent per frame.
+    // At most one import in flight per handle.
     private bool TryBeginImport(ModelAsset asset)
     {
         lock (_modelSync)
@@ -207,9 +152,7 @@ public sealed partial class AssetManager
             asset.ImportPending = false;
     }
 
-    // Import off the render thread and hand the (pure CPU) result back through
-    // the queue. Failures are queued too, so the pump can log them on the render
-    // thread instead of losing them in an unobserved task.
+    // Failures are queued too, so the pump logs them on the render thread.
     private void QueueImport(ModelAsset asset)
     {
         long sequence = asset.NextRequestSequence();
@@ -219,11 +162,8 @@ public sealed partial class AssetManager
             catch (Exception ex) { return new ModelJob(this, asset, sequence, null, ex.Message, async: true); }
         }, () => EndImport(asset));
     }
-    // The name-to-path half is ModelMaterialOverride's, shared with the cook so
-    // the two cannot disagree about which file an imported material's name means;
-    // the existence half is this manager's, asked of the mounted stack, because an
-    // override that ships inside a pack has to be found there and Exists never
-    // throws on a name the filesystem would refuse.
+    // Name-to-path is ModelMaterialOverride's rule, shared with the cook.
+    // Existence is asked of the content stack, so an override in a pack is found.
     private bool TryFindMaterialOverride(string materialName, [NotNullWhen(true)] out string? path)
     {
         path = ModelMaterialOverride.PathFor(materialName);
@@ -233,10 +173,7 @@ public sealed partial class AssetManager
         return false;
     }
 
-    // ---- lifetime --------------------------------------------------------
-
-    // Whether this exact handle is still the cache's entry for its path — false
-    // once it was unloaded, or replaced by a later request for the same path.
+    // False once the handle was unloaded or replaced by a later request.
     private bool IsCachedModel(ModelAsset asset)
     {
         lock (_modelSync)
@@ -261,8 +198,7 @@ public sealed partial class AssetManager
         }
     }
 
-    // Destroys every GPU mesh a model owns and blanks the handle, so anything
-    // still holding it sees an unloaded model rather than disposed meshes.
+    // Blanks the handle too, so a holder sees an unloaded model, not disposed meshes.
     private int DestroyModelMeshes(ModelAsset asset)
     {
         IReadOnlyList<Mesh> meshes = asset.Meshes;
@@ -277,8 +213,7 @@ public sealed partial class AssetManager
         return count;
     }
 
-    // Called from ReleaseGraphicsResources, on the render thread, before the
-    // renderer shuts down.
+    // Render thread, before the renderer shuts down.
     private void ReleaseModelResources()
     {
 

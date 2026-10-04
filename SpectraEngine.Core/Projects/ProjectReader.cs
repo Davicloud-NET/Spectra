@@ -6,10 +6,7 @@ using System.Text.Json;
 
 namespace SpectraEngine.Core.Projects;
 
-/// <summary>
-/// Reads a project manifest, carrying through every member it does not
-/// recognise.
-/// </summary>
+/// <summary>Reads a project manifest. Unknown members are preserved.</summary>
 public static class ProjectReader
 {
     /// <exception cref="ProjectFormatException">The document is malformed, or names a value outside a closed vocabulary.</exception>
@@ -109,9 +106,8 @@ public static class ProjectReader
                     break;
 
                 default:
-                    // 'input', 'bootScript', 'entityDefinitions' and 'settings'
-                    // all land here: specified, and with nothing in the tree to
-                    // bind to yet.
+                    // Includes 'input', 'bootScript', 'entityDefinitions', 'settings':
+                    // specified but not bound yet.
                     project.Unknown.Add(new PreservedMember(
                         member, CanonicalJson.CaptureValue(ref reader, utf8), anchor));
                     break;
@@ -177,9 +173,7 @@ public static class ProjectReader
         string value = ReadString(ref reader, member);
         if (!ProjectFormat.TryParseBackend(value, out GraphicsBackend backend))
         {
-            // Never a fall-through to a default backend. A mistyped 'd3d1' that
-            // silently became OpenGL would ship a game rendering through a path
-            // nobody tested, which is worse than refusing to start.
+            // No default: a typo must not ship the game on an untested backend.
             throw Fail(ref reader,
                 $"'{member}' must be one of opengl, vulkan, d3d11, d3d12; got '{value}'");
         }
@@ -216,8 +210,6 @@ public static class ProjectReader
             into.Add(reader.GetString() ?? string.Empty);
         }
     }
-
-    // --- primitives ---------------------------------------------------------
 
     private static bool NextMember(ref Utf8JsonReader reader, out string member)
     {
@@ -263,8 +255,6 @@ public static class ProjectReader
     private static int ReadPositiveInt(ref Utf8JsonReader reader, string member)
     {
         int value = ReadInt(ref reader, member);
-        // A zero-sized window is not creatable, and the failure would otherwise
-        // surface three layers down inside a windowing backend.
         if (value <= 0)
             throw Fail(ref reader, $"'{member}' must be greater than zero, not {value}");
         return value;

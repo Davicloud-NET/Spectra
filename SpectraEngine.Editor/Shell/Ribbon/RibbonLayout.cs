@@ -8,19 +8,9 @@ using System.Collections.Generic;
 namespace SpectraEngine.Editor.Shell.Ribbon;
 
 /// <summary>
-/// How much room a ribbon control takes, which on this surface is the same
-/// question as how important the verb is.
+/// How much room a ribbon control takes. The tests compute each page's width
+/// floor from it.
 /// </summary>
-/// <remarks>
-/// <b>An Office ribbon is a size hierarchy before it is anything else, and the
-/// first version of this surface had none.</b> Thirty controls, all
-/// <c>Button.seg</c> at 26px, so "insert a block" and "toggle the wireframe
-/// overlay" were the same object at the same weight and nothing on the surface
-/// said what it was for. Declared here rather than left to the markup because
-/// it is what the width floor is computed from: a group that no longer fits the
-/// window's own minimum is then a failing test rather than something somebody
-/// notices in a screenshot.
-/// </remarks>
 public enum RibbonItemSize
 {
     /// <summary>A 22px row: a 16px glyph and a word, three to a column.</summary>
@@ -31,26 +21,10 @@ public enum RibbonItemSize
 }
 
 /// <summary>
-/// What kind of control a ribbon item is, which decides what it needs wired
-/// rather than how it is drawn.
+/// What a ribbon item needs wired: a lit state, a set, a typed value, two hit
+/// regions. <see cref="RibbonLayout.RequiredClass"/> maps it to the style class
+/// the control must wear.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Behavioural, not cosmetic, which is why it lives in the roster.</b> A
-/// <see cref="Check"/> needs a lit state bound to something; a <see cref="Radio"/>
-/// is one of a set whose exclusivity comes from the verbs rather than the
-/// controls; a <see cref="Field"/> posts no click at all; a <see cref="Split"/>
-/// has two hit regions. Pixel geometry stays in the markup - this is the part a
-/// test can hold.
-/// </para>
-/// <para>
-/// <see cref="RibbonLayout.RequiredClass"/> maps a declared kind onto the style
-/// class its control must wear, and the page checks it at construction. Before
-/// that, a page could draw any control it liked under a valid <c>Tag</c>: a
-/// check row quietly rendered as a plain button looks finished and has no lit
-/// state, which is a control that lies about what the engine is doing.
-/// </para>
-/// </remarks>
 public enum RibbonControlKind
 {
     /// <summary>Posts its verb and nothing else.</summary>
@@ -78,26 +52,18 @@ public enum RibbonControlKind
     Split,
 }
 
-/// <summary>
-/// One control on the ribbon: the id its markup carries, the word on it, the
-/// verb it posts, and what shape it takes.
-/// </summary>
+/// <summary>One control on the ribbon.</summary>
 /// <param name="Id">
-/// Stable, lower case, dotted. The SAME string is the control's <c>Tag</c> in
-/// the tab's markup, which is what welds the roster to what is on screen: the
-/// tab view validates its own tree against this roster at construction, and
-/// <c>RibbonLayoutTests</c> re-checks it from the sources without needing a
-/// window.
+/// Lower case, dotted. Also the control's <c>Tag</c> in the tab's markup; the
+/// tab view checks its tree against the roster at construction.
 /// </param>
-/// <param name="Label">The word on the control. Sentence case, never a glyph alone.</param>
-/// <param name="Verb">The existing verb it resolves to.</param>
+/// <param name="Label">The word on the control, sentence case.</param>
+/// <param name="Verb">The verb it posts.</param>
 /// <param name="Size">
-/// How much room it takes. A <see cref="RibbonItemSize.Large"/> label is capped
-/// at <see cref="RibbonLayout.LargeLabelLimit"/> characters by a test, because
-/// the button wraps to two lines of 13 and a third has nowhere to go -
-/// <c>MaxLines</c> would silently eat it rather than clip it visibly.
+/// A <see cref="RibbonItemSize.Large"/> label may be at most
+/// <see cref="RibbonLayout.LargeLabelLimit"/> characters.
 /// </param>
-/// <param name="Kind">What it needs wired. See <see cref="RibbonControlKind"/>.</param>
+/// <param name="Kind">What it needs wired.</param>
 public sealed record RibbonItem(
     string Id,
     string Label,
@@ -106,113 +72,39 @@ public sealed record RibbonItem(
     RibbonControlKind Kind = RibbonControlKind.Button);
 
 /// <summary>One captioned box of controls inside a tab.</summary>
-/// <param name="Caption">
-/// Names the box. Sentence case at label size, never letter-spaced uppercase:
-/// a ribbon group caption is exactly where that habit reaches, and uppercase is
-/// measurably slower to read because it destroys the word shape a reader
-/// recognises before reading any letters.
-/// </param>
+/// <param name="Caption">Sentence case, not uppercase.</param>
 public sealed record RibbonGroup(string Caption, IReadOnlyList<RibbonItem> Items);
 
 /// <summary>One page of the command surface.</summary>
 /// <param name="Id">Matches the markup file that renders it.</param>
 /// <param name="Title">The word on the tab.</param>
-/// <param name="Summary">
-/// What the page is FOR, as the tab's tooltip. The tabs were the only controls
-/// on this surface with no tooltip at all, and they carry the one thing a new
-/// user has to understand about it: the two pages divide on whether a verb
-/// changes the level or changes how you look at it. Roster data rather than a
-/// string in <c>BuildRibbon</c>, so the strip still cannot say anything the
-/// roster does not know.
-/// </param>
+/// <param name="Summary">What the page is for. Shown as the tab's tooltip.</param>
 public sealed record RibbonTab(string Id, string Title, string Summary, IReadOnlyList<RibbonGroup> Groups);
 
 /// <summary>
 /// The ribbon's roster: which verbs are on which tab, which are never on one,
 /// and which tab a session opens on.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>THE TAB STRIP WAS RETIRED ONCE, ON EVIDENCE, AND THIS IS BUILT SO THE
-/// EVIDENCE CANNOT REPEAT.</b> The old Home / Model / View strip died of three
-/// things: Home and Model carried the same six verbs, Frame was written out
-/// three times, and Insert - the one thing a first session needs - sat on the
-/// tab nobody opened. The owner reopened the decision; the answer is not to
-/// argue with those findings but to make each of them a property of this file.
-/// </para>
-/// <list type="number">
-/// <item><b>No verb appears on two tabs.</b> A <see cref="ShellVerb"/> is a
-/// value, so this is a set comparison rather than a review habit, and
-/// <c>RibbonLayoutTests</c> fails the build over it.</item>
-/// <item><b>Insert is the first group of the DEFAULT tab</b>
-/// (<see cref="DefaultTabId"/>), which is also the tab every launch opens on -
-/// the active tab is deliberately NOT persisted, so no session can start with
-/// Insert hidden behind a click.</item>
-/// <item><b>Switching does something substantial.</b> Two tabs, and they divide
-/// on a real axis: Build changes the level, View changes only how you look at
-/// it. The floors in the tests exist so a future thin tab is a build failure
-/// rather than a taste argument.</item>
-/// </list>
-/// <para>
-/// <b>NO KEYTIPS, AND THE REASON IS ALT RATHER THAN TASTE.</b> Office's ribbon
-/// can own Alt because in Office the ribbon IS the menu bar; here the five
-/// menus carry <c>_File _Edit _Object _View _Help</c>, so Avalonia's access-key
-/// handler owns that chord and KeyTips would need an entry key nobody would
-/// guess or would have to take the menus' own away. Plain access keys on the
-/// tabs collide too - Alt+V is the View menu, and Avalonia round-robins
-/// duplicates, so one chord would open a menu on one press and switch a page on
-/// the next - and even distinct letters would open a page and then strand the
-/// user, which teaches that the surface answers the keyboard and then stops.
-/// <c>Ctrl+F1</c> collapses and expands it, which is Office's own chord for
-/// that and collides with nothing here.
-/// <br/>
-/// <b>This refusal is CONDITIONAL and the condition is testable:</b> it holds
-/// only while the ribbon carries no verb that is reachable nowhere else. It was
-/// indefensible until <c>FrameAll</c> reached the Object menu, because that verb
-/// was on this surface alone.
-/// </para>
-/// <para>
-/// <b>Two tabs, not three, and that is the honest count.</b> The verbs this
-/// shell has fill two pages properly. A third would have to be padded out of
-/// the document verbs the File menu already owns, and a thin tab is the retired
-/// strip again.
-/// </para>
-/// <para>
-/// <b><see cref="AlwaysVisible"/> is the part of the surface a collapse may not
-/// take away.</b> A tab-scoped verb is one click plus a collapse state away, so
-/// anything whose ABSENCE is dangerous cannot live on a tab: Play is already
-/// outside this surface entirely (the menu row's far corner), and undo and redo
-/// join it on the tab strip itself, because undo is the recovery verb for the
-/// destructive verbs the Build tab carries and it must not be hidden by the
-/// same click that hides them.
-/// </para>
-/// </remarks>
+// Rules the tests hold: no verb on two tabs, Insert first on the default tab,
+// and the active tab is not persisted, so every launch opens on Insert.
+// No keytips or tab access keys: the menus own Alt. Ctrl+F1 collapses.
 public static class RibbonLayout
 {
-    /// <summary>
-    /// The most characters a large label can hold.
-    /// </summary>
-    /// <remarks>
-    /// MEASURED, not chosen. The cap was twelve, and twelve is what let
-    /// "Everything" ship at a 58px button where it broke mid-word to
-    /// "Everythin / g": a single word longer than the line has no boundary to
-    /// wrap at, so <c>TextWrapping</c> cuts it wherever it runs out. The button
-    /// is 64 now and holds that word with two pixels to spare. Named here so
-    /// the number lives in one place rather than in three comments, two of
-    /// which still said twelve.
-    /// </remarks>
+    /// <summary>The most characters a large label can hold.</summary>
+    // Measured against the 64px button. A longer single word breaks mid-word.
     public const int LargeLabelLimit = 10;
 
     /// <summary>The tab a session opens on, every launch.</summary>
     public const string DefaultTabId = "build";
 
-    /// <summary>The other one.</summary>
     public const string ViewTabId = "view";
 
     /// <summary>
-    /// Undo and redo: on the tab strip, visible in both the expanded and the
-    /// collapsed state, and on no tab.
+    /// Undo and redo: on the tab strip, visible expanded and collapsed, and on
+    /// no tab.
     /// </summary>
+    // Undo recovers from the Build tab's destructive verbs, so a collapse must
+    // not hide it.
     public static IReadOnlyList<RibbonItem> AlwaysVisible { get; } =
     [
         new("history.undo", "Undo", ShellVerb.Of(EditorHostCommand.Undo)),
@@ -225,18 +117,7 @@ public static class RibbonLayout
         new(DefaultTabId, "Build",
             "Everything that changes the level: what is in it, where it is, and how it snaps.",
         [
-            // FIRST GROUP OF THE FIRST TAB, and that placement is the whole
-            // answer to the second finding. A new user's first question is
-            // "how do I put something in the world"; the retired strip's
-            // answer was on a tab they never opened.
-            //
-            // THE FOUR THINGS A LEVEL IS MADE OF GET LARGE BUTTONS and the rest
-            // is a column beside them: blocks, parts, cuts and lights, against
-            // a panel and a container that each place something into one of
-            // those. Their glyphs carry the node-kind tints the palette has had
-            // since the first pass and had spent in exactly one 15px tree
-            // glyph - which is why four insert buttons in a row used to read
-            // as four grey outlines.
+            // Must stay the first group of the first tab.
             new RibbonGroup("Insert",
             [
                 new RibbonItem("insert.block", "Block", ShellVerb.Of(InsertKind.WorldBrush),
@@ -250,29 +131,14 @@ public static class RibbonLayout
                 new RibbonItem("insert.panel", "Light panel", ShellVerb.Of(InsertKind.SurfaceLight)),
                 new RibbonItem("insert.group", "Group", ShellVerb.Of(InsertKind.Group)),
 
-                // THE ONE SPLIT BUTTON, and the only Office idiom on this
-                // surface that cannot be faked with what was already here: a
-                // main half that places the last class used, and a caret that
-                // opens the list. The caret names no verb and therefore carries
-                // no Tag - it opens something rather than doing something - so
-                // the roster describes one control and the validator sees one.
-                //
-                // Its flyout entries are deliberately NOT roster items. The
-                // roster is compile-time data and an entity class comes from
-                // the project's own .sentdef, so a build cannot know them; a
-                // test says so, because a roster that quietly grew a dynamic
-                // entry would make every claim in this file about a fixed set
-                // untrue.
+                // Main half places the last class used; the caret opens the
+                // list and has no Tag. The flyout's classes come from the
+                // project's .sentdef at click time, so they are not roster items.
                 new RibbonItem("insert.entity", "Entity", ShellVerb.InsertEntity(),
                     RibbonItemSize.Large, RibbonControlKind.Split),
             ]),
 
-            // The live tool is the most-read state on this surface, so it gets
-            // the second set of large buttons and they light amber like every
-            // other "this one is running" in the shell. The two-way choices
-            // beside them stay chips, because "world" is not the enabled state
-            // of "local" and a lit icon cannot say which of two words is
-            // current.
+            // Two-way choices are chips: "world" is not the on state of "local".
             new RibbonGroup("Transform",
             [
                 new RibbonItem("tool.move", "Move", ShellVerb.Of(GizmoCommand.UseTranslate),
@@ -287,10 +153,6 @@ public static class RibbonLayout
                     RibbonItemSize.Small, RibbonControlKind.Chip),
             ]),
 
-            // A field with a stepper pair beside it, which is Office's spinner
-            // and is what these two verbs have always been: [ and ] step one
-            // number, and a pair of arrows against the box holding it says so
-            // without a word.
             new RibbonGroup("Snap",
             [
                 new RibbonItem("choice.snap", "Snap to grid", ShellVerb.Of(ShellToggle.Snap),
@@ -303,9 +165,6 @@ public static class RibbonLayout
                     RibbonItemSize.Small, RibbonControlKind.Stepper),
             ]),
 
-            // The four verbs that LEFT the one-row bar because they were four
-            // anonymous glyphs in a row. Duplicate leads at full size because
-            // it is the one of the five somebody reaches for repeatedly.
             new RibbonGroup("Arrange",
             [
                 new RibbonItem("edit.duplicate", "Duplicate", ShellVerb.Of(EditorHostCommand.Duplicate),
@@ -324,18 +183,12 @@ public static class RibbonLayout
             [
                 new RibbonItem("camera.frame", "Selection", ShellVerb.Of(EditorCameraCommand.FrameSelection),
                     RibbonItemSize.Large),
-                // Reachable from nothing at all before the ribbon: no key, no
-                // menu, no button. The verb has existed since the editor camera
-                // did.
                 new RibbonItem("camera.frameall", "Everything", ShellVerb.Of(EditorCameraCommand.FrameAll),
                     RibbonItemSize.Large),
             ]),
 
-            // A RADIO COLUMN rather than a dropdown, and the difference is what
-            // is visible at rest: three modes, one lit, all three readable
-            // without opening anything. A dropdown showing "auto" hides the
-            // fact that there are two other answers. The exclusivity is a
-            // property of the three set-verbs, never of the controls.
+            // Radios, not a dropdown: all three modes readable at rest.
+            // Exclusivity comes from the three set-verbs, not the controls.
             new RibbonGroup("Ground grid",
             [
                 new RibbonItem("grid.auto", "Auto", ShellVerb.Of(EditorHostCommand.GridAuto),
@@ -346,16 +199,6 @@ public static class RibbonLayout
                     RibbonItemSize.Small, RibbonControlKind.Radio),
             ]),
 
-            // Five verbs whose only route was a menu. A latched overlay with no
-            // visible switch is the failure the viewport's standing chips were
-            // built for; this is the switch.
-            //
-            // CHECK ROWS, which is Office's Show group and is also how the
-            // icons come back here. The first version of this page carried no
-            // glyphs at all, and its comment was right about why - five
-            // ambiguous 16px outlines in a row are a grey texture rather than
-            // five icons. A box and a tick is not an ambiguous outline: it says
-            // on or off and leaves the word to say which overlay.
             new RibbonGroup("Overlays",
             [
                 new RibbonItem("overlay.wireframe", "Wireframe", ShellVerb.Of(DebugVisualization.Wireframe),
@@ -400,14 +243,8 @@ public static class RibbonLayout
     }
 
     /// <summary>
-    /// The item with this id, wherever it lives - a tab or the always-visible
-    /// strip.
+    /// The item with this id, on a tab or the always-visible strip, or null.
     /// </summary>
-    /// <remarks>
-    /// This is what a click handler calls with the control's own
-    /// <c>Tag</c>, so a control the roster does not know about resolves to
-    /// nothing and posts nothing rather than posting the wrong verb.
-    /// </remarks>
     public static RibbonItem? FindItem(string? id)
     {
         if (id is null)
@@ -438,22 +275,9 @@ public static class RibbonLayout
     /// The style class a control must wear to realize its declared
     /// <see cref="RibbonControlKind"/>, given its <see cref="RibbonItemSize"/>.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The second half of the weld, and the half that was missing.</b> The
-    /// <c>Tag</c> check already refused a control the roster has never heard of
-    /// and a roster entry with no control; between those two a page could still
-    /// draw ANY control it liked under a valid id. A check row quietly rendered
-    /// as a plain button looks finished, posts the right verb and has no lit
-    /// state at all - a control that lies about what the engine is doing, which
-    /// is exactly the failure the standing overlay chips exist to prevent.
-    /// </para>
-    /// <para>
-    /// Expressed once, here, so the page's runtime validator and
-    /// <c>RibbonLayoutTests</c> reading the markup as text cannot disagree
-    /// about what a kind looks like.
-    /// </para>
-    /// </remarks>
+    // Read by both the page's runtime validator and the tests that scan the
+    // markup. Without it a check row drawn as a plain button passes the Tag
+    // check and never lights.
     public static string RequiredClass(RibbonItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
@@ -462,21 +286,15 @@ public static class RibbonLayout
         {
             RibbonControlKind.Check => "rcheck",
 
-            // The third member of a set rcheck and rradio already establish: a
-            // class with no geometry of its own, whose job is that the roster
-            // declares the kind and both validators can check it. Without it a
-            // Toggle fell through to the size default, so the page's own
-            // validator - the one that refuses the shipped window - could not
-            // tell a tool button that lights from a plain button that does not.
+            // No geometry of its own; exists so the validators can tell a
+            // toggle from a plain button.
             RibbonControlKind.Toggle => "rtoggle",
             RibbonControlKind.Radio => "rradio",
             RibbonControlKind.Chip => "chip",
             RibbonControlKind.Field => "field",
             RibbonControlKind.Stepper => "rspin",
 
-            // The split's main half carries the Tag and is an ordinary large
-            // button; the caret beside it names no verb, so it carries no Tag
-            // and this never sees it.
+            // Only the split's main half is tagged, and it is a large button.
             RibbonControlKind.Split => "rbig",
 
             _ => item.Size == RibbonItemSize.Large ? "rbig" : "rsmall",

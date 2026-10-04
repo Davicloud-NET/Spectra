@@ -10,42 +10,19 @@ using SpectraEngine.Physics.Box3D.Native;
 namespace SpectraEngine.Physics.Box3D;
 
 /// <summary>
-/// A Box3D-backed <see cref="IScenePhysics"/>: the compiled static world as
-/// per-chunk static bodies carrying one convex hull per authored brush.
+/// Box3D-backed <see cref="IScenePhysics"/>. The static world becomes one static
+/// body per chunk cell, with one convex hull per authored brush.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Collision comes from AUTHORED brushes, never from carved surfaces.</b>
-/// The carve produces a crack-free skin for rendering; it does not produce
-/// convex pieces, and a solver needs convex pieces. The authored brushes
-/// already are convex by construction, so the placement list is both the
-/// correct input and the cheap one.
-/// </para>
-/// <para>
-/// <b>One static body per occupied chunk cell, positioned at the cell's
-/// corner.</b> Hulls attach in cell-local coordinates, which is what keeps
-/// collision precision position-independent in an unbounded world: a brush
-/// 10 km out is described by numbers no larger than the 32-unit cell it sits
-/// in. It also makes the dirty-cell recompile map straight onto physics —
-/// rebuilding a cell's body is exactly as scoped as rebuilding its mesh.
-/// </para>
-/// <para>
-/// <b>Synced at the compile-harvest slot, never inside the tick loop.</b>
-/// Visible geometry and solid geometry have to change in the same instant, or a
-/// player walks into an invisible wall for a frame.
-/// </para>
-/// </remarks>
+// Hulls come from the authored brushes, which are convex; the carved skin is not.
+// Each body sits at its cell's corner so hull coordinates stay small however
+// far out the cell is.
 public sealed class Box3DScenePhysics : IScenePhysics
 {
     private readonly ILogger _logger;
     private readonly Dictionary<ChunkCoord, ChunkBody> _chunkBodies = [];
 
-    // Hulls are cached only for the DURATION of one sync, deliberately. The
-    // experiment that settled it: attach a hull to a shape, free the hull, then
-    // drop a body on the shape — it lands correctly, so a shape copies its hull
-    // into the world rather than referencing ours. Long-lived refcounting would
-    // therefore buy nothing but memory across a large map. Within one sync the
-    // cache still matters: one Brush instance commonly backs many placements.
+    // Cached for one sync only. A shape copies its hull, so keeping ours
+    // longer buys nothing; within a sync one Brush often backs many placements.
     private readonly Dictionary<Brush, nint> _syncHulls = new(BrushReferenceComparer.Instance);
     private readonly List<ChunkCoord> _removalScratch = [];
 
@@ -53,16 +30,13 @@ public sealed class Box3DScenePhysics : IScenePhysics
     private CsgWorld? _syncedWorld;
     private bool _disposed;
 
-    /// <summary>Creates the world. Throws if the loaded library cannot be trusted.</summary>
+    /// <summary>Creates the world. Throws if the loaded box3d library is a double-precision build.</summary>
     public Box3DScenePhysics(ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
 
-        // The ABI handshake, before anything else. Every managed struct in the
-        // binding assumes the float build; a double library silently widens
-        // positions and every struct containing one, and no later symptom would
-        // point back here.
+        // Every struct in the binding assumes the float build.
         if (B3.IsDoublePrecision())
         {
             throw new InvalidOperationException(
@@ -70,9 +44,8 @@ public sealed class Box3DScenePhysics : IScenePhysics
                 "every struct layout this binding declares. Rebuild it with native/build-box3d.ps1.");
         }
 
-        // BEFORE DefaultWorldDef, not merely before the world: the default defs
-        // bake the length scale into contact speed, maximum linear speed, sleep
-        // threshold and density AT CALL TIME.
+        // Before DefaultWorldDef: the default defs bake in the length scale
+        // when they are called.
         B3.SetLengthUnitsPerMeter(PhysicsDefaults.MetresPerUnit);
 
         B3WorldDef def = B3.DefaultWorldDef();
@@ -96,9 +69,7 @@ public sealed class Box3DScenePhysics : IScenePhysics
 
         if (workers != 1)
         {
-            // Not fatal, but it means the library spawned threads we did not ask
-            // for — which changes determinism and is worth seeing rather than
-            // discovering later through an irreproducible result.
+            // Not fatal, but extra worker threads change determinism.
             _logger.LogWarning(
                 "Box3D reports {Workers} workers; the serial path was expected. Simulation is no " +
                 "longer single-threaded.", workers);
@@ -115,24 +86,12 @@ public sealed class Box3DScenePhysics : IScenePhysics
     public int StaticShapeCount { get; private set; }
 
     /// <summary>
-    /// Brushes whose collision does NOT reflect a subtractive brush cutting
-    /// them, as of the last sync.
+    /// Brushes cut by a subtractive brush whose collision ignores the cut, as of
+    /// the last sync. A convex hull per brush cannot express the hole, so a
+    /// doorway through such a brush is still solid to the solver.
     /// </summary>
-    /// <remarks>
-    /// <b>Reported rather than silently shipped, because it is a real
-    /// divergence.</b> The compiled solid is
-    /// <c>⋃{additive} \ ⋃{subtractive}</c>, but a convex hull per additive
-    /// brush cannot express the subtraction — so a doorway you can see through
-    /// is currently solid to the solver. Deciding the representation (an exact
-    /// plane-set convex decomposition, a per-chunk trimesh, or refusing
-    /// collision on cut geometry) is an open call recorded in
-    /// <c>docs/physics.md</c>. Until it is made, this counter is how the
-    /// discrepancy stays visible instead of arriving as a bug report about
-    /// invisible walls.
-    /// </remarks>
     public int CutBrushesWithoutCollision { get; private set; }
 
-    /// <summary>The native world handle, for tests and diagnostics.</summary>
     internal B3WorldId World => _world;
 
     /// <inheritdoc/>
@@ -143,18 +102,13 @@ public sealed class Box3DScenePhysics : IScenePhysics
 
         CsgWorld? world = scene.StaticWorld;
 
-        // Identity compare, so the steady state costs one reference check per
-        // frame. A compile that lands produces a NEW CsgWorld instance; nothing
-        // else can change the static world.
+        // A landed compile is always a new CsgWorld instance.
         if (ReferenceEquals(world, _syncedWorld))
             return;
 
         if (world is null)
         {
             DestroyAllChunkBodies();
-            // An empty tree has nothing left to optimise, so churn accrued
-            // toward the amortised rebuild is meaningless now and must not
-            // leak into the next world's accounting.
             _staticShapeChurnSinceRebuild = 0;
             _syncedWorld = null;
             return;
@@ -165,33 +119,20 @@ public sealed class Box3DScenePhysics : IScenePhysics
         {
             if (dirty is null)
             {
-                // A full compile: every cell may have changed, and cells may
-                // have vanished. Rebuilding wholesale is both correct and rare
-                // — it is the load-time and structural-edit path.
+                // Full compile: any cell may have changed or vanished.
                 DestroyAllChunkBodies();
                 CutBrushesWithoutCollision = 0;
                 foreach (WorldChunk chunk in world.Chunks.OrderedChunks)
                     BuildChunkBody(world, chunk);
 
-                // The one intended use of the full rebuild: optimise the tree
-                // once after bulk creation. Its cost is O(world log world),
-                // which is exactly what a load or a structural edit already
-                // paid for the compile itself.
                 RebuildStaticTree();
             }
             else
             {
-                // An incremental compile: only the dirty cells can differ, so
-                // only they are rebuilt. This is what keeps physics on the same
-                // world-size-independent footing as the mesh swap, and it is
-                // why there is NO tree rebuild down here. Box3D inserts and
-                // removes static leaves at shape create/destroy time (see
-                // b3CreateShapeProxy), so the tree stays correct without one;
-                // a rebuild only restores QUALITY, and calling it per sync was
-                // an O(world log world) pass on the render thread every frame
-                // a world brush moved, which falsified the sentence above.
-                // (docs/physics.md also records the API's own header calling
-                // it internal testing, i.e. not the knob for chunk churn.)
+                // Incremental: only dirty cells are rebuilt, and the tree is not
+                // rebuilt per sync. Box3D inserts and removes static leaves as
+                // shapes come and go, so the tree stays correct; a rebuild only
+                // improves quality and costs O(world log world).
                 for (int i = 0; i < dirty.Count; i++)
                 {
                     ChunkCoord coord = dirty[i];
@@ -200,23 +141,14 @@ public sealed class Box3DScenePhysics : IScenePhysics
                     if (world.Chunks.TryGet(coord, out WorldChunk chunk))
                         created = BuildChunkBody(world, chunk);
 
-                    // Only the NET change counts as tree-quality churn. The
-                    // steady state of an animating world brush is this exact
-                    // loop rebuilding the SAME cell every landed compile:
-                    // leaves removed, near-identical AABBs re-inserted, tree
-                    // quality essentially untouched. Counting gross
-                    // destroy+create would cross the threshold every few
-                    // hundred frames and re-arm a world-sized rebuild forever,
-                    // which is the cost this policy exists to remove. Growth
-                    // and shrinkage are what actually drift the tree.
+                    // Net change only. An animating brush rebuilds the same cell
+                    // with near-identical AABBs every compile, which barely
+                    // degrades the tree; counting it gross would trigger a
+                    // world-sized rebuild every few hundred frames.
                     _staticShapeChurnSinceRebuild += Math.Abs(created - destroyed);
                 }
 
-                // Net inserts degrade tree quality gradually, so the rebuild
-                // is amortised: once per quarter of the world's shapes changed
-                // (floor for small worlds), the per-edit cost stays
-                // world-size independent while the tree never drifts far from
-                // optimal.
+                // Amortised: rebuild once a quarter of the world's shapes changed.
                 if (_staticShapeChurnSinceRebuild > Math.Max(RebuildChurnFloor, StaticShapeCount / 4))
                     RebuildStaticTree();
             }
@@ -229,17 +161,11 @@ public sealed class Box3DScenePhysics : IScenePhysics
         _syncedWorld = world;
     }
 
-    // Amortisation floor: below this much accumulated churn the tree is never
-    // rebuilt, because a few hundred inserted leaves cannot degrade a query
-    // measurably. Above it, see the quarter-of-the-world rule at the call site.
+    // Below this much churn the tree is never rebuilt.
     private const int RebuildChurnFloor = 256;
 
     private int _staticShapeChurnSinceRebuild;
 
-    /// <summary>
-    /// Full static-tree rebuilds performed, for tests and diagnostics: the
-    /// count must track loads and amortisation thresholds, never every sync.
-    /// </summary>
     internal int StaticTreeRebuilds { get; private set; }
 
     private void RebuildStaticTree()
@@ -253,8 +179,7 @@ public sealed class Box3DScenePhysics : IScenePhysics
     public void PushKinematicTargets(float fixedDt)
     {
         ThrowIfDisposed();
-        // Nothing is kinematic yet: part brushes and moving platforms take this
-        // slot when they gain bodies.
+        // Nothing is kinematic yet.
     }
 
     /// <inheritdoc/>
@@ -268,17 +193,14 @@ public sealed class Box3DScenePhysics : IScenePhysics
     public void DrainEvents()
     {
         ThrowIfDisposed();
-        // No dynamic bodies yet, so there is nothing to drain. The slot exists
-        // and is called in the right place — inside the tick loop, immediately
-        // after the step that produced the events — so that filling it in later
-        // is not a restructuring.
+        // No dynamic bodies yet, so nothing to drain.
     }
 
     /// <inheritdoc/>
     public void PublishRenderPoses(float alpha)
     {
         ThrowIfDisposed();
-        // Nothing is simulated yet, so there is nothing to interpolate.
+        // Nothing simulated yet.
     }
 
     /// <inheritdoc/>
@@ -290,38 +212,29 @@ public sealed class Box3DScenePhysics : IScenePhysics
         _disposed = true;
         ReleaseSyncHulls();
 
-        // Destroying the world destroys its bodies and shapes, so the chunk map
-        // is dropped rather than walked.
+        // Destroying the world destroys its bodies and shapes.
         _chunkBodies.Clear();
         StaticShapeCount = 0;
 
         if (_world.Index1 != 0)
         {
-            // Exactly once: the library decrements its global world count
-            // BEFORE validating the id, so a double destroy corrupts that count
-            // rather than being harmlessly ignored. Clearing the handle is what
-            // makes a second Dispose a no-op.
+            // Once only: box3d decrements its world count before validating
+            // the id, so a double destroy corrupts the count.
             B3.DestroyWorld(_world);
             _world = default;
         }
     }
 
-    // Sub-steps per tick. Four is the library's own default range and is what
-    // keeps a stack of boxes from sinking; it is not a tuning knob anybody has
-    // measured here yet.
+    // Box3D's default. Not tuned here.
     private const int SubStepCount = 4;
 
-    // Returns the number of shapes created, which is what the amortised
-    // static-tree rebuild counts as churn.
+    // Returns the number of shapes created.
     private int BuildChunkBody(CsgWorld world, WorldChunk chunk)
     {
         IReadOnlyList<int> owned = chunk.OwnedBrushIndices;
         if (owned.Count == 0)
             return 0;
 
-        // The body sits at the cell's corner and every hull is placed relative
-        // to it, so no coordinate the solver sees exceeds the cell size however
-        // far out the cell is.
         Vector3 origin = chunk.Coord.MinCorner;
 
         B3BodyDef bodyDef = B3.DefaultBodyDef();
@@ -336,8 +249,7 @@ public sealed class Box3DScenePhysics : IScenePhysics
         }
 
         B3ShapeDef shapeDef = B3.DefaultShapeDef();
-        // A static body has no mass to recompute, and leaving this on would make
-        // a hundred-brush cell do a hundred redundant passes.
+        // Static bodies have no mass; skip the per-shape recompute.
         shapeDef.UpdateBodyMass = 0;
 
         int shapes = 0;
@@ -348,9 +260,8 @@ public sealed class Box3DScenePhysics : IScenePhysics
             BrushPlacement placement = placements[owned[i]];
             Brush brush = placement.Brush;
 
-            // A subtractive brush is a hole: it contributes no solid, so it gets
-            // no hull. What it does NOT do is remove solid from the brushes it
-            // cuts — see CutBrushesWithoutCollision.
+            // A hole gets no hull. It does not cut the hulls of the brushes it
+            // overlaps either; see CutBrushesWithoutCollision.
             if (brush.Operation == BrushOperation.Subtractive)
                 continue;
 
@@ -381,8 +292,6 @@ public sealed class Box3DScenePhysics : IScenePhysics
 
         if (shapes == 0)
         {
-            // A body with no shapes collides with nothing and costs a broadphase
-            // entry, so it is not kept.
             B3.DestroyBody(body);
             return 0;
         }
@@ -392,11 +301,7 @@ public sealed class Box3DScenePhysics : IScenePhysics
         return shapes;
     }
 
-    // Whether any subtractive brush resident in this cell overlaps the given
-    // placement — i.e. whether this brush's compiled solid has a bite taken out
-    // of it that its convex hull cannot express. Bounds-level and conservative:
-    // it can over-report a brush whose AABB overlaps a negative that does not
-    // actually cut it, which is the right direction for a warning.
+    // AABB test only, so it can over-report. Fine for a warning.
     private static bool IsCutBySubtractiveBrush(CsgWorld world, WorldChunk chunk, BrushPlacement placement)
     {
         Aabb bounds = placement.WorldBounds;
@@ -421,14 +326,11 @@ public sealed class Box3DScenePhysics : IScenePhysics
         HullRefusal refusal = BrushHullBuilder.TryCreate(brush, out nint hull, out string detail);
         if (refusal != HullRefusal.None)
         {
-            // Loudly, and never simplified: a reduced collision hull is a player
-            // clipping through a wall that renders correctly.
             _logger.LogError("Brush has no collision ({Refusal}). {Detail}", refusal, detail);
             hull = 0;
         }
 
-        // Cached either way, including the failure, so one bad brush produces
-        // one log line per sync rather than one per placement of it.
+        // Cache failures too: one log line per bad brush per sync.
         _syncHulls[brush] = hull;
         return hull;
     }
@@ -440,13 +342,12 @@ public sealed class Box3DScenePhysics : IScenePhysics
         _syncHulls.Clear();
     }
 
-    // Returns the number of shapes destroyed, counted as churn like creation.
+    // Returns the number of shapes destroyed.
     private int DestroyChunkBody(ChunkCoord coord)
     {
         if (!_chunkBodies.Remove(coord, out ChunkBody entry))
             return 0;
 
-        // Destroying a body destroys its shapes with it.
         B3.DestroyBody(entry.Body);
         StaticShapeCount -= entry.ShapeCount;
         return entry.ShapeCount;
@@ -464,10 +365,8 @@ public sealed class Box3DScenePhysics : IScenePhysics
         _removalScratch.Clear();
     }
 
-    // Splits a rigid world matrix into a translation relative to the chunk
-    // origin and a rotation. Rigid only — the scene's snapshot rejects a scaled
-    // brush placement before it reaches a compile, so a non-rigid matrix here
-    // means something bypassed that and is reported rather than approximated.
+    // False for a non-rigid matrix. The scene rejects scaled brush placements
+    // before a compile, so one arriving here is a bug upstream.
     private static bool TryDecomposeRigid(Matrix4x4 world, Vector3 origin, out B3Transform local)
     {
         local = default;
@@ -495,9 +394,6 @@ public sealed class Box3DScenePhysics : IScenePhysics
 
     private readonly record struct ChunkBody(B3BodyId Body, int ShapeCount);
 
-    // Brush identity, not equality: two structurally identical brushes are still
-    // two independent hull builds, and Brush deliberately does not define value
-    // equality.
     private sealed class BrushReferenceComparer : IEqualityComparer<Brush>
     {
         public static BrushReferenceComparer Instance { get; } = new();

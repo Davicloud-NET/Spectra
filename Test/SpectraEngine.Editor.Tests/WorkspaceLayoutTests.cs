@@ -2,22 +2,10 @@
 
 namespace SpectraEngine.Editor.Tests;
 
-/// <summary>
-/// How much of the window the viewport gets.
-/// </summary>
-/// <remarks>
-/// <b>Measured before any of this: 876x442 in a 1480x920 client, so 28%.</b>
-/// Two wide sidebars, an expanded ribbon and a 236px bottom dock around a 3D
-/// view. The numbers here are the arithmetic half of the fix; a headless render
-/// measures the real grid against them.
-/// </remarks>
 public sealed class WorkspaceLayoutTests
 {
-    // Measured from the running window: menu row, ribbon strip and body, the
-    // viewport header, the status bar and the bezel; and horizontally the two
-    // 1px splitter COLUMNS plus the bezel, without the panel columns. The
-    // splitters are inside the grid, so leaving them out made the model two
-    // pixels optimistic - which the headless measurement caught.
+    // Measured from the running window. Vertical: menu row, ribbon, viewport
+    // header, status bar, bezel. Horizontal: two 1px splitter columns plus bezel.
     private static readonly WorkspaceChrome Chrome = new(Vertical: 241, Horizontal: 6);
 
     [Fact]
@@ -27,8 +15,6 @@ public sealed class WorkspaceLayoutTests
 
         (double width, double height) = WorkspaceLayout.ViewportCell(metrics, 1180, 640, Chrome);
 
-        // The window refuses to go below 1180x640, so this is the worst case
-        // anybody can actually produce.
         width.ShouldBeGreaterThanOrEqualTo(640);
         height.ShouldBeGreaterThanOrEqualTo(300);
     }
@@ -47,8 +33,6 @@ public sealed class WorkspaceLayoutTests
     [Fact]
     public void Expanded_is_what_the_editor_shipped_as()
     {
-        // Kept whole rather than tuned, so somebody who wants every panel open
-        // gets exactly what they had.
         WorkspaceMetrics metrics = WorkspaceLayout.For(WorkspacePreset.Expanded);
 
         metrics.LeftWidth.ShouldBe(288);
@@ -59,17 +43,13 @@ public sealed class WorkspaceLayoutTests
         (double width, double height) = WorkspaceLayout.ViewportCell(metrics, 1480, 920, Chrome);
         double share = width * height / (1480 * 920);
 
-        // The measured 28.5%, pinned so a change to the expanded preset has to
-        // be deliberate.
+        // Measured at 28.5%.
         share.ShouldBeInRange(0.25, 0.32);
     }
 
     [Fact]
     public void The_drawer_never_pushes_the_viewport_row_under_its_minimum()
     {
-        // 300px of rows cannot hold a 160px drawer AND the viewport's own 200px
-        // floor, so the drawer opens smaller rather than the grid resolving it
-        // by shrinking something else.
         double clamped = WorkspaceLayout.ClampDrawerHeight(160, 300);
 
         clamped.ShouldBe(300 - WorkspaceLayout.ViewportMinHeight - 1);
@@ -79,10 +59,9 @@ public sealed class WorkspaceLayoutTests
     [Fact]
     public void A_drawer_that_fits_is_left_alone()
     {
-        // At the default window there is room for it, so nothing is clamped.
+        // Row heights at the default window and at the window minimum.
         WorkspaceLayout.ClampDrawerHeight(160, 679).ShouldBe(160);
 
-        // And at the window minimum too: 399 rows hold 160 plus the floor.
         WorkspaceLayout.ClampDrawerHeight(160, 399).ShouldBe(160);
     }
 
@@ -117,8 +96,6 @@ public sealed class WorkspaceLayoutTests
     [Fact]
     public void An_unknown_preset_word_reads_as_compact_rather_than_failing()
     {
-        // From a newer shell, or a hand edit. Every other setting here degrades
-        // the same way rather than losing the whole file.
         WorkspaceLayout.TryParse("theatre", out WorkspacePreset preset).ShouldBeFalse();
         preset.ShouldBe(WorkspacePreset.Compact);
 

@@ -15,39 +15,14 @@
   <!--
     Four rows, none of which overlaps the viewport.
 
-    THE AIRSPACE RULE BINDS A NATIVE SESSION AND IS VOID FOR A COMPOSITED ONE.
-    A native viewport is a child window and composites above everything Avalonia
-    draws INTO THIS WINDOW: an overlay, an adorner, a drop shadow or a dock float
-    drawn in the managed layer is invisible wherever it crosses the viewport's
-    cell. A POPUP is a different thing, and this was measured rather than
-    reasoned about. On Windows an Avalonia popup is a real OS window, so context
-    menus, menu flyouts, combo dropdowns, tooltips and modal dialogs all
-    composite ABOVE the native child - proven with a tree row's context menu
-    opening 300px out over live 3D. A composited viewport has no child window at
-    all: it is a control over a CompositionSurfaceVisual, so nothing in this
-    paragraph applies to it and the layout below simply stops constraining
-    itself. Which one a session got is never guessed at twice - see
-    ViewportLayout.
-
-    That is why this window has five menus. The previous shell had one, and
-    retired Edit and View on the reasoning that their flyouts would open past
-    the 280px tree column and vanish; the reasoning was sound and the premise
-    was wrong. Menus are the cheapest way to make every verb reachable a second
-    way with its shortcut printed beside it, which is the single largest
-    discoverability change available here.
-
-    ONE command row, not a tab strip. The strip was three tabs whose Home and
-    Model pages carried the same six verbs and whose Frame button was written
-    out three times, so switching mostly did nothing and taught the user the
-    tabs were decorative - while the one thing a first session actually needs,
-    inserting an object, sat on the tab nobody opened. The structural verbs
-    (duplicate, group, ungroup, delete) left the bar entirely: they were four
-    anonymous glyphs, and they are on the keyboard, in the Object menu and in
-    every row's context menu already.
+    Airspace: a native viewport is a child window and composites above anything
+    Avalonia draws into this window, so no overlay, adorner or managed dock
+    float may cross its cell. Popups (menus, flyouts, tooltips, dialogs) are
+    real OS windows on Windows and may. A composited viewport has no child
+    window and none of this applies. See ViewportLayout.
   -->
 
   <Window.Styles>
-    <!-- The document identity in the menu row. -->
     <Style Selector="TextBlock.docname">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
@@ -59,9 +34,6 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
-    <!-- The status bar's message zone. Prose, so it is set in the UI face:
-         these are whole sentences and they used to be rendered in 11px
-         Cascadia Mono. -->
     <Style Selector="TextBlock.statusmsg">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
@@ -71,10 +43,8 @@
       <Setter Property="Foreground" Value="{StaticResource SpectraAccent}" />
     </Style>
 
-    <!-- The resting tint is a CLASS, not a local attribute: a local Foreground
-         outranks every style, so the over-budget colour below could never
-         apply through it. Declared before .overbudget so the threshold state
-         wins on order. -->
+    <!-- A class, not a local Foreground, which would outrank .overbudget.
+         Declared before .overbudget so that one wins on order. -->
     <Style Selector="TextBlock.frametime">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
     </Style>
@@ -82,11 +52,8 @@
       <Setter Property="Foreground" Value="{StaticResource SpectraWarning}" />
     </Style>
 
-    <!-- The play button. Filled glyphs, and the two faces are the only place
-         in the shell that spends a semantic colour on a control: success green
-         to start (the brand red means SELECTED here, and a red play button
-         reads as record), accent to stop, because stopping is the loud state.
-         The disabled override comes LAST so it wins on order over both. -->
+    <!-- Play: green to start (red means selected here, and would read as
+         record), accent to stop. The disabled rule comes last so it wins. -->
     <Style Selector="Button.playbtn">
       <Setter Property="Height" Value="{StaticResource SpectraControlHeight}" />
       <Setter Property="MinWidth" Value="62" />
@@ -107,10 +74,8 @@
     <Style Selector="Button.playbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource SpectraBgControlHover}" />
     </Style>
-    <!-- The word needs its own rule: the global TextBlock style out-ranks the
-         Foreground a label would inherit from its button, so the setters on
-         the button itself never recolour it. Same mechanism, same fix, as the
-         seg labels in Controls.axaml. -->
+    <!-- The label needs its own rule: the global TextBlock style beats a
+         Foreground inherited from the button. -->
     <Style Selector="Button.playbtn TextBlock">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
     </Style>
@@ -133,10 +98,8 @@
       <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
     </Style>
 
-    <!-- The command bar wears the mode colour while play owns the scene: the
-         strongest "this is a live engine" moment the product has used to leave
-         the chrome pixel-identical, so the greyed Insert cluster read as
-         broken rather than as suspended. -->
+    <!-- Mode colour on the command bar during play, so the greyed Insert
+         cluster reads as suspended, not broken. -->
     <Style Selector="Border.cmdbar">
       <Setter Property="Transitions">
         <Transitions>
@@ -150,9 +113,7 @@
       <Setter Property="BorderBrush" Value="{StaticResource SpectraMode}" />
     </Style>
 
-    <!-- A standing amber chip: a latched viewport overlay with no standing
-         indicator is a viewport that looks broken to whoever fat-fingered F1.
-         Clicking one turns exactly that overlay off. -->
+    <!-- One chip per latched debug overlay; clicking it turns that overlay off. -->
     <Style Selector="Button.overlaychip">
       <Setter Property="Height" Value="18" />
       <Setter Property="Padding" Value="6,0" />
@@ -183,52 +144,25 @@
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
     </Style>
 
-    <!-- ============ The drop overlay ==================
-         THE FIRST THING THIS SHELL DRAWS OVER THE RENDER, and the whole of what
-         makes it possible is that a composited pane has no child window in it.
-         The markup below is unremarkable Avalonia; over a native child every
-         pixel of it would be painted and then composited away, which is the
-         airspace rule and the reason nothing like this could ship until now.
-         ViewportDropPrompt refuses to be visible in a native session for that
-         exact reason - see its remarks.
+    <!-- The drop overlay. Composited sessions only: over a native child it
+         would be composited away.
 
-         AMBER, NOT THE ACCENT. The accent means SELECTION here and one thing
-         only, and a drop target selects nothing; the palette's own history is
-         that red once meant selected, live tool, focus, primary, error, drop
-         target and no-match at once, and untangling it is what stopped the
-         window reading as monochrome-plus-one. What this says is "the viewport
-         is in a state where letting go does something", which is the definition
-         SpectraMode carries - the live gizmo tool, snap on, the standing
-         overlay chips eighteen lines above this. And the refusing arm is a
-         WARNING, which is deliberately the same amber told apart by its icon
-         and its place: one hue for one affordance, with the words carrying the
-         difference, rather than two colours to learn for one gesture.
+         Amber (SpectraMode), not the accent: the accent means selection, and a
+         drop target selects nothing. The refusing arm shares the hue and is
+         told apart by icon and words.
 
-         NOT HIT TEST VISIBLE, and that one is a silent killer. This element is
-         in the tree at all times with its opacity at zero; hit-testable, it
-         would sit between the pointer and the viewport, so DragOver would be
-         raised on IT and bubble to the window instead of reaching the pane -
-         the effect would go to None, the drop would never land, and there is no
-         error anywhere in that. -->
+         Must not be hit-test visible. It is always in the tree at opacity zero,
+         and would otherwise take DragOver from the viewport so the drop never
+         lands. -->
     <Style Selector="Border.dropoverlay">
       <Setter Property="IsHitTestVisible" Value="False" />
       <Setter Property="Opacity" Value="0" />
       <Setter Property="BorderThickness" Value="2" />
       <Setter Property="BorderBrush" Value="{StaticResource SpectraMode}" />
       <Setter Property="Background" Value="{StaticResource SpectraDropWash}" />
-      <!-- The ONE transition here, and it is on the appear and the disappear
-           because those are the only two things that move. Nothing in this
-           overlay follows the cursor: the frame is the pane and the chip is
-           pinned under the header, so there is no value a pointer writes per
-           frame and therefore no lag machine to build. A badge that tracked the
-           pointer would have to carry no transition at all, exactly like the
-           tree's drop ink, and it would still obscure the point being aimed at.
-
-           One duration in both directions rather than the faster exit the
-           budget prefers: expressing that means re-declaring Transitions inside
-           the state frame and relying on the order Avalonia applies and reverts
-           setters when one deactivates, which is not a guarantee it makes. A
-           55ms exit that is sometimes 90 is a coin flip, not a choice. -->
+      <!-- Fades in and out; nothing here follows the cursor, so a transition
+           is safe. One duration both ways: a faster exit would depend on the
+           order Avalonia reverts setters, which it does not guarantee. -->
       <Setter Property="Transitions">
         <Transitions>
           <DoubleTransition Property="Opacity"
@@ -241,9 +175,7 @@
       <Setter Property="Opacity" Value="1" />
     </Style>
 
-    <!-- Chrome over the picture, so it is opaque and wears a chrome surface.
-         A translucent label over a render is unreadable against whatever
-         happens to be behind it, which for a viewport is anything at all. -->
+    <!-- Opaque: a translucent label is unreadable over an arbitrary render. -->
     <Style Selector="Border.dropchip">
       <Setter Property="Background" Value="{StaticResource SpectraBgApp}" />
       <Setter Property="BorderBrush" Value="{StaticResource SpectraMode}" />
@@ -253,12 +185,8 @@
       <Setter Property="MaxWidth" Value="420" />
     </Style>
 
-    <!-- Every one of these names Foreground explicitly, and none of them may
-         stop. The global bare-TextBlock style sets it at StyleTrigger's
-         expense, so a colour inherited from the chip is beaten by a selector
-         that names no class and the label arrives body-grey - the mechanism
-         that has silently eaten hover states in this window four times. A
-         class in the selector is what wins the tie. -->
+    <!-- Each sets Foreground explicitly: the global TextBlock style beats a
+         colour inherited from the chip. Keep the class in the selector. -->
     <Style Selector="Border.dropchip Path.dropicon">
       <Setter Property="Stroke" Value="{StaticResource SpectraMode}" />
     </Style>
@@ -267,10 +195,7 @@
       <Setter Property="FontSize" Value="{StaticResource SpectraFontBase}" />
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <!-- Mono, because this is a VALUE: it is the content-relative path, the
-         string the asset caches, the map codec and the pack's id hash all key
-         on, and seeing it is how somebody knows the drag is carrying what they
-         think it is. -->
+    <!-- Mono: this is the content-relative path, a value. -->
     <Style Selector="Border.dropchip TextBlock.dropsubject">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
       <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
@@ -285,9 +210,7 @@
       <Setter Property="Margin" Value="0,4,0,0" />
     </Style>
 
-    <!-- Muted and smaller than the verdict above it: this is the second thing
-         to read, and it is present on every accepting material drag rather
-         than only when something is wrong. -->
+    <!-- Secondary line; shown on every accepting material drag. -->
     <Style Selector="Border.dropchip TextBlock.drophint">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
       <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
@@ -295,34 +218,26 @@
       <Setter Property="Margin" Value="0,3,0,0" />
     </Style>
 
-    <!-- TextBox.field.inline moved to Theme/Controls.axaml when the snap field
-         moved onto the ribbon: a collapsed ribbon flies its page out in a
-         popup, which is a separate visual root, and a Window.Styles rule does
-         not reach one. -->
+    <!-- Ribbon styles live in Theme/Controls.axaml: the ribbon flyout is a
+         popup, a separate visual root that Window.Styles does not reach. -->
   </Window.Styles>
 
   <Grid RowDefinitions="Auto,Auto,*,Auto">
 
-    <!-- ============ Menu row ==========================
-         Five menus, then the document's identity and Play at the far right.
-         Play is here rather than in the command row so it never moves and is
-         never one of a crowd: stopping a run must be the easiest thing on
-         screen to hit. -->
+    <!-- Menu row. Play sits at the far right so it never moves and stays
+         visible when the ribbon collapses. -->
     <Border Grid.Row="0"
             Height="{StaticResource SpectraMenuBarHeight}"
             Background="{StaticResource SpectraBgApp}">
       <Grid ColumnDefinitions="Auto,*,Auto">
 
-        <!-- 6 + the Menu's own 4 padding puts the first pill at x=10, the same
-             left rail as the command bar and the status bar below it. -->
+        <!-- 6 + the Menu's 4 padding = x 10, the left rail the other bars use. -->
         <Menu Grid.Column="0" VerticalAlignment="Center" Margin="6,0,0,0">
 
           <MenuItem Header="_File">
             <MenuItem Header="_New project..." Click="OnNewProjectClicked" />
             <MenuItem Header="_Open project..." Click="OnOpenProjectClicked" />
-            <!-- Populated in code from the same recents the start page shows:
-                 a menu built from settings at open time cannot drift from the
-                 list. Items land BEFORE the trailing clear entry. -->
+            <!-- Filled in code from the recents list, before the clear entry. -->
             <MenuItem Header="Recent p_rojects" x:Name="RecentProjectsMenu">
               <MenuItem Header="(nothing yet)" IsEnabled="False" x:Name="RecentProjectsEmptyItem" />
               <Separator x:Name="RecentProjectsSeparator" />
@@ -336,10 +251,9 @@
             <MenuItem Header="_Save" InputGesture="Ctrl+S" Click="OnSaveClicked" IsEnabled="{Binding HasSession}" />
             <MenuItem Header="Save _as..." InputGesture="Ctrl+Shift+S" Click="OnSaveAsClicked" IsEnabled="{Binding HasSession}" />
             <Separator />
-            <!-- Cooks the project and mounts the pack ALONE and strict, which is
-                 the only way to see what a shipped build sees: the editor
-                 resolves loose files above the pack, so a texture the cook never
-                 produced looks perfectly fine in this window. -->
+            <!-- Cooks, then mounts the pack alone and strict. The editor itself
+                 resolves loose files above the pack and would hide a missing
+                 cooked asset. -->
             <MenuItem Header="_Validate cooked content" Click="OnValidateCookedClicked"
                       IsEnabled="{Binding CanValidateCooked}"
                       ToolTip.Tip="Cook this project and check the pack resolves with nothing else mounted." />
@@ -351,13 +265,9 @@
             <MenuItem Header="Undo" InputGesture="Ctrl+Z" Click="OnUndoClicked" IsEnabled="{Binding CanUndo}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconUndo}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Redo" InputGesture="Ctrl+Y" Click="OnRedoClicked" IsEnabled="{Binding CanRedo}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconRedo}" /></MenuItem.Icon></MenuItem>
             <Separator />
-            <!-- SelectAll had no control anywhere in the shell: its only route
-                 was the engine keymap's Ctrl+A, which stands down whenever a
-                 camera claims the movement keys, so it was dead outright while
-                 the fly camera drove. And the keyboard reference promised
-                 Escape clears the selection, which nothing did. Both are verbs
-                 you reach for when NOTHING is selected, so neither belongs in a
-                 ribbon group that binds HasSelection. -->
+            <!-- Here, not on the ribbon: the engine's Ctrl+A stands down while a
+                 camera has the movement keys, and the ribbon's Arrange group
+                 is disabled with nothing selected. -->
             <MenuItem Header="Select all" InputGesture="Ctrl+A" Click="OnSelectAllClicked" />
             <MenuItem Header="Deselect all" InputGesture="Escape" Click="OnClearSelectionClicked" IsEnabled="{Binding HasSelection}" />
             <Separator />
@@ -373,9 +283,7 @@
             <MenuItem Header="{Binding GizmoStyleMenuLabel}" InputGesture="Y" Click="OnStyleClicked" />
           </MenuItem>
 
-          <!-- Everything that makes or changes an object. This is where a
-               newcomer looks for "how do I add something", so Insert is the
-               first item rather than buried under a tab. -->
+          <!-- Insert comes first: it is what a newcomer looks for. -->
           <MenuItem Header="_Object" IsEnabled="{Binding HasSession}">
             <MenuItem Header="Insert block" InputGesture="Ctrl+D1" Click="OnInsertWorldBrushClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon kind-world" Data="{StaticResource IconBrushWorld}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Insert part" InputGesture="Ctrl+D2" Click="OnInsertPartBrushClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon kind-part" Data="{StaticResource IconBrushPart}" /></MenuItem.Icon></MenuItem>
@@ -385,15 +293,10 @@
                       ToolTip.Tip="A lit panel flat on the surface you are looking at, parented to it."><MenuItem.Icon><Path Classes="icon menuicon kind-light" Data="{StaticResource IconLight}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Insert empty group" Click="OnInsertGroupClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconGroup}" /></MenuItem.Icon></MenuItem>
 
-            <!-- The one insert whose entries cannot be written down here: which
-                 entity classes exist is read out of the session's .sentdef, so
-                 the entries are BUILT IN CODE when the submenu opens, exactly
-                 as the viewport's own "Insert here > Entity" builds them. One
-                 mechanism rather than an ItemsSource here and a loop there:
-                 binding the entries would need a ControlTheme over Fluent's
-                 MenuItem theme, which this shell has no other instance of and
-                 whose failure mode is a submenu of blank rows. Hidden entirely
-                 when the catalogue is empty, rather than opening onto nothing. -->
+            <!-- Entries are built in code when the submenu opens, from the
+                 session's entity catalogue. Not an ItemsSource: that needs a
+                 ControlTheme over Fluent's MenuItem, and gets blank rows when
+                 wrong. Hidden when the catalogue is empty. -->
             <MenuItem x:Name="InsertEntityMenu" Header="Insert entity"
                       IsVisible="{Binding HasEntityClasses}"
                       IsEnabled="{Binding !IsPlaying}"
@@ -409,22 +312,13 @@
             <MenuItem Header="Convert block / part" InputGesture="Ctrl+T" Click="OnToggleBrushKindClicked" IsEnabled="{Binding CanEditSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconConvertKind}" /></MenuItem.Icon></MenuItem>
             <Separator />
             <MenuItem Header="Frame in viewport" InputGesture="F" Click="OnFrameClicked" IsEnabled="{Binding HasSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconFrame}" /></MenuItem.Icon></MenuItem>
-            <!-- Kept beside its sibling rather than filed under View: Frame was
-                 written out three times on the strip this ribbon replaced, and
-                 splitting the pair across two menus is that again. Until now
-                 FrameAll was reachable from the ribbon alone, plus an engine
-                 Shift+F the keyboard reference did not mention. -->
+            <!-- Beside Frame selection, not under View: keep the pair together. -->
             <MenuItem Header="Frame everything" InputGesture="Shift+F" Click="OnFrameAllClicked"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconLgFrameAll}" /></MenuItem.Icon></MenuItem>
           </MenuItem>
 
           <MenuItem Header="_View" IsEnabled="{Binding HasSession}">
-            <!-- Panels FIRST, because until this menu existed a user could
-                 neither hide a panel nor discover that panels were a concept:
-                 the dock chrome's close button was the only route, and closing
-                 one was then permanent. -->
-            <!-- How the window is arranged. Two presets rather than a pile of
-                 sliders: the question people actually have is "give me room to
-                 work" or "show me everything". -->
+            <!-- Panels first: this menu is the only way to reopen a closed one. -->
+            <!-- Workspace presets. -->
             <MenuItem Header="Workspace">
               <MenuItem Header="Compact" ToggleType="Radio"
                         IsChecked="{Binding IsCompactWorkspace, Mode=OneWay}"
@@ -466,9 +360,7 @@
             </MenuItem>
             <Separator />
 
-            <!-- Built in code from the backend's own pipeline list, radio
-                 checked, because which pipelines exist depends on the
-                 renderer that started. -->
+            <!-- Built in code: the pipeline list depends on the renderer. -->
             <MenuItem Header="Renderer" x:Name="RendererMenu" />
             <Separator />
             <MenuItem Header="Wireframe" InputGesture="F1" ToggleType="CheckBox"
@@ -482,8 +374,7 @@
             <MenuItem Header="Node axes" InputGesture="F5" ToggleType="CheckBox"
                       IsChecked="{Binding DebugSceneGraph, Mode=OneWay}" Click="OnDebugSceneGraphClicked" />
             <Separator />
-            <!-- Three SET verbs, never a cycle, like every state a control
-                 displays; the checkmark follows the engine's echo. -->
+            <!-- Three set verbs, not a cycle; the checkmark follows the engine. -->
             <MenuItem Header="Grid">
               <MenuItem Header="During move and resize" ToggleType="Radio"
                         IsChecked="{Binding GridAuto, Mode=OneWay}" Click="OnGridAutoClicked" />
@@ -504,9 +395,7 @@
           </MenuItem>
         </Menu>
 
-        <!-- With nothing open the bar carries the product's identity where the
-             document cluster otherwise sits, so the start page needs no header
-             of its own and the bar never changes height. -->
+        <!-- Shown with no session open, in place of the document cluster. -->
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
                     VerticalAlignment="Center" Margin="0,0,10,0"
                     IsVisible="{Binding !HasSession}">
@@ -519,9 +408,7 @@
                      Foreground="{StaticResource SpectraTextMuted}" />
         </StackPanel>
 
-        <!-- WHAT AM I EDITING. The window title used to answer this with
-             "Demo - Demo - Spectra Editor"; here the level is the loud half,
-             the project is context, and the dot is the unsaved mark. -->
+        <!-- Level name, project, and the unsaved dot. -->
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
                     VerticalAlignment="Center" Margin="0,0,10,0"
                     IsVisible="{Binding HasSession}">
@@ -534,8 +421,7 @@
                   VerticalAlignment="Center"
                   IsVisible="{Binding IsDocumentDirty}"
                   ToolTip.Tip="Unsaved changes" />
-          <!-- Inside a Spacing="8" run the separator's own 10px margin stacked
-               to 18 a side; 2 restores the status bar's 10px rhythm. -->
+          <!-- Margin 2: the parent's Spacing="8" already adds to it. -->
           <Border Classes="groupsep" Margin="2,0" />
           <Button Classes="playbtn" Click="OnPlayClicked"
                   IsEnabled="{Binding CanPlay}" ToolTip.Tip="{Binding PlayTip}">
@@ -553,37 +439,12 @@
       </Grid>
     </Border>
 
-    <!-- ============ Command ribbon =====================
-         A COLLAPSIBLE TABBED SURFACE, and the tab strip it is built on was
-         retired once, on evidence. The three findings that killed the old
-         Home / Model / View strip were: two of its pages carried the same six
-         verbs, Frame was written out three times, and Insert - the one thing a
-         first session needs - sat on the tab nobody opened. The owner reopened
-         the decision, so each finding is now a property of the code rather than
-         a warning in a comment.
+    <!-- Command ribbon. Collapsible, two pages (Build, View). The roster is
+         RibbonLayout: every control's Tag is its roster id, no verb is on two
+         pages, and RibbonLayoutTests enforces both.
 
-         1. NO VERB IS ON TWO TABS. The roster is data (RibbonLayout), a verb is
-            a value that compares equal to itself, and RibbonLayoutTests fails
-            the build over a duplicate. Every control's Tag is its roster id;
-            the page checks its own tree against the roster when it is built.
-         2. INSERT IS THE FIRST GROUP OF THE DEFAULT PAGE, and the active page
-            is not persisted, so every launch opens on it.
-         3. TWO PAGES, NOT THREE, and they divide on a real axis: Build changes
-            the level, View changes only how you look at it. Nothing is shared,
-            and a thin third page padded out of the File menu would be the
-            retired strip again.
-
-         WHAT A COLLAPSE MAY NOT TAKE AWAY stays outside the pages. Play is in
-         the menu row's far corner, where it has always been, because stopping a
-         run must never be two clicks away. Undo and redo are on the strip
-         itself, visible in both states: undo is the recovery verb for the
-         destructive verbs the Build page carries, and hiding it behind the same
-         click that hides them is the one arrangement that is worse than no
-         ribbon at all.
-
-         The menus stay, all five, with every shortcut printed beside every
-         verb. This is a third route onto verbs that already had two, never a
-         replacement for either. -->
+         Undo and redo sit on the tab strip and Play in the menu row, so a
+         collapsed ribbon never hides them. -->
     <Border Grid.Row="1" Classes="cmdbar" Classes.playing="{Binding IsPlaying}"
             Background="{StaticResource SpectraBgApp}"
             BorderBrush="{StaticResource SpectraBorderStrong}"
@@ -591,16 +452,11 @@
             IsVisible="{Binding HasSession}">
       <Grid RowDefinitions="Auto,Auto">
 
-        <!-- The strip. Collapsed, this row IS the ribbon - 32px against the
-             40px single row it replaces, so the collapsed state costs less than
-             what was here before. -->
+        <!-- The tab strip. Collapsed, this row is the whole ribbon. -->
         <Border x:Name="RibbonStrip" Grid.Row="0" Classes="ribbonstrip">
           <Grid ColumnDefinitions="Auto,*,Auto">
 
-            <!-- Filled from RibbonLayout.Tabs in code, so the strip and the
-                 roster cannot disagree about which pages exist. Two buttons is
-                 not much to build by hand, and it removes a whole class of
-                 drift for the price. -->
+            <!-- Filled in code from RibbonLayout.Tabs. -->
             <StackPanel x:Name="RibbonTabs" Grid.Column="0" Orientation="Horizontal"
                         Spacing="2" VerticalAlignment="Center" />
 
@@ -608,11 +464,7 @@
                         VerticalAlignment="Center">
               <Border Classes="cluster">
                 <StackPanel Orientation="Horizontal">
-                  <!-- Tagged with their roster ids like every ribbon control,
-                       so RibbonLayoutTests can hold the always-visible pair
-                       against the markup as well as against the data - the
-                       claim being made is that these two are HERE and on no
-                       page. -->
+                  <!-- Tag is the roster id; RibbonLayoutTests reads it. -->
                   <Button Classes="seg" Width="26" Padding="0" Tag="history.undo" Focusable="False" Click="OnRibbonStripClick"
                           IsEnabled="{Binding CanUndo}" ToolTip.Tip="{Binding UndoTip}">
                     <Path Classes="icon" Data="{StaticResource IconUndo}" />
@@ -624,9 +476,7 @@
                   </Button>
                 </StackPanel>
               </Border>
-              <!-- The pin. One geometry for both states, rotated, so the two
-                   cannot drift in weight - the same trick the tree's expander
-                   uses. -->
+              <!-- The pin: one geometry, rotated per state. -->
               <Button x:Name="RibbonPin" Classes="tool ribbonpin" Click="OnRibbonPinClicked">
                 <Path Classes="icon" Data="{StaticResource IconChevronRight}" />
               </Button>
@@ -634,25 +484,15 @@
           </Grid>
         </Border>
 
-        <!-- The page, inline, while the ribbon is pinned open. ONE live
-             instance per page for the window's life, moved between this host
-             and the flyout's - never a template, for the reason every dock tool
-             takes a live control: an instance keeps its wiring. -->
+        <!-- The page while pinned open. One live instance per page, moved
+             between this host and the flyout's. -->
         <Border x:Name="RibbonBody" Grid.Row="1" Classes="ribbonbody">
           <ContentControl x:Name="RibbonInlineHost" />
         </Border>
 
-        <!-- Collapsed, a tab click flies its page out HERE. A popup, and that
-             is the airspace rule rather than a style choice: on Windows an
-             Avalonia popup is a real OS window, so it composites above a native
-             viewport exactly as the menus and the context menus do. An overlay
-             drawn in this window's own layer would be painted and composited
-             away over a native child, which is the one thing a flyout must
-             never be.
-
-             Light dismiss, so clicking anywhere else puts it away; the click
-             that dismisses does not pass through, which is also what makes
-             clicking the open tab close it exactly once. -->
+        <!-- The page while collapsed. A popup, because only a real OS window
+             may cross a native viewport. The dismissing click does not pass
+             through, so clicking the open tab closes it once. -->
         <Popup x:Name="RibbonFlyout" Grid.Row="0"
                PlacementTarget="{Binding #RibbonStrip}"
                Placement="BottomEdgeAlignedLeft"
@@ -662,14 +502,8 @@
           </Border>
         </Popup>
 
-        <!-- THE COMMAND PALETTE, and it is a Popup for the same reason the
-             flyout above is: an Avalonia popup is a real OS window, so it may
-             cross a native viewport, and anything drawn in this window's own
-             layer would be composited away over one.
-
-             Anchored to the strip rather than centred on the window, because a
-             palette that lands in the middle of the picture covers the thing
-             you are about to run a command on. -->
+        <!-- Command palette. A popup for the same reason as the flyout.
+             Anchored to the strip so it does not cover the scene. -->
         <Popup x:Name="CommandPalettePopup" Grid.Row="0"
                PlacementTarget="{Binding #RibbonStrip}"
                Placement="BottomEdgeAlignedLeft"
@@ -680,40 +514,20 @@
       </Grid>
     </Border>
 
-    <!-- ============ Start page | editor ================
-         Two states of one row. The start page shows while NO engine session
-         exists, which for a native session is the only time free layout is
-         possible at all: its child window is created when the session launches
-         and composites above anything Avalonia draws from then on. The code
-         behind switches the two explicitly, because the viewport must leave the
-         tree BEFORE the editor view hides, never after. -->
+    <!-- Start page or editor. Switched in code: the viewport must leave the
+         tree before the editor view hides. -->
     <Panel Grid.Row="2">
 
       <shell:StartPage x:Name="StartView" />
 
-      <!-- ============ Panels | viewport ================
-           DOCKED, all of it, and the cells below are the NATIVE session's
-           shape: every panel owns its own and none of them intersects the
-           viewport's, because a NativeControlHost's child composites above
-           anything Avalonia draws in this window. A composited session lifts
-           the viewport out of its cell into the fourth dock and that
-           constraint stops applying, which is the only thing about this grid
-           that varies. -->
-      <!-- THE ROWS ARE NEW, AND THEIR ABSENCE IS WHY NOTHING HORIZONTAL HAD A
-           HOME. This grid was columns-only, so a content browser, an output log
-           and a console had nowhere to be but a fourth vertical column - which
-           is the shape that makes an editor read as a web dashboard. Left and
-           right span the full height, because the tree and the inspector are
-           the two panels that genuinely want it; the bottom region takes the
-           centre column only, under the viewport, which is Godot's shape and
-           the right one here. -->
+      <!-- Panels and viewport. No panel's cell intersects the viewport's. A
+           composited session moves the viewport into the centre dock. -->
+      <!-- Left and right span the full height; the bottom region sits under
+           the viewport only. -->
       <Grid x:Name="EditorView" IsVisible="False">
 
-        <!-- Spelled out rather than written as a string, because MIN sizes have
-             no shorthand and the panels had none: the viewport was clamped at
-             360 from the day it was embedded, while the columns beside it could
-             be dragged to zero width and left there, with the only way back
-             being a splitter one pixel from the window edge. -->
+        <!-- Long form: min sizes have no shorthand, and without them a column
+             can be dragged to zero width. -->
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="288" MinWidth="180" />
           <ColumnDefinition Width="1" />
@@ -727,46 +541,24 @@
           <RowDefinition Height="236" MinHeight="90" />
         </Grid.RowDefinitions>
 
-        <!-- Four DockControls now: one per side, one under the centre column,
-             and one IN the centre cell, which only a composited session ever
-             shows. The panels have always docked, re-stacked, tabbed and
-             floated (a floated panel is a real OS window, which is exactly why
-             it may cross a native viewport). What changed is the viewport: it
-             stays PINNED for a native session, because a NativeControlHost's
-             HWND is destroyed by any re-parent and the engine session goes with
-             it, and joins them for a composited one, which has no window to
-             destroy. -->
+        <!-- Four DockControls: one per side, one under the centre, and one in
+             the centre cell that only a composited session shows. A native
+             viewport never docks: re-parenting destroys its HWND and the
+             session. -->
         <dock:DockControl x:Name="LeftDock" Grid.Column="0" Grid.RowSpan="3"
                           InitializeLayout="True" InitializeFactory="True">
-          <!-- Native floats, never the managed in-window layer, on every root
-               and in both placements. Beside a native child it is the only
-               thing that works at all: a managed float is drawn in THIS
-               window's Avalonia layer, which the child composites over, so the
-               float would be invisible exactly where people drop panels.
-               Beside a composited pane it is merely a z-order question, and it
-               is still the right answer - a panel dragged out of the window
-               belongs to the desktop, not to a rectangle inside the editor. -->
+          <!-- Native floats on every root. A managed float is drawn in this
+               window's layer and vanishes behind a native viewport. -->
           <dm:RootDock x:Name="LeftRoot" Id="LeftRoot" IsCollapsable="False"
                        FloatingWindowHostMode="Native"
                        DefaultDockable="{Binding #LeftLayout}">
             <dm:ProportionalDock x:Name="LeftLayout" Id="LeftLayout" Orientation="Vertical">
-              <!-- The tools' CONTENT is assigned in code, deliberately: XAML
-                   element content of a Tool compiles to a deferred template
-                   that builds fresh controls per layout change, while a
-                   Control assigned to Tool.Content is returned as-is by the
-                   dock's builder - one live, event-wired panel instance that
-                   survives every re-dock and float. -->
-              <!-- 0.11, down from 0.16: a project has one or two levels for
-                   most of its life, and the pane was spending a seventh of the
-                   tallest column in the window on a single 24px row while the
-                   scene tree below it scrolled 253 nodes. CanPin is WRITTEN
-                   FROM CODE on every tool in this window, because it is the
-                   airspace rule wearing another name: Dock's pinned flyout is
-                   drawn in the managed Avalonia layer, so beside a native child
-                   unpinning a pane makes it invisible the moment it crosses the
-                   viewport and the most inviting glyph in the header is a trap.
-                   Beside a composited pane the flyout draws correctly, so it
-                   comes back. -->
+              <!-- Tool content is assigned in code. XAML content of a Tool becomes
+                   a deferred template that rebuilds the panel on every layout
+                   change; a Control instance survives re-docks and floats. -->
+              <!-- CanPin is set from code on every tool: Dock's pinned flyout is
+                   drawn in the managed layer, so it only works beside a
+                   composited viewport. -->
               <dm:ToolDock x:Name="MapsDock" Id="MapsDock" Alignment="Top" Proportion="0.085">
                 <dm:Tool x:Name="MapsTool" Id="Maps" Title="Levels" CanClose="False" CanPin="False" />
               </dm:ToolDock>
@@ -778,21 +570,11 @@
           </dm:RootDock>
         </dock:DockControl>
 
-        <!-- The splitter's ink is one pixel; its HIT AREA is nine, which is
-             what makes it draggable by a hand rather than by a surgeon. The
-             ink is the column beside it.
-
-             AND THE TRANSPARENT FILL NOW COMES FROM THE STYLE. Setting it here
-             wrote a LocalValue, which outranks a StyleTrigger, so the
-             GridSplitter:pointerover rule in Controls.axaml never fired on
-             either of the two controls in this window a user drags most. The
-             ink carries the hover instead, driven from code because a child
-             cannot read its parent's pseudo-classes from a selector. -->
-        <!-- The overhang leans AWAY from the viewport: the native child eats
-             the mouse, so any part of the band over its cell can never
-             hit-test - a symmetric -4 margin made the grab area 5px, not 9,
-             exactly while a session was live. Drag events hold the ink hot,
-             because a fast drag leaves the band mid-gesture. -->
+        <!-- Splitter: 1px of ink, 9px hit area. Do not set Background here; a
+             local value outranks the style's :pointerover rule. The ink's
+             hover class is set from code. -->
+        <!-- The hit band leans away from the viewport: a native child takes
+             the mouse, so the part over its cell never hit-tests. -->
         <GridSplitter x:Name="LeftSplitter" Grid.Column="1" Grid.RowSpan="3" ResizeDirection="Columns" Cursor="SizeWestEast"
                       Width="9" Margin="-7,0,-1,0" PointerEntered="OnSplitterEntered"
                       PointerExited="OnSplitterExited"
@@ -801,32 +583,13 @@
         <Border x:Name="LeftSplitInk" Grid.Column="1" Grid.RowSpan="3" Width="1" Classes="splitink"
                 HorizontalAlignment="Center" />
 
-        <!-- ============ The viewport's two homes ===========
-             The pane below lives in ONE of them per session, and which one is
-             a consequence of which viewport the session got rather than a
-             preference.
+        <!-- The viewport pane lives in one of two places per session. Native:
+             pinned in this grid cell. Composited: a tool in the DockControl
+             below. ViewportLayout.For decides, from the same decision that
+             built the viewport.
 
-             PINNED is this grid cell, and it is today's shape unchanged. A
-             NativeControlHost's child window is destroyed by any re-parent and
-             the engine session goes with it, so a native viewport sits in a
-             cell nothing can dock and the airspace rule binds this window:
-             nothing Avalonia draws may cross it.
-
-             DOCKED is the DockControl below. A composited pane is an ordinary
-             control over a CompositionSurfaceVisual - there is no window to
-             destroy - so it docks, tabs and floats like every other panel, and
-             airspace stops applying to this window entirely.
-
-             ViewportLayout.For decides, off the SAME decision that built the
-             viewport and never a second guess: the way a disagreement presents
-             is a native child dragged into a tool, which destroys the HWND and
-             takes the session with it.
-
-             The fourth dock is on the SAME factory as the other three, for the
-             reason written on the third: a per-control factory makes a drag's
-             target list that factory's own controls, so a panel could never
-             cross between regions - silently. Hidden until a composited session
-             asks for it. -->
+             Same factory as the other docks, or panels cannot be dragged
+             between regions. Hidden until a composited session asks for it. -->
         <dock:DockControl x:Name="CenterDock" Grid.Column="2" Grid.Row="0" IsVisible="False"
                           InitializeLayout="True" InitializeFactory="True">
           <dm:RootDock x:Name="CenterRoot" Id="CenterRoot" IsCollapsable="False"
@@ -834,106 +597,49 @@
                        DefaultDockable="{Binding #CenterLayout}">
             <dm:ProportionalDock x:Name="CenterLayout" Id="CenterLayout" Orientation="Vertical">
               <dm:ToolDock x:Name="ViewportDock" Id="ViewportDock" Alignment="Top" Proportion="1">
-                <!-- CanClose stays false in both placements: there is no Window
-                     menu and no reopen verb, so a closed viewport is a session
-                     with a running engine and no way to see it. CanPin is
-                     written from code, because it is the airspace rule wearing
-                     another name - Dock draws a pinned flyout in the main
-                     window's own Avalonia layer, which a native child
-                     composites over. -->
+                <!-- CanClose false: nothing reopens a closed viewport. CanPin is
+                     set from code. -->
                 <dm:Tool x:Name="ViewportTool" Id="Viewport" Title="Viewport" CanClose="False" />
               </dm:ToolDock>
             </dm:ProportionalDock>
           </dm:RootDock>
         </dock:DockControl>
 
-        <!-- The pane itself: the header strip and the bezel, ONE control that
-             travels between the two homes together, still in this cell for a
-             native session and lifted out of it into the tool for a composited
-             one. The header goes WITH it rather than staying behind, because a
-             float that left the camera readout and the overlay chips in the
-             main window would leave them describing a viewport that is
-             somewhere else.
-
-             The bezel is the darkest surface in the window and the only place
-             allowed near-black: chrome, then bezel, then render, so the picture
-             is framed rather than butted straight against a panel. -->
+        <!-- The pane: header strip plus bezel, one control so the header
+             travels with the viewport into a dock or float. -->
         <Grid x:Name="ViewportPane" Grid.Column="2" Grid.Row="0" RowDefinitions="Auto,*">
 
-          <!-- ============ Viewport header ==================
-               View-scoped state ABOVE the picture - the strip every engine
-               editor puts here, and the one row the airspace rule never
-               blocked even when it bound: chrome BESIDE a native child shrinks
-               it, it does not cross it, which is why this strip could ship
-               while an overlay could not. Beside a composited pane nothing
-               about it needs to change, which is the point - it was built to
-               the constraint rather than around it, so it is still simply the
-               row above the picture and it travels with the pane into a float.
-               Everything on it wires to a verb or snapshot field that already
-               existed; nothing here is decoration. -->
-          <!-- Extracted so the render suite can measure it: see
-               ViewportHeaderStrip for why. -->
+          <!-- Viewport header: view state in a row above the picture. Beside
+               the viewport, not over it, so it works in both session kinds. -->
+          <!-- Its own control so the render suite can measure it. -->
           <shell:ViewportHeaderStrip Grid.Row="0" x:Name="HeaderStrip" />
 
-          <!-- Padding is what makes the bezel EXIST: a Border's background
-               shows only through its padding ring, and with none the
-               documented chrome-bezel-render framing painted zero pixels. The
-               ring is beside the native child, never over it.
-
-               MinWidth is not cosmetic either: dragging a splitter to zero can
-               leave the swap chain unable to recover, and a floated pane has no
-               column MinWidth behind it at all. -->
+          <!-- The bezel is the padding ring; with no padding the background
+               never shows. MinWidth: a zero-width swap chain may not recover,
+               and a floated pane has no column minimum behind it. -->
           <Border Grid.Row="1" MinWidth="360" Padding="2"
                   Background="{StaticResource SpectraViewportBezel}">
-            <!-- A Grid rather than the Border's own Child, and that is the
-                 whole structural cost of H12: the pane now holds the viewport
-                 AND something drawn on top of it. The viewport control is
-                 inserted at index 0 from code, which pushes the overlay to the
-                 back of the list and therefore to the FRONT of the z order -
-                 later children draw over earlier ones. Declaring the overlay
-                 second in the markup would look tidier and break the moment
-                 the viewport is inserted, silently, by putting the frame
-                 behind the picture.
-
-                 INSIDE the padding ring, so the bezel stays a bezel: the
-                 overlay frames the render, not the chrome around it. -->
+            <!-- Code inserts the viewport control at index 0, so the overlay
+                 below ends up last in the list and draws on top. -->
             <Grid x:Name="ViewportHost">
               <Border Classes="dropoverlay" Classes.shown="{Binding DropVisible}">
-                <!-- TOP, not centred. The cursor is somewhere in this rectangle
-                     carrying the drag, and the surface people aim a prop at is
-                     below the horizon in almost every editor view; a chip in
-                     the middle would sit on the drop point it is describing.
-                     Under the header strip it reads as an extension of the
-                     chrome directly above it instead. -->
+                <!-- At the top: a centred chip would cover the drop point. -->
                 <Border Classes="dropchip" VerticalAlignment="Top"
                         HorizontalAlignment="Center" Margin="0,16,0,0">
                   <StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                      <!-- ONE glyph, named by the prompt: the icon is half of
-                           how the arms are told apart, since they share a hue
-                           by design, and there are three of them now (a mesh
-                           that would land, a material that would be painted, a
-                           warning when nothing will). Two Paths with negated
-                           visibility could carry two; a third would make it a
-                           chain nobody can read. -->
+                      <!-- One glyph, chosen by the prompt: mesh, material or
+                           warning. -->
                       <Path Classes="icon dropicon" Data="{Binding DropIcon}" />
                       <TextBlock Classes="dropheadline" Text="{Binding DropHeadline}" />
                       <TextBlock Classes="dropsubject" Text="{Binding DropSubject}"
                                  IsVisible="{Binding DropAccepts}" />
                     </StackPanel>
-                    <!-- The refusal, verbatim from AssetDropPolicy. H11 chose a
-                         sentence over a "no entry" cursor on the reasoning that
-                         a refusal cursor says the shell did not understand the
-                         gesture when in fact it understood it perfectly; this
-                         is where that sentence finally sits, at the place the
-                         gesture is happening rather than in the status bar
-                         behind the pointer. -->
+                    <!-- The refusal sentence, from AssetDropPolicy. -->
                     <TextBlock Classes="dropreason" Text="{Binding DropReason}"
                                IsVisible="{Binding !DropAccepts}" />
 
-                    <!-- What exactly would be covered, and the key that widens
-                         it. A modifier whose effect is only visible after the
-                         drop is a modifier nobody uses twice. -->
+                    <!-- What the drop would paint, and the modifier that widens it. -->
                     <TextBlock Classes="drophint" Text="{Binding DropHint}"
                                IsVisible="{Binding DropHasHint}" />
                   </StackPanel>
@@ -943,8 +649,7 @@
           </Border>
         </Grid>
 
-        <!-- The bottom region's own splitter. Rows, not columns, and it carries
-             the same ink-plus-hit-area treatment as the vertical pair. -->
+        <!-- The bottom region's splitter. -->
         <GridSplitter x:Name="BottomSplitter" Grid.Column="2" Grid.Row="1" ResizeDirection="Rows" Cursor="SizeNorthSouth"
                       Height="9" Margin="0,-1,0,-7" PointerEntered="OnSplitterEntered"
                       PointerExited="OnSplitterExited"
@@ -953,9 +658,8 @@
         <Border x:Name="BottomSplitInk" Grid.Column="2" Grid.Row="1" Height="1" Classes="splitink"
                 VerticalAlignment="Center" />
 
-        <!-- The third dock, on the SAME factory as the other two. A per-control
-             factory would make a drag's target list that factory's own controls,
-             so a panel could never cross between regions - silently. -->
+        <!-- Same factory as the other docks, or panels cannot be dragged
+             between regions. -->
         <dock:DockControl x:Name="BottomDock" Grid.Column="2" Grid.Row="2"
                           InitializeLayout="True" InitializeFactory="True">
           <dm:RootDock x:Name="BottomRoot" Id="BottomRoot" IsCollapsable="False"
@@ -995,11 +699,8 @@
       </Grid>
     </Panel>
 
-    <!-- ============ Status bar =========================
-         Left is the message zone, which the pump never overwrites. Right is
-         the continuous cluster: every field is LABELLED, because "858x804" and
-         "editor freelook" beside each other in monospace is a log line, not a
-         status bar, and each is fixed-width so nothing jitters. -->
+    <!-- Status bar. Messages on the left; labelled, fixed-width readouts on
+         the right so nothing jitters. -->
     <Border Grid.Row="3"
             Height="{StaticResource SpectraStatusBarHeight}"
             Background="{StaticResource SpectraBgApp}"
@@ -1009,9 +710,8 @@
       <Grid ColumnDefinitions="*,Auto">
 
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <!-- RenderTransform none: the icon class scales every glyph 1.2x for
-               row use, which turned this explicitly-sized 13px glyph into a
-               ~15.6px one overhanging its own layout box. -->
+          <!-- RenderTransform none: opts this explicitly sized glyph out of
+               the icon class's 1.2x scale. -->
           <Path Classes="icon" Width="13" Height="13" Data="{StaticResource IconWarning}"
                 Stroke="{StaticResource SpectraAccent}" StrokeThickness="1.3"
                 Stretch="Uniform" RenderTransform="none" IsVisible="{Binding IsError}" />
@@ -1020,10 +720,8 @@
         </StackPanel>
 
         <StackPanel Grid.Column="1" Orientation="Horizontal" IsVisible="{Binding HasSession}">
-          <!-- A STANDING failure, in its own slot so nothing can overwrite it.
-               A brush whose placement stopped being rigid makes every later
-               compile defective, and the only symptom is that editing the level
-               no longer changes what you see. -->
+          <!-- Static-world defect. Its own slot, so the message line cannot
+               overwrite it: the level stops recompiling while it stands. -->
           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                       IsVisible="{Binding HasWorldDefect}"
                       ToolTip.Tip="{Binding WorldDefectTip}">
@@ -1036,11 +734,8 @@
             <Border Classes="groupsep" Margin="4,0" />
           </StackPanel>
 
-          <!-- The graphics detector, standing beside the world defect and for
-               the same reason. What the validation layer reports - a missing
-               barrier, a pipeline state bound to a format it was not compiled
-               for - still renders a picture, so the viewport cannot show it and
-               the message line would lose it to the next thing that happens. -->
+          <!-- Graphics debug-layer errors. These still render a picture, so
+               this slot is the only place they show. -->
           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                       IsVisible="{Binding HasDebugLayerErrors}"
                       ToolTip.Tip="{Binding DebugLayerTip}">
@@ -1053,9 +748,7 @@
             <Border Classes="groupsep" Margin="4,0" />
           </StackPanel>
 
-          <!-- What is wrong right now, and the way into the list of it. A
-               count that is only visible with a panel open is a count nobody
-               sees; this one stands in the bar and opens the panel. -->
+          <!-- Standing problem count; opens the Problems panel. -->
           <Button Classes="ghost" Focusable="False" Padding="0" Margin="0"
                   Background="Transparent" BorderThickness="0"
                   IsVisible="{Binding Problems.HasProblems}"
@@ -1072,12 +765,8 @@
             </StackPanel>
           </Button>
 
-          <!-- Missing content, standing for the same reason as the two above.
-               A reference that will not resolve draws the magenta checker and
-               warns once into a log; the surface says something is wrong and
-               not what, and in a level big enough to scroll it can be off
-               screen entirely. Geometry that names no material is NOT counted
-               here: that is flat grey and perfectly healthy. -->
+          <!-- Missing content: references bound to the placeholder. Geometry
+               that names no material is not counted. -->
           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                       IsVisible="{Binding HasPlaceholderBound}"
                       ToolTip.Tip="{Binding PlaceholderBoundTip}">
@@ -1090,9 +779,6 @@
             <Border Classes="groupsep" Margin="4,0" />
           </StackPanel>
 
-          <!-- Play mode's standing chip, in the standing-state area beside the
-               world-defect slot: a session someone is walking through must say
-               so somewhere that does not scroll away. -->
           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                       IsVisible="{Binding IsPlaying}">
             <Border Width="6" Height="6" CornerRadius="3"
@@ -1104,19 +790,13 @@
           <TextBlock Classes="value" Text="{Binding SelectionLabel}" MinWidth="104"
                      Foreground="{StaticResource SpectraTextEmphasis}" />
 
-          <!-- What the mouse and the modifiers do RIGHT NOW. The one thing a
-               status bar can teach somebody who will never read documentation,
-               and the space it needs was being spent on five engine counters.
-               The camera readout that used to sit here is on the header chip
-               beside the viewport, which is where its effect happens. -->
+          <!-- What the mouse and modifiers do right now. -->
           <Border Classes="groupsep" />
           <TextBlock Classes="value" Text="{Binding GestureHint}" MinWidth="240"
                      Foreground="{StaticResource SpectraTextMuted}" />
 
-          <!-- The engine's instruments, off by default. Node and compile counts
-               are for somebody working on the engine; for somebody building a
-               level they are five numbers where the current gesture should be.
-               The separators live INSIDE the panel so they disappear with it. -->
+          <!-- Engine diagnostics, off by default. The separators are inside
+               the panel so they hide with it. -->
           <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center"
                       IsVisible="{Binding ShowDiagnostics}">
             <Border Classes="groupsep" />
@@ -1124,9 +804,6 @@
                        Foreground="{StaticResource SpectraTextMuted}" MinWidth="70"
                        ToolTip.Tip="Nodes in the scene" />
             <Border Classes="groupsep" />
-            <!-- The engine's heartbeat: this ticks while a drag recompiles the
-                 level underneath the cursor, which is the cheapest honest proof
-                 there is a compiler under the picture. -->
             <TextBlock Classes="label" Text="compiles" Margin="0,0,6,0" />
             <TextBlock Classes="value" Text="{Binding CompileCount}"
                        Foreground="{StaticResource SpectraTextMuted}" MinWidth="40"
@@ -1141,12 +818,9 @@
                        ToolTip.Tip="{Binding FrameTimeLabel}" />
           </StackPanel>
 
-          <!-- How long the render thread spent waiting for this window to hand
-               the shared texture back. Hidden until it is worth reading, and it
-               sits beside the frame rate deliberately: a rate that fell with
-               this at zero is the engine's own cost, and a rate that fell with
-               this raised is the UI thread holding the engine up. Frame time
-               cannot separate those, because the wait is inside the frame. -->
+          <!-- How long the render thread waited for this window to hand the
+               shared texture back. If the frame rate drops and this is raised,
+               the UI thread is the cause. -->
           <TextBlock Classes="value" Text="{Binding SharedAcquireLabel}"
                      IsVisible="{Binding SharedAcquireVisible}"
                      Foreground="{StaticResource SpectraWarning}"

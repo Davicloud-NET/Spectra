@@ -14,24 +14,12 @@ using DxgiApi = Silk.NET.DXGI.DXGI;
 
 namespace SpectraEngine.Editor.Viewport;
 
-/// <summary>
-/// The COM ownership rule the engine documents, restated for the shell.
-/// </summary>
-/// <remarks>
-/// <b>This is a copy because <c>SpectraEngine.Core.Graphics.ComOwnership</c> is
-/// internal to the engine assembly</b>, and the probe lives here deliberately:
-/// Core's graphics folder is under a convention test that bans naming a window,
-/// and this is host-side measurement rather than engine code. The rule is
-/// unchanged and is not optional. Silk's <c>ComPtr&lt;T&gt;</c> constructor has
-/// WRL semantics - it AddRefs rather than adopting - so wrapping a pointer a
-/// <c>Create*</c> or <c>QueryInterface</c> call already returned at one leaves
-/// the object at two, and disposing the wrapper drops it to one rather than
-/// zero. On a texture that is a leak; on anything a swap chain holds it is a
-/// crash.
-/// </remarks>
+// Shell-side copy of Core's ComOwnership, which is internal to the engine.
+// Silk's ComPtr<T> constructor AddRefs, so a freshly created pointer must
+// hand its reference over or the object leaks.
 internal static unsafe partial class ProbeCom
 {
-    /// <summary>Wraps <paramref name="raw"/> and releases the caller's reference.</summary>
+    // Wraps raw and releases the caller's reference.
     internal static ComPtr<T> Own<T>(T* raw) where T : unmanaged, IComVtbl<T>
     {
         if (raw is null)
@@ -42,10 +30,8 @@ internal static unsafe partial class ProbeCom
         return owned;
     }
 
-    /// <summary>
-    /// Releases <paramref name="field"/> and clears it, so a second release is
-    /// a no-op rather than an over-release.
-    /// </summary>
+    // Clears the field too: ComPtr.Dispose does not null the handle, so a
+    // second release would over-release.
     internal static void Release<T>(ref ComPtr<T> field) where T : unmanaged, IComVtbl<T>
     {
         if (field.Handle is null)
@@ -55,23 +41,14 @@ internal static unsafe partial class ProbeCom
         field = default;
     }
 
-    // Returned as the raw BOOL: Silk.NET.Core.Native also defines an
-    // UnmanagedType, so naming the marshalling attribute here would be
-    // ambiguous, and nothing reads the result anyway.
+    // Raw BOOL: Silk.NET.Core.Native also defines an UnmanagedType, so the
+    // marshalling attribute would be ambiguous here.
     [LibraryImport("kernel32.dll", EntryPoint = "CloseHandle", SetLastError = true)]
     internal static partial int CloseHandle(nint handle);
 }
 
-/// <summary>
-/// One route's texture: the resource, the handle the compositor is asked to
-/// import, and which kind of handle that is.
-/// </summary>
-/// <remarks>
-/// <b>The solid colour is written before the handle leaves this class</b>, under
-/// the texture's own keyed mutex where it has one, so the import and the
-/// hand-over are the only things the probe is still measuring by the time it
-/// asks the compositor anything.
-/// </remarks>
+// One route's texture and the handle the compositor is asked to import.
+// Already cleared to a solid colour by the time the handle is handed out.
 internal sealed unsafe class SharedProbeTexture : IDisposable
 {
     private ComPtr<ID3D11Texture2D> _texture11;
@@ -99,26 +76,21 @@ internal sealed unsafe class SharedProbeTexture : IDisposable
         _texture12 = texture12;
     }
 
-    /// <summary>The <c>KnownPlatformGraphicsExternalImageHandleTypes</c> value to import under.</summary>
+    // A KnownPlatformGraphicsExternalImageHandleTypes value.
     internal string HandleKind { get; }
 
     internal int Width { get; }
 
     internal int Height { get; }
 
-    /// <summary>Whether the resource actually carries an <c>IDXGIKeyedMutex</c>.</summary>
-    /// <remarks>
-    /// A D3D12 resource never does, which is the whole reason route 3 exists as
-    /// a separate measurement from route 4.
-    /// </remarks>
+    // A D3D12 resource never carries an IDXGIKeyedMutex.
     internal bool KeyedMutex { get; }
 
     internal nint Handle => _handle;
 
-    /// <summary>The key the importer must acquire; this side released it.</summary>
+    // This side released key 1; the importer acquires it and hands back 0.
     internal uint AcquireKey => 1;
 
-    /// <summary>The key the importer hands back, which is where this side started.</summary>
     internal uint ReleaseKey => 0;
 
     public void Dispose()
@@ -126,43 +98,21 @@ internal sealed unsafe class SharedProbeTexture : IDisposable
         ProbeCom.Release(ref _texture11);
         ProbeCom.Release(ref _texture12);
 
-        // Only an NT handle is a kernel object. A legacy global shared handle
-        // is not one and must not be passed to CloseHandle.
+        // Only an NT handle is a kernel object. Never CloseHandle a legacy
+        // global shared handle.
         if (_handle != 0 && _ntHandle)
             _ = ProbeCom.CloseHandle(_handle);
         _handle = 0;
     }
 }
 
-/// <summary>
-/// Creates the real textures the interop probe hands to the compositor: one per
-/// route, on the adapter the compositor reported.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>A capability flag is not proof.</b> The compositor advertises which handle
-/// kinds it imports and how each can be synchronised, and a machine can
-/// advertise a kind it cannot actually take a keyed mutex on. The question that
-/// gates replacing the viewport's native child is narrower still and is not
-/// advertised at all: whether a handle created by a <b>D3D12</b> device is
-/// accepted, given that Avalonia's Windows interop is ANGLE - GL ES over D3D11.
-/// So this class creates devices and textures and lets the import answer.
-/// </para>
-/// <para>
-/// <b>The adapter is chosen by the compositor's own LUID</b>, not by the system
-/// default. A shared handle only opens on the device that created it or on
-/// another device on the same adapter, so on a hybrid laptop a probe that took
-/// the default adapter would measure a cross-adapter refusal and report it as a
-/// driver limitation.
-/// </para>
-/// <para>
-/// <b>Devices are created per route, on demand.</b> A machine with no D3D12
-/// support must still return real answers for routes 1 and 2.
-/// </para>
-/// </remarks>
+// Creates the textures the interop probe hands to the compositor, one per route.
+// Adapter is picked by the compositor's LUID: a shared handle only opens on the
+// same adapter, so the system default would fail on a hybrid laptop.
+// Devices are created per route, so a machine without D3D12 still answers
+// routes 1 and 2.
 internal sealed unsafe partial class InteropProbeTextures : IDisposable
 {
-    /// <summary>Big enough to be a real texture, small enough to cost nothing.</summary>
     internal const int TextureSize = 64;
 
     private const uint SharedResourceRead = 0x80000000u;
@@ -173,8 +123,6 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
 
     private const uint Infinite = 0xFFFFFFFFu;
 
-    // Written into every route's texture so a hand-over that succeeds moved
-    // something rather than nothing.
     private static readonly float[] SolidColour = [0.10f, 0.55f, 0.90f, 1.0f];
 
     private readonly ILogger _logger;
@@ -198,15 +146,8 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
         DriverVersion = ReadDriverVersion(_adapter);
     }
 
-    /// <summary>
-    /// Reads the adapter's user-mode driver version, or an empty string.
-    /// </summary>
-    /// <remarks>
-    /// Never throws: this is an identifier for a cache key, and a machine whose
-    /// driver version cannot be read is a machine whose composited history
-    /// simply never matches - which costs a fallback to the native child and
-    /// nothing else.
-    /// </remarks>
+    // Never throws. An empty version never matches a recorded one, which only
+    // costs a fallback to the native child.
     private static string ReadDriverVersion(ComPtr<IDXGIAdapter> adapter)
     {
         if (adapter.Handle is null)
@@ -219,9 +160,7 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
             if (((IDXGIAdapter*)adapter.Handle)->CheckInterfaceSupport(&device, &umd) < 0)
                 return string.Empty;
 
-            // The four 16-bit parts a driver version is written as everywhere
-            // else, so a value in a settings file can be compared by eye with
-            // what Device Manager reports.
+            // Four 16-bit parts, the form Device Manager shows.
             ulong bits = (ulong)umd;
             return string.Create(
                 CultureInfo.InvariantCulture,
@@ -233,55 +172,29 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
         }
     }
 
-    /// <summary>What the textures are created on, and how that was decided.</summary>
+    // Adapter description, or why the system default was used.
     internal string AdapterName { get; }
 
-    /// <summary>
-    /// The user-mode driver build behind that adapter, or an empty string when
-    /// it could not be read.
-    /// </summary>
-    /// <remarks>
-    /// <b>The other half of a machine's identity, and the half that moves.</b>
-    /// A composited viewport that works today and not after a driver update is
-    /// exactly the failure the flip policy's green run is guarding against, so
-    /// the recorded history has to be anchored to the driver as well as to the
-    /// GPU. <c>CheckInterfaceSupport</c> is what reports it; it is documented as
-    /// answering for D3D10-era interfaces only, which is why a failure here is
-    /// an empty string rather than an error - an unknown driver simply never
-    /// matches a recorded one, so the count restarts, which is the safe answer.
-    /// </remarks>
+    // User-mode driver version, or empty when it could not be read.
     internal string DriverVersion { get; private set; } = string.Empty;
 
-    /// <summary>Route 1: a keyed-mutex D3D11 texture shared through an NT handle.</summary>
-    /// <param name="size">
-    /// The square's edge. <see cref="TextureSize"/> for a measurement of the
-    /// route; one texel for a launch-time rehearsal, where the question is only
-    /// whether the compositor will accept the import at all and the cheapest
-    /// texture that can be offered is the right one.
-    /// </param>
+    // Route 1: keyed-mutex D3D11 texture, NT handle. The launch-time rehearsal
+    // passes a size of one texel.
     internal SharedProbeTexture CreateD3D11NtHandleTexture(int size = TextureSize)
     {
         EnsureDevice11();
         return CreateSharedD3D11Texture(_device11, _context11, ntHandle: true, size);
     }
 
-    /// <summary>Route 2: the same texture shared through the legacy global handle.</summary>
+    // Route 2: the same texture through the legacy global handle.
     internal SharedProbeTexture CreateD3D11GlobalHandleTexture()
     {
         EnsureDevice11();
         return CreateSharedD3D11Texture(_device11, _context11, ntHandle: false, TextureSize);
     }
 
-    /// <summary>
-    /// Route 3, the unanswered question: a committed D3D12 resource on a shared
-    /// heap, offered under the same NT-handle kind.
-    /// </summary>
-    /// <remarks>
-    /// <b>It carries no keyed mutex and cannot be made to.</b> D3D12 synchronises
-    /// with fences, so if this handle imports at all, the hand-over still has to
-    /// find a second synchronisation path - which is exactly the cost the
-    /// D3D11On12 bridge buys out.
-    /// </remarks>
+    // Route 3: committed D3D12 resource on a shared heap, NT handle.
+    // No keyed mutex; D3D12 synchronises with fences.
     internal SharedProbeTexture CreateD3D12Texture()
     {
         EnsureDevice12();
@@ -311,8 +224,7 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
         D12.ID3D12Resource* raw = null;
         Guid resourceGuid = D12.ID3D12Resource.Guid;
 
-        // COMMON is the state a shared resource is created in; anything else is
-        // refused, and the clear below transitions in and back out again.
+        // A shared resource must be created in COMMON.
         SilkMarshal.ThrowHResult(device->CreateCommittedResource(
             &heapProps, D12.HeapFlags.Shared, &desc, D12.ResourceStates.Common, &clearValue,
             &resourceGuid, (void**)&raw));
@@ -339,10 +251,7 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
         }
     }
 
-    /// <summary>
-    /// Route 4: a D3D11On12 device over the same D3D12 device, and route 1's
-    /// texture created on it.
-    /// </summary>
+    // Route 4: route 1's texture on a D3D11On12 device over the D3D12 device.
     internal SharedProbeTexture CreateD3D11On12Texture()
     {
         EnsureDevice11On12();
@@ -359,8 +268,6 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
         ProbeCom.Release(ref _device11);
         ProbeCom.Release(ref _adapter);
     }
-
-    // --- devices -------------------------------------------------------------
 
     private void EnsureDevice11()
     {
@@ -403,9 +310,7 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
             (IUnknown*)_adapter.Handle, D3DFeatureLevel.Level110, &deviceGuid, (void**)&device));
         _device12 = ProbeCom.Own(device);
 
-        // The queue exists for the clear, and because D3D11On12CreateDevice
-        // takes one: an 11On12 device is a D3D11 front end over somebody else's
-        // command queue.
+        // Used by the clear and by D3D11On12CreateDevice.
         var queueDesc = new D12.CommandQueueDesc
         {
             Type = D12.CommandListType.Direct,
@@ -440,9 +345,7 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
         _context11On12 = ProbeCom.Own(context);
     }
 
-    // Silk.NET 2.23 binds no D3D11On12 entry point and no ID3D11On12Device, so
-    // the one function this needs is declared here rather than pulling in a
-    // second binding library for it.
+    // Silk.NET 2.23 has no D3D11On12 binding.
     [LibraryImport("d3d11.dll", EntryPoint = "D3D11On12CreateDevice")]
     private static partial int D3D11On12CreateDevice(
         void* device,
@@ -456,14 +359,10 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
         ID3D11DeviceContext** outContext,
         D3DFeatureLevel* chosenLevel);
 
-    // --- textures ------------------------------------------------------------
-
     private static SharedProbeTexture CreateSharedD3D11Texture(
         ComPtr<ID3D11Device> device, ComPtr<ID3D11DeviceContext> context, bool ntHandle, int size)
     {
-        // SHARED_NTHANDLE is only legal alongside SHARED or SHARED_KEYEDMUTEX,
-        // and the keyed mutex is what the compositor's hand-over wants, so both
-        // forms of this texture carry one.
+        // SHARED_NTHANDLE is only legal with SHARED or SHARED_KEYEDMUTEX.
         uint misc = (uint)ResourceMiscFlag.SharedKeyedmutex;
         if (ntHandle)
             misc |= (uint)ResourceMiscFlag.SharedNthandle;
@@ -497,7 +396,7 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
                 &mutexGuid, (void**)&rawMutex));
             mutex = ProbeCom.Own(rawMutex);
 
-            // Key 0 is the one a freshly created keyed mutex starts released on.
+            // A new keyed mutex starts released on key 0.
             SilkMarshal.ThrowHResult(((IDXGIKeyedMutex*)mutex.Handle)->AcquireSync(0, Infinite));
             try
             {
@@ -512,8 +411,8 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
                         (ID3D11RenderTargetView*)rtv.Handle, colour);
                 }
 
-                // The importer runs on another device, so the write has to have
-                // been submitted before the key changes hands.
+                // The importer is on another device: submit before releasing
+                // the key.
                 ((ID3D11DeviceContext*)context.Handle)->Flush();
             }
             finally
@@ -637,9 +536,7 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
             SilkMarshal.ThrowHResult(((D12.ID3D12CommandQueue*)_queue12.Handle)->Signal(
                 (D12.ID3D12Fence*)fence.Handle, 1));
 
-            // A spin rather than an event: clearing 64x64 finishes in
-            // microseconds, and a probe that could hang is worse than one that
-            // reports a timeout.
+            // Spin with a timeout so the probe cannot hang.
             var waited = Stopwatch.StartNew();
             while (((D12.ID3D12Fence*)fence.Handle)->GetCompletedValue() < 1)
             {
@@ -677,8 +574,6 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
         };
         list->ResourceBarrier(1, &barrier);
     }
-
-    // --- adapter -------------------------------------------------------------
 
     private ComPtr<IDXGIAdapter> FindAdapter(byte[]? compositorLuid, out string name)
     {
@@ -744,7 +639,7 @@ internal sealed unsafe partial class InteropProbeTextures : IDisposable
         }
     }
 
-    // The description is a fixed 128-char UTF-16 buffer inside the struct.
+    // Description is a fixed 128-char UTF-16 buffer.
     private static string DescriptionOf(ref AdapterDesc1 desc)
     {
         fixed (char* p = desc.Description)

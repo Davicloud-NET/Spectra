@@ -11,24 +11,11 @@ using PointerButtons = SpectraEngine.Core.Input.PointerButtons;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// The cursor lock, from both ends: the editor camera raising and clearing the
-/// <em>request</em> exactly in step with the look gesture, and the input
-/// manager's latch turning that request into a real captured cursor on the one
-/// thread allowed to do it — including putting the pointer back afterwards and
-/// letting go when the window loses focus.
+/// The cursor lock: the editor camera's request, and the input manager's latch
+/// that applies it. Every path that ends a look must release the lock.
 /// </summary>
-/// <remarks>
-/// <b>The failure mode is not subtle and it is not recoverable from inside the
-/// app:</b> a lock that is taken and never released leaves the user with an
-/// invisible pointer trapped in a window, and if it happens on a focus loss they
-/// cannot even click their way out. Every path that ends a look — the button
-/// coming up, the arbiter withholding the frame, the host resetting, the window
-/// going away — is asserted to clear it.
-/// </remarks>
 public sealed class CursorLockTests
 {
-    // --- The camera's half: request lifecycle --------------------------------
-
     [Fact]
     public void The_look_button_locks_the_cursor_and_releasing_it_gives_it_back()
     {
@@ -40,7 +27,7 @@ public sealed class CursorLockTests
 
         harness.EditorCamera.IsCursorLockRequested.ShouldBeTrue();
         harness.CursorLock.Requested.ShouldBe(CursorMode.Locked);
-        // Not yet a fact: the request has to cross to the window thread.
+        // Only a request until the window thread pumps it.
         harness.CursorLock.IsCursorLocked.ShouldBeFalse();
 
         harness.CursorLock.Pump();
@@ -78,8 +65,7 @@ public sealed class CursorLockTests
     [InlineData(PointerButtons.Right, KeyModifiers.Alt)]
     public void Only_freelook_captures_the_cursor(PointerButtons button, KeyModifiers modifiers)
     {
-        // Pan and orbit still need to see where the pointer is, and hiding it
-        // during them would be gratuitous.
+        // Pan and orbit need a visible pointer.
         var harness = new ViewportHarness();
 
         harness.EditorCamera.Update(harness.Frame(
@@ -95,8 +81,6 @@ public sealed class CursorLockTests
     [Fact]
     public void Suspending_navigation_releases_the_cursor()
     {
-        // The focus-loss path as the host sees it: whatever the buttons say, the
-        // camera stops running and must not keep the pointer.
         var harness = new ViewportHarness();
         harness.EditorCamera.Update(harness.Frame(
             harness.CenterPixel, down: PointerButtons.Right, pressed: PointerButtons.Right));
@@ -127,8 +111,7 @@ public sealed class CursorLockTests
     [Fact]
     public void A_button_that_vanishes_with_the_window_focus_releases_the_cursor()
     {
-        // Losing focus drops every held button (see InputManager below), so the
-        // very next frame the camera simply sees the look button up.
+        // Losing focus drops held buttons, so the camera sees the look button up.
         var harness = new ViewportHarness();
         harness.Viewport.Update(harness.Frame(
             harness.CenterPixel, down: PointerButtons.Right, pressed: PointerButtons.Right));
@@ -144,9 +127,7 @@ public sealed class CursorLockTests
     [Fact]
     public void A_gesture_the_arbiter_withholds_never_takes_the_cursor()
     {
-        // A marquee owns the pointer; the look button arriving mid-marquee is
-        // withheld from the camera, so no lock may be taken behind the user's
-        // back while they are still dragging a rectangle.
+        // Look button pressed mid-marquee: the marquee owns the pointer.
         var harness = new ViewportHarness();
         harness.Press(new Vector2(8f, 8f)).ShouldBe(ViewportDragMode.BoxSelect);
 
@@ -162,7 +143,6 @@ public sealed class CursorLockTests
     [Fact]
     public void A_camera_without_a_cursor_lock_still_navigates()
     {
-        // Headless hosts and the tests that predate the lock must keep working.
         var harness = new ViewportHarness();
         harness.EditorCamera.CursorLock = null;
         harness.EditorCamera.SetPose(Vector3.Zero, 0f, 0f);
@@ -174,8 +154,6 @@ public sealed class CursorLockTests
         harness.EditorCamera.Yaw.ShouldBe(30f * harness.EditorCamera.LookSensitivity, 1e-6f);
         harness.EditorCamera.IsCursorLockRequested.ShouldBeTrue();
     }
-
-    // --- The engine's half: the latch ----------------------------------------
 
     [Fact]
     public void A_request_only_takes_effect_when_the_window_thread_applies_it()
@@ -202,8 +180,7 @@ public sealed class CursorLockTests
         input.RequestCursorMode(CursorMode.Locked);
         input.ApplyPendingCursorMode();
 
-        // The backend now reports a virtual position that walks away from the
-        // window. It must not reach anything that builds a picking ray.
+        // While locked the backend reports a virtual position far off the window.
         input.OnMouseMove(null!, new Vector2(4000f, -2500f));
         input.Update(0.016);
 
@@ -227,15 +204,14 @@ public sealed class CursorLockTests
         input.Update(0.016);
 
         input.MousePosition.ShouldBe(new Vector2(640f, 360f));
-        // The teleport home is not motion the user made.
+        // The jump back is not user motion.
         input.MouseDelta.ShouldBe(Vector2.Zero);
     }
 
     [Fact]
     public void Losing_focus_releases_the_lock_and_overrides_a_pending_relock()
     {
-        // The render thread may well still believe it is looking around. Its
-        // stale request must not re-take the cursor on the next pump.
+        // A stale lock request from the render thread must not win on the next pump.
         InputManager input = CreateInput();
         input.OnMouseMove(null!, new Vector2(50f, 60f));
         input.Update(0.016);
@@ -253,8 +229,7 @@ public sealed class CursorLockTests
     [Fact]
     public void Losing_focus_drops_held_keys_and_turns_held_buttons_into_release_edges()
     {
-        // The key-up and button-up went to whoever stole the focus, so without
-        // this the look button stays "down" forever and the camera never lets go.
+        // The key-up and button-up events go to whichever window took focus.
         InputManager input = CreateInput();
         input.OnKeyDown(null!, Key.W, 0);
         input.OnMouseDown(null!, MouseButton.Right);
@@ -279,8 +254,6 @@ public sealed class CursorLockTests
 
         input.OnWindowFocusChanged(true);
 
-        // Re-taking the cursor is the camera's decision, made from the button
-        // state it sees next frame — not something focus does behind its back.
         input.IsCursorLocked.ShouldBeTrue();
     }
 

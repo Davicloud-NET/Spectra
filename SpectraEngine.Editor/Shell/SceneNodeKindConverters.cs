@@ -8,20 +8,9 @@ using System.Globalization;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
-/// Turns a <see cref="SceneNodeKind"/> into the row's glyph and its tint.
+/// Turns a <see cref="SceneNodeKind"/> into the row's glyph, looked up in the
+/// application's resources. An unresolved key gives null and the row shows no icon.
 /// </summary>
-/// <remarks>
-/// <b>Two converters rather than six style classes.</b> The alternative is a
-/// class per kind bound from the node and a style rule per class per property,
-/// which is twelve rules that have to stay in step with an enum; a lookup keyed
-/// by the enum itself cannot drift from it.
-/// <para>
-/// Both resolve through the application's resources, so the actual geometry and
-/// colours stay in <c>Theme/Icons.axaml</c> and <c>Theme/Tokens.axaml</c> with
-/// everything else. A key that does not resolve returns null and the row simply
-/// shows no icon, which is a visible gap rather than a crash in a list.
-/// </para>
-/// </remarks>
 public sealed class SceneNodeKindIconConverter : IValueConverter
 {
     /// <summary>The shared instance XAML binds to.</summary>
@@ -88,20 +77,14 @@ public sealed class SceneNodeKindBrushConverter : IValueConverter
         throw new NotSupportedException("A row's tint is never edited.");
 }
 
-/// <summary>Turns a row's depth into its indent.</summary>
-/// <remarks>
-/// <b>A flat list has no nesting to indent by</b>, which is the trade a
-/// virtualizing tree makes: the panel sees a list of rows and the depth travels
-/// on each one. The indent is therefore a left margin computed here rather than
-/// something the control does on its own.
-/// </remarks>
+/// <summary>
+/// Turns a row's depth into its left margin. The tree is a flat list, so the
+/// control does no indenting of its own.
+/// </summary>
 public sealed class TreeDepthIndentConverter : IValueConverter
 {
     /// <summary>Pixels of indent per level of depth.</summary>
-    // 14, the chevron column's own width, so a child's chevron tucks exactly
-    // under its parent's: 13 aligned with nothing and was the only odd number
-    // in the shell's spacing vocabulary, off by one per level compounding
-    // down the tree.
+    // The chevron column's width, so a child's chevron sits under its parent's.
     public const double PerLevel = 14;
 
     /// <inheritdoc/>

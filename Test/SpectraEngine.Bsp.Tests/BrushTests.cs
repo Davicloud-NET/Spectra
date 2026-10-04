@@ -3,13 +3,6 @@ using SpectraEngine.Core.Bsp;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// <see cref="Brush.CreateBox"/> geometry and the brush construction contract:
-/// invalid plane sets (too few, unbounded, duplicated, all-empty) must be
-/// rejected with <see cref="ArgumentException"/> instead of producing a
-/// silently-broken solid — while legitimate extreme shapes (sharp spires far
-/// larger than their plane offsets) must be accepted.
-/// </summary>
 public sealed class BrushTests
 {
     [Fact]
@@ -47,7 +40,6 @@ public sealed class BrushTests
             matches.ShouldBe(1, $"expected exactly one plane with normal {expectedNormals[i]}");
         }
 
-        // Outward normals put the brush centre (the local origin) behind every plane.
         foreach (Plane plane in box.LocalPlanes)
             Plane.DotCoordinate(plane, Vector3.Zero).ShouldBeLessThan(0f);
     }
@@ -62,8 +54,7 @@ public sealed class BrushTests
             foreach (Vector3 v in face.Vertices)
                 Plane.DotCoordinate(face.Surface, v).ShouldBe(0f, 1e-3);
 
-            // The fan normal must agree with the surface normal, or the face
-            // would render back-to-front.
+            // Winding must agree with the surface normal.
             Vector3 crossSum = Vector3.Zero;
             IReadOnlyList<Vector3> verts = face.Vertices;
             for (int i = 1; i + 1 < verts.Count; i++)
@@ -75,8 +66,7 @@ public sealed class BrushTests
     [Fact]
     public void CreateBox_stores_extents_locally_and_position_in_the_transform()
     {
-        // Asymmetric box far from the origin: local data must stay centred (the
-        // whole point of brush-local frames) while the transform carries position.
+        // Local data stays centred; the transform carries the position.
         Brush box = Brush.CreateBox(new Vector3(1f, 2f, 3f), new Vector3(3f, 6f, 9f));
 
         box.LocalBounds.Min.X.ShouldBe(-1f, 1e-3);
@@ -101,14 +91,10 @@ public sealed class BrushTests
     [Fact]
     public void Sharp_pyramid_with_distant_apex_is_accepted()
     {
-        // Square pyramid: 2x2 base centred on the local origin (y = 0), apex
-        // at (0, 60, 0). Every normalized plane offset is <= ~1, yet the apex
-        // vertex sits 60 units out — a magnitude threshold tied to the plane
-        // offsets would misread this perfectly valid closed spire as unbounded
-        // (regression test for exactly that false rejection). The constructor
-        // normalizes planes, so the side planes are written unnormalized:
-        // (±60, 1, 0) and (0, 1, ±60) each pass through the apex and one base
-        // edge.
+        // Square pyramid: 2x2 base at y = 0, apex at (0, 60, 0). Plane offsets
+        // are about 1 while the apex is 60 out, so a bound tied to the offsets
+        // would call it unbounded. Planes are unnormalized; the constructor
+        // normalizes them.
         var spire = new Brush(
         [
             new Plane(new Vector3(60f, 1f, 0f), -60f),  // +X side, through (1, 0, ±1) and the apex
@@ -120,7 +106,6 @@ public sealed class BrushTests
 
         spire.LocalFaces.Count.ShouldBe(5);
 
-        // The apex must have survived clipping intact.
         spire.LocalBounds.Max.Y.ShouldBe(60f, 1e-2);
         spire.LocalBounds.Min.Y.ShouldBe(0f, 1e-3);
     }
@@ -128,11 +113,8 @@ public sealed class BrushTests
     [Fact]
     public void Open_tube_with_no_end_caps_is_rejected()
     {
-        // Four prism side planes closing a 2x2 cross-section but open along
-        // BOTH ends of the Z axis (four planes, so the minimum-plane-count
-        // check cannot mask the boundedness guard). Every face is a strip
-        // running off to the clipper's seed boundary — the seed-sensitivity
-        // test must catch that the geometry changes with the seed size.
+        // A 2x2 prism open at both ends of Z. Four planes, so the minimum
+        // plane count check does not catch it first.
         Should.Throw<ArgumentException>(() => new Brush(
         [
             new Plane(Vector3.UnitX, -1f),
@@ -154,8 +136,7 @@ public sealed class BrushTests
     [Fact]
     public void Open_plane_set_missing_a_cap_is_rejected()
     {
-        // Five box planes without the +Y cap: the half-space intersection is
-        // unbounded, which can never be a valid solid.
+        // A box without its +Y cap.
         Should.Throw<ArgumentException>(() => new Brush(
         [
             new Plane(Vector3.UnitX, -1f),
@@ -184,8 +165,7 @@ public sealed class BrushTests
     [Fact]
     public void Inside_out_plane_set_with_all_empty_faces_is_rejected()
     {
-        // All normals flipped inward: the "solid" region (behind every plane)
-        // is empty, so every face clips away to nothing.
+        // Normals flipped inward: the solid is empty.
         Should.Throw<ArgumentException>(() => new Brush(
         [
             new Plane(Vector3.UnitX, 1f),

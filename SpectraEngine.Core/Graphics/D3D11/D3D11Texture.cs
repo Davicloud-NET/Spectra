@@ -19,32 +19,20 @@ internal sealed unsafe partial class D3D11Texture : Texture
     public ComPtr<ID3D11ShaderResourceView> Srv => _srv;
     public ComPtr<ID3D11SamplerState> Sampler => _sampler;
 
-    /// <summary>The underlying resource, for a render-target view over it.</summary>
     internal ID3D11Resource* Resource => (ID3D11Resource*)_texture.Handle;
 
-    /// <summary>The DXGI format the RESOURCE was created with, which the SRV must match.</summary>
+    // The resource's format. The SRV must match it.
     internal Silk.NET.DXGI.Format DxgiFormat { get; private set; }
 
-    /// <summary>
-    /// The DXGI format a render-target view over this texture must be created
-    /// with, which is the resource's own format everywhere except on a shared
-    /// target. See <see cref="CreateRenderTargetTexture"/> for why those differ.
-    /// </summary>
+    // Differs from DxgiFormat only on a shared target: UNORM resource, sRGB view.
     internal Silk.NET.DXGI.Format RtvFormat { get; private set; }
 
-    /// <summary>
-    /// The NT handle something outside this renderer imports this texture by, or
-    /// zero when it is not shared.
-    /// </summary>
+    // NT handle, zero when not shared.
     internal nint SharedHandle => _sharedHandle;
 
-    /// <summary>Whether this texture carries a shared handle and a keyed mutex.</summary>
     internal bool IsShared => _sharedHandle != 0;
 
-    /// <summary>
-    /// The keyed mutex that takes turns on this texture, or null when it is not
-    /// shared. See <see cref="Renderer.SharedProducerKey"/> for the protocol.
-    /// </summary>
+    // Null when not shared.
     internal IDXGIKeyedMutex* KeyedMutex => (IDXGIKeyedMutex*)_keyedMutex.Handle;
 
     private D3D11Texture(
@@ -76,9 +64,7 @@ internal sealed unsafe partial class D3D11Texture : Texture
 
         Silk.NET.DXGI.Format dxgiFormat = UploadDxgiFormat(format, resolved);
 
-        // D3D11 has no native 24-bit RGB texture format, so an Rgb8 payload is
-        // rewritten as RGBA8 first. Every other format's blocks or texels go up
-        // exactly as the file laid them out, at the pitch the file declared.
+        // No 24-bit RGB format in DXGI, so Rgb8 is expanded to RGBA8.
         ReadOnlySpan<byte> payload = desc.Payload;
         ReadOnlySpan<TextureMipDesc> mips = desc.Mips;
         byte[]? expanded = null;
@@ -89,10 +75,8 @@ internal sealed unsafe partial class D3D11Texture : Texture
             mips = expandedMips;
         }
 
-        // GenerateMips is only reachable for an uncompressed single level: it
-        // needs the RenderTarget bind flag, which no BC format may carry, and it
-        // would in any case have nothing to re-encode blocks with. A supplied
-        // chain is never regenerated - it is what the cooker produced.
+        // GenerateMips needs the RenderTarget bind flag, which BC formats
+        // cannot have. A supplied chain is used as is.
         bool wantsMipmaps = filter == TextureFilter.LinearMipmap;
         bool generateMips = wantsMipmaps
             && !desc.HasSuppliedMipChain
@@ -103,10 +87,7 @@ internal sealed unsafe partial class D3D11Texture : Texture
         uint miscFlags = 0u;
         if (generateMips)
         {
-            // For runtime GenerateMips we need RenderTarget bind + GenerateMips misc flag.
-            // An sRGB format is fine here and is in fact the point: GenerateMips
-            // filters through the view's format, so an sRGB chain is built by
-            // decoding, averaging light, and re-encoding.
+            // sRGB is fine: GenerateMips filters through the view, so it averages linear light.
             bindFlags |= (uint)BindFlag.RenderTarget;
             miscFlags |= (uint)ResourceMiscFlag.GenerateMips;
         }
@@ -129,15 +110,12 @@ internal sealed unsafe partial class D3D11Texture : Texture
         ID3D11Texture2D* texPtr = null;
         if (generateMips || deferred)
         {
-            // Have to create without initial data (mipmap chain isn't ready)
-            // then UpdateSubresource into mip 0 + GenerateMips.
+            // No initial data: mip 0 is uploaded afterwards.
             SilkMarshal.ThrowHResult(dev->CreateTexture2D(&textureDesc, null, &texPtr));
         }
         else
         {
-            // One SubresourceData per level, each pointing straight into the
-            // payload at the declared pitch: D3D11 is the one backend that takes
-            // a source stride, so nothing needs repacking here.
+            // D3D11 takes a source pitch, so levels point straight into the payload.
             Span<SubresourceData> initial = mips.Length <= 16
                 ? stackalloc SubresourceData[mips.Length]
                 : new SubresourceData[mips.Length];
@@ -161,7 +139,6 @@ internal sealed unsafe partial class D3D11Texture : Texture
             }
         }
 
-        // Shader resource view (full mip chain).
         var srvDesc = new ShaderResourceViewDesc
         {
             Format = dxgiFormat,
@@ -200,18 +177,8 @@ internal sealed unsafe partial class D3D11Texture : Texture
             width, height, format, resolved, dxgiFormat);
     }
 
-    /// <summary>
-    /// The DXGI format one CPU upload of <paramref name="format"/> creates its
-    /// resource with.
-    /// </summary>
-    /// <remarks>
-    /// <b>Rgb8 answers with an RGBA format on purpose</b>, because no DXGI
-    /// 24-bit texture format exists and the payload is expanded to match. The
-    /// linear branch of BC4, BC5 and BC6H is not a fallback either: those three
-    /// have no sRGB form in DXGI at all, which
-    /// <see cref="TextureFormatInfo.Resolve"/> has already accounted for by the
-    /// time the caller gets here.
-    /// </remarks>
+    // Rgb8 maps to RGBA (the payload is expanded). R8, BC4, BC5 and BC6H have
+    // no sRGB form in DXGI; TextureFormatInfo.Resolve already forced linear.
     private static Silk.NET.DXGI.Format UploadDxgiFormat(
         TextureFormat format, TextureColorSpace resolved)
     {
@@ -221,7 +188,6 @@ internal sealed unsafe partial class D3D11Texture : Texture
             TextureFormat.Rgba8 or TextureFormat.Rgb8 => srgb
                 ? Silk.NET.DXGI.Format.FormatR8G8B8A8UnormSrgb
                 : Silk.NET.DXGI.Format.FormatR8G8B8A8Unorm,
-            // No R8_UNORM_SRGB exists; Resolve already forced linear.
             TextureFormat.R8 => Silk.NET.DXGI.Format.FormatR8Unorm,
             TextureFormat.Bc1 => srgb
                 ? Silk.NET.DXGI.Format.FormatBC1UnormSrgb
@@ -239,39 +205,15 @@ internal sealed unsafe partial class D3D11Texture : Texture
         };
     }
 
-    /// <summary>
-    /// Creates an empty texture usable as both a render target and a shader
-    /// resource: the colour attachment of a <see cref="D3D11RenderTarget"/>.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A shared attachment is a UNORM resource with an <c>_SRGB</c> render
-    /// target view, and that split is the whole defence against a double
-    /// encode.</b> The engine's tone-map resolve writes linear light and relies
-    /// on the target's format to encode it, exactly as it does into the window;
-    /// the consumer on the other side of the handle then decodes once when it
-    /// samples. If the RESOURCE were sRGB-typed too, the consumer's own import
-    /// would decode a second time and the picture would come out washed out,
-    /// with no error anywhere. It is the same trick <c>D3D12TargetState</c>
-    /// already uses on the back buffer, for the same reason: a view carries the
-    /// colour space, and what an outside importer sees is the resource.
-    /// </para>
-    /// <para>
-    /// <b>The SRV stays UNORM, and that is not a choice.</b> Measured on this
-    /// machine: an <c>_SRGB</c> shader-resource view over an <c>_UNORM</c>
-    /// resource is refused with <c>E_INVALIDARG</c> while the <c>_SRGB</c>
-    /// render-target view over the same resource is accepted. So sampling a
-    /// shared target inside the engine reads encoded values undecoded - which
-    /// costs nothing today, because a shared target is what gets presented and
-    /// nothing samples it, and is written down because the first thing to sample
-    /// one will be surprised.
-    /// </para>
-    /// <para>
-    /// <b><c>SHARED_NTHANDLE</c> is only legal alongside <c>SHARED</c> or
-    /// <c>SHARED_KEYEDMUTEX</c></b>, and the keyed mutex is what the hand-over
-    /// wants, so both flags always travel together here.
-    /// </para>
-    /// </remarks>
+    // The colour attachment of a render target.
+    //
+    // A shared one is a UNORM resource with an _SRGB RTV. The RTV encodes on
+    // write; an sRGB-typed resource would make the importer decode a second
+    // time and wash the picture out. The SRV stays UNORM because D3D11 refuses
+    // an _SRGB SRV over a _UNORM resource (E_INVALIDARG), so sampling a shared
+    // target inside the engine reads encoded values.
+    //
+    // SHARED_NTHANDLE is only legal together with SHARED or SHARED_KEYEDMUTEX.
     internal static D3D11Texture CreateRenderTargetTexture(
         ComPtr<ID3D11Device> device,
         int width,
@@ -285,8 +227,6 @@ internal sealed unsafe partial class D3D11Texture : Texture
         TextureColorSpace resolved = TextureFormatInfo.Resolve(format, colorSpace);
         Silk.NET.DXGI.Format viewFormat = RenderTargetDxgiFormat(format, resolved);
 
-        // Unshared is the path every existing target takes and is unchanged: one
-        // format for the resource and both views.
         bool shared = sharing != RenderTargetSharing.None;
         Silk.NET.DXGI.Format resourceFormat = shared
             ? RenderTargetDxgiFormat(format, TextureColorSpace.Linear)
@@ -315,10 +255,6 @@ internal sealed unsafe partial class D3D11Texture : Texture
             }
             catch
             {
-                // Half a shared texture is worse than none: the caller would get
-                // a target that renders and can never be handed over, and the
-                // failure would surface as a silently black consumer instead of
-                // as the HRESULT that actually happened.
                 texture.Dispose();
                 throw;
             }
@@ -327,9 +263,6 @@ internal sealed unsafe partial class D3D11Texture : Texture
         return texture;
     }
 
-    // Queries out the two interfaces a shared attachment is reached through and
-    // mints the NT handle. Split out so the failure path above can dispose one
-    // object rather than unwinding four raw pointers by hand.
     private void AcquireSharing()
     {
         IDXGIResource1* resourcePtr = null;
@@ -356,18 +289,9 @@ internal sealed unsafe partial class D3D11Texture : Texture
         _keyedMutex = ComOwnership.Own(mutexPtr);
     }
 
-    /// <summary>
-    /// Creates a depth texture that can be both written through a depth-stencil
-    /// view and read through a sampler.
-    /// </summary>
-    /// <remarks>
-    /// <b>The resource is TYPELESS and the depth-ness lives on the views.</b>
-    /// D3D refuses a shader-resource view over a resource declared
-    /// <c>D32_FLOAT</c>, so writing needs <c>D32_FLOAT</c> on the DSV and
-    /// reading needs <c>R32_FLOAT</c> on the SRV, over one <c>R32_TYPELESS</c>
-    /// resource. That is the whole of what "typeless depth" means and the whole
-    /// of why a deferred pass cannot just reuse the ordinary depth path.
-    /// </remarks>
+    // A depth texture that can also be sampled. D3D refuses an SRV over a
+    // D32_FLOAT resource, so the resource is R32_TYPELESS with a D32_FLOAT DSV
+    // and an R32_FLOAT SRV.
     internal static D3D11Texture CreateDepthTexture(
         ComPtr<ID3D11Device> device, int width, int height)
     {
@@ -390,8 +314,7 @@ internal sealed unsafe partial class D3D11Texture : Texture
 
         ID3D11ShaderResourceView* srvPtr = CreateSrv(
             dev, texPtr, Silk.NET.DXGI.Format.FormatR32Float, mipLevels: 1);
-        // Point sampling: a depth is data, and interpolating two of them yields
-        // a value that lies on neither surface.
+        // Nearest: interpolated depth lies on neither surface.
         ID3D11SamplerState* samplerPtr = CreateSampler(dev, TextureFilter.Nearest, TextureWrap.Clamp);
 
         return new D3D11Texture(
@@ -402,7 +325,7 @@ internal sealed unsafe partial class D3D11Texture : Texture
             Silk.NET.DXGI.Format.FormatR32Typeless);
     }
 
-    /// <summary>Reallocates a depth texture in place, keeping the wrapper.</summary>
+    // Resizes in place; the wrapper object stays the same.
     internal void ReplaceDepthStorage(ComPtr<ID3D11Device> device, int width, int height)
     {
         D3D11Texture replacement = CreateDepthTexture(device, width, height);
@@ -420,20 +343,11 @@ internal sealed unsafe partial class D3D11Texture : Texture
         Height = height;
     }
 
-    /// <summary>
-    /// Replaces this texture's resource and view at a new size, <b>keeping the
-    /// same wrapper object</b>. What a render-target resize needs; the sampler
-    /// is unaffected and is deliberately kept.
-    /// </summary>
+    // Resizes in place; the wrapper object stays the same, so materials
+    // sampling it stay valid.
     internal void ReplaceStorage(ComPtr<ID3D11Device> device, int width, int height)
     {
-        // A shared attachment is the one target whose storage may NOT be swapped
-        // inside its wrapper. The wrapper's identity surviving a resize is what
-        // keeps every material sampling it correct - and it is exactly what
-        // would let a caller assume the HANDLE survived too, when the consumer
-        // has already imported the old one and would go on reading a resource
-        // that no longer exists. A shared target is recreated under a new
-        // generation instead; see SharedTargetRetirement.
+        // The consumer imported the old NT handle, which cannot be swapped.
         if (IsShared)
         {
             throw new InvalidOperationException(
@@ -446,8 +360,6 @@ internal sealed unsafe partial class D3D11Texture : Texture
         ID3D11Texture2D* texPtr = CreateRenderTargetResource(dev, width, height, DxgiFormat);
         ID3D11ShaderResourceView* srvPtr = CreateSrv(dev, texPtr, DxgiFormat, mipLevels: 1);
 
-        // Old first: nothing can be sampling this between the two lines, because
-        // resource creation and rendering share the render thread.
         ComOwnership.Release(ref _srv);
         ComOwnership.Release(ref _texture);
 
@@ -457,10 +369,6 @@ internal sealed unsafe partial class D3D11Texture : Texture
         Height = height;
     }
 
-    // The format argument used to be accepted and then ignored here, which was
-    // invisible only because RenderTargetDesc.Validate allowed nothing but
-    // Rgba8. The moment a float format became legal it would have produced a
-    // silently 8-bit target on this backend while OpenGL was correct.
     private static Silk.NET.DXGI.Format RenderTargetDxgiFormat(
         TextureFormat format, TextureColorSpace resolved) => format switch
     {
@@ -479,8 +387,6 @@ internal sealed unsafe partial class D3D11Texture : Texture
         {
             Width = (uint)width,
             Height = (uint)height,
-            // One level: there is nothing to build a chain from, and the
-            // contents change every frame, so a chain would be stale anyway.
             MipLevels = 1,
             ArraySize = 1,
             Format = dxgiFormat,
@@ -592,13 +498,9 @@ internal sealed unsafe partial class D3D11Texture : Texture
         ComOwnership.Release(ref _srv);
         ComOwnership.Release(ref _texture);
 
-        // An NT handle is a kernel object with its own reference on the
-        // resource, so releasing the COM pointers is not enough: leaving it open
-        // pins the whole surface for the process's life, which on a target
-        // recreated per resize is a full-screen leak that no COM audit finds.
-        // Cleared first so a second Dispose cannot close it twice - a closed
-        // handle value is reusable, and closing somebody else's is far worse
-        // than leaking this one.
+        // The NT handle holds its own reference on the resource, so it must be
+        // closed too. Zeroed first: a closed handle value can be reused, and a
+        // second close would hit somebody else's.
         if (_sharedHandle != 0)
         {
             nint handle = _sharedHandle;
@@ -607,20 +509,17 @@ internal sealed unsafe partial class D3D11Texture : Texture
         }
     }
 
-    /// <summary>DXGI_SHARED_RESOURCE_READ.</summary>
+    // DXGI_SHARED_RESOURCE_READ
     private const uint SharedResourceRead = 0x80000000u;
 
-    /// <summary>DXGI_SHARED_RESOURCE_WRITE.</summary>
+    // DXGI_SHARED_RESOURCE_WRITE
     private const uint SharedResourceWrite = 0x00000001u;
 
-    // The one Win32 call the graphics layer needs that Silk.NET does not bind:
-    // an NT shared handle is a kernel object and CloseHandle is the only way to
-    // let go of one.
+    // Silk.NET does not bind CloseHandle.
     private static partial class Kernel32
     {
-        // Returned as the raw BOOL rather than marshalled: Silk.NET.Core.Native
-        // also defines an UnmanagedType, so naming the marshalling attribute
-        // here would be ambiguous, and nothing reads the result anyway.
+        // Raw BOOL as int: Silk.NET.Core.Native also defines UnmanagedType,
+        // which makes the marshalling attribute ambiguous here.
         [LibraryImport("kernel32.dll", EntryPoint = "CloseHandle", SetLastError = true)]
         internal static partial int CloseHandle(nint handle);
     }

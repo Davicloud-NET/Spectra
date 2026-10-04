@@ -4,14 +4,8 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The fourth node payload, and the one rule that makes it safe to duplicate.
+/// Entity data on a node: mutable, so a clone must copy it and never share it.
 /// </summary>
-/// <remarks>
-/// <b>A shared payload is a bug you find months later.</b> Entity data is
-/// mutable, exactly like a light, so a clone that shared the instance would have
-/// every edit to the duplicate land on the original as well - and the tree, the
-/// viewport and the map file would all look correct while it happened.
-/// </remarks>
 public sealed class EntityDataTests
 {
     private static EntityData Door()
@@ -45,8 +39,6 @@ public sealed class EntityDataTests
     [Fact]
     public void A_cloned_node_gets_its_own_entity_data()
     {
-        // The payload rule stated at the node level, which is where a duplicate
-        // gesture actually goes through.
         var scene = new Scene("Entities");
         SceneNode node = scene.Root.CreateChild("Door");
         node.Entity = Door();
@@ -76,9 +68,7 @@ public sealed class EntityDataTests
     [Fact]
     public void Keyvalues_keep_the_order_they_were_authored_in()
     {
-        // Authored order is what the map format writes, so a list rather than a
-        // dictionary is the whole point of this type: reshuffling somebody's
-        // hand-edited file on save is a defect they cannot even report cleanly.
+        // The map format writes keyvalues in authored order.
         var entity = new EntityData("light");
         entity.SetValue("targetname", "hall_light");
         entity.SetValue("color", "1 0.9 0.75");
@@ -93,8 +83,7 @@ public sealed class EntityDataTests
     [Fact]
     public void Rewriting_a_keyvalue_replaces_it_where_it_stands()
     {
-        // In place, never remove-and-append: moving an edited member to the end
-        // of the object rewrites a region of the file nobody touched.
+        // In place: remove-and-append would move the member in the saved file.
         var entity = new EntityData("light");
         entity.SetValue("targetname", "hall_light");
         entity.SetValue("range", "12");
@@ -110,8 +99,7 @@ public sealed class EntityDataTests
     [Fact]
     public void Keyvalue_names_are_matched_ordinally()
     {
-        // A case-folding rule would need a culture to fold in, and the same file
-        // would then mean different things on different machines.
+        // Case folding needs a culture, so one file would differ by machine.
         var entity = new EntityData("light");
         entity.SetValue("range", "12");
         entity.SetValue("Range", "40");

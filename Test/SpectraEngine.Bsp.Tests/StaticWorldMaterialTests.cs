@@ -10,26 +10,13 @@ using static SpectraEngine.Bsp.Tests.SpatialTestHelpers;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The W5 per-material render path, end to end: the compile splits each cell's
-/// geometry per face material (<see cref="ChunkMesh.Submeshes"/>), the render
-/// thread uploads one GPU mesh per (cell, material) and resolves each one's
-/// material once at swap time, and the draw list emits one item per
-/// (visible chunk, material) while culling stays per chunk. The properties that
-/// must survive the split are pinned here: deterministic submesh order,
-/// dirty-cell-only GPU churn, unchanged culling behaviour and chunk stats, and
-/// an allocation-free per-frame build.
+/// The per-material render path: compile split, one GPU mesh per (cell, material),
+/// one draw item per (visible chunk, material).
 /// </summary>
-/// <remarks>
-/// Headless like the other scene suites: the test thread plays the render
-/// thread. Cell landmarks: with a 2-unit cube brush, (10,10,10) and (20,20,20)
-/// both sit inside cell (0,0,0), and (80,16,16) mid-cell (2,0,0).
-/// </remarks>
+// With a 2-unit cube brush, (10,10,10) and (20,20,20) are both in cell (0,0,0)
+// and (80,16,16) is mid-cell (2,0,0).
 public sealed class StaticWorldMaterialTests
 {
-    // ------------------------------------------------------------------
-    // (a) The compile-side split.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void A_cell_with_two_materials_produces_two_submeshes_and_one_material_produces_one()
     {
@@ -37,8 +24,7 @@ public sealed class StaticWorldMaterialTests
         var scene = new Scene("Test");
         var renderer = new FakeRenderer();
 
-        // Both brushes land in cell (0,0,0); the far one is a separate,
-        // single-material cell — the control.
+        // "far" is the single-material control cell.
         AddBrushNode(scene, "a", new Vector3(10f, 10f, 10f), low);
         AddBrushNode(scene, "b", new Vector3(20f, 20f, 20f), high);
         AddBrushNode(scene, "far", new Vector3(80f, 16f, 16f), MaterialRef.Default);
@@ -55,8 +41,6 @@ public sealed class StaticWorldMaterialTests
         only.Material.IsDefault.ShouldBeTrue();
         only.Indices.Length.ShouldBeGreaterThan(0);
 
-        // The split partitions: no triangle is lost or duplicated, and every
-        // submesh's indices address its own vertices.
         int mixedIndices = mixed.Submeshes.Sum(s => s.Indices.Length);
         mixedIndices.ShouldBe(uniform.Submeshes.Sum(s => s.Indices.Length) * 2); // two identical boxes
         foreach (ChunkSubmesh submesh in mixed.Submeshes)
@@ -72,9 +56,7 @@ public sealed class StaticWorldMaterialTests
         (MaterialRef low, MaterialRef high) = InternPair();
         var scene = new Scene("Test");
 
-        // Emission order is placement order, so adding the HIGH-id brush first
-        // makes "ascending material id" and "emission order" disagree — the
-        // only arrangement in which the ordering rule is observable.
+        // High-id brush first, so id order and emission order disagree.
         AddBrushNode(scene, "high", new Vector3(10f, 10f, 10f), high);
         AddBrushNode(scene, "low", new Vector3(20f, 20f, 20f), low);
         scene.RebuildStaticWorld(new FakeRenderer());
@@ -106,7 +88,7 @@ public sealed class StaticWorldMaterialTests
             ChunkMesh b = second.ChunkMeshes[c];
             b.Coord.ShouldBe(a.Coord);
             b.Submeshes.Count.ShouldBe(a.Submeshes.Count);
-            // A mixed cell is what makes this test non-vacuous.
+            // Guard: the cell must be mixed or the test proves nothing.
             a.Submeshes.Count.ShouldBe(2);
             for (int s = 0; s < a.Submeshes.Count; s++)
             {
@@ -118,10 +100,6 @@ public sealed class StaticWorldMaterialTests
             }
         }
     }
-
-    // ------------------------------------------------------------------
-    // (b) The GPU swap: one mesh per (cell, material), dirty cells only.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void The_swap_creates_one_gpu_mesh_per_cell_and_material()
@@ -135,7 +113,6 @@ public sealed class StaticWorldMaterialTests
 
         scene.RebuildStaticWorld(renderer);
 
-        // Two cells, three (cell, material) pairs, three GPU meshes.
         scene.StaticWorldChunkMeshes.Count.ShouldBe(2);
         renderer.CreatedMeshes.Count.ShouldBe(3);
         scene.TryGetStaticWorldChunkMesh(new ChunkCoord(0, 0, 0), out StaticWorldChunkMesh mixed).ShouldBeTrue();
@@ -143,8 +120,6 @@ public sealed class StaticWorldMaterialTests
         scene.TryGetStaticWorldChunkMesh(new ChunkCoord(2, 0, 0), out StaticWorldChunkMesh far).ShouldBeTrue();
         far.Submeshes.Length.ShouldBe(1);
 
-        // Each GPU mesh got exactly its own submesh's arrays, and the entries
-        // are index-aligned with the artifact's submeshes.
         for (int s = 0; s < mixed.Submeshes.Length; s++)
         {
             StaticWorldSubmesh entry = mixed.Submeshes[s];
@@ -173,9 +148,7 @@ public sealed class StaticWorldMaterialTests
         edited.LocalPosition = new Vector3(11f, 10f, 10f); // still mid-cell (0,0,0)
         PumpUntil(scene, renderer, logger, () => scene.StaticWorldCompileCount == 2);
 
-        // Exactly the edited cell churned — both of its materials, because the
-        // artifact (and therefore the whole cell) was rebuilt — and the far
-        // cell's single mesh was neither recreated nor destroyed.
+        // Both materials of the edited cell are recreated: the whole cell is rebuilt.
         renderer.CreatedMeshes.Count.ShouldBe(5);
         foreach (StaticWorldSubmesh stale in mixedBefore.Submeshes)
             ((FakeMesh)stale.Mesh).Disposed.ShouldBeTrue();
@@ -195,13 +168,6 @@ public sealed class StaticWorldMaterialTests
     [Fact]
     public void Repeated_recompiles_of_a_mixed_world_leak_no_gpu_meshes()
     {
-        // The soak property, machine-checked: the demo bobs a brush every frame,
-        // so a live editing session drives thousands of recompiles through the
-        // swap path. Each one replaces its cell's per-material meshes — and if
-        // the replaced ones were disposed without being deregistered (or not
-        // released at all), the renderer's tracking list would grow without
-        // bound while the visible world stayed the same size. Steady-state live
-        // mesh count is the invariant; CreatedMeshes only ever grows.
         (MaterialRef low, MaterialRef high) = InternPair();
         var (scene, renderer, logger) = CreateScene();
         SceneNode edited = AddBrushNode(scene, "a", new Vector3(10f, 10f, 10f), low);
@@ -210,41 +176,31 @@ public sealed class StaticWorldMaterialTests
 
         PumpUntil(scene, renderer, logger, () => scene.StaticWorldCompileCount == 1);
 
-        // Three (cell, material) pairs: the mixed cell's two plus the far cell's
-        // one. This is the count every later compile must return to.
+        // Mixed cell's two meshes plus the far cell's one.
         const int SteadyStateMeshes = 3;
         renderer.LiveMeshes.Count.ShouldBe(SteadyStateMeshes);
 
-        // Nudge the same brush inside its own cell, so every pass re-meshes the
-        // mixed cell (two materials) and carries the far cell untouched.
         const int Recompiles = 60;
         for (int i = 0; i < Recompiles; i++)
         {
             int target = scene.StaticWorldCompileCount + 1;
-            // A fresh position every pass — repeating one would leave the scene
-            // clean and the pump would wait for a compile that never comes. The
-            // walk stays well inside cell (0,0,0) (which spans 0..32), so the
-            // world keeps its two cells and three (cell, material) pairs.
+            // New position every pass or the scene stays clean and no compile
+            // comes. The walk stays inside cell (0,0,0), which spans 0..32.
             edited.LocalPosition = new Vector3(10f + (i + 1) * 0.05f, 10f, 10f);
             PumpUntil(scene, renderer, logger, () => scene.StaticWorldCompileCount >= target);
 
-            // Asserted every pass, not just at the end: a leak that plateaus
-            // after the first few edits is still a leak, and only the per-pass
-            // check pins the step where it appeared.
             renderer.LiveMeshes.Count.ShouldBe(
                 SteadyStateMeshes,
                 $"live GPU meshes drifted after {i + 1} recompile(s)");
         }
 
-        // The churn really happened — otherwise the invariant above would hold
-        // trivially — and every mesh dropped from the live list was disposed too.
+        // Guard: meshes really were recreated.
         renderer.CreatedMeshes.Count.ShouldBeGreaterThan(SteadyStateMeshes + Recompiles);
         foreach (FakeMesh mesh in renderer.CreatedMeshes.Except(renderer.LiveMeshes))
             mesh.Disposed.ShouldBeTrue("a deregistered mesh must also have been disposed");
         foreach (FakeMesh live in renderer.LiveMeshes)
             live.Disposed.ShouldBeFalse("a live mesh must still be renderable");
 
-        // And the world is still the same shape it started as.
         scene.StaticWorldChunkMeshes.Count.ShouldBe(2);
         scene.StaticWorldChunkMeshes.Sum(c => c.Submeshes.Length).ShouldBe(SteadyStateMeshes);
     }
@@ -252,9 +208,6 @@ public sealed class StaticWorldMaterialTests
     [Fact]
     public void A_failed_material_mesh_creation_rolls_back_the_whole_cell()
     {
-        // The budget dies between a mixed cell's two materials: the half-built
-        // cell must leave nothing behind, and the previous world must keep
-        // rendering (create-before-destroy, now one level deeper).
         (MaterialRef low, MaterialRef high) = InternPair();
         var (scene, renderer, logger) = CreateScene();
         SceneNode edited = AddBrushNode(scene, "a", new Vector3(10f, 10f, 10f), low);
@@ -266,7 +219,7 @@ public sealed class StaticWorldMaterialTests
         before.Submeshes.Length.ShouldBe(2);
 
         edited.LocalPosition = new Vector3(11f, 10f, 10f);
-        renderer.CreateMeshBudget = 1; // the cell's SECOND material throws
+        renderer.CreateMeshBudget = 1; // the cell's second material throws
         PumpUntilCreateMeshFails(scene, renderer, logger);
 
         scene.StaticWorld.ShouldBeSameAs(previousWorld);
@@ -275,14 +228,10 @@ public sealed class StaticWorldMaterialTests
         foreach (StaticWorldSubmesh entry in before.Submeshes)
             ((FakeMesh)entry.Mesh).Disposed.ShouldBeFalse();
 
-        // The one replacement that WAS created got rolled back, not leaked.
+        // The one replacement that was created is rolled back.
         renderer.CreatedMeshes.Count.ShouldBe(3);
         renderer.CreatedMeshes[2].Disposed.ShouldBeTrue();
     }
-
-    // ------------------------------------------------------------------
-    // (c) Resolution: material ids become assets on the render thread.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void Uploaded_submeshes_carry_the_material_the_asset_manager_resolved()
@@ -306,9 +255,6 @@ public sealed class StaticWorldMaterialTests
         scene.TryGetStaticWorldChunkMesh(new ChunkCoord(0, 0, 0), out StaticWorldChunkMesh cell).ShouldBeTrue();
         cell.Submeshes.Length.ShouldBe(2);
 
-        // The default face falls back to the scene's world material; the
-        // materialed face resolves through the asset manager to the very
-        // instance a direct load returns (one material object per path).
         StaticWorldSubmesh plain = cell.Submeshes.Single(s => s.SourceMaterial.IsDefault);
         plain.Material.ShouldBeSameAs(NoopMaterial);
         StaticWorldSubmesh accented = cell.Submeshes.Single(s => s.SourceMaterial == accent);
@@ -320,12 +266,8 @@ public sealed class StaticWorldMaterialTests
     [Fact]
     public void A_face_whose_material_path_escapes_the_content_root_still_compiles_and_uploads()
     {
-        // Interning only trims and folds separators, so a path like this reaches
-        // path normalisation at resolve time — which rejects it. That resolve
-        // happens inside the GPU swap on the render thread, where a throw is not
-        // a content problem but a render-thread crash that repeats on every
-        // compile (the async path rethrows out of ProcessStaticWorldCompilation
-        // straight into the engine's "render thread crashed" shutdown).
+        // Interning accepts this path; normalisation rejects it at resolve time,
+        // inside the GPU swap, where a throw would crash the render thread.
         MaterialRef escaping = MaterialRegistry.Intern($"../evil_{Guid.NewGuid():N}.spectramat");
         var renderer = new FakeRenderer();
         var logger = new CapturingLogger();
@@ -339,12 +281,10 @@ public sealed class StaticWorldMaterialTests
 
         scene.TryGetStaticWorldChunkMesh(new ChunkCoord(0, 0, 0), out StaticWorldChunkMesh cell).ShouldBeTrue();
         StaticWorldSubmesh only = cell.Submeshes.ShouldHaveSingleItem();
-        // Drawable, magenta, and logged — the standing signal for bad content.
         only.Material.ShouldBeSameAs(assets.DefaultMaterial);
         logger.MessagesAt(Microsoft.Extensions.Logging.LogLevel.Warning)
             .ShouldContain(m => m.Contains("not usable"), customMessage: logger.Describe());
 
-        // And it stays recoverable: a second compile does not throw either.
         scene.MarkStaticWorldDirty();
         Should.NotThrow(() => scene.RebuildStaticWorld(renderer));
 
@@ -362,7 +302,7 @@ public sealed class StaticWorldMaterialTests
         scene.RebuildStaticWorld(new FakeRenderer());
 
         scene.TryGetStaticWorldChunkMesh(new ChunkCoord(0, 0, 0), out StaticWorldChunkMesh cell).ShouldBeTrue();
-        cell.Submeshes.Length.ShouldBe(2); // still split — the geometry is what it is
+        cell.Submeshes.Length.ShouldBe(2); // still split
         foreach (StaticWorldSubmesh entry in cell.Submeshes)
             entry.Material.ShouldBeSameAs(NoopMaterial);
     }
@@ -387,18 +327,13 @@ public sealed class StaticWorldMaterialTests
         ((FakeMesh)uploaded).Disposed.ShouldBeFalse();
     }
 
-    // ------------------------------------------------------------------
-    // (d) The draw list: per-material items, per-chunk culling.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void World_items_are_one_per_visible_chunk_and_material_with_per_chunk_stats()
     {
         (MaterialRef low, MaterialRef high) = InternPair();
         var scene = new Scene("Test") { StaticWorldMaterial = NoopMaterial };
 
-        // One brush in view wearing two materials (one retextured face), one
-        // brush far behind the camera — culling must still work per chunk.
+        // One two-material brush in view, one brush behind the camera.
         SceneNode front = scene.Root.CreateChild("front");
         front.LocalPosition = new Vector3(0f, 0f, -5f);
         front.Brush = Brush.CreateBox(new Vector3(-1f), new Vector3(1f), low).WithFaceMaterial(2, high);
@@ -410,7 +345,7 @@ public sealed class StaticWorldMaterialTests
         var view = new RenderView();
         scene.BuildRenderView(MakeCamera(), view);
 
-        // Chunk stats count CHUNKS; the item list counts per-material draws.
+        // Chunk stats count chunks; the item list counts per-material draws.
         view.WorldChunksTotal.ShouldBe(2);
         view.WorldChunksVisible.ShouldBe(1);
         view.WorldItems.Count.ShouldBe(2);
@@ -449,7 +384,7 @@ public sealed class StaticWorldMaterialTests
         for (int i = 0; i < 50; i++)
             scene.BuildRenderView(camera, view);
 
-        // The multi-material path must be what is being measured.
+        // Guard: the multi-material path is what gets measured.
         view.WorldMaterialBatchesVisible.ShouldBeGreaterThan(view.WorldChunksVisible);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
@@ -460,13 +395,10 @@ public sealed class StaticWorldMaterialTests
         delta.ShouldBe(0L);
     }
 
-    // --- Helpers ------------------------------------------------------------
-
     private const string AccentMaterialPath = "Materials/checker_orange.spectramat";
 
-    // Camera at z = 3 looking down -Z (the Camera defaults, restated explicitly
-    // so the tests don't silently depend on them) — same fixture RenderViewTests
-    // culls against.
+    // At z = 3 looking down -Z. These are the Camera defaults, set here so the
+    // tests don't depend on them.
     private static Camera MakeCamera() => new()
     {
         Position = new Vector3(0f, 0f, 3f),
@@ -475,9 +407,8 @@ public sealed class StaticWorldMaterialTests
         AspectRatio = 16f / 9f,
     };
 
-    // Two distinct materials with the low id interned first. Ids are handed out
-    // in interning order and never reused, so `low.Id < high.Id` holds however
-    // many other tests interned around this one.
+    // Ids follow interning order and are never reused, so low.Id < high.Id
+    // whatever other tests intern.
     private static (MaterialRef Low, MaterialRef High) InternPair()
     {
         MaterialRef low = MaterialRegistry.Intern($"Materials/w5_low_{Guid.NewGuid():N}.spectramat");
@@ -489,7 +420,6 @@ public sealed class StaticWorldMaterialTests
     private static (Scene Scene, FakeRenderer Renderer, CapturingLogger Logger) CreateScene() =>
         (new Scene("Test"), new FakeRenderer(), new CapturingLogger());
 
-    // A 2-unit cube brush node wearing `material` on every face.
     private static SceneNode AddBrushNode(Scene scene, string name, Vector3 position, MaterialRef material)
     {
         SceneNode node = scene.Root.CreateChild(name);
@@ -498,7 +428,6 @@ public sealed class StaticWorldMaterialTests
         return node;
     }
 
-    // Same slow-machine-proof pump loop as the other scene compile suites.
     private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(30);
 
     private static void PumpUntil(Scene scene, FakeRenderer renderer, CapturingLogger logger, Func<bool> condition)

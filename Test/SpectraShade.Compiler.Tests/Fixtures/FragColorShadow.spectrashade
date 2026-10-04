@@ -1,7 +1,5 @@
-// FragColorShadow.spectrashade — a fragment body declaring a local named
-// fragColor, colliding with the GLSL generator's invented stage output
-// `out vec4 fragColor;`. Without escaping, the local silently shadows the
-// output and the stage never writes it (the shader still compiles cleanly).
+// A local named fragColor collides with the GLSL generator's own
+// `out vec4 fragColor;`. Unescaped, it shadows the output and still compiles.
 
 struct VertexInput {
     [Location(0)] vec3 position;

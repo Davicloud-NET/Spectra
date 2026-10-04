@@ -12,15 +12,7 @@ public sealed class CompiledShaderFile
     /// <summary>Magic bytes: "SSCO" (SpectraShade Compiled Object).</summary>
     public static ReadOnlySpan<byte> MagicBytes => "SSCO"u8;
 
-    /// <summary>
-    /// The extension a compiled shader is written with, dot included.
-    /// </summary>
-    /// <remarks>
-    /// Stated here rather than spelled at each call site: <c>ssc</c>, the cook
-    /// rule that emits one, the engine lookup that resolves one out of a pack
-    /// and the verify that checks one all have to name the same string, and a
-    /// typo in any of them is a lookup that quietly finds nothing.
-    /// </remarks>
+    /// <summary>The extension a compiled shader is written with, dot included.</summary>
     public const string FileExtension = ".specshadecomp";
 
     /// <summary>Format version of this file. Must match EngineInfo.ShaderFormatVersion to be loadable.</summary>
@@ -32,10 +24,7 @@ public sealed class CompiledShaderFile
     /// <summary>Per-backend pipeline entries with their compiled data.</summary>
     public required IReadOnlyList<PipelineBlob> Pipelines { get; init; }
 
-    /// <summary>
-    /// Finds the compiled data for a specific backend.
-    /// Returns null if this file wasn't compiled for that backend.
-    /// </summary>
+    /// <summary>The compiled data for a backend, or null if the file has none for it.</summary>
     public PipelineBlob? GetPipeline(GraphicsBackend backend)
     {
         for (int i = 0; i < Pipelines.Count; i++)
@@ -70,34 +59,15 @@ public sealed class PipelineBlob
 
     /// <summary>
     /// The vertex inputs the shader declares, in the order its input struct
-    /// declares them. Empty for a shader with no vertex stage.
+    /// declares them. Empty for a shader with no vertex stage. The same on every backend.
     /// </summary>
-    /// <remarks>
-    /// <b>Reported rather than agreed.</b> Before this existed, the only record
-    /// of a shader's vertex layout was a comment in the HLSL generator and a
-    /// matching comment in <c>D3D11Mesh.CreateInputLayout</c>. That held while
-    /// the engine had exactly one layout; per-instance inputs end it, because
-    /// the rate and the multi-location span of a matrix are facts about the
-    /// shader that no mesh knows. See <see cref="VertexInputElement"/>.
-    /// <para>
-    /// It is identical across backends, since it describes the source rather
-    /// than the target, and is carried per blob anyway because the blob is what
-    /// a renderer is handed.
-    /// </para>
-    /// </remarks>
     public IReadOnlyList<VertexInputElement> VertexInputs { get; init; } = [];
 
     /// <summary>
     /// A second vertex stage for the same shader, with its per-instance uniform
     /// arriving as a vertex input instead. Null unless the source marked a
-    /// <c>cbuffer</c> field <c>[PerInstance]</c>.
+    /// <c>cbuffer</c> field <c>[PerInstance]</c>. Pairs with <see cref="FragmentData"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>Same fragment stage, same materials, same everything else.</b> Only
-    /// the vertex stage differs, so a renderer builds the instanced program from
-    /// this plus <see cref="FragmentData"/> and the author never wrote a second
-    /// shader. See <c>InstancedVariant</c> for the rewrite.
-    /// </remarks>
     public byte[]? InstancedVertexData { get; init; }
 
     /// <summary>

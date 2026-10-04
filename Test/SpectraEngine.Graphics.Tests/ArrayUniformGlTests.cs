@@ -5,24 +5,8 @@ using SpectraEngine.Core.Graphics.OpenGL;
 
 namespace SpectraEngine.Graphics.Tests;
 
-/// <summary>
-/// Array uniforms reaching the GPU, proved by reading a pixel back.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Every layer below this one fails quietly.</b> A wrong location, a wrong
-/// element count, a wrong stride: none of them raise anything, on any backend.
-/// The shader simply reads zeros or somebody else's bytes. So the assertion is a
-/// pixel whose value could only have come from a specific element of a specific
-/// array.
-/// </para>
-/// <para>
-/// <b>OpenGL is the only backend this can be done on today</b>, because neither
-/// D3D backend has pixel readback. <c>CBufferPackingTests</c> covers the D3D
-/// layout half without a device; the upload half is still eye-only there, and
-/// that gap is worth remembering when reading a green suite.
-/// </para>
-/// </remarks>
+// A wrong location, count or stride raises nothing on any backend, so these
+// read a pixel back. GL only; the D3D upload half is untested.
 [Collection(GlRendererCollection.Name)]
 public sealed class ArrayUniformGlTests
 {
@@ -33,9 +17,8 @@ public sealed class ArrayUniformGlTests
         _fixture = fixture;
     }
 
-    // Reads one element of a vec4 array and writes it out, so the pixel IS the
-    // array element. The index is a uniform, which also exercises dynamic
-    // indexing rather than a constant the compiler could fold away.
+    // Writes out one array element. The index is a uniform so the compiler
+    // cannot fold it.
     private const string PickSource = """
         struct VertexInput {
             [Location(0)] vec3 position;
@@ -80,8 +63,7 @@ public sealed class ArrayUniformGlTests
         ShaderProgram shader = renderer.CreateShaderFromSource(PickSource);
         RenderTarget output = renderer.CreateRenderTarget(new RenderTargetDesc(4, 4));
 
-        // Distinct, and distinct in the red channel alone, so an off-by-one in
-        // the stride reads as a different number rather than a similar one.
+        // Distinct in red only, so a stride error reads a clearly different number.
         Vector4[] values =
         [
             new(0.2f, 0f, 0f, 1f),
@@ -94,10 +76,7 @@ public sealed class ArrayUniformGlTests
         {
             for (int i = 0; i < values.Length; i++)
             {
-                // Clear, not Keep: the clear is what initialises depth, and the
-                // triangle sits at z = 0 against an uninitialised depth buffer
-                // otherwise. That reads back as the clear colour with nothing
-                // to say why.
+                // Clear, not Keep: the clear initialises depth.
                 renderer.BeginPass(output, PassClear.To(new Vector4(0f, 0f, 0f, 1f)));
                 shader.Use();
                 shader.SetUniform("uValues", values);
@@ -122,11 +101,8 @@ public sealed class ArrayUniformGlTests
     [Fact]
     public void A_matrix_array_arrives_untransposed()
     {
-        // The engine uploads System.Numerics matrices with no transpose on any
-        // backend, and that is only correct because GLSL's mat4 is column-major
-        // and the memory layouts happen to agree. A transposed upload puts the
-        // translation into the wrong row, which this catches: the triangle is
-        // translated off screen and the pass writes nothing.
+        // A transposed upload would move the translation and push the
+        // triangle off screen.
         const string Source = """
             struct VertexInput {
                 [Location(0)] vec3 position;
@@ -160,8 +136,7 @@ public sealed class ArrayUniformGlTests
 
         Matrix4x4[] matrices =
         [
-            // Element 0 is a decoy that would push the triangle off screen, so
-            // reading the wrong element also fails this test.
+            // Decoy: reading element 0 pushes the triangle off screen.
             Matrix4x4.CreateTranslation(10f, 10f, 0f),
             Matrix4x4.Identity,
         ];

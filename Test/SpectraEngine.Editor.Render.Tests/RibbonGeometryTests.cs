@@ -9,48 +9,27 @@ using AvPath = Avalonia.Controls.Shapes.Path;
 namespace SpectraEngine.Editor.Render.Tests;
 
 /// <summary>
-/// What the ribbon MEASURES, on a real layout pass with real text metrics.
+/// Ribbon geometry on a real layout pass with real text metrics.
+/// Nothing here judges colour or contrast.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Every defect this surface has ever had was found by a person looking at the
-/// running window: a 58px button that broke "Everything" mid-word, a caret that
-/// rendered 28px left of its glyph, and - found here - a split button whose
-/// label sat seven pixels above every button beside it. None of the three is
-/// reachable from a source scrape, because in each case the markup and the
-/// styles are individually correct and it is the composed layout that is wrong.
-/// </para>
-/// <para>
-/// <b>What this suite deliberately does NOT claim.</b> Nothing here judges
-/// colour, contrast, or whether the hierarchy reads - every assertion is
-/// geometric or textual, and the whole surface would have been green throughout
-/// the period it was, in the owner's words, thirty identical grey buttons.
-/// </para>
-/// </remarks>
 [Collection(RibbonSessionCollection.Name)]
 public sealed class RibbonGeometryTests(RibbonSession session)
 {
-    /// <summary>
-    /// What a large glyph renders across: 25 units of ink from Icons.axaml's
-    /// own 3.5..28.5 convention, plus the 1.6 stroke Path.icon-lg draws it with.
-    /// </summary>
+    // Large glyphs fill 3.5..28.5 of a 32 box, plus the 1.6 stroke.
     private const double NominalLargeInk = 26.6;
 
-    /// <summary>How far a large glyph may sit from that. See the test.</summary>
     private const double LargeInkTolerance = 4.0;
 
-    /// <summary>Both pages, by roster id.</summary>
+    /// <summary>Both ribbon pages, by roster id.</summary>
     public static TheoryData<string> Pages => [RibbonLayout.DefaultTabId, RibbonLayout.ViewTabId];
 
     [Theory]
     [MemberData(nameof(Pages))]
     public void A_glyph_is_centred_in_the_box_layout_gave_it(string tabId)
     {
-        // THE 28-PIXEL DEFECT, GENERALISED. A Shape with Stretch="None" draws
-        // its geometry at AUTHORED coordinates inside whatever box it was
-        // arranged into, and Shape defaults to HorizontalAlignment=Stretch - so
-        // the box can be perfectly placed while the ink sits against its left
-        // edge. Bounds cannot see that; ink can.
+        // A Shape with Stretch="None" draws at its authored coordinates and
+        // defaults to HorizontalAlignment=Stretch, so a well-placed box can hold
+        // ink stuck to its left edge. Layout bounds cannot see that; ink can.
         session.On(() =>
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId);
@@ -64,24 +43,9 @@ public sealed class RibbonGeometryTests(RibbonSession session)
                     continue;
                 }
 
-                // MEASURED AGAINST THE SLACK, not against a pixel count, because
-                // the defect scales with the box: a glyph drawn from its box's
-                // left edge is off-centre by exactly half the room it had, so a
-                // 6px caret in a 64px band lands 29px out and the same caret in
-                // a 12px one lands 2.4px out. Asserting "nearer the centre than
-                // the edge" catches both and lets authoring asymmetry through -
-                // the current large set really is off centre by up to 1.05 (Part
-                // +0.85, Light -1.0, Rotate -1.05), which is the artwork's
-                // business rather than layout's.
-                //
-                // WHAT THIS CAN AND CANNOT SEE, measured rather than asserted: a
-                // stretched caret in the 12px column it has now lands 1.5 out and
-                // IS caught, but only just, because the column is too narrow for
-                // the defect to grow in. In the 64px foot band the caret used to
-                // sit in, the same mistake was 29 - which is the number CLAUDE.md
-                // records a person finding by looking at the window. The narrow
-                // column bounds the defect by construction, which is a better
-                // outcome than detecting a big one.
+                // Tolerance scales with the slack, not a pixel count: edge-drawn
+                // ink is off by half the room it had. The artwork itself is off
+                // centre by up to ~1px, which must pass.
                 string name = string.Join(' ', glyph.Classes);
                 Math.Abs(ink.Center.X - box.Center.X).ShouldBeLessThanOrEqualTo(
                     Allowed(box.Width, ink.Width),
@@ -99,19 +63,9 @@ public sealed class RibbonGeometryTests(RibbonSession session)
     [MemberData(nameof(Pages))]
     public void Every_large_glyph_is_drawn_to_one_optical_size(string tabId)
     {
-        // ONE FAMILY OR ELEVEN OUTLINES. Icons.axaml states that every large
-        // glyph is authored so its ink fills 3.5..28.5 of a 32 box, which with
-        // the 1.6 stroke renders 26.6 across - and nothing checked it, because
-        // RibbonDepthConventionTests can only read coordinates out of the file
-        // and asks the weaker question of whether the widest one exceeds 16.
-        //
-        // MEASURED, and the set does not hold its own convention: most glyphs
-        // are exactly 26.6 x 26.6, but Part renders 30.3 tall, Light 24.6 and
-        // Cut 25.1 - a 5.7px spread, 21% of the box. That is the same defect
-        // CLAUDE.md records fixing for the SMALL set, re-acquired by hand
-        // authoring, and it is why the bound here is loose enough to pass what
-        // ships today rather than red on arrival. It tightens to about a pixel
-        // the day the glyphs are normalised from a viewBox instead of by eye.
+        // The tolerance is loose because the shipped set is uneven: most glyphs
+        // are 26.6 square, but Part is 30.3 tall, Light 24.6 and Cut 25.1.
+        // Tighten to about a pixel once the artwork is normalised.
         session.On(() =>
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId);
@@ -134,10 +88,6 @@ public sealed class RibbonGeometryTests(RibbonSession session)
     [MemberData(nameof(Pages))]
     public void Every_large_button_puts_its_label_on_the_same_line(string tabId)
     {
-        // FOUND HERE, AND BY NOTHING ELSE. The Entity split's main half was 50
-        // tall with a top-aligned stack while every neighbour centred 53 in 66,
-        // so its icon and its label both sat seven pixels high - on the one
-        // control in the group that is meant to look like the others.
         session.On(() =>
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId);
@@ -164,12 +114,8 @@ public sealed class RibbonGeometryTests(RibbonSession session)
     [MemberData(nameof(Pages))]
     public void Columns_inside_one_group_share_an_edge(string tabId)
     {
-        // A column of small rows is either centred against the large buttons
-        // beside it or top-aligned with its sibling columns, and WHICH is a
-        // property of the group rather than of the column: centring a column of
-        // two beside a column of three aligns it to neither. Whatever a group
-        // chose, its columns have to agree - which is the whole reason
-        // StackPanel.rcol.ragged exists.
+        // Centred or top-aligned is the group's choice, but its columns must
+        // agree. That is what StackPanel.rcol.ragged is for.
         session.On(() =>
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId);
@@ -198,10 +144,8 @@ public sealed class RibbonGeometryTests(RibbonSession session)
     [MemberData(nameof(Pages))]
     public void Every_caption_on_a_page_shares_one_baseline(string tabId)
     {
-        // StackPanel.rrow's MinHeight exists for exactly this and nothing
-        // checked it: the Snap group is a check row over a field and is
-        // naturally shorter than a row of large buttons, so without the floor
-        // its caption would sit twenty pixels above its neighbours'.
+        // StackPanel.rrow's MinHeight does this: the Snap group is shorter
+        // than a row of large buttons.
         session.On(() =>
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId);
@@ -223,12 +167,8 @@ public sealed class RibbonGeometryTests(RibbonSession session)
     [MemberData(nameof(Pages))]
     public void A_caption_never_widens_the_group_it_names(string tabId)
     {
-        // This is what makes it LEGAL for the arithmetic width model to ignore
-        // captions. A caption is a centred child of the group's own vertical
-        // StackPanel, so it can widen the group; the model pretends it cannot.
-        // Rather than teach the model to measure text - which would mean the
-        // model needs a font, and then it is not the cheap bound any more -
-        // assert the precondition it relies on.
+        // The arithmetic width model ignores captions. This is the
+        // precondition that lets it.
         session.On(() =>
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId);
@@ -250,14 +190,8 @@ public sealed class RibbonGeometryTests(RibbonSession session)
     [MemberData(nameof(Pages))]
     public void No_ribbon_control_hangs_outside_its_page_or_over_another_one(string tabId)
     {
-        // Restricted to the controls the roster names, deliberately. A blanket
-        // "nothing overlaps" is false on this surface BY DESIGN - Border.sheen
-        // sits under the content of every large button and Path.mark sits over
-        // Path.markbox in every check and radio row - and would have to be
-        // exempted into uselessness. "No two ribbon controls sit on top of each
-        // other" is the claim worth making, and it is what turns the split's
-        // zero vertical headroom into a build failure the day it stops being a
-        // near-miss.
+        // Roster controls only. Parts overlap on purpose: Border.sheen under
+        // large buttons, Path.mark over Path.markbox.
         session.On(() =>
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId);
@@ -285,11 +219,7 @@ public sealed class RibbonGeometryTests(RibbonSession session)
         });
     }
 
-    /// <summary>
-    /// How far off centre a glyph's ink may sit: half the room it had, so a
-    /// glyph drawn from its box's edge always fails and authoring asymmetry
-    /// always passes.
-    /// </summary>
+    // Half of what edge-drawn ink would be off by, with a floor for the artwork.
     private static double Allowed(double boxSize, double inkSize) =>
         Math.Max(1.2, Math.Max(0, boxSize - inkSize) / 4);
 

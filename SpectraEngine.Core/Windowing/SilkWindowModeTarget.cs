@@ -4,16 +4,8 @@ using System;
 
 namespace SpectraEngine.Core.Windowing;
 
-/// <summary>
-/// Adapts a Silk.NET <see cref="IWindow"/> to <see cref="IWindowModeTarget"/>.
-/// The one place in the window-mode path that names a windowing backend, and
-/// therefore the one piece a future non-Silk host (the Uno editor) rewrites.
-/// </summary>
-/// <remarks>
-/// <b>Window thread only.</b> Every property here forwards straight to GLFW,
-/// which answers on the thread that created the window and nowhere else — the
-/// latch is what keeps other threads out.
-/// </remarks>
+// Silk.NET IWindow as an IWindowModeTarget. Window thread only: everything
+// forwards to GLFW.
 internal sealed class SilkWindowModeTarget : IWindowModeTarget
 {
     private readonly IWindow _window;
@@ -42,9 +34,7 @@ internal sealed class SilkWindowModeTarget : IWindowModeTarget
     /// <inheritdoc/>
     public bool Decorated
     {
-        // Silk's WindowBorder folds "has a frame" and "can be dragged to
-        // resize" into one enum. Resizable is the engine's windowed default,
-        // so that is what re-decorating restores to.
+        // WindowBorder has no plain "decorated". Resizable is the windowed default.
         get => _window.WindowBorder != WindowBorder.Hidden;
         set => _window.WindowBorder = value ? WindowBorder.Resizable : WindowBorder.Hidden;
     }
@@ -61,13 +51,9 @@ internal sealed class SilkWindowModeTarget : IWindowModeTarget
     {
         if (_window.Monitor is { } monitor)
         {
-            // Silk's GLFW monitor reports Bounds from glfwGetMonitorWorkarea —
-            // the desktop MINUS the taskbar — so filling it would leave the
-            // taskbar sitting on top of a "fullscreen" game. The video mode
-            // carries the display's real resolution, so the larger of the two
-            // per axis is what actually covers the screen; the max also means a
-            // backend that reports no video mode degrades to the work area
-            // rather than to nothing.
+            // Silk's GLFW monitor.Bounds is the work area (desktop minus
+            // taskbar). The video mode has the real resolution, so take the
+            // larger per axis. No video mode falls back to the work area.
             Rectangle<int> area = monitor.Bounds;
             Vector2D<int> resolution = monitor.VideoMode.Resolution ?? area.Size;
             bounds = new WindowRect(

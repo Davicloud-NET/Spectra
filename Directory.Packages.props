@@ -6,18 +6,10 @@
 
   <ItemGroup>
     <!--
-      Roslyn, for the entity source generator (and for the tests that drive it).
-
-      PINNED AT OR BELOW THE ROSLYN THE INSTALLED SDK HOSTS, and that is the
-      whole rule. An analyzer binds against the Microsoft.CodeAnalysis the
-      COMPILER loaded, not against the copy in its own package folder: a
-      reference to a newer one fails to bind and Roslyn drops the analyzer
-      SILENTLY, so the symptom is a missing generated type reported as an
-      ordinary "type or namespace could not be found" at the consumer, nowhere
-      near the cause. Measured 2026-09: SDK 10.0.201 hosts assembly version
-      5.3.0.0 and SDK 10.0.100-rc.1 hosts 5.0.0.0, so 5.0.0 is the highest pin
-      that runs on both. Raise it only after checking the SDKs that must build
-      this repo, never to pick up a language feature.
+      Roslyn, for the entity source generator and its tests. Pin at or below the
+      Roslyn the oldest SDK that builds this repo hosts (5.0.0 for 10.0.100-rc.1).
+      A newer reference fails to bind and the generator is dropped with no error
+      except "type or namespace could not be found" at the consumer.
     -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
 
@@ -32,54 +24,22 @@
     <PackageVersion Include="Serilog.Sinks.Debug" Version="3.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
 
-    <!--
-      Editor shell. Avalonia over Uno on the docking story (a level editor
-      without dockable panes is not a level editor) and because it runs
-      everywhere the engine runs. NativeControlHost is what embeds the engine's
-      own surface; see ROADMAP §10.
-    -->
+    <!-- Editor shell -->
     <PackageVersion Include="Avalonia" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.1" />
     <!--
-      The headless windowing platform, and Skia beside it. Adopted for one
-      reason: every defect this shell's ribbon has ever had was found by a
-      person looking at the running window and by nothing else - a 58px button
-      that broke "Everything" mid-word, and a split button's caret that
-      rendered 28px left of its glyph. Neither is reachable from a source
-      scrape, and the arithmetic bound that stood in for a measurement invents
-      a width per control kind rather than measuring one.
-
-      SKIA IS NOT ACTUALLY NEW HERE, and that is most of why this is cheap:
-      Avalonia.Desktop already depends on Avalonia.Skia, which already brings
-      SkiaSharp and its Windows and Linux natives, and CI already builds
-      SpectraEngine.Editor on both hosts. It is named explicitly because the
-      render suite calls UseSkia itself, on the rule the Silk.NET .Glfw entries
-      below already follow. What is genuinely new is Avalonia.Headless, MIT,
-      whose whole dependency set (Avalonia, Avalonia.Fonts.Inter,
-      Avalonia.HarfBuzz) was already restored and which ships no native asset.
-
-      UseHeadlessDrawing MUST BE FALSE, and that is the whole point of pairing
-      the two. The headless render interface installs a stub typeface whose
-      every glyph has the same advance, so a width measured under it is not a
-      measurement - it is the invented model again, wearing a framework's name.
-      Skia plus HarfBuzz is what makes "does this word fit" a fact.
-
-      What this CANNOT prove is written in the suite's own header: nothing here
-      judges colour, contrast or whether a layout reads well, and the viewport
-      is a native child that composites above everything Avalonia draws and so
-      cannot appear in a captured frame at all.
+      Headless platform plus real Skia for the editor render suite. Skia is
+      already a transitive dependency of Avalonia.Desktop; it is listed because
+      the suite calls UseSkia itself. UseHeadlessDrawing must stay false there:
+      the headless stub typeface gives every glyph the same advance.
     -->
     <PackageVersion Include="Avalonia.Headless" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Skia" Version="12.1.1" />
     <!--
-      Docking. Dock.Avalonia is MIT and did NOT go the commercial route
-      TreeDataGrid 12.x took (verified 2026-08: licence in repo and NuGet).
-      Dock.Model.Avalonia rather than .Mvvm/.ReactiveUI, because its dockables
-      carry Content directly, which is what lets the shell keep its live,
-      event-wired panel controls instead of templating fresh ones per layout
-      change.
+      Docking (MIT). Dock.Model.Avalonia rather than .Mvvm/.ReactiveUI: its
+      dockables carry Content directly, so the shell keeps its live panel controls.
     -->
     <PackageVersion Include="Dock.Avalonia" Version="12.1.0.6" />
     <PackageVersion Include="Dock.Avalonia.Themes.Fluent" Version="12.1.0.6" />
@@ -92,28 +52,13 @@
     <PackageVersion Include="StbImageSharp" Version="2.30.16" />
 
     <!--
-      Block compression for the cook, and the ONE dependency in this file whose
-      determinism was measured before it was adopted:
-      docs/spikes/2026-09-cook-dependency-spikes.md encoded the same PNG twice,
-      in parallel and serially, and in two processes, and got byte-equal BC7 both
-      ways - but got DIFFERENT bytes between an AVX2 baseline and a non-AVX2 one
-      (310 of 1,024 blocks), which is why InstructionSetBaseline is part of every
-      cook cache key. MIT OR Unlicense, one managed dependency
-      (CommunityToolkit.HighPerformance), no native dependency, and it publishes
-      and runs under NativeAOT with no warnings, which the editor needs because it
-      hosts the cooker in process.
+      Block compression for the cook. Output is byte-stable across runs and
+      threads but differs between AVX2 and non-AVX2, which is why
+      InstructionSetBaseline is in every cook cache key. AOT-clean.
     -->
     <PackageVersion Include="BCnEncoder.Net" Version="2.3.0" />
 
-    <!--
-      XxHash128, which keys the .spack entry table and its content digest. Not in
-      the shared framework, so it is a package rather than a using. Its NativeAOT
-      posture was verified rather than inferred (this repo adopts no dependency on
-      an inferred one): a throwaway console calling the one-shot, incremental and
-      HashToUInt128 forms published with -p:PublishAot=true on win-x64 with no
-      trim or AOT warnings, ran as a 951 KB native binary, and returned the
-      reference XXH3-128 vector for the empty input.
-    -->
+    <!-- XxHash128 for the .spack entry table and content digest. AOT-clean. -->
     <PackageVersion Include="System.IO.Hashing" Version="10.0.11" />
 
     <!-- Testing (xunit v3 on Microsoft.Testing.Platform) -->
@@ -127,13 +72,7 @@
     <PackageVersion Include="Microsoft.VisualStudio.Shell.15.0" Version="17.12.40504" />
     <PackageVersion Include="Microsoft.VSSDK.BuildTools" Version="17.12.2123" />
 
-    <!--
-      Silk.NET graphics/audio/input. Only packages some project actually
-      references are listed: the metapackage plus OpenCL, Vulkan and XInput
-      were carried here with no consumer at all, and a version row for a
-      package nobody references is an invitation to reference it by accident.
-      Vulkan returns with the SPIR-V generator.
-    -->
+    <!-- Silk.NET graphics/audio/input. List only packages a project references. -->
     <PackageVersion Include="Silk.NET.Assimp" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.Direct3D11" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.Direct3D12" Version="2.23.0" />
@@ -142,21 +81,15 @@
     <PackageVersion Include="Silk.NET.GLFW" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.Input" Version="2.23.0" />
     <!--
-      The two .Glfw backends are pulled in transitively by Silk.NET.Windowing /
-      Silk.NET.Input, but SilkPlatform references their RegisterPlatform types
-      directly (that static reference is what survives trimming), so they are
-      listed explicitly rather than relying on transitive compile-time assets.
+      The two .Glfw backends are transitive, but SilkPlatform references their
+      RegisterPlatform types directly so they survive trimming.
     -->
     <PackageVersion Include="Silk.NET.Input.Glfw" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.Maths" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.OpenAL" Version="2.23.0" />
     <!--
-      The native half, and it is not optional in practice: Silk.NET.OpenAL is
-      bindings only, and Windows has shipped no OpenAL runtime since 2007, so
-      without this every machine that has not installed one separately opens no
-      device and the engine runs in disabled mode. Its version tracks OpenAL
-      Soft's own releases rather than Silk's, which is why it is 1.x beside the
-      2.23.0 bindings.
+      Native OpenAL Soft. Silk.NET.OpenAL is bindings only and Windows ships no
+      runtime, so without this audio runs disabled. Versioned after OpenAL Soft.
     -->
     <PackageVersion Include="Silk.NET.OpenAL.Soft.Native" Version="1.23.1" />
     <PackageVersion Include="Silk.NET.OpenGL" Version="2.23.0" />

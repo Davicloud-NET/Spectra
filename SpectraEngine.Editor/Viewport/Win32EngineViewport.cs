@@ -13,28 +13,8 @@ namespace SpectraEngine.Editor.Viewport;
 /// The pane the engine renders into: a native child window embedded in the
 /// visual tree, with the engine's own swap chain behind it.
 /// </summary>
-/// <remarks>
-/// <b>This is the whole of the embedding.</b> Avalonia creates and positions a
-/// native child; the engine is handed it as an <see cref="IRenderSurface"/> and
-/// draws into it with its own render thread, its own device and its own present.
-/// Nothing about the engine's frame goes through the UI framework, which is
-/// exactly why a XAML layout pass cannot stall the viewport and why the async
-/// CSG pipeline keeps its single-threaded proofs.
-/// <para>
-/// <b>The surface arrives before the engine does, and that ordering is
-/// forced.</b> A renderer cannot initialise without a handle, and Avalonia only
-/// produces one when the control is attached to a visual tree, so
-/// <see cref="SurfaceCreated"/> is what a host waits for rather than starting
-/// the engine at construction and hoping.
-/// </para>
-/// <para>
-/// <b>Windows only for v1</b>, and it says so rather than degrading: on another
-/// platform the base class's default child still appears (so the layout is
-/// honest) but no surface is published and no engine starts. The Linux half is
-/// the embedded OpenGL context, which is the arc's largest single piece of
-/// remaining work and not something to fake.
-/// </para>
-/// </remarks>
+// The engine renders with its own thread, device and present. Windows only: on
+// other platforms the default child appears but no surface is published.
 public sealed class Win32EngineViewport : NativeControlHost, IEngineViewport
 {
     private Win32ViewportWindow? _window;
@@ -48,49 +28,30 @@ public sealed class Win32EngineViewport : NativeControlHost, IEngineViewport
 
     /// <summary>
     /// Raised on the UI thread before the native surface is destroyed. A host
-    /// must have stopped the engine by the time this returns, or the driver is
-    /// handed a window that no longer exists.
+    /// must have stopped the engine by the time this returns.
     /// </summary>
     public event Action? SurfaceDestroying;
 
-    /// <summary>
-    /// Raised for a Ctrl chord the shell owns rather than the engine.
-    /// </summary>
-    /// <remarks>
-    /// Forwarded from the native child window, which is where the OS delivers
-    /// the keyboard while the viewport has focus. Without this the File menu's
-    /// accelerators are inert exactly while somebody is working in the scene.
-    /// </remarks>
+    /// <summary>Raised for a Ctrl chord the shell owns rather than the engine.</summary>
+    // The OS delivers the keyboard to the child window while it has focus, so
+    // Avalonia's menu accelerators never fire.
     public event Action<ShellChord>? ShellChord;
 
     /// <summary>
     /// Raised on the UI thread for a right-click that never became a freelook
-    /// drag, in the viewport's own pixels (which are framebuffer pixels: the
-    /// child window is the framebuffer). The shell opens its context menu; the
-    /// engine has already seen the balanced button events.
+    /// drag, in framebuffer pixels.
     /// </summary>
     public event Action<int, int>? ContextMenuRequested;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Declared and never raised, which is what <see cref="AcceptsAssetDrops"/>
-    /// exists to say out loud. The compiler warning for an event nothing invokes
-    /// is suppressed rather than answered with a fake raise: the absence IS the
-    /// behaviour, and a viewport that quietly raised it from somewhere would be
-    /// worse than one that cannot.
-    /// </remarks>
+    // Never raised: see AcceptsAssetDrops.
 #pragma warning disable CS0067
     public event Action<ContentDragPayload, int, int, MaterialDropScope>? AssetDropped;
 #pragma warning restore CS0067
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Never raised either, and for one reason more than <see cref="AssetDropped"/>
-    /// has. This window sees no drag at all, and even if it did, the overlay the
-    /// event exists to drive is markup in the main window's Avalonia layer -
-    /// which a child HWND composites over. Reporting a drag from here would put
-    /// a frame and a label somewhere no pixel of them could reach.
-    /// </remarks>
+    // Never raised: this window sees no drag, and the overlay it would drive
+    // is drawn under the child HWND.
 #pragma warning disable CS0067
     public event Action<AssetDragState?>? AssetDragChanged;
 #pragma warning restore CS0067
@@ -99,32 +60,15 @@ public sealed class Win32EngineViewport : NativeControlHost, IEngineViewport
     /// Always false: the OS delivers input to the child HWND, and that window
     /// is not a registered OLE drop target.
     /// </summary>
-    /// <remarks>
-    /// <b>Not an oversight and not a stub.</b> Making a native child take a drop
-    /// means implementing <c>IDropTarget</c> and calling <c>RegisterDragDrop</c>
-    /// on the HWND, then translating OLE's own data objects back into the
-    /// managed payload a composited drop already carries - a second, unshared
-    /// drop path in a viewport the shell is moving away from. It is refused with
-    /// a sentence in <see cref="Shell.AssetDropPolicy"/> instead, so the
-    /// difference between the two panes is visible where the gesture happens.
-    /// </remarks>
     public bool AcceptsAssetDrops => false;
 
     /// <summary>Whether this platform can host the engine at all.</summary>
-    /// <remarks>
-    /// The answer now lives with the choice between the two viewports rather
-    /// than on one of them, because a shell asking "can this machine host a
-    /// viewport" is not asking about a particular kind.
-    /// </remarks>
     public static bool IsSupported => EngineViewports.IsSupported;
 
     /// <inheritdoc/>
     public Control Control => this;
 
-    /// <summary>
-    /// The running engine's host, once there is one. Setting it is what turns
-    /// the viewport's input on.
-    /// </summary>
+    /// <summary>The running engine's host. Setting it turns the viewport's input on.</summary>
     public EngineHost? Host
     {
         get => _host;
@@ -137,43 +81,21 @@ public sealed class Win32EngineViewport : NativeControlHost, IEngineViewport
     }
 
     /// <summary>
-    /// Applies whatever cursor mode the engine has asked for. <b>UI thread
-    /// only</b>, once per pass of the shell's pump.
+    /// Applies the cursor mode the engine asked for. UI thread only, once per
+    /// pass of the shell's pump.
     /// </summary>
-    /// <remarks>
-    /// The shell's equivalent of the slot <c>Engine.Run</c> applies its own
-    /// cursor latch in, and it exists for the identical reason: capturing and
-    /// hiding a pointer is window-thread work, and the engine asks for it from
-    /// the render thread.
-    /// </remarks>
     public void PumpCursorMode() => _window?.PumpCursorMode();
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <b>Nothing to do, and that is the whole of the native child's answer.</b>
-    /// The surface here IS the HWND: destroying the control destroys it, and
-    /// <see cref="DestroyNativeControlCore"/> already raises
-    /// <see cref="SurfaceDestroying"/> at the one moment the render thread must
-    /// be off it. Raising anything here would put the engine's stop a step
-    /// earlier for no gain and make the two paths disagree about which event
-    /// ends a session. There is no re-parent to tell apart either: a native
-    /// viewport is pinned in its own cell, because moving it is exactly what
-    /// takes the session with it.
-    /// </remarks>
+    // Nothing to do: the surface is the HWND, and DestroyNativeControlCore
+    // raises SurfaceDestroying when the control goes.
     public void Shutdown()
     {
     }
 
-    /// <summary>
-    /// Hands the keyboard to the engine's native child window.
-    /// </summary>
-    /// <remarks>
-    /// Not Avalonia's <c>Focus()</c>, which is a silent no-op here: a
-    /// <see cref="NativeControlHost"/> is not focusable, and even a focusable
-    /// one would hold AVALONIA focus while the OS keeps delivering keys
-    /// wherever they were going. The engine hears the keyboard only while its
-    /// own HWND has Win32 focus — the same <c>SetFocus</c> a click performs.
-    /// </remarks>
+    /// <summary>Hands the keyboard to the engine's native child window.</summary>
+    // Win32 SetFocus, not Avalonia's Focus(): a NativeControlHost is not
+    // focusable, so that call does nothing.
     public void FocusEngine() => _window?.FocusKeyboard();
 
     /// <inheritdoc/>
@@ -186,9 +108,6 @@ public sealed class Win32EngineViewport : NativeControlHost, IEngineViewport
         _window.ShellChord += chord => ShellChord?.Invoke(chord);
         _window.ContextMenuRequested += (x, y) => ContextMenuRequested?.Invoke(x, y);
 
-        // After the handle exists and before anything can render: a host that
-        // started the engine any earlier would be initialising a renderer
-        // against a window that is not there yet.
         SurfaceCreated?.Invoke(_window);
 
         return new PlatformHandle(_window.NativeHandle, "HWND");
@@ -203,10 +122,8 @@ public sealed class Win32EngineViewport : NativeControlHost, IEngineViewport
             return;
         }
 
-        // The engine has to be off this surface before the window goes, not
-        // after: the render thread owns the swap chain that presents to it, and
-        // presenting into a destroyed HWND is a driver-level failure rather
-        // than an exception anything here could catch.
+        // Before the window goes: presenting into a destroyed HWND fails in
+        // the driver, not as an exception.
         SurfaceDestroying?.Invoke();
 
         _window.Dispose();

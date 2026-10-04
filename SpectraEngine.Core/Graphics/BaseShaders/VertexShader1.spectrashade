@@ -1,5 +1,3 @@
-// VertexShader1.spectrashade
-
 struct VertexInput {
     [Location(0)] vec3 position;
     [Location(1)] vec3 normal;

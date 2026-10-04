@@ -7,28 +7,12 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Closure: the compiled skin of a set of solids must be a closed surface.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Sum the vector area of every surface and a closed set gives exactly
-/// zero.</b> Each polygon contributes <c>0.5 * sum(cross(v[i], v[i+1]))</c>,
-/// which points along its normal with magnitude equal to its area, and for any
-/// closed boundary those cancel. A non-zero residual means a hole, and its
-/// direction and magnitude say which way the missing patch faces and how large
-/// it is. That is a far sharper instrument than probing points, because it finds
-/// holes nobody thought to probe.
-/// </para>
-/// <para>
-/// This oracle is what made the doorway defect findable. The sealing arrangement
-/// read <c>(0, -1, 0)</c>: one square unit of upward-facing boundary missing,
-/// which pointed straight at the absent threshold under the door.
-/// </para>
-/// </remarks>
+/// <summary>The compiled skin of a set of solids must be a closed surface.</summary>
+// The vector areas of a closed surface sum to zero. A residual means a hole;
+// its direction and size say which way the missing patch faces and how big.
 public sealed class CsgClosureTests
 {
-    /// <summary>Float slop over a few hundred surfaces at play-area distances.</summary>
+    // Float slop over a few hundred surfaces at play-area distances.
     private const float Tolerance = 0.01f;
 
     public static Vector3 Closure(IReadOnlyList<Polygon> surfaces)
@@ -88,9 +72,6 @@ public sealed class CsgClosureTests
     [Fact]
     public void Two_boxes_meeting_flush_are_closed()
     {
-        // The shared interface is interior to the union, so BOTH faces must go.
-        // Keeping exactly one leaves a residual of that face's area, which is the
-        // failure the skipped test below records.
         Vector3 closure = Closure(Compile(scene =>
         {
             Box(scene, "a", new Vector3(0f, 0f, 0f), Vector3.One);
@@ -103,7 +84,6 @@ public sealed class CsgClosureTests
     [Fact]
     public void A_brush_hollowed_by_a_through_cut_is_closed()
     {
-        // The chasm's shape: a negative passing clean through a slab.
         Vector3 closure = Closure(Compile(scene =>
         {
             Box(scene, "slab", new Vector3(0f, 0f, 0f), new Vector3(8f, 1f, 8f));
@@ -116,8 +96,6 @@ public sealed class CsgClosureTests
     [Fact]
     public void A_doorway_flush_with_its_wall_base_is_closed()
     {
-        // The defect this oracle found. Before the fix it read (0, -1, 0): the
-        // one square unit of threshold under the door.
         Vector3 closure = Closure(CoplanarCutSealingTests.Build(floorTouching: true).Surfaces);
         Assert.True(closure.Length() < Tolerance,
             $"a doorway at its wall's base should close, residual {closure}");
@@ -126,10 +104,8 @@ public sealed class CsgClosureTests
     [Fact]
     public void The_demo_play_area_has_no_missing_horizontal_boundary()
     {
-        // Asserted on y and z only, deliberately. The play area still carries a
-        // known eight square unit hole in x, recorded below with its own
-        // reproduction. Asserting the whole vector here would only restate that
-        // defect in a test whose job is to catch new ones.
+        // y and z only: the play area has a known hole in x, reproduced by
+        // the skipped staircase test below.
         Vector3 closure = Closure(Compile(scene =>
             DemoPlayArea.Build(scene, MaterialRef.Default, MaterialRef.Default, MaterialRef.Default)).Surfaces);
 
@@ -143,28 +119,11 @@ public sealed class CsgClosureTests
         "Known CSG defect: two solids meeting flush lose one side of the shared interface when the " +
         "junction plane is not exactly representable in binary. See the test remarks.";
 
-    /// <summary>
-    /// A second, independent closure defect, minimally reproduced.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// A staircase whose last tread meets a terrace flush at x = 139 loses eight
-    /// square units of skin. The 4 by 2 shared interface has one of its two
-    /// opposite-facing coincident faces removed and the other kept, where both
-    /// should go.
-    /// </para>
-    /// <para>
-    /// <b>What makes it fire is arithmetic, not geometry.</b> The demo's three
-    /// staircases meet the terrace on the same plane over the same area, and only
-    /// this one breaks. It is the only one whose rise and run (0.40 and 0.80) are
-    /// not exactly representable in binary; the others use 0.25 with 0.5, and 0.5
-    /// with 1.0, which are. So the junction plane lands a few millionths off 139,
-    /// and the opposite-facing coincidence rule and its tie-break disagree about
-    /// whether that counts as coincident, because they are not applied at the same
-    /// tolerance. <c>Csg.CoplanarOrientation</c> already documents itself as ten
-    /// times looser in offset than <c>Polygon.Split</c>'s own classification.
-    /// </para>
-    /// </remarks>
+    // The last tread meets the terrace flush at x = 139 and the 4 by 2 shared
+    // interface keeps one of its two opposite faces. Rise and run (0.40, 0.80)
+    // are not exact in binary, so the junction lands a few millionths off 139,
+    // and Csg.CoplanarOrientation and Polygon.Split classify at different
+    // tolerances.
     [Fact(Skip = XResidualReason)]
     public void A_staircase_meeting_a_terrace_on_an_inexact_plane_is_closed()
     {
@@ -181,9 +140,7 @@ public sealed class CsgClosureTests
     [Fact]
     public void The_same_staircase_with_binary_exact_treads_is_closed()
     {
-        // The control, and the evidence for the diagnosis above: identical
-        // junction, identical area, rise and run changed to values that are exact
-        // in binary.
+        // Control: same junction and area, rise and run exact in binary.
         Vector3 closure = Closure(Compile(scene =>
         {
             Box(scene, "floor", new Vector3(150f, -1.5f, 0f), new Vector3(20f, 1.5f, 20f));

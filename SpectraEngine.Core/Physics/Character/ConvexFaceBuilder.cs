@@ -9,28 +9,11 @@ namespace SpectraEngine.Core.Physics.Character;
 /// Builds the face polygons of a convex solid from its outward half-space
 /// planes.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The same seed-and-clip a brush uses when it turns authored planes into
-/// faces: give every plane a quad far larger than the solid, clip it by every
-/// other plane, and whatever survives is that plane's face. It is written here
-/// rather than reused because a cover element's plane set is not a brush — it
-/// routinely contains a plane exactly coincident with one it already has, which
-/// brush construction rejects outright and which is <em>normal</em> for a
-/// flush cut.
-/// </para>
-/// <para>
-/// <b>It doubles as the exact emptiness test, which is why the cover is
-/// affordable.</b> A combination of half-spaces that describes nothing produces
-/// no surviving faces, and a solid needs at least four. So pruning empty cover
-/// elements costs nothing beyond building the ones that are real — and the
-/// alternative, a linear program per candidate, is what makes people reach for
-/// approximations instead.
-/// </para>
-/// </remarks>
+// Seed-and-clip like Brush, but tolerant of duplicate planes, which Brush
+// rejects and a flush cut produces. Also the emptiness test for cover
+// elements: planes that bound nothing leave fewer than four faces.
 public static class ConvexFaceBuilder
 {
-    /// <summary>Below this area a face is treated as a sliver and dropped.</summary>
     private const float MinFaceExtent = 1e-4f;
 
     /// <summary>
@@ -54,22 +37,11 @@ public static class ConvexFaceBuilder
                 if (i == j)
                     continue;
 
-                // A cover element's plane list routinely contains the SAME
-                // directed plane twice — a cut flush with the brush's own face
-                // makes the flipped negative plane identical to it. Clipping a
-                // face by its own plane annihilates it (Split reports coplanar
-                // on the front and the inside is empty), which silently deletes
-                // a real surface: the floor keeps its planes but loses its top,
-                // and a character walks off the end of it into thin air.
-                // Brush construction refuses duplicate planes outright; a cover
-                // element has to tolerate them instead.
+                // Skip a duplicate of this face's own plane. Clipping by it
+                // would delete the face (Split puts coplanar on the front).
                 if (SameDirectedPlane(planes[i], planes[j]))
                     continue;
 
-                // Split keeps the part BEHIND the outward plane, i.e. inside.
-                // A face exactly coincident with another plane survives on the
-                // front side and is therefore clipped away here — which is what
-                // makes a flush cut produce no sliver rather than a phantom.
                 face.Split(planes[j], out _, out Polygon? inside);
                 face = inside;
             }
@@ -112,9 +84,7 @@ public static class ConvexFaceBuilder
         return new Aabb(min, max);
     }
 
-    // A seed large enough to contain the solid: the largest plane offset,
-    // generously scaled. Undersizing it would clip real geometry away and
-    // report a solid as empty, which is why the margin is not tight.
+    // Generous on purpose: too small a seed clips real geometry away.
     private static float SeedExtent(ReadOnlySpan<Plane> planes)
     {
         float largest = 0f;
@@ -136,7 +106,6 @@ public static class ConvexFaceBuilder
         if (lengthSquared < 1e-12f)
             return null;
 
-        // Any axis not parallel to the normal gives a stable tangent frame.
         Vector3 reference = MathF.Abs(normal.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX;
         Vector3 tangent = Vector3.Normalize(Vector3.Cross(reference, normal));
         Vector3 bitangent = Vector3.Cross(normal, tangent);
@@ -145,8 +114,7 @@ public static class ConvexFaceBuilder
         Vector3 u = tangent * extent;
         Vector3 v = bitangent * extent;
 
-        // Wound counter-clockwise about the outward normal, matching every
-        // other polygon in the engine.
+        // Counter-clockwise about the outward normal.
         var verts = new[]
         {
             origin - u - v,

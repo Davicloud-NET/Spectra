@@ -12,47 +12,23 @@ using System.Threading.Tasks;
 namespace SpectraEngine.Core.Scene;
 
 /// <summary>
-/// The engine's spatial model, with the scene graph as the single spine: a tree
-/// of <see cref="SceneNode"/> instances rooted at <see cref="Root"/>, viewed
-/// through the <see cref="Camera"/>. Brush nodes in the graph are the authoring
-/// primitive for static world geometry; the compiled <see cref="StaticWorld"/>
-/// (carved surfaces + BSP + render mesh) is <em>derived data</em>, rebuilt from
-/// the brush nodes on demand — never authored directly.
+/// The scene graph: a tree of <see cref="SceneNode"/> under <see cref="Root"/>,
+/// viewed through <see cref="Camera"/>. Brush nodes are the authoring primitive
+/// for static geometry; <see cref="StaticWorld"/> is derived from them and
+/// recompiled in the background when they change.
+/// Every member is render thread only.
 /// </summary>
-/// <remarks>
-/// <b>Recompiles are asynchronous.</b> Editing a brush node (or moving any node
-/// with brush descendants) marks the world dirty automatically. Each frame the
-/// render thread's <see cref="ProcessStaticWorldCompilation"/> snapshots the
-/// brush placements, hands the immutable snapshot to a background task for the
-/// pure-CPU compile (carve → snap → weld → BSP → per-chunk mesh arrays), and
-/// swaps the finished world in — creating only the changed chunks' GPU meshes
-/// on the render thread — when it lands. At most one compile is in flight; the
-/// previous world keeps rendering
-/// until its replacement is ready. <see cref="RebuildStaticWorld"/> remains the
-/// synchronous path for load time and tests.
-/// <para>
-/// <b>Threading:</b> every member of this class is owned by the render thread
-/// (scene updates and GPU resource creation live there). The only work that
-/// leaves that thread is the background compile, and it reads nothing but its
-/// snapshot.
-/// </para>
-/// </remarks>
 public sealed partial class Scene
 {
     public Scene(string name = "Scene")
     {
         Name = name;
         _drawableComparison = _drawableNodes.Compare;
-        // The selection subscribes to NodeRemoved for auto-deselection, so it
-        // must exist before any node can leave the graph.
+        // Selection and both indexes subscribe to the change events, so they
+        // have to exist before the root is claimed.
         Selection = new SelectionSet(this);
-        // The spatial index subscribes to all three change events, so it too
-        // must exist before the root (and everything after it) enters the graph.
         Bvh = new SceneBvh(this);
         DrawableBvh = new SceneBvh(this, drawableOnly: true);
-        // The root is created by the property initializer before this runs;
-        // claiming it here makes every node later attached under it inherit
-        // the owner reference that powers automatic static-world dirtying.
         Root.SetOwner(this);
     }
 
@@ -63,122 +39,58 @@ public sealed partial class Scene
 
     public Camera Camera { get; } = new();
 
-    /// <summary>
-    /// The editor-facing selection over this scene's nodes. Render thread
-    /// only, like every other scene member.
-    /// </summary>
+    /// <summary>The editor-facing selection over this scene's nodes.</summary>
     public SelectionSet Selection { get; }
 
-    /// <summary>
-    /// The dynamic AABB tree over this scene's spatial nodes, maintained
-    /// automatically through the scene change events. Internal — consumers go
-    /// through <see cref="Raycast"/> and <see cref="QueryFrustum"/>. Render
-    /// thread only, like every other scene member.
-    /// </summary>
     internal SceneBvh Bvh { get; }
     internal SceneBvh DrawableBvh { get; }
 
-    // --- Scene change events ------------------------------------------------
-    // Render thread only, like all scene state: the graph is only ever mutated
-    // on the render thread, so the events fire there and handlers run there.
-    // Plain C# events raised with null-check invokes — with no subscribers a
-    // graph edit costs one null check, nothing more.
-    //
-    // RE-ENTRANCY RULE: handlers must not mutate the scene graph (add, remove,
-    // or reparent nodes) from inside an event — membership events fire in the
-    // middle of the ownership walk, and a structural edit there would corrupt
-    // the traversal. Observe and record; defer structural edits until after
-    // the event returns. (This is a stated contract, not an enforced guard.)
+    // Event handlers must not add, remove or reparent nodes: membership events
+    // fire in the middle of the ownership walk. Not enforced.
 
     /// <summary>
-    /// Raised for every node that enters this scene's graph. Attaching a
-    /// subtree raises it once per node, pre-order (parents before children);
-    /// a reparent within this scene raises nothing — the moved nodes never
-    /// left. Handlers observe the node with its <c>Owner</c> already set to
-    /// this scene. Render thread only; handlers must not mutate the graph
-    /// (see the re-entrancy rule above).
+    /// Raised for every node that enters this scene's graph, parents before
+    /// children. A reparent within the scene does not raise it.
+    /// Handlers must not mutate the graph.
     /// </summary>
     public event Action<SceneNode>? NodeAdded;
 
     /// <summary>
     /// Raised for every node that leaves this scene's graph, whether detached
-    /// outright or moved to another scene (a cross-scene move raises
-    /// <see cref="NodeRemoved"/> here and <see cref="NodeAdded"/> there, per
-    /// node). Handlers observe the node with its <c>Owner</c> already cleared
-    /// or pointing at the destination scene. Render thread only; handlers
-    /// must not mutate the graph (see the re-entrancy rule above).
+    /// or moved to another scene. Handlers must not mutate the graph.
     /// </summary>
     public event Action<SceneNode>? NodeRemoved;
 
     /// <summary>
-    /// Raised when an owned node's local transform actually changes — the
-    /// transform setters filter out equal-value writes, so a no-op write
-    /// raises nothing. Fires for every owned node, brush-bearing or not
-    /// (static-world dirtying is a separate, brush-only concern). Render
-    /// thread only; handlers must not mutate the graph (see the re-entrancy
-    /// rule above).
+    /// Raised when an owned node's local transform changes. An equal-value
+    /// write raises nothing. Handlers must not mutate the graph.
     /// </summary>
     public event Action<SceneNode>? NodeTransformChanged;
 
     /// <summary>
     /// Raised when an owned subtree moves to a different parent, or to a
-    /// different position under the same one, without leaving this scene.
-    /// Raised ONCE for the moved subtree's root, not per node: the descendants
-    /// did not move relative to it.
+    /// different index under the same one, without leaving this scene.
+    /// Raised once, for the subtree's root. Handlers must not mutate the graph.
     /// </summary>
-    /// <remarks>
-    /// <b>This is the one structural change the membership events cannot
-    /// report, by construction.</b> A reparent within one scene raises neither
-    /// <see cref="NodeAdded"/> nor <see cref="NodeRemoved"/>, because nothing
-    /// entered or left; the graph is genuinely the same set of nodes in a
-    /// different shape. An observer rebuilding a view of the hierarchy, a scene
-    /// tree above all, needs to hear about exactly that, and before this event
-    /// existed it could only have found out by re-walking the graph.
-    /// <para>
-    /// It fires for a re-ordering under the same parent too, because sibling
-    /// index is load-bearing here: it is traversal order, which is the static
-    /// world's placement-slot order.
-    /// </para>
-    /// <para>
-    /// Render thread only; handlers must not mutate the graph (see the
-    /// re-entrancy rule above).
-    /// </para>
-    /// </remarks>
     public event Action<SceneNode>? NodeReparented;
 
     /// <summary>
-    /// Raised when an owned node's <see cref="SceneNode.Name"/> actually
-    /// changes (the setter filters equal writes). A rename is neither a
-    /// membership change nor a reparent, so without this event a mirror of the
-    /// graph (the editor's scene tree) keeps showing the old name until an
-    /// unrelated structural change happens to rewrite the row. Render thread
-    /// only; handlers must not mutate the graph (see the re-entrancy rule
-    /// above). Does not bump the graph-structure version: a name is not
-    /// traversal order and no placement changes.
+    /// Raised when an owned node's <see cref="SceneNode.Name"/> changes.
+    /// Handlers must not mutate the graph.
     /// </summary>
     public event Action<SceneNode>? NodeRenamed;
 
-    // Raise helpers for SceneNode: the graph notifies its owning scene through
-    // these instead of exposing public raise entry points. Membership and
-    // reparent notifications also bump the graph-structure version — the
-    // signal that the brush snapshot's TRAVERSAL ORDER may have changed, which
-    // the incremental static-world compile's trusted-diff contract cannot
-    // survive (see _graphStructureVersion).
+    // Membership and reparent notifications bump _graphStructureVersion:
+    // traversal order may have changed.
     internal void OnNodeAdded(SceneNode node)
     {
         _graphStructureVersion++;
-        // Index BEFORE the event so handlers (and anything they call) can
-        // already resolve the arriving node through TryFindById.
+        // Indexed before the event so handlers can resolve the node by id.
         _nodesById[node.Id] = node;
         UpdatePartBrushMembership(node);
-        // The light list is rebuilt on arrival for the same reason the part set
-        // is. OnNodeRemoved drops a departing node from _lightNodes
-        // unconditionally, and the Light setter only registers a node that
-        // already has an Owner, so without this a light node that leaves and
-        // comes back is never relit: undoing a delete, re-attaching a detached
-        // subtree, or attaching a clone whose Light was assigned before it had a
-        // parent all produce a scene that is simply darker, with nothing thrown
-        // and nothing logged.
+        // OnNodeRemoved drops the node from _lightNodes and the Light setter
+        // only registers an owned node, so a light that leaves and comes back
+        // (undo of a delete) has to be relisted here.
         UpdateLightMembership(node);
         NodeAdded?.Invoke(node);
     }
@@ -187,16 +99,10 @@ public sealed partial class Scene
     {
         ForgetWorldPlacement(node);
         _graphStructureVersion++;
-        // De-index before the event, mirroring how Owner is repointed before
-        // the notification: a NodeRemoved handler must not be able to look the
-        // departing node up in the scene it is leaving. Identity-checked so a
-        // stale duplicate id (see the indexer note above) cannot unmap the
-        // node that currently owns the key.
+        // De-indexed before the event. The identity check keeps a stale
+        // duplicate id from unmapping the node that owns the key now.
         if (_nodesById.TryGetValue(node.Id, out SceneNode? indexed) && ReferenceEquals(indexed, node))
             _nodesById.Remove(node.Id);
-        // Unconditionally, unlike the membership recheck elsewhere: the node is
-        // leaving whatever it carries, and its meshes are collected by the next
-        // pump's sweep.
         _partBrushNodes.Remove(node);
         _partBrushMeshes.SetReference(node, null);
         _subtractiveBrushNodes.Remove(node);
@@ -208,27 +114,14 @@ public sealed partial class Scene
 
     internal void OnNodeTransformChanged(SceneNode node) => NodeTransformChanged?.Invoke(node);
 
-    // Spatial-index hooks from SceneNode for changes the three public events
-    // don't cover: component (MeshRenderer/Brush) edits on an already-owned
-    // node, and reparents WITHIN this scene (which move the subtree's world
-    // matrices but deliberately raise no membership events — yet still change
-    // traversal order, hence the structure bump).
+    // A mesh or brush changed on an owned node.
     internal void OnNodeSpatialComponentChanged(SceneNode node)
     {
         Bvh.OnSpatialComponentChanged(node);
         DrawableBvh.OnSpatialComponentChanged(node);
-        // The Brush setter routes through here unconditionally (it is one of
-        // the two gate sites that must stay kind-blind), which makes it the
-        // natural place to keep the part set honest through attach, swap and
-        // detach alike.
         UpdatePartBrushMembership(node);
     }
 
-    // Adds or drops `node` from the part set to match what it currently
-    // carries. Idempotent and O(1), so every caller may just say "recheck this
-    // node" rather than reasoning about which transition happened.
-    // Adds or drops `node` from the light list to match what it carries.
-    // Idempotent, so a caller may just say "recheck this node".
     internal void UpdateLightMembership(SceneNode node)
     {
         bool shouldBeListed = node.Light is not null;
@@ -245,11 +138,8 @@ public sealed partial class Scene
         _partBrushMeshes.SetReference(node,
             node.BrushKind == BrushKind.Part && node.Brush is { Operation: BrushOperation.Additive }
                 ? node.Brush : null);
-        // ADDITIVE part brushes only. A subtractive brush has no outward skin —
-        // its geometry is the cavity walls it induces in the brushes it cuts —
-        // so building a mesh from its own faces would upload the OUTWARD skin
-        // of a hole: a solid block standing exactly where the author asked for
-        // a void, rendered correctly, with nothing anywhere reporting an error.
+        // Additive parts only. A mesh built from a subtractive brush's own
+        // faces would draw a solid block where the author asked for a hole.
         if (node.Brush is { Operation: BrushOperation.Additive } &&
             node.BrushKind == BrushKind.Part)
         {
@@ -265,14 +155,8 @@ public sealed partial class Scene
         else
             _subtractiveBrushNodes.Remove(node);
 
-        // A SUBTRACTIVE PART IS INERT, and nothing else would ever say so.
-        // Part means "not in the placement list", so it carves nothing; and the
-        // additive-only rule above means it draws nothing either. The brush is
-        // therefore excluded from both halves of the engine and does exactly
-        // nothing, which is invisible in every sense: no error, no geometry, no
-        // hole. The two bits are independent by design and this is the one
-        // combination that cancels itself, so it is counted rather than left to
-        // be discovered.
+        // A subtractive part carves nothing and draws nothing. Counted so the
+        // mistake can be reported.
         if (node.Brush is { Operation: BrushOperation.Subtractive } &&
             node.BrushKind == BrushKind.Part)
         {
@@ -286,29 +170,16 @@ public sealed partial class Scene
         UpdateDrawableMembership(node);
     }
 
-    // ---- the drawable set --------------------------------------------------
-    //
-    // THE SPATIAL INDEX AND THE DRAW LIST WANT DIFFERENT POPULATIONS, and
-    // conflating them is expensive. Bvh indexes everything with a Brush so that
-    // picking, selection and raycasts can find world geometry; but a WORLD brush
-    // renders through the compiled static world and can never produce a draw of
-    // its own. Querying the BVH to build a draw list therefore walks every brush
-    // in the level to find the handful that draw: measured at 1.16 ms of a
-    // 1.96 ms view build, to find 13 drawable nodes among 25,638.
-    //
-    // A list rather than a set, because emission order feeds the draw list and
-    // has to be deterministic. Linear to scan, which is the right complexity
-    // here (it is proportional to what can draw, not to the world) and wants to
-    // become a second BVH only once drawables themselves number in the
-    // thousands.
+    // Kept apart from Bvh, which also indexes world brushes for picking. Those
+    // never draw on their own, and walking them to build a draw list is slow.
+    // A list, not a set: emission order feeds the draw list.
     private readonly OrderedIdentityList<SceneNode> _drawableNodes = new();
     private readonly Comparison<SceneNode> _drawableComparison;
 
     private void UpdateDrawableMembership(SceneNode node)
     {
         DrawableBvh.OnSpatialComponentChanged(node);
-        // A mesh renderer draws. So does a PART brush, from its own brush-local
-        // mesh. A world brush does not: the static world already carries it.
+        // World brushes draw through the static world, not here.
         bool drawable = node.MeshRenderer is not null ||
                         (node.BrushKind == BrushKind.Part && node.Brush is not null);
 
@@ -323,17 +194,8 @@ public sealed partial class Scene
 
     /// <summary>
     /// Nodes carrying a brush that is both <see cref="BrushKind.Part"/> and
-    /// subtractive, and therefore does nothing at all.
+    /// subtractive, which carves nothing and draws nothing. Always a mistake.
     /// </summary>
-    /// <remarks>
-    /// <b>Always a mistake, never a configuration.</b> A negative brush's whole
-    /// function is to take part in the carve, and <see cref="BrushKind.Part"/>
-    /// is precisely the declaration that a brush does not. The two cancel, the
-    /// brush disappears from the world and from the draw list, and the author
-    /// sees a hole that never appeared. Reported rather than thrown because the
-    /// editor converts whole selections between kinds in one command, and a
-    /// throw there would refuse the operation for one brush out of a hundred.
-    /// </remarks>
     public int InertPartBrushCount => _inertPartBrushNodes.Count;
 
     internal void OnNodeSubtreeMoved(SceneNode node)
@@ -347,103 +209,41 @@ public sealed partial class Scene
 
     internal void OnNodeRenamed(SceneNode node) => NodeRenamed?.Invoke(node);
 
-    // --- Node identity index ------------------------------------------------
-
-    // Guid -> node for every node currently in this scene's graph, maintained
-    // from the membership events above (which fire once per node of an attached
-    // or detached subtree, so whole-subtree edits are covered without a walk).
-    // A reparent WITHIN this scene raises no membership events and needs none:
-    // the nodes never left, so their mappings stay valid.
-    //
-    // Written with the indexer rather than Add: these run inside the ownership
-    // walk, where a throw would leave the graph half-owned. Ids are expected to
-    // be unique within a scene (Guid.NewGuid, or a deliberate reuse by undo of
-    // an id whose node has already left) — if two live nodes ever share one,
-    // the most recently added wins rather than crashing the edit.
+    // Written with the indexer, not Add: this runs inside the ownership walk,
+    // where a throw would leave the graph half-owned. On a duplicate id the
+    // latest node wins.
     private readonly Dictionary<Guid, SceneNode> _nodesById = [];
 
     /// <summary>
-    /// Resolves a <see cref="SceneNode.Id"/> to the live node in this scene, or
-    /// returns false when no node with that id is currently attached. This is
-    /// the lookup editor commands use: edit history is addressed by id, not by
-    /// object reference, because an undo can destroy and recreate a node — the
-    /// reference goes stale, the id does not. O(1) and allocation-free; render
-    /// thread only, like every other scene member.
+    /// Resolves a <see cref="SceneNode.Id"/> to the live node in this scene.
+    /// Editor commands address nodes this way, because an undo can recreate a
+    /// node under the same id.
     /// </summary>
     public bool TryFindById(Guid id, [MaybeNullWhen(false)] out SceneNode node) =>
         _nodesById.TryGetValue(id, out node);
 
-    /// <summary>
-    /// The number of nodes currently indexed by id — i.e. the node count of
-    /// this scene's graph, root included. Render thread only.
-    /// </summary>
+    /// <summary>The number of nodes in this scene's graph, root included.</summary>
     public int NodeCount => _nodesById.Count;
 
-    // --- Spatial queries ----------------------------------------------------
-
     /// <summary>
-    /// Casts a world-space ray against the scene's spatial nodes (nodes with a
-    /// <see cref="SceneNode.MeshRenderer"/> or <see cref="SceneNode.Brush"/>)
-    /// and reports the nearest hit within <paramref name="maxDistance"/>.
-    /// Brush nodes use an exact convex test against their planes; mesh nodes
-    /// use per-triangle intersection over the mesh's CPU-side geometry (a mesh
-    /// without CPU positions degrades to its bounding box — a unit box around
-    /// the node origin when even bounds are missing). Rays starting inside a
-    /// solid report no hit for that solid. Render thread only, allocation-free
-    /// in steady state.
+    /// Casts a world-space ray against nodes with a mesh or a brush and
+    /// reports the nearest hit. Brushes are tested against their authored
+    /// planes, meshes per triangle (or by bounding box when the mesh keeps no
+    /// CPU geometry). A ray starting inside a solid does not hit that solid.
+    /// Honours <see cref="SceneNode.CanQuery"/>; editor picking should pass
+    /// <see cref="SceneQueryFilter.EditorPicking"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>This overload honours <see cref="SceneNode.CanQuery"/></b> — see the
-    /// filtered overload for why that is true even of static world brushes.
-    /// Editor tooling that must pick what the user can see should pass
-    /// <see cref="SceneQueryFilter.EditorPicking"/> instead.
-    /// </remarks>
     public bool Raycast(in Ray3 ray, out SceneRaycastHit hit, float maxDistance = float.PositiveInfinity) =>
         Bvh.Raycast(in ray, out hit, default, maxDistance);
 
     /// <summary>
     /// As <see cref="Raycast(in Ray3, out SceneRaycastHit, float)"/>, reporting
     /// only nodes <paramref name="filter"/> accepts.
+    /// <see cref="SceneNode.CanQuery"/> applies to every node, world brushes
+    /// included. This tests authored planes, so it hits inside a doorway a
+    /// subtractive brush cut: right for picking, wrong for gameplay. Use
+    /// <see cref="RaycastGameplay(in Ray3, out GameplayRayHit, float)"/> there.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b><see cref="SceneNode.CanQuery"/> is honoured for every node, static
-    /// world brushes included.</b> That is worth stating because it was once
-    /// designed the other way round, on the premise that a world brush's
-    /// queries route through the compiled per-cell BSP — which cannot exclude
-    /// one brush, since the BSP is derived from the carve and excluding a brush
-    /// would change compiled output the determinism oracles compare. The
-    /// premise is false for <em>this</em> entry point: it traverses the spatial
-    /// index per node, where a flag test is one bit on a cache line already
-    /// read. What genuinely cannot honour the flag is
-    /// <see cref="Bsp.CsgWorld.Raycast"/>/<see cref="Bsp.CsgWorld.ContainsPoint"/>,
-    /// which answer about the compiled authored world and are demoted for
-    /// exactly that reason — so the honest rule is one sentence about which
-    /// query you called, not a refusal on the setter.
-    /// </para>
-    /// <para>
-    /// <b>WHAT THIS ANSWERS ABOUT, which is narrower than it looks.</b> A brush
-    /// node is tested against its <em>authored</em> planes, not against the
-    /// compiled solid — so this reports a hit inside a doorway that a
-    /// subtractive brush removed, and inside the overlap of two brushes that
-    /// merged. Subtractive brushes themselves are skipped (a hole is not a
-    /// solid), but that only removes the most absurd case, not the divergence:
-    /// <b>this is authored-geometry authority, and it is right for picking,
-    /// selection and editor tooling — it is not a gameplay query.</b>
-    /// <see cref="Bsp.CsgWorld.Raycast"/> answers about the compiled solid and
-    /// disagrees with this one by design; the two unify behind physics later.
-    /// Nothing enforces the distinction yet, so it is written here where the
-    /// caller is.
-    /// </para>
-    /// <para>
-    /// Refusing the flag on world brushes would also have created an ordering
-    /// trap with no good exit: clear <c>CanQuery</c> on a part brush, convert it
-    /// to world geometry, and the refusal has to either reject the conversion —
-    /// making conversion a refusal site, which is precisely what
-    /// <see cref="BrushKind"/> was designed to avoid — or silently rewrite the
-    /// author's flag.
-    /// </para>
-    /// </remarks>
     public bool Raycast(
         in Ray3 ray, out SceneRaycastHit hit, in SceneQueryFilter filter,
         float maxDistance = float.PositiveInfinity)
@@ -452,13 +252,8 @@ public sealed partial class Scene
         return Bvh.Raycast(in ray, out hit, in filter, maxDistance);
     }
 
-    // The CALLER's group is validated here, once, before any traversal — the
-    // opposite discipline to the node's group, which the filter answers
-    // leniently (see CollisionGroups.Interacts). The asymmetry is the point: a
-    // caller naming a group it never registered is a mistake at this call site
-    // and should be reported here, deterministically. Diagnosing it inside the
-    // walk instead would make the exception depend on whether some box happened
-    // to overlap, and would leave the caller's results list half-filled.
+    // Checked before the walk. Inside it, the throw would depend on what
+    // overlapped and leave the results list half-filled.
     private static void ValidateQueryGroup(in SceneQueryFilter filter)
     {
         if (filter.Groups is { } groups && (uint)filter.CollisionGroup >= (uint)groups.Count)
@@ -471,26 +266,17 @@ public sealed partial class Scene
     }
 
     /// <summary>
-    /// The scene's collision-group registry: up to 64 named groups and the
-    /// symmetric matrix saying which pairs interact. Every node starts in
-    /// <see cref="CollisionGroups.DefaultGroup"/> and everything collides, so a
-    /// scene that never touches this behaves as one without the feature.
+    /// The scene's collision groups: up to 64 named groups and which pairs
+    /// interact. Every node starts in <see cref="CollisionGroups.DefaultGroup"/>
+    /// and everything collides.
     /// </summary>
     public CollisionGroups CollisionGroups { get; } = new();
 
     /// <summary>
     /// Appends every spatial node whose world AABB intersects
-    /// <paramref name="box"/> to <paramref name="results"/> (the list is NOT
-    /// cleared — reuse one across frames and clear it yourself).
+    /// <paramref name="box"/> to <paramref name="results"/>. The list is not
+    /// cleared. A broad phase: bounds are tested, not geometry.
     /// </summary>
-    /// <remarks>
-    /// <b>The name says <c>Bounds</c> because the answer is about bounds.</b>
-    /// This is the broad phase: a node whose AABB overlaps the box but whose
-    /// geometry does not is reported, so the result is a superset and a caller
-    /// needing an exact answer runs its own narrow phase over it. Naming this
-    /// <c>GetPartsInBox</c> would promise an exactness the traversal does not
-    /// deliver, and the caller would not find out until a corner case.
-    /// </remarks>
     public void GetPartBoundsInBox(in Aabb box, List<SceneNode> results) =>
         Bvh.QueryBox(in box, results, default);
 
@@ -506,7 +292,7 @@ public sealed partial class Scene
 
     /// <summary>
     /// Appends every spatial node whose world AABB overlaps the sphere to
-    /// <paramref name="results"/> (the list is NOT cleared). Bounds-level, like
+    /// <paramref name="results"/>. The list is not cleared. Bounds only, like
     /// <see cref="GetPartBoundsInBox(in Aabb, List{SceneNode})"/>.
     /// </summary>
     public void GetPartBoundsInRadius(Vector3 center, float radius, List<SceneNode> results) =>
@@ -525,78 +311,27 @@ public sealed partial class Scene
 
     /// <summary>
     /// Appends every spatial node whose world AABB intersects
-    /// <paramref name="frustum"/> to <paramref name="results"/> (the list is
-    /// NOT cleared — reuse one list across frames and clear it yourself).
-    /// Conservative exactly like <see cref="Frustum.Intersects"/>: per-box
-    /// false positives are possible, false negatives are not. Render thread
-    /// only, allocation-free in steady state once the list has grown.
+    /// <paramref name="frustum"/> to <paramref name="results"/>. The list is
+    /// not cleared. Conservative: false positives are possible, false
+    /// negatives are not. Ignores <see cref="SceneNode.CanQuery"/>, because
+    /// visibility is not a gameplay query.
     /// </summary>
-    /// <remarks>
-    /// <b>Deliberately flag-blind, unlike every other query here.</b> This is a
-    /// visibility question, not a gameplay one: <see cref="SceneNode.CanQuery"/>
-    /// governs what a raycast or an overlap can find, and applying it to
-    /// culling would make clearing the flag turn geometry invisible — a
-    /// rendering bug wearing a physics property's clothes. It takes no filter
-    /// for the same reason.
-    /// </remarks>
     public void QueryFrustum(in Frustum frustum, List<SceneNode> results) =>
         Bvh.QueryFrustum(in frustum, results);
 
     /// <summary>
-    /// The tight world AABB the spatial index already maintains for
-    /// <paramref name="node"/> — brush bounds, mesh bounds, or their union —
-    /// reflecting any transform change made since the last query. False when
-    /// the node is not spatial or does not belong to this scene.
+    /// The tight world AABB the spatial index keeps for
+    /// <paramref name="node"/>. False when the node is not spatial or does not
+    /// belong to this scene.
     /// </summary>
-    /// <remarks>
-    /// The editor's selection highlight, box select and frame-selection all
-    /// need a node's bounds every frame; handing them the index's cached box
-    /// keeps them from recomputing what culling and raycasts already paid for,
-    /// and guarantees all four agree on where a node is. Render thread only,
-    /// allocation-free.
-    /// </remarks>
     public bool TryGetWorldBounds(SceneNode node, out Aabb bounds)
     {
         ArgumentNullException.ThrowIfNull(node);
         return Bvh.TryGetWorldBounds(node, out bounds);
     }
 
-    // Scratch list reused by BuildRenderView's frustum query — capacity is
-    // retained across frames so steady-state builds allocate nothing.
     private readonly List<SceneNode> _renderViewScratch = [];
 
-    /// <summary>
-    /// Fills <paramref name="view"/> with this frame's draw list for
-    /// <paramref name="camera"/>: refits the spatial index, frustum-culls the
-    /// scene's spatial nodes, and emits one <see cref="RenderItem"/> per
-    /// visible mesh node (world matrix from the node). The derived static
-    /// world rides along as per-chunk items in
-    /// <see cref="RenderView.WorldItems"/>, frustum-culled per chunk against
-    /// each chunk's true render AABB (see <see cref="ChunkMesh.RenderBounds"/>)
-    /// in one linear pass — chunks are few relative to nodes, so no
-    /// acceleration structure is warranted. A surviving chunk emits one item
-    /// per material it wears (see <see cref="ChunkMesh.Submeshes"/>), each
-    /// carrying the material resolved when that chunk was uploaded. Stats:
-    /// <see cref="RenderView.VisibleCount"/>/<see cref="RenderView.TotalCount"/>
-    /// count mesh items and registered mesh nodes;
-    /// <see cref="RenderView.WorldChunksVisible"/>/<see cref="RenderView.WorldChunksTotal"/>
-    /// count the world CHUNKS beside them, and
-    /// <see cref="RenderView.WorldMaterialBatchesVisible"/>/<see cref="RenderView.WorldMaterialBatchesTotal"/>
-    /// the per-material draws those chunks expand to. Item order follows the
-    /// spatial index's emission order (world chunks: ascending cell order, then
-    /// ascending material id) — deterministic and stable while the scene is
-    /// unchanged. Render thread only, like every other scene member;
-    /// allocation-free in steady state (the view and the internal scratch list
-    // Flattens the scene's lights into the view, keeping the nearest few.
-    //
-    // Not frustum-culled, and that is deliberate rather than an omission: a
-    // light behind the camera still lights what is in front of it, so culling
-    // lights by visibility would switch them off exactly when the player turns
-    // around. Range is the only thing that bounds a light's reach, and distance
-    // to the viewer is the only cheap proxy for "does this matter here".
-    //
-    // Iterates the scene's light list, which is O(lights) rather than O(nodes)
-    // and needs no bounds, which is why a light does not enter the BVH at all.
     private static RenderLightType ToRenderType(LightKind kind) => kind switch
     {
         LightKind.Directional => RenderLightType.Directional,
@@ -605,12 +340,12 @@ public sealed partial class Scene
         LightKind.Rect => RenderLightType.Rect,
         LightKind.Disc => RenderLightType.Disc,
 
-        // Thrown rather than defaulted. A silent fallback here lights a new kind
-        // as whatever the default happens to be, correctly-looking and wrong,
-        // which is exactly the class of failure the rest of this file refuses.
+        // Throw: a default would light a new kind as the wrong shape.
         _ => throw new NotSupportedException($"No render type for light kind '{kind}'."),
     };
 
+    // Not frustum-culled: a light behind the camera still lights what is in
+    // front of it. The view keeps the nearest few.
     private void CollectLights(Vector3 viewer, RenderView view)
     {
         for (int i = 0; i < _lightNodes.Count; i++)
@@ -620,24 +355,18 @@ public sealed partial class Scene
 
             Vector3 radiance = light.Color * light.Intensity;
 
-            // The TYPE rides in the colour's w, which was documented as unused.
-            // It used to be "range is zero, so this is directional", which
-            // encoded exactly two kinds and left a third nowhere to go.
+            // The light type rides in the colour's w.
             var color = new Vector4(radiance, (float)(int)ToRenderType(light.Kind));
 
-            // The node's own basis, read straight out of the world matrix. The
-            // same three rows the overlay and the gizmo read, rather than a
-            // rotation applied to unit vectors: two expressions for one basis is
-            // how a cone ends up pointing the opposite way from the arrow drawn
-            // over it, with nothing anywhere reporting a disagreement.
+            // Basis from the world matrix rows, the same ones the overlay and
+            // the gizmo read, so the three cannot disagree.
             Matrix4x4 world = node.WorldMatrix;
             var forward = Vector3.Normalize(new Vector3(world.M31, world.M32, world.M33));
 
             if (light.Kind == LightKind.Directional)
             {
-                // A negative key keeps a sun ahead of every point light: it has
-                // no position, so it cannot be "far away", and dropping the sun
-                // because a lamp happens to be nearer would be absurd.
+                // Negative key: a sun has no position and must never lose its
+                // slot to a nearer lamp.
                 view.OfferLight(new RenderLight(new Vector4(forward, 0f), color), -1f);
                 continue;
             }
@@ -647,15 +376,9 @@ public sealed partial class Scene
 
             var right = Vector3.Normalize(new Vector3(world.M11, world.M12, world.M13));
 
-            // COSINES here, not degrees: the shader compares a dot product, and
-            // converting per pixel would be a transcendental in the inner loop
-            // for a value that is constant over the frame. Half-angles, because
-            // that is what the geometry is and what the gizmo drags.
-            //
-            // The two area scalars share these two slots, which is what keeps
-            // this at four vec4s: a rect has no cone and a spot has no extent,
-            // so nothing is ever ambiguous about which meaning is live - the
-            // type says.
+            // The shader wants cosines of the half-angles. The w slots hold
+            // cone cosines for a spot and extents for an area light; the type
+            // says which.
             const float ToRadians = MathF.PI / 180f;
 
             Vector4 axis = light.Kind switch
@@ -673,16 +396,17 @@ public sealed partial class Scene
                 _ => new Vector4(right, 0f),
             };
 
-            // Past its own range plus the viewer's distance it cannot reach
-            // anything being drawn near the camera; skipping keeps a distant
-            // lamp from occupying one of the few slots.
             view.OfferLight(
                 new RenderLight(new Vector4(position, light.Range), color, axis, tangent),
                 distance);
         }
     }
 
-    /// retain their capacity).
+    /// <summary>
+    /// Fills <paramref name="view"/> with this frame's draw list for
+    /// <paramref name="camera"/>: visible mesh nodes and part brushes, the
+    /// static world's visible chunks (one item per material), and the lights.
+    /// Item order is stable while the scene is unchanged.
     /// </summary>
     public void BuildRenderView(Camera camera, RenderView view)
     {
@@ -692,10 +416,6 @@ public sealed partial class Scene
         CollectLights(camera.Position, view);
         CollectVisible(in frustum, view);
 
-        // After collection, because it partitions what collection produced. A
-        // pipeline that knows about batches draws Batches plus SingleItems; one
-        // that does not still draws Items and is unaffected, which is what lets
-        // the backends adopt this one at a time.
         view.BuildBatches();
     }
 
@@ -703,21 +423,8 @@ public sealed partial class Scene
     /// Builds the draw list for a shadow map: everything inside
     /// <paramref name="lightViewProjection"/>'s volume, with no lights.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A second cull, against the LIGHT, and it cannot be skipped.</b> Reusing
-    /// the camera's draw list would mean only what the camera can see casts a
-    /// shadow, so a wall just off the left of the screen would stop shading the
-    /// floor in front of you the moment you turned. The symptom is shadows that
-    /// appear and vanish as the camera moves, which reads as a flickering bug
-    /// rather than as a missing cull.
-    /// </para>
-    /// <para>
-    /// Lights are deliberately not collected: a shadow pass has no lighting, and
-    /// collecting them would overwrite the nearest-N selection the camera's view
-    /// already made with one ordered by a light's own position.
-    /// </para>
-    /// </remarks>
+    // Culled against the light, not reused from the camera's list: a wall just
+    // off screen still has to shade the floor.
     public void BuildShadowView(in Matrix4x4 lightViewProjection, RenderView view)
     {
         view.Clear();
@@ -725,18 +432,12 @@ public sealed partial class Scene
         Frustum frustum = Frustum.FromViewProjection(lightViewProjection);
         CollectVisible(in frustum, view);
 
-        // Batched per cascade, not once for the atlas: each cascade culls
-        // against its own volume, so the surviving set and therefore the
-        // batches differ between them.
+        // Per cascade: each one culls against its own volume.
         view.BuildBatches();
     }
 
-    // The shared walk: everything drawable inside a frustum, whether that
-    // frustum belongs to a camera or to a light.
     private void CollectVisible(in Frustum frustum, RenderView view)
     {
-        // Over what can DRAW, not over everything indexed for picking. See
-        // UpdateDrawableMembership for the measurement that motivated it.
         _renderViewScratch.Clear();
         IReadOnlyList<SceneNode> visible = _drawableNodes;
         if (!DrawableBvh.EntirelyInside(in frustum))
@@ -749,16 +450,7 @@ public sealed partial class Scene
             }
         }
 
-        // The query yields every visible spatial node, brush nodes included.
-        // Mesh-bearing nodes become draws, and so do PART brush nodes: world
-        // brush geometry renders through the compiled static world and never
-        // per-node, but a part is by definition not in that world, so its own
-        // mesh is drawn here under the node's world matrix. This is the one
-        // place the two kinds diverge in the render path.
-        // Counted apart from view.Items.Count, which now holds both
-        // populations: VisibleCount stays "mesh nodes that survived culling",
-        // so the two numbers keep meaning what their names say and neither can
-        // read as larger than its own total.
+        // Mesh nodes and part brushes are counted apart: view.Items holds both.
         int meshItems = 0;
         int partBrushes = 0;
         for (int i = 0; i < visible.Count; i++)
@@ -781,27 +473,9 @@ public sealed partial class Scene
             }
         }
 
-        // The static world's chunks: cull against the RENDER bounds (owned
-        // surfaces of border-spanning brushes stick out of their cell, so cell
-        // bounds would wrongly drop visible overhangs). The AABB test is
-        // conservative (see Frustum.Intersects), so a chunk containing any
-        // visible geometry always survives; vertices are already in world
-        // space, hence the identity model matrix.
-        //
-        // Culling stays PER CHUNK — one box test per cell, whatever its
-        // material count — and a surviving chunk then contributes one item per
-        // material it wears, with the material resolved back at swap time (a
-        // per-frame asset lookup here would allocate and would put asset state
-        // on the hot path). Both the entry list and each entry's submesh array
-        // are engine-owned and indexed, so this whole pass touches no
-        // allocator.
-        // CLUSTERED, so this stops being a scan of the whole world. One box test
-        // rejects a run of chunks at a time, and only surviving runs are opened.
-        // The list stays in coordinate order and so does the emission order: a
-        // cluster is a contiguous slice of it, and the slices are walked in
-        // order, so the draw list is byte-identical to the one the flat scan
-        // produced. See RebuildChunkClusters for why the runs are spatially
-        // tight enough for the test to reject anything at all.
+        // Static world chunks, a cluster at a time. Culled against render
+        // bounds, not cell bounds: owned surfaces can overhang the cell.
+        // Vertices are already in world space, so the model matrix is identity.
         int visibleChunks = 0;
         for (int cluster = 0; cluster < _chunkClusterBounds.Count; cluster++)
         {
@@ -833,50 +507,31 @@ public sealed partial class Scene
         view.WorldChunksVisible = visibleChunks;
         view.WorldChunksTotal = _staticWorldChunkList.Count;
         view.WorldMaterialBatchesVisible = view.WorldItems.Count;
-        // Maintained on the swap rather than counted here. Counting it was the
-        // last thing forcing this pass to touch every chunk in the world, which
-        // would have made the clustering above pointless.
+        // Kept by the swap. Counting here would touch every chunk.
         view.WorldMaterialBatchesTotal = _staticWorldBatchTotal;
     }
 
     /// <summary>
-    /// The compiled static world (carved surfaces + BSP tree for spatial
-    /// queries), derived from every brush node in the graph. Null until the
-    /// first compile completes, or when the scene has no brush nodes. Treat as
-    /// a build artifact: to change the world, edit the brush nodes — the edit
-    /// marks the world dirty and the engine recompiles in the background.
+    /// The compiled static world, derived from the brush nodes in the graph.
+    /// Null until the first compile completes or when the scene has no brush
+    /// nodes. To change it, edit the brush nodes.
     /// </summary>
     public CsgWorld? StaticWorld { get; private set; }
 
-    // The per-chunk GPU mesh map derived from StaticWorld.ChunkMeshes: one
-    // entry per world chunk with render geometry. The dictionary answers
-    // coordinate lookups (swap diffing, tests); the list is its
-    // ascending-cell-order snapshot, rebuilt at swap time so the per-frame
-    // culling pass is a plain indexed loop. Render thread only, like all
-    // scene state; both containers always describe the same entries.
+    // Same entries in both. The list is the ordered copy the cull pass walks,
+    // rebuilt at swap time.
     private readonly Dictionary<ChunkCoord, StaticWorldChunkMesh> _staticWorldChunkMeshes = [];
     private readonly List<StaticWorldChunkMesh> _staticWorldChunkList = [];
 
-    // ---- chunk cull clustering ---------------------------------------------
-    //
-    // Culling the static world used to be a linear scan of every chunk, run once
-    // for the camera and once per shadow cascade: five passes over the whole
-    // world every frame, whose cost tracked total content rather than visible
-    // content. Measured at 0.22 us per chunk batch, which an 80 km2 world turns
-    // into tens of milliseconds before anything is drawn.
-    //
-    // The list is kept sorted by ChunkCoord, so a run of consecutive entries is
-    // a run along one axis: a thin slab, not a scattered set. That is what makes
-    // a bounding box over a fixed-size RUN worth testing at all, and it is why
-    // this needs no tree and no reordering. Emission order is untouched.
+    // One box per run of consecutive chunks, so the cull rejects a run with a
+    // single test. Relies on the chunk list's order keeping a run compact.
     private const int ChunkClusterSize = 64;
     private readonly List<Aabb> _chunkClusterBounds = [];
     private readonly HashSet<int> _dirtyChunkClusters = [];
     private int _staticWorldBatchTotal;
 
-    // Rebuilt whenever the chunk list changes shape. O(chunks), and a swap that
-    // touches two cells still pays it: the alternative is tracking which
-    // clusters an insert shifted, and an insert shifts every cluster after it.
+    // O(chunks) per shape change. An insert shifts every cluster after it, so
+    // tracking which ones moved would not be cheaper.
     private void RebuildChunkClusters()
     {
         _chunkClusterBounds.Clear();
@@ -914,113 +569,61 @@ public sealed partial class Scene
         _chunkClusterBounds[cluster] = bounds;
     }
 
-    // Every owned node carrying a BrushKind.Part brush, and the GPU meshes
-    // those brushes draw with.
-    //
-    // The set exists so the per-frame pump has an exact work list instead of a
-    // graph walk: parts are the population that moves every tick, so anything
-    // O(world) here would reintroduce exactly the cost the kind was invented to
-    // remove. It is plain membership — no ancestor walk, no subtree invariant —
-    // maintained from the same four places that already learn about a brush
-    // arriving, leaving or changing kind, and it is deliberately NOT a third
-    // counter (see SceneNode's two lanes for why that distinction matters).
-    // A LIST, not a set, and that is the whole reason it is worth a comment:
-    // the light selection is a nearest-N, so ties have to be broken by something
-    // stable or two runs of the same scene light it differently. A hash set's
-    // iteration order is not that something. Insertion order is.
+    // A list, not a set: light selection is a nearest-N and ties need a stable
+    // order.
     private readonly OrderedIdentityList<SceneNode> _lightNodes = new();
 
     private readonly HashSet<SceneNode> _partBrushNodes = [];
     private readonly PartBrushMeshCache _partBrushMeshes = new();
 
-    // Every owned node carrying a SUBTRACTIVE brush, of either kind.
-    //
-    // Deliberately kind-BLIND, and deliberately not a filter over the part set.
-    // A subtractive brush renders nothing of its own by construction — a World
-    // one contributes cavity walls to the brushes it cuts and no skin, a Part
-    // one contributes nothing at all — so it is invisible in the viewport
-    // whichever kind it is, and the editor overlay that draws it must therefore
-    // see both. Deriving it from _partBrushNodes would silence the outline on
-    // exactly the population that renders nothing.
+    // Both kinds. A subtractive brush draws nothing either way, so the editor
+    // overlay has to see all of them.
     private readonly HashSet<SceneNode> _subtractiveBrushNodes = [];
 
-    // Cached so the per-brush upload path can hand the resolver down without
-    // allocating a delegate per call.
+    // Cached so the upload path does not allocate a delegate per call.
     private Func<MaterialRef, Material?>? _resolveWorldMaterial;
 
     /// <summary>
-    /// The static world's GPU meshes, one entry per chunk with render geometry
-    /// (each holding one GPU submesh per material that chunk wears), in
-    /// ascending chunk-cell order — the per-chunk successor of the old single
-    /// static-world mesh. Chunk vertices are in world space (identity model
-    /// matrix); a landing recompile replaces only the entries whose cells
-    /// actually changed. Empty until the first compile lands, or when the
-    /// scene has no brush nodes. Render thread only.
+    /// The static world's GPU meshes, one entry per chunk with render
+    /// geometry, each holding one submesh per material. Vertices are in world
+    /// space. Empty until the first compile lands.
     /// </summary>
     public IReadOnlyList<StaticWorldChunkMesh> StaticWorldChunkMeshes => _staticWorldChunkList;
 
     /// <summary>
     /// Looks up the static world's GPU mesh entry for the chunk cell at
-    /// <paramref name="coord"/>, if that cell currently has render geometry.
-    /// Render thread only.
+    /// <paramref name="coord"/>, if that cell has render geometry.
     /// </summary>
     public bool TryGetStaticWorldChunkMesh(ChunkCoord coord, out StaticWorldChunkMesh chunk) =>
         _staticWorldChunkMeshes.TryGetValue(coord, out chunk);
 
     /// <summary>
-    /// Material for static-world faces that carry no material of their own
-    /// (<see cref="MaterialRef.Default"/>) — the fallback the whole world used
-    /// to be drawn with. Assign before the first rebuild; it survives rebuilds
-    /// (only the geometry is derived). Changing it later affects chunks
-    /// uploaded from then on; call <see cref="RefreshStaticWorldMaterials"/> to
-    /// re-resolve the ones already on the GPU.
+    /// Material for static-world faces that name none. Null means
+    /// <see cref="AssetManager.NeutralMaterial"/>. Changing it only affects
+    /// chunks uploaded afterwards; call
+    /// <see cref="RefreshStaticWorldMaterials"/> for the rest.
     /// </summary>
-    /// <remarks>
-    /// Optional. Left null, an unnamed face draws with
-    /// <see cref="AssetManager.NeutralMaterial"/>, which is flat grey; a host
-    /// only assigns this when it wants something else, as the demo does with its
-    /// development grid.
-    /// </remarks>
     public Material? StaticWorldMaterial { get; set; }
 
     /// <summary>
-    /// Asset manager used to turn the material ids compiled into the static
-    /// world's faces into real materials. Optional: without one every face
-    /// falls back to <see cref="StaticWorldMaterial"/>, which is all a
-    /// geometry-only scene (or a headless test) needs. Assign before the first
-    /// rebuild, on the render thread — resolution happens there, at GPU-upload
-    /// time, never during the background compile.
+    /// Asset manager that resolves the material ids compiled into the static
+    /// world's faces. Without one every face falls back to
+    /// <see cref="StaticWorldMaterial"/>. Assign before the first rebuild.
     /// </summary>
     public AssetManager? Assets { get; set; }
 
     /// <summary>
-    /// What the entity classes placed in this scene DECLARE: the schemas parsed
-    /// from a <c>.sentdef</c> image, or null when nothing supplied one.
+    /// The schemas of the entity classes placed in this scene, parsed from a
+    /// <c>.sentdef</c> image, or null. An entity whose class is missing here
+    /// still loads and saves; it only loses its property editor.
     /// </summary>
-    /// <remarks>
-    /// <b>A slot beside <see cref="Assets"/>, and nullable for the same
-    /// reason.</b> A geometry-only scene and a headless test need no schemas at
-    /// all, and an entity whose class is absent from this catalogue is not an
-    /// error: <c>EntityData</c> names a class as text precisely so a map
-    /// authored against a game this build does not have still loads, round-trips
-    /// and saves. What a missing schema costs is the property editor, never the
-    /// authored data.
-    /// <para>
-    /// Description only. Building an entity is <c>EntityCatalog</c>'s, which
-    /// lives in the process that can construct the class; this is what a tool
-    /// holds for a game whose assembly it never loaded.
-    /// </para>
-    /// </remarks>
     public Entities.EntitySchemaCatalog? EntitySchemas { get; set; }
 
     /// <summary>
-    /// Re-resolves every uploaded chunk's materials from its compiled material
-    /// ids, without touching a single GPU mesh. The escape hatch for the two
-    /// cases that change what a face should be drawn with while its geometry
-    /// stays valid: assigning <see cref="StaticWorldMaterial"/> after the world
-    /// was compiled, and an <see cref="Assets"/> reload that replaced a
-    /// material instance. Render thread only; O(GPU submeshes) and no
-    /// allocation beyond whatever the asset manager does on a cache miss.
+    /// Re-resolves every uploaded chunk's materials without touching a GPU
+    /// mesh. Call after assigning <see cref="StaticWorldMaterial"/> on a
+    /// compiled world, or after an <see cref="Assets"/> reload replaced a
+    /// material instance.
     /// </summary>
     public void RefreshStaticWorldMaterials()
     {
@@ -1038,42 +641,11 @@ public sealed partial class Scene
         }
     }
 
-    // Render thread only: the compile's pure-value material id -> the asset
-    // object a pipeline can actually draw with. Called once per GPU submesh at
-    // upload time (and from RefreshStaticWorldMaterials), never per frame.
-    //
-    // An unassigned face resolves to StaticWorldMaterial, which is exactly what
-    // the pre-material engine drew the entire world with — so a scene that
-    // never touches materials renders identically. A face that DOES name a
-    // material needs the asset manager; without one there is nothing to resolve
-    // against, so it degrades to the same fallback rather than dropping the
-    // geometry. The asset manager's own default material is the last resort for
-    // a scene that set no fallback at all (it degrades, never throws, on a
-    // missing file or an unknown id).
     /// <summary>
-    /// Brings the part brushes' GPU meshes up to date: builds one for any part
-    /// brush that does not have one yet, and destroys the meshes of brushes
-    /// nothing references any more. Render thread only, once per frame, beside
-    /// <see cref="ProcessStaticWorldCompilation"/>.
+    /// Builds GPU meshes for part brushes that lack one and destroys those
+    /// nothing references any more. Call once per frame. A part that only
+    /// moves costs nothing here: its mesh is brush-local.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The work is proportional to the number of distinct part <em>brushes</em>
-    /// — not to the world, and not to how much anything moved. A part that only
-    /// moves is a pure cache hit: its mesh is brush-local, so movement is the
-    /// node's world matrix and nothing here is rebuilt. That is the entire
-    /// performance claim of <see cref="BrushKind.Part"/>, and it is why this
-    /// pump may run unconditionally every frame.
-    /// </para>
-    /// <para>
-    /// A part's mesh is built from its brush alone, with no carve against its
-    /// neighbours — which is the visible difference between the two kinds, not
-    /// an optimisation. Two overlapping world brushes merge into one skin; two
-    /// overlapping parts interpenetrate, and a part face left coplanar with a
-    /// world face z-fights. Both are correct, and both are why the editor must
-    /// make the kind visible.
-    /// </para>
-    /// </remarks>
     public void ProcessPartBrushMeshes(Renderer renderer)
     {
         if (_partBrushMeshes.PendingCount == 0)
@@ -1091,25 +663,22 @@ public sealed partial class Scene
     public int PartBrushNodeCount => _partBrushNodes.Count;
 
     /// <summary>
-    /// Every node in this scene carrying a <see cref="BrushKind.Part"/> brush,
-    /// maintained incrementally — this is the exact work list for anything that
-    /// must touch the parts each frame, and the reason such a pass does not have
-    /// to walk the graph. Order is unspecified. Render thread only.
+    /// Every node in this scene carrying an additive
+    /// <see cref="BrushKind.Part"/> brush. Order is unspecified.
     /// </summary>
     public IReadOnlyCollection<SceneNode> PartBrushNodes => _partBrushNodes;
 
     /// <summary>
     /// Every node in this scene carrying a subtractive brush, of either
-    /// <see cref="BrushKind"/> — the population that renders nothing of its own
-    /// and therefore has to be drawn by the editor or it cannot be seen at all.
-    /// Order is unspecified. Render thread only.
+    /// <see cref="BrushKind"/>. These draw nothing, so the editor has to.
+    /// Order is unspecified.
     /// </summary>
     public IReadOnlyCollection<SceneNode> SubtractiveBrushNodes => _subtractiveBrushNodes;
 
     /// <summary>How many nodes in this scene carry a subtractive brush.</summary>
     public int SubtractiveBrushNodeCount => _subtractiveBrushNodes.Count;
 
-    /// <summary>Destroys every GPU mesh the part-brush cache owns. Render thread, before renderer shutdown.</summary>
+    /// <summary>Destroys every GPU mesh the part-brush cache owns. Call before renderer shutdown.</summary>
     public void ReleasePartBrushMeshes(Renderer renderer) => _partBrushMeshes.ReleaseGraphicsResources(renderer);
 
     private Material? ResolveWorldMaterial(MaterialRef reference)
@@ -1117,145 +686,72 @@ public sealed partial class Scene
         if (!reference.IsDefault && Assets is { } assets)
             return assets.ResolveMaterial(reference);
 
-        // A face that names NOTHING gets the neutral surface, never the asset
-        // manager's fallback. The two are one call apart and mean opposite
-        // things: the fallback wears the magenta checker because it is the
-        // answer to a reference that failed, and a face with no reference has
-        // not failed at all. This is the only place that distinction is drawn,
-        // so every host inherits it - the editor's baseplate, a fresh map, a
-        // block somebody just inserted - while a host that assigns
-        // StaticWorldMaterial itself still wins, which is what keeps the demo
-        // on its dev grid.
+        // A face naming no material gets the neutral surface, not the asset
+        // manager's magenta fallback. That one is for references that failed.
         return StaticWorldMaterial ?? Assets?.NeutralMaterial;
     }
 
-    // --- Static-world compile state -----------------------------------------
-    // Single-threaded contract: every field below is read and written by the
-    // render thread ONLY (MarkStaticWorldDirty included — node edits happen
-    // during scene updates, which the render thread owns). The background
-    // compile task never touches them; it receives an immutable snapshot and
-    // returns a result, and the render thread harvests that result here. No
-    // locks or volatiles are needed because Task.Run / Task completion provide
-    // the necessary happens-before edges for the snapshot and the result.
+    // Compile state below is render thread only. The background compile gets
+    // an immutable snapshot and returns a result; it never touches these.
 
-    // Monotonic edit counter: bumped on every dirtying edit. Compared against
-    // _handledStaticWorldVersion to decide whether a new compile is needed.
+    // Bumped on every dirtying edit.
     private int _staticWorldVersion;
 
-    // Highest version a compile has been launched for (or that was handled
-    // synchronously / rejected as invalid). Marking a defective snapshot as
-    // handled is what stops a bad transform from retry-spamming every frame.
+    // Highest version launched, handled synchronously or rejected. Marking a
+    // defective snapshot handled stops it retrying every frame.
     private int _handledStaticWorldVersion;
 
-    // The single in-flight background compile, if any, and the version its
-    // snapshot was taken at. Exactly one compile runs at a time, so a landing
-    // result is always the newest one launched — no ordering logic is needed
-    // when harvesting.
+    // One compile at a time, so a landing result is always the newest.
     private Task<StaticWorldCompilation>? _inFlightCompile;
     private int _inFlightVersion;
 
-    // Last defect message logged for a rejected snapshot; suppresses per-frame
-    // repeats of the same defect while another brush keeps re-arming the pump.
+    // Suppresses per-frame repeats of the same defect line.
     private string? _lastLoggedSnapshotDefect;
 
     /// <summary>
     /// Why the last static-world compile was refused, or null when the world is
-    /// current.
+    /// current. While set, the world stops following brush edits.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Published because this failure is otherwise invisible, and it is
-    /// permanent.</b> A brush whose world transform is not rigid makes every
-    /// subsequent snapshot defective, so the compile stops landing and the
-    /// viewport goes on showing the last good world for as long as the session
-    /// lasts: the user edits geometry and nothing changes, with the reason in a
-    /// log file they have no reason to open. Nothing about that is recoverable
-    /// by guessing.
-    /// </para>
-    /// <para>
-    /// Render thread, like everything else here; the host copies it onto the
-    /// frame snapshot.
-    /// </para>
-    /// </remarks>
     public string? StaticWorldDefect { get; private set; }
 
-    // Cadence for the harvested-compile stats line. A continuously animating
-    // brush lands a compile nearly every frame, and a per-harvest line through
-    // synchronous sinks would throttle the render thread and grow the log file
-    // without bound — so harvests accumulate below and one Debug line
-    // summarizes them at a bounded rate (matching the SceneManager's 5 s
-    // Information cadence). Deadline of 0 makes the very first harvest log
-    // immediately, so short smoke runs still get their evidence.
+    // An animating brush lands a compile nearly every frame, so harvests are
+    // summed and logged at this rate. A deadline of 0 logs the first at once.
     private const long CompileStatsLogIntervalMs = 5000;
     private long _nextCompileStatsLogTicks;
 
-    // Stats accumulated since the last emitted line (render thread only, like
-    // all compile state): compiles landed, and the carve cache's hit/miss
-    // totals across them.
     private int _compileStatsLanded;
     private int _compileStatsCacheHits;
     private int _compileStatsCacheMisses;
 
-    // Dirty cells come from the journal's old/new immutable placements. A failed
-    // compile restores its cells before retrying against the published world.
-
-    // Cells dirtied but not yet handed to a compile. Normally drained at every
-    // launch; a faulted background compile merges its cell set back in so the
-    // next compile re-covers what the failed one was supposed to refresh.
+    // Drained at every launch. A faulted compile merges its cells back in.
     private readonly HashSet<ChunkCoord> _pendingDirtyCells = [];
 
-    // The dirty-cell set the in-flight background compile was launched with;
-    // null when nothing is in flight. Kept so a fault can restore it (see
-    // _pendingDirtyCells).
+    // Kept so a fault can restore it. Null when nothing is in flight.
     private ChunkCoord[]? _inFlightDirtyCells;
 
-    // Stable placement slots and authored order live in Scene.Placements.cs.
-
-    // Nodes that reported a brush-affecting edit since the last successful
-    // snapshot — each entry is the EDITED node, whose subtree contains the
-    // affected brush placements (a group-node move dirties the group node,
-    // not each descendant). Drained by every successful snapshot; retained
-    // across rejected (defective) snapshots so a defect on one node never
-    // loses another node's pending change.
+    // The edited nodes, not their descendants: a group move lists the group.
+    // Kept across rejected snapshots so one node's defect does not lose
+    // another node's change.
     private readonly HashSet<SceneNode> _dirtyBrushSubtrees = [];
 
-    // Context-free public dirty marks request complete validation. Node-aware
-    // edits journal only their affected placements, including structural edits.
+    // Set by dirty marks that name no node: the next snapshot validates
+    // everything.
     private bool _snapshotForceFull = true;
 
 
     /// <summary>
-    /// The sorted dirty-cell set the most recent static-world compile was
-    /// given (background launch, synchronous rebuild, or synchronous clear):
-    /// every chunk cell whose brush contents changed since the compile before
-    /// it. The first compile reports every covered cell (all cells dirty);
-    /// an unchanged-scene recompile reports none. Render thread only; the
-    /// incremental per-chunk stages consume this via
-    /// <see cref="CsgWorld.DirtyCells"/>, and tests use it as the tracking
-    /// oracle.
+    /// The sorted set of chunk cells the most recent static-world compile was
+    /// given as dirty. The first compile reports every covered cell; a
+    /// recompile of an unchanged scene reports none.
     /// </summary>
     public IReadOnlyList<ChunkCoord> LastCompileDirtyCells { get; private set; } = [];
 
-    // Diffs the freshly captured snapshot against the previous snapshot's
-    // per-node footprints, updates the stored footprints, and drains the
-    // accumulated dirty cells into one sorted array. Dirtying rule: a node
-    // present in both snapshots with an unchanged brush reference and
-    // placement matrix dirties nothing; any change — moved, brush swapped,
-    // attached, detached — dirties the UNION of its old and new footprints (a
-    // brush moving out of a cell leaves stale geometry behind there just as
-    // surely as it brings new geometry to where it lands). Two modes matching
-    // the snapshot's: a non-null `changedSlots` (the fast path's edit list)
-    // diffs exactly those slots in place — O(edit neighbourhood); null (a
-    // full re-walk) rebuilds the footprint dictionary over all placements,
-    // sweeping the old one for departed nodes. Render thread only, called
-    // exactly once per handled snapshot.
     private ChunkCoord[] DrainPendingDirtyCells()
     {
         var dirty = new ChunkCoord[_pendingDirtyCells.Count];
         _pendingDirtyCells.CopyTo(dirty);
         _pendingDirtyCells.Clear();
-        // Sorted so the set is deterministic for equal edit histories —
-        // ChunkCoord.CompareTo is the canonical cell order.
+        // Sorted so equal edit histories give the same set.
         Array.Sort(dirty);
         return dirty;
     }
@@ -1266,70 +762,40 @@ public sealed partial class Scene
             _pendingDirtyCells.Add(cell);
     }
 
-    // The previous compiled world carried from the last harvested (or
-    // synchronous) compile to the next launch — the incremental compile's
-    // whole input: per-brush carve/weld carry, chunk grid, per-cell trees and
-    // mesh artifacts, and the classic validation caches as lazily derived
-    // views (see CsgWorldCarry / CsgIncrementalCompiler). OWNERSHIP: the
-    // render thread holds it between compiles; at launch it is handed to the
-    // background task (and this field nulled), the task reads it — never
-    // mutates it — for the duration of the compile, and the harvested world
-    // becomes the next carry. Single-compile-in-flight makes the handoff
-    // race-free: no second launch can happen before the harvest, and the
-    // synchronous RebuildStaticWorld waits out any in-flight task before
-    // compiling. A faulted compile restores the carry from StaticWorld (the
-    // same immutable world object) — never a correctness issue, because the
-    // restored dirty-cell set re-covers everything the failed compile missed.
+    // The last compiled world, input to the next incremental compile. Handed
+    // to the background task at launch (and nulled here); the task only reads
+    // it. A faulted compile restores it from StaticWorld.
     private CsgWorld? _staticWorldCarry;
 
-    // Bumped by the membership/reparent raise helpers whenever the graph's
-    // structure — and therefore the brush snapshot's traversal ORDER — may
-    // have changed. The incremental compile's trusted-diff contract requires
-    // placement i to describe the same authoring slot as the previous
-    // compile's placement i, so a launch whose structure version differs from
-    // the carry's compiles through the validated cache path instead (always
-    // correct for any order, just O(world) validation — structural edits are
-    // rare next to per-frame drags).
+    // Bumped when traversal order may have changed. The incremental compile
+    // needs placement i to be the same slot as last time, so a launch whose
+    // version differs from the carry's takes the fully validated path.
     private int _graphStructureVersion;
 
-    // The structure version the carried world's snapshot was captured at, and
-    // the version captured for the in-flight compile (promoted into
-    // _carryStructureVersion when the compile lands).
     private int _carryStructureVersion;
     private int _inFlightStructureVersion;
 
-    // The structure version behind the currently published StaticWorld — what
-    // a faulted compile restores _carryStructureVersion from.
+    // What a faulted compile restores _carryStructureVersion from.
     private int _staticWorldStructureVersion;
 
     /// <summary>
-    /// Number of times a recompiled static world has been swapped in
-    /// (synchronous rebuilds included). Render thread only; useful as cheap
-    /// evidence that live recompiles are actually happening.
+    /// Number of times a recompiled static world has been swapped in,
+    /// synchronous rebuilds included.
     /// </summary>
     public int StaticWorldCompileCount { get; private set; }
 
     /// <summary>
-    /// True when brush nodes changed since the last compile was launched (or
-    /// handled synchronously). A world with a compile still in flight is no
-    /// longer "dirty" — those edits are already being processed.
+    /// True when brush nodes changed since the last compile was launched or
+    /// handled synchronously. Edits a compile in flight already covers do not
+    /// count.
     /// </summary>
     public bool StaticWorldDirty => _staticWorldVersion != _handledStaticWorldVersion;
 
     /// <summary>
-    /// Flags the derived static world as stale; the engine recompiles it in
-    /// the background. Called automatically by <see cref="SceneNode"/> for
-    /// structural brush edits (attach/detach, membership changes); transform
-    /// and brush-swap edits go through the node-scoped
-    /// <see cref="MarkBrushSubtreeDirty"/> instead. Render thread only — the
-    /// version counter is deliberately unsynchronized because scene edits are
-    /// single-threaded.
+    /// Flags the static world as stale so it recompiles in the background.
+    /// Forces the next snapshot to validate the whole graph; node edits use
+    /// <see cref="MarkBrushSubtreeDirty"/> instead.
     /// </summary>
-    /// <remarks>
-    /// Carrying no node context, this overload also forces the next snapshot
-    /// to re-walk and re-validate the whole graph — the behaviour external
-    /// callers always had. The per-frame drag path never comes through here.
-    /// </remarks>
     public void MarkStaticWorldDirty()
     {
         if (RefuseForCompiledWorld("A static-world dirty mark", isRebuild: false)) return;
@@ -1338,13 +804,12 @@ public sealed partial class Scene
         _snapshotForceFull = true;
     }
 
-    // Brush-kind conversion changes admission without changing graph membership.
+    // A brush-kind change shifts placement slots without adding or removing
+    // nodes, so it bumps the structure version itself.
     internal void MarkAdmissionChanged(SceneNode node)
     {
-        // The membership half runs either way: the part set mirrors what the
-        // graph SAYS, and leaving it stale would make a node whose kind changed
-        // draw through a lane it no longer belongs to. Only the dirtying is
-        // refused, which is the half a baked world cannot honour.
+        // Under a baked world only the dirtying is refused. The part set still
+        // has to follow the node's kind.
         if (!RefuseForCompiledWorld("A brush-kind change", isRebuild: false))
         {
             _graphStructureVersion++;
@@ -1354,10 +819,8 @@ public sealed partial class Scene
         UpdatePartBrushMembership(node);
     }
 
-    // Node-scoped dirtying for placement-preserving edits (transform changes,
-    // brush-for-brush swaps): records WHICH subtree changed so the next
-    // snapshot can patch exactly those slots instead of re-walking the world.
-    // Render thread only, like MarkStaticWorldDirty.
+    // For edits that keep placement order (transforms, brush swaps): the next
+    // snapshot patches only this subtree's slots.
     internal void MarkBrushSubtreeDirty(SceneNode node)
     {
         if (RefuseForCompiledWorld("A brush subtree dirty mark", isRebuild: false)) return;
@@ -1376,25 +839,13 @@ public sealed partial class Scene
     }
 
     /// <summary>
-    /// Captures the admitted brush placements exactly as a compile would, with no
-    /// renderer and no compile.
+    /// Captures the admitted brush placements as a compile would, with no
+    /// renderer and no compile. The map bake uses this so it carves the same
+    /// list in the same order as the engine. Returns null and fills
+    /// <paramref name="defectMessage"/> when a brush node's world transform is
+    /// not rigid.
     /// </summary>
-    /// <remarks>
-    /// <para><b>For the map BAKE, which has no GPU and must produce the engine's
-    /// own placements.</b> The whole claim a compiled map rests on is that the
-    /// cook's <c>CsgWorld.Build</c> is fed the same list this scene would feed it -
-    /// same nodes, same order, same rigidity refusal - so the baked chunks are
-    /// element-identical to a fresh compile of the same source. A cook that walked
-    /// the graph itself would be a second expression of that list, and the two
-    /// would drift exactly where nothing fails: traversal order is placement order
-    /// is the order the carve breaks its overlap ties in.</para>
-    /// <para>This read-only capture leaves the live compiler's change journal
-    /// intact, so baking between edits cannot consume unpublished changes.</para>
-    /// <para>Returns null and fills <paramref name="defectMessage"/> when a brush
-    /// node's world transform is non-rigid, which is the same refusal
-    /// <see cref="RebuildStaticWorld"/> makes and the reason a cook reports
-    /// <c>SC7001</c> rather than compiling a level that cannot be rendered.</para>
-    /// </remarks>
+    // Read-only: does not consume the live compiler's change journal.
     public IReadOnlyList<BrushPlacement>? CaptureStaticWorldPlacements(out string? defectMessage)
     {
         defectMessage = null;
@@ -1411,43 +862,27 @@ public sealed partial class Scene
     }
 
     /// <summary>
-    /// Synchronously recompiles the static world from the graph's brush nodes:
-    /// each brush is placed by its node's world transform, then carve → snap →
-    /// weld → BSP, then the per-chunk render meshes are rebuilt. Must run on
-    /// the render thread — GPU resources are created and disposed here. Throws
-    /// <see cref="InvalidOperationException"/> when any brush node's world
-    /// transform is non-rigid. With no brush nodes present the derived world
-    /// becomes null. Intended for load time and tests; frame-to-frame edits go
-    /// through <see cref="ProcessStaticWorldCompilation"/> instead.
-    /// Deliberately cache-free: this path always compiles fresh, exactly as it
-    /// did before incremental carving existed (its contract is unchanged).
+    /// Synchronously recompiles the static world from the graph's brush nodes
+    /// and rebuilds the per-chunk meshes, with no caches. For load time and
+    /// tests; frame-to-frame edits go through
+    /// <see cref="ProcessStaticWorldCompilation"/>. Throws
+    /// <see cref="InvalidOperationException"/> when a brush node's world
+    /// transform is not rigid. Does nothing while a compiled map is installed.
     /// </summary>
     public void RebuildStaticWorld(Renderer renderer)
     {
-        // The double-geometry guard, on the one path that would draw the level
-        // twice in a single call. It refuses rather than throwing because the
-        // callers are load-time paths that already have a world - a throw would
-        // turn a level somebody can see into a crash - and every refusal is
-        // counted and named so it cannot be a silent no-op.
+        // Refuse, do not throw: callers are load paths with a level on screen.
         if (RefuseForCompiledWorld("A synchronous static-world rebuild", isRebuild: true)) return;
 
-        // A background compile may still be in flight. Wait it out and drop
-        // its result: if it stayed parked in _inFlightCompile, the frame pump
-        // would later harvest its stale world and overwrite the synchronous
-        // rebuild done below. (Carving itself is thread-safe — brush local
-        // geometry, Polygon.Bounds included, is immutable — this wait is
-        // purely about result ordering.) The dropped result's carve cache is
-        // lost with it — the next background compile runs cold, which is
-        // merely a full carve, never a correctness issue.
+        // Wait out a compile in flight and drop its result, or the pump would
+        // later harvest it over this rebuild.
         if (_inFlightCompile is not null)
         {
             try { _inFlightCompile.Wait(); }
-            catch (AggregateException) { /* superseded — its failure is irrelevant now */ }
+            catch (AggregateException) { /* superseded, its failure no longer matters */ }
             _inFlightCompile = null;
 
-            // The dropped compile never landed, so the cells it was launched
-            // for are still stale relative to the last COMPLETED compile —
-            // fold them back so the diff below reports them again.
+            // It never landed, so its cells are still stale.
             if (_inFlightDirtyCells is not null)
             {
                 MarkCellsDirty(_inFlightDirtyCells);
@@ -1461,10 +896,8 @@ public sealed partial class Scene
 
         _handledStaticWorldVersion = _staticWorldVersion;
 
-        // Footprint bookkeeping runs on the synchronous path too, so async
-        // compiles resumed afterwards diff against THIS snapshot, and the
-        // dirty set stays observable (the build below is deliberately
-        // dirty-agnostic — it compiles everything regardless).
+        // The build below compiles everything, but the diff still runs so
+        // later background compiles diff against this snapshot.
         ChunkCoord[] dirtyCells = CollectDirtyCells(placements);
         LastCompileDirtyCells = dirtyCells;
 
@@ -1477,10 +910,8 @@ public sealed partial class Scene
         }
 
         CsgWorld world = CsgWorld.Build(placements);
-        // Publish first, commit the carry pairing only afterwards: a swap
-        // failure (CreateMesh throwing) must leave the carry describing the
-        // world that is actually rendering, with the consumed dirty cells
-        // folded back so the next compile re-covers them.
+        // Publish first, then commit the carry. If the swap throws, the carry
+        // must still describe the world on screen.
         try
         {
             ReplaceStaticWorld(renderer, world);
@@ -1491,56 +922,40 @@ public sealed partial class Scene
             throw;
         }
 
-        // The synchronous world is a valid carry for the next background
-        // compile: its snapshot is the one later dirty diffs run against.
         _staticWorldCarry = world;
         _carryStructureVersion = _graphStructureVersion;
         _staticWorldStructureVersion = _graphStructureVersion;
     }
 
     /// <summary>
-    /// Drives the asynchronous static-world pipeline; the engine calls this
-    /// once per frame on the render thread. First harvests a finished
-    /// background compile — swapping in the new world and creating its GPU
-    /// mesh here, where GPU resource creation is allowed — then, if brush
-    /// nodes changed and nothing is in flight, snapshots the graph and
-    /// launches the next compile on the thread pool. When edits arrive faster
-    /// than compiles finish, each landing compile immediately triggers the
-    /// next one, so a dragged brush yields progressive results.
+    /// Drives the background static-world compile; call once per frame.
+    /// Swaps in a finished compile and uploads its changed chunks, then
+    /// launches the next one if brush nodes changed and nothing is in flight.
     /// </summary>
     public void ProcessStaticWorldCompilation(Renderer renderer, ILogger logger)
     {
-        // Belt and braces, and the place the guard finally speaks: the marks above
-        // already refuse, so nothing should ever have re-armed this pump, and a
-        // world that arrived baked must not compile even if something did.
+        // A baked world must never compile. The only place the guard logs.
         if (_compiledStaticWorld is not null)
         {
             ReportCompiledWorldGuard(logger);
             return;
         }
 
-        // (a) Harvest a finished compile.
         if (_inFlightCompile is { } inFlight)
         {
             if (!inFlight.IsCompleted)
-                return; // Still compiling; the previous world keeps rendering.
+                return;
             _inFlightCompile = null;
 
             if (inFlight.IsFaulted)
             {
-                // Keep the last good world. Logged once here, not per frame:
-                // the version was marked handled at launch, so nothing retries
-                // until the next MarkStaticWorldDirty.
+                // Keeps the last good world. Nothing retries until the next
+                // dirty mark, so this logs once.
                 logger.LogError(inFlight.Exception,
                     "Static world compile v{Version} failed; keeping the previous world", _inFlightVersion);
 
-                // The failed compile consumed its dirty-cell set without
-                // refreshing those cells — restore it so the next compile
-                // (re-armed by the next edit) covers them again. The carry it
-                // consumed is restored from StaticWorld: the same immutable
-                // world object, and the restored dirty set covers everything
-                // that changed since ITS snapshot (last-snapshot diff plus the
-                // failed compile's cells), so the trusted-diff contract holds.
+                // Restore the dirty cells and the carry the failed compile
+                // consumed, so the next one covers them again.
                 if (_inFlightDirtyCells is not null)
                     MarkCellsDirty(_inFlightDirtyCells);
                 _inFlightDirtyCells = null;
@@ -1550,25 +965,16 @@ public sealed partial class Scene
             else
             {
                 StaticWorldCompilation result = inFlight.Result;
-                // Publish FIRST, commit the compile bookkeeping only after the
-                // swap succeeded. ReplaceStaticWorld can throw mid-swap
-                // (CreateMesh — a survivable failure by its own contract), and
-                // committing beforehand would pair the OLD published world
-                // with the NEW world's carry/dirty/version state: the dropped
-                // dirty set would never be re-covered, so a later faulted
-                // compile would restore a carry whose dirty cells no longer
-                // cover every changed placement — silently stale geometry in
-                // release builds, an unrecoverable VerifyTrustedDiff fault
-                // loop in debug builds.
+                // Publish first, commit the bookkeeping after. The swap can
+                // throw (CreateMesh), and committing early would pair the old
+                // published world with the new carry and lose the dirty set.
                 try
                 {
                     ReplaceStaticWorld(renderer, result.World);
                 }
                 catch
                 {
-                    // Same restoration as a faulted compile: fold the consumed
-                    // dirty cells back and re-pair the carry with the world
-                    // that is still actually published.
+                    // Same restoration as a faulted compile.
                     if (_inFlightDirtyCells is not null)
                         MarkCellsDirty(_inFlightDirtyCells);
                     _inFlightDirtyCells = null;
@@ -1578,16 +984,10 @@ public sealed partial class Scene
                 }
 
                 _inFlightDirtyCells = null;
-                // The landed world is the next compile's carry: its per-brush
-                // and per-cell state is what lets the next edit re-run only
-                // its own neighbourhood.
                 _staticWorldCarry = result.World;
                 _carryStructureVersion = _inFlightStructureVersion;
                 _staticWorldStructureVersion = _inFlightStructureVersion;
 
-                // Aggregate the stats and log at a bounded cadence (see the
-                // field comments): the steady-state cost per harvest is three
-                // integer adds and a tick read — no logging, no boxing.
                 CsgCacheStats stats = result.World.CacheStats ?? default;
                 _compileStatsLanded++;
                 _compileStatsCacheHits += stats.Hits;
@@ -1609,22 +1009,19 @@ public sealed partial class Scene
             }
         }
 
-        // (b) Launch the next compile if edits arrived since the last launch.
         if (_staticWorldVersion == _handledStaticWorldVersion)
             return;
 
         int version = _staticWorldVersion;
         PlacementSnapshot? placements = SnapshotBrushPlacements(out string? defectMessage);
 
-        // Handled either way: a defective snapshot must not retry-spam every
-        // frame — the next MarkStaticWorldDirty re-arms the pump.
+        // Handled even when defective, so it does not retry every frame.
         _handledStaticWorldVersion = version;
 
         if (placements is null)
         {
-            // A continuously animating brush re-arms the pump every frame, so a
-            // persistent defect on some other node would otherwise log per
-            // frame. Repeat the message only when the defect itself changes.
+            // An animating brush re-arms the pump every frame, so only log
+            // when the defect changes.
             if (defectMessage != _lastLoggedSnapshotDefect)
             {
                 _lastLoggedSnapshotDefect = defectMessage;
@@ -1639,18 +1036,13 @@ public sealed partial class Scene
         _lastLoggedSnapshotDefect = null;
         StaticWorldDefect = null;
 
-        // Diff this snapshot against the previous one BEFORE branching on the
-        // placement count: an emptied scene must still dirty the cells the
-        // departed brushes covered.
+        // Before the count check: an emptied scene still has to dirty the
+        // cells its brushes left.
         ChunkCoord[] dirtyCells = CollectDirtyCells(placements);
         LastCompileDirtyCells = dirtyCells;
 
         if (placements.Count == 0)
         {
-            // No brush nodes: the derived world is null. Cheap enough to do
-            // synchronously — no carve, just releasing the old chunk meshes.
-            // The carry is dropped too: every placement left the world, so
-            // there is nothing to derive the next compile from.
             _staticWorldCarry = null;
             ReplaceStaticWorld(renderer, null);
             _staticWorldStructureVersion = _graphStructureVersion;
@@ -1660,21 +1052,9 @@ public sealed partial class Scene
         _inFlightVersion = version;
         _inFlightDirtyCells = dirtyCells;
         _inFlightStructureVersion = _graphStructureVersion;
-        // The snapshot placements are immutable (paged copy-on-write — see
-        // SnapshotBrushPlacements), so the task and the render thread share
-        // them safely; the carried world transfers to the task, and the
-        // render thread re-acquires a carry when the result is harvested (the
-        // landed world) or the compile faults (StaticWorld). The dirty-cell
-        // array is shared read-only: the task carries it into the built
-        // world, the render thread only re-reads it on a fault.
-        //
-        // The trusted-diff contract (see CsgWorld.Build(placements, dirty,
-        // previous)) holds by construction here: dirtyCells is the footprint
-        // diff of every changed node since the carry's snapshot, and the
-        // structure-version check proves the traversal order is unchanged.
-        // After a structural edit the carry is still handed over, but flagged
-        // untrusted — the compile then uses only its lazily derived validation
-        // caches, which are safe under any placement order.
+        // Placements and dirty cells are immutable and shared with the task.
+        // The carry moves to the task. After a structural edit it is handed
+        // over as untrusted, and the compile uses only its validation caches.
         CsgWorld? carry = _staticWorldCarry;
         bool orderStable = carry is not null && _carryStructureVersion == _graphStructureVersion;
         _staticWorldCarry = null;
@@ -1682,15 +1062,8 @@ public sealed partial class Scene
             () => CompileStaticWorld(placements, dirtyCells, carry, orderStable));
     }
 
-    // Pure CPU compile of one snapshot; runs on a thread-pool thread. Reads
-    // ONLY the snapshot: placement transforms plus each brush's immutable
-    // local planes/faces/bounds (all fully computed at construction, so any
-    // number of carve workers may read them) — and the immutable previous
-    // world handed over at launch, which it reads but never mutates. It must
-    // never touch Scene, SceneNode, Brush.Transform, or any renderer/GPU
-    // object — GPU upload happens when the render thread harvests the result
-    // (the per-cell mesh ARRAYS are built here, inside CsgWorld.Build; only
-    // their upload is render-thread work).
+    // Runs on a pool thread. Reads only the snapshot and the previous world.
+    // Must not touch Scene, SceneNode, Brush.Transform or anything on the GPU.
     private static StaticWorldCompilation CompileStaticWorld(
         IReadOnlyList<BrushPlacement> placements, ChunkCoord[] dirtyCells, CsgWorld? previous, bool orderStable)
     {
@@ -1703,24 +1076,10 @@ public sealed partial class Scene
         return new StaticWorldCompilation(world, stopwatch.Elapsed.TotalMilliseconds);
     }
 
-    // Render thread only: swaps the derived world and updates the per-chunk
-    // GPU mesh map — creating meshes ONLY for cells whose artifact changed and
-    // destroying ONLY the replaced/removed cells' meshes, so a one-brush edit
-    // touches a handful of GPU buffers regardless of world size. Buffers are
-    // per (cell, material) since W5, which changes the constant and nothing
-    // else: the change detector is still the artifact instance, so a cell is
-    // carried or re-uploaded as a whole. Passing a null world clears the
-    // derived data (the no-brush-nodes case).
-    //
-    // Two shapes. A PATCHED world whose base is exactly the currently
-    // published world carries its per-cell mesh delta, and the swap applies
-    // just those entries — O(changed cells) of CPU work per landed compile,
-    // matching the GPU churn (the map rebuild below would otherwise cost
-    // O(world chunks) of dictionary/list traffic per drag frame). Everything
-    // else — full builds, validated fallbacks, clears, or a patched world
-    // whose base is not what is published (possible after a failed swap) —
-    // takes the full rebuild, whose per-cell instance diff is correct against
-    // any previous map state.
+    // Swaps the world and its chunk meshes. Only cells whose artifact instance
+    // changed are re-uploaded. Null clears everything.
+    // A patched world based on the published one applies just its delta;
+    // anything else takes the full per-cell diff below.
     private void ReplaceStaticWorld(Renderer renderer, CsgWorld? world)
     {
         if (world is not null && StaticWorld is { } published &&
@@ -1732,12 +1091,8 @@ public sealed partial class Scene
 
         IReadOnlyList<ChunkMesh> artifacts = world?.ChunkMeshes ?? Array.Empty<ChunkMesh>();
 
-        // Phase 1 — create before destroy, the same atomicity stance the old
-        // single-mesh swap had, now per cell: every replacement GPU mesh is
-        // created before any old mesh is destroyed, so if CreateMesh throws
-        // the created replacements are rolled back and the last good world —
-        // every chunk of it — stays intact and renderable. The brief overlap
-        // of old and new meshes in GPU memory is the price of that atomicity.
+        // Create before destroy: if CreateMesh throws, the new meshes are
+        // rolled back and the last good world stays whole.
         var replacement = new StaticWorldChunkMesh[artifacts.Count];
         var createdChunks = new List<StaticWorldSubmesh[]>();
         var carriedCells = new HashSet<ChunkCoord>();
@@ -1749,10 +1104,7 @@ public sealed partial class Scene
                 if (_staticWorldChunkMeshes.TryGetValue(artifact.Coord, out StaticWorldChunkMesh existing) &&
                     ReferenceEquals(existing.Artifact, artifact))
                 {
-                    // Clean cell carried forward by the compile (the mesh
-                    // cache reused the artifact instance): the existing GPU
-                    // meshes — all of the cell's materials — keep serving,
-                    // zero churn.
+                    // Same artifact instance: the cell is unchanged.
                     replacement[i] = existing;
                     carriedCells.Add(artifact.Coord);
                     continue;
@@ -1765,21 +1117,14 @@ public sealed partial class Scene
         }
         catch
         {
-            // Roll back this swap's creations; the map, the world, and every
-            // old GPU mesh are untouched, so rendering continues from the
-            // previous compile. (The throwing chunk rolled its own partial
-            // submeshes back before rethrowing — see CreateChunkSubmeshes.)
+            // The throwing chunk already rolled back its own submeshes.
             foreach (StaticWorldSubmesh[] submeshes in createdChunks)
                 DestroyChunkSubmeshes(renderer, submeshes);
             throw;
         }
 
-        // Phase 2 — commit: destroy exactly the replaced/removed cells' old
-        // meshes (an old entry survives iff the new world carried its artifact
-        // forward), then republish the map and its ordered list. DestroyMesh,
-        // not Dispose: rebuilds happen on every brush edit, and a plain
-        // Dispose would leave dead meshes in the renderer's tracking list
-        // until shutdown (a leak proportional to edit count).
+        // Commit. DestroyMesh, not Dispose: Dispose leaves the mesh in the
+        // renderer's tracking list until shutdown.
         foreach (KeyValuePair<ChunkCoord, StaticWorldChunkMesh> stale in _staticWorldChunkMeshes)
         {
             if (!carriedCells.Contains(stale.Key))
@@ -1794,12 +1139,8 @@ public sealed partial class Scene
             _staticWorldChunkList.Add(chunk);
         }
 
-        // Z-ORDER, not the artifact list's ascending cell order. Both are
-        // deterministic, which is all BuildRenderView's emission order needs;
-        // this one additionally makes a run of consecutive entries a compact
-        // block of space rather than a line, which is the whole reason the
-        // cluster boxes below can reject anything. The incremental path inserts
-        // against the same key, so the two agree.
+        // Z-order, so a run of consecutive entries is a compact block and the
+        // cluster boxes can reject something. The delta path uses the same key.
         _staticWorldChunkList.Sort(static (a, b) =>
             a.Coord.MortonKey.CompareTo(b.Coord.MortonKey));
 
@@ -1809,17 +1150,11 @@ public sealed partial class Scene
         RecordWorldPublication(world);
     }
 
-    // The delta swap: applies a patched compile's per-cell mesh changes to
-    // the map and ordered list in place — every untouched cell's entry (the
-    // overwhelming majority of a one-brush edit) is simply never visited.
-    // Same create-before-destroy atomicity as the full rebuild: all
-    // replacement GPU meshes are created first, and a CreateMesh throw rolls
-    // them back with the map, the list, and the published world untouched.
+    // Applies only the changed cells. Create before destroy, like the full
+    // rebuild.
     private void ApplyChunkMeshDelta(
         Renderer renderer, CsgWorld world, IReadOnlyList<(ChunkCoord Coord, ChunkMesh? Mesh)> delta)
     {
-        // Phase 1 — create every replacement/addition, one GPU mesh per
-        // (cell, material).
         var createdChunks = new List<StaticWorldSubmesh[]>(delta.Count);
         try
         {
@@ -1836,11 +1171,8 @@ public sealed partial class Scene
             throw;
         }
 
-        // Phase 2 — commit: per delta entry, destroy the replaced/removed
-        // cell's old mesh and splice the map and the ordered list. The list
-        // stays ascending because each entry lands at its binary-searched
-        // position (replacements in place, insertions/removals shifting —
-        // rare border-crossing edits only).
+        // Commit. Each entry lands at its sorted position, so the list stays
+        // ordered.
         int createdIndex = 0;
         bool shapeChanged = false;
         _dirtyChunkClusters.Clear();
@@ -1884,15 +1216,8 @@ public sealed partial class Scene
         RecordWorldPublication(world);
     }
 
-    // Render thread only: uploads one cell's artifact as one GPU mesh per
-    // material it wears and resolves each one's material once, here — the
-    // single point where the compile's pure-value material ids become asset
-    // objects (see ResolveWorldMaterial).
-    //
-    // Atomicity is per CELL, mirroring the swap's per-cell stance one level
-    // down: a throw partway through a cell's materials destroys that cell's
-    // already-created meshes before propagating, so the caller only ever has
-    // to roll back whole cells and no half-uploaded cell can leak.
+    // One GPU mesh per material in the cell. On a throw, this cell's meshes
+    // are destroyed before it propagates, so callers roll back whole cells.
     private StaticWorldSubmesh[] CreateChunkSubmeshes(Renderer renderer, ChunkMesh artifact)
     {
         IReadOnlyList<ChunkSubmesh> sources = artifact.Submeshes;
@@ -1903,9 +1228,7 @@ public sealed partial class Scene
             for (; created < submeshes.Length; created++)
             {
                 ChunkSubmesh source = sources[created];
-                // No CPU copy: chunks are culled by the artifact's render
-                // bounds and queried through the BSP, so a retained mirror is
-                // per-swap garbage nothing reads (see MeshCpuAccess).
+                // No CPU copy: nothing reads a chunk mesh's arrays.
                 Mesh gpuMesh = renderer.CreateMesh(
                     source.Vertices, source.Indices, VertexAttribute.StandardLayout, MeshCpuAccess.None);
                 submeshes[created] = new StaticWorldSubmesh(
@@ -1922,15 +1245,12 @@ public sealed partial class Scene
         return submeshes;
     }
 
-    // Destroys every GPU mesh of one chunk entry. DestroyMesh, not Dispose:
-    // the renderer's tracking list must lose them too (see Renderer.DestroyMesh).
     private static void DestroyChunkSubmeshes(Renderer renderer, StaticWorldSubmesh[] submeshes)
     {
         for (int i = 0; i < submeshes.Length; i++)
             renderer.DestroyMesh(submeshes[i].Mesh);
     }
 
-    // First index in the ordered chunk list whose coordinate is >= coord.
     private int ChunkListLowerBound(ChunkCoord coord)
     {
         int lo = 0, hi = _staticWorldChunkList.Count;
@@ -1945,7 +1265,6 @@ public sealed partial class Scene
         return lo;
     }
 
-    // Shared refusal text for live snapshots and pure bake captures.
     private static string DescribeBrushNodeDefect(SceneNode node, string defect) =>
         $"Brush node '{node.Name}' has a non-rigid world transform ({defect}). " +
         "Brush node transforms must be rigid — rotation and translation only; " +
@@ -1954,33 +1273,16 @@ public sealed partial class Scene
     /// <summary>Enumerates every node in the scene, depth-first from the root.</summary>
     public IEnumerable<SceneNode> Nodes => Root.Traverse();
 
-    /// <summary>
-    /// How far a brush node's world matrix may deviate from a rigid
-    /// (rotation + translation) transform before the compile rejects it.
-    /// </summary>
     private const float RigidTransformTolerance = 1e-4f;
 
-    // The whole CSG epsilon scheme assumes rigid brush transforms: under scale
-    // or shear, Plane.Transform returns non-normalized planes and every
-    // distance tolerance silently changes meaning. The snapshot is the single
-    // point where node transforms enter the brush pipeline, so rigidity is
-    // enforced there rather than trusted.
-    //
-    // Returns a description of why the matrix is not rigid, or null when it is.
-    // A rigid matrix is affine with an orthonormal, positively-oriented basis;
-    // singular matrices necessarily fail the unit-length or orthogonality check.
+    // Null when the matrix is rigid. The CSG tolerances assume it: under scale
+    // or shear, Plane.Transform returns planes that are not normalized.
     private static string? DescribeNonRigidDefect(in Matrix4x4 m)
     {
         const float tolerance = RigidTransformTolerance;
 
-        // Finiteness must be screened FIRST and explicitly: every predicate
-        // below is written "comparison > tolerance => defect", and all
-        // comparisons against NaN are false, so a NaN matrix would pass every
-        // later check as "rigid" and feed NaN geometry into carve/snap/weld/BSP.
-        // Non-finite values propagate through addition (and Inf + -Inf is NaN),
-        // so one non-finite element anywhere poisons the sum; finite elements
-        // could only overflow it near float.MaxValue, far outside any sane
-        // transform.
+        // Finiteness first: every check below is "x > tolerance", which a NaN
+        // passes. One non-finite element makes the sum non-finite.
         if (!float.IsFinite(
                 m.M11 + m.M12 + m.M13 + m.M14 +
                 m.M21 + m.M22 + m.M23 + m.M24 +
@@ -1992,7 +1294,7 @@ public sealed partial class Scene
             MathF.Abs(m.M34) > tolerance || MathF.Abs(m.M44 - 1f) > tolerance)
             return "projective components";
 
-        // Row-vector convention: the basis vectors are the upper 3x3 rows.
+        // Row vectors: the basis is the upper 3x3 rows.
         var r0 = new Vector3(m.M11, m.M12, m.M13);
         var r1 = new Vector3(m.M21, m.M22, m.M23);
         var r2 = new Vector3(m.M31, m.M32, m.M33);
@@ -2007,17 +1309,12 @@ public sealed partial class Scene
             MathF.Abs(Vector3.Dot(r2, r0)) > tolerance)
             return "shear: basis vectors are not orthogonal";
 
-        // An orthonormal basis has determinant ±1; -1 is a mirror, which turns
-        // every outward brush plane inside-out.
+        // A mirror turns every brush plane inside out.
         if (Vector3.Dot(Vector3.Cross(r0, r1), r2) < 0f)
             return "reflection: negative determinant";
 
         return null;
     }
 
-    // CPU-side output of one background compile: the built world, whose
-    // per-cell mesh arrays (CsgWorld.ChunkMeshes) are ready for GPU upload on
-    // the render thread. Immutable by construction; crosses threads exactly
-    // once, through the completed Task.
     private sealed record StaticWorldCompilation(CsgWorld World, double DurationMs);
 }

@@ -5,21 +5,16 @@ using System;
 
 namespace SpectraEngine.Core.Graphics.D3D12;
 
-/// <summary>
-/// Vertex + index buffers on the upload heap with their D3D12 buffer views and
-/// the mesh's <see cref="D3D12VertexLayout"/> (input layouts live in PSOs on
-/// D3D12, so the layout travels with the mesh to the PSO cache at draw time).
-/// Upload-heap placement trades a little GPU read bandwidth for not needing a
-/// copy queue — fine at current scene sizes; revisit when meshes get large.
-/// </summary>
+// Vertex and index buffers on the upload heap. Slower for the GPU to read
+// than a default heap, but needs no copy queue. The layout travels with the
+// mesh because input layouts are part of the PSO on D3D12.
 internal sealed unsafe class D3D12Mesh : Mesh
 {
     private readonly D3D12Renderer _renderer;
     private ComPtr<ID3D12Resource> _vertexBuffer;
     private ComPtr<ID3D12Resource> _indexBuffer;
 
-    // The POOL bucket each buffer came from, which is what it must be returned
-    // under: the buffer is at least this big and usually bigger than the data.
+    // Pool bucket sizes. The buffers must be returned under these, not the data size.
     private readonly uint _vertexCapacity;
     private readonly uint _indexCapacity;
     private readonly VertexBufferView _vbView;
@@ -51,9 +46,8 @@ internal sealed unsafe class D3D12Mesh : Mesh
 
         uint vbBytes = (uint)(vertices.Length * sizeof(float));
         uint ibBytes = (uint)(indices.Length * sizeof(uint));
-        // Rented, not created. CreateCommittedResource costs about half a
-        // millisecond per call on this backend, and the static-world compiler
-        // frees and re-creates chunk meshes every frame a world brush moves.
+        // Rented: CreateCommittedResource costs about 0.5 ms a call, and chunk
+        // meshes are recreated every frame a world brush moves.
         _vertexCapacity = D3D12Renderer.MeshBufferBucket(vbBytes);
         _indexCapacity = D3D12Renderer.MeshBufferBucket(ibBytes);
         try
@@ -121,9 +115,8 @@ internal sealed unsafe class D3D12Mesh : Mesh
         var program = _renderer.CurrentProgram;
         if (list is null || program is null) return;
 
-        // From the open pass, not hardcoded: a PSO is compiled against the
-        // render-target formats it will be bound with, so drawing the same mesh
-        // into an offscreen target needs its own pipeline state.
+        // Target formats come from the open pass: a PSO is only valid for the
+        // formats it was compiled against.
         var target = _renderer.CurrentTargetState;
         var pso = program.GetPso(
             Layout, _renderer.CurrentFillMode, PrimitiveTopologyType.Triangle,
@@ -160,10 +153,7 @@ internal sealed unsafe class D3D12Mesh : Mesh
 
         var target = _renderer.CurrentTargetState;
 
-        // The COMBINED layout, not this mesh's. On D3D12 the input layout is
-        // part of the pipeline, so an instanced draw is a different PSO rather
-        // than a different binding; the PSO cache keys on the elements
-        // structurally, so this selects one without the cache knowing why.
+        // The combined layout, not the mesh's own: an instanced draw is a different PSO.
         var pso = program.GetPso(
             d3d.CombinedLayout, _renderer.CurrentFillMode, PrimitiveTopologyType.Triangle,
             _renderer.CurrentDepthMode, BlendMode.Opaque, _renderer.CurrentDepthBias, in target);
@@ -186,8 +176,6 @@ internal sealed unsafe class D3D12Mesh : Mesh
     {
         if (_disposed) return;
         _disposed = true;
-        // Back to the pool rather than released: see D3D12Renderer's mesh
-        // buffer pool for why this backend cannot afford to allocate them again.
         _renderer.ReturnMeshBuffer(_indexCapacity, _indexBuffer);
         _renderer.ReturnMeshBuffer(_vertexCapacity, _vertexBuffer);
         _indexBuffer = default;

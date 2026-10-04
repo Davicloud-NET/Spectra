@@ -3,12 +3,6 @@ using SpectraEngine.Core.Bsp;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// <see cref="BrushBroadphase.FindOverlaps"/> pairing semantics, including the
-/// boundary case the carve relies on: boxes touching with zero gap count as
-/// overlapping (so coincident-face interfaces reach the CSG), while any
-/// strictly positive gap — however small — does not.
-/// </summary>
 public sealed class BrushBroadphaseTests
 {
     private static Aabb Box(float minX, float maxX) =>
@@ -35,9 +29,7 @@ public sealed class BrushBroadphaseTests
     [Fact]
     public void Touching_boxes_with_zero_gap_count_as_overlapping()
     {
-        // Coincident-face brushes (a wall meeting a floor) must be fed to the
-        // carve so the shared interface is resolved there; the broadphase
-        // therefore treats exact touching as overlap.
+        // The carve has to see coincident faces, e.g. a wall meeting a floor.
         int[][] neighbors = BrushBroadphase.FindOverlaps([Box(0f, 1f), Box(1f, 2f)]);
 
         neighbors[0].ShouldBe(new[] { 1 });
@@ -47,8 +39,7 @@ public sealed class BrushBroadphaseTests
     [Fact]
     public void Boxes_separated_by_a_hair_are_not_reported()
     {
-        // Documents the epsilon behaviour: the broadphase does no inflation, so
-        // any strictly positive gap — even 1e-3 — is a miss.
+        // No inflation: any positive gap is a miss.
         int[][] neighbors = BrushBroadphase.FindOverlaps([Box(0f, 1f), Box(1.001f, 2f)]);
 
         neighbors[0].ShouldBeEmpty();

@@ -3,20 +3,8 @@ using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// An <see cref="IAudioBackend"/> with no device behind it, modelling OpenAL's
-/// source states and buffer queues closely enough to test the pool's reclaim
-/// policy and the streaming voice's refill loop.
-/// </summary>
-/// <remarks>
-/// It exists because real playback is a manual gate, not an automated test: CI
-/// has no sound card, and a test that needs one is a test that gets disabled.
-/// The behaviours modelled are the ones the engine's own code reads back and
-/// acts on, and nothing else: a queued buffer becomes processed when the test
-/// says it has been consumed, a source with an empty queue goes to
-/// <see cref="AudioSourceState.Stopped"/> exactly as a starved one does, and
-/// nothing here makes sound.
-/// </remarks>
+// IAudioBackend with no device (CI has no sound card). Models only the AL
+// source states and buffer queues the engine reads back.
 internal sealed class FakeAudioBackend : IAudioBackend
 {
     private sealed class SourceRecord
@@ -25,7 +13,7 @@ internal sealed class FakeAudioBackend : IAudioBackend
         public uint StaticBuffer;
         public readonly List<uint> Queue = [];
 
-        /// <summary>Buffers at the head of the queue the driver has finished with.</summary>
+        // Buffers at the head of the queue the driver has finished with.
         public int Processed;
     }
 
@@ -34,7 +22,6 @@ internal sealed class FakeAudioBackend : IAudioBackend
     private uint _nextSource = 1;
     private uint _nextBuffer = 1;
 
-    /// <param name="maxSources">The driver's source limit, so a pool can be exhausted deliberately.</param>
     public FakeAudioBackend(int maxSources = 32) => MaxSources = maxSources;
 
     public int MaxSources { get; }
@@ -43,25 +30,22 @@ internal sealed class FakeAudioBackend : IAudioBackend
 
     public bool IsDisposed { get; private set; }
 
-    /// <summary>Buffers created and never destroyed. A non-zero value at the end of a test is a leak.</summary>
+    // Non-zero at the end of a test is a leak.
     public int LiveBufferCount => _buffers.Count;
 
-    /// <summary>Sources created and never destroyed.</summary>
     public int LiveSourceCount => _sources.Count;
 
-    /// <summary>Every buffer upload since the last reset, oldest first. The oracle for loop arithmetic.</summary>
+    // Every buffer upload since the last reset, oldest first.
     public List<short[]> Uploads { get; } = [];
 
-    // --- Test-side driving ---------------------------------------------------
-
-    /// <summary>Pretends the driver consumed <paramref name="count"/> queued buffers on the source.</summary>
+    // Pretends the driver consumed queued buffers.
     public void Consume(uint source, int count)
     {
         SourceRecord record = _sources[source];
         record.Processed = Math.Min(record.Queue.Count, record.Processed + count);
     }
 
-    /// <summary>Pretends the source played out everything queued and stopped, which is what an underrun looks like.</summary>
+    // An underrun: everything queued played out and the source stopped.
     public void Starve(uint source)
     {
         SourceRecord record = _sources[source];
@@ -69,19 +53,14 @@ internal sealed class FakeAudioBackend : IAudioBackend
         record.State = AudioSourceState.Stopped;
     }
 
-    /// <summary>Pretends a one-shot finished on its own.</summary>
+    // A one-shot finishing on its own.
     public void Finish(uint source) => _sources[source].State = AudioSourceState.Stopped;
 
-    /// <summary>What the source is doing, without going through the engine's own accessor.</summary>
     public AudioSourceState StateOf(uint source) => _sources[source].State;
 
-    /// <summary>Buffers currently queued on the source.</summary>
     public int QueueDepth(uint source) => _sources[source].Queue.Count;
 
-    /// <summary>Contents of a buffer, as uploaded.</summary>
     public short[] Contents(uint buffer) => _buffers[buffer];
-
-    // --- IAudioBackend -------------------------------------------------------
 
     public uint CreateBuffer()
     {
@@ -128,9 +107,7 @@ internal sealed class FakeAudioBackend : IAudioBackend
 
     public void SetSourceBuffer(uint source, uint buffer) => _sources[source].StaticBuffer = buffer;
 
-    // Real AL leaves the source's state alone across a requeue: a playing source
-    // keeps playing. Modelling that is what makes the underrun the only case
-    // where a queued source reads as Stopped.
+    // Like real AL, queueing leaves the source state alone.
     public void QueueBuffer(uint source, uint buffer) => _sources[source].Queue.Add(buffer);
 
     public uint UnqueueBuffer(uint source)
@@ -152,9 +129,7 @@ internal sealed class FakeAudioBackend : IAudioBackend
         SourceRecord record = _sources[source];
         record.State = AudioSourceState.Stopped;
 
-        // AL marks every queued buffer processed on a stop, which is what makes
-        // draining the queue legal. Getting this wrong in the fake would let a
-        // seek pass here and hang against a real driver.
+        // AL marks every queued buffer processed on a stop, so the queue can be drained.
         record.Processed = record.Queue.Count;
     }
 

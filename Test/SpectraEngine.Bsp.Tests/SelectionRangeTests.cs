@@ -3,18 +3,9 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The batched half of <see cref="SelectionSet"/>: <c>SetRange</c>,
-/// <c>AddRange</c>, <c>ToggleRange</c> and the mode-carrying <c>Apply</c>.
+/// The batched <see cref="SelectionSet"/> operations: one <c>SelectionChanged</c> per
+/// batch, and none when nothing changed.
 /// </summary>
-/// <remarks>
-/// <b>The contract these exist to enforce is the event count.</b> Box select
-/// routinely changes hundreds of nodes at once; doing it through the
-/// single-node API would raise hundreds of <c>SelectionChanged</c> events and
-/// thrash every UI binding watching the selection. One operation, one event —
-/// and none at all when the batch turns out to describe the selection that was
-/// already there, which is exactly what a marquee held still over the same
-/// nodes produces every frame it is re-committed.
-/// </remarks>
 public sealed class SelectionRangeTests
 {
     [Fact]
@@ -54,8 +45,7 @@ public sealed class SelectionRangeTests
 
         scene.Selection.SetRange([b, a]);
 
-        // Items promises a stable order that editor UI renders directly, so a
-        // reshuffle of the same nodes is something a listener must hear about.
+        // The editor UI renders Items in order, so a reorder counts as a change.
         scene.Selection.Items.ShouldBe(new[] { b, a });
         fired.ShouldBe(1);
     }
@@ -122,8 +112,6 @@ public sealed class SelectionRangeTests
 
         scene.Selection.ToggleRange([a, a]);
 
-        // Flipping twice would leave it unselected — and would be impossible for
-        // a caller to notice until a duplicate showed up in real data.
         scene.Selection.Items.ShouldBe(new[] { a });
     }
 
@@ -137,8 +125,6 @@ public sealed class SelectionRangeTests
 
         Should.Throw<ArgumentException>(() => scene.Selection.SetRange([b, foreign]));
 
-        // The whole batch is validated first, so the rejected call is a no-op
-        // rather than a half-applied selection.
         scene.Selection.Items.ShouldBe(new[] { a });
     }
 

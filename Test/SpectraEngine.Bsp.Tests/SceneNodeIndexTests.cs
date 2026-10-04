@@ -2,13 +2,7 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The scene's id index (<see cref="Scene.TryFindById"/>): maintained purely
-/// from the membership events, so it must stay exact across subtree attach and
-/// detach, reparenting within a scene (which raises no membership events at
-/// all), cross-scene moves, and a node recreated under an id whose previous
-/// instance has left — the case undo of a delete produces.
-/// </summary>
+/// <summary>The scene's id index (<see cref="Scene.TryFindById"/>).</summary>
 public sealed class SceneNodeIndexTests
 {
     [Fact]
@@ -46,7 +40,7 @@ public sealed class SceneNodeIndexTests
 
         scene.Root.AddChild(parent);
 
-        scene.NodeCount.ShouldBe(4); // root + 3
+        scene.NodeCount.ShouldBe(4);
         scene.TryFindById(parent.Id, out _).ShouldBeTrue();
         scene.TryFindById(child.Id, out _).ShouldBeTrue();
         scene.TryFindById(grandchild.Id, out _).ShouldBeTrue();
@@ -69,8 +63,7 @@ public sealed class SceneNodeIndexTests
 
         b.AddChild(child);
 
-        // A reparent raises no membership events (the node never left), and the
-        // index must not need any: it is still the same node in the same scene.
+        // A reparent raises no membership events.
         child.Parent.ShouldBeSameAs(b);
         scene.TryFindById(child.Id, out SceneNode? found).ShouldBeTrue();
         found.ShouldBeSameAs(child);
@@ -108,8 +101,7 @@ public sealed class SceneNodeIndexTests
         var recreated = new SceneNode("Box", id);
         scene.Root.AddChild(recreated);
 
-        // This is what undo of a delete produces: a new instance under the id
-        // the recorded commands still name.
+        // Undo of a delete does this: a new instance under the old id.
         scene.TryFindById(id, out SceneNode? found).ShouldBeTrue();
         found.ShouldBeSameAs(recreated);
         found.ShouldNotBeSameAs(original);
@@ -123,14 +115,12 @@ public sealed class SceneNodeIndexTests
         var first = scene.Root.CreateChild("Box");
         Guid id = first.Id;
 
-        // Two live nodes deliberately sharing an id: the later add wins the
-        // mapping rather than throwing inside the ownership walk.
+        // Two live nodes sharing an id: the later add wins the mapping.
         var second = new SceneNode("Box", id);
         scene.Root.AddChild(second);
         scene.TryFindById(id, out SceneNode? found).ShouldBeTrue();
         found.ShouldBeSameAs(second);
 
-        // Detaching the one that does NOT own the mapping must leave it alone.
         scene.Root.RemoveChild(first);
         scene.TryFindById(id, out found).ShouldBeTrue();
         found.ShouldBeSameAs(second);
@@ -146,8 +136,6 @@ public sealed class SceneNodeIndexTests
         SceneNode? resolved = null;
         scene.NodeAdded += node =>
         {
-            // Handlers (the id-addressed editing layer above all) must be able
-            // to resolve the node they are being told about.
             if (scene.TryFindById(node.Id, out SceneNode? hit))
                 resolved = hit;
         };

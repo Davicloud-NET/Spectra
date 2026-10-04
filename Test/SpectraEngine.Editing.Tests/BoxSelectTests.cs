@@ -11,29 +11,17 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// Box select, checked against an oracle that shares none of its machinery: the
-/// implementation asks the BVH for a sub-frustum's occupants and refines them,
-/// while the oracle walks every node in the scene, projects its bounds straight
-/// from the brush and the world matrix, and compares rectangles. Anything the
-/// acceleration structure drops — or invents — shows up as a disagreement.
+/// Box select, checked against a brute-force oracle that projects every node's
+/// bounds and never touches the BVH.
 /// </summary>
-/// <remarks>
-/// The grid is deliberately dense enough that most rectangles cut <em>through</em>
-/// nodes rather than cleanly around them: a marquee that only ever fully
-/// contained or fully missed its targets would not exercise the difference
-/// between the conservative frustum test and the exact screen-rectangle one,
-/// which is the whole reason the refinement pass exists.
-/// </remarks>
 public sealed class BoxSelectTests
 {
-    // 7 x 5 nodes, 2 units apart, small enough that the marquee edges cut
-    // through them.
+    // Dense grid, so marquee edges cut through nodes. That is what exercises
+    // the exact screen-rect refinement after the frustum test.
     private const int GridWidth = 7;
     private const int GridHeight = 5;
     private const float Spacing = 2f;
     private const float HalfExtent = 0.45f;
-
-    // --- The oracle comparison ----------------------------------------------
 
     [Theory]
     [MemberData(nameof(Cases))]
@@ -90,8 +78,7 @@ public sealed class BoxSelectTests
     public void Contain_mode_never_picks_more_than_intersect_mode()
     {
         var harness = BuildGrid(0.6f, -0.3f, 28f);
-        // Deliberately cutting through the grid rather than around it, so some
-        // nodes are half in.
+        // Cuts through the grid, so some nodes are half in.
         var rect = ScreenRect.FromCorners(new Vector2(300f, 220f), new Vector2(520f, 400f));
 
         var loose = new List<SceneNode>();
@@ -117,8 +104,6 @@ public sealed class BoxSelectTests
 
         backward.ShouldBe(forward);
     }
-
-    // --- The controller: modifiers and events --------------------------------
 
     [Fact]
     public void A_marquee_replaces_the_selection_and_raises_exactly_one_event()
@@ -153,7 +138,6 @@ public sealed class BoxSelectTests
         harness.Scene.Selection.Contains(kept).ShouldBeTrue();
         foreach (SceneNode node in harness.Viewport.BoxSelect.LastResult)
             harness.Scene.Selection.Contains(node).ShouldBeTrue();
-        // Stable order: the pre-existing selection stays first.
         harness.Scene.Selection.Items[0].ShouldBeSameAs(kept);
     }
 
@@ -161,8 +145,7 @@ public sealed class BoxSelectTests
     public void Ctrl_toggles_the_marquee_against_what_is_already_selected()
     {
         var harness = BuildGrid(0f, 0f, 30f);
-        // Smaller than the grid's projection, so there is an untouched node to
-        // prove the toggle leaves everything outside the marquee alone.
+        // Smaller than the grid's projection, so some node stays outside it.
         var from = new Vector2(350f, 250f);
         var to = new Vector2(460f, 340f);
         var rect = ScreenRect.FromCorners(from, to);
@@ -170,7 +153,6 @@ public sealed class BoxSelectTests
         BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, covered);
         covered.Count.ShouldBeGreaterThan(2);
 
-        // Pre-select half of what the marquee will cover, plus one node it will not.
         SceneNode outsider = harness.Scene.Root.Children.First(node => !covered.Contains(node));
         var preselected = covered.Take(covered.Count / 2).Append(outsider).ToArray();
         harness.Scene.Selection.SetRange(preselected);
@@ -245,7 +227,6 @@ public sealed class BoxSelectTests
         harness.Press(empty, KeyModifiers.Shift);
         harness.Release(empty, KeyModifiers.Shift);
 
-        // A slipped Shift+click must not throw away a carefully built selection.
         harness.Scene.Selection.Items.ShouldBe(new[] { kept });
     }
 
@@ -264,8 +245,6 @@ public sealed class BoxSelectTests
         harness.Scene.Selection.Items.ShouldBe(new[] { kept });
     }
 
-    // --- The overlay path ----------------------------------------------------
-
     [Fact]
     public void The_marquee_draws_four_lines_that_reproject_onto_the_rectangle()
     {
@@ -278,16 +257,14 @@ public sealed class BoxSelectTests
         var output = new DebugDraw();
         harness.Viewport.Draw(output, harness.ViewportSize);
 
-        // The gizmo draws nothing (nothing is selected), so every vertex here is
-        // the marquee: four lines, two vertices each, six floats per vertex.
+        // Nothing is selected, so the gizmo draws nothing and every vertex is
+        // the marquee's.
         output.VertexCount.ShouldBe(8);
 
         ScreenRect rect = harness.Viewport.BoxSelect.Rect;
         foreach (Vector3 vertex in DebugLineVertices(output))
         {
             Vector2 pixel = harness.WorldToScreen(vertex);
-            // The whole claim of the unprojected-overlay approach: what lands on
-            // screen is exactly the rectangle the user is dragging.
             pixel.X.ShouldBeOneOf(rect.Min.X, rect.Max.X, 0.5f);
             pixel.Y.ShouldBeOneOf(rect.Min.Y, rect.Max.Y, 0.5f);
         }
@@ -297,7 +274,7 @@ public sealed class BoxSelectTests
     public void A_marquee_still_within_the_click_threshold_draws_nothing()
     {
         var harness = BuildGrid(0f, 0f, 30f);
-        // From empty space, so this is a marquee rather than an object drag.
+        // Starts on empty space, so it is a marquee and not an object drag.
         harness.Press(EmptyPixel(harness));
         harness.Drag(EmptyPixel(harness) + new Vector2(1f, 1f));
 
@@ -306,8 +283,6 @@ public sealed class BoxSelectTests
 
         output.VertexCount.ShouldBe(0);
     }
-
-    // --- Fixture and oracle --------------------------------------------------
 
     private static ViewportHarness BuildGrid(float yaw, float pitch, float distance)
     {
@@ -330,12 +305,8 @@ public sealed class BoxSelectTests
         return harness;
     }
 
-    /// <summary>
-    /// The independent answer: walk every node, rebuild its world bounds from
-    /// the brush and the node's matrix (never from the spatial index), project
-    /// the eight corners with the camera's own view-projection, and compare
-    /// screen rectangles.
-    /// </summary>
+    // Brute force: world bounds from the brush and node matrix, eight corners
+    // projected, screen rectangles compared. No spatial index.
     private static SceneNode[] Oracle(ViewportHarness harness, in ScreenRect rect, BoxSelectMode mode)
     {
         Matrix4x4 viewProjection = harness.Scene.Camera.GetViewProjection();
@@ -359,10 +330,7 @@ public sealed class BoxSelectTests
                     (corner & 4) == 0 ? bounds.Min.Z : bounds.Max.Z);
 
                 Vector4 clip = Vector4.Transform(new Vector4(world, 1f), viewProjection);
-                // The fixture keeps everything comfortably in front of the
-                // camera; if that ever stops being true the oracle's own
-                // definition would go undefined, so it is asserted rather than
-                // silently handled.
+                // The oracle is undefined for anything behind the camera.
                 clip.W.ShouldBeGreaterThan(0.01f, $"'{node.Name}' straddles the eye plane");
 
                 var pixel = new Vector2(
@@ -393,8 +361,7 @@ public sealed class BoxSelectTests
         harness.Release(to, modifiers);
     }
 
-    // A pixel with no node under it and no gizmo handle near it: the far corner
-    // of the viewport, well outside the grid's projection.
+    // Viewport corner, well outside the grid's projection.
     private static Vector2 EmptyPixel(ViewportHarness harness) => new(6f, 6f);
 
     private static IEnumerable<Vector3> DebugLineVertices(DebugDraw output)
@@ -407,10 +374,8 @@ public sealed class BoxSelectTests
     }
 }
 
-/// <summary>Assertions the box-select suite shares.</summary>
 internal static class BoxSelectAssertions
 {
-    /// <summary>Asserts the value is within tolerance of one of two expected values.</summary>
     public static void ShouldBeOneOf(this float actual, float first, float second, float tolerance)
     {
         if (MathF.Abs(actual - first) <= tolerance || MathF.Abs(actual - second) <= tolerance)

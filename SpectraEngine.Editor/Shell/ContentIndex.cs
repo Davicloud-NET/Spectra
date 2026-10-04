@@ -8,18 +8,10 @@ using System.Threading.Tasks;
 
 namespace SpectraEngine.Editor.Shell;
 
-/// <summary>One file the index knows about.</summary>
-/// <param name="FullPath">Where it is on this machine.</param>
-/// <param name="ContentPath">
-/// The normalized content-relative path, which is the name the engine knows it
-/// by: what a material writes down, what a map records, what the pack hashes its
-/// id from.
-/// </param>
-/// <param name="Name">The file name with its extension, for reading.</param>
-/// <param name="Folder">Its folder's absolute path, for the folder view.</param>
-/// <param name="Kind">What it is.</param>
-/// <param name="Bytes">Its size on disk, or -1 for a folder.</param>
-/// <param name="MtimeTicks">When it last changed, for the thumbnail cache key.</param>
+/// <summary>One file or folder the index knows about.</summary>
+/// <param name="ContentPath">Normalized content-relative path, the engine's name for the file.</param>
+/// <param name="Folder">Absolute path of the containing folder.</param>
+/// <param name="Bytes">Size on disk, or -1 for a folder.</param>
 public sealed record ContentIndexEntry(
     string FullPath,
     string ContentPath,
@@ -31,39 +23,13 @@ public sealed record ContentIndexEntry(
 
 /// <summary>
 /// Every file under a project's assets folder, walked once and kept current.
+/// The folder view and the project-wide search both read it.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>ONE reader, two views.</b> The folder view and the project-wide search
-/// both read this. Enumerating the directory for one and indexing for the other
-/// is two readers that disagree the first time somebody renames a file: the
-/// folder shows the new name because it just listed, the search shows the old
-/// one because nothing told it, and neither reports a problem.
-/// </para>
-/// <para>
-/// <b>The walk is off the UI thread and the result is published whole.</b> A
-/// project with a few thousand assets takes long enough to be felt, and a
-/// collection mutated from a worker is a crash in a list control rather than a
-/// race somebody notices. Every walk carries a generation, so one that lands
-/// after the root has changed is dropped - the same ticket shape the asset
-/// manager's decode queue uses.
-/// </para>
-/// <para>
-/// <b>A watcher can overflow, and this one says so.</b> A burst larger than the
-/// internal buffer raises <see cref="FileSystemWatcher.Error"/> and drops
-/// events, which for an index means it is silently wrong from then on. That is
-/// answered with a full rewalk and a warning, because an index nobody knows is
-/// stale is worse than a refresh button.
-/// </para>
-/// </remarks>
+// Walks run off the UI thread and publish whole; a walk that lands after the
+// root changed is dropped by its generation.
 public sealed class ContentIndex : ObservableObject
 {
     /// <summary>How long a burst of file events is gathered before a rebuild.</summary>
-    /// <remarks>
-    /// A save from most editors is several events (a temp file, a rename, an
-    /// attribute change), and a copy of a folder is hundreds. Rebuilding per
-    /// event would rebuild a project's index a hundred times for one paste.
-    /// </remarks>
     public const int CoalesceMilliseconds = 250;
 
     private readonly ILogger _logger;
@@ -92,7 +58,7 @@ public sealed class ContentIndex : ObservableObject
         };
     }
 
-    /// <summary>Everything under the root. Replaced whole; never mutated in place.</summary>
+    /// <summary>Everything under the root.</summary>
     public IReadOnlyList<ContentIndexEntry> Entries => _entries;
 
     /// <summary>The folder being indexed, or null.</summary>
@@ -118,16 +84,7 @@ public sealed class ContentIndex : ObservableObject
     /// <summary>Raised on the UI thread when the entries have been replaced.</summary>
     public event Action? Changed;
 
-    /// <summary>
-    /// The walk in flight, or a completed task.
-    /// </summary>
-    /// <remarks>
-    /// <b>Published rather than kept private, because "the index is still
-    /// walking" is a real state with a real consumer.</b> The footer says
-    /// "Indexing..." from <see cref="IsWalking"/>; this is the same fact in the
-    /// form something can wait on, which is what a test needs to assert about a
-    /// walk rather than about a seeded list.
-    /// </remarks>
+    /// <summary>The walk in flight, or a completed task. Awaitable form of <see cref="IsWalking"/>.</summary>
     public Task Walking { get; private set; } = Task.CompletedTask;
 
     /// <summary>Points the index at a project's assets folder, or at nothing.</summary>
@@ -163,11 +120,6 @@ public sealed class ContentIndex : ObservableObject
         return rows;
     }
 
-    /// <summary>Folders first, then files, each alphabetically.</summary>
-    /// <remarks>
-    /// Not by date and not by kind: somebody looking for a file knows its name,
-    /// and any other order means hunting.
-    /// </remarks>
     private static int CompareForListing(ContentIndexEntry a, ContentIndexEntry b)
     {
         bool aFolder = a.Kind == ContentKind.Folder;
@@ -178,16 +130,7 @@ public sealed class ContentIndex : ObservableObject
         return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Applies one filesystem change without a rewalk.
-    /// </summary>
-    /// <remarks>
-    /// <b>Public so a test can drive it, the same reason
-    /// <c>AssetManager.NotifyFileChanged</c> is.</b> A real watcher needs a real
-    /// filesystem, real timing and a real dispatcher, none of which a test can
-    /// depend on; what can be tested is that a create appears, a rename moves
-    /// rather than duplicates, and a delete disappears.
-    /// </remarks>
+    /// <summary>Applies one filesystem change without a rewalk. Public so tests can drive it.</summary>
     public void ApplyChange(WatcherChangeTypes kind, string fullPath, string? oldFullPath)
     {
         if (_root is null) return;
@@ -251,14 +194,11 @@ public sealed class ContentIndex : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A folder the editor cannot read is a report rather than a crash:
-            // the browser is a convenience and the project still opens.
             _logger.LogWarning(ex, "Could not index {Root}", root);
             warning = "Could not read this project's Assets folder.";
         }
 
-        // A walk that lands after the root moved on describes a project the user
-        // has already left.
+        // Stale walk: the root changed while it ran.
         if (Volatile.Read(ref _generation) != generation) return;
 
         if (walked is not null)
@@ -291,15 +231,8 @@ public sealed class ContentIndex : ObservableObject
         return found;
     }
 
-    /// <summary>
-    /// Turns a path into an entry, or null when the engine cannot name it.
-    /// </summary>
-    /// <remarks>
-    /// The content path comes from <see cref="ContentDragPayload"/>'s own rule,
-    /// so an entry here and a drag from the browser produce the same string. A
-    /// file outside the root cannot be named at all and is dropped rather than
-    /// carried as a path nothing will resolve.
-    /// </remarks>
+    // Null when the engine cannot name the path (a file outside the root).
+    // The content path uses ContentDragPayload's rule so a drag gives the same string.
     private static ContentIndexEntry? Describe(string fullPath, string root)
     {
         try
@@ -341,8 +274,7 @@ public sealed class ContentIndex : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A file that vanished between the listing and the stat. Dropping it
-            // is right: the watcher's delete event is already on its way.
+            // Vanished between the listing and the stat.
             return null;
         }
     }
@@ -360,9 +292,7 @@ public sealed class ContentIndex : ObservableObject
                     NotifyFilters.LastWrite | NotifyFilters.Size,
             };
 
-            // Every event lands on a worker thread, so each one only asks the UI
-            // thread to restart the coalescing timer: the rebuild itself runs
-            // once, there, after the burst.
+            // Events arrive on a worker thread; each only restarts the timer on the UI thread.
             _watcher.Created += OnFileEvent;
             _watcher.Deleted += OnFileEvent;
             _watcher.Changed += OnFileEvent;
@@ -373,8 +303,7 @@ public sealed class ContentIndex : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            // A root on a network share or a platform with no watcher support.
-            // The browser still works; it just needs its refresh button.
+            // Network share, or a platform with no watcher support.
             _logger.LogWarning(ex, "No file watcher for {Root}", _root);
             Warning = "This folder is not being watched. Use Refresh after changing files.";
             _watcher = null;
@@ -410,8 +339,7 @@ public sealed class ContentIndex : ObservableObject
         Dispatcher.UIThread.Post(
             () =>
             {
-                // The buffer overflowed and events were dropped, so the index is
-                // wrong from here and nothing else would ever say so.
+                // Buffer overflow drops events, so the index is stale: rewalk.
                 _logger.LogWarning(e.GetException(), "Content watcher overflowed");
                 Warning = "Content index rebuilt after a watcher overflow.";
                 Rewalk();

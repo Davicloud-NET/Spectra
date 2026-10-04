@@ -7,33 +7,17 @@ using SpectraEngine.Editor.Shell;
 namespace SpectraEngine.Editor.Render.Tests;
 
 /// <summary>
-/// The workspace arithmetic, measured against a real Avalonia layout pass.
+/// <see cref="WorkspaceLayout"/>'s arithmetic against a real layout pass. The
+/// model may promise less than the grid gives, never more.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The model is a deliberately generous bound, and this is what holds it to
-/// being one.</b> <see cref="WorkspaceLayout"/> subtracts a measured chrome
-/// constant from the window; a grid does its own rounding, its own minimums and
-/// its own splitter widths. Asserting model &lt;= measured is the same move
-/// <c>RibbonWidthTests</c> makes: the arithmetic may under-promise and must
-/// never over-promise.
-/// </para>
-/// <para>
-/// A plain grid built to the same definitions rather than the shell's own
-/// window: constructing <c>MainWindow</c> headlessly would build seven panels,
-/// four dock controls and a settings file, none of which changes what a column
-/// of a given width measures.
-/// </para>
-/// </remarks>
+// Uses a plain grid with the shell's definitions, not MainWindow.
 [Collection(RibbonSessionCollection.Name)]
 public sealed class WorkspaceMeasureTests(RibbonSession session)
 {
     private static readonly WorkspaceChrome Chrome = new(Vertical: 241, Horizontal: 6);
 
-    // What is outside the GRID, as opposed to inside the model. The model's
-    // horizontal chrome counts the two 1px splitter columns because it knows
-    // nothing about the grid's internals; the grid contains them itself, so a
-    // harness that subtracted the model's figure would charge for them twice.
+    // The model's horizontal chrome (6) includes the two 1px splitter columns.
+    // The grid has those itself, so only the bezel is subtracted here.
     private const double BezelOnly = 4;
 
     [Theory]
@@ -61,7 +45,6 @@ public sealed class WorkspaceMeasureTests(RibbonSession session)
     [Fact]
     public void The_compact_preset_really_does_give_the_viewport_more_than_the_expanded_one()
     {
-        // The claim the whole preset exists for, measured rather than argued.
         session.On(() =>
         {
             (double compactWidth, double compactHeight) =
@@ -76,9 +59,7 @@ public sealed class WorkspaceMeasureTests(RibbonSession session)
         });
     }
 
-    /// <summary>
-    /// The editor grid's own column and row definitions, measured.
-    /// </summary>
+    // Mirrors the editor grid's column and row definitions.
     private static (double Width, double Height) Measure(
         in WorkspaceMetrics metrics, double width, double height)
     {
@@ -99,8 +80,8 @@ public sealed class WorkspaceMeasureTests(RibbonSession session)
         Grid.SetRow(cell, 0);
         grid.Children.Add(cell);
 
-        // The window is the client area minus the chrome the grid never sees:
-        // the menu row, the ribbon, the header strip and the status bar.
+        // Client area minus the chrome outside the grid: menu row, ribbon,
+        // header strip, status bar.
         var window = new Window
         {
             Content = grid,

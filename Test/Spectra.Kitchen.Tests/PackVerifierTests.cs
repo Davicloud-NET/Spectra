@@ -11,17 +11,8 @@ using System.Text;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// Cooked-only validation: the gate that catches a pack which mounts cleanly and
-/// is broken anyway.
+/// Cooked-only validation: packs that mount cleanly and are broken anyway.
 /// </summary>
-/// <remarks>
-/// <b>Every case here is a file that passes some earlier check.</b> A pack whose
-/// header is wrong is already refused by the mount and has its own suite; what is
-/// left, and what these fixtures build on purpose, is the class of pack that a
-/// running game will happily load and then render wrongly - a material whose
-/// texture nobody cooked, a payload that hashes correctly and does not decode, a
-/// table that is intact and no longer searchable.
-/// </remarks>
 public class PackVerifierTests
 {
     [Fact]
@@ -40,21 +31,15 @@ public class PackVerifierTests
         result.WarningCount.ShouldBe(0);
         result.EntriesChecked.ShouldBe(2);
 
-        // The number a cook's own summary cannot give: two entries were written,
-        // and one of them points at the other.
+        // The material points at the texture.
         result.ReferencesChecked.ShouldBe(1);
     }
 
     [Fact]
     public void A_material_naming_a_texture_nobody_cooked_fails_and_the_diagnostic_names_the_path()
     {
-        // Written by hand rather than cooked, and that is what the material rule
-        // changed: a cook of this project now refuses it at SC5001 before a pack
-        // exists at all, which is the right answer and would make this a test of
-        // the cook. The claim HERE is about the ARTIFACT - a pack that mounts
-        // cleanly and is missing a texture some material names, however it came
-        // to be that way - so the fixture has to be able to produce one the cook
-        // never would. CookGateTests is where the two verdicts are held together.
+        // Pack written by hand: the cook refuses this project at SC5001 before
+        // a pack exists.
         using var project = new TempProject();
         string pack = Path.Combine(project.Root, "hole.spack");
 
@@ -113,9 +98,8 @@ public class PackVerifierTests
     [Fact]
     public void A_payload_that_hashes_correctly_and_does_not_decode_is_still_caught()
     {
-        // Written directly rather than cooked, because the cook stores every
-        // entry verbatim: an undecodable payload needs a codec, and Deflate is
-        // the only one this build implements.
+        // Written directly: the cook stores entries uncompressed, and this needs
+        // a Deflate entry.
         using var project = new TempProject();
         string pack = Path.Combine(project.Root, "compressed.spack");
 
@@ -129,9 +113,7 @@ public class PackVerifierTests
 
         PackVerifyResult result = Verify(pack);
 
-        // This is the case the digest structurally cannot see: the damage and the
-        // hash over it were written together, so the container is intact and the
-        // asset inside it is not. Without the decode pass the pack ships.
+        // The digest was re-stamped over the damage, so only the decode pass sees it.
         result.Succeeded.ShouldBeFalse();
 
         CookDiagnostic broken = result.Diagnostics.Single(d => d.IsError);
@@ -154,10 +136,6 @@ public class PackVerifierTests
 
         result.Succeeded.ShouldBeFalse();
 
-        // The writer sorts, which is a claim about the code that wrote a pack.
-        // This is a claim about the bytes, and it is the only one of the two that
-        // survives the file being edited afterwards - and it names the two
-        // entries, where the mount's refusal below can only name their ids.
         CookDiagnostic unsorted = result.Diagnostics.Single(d => d.Id.ToString() == "SC9005");
         unsorted.Message.ShouldContain("Data/t");
         unsorted.Message.ShouldContain("out of order");
@@ -176,9 +154,7 @@ public class PackVerifierTests
 
         PackVerifyResult result = Verify(Cook(project));
 
-        // The parser warns rather than throwing so material files stay
-        // forward-compatible, which means an unusable line is otherwise a
-        // silently weaker material with nothing anywhere saying so.
+        // The parser warns on an unknown key instead of throwing.
         result.Succeeded.ShouldBeTrue(Describe(result));
         result.Diagnostics.Single().Id.ToString().ShouldBe("SC5002");
         result.Diagnostics.Single().Severity.ShouldBe(CookDiagnosticSeverity.Warning);
@@ -187,11 +163,6 @@ public class PackVerifierTests
     [Fact]
     public void The_engines_own_content_cooks_and_verifies()
     {
-        // The real thing: ten hand-authored materials naming eight real textures,
-        // through the real cook and the real reader. A synthetic fixture proves
-        // the mechanism; this proves the mechanism against the content somebody
-        // actually edits, which is where a path spelled two ways or a texture
-        // renamed on one side would show up.
         string assets = Path.Combine(AppContext.BaseDirectory, "Assets");
         Directory.Exists(assets).ShouldBeTrue($"the engine's content should be beside the test binary: {assets}");
 
@@ -203,8 +174,6 @@ public class PackVerifierTests
         result.Succeeded.ShouldBeTrue(Describe(result));
         result.ReferencesChecked.ShouldBeGreaterThan(0);
     }
-
-    // --- the 7xxx arm: a compiled map's own references -------------------------
 
     [Fact]
     public void A_project_with_a_map_in_it_verifies_clean_and_counts_the_levels_references()
@@ -218,20 +187,14 @@ public class PackVerifierTests
 
         result.Succeeded.ShouldBeTrue(Describe(result));
 
-        // Two materials from the map's own asset table, on top of whatever the
-        // materials themselves name. A zero here would mean the arm never ran and
-        // every case below would be unfalsifiable.
+        // At least the two materials in the map's asset table.
         result.ReferencesChecked.ShouldBeGreaterThanOrEqualTo(2);
     }
 
     [Fact]
     public void A_compiled_map_naming_assets_nobody_cooked_fails_in_the_MAP_band()
     {
-        // Hand-written rather than cooked, for the reason the material case above
-        // is: the cook refuses this project before a pack exists. The claim here is
-        // about the ARTIFACT - a level in a pack whose materials are not in the
-        // same pack, however it came to be that way - which is the failure a
-        // shipped build ships as a grey room with every log line reading healthy.
+        // Pack written by hand: the cook refuses this project before a pack exists.
         using var project = new TempProject();
         string pack = Path.Combine(project.Root, "holes.spack");
 
@@ -243,8 +206,7 @@ public class PackVerifierTests
 
         result.Succeeded.ShouldBeFalse();
 
-        // Every row of the fixture's asset table: two materials, a texture and a
-        // model, each reported in the band that names the failing SUBSYSTEM.
+        // One error per row of the fixture's asset table.
         CookDiagnostic[] missing = result.Diagnostics.Where(d => d.IsError).ToArray();
         missing.Length.ShouldBe(ScmapFixture.AssetPaths.Length);
         missing.ShouldAllBe(d => d.Id.ToString() == "SC7008");
@@ -262,10 +224,8 @@ public class PackVerifierTests
     [Fact]
     public void A_compiled_map_this_engine_would_refuse_at_boot_is_caught_before_it_ships()
     {
-        // The digest cannot see this: a level baked at another format version
-        // hashes perfectly and is still a map the runtime refuses on frame zero.
-        // Edited BEFORE the pack is written, so the pack's own digest agrees and
-        // the only thing that can complain is the reader.
+        // Version edited before the pack is written, so the digest agrees and
+        // only the map reader can complain.
         using var project = new TempProject();
         string pack = Path.Combine(project.Root, "stale.spack");
 

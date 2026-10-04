@@ -8,34 +8,13 @@ namespace SpectraEngine.Core.Assets.Sources;
 
 /// <summary>
 /// An overlay of <see cref="IContentSource"/>s: priority ordered, first hit
-/// wins.
+/// wins. Equal priorities keep mount order. Thread-safe.
 /// </summary>
-/// <remarks>
-/// <para><b>Flattened at mount, never probed per lookup.</b> The order is
-/// computed once when a source is mounted and published as an array a lookup
-/// walks; mounting a stack inside a stack splices its sources in rather than
-/// nesting, so a lookup is one linear walk however the overlay was assembled.
-/// Equal priorities keep mount order, which makes an overlay assembled the same
-/// way resolve the same way every run.</para>
-/// <para><b>Strictness belongs here and nowhere else.</b> A cook wants a missing
-/// asset to stop the build; the engine wants it to become a magenta checker and
-/// a warning. Those are the same lookup with different consequences, so the
-/// consequence is a property of the stack that was mounted rather than a flag on
-/// the asset manager: <see cref="AssetManager"/>'s degradation is a pinned
-/// invariant and must not become conditional on anything.</para>
-/// <para><b>Strictness applies to <see cref="TryOpen"/> only.</b>
-/// <see cref="Exists"/> is a question whose false is a legitimate answer rather
-/// than a miss — it is what a caller uses to choose a documented fallback
-/// <i>before</i> asking for bytes — and a probe that threw would convert exactly
-/// the degradation this engine relies on into a crash.</para>
-/// <para><b>Thread-safe.</b> Mounting publishes a fresh array, so a lookup on
-/// another thread either sees the source or does not, never a half-built list.
-/// Mounting is a start-up operation; lookups are not.</para>
-/// </remarks>
+// Strict mode lives here, not on AssetManager: a cook wants a miss to throw,
+// the engine wants a placeholder. It applies to TryOpen only; Exists never throws.
 public sealed class ContentSourceStack : IContentSource
 {
-    // Published whole on every mount and never mutated in place, so a reader
-    // needs no lock. Highest priority first.
+    // Highest priority first. Replaced whole on every mount, so readers need no lock.
     private volatile IContentSource[] _sources = [];
 
     /// <summary>
@@ -51,8 +30,8 @@ public sealed class ContentSourceStack : IContentSource
     }
 
     /// <summary>
-    /// Whether a total miss is an error. False for the engine (content problems
-    /// degrade), true for tools that would rather stop than ship a hole.
+    /// Whether a <see cref="TryOpen"/> miss in every source throws. False for
+    /// the engine, true for tools such as the cook.
     /// </summary>
     public bool Strict { get; }
 
@@ -77,9 +56,8 @@ public sealed class ContentSourceStack : IContentSource
 
         if (source is ContentSourceStack nested)
         {
-            // Flatten: a nested stack would be walked as one entry at its own
-            // priority, so its members could not interleave with this stack's,
-            // and its strictness would silently override the mounting stack's.
+            // Flatten: nested, its members could not interleave with ours by
+            // priority, and its strictness would override this stack's.
             IContentSource[] members = nested._sources;
             for (int i = 0; i < members.Length; i++)
                 Mount(members[i]);
@@ -89,8 +67,7 @@ public sealed class ContentSourceStack : IContentSource
         IContentSource[] current = _sources;
         var next = new IContentSource[current.Length + 1];
 
-        // Stable insertion: the new source goes after every source of equal or
-        // higher priority, so mount order breaks ties.
+        // After every source of equal or higher priority, so mount order breaks ties.
         int at = current.Length;
         for (int i = 0; i < current.Length; i++)
         {
@@ -166,10 +143,8 @@ public sealed class ContentSourceStack : IContentSource
             return;
         }
 
-        // First hit wins here too: a path a higher-priority source serves must
-        // appear once, not once per source that happens to hold a copy of it.
-        // Only this call's own additions are deduplicated — what the caller had
-        // in the list already is the caller's business.
+        // A path several sources hold appears once. Only this call's additions
+        // are deduplicated, not what the caller already had in the list.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < sources.Length; i++)
         {
@@ -186,9 +161,7 @@ public sealed class ContentSourceStack : IContentSource
     }
 
     /// <summary>
-    /// One line naming every mounted source in resolution order — what the
-    /// engine logs at start-up, because the first question when content resolves
-    /// wrongly is always which source answered.
+    /// One line naming every mounted source in resolution order, for the log.
     /// </summary>
     public string Describe()
     {

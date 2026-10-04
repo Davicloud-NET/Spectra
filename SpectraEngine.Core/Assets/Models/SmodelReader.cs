@@ -6,30 +6,12 @@ using System.Runtime.InteropServices;
 namespace SpectraEngine.Core.Assets.Models;
 
 /// <summary>
-/// Reads a cooked <c>.smodel</c> out of the bytes it sits in, with no stream, no
-/// allocation per record and no copy of anything large.
+/// Reads a cooked <c>.smodel</c> in place: the returned tables are spans into the file's bytes.
 /// </summary>
-/// <remarks>
-/// <para><b>A span in, and every table cast back out of it.</b> The bytes are
-/// normally a memory-mapped view of a pack payload, so the reader must never take
-/// ownership of them and must never index them without checking first: an
-/// out-of-range read into a mapping is an access violation with no managed stack,
-/// which is a crash nobody can attribute to a file. Every offset and every length
-/// below is therefore bounds-checked before it is used, and every failure is a
-/// <see cref="SmodelFormatException"/> naming what was wrong and what was
-/// expected.</para>
-/// <para><b>An unknown section FourCC is skipped, not refused.</b> That is the
-/// most important structural decision in the format: it is what lets a section
-/// designed today be written by a later cooker with no version bump, and it is
-/// the same stance the map codec takes for unknown JSON members. Everything
-/// <em>else</em> about the file is strict, because a cooked artifact is a build
-/// output that can always be regenerated.</para>
-/// <para><b>What this reader does not do is walk the indices.</b> Checking that
-/// every index addresses a real vertex is O(indices) and would spend, on load,
-/// exactly the time the zero-copy layout exists to save. The submesh ranges are
-/// checked against the index buffer, which is the bound that turns a malformed
-/// file into a wrong picture rather than into a read past the end.</para>
-/// </remarks>
+// The bytes are usually a mapped pack view, so every offset and length is bounds-checked
+// before use. A bad read there is an access violation, not an exception.
+// Unknown section FourCCs are skipped so later cookers can add sections without a version bump.
+// Index values are not validated (O(indices)); submesh ranges are checked against IBUF.
 public static class SmodelReader
 {
     private const int VertexLayoutSlot = 0;
@@ -46,11 +28,7 @@ public static class SmodelReader
     /// Validates <paramref name="file"/> and returns its tables as spans into it.
     /// </summary>
     /// <param name="file">The whole file, header included.</param>
-    /// <param name="source">
-    /// What to call the file in a message: a logical asset path, not a machine
-    /// path, so the same failure reads the same way from a pack and from a loose
-    /// cook directory.
-    /// </param>
+    /// <param name="source">The logical asset path, used in error messages.</param>
     /// <exception cref="SmodelFormatException">The file is not a readable <c>.smodel</c>.</exception>
     /// <exception cref="PlatformNotSupportedException">The machine is big-endian.</exception>
     public static SmodelModel Read(ReadOnlySpan<byte> file, string source)
@@ -75,10 +53,6 @@ public static class SmodelReader
         ushort formatVersion = BinaryPrimitives.ReadUInt16LittleEndian(file[0x04..]);
         if (formatVersion != EngineInfo.ModelFormatVersion)
         {
-            // Cooked, so it versions the strict way: exact match, and a message
-            // that says recook. There is nothing to carry forward and nothing to
-            // degrade to, because the bytes past the header only mean anything
-            // under the version that wrote them.
             throw new SmodelFormatException(
                 $"'{source}' is .smodel format version {formatVersion}, and this engine reads version " +
                 $"{EngineInfo.ModelFormatVersion}. Recook the model.");
@@ -89,11 +63,8 @@ public static class SmodelReader
         uint geometryFormatVersion = BinaryPrimitives.ReadUInt32LittleEndian(file[0x08..]);
         if (geometryFormatVersion != EngineInfo.GeometryFormatVersion)
         {
-            // The separate gate, and the one that actually bites: the container
-            // can be unchanged while what a vertex buffer MEANS has moved under
-            // it, and the symptom of missing that is a misinterpreted buffer,
-            // which draws garbage on one backend and refuses an input layout on
-            // another.
+            // Separate from the container version: the vertex buffer's meaning can
+            // change while the container does not.
             throw new SmodelFormatException(
                 $"'{source}' was cooked at geometry format version {geometryFormatVersion}, and this " +
                 $"engine reads version {EngineInfo.GeometryFormatVersion}. Recook the model.");
@@ -128,11 +99,8 @@ public static class SmodelReader
             ulong offset = BinaryPrimitives.ReadUInt64LittleEndian(record[8..]);
             ulong length = BinaryPrimitives.ReadUInt64LittleEndian(record[16..]);
 
-            // Bounds and alignment are checked for EVERY section, known or not.
-            // A section this reader will step over is still a claim about where
-            // the file's bytes are, and letting an unknown one describe an
-            // impossible region would make the forward-compatibility mechanism a
-            // way to smuggle a malformed file past the gate.
+            // Checked for skipped sections too, or an unknown FourCC could
+            // describe a region outside the file.
             RequireSectionInFile(source, fourCc, offset, length, file.Length);
 
             if ((offset % SmodelFormat.PayloadAlignment) != 0)
@@ -240,14 +208,8 @@ public static class SmodelReader
             skipped);
     }
 
-    /// <summary>
-    /// Refuses a name offset that is not a whole record inside the name blob.
-    /// </summary>
-    /// <remarks>
-    /// Shared with <see cref="SmodelModel.GetName"/> so the offset a submesh was
-    /// validated with and the offset a caller reads with cannot be checked two
-    /// different ways.
-    /// </remarks>
+    // Throws unless the offset is a whole record inside the name blob.
+    // SmodelModel.GetName uses the same check.
     internal static void RequireNameRecord(string source, ReadOnlySpan<byte> names, uint nameOffset, string what)
     {
         if (nameOffset == SmodelFormat.NameOffsetAbsent) return;
@@ -280,9 +242,7 @@ public static class SmodelReader
         SmodelFormat.CollisionSection => CollisionSlot,
         SmodelFormat.NameSection => NameSlot,
 
-        // ANIM lands here on purpose. It is reserved and never written, so a file
-        // carrying one is a file from a future this reader does not implement, and
-        // stepping over it is exactly what the skip rule is for.
+        // ANIM is reserved and not read yet, so it is skipped like any unknown section.
         _ => -1,
     };
 
@@ -293,9 +253,7 @@ public static class SmodelReader
 
     private static void RequireSectionInFile(string source, uint fourCc, ulong offset, ulong length, int fileLength)
     {
-        // Subtraction rather than addition, because offset + length is exactly the
-        // arithmetic a hostile or corrupt file makes wrap: two values near
-        // ulong.MaxValue sum to something small and pass a naive bound.
+        // Subtract, don't add: offset + length can wrap on a corrupt file.
         if (offset > (ulong)fileLength || length > (ulong)fileLength - offset)
         {
             throw new SmodelFormatException(
@@ -317,9 +275,7 @@ public static class SmodelReader
     {
         if (length % recordSize == 0) return;
 
-        // MemoryMarshal.Cast truncates a partial trailing element in silence, so
-        // without this the last record of a corrupt section simply disappears and
-        // every count downstream is one short with nothing reporting it.
+        // MemoryMarshal.Cast drops a partial trailing element without complaint.
         throw new SmodelFormatException(
             $"'{source}' section '{SmodelFormat.DescribeFourCc(fourCc)}' is {length} bytes, which is not " +
             $"a whole number of {recordSize}-byte records.");
@@ -382,12 +338,8 @@ public static class SmodelReader
         long strideBytes = (long)strideFloats * sizeof(float);
         if (strideBytes > ushort.MaxValue)
         {
-            // Bounded by the format's own arithmetic rather than by a taste
-            // limit: an attribute states its ByteOffset in a u16, so a vertex
-            // that did not fit in one could not address its own components. The
-            // check is also what keeps the stride-to-bytes multiplication in
-            // ReadVertexBuffer well inside an int, where an unchecked one would
-            // wrap and pass every length test that follows.
+            // ByteOffset is a u16, so a vertex cannot be larger than that.
+            // Also keeps the stride multiply in ReadVertexBuffer inside an int.
             throw new SmodelFormatException(
                 $"'{source}' section 'VTXL' declares a stride of {strideFloats} floats ({strideBytes} " +
                 $"bytes), and an attribute's byte offset is a u16, so a vertex cannot exceed " +
@@ -411,8 +363,7 @@ public static class SmodelReader
 
     private static ReadOnlySpan<float> ReadVertexBuffer(string source, ReadOnlySpan<byte> section, uint strideFloats)
     {
-        // ReadVertexLayout has already refused a stride too large for a u16 byte
-        // offset, so this multiplication is bounded far inside an int.
+        // Cannot overflow: ReadVertexLayout capped the stride.
         int strideBytes = (int)strideFloats * sizeof(float);
         RequireWholeRecords(source, SmodelFormat.VertexBufferSection, section.Length, strideBytes);
         return MemoryMarshal.Cast<byte, float>(section);
@@ -485,11 +436,7 @@ public static class SmodelReader
             int parent = joints[i].ParentIndex;
             if (parent >= i || parent < SmodelJoint.NoParent)
             {
-                // The whole point of the ordering rule: with it, a hierarchy walk
-                // is one forward loop. Without it, a forward reference reads a
-                // parent matrix that has not been computed yet, which for a fresh
-                // array is identity, so the pose is wrong in a way that still
-                // looks like a pose.
+                // Parents must come first so a hierarchy walk is one forward loop.
                 string name = joints[i].HasName
                     ? $"'{ReadNameFor(source, names, joints[i].NameOffset)}'"
                     : "unnamed";
@@ -526,11 +473,7 @@ public static class SmodelReader
                 $"{hullTableEnd} of a {section.Length}-byte section.");
         }
 
-        // The plane array is realigned inside the section rather than packed
-        // against the hull table, because the whole reason it is a flat array of
-        // System.Numerics.Plane is that it can be cast in place, and a hull table
-        // of any odd length would otherwise leave the first plane straddling a
-        // 16-byte boundary.
+        // Planes are realigned to 16 after the hull table so they can be cast in place.
         long planesStart = SmodelFormat.AlignUp(hullTableEnd, SmodelFormat.PayloadAlignment);
         if (planesStart > section.Length)
         {

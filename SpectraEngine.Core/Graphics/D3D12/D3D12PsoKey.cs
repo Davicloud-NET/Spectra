@@ -4,24 +4,9 @@ using Silk.NET.DXGI;
 
 namespace SpectraEngine.Core.Graphics.D3D12;
 
-/// <summary>
-/// The render-target configuration a pipeline state is compiled against:
-/// colour format, how many colour targets, depth format, and sample count.
-/// </summary>
-/// <remarks>
-/// <para>
-/// D3D12 bakes all four into the pipeline state object, so a pipeline built for
-/// one target configuration is invalid for another. Every draw in the engine
-/// currently goes to the back buffer, which is why a single hardcoded
-/// configuration worked. It stops working the moment anything renders somewhere
-/// else, and the four things that will are all scheduled: an sRGB back-buffer
-/// view, offscreen targets for post-processing, depth-only targets for shadow
-/// maps, and multisampled targets.
-/// </para>
-/// <para>
-/// Zero colour targets is legal and is what a depth-only shadow pass uses.
-/// </para>
-/// </remarks>
+// The target configuration a PSO is compiled against. D3D12 bakes it into the
+// PSO, so one built for another configuration is invalid.
+// Zero colour targets is legal: a depth-only shadow pass.
 internal readonly record struct D3D12TargetState(
     Format ColorFormat,
     uint RenderTargetCount,
@@ -35,16 +20,8 @@ internal readonly record struct D3D12TargetState(
     Format ColorFormat6 = Format.FormatUnknown,
     Format ColorFormat7 = Format.FormatUnknown)
 {
-    /// <summary>
-    /// The state for a multi-target pass: every attachment's format, because a
-    /// pipeline is validated against all of them.
-    /// </summary>
-    /// <remarks>
-    /// Four explicit fields rather than an array, because this is a dictionary
-    /// key: a record struct with an array compares by reference and every draw
-    /// would miss the cache and compile a new pipeline. Four is
-    /// <see cref="Graphics.Renderer.MaxColorTargets"/>.
-    /// </remarks>
+    // Explicit fields, not an array: this is a dictionary key, and an array
+    // compares by reference, so every draw would miss the PSO cache.
     public static D3D12TargetState ForTargets(ReadOnlySpan<Format> colors, Format depth)
     {
         static Format At(ReadOnlySpan<Format> c, int i) => i < c.Length ? c[i] : Format.FormatUnknown;
@@ -55,7 +32,6 @@ internal readonly record struct D3D12TargetState(
             At(colors, 4), At(colors, 5), At(colors, 6), At(colors, 7));
     }
 
-    /// <summary>The attachment format at <paramref name="index"/>.</summary>
     public Format ColorAt(int index) => index switch
     {
         0 => ColorFormat,
@@ -69,35 +45,14 @@ internal readonly record struct D3D12TargetState(
         _ => Format.FormatUnknown,
     };
 
-    /// <summary>The window's back buffer with the shared depth buffer: what every draw uses today.</summary>
-    /// <remarks>
-    /// <b>The RTV format, not the resource format.</b> A PSO is validated
-    /// against the view bound at draw time, and the back buffer is a _UNORM
-    /// resource seen through an _SRGB view (see
-    /// <see cref="D3D12Renderer.BackBufferRtvFormat"/>).
-    /// </remarks>
+    // RTV format, not the resource's: a PSO is validated against the bound
+    // view, and the back buffer is a _UNORM resource behind an _SRGB view.
     public static D3D12TargetState BackBuffer => new(
         D3D12Renderer.BackBufferRtvFormat, 1, D3D12Renderer.DepthFormat, 1);
 }
 
-/// <summary>
-/// The full identity of a compiled pipeline state: everything D3D12 bakes into
-/// one and therefore everything that must distinguish two cache entries.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Equality is structural, never hash-based.</b> The hash only picks a
-/// bucket. Comparing hashes instead would let a collision return a pipeline
-/// built for a different vertex layout or a different target format, and the
-/// symptom of that is corrupted or missing geometry that reproduces on one
-/// machine and not another.
-/// </para>
-/// <para>
-/// <b>The vertex layout is compared element by element</b> for the same reason:
-/// the layout carries its own precomputed hash for bucketing, and using it as
-/// identity would have exactly the collision problem described above.
-/// </para>
-/// </remarks>
+// Everything D3D12 bakes into a PSO. Equality is structural, layout included:
+// a hash collision must not return a PSO built for another layout or target.
 internal readonly struct D3D12PsoKey : IEquatable<D3D12PsoKey>
 {
     public readonly D3D12VertexLayout Layout;
@@ -106,12 +61,7 @@ internal readonly struct D3D12PsoKey : IEquatable<D3D12PsoKey>
     public readonly DepthMode Depth;
     public readonly BlendMode Blend;
 
-    /// <summary>
-    /// The rasterizer depth offset. In the key because D3D12 bakes it into the
-    /// pipeline state: the shadow pass draws the same meshes with the same
-    /// layout into the same target format as nothing else does, and without
-    /// this it would be handed the unbiased pipeline the camera pass compiled.
-    /// </summary>
+    // Baked into the PSO. Without it the shadow pass could get an unbiased one.
     public readonly DepthBias Bias;
 
     public readonly D3D12TargetState Target;
@@ -146,9 +96,7 @@ internal readonly struct D3D12PsoKey : IEquatable<D3D12PsoKey>
 
     public override bool Equals(object? obj) => obj is D3D12PsoKey other && Equals(other);
 
-    // Bucketing only. Equals above is the identity, and HashCode.Combine takes
-    // at most eight arguments, so the target state contributes as one nested
-    // hash rather than four fields.
+    // Bucketing only. Equals is the identity.
     public override int GetHashCode() =>
         HashCode.Combine(Layout.Key, Fill, Topology, Depth, Blend, Target.GetHashCode());
 }

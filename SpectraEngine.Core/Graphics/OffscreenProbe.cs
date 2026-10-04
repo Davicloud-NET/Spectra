@@ -6,51 +6,18 @@ using System.IO;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// Drives a real frame through a real offscreen render target, for the two
-/// backends that cannot be tested any other way.
+/// Renders real frames into an offscreen target for a few frames, resizes it,
+/// and fails if the graphics debug layer reported anything. This is the D3D
+/// backends' render-target test: they have no headless device fixture.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Why this exists.</b> OpenGL's render targets are checked by reading pixels
-/// back in <c>GlRenderTargetTests</c>, against a real driver, headlessly. D3D11
-/// and D3D12 have no such fixture: a device needs a window, and this process
-/// only gets one. So the parts of `R3` most likely to be wrong on those two go
-/// unexercised by the suite, and they are exactly the parts that still produce a
-/// picture when they are wrong. A missed D3D12 barrier reads undefined data. A
-/// pipeline state compiled against the back buffer's format and bound to a
-/// target with a different one is a validation failure, not a visibly wrong
-/// pixel. Both backends drain their debug layer every frame, so running a
-/// genuine offscreen pass on a real device is what turns those into failures
-/// somebody sees.
-/// </para>
-/// <para>
-/// <b>What it actually does</b> is set <see cref="Renderer.ProbeTarget"/> for a
-/// handful of frames, which makes each frame render into the target as well as
-/// into the window, in one command list. It then resizes the target and does it
-/// again, because a resize is where the object identity of the colour
-/// attachment and the re-creation of every view have to hold together. Nothing
-/// it draws is ever displayed.
-/// </para>
-/// <para>
-/// <b>Off by default</b>, like every other gate in this engine: it renders the
-/// scene twice per probing frame, and a diagnostic that quietly halves the frame
-/// rate of an ordinary run is worse than one that has to be asked for.
-/// </para>
-/// </remarks>
 public sealed class OffscreenProbe
 {
-    /// <summary>Frames rendered in each stage.</summary>
     private const int FramesPerStage = 3;
 
-    // Big enough that each corner texel lands well inside one quadrant of the
-    // 8x8 fixture under nearest sampling, and small enough to be free.
+    // Each corner texel lands inside one quadrant of the 8x8 fixture.
     private const int OrientationTargetSize = 16;
 
-    // One stage per thing that can independently be wrong. The two formats are
-    // separate DXGI formats, separate RTV formats and separate pipeline states
-    // on D3D12, and the float one is the format R4's scene target uses; the
-    // resize is where a stale view or a released-but-referenced resource shows
-    // up. `Resize` means "reuse the previous stage's target at half size".
+    // Resize: reuse the previous stage's target at half size.
     private readonly record struct Stage(string What, TextureFormat Format, TextureColorSpace Space, bool Resize);
 
     private static readonly Stage[] Stages =
@@ -82,10 +49,7 @@ public sealed class OffscreenProbe
         _height = height;
     }
 
-    /// <summary>
-    /// Called once per frame on the render thread, before
-    /// <see cref="Renderer.Render"/>. Returns when the probe is finished.
-    /// </summary>
+    /// <summary>Call once per frame on the render thread, before <see cref="Renderer.Render"/>.</summary>
     public void Update(Renderer renderer)
     {
         if (!Running) return;
@@ -94,21 +58,13 @@ public sealed class OffscreenProbe
         {
             if (_stage < 0)
             {
-                // The baseline matters: a run may already have logged debug
-                // layer errors for reasons that have nothing to do with render
-                // targets, and blaming those on the probe would make it a liar
-                // in the other direction.
+                // Baseline, so earlier errors are not blamed on the probe.
                 _errorsAtStart = renderer.DebugLayerErrorCount;
                 _logger.LogInformation(
                     "Offscreen probe: {Stages} stage(s), {Frames} frames each, starting at {Width}x{Height}",
                     Stages.Length, FramesPerStage, _width, _height);
 
-                // HALF THIS PROBE'S VERDICT IS "the debug layer stayed silent",
-                // and on D3D that number only exists while the validation layer
-                // is running. Without it the probe still proves the passes do
-                // not throw, but a missing barrier or a mismatched pipeline
-                // state would sail straight through it. Saying so is the
-                // difference between a weaker gate and a gate that lies.
+                // Without the validation layer a D3D run only proves nothing threw.
                 if (!renderer.DebugLayerActive && renderer.Backend != GraphicsBackend.OpenGL)
                 {
                     _logger.LogWarning(
@@ -129,9 +85,6 @@ public sealed class OffscreenProbe
                 return;
             }
 
-            // After the target stages, because it wants the same device warmed
-            // the same way, and before Finish, because its verdict is part of
-            // this probe's.
             bool orientationPassed = MeasureTextureOrientation(renderer);
             Finish(renderer, passed: orientationPassed);
         }
@@ -160,9 +113,8 @@ public sealed class OffscreenProbe
             renderer.DestroyRenderTarget(_target);
         }
 
-        // Deliberately not the window's size or aspect: a probe at the same
-        // shape as the back buffer would not catch a viewport or an aspect
-        // ratio that was still being taken from the window.
+        // Not the window's size or aspect, so a viewport still taken from the
+        // window shows up.
         _target = renderer.CreateRenderTarget(
             new RenderTargetDesc(_width, _height, stage.Format, stage.Space));
         renderer.ProbeTarget = _target;
@@ -171,30 +123,13 @@ public sealed class OffscreenProbe
     private static string Describe(int index) =>
         index >= 0 && index < Stages.Length ? Stages[index].What : "setup";
 
-    /// <summary>
-    /// Draws the asymmetric fixture through pinned UVs and reads the four
-    /// corners back, so this backend states which way up an uploaded texture
-    /// arrives. Returns false if the answer is not the engine's convention.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>This is the D3D half of a measurement OpenGL can make in a unit
-    /// test.</b> Those two backends have no headless device fixture, so a
-    /// question whose only symptom is the picture has nowhere else to be
-    /// answered; and it is a question the code cannot answer, because every call
-    /// on every path succeeds whichever way the rows go.
-    /// </para>
-    /// <para>
-    /// The readback's own picture-space convention is proved first, with
-    /// geometry and no texture at all. Without that step a wrong conversion in
-    /// the instrument would be reported as a wrong texture in the engine.
-    /// </para>
-    /// </remarks>
+    // Draws the asymmetric fixture and reads the four corners back to check
+    // which way up an uploaded texture arrives. The readback's own orientation
+    // is checked first, with plain geometry, so a readback bug is not reported
+    // as a texture bug.
     private bool MeasureTextureOrientation(Renderer renderer)
     {
-        // Deliberately no synthetic fallback: a probe that quietly measures
-        // different bytes when the fixture is missing is worse than one that
-        // says it could not run.
+        // No synthetic fallback: a missing fixture fails the probe.
         string path = Path.Combine(
             ContentRoot.Path, TextureOrientationProbe.TexturePath.Replace('/', Path.DirectorySeparatorChar));
         DecodedImage image;
@@ -235,9 +170,6 @@ public sealed class OffscreenProbe
                 return false;
             }
 
-            // Linear on both sides, so the only transform between the file's
-            // bytes and these is the tone curve, which is monotone per channel
-            // and cannot turn one quadrant colour into another.
             fixture = renderer.CreateTexture(
                 image.Pixels, image.Width, image.Height, image.Format, TextureColorSpace.Linear,
                 TextureFilter.Nearest, TextureWrap.Clamp);
@@ -293,12 +225,8 @@ public sealed class OffscreenProbe
             _target = null;
         }
 
-        // Nothing threw, but a graphics debug layer may still have rejected
-        // what the frames did. On D3D that is the ONLY report a missing barrier
-        // or a mismatched pipeline-state format produces: the frame renders,
-        // the API returns success, and the picture may even look right. So the
-        // probe's verdict is "no exception AND the debug layer stayed quiet",
-        // not just the first half.
+        // On D3D the debug layer is the only report of a missing barrier or a
+        // mismatched pipeline-state format.
         int newErrors = renderer.DebugLayerErrorCount - _errorsAtStart;
         if (passed && newErrors > 0)
         {

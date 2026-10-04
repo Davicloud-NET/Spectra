@@ -3,24 +3,13 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <!--
-      Full-opts JIT from the first call. With tiering enabled, dynamic-PGO
-      re-instrumentation lands mid-run and skews individual phase medians by
-      up to 10x (observed on the Parallel.For bodies in Carve/Weld); a
-      regression benchmark needs run-to-run stability more than peak-PGO
-      steady state.
-    -->
+    <!-- Tiered PGO re-instruments mid-run and skews phase medians by up to 10x. -->
     <TieredCompilation>false</TieredCompilation>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\SpectraEngine.Core\SpectraEngine.Core.csproj" />
-    <!--
-      The BAKE scenario times the map serializer, and pack/map writers live in
-      the cooker rather than in Core on purpose: a shipped game reads a .scmap
-      and writes none. Measuring the writer therefore means referencing the
-      cooker, which a benchmark may do and the engine may not.
-    -->
+    <!-- The bake scenario times the .scmap writer, which lives in the cooker. -->
     <ProjectReference Include="..\..\Spectra.Kitchen\Spectra.Kitchen.csproj" />
   </ItemGroup>
 

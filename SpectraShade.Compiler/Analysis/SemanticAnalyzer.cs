@@ -47,7 +47,6 @@ public sealed class SemanticAnalyzer
             _diagnostics.Add(new Diagnostic(DiagnosticSeverity.Error,
                 "Shader must have a [Fragment] function", shader.Span));
 
-        // Validate vertex function has a struct return type (not void)
         foreach (var func in stageFunctions.Where(f => f.HasAttribute("Vertex")))
         {
             if (func.ReturnType.Name == "void")
@@ -55,14 +54,9 @@ public sealed class SemanticAnalyzer
                     "[Vertex] function must return a struct (the fragment input), not void", func.Span));
         }
 
-        // A [Fragment] function may return void, and that is not a loophole: a
-        // depth-only pass (a shadow map) binds no render target at all, so a
-        // fragment stage that returns a colour is asking the hardware to
-        // discard a value it computed. Worse, both D3D debug layers report the
-        // mismatch, and D3D11 reports it once per DRAW, which floods the same
-        // info queue the engine reads to detect real errors.
+        // No return-type check for [Fragment]: a depth-only pass binds no render
+        // target, and a colour output there makes D3D11 warn on every draw.
 
-        // Validate geometry function
         foreach (var func in stageFunctions.Where(f => f.HasAttribute("Geometry")))
         {
             if (func.ReturnType.Name != "void")
@@ -78,7 +72,6 @@ public sealed class SemanticAnalyzer
                     "[Geometry] function must take an array parameter as input (e.g. VertexOutput[] vertices)", func.Span));
         }
 
-        // Validate compute function
         foreach (var func in stageFunctions.Where(f => f.HasAttribute("Compute")))
         {
             if (!func.HasAttribute("NumThreads"))
@@ -93,7 +86,6 @@ public sealed class SemanticAnalyzer
 
     private void ValidateBindings(ShaderDeclaration shader)
     {
-        // Validate that cbuffers and samplers have [Binding(N)] attributes
         foreach (var member in shader.Members)
         {
             if (member is CBufferDeclaration cbuffer)
@@ -162,7 +154,6 @@ public sealed class SemanticAnalyzer
             if (returnStruct is null)
                 continue;
 
-            // Validate Target index uniqueness
             var targetIndices = new HashSet<int>();
             foreach (var field in returnStruct.Fields)
             {
@@ -182,18 +173,8 @@ public sealed class SemanticAnalyzer
         }
     }
 
-    /// <summary>
-    /// Checks the vertex input struct's locations and rates.
-    /// </summary>
-    /// <remarks>
-    /// <b>Everything here fails silently at runtime if it is not caught here.</b>
-    /// Overlapping locations link and draw, and simply feed one attribute the
-    /// other's bytes. A <c>[PerInstance]</c> on a fragment output is ignored by
-    /// both generators. A matrix taking its location from the field index leaves
-    /// the next three fields sitting inside it. None of these produce a
-    /// compiler error, a linker error or a debug-layer message on any of the
-    /// three backends, which is the entire argument for validating them.
-    /// </remarks>
+    // Vertex input locations and rates. No backend reports any of these:
+    // overlapping locations link and draw with the wrong bytes.
     private void ValidateVertexInputs(ShaderDeclaration shader, List<StructDeclaration> allStructs)
     {
         var vertexFuncs = shader.Members
@@ -216,9 +197,7 @@ public sealed class SemanticAnalyzer
 
         ValidatePerInstanceUniforms(shader);
 
-        // [PerInstance] anywhere that is not a vertex input is a
-        // misunderstanding worth naming, because both generators ignore it and
-        // the author is left believing they asked for something.
+        // Both generators ignore [PerInstance] outside a vertex input.
         foreach (var s in allStructs)
         {
             if (inputStructs.Contains(s))
@@ -234,17 +213,8 @@ public sealed class SemanticAnalyzer
         }
     }
 
-    /// <summary>
-    /// Checks <c>[PerInstance]</c> where it marks a <c>cbuffer</c> field, i.e.
-    /// a uniform the compiler should also emit an instanced vertex stage for.
-    /// </summary>
-    /// <remarks>
-    /// Both refusals here are cases where the variant would be built wrong and
-    /// nothing downstream could tell. A non-matrix type has a different location
-    /// span and buffer stride than the instance layout describes, and a second
-    /// marked uniform would need a stride this does not express, so
-    /// <c>InstancedVariant</c> would silently take only the first.
-    /// </remarks>
+    // [PerInstance] on a cbuffer field. InstancedVariant only handles one
+    // mat4, so anything else is rejected here.
     private void ValidatePerInstanceUniforms(ShaderDeclaration shader)
     {
         FieldDeclaration? first = null;
@@ -301,9 +271,8 @@ public sealed class SemanticAnalyzer
             bool perInstance = VertexInputLayout.IsPerInstance(field);
             bool explicitLocation = VertexInputLayout.HasExplicitLocation(field);
 
-            // A multi-location type taking the field-index fallback is an
-            // overlap by construction: a mat4 at index 1 owns 1 through 4 while
-            // the next field believes it owns 2.
+            // A mat4 at field index 1 owns locations 1 to 4, and the next field
+            // would default to 2.
             if (span > 1 && !explicitLocation)
             {
                 _diagnostics.Add(new Diagnostic(DiagnosticSeverity.Error,
@@ -313,9 +282,8 @@ public sealed class SemanticAnalyzer
                 continue;
             }
 
-            // Per-instance data lives in its own buffer and its locations are
-            // chosen to sit past the per-vertex ones. Defaulting to the field
-            // index would put it on top of them.
+            // Per-instance locations sit past the per-vertex ones; the field
+            // index default would overlap them.
             if (perInstance && !explicitLocation)
             {
                 _diagnostics.Add(new Diagnostic(DiagnosticSeverity.Error,

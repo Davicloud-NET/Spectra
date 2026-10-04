@@ -3,9 +3,7 @@ using System.Collections.Generic;
 
 namespace SpectraShade.Compiler.Lexing;
 
-/// <summary>
-/// Hand-written lexer for SpectraShade. Produces a token stream from source text.
-/// </summary>
+/// <summary>Turns SpectraShade source text into tokens.</summary>
 public sealed class Lexer
 {
     private readonly string _source;
@@ -115,30 +113,26 @@ public sealed class Lexer
         int start = _pos;
         char c = Current;
 
-        // String literals
         if (c == '"')
             return ReadString(start);
 
-        // Numbers
         if (char.IsAsciiDigit(c))
             return ReadNumber(start);
 
-        // Identifiers and keywords
         if (char.IsAsciiLetter(c) || c == '_')
             return ReadIdentifierOrKeyword(start);
 
-        // Operators and punctuation
         return ReadOperatorOrPunctuation(start);
     }
 
     private Token ReadString(int start)
     {
-        Advance(); // skip opening quote
+        Advance();
         while (_pos < _source.Length && Current != '"' && Current != '\n')
             Advance();
 
         if (_pos < _source.Length && Current == '"')
-            Advance(); // skip closing quote
+            Advance();
 
         // Text includes quotes
         string text = _source[start.._pos];

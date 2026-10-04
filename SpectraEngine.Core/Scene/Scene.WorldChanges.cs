@@ -25,8 +25,7 @@ public sealed partial class Scene
             new(revision, cells is null || cells.Count == 0, hasBounds, new Aabb(min, max));
     }
 
-    /// <summary>Conservative dependency invalidation across every intervening publication.
-    /// An overflow asks the consumer to reselect locally, never trusts missing history.</summary>
+    // Conservative: true when the history has overflowed, so the caller reselects.
     internal bool WorldChangedSince(int revision, in Aabb dependencies)
     {
         if (revision < 0 || revision > StaticWorldCompileCount ||

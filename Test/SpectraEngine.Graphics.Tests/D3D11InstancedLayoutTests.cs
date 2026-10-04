@@ -15,31 +15,8 @@ namespace SpectraEngine.Graphics.Tests;
 /// <summary>
 /// The combined two-slot input layout, against a real D3D11 device.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This exists to check one assumption that the whole D3D11 instancing path
-/// rests on.</b> <c>D3D11InstanceBuffer</c> builds its layout against the
-/// DEFAULT shader's signature, exactly as <c>D3D11Mesh</c> already builds mesh
-/// layouts, because the instanced shader may not exist when the buffer is
-/// created. That is only valid if D3D permits a layout to declare elements the
-/// vertex shader does not read, and rejects only the reverse. If that is wrong,
-/// <c>CreateInputLayout</c> returns E_INVALIDARG and every instanced draw on
-/// this backend fails at creation.
-/// </para>
-/// <para>
-/// <b>No swap chain and no window.</b> <c>D3D11CreateDevice</c> with a null
-/// adapter and no chain gives a device that can create layouts, which is all
-/// this needs; the engine's own D3D fixtures need a window because they
-/// present, and this deliberately does not. A machine with no D3D11 device at
-/// all skips rather than fails, since that is an absent capability rather than
-/// a defect.
-/// </para>
-/// <para>
-/// <b>In the D3D11 collection with the shared-target tests</b>, because two
-/// classes acquiring Silk.NET's D3D11 API at once race; see
-/// <see cref="D3DDeviceCollection"/> for what that looked like.
-/// </para>
-/// </remarks>
+// Windowless device, no swap chain. A machine with no D3D11 device skips.
+// In the D3D collection because two classes acquiring Silk's D3D11 API at once race.
 [Collection(D3DDeviceCollection.Name)]
 public sealed unsafe class D3D11InstancedLayoutTests
 {
@@ -66,10 +43,8 @@ public sealed unsafe class D3D11InstancedLayoutTests
     [Fact]
     public void A_layout_naming_both_slots_is_valid_against_a_shader_that_reads_only_the_first()
     {
-        // The assumption the engine relies on: extra elements are permitted.
-        // The lit shader declares TEXCOORD0..2 and the layout supplies
-        // TEXCOORD0..7, which is how an instance buffer can be created before
-        // any instanced shader exists.
+        // Lit reads TEXCOORD0..2, the layout supplies 0..7. Extra elements
+        // are allowed.
         using var device = TryCreateDevice();
         if (device is null)
             return;
@@ -87,9 +62,7 @@ public sealed unsafe class D3D11InstancedLayoutTests
     [Fact]
     public void A_layout_missing_what_the_shader_reads_is_rejected()
     {
-        // The other direction, asserted so the test above means something: if
-        // D3D accepted this too, the first two would pass with any layout at
-        // all and would be proving nothing.
+        // Control: without this the two tests above would pass on any layout.
         using var device = TryCreateDevice();
         if (device is null)
             return;
@@ -103,8 +76,6 @@ public sealed unsafe class D3D11InstancedLayoutTests
             instanceAttributes: [],
             vs).ShouldBeFalse("the shader reads TEXCOORD3..7, which this layout does not supply");
     }
-
-    // --- helpers -------------------------------------------------------------
 
     private static VertexAttribute[] ShaderInputs(string source)
     {
@@ -213,10 +184,8 @@ public sealed unsafe class D3D11InstancedLayoutTests
             InstanceDataStepRate = perInstance ? 1u : 0u,
         };
 
-    // The API object is kept alive for the process rather than disposed per
-    // call: Silk's D3D11 wrapper owns the loaded native library, and releasing
-    // it while a device created through it is still being used takes the
-    // function table with it.
+    // Kept for the process: Silk's wrapper owns the native library, and
+    // disposing it under a live device takes the function table with it.
     private static readonly D3D11 Api = D3D11.GetApi(null);
 
     private static ComPtr<ID3D11Device>? TryCreateDevice()

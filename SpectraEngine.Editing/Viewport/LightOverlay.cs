@@ -8,70 +8,38 @@ using SpectraEngine.Editing.Gizmos;
 namespace SpectraEngine.Editing.Viewport;
 
 /// <summary>
-/// Draws every light, and the shape of whatever is selected.
+/// Draws an icon for every light, and the shape of each selected one.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A light was completely invisible and completely unpickable.</b> It has no
-/// mesh and no brush, and <see cref="SceneNode"/> deliberately keeps lights out
-/// of the spatial index - so a lamp could be found only by name in the tree, a
-/// marquee dragged across one CLEARED the selection, and moving one meant
-/// selecting it somewhere else and watching the numbers. That is the whole of
-/// the feature this restores: an icon you can see is a thing you can click.
-/// </para>
-/// <para>
-/// <b>Lights stay out of the BVH.</b> Admitting them would make every lamp
-/// collidable and query-visible, because <c>PhysicsFlags.Default</c> carries
-/// <c>CanCollide | CanQuery</c> - a lighting change that silently alters what
-/// the player can walk into. The editor picks them separately instead, which is
-/// what <see cref="LightPicking"/> is.
-/// </para>
-/// <para>
-/// <b>Always on, and not behind a <c>DebugVisualization</c> flag.</b> Those are
-/// off by default, and a light that is invisible at rest is unfindable - which
-/// is the state this replaces, not a state worth being able to return to.
-/// </para>
-/// <para>
-/// It lives in <c>SpectraEngine.Editing</c>, so a shipped game never links it.
-/// </para>
-/// </remarks>
+// Lights have no mesh and are not in the spatial index (that would make them
+// collidable), so the icon is the only thing to see or click.
 public sealed class LightOverlay
 {
     /// <summary>
-    /// The icon's radius in screen pixels - and the pick radius too.
+    /// The icon's radius in screen pixels. <see cref="LightPicking"/> picks at
+    /// the same radius.
     /// </summary>
-    /// <remarks>
-    /// <b>ONE constant, shared with <see cref="LightPicking"/>.</b> Two would
-    /// drift, and the symptom of drift is that you click something other than
-    /// what you can see, which is the least reportable class of bug there is.
-    /// </remarks>
     public const float IconPixels = 9f;
 
     /// <summary>Whether the overlay draws at all.</summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// How many light icons may be drawn in one frame.
+    /// How many light icons may be drawn in one frame. The rest are counted in
+    /// <see cref="SkippedLastDraw"/>.
     /// </summary>
-    /// <remarks>
-    /// Disclosed through <see cref="SkippedLastDraw"/> rather than silently
-    /// truncated, like every other cap in this assembly.
-    /// </remarks>
     public int MaxIcons { get; set; } = 256;
 
     /// <summary>Lights the last draw drew.</summary>
     public int DrawnLastDraw { get; private set; }
 
-    /// <summary>Lights the last draw could not.</summary>
+    /// <summary>Lights the last draw skipped because <see cref="MaxIcons"/> was reached.</summary>
     public int SkippedLastDraw { get; private set; }
 
     private const int RingSegments = 32;
     private const float DisabledDim = 0.28f;
 
-    /// <summary>
-    /// Draws an icon per light, plus the selected lights' shapes.
-    /// </summary>
-    /// <param name="output">The depth-OFF overlay buffer: a lamp inside a wall is still a lamp.</param>
+    /// <summary>Draws an icon per light, plus the selected lights' shapes.</summary>
+    /// <param name="output">The depth-off overlay buffer.</param>
     public void Draw(DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -103,10 +71,7 @@ public sealed class LightOverlay
             if (radius <= 0f)
                 continue;
 
-            // The lamp's OWN colour, dimmed when it is switched off. A light you
-            // have disabled is still a light you need to find, and a uniform
-            // icon colour would make a room full of tinted lamps say nothing
-            // about which is which.
+            // The light's own colour; grey when switched off.
             Vector3 colour = light.Enabled
                 ? Vector3.Max(light.Color, new Vector3(0.25f))
                 : new Vector3(DisabledDim);
@@ -115,9 +80,7 @@ public sealed class LightOverlay
             DrawnLastDraw++;
         }
 
-        // The shapes are for the SELECTION only. A range sphere per lamp would
-        // fill a lit room with overlapping circles and hide the geometry the
-        // lights exist to show.
+        // Shapes for the selection only; one per light would bury the scene.
         IReadOnlyList<SceneNode> selection = scene.Selection.Items;
         for (int i = 0; i < selection.Count; i++)
         {
@@ -127,9 +90,7 @@ public sealed class LightOverlay
         }
     }
 
-    // A small star: an octagon with spokes. Billboarded onto the camera's basis,
-    // so it reads the same from every angle - a light has no orientation worth
-    // showing here (its DIRECTION does, and that is the arrow below).
+    // An octagon with spokes, billboarded to the camera.
     private static void DrawIcon(DebugDraw output, Vector3 at, float radius, Vector3 colour, Camera camera)
     {
         Vector3 right = camera.Right * radius;
@@ -146,8 +107,6 @@ public sealed class LightOverlay
             previous = current;
         }
 
-        // Four spokes, at the diagonals so they do not lie along the octagon's
-        // own edges.
         for (int i = 0; i < 4; i++)
         {
             float angle = (i * (MathF.Tau / 4)) + (MathF.PI / 4f);
@@ -164,26 +123,15 @@ public sealed class LightOverlay
         switch (light.Kind)
         {
             case LightKind.Directional:
-                // Direction, not range: a sun has no position that matters and
-                // no reach to draw. The arrow is the node's forward axis, which
-                // IS the direction the light travels - the one fact about a
-                // directional light that is easy to get backwards and silent
-                // when you do.
-                // The third ROW of the world matrix, which is what
-                // Scene.CollectLights reads. Not a rotation applied to -Z:
-                // the engine's own derivation is +Z out of the matrix, and two
-                // expressions for one direction is how the arrow ends up
-                // pointing the opposite way from the light that is actually
-                // being cast, with nothing anywhere reporting a disagreement.
+                // Travel direction is the world matrix's third row, read the
+                // same way Scene.CollectLights reads it so the arrow cannot
+                // disagree with the light.
                 Matrix4x4 world = node.WorldMatrix;
                 var travel = Vector3.Normalize(new Vector3(world.M31, world.M32, world.M33));
                 output.Arrow(at, at + (travel * 2f), colour);
                 break;
 
             case LightKind.Point:
-                // Three great circles rather than a wire sphere: the reach is a
-                // scalar, and three rings say it with 96 lines where a lat-long
-                // sphere costs several hundred for no more information.
                 DrawRing(output, at, Vector3.UnitX, Vector3.UnitY, light.Range, colour);
                 DrawRing(output, at, Vector3.UnitY, Vector3.UnitZ, light.Range, colour);
                 DrawRing(output, at, Vector3.UnitZ, Vector3.UnitX, light.Range, colour);
@@ -200,9 +148,7 @@ public sealed class LightOverlay
         }
     }
 
-    // TWO cones, inner and outer, because the falloff between them is what a
-    // spot actually is: one outline says where the light stops and says nothing
-    // about where it is at full strength, which is the half a user is aiming.
+    // Outer cone is where the light stops, inner where it is at full strength.
     private static void DrawCone(DebugDraw output, SceneNode node, Light light, Vector3 colour)
     {
         Basis(node, out Vector3 forward, out Vector3 right, out Vector3 up);
@@ -213,8 +159,7 @@ public sealed class LightOverlay
         DrawConeRing(output, at, forward, right, up, reach, light.OuterAngle, colour);
         DrawConeRing(output, at, forward, right, up, reach, light.InnerAngle, colour * 0.45f);
 
-        // A short stub along the axis, so a cone seen end-on from directly
-        // behind is still a cone rather than two concentric circles.
+        // Axis stub, so a cone seen end-on is not just two circles.
         output.Line(at, at + (forward * reach * 0.15f), colour);
     }
 
@@ -228,9 +173,7 @@ public sealed class LightOverlay
 
         DrawRing(output, centre, right, up, radius, colour);
 
-        // Four rays from the apex to the rim, at the diagonals. Not the whole
-        // rim: a cone drawn as a full fan is a solid disc of lines that hides
-        // whatever the light is pointing at.
+        // Four rays only; a full fan hides what the light points at.
         for (int i = 0; i < 4; i++)
         {
             float angle = i * (MathF.Tau / 4);
@@ -239,9 +182,7 @@ public sealed class LightOverlay
         }
     }
 
-    // The emitting surface, plus one arrow saying which way it faces. The arrow
-    // is not decoration: an area light is ONE-SIDED, so a panel turned round
-    // lights nothing and looks identical from the front.
+    // The arrow matters: an area light is one-sided.
     private static void DrawArea(DebugDraw output, SceneNode node, Light light, Vector3 colour)
     {
         Basis(node, out Vector3 forward, out Vector3 right, out Vector3 up);
@@ -271,10 +212,7 @@ public sealed class LightOverlay
         output.Arrow(at, at + (forward * reach * 0.5f), colour);
     }
 
-    // The node's own basis, straight out of the world matrix - the same three
-    // rows Scene.CollectLights uploads. Not a rotation applied to unit vectors:
-    // two expressions for one basis is how the shape drawn here ends up facing
-    // the opposite way from the light being cast, silently.
+    // Rows of the world matrix, the same ones Scene.CollectLights uploads.
     private static void Basis(SceneNode node, out Vector3 forward, out Vector3 right, out Vector3 up)
     {
         Matrix4x4 world = node.WorldMatrix;
@@ -283,15 +221,8 @@ public sealed class LightOverlay
         up = Vector3.Normalize(new Vector3(world.M21, world.M22, world.M23));
     }
 
-    /// <summary>
-    /// Emits one circle as a rolling sequence of lines.
-    /// </summary>
-    /// <remarks>
-    /// <b>Line by line rather than through <c>DebugDraw.Polyline</c></b>, which
-    /// takes an <c>IReadOnlyList</c>: building one per ring per frame is an
-    /// allocation on the render thread, and these paths are held to zero by
-    /// <c>EditingAllocationTests</c>.
-    /// </remarks>
+    // Line by line: DebugDraw.Polyline takes a list, which would allocate per
+    // ring per frame. EditingAllocationTests holds this path to zero.
     private static void DrawRing(DebugDraw output, Vector3 centre, Vector3 u, Vector3 v, float radius, Vector3 colour)
     {
         if (radius <= 0f)
@@ -310,18 +241,13 @@ public sealed class LightOverlay
 }
 
 /// <summary>
-/// Ray-picking for light nodes, which the scene's spatial index deliberately
-/// does not carry.
+/// Ray-picking for light nodes, which the scene's spatial index does not carry.
 /// </summary>
-/// <remarks>
-/// Pure and allocation-free, so it can be tested without a scene graph, a
-/// camera rig or a window.
-/// </remarks>
 public static class LightPicking
 {
     /// <summary>
-    /// The icon's world radius at <paramref name="at"/>, so a light is the same
-    /// size to click whatever the distance.
+    /// The icon's world radius at <paramref name="at"/>. Zero when the point is
+    /// outside the view.
     /// </summary>
     public static float WorldRadius(Camera camera, Vector2 viewportSize, Vector3 at)
     {
@@ -332,13 +258,7 @@ public static class LightPicking
         return LightOverlay.IconPixels * GizmoMath.WorldPerPixel(camera, viewportSize.Y, depth);
     }
 
-    /// <summary>
-    /// The nearest light icon <paramref name="ray"/> passes through, if any.
-    /// </summary>
-    /// <remarks>
-    /// A ray-versus-sphere test at the icon's own screen-constant radius, which
-    /// is what makes the pick target exactly the thing that was drawn.
-    /// </remarks>
+    /// <summary>The nearest light icon <paramref name="ray"/> passes through, if any.</summary>
     public static bool TryPick(
         Scene scene, Camera camera, in Ray3 ray, Vector2 viewportSize,
         out SceneNode? node, out float distance)
@@ -373,10 +293,8 @@ public static class LightPicking
         return node is not null;
     }
 
-    // The standard quadratic, with the ray direction assumed normalised (Ray3's
-    // constructor guarantees it). Returns the NEAR root, clamped to zero, so a
-    // ray whose origin is already inside the icon still reports a hit at the
-    // origin rather than at the far side.
+    // Assumes a normalised direction. Near root, clamped to zero so an origin
+    // inside the sphere hits at the origin.
     private static bool TryRaySphere(in Ray3 ray, Vector3 centre, float radius, out float distance)
     {
         distance = 0f;
@@ -385,7 +303,7 @@ public static class LightPicking
         float b = Vector3.Dot(toCentre, ray.Direction);
         float c = Vector3.Dot(toCentre, toCentre) - (radius * radius);
 
-        // Pointing away and already outside: no root worth finding.
+        // Outside and pointing away.
         if (c > 0f && b > 0f)
             return false;
 

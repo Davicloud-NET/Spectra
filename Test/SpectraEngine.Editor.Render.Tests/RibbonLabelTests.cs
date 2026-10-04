@@ -5,25 +5,7 @@ using SpectraEngine.Editor.Shell.Ribbon;
 
 namespace SpectraEngine.Editor.Render.Tests;
 
-/// <summary>
-/// The word on the control is the word in the roster.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>They were two independent strings.</b> <c>RibbonItem.Label</c> and each
-/// control's own <c>TextBlock</c> were written separately and nothing compared
-/// them, so the roster could say "Block" while the button said something else -
-/// and the ten-character cap that keeps a large label off a third line was
-/// measuring the roster's string rather than the rendered one, which is the
-/// half that has to fit.
-/// </para>
-/// <para>
-/// Read off the constructed page rather than scraped, because the question is
-/// what a control DISPLAYS: a chip's value half is a binding, a field displays
-/// nothing at all, and a scrape has to guess which literal in the element is
-/// the label.
-/// </para>
-/// </remarks>
+/// <summary>The word on each ribbon control is the roster's label, and it fits.</summary>
 [Collection(RibbonSessionCollection.Name)]
 public sealed class RibbonLabelTests(RibbonSession session)
 {
@@ -41,8 +23,7 @@ public sealed class RibbonLabelTests(RibbonSession session)
                 string id = (string)control.Tag!;
                 RibbonItem item = RibbonLayout.FindItem(id)!;
 
-                // A field displays a VALUE, and the steppers are two carets:
-                // the roster's Label names them for the reader of the roster.
+                // A field shows a value and a stepper shows two carets, not the label.
                 if (item.Kind is RibbonControlKind.Field or RibbonControlKind.Stepper)
                 {
                     continue;
@@ -53,8 +34,7 @@ public sealed class RibbonLabelTests(RibbonSession session)
                     .Where(t => !string.IsNullOrWhiteSpace(t))
                     .ToList()!;
 
-                // A chip is a subject plus a bound value, so its FIRST block is
-                // the label and the second is engine state.
+                // A chip's first block is the label, the second a bound value.
                 string shown = words.Count > 0 ? words[0] : string.Empty;
 
                 shown.ShouldBe(item.Label, $"'{id}' draws its own word independently of the roster's");
@@ -69,11 +49,8 @@ public sealed class RibbonLabelTests(RibbonSession session)
     [MemberData(nameof(RibbonGeometryTests.Pages), MemberType = typeof(RibbonGeometryTests))]
     public void A_large_label_really_does_fit_on_two_lines(string tabId)
     {
-        // THE CAP, MEASURED RATHER THAN COUNTED. RibbonLayoutTests holds large
-        // labels to ten characters, which is a proxy: it fails first and with a
-        // better message for somebody about to type one, but the fact it stands
-        // in for is that the word fits the button. "Everything" broke mid-word
-        // at 58 and no character count could have said so.
+        // RibbonLayoutTests caps large labels at ten characters. That is a
+        // proxy; this measures whether the word fits.
         session.On(() =>
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId);
@@ -83,11 +60,8 @@ public sealed class RibbonLabelTests(RibbonSession session)
             {
                 TextBlock label = button.GetVisualDescendants().OfType<TextBlock>().First();
 
-                // Every line the layout produced, so a dropped character is
-                // visible: MaxLines silently EATS a third line rather than
-                // reporting one. Compared with >= because TextLine.Length counts
-                // the line's terminator, so an exact match is off by one per
-                // line - which is a thing to know rather than to rediscover.
+                // MaxLines drops a third line without reporting it. >= because
+                // TextLine.Length counts the line terminator.
                 int laid = label.TextLayout.TextLines.Sum(l => l.Length);
                 laid.ShouldBeGreaterThanOrEqualTo(
                     label.Text!.Length,
@@ -99,11 +73,8 @@ public sealed class RibbonLabelTests(RibbonSession session)
                 label.TextLayout.TextLines.Count.ShouldBeLessThanOrEqualTo(
                     2, $"'{button.Tag}' wraps \"{label.Text}\" past two lines");
 
-                // THE ONE THAT ACTUALLY CATCHES IT. "Everything" broken to
-                // "Everythin / g" is still two lines and still ellipsises
-                // nothing, so neither check above can see it. A single word has
-                // no boundary to break at, so it either fits its line or it is
-                // being cut mid-word.
+                // A single word cut mid-word is still two lines with no
+                // ellipsis, so the checks above miss it.
                 if (!label.Text.Contains(' '))
                 {
                     label.TextLayout.TextLines.Count.ShouldBe(

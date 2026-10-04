@@ -3,15 +3,8 @@ using SpectraEngine.Editor.Shell;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// What is wrong right now, as distinct from what has recently been said.
+/// The list of standing problems: a row stays until something resolves it.
 /// </summary>
-/// <remarks>
-/// <b>The defect being fixed is a count that healed itself.</b> The output log
-/// keeps 500 lines and counted the errors among them, so its summary read "no
-/// problems" both when nothing had gone wrong and when enough had happened
-/// since that the failure had scrolled out of the buffer. Every assertion here
-/// is about a count that stays true until something ends it.
-/// </remarks>
 public sealed class ProblemListTests
 {
     private const string Template = "Material {Path} is unreadable";
@@ -40,8 +33,6 @@ public sealed class ProblemListTests
         Assert.Equal(2, only.Count);
         Assert.Equal("x2", only.CountLabel);
 
-        // One condition, counted once: a compile that reports it every frame
-        // must not read as thousands of problems.
         Assert.Equal(1, problems.WarningCount);
         Assert.Equal("1 warning", problems.Summary);
     }
@@ -61,8 +52,6 @@ public sealed class ProblemListTests
     [Fact]
     public void The_same_subject_at_two_severities_is_two_rows()
     {
-        // A warning and an error about one file are two conditions: one of them
-        // stopped something and the other did not.
         var problems = new ProblemList();
 
         problems.Report(OutputSeverity.Warning, Template, "a", "Materials/a.spectramat");
@@ -75,8 +64,6 @@ public sealed class ProblemListTests
     [Fact]
     public void Info_records_nothing()
     {
-        // A problem list that took every severity would be the output log with
-        // extra steps, and its count would stop meaning "needs attention".
         var problems = new ProblemList();
 
         Assert.Null(problems.Report(OutputSeverity.Info, "Loaded {Path}", "loaded", "Textures/a.png"));
@@ -113,9 +100,7 @@ public sealed class ProblemListTests
     [Fact]
     public void A_resolved_condition_that_comes_back_is_a_fresh_row()
     {
-        // The count restarts rather than resuming: it came back, which is new
-        // information, and a row reading "x9" for something that was fixed in
-        // between would be a lie about how long it has been broken.
+        // The count restarts at one.
         var problems = new ProblemList();
         problems.Report(OutputSeverity.Warning, Template, "a", "Materials/a.spectramat");
         problems.Resolve("Materials/a.spectramat");
@@ -160,8 +145,6 @@ public sealed class ProblemListTests
     [Fact]
     public void A_dismissed_row_comes_back_if_it_is_reported_again()
     {
-        // Dismissal is not a fix: the condition is still true and the next
-        // report says so. That is why dismissing needs no confirmation.
         var problems = new ProblemList();
         ProblemEntry entry = problems.Report(OutputSeverity.Warning, Template, "a", "a")!;
         problems.Remove(entry);
@@ -190,8 +173,6 @@ public sealed class ProblemListTests
     [Fact]
     public void The_status_count_is_rows_rather_than_reports()
     {
-        // The status bar says how many things are wrong, not how many times
-        // they have been mentioned.
         var problems = new ProblemList();
         problems.Report(OutputSeverity.Warning, Template, "a", "a");
         problems.Report(OutputSeverity.Warning, Template, "a", "a");

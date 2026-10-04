@@ -7,66 +7,31 @@ namespace SpectraEngine.Core.Physics.Character;
 /// The four things a character mover needs from the world: sweep a capsule,
 /// gather the planes touching it, solve those planes, and clip velocity.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The mover algorithm is this engine's, permanently.</b> Physics libraries
-/// ship read-only mover primitives and document nothing about stairs, ground
-/// snap or slope limits — Box3D and Jolt are the same shape here — so the
-/// algorithm was always going to be ours. What a backend can supply is this
-/// seam's first two methods, and the swap is a constructor argument.
-/// </para>
-/// <para>
-/// <b>The last two carry shared implementations on purpose.</b> Two backends
-/// with two solvers would resolve identical plane sets to different positions,
-/// which is exactly the divergence that would invalidate every tuned constant
-/// the day the source was swapped. One solver, shared, removes that axis
-/// entirely.
-/// </para>
-/// </remarks>
+// A backend supplies the sweep and the gather. The solve and the clip are
+// shared defaults so every source resolves a plane set the same way.
 public interface ICharacterCollisionSource
 {
     /// <summary>
-    /// Changes only BETWEEN frames, never between the ticks of one frame.
+    /// Moves when the geometry changes. A replay that crosses a change must
+    /// be refused.
     /// </summary>
-    /// <remarks>
-    /// A predicted frame records this; a replay that crosses a change is
-    /// refused rather than being silently wrong about a world that moved under
-    /// it.
-    /// </remarks>
     int Revision { get; }
 
     /// <summary>The rest offset every method's contract is expressed against.</summary>
     float SkinWidth { get; }
 
     /// <summary>
-    /// Selects the geometry a tick can possibly touch, so every sweep and
-    /// gather within it shares one broad phase.
+    /// Selects the geometry a tick can touch, so every sweep and gather in it
+    /// shares one broad phase.
     /// </summary>
-    /// <remarks>
-    /// Sound because nothing in the scene moves during a tick: kinematic
-    /// targets are pushed before the mover runs, and the static world only ever
-    /// swaps between frames. Doing it per query instead would repeat the same
-    /// broadphase eleven times a tick for an answer that cannot have changed.
-    /// </remarks>
     void BeginTick(in Bsp.Aabb volume, in CharacterQueryFilter filter);
 
     /// <summary>
-    /// The fraction of <paramref name="translation"/> travelled before first
-    /// contact; 1 when unobstructed.
+    /// The fraction of <paramref name="translation"/> travelled before the
+    /// capsule's surface is <see cref="SkinWidth"/> from contact; 1 when
+    /// unobstructed. A capsule already overlapping returns 0 and still reports
+    /// a plane.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The fraction stops where the capsule's SURFACE separation equals
-    /// <see cref="SkinWidth"/>, not zero</b> — so a mover that advances by it
-    /// and does no backoff arithmetic of its own always rests clear.
-    /// </para>
-    /// <para>
-    /// <b>A capsule already overlapping returns 0 and still reports a plane.</b>
-    /// It never reports "no hit", which is the trap a naive ray test falls into
-    /// and the reason a character spawned inside geometry would otherwise sweep
-    /// straight through the world.
-    /// </para>
-    /// </remarks>
     float SweepCapsule(
         in CharacterCapsule capsule,
         Vector3 translation,
@@ -77,14 +42,9 @@ public interface ICharacterCollisionSource
     /// <summary>
     /// Every contact plane whose separation is at or below
     /// <paramref name="maxSeparation"/>, deepest first; returns how many were
-    /// written.
+    /// written. On overflow the deepest are kept and the rest counted in
+    /// <see cref="DroppedPlanes"/>.
     /// </summary>
-    /// <remarks>
-    /// On overflow it keeps the deepest and reports the rest through
-    /// <see cref="DroppedPlanes"/> — disclosed, never silently truncated.
-    /// Allocation-free: the spans are the caller's, and the mover stack-allocates
-    /// them.
-    /// </remarks>
     int GatherPlanes(
         in CharacterCapsule capsule,
         float maxSeparation,
@@ -92,7 +52,7 @@ public interface ICharacterCollisionSource
         Span<CharacterContactPlane> planes,
         Span<CharacterContactSource> sources);
 
-    /// <summary>Contact planes dropped for want of space since this source was created.</summary>
+    /// <summary>Contact planes dropped for want of space.</summary>
     int DroppedPlanes { get; }
 
     /// <summary>
@@ -112,33 +72,24 @@ public readonly record struct CharacterPlaneSolveResult(Vector3 Delta, int Itera
 
 /// <summary>
 /// The shared plane solver: accumulated-push Gauss-Seidel, transcribed from
-/// Box3D's own mover so a future native source resolves identically.
+/// Box3D's mover so a native source would resolve identically.
 /// </summary>
-/// <remarks>
-/// The iteration count and tolerance are the library's, deliberately. A
-/// different cap would make any future parity test between two sources
-/// meaningless, and the numbers are not tuning — they are the definition of
-/// what "solved" means.
-/// </remarks>
 public static class CharacterPlaneSolver
 {
-    /// <summary>Solver iterations. Box3D's own count.</summary>
+    // Both constants are Box3D's. Changing them breaks parity with it.
+
+    /// <summary>Solver iterations.</summary>
     public const int Iterations = 20;
 
-    /// <summary>Convergence tolerance, in world units. Box3D's linear slop.</summary>
+    /// <summary>Convergence tolerance, in world units.</summary>
     public const float Tolerance = 0.005f;
 
     /// <summary>
     /// Finds the translation nearest <paramref name="targetDelta"/> that leaves
     /// every plane's separation non-negative.
     /// </summary>
-    /// <remarks>
-    /// <b>Accumulated push, not per-iteration push.</b> Each plane tracks the
-    /// total it has contributed, so relaxing one plane can give back push
-    /// another plane no longer needs — which is what lets a character in a
-    /// corner settle instead of being ratcheted outward by whichever plane was
-    /// visited last.
-    /// </remarks>
+    // Push is accumulated per plane, so a plane can give back push it no longer
+    // needs. That lets a character in a corner settle.
     public static CharacterPlaneSolveResult Solve(Vector3 targetDelta, Span<CharacterContactPlane> planes)
     {
         for (int i = 0; i < planes.Length; i++)
@@ -153,8 +104,7 @@ public static class CharacterPlaneSolver
 
             for (int i = 0; i < planes.Length; i++)
             {
-                // The plane's D is the separation at zero translation, so this
-                // dot IS the separation after moving by delta.
+                // D is the separation at zero translation.
                 float separation = Plane.DotCoordinate(planes[i].Plane, delta);
                 float correction = -separation;
 
@@ -178,13 +128,9 @@ public static class CharacterPlaneSolver
     }
 
     /// <summary>
-    /// Removes velocity driving into any plane that actually engaged.
+    /// Removes velocity driving into any plane that engaged. Planes with zero
+    /// push are skipped.
     /// </summary>
-    /// <remarks>
-    /// <b>Planes with zero push are skipped.</b> A plane the solve never needed
-    /// is a surface the character is near but not resting on, and clipping
-    /// against it would brake for walls that are not in the way.
-    /// </remarks>
     public static Vector3 ClipVelocity(Vector3 velocity, ReadOnlySpan<CharacterContactPlane> planes)
     {
         for (int i = 0; i < planes.Length; i++)

@@ -2,108 +2,39 @@ using System.Runtime.InteropServices;
 
 namespace SpectraEngine.Physics.Box3D.Native;
 
-/// <summary>
-/// The raw Box3D entry points. One-to-one with the C API, no policy.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Hand-curated, not generated.</b> Box3D exports 547 functions; this binds
-/// the ones the engine actually calls. A generated binding would be larger,
-/// would need regenerating on every pin move, and would bind surface nobody has
-/// read — and every unread struct is a layout nobody checked.
-/// </para>
-/// <para>
-/// <b>Everything here is <c>internal</c> and unwrapped.</b> Null checks,
-/// refcounting, id validity and lifetime rules belong one layer up. This type's
-/// only job is to be a faithful transcription, so that when behaviour surprises
-/// somebody the question "does the binding match the header?" has a short
-/// answer.
-/// </para>
-/// <para>
-/// The assembly disables runtime marshalling, so every signature here is
-/// blittable except where a C <c>bool</c> return or parameter forces a
-/// one-byte marshal — those are annotated explicitly and generate a small
-/// managed conversion rather than a runtime marshalling stub.
-/// </para>
-/// </remarks>
+// Raw Box3D entry points, one-to-one with the C API. Hand-written: only what
+// the engine calls. No null checks or lifetime rules here; those live a layer up.
+// Runtime marshalling is off, so C bool is marshalled as U1 explicitly.
 internal static partial class B3
 {
     private const string Lib = "box3d";
 
-    // --- Tier 0: process init and the ABI handshake -------------------------
-
-    /// <summary>
-    /// Whether the loaded library was built with double precision.
-    /// </summary>
-    /// <remarks>
-    /// <b>The only runtime proof that the DLL matches the struct layouts this
-    /// assembly declares.</b> Every managed type here assumes the float build;
-    /// a double DLL changes the width of positions and every struct containing
-    /// one, silently. Check this once at startup and refuse to continue.
-    /// <para>
-    /// There is a second, automatic guard: the C header renames
-    /// <c>b3CreateWorld</c> under the double build, so a mismatched DLL throws
-    /// <see cref="System.EntryPointNotFoundException"/> at world creation
-    /// rather than corrupting memory. Both are worth having — this one names
-    /// the problem, that one catches it if nobody asked.
-    /// </para>
-    /// </remarks>
+    // Every struct here assumes the float build. Check once at startup.
     [LibraryImport(Lib, EntryPoint = "b3IsDoublePrecision")]
     [return: MarshalAs(UnmanagedType.U1)]
     internal static partial bool IsDoublePrecision();
 
-    /// <summary>The library's own version, as compiled.</summary>
-    /// <remarks>
-    /// Trust this over the build system: at the pinned commit this reports
-    /// 0.2.0 while the upstream <c>CMakeLists.txt</c> still says 0.1.0.
-    /// </remarks>
     [LibraryImport(Lib, EntryPoint = "b3GetVersion")]
     internal static partial B3Version GetVersion();
 
-    /// <summary>
-    /// Sets how many metres one length unit represents, rescaling the library's
-    /// own collision and constraint tolerances.
-    /// </summary>
-    /// <remarks>
-    /// <b>Must be called before the first <c>Default*Def</c> call, not merely
-    /// before the first world.</b> Those constructors bake the scale into their
-    /// results at call time — contact speed, maximum linear speed, sleep
-    /// threshold and density are all computed from it — so a def taken first
-    /// and a unit set second gives a def tuned for the wrong scale, with
-    /// nothing to indicate it.
-    /// </remarks>
+    // Call before the first Default*Def: those bake the length scale into
+    // their results when called.
     [LibraryImport(Lib, EntryPoint = "b3SetLengthUnitsPerMeter")]
     internal static partial void SetLengthUnitsPerMeter(float lengthUnits);
 
-    /// <inheritdoc cref="SetLengthUnitsPerMeter"/>
     [LibraryImport(Lib, EntryPoint = "b3GetLengthUnitsPerMeter")]
     internal static partial float GetLengthUnitsPerMeter();
 
-    // --- Tier 1: world lifecycle and stepping -------------------------------
-
-    /// <summary>
-    /// The only supported way to obtain a <see cref="B3WorldDef"/>. See that
-    /// type's remarks for why constructing one by hand is unsafe in Release.
-    /// </summary>
+    // Always start a B3WorldDef from this, never from a zeroed struct.
     [LibraryImport(Lib, EntryPoint = "b3DefaultWorldDef")]
     internal static partial B3WorldDef DefaultWorldDef();
 
-    /// <summary>
-    /// Creates a world. Returns a zeroed id on failure — which in a Release
-    /// build is the <em>only</em> signal, so callers must test it.
-    /// </summary>
+    // A zeroed id means failure. In a Release build that is the only signal.
     [LibraryImport(Lib, EntryPoint = "b3CreateWorld")]
     internal static partial B3WorldId CreateWorld(in B3WorldDef def);
 
-    /// <summary>
-    /// Destroys a world. <b>Exactly once.</b>
-    /// </summary>
-    /// <remarks>
-    /// The library decrements its global world count <em>before</em> validating
-    /// the id, so a double destroy corrupts that count rather than being
-    /// harmlessly ignored. The wrapper above this clears its id after calling,
-    /// and there is deliberately no finalizer.
-    /// </remarks>
+    // Once only: the world count is decremented before the id is validated,
+    // so a double destroy corrupts it.
     [LibraryImport(Lib, EntryPoint = "b3DestroyWorld")]
     internal static partial void DestroyWorld(B3WorldId worldId);
 
@@ -111,12 +42,7 @@ internal static partial class B3
     [return: MarshalAs(UnmanagedType.U1)]
     internal static partial bool World_IsValid(B3WorldId id);
 
-    /// <summary>Advances the world by one step.</summary>
-    /// <remarks>
-    /// <paramref name="timeStep"/> is a FIXED step — see
-    /// <c>SpectraEngine.Core.Physics.FixedTickAccumulator</c> for why the frame
-    /// delta must never reach here.
-    /// </remarks>
+    // timeStep is the fixed tick, never the frame delta.
     [LibraryImport(Lib, EntryPoint = "b3World_Step")]
     internal static partial void World_Step(B3WorldId worldId, float timeStep, int subStepCount);
 
@@ -126,11 +52,7 @@ internal static partial class B3
     [LibraryImport(Lib, EntryPoint = "b3World_GetGravity")]
     internal static partial B3Vec3 World_GetGravity(B3WorldId worldId);
 
-    /// <summary>
-    /// How many worker threads the world actually runs on. Assert this is one:
-    /// it is the observable proof that the serial branch was taken, rather than
-    /// the library having spawned its own threads.
-    /// </summary>
+    // Expected to be 1: the engine runs Box3D serially.
     [LibraryImport(Lib, EntryPoint = "b3World_GetWorkerCount")]
     internal static partial int World_GetWorkerCount(B3WorldId worldId);
 
@@ -144,21 +66,11 @@ internal static partial class B3
     internal static partial void World_EnableSleeping(
         B3WorldId worldId, [MarshalAs(UnmanagedType.U1)] bool flag);
 
-    /// <summary>
-    /// Rebuilds the static broadphase tree. Call once after a batch of chunk
-    /// bodies changes, never per shape.
-    /// </summary>
-    /// <remarks>
-    /// Upstream's header comment says only "This is for internal testing", but
-    /// it is the sole static-tree control the API exposes and the implementation
-    /// does a genuine full rebuild. Bound deliberately, with the caveat
-    /// recorded: if it disappears under a moved pin, the static tree simply
-    /// stays as the incremental inserts left it.
-    /// </remarks>
+    // Full rebuild of the static broadphase tree. Once per batch, never per shape.
+    // Upstream's header calls it "for internal testing", so it may vanish when
+    // the pin moves; the tree stays correct without it.
     [LibraryImport(Lib, EntryPoint = "b3World_RebuildStaticTree")]
     internal static partial void World_RebuildStaticTree(B3WorldId worldId);
-
-    // --- Tier 3: bodies -----------------------------------------------------
 
     [LibraryImport(Lib, EntryPoint = "b3DefaultBodyDef")]
     internal static partial B3BodyDef DefaultBodyDef();
@@ -191,16 +103,8 @@ internal static partial class B3
     [LibraryImport(Lib, EntryPoint = "b3Body_SetTransform")]
     internal static partial void Body_SetTransform(B3BodyId bodyId, B3Pos position, B3Quat rotation);
 
-    /// <summary>
-    /// Drives a kinematic body towards a pose over one step, velocity-based.
-    /// </summary>
-    /// <remarks>
-    /// Target, not teleport: the velocity it implies is what makes riders and
-    /// friction behave. The achieved pose is documented as close but not exact,
-    /// which is why move events for kinematic bodies are discarded rather than
-    /// echoed back — feeding solver drift into an authored value would fight
-    /// whatever is posing the body.
-    /// </remarks>
+    // Velocity-based, so riders and friction behave. The achieved pose is
+    // close, not exact: don't write it back into the authored transform.
     [LibraryImport(Lib, EntryPoint = "b3Body_SetTargetTransform")]
     internal static partial void Body_SetTargetTransform(
         B3BodyId bodyId, B3WorldTransform target, float timeStep,
@@ -222,30 +126,12 @@ internal static partial class B3
     [return: MarshalAs(UnmanagedType.U1)]
     internal static partial bool Body_IsEnabled(B3BodyId bodyId);
 
-    // --- Tier 4: hulls and shapes -------------------------------------------
-
-    /// <summary>
-    /// Builds a convex hull from a POINT CLOUD. Returns null on failure, which
-    /// is a normal outcome — over a limit, or degenerate input.
-    /// </summary>
-    /// <remarks>
-    /// <b>Points, not planes.</b> There is no half-space or face-polygon hull
-    /// builder anywhere in the API, so a brush's planes are useless here and its
-    /// face-polygon vertices are the input.
-    /// <para>
-    /// The return is <c>nint</c> deliberately: the hull is a variable-length
-    /// struct with data hanging off the end, documented as not directly
-    /// copyable, so it must never become a C# value type in a signature.
-    /// </para>
-    /// </remarks>
+    // Hull from a point cloud. Null on failure (over a limit, degenerate input).
+    // nint because the hull is a variable-length struct that can't be copied.
     [LibraryImport(Lib, EntryPoint = "b3CreateHull")]
     internal static unsafe partial nint CreateHull(B3Vec3* points, int pointCount, int maxVertexCount);
 
-    /// <summary>
-    /// Frees a hull. <b>Null is not tolerated</b> — the implementation
-    /// dereferences its argument with no check, so a null here is an access
-    /// violation rather than a no-op.
-    /// </summary>
+    // Dereferences null.
     [LibraryImport(Lib, EntryPoint = "b3DestroyHull")]
     internal static partial void DestroyHull(nint hull);
 
@@ -258,20 +144,11 @@ internal static partial class B3
     [LibraryImport(Lib, EntryPoint = "b3DefaultSurfaceMaterial")]
     internal static partial B3SurfaceMaterial DefaultSurfaceMaterial();
 
-    /// <summary>
-    /// Attaches a hull to a body. <b>The hull pointer is dereferenced before any
-    /// null check</b>, so passing null is an access violation — and
-    /// <see cref="CreateHull"/> returns null as a normal outcome, which makes
-    /// checking it mandatory rather than defensive.
-    /// </summary>
+    // Dereferences a null hull, and CreateHull can return null. Check first.
     [LibraryImport(Lib, EntryPoint = "b3CreateHullShape")]
     internal static partial B3ShapeId CreateHullShape(B3BodyId bodyId, in B3ShapeDef def, nint hull);
 
-    /// <summary>
-    /// Attaches a hull to a body under a transform and scale — how one brush's
-    /// brush-local hull is placed into its chunk body's cell-local frame.
-    /// </summary>
-    /// <inheritdoc cref="CreateHullShape"/>
+    // Same null rule as CreateHullShape.
     [LibraryImport(Lib, EntryPoint = "b3CreateTransformedHullShape")]
     internal static partial B3ShapeId CreateTransformedHullShape(
         B3BodyId bodyId, in B3ShapeDef def, nint hull, B3Transform transform, B3Vec3 scale);

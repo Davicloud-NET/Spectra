@@ -1,13 +1,6 @@
 namespace Spectra.Kitchen.CLI;
 
-/// <summary>
-/// The escape sequences, or nothing at all when colour is off.
-/// </summary>
-/// <remarks>
-/// A copy of <c>ssc</c>'s, deliberately: the two tools share a look and neither
-/// should have to reference the other to keep it. The colours are the same values
-/// so a person switching between them is reading one palette.
-/// </remarks>
+// Same palette as ssc. Copied so neither tool references the other.
 internal readonly struct AnsiStyle
 {
     private readonly bool _on;

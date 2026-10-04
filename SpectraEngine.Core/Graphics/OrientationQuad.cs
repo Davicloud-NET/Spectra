@@ -1,54 +1,35 @@
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// The geometry the texture-orientation measurement draws: a clip-space quad
-/// whose texture coordinates are <b>pinned</b>, meaning derived from the vertex
-/// position by one formula with no per-backend adjustment of any kind.
+/// Clip-space quad for the texture-orientation measurement. Its UVs come
+/// straight from the vertex position, the same on every backend.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Deliberately not <see cref="FullscreenTriangle"/>.</b> That one flips V on
-/// D3D, and it is right to: it samples a render target, whose row order really
-/// does differ between the APIs. This quad exists to answer a different
-/// question - whether the three backends agree about which way up an
-/// <i>uploaded</i> texture is - and an instrument carrying a compensation
-/// cannot measure whether a compensation is needed.
-/// </para>
-/// <para>
-/// A quad rather than an oversized triangle because all four corners have to be
-/// real: the measurement reads the four corners of the output and asks which
-/// corner of the source arrived at each. The full standard layout is carried
-/// for the same reason the triangle carries it - D3D11 builds every mesh's input
-/// layout from the lit shader's vertex bytecode, so a lean layout is rejected at
-/// mesh creation.
-/// </para>
-/// </remarks>
+// Not FullscreenTriangle: that one flips V on D3D, and a quad that compensates
+// can't measure whether compensation is needed.
+// Full standard vertex layout because D3D11 builds input layouts from the lit shader.
 public static class OrientationQuad
 {
     /// <summary>Which part of the target the quad covers.</summary>
     public enum Coverage
     {
-        /// <summary>The whole target: what the orientation measurement draws.</summary>
+        /// <summary>The whole target.</summary>
         Full,
 
         /// <summary>
-        /// The upper half in clip space (y from 0 to 1). Drawn over a cleared
-        /// target, this is what proves the READBACK's picture-space convention
-        /// is right on this backend before any conclusion is drawn from it.
+        /// The upper half in clip space (y from 0 to 1). Used to check which
+        /// way up the readback is.
         /// </summary>
         TopHalf,
     }
 
     /// <summary>
-    /// Vertices for the quad, in clip space, four of them, with
-    /// <c>u = (x + 1) / 2</c> and <c>v = (y + 1) / 2</c>.
+    /// Four clip-space vertices with <c>u = (x + 1) / 2</c> and <c>v = (y + 1) / 2</c>.
     /// </summary>
     public static float[] BuildVertices(Coverage coverage)
     {
         float yMin = coverage == Coverage.TopHalf ? 0f : -1f;
 
-        // Counter-clockwise in a y-up clip space, which is the front face on all
-        // three backends.
+        // Counter-clockwise: front-facing on all three backends.
         (float X, float Y)[] corners = [(-1f, yMin), (1f, yMin), (1f, 1f), (-1f, 1f)];
 
         var vertices = new float[corners.Length * 8];

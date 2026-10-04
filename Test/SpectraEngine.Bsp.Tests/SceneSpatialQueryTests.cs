@@ -6,19 +6,12 @@ using static SpectraEngine.Bsp.Tests.SpatialTestHelpers;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The scene-level spatial queries. <see cref="Scene.Raycast"/> must return
-/// analytically exact hits (distance, point, world normal) and the NEAREST hit
-/// under the fat-AABB ordering hazard — a far node's fat box can be entered
-/// before a near node's narrow-phase hit, so pruning may only ever compare
-/// against narrow-phase results. <see cref="Scene.QueryFrustum"/> must agree
-/// exactly with brute force over every node's true world AABB: the fat boxes
-/// inside the tree are allowed to cost extra visits, never to change results.
+/// <see cref="Scene.Raycast"/> against analytic hits and <see cref="Scene.QueryFrustum"/>
+/// against brute force.
 /// </summary>
 public sealed class SceneSpatialQueryTests
 {
     private const float Tolerance = 1e-4f;
-
-    // --- Raycast: exact hits -------------------------------------------------
 
     [Fact]
     public void Raycast_hits_a_mesh_cube_at_the_exact_analytic_distance()
@@ -73,7 +66,6 @@ public sealed class SceneSpatialQueryTests
         CreateMeshNode(scene.Root, "cube", new Vector3(10f, 0f, 0f));
         CreateBrushNode(scene.Root, "wall", new Vector3(0f, 10f, 0f));
 
-        // Away from everything, and squeezed between the two nodes.
         scene.Raycast(new Ray3(Vector3.Zero, -Vector3.UnitX), out _).ShouldBeFalse();
         scene.Raycast(new Ray3(Vector3.Zero, Vector3.UnitZ), out _).ShouldBeFalse();
     }
@@ -82,11 +74,9 @@ public sealed class SceneSpatialQueryTests
     public void Raycast_picks_the_nearest_of_two_aligned_nodes_despite_fat_box_ordering()
     {
         var scene = new Scene("Test");
-        // The far node is inserted FIRST, and its fat box (min x = 10.1 - 0.2
-        // = 9.9) is entered before the near node's narrow-phase hit at x = 10:
-        // an implementation that stops at the first leaf hit, or prunes boxes
-        // against box-entry distances instead of narrow-phase distances, picks
-        // the wrong node here.
+        // Far node inserted first. Its fat box (min x = 9.9) is entered before
+        // the near node's real hit at x = 10, so pruning on box-entry distance
+        // would pick the wrong node.
         SceneNode far = CreateMeshNode(scene.Root, "far", new Vector3(10.6f, 0f, 0f));
         SceneNode near = CreateMeshNode(scene.Root, "near", new Vector3(10.5f, 0f, 0f));
 
@@ -101,9 +91,9 @@ public sealed class SceneSpatialQueryTests
     [Fact]
     public void Raycast_reports_the_rotated_brush_normal_in_world_space()
     {
-        // A 2x2x2 brush rotated 45 degrees about Y. The +X local face's plane
-        // becomes n = (cos45, 0, -sin45), n.p = 1 in world space; a -X ray
-        // from (5, 0, -0.3) enters through that face at t = 5.3 - sqrt(2).
+        // 2x2x2 brush rotated 45 degrees about Y. Its local +X face becomes
+        // n = (cos45, 0, -sin45), n.p = 1; a -X ray from (5, 0, -0.3) enters
+        // it at t = 5.3 - sqrt(2).
         var scene = new Scene("Test");
         SceneNode node = scene.Root.CreateChild("rotated");
         node.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 4f);
@@ -123,9 +113,7 @@ public sealed class SceneSpatialQueryTests
     [Fact]
     public void Raycast_handles_scaled_mesh_nodes()
     {
-        // Mesh nodes may scale (only brush placements must stay rigid): a unit
-        // cube scaled by 2 spans [-1, 1], so a -X ray from x = 5 hits at t = 4
-        // and the normal must survive the non-rigid inverse transform.
+        // A unit cube scaled by 2 spans [-1, 1], so a -X ray from x = 5 hits at t = 4.
         var scene = new Scene("Test");
         SceneNode node = CreateMeshNode(scene.Root, "scaled", Vector3.Zero);
         node.LocalScale = new Vector3(2f);
@@ -143,12 +131,10 @@ public sealed class SceneSpatialQueryTests
     [Fact]
     public void Raycast_handles_scaled_brush_nodes()
     {
-        // The graph permits scale on brush nodes (only the static-world
-        // snapshot rejects it, and the scene stays live when it does), so
-        // picking must stay exact under it: a half-extent-0.5 box brush scaled
-        // by 2 spans [-1, 1], so a -X ray from x = 5 hits at t = 4 — a rigid
-        // inverse shortcut would report t = 4.5 with a point inside the solid
-        // and a normal of length 2.
+        // The graph allows scale on brush nodes; only the static-world snapshot
+        // rejects it. A 0.5 half-extent box scaled by 2 spans [-1, 1], so the
+        // hit is at t = 4. A rigid-inverse shortcut would give t = 4.5 and a
+        // normal of length 2.
         var scene = new Scene("Test");
         SceneNode node = CreateBrushNode(scene.Root, "scaled", Vector3.Zero);
         node.LocalScale = new Vector3(2f);
@@ -168,8 +154,6 @@ public sealed class SceneSpatialQueryTests
     [Fact]
     public void Raycast_falls_back_to_the_unit_box_for_meshes_without_cpu_geometry()
     {
-        // A FakeMesh built with no vertex data has no CPU positions, so the
-        // documented fallback applies: a unit box around the node origin.
         var scene = new Scene("Test");
         SceneNode node = scene.Root.CreateChild("gpu-only");
         node.LocalPosition = new Vector3(3f, 0f, 0f);
@@ -189,8 +173,6 @@ public sealed class SceneSpatialQueryTests
         var scene = new Scene("Test");
         scene.Raycast(new Ray3(Vector3.Zero, Vector3.UnitX), out _).ShouldBeFalse();
     }
-
-    // --- QueryFrustum: brute-force oracle ------------------------------------
 
     [Fact]
     public void QueryFrustum_matches_brute_force_over_a_grid_for_several_camera_poses()
@@ -215,8 +197,6 @@ public sealed class SceneSpatialQueryTests
             Frustum frustum = camera.GetFrustum();
 
             var expected = allNodes.Where(n => frustum.Intersects(WorldBoundsOf(n))).ToHashSet();
-            // Every pose sees something; the partial-view check below (across
-            // all poses) keeps the comparison from passing vacuously.
             expected.ShouldNotBeEmpty($"pose at {camera.Position} sees nothing — bad test setup");
             if (expected.Count < allNodes.Count)
                 sawPartialView = true;
@@ -244,7 +224,7 @@ public sealed class SceneSpatialQueryTests
         scene.QueryFrustum(camera.GetFrustum(), results);
         scene.QueryFrustum(camera.GetFrustum(), results);
 
-        results.Count.ShouldBe(2); // contract: caller owns clearing
+        results.Count.ShouldBe(2);
     }
 
     [Fact]
@@ -259,21 +239,18 @@ public sealed class SceneSpatialQueryTests
         scene.QueryFrustum(frustum, results);
         results.ShouldBe(new[] { mover });
 
-        // Jump far behind the camera — the stale fat box must not keep it visible.
+        // Far behind the camera. A stale fat box must not keep it visible.
         mover.LocalPosition = new Vector3(0f, 0f, 500f);
         results.Clear();
         scene.QueryFrustum(frustum, results);
         results.ShouldBeEmpty();
 
-        // And back into view.
         mover.LocalPosition = new Vector3(2f, 1f, -20f);
         results.Clear();
         scene.QueryFrustum(frustum, results);
         results.ShouldBe(new[] { mover });
     }
 
-    // A spread of poses around/inside the grid: axis-aligned from two sides, a
-    // diagonal look-at, a tilted close-up, and a narrow-FOV far view.
     private static IEnumerable<Camera> CameraPoses()
     {
         yield return new Camera { Position = new Vector3(0f, 0f, 30f), Yaw = -MathF.PI / 2f };

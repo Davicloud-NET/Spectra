@@ -59,9 +59,7 @@ public sealed class Box3DScenePhysicsTests
     [Fact]
     public void Two_brushes_far_apart_land_in_separate_chunk_bodies()
     {
-        // The per-cell design, observable: cells are 32 units, so brushes 200
-        // units apart cannot share a body. This is what keeps collision
-        // coordinates small however far out the geometry sits.
+        // Cells are 32 units, so brushes 200 apart cannot share a body.
         RequireNative();
         var scene = new Scene("Test");
         AddWorldBrush(scene, "near", Vector3.Zero, new Vector3(1f, 1f, 1f));
@@ -77,9 +75,6 @@ public sealed class Box3DScenePhysicsTests
     [Fact]
     public void Syncing_an_unchanged_world_twice_changes_nothing()
     {
-        // The steady state is one reference compare per frame. A sync that
-        // rebuilt on every call would churn every body in the map every frame
-        // and nothing would look wrong until somebody profiled it.
         RequireNative();
         var scene = new Scene("Test");
         AddWorldBrush(scene, "a", Vector3.Zero, new Vector3(2f, 1f, 2f));
@@ -100,9 +95,6 @@ public sealed class Box3DScenePhysicsTests
     [Fact]
     public void A_part_brush_gets_no_static_collision()
     {
-        // A part brush is not in the placement list at all, so physics inherits
-        // the world/part split for free by consuming that one list — it never
-        // learns what a BrushKind is.
         RequireNative();
         var scene = new Scene("Test");
         SceneNode part = scene.Root.CreateChild("part");
@@ -119,11 +111,8 @@ public sealed class Box3DScenePhysicsTests
     [Fact]
     public void A_subtractive_brush_gets_no_hull_and_its_victim_is_reported()
     {
-        // A hole contributes no solid, so it gets no hull — but a convex hull
-        // per additive brush ALSO cannot express the bite taken out of it. That
-        // divergence is real and currently unrepresentable, so it is counted
-        // rather than shipped silently: a doorway you can see through is solid
-        // to the solver until the representation question is decided.
+        // One convex hull per additive brush cannot express a cut, so the
+        // doorway stays solid to the solver. The backend counts such brushes.
         RequireNative();
         var scene = new Scene("Test");
         AddWorldBrush(scene, "wall", Vector3.Zero, new Vector3(4f, 3f, 0.5f));
@@ -188,10 +177,6 @@ public sealed class Box3DScenePhysicsTests
     [Fact]
     public void A_body_dropped_onto_scene_geometry_lands_on_it()
     {
-        // End to end, through the engine's own types: a brush authored on a
-        // scene node, compiled by the CSG pipeline, synced into physics, and
-        // something falling onto the result. If chunk-local placement were
-        // wrong the box would land at the wrong height or miss entirely.
         RequireNative();
         var scene = new Scene("Test");
         AddWorldBrush(scene, "floor", new Vector3(0f, -0.5f, 0f), new Vector3(8f, 0.5f, 8f));
@@ -201,7 +186,7 @@ public sealed class Box3DScenePhysicsTests
         physics.SyncStaticWorld(scene);
         physics.StaticShapeCount.ShouldBeGreaterThan(0);
 
-        // Drop a half-unit cube from 4 units up onto a floor whose top is y = 0.
+        // Half-extent 0.5 cube from 4 units up. The floor's top is y = 0.
         Brush boxBrush = Brush.CreateBox(new Vector3(-0.5f, -0.5f, -0.5f), new Vector3(0.5f, 0.5f, 0.5f));
         BrushHullBuilder.TryCreate(boxBrush, out nint boxHull, out string detail)
             .ShouldBe(HullRefusal.None, detail);
@@ -230,10 +215,6 @@ public sealed class Box3DScenePhysicsTests
     [Fact]
     public void A_full_compile_optimises_the_static_tree_exactly_once()
     {
-        // The full rebuild's one intended use: after bulk creation. Load time
-        // and structural edits already pay O(world) for the compile itself, so
-        // the tree optimisation rides along; re-syncing an unchanged world must
-        // not repeat it.
         RequireNative();
         var scene = new Scene("Test");
         AddWorldBrush(scene, "a", Vector3.Zero, new Vector3(2f, 1f, 2f));
@@ -249,15 +230,9 @@ public sealed class Box3DScenePhysicsTests
     [Fact]
     public void Incremental_syncs_do_not_rebuild_the_static_tree()
     {
-        // b3World_RebuildStaticTree is O(world log world) over every static
-        // hull, and the sync runs on the render thread once per landed compile,
-        // which is once per frame while a world brush is dragged. Box3D inserts
-        // and removes static leaves at shape create/destroy time, so skipping
-        // the rebuild loses nothing but tree QUALITY; that is amortised over
-        // accumulated churn instead. This is what keeps physics on the same
-        // world-size-independent footing as the mesh swap, and it is asserted
-        // here because the call that broke it looked like a harmless closing
-        // line (docs/physics.md row: the API's own header says internal testing).
+        // b3World_RebuildStaticTree is O(world log world), and the sync runs
+        // once per frame while a world brush is dragged. Box3D already updates
+        // the tree at shape create/destroy, so the rebuild only buys tree quality.
         RequireNative();
         var scene = new Scene("Test");
         SceneNode node = AddWorldBrush(scene, "a", Vector3.Zero, new Vector3(2f, 1f, 2f));
@@ -268,11 +243,9 @@ public sealed class Box3DScenePhysicsTests
         physics.SyncStaticWorld(scene);
         int rebuildsAfterLoad = physics.StaticTreeRebuilds;
 
-        // 160 in-place edits: enough that GROSS destroy+create churn (2 per
-        // sync) would cross the 256 amortisation floor, so this pins that
-        // in-place cell rebuilds count as NET zero. The movements cycle inside
-        // one cell on purpose; a cell-ownership crossing is a real net change
-        // and may legitimately accrue.
+        // 160 in-place edits: gross churn (2 per sync) would cross the 256
+        // floor, net churn is zero. The moves stay inside one cell, because
+        // crossing into another is a real net change.
         for (int i = 1; i <= 160; i++)
         {
             node.LocalPosition = new Vector3(0.01f * (i % 8), 0f, 0f);
@@ -289,8 +262,7 @@ public sealed class Box3DScenePhysicsTests
             "an animating brush rebuilds the same cell in place, which is net-zero churn and must never re-arm the rebuild");
     }
 
-    // Same shape as SceneAsyncCompileTests.PumpUntil: the test thread plays the
-    // render thread and only the CSG compile runs off-thread.
+    // The test thread plays the render thread; only the CSG compile runs off-thread.
     private static void PumpUntil(
         Scene scene, FakeRenderer renderer, Func<bool> condition, string description)
     {
@@ -309,9 +281,8 @@ public sealed class Box3DScenePhysicsTests
     [Fact]
     public void Disposing_twice_is_safe()
     {
-        // The library decrements its global world count BEFORE validating the
-        // id, so a double destroy corrupts that count rather than being
-        // ignored. Clearing the handle is what makes the second call a no-op.
+        // The library decrements its world count before validating the id, so
+        // a double destroy corrupts the count.
         RequireNative();
         int worldsBefore = B3.GetWorldCount();
 

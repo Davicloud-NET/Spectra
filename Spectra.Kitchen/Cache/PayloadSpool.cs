@@ -19,8 +19,7 @@ internal sealed class PayloadSpool : IDisposable
     {
         if (_temporaryRoot is null || !Directory.Exists(_temporaryRoot)) return;
         string prefix = _temporaryRoot + Path.DirectorySeparatorChar;
-        // Only this session's generated tree is eligible; no recursive deletion
-        // is issued against an arbitrary output or project directory.
+        // File by file with a prefix check, never a recursive delete.
         foreach (string file in Directory.EnumerateFiles(_temporaryRoot, "*", SearchOption.AllDirectories))
         {
             if (!Path.GetFullPath(file).StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) throw new IOException("Spool path escaped its session directory.");

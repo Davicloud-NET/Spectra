@@ -9,16 +9,9 @@ using System.Numerics;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The rows a property panel shows for a node, and the grouping it derives
-/// rather than being told.
+/// The rows a property panel shows for a node. Groups are derived from the
+/// payloads the node carries.
 /// </summary>
-/// <remarks>
-/// <b>The claim worth testing is that groups follow the PAYLOAD.</b> A panel
-/// with hand-laid-out sections needs editing every time the engine grows a
-/// component, which is exactly the cost this design exists to avoid; the way
-/// that breaks is a section appearing for a payload the node does not carry, or
-/// a payload growing a value that never reaches the panel at all.
-/// </remarks>
 public sealed class NodeInspectorTests
 {
     private static List<PropertyRow> Describe(SceneNode node)
@@ -60,8 +53,6 @@ public sealed class NodeInspectorTests
     [Fact]
     public void A_node_carrying_two_payloads_grows_both_groups()
     {
-        // Nothing says a node cannot be both, and a panel that showed only the
-        // first payload would hide half of what the node is.
         var node = new SceneNode("Lamppost")
         {
             Brush = Brush.CreateBox(new Vector3(-1f), new Vector3(1f), default),
@@ -75,9 +66,7 @@ public sealed class NodeInspectorTests
             NodeInspector.BrushGroup,
             NodeInspector.LightGroup,
 
-            // A brush is surfaced with something, so it grows a Material
-            // section too. Last, because these ids are appended and the merged
-            // panel lays out in PropertyId order.
+            // Last: the panel lays out in PropertyId order.
             NodeInspector.MaterialGroup,
         ]);
     }
@@ -85,9 +74,6 @@ public sealed class NodeInspectorTests
     [Fact]
     public void Rows_of_a_group_are_contiguous_so_the_panel_can_group_by_run()
     {
-        // The panel groups by walking the list and starting a section whenever
-        // the group changes. Interleaved rows would silently produce a second
-        // section with the same header.
         var node = new SceneNode("Lamppost")
         {
             Brush = Brush.CreateBox(new Vector3(-1f), new Vector3(1f), default),
@@ -110,9 +96,7 @@ public sealed class NodeInspectorTests
     [Fact]
     public void The_two_declared_bits_are_shown_on_the_objects_that_own_them()
     {
-        // Kind is on the NODE, operation is on the BRUSH. A panel that read
-        // either from the wrong object would still render, and would edit the
-        // wrong thing.
+        // Kind is on the node, operation on the brush.
         var node = new SceneNode("Doorway")
         {
             BrushKind = BrushKind.Part,
@@ -129,8 +113,6 @@ public sealed class NodeInspectorTests
     [Fact]
     public void Rotation_is_shown_as_degrees_a_person_can_type()
     {
-        // The scene stores a quaternion and always will. Four numbers with no
-        // individually meaningful component is not something anybody types into.
         var node = new SceneNode("Turned")
         {
             LocalRotation = new EulerAngles(Yaw: 90f, Pitch: 0f, Roll: 0f).ToQuaternion(),
@@ -146,8 +128,6 @@ public sealed class NodeInspectorTests
     [Fact]
     public void Brush_size_is_the_measurement_the_resize_gesture_works_in()
     {
-        // The planes are the truth and are not something anybody types. Showing
-        // bounds means the number here and the number the gizmo reports agree.
         var node = new SceneNode("Slab")
         {
             Brush = Brush.CreateBox(new Vector3(-3f, -0.5f, -2f), new Vector3(3f, 0.5f, 2f), default),
@@ -186,8 +166,7 @@ public sealed class NodeInspectorTests
     [Fact]
     public void Describe_reuses_the_list_it_is_given()
     {
-        // Called once per published snapshot. A fresh list per publish would be
-        // render-thread garbage for a panel that mostly shows the same rows.
+        // Called once per published snapshot, so it must not allocate a list.
         var node = new SceneNode("Thing");
         var rows = new List<PropertyRow> { PropertyRow.ReadOnly("stale", "stale", PropertyId.None, "stale") };
 
@@ -206,11 +185,7 @@ public sealed class NodeInspectorTests
         kind.Kind.ShouldBe(PropertyKind.Choice);
         kind.Text.ShouldBe("Point");
 
-        // EVERY kind, and matched against the enum rather than a literal list:
-        // a kind offered by the dropdown but missing from the label switch shows
-        // as "Directional" and rewrites itself to that the moment anybody
-        // touches the row, and a kind in the enum but missing from the dropdown
-        // cannot be reached at all.
+        // Checked against the enum so a new kind cannot be left out.
         kind.Choices!.Count.ShouldBe(Enum.GetValues<LightKind>().Length);
 
         foreach (LightKind value in Enum.GetValues<LightKind>())
@@ -220,9 +195,6 @@ public sealed class NodeInspectorTests
     [Fact]
     public void A_lights_shape_rows_are_the_ones_that_shape_reads()
     {
-        // A cone angle on a rect light is stored and read by NOTHING, so a row
-        // for it would accept a number and change no pixel - which teaches, in
-        // one session, that this panel's fields are decorative.
         List<PropertyRow> spot = Describe(
             new SceneNode("Spot") { Light = new Light { Kind = LightKind.Spot } });
 
@@ -242,9 +214,7 @@ public sealed class NodeInspectorTests
         disc.ShouldContain(r => r.Id == PropertyId.LightRadius);
         disc.ShouldNotContain(r => r.Id == PropertyId.LightOuterAngle);
 
-        // Range is the deliberate exception: it is stored and validated for
-        // every kind, so hiding it would hide a value that can still refuse an
-        // edit.
+        // Range is validated for every kind, so it is always shown.
         List<PropertyRow> sun = Describe(
             new SceneNode("Sun") { Light = new Light { Kind = LightKind.Directional } });
 

@@ -6,64 +6,30 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Gizmos;
 
 /// <summary>
-/// The arithmetic behind a fixed-increment resize: how big a node currently is
-/// in world units, what scale factor turns that into a requested world size, and
-/// how far the node has to move so the face opposite the dragged one stays
-/// planted.
+/// The arithmetic behind a fixed-increment resize: a node's world size, the
+/// scale factor for a requested size, and the shift that keeps the opposite
+/// face planted.
 /// </summary>
-/// <remarks>
-/// <b>Separate from <see cref="ScaleGizmo"/> because it is the part with a
-/// right answer.</b> The tool owns the gesture — constraints, capture, undo —
-/// while everything here is a pure function of numbers a test can supply
-/// directly, which is what makes "one notch is one world unit at any size"
-/// checkable without a viewport.
-/// <para>
-/// <b>Size is measured, not assumed.</b> A brush's size is its local plane
-/// bounds; a mesh node's is its mesh bounds times the node's world scale. Both
-/// are world units, so the same increment means the same thing for both — the
-/// claim the whole fixed-increment design rests on. A node with neither (an
-/// empty group, a mesh that reports no bounds) has no size to
-/// resize, and <see cref="TryMeasure"/> says so rather than inventing one; the
-/// tool falls back to a proportional drag there and says so out loud.
-/// </para>
-/// </remarks>
 public static class ResizeMath
 {
     /// <summary>
-    /// The smallest world size that still counts as measurable. Below this the
-    /// factor needed for a given size change explodes, and the object is
-    /// visually a point or a sheet anyway.
+    /// The smallest world size that counts as measurable. Below it the factor
+    /// for a given size change explodes.
     /// </summary>
     public const float MinimumMeasurableSize = 1e-4f;
 
     /// <summary>
-    /// Measures <paramref name="node"/>'s world-space size along its own three
-    /// local axes, and reports the local bounds a resize is anchored against.
-    /// Returns false — with <paramref name="worldSize"/> zeroed — for a node with
-    /// no geometry at all.
+    /// Measures <paramref name="node"/>'s world size along its local axes and
+    /// reports the local bounds a resize anchors against. False for a node with
+    /// no geometry.
     /// </summary>
-    /// <param name="node">The node to measure.</param>
     /// <param name="worldSize">
-    /// Size in world units along the node's local x/y/z. A component can still be
-    /// zero for a flat object (a quad mesh); callers check per axis.
+    /// A component can be zero for a flat object. Callers check per axis.
     /// </param>
     /// <param name="localBounds">
-    /// The node's local bounds. Its two corners are the coordinates of the faces
-    /// a resize plants: the minimum for a grow along +axis, the maximum for one
-    /// along −axis. Default when there is nothing to measure.
+    /// The min corner is the planted face for a grow along +axis, the max
+    /// corner for a grow along -axis.
     /// </param>
-    /// <remarks>
-    /// <b>Both corners, because a resize can be grabbed by either face.</b> A
-    /// face-anchored grow along +x plants the −x face and a grow along −x plants
-    /// the +x one, so a caller that only ever received the minimum could only
-    /// ever anchor one way, which is the same restriction that made half of every
-    /// object unreachable before the negative handles existed.
-    /// <para>
-    /// What counts as measurable geometry is
-    /// <see cref="GizmoSelectionBounds.TryGetLocalBounds"/>'s single definition,
-    /// shared with the box the handles stand on.
-    /// </para>
-    /// </remarks>
     public static bool TryMeasure(SceneNode node, out Vector3 worldSize, out Aabb localBounds)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -78,17 +44,8 @@ public static class ResizeMath
         return true;
     }
 
-    /// <summary>
-    /// The node's world scale — the length of each row of its world matrix's
-    /// basis, which is the factor taking one local unit along that axis to world
-    /// units.
-    /// </summary>
-    /// <remarks>
-    /// Row lengths rather than <see cref="Matrix4x4.Decompose"/>: decomposition
-    /// can fail outright (a zero scale somewhere in the chain) and would then
-    /// have to guess, while a row length is always defined and is exactly the
-    /// quantity wanted here.
-    /// </remarks>
+    /// <summary>The node's world scale: world units per local unit along each axis.</summary>
+    // Row lengths, not Matrix4x4.Decompose, which fails on a zero scale.
     public static Vector3 WorldScaleOf(SceneNode node)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -101,34 +58,12 @@ public static class ResizeMath
     }
 
     /// <summary>
-    /// The multiplier that turns a current world size into
+    /// The multiplier that turns <paramref name="startWorldSize"/> into
     /// <c>startWorldSize + sizeChange</c>, clamped so the result can neither
-    /// collapse nor invert.
+    /// collapse nor invert. Sizes are in world units.
     /// </summary>
-    /// <param name="startWorldSize">The size the drag was grabbed at, in world units.</param>
-    /// <param name="sizeChange">The requested change, in world units — the snapped increment.</param>
-    /// <param name="minimumSize">The smallest world size a resize may produce.</param>
-    /// <param name="minimumFactor">Lower clamp on the returned factor.</param>
-    /// <param name="maximumFactor">Upper clamp on the returned factor.</param>
-    /// <remarks>
-    /// This is the whole fix in one line: the factor is <em>derived</em> from an
-    /// absolute size, so a one-unit change stays a one-unit change whatever the
-    /// object measures, instead of the size change being derived from a factor
-    /// and therefore scaling with the object.
-    /// <para>
-    /// <b>Why a factor and not an absolute-extents API on <c>Brush</c>.</b> An
-    /// exact world size is what the caller asks for, so a
-    /// <c>Brush.WithExtents(size)</c> looks tempting — but a brush is a set of
-    /// half-spaces, not a box: "extents" are only defined through its derived
-    /// bounds, and scaling happens about the brush's local origin, which for
-    /// non-centred bounds is not the box centre. Such an API would have to invent
-    /// a centring convention that the brush deliberately does not have. Deriving
-    /// the factor here and handing it to <c>Brush.WithScaledExtents</c> — the
-    /// exact half-space image of the solid under a diagonal map, wedges included —
-    /// keeps the one meaning the geometry already has, and one division is the
-    /// entire difference.
-    /// </para>
-    /// </remarks>
+    // A factor rather than an absolute-extents call on Brush: a brush is a set
+    // of half-spaces scaled about its local origin, not a centred box.
     public static float FactorForSizeChange(
         float startWorldSize,
         float sizeChange,
@@ -144,27 +79,15 @@ public static class ResizeMath
     }
 
     /// <summary>
-    /// How far the node must move, along one of its own local axes and in its
-    /// <em>parent's</em> units, for the face at <paramref name="localAnchor"/> to
-    /// stay exactly where it was while the object is scaled by
-    /// <paramref name="factor"/> about the node's origin.
+    /// How far the node must move along one local axis, in its parent's units,
+    /// so the face at <paramref name="localAnchor"/> stays put while the object
+    /// is scaled by <paramref name="factor"/> about the node's origin.
     /// </summary>
     /// <param name="localAnchor">
-    /// The anchored face's coordinate in the node's local frame: the local
-    /// bounds' minimum when the handle being dragged is on the positive side of
-    /// the axis, and its maximum when the handle is on the negative side. The
-    /// anchored face is always the one opposite the handle.
+    /// The face opposite the handle, in the node's local frame: the bounds'
+    /// minimum for a positive handle, its maximum for a negative one.
     /// </param>
-    /// <param name="localScale">The node's own local scale on that axis (parent units per local unit).</param>
-    /// <param name="factor">The factor the axis is being scaled by.</param>
-    /// <remarks>
-    /// The face sits at <c>localScale · localAnchor</c> in parent units and moves
-    /// to <c>localScale · localAnchor · factor</c>, so putting it back costs
-    /// <c>localScale · localAnchor · (1 − factor)</c>. For the centred bounds
-    /// every box brush and most props have, that works out to exactly half the
-    /// size change — which is why a face-anchored notch moves the node by half an
-    /// increment and the far face not at all.
-    /// </remarks>
+    /// <param name="localScale">Parent units per local unit on that axis.</param>
     public static float AnchorShift(float localAnchor, float localScale, float factor) =>
         localScale * localAnchor * (1f - factor);
 }

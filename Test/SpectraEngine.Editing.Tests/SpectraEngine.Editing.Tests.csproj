@@ -6,25 +6,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\SpectraEngine.Editing\SpectraEngine.Editing.csproj" />
-    <!--
-      The demo host is referenced for one pure type: DemoStartupOptions, the
-      parser that decides whether the synthetic editing self-test runs. That
-      switch is an editing concern (it drives the gizmo chain) and its default
-      is load-bearing — a self-test left on moves brushes in front of whoever is
-      using the editor — so it is pinned here rather than left to a comment.
-      Nothing else in the executable is touched, and the dependency runs the
-      same direction the solution already does (host -> editing).
-    -->
+    <!-- Only for DemoStartupOptions: the self-test switch must default to off. -->
     <ProjectReference Include="..\..\SpectraEngine.Executable\SpectraEngine.Executable.csproj" />
 
     <!--
-      The GPU-free renderer the Bsp suite already owns, linked rather than
-      copied - the same arrangement the Kitchen and Physics suites use. The
-      editing suite's own StubRenderer and CompilingRenderer deliberately throw
-      on textures, which is right for a gizmo test and makes an AssetManager
-      impossible to attach: AttachRenderer creates the magenta placeholder.
-      Dropping a MODEL into the viewport needs one, so this suite needs a
-      renderer that answers both halves rather than a third partial fake.
+      Linked from the Bsp suite. StubRenderer throws on textures, so an
+      AssetManager cannot attach to it; the model-drop tests need one that can.
     -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\FakeRenderer.cs" Link="FakeRenderer.cs" />
     <Compile Include="..\SpectraEngine.Bsp.Tests\SpatialTestHelpers.cs" Link="SpatialTestHelpers.cs" />

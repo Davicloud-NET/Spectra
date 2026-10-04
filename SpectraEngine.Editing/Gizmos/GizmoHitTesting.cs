@@ -5,47 +5,25 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Gizmos;
 
 /// <summary>
-/// The screen-space proximity tests the three gizmos' hit-testers share: the
-/// pick tolerance every tool measures against, closest approach to a line-shaped
-/// handle, and closest approach to a ring.
+/// The proximity tests the gizmo hit-testers share. Distances come back in
+/// pixels, so the tolerance is the same at any camera distance.
 /// </summary>
-/// <remarks>
-/// <b>Every distance here comes back in pixels, not world units.</b> A gizmo has
-/// a constant screen size, so "within eight pixels of the handle" is the only
-/// tolerance that means the same thing at two units and at twenty thousand; the
-/// conversion runs through the same <see cref="GizmoGeometry.WorldToPixels"/>
-/// that sized what was drawn, so the tolerance the user feels and the tolerance
-/// the code applies cannot drift apart.
-/// <para>
-/// <b>Threading:</b> render thread only, like everything it reads. Every method
-/// is a pure function and allocates nothing.
-/// </para>
-/// </remarks>
 public static class GizmoHitTesting
 {
     /// <summary>
-    /// The default pick tolerance in pixels — how far from a line-shaped handle
-    /// (an axis arrow, a rotate ring) the cursor may sit and still grab it.
+    /// How far, in pixels, the cursor may be from an arrow or ring and still
+    /// grab it.
     /// </summary>
     public const float DefaultTolerancePixels = 8f;
 
     /// <summary>
-    /// How many segments a rotate ring is approximated by, for both drawing and
-    /// picking.
+    /// How many segments a rotate ring has, for both drawing and picking.
     /// </summary>
-    /// <remarks>
-    /// <b>Picking and rendering must use the same number</b>, because the polygon
-    /// is what the user sees and therefore what they aim at. Forty-eight keeps
-    /// the chord error of a ~96 px ring under a fifth of a pixel — far below the
-    /// pick tolerance — while costing 48 segment solves per ring, which is
-    /// nothing against a per-frame budget that already carries a BVH query.
-    /// </remarks>
     public const int RingSegments = 48;
 
     /// <summary>
-    /// The screen-space distance in pixels from <paramref name="ray"/> to the
-    /// segment <paramref name="a"/>–<paramref name="b"/>, plus how far along the
-    /// ray the closest approach happens.
+    /// The distance in pixels from a ray to a segment, plus how far along the
+    /// ray the closest approach is.
     /// </summary>
     public static float SegmentPixelDistance(
         in GizmoGeometry geometry, in Ray3 ray, Vector3 a, Vector3 b, out float rayDistance)
@@ -56,23 +34,11 @@ public static class GizmoHitTesting
     }
 
     /// <summary>
-    /// The screen-space distance in pixels from <paramref name="ray"/> to the
-    /// circle of <paramref name="radius"/> around <paramref name="centre"/> in
-    /// the plane with unit normal <paramref name="axis"/>, plus how far along the
-    /// ray the closest approach happens.
+    /// The distance in pixels from a ray to a ring, plus how far along the ray
+    /// the closest approach is.
     /// </summary>
-    /// <remarks>
-    /// <b>Measured against the drawn polygon, in screen space, deliberately.</b>
-    /// The tempting closed form — intersect the ray with the ring's plane and
-    /// compare the hit's in-plane distance from the centre against the radius —
-    /// is wrong for a manipulator in two ways: it fails outright when the view is
-    /// near edge-on to the ring (no usable plane intersection, so a ring seen
-    /// almost side-on becomes unpickable exactly where it is easiest to aim at),
-    /// and where it does work it measures an in-plane distance that projects to
-    /// far fewer pixels than it claims, so the tolerance silently shrinks as the
-    /// ring tilts. Walking the ring's segments costs a few hundred flops and is
-    /// correct from every angle.
-    /// </remarks>
+    // Walks the drawn segments. A ray/plane intersection fails for a ring seen
+    // edge-on and shrinks the tolerance as the ring tilts.
     public static float RingPixelDistance(
         in GizmoGeometry geometry, in Ray3 ray, Vector3 centre, Vector3 axis, float radius, out float rayDistance)
     {
@@ -101,31 +67,24 @@ public static class GizmoHitTesting
     }
 
     /// <summary>
-    /// Two unit vectors spanning the plane perpendicular to <paramref name="axis"/>
-    /// — the basis a ring is generated in, shared by the hit tester and the
-    /// renderer so the picked polygon is exactly the drawn one.
+    /// Two unit vectors spanning the plane perpendicular to <paramref name="axis"/>.
+    /// The hit tester and the renderer both build rings in this basis.
     /// </summary>
     public static void BuildRingBasis(Vector3 axis, out Vector3 first, out Vector3 second)
     {
-        // Pick the reference away from the axis so the cross product is well
-        // conditioned; the same rule Brush.CreatePlaneQuad uses.
+        // Reference away from the axis, so the cross product is not near zero.
         Vector3 reference = MathF.Abs(axis.Y) < 0.99f ? Vector3.UnitY : Vector3.UnitX;
         first = Vector3.Normalize(Vector3.Cross(reference, axis));
         second = Vector3.Cross(axis, first);
     }
 
     /// <summary>
-    /// Intersects a ray with the axis-aligned-in-frame cube of half-extent
-    /// <paramref name="radius"/> centred at <paramref name="centre"/>, oriented
-    /// by the geometry's frame axes. Used for the scale gizmo's cube handles,
-    /// whose test is exact containment rather than proximity.
+    /// Intersects a ray with a cube of half-extent <paramref name="radius"/>
+    /// oriented by the geometry's frame. Used for the scale gizmo's handles.
     /// </summary>
     public static bool TryRayHandleBox(
         in GizmoGeometry geometry, in Ray3 ray, Vector3 centre, float radius, out float rayDistance)
     {
-        // Slab test in the gizmo frame: transform the ray into the frame by
-        // projecting onto its three orthonormal axes, which for an orthonormal
-        // basis is the inverse rotation.
         Vector3 origin = ToFrame(in geometry, ray.Origin - centre);
         Vector3 direction = ToFrame(in geometry, ray.Direction);
 
@@ -153,8 +112,6 @@ public static class GizmoHitTesting
     {
         if (MathF.Abs(direction) < 1e-8f)
         {
-            // Parallel to this slab: a hit is only possible if the ray already
-            // lies between its planes.
             return origin >= -radius && origin <= radius;
         }
 

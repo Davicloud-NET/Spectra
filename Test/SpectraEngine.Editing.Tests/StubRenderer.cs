@@ -6,12 +6,7 @@ using System;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// A <see cref="Renderer"/> that creates nothing. The editing suite only needs
-/// a renderer for its framebuffer latch (the viewport the editor input adapter
-/// reads), so every GPU entry point throws — reaching one would mean a test
-/// grew a graphics dependency it has no business having.
-/// </summary>
+// Only the framebuffer size is needed here. Every GPU entry point throws.
 internal sealed class StubRenderer : Renderer
 {
     public StubRenderer()
@@ -19,18 +14,17 @@ internal sealed class StubRenderer : Renderer
     {
     }
 
-    // Arbitrary: nothing on the editing path branches on the backend.
+    // Arbitrary.
     public override GraphicsBackend Backend => GraphicsBackend.OpenGL;
 
     public override string CurrentPipelineName => "Stub";
 
     public override string NextPipeline() => "Stub";
 
-    // One pipeline, and it is the one already running.
     public override bool TrySelectPipeline(string name) =>
         string.Equals(name, "Stub", StringComparison.OrdinalIgnoreCase);
 
-    // No rasteriser, so no viewport. Present because the shadow atlas needs one.
+    // The shadow atlas calls this.
     protected override void SetViewportCore(int x, int y, int width, int height) { }
 
     public override Mesh CreateMesh(ReadOnlySpan<float> vertices, ReadOnlySpan<uint> indices,
@@ -44,10 +38,7 @@ internal sealed class StubRenderer : Renderer
     protected override Texture CreateTextureCore(in TextureUploadDesc desc)
         => throw new NotSupportedException("StubRenderer creates no GPU resources.");
 
-    // No target of any kind, so a pass is a no-op rather than a throw: these
-    // stubs stand in for a renderer during scene and editor tests, which drive
-    // no pipeline and so open no passes, but a future one that does should not
-    // fail for the wrong reason.
+    // Passes are no-ops, not throws: a test that opens one should not fail here.
     protected override void BeginPassCore(
         RenderTarget? target, ReadOnlySpan<RenderTarget> targets, in PassClear clear)
     {

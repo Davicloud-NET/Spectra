@@ -9,17 +9,7 @@ using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The Material and Face sections of the property panel: what a brush is
-/// surfaced with, and the picked face's own texture frame.
-/// </summary>
-/// <remarks>
-/// <b>"Put that material on this wall" had no complete route in the editor at
-/// all.</b> Materials were visible in the content browser and could be revealed
-/// on disk; nothing assigned one, and nothing anywhere in the shell showed what
-/// a brush was already wearing. These rows are the half of that gesture a
-/// keyboard can reach.
-/// </remarks>
+/// <summary>The Material and Face sections of the property panel.</summary>
 public sealed class FaceInspectorTests
 {
     private const string Wall = "Materials/wall.spectramat";
@@ -50,8 +40,6 @@ public sealed class FaceInspectorTests
         throw new Xunit.Sdk.XunitException($"No row for {id} keyed '{key}'.");
     }
 
-    // --- The whole brush -----------------------------------------------------
-
     [Fact]
     public void A_brush_grows_a_material_row_naming_what_every_face_wears()
     {
@@ -76,8 +64,7 @@ public sealed class FaceInspectorTests
 
         PropertyRow row = Row(Describe(node), PropertyId.BrushMaterial);
 
-        // Empty, not "(default)": the path is what the picker opens on and what
-        // an edit posts, and the word for having none is the panel's to choose.
+        // Empty, not "(default)": the text is the path an edit posts.
         row.Text.ShouldBe("");
     }
 
@@ -92,14 +79,9 @@ public sealed class FaceInspectorTests
 
         PropertyRow row = Row(Describe(node), PropertyId.BrushMaterial);
 
-        // The count, because "mixed" alone leaves somebody wondering whether it
-        // is two materials or six. Naming one of them would be worse: it would
-        // read as the answer.
         row.Note.ShouldBe("mixed (2 materials)");
         row.Text.ShouldBe("");
     }
-
-    // --- The picked face -----------------------------------------------------
 
     [Fact]
     public void Without_a_picked_face_there_is_no_face_section()
@@ -120,18 +102,13 @@ public sealed class FaceInspectorTests
         List<PropertyRow> rows = Describe(node, pickedPlane: 2);
         string key = 2.ToString(CultureInfo.InvariantCulture);
 
-        // Every row of the section carries the plane index as its KEY, which is
-        // the same mechanism an entity keyvalue uses: one PropertyId covers a
-        // family of rows told apart by a string, so the edit names a face rather
-        // than "the face" of whichever brush the panel last described.
+        // Each row carries the plane index as its key, so an edit names a face.
         Row(rows, PropertyId.FaceMaterial, key).Asset.ShouldBe(AssetKind.Material);
         Row(rows, PropertyId.FaceAlignment, key).Text.ShouldBe("World");
         Row(rows, PropertyId.FaceUScale, key).Unit.ShouldBe("su/rep");
         Row(rows, PropertyId.FaceUOffset, key).Unit.ShouldBe("rep");
         Row(rows, PropertyId.FaceRotation, key).Unit.ShouldBe("deg");
 
-        // +Y for plane 2 of a box, so a person can tell which of six faces they
-        // picked without counting.
         Row(rows, PropertyId.FaceIndex, key).Text.ShouldBe("+Y");
     }
 
@@ -155,14 +132,11 @@ public sealed class FaceInspectorTests
         List<PropertyRow> rows = [];
         NodeInspector.Describe([a, b], rows, null, pickedPlane: 2);
 
-        // A plane index means nothing across two brushes: face 2 of one is not
-        // face 2 of another, so the section is single-selection only and the
-        // merged panel has to agree with the picker about that.
+        // A plane index means nothing across two brushes.
         foreach (PropertyRow row in rows)
             row.Group.ShouldNotBe(NodeInspector.FaceGroup);
 
-        // The whole-brush row survives, because "what are these wearing" is a
-        // question a multi-selection can answer.
+        // The whole-brush row survives a multi-selection.
         Row(rows, PropertyId.BrushMaterial).Group.ShouldBe(NodeInspector.MaterialGroup);
     }
 
@@ -172,9 +146,7 @@ public sealed class FaceInspectorTests
         var scene = new Scene("Test");
         SceneNode node = BoxNode(scene);
 
-        // Turned, so brush-local and world disagree: the panel edits in world
-        // space and the file stores local axes, and a row reporting the local
-        // angle would move the texture the moment somebody retyped what they saw.
+        // Rotated so the brush-local and world angles differ.
         node.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.6f);
         Vector3 worldNormal = FaceAxes.WorldNormal(node.Brush!.LocalPlanes[2], node.WorldMatrix);
 
@@ -191,8 +163,6 @@ public sealed class FaceInspectorTests
         Row(rows, PropertyId.FaceRotation, key).Number.ShouldBe(30f, 1e-2f);
         Row(rows, PropertyId.FaceAlignment, key).Text.ShouldBe("Face");
     }
-
-    // --- The missing note ----------------------------------------------------
 
     [Fact]
     public void A_material_the_project_does_not_have_carries_a_missing_note()
@@ -211,9 +181,8 @@ public sealed class FaceInspectorTests
             SceneNode node = BoxNode(scene);
             node.Brush = node.Brush!.WithAllFacesMaterial(MaterialRegistry.Intern(Gone));
 
-            // Nothing is known to be wrong until something has tried to load it:
-            // the note reports what the cache LEARNED, because a filesystem probe
-            // per face per publish is a stat inside the snapshot path.
+            // The note comes from the load cache, not a disk probe, so nothing
+            // is reported until a load has been tried.
             Row(Describe(node), PropertyId.BrushMaterial).Note.ShouldBe("");
 
             assets.LoadMaterial(Gone);

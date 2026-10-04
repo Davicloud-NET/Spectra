@@ -10,47 +10,14 @@ namespace SpectraEngine.Editing.Selection;
 
 /// <summary>
 /// The marquee: tracks a rectangle from press to release, draws it, and on
-/// release replaces / extends / toggles the scene's selection with everything
-/// the rectangle covered — in <b>one</b> <c>SelectionChanged</c> event.
+/// release applies everything it covered to the scene's selection in one
+/// change event. The caller decides when a press starts one.
 /// </summary>
-/// <remarks>
-/// <b>It does not decide when to start.</b> Whether a press belongs to the
-/// marquee, to a gizmo handle, or to an object under the cursor is arbitration,
-/// and arbitration lives in <see cref="Viewport.ViewportInteractionController"/>
-/// — which calls <see cref="Begin"/> when it has ruled that the press landed on
-/// empty space. Keeping the decision out of here is what makes both halves
-/// testable in isolation.
-/// <para>
-/// <b>Rendering: unprojected world-space debug lines, not a new pipeline.</b>
-/// The four corners are turned into rays with <c>Camera.ScreenPointToRay</c>
-/// and sampled a hair in front of the near plane, giving a world-space quad
-/// that reprojects exactly onto the rectangle the user is dragging. Because
-/// <see cref="DebugDraw"/> lines already render depth-off on all three
-/// backends, the quad composites as a screen overlay and nothing occludes it —
-/// so a marquee costs eight vertices and zero backend work, instead of a
-/// fourth 2D pipeline copied across OpenGL, D3D11 and D3D12. The visible cost
-/// is that the rectangle is drawn with the same 1-pixel debug lines as the
-/// gizmos.
-/// </para>
-/// <para>
-/// <b>A press that never moved is a click, not an empty marquee.</b> Below
-/// <see cref="ClickThresholdPixels"/> the gesture resolves as a click on empty
-/// space: it clears the selection when no modifier is held, and deliberately
-/// does nothing when Shift or Ctrl is — a slipped Shift+click must not
-/// silently drop a carefully built selection.
-/// </para>
-/// <para>
-/// <b>Threading:</b> render thread only — it reads the scene's spatial index
-/// and writes its selection. Allocation-free in steady state once the result
-/// list has grown; the selection update itself is
-/// <see cref="SelectionSet.Apply"/>, which reuses its own scratch.
-/// </para>
-/// </remarks>
+// Render thread only. The outline is a world-space quad just past the near
+// plane, drawn as depth-off debug lines, so it needs no 2D pipeline.
 public sealed class BoxSelectController
 {
-    // How far in front of the near plane the overlay quad is sampled, as a
-    // fraction of the near distance. Far enough not to be clipped by depth
-    // rounding, near enough that nothing can get between it and the eye.
+    // Fraction of the near distance. Past depth rounding, still in front of everything.
     private const float OverlayNearOffset = 0.1f;
 
     private readonly List<SceneNode> _results = [];
@@ -68,18 +35,15 @@ public sealed class BoxSelectController
     /// <summary>The scene whose nodes the marquee selects.</summary>
     public Scene Scene { get; }
 
-    /// <summary>Touch or fully-contain. See <see cref="BoxSelectMode"/>.</summary>
+    /// <summary>Whether a node must touch the rectangle or lie fully inside it.</summary>
     public BoxSelectMode Mode { get; set; } = BoxSelectMode.Intersect;
 
-    /// <summary>
-    /// The button whose release commits the marquee. The arbiter presses it;
-    /// this only has to know which release to watch for.
-    /// </summary>
+    /// <summary>The button whose release commits the marquee.</summary>
     public PointerButtons DragButton { get; set; } = PointerButtons.Left;
 
     /// <summary>
-    /// How far the cursor must travel before the gesture counts as a drag
-    /// rather than a click, measured on the rectangle's longer side.
+    /// How long the rectangle's longer side must get before the gesture counts
+    /// as a drag rather than a click.
     /// </summary>
     public float ClickThresholdPixels { get; set; } = 3f;
 
@@ -89,22 +53,14 @@ public sealed class BoxSelectController
     /// <summary>True while a marquee is being dragged.</summary>
     public bool IsActive { get; private set; }
 
-    /// <summary>
-    /// The rectangle as it currently stands, normalized. Meaningless when
-    /// <see cref="IsActive"/> is false.
-    /// </summary>
+    /// <summary>The current rectangle. Only valid while <see cref="IsActive"/>.</summary>
     public ScreenRect Rect => ScreenRect.FromCorners(_anchor, _current);
 
-    /// <summary>
-    /// True when the current rectangle is still within
-    /// <see cref="ClickThresholdPixels"/> of its anchor — i.e. releasing now
-    /// would resolve as a click.
-    /// </summary>
+    /// <summary>True when releasing now would resolve as a click.</summary>
     public bool IsClick => Rect.LongestSide < ClickThresholdPixels;
 
     /// <summary>
-    /// The nodes the last committed marquee covered, in BVH traversal order.
-    /// Empty after a cancel or a click.
+    /// The nodes the last committed marquee covered. Empty after a cancel or a click.
     /// </summary>
     public IReadOnlyList<SceneNode> LastResult => _results;
 
@@ -112,9 +68,8 @@ public sealed class BoxSelectController
     public event Action<int>? Committed;
 
     /// <summary>
-    /// Starts a marquee anchored at <paramref name="cursorPosition"/>. A
-    /// marquee already in progress is restarted rather than refused, so a lost
-    /// release edge cannot strand the state machine.
+    /// Starts a marquee anchored at <paramref name="cursorPosition"/>. One
+    /// already in progress is restarted, so a lost release edge cannot strand it.
     /// </summary>
     public void Begin(Vector2 cursorPosition)
     {
@@ -128,12 +83,6 @@ public sealed class BoxSelectController
     /// Advances the marquee by one frame: tracks the cursor, and on the release
     /// edge (or <paramref name="cancelRequested"/>) ends the gesture.
     /// </summary>
-    /// <param name="frame">This frame's input snapshot.</param>
-    /// <param name="cancelRequested">
-    /// True on the frame the user asked to abort — Escape, or a viewport that
-    /// lost focus. Arrives as a parameter for the same reason it does on
-    /// <c>GizmoTool.Update</c>: the input frame carries no keyboard vocabulary.
-    /// </param>
     public BoxSelectResult Update(in EditorInputFrame frame, bool cancelRequested = false)
     {
         if (!IsActive)
@@ -145,8 +94,8 @@ public sealed class BoxSelectController
             return BoxSelectResult.Cancelled;
         }
 
-        // Track first, then test the release: a button pressed and released
-        // inside one frame must still see where the cursor ended up.
+        // Track before testing the release, so a same-frame press and release
+        // still sees where the cursor ended up.
         _current = frame.CursorPosition;
 
         if (!frame.WasReleased(DragButton))
@@ -156,8 +105,8 @@ public sealed class BoxSelectController
     }
 
     /// <summary>
-    /// Abandons the marquee without touching the selection. Returns false when
-    /// none was in progress.
+    /// Abandons the marquee without touching the selection. False when none
+    /// was in progress.
     /// </summary>
     public bool Cancel()
     {
@@ -170,14 +119,10 @@ public sealed class BoxSelectController
     }
 
     /// <summary>
-    /// Ends the gesture and applies it to the selection: a real drag selects
-    /// everything it covered, a click on empty space clears the selection
-    /// unless a modifier says to keep it.
+    /// Ends the gesture and applies it to the selection: a drag selects what it
+    /// covered, a click on empty space clears the selection unless a modifier
+    /// is held.
     /// </summary>
-    /// <remarks>
-    /// Public so a host that ends the gesture some other way (a released
-    /// pointer capture, a viewport that is closing) can still land the result.
-    /// </remarks>
     public BoxSelectResult Commit(KeyModifiers modifiers, Vector2 viewportSize)
     {
         if (!IsActive)
@@ -189,8 +134,7 @@ public sealed class BoxSelectController
         if (Rect.LongestSide < ClickThresholdPixels)
         {
             _results.Clear();
-            // A plain click on nothing means "deselect everything"; a modified
-            // one means the user was reaching for something and missed.
+            // A modified click on nothing is a miss; keep the selection.
             if (update == SelectionUpdate.Replace)
                 Scene.Selection.Clear();
 
@@ -201,8 +145,6 @@ public sealed class BoxSelectController
         ScreenRect rect = Rect;
         BoxSelectQuery.Query(Scene, in rect, viewportSize, Mode, _results);
 
-        // ONE event for the whole marquee, whatever it covered — see
-        // SelectionSet.SetRange for why that matters.
         Scene.Selection.Apply(_results, update);
 
         Committed?.Invoke(_results.Count);
@@ -210,9 +152,8 @@ public sealed class BoxSelectController
     }
 
     /// <summary>
-    /// Draws the marquee outline. Does nothing when no marquee is in progress,
-    /// or when it is still within the click threshold — a rectangle that flashes
-    /// up under every click is noise.
+    /// Draws the marquee outline. Nothing is drawn while the gesture is still
+    /// within the click threshold.
     /// </summary>
     public void Draw(DebugDraw output, Vector2 viewportSize)
     {
@@ -235,9 +176,7 @@ public sealed class BoxSelectController
         output.Line(bottomLeft, topLeft, OutlineColor);
     }
 
-    // A screen corner, unprojected onto a plane just past the near plane. The
-    // ray's origin is ON the near plane by contract, so stepping a little way
-    // along it keeps the quad from being clipped away by depth rounding.
+    // The ray starts on the near plane; step along it so the quad is not clipped.
     private static Vector3 CornerToWorld(Camera camera, Vector2 pixel, Vector2 viewportSize, float offset) =>
         camera.ScreenPointToRay(pixel, viewportSize).PointAt(offset);
 }
@@ -254,10 +193,7 @@ public enum BoxSelectResult
     /// <summary>The marquee ended as a drag and its coverage landed in the selection.</summary>
     Committed,
 
-    /// <summary>
-    /// The marquee ended without moving far enough to be a drag, and was
-    /// resolved as a click on empty space.
-    /// </summary>
+    /// <summary>The marquee never moved far enough to be a drag and resolved as a click on empty space.</summary>
     Clicked,
 
     /// <summary>The marquee was abandoned; the selection is untouched.</summary>

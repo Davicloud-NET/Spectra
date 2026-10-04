@@ -4,12 +4,7 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// <see cref="EditorInputFrame"/> query semantics: multi-flag tests mean "all
-/// of these", an empty query is never a match for buttons but always one for
-/// modifiers, and viewport containment is left/top inclusive, right/bottom
-/// exclusive.
-/// </summary>
+/// <summary>Button, modifier and viewport queries on <see cref="EditorInputFrame"/>.</summary>
 public sealed class EditorInputFrameTests
 {
     [Fact]
@@ -43,8 +38,7 @@ public sealed class EditorInputFrameTests
     {
         var frame = Build(down: PointerButtons.Left);
 
-        // Guards `if (frame.WasPressed(binding))` against an unassigned binding
-        // reading as "always pressed".
+        // Otherwise an unassigned binding reads as always pressed.
         frame.IsDown(PointerButtons.None).ShouldBeFalse();
         frame.WasPressed(PointerButtons.None).ShouldBeFalse();
         frame.WasReleased(PointerButtons.None).ShouldBeFalse();
@@ -59,7 +53,7 @@ public sealed class EditorInputFrameTests
         frame.HasModifiers(KeyModifiers.Shift | KeyModifiers.Control).ShouldBeTrue();
         frame.HasModifiers(KeyModifiers.Alt).ShouldBeFalse();
 
-        // "Any modifiers" is always satisfied; test the exact value for "none".
+        // HasModifiers(None) is always true; compare Modifiers to ask for none.
         frame.HasModifiers(KeyModifiers.None).ShouldBeTrue();
         (frame.Modifiers == KeyModifiers.None).ShouldBeFalse();
     }
@@ -99,7 +93,7 @@ public sealed class EditorInputFrameTests
             Vector2.Zero,
             1f / 60f);
 
-        // A panel that has not been laid out yet must not claim a hover.
+        // A panel not laid out yet.
         frame.IsCursorInsideViewport.ShouldBeFalse();
     }
 

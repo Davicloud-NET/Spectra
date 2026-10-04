@@ -5,18 +5,8 @@ using SpectraEngine.Core.Maps.Compiled;
 
 namespace Spectra.Kitchen.Tests;
 
-/// <summary>
-/// A compiled map read back into ordinary objects, so a test can assert about it
-/// after the bytes have gone out of scope.
-/// </summary>
-/// <remarks>
-/// <c>ScmapDocument</c> is a <c>ref struct</c> on purpose: a document provably
-/// cannot outlive the mapping its spans point into, which is what stops an
-/// unmapped view being read with no managed stack to blame. That same guarantee
-/// keeps it out of a lambda, a field or a collection, which is most of what a test
-/// wants to do with one, so the tests copy through here exactly once and assert
-/// against the copy.
-/// </remarks>
+// A compiled map copied into ordinary objects. ScmapDocument is a ref struct
+// and cannot go in a lambda, field or collection.
 internal sealed class ScmapProbe
 {
     public required ScmapHeader Header { get; init; }
@@ -34,21 +24,11 @@ internal sealed class ScmapProbe
     public required bool HasBrushSource { get; init; }
     public required List<BrushCopy> Brushes { get; init; }
 
-    /// <summary>
-    /// Triangles across every cell that owns render geometry, copied from the
-    /// document's own count rather than recomputed from the arrays above.
-    /// </summary>
-    /// <remarks>
-    /// The double-geometry guard is graded on this number, so a second expression
-    /// of it here would be a test measuring its own arithmetic rather than the
-    /// reader's.
-    /// </remarks>
+    // The document's own count, not recomputed here: tests grade the reader on it.
     public required int TriangleCount { get; init; }
 
-    /// <summary>One asset-table row, resolved through the string table.</summary>
     public readonly record struct AssetRow(PackEntryKind Kind, string Path, ulong ContentHash);
 
-    /// <summary>One cell's baked geometry, copied out of the mapping.</summary>
     public sealed record CellGeometry(
         int X,
         int Y,
@@ -58,10 +38,8 @@ internal sealed class ScmapProbe
         int BspRootIndex,
         bool HasBsp);
 
-    /// <summary>One submesh's arrays, copied.</summary>
     public sealed record SubmeshCopy(uint AssetIndex, float[] Vertices, uint[] Indices);
 
-    /// <summary>One kept brush's planes and faces, copied.</summary>
     public sealed record BrushCopy(
         uint NodeIndex,
         System.Numerics.Plane[] Planes,

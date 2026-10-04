@@ -7,30 +7,10 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Hosting;
 
 /// <summary>
-/// Everything a UI thread is allowed to know about a frame the engine has
-/// finished: values only, no live objects, safe to hold for as long as it likes.
+/// What a UI thread may know about a finished frame. Immutable values only,
+/// no live objects, so it is safe to hold on any thread. It describes a frame
+/// that is already over.
 /// </summary>
-/// <remarks>
-/// <b>Immutable because the alternative is a race on every property read.</b>
-/// The render thread owns the scene, the selection and the renderer, and starts
-/// changing them again the instant the frame ends. A UI binding that read
-/// through to any of them would be reading a moving object from the wrong
-/// thread; copying the handful of values a panel actually shows costs a small
-/// allocation at the publish rate and removes the whole class of problem.
-/// <para>
-/// <b>The UI is eventually consistent, and this is where that starts.</b> A
-/// snapshot describes a frame that is already over. An inspector shows its own
-/// local edit immediately and reconciles when the next snapshot confirms it;
-/// treating a snapshot as the current truth would make every text box fight the
-/// engine.
-/// </para>
-/// <para>
-/// <b>Selection is ids, not nodes</b>, for the same reason
-/// <see cref="SceneChange"/> is: a <c>SceneNode</c> cannot leave the render
-/// thread. A shell that wants more than an id asks through
-/// <see cref="EngineHost.EnqueueCommand"/>.
-/// </para>
-/// </remarks>
 public sealed class FrameSnapshot
 {
     /// <summary>The empty snapshot, for a host that has not seen a frame yet.</summary>
@@ -70,38 +50,24 @@ public sealed class FrameSnapshot
     /// </summary>
     public float SnapIncrement { get; init; }
 
-    /// <summary>
-    /// The move tool's snap increment in world units, whichever tool is live.
-    /// </summary>
-    /// <remarks>
-    /// All three per-tool increments ride every snapshot, unlike
-    /// <see cref="SnapIncrement"/>, which reports only the live tool's. A
-    /// command surface shows the move grid and the rotate angle side by side —
-    /// Studio's own top bar does — and a UI that could only see the live tool's
-    /// value would have to switch tools to read the other one.
-    /// </remarks>
+    /// <summary>The move tool's snap increment in world units, whichever tool is live.</summary>
     public float MoveSnapIncrement { get; init; }
 
-    /// <summary>The rotate tool's snap increment in degrees. See <see cref="MoveSnapIncrement"/>.</summary>
+    /// <summary>The rotate tool's snap increment in degrees, whichever tool is live.</summary>
     public float RotateSnapIncrement { get; init; }
 
-    /// <summary>The resize tool's snap increment in world units. See <see cref="MoveSnapIncrement"/>.</summary>
+    /// <summary>The resize tool's snap increment in world units, whichever tool is live.</summary>
     public float ResizeSnapIncrement { get; init; }
 
     /// <summary>Which camera is driving, as the editor names it, or null when there is no editor.</summary>
     public string? NavigationModeName { get; init; }
 
-    /// <summary>
-    /// The viewport camera's world position this frame. The one instrument
-    /// every engine editor's status surface carries: where am I. Published at
-    /// the snapshot rate like every readout, which is exactly right for text.
-    /// </summary>
+    /// <summary>The viewport camera's world position this frame.</summary>
     public System.Numerics.Vector3 CameraPosition { get; init; }
 
     /// <summary>
-    /// When the ground grid shows — "auto" (during move and resize gestures),
-    /// "on", or "off" — or null when there is no editor. Reported so the View
-    /// menu's checkmark follows the editor rather than its own last click.
+    /// When the ground grid shows: "auto" (during move and resize gestures),
+    /// "on" or "off". Null when there is no editor.
     /// </summary>
     public string? GridModeName { get; init; }
 
@@ -112,19 +78,12 @@ public sealed class FrameSnapshot
     public bool IsPlaying { get; init; }
 
     /// <summary>
-    /// Whether play mode can be entered at all — the engine built a character
-    /// over the active scene. False until the scene has loaded, so a Play
-    /// button can disable itself instead of silently doing nothing.
+    /// Whether play mode can be entered: the engine built a character over the
+    /// active scene. False until the scene has loaded.
     /// </summary>
     public bool CanPlay { get; init; }
 
     /// <summary>The debug visualisations currently drawn over the scene.</summary>
-    /// <remarks>
-    /// On the snapshot because the F1–F5 keys flip the same flags: a View menu
-    /// that tracked only its own clicks would drift from the keyboard the first
-    /// time somebody pressed one, and a checkbox that cannot show the real
-    /// state is worse than no checkbox.
-    /// </remarks>
     public DebugVisualization DebugFlags { get; init; }
 
     /// <summary>The rendering pipeline currently drawing the scene, or null before the renderer reported one.</summary>
@@ -132,8 +91,7 @@ public sealed class FrameSnapshot
 
     /// <summary>
     /// Every pipeline the running backend registered, in registration order.
-    /// The set is fixed for the renderer's life, so the same list instance
-    /// rides every snapshot and costs nothing to carry.
+    /// The same list instance rides every snapshot.
     /// </summary>
     public IReadOnlyList<string> PipelineNames { get; init; } = Array.Empty<string>();
 
@@ -148,66 +106,28 @@ public sealed class FrameSnapshot
 
     /// <summary>
     /// Why the static world stopped recompiling, or null when it is current.
+    /// A shell should show this: the viewport keeps drawing the last good world.
     /// </summary>
-    /// <remarks>
-    /// A shell that does not show this leaves the user editing a level that has
-    /// silently stopped rebuilding. See <c>Scene.StaticWorldDefect</c>.
-    /// </remarks>
     public string? StaticWorldDefect { get; init; }
 
     /// <summary>
     /// How many errors a graphics validation layer has reported over the
-    /// renderer's life. Zero on backends and builds that have no layer.
+    /// renderer's life. Zero when no layer is running, so read it with
+    /// <see cref="DebugLayerActive"/>.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The only continuous detector of the graphics faults that still draw a
-    /// picture</b> - a missing barrier, a pipeline state compiled for a format
-    /// it was not bound to. Nothing else in a running session can see either,
-    /// which is why this number leaves the engine at all: an offscreen probe
-    /// covers a diagnostic run, and an embedded surface with no probe behind it
-    /// has this and nothing else.
-    /// </para>
-    /// <para>
-    /// Read with <see cref="DebugLayerActive"/> and never alone. See that
-    /// member for why.
-    /// </para>
-    /// </remarks>
     public int DebugLayerErrorCount { get; init; }
 
     /// <summary>
     /// Whether the validation layer producing
-    /// <see cref="DebugLayerErrorCount"/> is actually running.
+    /// <see cref="DebugLayerErrorCount"/> is running.
     /// </summary>
-    /// <remarks>
-    /// <b>Both halves are published, because a silent layer that is not running
-    /// proves nothing.</b> On D3D the count exists only while validation is on,
-    /// so zero-and-off and zero-and-clean are the same number and mean opposite
-    /// things. A slot that carried the count alone could only ever imply
-    /// all-clear; carrying this too lets it say the detector is off instead.
-    /// </remarks>
     public bool DebugLayerActive { get; init; }
 
     /// <summary>
-    /// How many cached asset references are standing on a failure: a texture
-    /// that would not decode, a material file that would not read, a sampler
-    /// slot left holding the magenta checker.
+    /// How many cached asset references failed and are bound to the placeholder:
+    /// a texture that would not decode, a material file that would not read.
+    /// A decode still in flight is not counted.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The one failure in this engine whose whole report is a colour.</b> A
-    /// reference that cannot be resolved degrades to the placeholder and a
-    /// warning line, deliberately, so a level with one bad path still opens.
-    /// The consequence is that the evidence is a magenta surface somewhere in
-    /// the world and a line in a log nobody is reading, which is why the number
-    /// leaves the engine at all.
-    /// </para>
-    /// <para>
-    /// Read at snapshot rate, so it lags a load or a fix by up to one publish
-    /// interval. It counts standing failures only: a decode still in flight is
-    /// bound to the placeholder too and is deliberately not counted.
-    /// </para>
-    /// </remarks>
     public int PlaceholderBoundCount { get; init; }
 
     /// <summary>
@@ -220,117 +140,42 @@ public sealed class FrameSnapshot
     /// Which view the editor camera is showing. See
     /// <see cref="Scene.ISceneEditor.ViewName"/> for the vocabulary.
     /// </summary>
-    /// <remarks>
-    /// Snapshot-followed with no optimistic hold, exactly like the grid chip:
-    /// looking around LEAVES an orthographic view, so the shell's guess about
-    /// which view is live would be wrong the moment somebody right-dragged, and
-    /// a control lit against the engine is worse than one a frame behind it.
-    /// </remarks>
     public string? ViewName { get; init; }
 
     /// <summary>
     /// Mean time the render thread spent waiting for the shared target's key
     /// since the last snapshot, in milliseconds. Zero on a windowed surface.
+    /// Tells a slow producer from a stalled consumer, which frame time cannot.
     /// </summary>
-    /// <remarks>
-    /// <b>Frame time alone cannot tell a slow producer from a stalled one</b>,
-    /// because the wait is inside the frame. For a composited viewport the
-    /// mutex is the clock and the consumer releases the key from a continuation
-    /// on the shell's UI dispatcher, so this is the one number that says
-    /// whether a frame rate fell because the engine had more to draw or
-    /// because the UI thread was busy. Read it beside
-    /// <see cref="SharedAcquirePeakMs"/>, never alone.
-    /// </remarks>
     public float SharedAcquireWaitMs { get; init; }
 
     /// <summary>
     /// The longest single wait for the shared target's key since the last
     /// snapshot, in milliseconds.
     /// </summary>
-    /// <remarks>
-    /// <b>The peak is the number a person actually feels.</b> A viewport
-    /// missing one vsync in three averages a third of the stall it suffers,
-    /// which reads as a small steady cost rather than as the intermittent
-    /// hitch it is.
-    /// </remarks>
     public float SharedAcquirePeakMs { get; init; }
 
     /// <summary>
     /// The selection's editable properties, merged across every selected node.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Values, like everything else here.</b> A row carries no
-    /// <c>SceneNode</c>, no <c>Brush</c> and no asset handle, because a UI
-    /// holding one of those would be holding something the render thread
-    /// mutates the instant the frame ends.
-    /// </para>
-    /// <para>
-    /// <b>On the snapshot rather than fetched on demand, and that is what makes
-    /// a panel follow a gizmo drag.</b> A drag moves the node every frame, and a
-    /// panel that only refreshed when the selection changed would sit there
-    /// showing the position the object had before it was picked up. The cost is
-    /// a dozen struct rows per publish, at the snapshot's own ~30 Hz rather than
-    /// per frame.
-    /// </para>
-    /// </remarks>
     public IReadOnlyList<PropertyRow> SelectionProperties { get; init; } = Array.Empty<PropertyRow>();
 
     /// <summary>
     /// The selected entity's class, declared outputs and wiring, or null when
     /// the selection is not exactly one node carrying an entity.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Copies, like everything else here.</b> The connection list a node
-    /// carries is a mutable <c>List</c> the render thread rewrites on the next
-    /// undo; what rides out is a snapshot of it, so a panel holding this frame
-    /// still describes this frame.
-    /// </para>
-    /// <para>
-    /// <b>Null for a multi-selection, and that is a named deferral.</b> A
-    /// keyvalue merges per key; wires have no key to merge on, so a union could
-    /// not be written back and an intersection would hide wiring. See
-    /// <see cref="EntityPanelInfo"/>.
-    /// </para>
-    /// </remarks>
     public EntityPanelInfo? SelectionEntity { get; init; }
 
     /// <summary>
-    /// The shared colour target a composited host is expected to import and
-    /// present, or null when the engine is presenting for itself.
+    /// The shared colour target a composited host should import and present, or
+    /// null when the engine presents for itself. Re-import when the generation
+    /// changes; handle values are recycled and do not identify a target.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A VALUE, like everything else here: four numbers, no live object.</b>
-    /// The handle names a GPU resource the render thread owns, and what crosses
-    /// is the name rather than the thing - the same rule that keeps a
-    /// <c>SceneNode</c> off this class. That is also why the vocabulary is a
-    /// native handle and three integers and stays that way: a renderer that
-    /// named the shell's UI framework could be embedded in exactly one shell.
-    /// </para>
-    /// <para>
-    /// <b>The GENERATION is the identity, never the handle.</b> A shared target
-    /// is never resized in place - it is destroyed and recreated under a fresh
-    /// generation - so a consumer re-imports when the number changes and not
-    /// before, and the previous generation's resource is held for it until it
-    /// says it has let go (<c>Renderer.NotifySharedTargetReleased</c>). A
-    /// consumer that compared handles instead would re-import on nothing and
-    /// miss the one case that matters, because handle values are recycled.
-    /// </para>
-    /// <para>
-    /// <b>A new generation forces a publish</b>, exactly as a command the user
-    /// just issued does: the consumer is sampling a resource that is about to
-    /// be retired, and hearing about the replacement a whole snapshot interval
-    /// later is a third of a second of a viewport showing the wrong size.
-    /// </para>
-    /// </remarks>
     public Renderer.SharedTargetHandle? SharedTarget { get; init; }
 
     /// <summary>
     /// The structural changes since the previous snapshot, in the order they
-    /// happened. Empty on a frame where nothing moved in the graph, which is
-    /// most of them.
+    /// happened. Usually empty.
     /// </summary>
     public IReadOnlyList<SceneChange> Changes { get; init; } = Array.Empty<SceneChange>();
 
@@ -339,10 +184,5 @@ public sealed class FrameSnapshot
     /// <see cref="Changes"/> is incomplete and a view must rebuild rather than
     /// replay. Also set for the first snapshot after a scene swap.
     /// </summary>
-    /// <remarks>
-    /// Reported rather than hidden, because a tree view fed a partial log looks
-    /// correct and is wrong, which is the failure this engine's standing rule
-    /// about silent degradation exists to prevent.
-    /// </remarks>
     public bool ChangesOverflowed { get; init; }
 }

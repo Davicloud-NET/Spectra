@@ -2,28 +2,11 @@
 
 namespace SpectraEngine.Editor.Viewport.Windows;
 
-/// <summary>
-/// Virtual-key codes to the engine's <see cref="InputKey"/>.
-/// </summary>
-/// <remarks>
-/// <b>The left and right modifiers are the only hard part, and they are not
-/// optional.</b> Windows reports a bare <c>VK_SHIFT</c> / <c>VK_CONTROL</c> /
-/// <c>VK_MENU</c> for both sides, while the engine binds the left ones
-/// specifically (left Control descends the fly camera, left Shift boosts it).
-/// Shift is separated by re-mapping its scancode; Control and Alt by the
-/// extended-key bit, which is set for the right-hand one. Skip that and the
-/// right-hand modifiers either do nothing or, worse, do the left one's job.
-/// </remarks>
+// Windows reports VK_SHIFT / VK_CONTROL / VK_MENU for both sides, and the
+// engine binds the left ones specifically, so the side has to be recovered.
 internal static class Win32Keys
 {
-    /// <summary>
-    /// The engine's name for a virtual key, or <see cref="InputKey.Unknown"/>.
-    /// </summary>
-    /// <param name="virtualKey">The <c>wParam</c> of a key message.</param>
-    /// <param name="lParam">
-    /// The message's <c>lParam</c>, which carries the scancode in bits 16..23
-    /// and the extended-key flag in bit 24.
-    /// </param>
+    // lParam: scancode in bits 16..23, extended-key flag in bit 24.
     internal static InputKey ToInputKey(int virtualKey, nint lParam)
     {
         uint scanCode = (uint)(((long)lParam >> 16) & 0xFF);
@@ -32,9 +15,7 @@ internal static class Win32Keys
         switch (virtualKey)
         {
             case Win32Interop.VK_SHIFT:
-                // MapVirtualKey with the extended mapping is the documented way
-                // to get back the side, because shift does not set the
-                // extended-key bit the way control and alt do.
+                // Shift does not set the extended-key bit, so map the scancode.
                 uint side = Win32Interop.MapVirtualKey(scanCode, Win32Interop.MAPVK_VSC_TO_VK_EX);
                 return side == Win32Interop.VK_RSHIFT ? InputKey.ShiftRight : InputKey.ShiftLeft;
 
@@ -45,17 +26,13 @@ internal static class Win32Keys
                 return extended ? InputKey.AltRight : InputKey.AltLeft;
         }
 
-        // Letters and digits are contiguous ASCII in the virtual-key space, so
-        // the whole of both rows is two range tests rather than thirty-six
-        // cases that could each be mistyped.
+        // Letters and digits are contiguous ASCII in the virtual-key space.
         if (virtualKey is >= 'A' and <= 'Z')
             return InputKey.A + (virtualKey - 'A');
         if (virtualKey is >= '0' and <= '9')
             return InputKey.Number0 + (virtualKey - '0');
 
-        // VK_NUMPAD0 through VK_NUMPAD9, contiguous like the other two rows.
-        // Separate from the number row on purpose: the OS reports them as
-        // different keys and the editor binds them to different verbs.
+        // VK_NUMPAD0..9. Not the number row: the editor binds them differently.
         if (virtualKey is >= 0x60 and <= 0x69)
             return InputKey.Keypad0 + (virtualKey - 0x60);
 
@@ -100,7 +77,7 @@ internal static class Win32Keys
             0x2C => InputKey.PrintScreen,
             0x13 => InputKey.Pause,
 
-            // OEM keys, named for a US layout exactly as InputKey is.
+            // OEM keys, named for a US layout like InputKey.
             0xDE => InputKey.Apostrophe,
             0xBC => InputKey.Comma,
             0xBD => InputKey.Minus,

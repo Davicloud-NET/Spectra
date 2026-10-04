@@ -6,48 +6,18 @@ namespace SpectraEngine.Core.Entities;
 
 /// <summary>
 /// What entity classes this build knows: class name to a factory that builds one
-/// and the <see cref="EntitySchema"/> that describes it.
+/// and the <see cref="EntitySchema"/> that describes it. Enumerates in class
+/// name order and freezes on first read; registering after that throws.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Registration is static, enumeration is SORTED, and the two facts are
-/// connected.</b> The intended producer is a generated <c>[ModuleInitializer]</c>
-/// per entity class, and the order module initializers run in is decided by the
-/// loader: it is stable enough to look deterministic in a debug run and is not a
-/// guarantee. The binary schema artifact this feeds must be byte-stable across
-/// runs, so every enumeration here is ordered by class name with
-/// <see cref="string.CompareOrdinal"/> and registration order is never
-/// observable.
-/// </para>
-/// <para>
-/// <b>Frozen on first read.</b> A class registered after something has already
-/// resolved a name would change what a map means halfway through a load, and a
-/// schema artifact exported before it would be missing an entry that a later run
-/// happens to include. The freeze makes that a throw at the registration rather
-/// than a difference somebody notices in a file.
-/// </para>
-/// <para>
-/// <b>An instance type with a <see cref="Shared"/> singleton, not a static
-/// class.</b> The process-wide registry is what generated code registers into,
-/// but a catalogue that can only ever be the process-wide one cannot be tested
-/// (the freeze makes test order load-bearing) and cannot be scoped to one game.
-/// One type, two ways to reach it.
-/// </para>
-/// <para>
-/// <b>No reflection anywhere.</b> A factory is a delegate the generator emits, so
-/// nothing here needs a type name, an <c>Activator.CreateInstance</c> or an
-/// assembly scan, all three of which a trimmed AOT build removes.
-/// </para>
-/// </remarks>
+// Sorted because registrations are module initializers, whose order the loader
+// decides, and the exported schema file must be byte-stable across runs.
 public sealed class EntityCatalog
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _byClassName = new(StringComparer.Ordinal);
 
-    // Non-null exactly when the catalogue is frozen, and written inside the lock
-    // after the dictionary is complete: a reader that sees this array has seen
-    // every entry that will ever be in the dictionary, so reads past the freeze
-    // need no lock at all.
+    // Non-null once frozen. Written under the lock after the dictionary is
+    // complete, so reads past the freeze need no lock.
     private volatile EntitySchema[]? _sorted;
 
     /// <summary>The process-wide catalogue that generated registrations feed.</summary>
@@ -146,9 +116,7 @@ public sealed class EntityCatalog
             foreach (Entry entry in _byClassName.Values)
                 ordered[i++] = entry.Schema;
 
-            // Ordinal, and never the current culture: a catalogue sorted by a
-            // machine's locale would export a different schema file on a
-            // different machine from the same source.
+            // Ordinal: a culture sort would export a different file per machine.
             Array.Sort(ordered, static (a, b) => string.CompareOrdinal(a.ClassName, b.ClassName));
             _sorted = ordered;
             return ordered;

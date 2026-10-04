@@ -8,58 +8,19 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Commands;
 
 /// <summary>
-/// The four structural verbs an editor offers over a selection: duplicate,
-/// delete, group and ungroup. Each lands as exactly one undo entry, and each
-/// works on the selection's <em>roots</em> rather than on every selected node.
+/// Duplicate, delete, group, ungroup and reparent over a selection. Each is one
+/// undo entry and works on the selection's roots. Selection changes are not
+/// part of the undo entry.
 /// </summary>
-/// <remarks>
-/// <b>Every one of these is composed out of the three structural commands</b>
-/// (<see cref="AddNodesCommand"/>, <see cref="RemoveNodesCommand"/>,
-/// <see cref="ReparentNodesCommand"/>) plus the transform command that already
-/// existed, rather than being four more command types. A group is a node added
-/// and a set of nodes reparented; an ungroup is the same run backwards. Keeping
-/// them compositions means the sibling-index restoration that makes structural
-/// undo correct is written once.
-/// <para>
-/// <b>The selection is filtered to its roots first, and that is not a tidy-up.</b>
-/// Duplicating a node whose parent is also selected would copy that subtree
-/// twice, once as itself and once inside its parent's copy; deleting one would
-/// remove a node that is about to be removed anyway, and record a placement into
-/// a parent that will not exist. This is the same effective-selection rule the
-/// gizmos apply before manipulating.
-/// </para>
-/// <para>
-/// <b>Selection changes are NOT part of the undo entry.</b> Undoing a delete
-/// restores the geometry, not the fact that it was selected, which is what every
-/// editor this engine's audiences use already does. The selection is still
-/// updated as a side effect, because a duplicate you cannot immediately drag is
-/// not a duplicate.
-/// </para>
-/// <para>
-/// <b>Threading:</b> render thread only, like the scene and the history.
-/// </para>
-/// </remarks>
 public static class StructuralEditor
 {
-    /// <summary>The name a duplicated node keeps: its original's.</summary>
-    /// <remarks>
-    /// Studio's behaviour, and the right default for the engine's default gizmo
-    /// style. Blender's ".001" suffix is the alternative, and a scene tree that
-    /// wants unique display names should derive them rather than mangle the
-    /// authored name at duplicate time.
-    /// </remarks>
+    /// <summary>The undo entry name for a duplicate.</summary>
     public const string DuplicateTransactionName = "Duplicate";
 
     /// <summary>
-    /// Copies each root of <paramref name="selection"/> and attaches the copies
-    /// beside their originals, then selects the copies. Returns false, changing
-    /// nothing, when there is nothing duplicable.
+    /// Copies each selected root to the end of its parent's children and
+    /// selects the copies. Returns false when there is nothing to duplicate.
     /// </summary>
-    /// <remarks>
-    /// Copies land at the END of their original's parent, which is where Studio
-    /// puts them and what keeps the index arithmetic honest when several
-    /// siblings are duplicated at once.
-    /// </remarks>
     public static bool TryDuplicate(Scene scene, UndoStack undo, IReadOnlyList<SceneNode> selection)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -72,9 +33,8 @@ public static class StructuralEditor
         var placements = new List<NodePlacement>(roots.Count);
         var clones = new List<SceneNode>(roots.Count);
 
-        // Consecutive indices per parent, counted from that parent's current
-        // child count, so several siblings duplicated together keep their
-        // relative order instead of all naming the same slot.
+        // Consecutive indices per parent, so siblings duplicated together
+        // keep their order.
         var nextIndex = new Dictionary<Guid, int>();
         foreach (SceneNode root in roots)
         {
@@ -97,15 +57,9 @@ public static class StructuralEditor
     }
 
     /// <summary>
-    /// Removes each root of <paramref name="selection"/> from the scene and
-    /// clears the selection. Returns false, changing nothing, when there is
-    /// nothing deletable.
+    /// Removes each selected root from the scene and clears the selection.
+    /// Returns false when there is nothing to delete.
     /// </summary>
-    /// <remarks>
-    /// The removed subtrees stay alive inside the history entry, which is what
-    /// makes the undo possible and what keeps their GPU meshes resident until
-    /// the entry ages out of the bounded ring.
-    /// </remarks>
     public static bool TryDelete(Scene scene, UndoStack undo, IReadOnlyList<SceneNode> selection)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -124,24 +78,12 @@ public static class StructuralEditor
     }
 
     /// <summary>
-    /// Puts the roots of <paramref name="selection"/> under one new node,
-    /// pivoted at the centre of what it contains, and selects it. Every child
-    /// keeps its exact world transform. Returns false, changing nothing, when
-    /// there is nothing to group or when a transform cannot be preserved.
+    /// Puts the selected roots under one new node, pivoted at the centre of
+    /// their bounds, and selects it. Children keep their world transforms.
+    /// Returns false when there is nothing to group or a transform cannot be
+    /// preserved.
     /// </summary>
-    /// <remarks>
-    /// <b>The group's pivot is the selection's bounds centre, not the parent's
-    /// origin</b>, because the pivot is what every later manipulation of the
-    /// group turns and scales about. A group node dumped at the origin makes
-    /// rotating the thing you just grouped rotate it around somewhere else.
-    /// <para>
-    /// The group is given a translation only, never a rotation or a scale, which
-    /// is what keeps every brush placement under it rigid. Children are then
-    /// re-expressed under it from their world matrices, so mixed parents work.
-    /// A subtree whose matrix will not decompose (a zero scale somewhere in the
-    /// chain) makes the whole operation refuse rather than silently shear.
-    /// </para>
-    /// </remarks>
+    // The group gets a translation only, so brush placements under it stay rigid.
     public static bool TryGroup(
         Scene scene, UndoStack undo, IReadOnlyList<SceneNode> selection, string groupName = "Group")
     {
@@ -167,8 +109,7 @@ public static class StructuralEditor
             LocalPosition = Vector3.Transform((min + max) * 0.5f, parentInverse),
         };
 
-        // Where the selection was, so the group takes its place in the tree
-        // rather than appearing at the bottom of it.
+        // The group takes the first selected sibling's slot.
         int groupIndex = parent.Children.Count;
         foreach (SceneNode root in roots)
         {
@@ -179,8 +120,6 @@ public static class StructuralEditor
         undo.BeginTransaction("Group");
         Run(scene, undo, new AddNodesCommand([new NodePlacement(group, parent.Id, groupIndex)]) { Name = "Group" });
 
-        // The group is in the scene now, so it has a world matrix to re-express
-        // the children against.
         if (!TryReparentPreservingWorld(scene, undo, roots, group, 0, "Group"))
         {
             undo.CancelTransaction();
@@ -194,9 +133,8 @@ public static class StructuralEditor
 
     /// <summary>
     /// Dissolves each selected node that has children: the children move up to
-    /// the node's own parent, keeping their world transforms and their order,
-    /// and the emptied node is removed. Returns false, changing nothing, when
-    /// nothing in the selection is a group.
+    /// its parent, keeping world transforms and order, and the emptied node is
+    /// removed. Returns false when nothing selected has children.
     /// </summary>
     public static bool TryUngroup(Scene scene, UndoStack undo, IReadOnlyList<SceneNode> selection)
     {
@@ -222,8 +160,7 @@ public static class StructuralEditor
             SceneNode parent = group.Parent!;
             var children = new List<SceneNode>(group.Children);
 
-            // Children take the group's slot, and the emptied group is removed
-            // afterwards, so the run ends up exactly where the group was.
+            // Children take the group's slot.
             if (!TryReparentPreservingWorld(scene, undo, children, parent, group.IndexInParent, "Ungroup"))
             {
                 undo.CancelTransaction();
@@ -240,26 +177,11 @@ public static class StructuralEditor
     }
 
     /// <summary>
-    /// Moves the roots of <paramref name="selection"/> under
-    /// <paramref name="newParent"/> at <paramref name="insertIndex"/>
-    /// (<c>-1</c> appends), keeping every world transform, as one history
-    /// entry. The verb a scene-tree drag lands on. Returns false, changing
-    /// nothing, when nothing can legally move.
+    /// Moves the selected roots under <paramref name="newParent"/> at
+    /// <paramref name="insertIndex"/> (-1 appends), keeping world transforms.
+    /// Roots that would form a cycle are left out. Returns false when nothing
+    /// can move.
     /// </summary>
-    /// <remarks>
-    /// <b>A drop that would make a cycle is filtered out, never attempted.</b>
-    /// Dragging a group onto its own child is an ordinary slip, and
-    /// <c>SceneNode.InsertChild</c> answers it with a throw, which from inside
-    /// an open transaction would leave the history open and the scene
-    /// half-moved. Offending roots are dropped from the move (the rest of a
-    /// multi-drag still lands); when everything offends, the verb refuses.
-    /// <para>
-    /// <b>The insert index is adjusted for same-parent moves.</b> A node
-    /// dropped later under its own parent leaves its old slot first, which
-    /// shifts every later sibling down by one; naming the pre-removal index
-    /// would land it one row past where the drop indicator pointed.
-    /// </para>
-    /// </remarks>
     public static bool TryReparent(
         Scene scene, UndoStack undo, IReadOnlyList<SceneNode> selection, SceneNode newParent, int insertIndex)
     {
@@ -267,8 +189,7 @@ public static class StructuralEditor
         ArgumentNullException.ThrowIfNull(undo);
         ArgumentNullException.ThrowIfNull(newParent);
 
-        // The target must be this scene's; a stale reference (the parent was
-        // deleted between gesture and apply) refuses cleanly.
+        // The parent may have been deleted between gesture and apply.
         if (!scene.TryFindById(newParent.Id, out SceneNode? liveParent) ||
             !ReferenceEquals(liveParent, newParent))
         {
@@ -277,8 +198,8 @@ public static class StructuralEditor
 
         List<SceneNode> roots = SelectionRoots(scene, selection);
 
-        // Every node on the target's own ancestor chain (itself included) is a
-        // cycle waiting to happen; one walk up collects them all.
+        // Drop roots on the target's ancestor chain: InsertChild throws on a
+        // cycle, which would leave the transaction open.
         for (SceneNode? ancestor = newParent; ancestor is not null; ancestor = ancestor.Parent)
         {
             for (int i = roots.Count - 1; i >= 0; i--)
@@ -291,12 +212,8 @@ public static class StructuralEditor
         if (roots.Count == 0)
             return false;
 
-        // The dragged block keeps the TREE's order, not the click order. A
-        // selection list is in the order rows were Ctrl-clicked, so without
-        // this, dragging B then A drops them as B, A - and sibling order is
-        // placement order, so that is authored data decided by which row the
-        // user happened to touch first. Only meaningful when they share a
-        // parent; across parents there is no single order to sort by.
+        // Keep tree order, not click order: sibling order is authored data.
+        // Only defined when the roots share a parent.
         bool oneParent = true;
         for (int i = 1; i < roots.Count && oneParent; i++)
             oneParent = ReferenceEquals(roots[i].Parent, roots[0].Parent);
@@ -306,11 +223,9 @@ public static class StructuralEditor
 
         int target = insertIndex < 0 ? newParent.Children.Count : insertIndex;
 
-        // Same-parent movers vacate their slots before the insert happens, so
-        // the destination shifts down by however many of them sat above it.
-        // Counted against the ORIGINAL target, never against a running total:
-        // comparing each root to a progressively decremented index makes the
-        // answer depend on the order the roots arrive in.
+        // Same-parent movers leave their slots first, shifting the destination
+        // down. Count against the original target, not a running total, or
+        // the result depends on root order.
         int vacated = 0;
         foreach (SceneNode root in roots)
         {
@@ -320,12 +235,7 @@ public static class StructuralEditor
 
         int firstIndex = Math.Max(0, target - vacated);
 
-        // A drop that asks for the arrangement the scene already has records
-        // nothing. Without this, nudging a row a few pixels onto its own edge
-        // commits a "Reparent" entry whose undo changes nothing visible, so
-        // the next Ctrl+Z reads as dead - the same refusal a rename makes for
-        // an unchanged name and the property panel makes for an unchanged
-        // value.
+        // No-op drop: record nothing, or Ctrl+Z gets an entry that undoes nothing.
         bool alreadyPlaced = true;
         for (int i = 0; i < roots.Count && alreadyPlaced; i++)
             alreadyPlaced = ReferenceEquals(roots[i].Parent, newParent) && roots[i].IndexInParent == firstIndex + i;
@@ -346,9 +256,8 @@ public static class StructuralEditor
     }
 
     /// <summary>
-    /// The nodes in <paramref name="selection"/> that no other selected node
-    /// carries: the set a structural edit actually operates on. Excludes the
-    /// scene root, which has no placement and cannot be removed.
+    /// The selected nodes with no selected ancestor. Excludes the scene root
+    /// and nodes that are not in this scene.
     /// </summary>
     public static List<SceneNode> SelectionRoots(Scene scene, IReadOnlyList<SceneNode> selection)
     {
@@ -360,9 +269,8 @@ public static class StructuralEditor
         {
             SceneNode node = selection[i];
 
-            // In THIS scene and not its root. The id index is how an outside
-            // assembly asks that question: SceneNode.Owner is internal to Core,
-            // and a selection can outlive the graph it was taken from.
+            // A selection can outlive its scene. SceneNode.Owner is internal
+            // to Core, so ask the id index.
             if (node.Parent is null ||
                 !scene.TryFindById(node.Id, out SceneNode? live) ||
                 !ReferenceEquals(live, node))
@@ -387,17 +295,14 @@ public static class StructuralEditor
         return roots;
     }
 
-    // Moves nodes under a new parent while rewriting their local transforms so
-    // nothing appears to move. Both halves are recorded, so the undo restores
-    // the placement AND the transform.
+    // Reparents and rewrites local transforms so nothing moves in world space.
     private static bool TryReparentPreservingWorld(
         Scene scene, UndoStack undo, IReadOnlyList<SceneNode> nodes, SceneNode newParent, int firstIndex, string name)
     {
         if (!Matrix4x4.Invert(newParent.WorldMatrix, out Matrix4x4 inverse))
             return false;
 
-        // Solved BEFORE anything moves: a node's world matrix is only the one to
-        // preserve while it still hangs where it did.
+        // Solve before anything moves, while the world matrices are still the old ones.
         var locals = new Transform[nodes.Count];
         for (int i = 0; i < nodes.Count; i++)
         {

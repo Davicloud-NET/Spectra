@@ -7,18 +7,9 @@ using System.Numerics;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The material half of the asset pipeline, exercised headlessly against a
-/// <see cref="FakeRenderer"/> — same division of labour as
-/// <see cref="AssetManagerTests"/>, except material loading is fully
-/// synchronous, so no pumping is involved.
+/// Material loading against a <see cref="FakeRenderer"/>. Content problems
+/// must degrade to something drawable and log, never throw into a frame.
 /// </summary>
-/// <remarks>
-/// The theme running through these tests is that <em>content problems must not
-/// be able to crash a frame</em>: a missing file, a missing texture, a shader
-/// that never resolved. Each one degrades to something drawable and logs, and
-/// <see cref="AssetManager.DefaultMaterial"/> is the backstop that makes that
-/// possible — which is why several tests do nothing but prove it is never null.
-/// </remarks>
 public sealed class MaterialAssetTests
 {
     private const string DevGrid = "Materials/dev_grid.spectramat";
@@ -36,8 +27,7 @@ public sealed class MaterialAssetTests
         material.SourcePath.ShouldBe(DevGrid);
         material.Shader.ShouldBeSameAs(renderer.DefaultShader);
 
-        // #8C8C99, decoded from sRGB. The shipped material files are authored in
-        // display colours; what reaches a uniform is linear.
+        // #8C8C99 in the file, linear in the uniform.
         material.TryGetVector3("uBaseColor", out Vector3 baseColor).ShouldBeTrue();
         baseColor.ShouldBe(ColorSpace.SrgbToLinear(new Vector3(0x8C / 255f, 0x8C / 255f, 0x99 / 255f)));
 
@@ -46,8 +36,6 @@ public sealed class MaterialAssetTests
         texture.ShouldNotBeSameAs(assets.PlaceholderTexture);
         ((FakeTexture)texture).Width.ShouldBe(128);
 
-        // The texture went through the texture cache, so the material shares one
-        // GPU texture with anything else that names the same image.
         assets.TryGetTexture(GridTexture, out TextureAsset? asset).ShouldBeTrue();
         asset.Texture.ShouldBeSameAs(texture);
         asset.Filter.ShouldBe(TextureFilter.LinearMipmap);
@@ -61,7 +49,7 @@ public sealed class MaterialAssetTests
     {
         var (assets, _) = CreateAttached();
 
-        // checker_gray.spectramat asks for nearest filtering on purpose.
+        // checker_gray.spectramat asks for nearest filtering.
         assets.LoadMaterial(CheckerGray);
 
         assets.TryGetTexture("Textures/checker_gray.png", out TextureAsset? asset).ShouldBeTrue();
@@ -79,14 +67,11 @@ public sealed class MaterialAssetTests
 
         Material first = assets.LoadMaterial(DevGrid);
         Material second = assets.LoadMaterial(DevGrid);
-        // Different spelling, same asset: the cache key is normalised exactly
-        // like the texture cache's.
         Material third = assets.LoadMaterial("Materials\\dev_grid.spectramat");
 
         second.ShouldBeSameAs(first);
         third.ShouldBeSameAs(first);
         assets.MaterialCount.ShouldBe(1);
-        // Built-ins + one diffuse upload: the repeat loads never touched disk.
         renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 1);
 
         Material other = assets.LoadMaterial(CheckerGray);
@@ -150,13 +135,11 @@ public sealed class MaterialAssetTests
             var assets = Attach(logger, root, out _);
             Material material = assets.LoadMaterial("Materials/gone.spectramat");
 
-            // The slot is bound to the placeholder rather than left empty: an
-            // unbound sampler reads whatever the previous draw left on the unit.
+            // An unbound sampler would read whatever the last draw left on the unit.
             material.TryGetTexture("uDiffuse", out int unit, out Texture? missing).ShouldBeTrue();
             unit.ShouldBe(0);
             missing.ShouldBeSameAs(assets.PlaceholderTexture);
 
-            // The healthy slot beside it is unaffected, as is the rest of the file.
             material.TryGetTexture("uMask", out int maskUnit, out Texture? mask).ShouldBeTrue();
             maskUnit.ShouldBe(1);
             mask.ShouldNotBeSameAs(assets.PlaceholderTexture);
@@ -187,8 +170,6 @@ public sealed class MaterialAssetTests
             var assets = Attach(logger, root, out _);
             Material material = assets.LoadMaterial("Materials/escape.spectramat");
 
-            // Content references stay inside the content root; a file that tries
-            // otherwise is a warning, not an exception out of the draw loop.
             material.TryGetTexture("uDiffuse", out _, out Texture? texture).ShouldBeTrue();
             texture.ShouldBeSameAs(assets.PlaceholderTexture);
             logger.MessagesAt(LogLevel.Warning).ShouldContain(
@@ -214,8 +195,7 @@ public sealed class MaterialAssetTests
         material.ShouldBeSameAs(assets.DefaultMaterial);
         logger.MessagesAt(LogLevel.Warning).Count(m => m.Contains("does_not_exist")).ShouldBe(1);
 
-        // Cached under the requested key, so a caller that asks every frame pays
-        // a dictionary probe instead of another stat() and another warning.
+        // The miss is cached: no second warning.
         assets.LoadMaterial("Materials/does_not_exist.spectramat").ShouldBeSameAs(material);
         logger.MessagesAt(LogLevel.Warning).Count(m => m.Contains("does_not_exist")).ShouldBe(1);
 
@@ -279,8 +259,7 @@ public sealed class MaterialAssetTests
         var assets = new AssetManager(
             NullLogger<AssetManager>.Instance, ContentRoot.Path, hotReloadEnabled: false);
 
-        // Before a renderer exists: not drawable, but a real object — this is
-        // what stops a null reference reaching the draw loop.
+        // Before a renderer exists: not drawable, but not null.
         Material material = assets.DefaultMaterial.ShouldNotBeNull();
         material.Name.ShouldBe(AssetManager.DefaultMaterialName);
         material.Shader.ShouldBeNull();
@@ -290,8 +269,7 @@ public sealed class MaterialAssetTests
         var renderer = new FakeRenderer();
         assets.AttachRenderer(renderer);
 
-        // Attaching completes the same instance rather than replacing it, so a
-        // mesh that grabbed it early starts drawing correctly.
+        // Same instance, so a mesh that grabbed it early starts drawing.
         assets.DefaultMaterial.ShouldBeSameAs(material);
         material.Shader.ShouldBeSameAs(renderer.DefaultShader);
         material.TryGetTexture("uDiffuse", out int unit, out Texture? texture).ShouldBeTrue();
@@ -300,9 +278,7 @@ public sealed class MaterialAssetTests
 
         assets.ReleaseGraphicsResources();
 
-        // After teardown it survives, stripped back to non-drawable: its texture
-        // was just destroyed, so keeping the binding would resolve to a disposed
-        // GPU object.
+        // After teardown its texture is gone, so the binding has to go too.
         assets.DefaultMaterial.ShouldBeSameAs(material);
         material.Shader.ShouldBeNull();
         material.TextureCount.ShouldBe(0);
@@ -323,8 +299,6 @@ public sealed class MaterialAssetTests
 
         assets.DefaultMaterial.ShouldNotBeNull();
         assets.DefaultMaterial.Shader.ShouldBeNull();
-        // Applying a shaderless material is a no-op, not a crash: the pipelines
-        // skip such an item, and nothing here may throw either.
         Should.NotThrow(assets.DefaultMaterial.Apply);
         logger.MessagesAt(LogLevel.Warning).ShouldContain(
             m => m.Contains("no default shader"), customMessage: logger.Describe());
@@ -352,8 +326,7 @@ public sealed class MaterialAssetTests
         var assets = new AssetManager(
             NullLogger<AssetManager>.Instance, ContentRoot.Path, hotReloadEnabled: false);
 
-        // A caller error, unlike every content problem above: without a renderer
-        // there is nowhere to put the textures.
+        // A caller error, not a content problem, so it throws.
         Should.Throw<InvalidOperationException>(() => assets.LoadMaterial(DevGrid));
     }
 
@@ -368,8 +341,6 @@ public sealed class MaterialAssetTests
                 texture uDiffuse = Textures/dev_grid.png
                 color uBaseColor = 1 0 0
                 """);
-            // No colour line at all — the parser accepts this silently, which is
-            // exactly why the material has to carry a defined value anyway.
             WriteMaterial(root, "untinted.spectramat", """
                 shader = lit
                 texture uDiffuse = Textures/dev_grid.png
@@ -379,16 +350,13 @@ public sealed class MaterialAssetTests
             Material tinted = assets.LoadMaterial("Materials/tinted.spectramat");
             Material untinted = assets.LoadMaterial("Materials/untinted.spectramat");
 
-            // The file's own value still wins over the seeded default.
             tinted.TryGetVector3("uBaseColor", out Vector3 red).ShouldBeTrue();
             red.ShouldBe(new Vector3(1f, 0f, 0f));
             untinted.TryGetVector3("uBaseColor", out Vector3 seeded).ShouldBeTrue();
             seeded.ShouldBe(Vector3.One);
 
-            // Every backend keeps uniform state between draws, so a material
-            // that writes nothing for uBaseColor inherits whatever the previous
-            // draw left there — and on the very first draw inherits the
-            // backend's zero-initialised value, i.e. albedo * 0 = solid black.
+            // Uniform state persists between draws, so an unwritten uBaseColor
+            // would inherit the previous draw's value.
             var shader = new RecordingShaderProgram();
             tinted.Shader = shader;
             untinted.Shader = shader;
@@ -418,17 +386,14 @@ public sealed class MaterialAssetTests
         var assets = new AssetManager(logger, ContentRoot.Path, hotReloadEnabled: false);
         assets.AttachRenderer(new FakeRenderer());
 
-        // MaterialRegistry only trims and folds separators, so a path like this
-        // survives interning and reaches path normalisation at resolve time.
+        // Interning only trims and folds separators, so a bad path gets this far.
         MaterialRef reference = MaterialRegistry.Intern(badPath);
 
-        // ResolveMaterial runs inside the static-world GPU swap on the render
-        // thread: a throw here ends the render thread and repeats on every
-        // compile, so it has to degrade like every other bad content reference.
+        // ResolveMaterial runs in the static-world swap on the render thread;
+        // a throw there would end it.
         Material material = Should.NotThrow(() => assets.ResolveMaterial(reference));
         material.ShouldBeSameAs(assets.DefaultMaterial);
 
-        // Warned about once, not once per compile.
         Should.NotThrow(() => assets.ResolveMaterial(reference));
         logger.MessagesAt(LogLevel.Warning).Count(m => m.Contains(badPath)).ShouldBe(1, logger.Describe());
         logger.MessagesAt(LogLevel.Error).ShouldBeEmpty(logger.Describe());
@@ -452,9 +417,6 @@ public sealed class MaterialAssetTests
             sharp.TryGetTexture("uDiffuse", out _, out Texture? sharpTexture).ShouldBeTrue();
             tiled.TryGetTexture("uDiffuse", out _, out Texture? tiledTexture).ShouldBeTrue();
 
-            // Load order used to decide which of the two got its sampler state;
-            // the loser rendered with the other's, and a repeat-tiled surface
-            // clamped to the edge is a smear, not a tile.
             sharpTexture.ShouldNotBeSameAs(tiledTexture);
             ((FakeTexture)sharpTexture).Filter.ShouldBe(TextureFilter.Nearest);
             ((FakeTexture)sharpTexture).Wrap.ShouldBe(TextureWrap.Clamp);
@@ -476,22 +438,18 @@ public sealed class MaterialAssetTests
         Material material = assets.LoadMaterial(DevGrid);
         material.Shader.ShouldNotBeNull();
 
-        // Warm up: JIT Apply and the dictionary enumerators it walks.
+        // Warm up the JIT.
         for (int i = 0; i < 200; i++) material.Apply();
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 10_000; i++) material.Apply();
         long after = GC.GetAllocatedBytesForCurrentThread();
 
-        // Apply runs once per draw call, every frame — the per-frame budget is
-        // zero, which is why the maps are walked with struct enumerators and a
-        // texture binding resolves with a field read.
+        // Apply runs once per draw call.
         (after - before).ShouldBe(0);
 
         assets.ReleaseGraphicsResources();
     }
-
-    // ---- helpers ---------------------------------------------------------
 
     private static (AssetManager Assets, FakeRenderer Renderer) CreateAttached()
     {
@@ -510,8 +468,7 @@ public sealed class MaterialAssetTests
         return assets;
     }
 
-    // A throwaway content root with the repo's textures copied in, so a material
-    // written here can reference real images without touching the repo folder.
+    // Temp content root with the repo's grid texture copied in.
     private static string CreateTempContentRoot()
     {
         string root = Path.Combine(Path.GetTempPath(), "SpectraMaterialTests", Guid.NewGuid().ToString("N"));

@@ -8,23 +8,10 @@ namespace SpectraEngine.Bsp.Tests;
 /// <summary>
 /// Colour space as it travels from a <c>.spectramat</c> line to a GPU texture.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Three separate claims live here, and they are separate because they can fail
-/// independently: the file format says what a texture is, the cache treats that
-/// as part of the texture's identity, and a format that cannot carry sRGB says
-/// so out loud rather than degrading in silence.
-/// </para>
-/// <para>
-/// <see cref="ColorSpaceTests"/> pins the arithmetic; this pins the plumbing.
-/// </para>
-/// </remarks>
 public sealed class TextureColorSpaceTests
 {
     private const string Grid = "Textures/dev_grid.png";
     private const string Mask = "Textures/gradient_mask.png";
-
-    // ---- the file format -------------------------------------------------
 
     [Fact]
     public void A_texture_is_srgb_unless_the_line_says_data()
@@ -37,10 +24,6 @@ public sealed class TextureColorSpaceTests
 
         definition.Warnings.ShouldBeEmpty();
 
-        // An image file is a picture until its author says otherwise. The
-        // default has to be this way round: an albedo silently loaded as data
-        // renders dark with nothing in the log, whereas a normal map loaded as
-        // colour is obvious the moment anyone looks at the surface.
         definition.TryGetTextureSlot("uDiffuse", out MaterialTextureSlot diffuse).ShouldBeTrue();
         diffuse.ColorSpace.ShouldBe(TextureColorSpace.Srgb);
 
@@ -61,9 +44,6 @@ public sealed class TextureColorSpaceTests
         definition.Warnings.ShouldBeEmpty();
         definition.TryGetTextureSlot("uNormal", out MaterialTextureSlot slot).ShouldBeTrue();
 
-        // The point of the test: one line, both meanings, no ambiguity. 'linear'
-        // was already the bilinear filter when this option was added, so reusing
-        // it for the colour space would have made this exact line unparseable.
         slot.Filter.ShouldBe(TextureFilter.Linear);
         slot.Wrap.ShouldBe(TextureWrap.Clamp);
         slot.ColorSpace.ShouldBe(TextureColorSpace.Linear);
@@ -97,12 +77,10 @@ public sealed class TextureColorSpaceTests
         definition.Warnings.ShouldContain(w => w.Contains("unknown option 'gamma'"));
         definition.Warnings.ShouldContain(w => w.Contains("srgb/data"));
 
-        // The bad option costs that option, never the texture.
+        // The slot itself survives the bad option.
         definition.TryGetTextureSlot("uDiffuse", out MaterialTextureSlot slot).ShouldBeTrue();
         slot.ColorSpace.ShouldBe(TextureColorSpace.Srgb);
     }
-
-    // ---- the cache -------------------------------------------------------
 
     [Fact]
     public void One_image_asked_for_both_ways_loads_two_textures()
@@ -114,16 +92,12 @@ public sealed class TextureColorSpaceTests
         TextureAsset data = assets.LoadTexture(
             Grid, TextureFilter.Nearest, TextureWrap.Repeat, TextureColorSpace.Linear);
 
-        // Colour space is baked into the GPU format on all three backends, just
-        // like filter and wrap, so these cannot share one texture. The case is
-        // real rather than hypothetical: one grid image is legitimately both a
-        // wall albedo and a mask.
+        // Colour space is part of the GPU format, so the two can't share a texture.
         data.ShouldNotBeSameAs(albedo);
         assets.TextureCount.ShouldBe(2);
         ((FakeTexture)albedo.Texture).ColorSpace.ShouldBe(TextureColorSpace.Srgb);
         ((FakeTexture)data.Texture).ColorSpace.ShouldBe(TextureColorSpace.Linear);
 
-        // Both stay cached; neither request decodes again.
         assets.LoadTexture(Grid, TextureFilter.Nearest, TextureWrap.Repeat, TextureColorSpace.Srgb)
             .ShouldBeSameAs(albedo);
         assets.LoadTexture(Grid, TextureFilter.Nearest, TextureWrap.Repeat, TextureColorSpace.Linear)
@@ -138,9 +112,7 @@ public sealed class TextureColorSpaceTests
     {
         var (assets, _) = Attach(NullLogger<AssetManager>.Instance);
 
-        // The shipped materials name no colour space, so they take the default,
-        // and the handle their texture resolves to must be the sRGB variant --
-        // not merely "some variant of that path".
+        // dev_grid names no colour space, so it takes the sRGB default.
         assets.LoadMaterial("Materials/dev_grid.spectramat");
 
         assets.TryGetTexture(Grid, TextureFilter.LinearMipmap, TextureWrap.Repeat,
@@ -153,18 +125,13 @@ public sealed class TextureColorSpaceTests
         assets.ReleaseGraphicsResources();
     }
 
-    // ---- the formats that cannot ----------------------------------------
-
     [Fact]
     public void A_single_channel_image_asked_for_srgb_falls_back_and_says_so()
     {
         var logger = new CapturingLogger();
         var (assets, _) = Attach(logger);
 
-        // gradient_mask.png is one channel, and no backend has a one-channel
-        // sRGB format. Falling back is right; falling back silently is not,
-        // because the material author would have no way to learn that the flag
-        // they wrote did nothing.
+        // gradient_mask.png is one channel. No backend has a one-channel sRGB format.
         TextureAsset asset = assets.LoadTexture(
             Mask, TextureFilter.Linear, TextureWrap.Repeat, TextureColorSpace.Srgb);
 
@@ -181,8 +148,6 @@ public sealed class TextureColorSpaceTests
 
     private static (AssetManager Assets, FakeRenderer Renderer) Attach(ILogger logger)
     {
-        // Hot-reload off: these tests assert on loading, and a watcher on the
-        // shared repo folder would only add OS noise.
         var assets = new AssetManager(logger, ContentRoot.Path, hotReloadEnabled: false);
         var renderer = new FakeRenderer();
         assets.AttachRenderer(renderer);
@@ -194,11 +159,7 @@ public sealed class TextureColorSpaceTests
     {
         var (assets, _) = Attach(NullLogger<AssetManager>.Instance);
 
-        // The handle remembers what was ASKED for and the texture remembers what
-        // it GOT. Keying the cache on the resolved value instead would collapse
-        // these two into one entry, and the second caller would then get a
-        // handle whose ColorSpace disagreed with its own request -- harmless for
-        // R8 today, wrong the moment any format gains an sRGB form.
+        // The handle keeps what was asked for, the texture what it got.
         TextureAsset asked = assets.LoadTexture(
             Mask, TextureFilter.Linear, TextureWrap.Repeat, TextureColorSpace.Srgb);
         TextureAsset plain = assets.LoadTexture(
@@ -208,8 +169,6 @@ public sealed class TextureColorSpaceTests
         plain.ColorSpace.ShouldBe(TextureColorSpace.Linear);
         asked.ShouldNotBeSameAs(plain);
 
-        // Both resolved to the same thing on the GPU, which is the fallback
-        // working.
         asked.Texture.ColorSpace.ShouldBe(TextureColorSpace.Linear);
         plain.Texture.ColorSpace.ShouldBe(TextureColorSpace.Linear);
 

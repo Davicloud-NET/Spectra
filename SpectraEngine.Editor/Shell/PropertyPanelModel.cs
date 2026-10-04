@@ -39,9 +39,7 @@ public sealed class PropertyRowModel : ObservableObject
         AssetKind = row.Asset;
         Help = row.Help ?? string.Empty;
 
-        // A mismatched pair would silently pour one choice's word into another
-        // choice's slot, which is the shape of defect the (Id, Key) row identity
-        // already exists to prevent one level up.
+        // Labels pair with choices by index, so the counts must match.
         if (ChoiceLabels.Count != Choices.Count)
         {
             throw new InvalidOperationException(
@@ -51,13 +49,8 @@ public sealed class PropertyRowModel : ObservableObject
 
         Fields = Kind switch
         {
-            // A colour is NOT three numbers to a person, so it does not get
-            // three number cells - it gets ONE, holding a hex string, and the
-            // swatch beside it is a readout. It has to be a real field rather
-            // than a bound string, because the panel's commit contract lives in
-            // PropertyFieldModel: a hex value parsed on every keystroke can
-            // never be assembled, since "#8", "#80" and "#808" are all
-            // unreadable and each one reverts the box to the last good colour.
+            // One cell holding a hex string. A real field, not a bound string:
+            // parsed per keystroke, "#8" never gets as far as "#808080".
             PropertyKind.Color =>
                 [new PropertyFieldModel(Id, PropertyAxes.All, string.Empty, CommitField)],
 
@@ -73,9 +66,7 @@ public sealed class PropertyRowModel : ObservableObject
             _ => [],
         };
 
-        // The row re-raises its cells' refusals, so one line under the row can
-        // bind to the row rather than every template needing to reach into a
-        // particular cell.
+        // Re-raise the cells' refusals so the line under the row binds to the row.
         foreach (PropertyFieldModel field in Fields)
         {
             field.PropertyChanged += (_, e) =>
@@ -94,44 +85,18 @@ public sealed class PropertyRowModel : ObservableObject
 
     /// <summary>
     /// Which keyvalue this row is, for the ids whose <see cref="Id"/> alone
-    /// does not name one. Empty on every other row.
+    /// does not name one. Empty on every other row. Every edit carries both.
     /// </summary>
-    /// <remarks>
-    /// <b>A row's identity is the PAIR, so every edit this row emits carries
-    /// both halves.</b> Every keyvalue an entity declares wears one id
-    /// (<see cref="PropertyId.EntityKeyvalue"/>) and is told apart only by this
-    /// string; an edit sent without it names no property at all, and
-    /// <c>PropertyEditor</c> refuses it rather than guessing.
-    /// </remarks>
     public string Key { get; }
 
     /// <summary>
-    /// Whether this row edits an entity keyvalue, whose value crosses as WIRE
-    /// TEXT whatever widget the schema asked for.
+    /// Whether this row edits an entity keyvalue, whose value is committed as
+    /// wire text whatever widget the schema asked for.
     /// </summary>
-    /// <remarks>
-    /// <b>The one place the panel's typed cells are serialised, and it has to
-    /// be one place.</b> A keyvalue's storage is its wire string, so a number
-    /// cell over an <c>Int</c> property and a checkbox over a <c>Bool</c> one
-    /// both commit text: the command writes the string it is handed and does no
-    /// conversion, which is exactly what lets an unparseable authored value
-    /// survive being looked at. Formatting through <c>KeyvalueWire</c> rather
-    /// than through the panel's own <c>Format</c> keeps the text the panel
-    /// writes and the text the reader parses one vocabulary.
-    /// </remarks>
     public bool IsEntityKeyvalue => Id == PropertyId.EntityKeyvalue;
 
-    /// <summary>
-    /// This row's index in the published list.
-    /// </summary>
-    /// <remarks>
-    /// The panel does not render every published row - the name and the id
-    /// become its header - so the model's rows and the snapshot's rows are no
-    /// longer index-for-index. Carrying the source index refreshes in one pass
-    /// and allocates nothing; the obvious alternative, filtering the published
-    /// list into a fresh one, allocates at the publish rate for a panel that
-    /// exists to avoid exactly that.
-    /// </remarks>
+    // Index in the published list. The panel skips some published rows (the
+    // header shows them), so model rows and snapshot rows don't line up.
     internal int SourceIndex { get; set; }
 
     public string Group { get; }
@@ -149,14 +114,9 @@ public sealed class PropertyRowModel : ObservableObject
     public bool HasHelp => Help.Length > 0;
 
     /// <summary>
-    /// The dropdown's own value: a WORD, which commits the token beside it.
+    /// The dropdown's value: the display word for <see cref="Choice"/>. Setting
+    /// it commits the matching token; an unlisted word is taken as a token.
     /// </summary>
-    /// <remarks>
-    /// The dropdown binds here rather than to <see cref="Choice"/> so what the
-    /// user picks and what the map records can differ. A word that is not in
-    /// the list is treated as a token, which is what a row whose labels are its
-    /// tokens produces.
-    /// </remarks>
     public string ChoiceLabel
     {
         get
@@ -195,15 +155,7 @@ public sealed class PropertyRowModel : ObservableObject
     }
     public IReadOnlyList<PropertyFieldModel> Fields { get; }
 
-    /// <summary>
-    /// The first cell's refusal, or empty. Shown as one line under the row.
-    /// </summary>
-    /// <remarks>
-    /// <b>Per ROW rather than per cell, because a vector is three cells and one
-    /// line.</b> Three reason lines under one row would be three times the
-    /// layout shift for one mistake, and the message already names the axis it
-    /// is about.
-    /// </remarks>
+    /// <summary>The first cell's refusal, or empty. Shown as one line under the row.</summary>
     public string Rejection
     {
         get
@@ -227,25 +179,13 @@ public sealed class PropertyRowModel : ObservableObject
     /// This row's colour in linear light, or a NaN vector when the selection
     /// disagrees.
     /// </summary>
-    /// <remarks>
-    /// What the picker opens on. NaN rather than a nullable, because that is
-    /// already how a mixed colour travels through this row.
-    /// </remarks>
     public Vector3 ColorLinear => _color;
 
     /// <summary>Whether the selection disagrees about this colour.</summary>
     public bool IsColorMixed => float.IsNaN(_color.X);
 
-    /// <summary>
-    /// Writes a colour from the picker, the way a scrub writes a number.
-    /// </summary>
-    /// <remarks>
-    /// <b>Through the scrub guard, for the reason a numeric drag uses it.</b>
-    /// The picker writes faster than the engine publishes, so without it every
-    /// refresh would put a value one or two publishes stale back into the hex
-    /// box and the swatch would fight the pointer. The swatch is refreshed here
-    /// directly so it follows the drag rather than waiting for the echo.
-    /// </remarks>
+    // Writes a colour from the picker. Goes through the scrub guard like a
+    // numeric drag, and refreshes the swatch here instead of waiting for the echo.
     internal void ScrubColor(Vector3 linear)
     {
         if (Kind != PropertyKind.Color || Fields.Count == 0) return;
@@ -270,17 +210,7 @@ public sealed class PropertyRowModel : ObservableObject
 
     internal Action<PropertyEdit> Apply { get; }
 
-    /// <summary>
-    /// A three-number value, which the panel lays out over two lines.
-    /// </summary>
-    /// <remarks>
-    /// <b>Two lines, because one does not fit.</b> The panel is 300px wide by
-    /// default; a fixed label column plus three cells side by side left about
-    /// 31px of interior per cell, which is five characters of monospace - so
-    /// "-125.5" could not be displayed at all, in a panel whose entire job is
-    /// displaying positions. Putting the label on its own line gives each cell
-    /// about 86px and costs one row of height on three rows.
-    /// </remarks>
+    /// <summary>A three-number value, which the panel lays out over two lines.</summary>
     public bool IsVector => Kind == PropertyKind.Vector3;
 
     /// <summary>A colour, shown as a swatch and a hex value.</summary>
@@ -289,23 +219,14 @@ public sealed class PropertyRowModel : ObservableObject
     /// <summary>A one-cell value that fits beside its label.</summary>
     public bool IsScalar => Kind is PropertyKind.Number or PropertyKind.Text;
 
-    /// <summary>Whether the selection can be picked from at all.</summary>
-    /// <remarks>
-    /// A picker needs ONE entity selected, because the list it offers comes off
-    /// the selected node's own capture: a multi-selection publishes none, and a
-    /// button that opened an empty list would look broken rather than refused.
-    /// </remarks>
+    /// <summary>
+    /// Whether the target picker can open. It needs a single entity selected:
+    /// a multi-selection publishes no target list.
+    /// </summary>
     public bool CanPickTarget => IsTarget && !IsPartial && _selectionCount <= 1;
 
-    /// <summary>The starting value of each cell, captured when a drag begins.</summary>
-    /// <remarks>
-    /// <b>Per cell, because a drag on the row's LABEL is a uniform delta and
-    /// not one shared number.</b> Seeding every axis from x's value and writing
-    /// it back absolutely does not offset y and z, it overwrites them: a
-    /// position of (10, 2, -5) becomes (10.02, 10.02, 10.02) on the first
-    /// pointer move, and a brush of any shape becomes a cube. The commands are
-    /// absolute by design, so the delta has to be reconstructed here.
-    /// </remarks>
+    // Each cell's value when a drag began. A label drag applies one delta to
+    // all three, and the commands are absolute.
     internal float[] ScrubStarts { get; } = new float[3];
 
     public bool IsBoolean => Kind == PropertyKind.Boolean;
@@ -315,15 +236,7 @@ public sealed class PropertyRowModel : ObservableObject
     /// <summary>A file chosen from the project, shown as a name and a button.</summary>
     public bool IsAsset => Kind == PropertyKind.Asset;
 
-    /// <summary>
-    /// An entity name, typed or picked.
-    /// </summary>
-    /// <remarks>
-    /// <b>A text box with a picker beside it, never a dropdown.</b> A wildcard,
-    /// a runtime token and a name typed before the entity exists are all legal
-    /// values no list can offer, and a control that could not show its own value
-    /// would render blank and write that blank back on the first touch.
-    /// </remarks>
+    /// <summary>An entity name, typed or picked.</summary>
     public bool IsTarget => Kind == PropertyKind.Target;
 
     /// <summary>Writes a picked entity name through the field's commit path.</summary>
@@ -332,11 +245,8 @@ public sealed class PropertyRowModel : ObservableObject
         if (!IsTarget || Fields.Count == 0 || string.IsNullOrEmpty(name)) return;
 
         PropertyFieldModel field = Fields[0];
-        // BeginEdit first, because Commit is the END of an edit and returns
-        // early without one - a pick that only assigned the text would show the
-        // new name and post nothing. SetScrubText is the wrong door too: it
-        // writes the LIVE value as well, so the commit would compare the new
-        // name against itself and record no change.
+        // BeginEdit first: Commit returns early without an open edit.
+        // Not SetScrubText: it also sets the live value, so Commit sees no change.
         field.BeginEdit();
         field.Text = name;
         field.Commit();
@@ -345,13 +255,7 @@ public sealed class PropertyRowModel : ObservableObject
     /// <summary>Which kind of file this row's picker offers.</summary>
     public AssetKind AssetKind { get; }
 
-    /// <summary>
-    /// The content-relative path this row holds, empty for the engine default.
-    /// </summary>
-    /// <remarks>
-    /// The PATH rather than the label, because it is what the picker opens on
-    /// and what a reveal navigates to; the label is for reading.
-    /// </remarks>
+    /// <summary>The content-relative path this row holds, empty for the engine default.</summary>
     public string AssetPath
     {
         get => _assetPath;
@@ -362,15 +266,7 @@ public sealed class PropertyRowModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// The file's stem, or the word for having none.
-    /// </summary>
-    /// <remarks>
-    /// <b>The stem, because a path does not fit.</b> The panel is 300px wide
-    /// and <c>Materials/dev/wall_brick_02.spectramat</c> is not readable in it
-    /// at any font this shell uses; the folder is in the tooltip and the picker
-    /// shows it beside every row.
-    /// </remarks>
+    /// <summary>The file's stem, or "(default)" or "(mixed)".</summary>
     public string AssetLabel
     {
         get
@@ -386,14 +282,9 @@ public sealed class PropertyRowModel : ObservableObject
     }
 
     /// <summary>
-    /// What is wrong or unusual about this row's value, in one or two words.
+    /// What is wrong or unusual about this row's value, in one or two words,
+    /// such as "missing" for a material whose file does not exist.
     /// </summary>
-    /// <remarks>
-    /// <b>"missing" is the whole reason this exists.</b> A material naming a
-    /// file nobody wrote degrades to the default material and a magenta
-    /// checker, which is a picture rather than a report: the row is the only
-    /// place a person is looking when they wonder why.
-    /// </remarks>
     public string Note
     {
         get => _note;
@@ -407,11 +298,7 @@ public sealed class PropertyRowModel : ObservableObject
     /// <summary>Whether there is a note to show.</summary>
     public bool HasNote => _note.Length > 0;
 
-    /// <summary>Writes a picked file into this row.</summary>
-    /// <remarks>
-    /// An empty path is a real answer and means the engine default, which is
-    /// what an unnamed brush face already draws with.
-    /// </remarks>
+    /// <summary>Writes a picked file into this row. An empty path means the engine default.</summary>
     public void PickAsset(string contentPath)
     {
         if (!IsAsset) return;
@@ -428,14 +315,8 @@ public sealed class PropertyRowModel : ObservableObject
     /// <summary>
     /// How much one pixel of horizontal drag is worth, in the value's own unit.
     /// </summary>
-    /// <remarks>
-    /// <b>Per property, because the units are not comparable.</b> A degree and
-    /// a world unit are different sizes of thing, and one shared rate would
-    /// make rotation unusably twitchy or position unusably slow. The numbers
-    /// are chosen so a comfortable 200px drag covers a useful range: four world
-    /// units of position, fifty degrees of rotation, one whole doubling of
-    /// scale.
-    /// </remarks>
+    // Tuned so a 200px drag is about 4 units of position, 50 degrees, or one
+    // doubling of scale.
     public float ScrubStep => Id switch
     {
         PropertyId.Rotation => 0.25f,
@@ -443,9 +324,7 @@ public sealed class PropertyRowModel : ObservableObject
         PropertyId.LightIntensity => 0.05f,
         PropertyId.LightRange => 0.05f,
 
-        // A face's texture frame is measured in repeats and world units per
-        // repeat, both of which are small numbers where a whole unit of drag is
-        // a change nobody wanted.
+        // Face texture values are small numbers: repeats, units per repeat.
         PropertyId.FaceUScale or PropertyId.FaceVScale => 0.01f,
         PropertyId.FaceUOffset or PropertyId.FaceVOffset => 0.005f,
         PropertyId.FaceRotation => 0.25f,
@@ -453,10 +332,6 @@ public sealed class PropertyRowModel : ObservableObject
     };
 
     /// <summary>How much one arrow-key press is worth.</summary>
-    /// <remarks>
-    /// Bigger than a pixel of drag, because a key press is a deliberate single
-    /// step and a user pressing Up expects to see the object move.
-    /// </remarks>
     public float KeyStep => Id switch
     {
         PropertyId.Rotation => 5f,
@@ -475,20 +350,9 @@ public sealed class PropertyRowModel : ObservableObject
     }
 
     /// <summary>
-    /// The colour as an sRGB hex string, for the swatch's tooltip.
+    /// The colour as an sRGB hex string, for the swatch's tooltip. The stored
+    /// value is linear. Read-only: edits go through <c>Fields[0]</c>.
     /// </summary>
-    /// <remarks>
-    /// <b>The stored value is LINEAR and the edited one is sRGB.</b> A light's
-    /// colour is a quantity of light, and the panel used to show it as three
-    /// linear floats under a label reading "Color (linear)" - "1, 0.9114,
-    /// 0.7484" for a warm white, which is a correct description of the storage
-    /// and tells a person nothing about the colour. The conversion happens
-    /// here, at the edge, exactly as it does on the way into a texture.
-    /// <para>
-    /// Read-only: what the user edits is <c>Fields[0]</c>, on the same commit
-    /// contract as every other cell.
-    /// </para>
-    /// </remarks>
     public string Hex
     {
         get => _hex;
@@ -506,13 +370,7 @@ public sealed class PropertyRowModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// "3 of 5" when the property is unique to part of the selection.
-    /// </summary>
-    /// <remarks>
-    /// Shown rather than hidden, because editing such a row is still a bulk
-    /// edit and the user is entitled to know how many objects it will reach.
-    /// </remarks>
+    /// <summary>"3 of 5" when the property is unique to part of the selection.</summary>
     public string PartialLabel => _isPartial
         ? string.Format(CultureInfo.InvariantCulture, "{0} of {1}", _presentCount, _selectionCount)
         : string.Empty;
@@ -526,7 +384,6 @@ public sealed class PropertyRowModel : ObservableObject
             if (!Set(ref _flag, value) || _applyingRefresh)
                 return;
 
-            // A checkbox has no typing to finish, so the click IS the commit.
             Apply(IsEntityKeyvalue
                 ? new PropertyEdit { Id = Id, Key = Key, Text = KeyvalueWire.Format(value) }
                 : new PropertyEdit { Id = Id, Flag = value });
@@ -542,21 +399,15 @@ public sealed class PropertyRowModel : ObservableObject
             if (!Set(ref _choice, value) || _applyingRefresh || string.IsNullOrEmpty(value))
                 return;
 
-            // A choice's value is already its wire token - NodeInspector hands
-            // the dropdown the schema's TOKENS rather than its display names,
-            // for exactly this reason - so an entity choice needs no
-            // conversion, only its key.
+            // The value is already the wire token, so an entity choice needs only its key.
             Apply(new PropertyEdit { Id = Id, Key = Key, Text = value });
         }
     }
 
-    /// <summary>Takes a fresh value from a published row.</summary>
     internal void Refresh(PropertyRow row)
     {
-        // The IsPartial setter raises PartialLabel when the FLAG flips; this
-        // raise covers the label's other inputs, and only when they moved —
-        // Refresh runs for every row on every pump, and an unconditional raise
-        // here is binding churn for a panel that has not changed.
+        // The IsPartial setter raises PartialLabel when the flag flips. Raise
+        // for the counts only when they moved: this runs per row per pump.
         bool partialCountsChanged =
             _presentCount != row.PresentCount || _selectionCount != row.SelectionCount;
         IsPartial = row.IsPartial;
@@ -587,16 +438,14 @@ public sealed class PropertyRowModel : ObservableObject
                 break;
 
             case PropertyKind.Boolean:
-                // Guarded, or assigning the refreshed value would look like a
-                // click and apply itself straight back to the scene.
+                // Guarded, or the assignment looks like a click and applies itself.
                 _applyingRefresh = true;
                 Flag = row.Flag;
                 _applyingRefresh = false;
                 break;
 
             case PropertyKind.Asset:
-                // No guard needed: nothing here is two-way, so a refresh cannot
-                // echo back as a pick the way a checkbox or a dropdown can.
+                // No guard needed: nothing here is bound two-way.
                 _assetMixed = row.IsMixed;
                 AssetPath = row.IsMixed ? string.Empty : row.Text;
                 Note = row.Note ?? string.Empty;
@@ -608,9 +457,7 @@ public sealed class PropertyRowModel : ObservableObject
                 Choice = row.IsMixed ? string.Empty : row.Text;
                 _applyingRefresh = false;
 
-                // The dropdown binds to the WORD, so it has to hear about it
-                // too; the guard above is what stops that echoing back as a
-                // pick.
+                // The dropdown binds to the label, not the token.
                 Raise(nameof(ChoiceLabel));
                 break;
 
@@ -629,11 +476,9 @@ public sealed class PropertyRowModel : ObservableObject
     {
         bool mixed = float.IsNaN(linear.X);
 
-        // Only the SWATCH is skipped for an unchanged colour: Set compares
-        // brushes by REFERENCE, so an unguarded refresh allocates a fresh
-        // SolidColorBrush and re-renders it on every pump for as long as a
-        // light is selected. NaN never equals itself, which is why mixed is
-        // compared as a state rather than through the vector.
+        // Skip the swatch for an unchanged colour: Set compares brushes by
+        // reference, so every pump would allocate a new one. NaN != NaN, so
+        // mixed is compared as a state.
         bool sameValue = _colorRefreshed &&
             (mixed ? float.IsNaN(_color.X) : !float.IsNaN(_color.X) && _color == linear);
 
@@ -648,30 +493,15 @@ public sealed class PropertyRowModel : ObservableObject
                 : new SolidColorBrush(Color.FromRgb(ToByte(linear.X), ToByte(linear.Y), ToByte(linear.Z)));
         }
 
-        // The FIELD reconciles every pump like every other kind's cells do,
-        // never under the value guard: per-pump reconciliation is what
-        // visually reverts a refused or no-op commit. A hex typed while play
-        // mode owns the scene is refused by the editor, and skipping this
-        // would leave the box showing the refused value beside a swatch of
-        // the real colour, indefinitely. The field's own equality guard makes
-        // the unchanged case free, and a focused box is left alone exactly as
-        // every other cell's is.
+        // The field refreshes every pump, outside the sameValue guard. That
+        // is what puts the real value back after a refused commit.
         Fields[0].Refresh(Hex, mixed);
     }
 
-    // Whether RefreshColor has run at all: the skip must not swallow the FIRST
-    // refresh, or a genuinely black light would never grow a swatch.
+    // The first refresh must never be skipped, or a black light gets no swatch.
     private bool _colorRefreshed;
 
-    /// <summary>
-    /// Writes one absolute value while a drag is in flight.
-    /// </summary>
-    /// <remarks>
-    /// <b>Absolute, like every command in this editor</b>, which is what lets a
-    /// drag emit one of these per pointer move and still undo in one step: the
-    /// host holds a transaction open around the gesture, and the coalescing
-    /// commands inside it keep the value the drag STARTED from.
-    /// </remarks>
+    // Writes one absolute value while a drag is in flight.
     internal void ScrubTo(PropertyFieldModel field, float value)
     {
         field.SetScrubText(PropertyFieldModel.Format(value));
@@ -694,20 +524,9 @@ public sealed class PropertyRowModel : ObservableObject
             });
     }
 
-    /// <summary>
-    /// One value written into all three components of a wire triple, for a
-    /// per-axis entity edit.
-    /// </summary>
-    /// <remarks>
-    /// <b>Three components, because the merge needs three on both sides.</b>
-    /// <c>PropertyEditor</c> splices the masked component at the TOKEN level and
-    /// refuses anything that is not exactly three whitespace-separated parts,
-    /// falling back to writing the value whole - which for a one-token string
-    /// would replace a whole vector with a single number. The two unmasked
-    /// components are copied from the STORED text rather than from these, so
-    /// what is sent for them is never what is written and an author's "1.0"
-    /// beside an edited y survives verbatim.
-    /// </remarks>
+    // A per-axis entity edit sends all three components. PropertyEditor
+    // splices the masked one by token and writes anything that is not three
+    // parts whole, which would replace the vector with one number.
     private static string WireTriple(float value) =>
         KeyvalueWire.Format(new Vector3(value, value, value));
 
@@ -716,8 +535,6 @@ public sealed class PropertyRowModel : ObservableObject
         switch (Kind)
         {
             case PropertyKind.Text:
-                // A text row's typed value IS its wire form, entity or not, so
-                // this arm needs only the key.
                 Apply(new PropertyEdit { Id = Id, Key = Key, Text = typed });
                 break;
 
@@ -728,10 +545,8 @@ public sealed class PropertyRowModel : ObservableObject
                     return;
                 }
 
-                // Refused HERE rather than by the editor, using the editor's own
-                // rule: a value Light's setter throws on would otherwise be
-                // posted, dropped on the render thread, and reverted by the next
-                // publish with nothing anywhere saying why.
+                // Refuse here with the editor's own rule. Posted, a bad value is
+                // dropped on the render thread and nothing says why.
                 if (!IsEntityKeyvalue && PropertyLimits.Refusal(Id, number) is { } why)
                 {
                     field.Reject($"Not applied: {Name} must be {why}.");
@@ -765,8 +580,7 @@ public sealed class PropertyRowModel : ObservableObject
                     return;
                 }
 
-                // One axis per cell, so typing into y is a bulk edit that leaves
-                // every node's own x and z alone.
+                // One axis per cell: typing into y leaves each node's x and z alone.
                 Apply(IsEntityKeyvalue
                     ? new PropertyEdit
                     {
@@ -782,12 +596,7 @@ public sealed class PropertyRowModel : ObservableObject
         }
     }
 
-    // ─── Colour space ────────────────────────────────────
-    //
-    // The engine stores linear light and a person writes sRGB. These are the
-    // same two curves the texture path uses; they are written out rather than
-    // shared with it because that path applies them in hardware, on a sampler,
-    // and has no callable form.
+    // Linear <-> sRGB. The texture path does this in hardware and has no callable form.
 
     private static byte ToByte(float linear)
     {
@@ -805,7 +614,7 @@ public sealed class PropertyRowModel : ObservableObject
     private static string ToHex(Vector3 linear) =>
         $"#{ToByte(linear.X):X2}{ToByte(linear.Y):X2}{ToByte(linear.Z):X2}";
 
-    /// <summary>Reads "#RRGGBB" or "RRGGBB" into linear RGB.</summary>
+    // Reads "#RRGGBB" or "RRGGBB" into linear RGB.
     internal static bool TryParseHex(string? text, out Vector3 linear)
     {
         linear = default;
@@ -835,20 +644,9 @@ public sealed class PropertyRowModel : ObservableObject
 /// The property panel: the selection's rows, grouped, patched from each
 /// published snapshot.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Patched, never replaced.</b> Assigning a fresh collection every snapshot
-/// would reset scroll, drop focus and destroy whatever half-typed value was in
-/// a box thirty times a second. Rows are matched by
-/// <see cref="PropertyId"/> and reused; only a change in which properties exist
-/// rebuilds anything.
-/// </para>
-/// <para>
-/// <b>Sections come from a run of equal groups</b>, which is safe because the
-/// inspector emits each group as one contiguous run and merges a multi-selection
-/// in a deterministic order rather than in click order.
-/// </para>
-/// </remarks>
+// Rows are reused while the set of properties stays the same. A fresh
+// collection per snapshot would reset scroll and focus 30 times a second.
+// Sections are runs of equal Group: the inspector emits each group contiguously.
 public sealed class PropertyPanelModel : ObservableObject
 {
     private readonly Action<PropertyEdit> _apply;
@@ -864,11 +662,8 @@ public sealed class PropertyPanelModel : ObservableObject
     /// <param name="beginGesture">Opens one history entry around a drag.</param>
     /// <param name="endGesture">Closes it, keeping the result or rolling it back.</param>
     /// <param name="applyConnections">
-    /// Posts a whole replacement wiring list for one node, or null in a host
-    /// that offers no wiring at all. Separate from <paramref name="apply"/>
-    /// because it addresses a NODE ID rather than the selection: a connection
-    /// edit replaces a list, and a stale selection would overwrite the wrong
-    /// entity's wiring entirely.
+    /// Posts a whole replacement wiring list for one node, addressed by node
+    /// id rather than by selection. Null in a host that offers no wiring.
     /// </param>
     public PropertyPanelModel(
         Action<PropertyEdit> apply,
@@ -886,35 +681,15 @@ public sealed class PropertyPanelModel : ObservableObject
             (field, typed) => _apply(new PropertyEdit { Id = PropertyId.NodeName, Text = typed }));
     }
 
-    /// <summary>
-    /// The node's name, edited in the panel's own header.
-    /// </summary>
-    /// <remarks>
-    /// <b>The header IS the name field</b>, rather than the header naming the
-    /// node and a "Node" section below it holding a second copy. That section
-    /// used to carry exactly two rows: the name, and a GUID rendered as
-    /// permanently truncated text - so the two most valuable rows in the panel
-    /// were a duplicate and an identifier nobody can use. The id is still
-    /// published and is still what every command addresses; it simply is not a
-    /// thing to look at.
-    /// </remarks>
+    /// <summary>The node's name, edited in the panel's own header.</summary>
     public PropertyFieldModel NameField { get; }
 
     /// <summary>The rows, in display order, with group headers folded in.</summary>
     public ObservableCollection<PropertyGroupModel> Groups { get; } = [];
 
-    /// <summary>
-    /// The Outputs section: the selected entity's wires.
-    /// </summary>
-    /// <remarks>
-    /// <b>Not a <see cref="PropertyGroupModel"/>, deliberately.</b> A property
-    /// group is a list of labelled values whose identity is
-    /// (<see cref="PropertyId"/>, key) and whose edits are per-value; a wire is
-    /// six values with no key at all, edited as a whole list and added and
-    /// removed by buttons. Forcing it into a row shape would mean minting a
-    /// property id per field per index - which is the hash with unreported
-    /// collisions <see cref="PropertyId.EntityKeyvalue"/> exists to avoid.
-    /// </remarks>
+    /// <summary>The Outputs section: the selected entity's wires.</summary>
+    // Not a PropertyGroupModel: a wire has no (id, key) identity and is
+    // edited as a whole list.
     public EntityWiringModel Wiring { get; }
 
     /// <summary>Whether anything is selected at all.</summary>
@@ -927,13 +702,6 @@ public sealed class PropertyPanelModel : ObservableObject
     /// Whether more than one object is selected, so the header shows a count
     /// instead of an editable name.
     /// </summary>
-    /// <remarks>
-    /// <b>The panel names its subject.</b> A column of fields with "1 selected"
-    /// over it says how many things are being edited and not WHICH, which for a
-    /// scene of 253 similarly-named nodes is the only question that matters. A
-    /// multi-selection is the one case where there is no single name to show,
-    /// and it says so.
-    /// </remarks>
     public bool IsMultiple
     {
         get => _isMultiple;
@@ -947,16 +715,7 @@ public sealed class PropertyPanelModel : ObservableObject
     /// <summary>"3 objects", for a multi-selection header.</summary>
     public string MultipleLabel => $"{_selectionCount} objects";
 
-    /// <summary>
-    /// What kind of thing it is, derived from which sections exist.
-    /// </summary>
-    /// <remarks>
-    /// Derived rather than published: a node carrying a brush grows a Brush
-    /// section, and the kind and operation rows inside it already say which of
-    /// the three brush kinds it is. Asking the engine for a fourth fact that is
-    /// implied by three it already sent would be a second source to disagree
-    /// with the first.
-    /// </remarks>
+    /// <summary>What kind of thing it is, derived from which sections exist.</summary>
     public string HeaderKind
     {
         get => _headerKind;
@@ -972,21 +731,8 @@ public sealed class PropertyPanelModel : ObservableObject
 
     /// <summary>
     /// The standing warning shown for an entity whose class this session has no
-    /// schema for.
+    /// schema for. Not an error: the authored keyvalues stay editable as text.
     /// </summary>
-    /// <remarks>
-    /// <b>Amber, which is STATE, not the accent and not the danger colour.</b>
-    /// An unknown class is not an error: <c>EntityData</c> is strings precisely
-    /// so a map authored against another game round-trips byte for byte, and
-    /// the rows below this badge are that map's own data, editable and
-    /// preserved. What the reader needs to know is that the schema is missing,
-    /// so the properties they can see are only the ones somebody wrote down and
-    /// there are no declared defaults behind them.
-    /// <para>
-    /// Standing, in a slot of its own, rather than on the status line, which is
-    /// last-writer-wins and would lose it to the next thing that happens.
-    /// </para>
-    /// </remarks>
     public string UnknownClassLabel
     {
         get => _unknownClass;
@@ -998,44 +744,25 @@ public sealed class PropertyPanelModel : ObservableObject
     }
 
     /// <summary>
-    /// What entity classes the session knows, or null when none is open.
+    /// The entity classes the session knows, or null when none is open. The
+    /// same catalogue the Insert menu is built from. Set when a session starts.
     /// </summary>
-    /// <remarks>
-    /// <b>The same catalogue the Insert menu is built from, and deliberately
-    /// so.</b> The panel already shows an unknown class's authored keyvalues as
-    /// text - that is what makes a map from a game this build does not have
-    /// worth opening at all - but nothing on screen said WHY the properties
-    /// looked like that, so a class name with a typo in it was indistinguishable
-    /// from a class with no declared properties. Asking the session's own
-    /// catalogue means the badge and the menu cannot disagree about which
-    /// classes exist.
-    /// <para>
-    /// Assigned rather than taken in the constructor, because the panel is
-    /// built with the window and a catalogue exists only once a session does.
-    /// </para>
-    /// </remarks>
     public EntitySchemaCatalog? Schemas
     {
         get => _schemas;
         set
         {
             _schemas = value;
-
-            // Forwarded rather than read through a back-reference: the wiring
-            // model answers "what inputs does this target's class declare",
-            // which is the same question this catalogue answers for the badge,
-            // and two ways of reaching one catalogue is how they end up being
-            // two catalogues.
             Wiring.Schemas = value;
         }
     }
 
     private EntitySchemaCatalog? _schemas;
 
-    /// <summary>Opens one history entry to hold a drag across a field.</summary>
+    // Opens one history entry around a drag.
     internal void BeginGesture(string name) => _beginGesture(name);
 
-    /// <summary>Closes it, keeping the result or rolling it back.</summary>
+    // Closes it, keeping the result or rolling it back.
     internal void EndGesture(bool commit) => _endGesture(commit);
 
     /// <summary>Takes one published snapshot's rows.</summary>
@@ -1056,9 +783,7 @@ public sealed class PropertyPanelModel : ObservableObject
         {
             _selectionCount = selectionCount;
             Raise(nameof(HasSelection));
-            // MultipleLabel prints this count; the IsMultiple setter only
-            // covers the FLAG flipping, so the count's raise lives here, under
-            // the count's own guard.
+            // The IsMultiple setter only raises this when the flag flips.
             Raise(nameof(MultipleLabel));
         }
 
@@ -1076,8 +801,6 @@ public sealed class PropertyPanelModel : ObservableObject
 
     private void RefreshHeader(IReadOnlyList<PropertyRow> rows, int selectionCount)
     {
-        // Its setter raises MultipleLabel when the flag flips; the count's
-        // half of that label is raised by Apply under the count guard.
         IsMultiple = selectionCount > 1;
 
         if (selectionCount == 0)
@@ -1131,19 +854,14 @@ public sealed class PropertyPanelModel : ObservableObject
 
         HeaderKind = DescribeKind(hasBrush, brushKind, brushOperation, hasEntity, hasLight, hasMesh);
 
-        // A MIXED classname is several classes at once, and naming one of them
-        // as the missing schema would be a lie about the other four. The rows
-        // themselves are still shown and still edited; what is withheld is a
-        // badge that could only be right for part of the selection.
+        // No badge for a mixed classname: it would be wrong for part of the selection.
         UnknownClassLabel =
             hasEntity && !classMixed && className.Length > 0 && !Knows(className)
                 ? $"Unknown class '{className}' - properties preserved as text"
                 : string.Empty;
     }
 
-    // Null catalogue means no session, which is not the same as "this class does
-    // not exist": every class would be unknown, and the panel would badge a map
-    // it has simply not been told about yet.
+    // No catalogue means no session yet, so nothing is badged as unknown.
     private bool Knows(string className) =>
         Schemas is null || Schemas.TryGetSchema(className, out _);
 
@@ -1152,8 +870,7 @@ public sealed class PropertyPanelModel : ObservableObject
     {
         if (hasBrush)
         {
-            // Subtractive outranks the kind, exactly as it does in the tree: a
-            // cut renders nothing at all, so it is the fact worth leading with.
+            // Subtractive outranks the kind, as in the tree.
             if (operation.Equals("Subtractive", StringComparison.OrdinalIgnoreCase))
                 return "Cut";
 
@@ -1165,25 +882,15 @@ public sealed class PropertyPanelModel : ObservableObject
             };
         }
 
-        // Entity above light and mesh, and below the brush cases, which is
-        // exactly SceneNodeClassifier's order: a node with behaviour is what it
-        // does, but a brush is still what a level editor sees. Two answers to
-        // one question would put a different word in the chip from the one in
-        // the tree row that is selected beside it.
+        // Same order as SceneNodeClassifier, so the chip matches the tree row.
         if (hasEntity) return "Entity";
         if (hasLight) return "Light";
         if (hasMesh) return "Mesh";
         return string.Empty;
     }
 
-    // The shape comparison moved to PropertyRowShape in Core, where it can be
-    // tested without a UI framework and where the rule it encodes - that a row's
-    // identity is (Id, Key), never Id alone - is stated once for every consumer.
-    // Compared against the PUBLISHED shape rather than against the built rows,
-    // because the panel does not build one row per published row: comparing the
-    // two directly would report a mismatch on every publish and rebuild the
-    // whole panel thirty times a second, resetting scroll and dropping focus as
-    // it went.
+    // _shape records the published rows, not the built ones: the panel skips
+    // some, so comparing against built rows would rebuild on every publish.
     private void Rebuild(IReadOnlyList<PropertyRow> rows)
     {
         Groups.Clear();
@@ -1195,8 +902,7 @@ public sealed class PropertyPanelModel : ObservableObject
             PropertyRow row = rows[i];
             _shape.Add(row);
 
-            // The name and the id are the panel's HEADER, not a section. See
-            // NameField for why.
+            // Name and id belong to the header, not a section.
             if (row.Id is PropertyId.NodeId or PropertyId.NodeName)
                 continue;
 
@@ -1223,22 +929,9 @@ public sealed class PropertyGroupModel
     public bool HasName => Name.Length > 0;
 
     /// <summary>
-    /// The heading as it is printed: upper case, because the style that sets it
-    /// letter-spaces at 10px, and lower case at that size and tracking reads as
-    /// damaged rather than as small.
+    /// The heading in upper case. The panel prints <see cref="Name"/>; this is
+    /// kept because tests name it.
     /// </summary>
-    /// <remarks>
-    /// <b>Retired, and the heading uses <see cref="Name"/> directly.</b> A
-    /// 10px letter-spaced uppercase label is the marketing eyebrow, not a tool's
-    /// section heading - every editor in this category sets them at body size
-    /// and lets weight carry the emphasis. Uppercase is also measurably slower
-    /// to read, because it destroys the word shape a reader recognises before
-    /// they have read any letters.
-    /// <para>
-    /// Kept as a member rather than deleted because the panel's own tests name
-    /// it, and it costs one expression.
-    /// </para>
-    /// </remarks>
     public string UpperName => Name.ToUpperInvariant();
 
     public ObservableCollection<PropertyRowModel> Rows { get; } = [];

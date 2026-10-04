@@ -5,27 +5,9 @@ using System;
 
 namespace SpectraEngine.Core.Graphics.D3D12;
 
-/// <summary>
-/// An upload-heap buffer of per-instance data, its vertex buffer view, and the
-/// combined two-slot layout the PSO is compiled against.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>D3D12 has no standalone input layout object: it lives inside the PSO.</b>
-/// So an instanced draw does not bind a different layout, it selects a different
-/// pipeline, and the layout has to reach <c>GetPso</c> as part of the key. That
-/// is why the combined layout is built here and handed over at draw time, and
-/// why <c>D3D12VertexLayout.Element</c> carries the slot and the rate: the PSO
-/// cache compares elements structurally, so an instanced layout produces a
-/// distinct pipeline without the cache having to learn a new concept.
-/// </para>
-/// <para>
-/// <b>Persistently mapped, unlike a mesh.</b> A mesh is written once at
-/// creation; this is rewritten every frame, and mapping and unmapping an upload
-/// resource per frame is pure overhead on a heap that is CPU-visible for its
-/// whole life. The read range stays empty because nothing reads it back.
-/// </para>
-/// </remarks>
+// Per-instance data on the upload heap, kept mapped while in use.
+// The input layout is part of the PSO on D3D12, so an instanced draw needs a
+// combined two-slot layout to key its pipeline on.
 internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
 {
     private readonly D3D12Renderer _renderer;
@@ -35,10 +17,10 @@ internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
     private void* _mapped;
     private bool _disposed;
 
-    /// <summary>The combined slot-0 + slot-1 layout, for the PSO key.</summary>
+    // Slot 0 + slot 1, for the PSO key.
     internal D3D12VertexLayout CombinedLayout { get; }
 
-    /// <summary>The view binding this buffer into slot 1.</summary>
+    // Binds this buffer into slot 1.
     internal VertexBufferView View { get; private set; }
 
     internal D3D12InstanceBuffer(
@@ -72,11 +54,10 @@ internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
             offset += vertexAttributes[i].ComponentCount * sizeof(float);
         }
 
-        // The vertex stride, kept as the layout's own: slot 1's stride travels
-        // on the vertex buffer view instead, and a layout has room for one.
+        // The layout carries slot 0's stride; slot 1's is on the buffer view.
         uint vertexStride = offset;
 
-        // Offsets restart at zero, because they are offsets within slot 1.
+        // Offsets are per slot.
         offset = 0;
         for (int i = 0; i < instanceAttributes.Length; i++)
         {
@@ -100,14 +81,8 @@ internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
     };
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// <b>Appending at the cursor is the whole reason this API is not a plain
-    /// overwrite.</b> The buffer is persistently mapped with no renaming and no
-    /// versioning, and the frame is a single command list submitted at the end,
-    /// so a second write at offset zero retroactively changes what every draw
-    /// already recorded will read. Distinct ranges are what make several passes
-    /// (or four shadow cascades) able to share one buffer in one frame.
-    /// </remarks>
+    // Append, never overwrite: the frame is one command list submitted at the
+    // end, so rewriting a range changes what already recorded draws will read.
     public override int Append(ReadOnlySpan<float> data, int instanceCount)
     {
         ValidateUpdate(data, instanceCount);
@@ -121,11 +96,8 @@ internal sealed unsafe class D3D12InstanceBuffer : InstanceBuffer
             uint stride = checked((uint)FloatsPerInstance * sizeof(float));
             uint bytes = checked((uint)Capacity * stride);
             uint capacity = D3D12Renderer.MeshBufferBucket(bytes);
-            // Every BeginFrame/Update gets an immutable buffer version. The
-            // completed-buffer pool makes steady frames cheap and keeps both
-            // submitted and currently recorded commands' previous versions live.
-            // Unlike a transient ring address this also supports callers that
-            // upload between frames, then draw unchanged data in later frames.
+            // A fresh pooled buffer per frame. The pool keeps the previous one
+            // alive while submitted commands still read it.
             var buffer = _renderer.RentMeshBuffer(capacity);
             void* mapped = null;
             var range = new Silk.NET.Direct3D12.Range();

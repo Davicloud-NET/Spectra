@@ -7,23 +7,11 @@ using SilkCursorMode = Silk.NET.Input.CursorMode;
 namespace SpectraEngine.Core.Input;
 
 /// <summary>
-/// Tracks keyboard and mouse state from Silk.NET input events and exposes a
-/// pollable query surface. Events fire on the OS-event thread; queries are
-/// expected from the render thread, so all shared state is mutated under a
-/// single lock.
+/// Tracks keyboard and mouse state from submitted input events and exposes a
+/// pollable query surface. Events arrive on the OS-event thread and queries
+/// come from the render thread, so all state sits under one lock.
 /// </summary>
-/// <remarks>
-/// It is also the engine's <see cref="ICursorLock"/>: cursor-mode requests
-/// arrive here from any thread and are applied by the main thread in
-/// <see cref="ApplyPendingCursorMode"/>. See that method for why the round trip
-/// exists at all.
-/// <para>
-/// Note that <c>CursorMode</c> spelled unqualified in this file is the engine's
-/// own <see cref="Input.CursorMode"/> — a type in this namespace outranks one
-/// pulled in by a <c>using</c> — and the backend's is spelled
-/// <c>SilkCursorMode</c>.
-/// </para>
-/// </remarks>
+// Unqualified CursorMode here is the engine's; Silk's is SilkCursorMode.
 public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
 {
     private readonly ILogger<InputManager> _logger;
@@ -32,9 +20,6 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     private readonly HashSet<InputKey> _pendingPressed = [];
     private readonly HashSet<InputKey> _pressedThisFrame = [];
 
-    // Buttons are a flag set rather than a HashSet: there are three of them,
-    // every query is a mask test, and the neutral vocabulary they are reported
-    // in is already a flags enum.
     private PointerButtons _buttonsDown;
     private PointerButtons _pendingPressedButtons;
     private PointerButtons _pressedButtonsThisFrame;
@@ -48,19 +33,12 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     private Vector2 _accumulatedScrollDelta;
     private Vector2 _scrollDelta;
 
-    // ─── Cursor-mode latch ───────────────────────────────────
-    // Requested from any thread, applied by the main thread in
-    // ApplyPendingCursorMode. Both live under _stateLock like everything else
-    // here; _appliedCursorMode is only ever WRITTEN by the main thread, so the
-    // lock is purely about torn reads and about the focus-loss override below
-    // racing an in-flight request.
+    // Requested from any thread, applied by the main thread in ApplyPendingCursorMode.
     private CursorMode _requestedCursorMode = CursorMode.Normal;
     private CursorMode _appliedCursorMode = CursorMode.Normal;
 
-    // Where the cursor was when the lock was taken, so releasing can put it
-    // back. Also what MousePosition reports while locked: GLFW's virtual
-    // position runs off to infinity once the cursor is disabled, and a picking
-    // ray built from that would aim somewhere absurd.
+    // Where the cursor was when the lock was taken. Also what MousePosition
+    // reports while locked, since GLFW's virtual position is unbounded then.
     private Vector2 _cursorRestorePosition;
     private bool _hasCursorRestorePosition;
 
@@ -72,29 +50,18 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     /// <summary>The mouse movement accumulated during the last <see cref="Update"/> interval.</summary>
     public Vector2 MouseDelta
     {
-        // Locked like every other accessor: Vector2 is two floats, so an
-        // unlocked read could observe a torn value mid-write.
+        // Vector2 is two floats: an unlocked read could be torn.
         get { lock (_stateLock) return _mouseDelta; }
     }
 
     /// <summary>
     /// The cursor's latest position in window client coordinates: pixels,
-    /// origin at the top-left, y growing downward — exactly the convention the
-    /// camera's picking-ray API expects. Unlike <see cref="MouseDelta"/> this
-    /// is not latched per frame: position is absolute, so the freshest value
-    /// is always the right one. Zero until the OS reports a first position.
+    /// origin at the top-left, y growing downward. Not latched per frame.
+    /// Zero until the OS reports a first position. While the cursor is locked
+    /// this stays at the position the lock was taken at.
     /// </summary>
-    /// <remarks>
-    /// <b>Frozen while the cursor is locked.</b> A disabled (captured) cursor
-    /// has no meaningful absolute position — GLFW reports an unbounded virtual
-    /// one that walks away from the window as you look around — so this reports
-    /// the position the lock was taken at, and callers that care read
-    /// <see cref="IsCursorLocked"/> and stand down rather than picking through a
-    /// stale coordinate.
-    /// </remarks>
     public Vector2 MousePosition
     {
-        // Locked for the same torn-read reason as MouseDelta.
         get
         {
             lock (_stateLock)
@@ -111,31 +78,22 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     /// Wheel movement accumulated during the last <see cref="Update"/> interval,
     /// in notches: <c>Y</c> is the vertical wheel (positive = away from the
     /// user), <c>X</c> the horizontal one. Latched per frame like
-    /// <see cref="MouseDelta"/>, because scroll is a delta, not a state.
+    /// <see cref="MouseDelta"/>.
     /// </summary>
     public Vector2 ScrollDelta
     {
         get { lock (_stateLock) return _scrollDelta; }
     }
 
-    // ─── Backend-neutral view ────────────────────────────────
-    // The properties below report the same state as the Silk.NET-typed queries
-    // above, but in the engine's own PointerButtons/KeyModifiers vocabulary.
-    // That is what lets SpectraEngine.Editing consume live input without
-    // referencing Silk.NET at all (see EditorInputFrame): the whole windowing
-    // backend stays behind this seam.
-
-    /// <summary>
-    /// The mouse buttons currently held, as a backend-neutral flag set.
-    /// </summary>
+    /// <summary>The mouse buttons currently held.</summary>
     public PointerButtons PointerButtonsDown
     {
         get { lock (_stateLock) return _buttonsDown; }
     }
 
     /// <summary>
-    /// The mouse buttons that went from up to down on this tick, as a
-    /// backend-neutral flag set. Latched by <see cref="Update"/>.
+    /// The mouse buttons that went from up to down on this tick. Latched by
+    /// <see cref="Update"/>.
     /// </summary>
     public PointerButtons PointerButtonsPressed
     {
@@ -143,9 +101,9 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     }
 
     /// <summary>
-    /// The mouse buttons that went from down to up on this tick, as a
-    /// backend-neutral flag set. Latched by <see cref="Update"/>. A button
-    /// pressed and released inside a single tick reports on both edge sets.
+    /// The mouse buttons that went from down to up on this tick. Latched by
+    /// <see cref="Update"/>. A button pressed and released inside a single
+    /// tick reports on both edge sets.
     /// </summary>
     public PointerButtons PointerButtonsReleased
     {
@@ -153,8 +111,8 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     }
 
     /// <summary>
-    /// The modifier keys currently held, as a backend-neutral flag set. Left
-    /// and right physical keys collapse into one flag each.
+    /// The modifier keys currently held. Left and right physical keys collapse
+    /// into one flag each.
     /// </summary>
     public KeyModifiers Modifiers
     {
@@ -176,17 +134,6 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
         }
     }
 
-    // ─── Cursor shape (ICursorShape) ─────────────────────────
-    //
-    // Beside the mode latch and not folded into it: mode is whether the pointer
-    // is visible, hidden or captured; shape is what it MEANS. A freelook wants
-    // Locked and has no shape at all, and a gizmo handle wants a visible
-    // pointer with a Grab shape - one setting could not say both.
-    //
-    // No "applied" half, unlike the mode: Windows re-asserts the class cursor
-    // on every mouse move, so a shape is not a transition anybody can wait on
-    // and the only useful answer is the newest request.
-
     private CursorShape _requestedCursorShape = CursorShape.Arrow;
 
     /// <inheritdoc/>
@@ -201,8 +148,6 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     {
         get { lock (_stateLock) return _requestedCursorShape; }
     }
-
-    // ─── Cursor lock (ICursorLock) ───────────────────────────
 
     /// <inheritdoc/>
     public void RequestCursorMode(CursorMode mode)
@@ -224,39 +169,20 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     }
 
     /// <summary>
-    /// The cursor mode last asked for, whether or not it has been applied.
+    /// The cursor mode last asked for, whether or not it has been applied. An
+    /// embedded host polls this, captures the pointer itself, then calls
+    /// <see cref="ApplyPendingCursorMode"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>For an embedded host, which owns the cursor the engine cannot
-    /// touch.</b> The standalone path's <see cref="ApplyPendingCursorMode"/>
-    /// drives a Silk mouse device; behind a host-supplied surface there is no
-    /// device to drive, so a shell polls this, performs its own platform
-    /// capture, and calls <see cref="ApplyPendingCursorMode"/> to close the
-    /// state machine. The bookkeeping half of that method runs with or without
-    /// a device, which is exactly what makes the split work.
-    /// </remarks>
     public CursorMode RequestedCursorMode
     {
         get { lock (_stateLock) return _requestedCursorMode; }
     }
 
     /// <summary>
-    /// Applies whatever cursor mode was last requested. <b>Main thread only</b>,
-    /// once per pass of the OS-event pump — the same slot the window title latch
-    /// is applied in, and for the same reason: GLFW cursor calls belong to the
-    /// thread that created the window.
+    /// Applies the cursor mode last requested. Main thread only, once per pass
+    /// of the OS-event pump: GLFW cursor calls belong to the thread that
+    /// created the window. Leaving the lock puts the cursor back where it was.
     /// </summary>
-    /// <remarks>
-    /// Taking the lock hides the cursor and remembers where it was; releasing it
-    /// puts the cursor back and re-seeds the position tracker, so the teleport
-    /// home is not reported to anyone as a mouse movement. Both transitions
-    /// clear the accumulated delta, because the driver's own jump at the moment
-    /// of capture (and of release) is not user motion.
-    /// <para>
-    /// Costs two lock acquisitions and a compare on a frame where nothing
-    /// changed, which is every frame outside a freelook transition.
-    /// </para>
-    /// </remarks>
     public void ApplyPendingCursorMode()
     {
         CursorMode requested;
@@ -271,9 +197,8 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
             restore = _cursorRestorePosition;
             hasRestore = _hasCursorRestorePosition;
 
-            // Entering the lock: the position the cursor should come back to is
-            // the last real one we saw, captured here — before the backend
-            // starts reporting virtual coordinates.
+            // Capture the restore point before the backend starts reporting
+            // virtual coordinates.
             if (requested == CursorMode.Locked && _lastMousePosition is { } live)
             {
                 restore = live;
@@ -281,10 +206,8 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
             }
         }
 
-        // The device calls are the only part that needs a device: with none
-        // attached (headless, or before Initialize) the bookkeeping below still
-        // runs, so the state machine behaves identically and the request does
-        // not sit pending forever, re-attempted on every single pump.
+        // With no device (headless, or an embedded host) the bookkeeping below
+        // still runs, so the request does not stay pending.
         if (PrimaryMouse() is { } mouse)
         {
             mouse.Cursor.CursorMode = requested switch
@@ -294,10 +217,8 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
                 _ => SilkCursorMode.Normal,
             };
 
-            // Leaving the lock: put the pointer back where the user left it.
-            // This must happen AFTER the mode change — a position written while
-            // the cursor is still disabled goes to the virtual cursor, not the
-            // real one.
+            // After the mode change: a position written while the cursor is
+            // still disabled goes to the virtual cursor.
             if (requested != CursorMode.Locked && hasRestore)
                 mouse.Position = restore;
         }
@@ -308,8 +229,7 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
             _cursorRestorePosition = restore;
             _hasCursorRestorePosition = hasRestore;
 
-            // Either direction, the jump the backend just performed is not
-            // something the user did with their hand.
+            // The backend's jump on capture or release is not user motion.
             _accumulatedMouseDelta = Vector2.Zero;
             if (requested != CursorMode.Locked && hasRestore)
                 _lastMousePosition = restore;
@@ -317,23 +237,9 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     }
 
     /// <summary>
-    /// Applies whatever cursor SHAPE was last requested. <b>Main thread only</b>,
-    /// in the same pump slot as the mode.
+    /// Applies the cursor shape last requested. Main thread only, standalone
+    /// window only; an embedded host reads <see cref="CursorShape"/> instead.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The standalone path only.</b> An embedded host has no Silk mouse to
-    /// drive and answers the OS itself, from wherever that platform asks - on
-    /// Windows, inside <c>WM_SETCURSOR</c>. It reads
-    /// <see cref="CursorShape"/> rather than calling this.
-    /// </para>
-    /// <para>
-    /// <b>Silk's standard set has no Grab, no Grabbing and no Rotate</b>, so
-    /// those degrade here: a hand for the two grabs, a move cursor for the
-    /// rotate. The degradation lives in the backend on every platform, which is
-    /// the rule the shape vocabulary exists to make possible.
-    /// </para>
-    /// </remarks>
     public void ApplyPendingCursorShape()
     {
         CursorShape requested;
@@ -347,6 +253,7 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
 
         if (PrimaryMouse() is { } mouse)
         {
+            // Silk has no Grab, Grabbing or Rotate cursor.
             mouse.Cursor.StandardCursor = requested switch
             {
                 CursorShape.Crosshair => StandardCursor.Crosshair,
@@ -368,40 +275,27 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     private CursorShape _appliedCursorShape = CursorShape.Arrow;
 
     /// <summary>
-    /// Reacts to the window gaining or losing focus. <b>Main thread only</b> —
-    /// the engine wires it to the window's focus event.
+    /// Reacts to the window gaining or losing focus. Main thread only. Losing
+    /// focus releases the cursor lock and every held key and button.
     /// </summary>
-    /// <remarks>
-    /// <b>Losing focus while looking around must not leave the cursor
-    /// captured.</b> Alt-tabbing out of a freelook otherwise strands the user
-    /// with an invisible, trapped pointer over a window that is no longer even
-    /// in front. So a focus loss forces the mode back to
-    /// <see cref="Input.CursorMode.Normal"/> — overwriting the pending
-    /// <em>request</em> as well, or the render thread's stale "keep it locked"
-    /// would simply re-take it on the next pump — and drops every held key and
-    /// button, because the releases that ended them were delivered to whichever
-    /// window took the focus. Dropping the buttons is also what makes the
-    /// release stick: the editor camera sees its look button come up, ends the
-    /// gesture, and asks for the unlocked cursor it already has.
-    /// </remarks>
     public void OnWindowFocusChanged(bool focused)
     {
         if (!focused)
             Submit(InputEvent.FocusLost());
     }
 
-    // Caller must hold _stateLock. Shared by the window's focus event and by a
-    // host's FocusLost submission, because losing focus means the same thing
-    // however the engine hears about it.
+    // Caller must hold _stateLock.
     private void ReleaseEverything()
     {
+        // Overwrite the request too, or the render thread's stale "locked"
+        // re-takes the cursor on the next pump.
         _requestedCursorMode = CursorMode.Normal;
 
         _keysDown.Clear();
         _pendingPressed.Clear();
 
-        // Held buttons become release edges rather than vanishing, so a
-        // gesture watching for its own release edge still gets one.
+        // Held buttons become release edges, so a gesture waiting for its
+        // release still gets one.
         _pendingReleasedButtons |= _buttonsDown;
         _buttonsDown = PointerButtons.None;
         _pendingPressedButtons = PointerButtons.None;
@@ -410,8 +304,7 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
         _accumulatedScrollDelta = Vector2.Zero;
     }
 
-    // The device cursor requests are applied to. Silk exposes one cursor per
-    // mouse; the window's cursor is the primary mouse's.
+    // Silk exposes one cursor per mouse; the window's is the first mouse's.
     private IMouse? PrimaryMouse()
     {
         IInputContext? context = _inputContext;
@@ -438,10 +331,7 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
             mouse.Scroll += OnScroll;
         }
 
-        // Seed the pollable cursor position from the first mouse so a click
-        // before any MouseMove event picks through the real cursor location
-        // instead of (0,0). Initialize runs on the OS-event thread before the
-        // render loop starts, so reading the device here is safe.
+        // Seed the position so a click before any move event does not pick at (0,0).
         if (_inputContext.Mice.Count > 0)
         {
             Vector2 position = _inputContext.Mice[0].Position;
@@ -509,9 +399,7 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
 
     /// <summary>
     /// True for the single tick on which <paramref name="button"/> went from
-    /// down to up. The release edge is what ends a gizmo drag, so it is latched
-    /// exactly like the press edge rather than inferred from a state change the
-    /// caller might miss between ticks.
+    /// down to up.
     /// </summary>
     public bool WasMouseButtonReleased(PointerButtons button)
     {
@@ -523,14 +411,11 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     {
         if (_inputContext is not null)
         {
-            // Give the pointer back before the devices go away: a process that
-            // exits mid-freelook must not leave a captured cursor behind.
+            // Release a captured cursor before the devices go away.
             RequestCursorMode(CursorMode.Normal);
             ApplyPendingCursorMode();
 
 
-            // Mirror Initialize: detach our handlers so the devices hold no
-            // references to this manager, then release the native context.
             for (int i = 0; i < _inputContext.Keyboards.Count; i++)
             {
                 var keyboard = _inputContext.Keyboards[i];
@@ -554,12 +439,8 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
         _logger.LogInformation("Input manager shut down");
     }
 
-    // ─── Event handlers (OS-event thread) ────────────────────
-    //
-    // Internal rather than private so the headless suites can drive the state
-    // machine — edges, latching, the neutral flag mapping — without a real
-    // input device. The device parameter is part of Silk.NET's event signature
-    // and is unused, so a test may pass null for it.
+    // OS-event thread. Internal so tests can drive them without a device;
+    // the device parameter is unused and may be null.
 
     internal void OnKeyDown(IKeyboard keyboard, Key key, int keyCode) =>
         Submit(InputEvent.KeyDown(SilkInputKeys.ToInputKey(key)));
@@ -579,20 +460,11 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
     internal void OnMouseMove(IMouse mouse, Vector2 position) =>
         Submit(InputEvent.PointerMove(position));
 
-    // ─── Submitted input (IInputSink) ────────────────────────
-
     /// <summary>
     /// Applies one event to the input state. Called by the standalone window's
-    /// own device handlers above and by an embedded host through
+    /// device handlers and by an embedded host through
     /// <c>EngineHost.SubmitInput</c>.
     /// </summary>
-    /// <remarks>
-    /// <b>Both paths land here, which is the point.</b> Edge detection, the
-    /// auto-repeat filter, the delta accumulator and the focus-loss release are
-    /// one implementation, so an embedded viewport cannot drift from the
-    /// standalone window in how a press or a drag behaves — and the headless
-    /// tests that pin those rules cover both.
-    /// </remarks>
     public void Submit(in InputEvent input)
     {
         bool focusLost = false;
@@ -602,10 +474,8 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
             switch (input.Kind)
             {
                 case InputEventKind.KeyDown:
-                    // A key the source could not name matches no binding, so it
-                    // must not enter the held set either: it would collide with
-                    // every other unnameable key and one release would clear
-                    // them all.
+                    // Unknown stays out of the held set: all unnamed keys share
+                    // that value, so one release would lift them all.
                     if (input.Key is not InputKey.Unknown && _keysDown.Add(input.Key))
                         _pendingPressed.Add(input.Key);
                     break;
@@ -615,17 +485,13 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
                     break;
 
                 case InputEventKind.PointerDown:
-                    // Same edge rule as the keyboard: only buttons that were
-                    // not already held arm the press edge.
                     PointerButtons pressed = input.Button & ~_buttonsDown;
                     _buttonsDown |= input.Button;
                     _pendingPressedButtons |= pressed;
                     break;
 
                 case InputEventKind.PointerUp:
-                    // Only a real down-to-up transition arms the release edge,
-                    // so a stray release for a button never seen to go down
-                    // reports nothing.
+                    // A release for a button never seen down reports nothing.
                     PointerButtons released = input.Button & _buttonsDown;
                     _buttonsDown &= ~input.Button;
                     _pendingReleasedButtons |= released;
@@ -638,9 +504,7 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
                     break;
 
                 case InputEventKind.PointerDelta:
-                    // No position to update: a captured cursor has none, and
-                    // writing one would corrupt the restore point the lock is
-                    // holding on the caller's behalf.
+                    // No position update: a captured cursor has none.
                     _accumulatedMouseDelta += input.Value;
                     break;
 
@@ -655,11 +519,7 @@ public sealed class InputManager : ICursorLock, ICursorShape, IInputSink
             }
         }
 
-        // Outside the lock, and only on the one event that needs it: a focus
-        // loss must give the cursor back immediately rather than a frame later,
-        // or alt-tabbing out of a freelook strands the user with an invisible,
-        // trapped pointer over a window that is no longer even in front. Costs
-        // nothing on every other event.
+        // Outside the lock. Give the cursor back now, not a frame later.
         if (focusLost)
             ApplyPendingCursorMode();
     }

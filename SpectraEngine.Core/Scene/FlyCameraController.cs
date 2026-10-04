@@ -5,10 +5,8 @@ namespace SpectraEngine.Core.Scene;
 
 /// <summary>
 /// A simple free-fly camera driver. WASD moves along the camera's own axes,
-/// Space/Ctrl move along world up/down, hold Shift to sprint. Hold the right
-/// mouse button to look around — the cursor stays visible (no cross-thread
-/// cursor capture), and the look only engages on frames where the button was
-/// already held, so pressing it doesn't apply stale mouse delta.
+/// Space/Ctrl move along world up/down, Shift sprints. Hold the right mouse
+/// button to look around; the cursor stays visible.
 /// </summary>
 public sealed class FlyCameraController
 {
@@ -34,9 +32,7 @@ public sealed class FlyCameraController
 
         bool looking = _input.IsMouseButtonDown(PointerButtons.Right);
 
-        // Apply mouse look only when the button was already held last frame —
-        // skipping the press-frame avoids any delta that accumulated before the
-        // user engaged the look.
+        // Skip the press frame: its delta built up before the look started.
         if (looking && _wasLookingLastFrame)
         {
             Vector2 delta = _input.MouseDelta;

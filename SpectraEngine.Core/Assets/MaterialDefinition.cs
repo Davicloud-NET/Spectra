@@ -7,29 +7,23 @@ namespace SpectraEngine.Core.Assets;
 /// <summary>Type of a scalar/colour/vector parameter declared in a material file.</summary>
 public enum MaterialParameterKind
 {
-    /// <summary>A single scalar, uploaded through <c>SetUniform(string, float)</c>.</summary>
+    /// <summary>A single scalar.</summary>
     Float,
 
     /// <summary>Two components.</summary>
     Vector2,
 
-    /// <summary>Three components — also what a three-component <c>color</c> produces.</summary>
+    /// <summary>Three components. Also what a three-component <c>color</c> produces.</summary>
     Vector3,
 
-    /// <summary>Four components — also what a four-component <c>color</c> produces.</summary>
+    /// <summary>Four components. Also what a four-component <c>color</c> produces.</summary>
     Vector4,
 }
 
 /// <summary>
-/// One scalar/colour/vector parameter parsed from a <c>.spectramat</c> file.
+/// One parameter parsed from a <c>.spectramat</c> file. The value is always a
+/// <see cref="Vector4"/>, narrowed by <see cref="Kind"/>; unused components are zero.
 /// </summary>
-/// <remarks>
-/// The value is always carried as a <see cref="Vector4"/> and narrowed by
-/// <see cref="Kind"/> when it is pushed into a <see cref="Material"/>: a single
-/// storage shape keeps the parsed definition a flat, copyable struct list
-/// instead of a polymorphic object graph (which AOT and the allocation budget
-/// would both rather avoid). Unused components are zero.
-/// </remarks>
 public readonly record struct MaterialParameter(string Name, MaterialParameterKind Kind, Vector4 Value)
 {
     /// <summary>The value as a scalar (component X).</summary>
@@ -45,20 +39,13 @@ public readonly record struct MaterialParameter(string Name, MaterialParameterKi
     public Vector4 AsVector4 => Value;
 }
 
-/// <summary>
-/// One texture binding parsed from a <c>.spectramat</c> file: which sampler to
-/// fill, which content-relative image file to fill it from, and how to sample it.
-/// </summary>
+/// <summary>One texture binding parsed from a <c>.spectramat</c> file.</summary>
 /// <param name="Name">Sampler name in the shader, e.g. <c>uDiffuse</c>.</param>
-/// <param name="TexturePath">Content-root-relative path of the image file, as written in the file.</param>
-/// <param name="Unit">Texture unit, assigned by declaration order within the file (first slot is 0).</param>
-/// <param name="Filter">Sampling filter; <see cref="TextureFilter.LinearMipmap"/> unless the file says otherwise.</param>
-/// <param name="Wrap">Wrap mode; <see cref="TextureWrap.Repeat"/> unless the file says otherwise.</param>
-/// <param name="ColorSpace">
-/// How to read the file's bytes; <see cref="TextureColorSpace.Srgb"/> unless the
-/// line says <c>data</c>. See <see cref="MaterialParser"/> for why that is the
-/// default.
-/// </param>
+/// <param name="TexturePath">Content-root-relative path of the image file, as written.</param>
+/// <param name="Unit">Texture unit, assigned by declaration order (first slot is 0).</param>
+/// <param name="Filter">Defaults to <see cref="TextureFilter.LinearMipmap"/>.</param>
+/// <param name="Wrap">Defaults to <see cref="TextureWrap.Repeat"/>.</param>
+/// <param name="ColorSpace"><see cref="TextureColorSpace.Srgb"/> unless the line says <c>data</c>.</param>
 public readonly record struct MaterialTextureSlot(
     string Name,
     string TexturePath,
@@ -68,16 +55,9 @@ public readonly record struct MaterialTextureSlot(
     TextureColorSpace ColorSpace);
 
 /// <summary>
-/// The parsed contents of a <c>.spectramat</c> file — a pure CPU-side value with
-/// no GPU or asset-manager dependencies. See <see cref="MaterialParser"/> for the
-/// file format and for how it is produced.
+/// The parsed contents of a <c>.spectramat</c> file. Always usable: lines the
+/// parser could not read end up in <see cref="Warnings"/>. Immutable.
 /// </summary>
-/// <remarks>
-/// A definition is always complete enough to build a material from: anything the
-/// parser could not make sense of is reported through <see cref="Warnings"/>
-/// rather than thrown, so one bad line never costs a whole material. Immutable
-/// after construction, so it may be read from any thread.
-/// </remarks>
 public sealed class MaterialDefinition
 {
     internal MaterialDefinition(
@@ -94,12 +74,11 @@ public sealed class MaterialDefinition
         Warnings = warnings;
     }
 
-    /// <summary>Where this definition was parsed from; only used to label messages.</summary>
+    /// <summary>Where this definition was parsed from. Only labels messages.</summary>
     public string Origin { get; }
 
     /// <summary>
-    /// Shader named by the file's <c>shader</c> key, or null when it did not name
-    /// one — in which case the engine's built-in lit shader is used.
+    /// Shader named by the file's <c>shader</c> key. Null means the built-in lit shader.
     /// </summary>
     public string? ShaderName { get; }
 
@@ -110,12 +89,11 @@ public sealed class MaterialDefinition
     public IReadOnlyList<MaterialParameter> Parameters { get; }
 
     /// <summary>
-    /// Everything the parser could not use, one message per problem, each
-    /// prefixed with the origin and line number. Empty for a clean file.
+    /// One message per problem, prefixed with the origin and line number.
     /// </summary>
     public IReadOnlyList<string> Warnings { get; }
 
-    /// <summary>Finds a parameter by name (ordinal, case-sensitive — uniform names are).</summary>
+    /// <summary>Finds a parameter by name (ordinal, case-sensitive).</summary>
     public bool TryGetParameter(string name, out MaterialParameter parameter)
     {
         for (int i = 0; i < Parameters.Count; i++)

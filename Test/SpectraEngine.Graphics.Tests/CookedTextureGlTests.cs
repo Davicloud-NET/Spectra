@@ -17,33 +17,8 @@ namespace SpectraEngine.Graphics.Tests;
 /// A PNG cooked to a <c>.simage</c>, read back, uploaded and sampled against a
 /// real driver.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is the only place the whole cooked-texture chain is one claim.</b> The
-/// writer lives in <c>Spectra.Kitchen</c> because no shipped game writes a pack;
-/// the reader and the uploader live in Core because every shipped game reads one.
-/// Each half has its own tests and each passes with the other broken: a container
-/// nothing can upload still round-trips through its own reader, and an uploader
-/// still uploads a hand-built payload. What only a driver can answer is whether
-/// the bytes the cooker actually produces become the picture the author drew.
-/// </para>
-/// <para>
-/// <b>The fixture is cooked here rather than checked in</b>, so an encoder or
-/// container change re-runs through this oracle instead of leaving a stale
-/// artifact passing. It is the engine's own
-/// <see cref="TextureOrientationProbe"/> image, which is asymmetric on both axes
-/// - the reason that file exists at all - so a vertical flip, a horizontal flip
-/// and a transpose are three different readings rather than one.
-/// </para>
-/// <para>
-/// <b>Every failure in this area renders a picture rather than raising
-/// anything.</b> A cooked image uploaded upside down draws a world upside down and
-/// logs nothing; a mip chain uploaded at the wrong indices is correct up close and
-/// wrong at distance. So the instrument is a rendered picture read texel by texel,
-/// and the falsification test below is what proves the instrument can report the
-/// other answer.
-/// </para>
-/// </remarks>
+// The fixture is cooked here, not checked in, so an encoder or container
+// change can't leave a stale artifact passing.
 [Collection(GlRendererCollection.Name)]
 public sealed class CookedTextureGlTests
 {
@@ -59,33 +34,22 @@ public sealed class CookedTextureGlTests
     [Fact]
     public void A_cooked_image_samples_the_same_way_up_as_the_loose_file_it_came_from()
     {
-        // THE test that would catch a reintroduced flip. The cooked path performs
-        // no row flip at load and cannot: BC6H and BC7 blocks cannot be reversed
-        // without a full decode and re-encode. The flip that establishes the
-        // engine's v = 0 convention therefore happens once, at cook time, through
-        // the same ImageDecoder the loose path uses - so the two agree by
-        // construction, and this is what says so out loud.
+        // Block-compressed rows can't be flipped at load, so the flip happens
+        // at cook time through the same ImageDecoder the loose path uses.
         TextureOrientationProbe.Reading loose = Render(UploadLoose());
         TextureOrientationProbe.Reading cooked = Render(UploadCooked());
 
         cooked.MatchesAuthoredImage.ShouldBeTrue(
             $"the cooked image rendered as: {cooked}. Verdict: {cooked.Verdict}");
 
-        // Stated as an equality as well, because "both upright" and "both agree"
-        // are different claims and the second is the one a future convention change
-        // must keep: if v = 0 ever moves to the top of the picture, these two must
-        // move together or a level renders half one way up and half the other.
+        // If the v = 0 convention ever moves, these two must move together.
         cooked.ShouldBe(loose);
     }
 
     [Fact]
     public void A_cooked_image_whose_rows_were_flipped_before_encoding_reads_as_flipped()
     {
-        // The falsification. "The cooked one matches" is also what a blind
-        // instrument reports, so the same path with the source rows reversed has to
-        // come back FLIPPED or the test above proves nothing. Mirrored BEFORE the
-        // encode rather than after, because after is exactly the thing block
-        // compression makes impossible.
+        // Control for the test above: proves the probe can report a flip.
         DecodedImage image = DecodeFixture();
         var mirrored = new DecodedImage(
             MirrorRows(image), image.Width, image.Height, image.Channels, image.Format);
@@ -105,16 +69,11 @@ public sealed class CookedTextureGlTests
         info.Width.ShouldBe(loose.Width);
         info.Height.ShouldBe(loose.Height);
 
-        // Block compression rather than a copy: BC7 is one byte per texel where
-        // the decoded source is three, and the whole chain still costs less than
-        // the base level did.
         info.Format.ShouldBe(TextureFormat.Bc7);
         info.PayloadBytes.ShouldBeLessThan(loose.Width * loose.Height * loose.Channels);
 
-        // The chain is SUPPLIED, which is what tells the backend not to build one -
-        // and it cannot build one for a compressed format anyway, so a cooked image
-        // with a single level would be a texture that goes to mush at distance with
-        // nothing reporting it.
+        // The backend can't build mips for a compressed format, so the cook
+        // has to supply the chain.
         info.MipCount.ShouldBe(4);
 
         Texture texture = Upload(cooked);
@@ -133,10 +92,8 @@ public sealed class CookedTextureGlTests
     [Fact]
     public void The_upload_takes_the_CALLERS_colour_space_rather_than_the_files()
     {
-        // The cooker writes the UNORM vkFormat deliberately, because whether a block
-        // of bytes is colour or data is a property of the material SLOT: one cooked
-        // artifact has to serve an albedo in one material and a mask in another,
-        // which is exactly why AssetManager's cache key carries the colour space.
+        // The cooker writes the UNORM vkFormat: one cooked image can be an
+        // albedo in one material and a mask in another.
         byte[] cooked = Cook();
         SimageReader.Read(cooked, "cooked.simage").DeclaredColorSpace.ShouldBe(TextureColorSpace.Linear);
 
@@ -151,10 +108,6 @@ public sealed class CookedTextureGlTests
         }
     }
 
-    // --- helpers -------------------------------------------------------------
-
-    // Through the real rule, over the engine's real content root, so what is
-    // measured is what scook writes rather than a shape assembled for the test.
     private static byte[] Cook()
     {
         var context = new RuleContext(
@@ -166,8 +119,7 @@ public sealed class CookedTextureGlTests
         return context.Emissions.Single().Payload;
     }
 
-    // The same container the rule writes, over pixels this test chose. Used only
-    // by the falsification, which needs a source the rule cannot be asked for.
+    // Same container the rule writes, over pixels the test chose.
     private static byte[] Encode(DecodedImage image)
     {
         byte[][] levels = ImageBlockEncoder.Encode(
@@ -188,8 +140,7 @@ public sealed class CookedTextureGlTests
     {
         SimageInfo info = SimageReader.Read(cooked, "cooked.simage");
 
-        // Nearest, so the base level is what reaches the screen and no mip
-        // selection can turn a level-index bug into a slightly blurrier pass.
+        // Nearest: no mip selection, so only the base level is measured.
         return _fixture.Renderer.CreateTexture(new TextureUploadDesc(
             info.Format, colorSpace, cooked, info.Mips, TextureFilter.Nearest, TextureWrap.Clamp));
     }
@@ -198,9 +149,7 @@ public sealed class CookedTextureGlTests
     {
         DecodedImage image = DecodeFixture();
 
-        // Linear on both sides, so the only transform between the file's bytes and
-        // the read-back bytes is the tone curve, which is monotone per channel and
-        // cannot turn one quadrant colour into another.
+        // Linear on both sides: only the tone curve sits between the bytes.
         return _fixture.Renderer.CreateTexture(
             image.Pixels, image.Width, image.Height, image.Format, TextureColorSpace.Linear,
             TextureFilter.Nearest, TextureWrap.Clamp);

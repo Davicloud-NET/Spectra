@@ -9,151 +9,69 @@ namespace SpectraEngine.Core.Inspection;
 /// One authored wire, plus whether anything in the scene answers to its target
 /// name.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The wire is carried whole rather than flattened into six fields.</b>
-/// <see cref="EntityConnection"/> is already a value of strings and numbers, so
-/// it crosses the host boundary safely as it stands, and copying it apart here
-/// would mean a second place that has to be updated when the record grows a
-/// member - which for a wire is a member silently dropped from every panel.
-/// </para>
-/// <para>
-/// <b><see cref="TargetResolves"/> is computed on the RENDER THREAD, at publish
-/// time.</b> A shell's mirror of the scene tree is stale by up to a publish
-/// interval, so a shell-side resolve would flag a target that exists as missing
-/// for a third of a second after it was renamed into place, and would keep
-/// showing one that has just been deleted as fine. The engine owns the graph
-/// and is the only thing that can answer without racing it.
-/// </para>
-/// </remarks>
-/// <param name="Wire">The authored connection, exactly as the node stores it.</param>
+/// <param name="Wire">The authored connection, as the node stores it.</param>
 /// <param name="TargetResolves">
 /// Whether at least one entity in the scene answers to
-/// <see cref="EntityConnection.TargetName"/> - by exact name, by a trailing-*
-/// prefix, or as one of the runtime <c>!</c> forms, which cannot be checked
-/// statically and are therefore reported as resolving.
+/// <see cref="EntityConnection.TargetName"/>: by exact name or by a trailing-*
+/// prefix. The runtime <c>!</c> forms cannot be checked and report as resolving.
 /// </param>
 public readonly record struct EntityConnectionInfo(EntityConnection Wire, bool TargetResolves);
 
 /// <summary>One entity a wire could aim at.</summary>
-/// <remarks>
-/// <b>The class travels with the name, because a name alone is not enough to
-/// pick with.</b> A level has a dozen things called "door1" through "door12"
-/// and the useful question is which of them is the trigger; the class is what
-/// answers it, and it is already known at the moment the name is collected.
-/// </remarks>
-/// <param name="Name">The node's name, which IS its targetname.</param>
-/// <param name="ClassName">What it is, as the map records it.</param>
+/// <param name="Name">The node's name, which is its targetname.</param>
+/// <param name="ClassName">The entity's class, as the map records it.</param>
 public readonly record struct EntityTargetInfo(string Name, string ClassName);
 
 /// <summary>
-/// What a wiring panel needs about the selected entity: the class it names,
-/// the outputs that class declares, and the wires the node carries.
+/// What a wiring panel needs about the selected entity: its class, the outputs
+/// that class declares, and the node's wires. Holds copies, never live lists.
+/// Published for a single-node entity selection only.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Copies, never the live lists.</b> Nothing crossing the host boundary may
-/// be a live object: the render thread starts mutating that node the instant
-/// the frame ends, and a panel holding <c>EntityData.Connections</c> itself
-/// would be reading a <c>List&lt;T&gt;</c> from the wrong thread while an
-/// undo rewrote it. That is the same rule <see cref="PropertyRow"/> follows and
-/// the reason a published selection is ids rather than nodes.
-/// </para>
-/// <para>
-/// <b>Published for a SINGLE-node entity selection only.</b> Merging the wiring
-/// of several entities is a named deferral rather than an oversight: a keyvalue
-/// merges per key and per axis, but a connection list has no key to merge on -
-/// two entities' third wires are not the same wire - so the honest answers are
-/// the union (which no edit could write back) or the intersection (which hides
-/// wiring). Neither is worth shipping ahead of an entity picker, and a
-/// panel that showed one entity's wires while the selection held five would be
-/// the worst of the three.
-/// </para>
-/// </remarks>
 public sealed class EntityPanelInfo
 {
     /// <summary>
-    /// The node the wiring belongs to.
+    /// The node the wiring belongs to. A connection edit should address this id,
+    /// not the current selection: it replaces the whole list.
     /// </summary>
-    /// <remarks>
-    /// <b>An edit addresses THIS id, not "the selection".</b> Every other
-    /// property edit lets the editor resolve the selection on the render
-    /// thread, because a property edit writes one named value and landing on a
-    /// node the user has since also selected is harmless. A connection edit
-    /// replaces a whole list, so landing on the wrong node would overwrite that
-    /// node's entire wiring with another node's - so the id the panel was built
-    /// from travels with it, and the command addresses that.
-    /// </remarks>
     public required Guid NodeId { get; init; }
 
     /// <summary>The class the entity names, as the map spells it.</summary>
     public string ClassName { get; init; } = "";
 
     /// <summary>
-    /// Whether a schema for <see cref="ClassName"/> was found.
+    /// Whether a schema for <see cref="ClassName"/> was found. False is not an
+    /// error, but <see cref="Outputs"/> is then empty.
     /// </summary>
-    /// <remarks>
-    /// False is not an error: <c>EntityData</c> is strings precisely so a map
-    /// authored against a game this build does not have round-trips. What it
-    /// costs is <see cref="Outputs"/>, so a panel can say why the dropdown is
-    /// empty rather than looking broken.
-    /// </remarks>
     public bool IsKnown { get; init; }
 
     /// <summary>The output names the class declares, in declaration order.</summary>
     public IReadOnlyList<string> Outputs { get; init; } = [];
 
     /// <summary>
-    /// The node's wires, in AUTHORED ORDER, each with its target's verdict.
+    /// The node's wires in authored order, each with whether its target resolves.
+    /// The order round-trips through <c>map.json</c>; do not sort it.
     /// </summary>
-    /// <remarks>
-    /// <b>Order is authored data.</b> It round-trips through <c>map.json</c>
-    /// and is never sorted here or anywhere else; a panel that listed wires
-    /// alphabetically would rewrite that region of a person's file the first
-    /// time they added one.
-    /// </remarks>
     public IReadOnlyList<EntityConnectionInfo> Connections { get; init; } = [];
 
     /// <summary>
     /// Every entity in the scene a wire could aim at, in walk order.
     /// </summary>
-    /// <remarks>
-    /// <b>The same walk that decides whether a wire resolves.</b> Two walks
-    /// would mean a picker offering a name the resolve check calls dead, which
-    /// is the worst possible pair of answers: the list says the target exists
-    /// and the warning beside it says it does not.
-    /// </remarks>
     public IReadOnlyList<EntityTargetInfo> Targets { get; init; } = [];
 
-    /// <summary>Whether the scene has more entities than the list carries.</summary>
-    /// <remarks>
-    /// Said out loud rather than left as a short list: a capped picker with no
-    /// note looks exactly like a project with that many entities in it.
-    /// </remarks>
+    /// <summary>Whether the scene has more entities than <see cref="Targets"/> carries.</summary>
     public bool TargetsTruncated { get; init; }
 
     /// <summary>
     /// Describes <paramref name="node"/>'s entity payload, or null when it
-    /// carries none.
+    /// carries none. Render thread only.
     /// </summary>
-    /// <remarks>
-    /// <b>Render thread only</b>, like <see cref="NodeInspector"/>: it reads a
-    /// live node and the graph around it, and hands back values that reference
-    /// neither.
-    /// </remarks>
     /// <param name="node">The selected node.</param>
     /// <param name="schemas">What the scene's classes declare, or null.</param>
     /// <param name="scene">
-    /// The scene to resolve target names against, or null to skip the check
-    /// (every target then reports as unresolved, which is the honest answer
-    /// when there is nothing to resolve against).
+    /// The scene to resolve target names against. With null, every target
+    /// reports as unresolved.
     /// </param>
-    /// <param name="targetScratch">
-    /// A list the caller owns, reused across publishes. The walk that fills it
-    /// is the one part of this that is proportional to the scene rather than to
-    /// the entity, so a caller that brings its own buffer allocates nothing but
-    /// the published array.
-    /// </param>
+    /// <param name="targetScratch">A list the caller owns, reused across calls to avoid allocating.</param>
     public static EntityPanelInfo? Capture(
         SceneNode node,
         EntitySchemaCatalog? schemas,
@@ -169,10 +87,8 @@ public sealed class EntityPanelInfo
         bool known = schemas is not null && schemas.TryGetSchema(entity.ClassName, out schema);
         IReadOnlyList<string> outputs = known && schema is not null ? schema.Outputs : [];
 
-        // ONE walk, and it is what both the picker and the resolve check read.
-        // It runs whenever an entity is selected rather than only when there is
-        // a wire, because the picker is offered on an entity with no wiring at
-        // all - which is what somebody adding their first one has.
+        // One walk feeds both the picker and the resolve check, so they cannot
+        // disagree. Runs even with no wires: the picker is offered then too.
         List<EntityTargetInfo> targets = targetScratch ?? [];
         targets.Clear();
         bool truncated = false;
@@ -198,23 +114,12 @@ public sealed class EntityPanelInfo
     }
 
     /// <summary>How many entities one capture will list.</summary>
-    /// <remarks>
-    /// A cap rather than the whole scene, because a level's entity count is
-    /// unbounded and a dropdown nobody can reach the end of is a search box
-    /// with extra scrolling. The panel says how many were left out.
-    /// </remarks>
     public const int MaxTargets = 2000;
 
     /// <summary>
-    /// Every entity in the scene, as a name and a class.
+    /// Collects every entity in the scene as a name and a class. Only nodes
+    /// carrying an entity are listed, since the runtime resolves nothing else.
     /// </summary>
-    /// <remarks>
-    /// <b>Entity-carrying nodes only, because that is what the runtime
-    /// resolves.</b> <c>TargetNameIndex</c> lists entities and nothing else, so
-    /// a wire aimed at a plain brush node named "door" delivers to nothing, and
-    /// a picker that offered it would be inviting somebody to write exactly the
-    /// dead wire the warning beside it exists to catch.
-    /// </remarks>
     public static void CollectTargets(Scene.Scene scene, List<EntityTargetInfo> into, out bool truncated)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -240,17 +145,8 @@ public sealed class EntityPanelInfo
         }
     }
 
-    /// <summary>
-    /// Whether anything in <paramref name="names"/> answers to
-    /// <paramref name="target"/>.
-    /// </summary>
-    /// <remarks>
-    /// <b>The same three forms <c>TargetNameIndex.Resolve</c> honours</b>, and
-    /// deliberately no more: a check that recognised a form the runtime does
-    /// not would report a dead wire as live, which is worse than no check.
-    /// A <c>!</c> form names an entity chosen while the level runs, so there is
-    /// nothing here that could disprove it and it reports as resolving.
-    /// </remarks>
+    // Must accept the same forms as TargetNameIndex.Resolve and no more.
+    // A "!" token names an entity chosen at runtime, so it counts as resolving.
     private static bool Resolves(string? target, List<EntityTargetInfo> names)
     {
         if (string.IsNullOrEmpty(target))

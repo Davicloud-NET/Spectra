@@ -8,41 +8,16 @@ using System.Text.Json;
 namespace SpectraEngine.Core.Serialization;
 
 /// <summary>
-/// The house rules for every authored text document the engine writes: maps,
-/// projects, and whatever comes next.
+/// JSON settings and helpers shared by every authored text document the engine
+/// writes (maps, projects). Output is byte-stable across platforms.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This exists as one implementation because the settings in it fail
-/// silently.</b> Two of them in particular produce valid, correct-looking JSON
-/// and quietly break the one promise these formats are for. A second copy of
-/// them is not a duplication smell, it is a defect waiting for someone to fix
-/// one and not the other.
-/// </para>
-/// <para>
-/// <b><c>NewLine</c> defaults to <see cref="Environment.NewLine"/>.</b> A
-/// writer that leaves it alone emits CRLF on Windows and LF everywhere else, so
-/// byte identity holds only within one operating system and a team gets a
-/// whole-file diff every time the file crosses platforms.
-/// </para>
-/// <para>
-/// <b>The default <see cref="JavaScriptEncoder"/> escapes <c>+ &lt; &gt; &amp;</c>
-/// and every non-ASCII character</b> to <c>\uXXXX</c>, which would turn every
-/// inline script and every non-ASCII name into unmergeable noise in files whose
-/// entire purpose is being read and merged by people.
-/// </para>
-/// <para>
-/// <b>And <see cref="Utf8JsonWriter.WriteRawValue(ReadOnlySpan{byte}, bool)"/>
-/// does not indent raw content at all</b>, which is what makes preserved
-/// members round-trip and what makes an array of raw records need its own line
-/// layout.
-/// </para>
-/// </remarks>
 public static class CanonicalJson
 {
-    /// <summary>Spaces per indent level. Fixed, because it is part of the bytes.</summary>
+    /// <summary>Spaces per indent level.</summary>
     public const int IndentSize = 2;
 
+    // NewLine defaults to Environment.NewLine (CRLF on Windows). The default
+    // encoder escapes + < > & and all non-ASCII to \uXXXX.
     public static JsonWriterOptions WriterOptions => new()
     {
         Indented = true,
@@ -54,10 +29,8 @@ public static class CanonicalJson
     };
 
     /// <summary>
-    /// Reader settings. Comments are disallowed and trailing commas refused,
-    /// because both would be dropped on the next save and a round trip that
-    /// silently deletes a reviewer's comment is worse than one that refuses to
-    /// load.
+    /// Reader settings. Comments and trailing commas are refused, since the
+    /// next save would drop them.
     /// </summary>
     public static JsonReaderOptions ReaderOptions => new()
     {
@@ -66,11 +39,6 @@ public static class CanonicalJson
     };
 
     /// <summary>Renders a document to canonical UTF-8 bytes, with no BOM and a trailing newline.</summary>
-    /// <remarks>
-    /// The trailing newline is not cosmetic: without one, every diff that
-    /// touches the last line reports "\ No newline at end of file", and any
-    /// editor that adds one on save puts a spurious change into the next commit.
-    /// </remarks>
     public static byte[] Write(Action<Utf8JsonWriter> write)
     {
         var buffer = new ArrayBufferWriter<byte>(4096);
@@ -81,16 +49,9 @@ public static class CanonicalJson
         return buffer.WrittenSpan.ToArray();
     }
 
-    /// <summary>
-    /// Renders one record on a single line, through a second un-indented
-    /// writer.
-    /// </summary>
-    /// <remarks>
-    /// <b>Never by string concatenation.</b> Going through the library means
-    /// escaping and float formatting stay its problem, so the compact path and
-    /// the indented path cannot disagree about how a number is spelled or a
-    /// string escaped.
-    /// </remarks>
+    /// <summary>Renders one record on a single line.</summary>
+    // Through a writer, not string concatenation, so escaping and number
+    // formatting match the indented path.
     public static byte[] Compact(Action<Utf8JsonWriter> write)
     {
         var buffer = new ArrayBufferWriter<byte>(128);
@@ -107,12 +68,8 @@ public static class CanonicalJson
     }
 
     /// <summary>Writes an array of already-compacted records, one per line.</summary>
-    /// <remarks>
-    /// One record per line is a merge decision: each record is the unit a person
-    /// edits, so a change to one should be a one-line diff. The array's own
-    /// layout is built here because <c>WriteRawValue</c> will not indent it, and
-    /// the whitespace is the only thing written by hand.
-    /// </remarks>
+    // One record per line keeps an edit a one-line diff. WriteRawValue does not
+    // indent raw content, so the layout is built by hand.
     public static void WriteRecordArray(Utf8JsonWriter writer, string member, List<byte[]> records)
     {
         writer.WritePropertyName(member);
@@ -123,8 +80,6 @@ public static class CanonicalJson
             return;
         }
 
-        // CurrentDepth counts the containers already open, so the records sit
-        // one level in from the array's own closing bracket.
         int depth = writer.CurrentDepth;
         string outer = new(' ', depth * IndentSize);
         string inner = new(' ', (depth + 1) * IndentSize);
@@ -155,24 +110,12 @@ public static class CanonicalJson
     }
 
     /// <summary>
-    /// Captures the current member's value exactly as it appears in the source.
+    /// Captures the current member's raw value bytes. The reader must be on the
+    /// property name, and <paramref name="utf8"/> must be the whole document as
+    /// one contiguous span.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The reader must be positioned on the property NAME, and
-    /// <paramref name="utf8"/> must be the whole document as one contiguous
-    /// span: <see cref="Utf8JsonReader.TokenStartIndex"/> and
-    /// <see cref="Utf8JsonReader.BytesConsumed"/> are relative to the reader's
-    /// own input, so a multi-segment sequence or a chunked read would slice the
-    /// wrong bytes silently rather than fail.
-    /// </para>
-    /// <para>
-    /// The name is taken by the caller and the span starts at the VALUE. The
-    /// obvious alternative, capturing from the property name, produces a span
-    /// that already contains the name and then emits it twice when replayed
-    /// through <c>WritePropertyName</c> plus <c>WriteRawValue</c>.
-    /// </para>
-    /// </remarks>
+    // TokenStartIndex and BytesConsumed are relative to the reader's own input,
+    // so a chunked read would slice the wrong bytes.
     public static byte[] CaptureValue(ref Utf8JsonReader reader, ReadOnlySpan<byte> utf8)
     {
         reader.Read();
@@ -182,11 +125,6 @@ public static class CanonicalJson
     }
 
     /// <summary>Strips a UTF-8 byte order mark, if one is present.</summary>
-    /// <remarks>
-    /// A file someone saved from an editor that insists on a BOM is still a file
-    /// they want to open. The next save writes it back canonically, which is a
-    /// one-time diff rather than a refusal.
-    /// </remarks>
     public static ReadOnlySpan<byte> StripBom(ReadOnlySpan<byte> utf8) =>
         utf8.Length >= 3 && utf8[0] == 0xEF && utf8[1] == 0xBB && utf8[2] == 0xBF ? utf8[3..] : utf8;
 }

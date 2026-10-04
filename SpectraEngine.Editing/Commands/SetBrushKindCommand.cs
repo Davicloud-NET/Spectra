@@ -4,36 +4,9 @@ using System;
 namespace SpectraEngine.Editing.Commands;
 
 /// <summary>
-/// Converts a brush between world geometry and a standalone part — the one
-/// edit that changes whether a brush is admitted to the fused static world.
+/// Converts a brush between world geometry and a standalone part. The node
+/// keeps its id, brush and face materials.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The conversion is a property write, not a rebuild.</b> The node keeps its
-/// <see cref="SceneNode.Id"/>, its brush instance, its per-face materials and
-/// its texture axes, so every <c>NodeRef</c>, every entity target name and every
-/// undo entry pointing at it stays valid across the round trip. That is the
-/// whole reason the kind is a bit on the node rather than a different node type:
-/// the alternative — delete the brush node, create a mesh node — invalidates
-/// history and identity to express what is conceptually one checkbox.
-/// </para>
-/// <para>
-/// <b>It is an absolute before/after pair, like every other command here.</b>
-/// Replaying a kind the node already has is free (the setter early-outs on an
-/// equal write), which is what makes undo and redo idempotent rather than
-/// merely reversible.
-/// </para>
-/// <para>
-/// <b>What the user should be told, and what this command deliberately does
-/// not do.</b> Converting to <see cref="BrushKind.Part"/> takes the brush out
-/// of the carve: it stops merging with the geometry around it, so a face left
-/// coplanar with a world face will z-fight and a seam that used to be welded
-/// becomes two independent surfaces. Converting back re-admits it and costs one
-/// static-world recompile. Neither is reversible information loss, so this
-/// command performs no baking and issues no warning — the dialog that explains
-/// the trade is a UI concern, and it belongs where the user can see it.
-/// </para>
-/// </remarks>
 public sealed class SetBrushKindCommand : IEditorCommand
 {
     private WeakReference<SceneNode>? _lastApplied;
@@ -47,8 +20,8 @@ public sealed class SetBrushKindCommand : IEditorCommand
     }
 
     /// <summary>
-    /// Captures <paramref name="node"/>'s current kind as the before-state.
-    /// Call this <em>before</em> applying the edit to the node.
+    /// Captures the node's current kind as the before state. Call before
+    /// applying the edit.
     /// </summary>
     public static SetBrushKindCommand Capture(SceneNode node, BrushKind after)
     {
@@ -92,7 +65,6 @@ public sealed class SetBrushKindCommand : IEditorCommand
     private void Apply(Scene scene, BrushKind kind)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        // Missing target = no-op, per the IEditorCommand contract.
         if (!scene.TryFindById(NodeId, out SceneNode? node))
             return;
 

@@ -9,47 +9,16 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// A headless viewport for driving any <see cref="GizmoTool"/> in tests: a scene
-/// with a configured camera, an undo history, a <see cref="GizmoController"/>
-/// with all three tools, and the frame plumbing to aim a cursor at a world point
-/// and press, drag, and release.
-/// </summary>
-/// <remarks>
-/// <b>Aiming is done in world space and projected</b>, never in raw pixels.
-/// <see cref="WorldToScreen"/> is the exact inverse of the mapping
-/// <see cref="Camera.ScreenPointToRay"/> applies, so pointing the cursor at a
-/// world point <c>P</c> produces a ray that passes through <c>P</c> — which is
-/// what lets a test say "drag exactly 5.37 units along x" or "sweep exactly 30°
-/// around the y ring" and check the answer to float precision, instead of
-/// guessing pixel offsets.
-/// <para>
-/// <b><see cref="Gizmo"/> follows the controller's mode</b>, so a test switches
-/// tools with <see cref="Use"/> and then uses the same grab/drag/release verbs
-/// whichever tool is live.
-/// </para>
-/// <para>
-/// No GPU, no window: only <see cref="Camera"/> maths and the editing layer's
-/// own backend-neutral input snapshot.
-/// </para>
-/// </remarks>
+// Headless viewport for driving a GizmoTool: scene, camera, undo, controller.
+// Tests aim the cursor at world points, which WorldToScreen projects to pixels,
+// so a drag can be stated in world units and checked to float precision.
 internal sealed class GizmoHarness
 {
-    // The point the current gesture was grabbed at, so DragBy can express a
-    // movement as an absolute aim point (grab aim + delta) rather than
-    // accumulating — the same discipline the gizmo itself follows.
     private Vector3 _grabAim;
 
-    /// <remarks>
-    /// <b>The style defaults to <see cref="GizmoStyle.Classic"/>, which is NOT
-    /// the engine's default.</b> The classic layout is the one this suite grew
-    /// up pinning: handles at a fixed distance from the pivot, so a test can aim
-    /// at "eight tenths of an axis length along x" and mean it. Studio's handles
-    /// stand on the selection's own box, so those aim points would land on
-    /// nothing. A test that means the shipping default says
-    /// <see cref="GizmoStyle.Studio"/> and asks <see cref="GrabPointFor"/> where
-    /// the handle actually is; <see cref="GizmoStyleTests"/> is that suite.
-    /// </remarks>
+    // Style defaults to Classic, not the engine default (Studio): Classic
+    // handles sit at a fixed distance from the pivot, which tests can aim at.
+    // For Studio, pass it and ask GrabPointFor where the handle is.
     public GizmoHarness(
         Vector3 cameraPosition,
         Vector3 lookAt,
@@ -61,19 +30,17 @@ internal sealed class GizmoHarness
         Scene = new Scene("Gizmo");
         Scene.Camera.Position = cameraPosition;
         Scene.Camera.LookAt(lookAt);
-        // The pipelines normally write this every frame; without it the
-        // projection and the viewport would disagree and every projected aim
-        // point would land a few pixels off.
+        // The pipelines normally set this each frame.
         Scene.Camera.AspectRatio = ViewportSize.X / ViewportSize.Y;
         Undo = new UndoStack(Scene);
         Gizmos = new GizmoController(Scene, Undo) { Style = style ?? GizmoStyle.Classic };
     }
 
-    /// <summary>A camera looking at the origin from a three-quarter view, where all three axes are separated on screen.</summary>
+    // All three axes are separated on screen.
     public static GizmoHarness ThreeQuarterView(GizmoStyle? style = null) =>
         new(new Vector3(8f, 6f, 10f), Vector3.Zero, style: style);
 
-    /// <summary>A camera on the +z axis looking straight down −z: the x and y axes lie in the view plane, and z projects to a point.</summary>
+    // Looking down -z: x and y lie in the view plane, z projects to a point.
     public static GizmoHarness FrontView(float distance = 10f, GizmoStyle? style = null) =>
         new(new Vector3(0f, 0f, distance), Vector3.Zero, style: style);
 
@@ -83,28 +50,22 @@ internal sealed class GizmoHarness
 
     public GizmoController Gizmos { get; }
 
-    /// <summary>The live tool — whichever mode the controller is in.</summary>
     public GizmoTool Gizmo => Gizmos.Active;
 
-    /// <summary>The move tool, for tests that need its translate-specific surface.</summary>
     public TranslateGizmo Translate => Gizmos.Translate;
 
-    /// <summary>The rotate tool.</summary>
     public RotateGizmo Rotate => Gizmos.Rotate;
 
-    /// <summary>The resize tool.</summary>
     public ScaleGizmo Scale => Gizmos.Scale;
 
     public Vector2 ViewportSize { get; }
 
-    /// <summary>Switches the live tool and returns it.</summary>
     public GizmoTool Use(GizmoMode mode)
     {
         Gizmos.Mode = mode;
         return Gizmos.Active;
     }
 
-    /// <summary>Adds a plain child node of the root at <paramref name="position"/> and selects it.</summary>
     public SceneNode AddSelectedNode(Vector3 position, string name = "Node")
     {
         SceneNode node = AddNode(position, name);
@@ -112,7 +73,6 @@ internal sealed class GizmoHarness
         return node;
     }
 
-    /// <summary>Adds a plain child node of the root at <paramref name="position"/>.</summary>
     public SceneNode AddNode(Vector3 position, string name = "Node")
     {
         SceneNode node = Scene.Root.CreateChild(name);
@@ -120,10 +80,6 @@ internal sealed class GizmoHarness
         return node;
     }
 
-    /// <summary>
-    /// Adds a selected node carrying a centred box brush of the given half
-    /// extent — the authoring shape the resize tests measure.
-    /// </summary>
     public SceneNode AddSelectedBrushNode(Vector3 position, float halfExtent = 1f, string name = "Brush")
     {
         SceneNode node = AddNode(position, name);
@@ -132,16 +88,8 @@ internal sealed class GizmoHarness
         return node;
     }
 
-    /// <summary>
-    /// Adds a selected node carrying a centred box <em>mesh</em> of the given
-    /// half extent — a node with a measurable world size, which is what the
-    /// resize tool needs to honour a world-unit increment.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately distinct from <see cref="AddSelectedNode"/>: a bare node has
-    /// no geometry and therefore no size, and the resize tool falls back to a
-    /// proportional drag for it. A test that means "a mesh" has to say so.
-    /// </remarks>
+    // A mesh node has a measurable size. A bare node has none, and the resize
+    // tool falls back to a proportional drag for it.
     public SceneNode AddSelectedMeshNode(Vector3 position, float halfExtent = 0.5f, string name = "Mesh")
     {
         SceneNode node = AddMeshNode(position, halfExtent, name);
@@ -149,7 +97,6 @@ internal sealed class GizmoHarness
         return node;
     }
 
-    /// <summary>Adds an unselected node carrying a centred box mesh. See <see cref="AddSelectedMeshNode"/>.</summary>
     public SceneNode AddMeshNode(Vector3 position, float halfExtent = 0.5f, string name = "Mesh")
     {
         SceneNode node = AddNode(position, name);
@@ -157,10 +104,7 @@ internal sealed class GizmoHarness
         return node;
     }
 
-    /// <summary>
-    /// Projects a world point to viewport pixels — the exact inverse of
-    /// <see cref="Camera.ScreenPointToRay"/>'s pixel-to-NDC mapping.
-    /// </summary>
+    // Inverse of Camera.ScreenPointToRay's pixel-to-NDC mapping.
     public Vector2 WorldToScreen(Vector3 world)
     {
         Vector4 clip = Vector4.Transform(new Vector4(world, 1f), Scene.Camera.GetViewProjection());
@@ -169,31 +113,18 @@ internal sealed class GizmoHarness
             (1f - clip.Y / clip.W) * 0.5f * ViewportSize.Y);
     }
 
-    /// <summary>This frame's gizmo geometry for a world-aligned pivot, without running the state machine.</summary>
+    // Geometry for a world-aligned pivot, without running the state machine.
     public GizmoGeometry GeometryAt(Vector3 pivot) => GeometryAt(pivot, Quaternion.Identity);
 
-    /// <summary>This frame's gizmo geometry for a pivot in an explicit frame.</summary>
     public GizmoGeometry GeometryAt(Vector3 pivot, Quaternion frame) =>
         GizmoGeometry.Build(Scene.Camera, pivot, frame, ViewportSize, Gizmo.HandlePixelSize);
 
-    /// <summary>
-    /// The geometry the live tool would actually lay out for the current
-    /// selection: the style's roster, the style's pivot, and handles standing
-    /// wherever the style puts them.
-    /// </summary>
+    // What the live tool lays out for the current selection and style.
     public GizmoGeometry LiveGeometry() => Gizmo.GeometryFor(ViewportSize);
 
-    /// <summary>
-    /// A world point on <paramref name="handle"/> that a grab can be aimed at,
-    /// wherever the live style has put it: the centre of a resize cube, or the
-    /// middle of an axis handle's shaft.
-    /// </summary>
-    /// <remarks>
-    /// The whole reason a Studio-style test cannot hard-code an aim point. The
-    /// handle's distance from the pivot is a property of the selection's box,
-    /// so the test has to ask the geometry the same way the renderer and the hit
-    /// tester do.
-    /// </remarks>
+    // A world point on the handle to aim a grab at: the resize cube's centre,
+    // or the middle of an axis shaft. Studio handles stand on the selection's
+    // box, so their position cannot be hard-coded.
     public Vector3 GrabPointFor(GizmoHandle handle)
     {
         GizmoGeometry geometry = LiveGeometry();
@@ -210,7 +141,6 @@ internal sealed class GizmoHarness
         return geometry.Pivot;
     }
 
-    /// <summary>Builds one input frame.</summary>
     public EditorInputFrame Frame(
         Vector2 cursor,
         PointerButtons down = PointerButtons.None,
@@ -219,11 +149,9 @@ internal sealed class GizmoHarness
         KeyModifiers modifiers = KeyModifiers.None) =>
         new(cursor, ViewportSize, down, pressed, released, modifiers, Vector2.Zero, 1f / 60f);
 
-    /// <summary>Moves the cursor over <paramref name="aimAt"/> with no button held.</summary>
     public GizmoUpdateResult Hover(Vector3 aimAt) =>
         Gizmos.Update(Frame(WorldToScreen(aimAt)));
 
-    /// <summary>Presses the drag button with the cursor over <paramref name="aimAt"/>.</summary>
     public GizmoUpdateResult Grab(Vector3 aimAt)
     {
         _grabAim = aimAt;
@@ -231,30 +159,22 @@ internal sealed class GizmoHarness
             WorldToScreen(aimAt), down: PointerButtons.Left, pressed: PointerButtons.Left));
     }
 
-    /// <summary>
-    /// Holds the drag button and aims at the grab point displaced by
-    /// <paramref name="worldDelta"/>. Because the aim is absolute, a sequence
-    /// of <c>DragBy</c> calls is a sequence of cursor <em>positions</em>, not
-    /// accumulated movements — exactly what a real mouse produces.
-    /// </summary>
+    // The delta is from the grab point, not from the previous DragBy.
     public GizmoUpdateResult DragBy(Vector3 worldDelta, KeyModifiers modifiers = KeyModifiers.None) =>
         DragTo(_grabAim + worldDelta, modifiers);
 
-    /// <summary>Holds the drag button and aims at an absolute world point.</summary>
     public GizmoUpdateResult DragTo(Vector3 aimAt, KeyModifiers modifiers = KeyModifiers.None) =>
         Gizmos.Update(Frame(
             WorldToScreen(aimAt), down: PointerButtons.Left, modifiers: modifiers));
 
-    /// <summary>Releases the drag button, committing the gesture.</summary>
     public GizmoUpdateResult Release(KeyModifiers modifiers = KeyModifiers.None) =>
         Gizmos.Update(Frame(
             WorldToScreen(_grabAim), released: PointerButtons.Left, modifiers: modifiers));
 
-    /// <summary>Sends the Escape edge to an in-progress drag.</summary>
     public GizmoUpdateResult PressEscape() =>
         Gizmos.Update(Frame(WorldToScreen(_grabAim), down: PointerButtons.Left), cancelRequested: true);
 
-    /// <summary>Presses the cancel (right) button during a drag.</summary>
+    // Right button cancels a drag.
     public GizmoUpdateResult RightClick() =>
         Gizmos.Update(Frame(
             WorldToScreen(_grabAim),

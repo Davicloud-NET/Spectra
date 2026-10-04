@@ -7,24 +7,9 @@ using System.Linq;
 namespace SpectraEngine.Graphics.Tests;
 
 /// <summary>
-/// The seam that makes the engine embeddable: <b>nothing under
-/// <c>Graphics/</c> may name a window.</b>
+/// Scans the graphics sources: none may name a window or the shell's UI
+/// framework. Backends depend on <see cref="IRenderSurface"/> only.
 /// </summary>
-/// <remarks>
-/// A renderer that takes a Silk.NET <c>IWindow</c> takes far more than a surface:
-/// a title, a cursor, an event pump, and a lifetime. An editor shell owns every
-/// one of those and can hand the engine only a native child handle and, for
-/// OpenGL, a context. Narrowing the dependency to <see cref="IRenderSurface"/>
-/// is what turns hosting into "write one small adapter" instead of "touch three
-/// backends", and it is worth nothing if the next backend change quietly reaches
-/// for a window again.
-/// <para>
-/// <b>Enforced in the source, like the COM ownership rule</b>, and for the same
-/// reason: the thing that would break is a compile-time dependency, so no
-/// runtime test can see it. <c>WindowRenderSurface</c> is the one legitimate
-/// exception, because being the adapter is its entire job.
-/// </para>
-/// </remarks>
 public sealed class RenderSurfaceConventionTests
 {
     [Fact]
@@ -34,8 +19,7 @@ public sealed class RenderSurfaceConventionTests
 
         foreach (string file in GraphicsSources())
         {
-            // The adapter, and the fullscreen latch's own vocabulary, which is
-            // about the window the ENGINE owns and never reaches a backend.
+            // The adapter is the one exception.
             string name = Path.GetFileName(file);
             if (name == "WindowRenderSurface.cs")
                 continue;
@@ -47,9 +31,8 @@ public sealed class RenderSurfaceConventionTests
                 if (IsComment(line))
                     continue;
 
-                // IWindow, but not IWindowModeLatch or IWindowModeTarget: those
-                // name the engine's own fullscreen seam, which is deliberately
-                // backend-neutral already and never carries a surface.
+                // IWindowModeLatch and IWindowModeTarget are fine: that is the
+                // fullscreen seam, not a window.
                 int at = line.IndexOf("IWindow", StringComparison.Ordinal);
                 while (at >= 0)
                 {
@@ -70,23 +53,7 @@ public sealed class RenderSurfaceConventionTests
             "host already owns, and re-couples the engine to running its own window");
     }
 
-    /// <summary>
-    /// The same seam pointed the other way: <b>nothing under <c>Graphics/</c>
-    /// may name the shell's UI framework.</b>
-    /// </summary>
-    /// <remarks>
-    /// A composited surface hands a texture to something outside the engine, and
-    /// the vocabulary for that (a shared handle, a keyed mutex, a generation) is
-    /// deliberately made of nothing but a native handle and integers. The moment
-    /// a backend names the framework on the other side, the engine can only ever
-    /// be embedded in that one shell, and the whole reason
-    /// <see cref="IRenderSurface"/> exists is gone.
-    /// <para>
-    /// <b>No file is exempt, unlike the window rule.</b> There is no adapter
-    /// here to be the exception: the shell's adapter lives in the shell, which
-    /// is the arrangement being enforced.
-    /// </para>
-    /// </remarks>
+    // No file is exempt here: the shell's adapter lives in the shell.
     [Fact]
     public void No_graphics_source_names_the_shell_ui_framework()
     {
@@ -116,19 +83,13 @@ public sealed class RenderSurfaceConventionTests
     [Fact]
     public void Every_backend_refuses_a_surface_it_cannot_use()
     {
-        // The refusal is the whole value of Kind carrying the platform rather
-        // than the handle being a bare nint: "wrong platform" has to stay a
-        // clear error instead of whatever a driver does with a nonsense pointer.
         var glOnly = new StubSurface(RenderSurfaceKind.None, handle: 0);
         var win32Only = new StubSurface(RenderSurfaceKind.Win32, handle: 1234);
 
         glOnly.GLContext.ShouldBeNull();
         win32Only.GLContext.ShouldBeNull();
 
-        // A GL-less surface cannot drive the GL backend, and a context-less,
-        // handle-less one cannot drive anything. Both messages have to name what
-        // was actually supplied, because "it did not start" with no reason is
-        // the failure mode an embedded host will hit first.
+        // The message has to say what was missing.
         Should.Throw<InvalidOperationException>(() => new Core.Graphics.OpenGL.OpenGLRenderer(
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<Renderer>.Instance,
                 new SpectraShade.Compiler.SpectraShadeCompiler())
@@ -150,8 +111,6 @@ public sealed class RenderSurfaceConventionTests
         }
     }
 
-    // True when the match is part of a longer identifier such as
-    // IWindowModeLatch, which is the engine's fullscreen seam and not a window.
     private static bool IsLongerIdentifier(string line, int at)
     {
         int after = at + "IWindow".Length;

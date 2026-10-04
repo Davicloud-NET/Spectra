@@ -33,14 +33,11 @@ public class PackWriterTests
         header.EntryCount.ShouldBe(2u);
         header.PackSequence.ShouldBe(7u);
 
-        // Explicit in the header even though v1 could derive it, so the header can
-        // grow without a version bump.
         header.EntryTableOffset.ShouldBe((ulong)HandParsedPack.HeaderSize);
 
         header.NameTableOffset.ShouldBe(header.EntryTableOffset + (2 * (ulong)HandParsedPack.EntrySize));
         header.NameTableLength.ShouldBeGreaterThan(0ul);
 
-        // Truncation is detectable from the file's own bytes, with no stat call.
         header.TotalFileSize.ShouldBe((ulong)pack.Length);
 
         header.EngineVersion.ShouldBe(
@@ -112,10 +109,8 @@ public class PackWriterTests
     [Fact]
     public void Entries_are_sorted_ascending_as_unsigned_one_hundred_and_twenty_eight_bit_values()
     {
-        // Enough paths that some ids land in the top half of the space. Signed
-        // comparison would order those below the bottom half, and a binary search
-        // over the result would miss roughly half of every pack, intermittently,
-        // as a content miss rather than as a fault.
+        // 200 paths so some ids have the top bit set, where a signed compare
+        // would order them wrongly.
         var writer = new PackWriter();
         for (int i = 0; i < 200; i++)
             writer.Add($"Textures/tile_{i:D3}.png", PackEntryKind.Image, Bytes(3, seed: i));
@@ -131,8 +126,7 @@ public class PackWriterTests
                 $"entry {i} is not above entry {i - 1}");
         }
 
-        // Without this the ordering claim is vacuous: a corpus whose ids all sit
-        // below 2^127 is ordered identically by a signed comparison.
+        // Guards the fixture: without a top-bit id the test proves nothing.
         entries.ShouldContain(e => e.AssetId >= (UInt128.One << 127), "no id had its top bit set");
     }
 
@@ -142,8 +136,7 @@ public class PackWriterTests
         var writer = new PackWriter();
         for (int i = 0; i < 12; i++)
         {
-            // Deliberately unaligned lengths, so a writer that forgot to pad would
-            // put the next payload on an odd offset.
+            // Unaligned lengths, so a missing pad shows.
             writer.Add($"Models/prop_{i}.smodel", PackEntryKind.Model, Bytes(7 + (i * 13), seed: i));
         }
 
@@ -173,13 +166,11 @@ public class PackWriterTests
         HandParsedPack.Header header = HandParsedPack.ReadHeader(pack);
         List<HandParsedPack.Entry> entries = HandParsedPack.ReadEntries(pack, header);
 
-        // The gap between the tables and the data section.
         long tablesEnd = (long)(header.NameTableOffset + header.NameTableLength);
         for (long i = tablesEnd; i < (long)header.DataSectionOffset; i++)
             pack[i].ShouldBe((byte)0, $"byte {i} between the name table and the data section");
 
-        // And the pad after each payload. An unzeroed pad picks up whatever was in
-        // the buffer and breaks byte identity in a way that is very hard to bisect.
+        // An unzeroed pad picks up buffer garbage and breaks byte identity.
         foreach (HandParsedPack.Entry entry in entries)
         {
             long end = (long)(entry.PayloadOffset + entry.StoredSize);
@@ -203,9 +194,6 @@ public class PackWriterTests
     [Fact]
     public void Insertion_order_does_not_change_the_bytes()
     {
-        // The whole point of sorting by id: a cooker that walks a directory in
-        // whatever order the filesystem returned still writes one file, so an
-        // incremental cook can skip work and a patcher can diff.
         string[] paths =
         [
             "Textures/wall_brick.png",
@@ -261,8 +249,7 @@ public class PackWriterTests
     [Fact]
     public void A_deflate_entry_records_both_sizes_and_inflates_back_to_the_original()
     {
-        // Compressible on purpose: a random payload would deflate larger, which is
-        // true and would not exercise the two sizes differing.
+        // Compressible, so the two sizes differ.
         byte[] payload = new byte[4096];
         for (int i = 0; i < payload.Length; i++) payload[i] = (byte)(i % 7);
 
@@ -348,9 +335,7 @@ public class PackWriterTests
     [Fact]
     public void An_id_collision_is_refused_naming_both_paths()
     {
-        // Reachable rather than theoretical: pack identity is case-insensitive to
-        // match the engine's asset caches, so two spellings of one asset collide
-        // here instead of each getting an entry the other's spelling misses.
+        // Pack identity folds case, like the engine's asset caches.
         var writer = new PackWriter();
         writer.Add("Textures/Wall_Brick.png", PackEntryKind.Image, Bytes(4));
         writer.Add("Textures/wall_brick.png", PackEntryKind.Image, Bytes(8));
@@ -365,13 +350,8 @@ public class PackWriterTests
     [Fact]
     public void Two_spellings_of_one_asset_resolve_to_one_id()
     {
-        // The property the collision above is a symptom of, stated directly: the
-        // asset caches key on OrdinalIgnoreCase, so a pack that did not fold case
-        // would hold content the shipped game misses whenever a material file
-        // spells a texture differently from the folder does.
         PackAssetId.From("Textures/Wall_Brick.png").ShouldBe(PackAssetId.From("textures/wall_brick.png"));
 
-        // And separators and dot segments are settled by normalisation, as ever.
         PackAssetId.From("/Textures/./wall.png").ShouldBe(PackAssetId.From("Textures\\wall.png"));
     }
 
@@ -440,8 +420,6 @@ public class PackWriterTests
             byte[] fromFile = File.ReadAllBytes(path);
             fromFile.ShouldBe(Write(writer));
 
-            // The file is exactly as long as it says it is, which is the property
-            // truncation detection rests on.
             HandParsedPack.ReadHeader(fromFile).TotalFileSize.ShouldBe((ulong)fromFile.Length);
         }
         finally
@@ -457,8 +435,6 @@ public class PackWriterTests
         return stream.ToArray();
     }
 
-    // Deterministic content, so a byte-identity comparison measures the writer
-    // rather than the payloads.
     private static byte[] Bytes(int length, int seed = 0)
     {
         var bytes = new byte[length];

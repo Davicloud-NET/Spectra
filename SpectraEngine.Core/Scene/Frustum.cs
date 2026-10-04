@@ -5,13 +5,7 @@ namespace SpectraEngine.Core.Scene;
 
 /// <summary>
 /// A view frustum as six normalized planes whose normals point inward: a point
-/// is inside when its signed distance to every plane is non-negative. Extracted
-/// from a combined view-projection matrix via Gribb–Hartmann, adapted to the
-/// System.Numerics row-vector convention the engine uses on the CPU
-/// (clip = world · View · Projection), where each clip component is a dot
-/// product of the point with a matrix <em>column</em>. An immutable value type —
-/// safe to copy across threads; build one per cull pass from
-/// <see cref="Camera.GetFrustum"/>.
+/// is inside when its signed distance to every plane is non-negative.
 /// </summary>
 public readonly struct Frustum
 {
@@ -49,14 +43,9 @@ public readonly struct Frustum
     /// </summary>
     public static Frustum FromViewProjection(in Matrix4x4 m)
     {
-        // Row-vector Gribb–Hartmann: clip.x/y/z/w are dots of the point with
-        // columns 1..4 of the matrix, so the inside-clip conditions
-        //   -w <= x,  x <= w,  -w <= y,  y <= w,  0 <= z,  z <= w
-        // turn into sums/differences of column 4 with columns 1–3. The near
-        // plane is column 3 ALONE because Matrix4x4.CreatePerspectiveFieldOfView
-        // maps depth to the D3D-style [0, 1] clip range (near plane lands at
-        // z = 0), not OpenGL's [-1, 1]. Normalizing makes DotCoordinate a true
-        // world-space distance, which the positive-vertex test relies on.
+        // Gribb-Hartmann for row vectors: clip x/y/z/w are dots with columns
+        // 1..4, so the planes are column 4 plus or minus columns 1-3.
+        // Near is column 3 alone because clip depth is [0, 1], not [-1, 1].
         return new Frustum(
             left: Plane.Normalize(new Plane(m.M14 + m.M11, m.M24 + m.M21, m.M34 + m.M31, m.M44 + m.M41)),
             right: Plane.Normalize(new Plane(m.M14 - m.M11, m.M24 - m.M21, m.M34 - m.M31, m.M44 - m.M41)),
@@ -67,11 +56,8 @@ public readonly struct Frustum
     }
 
     /// <summary>
-    /// Conservative frustum-vs-box test for culling: returns false ONLY when the
-    /// box lies fully outside at least one plane, so a box containing any visible
-    /// point is never rejected. May return true for a box that straddles a corner
-    /// region outside the true frustum — false positives merely cost a draw,
-    /// false negatives would make geometry vanish.
+    /// Conservative box test for culling: false only when the box lies fully
+    /// outside one plane. May return true for a box just outside a corner.
     /// </summary>
     public bool Intersects(in Aabb box) =>
         !OutsidePlane(Left, box) && !OutsidePlane(Right, box) &&
@@ -101,9 +87,7 @@ public readonly struct Frustum
 
     private static bool OutsidePlane(in Plane plane, in Aabb box)
     {
-        // Positive-vertex trick: test only the box corner farthest along the
-        // inward plane normal. If even that corner is behind the plane, the
-        // whole box is — one dot product instead of eight per plane.
+        // Only the corner farthest along the normal needs testing.
         var positive = new Vector3(
             plane.Normal.X >= 0f ? box.Max.X : box.Min.X,
             plane.Normal.Y >= 0f ? box.Max.Y : box.Min.Y,

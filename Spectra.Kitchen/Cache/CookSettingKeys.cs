@@ -3,26 +3,11 @@ using System;
 namespace Spectra.Kitchen.Cache;
 
 /// <summary>
-/// The cook settings a rule's OUTPUT can depend on, declared per rule.
+/// The cook settings a rule's output can depend on, declared per rule. Only the
+/// declared ones enter that rule's cache key.
 /// </summary>
-/// <remarks>
-/// <para><b>Per rule, because the alternative invalidates the world.</b> Hashing
-/// the whole settings block into every key means changing <c>--script-source</c>
-/// re-cooks every texture in the project. A rule declares what it reads, the key
-/// carries only that, and a settings change then invalidates exactly the rules
-/// that read it and nothing else.</para>
-/// <para><b>Only settings that can change a cooked PAYLOAD are here.</b>
-/// <c>Jobs</c>, <c>Loose</c>, <c>OutputPath</c>, <c>ManifestPath</c> and
-/// <c>UseCache</c> decide how a cook is scheduled, where it is written and in what
-/// container - never what the bytes are - so a rule may not declare them and a
-/// cached artifact is legitimately shared across all of them. <c>Strict</c> is
-/// absent for a subtler reason: it changes the SEVERITY of diagnostics rather than
-/// any payload, and the cache never serves a rule that reported one at all (see
-/// <see cref="CookCache"/>), so a strict run and a lax run can only share a cache
-/// entry for a rule that had nothing to say under either.</para>
-/// <para><b>Flags rather than a list, so the declaration costs no allocation</b>
-/// on a member that is read once per rule per cook.</para>
-/// </remarks>
+// Only settings that change a cooked payload belong here. Jobs, Loose, the
+// output paths, UseCache and Strict do not.
 [Flags]
 public enum CookSettingKeys
 {
@@ -48,12 +33,5 @@ public enum CookSettingKeys
     /// Reads <c>CookSettings.AudioSampleRate</c>: the one rate every cooked
     /// sound is resampled to.
     /// </summary>
-    /// <remarks>
-    /// It changes a PAYLOAD in the strongest possible sense - every sample in
-    /// every sound - so a rate change has to invalidate the whole audio library
-    /// and nothing else. That asymmetry is exactly what a per-rule declaration
-    /// buys: hashing the whole settings block would re-cook every texture in the
-    /// project the day somebody decided the project runs at 44.1.
-    /// </remarks>
     AudioSampleRate = 1 << 5,
 }

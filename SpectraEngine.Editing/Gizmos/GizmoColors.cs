@@ -4,22 +4,8 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Gizmos;
 
-/// <summary>
-/// The one palette all three manipulators draw in, and the primitives they all
-/// draw with.
-/// </summary>
-/// <remarks>
-/// <b>An axis must mean the same colour in every tool</b>, and the highlight
-/// must mean "this is the handle you are about to grab" wherever it appears —
-/// which it cannot if each gizmo carries its own constants. The colours match
-/// <c>DebugVisualizations</c>' scene-graph axes, so an axis reads the same in the
-/// viewport overlay as it does under the cursor.
-/// <para>
-/// <b>Threading:</b> render thread only, like the <see cref="DebugDraw"/> these
-/// fill. Drawing allocates nothing beyond the line buffer's own amortised
-/// growth.
-/// </para>
-/// </remarks>
+/// <summary>The palette and line primitives the manipulators share.</summary>
+// Axis colours match DebugVisualizations' scene-graph axes.
 public static class GizmoColors
 {
     private static readonly Vector3 AxisXColor = new(1f, 0.25f, 0.25f);
@@ -27,23 +13,18 @@ public static class GizmoColors
     private static readonly Vector3 AxisZColor = new(0.35f, 0.55f, 1f);
     private static readonly Vector3 ScreenColor = new(0.85f, 0.85f, 0.9f);
 
-    // Warm yellow: unused by any other viewport visualisation, so "this is the
-    // handle you are about to grab" never reads as some other overlay.
+    // Yellow: no other viewport overlay uses it.
     private static readonly Vector3 HighlightColor = new(1f, 0.9f, 0.2f);
 
     /// <summary>
-    /// The colour a handle is drawn in — its axis colour, or the highlight when
-    /// it is the hovered/active one.
+    /// The colour a handle is drawn in: its axis colour, or the highlight when
+    /// it is the hovered or active one.
     /// </summary>
     public static Vector3 For(GizmoHandle handle, GizmoHandle highlighted)
     {
         if (handle == highlighted && handle != GizmoHandle.None)
             return HighlightColor;
 
-        // Both ends of an axis wear the axis's colour: the −x face handle is
-        // still an x handle, and giving it anything else would break the
-        // red/green/blue reading the whole viewport shares. Which end it is
-        // reads from where it sits, not from what colour it is.
         return GizmoHandles.PositiveAxis(handle) switch
         {
             GizmoHandle.AxisX => AxisXColor,
@@ -51,9 +32,7 @@ public static class GizmoColors
             GizmoHandle.AxisZ => AxisZColor,
             _ => handle switch
             {
-                // A plane quad takes the colour of the axis it is normal to,
-                // which is how a viewer reads "this square slides in the other
-                // two".
+                // A plane quad takes the colour of its normal axis.
                 GizmoHandle.PlaneYZ => AxisXColor,
                 GizmoHandle.PlaneZX => AxisYColor,
                 GizmoHandle.PlaneXY => AxisZColor,
@@ -66,11 +45,8 @@ public static class GizmoColors
     public static Vector3 Highlight => HighlightColor;
 
     /// <summary>
-    /// Draws a circle of <paramref name="radius"/> around
-    /// <paramref name="centre"/> in the plane perpendicular to
-    /// <paramref name="axis"/>, as
-    /// <see cref="GizmoHitTesting.RingSegments"/> line segments in the same basis
-    /// the hit tester walks — so what is drawn is exactly what is pickable.
+    /// Draws a circle in the plane perpendicular to <paramref name="axis"/>,
+    /// using the same segments and basis the hit tester walks.
     /// </summary>
     public static void DrawCircle(DebugDraw output, Vector3 centre, Vector3 axis, float radius, Vector3 color)
     {
@@ -79,12 +55,7 @@ public static class GizmoColors
         DrawCircle(output, centre, u, v, radius, color);
     }
 
-    /// <summary>
-    /// Draws a circle in the plane spanned by the two unit vectors
-    /// <paramref name="first"/> and <paramref name="second"/> — the overload for
-    /// callers that already have a basis (the screen-facing handles, built in the
-    /// camera basis).
-    /// </summary>
+    /// <summary>Draws a circle in the plane spanned by two unit vectors.</summary>
     public static void DrawCircle(
         DebugDraw output, Vector3 centre, Vector3 first, Vector3 second, float radius, Vector3 color)
     {
@@ -101,9 +72,8 @@ public static class GizmoColors
     }
 
     /// <summary>
-    /// Draws the twelve edges of a cube of half-extent <paramref name="radius"/>
-    /// centred at <paramref name="centre"/>, oriented by the gizmo frame — the
-    /// scale gizmo's handle, and exactly the box its pick tests against.
+    /// Draws a wire cube of half-extent <paramref name="radius"/> oriented by
+    /// the gizmo frame. The same box the scale gizmo's pick tests against.
     /// </summary>
     public static void DrawBox(
         DebugDraw output, in GizmoGeometry geometry, Vector3 centre, float radius, Vector3 color)
@@ -114,7 +84,6 @@ public static class GizmoColors
         Vector3 y = geometry.AxisY * radius;
         Vector3 z = geometry.AxisZ * radius;
 
-        // The four corners of the −z face, then the +z face, then the struts.
         Vector3 a = centre - x - y - z;
         Vector3 b = centre + x - y - z;
         Vector3 c = centre + x + y - z;

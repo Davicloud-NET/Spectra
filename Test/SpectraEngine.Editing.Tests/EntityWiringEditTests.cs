@@ -14,21 +14,7 @@ using System.Text;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// Wiring an entity's outputs to another entity's inputs: the command, the
-/// editor verb over it, and the map bytes underneath.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Whole arrays, because a connection has no identity a delta could
-/// name.</b> Two wires on one entity may be identical in every field, and an
-/// insert shifts every index after it, so "remove the wire at 2" replayed
-/// against a list an undo has already changed removes the wrong one. What the
-/// tests below defend is that an undo puts the exact list back IN ORDER, that a
-/// run of edits is one history entry, and that the file comes back byte for
-/// byte afterwards - which is the claim the whole map format rests on.
-/// </para>
-/// </remarks>
+/// <summary>Entity wiring edits: the command, the editor verb over it, and the map bytes.</summary>
 public sealed class EntityWiringEditTests
 {
     private static EntityConnection Wire(
@@ -61,15 +47,9 @@ public sealed class EntityWiringEditTests
     private static IReadOnlyList<EntityConnection> Wiring(SceneNode node) =>
         node.Entity!.Connections;
 
-    // --- the command ---------------------------------------------------------
-
     [Fact]
     public void Undo_restores_the_exact_list_in_the_authored_order()
     {
-        // ORDER, not merely membership. Connection order round-trips through
-        // map.json, so an undo that put the same three wires back in a
-        // different order would leave a file that is valid, different, and
-        // bit-unequal to the one that was saved.
         SceneNode node = Placed(
             "door", "func_door",
             Wire("OnOpen", "light1", "TurnOn"),
@@ -79,8 +59,7 @@ public sealed class EntityWiringEditTests
         var rig = new Rig(node);
         EntityConnection[] before = [.. Wiring(node)];
 
-        // A reordering edit, which is the case a list-diffing implementation
-        // gets wrong while every membership assertion stays green.
+        // Reorders as well as removes; a membership check alone misses order.
         rig.Undo.Execute(SetEntityConnectionsCommand.Capture(
             node, [before[2], before[0]]));
 
@@ -102,9 +81,7 @@ public sealed class EntityWiringEditTests
     [Fact]
     public void The_captured_before_state_is_a_copy_of_the_live_list()
     {
-        // EntityData owns the list and hands it out. A command that stored the
-        // instance would have its own before-state rewritten by the edit it is
-        // recording, so an undo would restore what it had just undone to.
+        // EntityData hands out its live list.
         SceneNode node = Placed("door", "func_door", Wire("OnOpen", "a"));
         var rig = new Rig(node);
 
@@ -122,7 +99,7 @@ public sealed class EntityWiringEditTests
     [Fact]
     public void A_missing_target_is_a_no_op_rather_than_a_throw()
     {
-        // History behind a still-undone delete legitimately names absent nodes.
+        // History behind an undone delete names absent nodes.
         var scene = new Scene("entities");
         var command = new SetEntityConnectionsCommand(
             Guid.NewGuid(), [Wire("OnOpen", "a")], []);
@@ -148,8 +125,6 @@ public sealed class EntityWiringEditTests
     [Fact]
     public void Capturing_from_a_node_with_no_entity_is_refused_at_the_call()
     {
-        // A before-state of "no wires" read off a node that has no payload at
-        // all would make an undo clear a list nothing ever stored.
         Should.Throw<InvalidOperationException>(
             () => SetEntityConnectionsCommand.Capture(new SceneNode("plain"), []));
     }
@@ -164,15 +139,11 @@ public sealed class EntityWiringEditTests
         SetEntityConnectionsCommand.SameWiring([a, b], [b, a]).ShouldBeFalse();
         SetEntityConnectionsCommand.SameWiring([a], [a, b]).ShouldBeFalse();
 
-        // Exact, never tolerant: a delay differing in the last place really is
-        // a different file, and a tolerance would report the two settled and
-        // then write one over the other.
+        // No tolerance: a delay one ulp off is a different file.
         SetEntityConnectionsCommand.SameWiring(
             [Wire("OnOpen", "x", delay: 1f)],
             [Wire("OnOpen", "x", delay: 1.0000001f)]).ShouldBeFalse();
     }
-
-    // --- coalescing ----------------------------------------------------------
 
     [Fact]
     public void A_run_of_edits_to_one_nodes_wiring_is_one_history_entry()
@@ -207,8 +178,6 @@ public sealed class EntityWiringEditTests
         first.After[0].TargetName.ShouldBe("a");
     }
 
-    // --- the editor verb -----------------------------------------------------
-
     private static SceneEditorHost NewHost(Scene scene)
     {
         var renderer = new CompilingRenderer();
@@ -224,9 +193,8 @@ public sealed class EntityWiringEditTests
     [Fact]
     public void The_verb_addresses_a_node_id_rather_than_the_selection()
     {
-        // A property edit lets the editor resolve the selection on the render
-        // thread; a wiring edit replaces a whole LIST, so landing on a node the
-        // user has also selected would overwrite that node's entire wiring.
+        // A wiring edit replaces the whole list, so it must not land on
+        // whatever happens to be selected.
         SceneNode wired = Placed("door", "func_door", Wire("OnOpen", "a"));
         SceneNode other = Placed("relay", "logic_relay", Wire("OnTrigger", "b"));
 
@@ -246,9 +214,7 @@ public sealed class EntityWiringEditTests
     [Fact]
     public void Writing_the_list_the_node_already_has_records_nothing()
     {
-        // The panel commits on Enter and on losing focus, so tabbing through a
-        // wire's fields is ordinary and must not fill the history with entries
-        // that undo to themselves.
+        // The panel commits on blur, so tabbing through fields sends this.
         SceneNode node = Placed("door", "func_door", Wire("OnOpen", "a", "TurnOn", "p", 2f, 4));
         var scene = new Scene("Editor");
         scene.Root.AddChild(node);
@@ -277,9 +243,7 @@ public sealed class EntityWiringEditTests
     [Fact]
     public void A_suspended_editor_refuses_a_wiring_edit()
     {
-        // A panel's view of play mode is stale by up to a publish interval, so
-        // a click landing in that window must do nothing rather than edit a
-        // scene somebody is walking around in.
+        // The panel's view of play mode lags by up to a publish interval.
         SceneNode node = Placed("door", "func_door", Wire("OnOpen", "a"));
         var scene = new Scene("Editor");
         scene.Root.AddChild(node);
@@ -296,9 +260,8 @@ public sealed class EntityWiringEditTests
     [Fact]
     public void A_wire_whose_target_does_not_exist_is_kept_rather_than_dropped()
     {
-        // The map loader keeps an unresolved wire - the target may be spawned
-        // at run time, or belong to a level that is not open - and the editor
-        // must not be the place that quietly disagrees.
+        // The map loader keeps unresolved wires too: the target may be
+        // spawned at run time.
         SceneNode node = Placed("door", "func_door");
         var scene = new Scene("Editor");
         scene.Root.AddChild(node);
@@ -311,13 +274,8 @@ public sealed class EntityWiringEditTests
         Wiring(node)[0].TargetName.ShouldBe("nothing_is_called_this");
     }
 
-    // --- the bytes -----------------------------------------------------------
-
-    // A hand-written bundle, so the byte-identity claim is about a file a person
-    // could have typed rather than about whatever the writer happens to emit.
-    // No geometry: Brush's constructor re-normalises every plane, which is a
-    // canonicalisation rather than a defect and would make this test about
-    // something else entirely.
+    // Hand-written, so byte identity is against a file a person could type.
+    // No brushes: Brush re-normalises its planes, which changes the bytes.
     private static readonly byte[] WiredMap = Encoding.UTF8.GetBytes("""
         {
           "spectramap": 3,
@@ -367,10 +325,7 @@ public sealed class EntityWiringEditTests
     [Fact]
     public void A_wiring_edit_undone_saves_byte_for_byte_again()
     {
-        // The whole point of an absolute-array command: the undo has to restore
-        // the bytes, not merely a list that means the same thing. A reordering
-        // edit is used deliberately, since a re-sorted list is the failure this
-        // catches and the only one that survives a membership assertion.
+        // The edit reorders, so an undo that re-sorted the list would show.
         var loaded = new Scene("Testmap");
         MapSceneBinder.ApplyTo(MapReader.Read(WiredMap), loaded);
 
@@ -423,9 +378,6 @@ public sealed class EntityWiringEditTests
     [Fact]
     public void A_transform_is_untouched_by_a_wiring_edit()
     {
-        // The command writes one payload and nothing else. Stated as a test
-        // because the node it edits is resolved by id and a wrong lookup would
-        // be invisible in every wiring assertion above.
         SceneNode node = Placed("door", "func_door", Wire("OnOpen", "a"));
         node.LocalPosition = new Vector3(3f, 4f, 5f);
         var rig = new Rig(node);

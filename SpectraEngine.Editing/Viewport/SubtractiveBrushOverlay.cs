@@ -11,36 +11,14 @@ namespace SpectraEngine.Editing.Viewport;
 /// Draws the edges of every subtractive brush, with an inward tick per face
 /// showing which way the solid is being removed.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is not an affordance, it is the only way the brush can be seen at
-/// all.</b> A subtractive brush emits no outward skin by construction — a
-/// <see cref="BrushKind.World"/> one contributes cavity walls to the brushes it
-/// cuts and nothing of its own; a <see cref="BrushKind.Part"/> one contributes
-/// nothing whatsoever. Without this pass a negative brush is an invisible,
-/// unpickable object that is nonetheless deleting the level, and the author's
-/// only evidence of it is the hole it leaves.
-/// </para>
-/// <para>
-/// <b>Kind-blind, deliberately.</b> Both kinds of subtractive brush render
-/// nothing, so both need drawing. Filtering the part-brush set instead would
-/// silence the outline on exactly the population that renders nothing.
-/// </para>
-/// <para>
-/// <b>The inward tick earns its cost.</b> An outline alone says "a box is
-/// here"; it does not say which side of each face is being taken away, and for
-/// a brush whose whole purpose is removal that is the one thing the author
-/// needs. The tick is drawn from each face's centroid along the face's inward
-/// normal — into the removed volume — so a negative reads as a box pointing at
-/// itself.
-/// </para>
-/// </remarks>
+// A subtractive brush renders nothing of its own, world or part kind, so this
+// is the only place it can be seen.
 public sealed class SubtractiveBrushOverlay
 {
-    /// <summary>The outline colour: magenta, distinct from the part-brush cyan and every gizmo axis.</summary>
+    /// <summary>The default outline colour, magenta.</summary>
     public static readonly Vector3 DefaultColor = new(0.95f, 0.25f, 0.75f);
 
-    /// <summary>Whether the overlay draws at all. On in an editor, off in a game.</summary>
+    /// <summary>Whether the overlay draws at all.</summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>Outline colour.</summary>
@@ -57,8 +35,7 @@ public sealed class SubtractiveBrushOverlay
 
     /// <summary>
     /// Subtractive brushes the last <see cref="Draw"/> skipped because
-    /// <see cref="MaxOutlines"/> was reached. Non-zero means some of the
-    /// invisible geometry in this scene is currently drawn nowhere at all.
+    /// <see cref="MaxOutlines"/> was reached.
     /// </summary>
     public int SkippedLastDraw { get; private set; }
 
@@ -94,8 +71,6 @@ public sealed class SubtractiveBrushOverlay
         }
     }
 
-    // One tick per face, from the face centroid along the INWARD normal — the
-    // direction the solid is being removed towards.
     private static void DrawInwardTicks(
         DebugDraw output, Brush brush, Matrix4x4 world, Vector3 color, float tickFraction)
     {

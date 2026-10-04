@@ -3,14 +3,7 @@ using System.Diagnostics;
 
 namespace SpectraEngine.Core.Diagnostics;
 
-/// <summary>
-/// The phases of one frame, in the order the render loop runs them.
-/// </summary>
-/// <remarks>
-/// An enum rather than strings so a scope costs an array index and no
-/// allocation. Anything measured every frame has to be cheaper than what it
-/// measures, or the profiler becomes the profile.
-/// </remarks>
+/// <summary>The phases of one frame, in the order the render loop runs them.</summary>
 public enum FramePhase
 {
     /// <summary>Editor tools, camera controllers, demo animation.</summary>
@@ -51,32 +44,14 @@ public enum FramePhase
     Unaccounted,
 }
 
-/// <summary>Immutable rolling CPU-frame distribution, in milliseconds.</summary>
+/// <summary>Rolling CPU frame time distribution, in milliseconds.</summary>
 public readonly record struct FrameProfileSnapshot(int Samples, double P50, double P95, double P99, double Max);
 
 /// <summary>
-/// Where a frame's time went, measured on the CPU, phase by phase.
+/// Where a frame's CPU time went, phase by phase, as a smoothed average.
+/// Nested scopes are charged exclusively and the rest goes to Unaccounted, so
+/// the phases sum to the frame. Render thread only.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>CPU time, and it says so.</b> A phase's number is how long the render
-/// thread spent inside it, which on an immediate-mode API is mostly the cost of
-/// building and submitting commands rather than of the GPU executing them. That
-/// is the right thing to measure first here: the engine's frame time was
-/// identical at 1280x720 and at 2560x1440, which is only possible if the
-/// bottleneck is on this side.
-/// </para>
-/// <para>
-/// Explicit GPU fence waits are separated from presentation. Nested scopes
-/// account exclusively for elapsed wall time; any remaining time belongs to
-/// Unaccounted, so the phase sum covers the complete frame.
-/// </para>
-/// <para>
-/// Values are smoothed with an exponential average because a raw frame is
-/// dominated by whichever one happened to land a compile or a resize. Render
-/// thread only, and lock-free for that reason.
-/// </para>
-/// </remarks>
 public sealed class FrameProfiler
 {
     private static readonly double MillisecondsPerTick = 1000.0 / Stopwatch.Frequency;
@@ -102,13 +77,13 @@ public sealed class FrameProfiler
         _smoothing = smoothing;
     }
 
-    /// <summary>Whether phases are being timed at all. Off costs one branch per scope.</summary>
+    /// <summary>Whether phases are being timed. Off costs one branch per scope.</summary>
     public bool Enabled { get; set; }
 
     /// <summary>Milliseconds spent in <paramref name="phase"/>, smoothed over recent frames.</summary>
     public double this[FramePhase phase] => _smoothed[(int)phase];
 
-    /// <summary>Total of every phase, smoothed. Close to the frame time when nothing is unmeasured.</summary>
+    /// <summary>Total of every phase, smoothed.</summary>
     public double TotalMs
     {
         get
@@ -122,7 +97,7 @@ public sealed class FrameProfiler
     /// <summary>Opens a timing scope; dispose to close it. Use with <c>using</c>.</summary>
     public Scope Measure(FramePhase phase) => new(this, phase);
 
-    /// <summary>Starts complete wall-clock frame accounting. Render thread.</summary>
+    /// <summary>Starts timing a frame.</summary>
     public void BeginFrame() => BeginFrame(Stopwatch.GetTimestamp());
 
     internal void BeginFrame(long timestamp)
@@ -133,7 +108,7 @@ public sealed class FrameProfiler
         _frameStart = _transition = timestamp;
     }
 
-    /// <summary>Sorts retained samples only when a consumer requests a report.</summary>
+    /// <summary>Frame time percentiles over the retained samples. Sorts on each call.</summary>
     public FrameProfileSnapshot Snapshot()
     {
         if (_frameCount == 0) return default;
@@ -168,16 +143,14 @@ public sealed class FrameProfiler
     }
 
     /// <summary>
-    /// The phases worth naming, as "name ms" pairs, largest first, for a log
-    /// line. Allocates: call it on a log cadence, never per frame.
+    /// The largest phases as "name ms" pairs, for a log line. Allocates; do
+    /// not call it per frame.
     /// </summary>
     public string Describe(int top = 6)
     {
         Span<int> order = stackalloc int[PhaseCount];
         for (int i = 0; i < PhaseCount; i++) order[i] = i;
 
-        // Selection sort over ten items: shorter than explaining why a real
-        // sort was worth allocating for a log line.
         for (int i = 0; i < PhaseCount; i++)
         {
             for (int j = i + 1; j < PhaseCount; j++)
@@ -232,7 +205,7 @@ public sealed class FrameProfiler
         GpuTimer?.Mark(phase, false);
     }
 
-    /// <summary>One open phase. A ref struct so it cannot outlive its frame or escape to the heap.</summary>
+    /// <summary>One open phase.</summary>
     public readonly ref struct Scope
     {
         private readonly FrameProfiler? _profiler;
@@ -240,8 +213,7 @@ public sealed class FrameProfiler
 
         internal Scope(FrameProfiler profiler, FramePhase phase)
         {
-            // Null when disabled, so Dispose is a null check rather than a
-            // second lookup of the same flag.
+            // Null when disabled.
             _profiler = profiler.Enabled ? profiler : null;
             _phase = phase;
             _profiler?.Open(phase, Stopwatch.GetTimestamp());

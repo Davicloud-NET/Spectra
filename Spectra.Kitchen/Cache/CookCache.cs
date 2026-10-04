@@ -9,51 +9,24 @@ using System.Threading;
 namespace Spectra.Kitchen.Cache;
 
 /// <summary>What a cached rule run produced, ready to be emitted again.</summary>
-/// <param name="Dependencies">Exactly what the rule touched when it ran, misses included.</param>
-/// <param name="Emissions">Its outputs, with their payloads read back out of the store.</param>
+/// <param name="Dependencies">What the rule touched when it ran, misses included.</param>
+/// <param name="Emissions">Its outputs, payloads read back from the store.</param>
 public sealed record CachedRun(
     IReadOnlyList<RuleDependency> Dependencies,
     IReadOnlyList<RuleEmission> Emissions);
 
 /// <summary>
-/// The incremental cook: a dependency graph, a content-addressed store of
-/// payloads, and a stat cache that only ever saves a re-hash.
+/// The incremental cook: a dependency graph, a content-addressed payload
+/// store, and a stat cache that saves re-hashing.
 /// </summary>
-/// <remarks>
-/// <para><b>A hit is decided by RESTATING the recorded observations against
-/// today's filesystem, never by predicting what the rule would do.</b> Each
-/// recorded dependency is looked up again as it stands now, a key is built from
-/// the result, and the run is replayed only if that key equals the recorded one.
-/// The cache therefore needs no model of any rule and cannot be wrong about one:
-/// anything it cannot restate identically is a miss.</para>
-/// <para><b>Which is what makes a negative dependency work.</b> A path the rule
-/// probed and did not find is restated as found the moment somebody adds the file,
-/// which moves it out of the trailing missing-probe list and into the inputs. Both
-/// counts change, so the key cannot match, so the rule re-runs. Without that, a
-/// watch loop serves a broken cook forever while reporting success, which is the
-/// single most common incremental-build bug and the reason this whole shape
-/// exists.</para>
-/// <para><b>A rule that reported a diagnostic is never cached.</b> The store holds
-/// bytes and the graph holds dependencies; neither holds what the rule SAID. A hit
-/// would therefore drop a warning on every run after the first, which is an
-/// incremental build quietly hiding the thing it was asked to be loud about. A
-/// rule with something to say simply re-runs and says it again, and it costs
-/// nothing today because no rule in this build reports anything.</para>
-/// <para><b>Every failure here degrades to a miss.</b> An unreadable graph, a
-/// payload that has left the store, a dependency the filesystem refuses: each one
-/// means the rule runs, which is slow and correct. The cache has exactly one way
-/// to be wrong, and it is to claim a hit it should not have.</para>
-/// <para><b>The scheduler calls this from N workers, and each of the three parts
-/// is safe for its own reason rather than all of them behind one lock.</b>
-/// <see cref="CookGraph"/> and <see cref="StatCache"/> each hold a lock, because
-/// each is a dictionary somebody mutates; <see cref="ContentStore"/> holds none,
-/// because its temp-file-plus-rename already survives concurrent writers and
-/// survives them across processes too. One lock over the whole cache would have
-/// been simpler and would have put the payload write - the slowest step - inside
-/// it, which is most of what there is to parallelise. What makes the COMPOSITION
-/// safe is the work list rather than any lock: exactly one work item per source
-/// path, so no two workers ever read and write one record.</para>
-/// </remarks>
+// A hit is decided by asking the recorded dependencies again against today's
+// filesystem and comparing keys. A probe that missed and now finds a file
+// changes the key, so the rule re-runs.
+// Any failure here is a miss. A rule that reported a diagnostic is never
+// cached, since a replay could not repeat what it said.
+// Called from N workers. The graph and stat cache lock themselves, the store
+// relies on temp file plus rename. One work item per source path, so no two
+// workers touch one record.
 public sealed class CookCache
 {
     /// <summary>The folder a project's cook cache lives in, at the project root.</summary>
@@ -105,9 +78,6 @@ public sealed class CookCache
     /// </summary>
     /// <param name="contentRoot">Absolute path of the project's content root.</param>
     /// <param name="sourcePath">Normalised content-relative path of the asset.</param>
-    /// <param name="rule">The rule that would cook it.</param>
-    /// <param name="settings">The settings this cook is running under.</param>
-    /// <param name="run">The replay, on a hit.</param>
     public bool TryReplay(
         string contentRoot,
         string sourcePath,
@@ -152,9 +122,7 @@ public sealed class CookCache
             CachedOutput output = generation.Outputs[i];
             if (!_store.TryGetPayload(output.ContentHash, out var payload) || payload.Length != output.Length)
             {
-                // A payload that has left the store is a miss, not a failure. The
-                // rule runs, emits the same bytes, and Put restores the entry, so
-                // a cache somebody deleted half of repairs itself.
+                // Payload gone from the store: miss. The re-run puts it back.
                 Interlocked.Increment(ref _misses);
                 return false;
             }
@@ -164,10 +132,8 @@ public sealed class CookCache
 
         Interlocked.Increment(ref _hits);
 
-        // The RESTATED dependencies rather than the recorded ones. They are equal
-        // in every field the key hashes - that is what made this a hit - and the
-        // restated list is the one that describes the filesystem the manifest is
-        // about to be written against.
+        // Restated, not recorded: it describes the filesystem the manifest is
+        // written against.
         run = new CachedRun(restated, emissions);
         return true;
     }
@@ -210,9 +176,7 @@ public sealed class CookCache
         if (_stat.IsDirty) _stat.Save(Path.Combine(_root, StatFileName));
     }
 
-    // The recorded dependency list is a list of QUESTIONS the rule asked. Asking
-    // them again is all a hit test is, and asking them in the recorded order is
-    // what keeps the restated key comparable to the recorded one at all.
+    // Keep the recorded order, or the restated key cannot match the recorded one.
     private IReadOnlyList<RuleDependency> Restate(
         string contentRoot, IReadOnlyList<RuleDependency> recorded)
     {
@@ -225,15 +189,12 @@ public sealed class CookCache
 
             restated[i] = dependency.Kind switch
             {
-                // A read has to be re-read (through the stat cache, which usually
-                // answers from mtime and size) because its CONTENTS are in the key.
+                // Contents are in the key, so re-hash (usually answered by the stat cache).
                 RuleDependencyKind.Read => _stat.TryGetHash(dependency.Path, full, out UInt128 hash)
                     ? new RuleDependency(dependency.Path, RuleDependencyKind.Read, hash)
                     : new RuleDependency(dependency.Path, RuleDependencyKind.ProbeMissing, UInt128.Zero),
 
-                // Existence only, so no hash and no read: a rule that asked whether
-                // a file exists does not change when its bytes do, and hashing it
-                // anyway would make every probe cost a read.
+                // A probe only asked whether the file exists. No hash.
                 _ => File.Exists(full)
                     ? new RuleDependency(dependency.Path, RuleDependencyKind.ProbeFound, UInt128.Zero)
                     : new RuleDependency(dependency.Path, RuleDependencyKind.ProbeMissing, UInt128.Zero),

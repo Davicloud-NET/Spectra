@@ -8,67 +8,43 @@ namespace SpectraEngine.Core.Assets;
 /// <summary>
 /// Locates the folder that holds the engine's on-disk content (textures, and
 /// later materials/models) and normalises the relative paths used as asset
-/// cache keys.
+/// cache keys. Thread-safe.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Resolution mirrors <see cref="Graphics.Shaders.BaseShaders"/>: walk up from
-/// <see cref="AppContext.BaseDirectory"/> looking for the solution file. If it
-/// is found the process is running from a developer build, so the repo's
-/// <c>Assets</c> folder wins — hot-reload then watches the files the developer
-/// actually edits rather than the build's stale copies. Otherwise the copy next
-/// to the executable is used, which is what a deployed/AOT-published build ships.
-/// </para>
-/// <para>
-/// The walk hits the filesystem, so the result is resolved exactly once and
-/// cached for the process lifetime; every member here is thread-safe.
-/// </para>
-/// </remarks>
+// In a developer build the repo's Assets folder wins over the copy beside the
+// executable, so hot reload watches the files that get edited.
 public static class ContentRoot
 {
     /// <summary>Name of the content folder, both in the repo and beside the executable.</summary>
     public const string DirectoryName = "Assets";
 
-    // Lazy rather than a static constructor so the (filesystem-touching) walk
-    // is paid only by processes that actually load content, and exactly once.
     private static readonly Lazy<Resolution> Resolved =
         new(ResolveCore, LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
-    /// Absolute path of the content root. Resolved on first access and cached;
-    /// the directory is not guaranteed to exist (a build with no content still
-    /// yields the path it would live at). Thread-safe.
+    /// Absolute path of the content root. Resolved on first access and cached.
+    /// The directory may not exist.
     /// </summary>
     public static string Path => Resolved.Value.Root;
 
     /// <summary>
-    /// True when the content root was found inside the source tree, i.e. this is
-    /// a developer build. Asset hot-reload defaults to this value: watching the
-    /// read-only copy beside a deployed executable would never fire. Thread-safe.
+    /// True when the content root was found inside the source tree. Asset hot
+    /// reload defaults to this value.
     /// </summary>
     public static bool IsDeveloperBuild => Resolved.Value.FromSourceTree;
 
     /// <summary>
     /// Why the content root did not come from the source tree, or null when it
-    /// did. Thread-safe.
+    /// did.
     /// </summary>
-    /// <remarks>
-    /// A NativeAOT-published developer build has no solution file above the
-    /// executable, so this walk fails and hot-reload stops working with nothing
-    /// on screen saying so. The reason is carried rather than recomputed at the
-    /// log site because only the walk knows which of the two ways it failed.
-    /// </remarks>
     public static string? NotFromSourceTreeReason => Resolved.Value.Reason;
 
     /// <summary>
     /// Canonical cache-key form of <paramref name="relativePath"/>: forward
-    /// slashes, no leading separator, no <c>.</c> segments. Keys compare with
-    /// <see cref="StringComparer.OrdinalIgnoreCase"/> so the same asset resolves
-    /// to one cache entry regardless of how a caller spelled it. Pure, thread-safe.
+    /// slashes, no leading separator, no <c>.</c> segments. Compare keys with
+    /// <see cref="StringComparer.OrdinalIgnoreCase"/>.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// The path is empty, rooted, or contains a <c>..</c> segment — content
-    /// references must stay inside the content root.
+    /// The path is empty, rooted, or contains a <c>..</c> segment.
     /// </exception>
     public static string NormalizeRelativePath(string relativePath)
     {
@@ -76,9 +52,7 @@ public static class ContentRoot
         if (relativePath.Length == 0)
             throw new ArgumentException("Asset path must not be empty.", nameof(relativePath));
 
-        // A leading separator is just a habit ("/Textures/x.png" plainly means
-        // content-relative), so strip it before the rooted check — which still
-        // has to reject a genuine drive- or device-rooted path.
+        // "/Textures/x.png" means content-relative, so strip before the rooted check.
         ReadOnlySpan<char> remaining = relativePath.AsSpan().TrimStart("/\\");
 
         // Linux doesn't call "C:\x" rooted, but it is never a content path.
@@ -115,7 +89,7 @@ public static class ContentRoot
     /// <summary>
     /// Absolute filesystem path of <paramref name="relativePath"/> under
     /// <paramref name="root"/>. The path is normalised first, so it cannot
-    /// escape the root. Pure, thread-safe.
+    /// escape the root.
     /// </summary>
     public static string ResolveAbsolute(string root, string relativePath)
     {
@@ -124,8 +98,6 @@ public static class ContentRoot
             System.IO.Path.Combine(root, normalized.Replace('/', System.IO.Path.DirectorySeparatorChar)));
     }
 
-    // Developer build: repo Assets\ (editable, watchable). Otherwise the copy
-    // the build dropped next to the executable.
     private static Resolution ResolveCore()
     {
         string? sourceRoot = TryFindSourceRoot();
@@ -146,8 +118,7 @@ public static class ContentRoot
         return new Resolution(fallback, FromSourceTree: false, reason);
     }
 
-    // Same walk BaseShaders uses to enable shader hot-reload: the nearest
-    // ancestor holding a solution file is the repo root.
+    // Nearest ancestor holding a solution file is the repo root.
     private static string? TryFindSourceRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

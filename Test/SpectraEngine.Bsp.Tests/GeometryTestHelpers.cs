@@ -3,25 +3,17 @@ using SpectraEngine.Core.Bsp;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Shared geometric assertions. Vertices are keyed by rounding onto the
-/// <see cref="VertexSnapper.GridSize"/> lattice so points produced by different
-/// floating-point paths compare equal — the same guarantee the engine itself
-/// relies on for crack-free rendering.
-/// </summary>
+// Vertices are keyed on the VertexSnapper.GridSize lattice, so points from
+// different floating-point paths compare equal.
 internal static class GeometryTestHelpers
 {
-    /// <summary>Quantises a vertex to the snap lattice for exact keying.</summary>
     public static (long X, long Y, long Z) LatticeKey(Vector3 v) => (
         (long)MathF.Round(v.X / VertexSnapper.GridSize),
         (long)MathF.Round(v.Y / VertexSnapper.GridSize),
         (long)MathF.Round(v.Z / VertexSnapper.GridSize));
 
-    /// <summary>
-    /// Asserts the polygon set forms a closed 2-manifold: every undirected edge
-    /// is shared by exactly two polygons. A count of 1 means an open border (a
-    /// crack in the surface); 3 or more means doubled/overlapping surfaces.
-    /// </summary>
+    // Every undirected edge must be shared by two polygons. One means a crack,
+    // three or more means doubled surfaces.
     public static void ShouldBeClosedTwoManifold(IReadOnlyList<Polygon> polygons)
     {
         var edgeCounts = new Dictionary<((long, long, long) A, (long, long, long) B), int>();
@@ -34,7 +26,7 @@ internal static class GeometryTestHelpers
                 var a = LatticeKey(verts[i]);
                 var b = LatticeKey(verts[(i + 1) % verts.Count]);
 
-                // A sub-grid sliver edge carries no connectivity information.
+                // Sub-grid sliver edge.
                 if (a.Equals(b))
                     continue;
 
@@ -48,7 +40,7 @@ internal static class GeometryTestHelpers
             count.ShouldBe(2, $"undirected edge {edge.A} -- {edge.B} is used by {count} polygon(s), expected exactly 2");
     }
 
-    /// <summary>Area of a planar convex polygon via fan decomposition.</summary>
+    // Planar convex polygons only.
     public static float Area(Polygon poly)
     {
         IReadOnlyList<Vector3> v = poly.Vertices;
@@ -58,7 +50,6 @@ internal static class GeometryTestHelpers
         return crossSum.Length() * 0.5f;
     }
 
-    /// <summary>Sum of <see cref="Area"/> over a polygon set.</summary>
     public static float TotalArea(IEnumerable<Polygon> polygons)
     {
         float total = 0f;
@@ -67,7 +58,7 @@ internal static class GeometryTestHelpers
         return total;
     }
 
-    /// <summary>Inclusive point-in-box test (Aabb itself only offers box-box).</summary>
+    // Inclusive.
     public static bool Contains(this Aabb bounds, Vector3 point) =>
         point.X >= bounds.Min.X && point.X <= bounds.Max.X &&
         point.Y >= bounds.Min.Y && point.Y <= bounds.Max.Y &&

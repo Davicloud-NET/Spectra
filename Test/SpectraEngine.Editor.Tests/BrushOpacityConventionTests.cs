@@ -1,30 +1,11 @@
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// Guards the rule that a shell brush states its translucency in its colour's
-/// ALPHA and never on the brush's <c>Opacity</c> property.
+/// A shell brush states its translucency in its colour's alpha, never in <c>Opacity</c>.
 /// </summary>
-/// <remarks>
-/// <para><b>This is a correctness rule, not a style one, because every one of
-/// these fills is animated.</b> A <c>BrushTransition</c> interpolates the
-/// <c>Color</c> and the <c>Opacity</c> as two independent quantities and the
-/// renderer then MULTIPLIES them. A fade from <c>Transparent</c> (opacity 1) to
-/// white at opacity 0.08 therefore runs an effective alpha of
-/// <c>t * (1 - 0.92t)</c>, which peaks at 0.272 a little past halfway and
-/// settles at 0.08: every hover in the shell flared to roughly three and a half
-/// times its intended fill and fell back, on the way in and again on the way
-/// out.</para>
-/// <para>Measured tick by tick against the real theme rather than reasoned
-/// about, and the reading is in the commit that fixed it. With the alpha in the
-/// colour there is one interpolated quantity and the overshoot is
-/// arithmetically impossible.</para>
-/// <para>The same file already refuses opacity for TEXT colours, for a
-/// different reason (opacity on a white brush breaks Windows subpixel gamma).
-/// One rule now covers both.</para>
-/// <para>Enforced as a source convention in the shape of
-/// <c>ComPtrOwnershipConventionTests</c>, because the tests project references
-/// no Avalonia and structurally cannot evaluate a brush.</para>
-/// </remarks>
+// A BrushTransition interpolates Color and Opacity separately and the renderer
+// multiplies them, so an animated fill overshoots its target and falls back.
+// Scans the sources: this project references no Avalonia.
 public sealed class BrushOpacityConventionTests
 {
     [Fact]
@@ -56,9 +37,7 @@ public sealed class BrushOpacityConventionTests
     [Fact]
     public void No_transitioned_fill_rests_on_Transparent()
     {
-        // Transparent is #00000000, so a fade to a translucent white walks the
-        // RGB channels from black to white and the fill passes through grey on
-        // its way in. Same hue at zero alpha moves one number.
+        // Transparent is #00000000, so a fade to translucent white passes through grey.
         string controls = Path.Combine(SourceRoot(), "SpectraEngine.Editor", "Theme", "Controls.axaml");
         string text = File.ReadAllText(controls);
 
@@ -81,8 +60,6 @@ public sealed class BrushOpacityConventionTests
             "(#00FFFFFF), not on Transparent, which is transparent BLACK");
     }
 
-    // The same walk ContentRoot uses: the nearest ancestor holding a solution
-    // file is the repo root. These tests only ever run out of the repo.
     private static string SourceRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

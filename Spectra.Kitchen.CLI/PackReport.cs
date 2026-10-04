@@ -5,24 +5,12 @@ using System.Text.Json;
 
 namespace Spectra.Kitchen.CLI;
 
-/// <summary>
-/// Renders what <c>scook inspect</c> found, for a person and for a script.
-/// </summary>
-/// <remarks>
-/// <para><b>Both forms read the same <see cref="PackContents"/>.</b> Two
-/// renderings of one file are allowed to differ in layout and must not differ in
-/// content, which they cannot here because neither of them reads the pack.</para>
-/// <para><b>Kind and codec are printed by NAME, through a hand-written table.</b>
-/// <c>Enum.ToString</c> is reflection over metadata that a trimmed publish
-/// removes, so it would print names in every debug run and numbers in the AOT
-/// binary this project ships - the same discipline every other closed vocabulary
-/// in this tool follows. An unrecognised byte prints as its number rather than
-/// being guessed at, because the kinds are append-only and a pack from a newer
-/// cooker legitimately carries one this build has no word for.</para>
-/// </remarks>
+// Renders "scook inspect" as text and as JSON.
+// Kind and codec names come from hand-written tables: Enum.ToString prints
+// numbers after trimming. An unknown byte prints as its number.
 internal static class PackReport
 {
-    /// <summary>Format version of the JSON document, which is not the pack's.</summary>
+    // Version of the JSON document, not of the pack format.
     public const int JsonVersion = 1;
 
     public static void WriteText(PackContents contents, TextWriter output, AnsiStyle s)
@@ -43,8 +31,6 @@ internal static class PackReport
         output.WriteLine($"  digest {s.Value}{contents.StoredDigest:X32}{s.Reset} {s.Dim}(declared, not checked){s.Reset}");
         output.WriteLine();
 
-        // Widened to this pack's own longest name rather than to a fixed column:
-        // content paths are long and a truncated one is a row nobody can act on.
         int nameWidth = "name".Length;
         for (int i = 0; i < contents.Entries.Count; i++)
             nameWidth = Math.Max(nameWidth, contents.NameOf(i).Length);
@@ -97,9 +83,6 @@ internal static class PackReport
             writer.WriteStartObject();
             writer.WriteNumber("scookInspect", JsonVersion);
 
-            // The FILE, not the path it was given: a report naming a relative
-            // path is a report that means something different in every directory
-            // it is read from.
             writer.WriteString("pack", contents.Path.Replace('\\', '/'));
 
             writer.WritePropertyName("header");

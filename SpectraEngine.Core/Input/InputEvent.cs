@@ -40,23 +40,11 @@ public enum InputEventKind
 }
 
 /// <summary>
-/// One piece of input, in the engine's own vocabulary, submitted by whoever
-/// owns the window. See <c>EngineHost.SubmitInput</c>.
+/// One piece of input, submitted by whoever owns the window. See
+/// <c>EngineHost.SubmitInput</c>.
 /// </summary>
-/// <remarks>
-/// <b>Absolute position and raw delta are separate kinds on purpose.</b> A
-/// normal pointer reports where it is and the engine differences successive
-/// positions; a captured pointer has no meaningful position at all (the OS
-/// reports one that walks away from the window as you look around) and can only
-/// report how far it moved. Collapsing the two into one event with an optional
-/// position is how a freelook ends up computing its motion from a coordinate
-/// that stopped meaning anything.
-/// <para>
-/// <b>Threading:</b> submitted from the thread that owns the window, exactly
-/// where the standalone path's own device events arrive. The engine's input
-/// state is mutated under a lock either way.
-/// </para>
-/// </remarks>
+// PointerMove and PointerDelta stay separate kinds: a captured cursor has no
+// meaningful absolute position, only motion.
 public readonly record struct InputEvent
 {
     /// <summary>What this event reports.</summary>
@@ -67,8 +55,7 @@ public readonly record struct InputEvent
 
     /// <summary>
     /// The button, for <see cref="InputEventKind.PointerDown"/> and
-    /// <see cref="InputEventKind.PointerUp"/>. Exactly one flag: a press event
-    /// naming two buttons is two events.
+    /// <see cref="InputEventKind.PointerUp"/>. One flag per event.
     /// </summary>
     public PointerButtons Button { get; private init; }
 
@@ -89,8 +76,7 @@ public readonly record struct InputEvent
 
     /// <summary>
     /// The pointer at an absolute position, in viewport pixels with the origin
-    /// at the top-left and y growing downward — the same convention the
-    /// camera's picking ray expects.
+    /// at the top-left and y growing downward.
     /// </summary>
     public static InputEvent PointerMove(Vector2 position) =>
         new() { Kind = InputEventKind.PointerMove, Value = position };
@@ -120,8 +106,7 @@ public readonly record struct InputEvent
 }
 
 /// <summary>
-/// Where submitted input goes. Implemented by the engine's input manager, and
-/// named by <c>EngineHost</c> so a shell never has to reach past it.
+/// Where submitted input goes. Implemented by the engine's input manager.
 /// </summary>
 public interface IInputSink
 {

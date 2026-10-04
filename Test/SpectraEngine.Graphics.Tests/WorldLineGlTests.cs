@@ -11,28 +11,12 @@ namespace SpectraEngine.Graphics.Tests;
 /// The depth-tested world-line lane: a line behind geometry is hidden, and the
 /// same line in front of it is drawn.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is the whole reason the lane exists</b>, and it cannot be checked any
-/// other way. The engine's overlay draws depth-OFF by design - correct for gizmo
-/// handles, which must never be hidden by what they manipulate - and a ground
-/// grid on that lane draws straight through walls. The failure renders a
-/// picture: no error, no debug-layer message, and a viewport that looks busy
-/// rather than broken until somebody notices the floor showing through a
-/// building.
-/// </para>
-/// <para>
-/// <b>Both directions, deliberately.</b> A test that only checked "hidden
-/// behind" passes just as happily when the lane draws nothing at all.
-/// </para>
-/// </remarks>
 [Collection(GlRendererCollection.Name)]
 public sealed class WorldLineGlTests
 {
     private const int ProbeSize = 64;
 
-    // Bright green: unlike the sky, unlike the wall, and unlike anything the
-    // ambient term produces from a grey albedo.
+    // Green: unlike the sky and the red wall.
     private static readonly Vector3 LineColor = new(0f, 1f, 0f);
 
     private readonly GlRendererFixture _fixture;
@@ -44,11 +28,8 @@ public sealed class WorldLineGlTests
     [InlineData("Forward")]
     public void A_world_line_behind_geometry_is_hidden_and_in_front_of_it_is_drawn(string pipeline)
     {
-        // Both pipelines, because they flush the lane from DIFFERENT passes and
-        // with different depth mechanisms: forward hardware-tests inside its
-        // own scene pass, deferred draws AFTER the light pass and compares
-        // against the sampled G-buffer depth in the shader. Only one of them
-        // can be right by accident.
+        // The pipelines test depth differently: forward uses the hardware test,
+        // deferred compares against the sampled G-buffer depth in the shader.
         (int bR, int bG, int bB) = Render(pipeline, lineZ: -4f);
         (int fR, int fG, int fB) = Render(pipeline, lineZ: 1.5f);
 
@@ -66,11 +47,8 @@ public sealed class WorldLineGlTests
     [Fact]
     public void A_world_line_lying_exactly_on_a_surface_is_drawn_rather_than_rejected()
     {
-        // The case the whole feature exists for: a grid at y = 0 over a floor
-        // whose top is also at y = 0 is coplanar by construction, and a strict
-        // Less comparison rejects it. GL defaults to Less, so getting this wrong
-        // makes one backend disagree with the other two about whether the grid
-        // is visible at all.
+        // A grid on a floor is coplanar with it. GL defaults to Less, which
+        // rejects the tie.
         (int _, int onG, int _) = Render("Deferred", lineZ: WallFrontZ);
         (int _, int behindG, int _) = Render("Deferred", lineZ: -4f);
 
@@ -84,14 +62,8 @@ public sealed class WorldLineGlTests
     [InlineData("Forward")]
     public void A_world_line_behind_a_STATIC_WORLD_brush_is_hidden_by_it(string pipeline)
     {
-        // The demo's walls are compiled static-world chunks, not mesh nodes, and
-        // they take a different route through DrawGeometry. A test that only
-        // ever put a mesh in front of the line proves nothing about the geometry
-        // most of a level is made of.
-        // FIRST: the wall is actually on screen. Without this the test cannot
-        // tell "the line is drawing through the wall" from "the static world
-        // never compiled and the line is over sky", and those want opposite
-        // fixes.
+        // Static-world chunks take a different route through DrawGeometry than
+        // mesh nodes. First check the wall is on screen, or the rest measures sky.
         (int wallR, int wallG, int wallB) = RenderAgainstBrush(pipeline, lineZ: null);
         wallR.ShouldBeGreaterThan(wallB,
             $"[{pipeline}] the compiled brush wall is not covering the centre pixel " +
@@ -113,13 +85,6 @@ public sealed class WorldLineGlTests
     [InlineData("Forward")]
     public void A_faded_world_line_blends_toward_the_surface_instead_of_toward_black(string pipeline)
     {
-        // THE oracle the old lane could not pass, and the reason it was
-        // rebuilt. Lines used to render as opaque overwrites whose "fade" was
-        // a colour lerp toward black - which over a lit red wall REPLACED the
-        // wall pixel with a near-black one, so a fading line gained contrast
-        // instead of losing it and then vanished in one frame at a cull
-        // threshold. A real fade is alpha: the wall's own colour must survive
-        // underneath in proportion.
         (int wallR, int wallG, int _) = Render(pipeline, lineZ: WallFrontZ, opacity: 0f);
         (int fullR, int fullG, int _) = Render(pipeline, lineZ: WallFrontZ);
         (int fadedR, int fadedG, int _) = Render(pipeline, lineZ: WallFrontZ, opacity: 0.3f);
@@ -134,9 +99,7 @@ public sealed class WorldLineGlTests
             $"[{pipeline}] a 30% line must be dimmer than a full one - if these match, the " +
             "opacity is not reaching the shader");
 
-        // The discriminator: under alpha the wall's red shows through a faded
-        // line; under the old overwrite model this pixel was black albedo plus
-        // a whisper of green emissive, and red read near zero.
+        // Under alpha the wall's red shows through. An opaque overwrite reads near zero.
         fadedR.ShouldBeGreaterThan(wallR / 2,
             $"[{pipeline}] the wall's red must survive under a 30% line " +
             $"(wall red {wallR}, faded-line red {fadedR}); losing it means the line is " +
@@ -148,16 +111,12 @@ public sealed class WorldLineGlTests
     [InlineData("Forward")]
     public void The_distance_fade_dims_a_line_per_pixel_along_its_length(string pipeline)
     {
-        // The falloff is computed in the fragment stage from world distance,
-        // so ONE line must be bright where it is near the fade centre and gone
-        // where it is not - no segments, no per-segment culls.
         var fade = (Center: new Vector3(0f, 0f, WallFrontZ), Start: 0.25f, End: 1.2f);
 
         (int _, int nearG, int _) = Render(pipeline, lineZ: WallFrontZ, fade: fade);
         (int _, int farG, int _) = Render(pipeline, lineZ: WallFrontZ, fade: fade, sampleX: (ProbeSize / 2) + 24);
 
-        // The control: without the fade, the same distant sample is bright -
-        // so the dimming below is the fade's doing, not the sampling position.
+        // Control: without the fade the same distant sample is bright.
         (int _, int farControlG, int _) = Render(pipeline, lineZ: WallFrontZ, sampleX: (ProbeSize / 2) + 24);
 
         farControlG.ShouldBeGreaterThan(farG + 30,
@@ -170,7 +129,6 @@ public sealed class WorldLineGlTests
             $"(near {nearG} against far {farG}); a flat brightness means the falloff is not per pixel");
     }
 
-    // The wall's +z face, from the scale below.
     private const float WallFrontZ = 0.25f;
 
     private (int R, int G, int B) Render(
@@ -190,8 +148,6 @@ public sealed class WorldLineGlTests
 
             Scene scene = BuildWall();
 
-            // Horizontal, through the middle of the view, wide enough that the
-            // centre pixel lands on it whatever the projection does.
             renderer.WorldLines.Clear();
             renderer.WorldLines.Line(
                 new Vector3(-4f, 0f, lineZ), new Vector3(4f, 0f, lineZ), LineColor);
@@ -206,11 +162,8 @@ public sealed class WorldLineGlTests
             scene.BuildRenderView(scene.Camera, view);
             renderer.Render(scene, view, 1.0 / 60.0);
 
-            // A short COLUMN, not one pixel. The line is one pixel wide and
-            // lands on whichever row the projection rounds to, so a single
-            // centre sample is a coin flip between "the lane is broken" and
-            // "the line is one row up" - which is exactly the kind of flaky
-            // pixel assertion that gets deleted rather than believed.
+            // A short column, not one pixel: the line is one pixel wide and
+            // may land a row above or below the centre.
             return BrightestGreen(probe, sampleX ?? ProbeSize / 2, ProbeSize / 2, radius: 3);
         }
         finally
@@ -262,7 +215,6 @@ public sealed class WorldLineGlTests
         }
     }
 
-    // The same wall, as a compiled STATIC WORLD brush rather than a mesh.
     private Scene BuildBrushWall()
     {
         OpenGLRenderer renderer = _fixture.Renderer;
@@ -271,10 +223,6 @@ public sealed class WorldLineGlTests
         scene.Camera.Position = new Vector3(0f, 0f, 3f);
         scene.Camera.LookAt(Vector3.Zero);
 
-        // The compiled world draws through StaticWorldMaterial when a face
-        // names none; without it the chunks render as nothing and this test
-        // would be measuring sky - which is exactly what the guard above
-        // caught the first time it was written.
         Texture white = renderer.CreateTexture(
             [255, 255, 255, 255], 1, 1, TextureFormat.Rgba8, TextureColorSpace.Linear,
             TextureFilter.Nearest, TextureWrap.Clamp);
@@ -305,10 +253,8 @@ public sealed class WorldLineGlTests
             Range = 4f,
         };
 
-        // A SUN, so the frame runs a shadow pass. That pass sets a slope-scaled
-        // raster bias and narrows the viewport per cascade, and a scene without
-        // one skips all of it - so a test with only a point light silently
-        // measures a simpler frame than any real level renders.
+        // A sun, so the frame runs a shadow pass, which changes the raster
+        // bias and the viewport before the lines draw.
         var sun = scene.Root.CreateChild("Sun");
         sun.LocalTransform = sun.LocalTransform with
         {
@@ -316,15 +262,11 @@ public sealed class WorldLineGlTests
         };
         sun.Light = new Light { Kind = LightKind.Directional, Intensity = 1f };
 
-        // The static world is DERIVED and has to be compiled before it can be
-        // drawn; without this the scene renders as empty sky and the test would
-        // report the line as visible for the wrong reason.
         scene.RebuildStaticWorld(renderer);
         return scene;
     }
 
-    // A wall filling the view with its +z face at z = 0.25, lit hard enough to
-    // be clearly not-green.
+    // A red wall filling the view, +z face at WallFrontZ.
     private Scene BuildWall()
     {
         OpenGLRenderer renderer = _fixture.Renderer;
@@ -342,7 +284,6 @@ public sealed class WorldLineGlTests
 
         var material = new Material(renderer.DefaultShader);
         material
-            // RED, so a green line over it is unmistakable in one channel.
             .SetVector3("uBaseColor", new Vector3(0.9f, 0.05f, 0.05f))
             .SetFloat("uRoughness", 0.9f)
             .SetFloat("uMetallic", 0f)

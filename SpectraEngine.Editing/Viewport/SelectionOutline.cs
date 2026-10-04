@@ -10,33 +10,9 @@ using SpectraEngine.Editing.Hosting;
 namespace SpectraEngine.Editing.Viewport;
 
 /// <summary>
-/// Outlines what is selected, in the shape of the thing rather than in the
-/// shape of a box around it.
+/// Outlines the selection in each node's own shape: brush edges, an oriented
+/// mesh box, or a cross for a group.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>It used to be a world-space AABB in magenta, drawn from Core.</b> Three
-/// things were wrong with that and only one of them is cosmetic. It <i>lied</i>
-/// about anything rotated: a wall turned thirty degrees was outlined by a box
-/// half again its size, and the outline claimed geometry that was not selected.
-/// It was a THIRD attention colour, beside the shell's red and the gizmo's
-/// yellow, on a viewport whose colour budget was already spent. And it lived in
-/// <c>SpectraEngine.Core</c>, so every shipped game linked and called a
-/// selection renderer for a selection it can never have.
-/// </para>
-/// <para>
-/// <b>Orange, at two weights.</b> Hovered is the same hue at forty per cent, not
-/// a second colour - which is how Unreal and Blender do it, and what lets the
-/// viewport gain an affordance without gaining a hue. The hue itself sits far
-/// enough from the gizmo's yellow highlight to be told apart at speed and reads
-/// against sky, against a grey baseplate and inside a dark interior.
-/// </para>
-/// <para>
-/// <b>A group gets a screen-constant cross, not a fixed world size.</b> The old
-/// marker was 0.15 world units, which is invisible from thirty metres - so a
-/// selected group looked exactly like nothing being selected.
-/// </para>
-/// </remarks>
 public sealed class SelectionOutline
 {
     /// <summary>Selected, at full weight.</summary>
@@ -52,11 +28,6 @@ public sealed class SelectionOutline
     /// How many nodes may be outlined in full before the pass falls back to
     /// bounds boxes.
     /// </summary>
-    /// <remarks>
-    /// Disclosed through <see cref="SkippedLastDraw"/>, never silent: an
-    /// outline that quietly stopped after sixty-four of a two-hundred-node
-    /// selection would read as "those are the ones I picked".
-    /// </remarks>
     public int MaxOutlines { get; set; } = 64;
 
     /// <summary>Nodes the last draw outlined in their own shape.</summary>
@@ -67,27 +38,15 @@ public sealed class SelectionOutline
 
     private const float GroupCrossPixels = 9f;
 
-    /// <summary>
-    /// Outlines the scene's selection, and the hovered node beneath it.
-    /// </summary>
-    /// <param name="hovered">
-    /// What the cursor is over, or null. Skipped when it is already selected:
-    /// it already carries the full-weight outline, and brightening it would
-    /// promise that this press does something different, which it does not.
-    /// </param>
+    /// <summary>Outlines the scene's selection, and the hovered node beneath it.</summary>
+    /// <param name="hovered">What the cursor is over, or null. Skipped when already selected.</param>
     public void Draw(DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize, SceneNode? hovered) =>
         Draw(output, scene, camera, viewportSize, new OutlineFocus(hovered, -1, null));
 
     /// <summary>
     /// Draws the selection, the hover, the picked face and what a material drag
-    /// would land on.
+    /// would land on. A drag's target replaces the hover outline.
     /// </summary>
-    /// <remarks>
-    /// <b>A drag's target is drawn at FULL weight and takes the hover's place
-    /// rather than joining it.</b> The whole point of drawing anything during a
-    /// drag is saying which surface letting go would paint; a brush outline and
-    /// a face loop both lit would be two answers to that question.
-    /// </remarks>
     public void Draw(
         DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize, in OutlineFocus focus)
     {
@@ -106,9 +65,7 @@ public sealed class SelectionOutline
 
         if (focus.MaterialDrag is { } scope && hovered?.Brush is { } dragged)
         {
-            // What letting go would paint, and nothing else: no hover outline
-            // beside it, or the viewport shows a face and a block at once and
-            // means one of them.
+            // Only what letting go would paint.
             if (scope == MaterialDropScope.Brush || focus.HoveredPlane < 0)
             {
                 PartBrushOverlay.DrawBrushEdges(output, dragged, hovered.WorldMatrix, SelectedColor);
@@ -138,9 +95,7 @@ public sealed class SelectionOutline
                 continue;
             }
 
-            // A picked face outranks its own brush: the brush drops to hover
-            // weight so the loop on top of it reads as the thing that is
-            // selected, which is what the Face section of the panel is editing.
+            // A picked face outranks its brush: the brush drops to hover weight.
             bool picked = focus.MaterialDrag is null &&
                 focus.PickedFaceNode is not null &&
                 ReferenceEquals(focus.PickedFaceNode, node) &&
@@ -154,10 +109,8 @@ public sealed class SelectionOutline
             DrawnLastDraw++;
         }
 
-        // One box around the whole selection, at low weight, when there is more
-        // than one thing in it. Deliberately the SAME box the Studio handles
-        // stand on, so the outline and the handles cannot disagree about what
-        // is being manipulated.
+        // One faint box around a multi-selection: the box the Studio handles
+        // stand on.
         if (selection.Count > 1)
         {
             Vector3 lo = new(float.PositiveInfinity);
@@ -179,13 +132,10 @@ public sealed class SelectionOutline
         }
     }
 
-    /// <summary>Draws one plane's face loop, when that plane has a face.</summary>
-    /// <remarks>
-    /// A plane clipped away by its neighbours has a face SURFACE and no
-    /// polygon, so this draws nothing rather than refusing: the picked face is
-    /// still a legitimate thing to have selected, and the panel above it is
-    /// still editing that face's material.
-    /// </remarks>
+    /// <summary>
+    /// Draws one plane's face loop. Draws nothing for a plane its neighbours
+    /// clipped away, which has no polygon.
+    /// </summary>
     public static void DrawFaceLoop(
         DebugDraw output, Brush brush, Matrix4x4 world, int planeIndex, Vector3 color)
     {
@@ -209,43 +159,32 @@ public sealed class SelectionOutline
     private static void DrawNode(
         DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize, SceneNode node, Vector3 color)
     {
-        // A brush knows its own shape, so it gets it. This is the case the AABB
-        // was actively wrong about.
         if (node.Brush is { } brush)
         {
             PartBrushOverlay.DrawBrushEdges(output, brush, node.WorldMatrix, color);
             return;
         }
 
-        // A mesh gets its LOCAL bounds under the world matrix, which is an
-        // oriented box rather than an axis-aligned one: the same correction, one
-        // level less exact.
+        // Local bounds under the world matrix: an oriented box, so a rotated
+        // mesh is not over-claimed.
         if (node.MeshRenderer?.Mesh is { HasLocalBounds: true } mesh)
         {
             DrawOrientedBox(output, mesh.LocalBounds, node.WorldMatrix, color);
             return;
         }
 
-        // Neither: a group, or a node whose mesh reports no bounds. A cross at
-        // its origin, sized in SCREEN space so it is findable from any distance.
+        // A group, or a mesh with no bounds: a cross at the origin, sized in
+        // screen space so it is visible from any distance.
         float depth = MathF.Max(GizmoMath.ViewDepth(camera, node.WorldPosition), 0.01f);
         float size = GroupCrossPixels * GizmoMath.WorldPerPixel(camera, viewportSize.Y, depth);
         output.Cross(node.WorldPosition, MathF.Max(size, 0.01f), color);
 
-        // Plus the subtree's extent at low weight, so selecting a group says
-        // what is inside it rather than only where its origin is.
+        // Plus the subtree's extent, faint.
         if (scene.TryGetWorldBounds(node, out Aabb bounds))
             output.Box(bounds.Min, bounds.Max, color * 0.4f);
     }
 
-    /// <summary>
-    /// Draws an axis-aligned box transformed by <paramref name="world"/>: the
-    /// twelve edges of the local box, each end transformed.
-    /// </summary>
-    /// <remarks>
-    /// <c>DebugDraw.Box</c> is axis-aligned by construction and cannot express
-    /// this, which is why the old highlight was axis-aligned too.
-    /// </remarks>
+    /// <summary>Draws the twelve edges of a local box transformed by <paramref name="world"/>.</summary>
     public static void DrawOrientedBox(DebugDraw output, Aabb local, Matrix4x4 world, Vector3 color)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -264,8 +203,7 @@ public sealed class SelectionOutline
             corners[i] = Vector3.Transform(p, world);
         }
 
-        // Bit i of the corner index is axis i, so two corners are joined by an
-        // edge exactly when their indices differ in one bit. Twelve pairs.
+        // Two corners share an edge when their indices differ in one bit.
         for (int i = 0; i < 8; i++)
         {
             for (int bit = 1; bit <= 4; bit <<= 1)

@@ -4,37 +4,16 @@ using Texture = SpectraEngine.Core.Graphics.Texture;
 
 namespace SpectraEngine.Graphics.Tests;
 
-/// <summary>
-/// The measurement both parity suites run: two textures built from the same
-/// bytes by the two entry points, drawn through the same quad, compared byte
-/// for byte.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Rendering is the only honest comparison here.</b> A texture object exposes
-/// its size, its format and its resolved colour space and nothing about the
-/// texels the driver actually holds, so asserting on those would pass for a
-/// texture uploaded at the wrong pitch, into the wrong level, or through the
-/// wrong internal format. The picture is the artefact both paths exist to
-/// produce.
-/// </para>
-/// <para>
-/// <b>Exact equality, not a tolerance.</b> Two identical uploads drawn through
-/// one shader into one target in one session differ by nothing at all; a
-/// tolerance here would let a genuine one-code difference through, which is what
-/// a wrong internal format on a near-white texture looks like.
-/// </para>
-/// </remarks>
+// Two textures built from the same bytes by the two entry points, drawn
+// through the same quad and compared byte for byte. A texture object says
+// nothing about the texels the driver holds, so the picture is what is compared.
+// Exact equality: a tolerance would hide a wrong internal format.
 internal static class TextureUploadParity
 {
-    /// <summary>Small enough to read whole, large enough to catch a sheared row.</summary>
     internal const int TargetSize = 16;
 
-    /// <summary>
-    /// An asymmetric RGBA8 source, tightly packed, row 0 first. Deliberately not
-    /// a flat colour: a texture where every texel is the same is identical under
-    /// any pitch, any flip and any transpose.
-    /// </summary>
+    // Asymmetric RGBA8, tightly packed, row 0 first. A flat colour would look
+    // the same under any pitch or flip.
     internal static byte[] BuildSource(int width, int height)
     {
         var pixels = new byte[width * height * 4];
@@ -52,10 +31,7 @@ internal static class TextureUploadParity
         return pixels;
     }
 
-    /// <summary>
-    /// Draws <paramref name="source"/> over a fresh target and returns the whole
-    /// picture as RGBA8, row 0 at the bottom.
-    /// </summary>
+    // Returns the whole picture as RGBA8, row 0 at the bottom.
     internal static byte[] RenderWhole(Renderer renderer, Texture source)
     {
         RenderTarget output = renderer.CreateRenderTarget(
@@ -73,15 +49,10 @@ internal static class TextureUploadParity
         }
     }
 
-    /// <summary>
-    /// An 8x8 RGB8 image with four distinct quadrants, laid out row 0 first with
-    /// row 0 at the bottom of the picture, exactly as <c>ImageDecoder</c>
-    /// produces.
-    /// </summary>
+    // RGB8 with four distinct quadrants, row 0 at the bottom of the picture,
+    // the layout ImageDecoder produces.
     internal static byte[] BuildRgb8Quadrants(int size)
     {
-        // Named as the picture is seen, which is why row 0 gets the BOTTOM pair:
-        // the engine's convention is that texel row 0 is sampled at v = 0.
         ReadOnlySpan<byte> topLeft = [255, 0, 0];
         ReadOnlySpan<byte> topRight = [0, 255, 0];
         ReadOnlySpan<byte> bottomLeft = [0, 0, 255];
@@ -103,19 +74,9 @@ internal static class TextureUploadParity
         return pixels;
     }
 
-    /// <summary>
-    /// An RGB8 source with a generated mip chain must still arrive upright.
-    /// </summary>
-    /// <remarks>
-    /// <b>The one live combination whose arithmetic changes shape on the way
-    /// through.</b> No API has a 24-bit texture format, so the payload is
-    /// rewritten as RGBA8 and the levels it describes are rewritten with it;
-    /// anything downstream that goes on measuring rows against the REQUESTED
-    /// format computes three quarters of the real stride. D3D12 in particular
-    /// then rebuilds the chain in software off that stride. Nothing throws for
-    /// certain and nothing logs; the picture shears. <c>ImageDecoder</c> emits
-    /// this format for every three-channel PNG, so it is not a hypothetical.
-    /// </remarks>
+    // No API has a 24-bit format, so RGB8 is expanded to RGBA8 on upload. Code
+    // that keeps measuring rows against RGB8 gets 3/4 of the real stride and
+    // the picture shears. D3D12 builds its mip chain in software off that stride.
     internal static void AssertRgb8WithMipsIsUpright(Renderer renderer, string backend)
     {
         const int size = 8;
@@ -127,8 +88,7 @@ internal static class TextureUploadParity
 
         try
         {
-            // Magnified onto a larger target, so the base level is what is being
-            // read and the generated levels only have to exist.
+            // Magnified, so only the base level is sampled.
             byte[] picture = RenderWhole(renderer, source);
 
             var reading = new TextureOrientationProbe.Reading(
@@ -146,18 +106,15 @@ internal static class TextureUploadParity
         }
     }
 
-    /// <summary>Classifies one texel of a whole-target readback. Row 0 is the bottom.</summary>
+    // Row 0 is the bottom.
     internal static TextureOrientationProbe.Quadrant ClassifyAt(byte[] picture, int x, int y)
     {
         int i = (y * TargetSize + x) * 4;
         return TextureOrientationProbe.Classify(picture[i], picture[i + 1], picture[i + 2]);
     }
 
-    /// <summary>
-    /// The whole assertion: the old single-span call and an equivalent
-    /// descriptor must produce the same picture, and that picture must not be
-    /// blank.
-    /// </summary>
+    // The single-span call and an equivalent descriptor must produce the same,
+    // non-blank picture.
     internal static void AssertBothPathsAgree(Renderer renderer, string backend)
     {
         GBufferLayoutParity.Check(renderer);
@@ -181,9 +138,7 @@ internal static class TextureUploadParity
             byte[] fromSpan = RenderWhole(renderer, viaSpan);
             byte[] fromDesc = RenderWhole(renderer, viaDesc);
 
-            // A blank picture agrees with a blank picture perfectly, so the
-            // reference is checked for variation before the two are compared -
-            // the same guard --viewport-compare makes for the same reason.
+            // Two blank pictures would also agree.
             ViewportCompare.HasVariation(fromSpan).ShouldBeTrue(
                 $"{backend} rendered a flat picture, so the comparison below would prove nothing.");
 
@@ -248,12 +203,6 @@ internal static class TextureUploadParity
 /// <summary>
 /// The two <c>CreateTexture</c> entry points agree on OpenGL.
 /// </summary>
-/// <remarks>
-/// The old overload is now expressed over the new one, so this is a claim about
-/// that expression rather than about two implementations - which is exactly the
-/// claim worth pinning, because the day somebody reintroduces a second path this
-/// is what notices.
-/// </remarks>
 [Collection(GlRendererCollection.Name)]
 public sealed class TextureUploadParityGlTests
 {
@@ -276,11 +225,6 @@ public sealed class TextureUploadParityGlTests
 /// <summary>
 /// The same claim on both D3D backends.
 /// </summary>
-/// <remarks>
-/// On <see cref="D3DDeviceCollection"/> rather than a collection of its own: see
-/// that type for the measured reason two device-creating collections must not
-/// run at once.
-/// </remarks>
 [Collection(D3DDeviceCollection.Name)]
 public sealed class TextureUploadParityD3DTests
 {
@@ -343,10 +287,8 @@ public sealed class TextureUploadParityD3DTests
         RequireD3D12();
         AssertBc7Uploads(_d3d12.Renderer);
 
-        // The D3D12 path copies per row through GetCopyableFootprints, whose
-        // destination pitch is 256-aligned; a whole-level memcpy is refused by
-        // nothing and produces a sheared texture, so the debug layer's silence
-        // is not the claim here - the picture below is.
+        // D3D12's destination pitch is 256-aligned (GetCopyableFootprints), so
+        // the upload must copy per row. A whole-level memcpy shears the picture.
         _d3d12.Present();
     }
 

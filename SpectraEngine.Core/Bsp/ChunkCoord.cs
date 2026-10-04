@@ -5,22 +5,15 @@ namespace SpectraEngine.Core.Bsp;
 
 /// <summary>
 /// Integer coordinates of one cell in the sparse static-world chunk grid. A
-/// cell is the axis-aligned cube <c>[coord * CellSize, (coord + 1) * CellSize)</c>
-/// per axis — floor semantics, so a position exactly on a cell boundary belongs
-/// to the cell on the positive side. Coordinates are unbounded and may be
-/// negative: the world has no extents (open-world pillar — brushes go anywhere,
-/// Roblox-style, never inside a sealed hull).
+/// cell is the cube <c>[coord * CellSize, (coord + 1) * CellSize)</c> per axis,
+/// so a position on a boundary belongs to the positive side. Coordinates are
+/// unbounded and may be negative.
 /// </summary>
 public readonly record struct ChunkCoord(int X, int Y, int Z) : IComparable<ChunkCoord>
 {
     /// <summary>
-    /// Edge length of a chunk cell in world units. PINNED at 32: large enough
-    /// that typical room-scale editing touches a handful of cells, small enough
-    /// that a one-brush edit never drags city-block amounts of geometry through
-    /// a recompile. A power of two, so position/CellSize is an exact mantissa
-    /// rescale and cell classification cannot wobble at representable
-    /// boundaries. Do not change without documenting why — the incremental
-    /// compile stages (W2–W4) and their oracle tests are calibrated to it.
+    /// Edge length of a chunk cell in world units. A power of two, so the
+    /// division is exact. The compile stages and their tests are calibrated to 32.
     /// </summary>
     public const float CellSize = 32.0f;
 
@@ -31,22 +24,16 @@ public readonly record struct ChunkCoord(int X, int Y, int Z) : IComparable<Chun
     /// <summary>Minimum (inclusive) world-space corner of the cell.</summary>
     public Vector3 MinCorner => new(X * CellSize, Y * CellSize, Z * CellSize);
 
-    /// <summary>
-    /// Maximum world-space corner of the cell — exclusive for point
-    /// classification (a point exactly here belongs to the next cell), computed
-    /// as <c>(coord + 1) * CellSize</c> rather than <c>MinCorner + CellSize</c>
-    /// so it is bit-identical to the neighbouring cell's <see cref="MinCorner"/>.
-    /// </summary>
+    /// <summary>Maximum (exclusive) world-space corner of the cell.</summary>
+    // (coord + 1) * CellSize, not MinCorner + CellSize: bit-identical to the
+    // neighbour's MinCorner.
     public Vector3 MaxCorner => new((X + 1) * CellSize, (Y + 1) * CellSize, (Z + 1) * CellSize);
 
     /// <summary>The cell's world-space box, <see cref="MinCorner"/>..<see cref="MaxCorner"/>.</summary>
     public Aabb Bounds => new(MinCorner, MaxCorner);
 
     /// <summary>
-    /// Lexicographic X → Y → Z order. This is THE deterministic enumeration
-    /// order for chunked consumers: whenever per-cell work must be combined
-    /// into an ordered whole (surface concatenation, mesh assembly, dirty-set
-    /// reporting), cells are sorted by this comparison.
+    /// Lexicographic X, Y, Z order. The order per-cell work is combined in.
     /// </summary>
     public int CompareTo(ChunkCoord other)
     {
@@ -57,31 +44,11 @@ public readonly record struct ChunkCoord(int X, int Y, int Z) : IComparable<Chun
     }
 
     /// <summary>
-    /// A Z-order (Morton) key for this cell: the bits of X, Y and Z interleaved.
+    /// A Z-order (Morton) key: the bits of X, Y and Z interleaved, so a run
+    /// of consecutive keys is a compact block of cells. 21 bits per axis.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Spatial locality in one number.</b> Cells that are near each other in
-    /// space have near keys, which lexicographic order does NOT give: sorting by
-    /// (x, y, z) makes a run of consecutive cells a long thin line along z, and a
-    /// bounding box around such a run is nearly the width of the world. A run of
-    /// Morton-ordered cells is a compact block, which is what makes a box over a
-    /// run worth testing against a frustum.
-    /// </para>
-    /// <para>
-    /// <b>Separate from <see cref="CompareTo"/> on purpose.</b> That ordering is
-    /// relied on elsewhere for deterministic dirty-cell sets, where "ascending
-    /// cell order" means the obvious thing and a spatial curve would not.
-    /// </para>
-    /// <para>
-    /// Coordinates are biased into unsigned range before interleaving, because
-    /// the world is unbounded in both directions and a negative cell must sort
-    /// below a positive one rather than above every one. 21 bits each covers
-    /// roughly a million cells per axis, or 33 million world units at the
-    /// current cell size, which is past the point where float precision fails
-    /// anyway.
-    /// </para>
-    /// </remarks>
+    // Don't fold this into CompareTo. Dirty-cell sets rely on lexicographic order.
+    // Biased to unsigned first so negative cells sort below positive ones.
     public ulong MortonKey => Interleave(Bias(X)) | (Interleave(Bias(Y)) << 1) | (Interleave(Bias(Z)) << 2);
 
     private const int MortonBits = 21;
@@ -90,7 +57,7 @@ public readonly record struct ChunkCoord(int X, int Y, int Z) : IComparable<Chun
     private static uint Bias(int value) =>
         (uint)Math.Clamp(value + MortonBias, 0, (1 << MortonBits) - 1);
 
-    // Spreads 21 low bits so each occupies every third position.
+    // Spreads the low 21 bits to every third position.
     private static ulong Interleave(uint value)
     {
         ulong x = value & 0x1FFFFFUL;

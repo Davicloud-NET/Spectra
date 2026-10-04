@@ -18,18 +18,8 @@ namespace Spectra.Kitchen.Tests;
 /// The shader cook: source in, one blob per requested backend out, and nothing
 /// for a backend nobody asked for.
 /// </summary>
-/// <remarks>
-/// <para><b>The fixture is the engine's own <c>ShadowDepth</c>, not a toy.</b>
-/// It is the shader the renderer instances, so it exercises the whole container
-/// - two stages, a vertex input table, and the generated instanced twin with a
-/// table of its own - and a toy shader would silently prove only that the
-/// header round-trips.</para>
-/// <para><b>Every claim here is about what is or is not IN the pack.</b> The
-/// failures this rule can have are all silent at runtime: a missing blob makes
-/// the engine compile from source and render the right picture, and an extra
-/// blob makes a d3d11-only build ship GLSL nobody will ever bind. Neither
-/// throws, neither logs, and neither changes a pixel.</para>
-/// </remarks>
+// Fixture is the engine's ShadowDepth: two stages, a vertex input table and
+// the generated instanced twin.
 public class ShaderRuleTests
 {
     private const string ShaderPath = "Shaders/ShadowDepth.spectrashade";
@@ -46,29 +36,21 @@ public class ShaderRuleTests
         pack.TryOpen(CookedPath, out ContentBlob? blob).ShouldBeTrue();
         using (blob)
         {
-            // Asked for, and there.
             PipelineBlob d3d11 = ShaderFileReader
                 .ReadPipeline(blob.Span, GraphicsBackend.D3D11).ShouldNotBeNull();
 
             d3d11.VertexData.ShouldNotBeNull();
             d3d11.VertexInputs.ShouldNotBeEmpty();
 
-            // The generated twin survives the cook. Without it a batched shadow
-            // draw has no program to run and the pass silently stops batching.
+            // The instanced twin survives the cook.
             d3d11.InstancedVertexData.ShouldNotBeNull();
             d3d11.InstancedVertexInputs.ShouldContain(
                 element => element.Rate == VertexInputRate.PerInstance);
 
-            // Not asked for, and not there. This is the writer-side filter: the
-            // compiler was also only asked for d3d11, and trusting that alone
-            // would make the promise a property of another component.
             ShaderFileReader.ReadPipeline(blob.Span, GraphicsBackend.OpenGL).ShouldBeNull();
             ShaderFileReader.ReadBackends(blob.Span).ShouldBe([GraphicsBackend.D3D11]);
         }
 
-        // And the engine's own lookup finds it, which is the whole point of
-        // cooking one: the resolver reports a cooked pipeline rather than source
-        // text, so nothing compiles at startup.
         var stack = new ContentSourceStack();
         stack.Mount(pack);
 
@@ -78,9 +60,7 @@ public class ShaderRuleTests
         resolved.Cooked.ShouldNotBeNull();
         resolved.Source.ShouldBeNull();
 
-        // A backend the pack was not cooked for degrades to source rather than
-        // failing: the picture is right and the run pays for a compile, which is
-        // a report at Error and never a black window.
+        // A backend the pack was not cooked for falls back to source.
         BaseShaderResolver
             .ResolveBuiltIn(stack, BaseShaders.ShadowDepthFileName, GraphicsBackend.OpenGL, NullLogger.Instance)
             .Cooked.ShouldBeNull();
@@ -98,10 +78,7 @@ public class ShaderRuleTests
         pack.TryOpen(CookedPath, out ContentBlob? blob).ShouldBeTrue();
         using (blob)
         {
-            // The target order rather than the compiler's registration order, so
-            // one command line writes one file. The reverse would still load and
-            // would make two runs of the same command disagree byte for byte the
-            // day a generator is registered somewhere else.
+            // Target order, not the compiler's registration order.
             ShaderFileReader.ReadBackends(blob.Span)
                 .ShouldBe([GraphicsBackend.D3D12, GraphicsBackend.OpenGL]);
         }
@@ -115,11 +92,8 @@ public class ShaderRuleTests
         using var project = new TempProject();
         WriteShader(project);
 
-        // Two PROCESSES, because .NET randomises the string hash seed per
-        // process: a dictionary iteration order that leaked into a generated
-        // stage would be stable inside one test host and different between two
-        // runs of the tool, which is the failure reported as "CI says the pack
-        // changed and nothing changed".
+        // Two processes: the string hash seed is per process, so a leaked
+        // dictionary order only shows across runs.
         byte[] first = CookOutOfProcess(project, "shader-a");
         byte[] second = CookOutOfProcess(project, "shader-b");
 
@@ -143,9 +117,7 @@ public class ShaderRuleTests
     [Fact]
     public void The_verifier_fails_a_pack_one_shader_short_and_names_the_backend_and_the_shader()
     {
-        // Built by hand rather than cooked, because one cook gives every shader
-        // the same target list: the failure being caught is a shader that came
-        // out short of the others, which no single cook can produce.
+        // Built by hand: one cook gives every shader the same target list.
         using var project = new TempProject();
         string pack = Path.Combine(project.Root, "mixed.spack");
 
@@ -169,8 +141,6 @@ public class ShaderRuleTests
         missing.Message.ShouldContain("Shaders/Short.specshadecomp");
         missing.Message.ShouldContain("opengl");
 
-        // And not against the complete one, or the diagnostic says nothing about
-        // which shader to go and look at.
         missing.Message.ShouldNotContain("Complete");
     }
 
@@ -182,13 +152,10 @@ public class ShaderRuleTests
 
         string pack = Cook(project, GraphicsBackend.D3D11);
 
-        // The union over the pack's own shaders is {d3d11}, so on its own the
-        // pack is self-consistent and passes. That is the honest limit of a
-        // container that does not record what it was cooked for.
+        // A pack does not record its targets, so with none given the expectation
+        // is the union over its own shaders, here {d3d11}.
         PackVerifier.Verify(pack).Succeeded.ShouldBeTrue();
 
-        // Told what was wanted, it fails - which is why scook verify forwards
-        // --target rather than defaulting to one.
         PackVerifyResult asked = PackVerifier.Verify(
             pack, logger: null, targets: [GraphicsBackend.D3D11, GraphicsBackend.D3D12]);
 
@@ -211,20 +178,14 @@ public class ShaderRuleTests
 
         result.Succeeded.ShouldBeFalse();
 
-        // Under SC6001 rather than an invented SS number: the compiler's
-        // Diagnostic carries a severity, a message and a span and no code at all,
-        // so wrapping one would mint a number ssc and the language server do not
-        // agree with.
+        // SC6001: the compiler's own diagnostics carry no code to wrap.
         result.Diagnostics.ShouldContain(d => d.IsError && d.Id.ToString() == "SC6001");
 
-        // And the source file is named, so the line is one an IDE can jump to.
         result.Diagnostics
             .First(d => d.Id.ToString() == "SC6001")
             .File.ShouldBe(ShaderPath);
 
-        // A failed cook writes no pack at all, so there is nothing to inspect;
-        // what matters is that the shader did not silently become a raw copy of
-        // its own source.
+        // The shader must not fall back to a raw copy of its source.
         result.Assets
             .Single(a => a.SourcePath == ShaderPath)
             .Outputs.ShouldBeEmpty();
@@ -244,9 +205,7 @@ public class ShaderRuleTests
         CookedAsset asset = result.Assets.Single();
         asset.Rule.ShouldBe(Rules.RuleKind.Shader);
 
-        // The source itself is NOT in the pack: a shipped game reads the blob,
-        // and shipping the source beside it would be handing every player the
-        // input to a compiler the build was meant to have run for them.
+        // Only the blob, not the source.
         CookedOutput output = asset.Outputs.Single();
         output.Path.ShouldBe(CookedPath);
     }
@@ -257,9 +216,6 @@ public class ShaderRuleTests
         using var project = new TempProject();
         WriteShader(project);
 
-        // The cache stores emitted bytes and replays them, so a rule whose output
-        // it never captured correctly is a pack that changes on the second run of
-        // an unchanged project.
         string cold = Path.Combine(project.Root, "cold");
         string warm = Path.Combine(project.Root, "warm");
 
@@ -297,14 +253,9 @@ public class ShaderRuleTests
 
         second.Succeeded.ShouldBeTrue();
 
-        // The rule declares CookSettingKeys.Targets, so the key moves with the
-        // list. Without the declaration the second run is a cache hit serving a
-        // d3d11-only blob for a cook that asked for two backends, and nothing
-        // reports it.
+        // A cache hit here would serve a d3d11-only blob to a two-backend cook.
         second.CacheHits.ShouldBe(0);
     }
-
-    // --- helpers -------------------------------------------------------------
 
     private static void WriteShader(TempProject project) =>
         project.WriteAsset(ShaderPath, BaseShaders.ShadowDepth);

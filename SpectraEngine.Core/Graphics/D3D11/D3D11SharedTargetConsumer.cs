@@ -9,47 +9,14 @@ using DxgiApi = Silk.NET.DXGI.DXGI;
 
 namespace SpectraEngine.Core.Graphics.D3D11;
 
-/// <summary>
-/// A second D3D11 device that opens the producer's shared texture by handle and
-/// takes the consumer's turn on it. See <see cref="ISharedTargetConsumer"/> for
-/// why a second device rather than a second thread.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>It serves BOTH backends</b>, because the shared texture is a D3D11 one on
-/// both: D3D11 creates it directly and D3D12 creates it through the D3D11On12
-/// bridge, precisely so the two cannot disagree about its colour space. So this
-/// opens a D3D11 handle either way and there is one implementation rather than
-/// two.
-/// </para>
-/// <para>
-/// <b>It asks NO renderer for anything, which is what keeps both backends'
-/// files out of this.</b> Everything it needs is on the handle: a shared
-/// resource opens on the device that created it or on another device on the
-/// same ADAPTER and nowhere else, so the adapter is found by trying each one in
-/// turn until the open succeeds. On an ordinary machine that is one attempt; on
-/// a hybrid one, or under <c>--adapter=</c>, it is the attempt that finds the
-/// GPU the producer actually opened, which a consumer built on the system
-/// default would have missed and reported as a broken handle.
-/// </para>
-/// <para>
-/// <b>It really copies.</b> A compositor's turn is an acquire, a snapshot of the
-/// whole texture and a release, and the snapshot is most of what the turn
-/// costs; a consumer that acquired and released with nothing in between would
-/// report a hand-over rate no real consumer can reach. The copy is inside the
-/// bracket, and the flush is before the release for the reason the producer
-/// flushes before its own: a texture handed over with the copy still queued is
-/// a texture the GPU has not finished reading.
-/// </para>
-/// <para>
-/// <b>No debug layer, ever.</b> This is an instrument, it is created inside a
-/// measurement, and a validated second device would put its own cost into the
-/// number being measured.
-/// </para>
-/// </remarks>
+// A second D3D11 device that opens the producer's shared texture and takes
+// the consumer's turn on it. Used by both backends: the shared texture is a
+// D3D11 one on D3D12 too. Each turn copies the whole texture, as a real
+// compositor would, so the measured hand-over rate is honest. No debug layer:
+// its cost would land in the measurement.
 internal sealed unsafe class D3D11SharedTargetConsumer : ISharedTargetConsumer
 {
-    /// <summary>WAIT_TIMEOUT, which AcquireSync returns as a success-coded HRESULT.</summary>
+    // WAIT_TIMEOUT. AcquireSync returns it as a positive HRESULT.
     private const int WaitTimeout = 0x00000102;
 
     private ComPtr<ID3D11Device> _device;
@@ -72,10 +39,8 @@ internal sealed unsafe class D3D11SharedTargetConsumer : ISharedTargetConsumer
         _mutex = mutex;
     }
 
-    /// <summary>
-    /// Opens <paramref name="sharedHandle"/> on a fresh device, searching the
-    /// machine's adapters for the one that will take it. Null when none will.
-    /// </summary>
+    // A shared resource only opens on the adapter that created it, so try
+    // each adapter in turn. Null when none takes the handle.
     internal static D3D11SharedTargetConsumer? TryOpen(
         nint sharedHandle, int width, int height, ILogger logger)
     {
@@ -108,10 +73,7 @@ internal sealed unsafe class D3D11SharedTargetConsumer : ISharedTargetConsumer
                 ComPtr<IDXGIAdapter1> adapter = ComOwnership.Own(adapterPtr);
                 try
                 {
-                    // Software adapters are skipped for the reason DxgiAdapters
-                    // already states: WARP takes almost anything and then runs at
-                    // a hundredth of the speed, which here would turn a pacing
-                    // measurement into a measurement of WARP.
+                    // Skip WARP: it would turn this into a measurement of WARP.
                     AdapterDesc1 desc = default;
                     ((IDXGIAdapter1*)adapter.Handle)->GetDesc1(&desc);
                     if ((desc.Flags & (uint)AdapterFlag.Software) != 0)
@@ -156,10 +118,7 @@ internal sealed unsafe class D3D11SharedTargetConsumer : ISharedTargetConsumer
             ID3D11DeviceContext* contextPtr = null;
             D3DFeatureLevel chosen = default;
 
-            // Unknown driver type, which is what D3D11CreateDevice demands when
-            // an adapter is named: naming Hardware AND an adapter is refused with
-            // E_INVALIDARG, and the message says nothing about which of the two
-            // arguments it means.
+            // Unknown driver type: Hardware plus an explicit adapter is E_INVALIDARG.
             SilkMarshal.ThrowHResult(api.CreateDevice(
                 (IDXGIAdapter*)adapter, D3DDriverType.Unknown, 0, 0u,
                 (D3DFeatureLevel*)null, 0u, D3D11Api.SdkVersion,
@@ -181,12 +140,8 @@ internal sealed unsafe class D3D11SharedTargetConsumer : ISharedTargetConsumer
         }
         catch (Exception)
         {
-            // A refusal here is the ordinary answer for every adapter but one, so
-            // it is not reported: what a caller needs to know is that NO adapter
-            // took it, which TryOpen says once. Half a consumer is worse than
-            // none either way - the caller would get an object that can never
-            // take a turn, and the producer would then report a timeout per frame
-            // instead of the HRESULT that happened.
+            // Expected for every adapter but one, so not logged. TryOpen reports
+            // once if none takes it.
             ComOwnership.Release(ref mutex);
             ComOwnership.Release(ref snapshot);
             ComOwnership.Release(ref shared);
@@ -204,9 +159,7 @@ internal sealed unsafe class D3D11SharedTargetConsumer : ISharedTargetConsumer
         var mutex = (IDXGIKeyedMutex*)_mutex.Handle;
         int hr = mutex->AcquireSync(Renderer.SharedConsumerKey, (uint)Math.Max(0, timeoutMs));
 
-        // WAIT_TIMEOUT is a SUCCESS-coded HRESULT, so the ordinary hr < 0 test
-        // reads a producer that never released as an acquisition and the
-        // release below then fails on a key this side never held.
+        // hr < 0 alone misses the timeout.
         if (hr == WaitTimeout) return false;
         if (hr < 0) return false;
 
@@ -218,8 +171,7 @@ internal sealed unsafe class D3D11SharedTargetConsumer : ISharedTargetConsumer
         }
         finally
         {
-            // In a finally, because dropping the release deadlocks the producer
-            // on its next frame with nothing anywhere reporting a disagreement.
+            // A missed release deadlocks the producer on its next frame.
             mutex->ReleaseSync(Renderer.SharedProducerKey);
         }
 
@@ -237,9 +189,7 @@ internal sealed unsafe class D3D11SharedTargetConsumer : ISharedTargetConsumer
 
     private static ComPtr<ID3D11Texture2D> OpenShared(ID3D11Device* device, nint sharedHandle)
     {
-        // OpenSharedResource1, never OpenSharedResource: the producer minted an
-        // NT handle, and the older entry point takes the legacy global one and
-        // refuses this with E_INVALIDARG.
+        // OpenSharedResource1: the older call refuses an NT handle with E_INVALIDARG.
         ID3D11Device1* device1Ptr = null;
         Guid device1Guid = ID3D11Device1.Guid;
         SilkMarshal.ThrowHResult(device->QueryInterface(&device1Guid, (void**)&device1Ptr));
@@ -260,9 +210,7 @@ internal sealed unsafe class D3D11SharedTargetConsumer : ISharedTargetConsumer
 
     private static ComPtr<ID3D11Texture2D> CreateSnapshot(ID3D11Device* device, int width, int height)
     {
-        // R8G8B8A8_UNORM, matching the shared RESOURCE rather than its sRGB
-        // render-target view: the producer's encode already happened on the way
-        // in, and CopyResource requires the two resources to agree.
+        // UNORM to match the shared resource (not its sRGB view): CopyResource needs equal formats.
         var desc = new Texture2DDesc
         {
             Width = (uint)width,

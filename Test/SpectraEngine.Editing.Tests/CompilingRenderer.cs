@@ -5,19 +5,8 @@ using System;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// A <see cref="Renderer"/> that accepts static-world meshes and keeps nothing
-/// but a count. Enough to run <c>Scene.RebuildStaticWorld</c> headlessly, which
-/// is what the gizmo's brush tests need: they assert on the scene's
-/// <c>LastCompileDirtyCells</c>, never on geometry, so the mesh contents are
-/// genuinely irrelevant and pretending otherwise would only add a second
-/// FakeMesh to maintain.
-/// </summary>
-/// <remarks>
-/// Textures and shaders still throw, exactly as <see cref="StubRenderer"/> does:
-/// reaching one from the editing suite would mean a test grew a graphics
-/// dependency it has no business having.
-/// </remarks>
+// Accepts static-world meshes and only counts them, so Scene.RebuildStaticWorld
+// can run headless. Textures and shaders throw: an editing test should not need them.
 internal sealed class CompilingRenderer : Renderer
 {
     public CompilingRenderer()
@@ -25,7 +14,6 @@ internal sealed class CompilingRenderer : Renderer
     {
     }
 
-    /// <summary>How many meshes the static-world compile has asked for.</summary>
     public int CreatedMeshCount { get; private set; }
 
     public override GraphicsBackend Backend => GraphicsBackend.OpenGL;
@@ -34,11 +22,9 @@ internal sealed class CompilingRenderer : Renderer
 
     public override string NextPipeline() => "Compiling";
 
-    // One pipeline, and it is the one already running.
     public override bool TrySelectPipeline(string name) =>
         string.Equals(name, "Compiling", StringComparison.OrdinalIgnoreCase);
 
-    // No rasteriser, so no viewport. Present because the shadow atlas needs one.
     protected override void SetViewportCore(int x, int y, int width, int height) { }
 
     public override Mesh CreateMesh(
@@ -56,10 +42,7 @@ internal sealed class CompilingRenderer : Renderer
     protected override Texture CreateTextureCore(in TextureUploadDesc desc)
         => throw new NotSupportedException("CompilingRenderer creates no textures.");
 
-    // No target of any kind, so a pass is a no-op rather than a throw: these
-    // stubs stand in for a renderer during scene and editor tests, which drive
-    // no pipeline and so open no passes, but a future one that does should not
-    // fail for the wrong reason.
+    // Passes are no-ops, not throws, so a test that opens one doesn't fail here.
     protected override void BeginPassCore(
         RenderTarget? target, ReadOnlySpan<RenderTarget> targets, in PassClear clear)
     {

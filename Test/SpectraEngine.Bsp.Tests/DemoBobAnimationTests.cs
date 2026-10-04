@@ -5,22 +5,15 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The demo's bobbing brush must never win an argument with an edit. The
-/// animation is the frame's LAST writer — the engine runs the editing layer
-/// first and the demo update after it (see <c>Engine.Run</c>) — so an
-/// animation that recomputed its pose from a rest position captured at load
-/// would silently discard every gizmo drag, undo and redo aimed at that node,
-/// within the same frame it was made. The tool would look broken rather than
-/// the demo, which is why this is pinned rather than commented.
+/// The demo's bobbing brush must yield to edits: it runs after the editor
+/// each frame, so it would otherwise overwrite every drag and undo.
 /// </summary>
 public sealed class DemoBobAnimationTests
 {
     private const float Amplitude = 0.5f;
     private const double PeriodSeconds = 4.0;
 
-    // A quarter period: the sine is at its peak, so the animation is
-    // contributing its full amplitude and any "adopt the raw position" bug
-    // shows up at maximum size.
+    // A quarter period, where the bob is at full amplitude.
     private const double PeakTime = PeriodSeconds / 4.0;
 
     [Fact]
@@ -41,24 +34,19 @@ public sealed class DemoBobAnimationTests
         (SceneNode node, DemoBobAnimation bob) = CreateBob(new Vector3(-2f, 0.1f, -2f));
         bob.Advance(PeakTime);
 
-        // What a gizmo drag does: write an absolute local position.
         var edited = new Vector3(5f, 3f, -7f);
         node.LocalPosition = edited;
         bob.Advance(PeakTime);
 
-        // Same phase, so the animation contributes exactly what it did before
-        // the edit — the node must therefore still be exactly where the editor
-        // put it, not back at the rest pose captured at load.
+        // Same phase as before the edit, so the bob adds nothing new.
         node.LocalPosition.ShouldBe(edited);
     }
 
     [Fact]
     public void An_external_edit_is_not_snapped_by_the_animations_own_offset()
     {
-        // The obvious fix — adopt the edited position as the new rest pose —
-        // re-adds the current bob on top of it and jumps the node by up to a
-        // full amplitude on the frame after the edit. That jump is precisely
-        // the kind of unexplained pop this animation must not produce.
+        // Taking the edited position as the new rest pose would re-add the
+        // current bob and jump the node by up to a full amplitude.
         (SceneNode node, DemoBobAnimation bob) = CreateBob(Vector3.Zero);
         bob.Advance(PeakTime);
 
@@ -80,17 +68,15 @@ public sealed class DemoBobAnimationTests
 
         bob.Advance(PeakTime * 3.0);    // three quarter periods on: -amplitude
 
-        // The edit re-centred the bob, so the swing is measured from the new
-        // rest pose (10 - amplitude, because the edit landed on a peak).
+        // The edit landed on a peak, so the new rest pose is 10 - amplitude.
         node.LocalPosition.Y.ShouldBe(10f - 2f * Amplitude, 1e-4f);
     }
 
     [Fact]
     public void An_undo_back_to_the_original_pose_is_honoured_too()
     {
-        // The undo path writes the node's captured pre-drag transform, which
-        // equals the rest pose plus whatever bob was applied at capture time.
-        // Nothing about it may be treated as "the animation's own write".
+        // Undo writes back rest pose plus the bob at capture time. That must
+        // not be mistaken for the animation's own write.
         (SceneNode node, DemoBobAnimation bob) = CreateBob(Vector3.Zero);
         bob.Advance(PeakTime);
         Vector3 captured = node.LocalPosition;
@@ -106,9 +92,7 @@ public sealed class DemoBobAnimationTests
     [Fact]
     public void The_bob_keeps_dirtying_the_static_world()
     {
-        // The animation exists to keep the async recompile pipeline exercised
-        // every frame; a version that stopped writing would still pass every
-        // assertion above and quietly delete that coverage.
+        // The bob exists to exercise the async recompile every frame.
         var scene = new Scene("Test");
         SceneNode node = scene.Root.CreateChild("PillarA");
         node.Brush = Brush.CreateBox(

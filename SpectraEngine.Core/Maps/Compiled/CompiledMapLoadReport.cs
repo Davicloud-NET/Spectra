@@ -4,24 +4,9 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Maps.Compiled;
 
 /// <summary>
-/// What a compiled map load could not bring across, and what this build's reader
-/// structurally cannot carry at all.
+/// What a compiled map load could not bring across: per-node misses in this
+/// file, plus <see cref="FormatGaps"/>, which the format cannot carry at all.
 /// </summary>
-/// <remarks>
-/// <para><b>Two different kinds of miss, kept apart on purpose.</b> A PER-NODE
-/// miss is a fact about this file - a mesh instance whose model row is absent, a
-/// part brush whose planes are not in <c>BRSH</c> - and naming the node is what
-/// makes it fixable. A FORMAT gap is a fact about the BUILD: <c>.scmap</c> v1 has
-/// no light table, so a lamp's node arrives and its lamp does not, and no amount
-/// of looking at the file can tell you whether the author put one there. Reporting
-/// the second as though it were the first would name the wrong thing; not
-/// reporting it at all is how a level quietly loses its lights.</para>
-/// <para><b>The format gaps are a constant, and they are printed on every
-/// load.</b> That is the same posture the entity catalogue takes when it prints
-/// its class count on every run: the failure being guarded against is a shipped
-/// build that silently does less than the last one, and a line nobody reads is
-/// still a line somebody can be pointed at.</para>
-/// </remarks>
 public sealed class CompiledMapLoadReport
 {
     private readonly List<string> _unboundMeshInstances = [];
@@ -30,14 +15,8 @@ public sealed class CompiledMapLoadReport
 
     /// <summary>
     /// What a <c>.scmap</c> at this format version cannot carry, whatever is in
-    /// the file.
+    /// the file. Logged on every load.
     /// </summary>
-    /// <remarks>
-    /// Each entry is a gap <c>docs/formats-and-pipeline.md</c> 2.7 names, in the
-    /// order that document names them. They are append-only in spirit: an entry
-    /// leaves this list on the day the section that closes it lands, and never
-    /// because a load happened to look complete.
-    /// </remarks>
     public static IReadOnlyList<string> FormatGaps { get; } =
     [
         "lights (no ScmapPayloadKind value and no light table, so a lamp's node arrives without its lamp)",
@@ -81,19 +60,12 @@ public sealed class CompiledMapLoadReport
     public int SkippedSections { get; internal set; }
 
     /// <summary>
-    /// Baked world brushes whose authored planes were in <c>BRSH</c> and were
-    /// deliberately NOT rebuilt.
+    /// Baked world brushes whose planes were in <c>BRSH</c> and were not rebuilt,
+    /// because their surfaces are already in the chunks.
     /// </summary>
-    /// <remarks>
-    /// <b>The double-geometry guard, counted.</b> A <c>--keep-brush-source</c> cook
-    /// puts a world brush's planes in the file as well as its surfaces in the
-    /// chunks, and a loader that helpfully rebuilt one would draw that brush twice
-    /// with nothing reporting it. Non-zero here means the file offered geometry
-    /// this load correctly declined; zero means it offered none.
-    /// </remarks>
     public int BakedBrushSourcesSkipped { get; private set; }
 
-    /// <summary>Whether nothing in THIS FILE was lost. Says nothing about <see cref="FormatGaps"/>.</summary>
+    /// <summary>Whether nothing in this file was lost. Says nothing about <see cref="FormatGaps"/>.</summary>
     public bool IsComplete =>
         _unboundMeshInstances.Count == 0 && _partBrushesWithoutSource.Count == 0 && _brushesRefused.Count == 0;
 
@@ -113,7 +85,7 @@ public sealed class CompiledMapLoadReport
         return string.Join("; ", parts) + ".";
     }
 
-    /// <summary>One sentence naming what this BUILD cannot carry, whatever the file holds.</summary>
+    /// <summary>One sentence naming what this build cannot carry, whatever the file holds.</summary>
     public static string DescribeFormatGaps() =>
         $".scmap v{EngineInfo.CompiledMapFormatVersion} carries no " + string.Join("; no ", FormatGaps) + ".";
 
@@ -125,9 +97,6 @@ public sealed class CompiledMapLoadReport
 
     internal void BrushRefused(string node) => _brushesRefused.Add(node);
 
-    // Bounded, because a broken map can name every node in the level and a log
-    // line that scrolls a level's worth of names past somebody is a line nobody
-    // reads to the end of.
     private static string Join(List<string> names) =>
         names.Count <= 5
             ? string.Join(", ", names)

@@ -12,46 +12,24 @@ public enum RibbonBodyHost
     Inline,
 
     /// <summary>
-    /// In the flyout, over whatever is below. A real popup, which on Windows is
-    /// a real OS window and therefore the ONE surface that may legally cross a
-    /// native viewport - the same reason the menus, the context menus and the
-    /// modal dialogs may.
+    /// In the flyout, over whatever is below. A popup is its own OS window on
+    /// Windows, so it can cross a native viewport.
     /// </summary>
     Flyout,
 }
 
-/// <summary>
-/// The ribbon's two states and the transitions between them, as a value.
-/// </summary>
+/// <summary>The ribbon's collapse state.</summary>
 /// <param name="Expanded">Pinned open. Persisted; see <see cref="EditorSettings"/>.</param>
-/// <param name="ActiveTabId">Which page the strip is pointing at.</param>
+/// <param name="ActiveTabId">Which page the strip is pointing at. Not persisted.</param>
 /// <param name="FlyoutOpen">
 /// A collapsed ribbon showing one page temporarily. Never true while
-/// <paramref name="Expanded"/> is - the transitions below maintain that, and
-/// <see cref="RibbonSurface.HostFor"/> would otherwise have two answers.
+/// <paramref name="Expanded"/> is.
 /// </param>
 public readonly record struct RibbonSurfaceState(bool Expanded, string ActiveTabId, bool FlyoutOpen);
 
 /// <summary>
 /// The collapse state machine. Pure: no control, no window, no settings.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A state machine rather than three booleans on the window, because every
-/// interesting case is a COMBINATION.</b> Clicking the active tab means "switch
-/// page" while expanded and "put that page away" while collapsed; expanding
-/// while a flyout is open must not leave the flyout behind it; and a command
-/// invoked out of a flyout closes it, which is the behaviour that makes a
-/// collapsed ribbon usable rather than sticky. Written as transitions over a
-/// value, all four are testable without an Avalonia application.
-/// </para>
-/// <para>
-/// <b>The active tab is deliberately not part of what gets persisted.</b> A
-/// shell that reopened on View would start every session with Insert hidden,
-/// which is precisely the failure that retired the previous tab strip. Only the
-/// expanded flag survives a launch.
-/// </para>
-/// </remarks>
 public static class RibbonSurface
 {
     /// <summary>The state a session starts in, on the default tab.</summary>
@@ -68,15 +46,10 @@ public static class RibbonSurface
     }
 
     /// <summary>
-    /// A tab was clicked.
+    /// A tab was clicked. Expanded, it switches page. Collapsed, it flies the
+    /// page out, or puts it away if that page is already out. An unknown id
+    /// changes nothing.
     /// </summary>
-    /// <remarks>
-    /// Expanded, this is navigation. Collapsed, it flies the page out - and
-    /// clicking the tab that is already flown out puts it away again, which is
-    /// the only way a keyboard-free user closes one without invoking something.
-    /// An id no tab carries changes nothing, so a stale control cannot leave
-    /// the strip pointing at a page that does not exist.
-    /// </remarks>
     public static RibbonSurfaceState SelectTab(in RibbonSurfaceState state, string? tabId)
     {
         if (RibbonLayout.FindTab(tabId) is not { } tab)
@@ -92,25 +65,16 @@ public static class RibbonSurface
     }
 
     /// <summary>
-    /// Pins the ribbon open, or collapses it to the strip.
+    /// Pins the ribbon open, or collapses it to the strip. Closes the flyout
+    /// either way.
     /// </summary>
-    /// <remarks>
-    /// SET semantics rather than a toggle verb, the same rule every displayed
-    /// state in this shell follows. Either way the flyout closes: an expanded
-    /// ribbon with a popup of the same page over it is two copies of one thing.
-    /// </remarks>
     public static RibbonSurfaceState SetExpanded(in RibbonSurfaceState state, bool expanded) =>
         state with { Expanded = expanded, FlyoutOpen = false };
 
     /// <summary>
-    /// A ribbon control was invoked.
+    /// A ribbon control was invoked. Closes the flyout, which would otherwise
+    /// stay over the viewport the edit landed in.
     /// </summary>
-    /// <remarks>
-    /// A command posted out of a flown-out page closes the page. Without it a
-    /// collapsed ribbon behaves worse than an expanded one: the flyout stays
-    /// over the viewport the edit just landed in, and the thing the user wanted
-    /// to look at is the thing they cannot see.
-    /// </remarks>
     public static RibbonSurfaceState Invoke(in RibbonSurfaceState state) =>
         state.FlyoutOpen ? state with { FlyoutOpen = false } : state;
 

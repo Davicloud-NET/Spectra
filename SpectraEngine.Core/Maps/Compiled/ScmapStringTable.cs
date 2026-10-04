@@ -6,38 +6,17 @@ using System.Text;
 namespace SpectraEngine.Core.Maps.Compiled;
 
 /// <summary>
-/// The <c>STRT</c> section, read in place: an offset array over one UTF-8 blob.
+/// The <c>STRT</c> section, read in place: count+1 offsets over one UTF-8 blob.
+/// Index 0 is the empty string, so "no name" needs no sentinel.
 /// </summary>
-/// <remarks>
-/// <para><b>Offsets rather than length prefixes, and no NUL terminators.</b> A
-/// consumer of this table wants a <c>ReadOnlySpan&lt;byte&gt;</c> it can compare
-/// or decode without walking anything, and index 0 is the empty string so that a
-/// record meaning "no name" needs no sentinel value: zero already reads as
-/// nothing.</para>
-/// <para><b>The count+1 offset array is what makes a length a subtraction.</b> The
-/// last entry is the blob length, so every string's extent is
-/// <c>offsets[i + 1] - offsets[i]</c> with no special case for the final one, and
-/// the reader validates the array is non-decreasing and ends exactly at the blob
-/// length. Without the second half of that check a truncated blob is a read past
-/// the end of a mapped view, which is an access violation with no managed stack
-/// rather than an exception.</para>
-/// <para><b>Emission order is FIRST-REFERENCE order during the canonical node
-/// walk</b>, which the writer owns and this reader cannot verify. It matters
-/// because dictionary iteration order would leak the runtime string hash seed into
-/// the file, and the failure that causes is a cook whose bytes differ between two
-/// runs of the same tool on the same input, which somebody reports as "CI says the
-/// map changed and nothing changed".</para>
-/// </remarks>
 public readonly ref struct ScmapStringTable
 {
     private readonly ReadOnlySpan<uint> _offsets;
     private readonly ReadOnlySpan<byte> _blob;
 
-    /// <summary>
-    /// Parses the section, validating every offset before anything indexes with
-    /// one.
-    /// </summary>
-    /// <exception cref="ScmapFormatException">The section is not a well-formed string table.</exception>
+    /// <summary>Parses the section and validates every offset up front.</summary>
+    // The section may be a mapped view, where a read past the end is an access
+    // violation and not an exception. So nothing indexes before the checks pass.
     public ScmapStringTable(ReadOnlySpan<byte> section, string source)
     {
         if (section.Length < ScmapFormat.StringCountSize)
@@ -109,7 +88,6 @@ public readonly ref struct ScmapStringTable
     public int Count { get; }
 
     /// <summary>The UTF-8 bytes of one string, without decoding them.</summary>
-    /// <exception cref="ArgumentOutOfRangeException">The index is not in the table.</exception>
     public ReadOnlySpan<byte> GetUtf8(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
@@ -119,18 +97,13 @@ public readonly ref struct ScmapStringTable
         return _blob.Slice(start, (int)_offsets[index + 1] - start);
     }
 
-    /// <summary>One string, decoded. Allocates, so it is for names and messages rather than for a hot path.</summary>
+    /// <summary>One string, decoded. Allocates.</summary>
     public string GetString(int index) => Encoding.UTF8.GetString(GetUtf8(index));
 
     /// <summary>
     /// One string, decoded, or the empty string when the index is out of range.
+    /// For error messages about a record whose name index may be bad too.
     /// </summary>
-    /// <remarks>
-    /// For a message about a record that is itself being refused: a node whose
-    /// payload kind is illegal may well also carry a name index that is, and a
-    /// second exception thrown while composing the first one's text would replace
-    /// a precise refusal with an index-out-of-range nobody can act on.
-    /// </remarks>
     public string GetStringOrEmpty(int index) =>
         index >= 0 && index < Count ? GetString(index) : string.Empty;
 }

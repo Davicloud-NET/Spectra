@@ -8,23 +8,7 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// Writing a property-panel edit back to a selection.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>The panel commits on Enter and on losing focus</b>, so tabbing through
-/// fields without changing anything is an ordinary thing for a person to do.
-/// Two rules follow, and both are tested here: one commit is one history entry
-/// however many nodes it touched, and a commit that changes nothing records
-/// nothing.
-/// </para>
-/// <para>
-/// <b>The axis mask is the consequential part.</b> Editing the y of a mixed
-/// position has to leave x and z as each node had them; writing the whole
-/// vector back would stack the selection at one point.
-/// </para>
-/// </remarks>
+/// <summary>Writing a property-panel edit back to a selection.</summary>
 public sealed class PropertyEditorTests
 {
     private static Brush Box(float half = 1f) =>
@@ -48,13 +32,9 @@ public sealed class PropertyEditorTests
         public int Apply(PropertyEdit edit) => PropertyEditor.Apply(Undo, Nodes, edit);
     }
 
-    // --- history shape ------------------------------------------------------
-
     [Fact]
     public void A_bulk_edit_over_many_nodes_is_one_undo_entry()
     {
-        // Fifty entries would take fifty Ctrl+Z presses to undo one thing the
-        // user did once.
         var a = new SceneNode("A") { LocalPosition = new Vector3(0f, 1f, 0f) };
         var b = new SceneNode("B") { LocalPosition = new Vector3(0f, 2f, 0f) };
         var c = new SceneNode("C") { LocalPosition = new Vector3(0f, 3f, 0f) };
@@ -78,8 +58,7 @@ public sealed class PropertyEditorTests
     [Fact]
     public void A_commit_that_changes_nothing_records_nothing()
     {
-        // Tabbing through fields must not fill the history with entries that
-        // undo to themselves.
+        // The panel commits on blur, so tabbing through fields lands here.
         var node = new SceneNode("A") { LocalPosition = new Vector3(4f, 5f, 6f) };
         var rig = new Rig(node);
 
@@ -105,13 +84,9 @@ public sealed class PropertyEditorTests
         }).ShouldBe(1, "the settled node already holds the value");
     }
 
-    // --- the axis mask ------------------------------------------------------
-
     [Fact]
     public void Editing_one_axis_leaves_the_others_as_each_node_had_them()
     {
-        // The single most consequential behaviour here: without the mask this
-        // is a way to stack the whole selection at one point.
         var a = new SceneNode("A") { LocalPosition = new Vector3(-5f, 1f, 3f) };
         var b = new SceneNode("B") { LocalPosition = new Vector3(7f, 2f, -8f) };
         var rig = new Rig(a, b);
@@ -130,9 +105,6 @@ public sealed class PropertyEditorTests
     [Fact]
     public void A_rotation_is_merged_in_degrees_rather_than_on_the_quaternion()
     {
-        // A quaternion has no separable components, so editing the yaw of a
-        // mixed selection can only leave each node's pitch alone if the merge
-        // happens in the euler view.
         var a = new SceneNode("A")
         {
             LocalRotation = new EulerAngles(Yaw: 0f, Pitch: 30f, Roll: 0f).ToQuaternion(),
@@ -156,13 +128,9 @@ public sealed class PropertyEditorTests
         EulerAngles.FromQuaternion(b.LocalRotation).Yaw.ShouldBe(90f, 0.01f);
     }
 
-    // --- reaching only the nodes that carry the property --------------------
-
     [Fact]
     public void An_edit_reaches_only_the_nodes_that_carry_the_property()
     {
-        // A brush field edited while a light is also selected is a bulk edit
-        // over the brushes, not an error and not a no-op.
         var brush = new SceneNode("Wall") { Brush = Box() };
         var light = new SceneNode("Lamp") { Light = new Light() };
         var rig = new Rig(brush, light);
@@ -176,8 +144,6 @@ public sealed class PropertyEditorTests
     [Fact]
     public void A_read_only_property_is_ignored_rather_than_throwing()
     {
-        // The panel never offers these, so reaching here means a caller built an
-        // edit by hand; a throw would be a crash rather than a correction.
         var node = new SceneNode("A");
         var rig = new Rig(node);
 
@@ -186,14 +152,10 @@ public sealed class PropertyEditorTests
         rig.Undo.UndoCount.ShouldBe(0);
     }
 
-    // --- values the payload would refuse ------------------------------------
-
     [Fact]
     public void A_light_range_of_zero_is_refused_before_anything_is_written()
     {
-        // Light.Range throws on anything not strictly positive. A command
-        // carrying zero would throw from inside Do, halfway through a
-        // transaction, leaving the history open and the scene half-edited.
+        // Light.Range throws at or below zero, which would be mid-transaction.
         var node = new SceneNode("Sun") { Light = new Light { Range = 10f } };
         var rig = new Rig(node);
 
@@ -224,7 +186,6 @@ public sealed class PropertyEditorTests
     [Fact]
     public void An_empty_name_is_refused()
     {
-        // It would leave a row in the tree with nothing to click.
         var node = new SceneNode("Wall");
         var rig = new Rig(node);
 
@@ -233,14 +194,10 @@ public sealed class PropertyEditorTests
         node.Name.ShouldBe("Wall");
     }
 
-    // --- payload edits ------------------------------------------------------
-
     [Fact]
     public void A_light_edit_undoes_by_value_rather_than_by_reference()
     {
-        // Light is the one MUTABLE payload. A command holding the instance and
-        // restoring the pointer would restore an object whose fields the redo
-        // had already overwritten, so undo would appear to do nothing.
+        // Light is mutable, so restoring the instance would restore nothing.
         var node = new SceneNode("Sun") { Light = new Light { Intensity = 2f } };
         var rig = new Rig(node);
 
@@ -257,9 +214,6 @@ public sealed class PropertyEditorTests
     [Fact]
     public void A_brush_size_is_typed_as_a_size_and_becomes_the_factor_the_brush_wants()
     {
-        // One typed number is the same world measurement on every object in the
-        // selection, whatever each already measured. That is the whole reason
-        // the row is a size rather than a scale.
         var small = new SceneNode("Small") { Brush = Box(0.5f) };   // 1 unit across
         var large = new SceneNode("Large") { Brush = Box(3f) };     // 6 units across
         var rig = new Rig(small, large);
@@ -276,7 +230,6 @@ public sealed class PropertyEditorTests
         (smallBounds.Max.X - smallBounds.Min.X).ShouldBe(4f, 0.001f);
         (largeBounds.Max.X - largeBounds.Min.X).ShouldBe(4f, 0.001f);
 
-        // The untouched axes keep each brush's own measurement.
         (smallBounds.Max.Y - smallBounds.Min.Y).ShouldBe(1f, 0.001f);
         (largeBounds.Max.Y - largeBounds.Min.Y).ShouldBe(6f, 0.001f);
     }

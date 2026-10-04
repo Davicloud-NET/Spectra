@@ -3,32 +3,14 @@ using System.Reflection;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Guards the one rule the whole audio stage turns on: loop points are
-/// buffer-queue arithmetic in sample frames, and <c>AL_LOOPING</c> is never
-/// used to express one.
-/// </summary>
-/// <remarks>
-/// <para>OpenAL's looping flag repeats a WHOLE buffer, so it can express
-/// exactly one region: the entire sound. Reaching for it is the obvious thing
-/// to do and it works perfectly for every test asset anyone writes by hand,
-/// which is why the failure only surfaces when somebody authors the first sound
-/// with an intro, and then surfaces on every looping asset at once.</para>
-/// <para>Two tripwires, because the behaviour cannot be tested through a real
-/// driver here. The interface a voice talks to has no way to SAY looping, so no
-/// engine code path can set it; and the one file that names the AL enum sets it
-/// to false and nothing else. The convention test is the same shape as
-/// <c>ComPtrOwnershipConventionTests</c>: enforce the rule where it would
-/// actually be broken, in the source.</para>
-/// </remarks>
+// AL_LOOPING repeats a whole buffer and cannot express a loop region, so the
+// engine never uses it. No audio device in CI, so the rule is checked in the
+// interface and in the source text.
 public sealed class AudioLoopingConventionTests
 {
     [Fact]
     public void The_backend_seam_cannot_express_a_whole_buffer_loop_at_all()
     {
-        // The strongest form of the guarantee: not "nobody sets it" but "there
-        // is no member through which it could be set". A future voice type gets
-        // this for free.
         MethodInfo[] members = typeof(IAudioBackend).GetMethods();
 
         foreach (MethodInfo member in members)
@@ -60,9 +42,7 @@ public sealed class AudioLoopingConventionTests
                 if (IsComment(line)) continue;
                 if (!line.Contains("SourceBoolean.Looping", StringComparison.Ordinal)) continue;
 
-                // The one legitimate use is clearing it on a pooled source
-                // before a voice takes it, so a stale flag cannot follow a
-                // handle from one sound to the next.
+                // Clearing it on a pooled source is the one allowed use.
                 if (line.Contains("false", StringComparison.Ordinal)) continue;
 
                 offenders.Add($"{Path.GetFileName(file)}({i + 1}): {line.Trim()}");
@@ -81,8 +61,7 @@ public sealed class AudioLoopingConventionTests
             || trimmed.StartsWith("*", StringComparison.Ordinal);
     }
 
-    // The same walk ContentRoot uses: the nearest ancestor holding a solution
-    // file is the repo root. These tests only ever run out of the repo.
+    // Repo root: the nearest ancestor holding a solution file.
     private static string SourceRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

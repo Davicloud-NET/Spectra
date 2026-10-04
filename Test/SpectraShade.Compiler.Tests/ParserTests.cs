@@ -39,10 +39,7 @@ public sealed class ParserTests
     [Fact]
     public void Braceless_if_with_declaration_body_reports_diagnostic_instead_of_throwing()
     {
-        // A declaration as the sole body of a brace-less if. VariableDeclaration
-        // is not a Statement, so this used to crash the parser with an
-        // InvalidCastException — escaping the diagnostics contract — instead
-        // of reporting an error.
+        // VariableDeclaration is not a Statement, so a cast here would throw.
         var source = """
             shader Crash {
                 [Vertex]
@@ -67,7 +64,6 @@ public sealed class ParserTests
     [Fact]
     public void Braceless_loop_with_declaration_body_reports_diagnostic_instead_of_throwing()
     {
-        // Same crash shape through the for and while body paths.
         var source = """
             shader Crash {
                 [Vertex]

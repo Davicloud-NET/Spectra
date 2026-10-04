@@ -5,26 +5,11 @@ using System.Runtime.CompilerServices;
 using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Graphics;
 
-// The BVH's structural invariants (and a few other scene internals) are
-// verified directly by the headless scene test suite.
 [assembly: InternalsVisibleTo("SpectraEngine.Bsp.Tests")]
-// The editing suite drives the renderer's framebuffer latch (internal, since
-// only the engine's main thread may publish to it) to prove the editor input
-// adapter reads the viewport from it.
 [assembly: InternalsVisibleTo("SpectraEngine.Editing.Tests")]
-// The graphics suite verifies the DXGI HRESULT classification that decides
-// whether a failed resize is recoverable or a lost device — internal, because
-// it is backend plumbing rather than engine API.
 [assembly: InternalsVisibleTo("SpectraEngine.Graphics.Tests")]
-// The physics suite compiles real static worlds to sync collision against, and
-// does it through the same headless renderer the scene suite uses — which
-// touches the internal GPU-resource bookkeeping every Renderer subclass does.
 [assembly: InternalsVisibleTo("SpectraEngine.Physics.Tests")]
-// The cook suite boots an asset manager out of a mounted pack, and does it
-// through the same headless renderer the scene suite uses - which overrides the
-// internal readback and GPU-resource bookkeeping every Renderer subclass does.
 [assembly: InternalsVisibleTo("Spectra.Kitchen.Tests")]
-// Reproducible review probes exercise the same internal placement journal.
 [assembly: InternalsVisibleTo("SceneProbe")]
 
 namespace SpectraEngine.Core.Scene;
@@ -33,84 +18,37 @@ namespace SpectraEngine.Core.Scene;
 /// Result of a <see cref="Scene.Raycast"/>: the nearest spatial node the ray
 /// struck, with the world-space hit point and surface normal.
 /// </summary>
-/// <param name="Node">The scene node whose geometry was hit.</param>
-/// <param name="Distance">World-space distance from the ray origin to the hit (the ray parameter t).</param>
-/// <param name="Point">World-space hit position.</param>
 /// <param name="Normal">Unit world-space surface normal at the hit, facing the ray.</param>
 /// <param name="PlaneIndex">
 /// Which of the brush's <see cref="Bsp.Brush.LocalPlanes"/> the ray entered
 /// through, or -1 when the hit was not a brush face.
 /// </param>
-/// <remarks>
-/// <b>The plane index was always computed and always thrown away.</b> The brush
-/// raycast finds the entry plane to derive the normal from it, and every gesture
-/// that acts on a FACE rather than an object - painting a material, reading a
-/// face's texture axes - needs exactly that number. A second query that
-/// recomputed it would be a narrow phase free to disagree with what the click
-/// selected.
-/// </remarks>
 public readonly record struct SceneRaycastHit(
     SceneNode Node, float Distance, Vector3 Point, Vector3 Normal, int PlaneIndex = -1);
 
-/// <summary>
-/// A dynamic bounding-volume hierarchy over a scene's <em>spatial</em> nodes —
-/// the nodes carrying a <see cref="SceneNode.MeshRenderer"/> or a
-/// <see cref="SceneNode.Brush"/> — powering <see cref="Scene.Raycast"/> and
-/// <see cref="Scene.QueryFrustum"/> without walking the whole graph.
-/// </summary>
-/// <remarks>
-/// <b>Structure:</b> a binary AABB tree with one leaf per spatial node, stored
-/// as struct nodes in a pooled, free-listed array (int indices, no per-node
-/// heap objects). Leaves are inserted at the cheapest position by the
-/// Box2b2-style surface-area heuristic descent. Leaf boxes are <em>fat</em>:
-/// the node's tight world AABB expanded by <see cref="FatMargin"/> world units
-/// on every side, so small movements only update the cached tight box instead
-/// of restructuring the tree.
-/// <para>
-/// <b>Maintenance is event-driven and lazy.</b> The scene's membership events
-/// insert/remove leaves; component hooks on the <c>MeshRenderer</c>/<c>Brush</c>
-/// setters cover nodes that become (non-)spatial while owned; transform edits
-/// and same-scene reparents mark the affected leaves dirty. Dirty leaves are
-/// refit in a batch at the start of the next query — re-inserted only when the
-/// true AABB escaped its fat box.
-/// </para>
-/// <para>
-/// <b>Threading:</b> render thread only, like the <see cref="Scene"/> that owns
-/// it — every mutation arrives through scene-graph edits, which are
-/// single-threaded by the engine's threading contract, so no locks are needed.
-/// </para>
-/// </remarks>
+// Dynamic AABB tree over a scene's spatial nodes (those with a MeshRenderer or
+// a Brush). Leaf boxes are fat, so small moves only update the cached tight
+// box. Moved leaves are refit lazily at the start of the next query.
+// Render thread only, like the Scene that owns it.
 internal sealed class SceneBvh
 {
-    /// <summary>
-    /// How far (world units) a leaf's fat AABB extends beyond the node's tight
-    /// world AABB on every side. Larger values tolerate more movement before a
-    /// leaf must be re-inserted but make traversal visit more nodes; 0.2 suits
-    /// the editor's typical drag speeds and brush sizes.
-    /// </summary>
+    // World units a leaf's fat box extends past the tight box on every side.
+    // Larger tolerates more movement before a re-insert but visits more nodes.
     internal const float FatMargin = 0.2f;
 
     private const int Null = -1;
 
-    // A mesh whose LocalBounds describes nothing (no position stream at all)
-    // falls back to a unit box around the node origin, documented on
-    // Scene.Raycast/QueryFrustum. Validity comes from Mesh.HasLocalBounds, NOT
-    // from Positions: a MeshCpuAccess.None mesh has empty arrays and perfectly
-    // good bounds, and gating on the arrays would cull it against this box.
-    // The Positions check stays as a fallback for meshes populated without
-    // InitializeCpuData (test doubles), whose bounds arrive with their arrays.
+    // For a mesh with no bounds at all. Validity comes from HasLocalBounds, not
+    // Positions: a MeshCpuAccess.None mesh has empty arrays and good bounds.
+    // The Positions check covers test doubles that skip InitializeCpuData.
     private static readonly Aabb UnitFallbackBox = new(new Vector3(-0.5f), new Vector3(0.5f));
 
-    // One tree node. Internal nodes own the union of their children's fat
-    // boxes; leaves own their scene node's fat box plus the cached tight box
-    // (used for exact-leaf query tests and escape detection). Struct-in-array
-    // keeps the tree cache-friendly and AOT-trivial.
     private struct Node
     {
-        public Aabb FatBox;
+        public Aabb FatBox;     // internal nodes: union of the children's
         public Aabb TightBox;   // leaves only
-        public int Parent;      // doubles as nothing; Child1 doubles as the free-list next
-        public int Child1;
+        public int Parent;
+        public int Child1;      // free-list next while the node is free
         public int Child2;
         public SceneNode? Leaf; // null for internal and free nodes
         public bool Dirty;      // leaf is queued in _dirtyNodes
@@ -121,17 +59,13 @@ internal sealed class SceneBvh
     private int _freeList;
     private int _root = Null;
 
-    // SceneNode -> leaf index. Only maintenance touches it (queries never
-    // allocate or look up here except the O(1) dirty-flush check).
     private readonly Dictionary<SceneNode, int> _leaves = [];
 
-    // Leaves marked dirty since the last flush, deduplicated by Node.Dirty.
-    // Holds SceneNode references, not leaf indices: indices can be freed and
-    // reused between the mark and the flush, references cannot dangle.
+    // References, not leaf indices: an index can be freed and reused between
+    // the mark and the flush.
     private readonly List<SceneNode> _dirtyNodes = [];
 
-    // Reused traversal stacks so steady-state queries and dirty-marking walks
-    // allocate nothing (they only grow, on the rare deep tree).
+    // Reused so queries and dirty-marking walks do not allocate.
     private int[] _traversalStack = new int[64];
     private readonly List<SceneNode> _subtreeStack = [];
 
@@ -139,8 +73,6 @@ internal sealed class SceneBvh
     internal SceneBvh(Scene scene, bool drawableOnly = false)
     {
         _drawableOnly = drawableOnly;
-        // Seed the pool small and chain every node onto the free list; the
-        // pool doubles on demand.
         _nodes = new Node[16];
         _freeList = Null;
         for (int i = _nodes.Length - 1; i >= 0; i--)
@@ -150,27 +82,17 @@ internal sealed class SceneBvh
             _freeList = i;
         }
 
-        // Membership events keep the leaf set in sync with the graph; the
-        // transform event marks moved leaves (and their spatial descendants,
-        // whose world matrices changed too) for the lazy refit.
         scene.NodeAdded += OnNodeAdded;
         scene.NodeRemoved += OnNodeRemoved;
         scene.NodeTransformChanged += OnSubtreeMoved;
     }
 
-    /// <summary>Number of spatial nodes currently indexed (test/diagnostic hook).</summary>
     internal int LeafCount => _leaves.Count;
 
-    // Leaves whose scene node carries a MeshRenderer — the denominator behind
-    // RenderView.TotalCount. Maintained incrementally at the three points a
-    // leaf's mesh-ness can change (insert, remove, component swap) so reading
-    // it per frame is O(1) instead of a walk over the leaf set.
+    // Leaves with a MeshRenderer. Feeds RenderView.TotalCount, read per frame.
     private int _meshLeafCount;
 
-    /// <summary>Number of indexed nodes carrying a <see cref="SceneNode.MeshRenderer"/>.</summary>
     internal int MeshLeafCount => _meshLeafCount;
-
-    // --- Event-driven maintenance -------------------------------------------
 
     private bool IsSpatial(SceneNode node) => node.MeshRenderer is not null ||
         (node.Brush is not null && (!_drawableOnly || node.BrushKind == BrushKind.Part));
@@ -191,15 +113,12 @@ internal sealed class SceneBvh
         }
     }
 
-    // Handles both the NodeTransformChanged event and same-scene reparents
-    // (Scene.OnNodeSubtreeMoved): every spatial node in the moved subtree has a
-    // changed world matrix, so each of their leaves goes onto the dirty list.
-    // The walk reuses one stack; the graph must not mutate mid-walk, which the
-    // scene events' re-entrancy rule already guarantees.
+    // Transform changes and same-scene reparents: every leaf in the subtree
+    // has a new world matrix.
     internal void OnSubtreeMoved(SceneNode node)
     {
         if (_leaves.Count == 0)
-            return; // nothing indexed — don't pay for the walk
+            return;
 
         _subtreeStack.Add(node);
         while (_subtreeStack.Count > 0)
@@ -216,12 +135,7 @@ internal sealed class SceneBvh
         }
     }
 
-    /// <summary>
-    /// Hook for the <see cref="SceneNode.MeshRenderer"/>/<see cref="SceneNode.Brush"/>
-    /// setters (via <see cref="Scene"/>): a component was assigned, cleared, or
-    /// replaced on an already-owned node, which may change whether the node is
-    /// spatial at all — or just its bounds.
-    /// </summary>
+    // A mesh or brush was assigned, cleared or replaced on an owned node.
     internal void OnSpatialComponentChanged(SceneNode node)
     {
         bool spatial = IsSpatial(node);
@@ -229,8 +143,6 @@ internal sealed class SceneBvh
         {
             if (spatial)
             {
-                // Component swap — the bounds source changed, and possibly the
-                // node's mesh-ness too (e.g. a brush node gaining a renderer).
                 bool countsAsMesh = node.MeshRenderer is not null;
                 if (countsAsMesh != _nodes[leaf].CountsAsMesh)
                 {
@@ -259,10 +171,8 @@ internal sealed class SceneBvh
         }
     }
 
-    // Batch refit at the start of every query: recompute each dirty leaf's
-    // tight box; when it still fits inside the leaf's fat box only the cached
-    // tight box changes (ancestor boxes contain the unchanged fat box, so the
-    // tree stays valid untouched) — only an escaped leaf is re-inserted.
+    // Runs at the start of every query. A leaf still inside its fat box only
+    // gets a new tight box; one that escaped is re-inserted.
     private void FlushDirtyLeaves()
     {
         if (_dirtyNodes.Count == 0)
@@ -271,8 +181,7 @@ internal sealed class SceneBvh
         for (int i = 0; i < _dirtyNodes.Count; i++)
         {
             SceneNode sceneNode = _dirtyNodes[i];
-            // A leaf removed (or removed and freshly re-inserted) since it was
-            // marked either no longer exists or is already clean — skip.
+            // Removed, or removed and re-inserted, since it was marked.
             if (!_leaves.TryGetValue(sceneNode, out int leaf) || !_nodes[leaf].Dirty)
                 continue;
             _nodes[leaf].Dirty = false;
@@ -292,12 +201,6 @@ internal sealed class SceneBvh
         _dirtyNodes.Clear();
     }
 
-    // --- World bounds --------------------------------------------------------
-
-    // The tight world AABB the index maintains for a spatial node: the union of
-    // its brush and mesh contributions, each transformed by the node's world
-    // matrix. Mesh nodes use the mesh's CPU-side LocalBounds; a mesh without
-    // CPU positions falls back to a unit box around the node origin.
     private static Aabb ComputeWorldBounds(SceneNode node)
     {
         Matrix4x4 world = node.WorldMatrix;
@@ -315,21 +218,17 @@ internal sealed class SceneBvh
             result = has ? Union(result, meshBox) : meshBox;
             has = true;
         }
-        // Only spatial nodes reach here; a degenerate point box at the node
-        // origin is a safe fallback should that invariant ever break.
+        // Only spatial nodes reach here; the point box is a fallback.
         return has ? result : new Aabb(world.Translation, world.Translation);
     }
 
     private static Aabb MeshLocalBounds(Mesh mesh) =>
         mesh.HasLocalBounds || mesh.Positions.Count > 0 ? mesh.LocalBounds : UnitFallbackBox;
 
-    // --- Node pool -----------------------------------------------------------
-
     private int AllocateNode()
     {
         if (_freeList == Null)
         {
-            // Grow the pool and chain the new tail onto the free list.
             int oldCapacity = _nodes.Length;
             Array.Resize(ref _nodes, oldCapacity * 2);
             for (int i = _nodes.Length - 1; i >= oldCapacity; i--)
@@ -360,8 +259,6 @@ internal sealed class SceneBvh
         _freeList = index;
     }
 
-    // --- Tree structure ------------------------------------------------------
-
     private void Insert(SceneNode sceneNode)
     {
         Aabb tight = ComputeWorldBounds(sceneNode);
@@ -378,9 +275,7 @@ internal sealed class SceneBvh
         InsertLeafIntoTree(leaf);
     }
 
-    // Box2D-style cheapest insertion: descend toward the child whose subtree
-    // grows the least (surface-area heuristic), stopping where creating a new
-    // parent is cheaper than pushing the leaf further down.
+    // Box2D-style insertion by the surface-area heuristic.
     private void InsertLeafIntoTree(int leaf)
     {
         if (_root == Null)
@@ -401,9 +296,8 @@ internal sealed class SceneBvh
             float area = SurfaceArea(_nodes[index].FatBox);
             float combinedArea = SurfaceArea(Union(_nodes[index].FatBox, leafBox));
 
-            // Cost of making a new parent for this node and the leaf, vs. the
-            // cost of descending into either child (each descent inherits the
-            // enlargement it forces on this node's box).
+            // New parent here, or descend. Descending inherits the growth it
+            // forces on this node's box.
             float costHere = 2f * combinedArea;
             float inheritance = 2f * (combinedArea - area);
             float cost1 = DescendCost(child1, leafBox) + inheritance;
@@ -444,13 +338,12 @@ internal sealed class SceneBvh
     private float DescendCost(int child, in Aabb leafBox)
     {
         float unionArea = SurfaceArea(Union(_nodes[child].FatBox, leafBox));
-        // A leaf child would become a sibling (its whole box counts); an
-        // internal child only charges the growth it suffers.
+        // A leaf child becomes a sibling, so its whole box counts. An internal
+        // child only charges its growth.
         return _nodes[child].Leaf is not null ? unionArea : unionArea - SurfaceArea(_nodes[child].FatBox);
     }
 
-    // Detaches a leaf from the tree, collapsing its parent onto the sibling.
-    // The leaf node itself stays allocated (the refit path re-inserts it).
+    // The leaf node stays allocated; the refit path re-inserts it.
     private void RemoveLeafFromTree(int leaf)
     {
         if (leaf == _root)
@@ -479,9 +372,6 @@ internal sealed class SceneBvh
         FreeNode(parent);
     }
 
-    // Re-unions ancestor boxes bottom-up after a structural change. Every
-    // internal node's box is exactly the union of its children's boxes — the
-    // invariant the validation walk asserts.
     private void RefitAncestors(int index)
     {
         while (index != Null)
@@ -491,17 +381,7 @@ internal sealed class SceneBvh
         }
     }
 
-    // --- Queries -------------------------------------------------------------
-
-    /// <summary>
-    /// Fetches the index's cached tight world AABB for <paramref name="node"/>
-    /// (brush bounds, mesh bounds, or their union — exactly what the index
-    /// maintains), flushing pending refits first so the box reflects the
-    /// node's current transform. False when the node is not indexed (not
-    /// spatial, or not in this scene). Render thread only; allocation-free —
-    /// consumers like the selection highlight reuse these bounds instead of
-    /// recomputing them per frame.
-    /// </summary>
+    // False when the node is not indexed.
     internal bool TryGetWorldBounds(SceneNode node, out Aabb bounds)
     {
         FlushDirtyLeaves();
@@ -516,28 +396,10 @@ internal sealed class SceneBvh
         return false;
     }
 
-    /// <summary>
-    /// Casts a ray against every indexed node's geometry (exact convex test for
-    /// brushes, per-triangle test for meshes with CPU-side geometry) and
-    /// reports the nearest hit. See <see cref="Scene.Raycast"/> for the public
-    /// contract.
-    /// </summary>
     public bool Raycast(in Ray3 ray, out SceneRaycastHit hit, float maxDistance = float.PositiveInfinity) =>
         Raycast(ray, out hit, default, maxDistance);
 
-    /// <summary>
-    /// As <see cref="Raycast(in Ray3, out SceneRaycastHit, float)"/>, reporting
-    /// only nodes <paramref name="filter"/> accepts.
-    /// </summary>
-    /// <remarks>
-    /// <b>The filter is applied at the LEAF, after the box test and before the
-    /// narrow phase.</b> That ordering is deliberate on both sides: testing it
-    /// before the narrow phase means a rejected node costs no plane clipping,
-    /// and testing it at the leaf rather than during the descent means an
-    /// internal node is never pruned for its children's flags — which would be
-    /// wrong, since a subtree's box says nothing about which of its leaves are
-    /// queryable.
-    /// </remarks>
+    // The filter runs at the leaf: after the box test, before the narrow phase.
     public bool Raycast(
         in Ray3 ray, out SceneRaycastHit hit, in SceneQueryFilter filter,
         float maxDistance = float.PositiveInfinity)
@@ -548,11 +410,9 @@ internal sealed class SceneBvh
         if (_root == Null)
             return false;
 
-        // `best` is the nearest NARROW-PHASE hit so far. Fat/tight boxes are
-        // only ever pruned against it — a box's entry t is a lower bound on any
-        // geometry hit inside it, so entry > best proves the subtree is
-        // farther. The reverse does not hold: a box entered before `best` can
-        // still contain only farther geometry, hence no early-out on box order.
+        // Nearest narrow-phase hit so far. Boxes are pruned against it, but a
+        // box entered earlier can still hold only farther geometry, so there
+        // is no early-out on box order.
         float best = maxDistance;
         bool found = false;
 
@@ -565,8 +425,7 @@ internal sealed class SceneBvh
 
             if (_nodes[index].Leaf is { } sceneNode)
             {
-                // Cheap filter against the tight box with the CURRENT best —
-                // it may have shrunk since this leaf was pushed.
+                // best may have shrunk since this leaf was pushed.
                 if (!RayIntersectsBox(ray, _nodes[index].TightBox, best, out _))
                     continue;
 
@@ -586,10 +445,8 @@ internal sealed class SceneBvh
                     RaycastMesh(sceneNode, meshRenderer.Mesh, ray, best, out float tMesh, out Vector3 nMesh))
                 {
                     best = tMesh;
-                    // No plane index: a mesh has no brush face. A nearer mesh
-                    // on a node that also carries a brush therefore clears the
-                    // one the brush arm just set, which is right - what was hit
-                    // is the mesh.
+                    // No plane index: what was hit is the mesh, even on a node
+                    // that also has a brush.
                     hit = new SceneRaycastHit(sceneNode, tMesh, ray.PointAt(tMesh), nMesh);
                     found = true;
                 }
@@ -604,9 +461,7 @@ internal sealed class SceneBvh
             if (stackTop + 2 > _traversalStack.Length)
                 Array.Resize(ref _traversalStack, _traversalStack.Length * 2);
 
-            // Near child on top of the stack: visiting it first gives the
-            // narrow phase the earliest chance to shrink `best` and prune the
-            // far subtree.
+            // Near child first, so its hit can prune the far one.
             if (hit1 && hit2)
             {
                 if (t1 <= t2)
@@ -633,11 +488,6 @@ internal sealed class SceneBvh
         return found;
     }
 
-    /// <summary>
-    /// Appends every indexed node whose tight world AABB intersects the
-    /// frustum to <paramref name="results"/>. See
-    /// <see cref="Scene.QueryFrustum"/> for the public contract.
-    /// </summary>
     internal bool EntirelyInside(in Frustum frustum)
     {
         FlushDirtyLeaves();
@@ -660,9 +510,8 @@ internal sealed class SceneBvh
 
             if (_nodes[index].Leaf is { } sceneNode)
             {
-                // Leaves test their TIGHT box: internal fat boxes make the walk
-                // conservative (no false negatives), but the per-node verdict
-                // matches a brute-force Frustum.Intersects over true bounds.
+                // Leaves test the tight box, so the result matches a brute-force
+                // test over true bounds.
                 if (frustum.Intersects(_nodes[index].TightBox))
                     results.Add(sceneNode);
                 continue;
@@ -678,11 +527,6 @@ internal sealed class SceneBvh
         }
     }
 
-    /// <summary>
-    /// Appends every indexed node whose tight world AABB intersects
-    /// <paramref name="box"/> and passes <paramref name="filter"/>. See
-    /// <see cref="Scene.GetPartBoundsInBox"/> for the public contract.
-    /// </summary>
     public void QueryBox(in Aabb box, List<SceneNode> results, in SceneQueryFilter filter)
     {
         FlushDirtyLeaves();
@@ -699,10 +543,6 @@ internal sealed class SceneBvh
 
             if (_nodes[index].Leaf is { } sceneNode)
             {
-                // Leaves test their TIGHT box, like the frustum walk: internal
-                // fat boxes keep the descent conservative (no false negatives)
-                // while the per-node verdict still matches a brute-force test
-                // over true bounds.
                 if (_nodes[index].TightBox.Intersects(box) && filter.Accepts(sceneNode))
                     results.Add(sceneNode);
                 continue;
@@ -718,18 +558,8 @@ internal sealed class SceneBvh
         }
     }
 
-    /// <summary>
-    /// Appends every indexed node whose tight world AABB overlaps the sphere
-    /// and passes <paramref name="filter"/>.
-    /// </summary>
-    /// <remarks>
-    /// <b>The verdict is bounds-vs-sphere, not geometry-vs-sphere</b>, exactly
-    /// as the box query's is bounds-vs-box. That is a deliberate contract, not
-    /// an approximation to tighten later: this is the broad phase, its answer
-    /// is a superset, and the caller that needs an exact answer runs a narrow
-    /// phase over the (small) result. Callers are told so by name — the scene
-    /// wrappers say <c>GetPartBounds…</c> rather than <c>GetParts…</c>.
-    /// </remarks>
+    // Bounds against the sphere, not geometry. A broad phase: the result is a
+    // superset.
     public void QuerySphere(Vector3 center, float radius, List<SceneNode> results, in SceneQueryFilter filter)
     {
         FlushDirtyLeaves();
@@ -761,21 +591,11 @@ internal sealed class SceneBvh
         }
     }
 
-    // --- Narrow phases -------------------------------------------------------
-
-    // Exact convex ray test in BRUSH LOCAL space: the world ray is transformed
-    // into the node's local frame, then slab-clipped against every plane — max
-    // entry vs. min exit. The plane producing the final entry supplies the
-    // normal, mapped back to world space. Rays starting inside the brush
-    // report no hit (no defined entry face).
-    //
-    // The GENERAL matrix inverse is used, not a rigid shortcut: only the
-    // static-world snapshot enforces rigid brush placements, and the scene
-    // stays live (with picking) when it rejects one — the graph itself permits
-    // scale on brush nodes, so picking must stay exact under it. As in
-    // RaycastMesh, the ray parameter still measures world distance because
-    // only the local direction is scaled, not t; the normal maps through the
-    // inverse transpose and is re-normalized.
+    // Clips the ray against the brush planes in brush-local space. A ray
+    // starting inside reports no hit.
+    // General inverse, not a rigid shortcut: the graph allows scale on a brush
+    // node and picking has to stay exact under it. t still measures world
+    // distance because only the direction is scaled.
     private static bool RaycastBrush(
         SceneNode node, Brush brush, in Ray3 ray, float best,
         out float t, out Vector3 normal, out int planeIndex)
@@ -785,7 +605,7 @@ internal sealed class SceneBvh
         planeIndex = -1;
 
         if (!Matrix4x4.Invert(node.WorldMatrix, out Matrix4x4 inverse))
-            return false; // degenerate transform (e.g. zero scale) — nothing to hit
+            return false; // zero scale or similar
         Vector3 origin = Vector3.Transform(ray.Origin, inverse);
         Vector3 direction = Vector3.TransformNormal(ray.Direction, inverse);
 
@@ -803,14 +623,13 @@ internal sealed class SceneBvh
             if (MathF.Abs(denom) < 1e-9f)
             {
                 if (distance > 0f)
-                    return false; // parallel to the plane and outside its half-space
+                    return false; // parallel and outside
                 continue;
             }
 
             float tPlane = -distance / denom;
             if (denom < 0f)
             {
-                // Moving inward through this plane: a potential entry.
                 if (tPlane > tEnter)
                 {
                     tEnter = tPlane;
@@ -835,12 +654,8 @@ internal sealed class SceneBvh
         return true;
     }
 
-    // Möller–Trumbore over the mesh's CPU-side triangles, run in MESH LOCAL
-    // space (mesh node transforms may scale, so the general inverse is used;
-    // the ray parameter still measures world distance because only the local
-    // direction is scaled, not t). A mesh without CPU geometry falls back to a
-    // ray-vs-AABB test against its local bounds (unit box when even those are
-    // missing) — documented on Scene.Raycast.
+    // Möller–Trumbore in mesh-local space. A mesh with no CPU geometry is
+    // tested against its local bounds instead.
     private static bool RaycastMesh(
         SceneNode node, Mesh mesh, in Ray3 ray, float best, out float t, out Vector3 normal)
     {
@@ -849,7 +664,7 @@ internal sealed class SceneBvh
 
         Matrix4x4 world = node.WorldMatrix;
         if (!Matrix4x4.Invert(world, out Matrix4x4 inverse))
-            return false; // degenerate transform (e.g. zero scale) — nothing to hit
+            return false; // zero scale or similar
 
         Vector3 origin = Vector3.Transform(ray.Origin, inverse);
         Vector3 direction = Vector3.TransformNormal(ray.Direction, inverse);
@@ -879,7 +694,7 @@ internal sealed class SceneBvh
             Vector3 pVec = Vector3.Cross(direction, edge2);
             float det = Vector3.Dot(edge1, pVec);
             if (MathF.Abs(det) < 1e-12f)
-                continue; // ray parallel to the triangle plane
+                continue; // parallel
 
             float invDet = 1f / det;
             Vector3 tVec = origin - a;
@@ -897,8 +712,7 @@ internal sealed class SceneBvh
                 continue;
 
             bestT = tTri;
-            // No backface culling: orient the geometric normal against the ray
-            // so double-sided picking always reports the facing side.
+            // No backface culling: flip the normal to face the ray.
             Vector3 n = Vector3.Cross(edge1, edge2);
             bestLocalNormal = Vector3.Dot(n, direction) > 0f ? -n : n;
             found = true;
@@ -912,9 +726,7 @@ internal sealed class SceneBvh
         return true;
     }
 
-    // Ray vs. axis-aligned box in the node's LOCAL frame, tracking the entry
-    // axis for the normal. Rays starting inside report no hit, mirroring the
-    // brush contract.
+    // A ray starting inside reports no hit, like the brush test.
     private static bool RaycastLocalBox(
         in Aabb box, in Vector3 origin, in Vector3 direction, float best, out float t, out Vector3 localNormal)
     {
@@ -971,15 +783,11 @@ internal sealed class SceneBvh
         return true;
     }
 
-    // Local-to-world normal transform: normals transform by the inverse
-    // transpose of the linear part, i.e. n · (L⁻¹)ᵀ in the engine's row-vector
-    // convention — TransformNormal against the transposed inverse.
+    // Normals go through the inverse transpose.
     private static Vector3 WorldNormal(in Vector3 localNormal, in Matrix4x4 inverseWorld) =>
         Vector3.Normalize(Vector3.TransformNormal(localNormal, Matrix4x4.Transpose(inverseWorld)));
 
-    // Slab test against a world-space box, pruned at tLimit. Entry at tEntry
-    // (0 when the origin is inside). Parallel axes require the origin inside
-    // the slab, keeping the test exact without infinities or NaNs.
+    // tEntry is 0 when the origin is inside the box.
     private static bool RayIntersectsBox(in Ray3 ray, in Aabb box, float tLimit, out float tEntry)
     {
         float tMin = 0f;
@@ -1038,17 +846,7 @@ internal sealed class SceneBvh
         return 2f * (size.X * size.Y + size.Y * size.Z + size.Z * size.X);
     }
 
-    // --- Validation (tests) --------------------------------------------------
-
-    /// <summary>
-    /// Test/diagnostic hook: flushes pending refits, then walks the whole tree
-    /// asserting every structural invariant — parent/child links are mutually
-    /// consistent, every internal node's box is exactly the union of its
-    /// children's, every leaf's fat box contains its up-to-date tight box, and
-    /// the reachable leaves are exactly the tracked spatial nodes. Throws
-    /// <see cref="InvalidOperationException"/> on the first violation.
-    /// Allocates freely — never call it on a hot path.
-    /// </summary>
+    // Test hook: throws on the first broken tree invariant. Allocates.
     internal void Validate()
     {
         FlushDirtyLeaves();

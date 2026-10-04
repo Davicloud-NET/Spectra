@@ -43,9 +43,7 @@ public sealed class GlslGeneratorTests
     {
         var glsl = CompileStageText("BracelessReturns.spectrashade", ShaderStage.Fragment);
 
-        // `if (c) return X;` lowers the single return into two statements
-        // (output assignment + bare return), so the body must come out braced —
-        // an unbraced emission would leak the bare `return;` out of the if.
+        // The return lowers to assignment + bare return, so the body needs braces.
         glsl.ShouldContain(
             "    if ((v_uv.x > 0.5))\n" +
             "    {\n" +
@@ -53,8 +51,6 @@ public sealed class GlslGeneratorTests
             "        return;\n" +
             "    }\n", Case.Sensitive);
 
-        // The fall-through return after the if must still emit its own
-        // assignment (with the leak, execution never reached it).
         glsl.ShouldContain(
             "    fragColor = vec4(0.0, 1.0, 0.0, 1.0);\n" +
             "    return;\n", Case.Sensitive);
@@ -65,8 +61,6 @@ public sealed class GlslGeneratorTests
     {
         var glsl = CompileStageText("BracelessReturns.spectrashade", ShaderStage.Vertex);
 
-        // A vertex struct return lowers to gl_Position + one assignment per
-        // varying + bare return — all of it must stay inside the if.
         glsl.ShouldContain(
             "    if ((a_position.x < 0.5))\n" +
             "    {\n" +
@@ -75,7 +69,6 @@ public sealed class GlslGeneratorTests
             "        return;\n" +
             "    }\n", Case.Sensitive);
 
-        // The statements after the if must still be emitted at function scope.
         glsl.ShouldContain(
             "    result.uv = vec2(0.0, 0.0);\n" +
             "    gl_Position = result.position;\n" +
@@ -88,8 +81,6 @@ public sealed class GlslGeneratorTests
     {
         var glsl = CompileStageText("BareVertexReturn.spectrashade", ShaderStage.Vertex);
 
-        // A non-struct vertex return is the clip-space position itself; it
-        // must route to gl_Position instead of being silently dropped.
         glsl.ShouldContain(
             "void main()\n" +
             "{\n" +
@@ -103,10 +94,7 @@ public sealed class GlslGeneratorTests
     {
         var glsl = CompileStageText("ForExpressionInitializer.spectrashade", ShaderStage.Fragment);
 
-        // An assignment initializer on a pre-declared counter must survive
-        // into the emitted for header (it used to emit `for (; ...)`) — in
-        // the natural spelling and in the parenthesized legacy one (the
-        // parens are unwrapped during parsing, so both emit identically).
+        // The parser unwraps `(j = 0)`, so both spellings emit the same.
         glsl.ShouldContain("for (i = 0; (i < 4); i = (i + 1))", Case.Sensitive);
         glsl.ShouldContain("for (j = 0; (j < 2); j = (j + 1))", Case.Sensitive);
     }
@@ -116,9 +104,7 @@ public sealed class GlslGeneratorTests
     {
         var glsl = CompileStageText("FragColorShadow.spectrashade", ShaderStage.Fragment);
 
-        // The generator owns the invented `fragColor` output; a user local of
-        // the same name must be escaped, or it silently shadows the output
-        // and the stage never writes it (the shader still compiles cleanly).
+        // Unescaped, the local shadows the generator's output and still compiles.
         glsl.ShouldContain("out vec4 fragColor;\n", Case.Sensitive);
         glsl.ShouldContain("    vec4 _ss_fragColor = vec4(v_uv, 0.0, 1.0);\n", Case.Sensitive);
         glsl.ShouldContain(
@@ -140,26 +126,16 @@ public sealed class GlslGeneratorTests
         return Verify(text, extension: extension);
     }
 
-    // Compiles one stage to text for targeted string assertions. The generator
-    // emits Environment.NewLine (via StringBuilder.AppendLine), so the result
-    // is normalized to LF to keep multi-line ShouldContain checks OS-agnostic.
     [Fact]
     public void Whole_number_float_literals_keep_their_decimal_point()
     {
         var glsl = CompileStageText("WholeNumberFloats.spectrashade", ShaderStage.Fragment);
 
-        // The bug this pins is not cosmetic. GLSL has no float suffix, so a
-        // literal printed as "1" IS an int, and `1 / 3` is integer division
-        // evaluating to zero. The shader still compiles, the driver says
-        // nothing, and the result is wrong on OpenGL only, while the HLSL
-        // generator (which has always emitted "1.0") computes it correctly.
-        // Two backends agreeing is not a majority.
+        // GLSL has no float suffix: "1" is an int and `1 / 3` is zero.
         glsl.ShouldContain("float third = (1.0 / 3.0);", Case.Sensitive);
         glsl.ShouldContain("float scaled = (2.0 * third);", Case.Sensitive);
         glsl.ShouldContain("vec3(1.0, 0.0, 0.0)", Case.Sensitive);
 
-        // Stated as a refusal too: no bare integer literal may appear where a
-        // float was written, in any of the emitted arithmetic.
         glsl.ShouldNotContain("(1 / 3)", Case.Sensitive);
         glsl.ShouldNotContain("(2 * third)", Case.Sensitive);
     }
@@ -167,8 +143,6 @@ public sealed class GlslGeneratorTests
     [Fact]
     public void The_hlsl_generator_agrees_digit_for_digit()
     {
-        // The two generators read the same source, so a literal that differs
-        // between them is a divergence in the language, not in a backend.
         var glsl = CompileStageText("WholeNumberFloats.spectrashade", ShaderStage.Fragment);
 
         glsl.ShouldContain("1.0 / 3.0", Case.Sensitive);
@@ -177,11 +151,7 @@ public sealed class GlslGeneratorTests
     [Fact]
     public void Array_uniforms_use_the_syntax_the_documentation_teaches()
     {
-        // LANGUAGE.md taught `vec3 lightPositions[8];` for as long as arrays
-        // existed, and that spelling is a hard parse error: the parser reads a
-        // whole type, brackets included, then expects a name. Nothing caught it
-        // because no fixture used an array at all. This fixture IS the
-        // documented example, so the two cannot drift apart again.
+        // The fixture is the example from LANGUAGE.md.
         var glsl = CompileStageText("ArrayUniforms.spectrashade", ShaderStage.Fragment);
 
         glsl.ShouldContain("uniform vec4 uLightColors[4];", Case.Sensitive);
@@ -191,7 +161,6 @@ public sealed class GlslGeneratorTests
     [Fact]
     public void An_array_uniform_can_be_indexed_by_a_loop_variable()
     {
-        // Whether a lighting loop is expressible at all comes down to this.
         var glsl = CompileStageText("ArrayUniforms.spectrashade", ShaderStage.Fragment);
 
         glsl.ShouldContain("for (int i = 0; (i < uLightCount); i = (i + 1))", Case.Sensitive);
@@ -216,6 +185,7 @@ public sealed class GlslGeneratorTests
             _ => blob.FragmentData,
         };
         data.ShouldNotBeNull();
+        // The generator emits Environment.NewLine; the assertions expect LF.
         return Encoding.UTF8.GetString(data!).Replace("\r\n", "\n");
     }
 

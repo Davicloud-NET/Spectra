@@ -5,23 +5,13 @@ using Xunit;
 namespace SpectraEngine.Graphics.Tests;
 
 /// <summary>
-/// The comparison arithmetic behind <c>--viewport-compare</c>, with no device
-/// anywhere near it.
+/// The comparison arithmetic behind <c>--viewport-compare</c>, with no device.
 /// </summary>
-/// <remarks>
-/// <b>Separate from the driver-backed half deliberately</b>, the same split
-/// <c>TextureOrientationProbe</c> already uses: the numbers are what decide
-/// whether a run is reported as PASS or FAIL, and they must be provable without
-/// a GPU, without a composited surface and without a keyed mutex to take turns
-/// on. What the driver tests then add is that the two pictures being compared
-/// are really the two pictures they are supposed to be.
-/// </remarks>
 public sealed class ViewportCompareTests
 {
-    /// <summary>Linear 0.5 stored through an sRGB view, which is 188 of 255.</summary>
+    // Linear 0.5 through an sRGB view.
     private const byte EncodedOnce = 188;
 
-    /// <summary>The same value encoded a SECOND time, which is what this gate exists to catch.</summary>
     private const byte EncodedTwice = 223;
 
     [Fact]
@@ -39,9 +29,7 @@ public sealed class ViewportCompareTests
     [Fact]
     public void A_difference_within_the_threshold_still_passes()
     {
-        // The slack is for a driver that rounds a format conversion by a level,
-        // not for anything the engine is expected to do: a correct pair is
-        // bit-identical.
+        // The slack is for driver rounding. A correct pair is bit-identical.
         byte[] reference = [100, 100, 100, 255];
         byte[] shared = [102, 99, 100, 255];
 
@@ -67,11 +55,6 @@ public sealed class ViewportCompareTests
     [Fact]
     public void A_double_srgb_encode_is_reported_as_a_large_delta_and_a_failure()
     {
-        // The failure the whole probe exists for, in numbers: an sRGB view over
-        // a value that was already encoded stores 223 where 188 was meant. The
-        // point of asserting the magnitude is that the threshold has a factor of
-        // seventeen of headroom over it, so no plausible tightening or loosening
-        // of the tolerance can make this pass or a correct pair fail.
         byte[] reference = [EncodedOnce, EncodedOnce, EncodedOnce, 255];
         byte[] shared = [EncodedTwice, EncodedTwice, EncodedTwice, 255];
 
@@ -86,9 +69,7 @@ public sealed class ViewportCompareTests
     [Fact]
     public void The_worst_channel_and_texel_are_the_FIRST_ones_that_reach_the_maximum()
     {
-        // Stable coordinates matter more than they look: two runs of one defect
-        // must name the same pixel, or a report cannot be compared with the one
-        // before it.
+        // Two runs of one defect must name the same pixel.
         byte[] reference = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         byte[] shared = [0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 40, 0];
 
@@ -104,9 +85,6 @@ public sealed class ViewportCompareTests
     [Fact]
     public void Comparing_pictures_of_different_sizes_is_refused_rather_than_truncated()
     {
-        // Silently comparing the overlap would report a PASS for two pictures
-        // that are not of the same thing, which is the one answer this must
-        // never give.
         byte[] four = [1, 2, 3, 4];
         byte[] eight = [1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -124,15 +102,13 @@ public sealed class ViewportCompareTests
     [Fact]
     public void A_flat_picture_has_no_variation_and_a_drawn_one_does()
     {
-        // The net under the comparison: two blank pictures agree perfectly, so
-        // a frame that drew nothing would report the strongest possible PASS.
         byte[] flat = [7, 8, 9, 255, 7, 8, 9, 255, 7, 8, 9, 255];
         byte[] drawn = [7, 8, 9, 255, 7, 8, 10, 255, 7, 8, 9, 255];
 
         ViewportCompare.HasVariation(flat).ShouldBeFalse();
         ViewportCompare.HasVariation(drawn).ShouldBeTrue();
 
-        // One texel cannot vary from anything, so it is not evidence either.
+        // A single texel has nothing to vary from.
         ViewportCompare.HasVariation([7, 8, 9, 255]).ShouldBeFalse();
     }
 }

@@ -8,16 +8,10 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The query half of the physics arc: per-node <see cref="PhysicsFlags"/>,
-/// the collision-group registry, and the BVH's box and sphere overlap queries.
-/// No physics engine is involved — these are the filters and the broad phase a
-/// solver will later consume, and they are useful on their own (triggers, area
-/// effects, editor tooling).
+/// Per-node <see cref="PhysicsFlags"/>, collision groups, and the box and sphere overlap queries.
 /// </summary>
 public sealed class SceneQueryFlagTests
 {
-    // --- Flags --------------------------------------------------------------
-
     [Fact]
     public void A_node_starts_solid_queryable_touchable_and_anchored()
     {
@@ -33,9 +27,7 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void CanQuery_is_independent_of_CanCollide()
     {
-        // The deliberate divergence. Roblox requires CanCollide off before
-        // CanQuery takes effect, so "a solid wall a targeting ray passes
-        // through" is inexpressible there.
+        // Unlike Roblox, where CanQuery only takes effect with CanCollide off.
         var node = new SceneNode("n") { CanQuery = false };
 
         node.CanCollide.ShouldBeTrue();
@@ -45,8 +37,6 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void Flag_writes_do_not_dirty_the_static_world()
     {
-        // None of these bits changes the compiled world, so a script toggling
-        // CanCollide on a world brush must cost nothing.
         var scene = new Scene("Test");
         SceneNode brush = scene.Root.CreateChild("wall");
         brush.Brush = UnitBrush();
@@ -62,8 +52,6 @@ public sealed class SceneQueryFlagTests
         scene.StaticWorldDirty.ShouldBeFalse();
     }
 
-    // --- Raycast filtering --------------------------------------------------
-
     [Fact]
     public void A_raycast_skips_a_node_that_cannot_be_queried()
     {
@@ -78,10 +66,8 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void CanQuery_is_honoured_on_a_static_WORLD_brush()
     {
-        // The design once specified refusing the flag on world brushes, on the
-        // premise that their queries route through the compiled per-cell BSP.
-        // They do not: Scene.Raycast traverses the spatial index per node, so
-        // the flag is one bit test and is honoured for every kind of node.
+        // Scene.Raycast walks the spatial index per node, not the compiled
+        // BSP, so the flag works on world brushes too.
         var (scene, near, far) = TwoBrushesInALine();
         near.BrushKind.ShouldBe(BrushKind.World);
 
@@ -94,8 +80,7 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void Editor_picking_disregards_the_query_flags()
     {
-        // A designer must be able to select what they can see; otherwise
-        // clearing CanQuery hides its own undo.
+        // Otherwise clearing CanQuery would make the node unselectable.
         var (scene, near, _) = TwoBrushesInALine();
         near.CanQuery = false;
 
@@ -108,7 +93,7 @@ public sealed class SceneQueryFlagTests
     public void RespectCanCollide_reproduces_the_Roblox_coupling_on_request()
     {
         var (scene, near, far) = TwoBrushesInALine();
-        near.CanCollide = false;   // still queryable by default here
+        near.CanCollide = false;
 
         scene.Raycast(RayAlongX(), out SceneRaycastHit unfiltered).ShouldBeTrue();
         unfiltered.Node.ShouldBeSameAs(near, "the two flags are independent by default");
@@ -129,8 +114,6 @@ public sealed class SceneQueryFlagTests
         hit.Node.ShouldBeSameAs(far);
     }
 
-    // --- Collision groups ---------------------------------------------------
-
     [Fact]
     public void Everything_collides_until_a_pair_is_disabled()
     {
@@ -145,8 +128,6 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void Disabling_a_pair_is_symmetric()
     {
-        // A matrix that can disagree with itself is a bug whose only symptom is
-        // objects passing through each other from one side.
         var groups = new CollisionGroups();
         int a = groups.Register("A");
         int b = groups.Register("B");
@@ -171,9 +152,6 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void The_sixty_fifth_group_is_a_named_error()
     {
-        // Running out of a fixed resource must be reported at the moment it
-        // happens; silently reusing a group means geometry collides with
-        // things it was configured not to.
         var groups = new CollisionGroups();
         for (int i = 1; i < CollisionGroups.MaxGroups; i++)
             groups.Register($"G{i}");
@@ -201,17 +179,12 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void An_unregistered_node_group_is_answered_not_thrown()
     {
-        // Found by adversarial review of the first cut of this feature.
-        // SceneNode.CollisionGroup validates only the 64 ceiling — deliberately,
-        // because a node may be assigned a group before it is attached to any
-        // scene and a deserializer may restore ids before names. The registry's
-        // strict accessor treats an unnamed id as out of range, so joining the
-        // two in the filter threw ArgumentOutOfRangeException FROM INSIDE the
-        // BVH walk — and only when a box happened to overlap, leaving the
-        // caller's results list partially filled.
+        // A node may get a group id before the scene has registered a name for
+        // it (set while detached, or restored by a loader). The filter must not
+        // throw on that from inside the BVH walk.
         var (scene, near, _) = TwoBrushesInALine();
         int rays = scene.CollisionGroups.Register("Rays");
-        near.CollisionGroup = 40;   // legal on the node, named by nobody
+        near.CollisionGroup = 40;   // legal on the node, never registered
 
         var filter = new SceneQueryFilter { Groups = scene.CollisionGroups, CollisionGroup = rays };
 
@@ -226,10 +199,8 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void An_unregistered_QUERY_group_is_reported_at_the_call_site()
     {
-        // The mirror discipline, and the asymmetry is the point: the CALLER
-        // naming a group it never registered is a mistake at the call site, so
-        // it is reported there — deterministically, before any traversal —
-        // rather than from inside a walk if some box happens to overlap.
+        // A caller naming an unregistered group is a mistake, reported before
+        // any traversal.
         var (scene, _, _) = TwoBrushesInALine();
         var filter = new SceneQueryFilter { Groups = scene.CollisionGroups, CollisionGroup = 40 };
         var results = new List<SceneNode>();
@@ -245,8 +216,6 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void A_subtractive_brush_is_not_hit_by_a_query()
     {
-        // A hole contributes no solid, so reporting a hit on its own box would
-        // stop a shot in mid-air on geometry that is not drawn.
         var scene = new Scene("Test");
         SceneNode hole = scene.Root.CreateChild("hole");
         hole.Brush = UnitBrush().WithOperation(BrushOperation.Subtractive);
@@ -261,9 +230,6 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void Editor_picking_can_still_select_a_subtractive_brush()
     {
-        // An author has to be able to select the negative brush that cut their
-        // doorway — it renders nothing, so the viewport is the only place they
-        // can reach it other than the Explorer.
         var scene = new Scene("Test");
         SceneNode hole = scene.Root.CreateChild("hole");
         hole.Brush = UnitBrush().WithOperation(BrushOperation.Subtractive);
@@ -273,8 +239,6 @@ public sealed class SceneQueryFlagTests
 
         hit.Node.ShouldBeSameAs(hole);
     }
-
-    // --- Overlap queries ----------------------------------------------------
 
     [Fact]
     public void A_box_query_finds_the_nodes_whose_bounds_it_overlaps()
@@ -306,7 +270,6 @@ public sealed class SceneQueryFlagTests
         var (scene, near, far) = TwoBrushesInALine();
         var results = new List<SceneNode>();
 
-        // The near brush spans x in [-1,1]; the far one is centred at x=10.
         scene.GetPartBoundsInRadius(Vector3.Zero, 3f, results);
 
         results.ShouldContain(near);
@@ -320,8 +283,6 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void A_sphere_query_measures_from_the_box_not_from_its_centre()
     {
-        // The corner case a centre-distance test gets wrong: a sphere that
-        // reaches the near face of a box but not its middle still overlaps it.
         var scene = new Scene("Test");
         SceneNode wide = scene.Root.CreateChild("wide");
         wide.Brush = Brush.CreateBox(new Vector3(-10f, -1f, -1f), new Vector3(10f, 1f, 1f));
@@ -354,9 +315,6 @@ public sealed class SceneQueryFlagTests
     [Fact]
     public void An_overlap_query_finds_part_brushes_as_readily_as_world_ones()
     {
-        // The BVH is deliberately BrushKind-blind, so a part brush is queryable
-        // exactly like world geometry — which is what a trigger volume and an
-        // area effect both need.
         var scene = new Scene("Test");
         SceneNode part = scene.Root.CreateChild("part");
         part.BrushKind = BrushKind.Part;
@@ -385,16 +343,13 @@ public sealed class SceneQueryFlagTests
         results.ShouldContain(node);
     }
 
-    // --- Helpers ------------------------------------------------------------
-
     private static Ray3 RayAlongX() => new(new Vector3(-20f, 0f, 0f), Vector3.UnitX);
 
     private static Brush UnitBrush() =>
         Brush.CreateBox(new Vector3(-1f, -1f, -1f), new Vector3(1f, 1f, 1f));
 
-    // Two unit brushes on the x axis: one at the origin, one at x = 10, so a
-    // ray from -x hits the near one first and the far one only if the near one
-    // is filtered out.
+    // Unit brushes at x = 0 and x = 10. A ray from -x reaches the far one only
+    // when the near one is filtered out.
     private static (Scene Scene, SceneNode Near, SceneNode Far) TwoBrushesInALine()
     {
         var scene = new Scene("Test");

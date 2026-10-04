@@ -1,10 +1,5 @@
-// Array uniforms, in the exact spelling LANGUAGE.md teaches.
-//
-// The documentation used to show the C-style `vec3 lightPositions[8];`, which is
-// a hard parse error: the parser reads a whole type, brackets included, and then
-// expects a name. Nothing caught that, because no fixture used arrays at all.
-// This file exists so the documented form and the accepted form cannot drift
-// apart again.
+// Array uniforms as LANGUAGE.md spells them: `vec4[4] name`.
+// The C-style `vec3 name[8];` is a parse error.
 
 struct VertexInput {
     [Location(0)] vec3 position;
@@ -42,8 +37,7 @@ shader ArrayUniforms {
 
     [Fragment] [Target(0)]
     vec4 FragmentMain(FragmentInput input) {
-        // A dynamic index driven by a loop variable, which is what any real
-        // lighting loop needs and what a fragment stage must therefore allow.
+        // Dynamic index from a loop variable, as a lighting loop needs.
         vec3 total = vec3(0.0, 0.0, 0.0);
         for (int i = 0; i < uLightCount; i = i + 1) {
             total = total + uLightColors[i].rgb * uLightPositions[i].w;

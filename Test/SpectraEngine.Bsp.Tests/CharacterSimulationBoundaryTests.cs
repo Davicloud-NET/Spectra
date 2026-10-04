@@ -9,34 +9,14 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The line between simulating a character and drawing one.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Three things this engine intends to do need a character simulated with no
-/// camera, no input device and no renderer present: a dedicated server running
-/// the world headlessly, a rollback replaying one tick many times per
-/// correction, and a scripted mover that must be bindable without dragging
-/// rendering types into the scripting surface. A constructor that demanded a
-/// camera would have closed off all three at once, which is what
-/// <c>FirstPersonController</c> used to do.
-/// </para>
-/// <para>
-/// <b>The separation is real but not complete, and this file says where it
-/// stops.</b> <see cref="Scene.RebuildStaticWorld"/> still takes a
-/// <c>Renderer</c> and creates GPU meshes, so compiling a world headlessly is
-/// the next coupling to break. The simulation itself is clean; the world it
-/// reads is not yet.
-/// </para>
-/// </remarks>
+// A character must simulate with no camera, input device or renderer: a
+// dedicated server, rollback and a scripted mover all need that.
+// Scene.RebuildStaticWorld still takes a Renderer, so the world is not headless yet.
 public sealed class CharacterSimulationBoundaryTests
 {
     private const float Dt = PhysicsDefaults.FixedDeltaTime;
 
-    // Types whose presence in the simulation's surface would mean the wrong
-    // thing had been coupled to it. Matched by name so this test does not have
-    // to reference the graphics or input namespaces to forbid them.
+    // Matched by name, so the test need not reference graphics or input.
     private static readonly string[] Forbidden =
     [
         "Camera", "InputManager", "ICursorLock", "Renderer", "DebugDraw", "RenderView",
@@ -66,9 +46,6 @@ public sealed class CharacterSimulationBoundaryTests
     [Fact]
     public void A_character_can_be_spawned_walked_and_respawned_with_no_view_of_any_kind()
     {
-        // The whole point, exercised rather than asserted: this test constructs
-        // no camera, no input manager and no debug draw, and drives a full
-        // spawn, walk, fall and respawn cycle.
         var scene = new Scene("Headless");
 
         SceneNode floor = scene.Root.CreateChild("floor");
@@ -85,14 +62,13 @@ public sealed class CharacterSimulationBoundaryTests
         };
         simulation.Spawn();
 
-        // Settle onto the floor.
         for (int i = 0; i < 30; i++)
             Assert.False(simulation.Tick(default, Dt));
 
         Assert.True(simulation.State.Grounded, "the character should be standing on the floor");
         Assert.Equal(simulation.Tuning.SkinWidth, simulation.State.Position.Y, 4);
 
-        // Walk east off the 4-unit slab and keep going until the guard fires.
+        // Walk east off the 4-unit slab until the fall guard fires.
         var walk = new CharacterCommand { MoveForward = CharacterCommand.Axis(1f), Yaw = 0f };
 
         bool respawned = false;
@@ -107,9 +83,8 @@ public sealed class CharacterSimulationBoundaryTests
     [Fact]
     public void State_can_be_captured_and_restored_as_a_plain_struct_copy()
     {
-        // What a network correction and a rollback replay both do. It is only
-        // free because CharacterState is a struct with nothing reaching out of
-        // it, which is a constraint on every field ever added to it.
+        // Network correction and rollback both restore by copy. That only
+        // works while CharacterState holds no references.
         var scene = new Scene("Restore");
         SceneNode floor = scene.Root.CreateChild("floor");
         floor.LocalPosition = new Vector3(0f, -0.5f, 0f);
@@ -134,8 +109,6 @@ public sealed class CharacterSimulationBoundaryTests
         Assert.Equal(captured.Position, simulation.State.Position);
         Assert.Equal(captured.Velocity, simulation.State.Velocity);
 
-        // And replaying the same commands from the restored state reproduces the
-        // same result, which is the property rollback actually depends on.
         Vector3 firstRun = default;
         for (int i = 0; i < 40; i++)
             simulation.Tick(in walk, Dt);

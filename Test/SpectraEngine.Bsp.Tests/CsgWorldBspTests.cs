@@ -3,16 +3,10 @@ using SpectraEngine.Core.Bsp;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// End-to-end queries against a compiled <see cref="CsgWorld"/> (carve → snap →
-/// weld → BSP) for a floor-plus-pillar world: point containment, downward rays,
-/// rays starting inside solid, and rays that miss. Pure CPU — no GPU involved.
-/// </summary>
+/// <summary>Point and ray queries against a compiled <see cref="CsgWorld"/>.</summary>
 public sealed class CsgWorldBspTests
 {
     // Floor slab y in [-1, 0], 16x16; pillar 2x2 standing on it, y in [0, 4].
-    // The shared y=0 interface under the pillar footprint is interior and must
-    // be removed by the carve.
     private static CsgWorld BuildFloorAndPillar()
     {
         Brush floor = Brush.CreateBox(new Vector3(-8f, -1f, -8f), new Vector3(8f, 0f, 8f));
@@ -23,9 +17,7 @@ public sealed class CsgWorldBspTests
     [Fact]
     public void World_surfaces_form_a_closed_two_manifold_after_welding()
     {
-        // The pillar footprint punches a hole in the floor's top face, creating
-        // T-junctions along the hole rim; after snap+weld the skin must still
-        // be watertight.
+        // The pillar footprint leaves T-junctions around the hole in the floor's top.
         CsgWorld world = BuildFloorAndPillar();
         world.Surfaces.ShouldNotBeEmpty();
         GeometryTestHelpers.ShouldBeClosedTwoManifold(world.Surfaces);
@@ -35,16 +27,16 @@ public sealed class CsgWorldBspTests
     public void ContainsPoint_is_true_inside_floor_and_pillar()
     {
         CsgWorld world = BuildFloorAndPillar();
-        world.ContainsPoint(new Vector3(4f, -0.5f, 4f)).ShouldBeTrue();  // inside the floor slab
-        world.ContainsPoint(new Vector3(0f, 2f, 0f)).ShouldBeTrue();     // inside the pillar
-        world.ContainsPoint(new Vector3(0f, -0.5f, 0f)).ShouldBeTrue();  // in the floor, under the pillar
+        world.ContainsPoint(new Vector3(4f, -0.5f, 4f)).ShouldBeTrue();  // floor
+        world.ContainsPoint(new Vector3(0f, 2f, 0f)).ShouldBeTrue();     // pillar
+        world.ContainsPoint(new Vector3(0f, -0.5f, 0f)).ShouldBeTrue();  // floor under the pillar
     }
 
     [Fact]
     public void ContainsPoint_is_false_in_open_air()
     {
         CsgWorld world = BuildFloorAndPillar();
-        world.ContainsPoint(new Vector3(4f, 2f, 4f)).ShouldBeFalse();    // beside the pillar, above the floor
+        world.ContainsPoint(new Vector3(4f, 2f, 4f)).ShouldBeFalse();    // beside the pillar
         world.ContainsPoint(new Vector3(0f, 5f, 0f)).ShouldBeFalse();    // above the pillar
         world.ContainsPoint(new Vector3(0f, -5f, 0f)).ShouldBeFalse();   // below the floor
         world.ContainsPoint(new Vector3(50f, 50f, 50f)).ShouldBeFalse(); // far outside
@@ -83,7 +75,7 @@ public sealed class CsgWorldBspTests
     {
         CsgWorld world = BuildFloorAndPillar();
 
-        var origin = new Vector3(0f, 2f, 0f); // inside the pillar
+        var origin = new Vector3(0f, 2f, 0f);
         world.Raycast(origin, Vector3.UnitX, 10f, out BspRaycastHit hit).ShouldBeTrue();
 
         hit.Distance.ShouldBe(0f);
@@ -101,7 +93,7 @@ public sealed class CsgWorldBspTests
     [Fact]
     public void Raycast_stops_at_max_distance()
     {
-        // The floor is 8 units below; a 5-unit segment must not reach it.
+        // The floor is 8 units below.
         CsgWorld world = BuildFloorAndPillar();
         world.Raycast(new Vector3(4f, 8f, 4f), new Vector3(0f, -1f, 0f), 5f, out _).ShouldBeFalse();
     }
@@ -109,24 +101,18 @@ public sealed class CsgWorldBspTests
     [Fact]
     public void Raycast_with_unbounded_distance_terminates_and_answers_correctly()
     {
-        // Regression: the cell walk had no termination bound beyond
-        // maxDistance itself, so a miss ray with float.MaxValue (or
-        // PositiveInfinity — Scene.Raycast's own "unbounded" sentinel) walked
-        // cells forever once the DDA's tMax accumulation saturated in float.
-        // The walk must clip to the occupied-cell region: misses return
-        // promptly (this test would time out otherwise) and hits are
-        // unaffected by the unbounded budget.
+        // The cell walk must clip to the occupied region. Bounded only by
+        // maxDistance, a miss ray walks cells forever and this test hangs.
         CsgWorld world = BuildFloorAndPillar();
 
         world.Raycast(new Vector3(4f, 8f, 4f), new Vector3(0f, 1f, 0f), float.MaxValue, out _).ShouldBeFalse();
         world.Raycast(new Vector3(4f, 8f, 4f), new Vector3(0f, 1f, 0f), float.PositiveInfinity, out _).ShouldBeFalse();
         world.Raycast(new Vector3(4f, 8f, 4f), new Vector3(1f, 0.25f, 0.5f), float.PositiveInfinity, out _).ShouldBeFalse();
 
-        // A ray that starts far outside the occupied region and points at it
-        // still hits, and one that points away misses without walking.
+        // Starting far outside the occupied region.
         world.Raycast(new Vector3(4f, 1e6f, 4f), new Vector3(0f, -1f, 0f), float.PositiveInfinity, out BspRaycastHit hit)
             .ShouldBeTrue();
-        hit.Point.Y.ShouldBe(0f, 1e-2); // the floor top, beside the pillar
+        hit.Point.Y.ShouldBe(0f, 1e-2);
         world.Raycast(new Vector3(4f, 1e6f, 4f), new Vector3(0f, 1f, 0f), float.MaxValue, out _).ShouldBeFalse();
 
         world.Raycast(new Vector3(4f, 8f, 4f), new Vector3(0f, -1f, 0f), float.PositiveInfinity, out BspRaycastHit down)
@@ -137,28 +123,20 @@ public sealed class CsgWorldBspTests
     [Fact]
     public void Routed_raycast_matches_monolithic_across_a_sub_probe_gap_at_a_cell_border()
     {
-        // Regression: two facing surfaces separated by 5.5e-4 — wider than
-        // the weld band (2e-4) but narrower than the old raycast probe
-        // (1e-3) — straddling the x=32 cell boundary. The near box E ends at
-        // 31.99995 (resident in both cells); the far box D starts at 32.0005
-        // (NOT resident in cell 0). The old fixed-epsilon probe made the
-        // monolithic tree fabricate a hit at E's face PLANE for rays passing
-        // above E into D (it sampled straight through the air gap), while the
-        // routed walk — whose cell-0 tree cannot see D — reported the true
-        // entry at D's face: 684 divergences of 5.5e-4 over a small sweep.
-        // With entry detection by leaf containment, both must agree — on the
-        // TRUE surface — for every ray.
+        // Two facing surfaces 5.5e-4 apart across the x=32 cell boundary:
+        // wider than the weld band (2e-4), narrower than 1e-3. E ends at
+        // 31.99995 and is resident in both cells; D starts at 32.0005 and is
+        // not resident in cell 0. A fixed-epsilon probe samples through the
+        // gap and reports a hit on E's face plane for rays that pass above E.
         Brush e = Brush.CreateBox(new Vector3(28f, 0f, 0f), new Vector3(31.99995f, 2f, 4f));
         Brush d = Brush.CreateBox(new Vector3(32.0005f, 0f, 0f), new Vector3(36f, 4f, 4f));
         CsgWorld world = CsgWorld.Build([e, d]);
         BspTree mono = BspTree.BuildFromSurfaces(world.Surfaces);
 
-        // Rays passing over E (whose profile stops at y=2) straight into D's
-        // taller face: they cross E's max-x face plane in open air inside
-        // cell 0, exactly where the old probe overshot into D.
+        // Rays over E (which stops at y=2) into D's taller face.
         for (int i = 0; i <= 16; i++)
         {
-            float y = 2.1f + i * 0.1f; // 2.1 .. 3.7, above E, within D
+            float y = 2.1f + i * 0.1f; // 2.1 .. 3.7
             var origin = new Vector3(30f, y, 2f);
             Vector3 direction = Vector3.UnitX;
 
@@ -172,7 +150,7 @@ public sealed class CsgWorldBspTests
             actual.Normal.X.ShouldBe(expected.Normal.X, 1e-4f, $"normal diverged at y={y}");
         }
 
-        // And rays into E itself (below y=2) still agree on E's near face.
+        // Rays into E itself, below y=2.
         for (int i = 0; i <= 8; i++)
         {
             float y = 0.2f + i * 0.2f;

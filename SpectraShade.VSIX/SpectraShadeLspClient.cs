@@ -11,10 +11,7 @@ using Microsoft.VisualStudio.Utilities;
 
 namespace SpectraShade.VSIX;
 
-/// <summary>
-/// LSP client that launches the SpectraShade language server
-/// and connects Visual Studio to it for diagnostics, completions, etc.
-/// </summary>
+/// <summary>Launches the SpectraShade language server and connects Visual Studio to it.</summary>
 [ContentType("spectrashade")]
 [Export(typeof(ILanguageClient))]
 public sealed class SpectraShadeLspClient : ILanguageClient
@@ -34,15 +31,12 @@ public sealed class SpectraShadeLspClient : ILanguageClient
 
     public async Task<Connection?> ActivateAsync(CancellationToken token)
     {
-        // Find the LSP server executable
-        // In development: look relative to the extension directory
-        // In production: the server would be bundled with the VSIX
         string extensionDir = Path.GetDirectoryName(typeof(SpectraShadeLspClient).Assembly.Location)!;
         string serverPath = Path.Combine(extensionDir, "spectrashade-lsp", "spectrashade-lsp.exe");
 
         if (!File.Exists(serverPath))
         {
-            // Fallback: try to find it via dotnet tool or PATH
+            // Fall back to PATH.
             serverPath = "spectrashade-lsp";
         }
 

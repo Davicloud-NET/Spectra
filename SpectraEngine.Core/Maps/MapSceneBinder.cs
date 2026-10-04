@@ -11,36 +11,13 @@ namespace SpectraEngine.Core.Maps;
 
 /// <summary>
 /// Projects a live <see cref="Scene.Scene"/> to a <see cref="MapDocument"/> and
-/// builds one back.
+/// builds one back. Lossy: a mesh built in code has no file to name, and brush
+/// planes come back normalised. Render thread only.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is the lossy half of the round trip, and what it loses is stated
-/// rather than discovered.</b> The document round trip is exact; this one is
-/// not, in two directions. Going out, a mesh is written as a reference to a
-/// model file, so one built in code has nothing to name - see
-/// <see cref="MapSaveReport"/>. Coming back,
-/// <c>Brush</c>'s constructor re-normalises every plane, so a hand-authored
-/// <c>[2, 0, 0, -64]</c> becomes <c>[1, 0, 0, -32]</c> on the next save. That
-/// second one is a canonicalisation rather than a defect, since it is the same
-/// plane, but it is why byte identity is a claim about documents and never
-/// about scenes.
-/// </para>
-/// <para>
-/// <b>Every brush gets its own instance, and that is not an implementation
-/// detail.</b> <c>CsgCompileCache</c> and <c>PartBrushMeshCache</c> both key on
-/// <c>Brush</c> reference identity, so sharing one instance across two nodes
-/// would make every duplicate past the first re-carve on every compile,
-/// forever, while rendering perfectly.
-/// </para>
-/// <para>
-/// <b>Render-thread only</b>, like every other scene mutation.
-/// </para>
-/// </remarks>
+// Every node gets its own Brush instance. CsgCompileCache and PartBrushMeshCache
+// key on reference identity, so a shared one re-carves on every compile.
 public static class MapSceneBinder
 {
-    // --- scene -> document --------------------------------------------------
-
     /// <summary>Projects <paramref name="scene"/>'s graph to a document.</summary>
     public static MapDocument FromScene(Scene.Scene scene) => FromScene(scene, null);
 
@@ -62,41 +39,10 @@ public static class MapSceneBinder
         return document;
     }
 
-    /// <summary>
-    /// The oldest reader that can open this scene without losing anything.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Per document, not per engine.</b> A blanket floor would tell every
-    /// older editor to refuse every map this engine writes, including the
-    /// overwhelming majority carrying nothing it could not read. What actually
-    /// needs a newer reader is a light with a SHAPE, because
-    /// <see cref="NodeToMap"/> builds a fresh <c>MapLight</c> rather than
-    /// editing the loaded one - so an older editor that opened such a map and
-    /// saved it would drop every angle and extent and leave a light that is
-    /// quietly the wrong shape.
-    /// </para>
-    /// <para>
-    /// <b>The KIND is what is tested, not the numbers.</b> A point light with a
-    /// non-default width loses nothing that matters, because nothing reads a
-    /// point light's width; a rect light losing its extents is a different
-    /// light. Testing the numbers as well would raise the floor on maps that do
-    /// not need it.
-    /// </para>
-    /// <para>
-    /// <b>An entity payload raises the floor on exactly the same argument.</b>
-    /// An older editor read <c>entity</c> as an opaque unknown and then rebuilt
-    /// each node from the scene on save, where nothing held it - so it would open
-    /// the map, display it correctly, and delete every keyvalue and wire in it on
-    /// the next save.
-    /// </para>
-    /// <para>
-    /// <b>The MAX of what applies, never the first hit.</b> A map carrying both a
-    /// rect light and an entity needs the newer of the two readers, and returning
-    /// whichever was found first would name a reader that still eats half the
-    /// document.
-    /// </para>
-    /// </remarks>
+    // The oldest reader that can open and re-save this scene without losing data.
+    // Per document: only a shaped light (spot, rect, disc) or an entity raises
+    // the floor, since an older editor would drop those on save. Light kind is
+    // tested, not its numbers. Takes the max of what applies.
     private static int RequiredReaderVersion(Scene.Scene scene)
     {
         int floor = EngineInfo.MinimumReadableMapVersion;
@@ -110,9 +56,7 @@ public static class MapSceneBinder
             }
         }
 
-        // The root's own payload is never written - 'nodes' is Root.Children -
-        // so a walk that started at the root would raise the floor for a payload
-        // no reader will ever see.
+        // Checks descendants only: the root's own payload is never written.
         if (CarriesEntity(scene.Root))
             floor = Math.Max(floor, EngineInfo.EntityMapVersion);
 
@@ -136,7 +80,7 @@ public static class MapSceneBinder
         {
             Id = node.Id,
             Name = node.Name,
-            // Omitted when World, which is what a file with no 'kind' means.
+            // World is the default and is omitted.
             Kind = node.BrushKind == BrushKind.Part ? BrushKind.Part : null,
             Transform = ToMap(node.LocalTransform),
         };
@@ -146,12 +90,8 @@ public static class MapSceneBinder
 
         if (node.Light is { } light)
         {
-            // EVERY field, because this builds a FRESH MapLight rather than
-            // editing the one that was loaded: a member left out here is a
-            // member silently deleted from the file on the next save. That is
-            // exactly why MinimumReadableMapVersion had to move when these were
-            // added - an older editor opening a rect-light map and saving it
-            // would drop every extent and leave a light that is the wrong shape.
+            // Copy every field. This is a fresh MapLight, so a member left out
+            // here is deleted from the file on the next save.
             mapped.Light = new MapLight
             {
                 Kind = light.Kind,
@@ -169,16 +109,10 @@ public static class MapSceneBinder
 
         if (node.Entity is { } entity)
         {
-            // EVERY field, for the reason stated above the light: this builds a
-            // FRESH MapEntity rather than editing the one that was loaded, so a
-            // field left out here is a field silently deleted from the file on
-            // the next save. That is precisely the hole that existed while
-            // 'entity' rode through as a preserved unknown - the document path
-            // carried it perfectly and this path never saw it at all.
+            // Copy every field, as for the light.
             var payload = new MapEntity { Class = entity.ClassName };
 
-            // In authored order, duplicates included: the order is the file's
-            // own and a hand-written duplicate must come back out.
+            // Authored order, duplicates included.
             payload.Keys.AddRange(entity.Keyvalues);
 
             foreach (EntityConnection wire in entity.Connections)
@@ -197,9 +131,7 @@ public static class MapSceneBinder
             mapped.Entity = payload;
         }
 
-        // A mesh is written as a REFERENCE, never as geometry: vertices belong
-        // in the cooked artifact, and an authored map names the source file the
-        // same way a face names a material path.
+        // A mesh is saved as a reference to its model file, never as geometry.
         if (node.MeshRenderer is not null)
         {
             if (node.MeshSource is { } source)
@@ -212,10 +144,7 @@ public static class MapSceneBinder
             }
             else
             {
-                // A mesh built from raw arrays has no file behind it, so there
-                // is nothing to name. Permanent rather than unfinished, and
-                // reported rather than dropped in silence: a map that quietly
-                // forgets a prop is worse than one that says it did.
+                // Built in code: no file to name, so report it.
                 report?.RecordUnsourcedMesh(node);
             }
         }
@@ -247,21 +176,16 @@ public static class MapSceneBinder
     {
         var mapped = new MapFace
         {
-            // The path, never the id: MaterialRef ids are handed out in
-            // first-intern order within one process, so the same map loaded
-            // second gets different ones. TryGetPath answers false for the
-            // default material, which is exactly the case that writes nothing.
+            // The path, never the id: ids depend on interning order. TryGetPath
+            // is false for the default material, which writes nothing.
             Material = MaterialRegistry.TryGetPath(face.Material, out string path) ? path : null,
-            // A zero axis IS the world-aligned encoding, so it is written as an
-            // absent member rather than as three zeros.
+            // World-aligned (zero axes) is written as an absent member.
             UAxis = face.IsWorldAligned ? null : face.UAxis,
             VAxis = face.IsWorldAligned ? null : face.VAxis,
             UOffset = face.UOffset,
             VOffset = face.VOffset,
-            // FaceSurface treats a stored zero scale as 1 and launders it on
-            // most paths, so the effective value is what round-trips. Writing
-            // the raw 0 would produce a file the FaceSurface constructor then
-            // refuses to load.
+            // FaceSurface treats a stored zero scale as 1, but its constructor
+            // refuses a zero. Write the effective value.
             UScale = face.UScale != 0f ? face.UScale : 1f,
             VScale = face.VScale != 0f ? face.VScale : 1f,
         };
@@ -276,15 +200,9 @@ public static class MapSceneBinder
         Scale = transform.Scale,
     };
 
-    // --- document -> scene --------------------------------------------------
-
     /// <summary>
-    /// Replaces <paramref name="scene"/>'s graph with the document's.
+    /// Replaces <paramref name="scene"/>'s graph with the document's. The root node itself is kept.
     /// </summary>
-    /// <remarks>
-    /// The root itself is never replaced: <c>Scene.Root</c> is get-only and
-    /// owns the scene back-pointer every setter's side effects run through.
-    /// </remarks>
     /// <exception cref="MapFormatException">A node's brush cannot be built.</exception>
     public static void ApplyTo(MapDocument document, Scene.Scene scene) =>
         ApplyTo(document, scene, null);
@@ -307,23 +225,13 @@ public static class MapSceneBinder
         foreach (MapNode node in document.Nodes)
             scene.Root.AddChild(ToSceneNode(node, scene.Assets, report));
 
-        // After the graph exists, because a wire may name a node that appears
-        // later in the document, and one pass, because the answer is a property
-        // of the whole map rather than of any node in it.
+        // After the whole graph: a wire may name a node later in the document.
         if (report is not null)
             ReportUnresolvedTargets(document, report);
     }
 
-    /// <summary>
-    /// Names every wire whose target is nowhere in this map.
-    /// </summary>
-    /// <remarks>
-    /// <b>A warning, and the wire is KEPT.</b> A mapper who renames a door must
-    /// not silently lose the wiring into it - the rename is the mistake, the wire
-    /// is the work, and dropping the wire is unrecoverable while reporting it is
-    /// a line in a log. The same reasoning that makes a missing model degrade
-    /// rather than throw, one payload over.
-    /// </remarks>
+    // Reports wires whose target is not in this map. The wires are kept: a
+    // dangling target is usually a rename in progress.
     private static void ReportUnresolvedTargets(MapDocument document, MapLoadReport report)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
@@ -344,7 +252,6 @@ public static class MapSceneBinder
     {
         foreach (MapNode node in nodes)
         {
-            // targetname IS SceneNode.Name: one identity, one field.
             names.Add(node.Name);
             if (node.Entity is { Outputs.Count: > 0 })
                 wired.Add(node);
@@ -353,23 +260,13 @@ public static class MapSceneBinder
         }
     }
 
-    /// <summary>
-    /// Whether <paramref name="target"/> names something this map could deliver
-    /// to.
-    /// </summary>
-    /// <remarks>
-    /// <b>An EMPTY target is not an unresolved one and is not reported.</b> It
-    /// names nothing rather than naming something absent, which is an authoring
-    /// state a half-wired entity legitimately sits in; warning about it would put
-    /// noise in front of the case that matters.
-    /// </remarks>
     private static bool Resolves(string target, HashSet<string> names)
     {
+        // An empty target is a half-wired entity, not a dangling wire.
         if (target.Length == 0)
             return true;
 
-        // Resolved when the output fires, against the entity that fired it or
-        // the one that activated it - none of which the map can know.
+        // Runtime tokens resolve when the output fires.
         if (Array.IndexOf(MapFormat.RuntimeTargets, target) >= 0)
             return true;
 
@@ -390,9 +287,7 @@ public static class MapSceneBinder
 
     private static SceneNode ToSceneNode(MapNode mapped, AssetManager? assets, MapLoadReport? report)
     {
-        // The deserialisation door. The other constructor mints a fresh id,
-        // which would break every command that addresses a node by id and every
-        // undo of a delete.
+        // Keep the saved id: commands and undo address nodes by it.
         var node = new SceneNode(mapped.Name, mapped.Id)
         {
             LocalTransform = new Transform
@@ -403,9 +298,8 @@ public static class MapSceneBinder
             },
         };
 
-        // Kind BEFORE brush, exactly as the demo places props: the brush setter
-        // reads the kind to decide which lane the brush joins, so the reverse
-        // order admits a part brush to the static world for one write.
+        // Kind before brush: the brush setter reads the kind, so the other
+        // order briefly admits a part brush to the static world.
         if (mapped.Kind is { } kind)
             node.BrushKind = kind;
 
@@ -417,11 +311,7 @@ public static class MapSceneBinder
 
         if (mapped.Light is { } light)
         {
-            // The two angles are assigned INNER FIRST, because OuterAngle
-            // clamps against the inner one on read: assigned the other way
-            // round, a narrow inner angle read after a wide outer one would
-            // still land correctly, but a file whose outer is smaller than its
-            // inner would silently swap meaning depending on assignment order.
+            // Inner angle before outer: OuterAngle clamps against the inner one.
             node.Light = new Light
             {
                 Kind = light.Kind,
@@ -439,16 +329,10 @@ public static class MapSceneBinder
 
         if (mapped.Entity is { } entity)
         {
-            // VERBATIM, with NO catalogue lookup. That is what makes an unknown
-            // class round-trip losslessly: the map may have been authored against
-            // a game this build does not have, and a binder that resolved the
-            // class here would have to decide what to do when it could not -
-            // every answer to which drops the payload.
+            // No catalogue lookup, so a class this build lacks round-trips.
             var data = new EntityData(entity.Class);
 
-            // Add, never SetValue: SetValue replaces an existing name in place,
-            // which would collapse a hand-authored duplicate to one entry and
-            // silently rewrite the file on the next save.
+            // Add, not SetValue, which would collapse a duplicate key.
             data.Keyvalues.AddRange(entity.Keys);
 
             foreach (MapConnection wire in entity.Outputs)
@@ -460,28 +344,16 @@ public static class MapSceneBinder
             node.Entity = data;
         }
 
-        // Appended in order, because child order is traversal order is
-        // static-world placement order, and placement order breaks ties in the
-        // carve. A load that reordered siblings would build a level that is
-        // valid, different, and bit-unequal to the one that was saved.
+        // In document order: child order is placement order, which breaks ties
+        // in the carve.
         foreach (MapNode child in mapped.Children)
             node.AddChild(ToSceneNode(child, assets, report));
 
         return node;
     }
 
-    /// <summary>
-    /// Resolves a model reference back into a live renderer.
-    /// </summary>
-    /// <remarks>
-    /// <b>Every failure here degrades to a node with no renderer and a line in
-    /// the report, never an exception.</b> A missing or changed model is a
-    /// content problem, and the engine's standing rule is that content errors
-    /// must not reach the draw loop: the rest of the level is perfectly good and
-    /// a level designer needs to see it in order to fix the prop. That is the
-    /// opposite of the brush path, which throws, because a brush that cannot be
-    /// built is a hole in the world rather than a missing decoration.
-    /// </remarks>
+    // A model that cannot be resolved leaves a node with no renderer and a line
+    // in the report. Unlike a bad brush, it never throws.
     private static void AttachMesh(
         SceneNode node, MapMeshSource mesh, AssetManager? assets, MapLoadReport? report)
     {
@@ -500,10 +372,7 @@ public static class MapSceneBinder
                 return;
             }
 
-            // The index is positional, so a re-exported model can name a
-            // submesh that is no longer there. Checked rather than trusted: an
-            // unchecked index is an IndexOutOfRangeException from inside a load,
-            // which says nothing about which node or which file.
+            // A re-exported model can have fewer submeshes.
             if (mesh.Submesh >= model.Meshes.Count)
             {
                 report?.RecordUnresolved(node.Name, mesh.Model,
@@ -560,11 +429,7 @@ public static class MapSceneBinder
         }
         catch (ArgumentException ex)
         {
-            // Brush validates convexity, boundedness and duplicate planes, and
-            // throws from deep inside CSG code that has never heard of a file.
-            // Unwrapped, a hand-edited map reports "Planes 2 and 5 are
-            // near-coplanar duplicates" and names neither the node nor the
-            // place in the document.
+            // Brush's own error names plane indices only. Add the node and offset.
             throw new MapFormatException(
                 $"This brush cannot be built: {ex.Message}", owner.Name, owner.SourceOffset, ex);
         }
@@ -572,25 +437,9 @@ public static class MapSceneBinder
 }
 
 /// <summary>
-/// What a save could not write down.
+/// What a save could not write down. A mesh built in code names no model file,
+/// so its node is saved without geometry.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A mesh built in code cannot be saved, and that is permanent rather than
-/// unfinished.</b> A node whose renderer came from a model file carries a
-/// <see cref="MeshSource"/> and is written as a reference to it. A node whose
-/// mesh came from raw vertex arrays - <c>Primitives.Cube()</c>, a procedural
-/// generator, anything handed straight to <c>Renderer.CreateMesh</c> - has no
-/// file to name, so the node saves with its identity, name, placement and
-/// children, and loses its geometry.
-/// </para>
-/// <para>
-/// The only ways to close that are to write the vertices into the authored map,
-/// which is derived data in a file whose whole rule is that it holds none, or
-/// to give procedural geometry a recipe worth naming. Both are real designs,
-/// and neither belongs inside a codec.
-/// </para>
-/// </remarks>
 public sealed class MapSaveReport
 {
     private readonly List<string> _unsourced = [];
@@ -615,16 +464,9 @@ public sealed class MapSaveReport
 }
 
 /// <summary>
-/// What a load could not resolve.
+/// What a load could not resolve. A map naming a missing model still loads; the
+/// node arrives without a renderer and the reason is recorded here.
 /// </summary>
-/// <remarks>
-/// <b>A map that names a model the project no longer has still loads.</b> The
-/// node arrives with its identity, placement and children and no renderer, and
-/// the reason lands here. That follows the engine's standing rule that content
-/// errors must not reach the draw loop, and it is the difference between a
-/// level designer seeing their level with one prop missing and seeing an
-/// exception.
-/// </remarks>
 public sealed class MapLoadReport
 {
     private readonly List<string> _unresolved = [];
@@ -635,14 +477,8 @@ public sealed class MapLoadReport
 
     /// <summary>
     /// One line per wire naming a target nothing in this map answers to. The
-    /// wires themselves are KEPT.
+    /// wires themselves are kept.
     /// </summary>
-    /// <remarks>
-    /// <b>Kept rather than dropped, deliberately.</b> A dangling target is
-    /// usually a rename in progress, and the wiring is the work while the name is
-    /// one edit away from being right again; a load that tidied it away would
-    /// destroy something unrecoverable in order to report nothing.
-    /// </remarks>
     public IReadOnlyList<string> UnresolvedTargets => _danglingWires;
 
     /// <summary>Whether everything the map named was found.</summary>

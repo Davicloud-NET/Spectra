@@ -12,32 +12,8 @@ namespace SpectraEngine.Graphics.Tests;
 /// The deferred geometry pass collapses repeated meshes into instanced draws,
 /// and the picture does not change when it does.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The oracle is two scenes that differ ONLY in whether the batch path can
-/// run.</b> Six nodes sharing one <see cref="Brush"/> instance resolve to one
-/// GPU mesh (<c>PartBrushMeshCache</c> keys on reference identity), so they
-/// become a single batch of six; six nodes carrying six structurally equal but
-/// separate brushes resolve to six meshes and stay six ordinary draws. Same
-/// geometry, same material, same transforms, same shader maths - so the two
-/// frames must be the same picture, and any difference is the instanced path
-/// getting a transform wrong.
-/// </para>
-/// <para>
-/// <b>Comparing against a toggle would have been weaker.</b> A switch that
-/// disables batching only proves the two branches of one code path agree; two
-/// scenes prove the batched frame matches what the engine drew before batching
-/// existed, which is the claim that matters.
-/// </para>
-/// <para>
-/// <b>Both halves of the assertion are load-bearing.</b> A batch path that
-/// silently drew nothing would also produce two identical frames, so the test
-/// pins <c>GeometryDrawsSaved</c> as well: five for the shared scene and zero
-/// for the separate one. Without it, "the batch path is broken" and "there was
-/// nothing to batch" are the same green tick - which is exactly why no earlier
-/// measurement in this repo could see instancing at all.
-/// </para>
-/// </remarks>
+// Two scenes with the same geometry: nodes sharing a Brush instance get one
+// GPU mesh and batch, nodes with separate equal brushes don't.
 [Collection(GlRendererCollection.Name)]
 public sealed class GeometryInstancingGlTests
 {
@@ -45,18 +21,12 @@ public sealed class GeometryInstancingGlTests
 
     public GeometryInstancingGlTests(GlRendererFixture fixture) => _fixture = fixture;
 
-    // Two groups, each above RenderView.MinimumBatchSize, so the view carries
-    // TWO batches and the second one starts at a non-zero offset into the shared
-    // transform array. With a single batch that offset is always zero and a
-    // whole class of indexing bug draws the right picture.
+    // Two groups, so the second batch starts at a non-zero offset into the
+    // transform array. One batch would hide offset bugs.
     private const int GroupSize = 5;
     private const int Copies = GroupSize * 2;
 
-    // Setting ProbeTarget makes a frame render the scene TWICE: once into the
-    // probe and once into the window, both inside one command list. Every
-    // per-frame counter therefore reads double here, which is the honest number
-    // rather than a quirk to divide away - and pinning it means a change to that
-    // path shows up as this test rather than as a puzzling profile.
+    // With ProbeTarget set a frame renders the scene twice: probe, then window.
     private const int ExecutionsPerFrame = 2;
 
     private static Brush Box(float halfExtent = 0.5f) =>
@@ -69,16 +39,12 @@ public sealed class GeometryInstancingGlTests
         renderer.GetFramebufferSize(out int width, out int height);
         int size = Math.Min(width, height);
 
-        // Two shared brushes, ALTERNATING, so the two batches interleave in the
-        // draw list. RenderView groups by first appearance rather than by
-        // adjacency precisely because the list arrives in spatial-index order,
-        // and alternating here is what exercises that.
+        // Alternating, so the two batches interleave in the draw list.
         Brush small = Box(0.5f);
         Brush large = Box(0.62f);
         (int[,] batched, int savedBatched, int batchCount, int visibleBatched) =
             Render(i => (i % 2 == 0) ? small : large, size);
 
-        // A separate brush each: ten meshes, ten single items, no batch.
         (int[,] separate, int savedSeparate, int separateBatches, int visibleSeparate) =
             Render(i => Box((i % 2 == 0) ? 0.5f : 0.62f), size);
 
@@ -92,8 +58,7 @@ public sealed class GeometryInstancingGlTests
         savedSeparate.ShouldBe(0, "ten distinct meshes cannot be collapsed");
         separateBatches.ShouldBe(0, "nothing repeats, so nothing should be partitioned into a batch");
 
-        // Not vacuous: the props have to actually be on screen, or two blank
-        // frames would agree perfectly and prove nothing.
+        // Two blank frames would also agree.
         CountLit(separate, size).ShouldBeGreaterThan(size * 4,
             "the props must cover a meaningful part of the frame for this comparison to mean anything");
 
@@ -104,18 +69,14 @@ public sealed class GeometryInstancingGlTests
             "in the same place with the same shading");
     }
 
-    // --- rendering -----------------------------------------------------------
-
     private (int[,] Pixels, int DrawsSaved, int Batches, int Visible) Render(
         Func<int, Brush> brushFor, int size)
     {
         OpenGLRenderer renderer = _fixture.Renderer;
 
         var scene = new Scene("instancing");
-        // Part brushes resolve their material through the scene, and a bare
-        // scene has no AssetManager; without this every item carries a null
-        // material and the geometry pass skips it, which would make the whole
-        // comparison two empty frames.
+        // No AssetManager here, so part brushes need this material or the
+        // geometry pass skips them.
         SpectraEngine.Core.Graphics.Texture white = renderer.CreateTexture(
             [255, 255, 255, 255], 1, 1, TextureFormat.Rgba8, TextureColorSpace.Linear,
             TextureFilter.Nearest, TextureWrap.Clamp);
@@ -131,16 +92,11 @@ public sealed class GeometryInstancingGlTests
         for (int i = 0; i < Copies; i++)
         {
             SceneNode node = scene.Root.CreateChild($"Prop{i}");
-            // A GRID, not a row: ten props in a line runs off the sides of the
-            // frustum, and a culled prop leaves its group below the minimum
-            // batch size, which reads as "batching is broken" rather than as
-            // "the fixture is too wide". PartBrushesVisible is asserted for the
-            // same reason.
+            // A grid: a row of ten runs off the frustum, and a culled prop
+            // drops its group below the batch minimum.
             node.LocalPosition = new Vector3(
                 ((i % 5) - 2) * 1.6f, ((i / 5) - 0.5f) * 1.8f, 0f);
-            // Kind before brush, exactly as the demo places props: the brush
-            // setter dirties the static world, and a part must never be admitted
-            // to the placement list even for one frame.
+            // Kind before brush, so the part is never admitted to the static world.
             node.BrushKind = BrushKind.Part;
             node.Brush = brushFor(i);
         }
@@ -168,13 +124,9 @@ public sealed class GeometryInstancingGlTests
 
             scene.ProcessPartBrushMeshes(renderer);
 
-            // TWO FRAMES, and the second is the one that counts. The instance
-            // buffer is sized at a frame boundary from the previous frame's
-            // high-water mark, because growing it inside a pass frees a resource
-            // the open command list references - so the first frame a batch ever
-            // appears is drawn unbatched and correct, and the second is batched.
-            // A single-frame test would measure only the fallback and would pass
-            // just as happily with the instanced path completely broken.
+            // Two frames. The instance buffer is sized from the previous
+            // frame, so the first frame draws unbatched and only the second
+            // takes the instanced path.
             for (int frame = 0; frame < 2; frame++)
             {
                 scene.BuildRenderView(scene.Camera, view);
@@ -223,7 +175,7 @@ public sealed class GeometryInstancingGlTests
         return luma;
     }
 
-    // Pixels brighter than the sky, i.e. something was drawn there.
+    // Pixels that differ from the sky.
     private static int CountLit(int[,] frame, int size)
     {
         int background = frame[0, 0];

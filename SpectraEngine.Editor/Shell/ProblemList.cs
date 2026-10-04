@@ -126,32 +126,12 @@ public sealed class ProblemEntry : ObservableObject
 }
 
 /// <summary>
-/// What is wrong right now, as distinct from what has been said.
+/// The standing problems: one row per (severity, template, subject), repeats
+/// counted. A row stays until it is resolved, dismissed or its scope is cleared.
+/// UI thread only.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The bounded history could not answer "is anything wrong", and reported
-/// that it could.</b> <see cref="OutputLog"/> keeps the last 500 lines and
-/// counted the errors among them, so its summary said "no problems" in two
-/// completely different situations: nothing had gone wrong, and enough had
-/// happened since that the failure had scrolled out of the buffer. A count that
-/// falls back to zero on its own is worse than no count.
-/// </para>
-/// <para>
-/// <b>Keyed on (severity, template, subject), which is what makes a repeat a
-/// count instead of a row.</b> A compile that warns about one unreadable
-/// material every frame is one problem; the same template about two files is
-/// two. The template rather than the rendered message, because the rendered
-/// message differs per file and would make every file its own row anyway - and
-/// because two templates that happen to render alike are still two conditions.
-/// </para>
-/// <para>
-/// <b>A problem stands until something says it is over.</b> Most have no
-/// resolution event, and that is deliberate: an unreadable file is still
-/// unreadable until somebody fixes it, and expiring the row on a timer would
-/// reproduce exactly the lie this class was written to stop. UI thread only.
-/// </para>
-/// </remarks>
+// Keyed on the template, not the rendered message, so one condition about two
+// files is two rows. Rows never expire on a timer.
 public sealed class ProblemList : ObservableObject
 {
     private readonly Dictionary<(OutputSeverity Severity, string Template, string Subject), ProblemEntry> _index =
@@ -205,13 +185,8 @@ public sealed class ProblemList : ObservableObject
 
     /// <summary>
     /// Records a condition, or counts a repeat of one already standing.
+    /// Only warnings and errors are recorded; anything else returns null.
     /// </summary>
-    /// <returns>The row, or null when nothing was recorded.</returns>
-    /// <remarks>
-    /// <b>Info records nothing and returns null.</b> A problem list that
-    /// accepted every severity would be the output log with extra steps, and its
-    /// count would stop meaning "something needs attention".
-    /// </remarks>
     public ProblemEntry? Report(
         OutputSeverity severity,
         string template,
@@ -247,11 +222,7 @@ public sealed class ProblemList : ObservableObject
         return entry;
     }
 
-    /// <summary>
-    /// Drops every problem about <paramref name="subject"/>, because something
-    /// said it is over.
-    /// </summary>
-    /// <returns>How many rows went.</returns>
+    /// <summary>Drops every problem about <paramref name="subject"/>. Returns how many rows went.</summary>
     public int Resolve(string subject)
     {
         if (string.IsNullOrEmpty(subject)) return 0;
@@ -282,8 +253,7 @@ public sealed class ProblemList : ObservableObject
         RaiseCounts();
     }
 
-    /// <summary>Drops every problem in one scope, because its subject changed.</summary>
-    /// <returns>How many rows went.</returns>
+    /// <summary>Drops every problem in one scope. Returns how many rows went.</summary>
     public int ClearScope(ProblemScope scope)
     {
         int removed = 0;

@@ -3,30 +3,19 @@ using SpectraEngine.Editor.Shell.Ribbon;
 
 namespace SpectraEngine.Editor.Tests;
 
-/// <summary>
-/// The palette's data and its ranking, both of which are pure and neither of
-/// which a person can check by looking at a list.
-/// </summary>
+/// <summary>The palette's command table and its ranking.</summary>
 public sealed class CommandPaletteTests
 {
     [Fact]
     public void The_palette_reaches_every_verb_the_ribbon_does()
     {
-        // THE PROPERTY THAT MAKES IT A THIRD ROUTE RATHER THAN A RIVAL. The
-        // design doctrine this shell follows asks for every command to be
-        // reachable by direct manipulation, by a menu with its shortcut printed,
-        // and by a palette; a palette that reaches a subset of the buttons is
-        // none of those things. It fails the day somebody adds a ribbon control
-        // and forgets this table, which is the only way the two can drift.
         var inPalette = CommandTable.Commands.Select(c => c.Verb).ToHashSet();
 
         var missing = RibbonLayout.Tabs
             .SelectMany(RibbonLayout.ItemsOf)
             .Concat(RibbonLayout.AlwaysVisible)
 
-            // The snap increment is a FIELD: its verb names a control that is
-            // typed into rather than invoked, and there is nothing for a palette
-            // to run. Its two steppers are here.
+            // A field is typed into, so the palette has nothing to run.
             .Where(i => i.Kind != RibbonControlKind.Field)
             .Select(i => i.Verb)
             .Where(v => !inPalette.Contains(v))
@@ -38,9 +27,6 @@ public sealed class CommandPaletteTests
     [Fact]
     public void Initials_reach_the_command_they_are_the_initials_of()
     {
-        // The whole value of a palette is typing the letters you remember rather
-        // than a prefix you do not, and whether the ranking honours that is
-        // exactly what no amount of looking at the list will tell you.
         First("ib").ShouldBe("Insert block");
         First("dup").ShouldBe("Duplicate");
         First("ung").ShouldBe("Ungroup");
@@ -60,10 +46,8 @@ public sealed class CommandPaletteTests
     {
         CommandSearchResult all = CommandTable.Search(string.Empty, Ready(), limit: 500);
 
-        // Not the whole table, and it must not be: the two SET-verb pairs are
-        // mutually exclusive by construction, so exactly one half of each is
-        // offered in any one state. Naming them is the point - a row that
-        // vanished for some OTHER reason would show up here as a third.
+        // Play/stop and collapse/expand are exclusive pairs, so one half of
+        // each is withheld. Named, so a row missing for another reason shows up.
         IReadOnlyList<string> withheld = CommandTable.Commands
             .Select(c => c.Title)
             .Except(all.Rows.Select(c => c.Title))
@@ -77,7 +61,6 @@ public sealed class CommandPaletteTests
     [Fact]
     public void Every_row_is_reachable_in_some_state()
     {
-        // The other half of the pair above: nothing in the table is dead.
         var reachable = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (bool playing in new[] { false, true })
@@ -98,9 +81,6 @@ public sealed class CommandPaletteTests
     [Fact]
     public void A_command_that_cannot_run_is_not_offered()
     {
-        // The same gate the buttons wear, and for the same reason: a palette row
-        // that runs into RefuseEdit and logs at Debug is a control that lies
-        // about what the engine is doing.
         Titles(hasSelection: false, isPlaying: false).ShouldNotContain("Duplicate");
         Titles(hasSelection: true, isPlaying: false).ShouldContain("Duplicate");
 
@@ -114,9 +94,6 @@ public sealed class CommandPaletteTests
     [Fact]
     public void The_same_query_ranks_the_same_way_every_time()
     {
-        // Score ties are broken ordinally rather than left to whatever order the
-        // table happens to be written in, so the list a person builds muscle
-        // memory against does not reshuffle under them.
         IReadOnlyList<ShellCommand> once = CommandTable.Search("in", Ready()).Rows;
         IReadOnlyList<ShellCommand> twice = CommandTable.Search("in", Ready()).Rows;
 
@@ -136,18 +113,10 @@ public sealed class CommandPaletteTests
             .ShouldBe(CommandTable.Commands.Count, "two rows with one name is one the user cannot pick");
     }
 
-    // --- the verbs the palette could not reach -------------------------------
-    //
-    // The class doc always said the rows beyond the ribbon's were "the document
-    // verbs"; there were none. Saving, opening a project, playing and showing a
-    // panel were reachable by menu and by chord, and by nothing you could type.
-
     [Fact]
     public void Every_application_level_verb_is_in_the_table()
     {
-        // Hand-written rather than reflected over the enums: enumerating by
-        // reflection is what trimming removes, and it would pass here and fail
-        // in a published build.
+        // Hand-written, not reflected over the enums: trimming removes that.
         DocumentVerb[] documents =
         [
             DocumentVerb.NewProject, DocumentVerb.OpenProject, DocumentVerb.CloseProject,
@@ -185,7 +154,6 @@ public sealed class CommandPaletteTests
     [Fact]
     public void Play_is_withheld_on_a_scene_that_cannot_run()
     {
-        // Offering it would be offering a verb the engine answers by refusing.
         CommandTable.Search(string.Empty, Ready(canPlay: false), limit: 500).Rows
             .Select(c => c.Title).ShouldNotContain("Play");
     }
@@ -208,12 +176,10 @@ public sealed class CommandPaletteTests
             Ready(hasSession: false, hasProject: false, canPlay: false),
             limit: 500).Rows.Select(c => c.Title).ToList();
 
-        // These make sense with nothing open, and are the way OUT of that state.
         nothingOpen.ShouldContain("New project...");
         nothingOpen.ShouldContain("Open project...");
         nothingOpen.ShouldContain("Exit");
 
-        // These act on something that is not there.
         nothingOpen.ShouldNotContain("Save level");
         nothingOpen.ShouldNotContain("Close project");
         nothingOpen.ShouldNotContain("Validate cooked content");
@@ -231,8 +197,6 @@ public sealed class CommandPaletteTests
     [Fact]
     public void A_title_still_outranks_an_alias_that_matches_as_well()
     {
-        // The alias scores a point below its own match, so a row whose TITLE
-        // says what you typed wins against one that merely answers to it.
         First("play").ShouldBe("Play");
     }
 
@@ -268,7 +232,6 @@ public sealed class CommandPaletteTests
     private static string First(string query) =>
         CommandTable.Search(query, Ready()).Rows[0].Title;
 
-    /// <summary>A session that can do everything, as the baseline.</summary>
     private static CommandContext Ready(
         bool hasSelection = true,
         bool isPlaying = false,

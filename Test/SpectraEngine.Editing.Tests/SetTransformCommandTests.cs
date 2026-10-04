@@ -5,13 +5,7 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// Transform command semantics: absolute before/after values round-trip
-/// exactly through do/undo/redo, edits are addressed by
-/// <see cref="SceneNode.Id"/> rather than by object reference (so a node
-/// destroyed and recreated under the same id is still the right target), and a
-/// command whose target is not in the scene is a silent no-op.
-/// </summary>
+/// <summary>Transform commands: absolute values, addressed by node id.</summary>
 public sealed class SetTransformCommandTests
 {
     private static readonly Vector3 StartPosition = new(1.25f, -3.5f, 7.75f);
@@ -27,8 +21,6 @@ public sealed class SetTransformCommandTests
         node.LocalPosition.ShouldBe(EndPosition);
 
         stack.Undo().ShouldBeTrue();
-        // Exact, not approximate: the command replays the captured value, it
-        // does not integrate a delta.
         node.LocalPosition.ShouldBe(StartPosition);
 
         stack.Redo().ShouldBeTrue();
@@ -62,8 +54,6 @@ public sealed class SetTransformCommandTests
         stack.Execute(SetTransformCommand.Move(node, EndPosition));
         stack.Undo();
 
-        // Brush nodes must stay rigid; the move command owns position and
-        // rotation only.
         node.LocalScale.ShouldBe(new Vector3(2f, 3f, 4f));
     }
 
@@ -100,17 +90,14 @@ public sealed class SetTransformCommandTests
 
         stack.Execute(SetTransformCommand.Move(node, EndPosition));
 
-        // Simulate what an undo of a delete does: destroy the instance and
-        // recreate the node under the same identity, already carrying the
-        // post-edit value.
+        // What undoing a delete does: a new instance under the same id.
         scene.Root.RemoveChild(node);
         var recreated = new SceneNode("Box", id) { LocalPosition = EndPosition };
         scene.Root.AddChild(recreated);
 
         stack.Undo().ShouldBeTrue();
 
-        // The command found the LIVE node by id; the stale instance an
-        // object-reference-addressed command would have edited is untouched.
+        // The stale instance is untouched.
         recreated.LocalPosition.ShouldBe(StartPosition);
         node.LocalPosition.ShouldBe(EndPosition);
     }
@@ -124,9 +111,8 @@ public sealed class SetTransformCommandTests
 
         scene.Root.RemoveChild(node);
 
-        // Legitimate: history behind a still-undone delete names nodes that are
-        // not currently attached. It must not throw, and must not resurrect a
-        // value onto the detached instance.
+        // History behind an undone delete names detached nodes. Must not throw
+        // or write to the detached instance.
         stack.Undo().ShouldBeTrue();
         node.LocalPosition.ShouldBe(EndPosition);
     }
@@ -143,10 +129,7 @@ public sealed class SetTransformCommandTests
         command.Do(scene);
         command.Do(scene);
 
-        // Absolute values, not deltas: the second Do writes the value the node
-        // already holds, the setter's equality early-out swallows it, and no
-        // static-world dirtying or change event follows. This is exactly why a
-        // live-dragged tool can Record without double-applying anything.
+        // The setter early-outs on an equal value, so the second Do raises nothing.
         node.LocalPosition.ShouldBe(EndPosition);
         fired.ShouldBe(1);
     }

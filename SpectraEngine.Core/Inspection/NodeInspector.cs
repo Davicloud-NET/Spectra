@@ -12,28 +12,8 @@ namespace SpectraEngine.Core.Inspection;
 
 /// <summary>
 /// Describes a scene node as a list of editable rows, grouped by the payload
-/// each value came from.
+/// each value came from. Render thread only: it reads live nodes.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Render thread only.</b> It reads a live <c>SceneNode</c> and everything
-/// hanging off it, so it runs where the graph does and hands back values that
-/// carry no reference to any of it.
-/// </para>
-/// <para>
-/// <b>Groups are derived, never authored.</b> A node that carries a light grows
-/// a Light section; one that does not simply has no such rows. That is the
-/// whole reason the panel does not need editing every time the engine grows a
-/// component.
-/// </para>
-/// <para>
-/// <b>Rotation is shown as euler degrees, which is a lossy VIEW of an exact
-/// value.</b> The scene stores a quaternion and always will; three degrees are
-/// what a person can type. The cost is that the numbers can read back
-/// redistributed after an edit near a pole, which is inherent to euler triples
-/// rather than to this conversion (see <see cref="EulerAngles"/>).
-/// </para>
-/// </remarks>
 public static class NodeInspector
 {
     public const string NodeGroup = "Node";
@@ -49,27 +29,11 @@ public static class NodeInspector
     public const string MeshGroup = "Mesh";
     public const string EntityGroup = "Entity";
 
-    /// <summary>
-    /// The choice TOKENS of a descriptor's choice list, projected once per
-    /// list.
-    /// </summary>
-    /// <remarks>
-    /// <b>A weak table rather than a plain cache, because the key is somebody
-    /// else's array.</b> A descriptor declares its choices as (value, display)
-    /// pairs and a row needs the values alone, so a projection is unavoidable;
-    /// doing it per row per publish is exactly the garbage
-    /// <see cref="PropertyRow.Choices"/> already warns about, and doing it into
-    /// a static dictionary would keep every schema catalogue a session ever
-    /// loaded alive for the process's life. A schema's lists are built once and
-    /// documented as never mutated afterwards, so keying on the list's identity
-    /// is sound, and the entry dies when the schema does.
-    /// </remarks>
+    // Choice tokens per descriptor choice list. Weak, keyed on the schema's own
+    // list, so an entry dies with its schema and nothing allocates per publish.
     private static readonly ConditionalWeakTable<object, string[]> ChoiceTokenCache = new();
 
-    // The WORDS, beside the tokens. World and Additive are what the map format
-    // and the commands say; Block and "Adds solid" are what a person reading a
-    // panel can act on. See PropertyRow.ChoiceLabels for why these are two
-    // lists rather than a rename.
+    // Display words. The tokens below are what the map format and commands use.
     private static readonly string[] BrushKindLabels = ["Block", "Part"];
     private static readonly string[] BrushOperationLabels = ["Adds solid", "Cuts solid"];
 
@@ -86,20 +50,10 @@ public static class NodeInspector
         ["Directional", "Point", "Spot", "Rect", "Disc"];
 
     /// <summary>
-    /// Fills <paramref name="into"/> with the node's rows, in group order.
+    /// Fills <paramref name="into"/> with the node's rows, in group order. The list is cleared first.
     /// </summary>
-    /// <remarks>
-    /// The list is cleared and refilled rather than rebuilt, because the caller
-    /// does this once per published snapshot and a fresh list per publish is
-    /// render-thread garbage for a panel that mostly shows the same rows.
-    /// </remarks>
-    /// <param name="node">The node to describe.</param>
-    /// <param name="into">The list to fill; cleared first.</param>
     /// <param name="schemas">
-    /// What the entity classes in this scene DECLARE, or null when nothing
-    /// supplied any. A null catalogue is not an error and not an empty panel:
-    /// an entity's authored keyvalues are still shown, as text, which is the
-    /// same answer an unknown classname gets.
+    /// Entity class schemas, or null. Without one an entity's keyvalues still show, as text.
     /// </param>
     public static void Describe(
         SceneNode node, List<PropertyRow> into, EntitySchemaCatalog? schemas = null,
@@ -118,11 +72,8 @@ public static class NodeInspector
         into.Add(PropertyRow.OfVector(
             TransformGroup, "Rotation", PropertyId.Rotation,
             EulerAngles.FromQuaternion(local.Rotation).AsDegrees, "deg"));
-        // A brush node has no editable scale, and offering one was a way to
-        // stop the level compiling. Brush placements must stay rigid: the resize
-        // tool rebuilds the brush's own extents rather than scaling its node,
-        // and the Brush section's Size row is the same measurement in the same
-        // units. So the row is simply absent, rather than present and refused.
+        // No scale row on a brush node: placements must stay rigid or the
+        // static world stops compiling. Size is edited through the Brush section.
         if (node.Brush is null)
             into.Add(PropertyRow.OfVector(TransformGroup, "Scale", PropertyId.Scale, local.Scale));
 
@@ -141,51 +92,21 @@ public static class NodeInspector
         }
         else if (node.MeshRenderer is not null)
         {
-            // A mesh built in code names no file, and saying so here is the only
-            // place a person finds out why that node will not survive a save.
+            // Names no file, so the node will not survive a save.
             into.Add(PropertyRow.ReadOnly(MeshGroup, "Model", PropertyId.MeshModel, "(built in code)"));
         }
 
         if (node.Entity is { } entity)
             DescribeEntity(entity, schemas, into);
-        // LAST, because PropertyId's declaration order is the merged panel's
-        // display order and these ids are appended: emitting them beside the
-        // brush rows would lay a single selection out differently from two.
+        // Last, to match PropertyId order, which is what a merged selection uses.
         if (node.Brush is { } surfaced)
             DescribeMaterial(node, surfaced, pickedPlane, into);
     }
 
     /// <summary>
-    /// Fills <paramref name="into"/> with the rows for a whole selection,
-    /// merged.
+    /// Fills <paramref name="into"/> with the merged rows for a selection: the union of the
+    /// nodes' properties in <see cref="PropertyId"/> order, with disagreement tracked per axis.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The UNION of the selection's properties, not the intersection.</b> A
-    /// row carried by only some of the selected nodes is still shown and still
-    /// editable, and the edit reaches the nodes that have it. Hiding it would
-    /// mean that selecting one extra object silently removed the field somebody
-    /// was about to type into.
-    /// </para>
-    /// <para>
-    /// <b>Disagreement is tracked PER AXIS, which is what makes a bulk edit
-    /// useful.</b> "Put all of these on the floor" sets y and must leave x and
-    /// z alone. A row that could only say "these vectors differ", and only
-    /// write all three back, would turn that gesture into a way to stack the
-    /// whole selection at one point.
-    /// </para>
-    /// <para>
-    /// <b>The merged order is <see cref="PropertyId"/>'s declaration order,
-    /// which is deliberately the display order.</b> Merging in first-seen order
-    /// would make the sections depend on which node happened to be selected
-    /// first, so a selection of a light and a brush would lay itself out
-    /// differently depending on click order, and the panel's group-by-run
-    /// assumption would break with it.
-    /// </para>
-    /// </remarks>
-    /// <param name="nodes">The selection.</param>
-    /// <param name="into">The list to fill; cleared first.</param>
-    /// <param name="schemas">What the entity classes in this scene declare, or null.</param>
     public static void Describe(
         IReadOnlyList<SceneNode> nodes, List<PropertyRow> into, EntitySchemaCatalog? schemas = null,
         int pickedPlane = -1)
@@ -203,9 +124,7 @@ public static class NodeInspector
             return;
         }
 
-        // A picked face is dropped for a multi-selection deliberately: a plane
-        // index means nothing across two brushes, because face 4 of one is not
-        // face 4 of another.
+        // The picked face is dropped: a plane index means nothing across brushes.
 
         var merged = new SortedDictionary<RowSlot, PropertyRow>();
         var slots = new Dictionary<(PropertyId Id, string Key), RowSlot>();
@@ -219,22 +138,13 @@ public static class NodeInspector
 
             foreach (PropertyRow row in scratch)
             {
-                // Keyed by the PAIR. Merging on the id alone would fold every
-                // keyvalue an entity carries into one row, since they all wear
-                // PropertyId.EntityKeyvalue - the panel would show one field
-                // holding whichever key was described first, and a bulk edit
-                // would write it over the rest.
+                // Id alone would fold every entity keyvalue into one row.
                 (PropertyId Id, string Key) identity = (row.Id, row.Key ?? "");
 
                 if (!slots.TryGetValue(identity, out RowSlot slot))
                 {
-                    // First appearance decides the slot, and the ORDER inside
-                    // one id is first-seen rather than alphabetical: for the
-                    // ordinary selection - several nodes of one class - that is
-                    // the schema's declaration order, which is authored data
-                    // and not this panel's to reshuffle. The outer sort stays
-                    // PropertyId's declaration order, so the sections still lay
-                    // out the same whichever node was clicked first.
+                    // Keys under one id keep first-seen order, which for nodes
+                    // of one class is the schema's declaration order.
                     slot = new RowSlot(row.Id, identity.Key.Length == 0 ? 0 : ++keyedSeen);
                     slots.Add(identity, slot);
                     merged.Add(slot, row with { PresentCount = 1, SelectionCount = nodes.Count });
@@ -254,14 +164,7 @@ public static class NodeInspector
             into.Add(row);
     }
 
-    /// <summary>Where one merged row sits: its property, then its key's turn.</summary>
-    /// <remarks>
-    /// <b>An ordinal rather than the key string, deliberately.</b> Sorting the
-    /// keys themselves would lay a schema's properties out alphabetically, and
-    /// a schema author's declaration order is the order they meant. Ordering by
-    /// first appearance keeps that order for a homogeneous selection and stays
-    /// deterministic for a mixed one, because the selection's own order is.
-    /// </remarks>
+    // Sort position of a merged row: property first, then first appearance of its key.
     private readonly record struct RowSlot(PropertyId Id, int Order) : IComparable<RowSlot>
     {
         public int CompareTo(RowSlot other)
@@ -271,16 +174,8 @@ public static class NodeInspector
         }
     }
 
-    /// <summary>
-    /// Which parts of two rows for the same property disagree.
-    /// </summary>
-    /// <remarks>
-    /// <b>Exact comparison, on purpose.</b> Two positions that differ in the
-    /// last ulp really are different positions, and a tolerance here would
-    /// report them as settled and then quietly write one of them over the
-    /// other on the next bulk edit. The panel is free to round what it DISPLAYS;
-    /// what it must not do is round what it compares.
-    /// </remarks>
+    // Exact comparison, no tolerance: values reported equal get written over
+    // each other by the next bulk edit.
     private static PropertyAxes Disagreement(in PropertyRow a, in PropertyRow b) => a.Kind switch
     {
         PropertyKind.Vector3 or PropertyKind.Color =>
@@ -291,10 +186,6 @@ public static class NodeInspector
         PropertyKind.Number => a.Number == b.Number ? PropertyAxes.None : PropertyAxes.All,
         PropertyKind.Boolean => a.Flag == b.Flag ? PropertyAxes.None : PropertyAxes.All,
 
-        // Text, Choice and ReadOnlyText all compare their string. An id is
-        // read-only and always differs across a multi-selection, which is
-        // correct and is why the panel renders a mixed read-only row as a
-        // placeholder rather than as one node's value.
         _ => string.Equals(a.Text, b.Text, StringComparison.Ordinal)
             ? PropertyAxes.None
             : PropertyAxes.All,
@@ -302,10 +193,6 @@ public static class NodeInspector
 
     private static void DescribeBrush(SceneNode node, Brush brush, List<PropertyRow> into)
     {
-        // Kind is on the NODE and operation is on the BRUSH, and they are shown
-        // in that order because that is the order they are decided in: kind
-        // decides whether the brush is admitted to the world at all, operation
-        // decides whether it adds solid or removes it.
         into.Add(PropertyRow.OfChoice(
             BrushGroup, "Kind", PropertyId.BrushKind,
             node.BrushKind == BrushKind.Part ? "Part" : "World",
@@ -316,9 +203,7 @@ public static class NodeInspector
             brush.Operation == BrushOperation.Subtractive ? "Subtractive" : "Additive",
             BrushOperationChoices, BrushOperationLabels, BrushOperationHelp));
 
-        // Size rather than the planes: a plane list is the truth and is not
-        // something anybody types. The bounds are what a resize gesture already
-        // works in, so the number here and the number the gizmo reports agree.
+        // Bounds size, the same measurement the resize gizmo works in.
         Aabb bounds = brush.LocalBounds;
         into.Add(PropertyRow.OfVector(BrushGroup, "Size", PropertyId.BrushSize, bounds.Max - bounds.Min, "su"));
     }
@@ -329,29 +214,11 @@ public static class NodeInspector
         "World: the texture projects from the world axes, so it stays put when the brush turns. " +
         "Face: it lies in the face's own plane and turns with it.";
 
-    /// <summary>
-    /// What this brush is surfaced with, and the picked face's own frame.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The task this closes is "put that material on this wall", which had no
-    /// complete route in the editor at all.</b> Materials were visible in the
-    /// content browser and could be revealed on disk; nothing assigned one.
-    /// </para>
-    /// <para>
-    /// <b>The Face section needs a SINGLE selected brush</b>, because a plane
-    /// index means nothing across two brushes: face 4 of one is not face 4 of
-    /// another. Multi-brush face editing is a real gesture and is deliberately
-    /// not this one.
-    /// </para>
-    /// </remarks>
+    // The brush's material, plus the picked face's material and texture frame.
     private static void DescribeMaterial(SceneNode node, Brush brush, int pickedPlane, List<PropertyRow> into)
     {
         IReadOnlyList<FaceSurface> faces = brush.FaceSurfaces;
 
-        // What the whole brush wears, when its faces agree. They usually do:
-        // a brush is created with one material on every face and stays that way
-        // unless somebody paints one of them.
         MaterialRef first = faces.Count > 0 ? faces[0].Material : MaterialRef.Default;
         int distinct = 1;
         for (int i = 1; i < faces.Count; i++)
@@ -375,9 +242,6 @@ public static class NodeInspector
         FaceSurface world = face.Transformed(node.WorldMatrix);
         string key = pickedPlane.ToString(CultureInfo.InvariantCulture);
 
-        // Keyed like every other row of the section: a row's identity is the
-        // pair, and one row of a family carrying no key is the sort of exception
-        // that is fine until something shows two faces at once.
         into.Add(PropertyRow.ReadOnly(
             FaceGroup, "Face", PropertyId.FaceIndex, FaceLabel(brush, pickedPlane), key));
 
@@ -390,8 +254,6 @@ public static class NodeInspector
             FaceAxes.AlignmentLabel(in world),
             FaceAlignmentChoices, help: FaceAlignmentHelp, key: key));
 
-        // World units per repeat, which is the unit the file stores and the one
-        // an author measures a wall in.
         into.Add(PropertyRow.OfNumber(FaceGroup, "U scale", PropertyId.FaceUScale, face.UScale, "su/rep", key));
         into.Add(PropertyRow.OfNumber(FaceGroup, "V scale", PropertyId.FaceVScale, face.VScale, "su/rep", key));
         into.Add(PropertyRow.OfNumber(FaceGroup, "U offset", PropertyId.FaceUOffset, face.UOffset, "rep", key));
@@ -421,9 +283,7 @@ public static class NodeInspector
     private static string PathOf(MaterialRef material) =>
         MaterialRegistry.TryGetPath(material, out string path) ? path : string.Empty;
 
-    // Read from the asset manager's cache rather than the disk: this runs per
-    // publish, and a stat per face per frame is a filesystem call in the
-    // snapshot path.
+    // Asks the asset manager's cache, not the disk: this runs per publish.
     private static string MissingNote(SceneNode node, MaterialRef material)
     {
         if (material.IsDefault) return string.Empty;
@@ -432,8 +292,6 @@ public static class NodeInspector
         return assets.IsMaterialMissing(PathOf(material)) ? "missing" : string.Empty;
     }
 
-    // "+Y" when the plane's local normal is on an axis, which is every face of
-    // every box brush; otherwise its index, which at least identifies it.
     private static string FaceLabel(Brush brush, int planeIndex)
     {
         Vector3 n = brush.LocalPlanes[planeIndex].Normal;
@@ -453,25 +311,15 @@ public static class NodeInspector
         into.Add(PropertyRow.OfChoice(
             LightGroup, "Kind", PropertyId.LightKind, KindLabel(light.Kind), LightKindChoices));
 
-        // Linear RGB, and labelled so, because the number here is not the number
-        // in a colour picker: a .spectramat colour directive is authored in sRGB
-        // and stored linear, and showing one as though it were the other is how
-        // a light ends up mysteriously twice as bright as the material beside it.
+        // Linear RGB.
         into.Add(PropertyRow.OfColor(LightGroup, "Color", PropertyId.LightColor, light.Color));
         into.Add(PropertyRow.OfNumber(LightGroup, "Intensity", PropertyId.LightIntensity, light.Intensity));
 
-        // Shown for a directional light too, even though it means nothing there:
-        // Light.Range is still stored and still validated on set, so hiding it
-        // would hide a value that can still refuse an edit.
+        // Shown for directional lights too: Range is still validated on set.
         into.Add(PropertyRow.OfNumber(LightGroup, "Range", PropertyId.LightRange, light.Range, "su"));
         into.Add(PropertyRow.OfFlag(LightGroup, "Enabled", PropertyId.LightEnabled, light.Enabled));
 
-        // SHOWN PER KIND, unlike range above, and the difference is deliberate.
-        // Range is stored and validated for every light, so hiding it would hide
-        // a value that can still refuse an edit; a cone angle on a rect light is
-        // stored and read by nothing at all, so a row for it would be a field
-        // that accepts a number and changes no pixel - which is worse than an
-        // absent row, because it teaches that the panel's fields are decorative.
+        // Shape rows only for the kind that reads them.
         switch (light.Kind)
         {
             case LightKind.Spot:
@@ -495,33 +343,13 @@ public static class NodeInspector
         }
     }
 
-    /// <summary>
-    /// Turns an entity payload into rows: the class it names, the properties
-    /// its schema declares, and whatever else it is carrying.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The schema decides which rows EXIST; the payload decides what they
-    /// hold.</b> A key the schema names but the node has not authored shows the
-    /// declared default, because that is the value the entity will run with -
-    /// showing an empty field there would be a lie about what the level does.
-    /// </para>
-    /// <para>
-    /// <b>Stored keys the schema does not name are shown anyway, as text.</b>
-    /// That is the whole reason a map naming a class this build has never heard
-    /// of is worth opening: <c>EntityData</c> is strings precisely so such a map
-    /// round-trips, and a panel that showed nothing for it would make the data
-    /// invisible while it was still in the file. It is also the only view a
-    /// placeholder entity has.
-    /// </para>
-    /// </remarks>
+    // Schema-declared keys show their stored value or the declared default.
+    // Stored keys the schema does not name are shown as text, so an unknown
+    // class is still editable.
     private static void DescribeEntity(
         EntityData entity, EntitySchemaCatalog? schemas, List<PropertyRow> into)
     {
-        // Read-only: a classname is not a property, it is which set of
-        // properties there ARE. Retyping it would rewrite the whole section
-        // under the reader's cursor and orphan every keyvalue the old class
-        // named, so changing a class is a verb of its own rather than a field.
+        // Read-only: retyping a class would orphan every keyvalue it named.
         into.Add(PropertyRow.ReadOnly(
             EntityGroup, "Class", PropertyId.EntityClassname, entity.ClassName));
 
@@ -537,10 +365,8 @@ public static class NodeInspector
             {
                 KeyvalueDescriptor descriptor = declared[i];
 
-                // "Bound and carried, never shown" is what the flag says, so it
-                // gets no row - and the loop below has to treat it as named all
-                // the same, or the key comes straight back as an unknown one
-                // and the flag means nothing.
+                // No row, but IsDeclared below still has to see it or the key
+                // comes back as an unknown one.
                 if (descriptor.IsHiddenInEditor)
                     continue;
 
@@ -557,11 +383,8 @@ public static class NodeInspector
             if (schema is not null && IsDeclared(schema, keyvalue.Key))
                 continue;
 
-            // A hand-written file may legally carry the same key twice - the
-            // reader preserves both rather than dropping one - and two rows
-            // sharing an identity would collide in the merge and in the panel's
-            // shape. The first one wins here, matching EntityData.TryGetValue,
-            // which is the value the entity will actually bind.
+            // A hand-written file can carry a key twice. First wins, matching
+            // EntityData.TryGetValue.
             if (AlreadyListed(into, entityStart, keyvalue.Key))
                 continue;
 
@@ -593,17 +416,8 @@ public static class NodeInspector
         return false;
     }
 
-    /// <summary>
-    /// The row one declared keyvalue gets: which editor, and the value read out
-    /// of its wire string.
-    /// </summary>
-    /// <remarks>
-    /// <b>A value the declared type cannot carry degrades to TEXT rather than
-    /// to a zero.</b> A typed row parses the wire string, and a parse that
-    /// failed would show 0 or the origin - and then write that back on the next
-    /// commit, destroying whatever the author had actually written. Showing the
-    /// text as it stands is the only answer that cannot lose it.
-    /// </remarks>
+    // A value the declared type cannot parse becomes a text row. A typed row
+    // would show zero and write it back on the next commit.
     private static PropertyRow RowFor(in KeyvalueDescriptor descriptor, string value)
     {
         string label = descriptor.Display.Length > 0 ? descriptor.Display : descriptor.Name;
@@ -637,9 +451,6 @@ public static class NodeInspector
                     EntityGroup, label, PropertyId.EntityKeyvalue, vector, "", key);
 
             case KeyvalueType.Angles:
-                // The one typed row that carries a unit, and it carries it for
-                // the same reason a rotation row does: three bare numbers under
-                // a label say nothing about whether they are degrees.
                 KeyvalueWire.TryParseAngles(value, out Vector3 degrees);
                 return PropertyRow.OfVector(
                     EntityGroup, label, PropertyId.EntityKeyvalue, degrees, "deg", key);
@@ -650,28 +461,17 @@ public static class NodeInspector
                     EntityGroup, label, PropertyId.EntityKeyvalue, linear, key);
 
             case KeyvalueType.Choices:
-                // The TOKENS, not the display names: the row's value is the wire
-                // string and the panel matches its dropdown by text, so handing
-                // it display names would leave every choice unselected and the
-                // first edit would write a display name into the map.
+                // Tokens, not display names: the row's value is the wire string
+                // and the dropdown matches by text.
                 return PropertyRow.OfChoice(
                     EntityGroup, label, PropertyId.EntityKeyvalue, value,
                     ChoiceTokensOf(descriptor.Choices), key: key);
 
-            // A name in this scene, picked from what is actually there. The row
-            // is still TEXT underneath, because a wildcard and a runtime token
-            // are legal values a picker cannot offer: the picker fills the box
-            // rather than replacing it.
-            //
-            // TargetName ONLY. A NodeRef's wire form is a hyphenated GUID rather
-            // than a name, so the same picker over it would write a value the
-            // reader refuses - and it would look right, because the name it
-            // wrote is the name of the node the user chose. It stays text until
-            // it has a picker that writes ids.
+            // TargetName only. A NodeRef's wire form is a GUID, so the name
+            // picker would write a value the reader refuses.
             case KeyvalueType.TargetName:
                 return PropertyRow.OfTarget(EntityGroup, label, PropertyId.EntityKeyvalue, value, key);
 
-            // A file in this project, picked the way a brush's material is.
             case KeyvalueType.AssetMaterial:
                 return PropertyRow.OfAsset(
                     EntityGroup, label, PropertyId.EntityKeyvalue, value, AssetKind.Material, key: key);
@@ -684,9 +484,7 @@ public static class NodeInspector
                 return PropertyRow.OfAsset(
                     EntityGroup, label, PropertyId.EntityKeyvalue, value, AssetKind.Model, key: key);
 
-            // AssetSound stays text: the content browser has no sound kind, so
-            // its picker would open on an empty list. Named here rather than
-            // left to be discovered from an empty dropdown.
+            // AssetSound stays text: the content browser has no sound kind.
             default:
                 return PropertyRow.OfText(EntityGroup, label, PropertyId.EntityKeyvalue, value, key);
         }
@@ -708,9 +506,8 @@ public static class NodeInspector
         });
     }
 
-    // A switch, never a ternary. The label feeds a dropdown whose selected item
-    // is matched by TEXT, so a kind with no case would show as "Directional"
-    // and silently rewrite itself to that the moment anybody touched the row.
+    // Every kind needs its own case: the dropdown matches by text, so a kind
+    // falling to the default would be rewritten to Directional on the next edit.
     private static string KindLabel(LightKind kind) => kind switch
     {
         LightKind.Point => "Point",

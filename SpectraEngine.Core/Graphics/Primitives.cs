@@ -4,17 +4,15 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// Generates vertex/index data for built-in mesh shapes. The vertex layout is
-/// position (xyz) + normal (xyz) + uv (xy) — 8 floats per vertex — matching
-/// vertex attribute locations 0, 1, and 2.
+/// Vertex and index data for built-in shapes. Eight floats per vertex:
+/// position (xyz), normal (xyz), uv (xy).
 /// </summary>
 public static class Primitives
 {
-    /// <summary>A unit cube centred on the origin with per-face flat normals and 0..1 UVs per face.</summary>
+    /// <summary>A unit cube centred on the origin, with flat normals and 0..1 UVs per face.</summary>
     public static (float[] Vertices, uint[] Indices) Cube()
     {
-        // Per face, four corners ordered so the (1,2)-triangulation winds CCW
-        // when viewed from outside, with UVs spanning the full 0..1 square.
+        // Four corners per face, counter-clockwise seen from outside.
         float[] vertices =
         [
             // +Z
@@ -66,27 +64,13 @@ public static class Primitives
     }
 
     /// <summary>
-    /// A unit-radius UV sphere centred on the origin, with exact analytic
-    /// normals and a longitude/latitude UV map.
+    /// A UV sphere centred on the origin, with analytic normals and a
+    /// longitude/latitude UV map.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>This exists because a cube cannot show whether a BRDF is right.</b>
-    /// Every fragment of a flat face shares one normal, so a specular highlight
-    /// is either entirely present or entirely absent and roughness reads as a
-    /// brightness change. Curvature is what makes the highlight a shape that
-    /// grows and softens, which is the thing worth looking at, and it is the
-    /// reason every PBR reference image in existence is a row of spheres.
-    /// </para>
-    /// <para>
-    /// The seam is real and deliberate: the last column of vertices duplicates
-    /// the first at u = 1 instead of u = 0, because one vertex cannot carry two
-    /// texture coordinates. Poles are a fan of distinct vertices for the same
-    /// reason. Both cost a few vertices and avoid a visible tear.
-    /// </para>
-    /// </remarks>
     /// <param name="segments">Divisions around the equator; at least 3.</param>
     /// <param name="rings">Divisions from pole to pole; at least 2.</param>
+    // The seam column and the poles are duplicated vertices: one vertex can't
+    // carry two UVs.
     public static (float[] Vertices, uint[] Indices) Sphere(int segments = 32, int rings = 16)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(segments, 3);
@@ -99,8 +83,7 @@ public static class Primitives
         int v = 0;
         for (int y = 0; y < rows; y++)
         {
-            // Latitude from the south pole up, so v = 0 is the bottom of the
-            // image the way it is on every cube face.
+            // South pole first, so v = 0 is the bottom of the image.
             float vCoord = y / (float)rings;
             float phi = vCoord * MathF.PI;
             float sinPhi = MathF.Sin(phi);
@@ -111,9 +94,6 @@ public static class Primitives
                 float uCoord = x / (float)segments;
                 float theta = uCoord * MathF.Tau;
 
-                // On a unit sphere centred on the origin the position and the
-                // normal are the same vector, which is why no normal needs
-                // averaging and there is no smoothing decision to get wrong.
                 float nx = MathF.Cos(theta) * sinPhi;
                 float ny = -cosPhi;
                 float nz = MathF.Sin(theta) * sinPhi;
@@ -137,10 +117,7 @@ public static class Primitives
                 uint a = (uint)(y * columns + x);
                 uint b = (uint)(a + columns);
 
-                // Degenerate triangles at the poles are skipped rather than
-                // emitted: one of the two per quad collapses to a line there,
-                // and a zero-area triangle is a wasted index with an undefined
-                // normal in anything that later reads the mesh.
+                // At a pole one triangle of the quad is degenerate; skip it.
                 if (y != 0)
                 {
                     indices.Add(a);
@@ -159,11 +136,7 @@ public static class Primitives
         return (vertices, indices.ToArray());
     }
 
-    /// <summary>
-    /// Builds a 16×16 two-colour checkerboard in RGB8 — handy as a debug
-    /// diffuse texture when you don't yet have an asset pipeline. UVs above 1
-    /// tile naturally with <see cref="TextureWrap.Repeat"/>.
-    /// </summary>
+    /// <summary>A two-colour checkerboard in RGB8, for use as a debug texture.</summary>
     public static byte[] CheckerboardRgb8(int size = 16, byte light = 230, byte dark = 60)
     {
         var pixels = new byte[size * size * 3];

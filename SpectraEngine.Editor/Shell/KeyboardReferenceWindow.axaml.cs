@@ -5,8 +5,6 @@ using System.Collections.Generic;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>One line of the keyboard reference.</summary>
-/// <param name="Keys">The chord, written the way a user would say it.</param>
-/// <param name="What">What it does, in the effect's words rather than the mechanism's.</param>
 public sealed record KeyboardRow(string Keys, string What);
 
 /// <summary>One headed group of the keyboard reference.</summary>
@@ -15,23 +13,8 @@ public sealed record KeyboardSection(string Name, IReadOnlyList<KeyboardRow> Row
 /// <summary>
 /// The shell's keyboard reference: every chord the editor answers to, grouped.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A real top-level window, which is what lets it cross the viewport.</b>
-/// The airspace rule constrains content Avalonia draws INSIDE the main window;
-/// a separate window is composited by the OS above the viewport's native child
-/// like any other, so this may be as large as it needs to be.
-/// </para>
-/// <para>
-/// <b>The table is authored, not generated.</b> There is no single source to
-/// generate it from: the chords live in the main window's
-/// <c>KeyBindings</c>, in the viewport's <c>ShellChord</c> interception and in
-/// the engine's own keymap, and a reference built from any one of those would
-/// silently claim the other two do not exist. Authoring it means it can be
-/// wrong; generating it from a third of the truth means it is wrong by
-/// construction.
-/// </para>
-/// </remarks>
+// Written by hand: the chords live in the window's KeyBindings, the viewport's
+// ShellChord interception and the engine keymap, so no one table can generate it.
 public partial class KeyboardReferenceWindow : Window
 {
     public KeyboardReferenceWindow()

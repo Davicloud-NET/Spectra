@@ -12,80 +12,22 @@ namespace SpectraEngine.Core.Assets;
 /// Reads <c>.spectramat</c> material files into a <see cref="MaterialDefinition"/>.
 /// </summary>
 /// <remarks>
-/// <para><b>Why hand-parsed.</b> The format is line-oriented key/value text, so a
-/// ~150-line reader beats pulling in a serializer: it is trivially AOT-safe (no
-/// reflection, no source-generated contexts to keep in sync), it can report a
-/// line number with every complaint, and an artist can diff it in a merge tool.
-/// </para>
-///
-/// <para><b>File format.</b> One directive per line. Blank lines are ignored and
-/// <c>//</c> starts a comment that runs to the end of the line (the same comment
-/// syntax as <c>.spectrashade</c>; <c>#</c> is not a comment because it
-/// introduces a hex colour). Every directive is
-/// <c>name = value</c> or <c>kind name = value</c>, and names are matched to
-/// shader uniforms case-sensitively:
-/// </para>
+/// One directive per line, <c>name = value</c> or <c>kind name = value</c>.
+/// <c>//</c> starts a comment. Names match shader uniforms case-sensitively.
 /// <code>
-/// // wall.spectramat
-/// shader = lit                                     // optional; the built-in lit shader is the default
-///
+/// shader = lit                                     // optional, lit is the default
 /// texture uDiffuse = Textures/wall_brick.png, linearmipmap, repeat
 /// color   uBaseColor = #B4A08C                     // or: 0.706 0.627 0.549
 /// float   uRoughness = 0.8
 /// vec2    uTiling = 4 4
-/// vec3    uEmissive = 0 0 0
-/// vec4    uParams = 1 0 0 1
 /// </code>
-///
-/// <list type="bullet">
-/// <item><description><c>shader</c> — optional bare key naming the shader program.
-/// <c>lit</c> (the default) selects the engine's built-in lit shader; other names
-/// are resolved by the host through <see cref="AssetManager.ShaderResolver"/> and
-/// fall back to the lit shader with a warning if nothing claims them.</description></item>
-/// <item><description><c>texture &lt;sampler&gt; = &lt;path&gt;[, &lt;option&gt;]...</c> —
-/// the path is relative to the content root. Options may appear in any order:
-/// filter is <c>nearest</c>, <c>linear</c>, or <c>linearmipmap</c> (default);
-/// wrap is <c>repeat</c> (default) or <c>clamp</c>; colour space is
-/// <c>srgb</c> (default) or <c>data</c>. Texture units are assigned by
-/// declaration order, so the first <c>texture</c> line is unit 0.</description></item>
-/// <item><description><c>float</c>, <c>vec2</c>, <c>vec3</c>, <c>vec4</c> —
-/// whitespace- or comma-separated numbers, parsed with the invariant culture, so
-/// <c>0.5</c> is a half everywhere on earth.</description></item>
-/// <item><description><c>color</c> — either <c>#RRGGBB</c> / <c>#RRGGBBAA</c>
-/// or 3–4 plain numbers. Three components produce a
-/// <see cref="MaterialParameterKind.Vector3"/>, four a
-/// <see cref="MaterialParameterKind.Vector4"/>. <b>The value is read as sRGB and
-/// stored as linear</b> — see below.</description></item>
-/// </list>
-///
-/// <para><b>Colour space: <c>color</c> is sRGB, <c>vec3</c> is not.</b> That is
-/// the whole rule, and it is the same split Unity and Unreal draw between a
-/// Color and a Vector. A <c>color</c> is something a person picked out of a
-/// colour picker, so <c>#B4A08C</c> here means exactly what <c>#B4A08C</c> means
-/// in any paint program, and the parser converts it to the linear value the
-/// shader needs. A <c>vec3</c> is three numbers and is passed through untouched,
-/// which is what a direction, a tiling rate or a hand-tuned coefficient wants.
-/// Alpha is never converted in either case: it is coverage, not light.</para>
-///
-/// <para><b>Textures default to <c>srgb</c> for the same reason</b> — an image
-/// file is a picture until someone says otherwise. Write <c>data</c> on the
-/// texture line for anything the shader does arithmetic on rather than looks at:
-/// normal, roughness, metallic, AO, masks. A single-channel image is always
-/// treated as data, because no backend has a one-channel sRGB format.</para>
-///
-/// <para><b>Render flags</b> (blending, culling, depth state) are deliberately
-/// absent: no pipeline consumes per-material render state today, and a key that
-/// silently does nothing is worse than no key. An unknown key only warns, so
-/// files may be written ahead of the engine without breaking.</para>
-///
-/// <para><b>Tolerance.</b> Nothing in a material file is fatal. An unreadable
-/// line, an unknown key or kind, a malformed number, a duplicate name — each
-/// costs that one directive, lands in <see cref="MaterialDefinition.Warnings"/>,
-/// and parsing continues. Only the file being unreadable throws (from
-/// <see cref="ParseFile"/>).</para>
-///
-/// <para><b>Threading.</b> Pure CPU and free of GPU state, like
-/// <see cref="ImageDecoder"/> — every member here is callable from any thread.</para>
+/// Texture options, in any order: <c>nearest</c>/<c>linear</c>/<c>linearmipmap</c>,
+/// <c>repeat</c>/<c>clamp</c>, <c>srgb</c>/<c>data</c>. Units follow declaration order.
+/// A <c>color</c> is read as sRGB and stored linear (alpha untouched); a
+/// <c>vec3</c> is passed through as written. Use <c>data</c> for normal,
+/// roughness and mask textures.
+/// Nothing in a file is fatal: a bad line becomes a warning and parsing continues.
+/// Callable from any thread.
 /// </remarks>
 public static class MaterialParser
 {
@@ -95,21 +37,15 @@ public static class MaterialParser
     /// <summary>Shader name that selects the engine's built-in lit shader.</summary>
     public const string BuiltInShaderName = "lit";
 
-    // Matches the sampling defaults callers get from AssetManager.LoadTexture,
-    // so an option-free texture line behaves exactly like a code-authored load.
+    // Same defaults as AssetManager.LoadTexture.
     private const TextureFilter DefaultFilter = TextureFilter.LinearMipmap;
     private const TextureWrap DefaultWrap = TextureWrap.Repeat;
 
-    // An image file is a picture unless its author says otherwise. Defaulting
-    // the other way would leave every albedo in the project quietly rendering
-    // dark with nothing on screen or in the log to say why, whereas a data map
-    // read as colour is caught the moment anyone looks at the surface.
+    // sRGB by default: a data map read as colour is easy to spot, an albedo
+    // read as data just renders dark.
     private const TextureColorSpace DefaultColorSpace = TextureColorSpace.Srgb;
 
-    /// <summary>
-    /// Reads and parses the material file at <paramref name="absolutePath"/>.
-    /// Any thread.
-    /// </summary>
+    /// <summary>Reads and parses the material file at <paramref name="absolutePath"/>.</summary>
     /// <exception cref="IOException">The file could not be read.</exception>
     public static MaterialDefinition ParseFile(string absolutePath)
     {
@@ -117,17 +53,7 @@ public static class MaterialParser
         return Parse(File.ReadAllText(absolutePath), absolutePath);
     }
 
-    /// <summary>
-    /// Parses material-file bytes exactly as they arrive from an
-    /// <see cref="Sources.IContentSource"/>, without a temporary file in
-    /// between. Any thread.
-    /// </summary>
-    /// <remarks>
-    /// A material file is UTF-8 text. The BOM some editors write is stripped
-    /// because <see cref="File.ReadAllText(string)"/> strips it too and a stray
-    /// U+FEFF would turn line 1 into an unparseable directive; other encodings
-    /// are not recognised, which the file format has never promised.
-    /// </remarks>
+    /// <summary>Parses material-file bytes as UTF-8 text. A leading BOM is stripped.</summary>
     public static MaterialDefinition ParseUtf8(ReadOnlySpan<byte> utf8, string originForErrors = "<memory>")
     {
         if (utf8.Length >= 3 && utf8[0] == 0xEF && utf8[1] == 0xBB && utf8[2] == 0xBF)
@@ -138,7 +64,7 @@ public static class MaterialParser
 
     /// <summary>
     /// Parses material-file text. <paramref name="originForErrors"/> only labels
-    /// the messages in <see cref="MaterialDefinition.Warnings"/>. Any thread.
+    /// the messages in <see cref="MaterialDefinition.Warnings"/>.
     /// </summary>
     public static MaterialDefinition Parse(string text, string originForErrors = "<memory>")
     {
@@ -172,8 +98,7 @@ public static class MaterialParser
                 continue;
             }
 
-            // Left side is either one token (a bare key like 'shader') or two
-            // (a typed parameter: kind then name). Anything else is a typo.
+            // One token is a bare key like 'shader'; two is kind then name.
             int split = IndexOfWhitespace(left);
             if (split < 0)
             {
@@ -197,8 +122,6 @@ public static class MaterialParser
         return new MaterialDefinition(originForErrors, shaderName, textures, parameters, warnings);
     }
 
-    // ---- directives ------------------------------------------------------
-
     private static void ParseBareKey(
         ReadOnlySpan<char> key,
         ReadOnlySpan<char> value,
@@ -221,8 +144,7 @@ public static class MaterialParser
             return;
         }
 
-        // Unknown keys are the format's forward-compatibility hinge: a file
-        // written for a newer engine still loads everything this one understands.
+        // Warn, don't fail: a file written for a newer engine should still load.
         Warn(warnings, origin, line, $"unknown key '{key.ToString()}' ignored");
     }
 
@@ -313,10 +235,7 @@ public static class MaterialParser
             return;
         }
 
-        // sRGB in the file, linear in the shader. This is the one place the
-        // engine converts a colour in software, because it is the one colour
-        // that does not arrive through a sampler; every texel gets the same
-        // treatment from the hardware. Alpha rides through unconverted.
+        // sRGB in the file, linear in the shader. Alpha is not converted.
         var authored = new Vector4(components[0], components[1], components[2], components[3]);
         Vector4 linear = ColorSpace.SrgbToLinear(authored);
 
@@ -336,8 +255,7 @@ public static class MaterialParser
         string origin,
         int line)
     {
-        // The path is everything up to the first comma, so a folder or file name
-        // containing a space still works; the options after it never do.
+        // Path runs to the first comma, so it may contain spaces.
         int comma = value.IndexOf(',');
         ReadOnlySpan<char> path = (comma < 0 ? value : value[..comma]).Trim();
         if (path.IsEmpty)
@@ -357,11 +275,6 @@ public static class MaterialParser
             options = next < 0 ? default : options[(next + 1)..];
             if (option.IsEmpty) continue;
 
-            // Filter is tried first, and that is why the colour-space keywords
-            // are 'srgb' and 'data' rather than 'srgb' and 'linear': 'linear'
-            // already means bilinear filtering here, and one token that meant
-            // two things depending on which other tokens were present would be
-            // unreadable in a file and ambiguous in this loop.
             if (TryParseFilter(option, out TextureFilter parsedFilter)) filter = parsedFilter;
             else if (TryParseWrap(option, out TextureWrap parsedWrap)) wrap = parsedWrap;
             else if (TryParseColorSpace(option, out TextureColorSpace parsedSpace)) colorSpace = parsedSpace;
@@ -375,8 +288,7 @@ public static class MaterialParser
         {
             if (textures[i].Name != slotName) continue;
 
-            // Keep the original unit: the sampler already has one, and shifting
-            // it would silently renumber every slot declared after it.
+            // Keep the original unit so later slots are not renumbered.
             Warn(warnings, origin, line, $"texture '{slotName}' declared more than once; the last one wins");
             textures[i] = new MaterialTextureSlot(
                 slotName, path.ToString(), textures[i].Unit, filter, wrap, colorSpace);
@@ -406,8 +318,6 @@ public static class MaterialParser
         parameters.Add(parameter);
     }
 
-    // ---- scanning helpers ------------------------------------------------
-
     private static ReadOnlySpan<char> StripComment(ReadOnlySpan<char> line)
     {
         int comment = line.IndexOf("//", StringComparison.Ordinal);
@@ -423,9 +333,7 @@ public static class MaterialParser
         return -1;
     }
 
-    // Numbers separated by whitespace and/or commas, invariant culture: a
-    // material file must read the same on a machine whose locale uses a comma
-    // as the decimal separator.
+    // Whitespace or comma separated, invariant culture.
     private static bool TryParseNumbers(ReadOnlySpan<char> value, Span<float> destination, out int count)
     {
         destination.Clear();
@@ -442,7 +350,7 @@ public static class MaterialParser
             while (end < remaining.Length && !char.IsWhiteSpace(remaining[end]) && remaining[end] != ',')
                 end++;
 
-            if (count == destination.Length) return false; // more components than any kind accepts
+            if (count == destination.Length) return false;
             if (!float.TryParse(remaining[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed))
                 return false;
 
@@ -473,8 +381,7 @@ public static class MaterialParser
 
     private static bool TryParseFilter(ReadOnlySpan<char> token, out TextureFilter filter)
     {
-        // Hand-written instead of Enum.TryParse: no reflection anywhere near the
-        // AOT boundary, and it rejects the numeric spellings Enum.TryParse takes.
+        // Not Enum.TryParse: AOT, and it would accept numeric spellings.
         if (token.Equals("nearest", StringComparison.OrdinalIgnoreCase)) { filter = TextureFilter.Nearest; return true; }
         if (token.Equals("linear", StringComparison.OrdinalIgnoreCase)) { filter = TextureFilter.Linear; return true; }
         if (token.Equals("linearmipmap", StringComparison.OrdinalIgnoreCase) ||
@@ -496,7 +403,7 @@ public static class MaterialParser
     private static bool TryParseColorSpace(ReadOnlySpan<char> token, out TextureColorSpace colorSpace)
     {
         if (token.Equals("srgb", StringComparison.OrdinalIgnoreCase)) { colorSpace = TextureColorSpace.Srgb; return true; }
-        // 'data', never 'linear': that word is already a filter on this line.
+        // 'data', not 'linear': that word is already a filter on this line.
         if (token.Equals("data", StringComparison.OrdinalIgnoreCase)) { colorSpace = TextureColorSpace.Linear; return true; }
 
         colorSpace = DefaultColorSpace;

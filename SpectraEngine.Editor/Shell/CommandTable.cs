@@ -37,14 +37,7 @@ public enum CommandNeeds
     CanPlay = 128,
 }
 
-/// <summary>
-/// What the shell can currently do, for deciding what to offer.
-/// </summary>
-/// <remarks>
-/// <b>A struct of flags rather than a growing parameter list.</b> The gate took
-/// two booleans and now needs six; every call site would otherwise have to be
-/// edited every time a verb family arrives with a new condition.
-/// </remarks>
+/// <summary>What the shell can currently do, for deciding what to offer.</summary>
 public readonly record struct CommandContext(
     bool HasSelection,
     bool IsPlaying,
@@ -55,14 +48,9 @@ public readonly record struct CommandContext(
 
 /// <summary>One row of the palette.</summary>
 /// <param name="Title">What the palette shows and what the query is matched against.</param>
-/// <param name="Verb">The existing verb it resolves to.</param>
 /// <param name="Needs">What has to be true for it to be offered.</param>
 /// <param name="Gesture">The chord that also reaches it, printed beside it, or empty.</param>
-/// <param name="Aliases">
-/// Other words that should find it. The title is what people READ and not
-/// always what they would type: nobody types "Overlay: wireframe" looking for
-/// wireframe.
-/// </param>
+/// <param name="Aliases">Other words that should find it.</param>
 public sealed record ShellCommand(
     string Title,
     ShellVerb Verb,
@@ -74,15 +62,7 @@ public sealed record ShellCommand(
     public IReadOnlyList<string> Aliases { get; init; } = Aliases ?? [];
 }
 
-/// <summary>
-/// What a search found, and how much of it is being shown.
-/// </summary>
-/// <remarks>
-/// <b>The count is the point.</b> The palette shows twelve rows and used to
-/// return twelve with no way to know whether that was all of them, so a query
-/// matching thirty looked exactly like a query matching twelve and the other
-/// eighteen were unreachable by any means the user could see.
-/// </remarks>
+/// <summary>What a search found, and how much of it is being shown.</summary>
 public readonly record struct CommandSearchResult(IReadOnlyList<ShellCommand> Rows, int TotalMatches)
 {
     /// <summary>Whether anything matched that is not shown.</summary>
@@ -95,37 +75,16 @@ public readonly record struct CommandSearchResult(IReadOnlyList<ShellCommand> Ro
 }
 
 /// <summary>
-/// Every verb the palette can reach, by name.
+/// Every verb the palette can reach, by name. Rows dispatch through the same
+/// <see cref="ShellVerb"/> handler the ribbon uses.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The palette is a second reader of one dispatcher, not a fourth command
-/// path.</b> Every row here carries a <see cref="ShellVerb"/> - the same closed
-/// union the ribbon's roster carries - and <c>MainWindow.OnShellVerb</c> already
-/// routes each kind through the window's own optimistic handlers, so a command
-/// invoked from here cannot light a frame later than the same command invoked
-/// from a button. That type was called <c>RibbonVerb</c> and lived under
-/// <c>Shell/Ribbon/</c>; it was renamed and lifted precisely so this could be
-/// true rather than nearly true.
-/// </para>
-/// <para>
-/// <b>Hand-written, and no reflection anywhere.</b> Enumerating verbs by
-/// reflecting over an enum is what trimming removes, and it would fail in a
-/// published build having worked in every debug run - the same discipline
-/// <c>GizmoShortcuts.TryResolve</c> and <c>ConsoleCommands</c> already follow.
-/// </para>
-/// <para>
-/// <b>It is a SUPERSET of the ribbon, and a test says so.</b> Every verb on
-/// either page appears here; the rows beyond them are the document verbs and
-/// the ones the ribbon deliberately does not carry.
-/// </para>
-/// </remarks>
+// Hand-written, no enum reflection: trimming removes it in a published build.
+// A test holds that every ribbon verb is in here.
 public static class CommandTable
 {
     /// <summary>Every row, in no particular order: the score decides what is shown.</summary>
     public static IReadOnlyList<ShellCommand> Commands { get; } =
     [
-        // ─── Insert ──────────────────────────────────────
         new("Insert block", ShellVerb.Of(InsertKind.WorldBrush), CommandNeeds.NotPlaying, "Ctrl+1"),
         new("Insert part", ShellVerb.Of(InsertKind.PartBrush), CommandNeeds.NotPlaying, "Ctrl+2"),
         new("Insert cut", ShellVerb.Of(InsertKind.SubtractiveBrush), CommandNeeds.NotPlaying, "Ctrl+3"),
@@ -134,38 +93,31 @@ public static class CommandTable
         new("Insert empty group", ShellVerb.Of(InsertKind.Group), CommandNeeds.NotPlaying),
         new("Insert entity", ShellVerb.InsertEntity(), CommandNeeds.NotPlaying),
 
-        // ─── Tools ───────────────────────────────────────
         new("Move tool", ShellVerb.Of(GizmoCommand.UseTranslate), CommandNeeds.None, "W"),
         new("Rotate tool", ShellVerb.Of(GizmoCommand.UseRotate), CommandNeeds.None, "E"),
         new("Size tool", ShellVerb.Of(GizmoCommand.UseScale), CommandNeeds.None, "R", ["scale", "resize"]),
         new("Drag axes: world or local", ShellVerb.Of(ShellToggle.Axes), CommandNeeds.None, "X"),
         new("Handles: Studio or Classic", ShellVerb.Of(ShellToggle.Handles), CommandNeeds.None, "Y"),
 
-        // ─── Snap ────────────────────────────────────────
         new("Snap to grid", ShellVerb.Of(ShellToggle.Snap), CommandNeeds.None, "G"),
         new("Finer grid", ShellVerb.Of(GizmoCommand.FinerSnap), CommandNeeds.None, "["),
         new("Coarser grid", ShellVerb.Of(GizmoCommand.CoarserSnap), CommandNeeds.None, "]"),
 
-        // ─── Arrange ─────────────────────────────────────
         new("Duplicate", ShellVerb.Of(EditorHostCommand.Duplicate), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Ctrl+D"),
         new("Delete", ShellVerb.Of(EditorHostCommand.Delete), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Del"),
         new("Convert block or part", ShellVerb.Of(EditorHostCommand.ToggleBrushKind), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Ctrl+T"),
         new("Group", ShellVerb.Of(EditorHostCommand.Group), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Ctrl+G"),
         new("Ungroup", ShellVerb.Of(EditorHostCommand.Ungroup), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Ctrl+Shift+G"),
 
-        // ─── History and selection ───────────────────────
         new("Undo", ShellVerb.Of(EditorHostCommand.Undo), CommandNeeds.NotPlaying, "Ctrl+Z"),
         new("Redo", ShellVerb.Of(EditorHostCommand.Redo), CommandNeeds.NotPlaying, "Ctrl+Y"),
         new("Select all", ShellVerb.Of(EditorHostCommand.SelectAll), CommandNeeds.None, "Ctrl+A"),
         new("Deselect all", ShellVerb.Of(EditorHostCommand.ClearSelection), CommandNeeds.Selection, "Esc", ["clear selection"]),
 
-        // ─── View ────────────────────────────────────────
         new("Frame the selection", ShellVerb.Of(EditorCameraCommand.FrameSelection), CommandNeeds.Selection, "F", ["focus"]),
         new("Frame everything", ShellVerb.Of(EditorCameraCommand.FrameAll), CommandNeeds.None, "Shift+F"),
 
-        // The seven views. Reachable here as well as on the keypad, because a
-        // laptop keyboard has no keypad at all and a verb with one route on
-        // hardware not everybody has is a verb half the users cannot reach.
+        // The views are here too because a laptop has no keypad.
         new("View: perspective", ShellVerb.Of(EditorCameraCommand.ViewPerspective), CommandNeeds.Session, "Numpad 5", ["camera"]),
         new("View: top", ShellVerb.Of(EditorCameraCommand.ViewTop), CommandNeeds.Session, "Numpad 7", ["plan", "orthographic"]),
         new("View: bottom", ShellVerb.Of(EditorCameraCommand.ViewBottom), CommandNeeds.Session, "Ctrl+Numpad 7", ["orthographic"]),
@@ -178,18 +130,12 @@ public static class CommandTable
         new("Ground grid: always", ShellVerb.Of(EditorHostCommand.GridOn)),
         new("Ground grid: off", ShellVerb.Of(EditorHostCommand.GridOff), CommandNeeds.None, "", ["hide grid"]),
 
-        // ─── Overlays ────────────────────────────────────
         new("Overlay: wireframe", ShellVerb.Of(DebugVisualization.Wireframe), CommandNeeds.None, "F1", ["wireframe"]),
         new("Overlay: CSG vertices", ShellVerb.Of(DebugVisualization.Vertices), CommandNeeds.None, "F2"),
         new("Overlay: bounds", ShellVerb.Of(DebugVisualization.Aabbs), CommandNeeds.None, "F3"),
         new("Overlay: face normals", ShellVerb.Of(DebugVisualization.Normals), CommandNeeds.None, "F4"),
         new("Overlay: node axes", ShellVerb.Of(DebugVisualization.SceneGraph), CommandNeeds.None, "F5"),
 
-        // ─── Documents ───────────────────────────────────
-        //
-        // The rows the class doc always claimed were here. Every one calls the
-        // same handler the File menu does, so a confirmation the menu asks for
-        // is a confirmation the palette asks for.
         new("New project...", ShellVerb.Of(DocumentVerb.NewProject)),
         new("Open project...", ShellVerb.Of(DocumentVerb.OpenProject)),
         new("Close project", ShellVerb.Of(DocumentVerb.CloseProject), CommandNeeds.Session),
@@ -200,12 +146,10 @@ public static class CommandTable
         new("Validate cooked content", ShellVerb.Of(DocumentVerb.ValidateCooked), CommandNeeds.Project),
         new("Exit", ShellVerb.Of(DocumentVerb.Exit), CommandNeeds.None, "", ["quit", "close editor"]),
 
-        // ─── Play ────────────────────────────────────────
         new("Play", ShellVerb.Of(PlayVerb.Play),
             CommandNeeds.Session | CommandNeeds.NotPlaying | CommandNeeds.CanPlay, "F8", ["run", "test"]),
         new("Stop", ShellVerb.Of(PlayVerb.Stop), CommandNeeds.Session | CommandNeeds.Playing, "F8"),
 
-        // ─── Panels ──────────────────────────────────────
         new("Show Scene panel", ShellVerb.Of(PanelId.Scene), CommandNeeds.Session, "", ["tree", "outliner"]),
         new("Show Levels panel", ShellVerb.Of(PanelId.Levels), CommandNeeds.Session, "", ["maps"]),
         new("Show Properties panel", ShellVerb.Of(PanelId.Properties), CommandNeeds.Session, "", ["inspector"]),
@@ -215,13 +159,11 @@ public static class CommandTable
         new("Show Console panel", ShellVerb.Of(PanelId.Console), CommandNeeds.Session, "`"),
         new("Keyboard reference", ShellVerb.Of(PanelId.KeyboardReference), CommandNeeds.None, "", ["shortcuts", "keys"]),
 
-        // ─── The ribbon ──────────────────────────────────
         new("Collapse the ribbon", ShellVerb.Of(RibbonVerb.Collapse),
             CommandNeeds.Session | CommandNeeds.RibbonExpanded, "Ctrl+F1"),
         new("Expand the ribbon", ShellVerb.Of(RibbonVerb.Expand),
             CommandNeeds.Session | CommandNeeds.RibbonCollapsed, "Ctrl+F1"),
 
-        // ─── The workspace ───────────────────────────────
         new("Maximise viewport", ShellVerb.Of(WorkspaceCommand.MaximiseViewport),
             CommandNeeds.Session, "F11", ["fullscreen", "full screen"]),
         new("Restore workspace", ShellVerb.Of(WorkspaceCommand.RestoreWorkspace),
@@ -255,9 +197,7 @@ public static class CommandTable
 
             int score = CommandScore.Of(command.Title, query);
 
-            // An alias scores as itself and the best wins. Without the -1 an
-            // alias could outrank an exact title match, which would put "Size
-            // tool" above a command actually called "Scale" if one ever existed.
+            // -1 so an alias never outranks the same match on a title.
             foreach (string alias in command.Aliases)
             {
                 int aliasScore = CommandScore.Of(alias, query);
@@ -269,10 +209,7 @@ public static class CommandTable
             matches.Add((command, score));
         }
 
-        // Ordinal by title after the score, so two rows that score the same
-        // come out in the same order every time somebody types the same
-        // letters. A palette whose list reshuffles between identical queries
-        // is one nobody can build muscle memory against.
+        // Title breaks ties so the same query always gives the same order.
         List<ShellCommand> rows = matches
             .OrderByDescending(row => row.Score)
             .ThenBy(row => row.Command.Title, StringComparer.Ordinal)
@@ -301,8 +238,6 @@ public static class CommandTable
         if (needs.HasFlag(CommandNeeds.RibbonExpanded) && !context.RibbonExpanded) return false;
         if (needs.HasFlag(CommandNeeds.RibbonCollapsed) && context.RibbonExpanded) return false;
 
-        // Offering Play on a scene with no character would be offering a verb
-        // the engine answers by refusing.
         if (needs.HasFlag(CommandNeeds.CanPlay) && !context.CanPlay) return false;
 
         return true;

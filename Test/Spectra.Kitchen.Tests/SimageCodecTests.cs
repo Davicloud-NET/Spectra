@@ -12,23 +12,9 @@ using System.Text;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The <c>.simage</c> container: what the writer produces, and every rule the
-/// reader refuses.
+/// The <c>.simage</c> container: what the writer produces and what the reader
+/// refuses. Refusal fixtures patch one field of a file the writer just made.
 /// </summary>
-/// <remarks>
-/// <para><b>Every refusal gets its own test, because every one of them has a
-/// failure that renders a picture rather than raising anything.</b> A wrong block
-/// size shears the image, a level read at the wrong offset uploads somebody else's
-/// bytes, and an unrecognised <c>vkFormat</c> guessed at computes a row pitch for
-/// a layout the file does not have - which is a read past the end of a mapped view
-/// and, on Windows, an access violation with no managed stack. A reader that
-/// merely "handles" these is a reader nobody can debug.</para>
-/// <para><b>The fixtures are made by CORRUPTING a real cooked file rather than by
-/// hand-writing bytes.</b> A hand-written one proves the reader rejects a thing no
-/// writer produces; patching one field of a file the writer just made proves the
-/// reader rejects exactly the file a stale tool would hand it, and that everything
-/// else about that file was fine.</para>
-/// </remarks>
 public class SimageCodecTests
 {
     [Fact]
@@ -47,11 +33,8 @@ public class SimageCodecTests
         info.RowOrder.ShouldBe(SimageRowOrder.BottomUp);
         info.ProfileVersion.ShouldBe(EngineInfo.TextureFormatVersion);
 
-        // Level index 0 is the BASE while the level DATA is stored smallest-first,
-        // and both are the KTX2 spec's. Pairing them backwards produces a file that
-        // parses perfectly and uploads the 1x1 level as the base, which renders as
-        // a flat colour up close - so the check is that each level's OWN bytes come
-        // back, not merely that the offsets are in range.
+        // KTX2: index 0 is the base level, but level data is stored smallest
+        // first. Compare each level's bytes so a backwards pairing fails.
         for (int level = 0; level < levels.Count; level++)
         {
             TextureMipDesc mip = info.Mips[level];
@@ -60,17 +43,14 @@ public class SimageCodecTests
             file.AsSpan(mip.Offset, levels[level].Length).ToArray().ShouldBe(levels[level]);
         }
 
-        // And the base level really is the LAST thing in the file, which is what
-        // makes a streaming reader able to take the small levels first.
+        // The base level is last in the file.
         info.Mips[0].Offset.ShouldBeGreaterThan(info.Mips[^1].Offset);
     }
 
     [Fact]
     public void Every_level_starts_on_the_alignment_its_format_requires()
     {
-        // The alignment is what lets a mapped payload reach the GPU with no copy;
-        // a file that ignored it would need one, silently, on some future path
-        // that assumed otherwise.
+        // Alignment lets a mapped payload reach the GPU with no copy.
         foreach ((TextureFormat format, int alignment) in
                  new[] { (TextureFormat.Bc7, 16), (TextureFormat.Bc4, 8), (TextureFormat.R8, 4) })
         {
@@ -90,14 +70,10 @@ public class SimageCodecTests
     {
         byte[] file = Valid();
 
-        // There is no Spectra magic here on purpose: the extension is the user's
-        // vocabulary and the bytes are KTX2, which is the whole reason toktx,
-        // RenderDoc and any GPU debugger read the same file.
+        // No Spectra magic: the bytes are plain KTX2.
         file.AsSpan(0, 12).ToArray().ShouldBe(SimageFormat.Identifier.ToArray());
 
-        // A DFD is written although nothing here parses one, because the format
-        // requires it and external tools use it. Its total size includes itself,
-        // which is the field a reader of it would start from.
+        // KTX2 requires a DFD. Its first field is its own total size.
         uint dfdOffset = ReadU32(file, 48);
         uint dfdLength = ReadU32(file, 52);
         dfdLength.ShouldBeGreaterThan(0u);
@@ -116,10 +92,7 @@ public class SimageCodecTests
     [Fact]
     public void Zstandard_supercompression_is_refused_BY_NAME()
     {
-        // The important half is the NAME. Zstandard is in the .simage profile and
-        // .NET ships no decoder for it, so the honest answer is "not implemented
-        // yet" - and a reader that instead took the level bytes for raw blocks
-        // would upload noise and report nothing.
+        // Zstandard is in the profile, but .NET ships no decoder yet.
         byte[] file = Valid();
         WriteU32(file, 44, SimageFormat.SupercompressionZstd);
 
@@ -131,9 +104,7 @@ public class SimageCodecTests
     [Fact]
     public void BasisLZ_supercompression_is_refused_permanently_rather_than_as_a_gap()
     {
-        // A different sentence from Zstandard's on purpose: this one needs a whole
-        // transcoder, which is precisely the reader cost the restricted profile
-        // exists to refuse, so the answer is to recook rather than to wait.
+        // Unlike Zstandard this is outside the profile for good: it needs a transcoder.
         byte[] file = Valid();
         WriteU32(file, 44, SimageFormat.SupercompressionBasisLz);
 
@@ -143,9 +114,6 @@ public class SimageCodecTests
     [Fact]
     public void A_vkFormat_off_the_allowlist_is_refused_with_its_own_number()
     {
-        // An ALLOWLIST, so the refusal is what happens to anything unknown. The
-        // number travels because a person can look it up in vulkan_core.h and
-        // "an unsupported format" cannot be acted on at all.
         byte[] file = Valid();
         WriteU32(file, 12, 109);  // VK_FORMAT_R16G16B16A16_SFLOAT
 
@@ -169,10 +137,7 @@ public class SimageCodecTests
         WriteU32(faces, 36, 2);
         Refuse(faces).Message.ShouldContain("1 face or 6");
 
-        // Six faces is a LEGAL KTX2 shape and is in the profile; what is missing is
-        // an uploader, since Renderer.CreateTexture has no cube path. Refused
-        // rather than uploaded as its first face, which would light a scene from a
-        // sixth of a sky and report nothing.
+        // Six faces is legal KTX2, but Renderer.CreateTexture has no cube path.
         byte[] cube = Valid();
         WriteU32(cube, 36, 6);
         Refuse(cube).Message.ShouldContain("cube map");
@@ -185,11 +150,9 @@ public class SimageCodecTests
     [Fact]
     public void A_level_index_the_file_is_too_short_to_hold_is_refused_rather_than_read()
     {
-        // The refusal that is not about content at all: an index running past the
-        // end of a mapped view is an access violation with no managed stack, so
-        // the bound is checked before any entry is touched.
+        // Reading past a mapped view is an access violation, not an exception.
         byte[] file = Valid();
-        WriteU32(file, 40, 64);  // 64 levels, whose index alone is larger than the file
+        WriteU32(file, 40, 64);  // the level index alone is larger than the file
 
         Refuse(file).Message.ShouldContain("64 levels");
     }
@@ -197,9 +160,7 @@ public class SimageCodecTests
     [Fact]
     public void A_level_whose_length_disagrees_with_its_own_size_is_refused()
     {
-        // KTX2 states that a level's rows are tightly packed, which is what lets
-        // the reader DERIVE the row pitch rather than trusting one. This is the
-        // check that makes that a reading rather than an assumption.
+        // KTX2 rows are tightly packed, so the reader derives the expected length.
         byte[] file = Valid();
         int baseEntry = SimageFormat.LevelIndexOffset;
         WriteU64(file, baseEntry + 8, 12);
@@ -210,9 +171,7 @@ public class SimageCodecTests
     [Fact]
     public void A_file_cooked_for_another_profile_version_names_BOTH_numbers_and_says_recook()
     {
-        // A cooked artifact versions the strict way: exact match or refuse. It is a
-        // build output that can always be regenerated, and the bytes past the
-        // header only mean anything under the version that wrote them.
+        // Exact match or refuse: a cooked file can always be regenerated.
         int stale = EngineInfo.TextureFormatVersion + 1;
         byte[] file = Ktx2Writer.Write(
             TextureFormat.Bc7, 8, 8, Chain(TextureFormat.Bc7, 8, 8), SimageRowOrder.BottomUp, stale);
@@ -226,11 +185,8 @@ public class SimageCodecTests
     [Fact]
     public void A_top_down_file_is_refused_because_nothing_here_can_flip_a_block()
     {
-        // The engine samples v = 0 at the BOTTOM of the picture, and a
-        // block-compressed payload cannot be flipped at load - BC6H and BC7 need a
-        // full decode and re-encode. So the one thing worse than refusing a
-        // top-down file is uploading it: the world renders upside down, raises
-        // nothing, and looks like an art problem.
+        // The engine samples v = 0 at the bottom, and block-compressed data
+        // cannot be flipped at load.
         byte[] file = Ktx2Writer.Write(
             TextureFormat.Bc7,
             8,
@@ -245,10 +201,7 @@ public class SimageCodecTests
     [Fact]
     public void A_KTX2_file_that_is_not_ours_is_refused_for_saying_neither_thing()
     {
-        // An arbitrary conforming KTX2 file carries neither key, and it is exactly
-        // the file this engine cannot upload correctly: it does not know which way
-        // up the rows are, and it does not know whether the tool that wrote it
-        // agreed with this build about what a .simage is.
+        // A plain KTX2 file carries neither the orientation nor the profile key.
         byte[] file = Valid();
         WriteU32(file, 60, 0);  // kvdByteLength
 
@@ -262,16 +215,12 @@ public class SimageCodecTests
         int at = Encoding.UTF8.GetString(file).IndexOf(SimageFormat.OrientationKey, StringComparison.Ordinal);
         at.ShouldBeGreaterThan(0);
 
-        // "rl" is a legal KTXorientation value and is not one of the two this
-        // profile understands, so it is named rather than defaulted: a default
-        // here would be a guess about which way up somebody's texture is.
+        // "rl" is a legal KTXorientation value the profile does not accept.
         file[at + SimageFormat.OrientationKey.Length + 1] = (byte)'r';
         file[at + SimageFormat.OrientationKey.Length + 2] = (byte)'l';
 
         Refuse(file).Message.ShouldContain("'rl'");
     }
-
-    // --- helpers -------------------------------------------------------------
 
     private static byte[] Valid() => Ktx2Writer.Write(
         TextureFormat.Bc7,
@@ -281,10 +230,7 @@ public class SimageCodecTests
         SimageRowOrder.BottomUp,
         EngineInfo.TextureFormatVersion);
 
-    // Levels of the right SIZE with recognisable contents. The bytes are not real
-    // BC blocks and do not need to be: nothing in the container reads inside a
-    // level, and a fixture that had to be encoded would make every refusal test
-    // depend on the encoder.
+    // Right-sized levels, not real BC blocks. The container never reads inside one.
     private static List<byte[]> Chain(TextureFormat format, int width, int height)
     {
         var levels = new List<byte[]>();

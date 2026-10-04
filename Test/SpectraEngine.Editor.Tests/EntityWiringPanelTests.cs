@@ -8,24 +8,8 @@ using System.Linq;
 
 namespace SpectraEngine.Editor.Tests;
 
-/// <summary>
-/// The Outputs section: the shell's half of entity wiring.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Every edit posts the WHOLE list, so the thing worth pinning is what the
-/// section GATHERS.</b> A row that reported only the field somebody touched
-/// would send a list with five stale wires in it, and the command - which is
-/// absolute by design - would write them.
-/// </para>
-/// <para>
-/// <b>And the hold-off, which is invisible until it is missing.</b> A snapshot
-/// published between an add and the engine's echo still describes the list the
-/// add replaced; writing that back makes the new row appear and vanish. It is
-/// bounded for the reason every optimistic value here is bounded: the value a
-/// user asks for is not always the value they get.
-/// </para>
-/// </remarks>
+/// <summary>The Outputs section: the shell's half of entity wiring.</summary>
+// Every edit posts the whole connection list, since the command is absolute.
 public sealed class EntityWiringPanelTests
 {
     private static readonly Guid NodeId = Guid.Parse("3f2a1c88-4b6d-4a19-9d0e-77c1f0a2b3e4");
@@ -67,8 +51,6 @@ public sealed class EntityWiringPanelTests
 
         public EntityConnection[] LastPost => Posts[^1].Wires;
     }
-
-    // --- what is shown -------------------------------------------------------
 
     [Fact]
     public void The_section_appears_only_for_an_entity()
@@ -127,8 +109,6 @@ public sealed class EntityWiringPanelTests
         row.TimesField.Text.ShouldBe("2");
     }
 
-    // --- the amber warning ---------------------------------------------------
-
     [Fact]
     public void An_unresolved_target_warns_and_the_wire_stays()
     {
@@ -160,8 +140,6 @@ public sealed class EntityWiringPanelTests
         rig.Wiring.Rows[0].TargetWarning.ShouldBe("");
     }
 
-    // --- the output dropdown -------------------------------------------------
-
     [Fact]
     public void The_dropdown_offers_what_the_class_declares()
     {
@@ -175,11 +153,8 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void An_authored_output_nothing_declares_is_typed_rather_than_picked()
     {
-        // A newer version of the class may have dropped it. A dropdown that
-        // could not show the stored value would render blank and then write
-        // that blank back the moment anybody touched the row beside it, so the
-        // row falls back to a text box - which keeps the value visible AND
-        // editable, and keeps the menu honest about what the class has.
+        // A dropdown that cannot show the stored value renders blank and
+        // writes the blank back on the next edit, so the row is a text box.
         var rig = new Rig();
         rig.Publish(Info(outputs: ["OnOpen"], wires: Resolved(Wire("OnSomethingElse", "a"))));
 
@@ -210,14 +185,8 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void An_unchanged_publish_hands_the_dropdown_the_same_list_instance()
     {
-        // A fresh array per publish makes the ComboBox drop its selection and
-        // rebuild its popup thirty times a second. The identity of the list is
-        // what keeps the control still, so the row is handed the schema's own
-        // instance and never builds one.
-        //
-        // ONE outputs instance, which is what the engine publishes: the list
-        // comes off the EntitySchema, and a schema's lists are built once and
-        // documented as never mutated afterwards.
+        // A fresh list per publish makes the ComboBox drop its selection. One
+        // instance, as the engine publishes: the list comes off the schema.
         string[] declared = ["OnOpen", "OnClose"];
 
         var rig = new Rig();
@@ -234,9 +203,7 @@ public sealed class EntityWiringPanelTests
     public void A_dropdown_clearing_its_own_selection_posts_nothing()
     {
         // A ComboBox clears SelectedItem when its ItemsSource is replaced, and
-        // a two-way binding delivers that here looking exactly like a click.
-        // Taken literally it would post a wire with no output at all - and
-        // then write it, because the command is absolute.
+        // a two-way binding delivers that like a click.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire("OnOpen", "a"))));
 
@@ -249,9 +216,6 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void The_typed_output_commits_rather_than_writing_per_keystroke()
     {
-        // The fallback for a class with no schema is a field model, not a
-        // string bound two-way: typing "OnFoo" through a two-way Text binding
-        // would post five wiring edits and put five entries in the history.
         var rig = new Rig();
         rig.Publish(Info(known: false, outputs: [], wires: Resolved(Wire("", "a"))));
 
@@ -268,13 +232,8 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void Typing_an_output_never_changes_the_dropdowns_item_source()
     {
-        // FOUND IN THE RUNNING SHELL, and the reason the choice list is never
-        // widened. The first design put the authored value into the list, so
-        // typing an output on a class with no schema replaced the item source -
-        // the control discarded its selection, and a binding will not re-push a
-        // value it has already pushed, so the box sat permanently blank over a
-        // model that knew the answer. An item source that never changes cannot
-        // fail that way at all.
+        // Replacing the item source makes the control discard its selection,
+        // and a binding will not re-push a value it already pushed.
         var rig = new Rig();
         rig.Publish(Info(known: false, outputs: [], wires: Resolved(Wire("", "a"))));
 
@@ -303,8 +262,6 @@ public sealed class EntityWiringPanelTests
         rig.Wiring.Rows[0].OutputField.Text.ShouldBe("OnWhatever");
     }
 
-    // --- what a commit posts -------------------------------------------------
-
     [Fact]
     public void A_field_commit_posts_the_whole_list_with_the_edit_in_place()
     {
@@ -328,9 +285,7 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void An_empty_parameter_is_a_value_and_commits()
     {
-        // The one cell where clearing the box means "send no argument" rather
-        // than "leave it alone". Every other field reverts an empty commit,
-        // which for this one would make a parameter impossible to remove.
+        // Every other field reverts an empty commit.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire(param: "3"))));
 
@@ -356,9 +311,6 @@ public sealed class EntityWiringPanelTests
         rig.Posts.ShouldBeEmpty();
         delay.Text.ShouldBe("2");
 
-        // A negative delay is the same case rather than a smaller one: the
-        // event queue keys on a fire time, so scheduling into the past is a
-        // different bug, not a faster wire.
         delay.BeginEdit();
         delay.Text = "-1";
         delay.Commit();
@@ -370,9 +322,6 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void The_infinite_sentinel_is_shown_as_a_word()
     {
-        // The file stores -1 because EntityConnection.Infinite is -1, and
-        // showing that asked every reader to know it: a wire that fires forever
-        // read as a wire with a negative count.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire(times: EntityConnection.Infinite))));
 
@@ -382,8 +331,6 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void Typing_the_word_posts_the_sentinel_in_any_case()
     {
-        // A field that displays "Forever" and refuses "forever" punishes
-        // retyping what it just showed.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire(times: 4))));
 
@@ -414,8 +361,6 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void A_negative_delay_is_refused_and_says_why()
     {
-        // The queue keys on a fire time, so a wire scheduled into the past is
-        // not a shorter delay, it is a different bug.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire(delay: 1.5f))));
 
@@ -432,8 +377,6 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void Any_negative_times_normalises_to_the_infinite_sentinel()
     {
-        // EntityConnection's own rule, applied where the value is typed so the
-        // file gets the canonical -1 rather than whatever was entered.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire(times: 4))));
 
@@ -448,10 +391,6 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void Picking_an_output_posts_it_and_a_refresh_does_not()
     {
-        // The dropdown applies on the click, and guards its refresh: assigning
-        // the published value back is indistinguishable from a user picking it,
-        // and would post an edit per publish for as long as the entity stayed
-        // selected.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire("OnOpen", "a"))));
         rig.Posts.ShouldBeEmpty();
@@ -492,14 +431,9 @@ public sealed class EntityWiringPanelTests
         rig.Wiring.Rows.ShouldBeEmpty();
     }
 
-    // --- the refresh guard and the hold-off ----------------------------------
-
     [Fact]
     public void A_focused_field_stops_taking_refreshes()
     {
-        // The panel's standing contract, and it has to hold here too: a wiring
-        // panel republishes at the snapshot rate, and a field that took each
-        // one would delete characters as they were typed.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire(target: "a"))));
 
@@ -515,9 +449,7 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void A_stale_snapshot_does_not_undo_an_add()
     {
-        // The engine echoes an edit a publish or two later. Writing the older
-        // list back in between makes the row appear and vanish, which reads as
-        // the button being broken.
+        // The engine echoes an edit a publish or two later.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire("OnOpen", "a"))));
 
@@ -540,9 +472,7 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void The_engine_wins_once_the_hold_expires()
     {
-        // The bound is the whole design: a wiring edit is refused outright
-        // while play mode owns the scene, and a panel that held its own opinion
-        // forever would show wiring the level does not have.
+        // The engine can refuse an edit, e.g. during play mode.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire("OnOpen", "a"))));
 
@@ -558,9 +488,6 @@ public sealed class EntityWiringPanelTests
     [Fact]
     public void Selecting_a_different_entity_drops_a_pending_edit()
     {
-        // The edit was aimed at a node this panel is no longer showing; holding
-        // it would make the next entity open with the previous one's wiring on
-        // screen.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire("OnOpen", "a"))));
         rig.Wiring.Add();
@@ -579,14 +506,9 @@ public sealed class EntityWiringPanelTests
         rig.Wiring.Rows.ShouldBeEmpty();
     }
 
-    // --- the section is patched, not replaced --------------------------------
-
     [Fact]
     public void An_unchanged_publish_keeps_the_controls_it_already_built()
     {
-        // Assigning fresh rows per publish resets scroll and destroys a
-        // half-typed value thirty times a second, which is the same reason the
-        // property rows above are patched rather than rebuilt.
         var rig = new Rig();
         rig.Publish(Info(wires: Resolved(Wire(target: "a"))));
 
@@ -611,14 +533,9 @@ public sealed class EntityWiringPanelTests
         rig.Wiring.Rows[0].TargetField.Text.ShouldBe("a");
     }
 
-    // --- the rest of the panel is unaffected ---------------------------------
-
     [Fact]
     public void A_panel_built_without_a_wiring_callback_still_works()
     {
-        // The parameter is optional so a host with no wiring surface - a test
-        // rig, a future read-only viewer - does not have to invent one, and a
-        // click there must be a no-op rather than a null reference.
         var panel = new PropertyPanelModel(_ => { }, _ => { }, _ => { });
 
         panel.Apply([], 1, Info(wires: Resolved(Wire())));
@@ -626,17 +543,8 @@ public sealed class EntityWiringPanelTests
     }
 }
 
-/// <summary>
-/// The target picker and the input dropdown behind it.
-/// </summary>
-/// <remarks>
-/// <b>The input list needs exactly ONE exact match, and that arithmetic is the
-/// whole feature.</b> A wildcard aims at several classes, two entities may share
-/// a name (which is legal and means something), and a runtime token names
-/// whatever the level picks while it runs. In every one of those the class is
-/// not known, so there is nothing honest to list and a dropdown that guessed
-/// would offer inputs half the targets do not have.
-/// </remarks>
+/// <summary>The target picker and the input dropdown behind it.</summary>
+// Inputs are offered only when the target resolves to one entity of a known class.
 public sealed class WiringTargetPickerTests
 {
     private static EntitySchemaCatalog Catalog(params EntitySchema[] schemas) =>
@@ -670,10 +578,7 @@ public sealed class WiringTargetPickerTests
         IReadOnlyList<string> first = ConnectionRowModel.InputsFor("relay", Scene, catalog);
         IReadOnlyList<string> again = ConnectionRowModel.InputsFor("relay", Scene, catalog);
 
-        // Never a fresh list per refresh: replacing a bound item source makes
-        // the control discard its selection, and a binding will not re-push a
-        // value it has already pushed, so the dropdown would sit permanently
-        // blank over a model that knows the answer.
+        // Replacing a bound item source makes the control drop its selection.
         ReferenceEquals(first, again).ShouldBeTrue();
     }
 
@@ -688,8 +593,7 @@ public sealed class WiringTargetPickerTests
             new("door", "logic_timer"),
         ];
 
-        // Legal, and it means the wire fires at BOTH: offering one of their
-        // input lists would be a guess about which.
+        // Legal: the wire fires at both.
         ConnectionRowModel.InputsFor("door", twins, catalog).Count.ShouldBe(0);
     }
 
@@ -709,8 +613,6 @@ public sealed class WiringTargetPickerTests
     {
         EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
 
-        // It names whatever the level chooses while it runs, so there is no
-        // class to read inputs from until then.
         ConnectionRowModel.InputsFor(token, Scene, catalog).Count.ShouldBe(0);
     }
 
@@ -759,9 +661,6 @@ public sealed class WiringTargetPickerTests
 
         ConnectionRowModel row = model.Rows[0];
 
-        // The three tokens are the runtime's own vocabulary and name nothing in
-        // the scene, so a list sorted with the entities would bury exactly the
-        // three somebody reaching for a picker has never seen.
         row.TargetChoices[0].ShouldBe("!self");
         row.TargetChoices[1].ShouldBe("!activator");
         row.TargetChoices[2].ShouldBe("!caller");
@@ -798,9 +697,7 @@ public sealed class WiringTargetPickerTests
         ConnectionRowModel row = model.Rows[0];
         row.HasInputChoices.ShouldBeTrue();
 
-        // The two cells are read in one gesture, so the answer must not wait for
-        // the next publish: a dropdown still offering the previous target's
-        // inputs is a list of verbs the new one does not have.
+        // No publish in between: the inputs must follow the commit itself.
         row.TargetField.BeginEdit();
         row.TargetField.Text = "rel*";
         row.TargetField.Commit();
@@ -836,9 +733,6 @@ public sealed class WiringTargetPickerTests
 
         model.Rows[0].PickTarget("relay");
 
-        // ONE post, carrying the whole list: a pick and a typed name take the
-        // same route, so the commit contract and the one-post-per-change rule
-        // are not two implementations.
         posted.Count.ShouldBe(1);
         posted[0][0].TargetName.ShouldBe("relay");
     }

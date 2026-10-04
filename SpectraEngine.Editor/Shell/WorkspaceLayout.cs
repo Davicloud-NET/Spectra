@@ -33,25 +33,6 @@ public readonly record struct WorkspaceChrome(double Vertical, double Horizontal
 /// <summary>
 /// How much of the window the viewport gets, and what the presets are.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Measured, not guessed: the viewport was 28% of the window.</b> 876x442 in
-/// a 1480x920 client, with two wide sidebars, an expanded ribbon and a 236px
-/// bottom dock around it. That is a 3D editor spending nearly three quarters of
-/// its screen on chrome.
-/// </para>
-/// <para>
-/// <b>The ribbon stays EXPANDED in both presets.</b> Collapsing it by default
-/// would hide Insert behind a click, which is the ribbon doctrine's own finding
-/// (2) coming back: the one thing a first session needs must not be on a surface
-/// nobody has opened. The room comes from the sidebars, the drawer and the
-/// Levels dock instead.
-/// </para>
-/// <para>
-/// Pure arithmetic, so the claim can be tested without a window and then
-/// measured against a real one.
-/// </para>
-/// </remarks>
 public static class WorkspaceLayout
 {
     /// <summary>The viewport column's own minimum, which the grid enforces.</summary>
@@ -66,13 +47,8 @@ public static class WorkspaceLayout
     /// <summary>The numbers for a preset.</summary>
     public static WorkspaceMetrics For(WorkspacePreset preset) => preset switch
     {
-        // Narrower columns, a closed drawer and no Levels dock. Levels becomes
-        // a chip beside the document name, because a project has one or two
-        // levels and an always-open dock for them is a permanent 8% strip.
         WorkspacePreset.Compact => new(250, 280, DefaultDrawerHeight, false, false),
 
-        // What the editor shipped as, kept whole so somebody who wants every
-        // panel open can have exactly that back.
         _ => new(288, 308, 236, true, true),
     };
 
@@ -90,12 +66,6 @@ public static class WorkspaceLayout
     /// <summary>
     /// The drawer height that leaves the viewport its minimum.
     /// </summary>
-    /// <remarks>
-    /// At the window's own minimum size a 160px drawer would push the viewport
-    /// row under its floor, and the grid would win by shrinking something else.
-    /// Clamping here means the drawer opens smaller rather than the layout
-    /// fighting itself.
-    /// </remarks>
     public static double ClampDrawerHeight(double wanted, double rowsAvailable) =>
         Math.Max(0, Math.Min(wanted, rowsAvailable - ViewportMinHeight - 1));
 
@@ -104,8 +74,8 @@ public static class WorkspaceLayout
         preset == WorkspacePreset.Expanded ? "expanded" : "compact";
 
     /// <summary>
-    /// Reads a preset name. An unknown word reads as compact rather than
-    /// failing the file, the way every other setting here degrades.
+    /// Reads a preset name. An unknown word leaves <paramref name="preset"/>
+    /// at compact and returns false.
     /// </summary>
     public static bool TryParse(string? name, out WorkspacePreset preset)
     {

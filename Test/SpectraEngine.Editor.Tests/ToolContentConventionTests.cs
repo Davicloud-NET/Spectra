@@ -1,26 +1,11 @@
 ﻿namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// Guards the rule that a dock tool's content and its DataContext are assigned
-/// together, because assigning only the content is not an error anywhere and
-/// the symptom is a pane of blank controls.
+/// A dock tool's content and its DataContext must be assigned together.
 /// </summary>
-/// <remarks>
-/// <para>Dock hands a tool's content presenter its own DataContext, and a
-/// floated tool leaves the window's logical tree entirely, so a content control
-/// that relies on inheritance resolves every binding against an object carrying
-/// none of the properties it names.</para>
-/// <para><b>Avalonia reports nothing for that.</b> A failed binding leaves the
-/// target property at its own default, so <c>Text</c> goes empty, an
-/// <c>ItemsSource</c> goes empty, and <c>IsVisible</c> stays TRUE. That is how
-/// the viewport header strip came to show every debug overlay chip at once with
-/// every value beside them blank: six panels set the DataContext inline and the
-/// seventh host, added when the viewport became dockable, did not.</para>
-/// <para>The tests project cannot evaluate a binding at all (it references no
-/// Avalonia), which is exactly why this ships as a source convention in the
-/// shape of <c>ComPtrOwnershipConventionTests</c>: enforce the rule where it
-/// would actually be broken.</para>
-/// </remarks>
+// Dock gives tool content its own DataContext, and Avalonia reports nothing for
+// a failed binding: Text goes empty and IsVisible stays true. This project has
+// no Avalonia, so the rule is checked against the sources.
 public sealed class ToolContentConventionTests
 {
     [Fact]
@@ -41,7 +26,6 @@ public sealed class ToolContentConventionTests
                 string line = lines[i];
                 if (IsComment(line)) continue;
 
-                // A direct write to <something>Tool.Content bypasses the pairing.
                 int assign = line.IndexOf("Tool.Content", StringComparison.Ordinal);
                 if (assign < 0) continue;
                 if (line.IndexOf('=', assign) < 0) continue;
@@ -59,8 +43,7 @@ public sealed class ToolContentConventionTests
     [Fact]
     public void The_pairing_lives_in_exactly_one_place()
     {
-        // If the helper is ever inlined back to its call sites this test fails
-        // rather than the guard above quietly passing over zero call sites.
+        // Without this the guard above passes over zero call sites.
         string window = Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml.cs");
         string text = File.ReadAllText(window);
 
@@ -88,8 +71,6 @@ public sealed class ToolContentConventionTests
             || trimmed.StartsWith("///", StringComparison.Ordinal);
     }
 
-    // The same walk ContentRoot uses: the nearest ancestor holding a solution
-    // file is the repo root. These tests only ever run out of the repo.
     private static string SourceRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

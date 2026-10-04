@@ -11,22 +11,6 @@ namespace SpectraEngine.Editor.Shell;
 /// The property panel: the selection's editable values, patched from every
 /// published snapshot.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The commit contract lives here.</b> A focused field stops taking
-/// refreshes, Enter and losing focus commit, Escape reverts, and text that will
-/// not parse reverts rather than sticking.
-/// </para>
-/// <para>
-/// <b>A number can also be DRAGGED, and that is what makes this an editor's
-/// panel rather than a settings dialog.</b> Pressing a row's label - or one
-/// axis letter of a vector - and moving sideways writes the value continuously;
-/// the host holds one history entry open around the whole gesture, so it undoes
-/// in one press. Every rule the gizmos follow applies: the value is recomputed
-/// from the grab, a modifier scales the rate, releasing commits and losing the
-/// pointer cancels.
-/// </para>
-/// </remarks>
 public partial class PropertiesPanel : UserControl
 {
     public PropertiesPanel()
@@ -47,12 +31,6 @@ public partial class PropertiesPanel : UserControl
     /// <summary>Raised when Escape ends an edit, so the host can take focus back.</summary>
     public event Action? EscapePressed;
 
-    // ─── The live drag ───────────────────────────────────
-    //
-    // One at a time, by construction: a pointer capture cannot be held by two
-    // controls at once, and the fields the drag writes are addressed through
-    // the captured control's own DataContext.
-
     private PropertyRowModel? _scrubRow;
     private PropertyFieldModel? _scrubField;
     private PropertyPanelModel? _scrubPanel;
@@ -70,8 +48,7 @@ public partial class PropertiesPanel : UserControl
             return;
         }
 
-        // The header's name box binds to the panel's own field rather than to a
-        // row, because the name IS the header.
+        // The header's name box binds to the panel, not to a row.
         if (sender is TextBox { DataContext: ShellModel { Properties: { } panel } })
             panel.NameField.BeginEdit();
     }
@@ -99,34 +76,22 @@ public partial class PropertiesPanel : UserControl
         if (field is null)
             return;
 
-        // Enter commits and stops editing, which leaves the caret in a box the
-        // refresh is free to overwrite again. That is correct for a field
-        // nobody is touching and wrong the instant they touch it, so the next
-        // key press re-arms the guard. Escape is the exception: it hands focus
-        // away, so re-arming would leave a guard set on a box nobody is in.
+        // After Enter the box keeps focus but is not editing, so the next key
+        // re-arms the guard. Not Escape: it hands focus away.
         if (e.Key is not (Key.Enter or Key.Escape) && !field.IsEditing)
             field.BeginEdit();
 
         switch (e.Key)
         {
             case Key.Enter:
-                // Commit and STOP editing. This used to call BeginEdit() again
-                // straight afterwards, on the reasoning that focus stays in the
-                // box so the edit is still open. The effect was that the field
-                // never took another refresh for as long as it kept focus: type
-                // a position, press Enter, then drag the object in the viewport,
-                // and the box went on showing the number you typed while the
-                // object was somewhere else. A field that lies about where an
-                // object is is worse than one that loses focus.
+                // Don't BeginEdit again here: a focused box would then stop
+                // refreshing and show a stale value while the object moves.
                 field.Commit();
                 e.Handled = true;
                 break;
 
             case Key.Escape:
                 field.Revert();
-                // Handing focus back is what makes Escape read as "I am done
-                // here" rather than leaving the caret in a box that just
-                // changed under it.
                 EscapePressed?.Invoke();
                 e.Handled = true;
                 break;
@@ -141,15 +106,7 @@ public partial class PropertiesPanel : UserControl
         }
     }
 
-    /// <summary>
-    /// Steps a numeric field by one increment from the keyboard.
-    /// </summary>
-    /// <remarks>
-    /// <b>Committed as an absolute value read out of the box</b>, not as a
-    /// delta applied to the scene: the box is what the user is looking at, the
-    /// commands are absolute anyway, and a delta would drift against a value
-    /// the viewport is also moving.
-    /// </remarks>
+    // Arrow-key step. Commits the absolute value read from the box, not a delta.
     private static bool Nudge(TextBox box, PropertyFieldModel field, int direction, KeyModifiers modifiers)
     {
         if (FindRow(box) is not { IsScrubbable: true } row)
@@ -166,13 +123,6 @@ public partial class PropertiesPanel : UserControl
         return true;
     }
 
-    // ─── Outputs ─────────────────────────────────────────
-    //
-    // Add and remove post the WHOLE list, like every other wiring edit: the
-    // command carries absolute arrays because a connection has no per-item
-    // identity a delta could name. Both are ordinary clicks rather than
-    // gestures, so each is one history entry on its own.
-
     private void OnAddConnection(object? sender, RoutedEventArgs e)
     {
         if (DataContext is ShellModel { Properties: { } panel })
@@ -188,8 +138,6 @@ public partial class PropertiesPanel : UserControl
         }
     }
 
-    // ─── Drag to change a number ─────────────────────────
-
     private void OnAxisPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not Control { DataContext: PropertyFieldModel field } handle)
@@ -203,29 +151,23 @@ public partial class PropertiesPanel : UserControl
         if (sender is not Control { DataContext: PropertyRowModel row } handle || !row.IsScrubbable)
             return;
 
-        // A vector's own label drags all three cells together, which is the
-        // gesture "make this twice the size" wants. One field is captured for
-        // the readout; the edit carries every axis.
+        // A vector's label drags all three cells. The first field is only the readout.
         BeginScrub(handle, row, row.Fields.Count > 0 ? row.Fields[0] : null, e);
     }
 
     private void BeginScrub(
         Control handle, PropertyRowModel? row, PropertyFieldModel? field, PointerPressedEventArgs e)
     {
-        // Left button only. Avalonia raises PointerPressed for every button and
-        // a capture is per POINTER rather than per button, so without this a
-        // right-press on a label - on its way to a context menu - would open a
-        // history transaction, capture the pointer, and write positions into the
-        // scene for as long as the button was held.
+        // Left button only. PointerPressed fires for every button and capture
+        // is per pointer, so a right-press would otherwise start a drag.
         if (!e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)
             return;
 
         if (row is null || field is null || !row.IsScrubbable)
             return;
 
-        // A mixed cell has no value to drag FROM, and an absolute write would
-        // silently collapse the whole selection onto one number. Typing into it
-        // is still allowed, because typing is an unambiguous instruction.
+        // A mixed cell has no start value, and an absolute write would
+        // collapse the selection onto one number.
         if (!PropertyFieldModel.TryParseNumber(field.Text, out float start))
             return;
 
@@ -241,8 +183,7 @@ public partial class PropertiesPanel : UserControl
         _scrubValue = start;
         _scrubMoved = false;
 
-        // Every cell's OWN starting value, because a drag on the row's label
-        // moves all three by the same amount rather than to the same number.
+        // Per-cell start: a label drag offsets each cell by the same amount.
         for (int i = 0; i < row.Fields.Count && i < row.ScrubStarts.Length; i++)
         {
             row.ScrubStarts[i] = PropertyFieldModel.TryParseNumber(row.Fields[i].Text, out float v)
@@ -270,19 +211,14 @@ public partial class PropertiesPanel : UserControl
         double dx = x - _scrubLastX;
         _scrubLastX = x;
 
-        // Accumulated through the modifier rather than recomputed from the grab
-        // point, so changing the modifier mid-drag changes the RATE from here on
-        // instead of retroactively rescaling everything already travelled.
+        // Accumulated, so a modifier changed mid-drag only changes the rate from here on.
         _scrubValue += dx * row.ScrubStep * Scale(e.KeyModifiers);
         _scrubMoved = true;
 
         var value = (float)_scrubValue;
 
-        // A vector dragged by its own label moves all three BY THE SAME AMOUNT;
-        // dragged by one axis letter it moves that one. Writing `value` to all
-        // three would not offset them, it would flatten them onto x's number -
-        // the commands are absolute, so the delta is reconstructed from each
-        // cell's own captured start.
+        // Label drag: same delta on each cell's own start. Writing `value`
+        // to all three would flatten them onto x.
         if (ReferenceEquals(handle.DataContext, row))
         {
             var delta = (float)(_scrubValue - _scrubStart);
@@ -305,9 +241,7 @@ public partial class PropertiesPanel : UserControl
 
     private void OnScrubReleased(object? sender, PointerReleasedEventArgs e)
     {
-        // A press that never travelled is a click, not a drag, and must leave
-        // nothing behind: the gesture is cancelled so the history stays clean
-        // and the caret can land in the field the user was aiming at.
+        // No travel means a click: cancel so the history stays clean.
         EndScrub(commit: _scrubMoved);
         e.Handled = true;
     }
@@ -330,33 +264,13 @@ public partial class PropertiesPanel : UserControl
         _scrubMoved = false;
     }
 
-    /// <summary>
-    /// The rate multiplier a modifier asks for: Shift is coarse, Ctrl is fine.
-    /// </summary>
-    /// <remarks>
-    /// The After Effects and Figma convention, which is the one this audience
-    /// meets most often outside a game engine.
-    /// </remarks>
     private static float Scale(KeyModifiers modifiers) =>
         modifiers.HasFlag(KeyModifiers.Shift) ? 10f
         : modifiers.HasFlag(KeyModifiers.Control) ? 0.1f
         : 1f;
 
-    /// <summary>
-    /// Walks up to the row a control belongs to.
-    /// </summary>
-    /// <remarks>
-    /// The cells of a vector row are a nested ItemsControl, so a cell's own
-    /// DataContext is the field and its row is only reachable through the tree.
-    /// Bounded by the ItemsControl that produced the rows, so a control outside
-    /// a row returns null instead of walking to the window.
-    /// </remarks>
-    // --- The colour picker ---------------------------------------------------
-    //
-    // The swatch was an inert Border with a tooltip, so choosing a warmer light
-    // meant knowing a hex code or leaving the editor. The picker rides the
-    // property gesture the numeric scrubs already use, which is what makes a
-    // whole drag one undo entry rather than sixty.
+    // The colour picker rides the same property gesture as the numeric
+    // scrubs, so a whole drag is one undo entry.
 
     private PropertyRowModel? _colorRow;
     private bool _colorChanged;
@@ -364,9 +278,7 @@ public partial class PropertiesPanel : UserControl
 
     private void OnSwatchPressed(object? sender, PointerPressedEventArgs e)
     {
-        // Left only: Avalonia raises this for every button, and a right-press on
-        // its way to a context menu must not open a gesture that then writes
-        // colours for as long as it is held.
+        // Left button only, as in BeginScrub.
         if (sender is not Control control ||
             !e.GetCurrentPoint(control).Properties.IsLeftButtonPressed ||
             FindRow(control) is not { } row ||
@@ -410,9 +322,7 @@ public partial class PropertiesPanel : UserControl
 
         if (row.Fields.Count > 0) row.Fields[0].EndScrub();
 
-        // Light dismiss is a COMMIT, the way a click outside a field commits it.
-        // Escape is the only cancel, and a picker closed without a movement
-        // records nothing at all.
+        // Light dismiss commits. Only Escape cancels. No change records nothing.
         (DataContext as ShellModel)?.Properties?.EndGesture(_colorChanged && !_colorCancelled);
 
         _colorRow = null;
@@ -421,8 +331,6 @@ public partial class PropertiesPanel : UserControl
         if (_colorCancelled) EscapePressed?.Invoke();
         _colorCancelled = false;
     }
-
-    // ─── The target picker ───────────────────────────────
 
     private ConnectionRowModel? _targetRow;
     private bool _targetCancelled;
@@ -443,15 +351,7 @@ public partial class PropertiesPanel : UserControl
 
     private PropertyRowModel? _targetPropertyRow;
 
-    /// <summary>
-    /// Opens the same picker over a keyvalue row whose declared type is a
-    /// target name.
-    /// </summary>
-    /// <remarks>
-    /// The same list and the same keyboard as the wiring one: a schema that
-    /// declares a <c>TargetName</c> is asking the identical question, and two
-    /// pickers over one question would drift about which entities count.
-    /// </remarks>
+    // Same picker as the wiring one, over a keyvalue row declared as a target name.
     private void OnPickRowTargetPressed(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control control || FindRow(control) is not { } row || !row.IsTarget) return;
@@ -483,25 +383,14 @@ public partial class PropertiesPanel : UserControl
         _targetRow = null;
         _targetPropertyRow = null;
 
-        // Escape here means the same as Escape in a field: abandon, and give the
-        // keyboard back rather than leaving it in a closed popup.
         EscapePressed?.Invoke();
         _targetCancelled = false;
     }
 
-    // ─── The asset picker ────────────────────────────────
-
     private PropertyRowModel? _assetRow;
     private bool _assetCancelled;
 
-    /// <summary>
-    /// Opens the picker over the row that was pressed.
-    /// </summary>
-    /// <remarks>
-    /// <b>The catalogue is rebuilt here, at the open.</b> A picker offering a
-    /// list from whenever the project was loaded would not show the material
-    /// somebody just wrote, and the walk is a few hundred file names.
-    /// </remarks>
+    // The catalogue is rebuilt at each open, so a file written a moment ago shows up.
     private void OnAssetCellPressed(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control control ||
@@ -513,8 +402,7 @@ public partial class PropertiesPanel : UserControl
 
         if ((DataContext as ShellModel)?.Assets is not { } catalog)
         {
-            // No project, no files to offer. Refusing in place beats opening an
-            // empty list that looks like a broken control.
+            // No project, nothing to offer.
             return;
         }
 
@@ -528,9 +416,6 @@ public partial class PropertiesPanel : UserControl
         AssetPopup.IsOpen = true;
     }
 
-    // The catalogue knows its own root from the last rebuild; asking it back is
-    // what keeps this panel from being a second place that knows where a
-    // project's assets live.
     private static string? RootFor(AssetCatalog catalog) => catalog.Root;
 
     private void OnAssetPicked(string contentPath)
@@ -551,12 +436,11 @@ public partial class PropertiesPanel : UserControl
     {
         _assetRow = null;
 
-        // Escape here means the same as Escape in a field: abandon, and give the
-        // keyboard back to the viewport rather than leaving it in a closed popup.
         if (_assetCancelled) EscapePressed?.Invoke();
         _assetCancelled = false;
     }
 
+    // A vector cell's DataContext is the field. Its row is only reachable through the tree.
     private static PropertyRowModel? FindRow(Control? from)
     {
         for (Visual? v = from; v is not null; v = v.GetVisualParent())

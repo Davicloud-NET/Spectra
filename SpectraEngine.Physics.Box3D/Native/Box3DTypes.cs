@@ -15,13 +15,7 @@ public struct B3Version
 }
 
 /// <summary>A three-component vector in Box3D's layout.</summary>
-/// <remarks>
-/// Field-for-field identical to <see cref="Vector3"/> today, and deliberately
-/// NOT aliased to it. The binding's types must mirror the C library's, and
-/// <see cref="Vector3"/> is the engine's type: tying them together would make a
-/// future change to either one silently reinterpret the other's bytes. Convert
-/// explicitly at the seam, where the conversion is visible and free.
-/// </remarks>
+// Not aliased to Vector3: binding types mirror the C library, not the engine.
 [StructLayout(LayoutKind.Sequential)]
 public struct B3Vec3
 {
@@ -41,14 +35,7 @@ public struct B3Vec3
     public readonly Vector3 ToVector3() => new(X, Y, Z);
 }
 
-/// <summary>A quaternion, stored as a vector part followed by the scalar.</summary>
-/// <remarks>
-/// <b>Vector first, scalar last</b> — which happens to match
-/// <see cref="Quaternion"/>'s <c>(X, Y, Z, W)</c> order, but the agreement is a
-/// coincidence of two independent choices and is pinned by the ABI manifest
-/// rather than assumed. Getting this backwards produces rotations that look
-/// almost right, which is the worst possible failure mode.
-/// </remarks>
+/// <summary>A quaternion: vector part first, scalar last.</summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct B3Quat
 {
@@ -68,20 +55,9 @@ public struct B3Transform
     public B3Quat Q;
 }
 
-/// <summary>
-/// A world position — <b>a distinct type from <see cref="B3Vec3"/>, on purpose,
-/// even though they are byte-identical in this build.</b>
-/// </summary>
-/// <remarks>
-/// In C, <c>b3Pos</c> is a <c>typedef</c> of <c>b3Vec3</c> under the float build
-/// and a <em>separate struct of doubles</em> under
-/// <c>BOX3D_DOUBLE_PRECISION</c>. Keeping the managed types separate from the
-/// binding's first line is what makes a future double build a re-generation
-/// rather than a rewrite: every signature that means "a world position" already
-/// says so, and only this type's fields change. Collapsing the two now would
-/// save nothing and would hide, at every call site, which values are the ones
-/// that would need to widen.
-/// </remarks>
+/// <summary>A world position.</summary>
+// Same bytes as B3Vec3 in the float build, but b3Pos is a struct of doubles
+// under BOX3D_DOUBLE_PRECISION. Keep the two types apart.
 [StructLayout(LayoutKind.Sequential)]
 public struct B3Pos
 {
@@ -101,10 +77,7 @@ public struct B3Pos
     public readonly Vector3 ToVector3() => new(X, Y, Z);
 }
 
-/// <summary>
-/// A world transform: a <see cref="B3Pos"/> translation with a float rotation.
-/// Distinct from <see cref="B3Transform"/> for the reason on <see cref="B3Pos"/>.
-/// </summary>
+/// <summary>A world transform: a <see cref="B3Pos"/> translation and a rotation.</summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct B3WorldTransform
 {
@@ -112,12 +85,7 @@ public struct B3WorldTransform
     public B3Quat Q;
 }
 
-/// <summary>An opaque handle to a physics world.</summary>
-/// <remarks>
-/// Note the <b>16-bit</b> fields: this struct is four bytes and two-byte
-/// aligned, unlike the body and shape ids beside it. Passed by value on nearly
-/// every call, so a wrong layout here is wrong on every call.
-/// </remarks>
+/// <summary>An opaque handle to a physics world. Four bytes, unlike the body and shape ids.</summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct B3WorldId
 {
@@ -125,12 +93,7 @@ public struct B3WorldId
     public ushort Generation;
 }
 
-/// <summary>An opaque handle to a body.</summary>
-/// <remarks>
-/// <c>index1</c> is one-based (hence the name): a zeroed struct is the null
-/// handle, which is what makes <c>default</c> mean "no body" without a separate
-/// flag.
-/// </remarks>
+/// <summary>An opaque handle to a body. Index1 is one-based, so <c>default</c> is the null handle.</summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct B3BodyId
 {

@@ -2,16 +2,8 @@ namespace SpectraEngine.Core.Scene;
 
 /// <summary>
 /// How a batch of nodes combines with the selection already in a
-/// <see cref="SelectionSet"/> — the data form of the modifier key a viewport
-/// was holding when the gesture ended.
+/// <see cref="SelectionSet"/>. The editing layer maps modifier keys to these.
 /// </summary>
-/// <remarks>
-/// One enum rather than one per layer: the editor resolves Shift/Ctrl into
-/// these values and hands them to <see cref="SelectionSet.Apply"/>, so there is
-/// no second vocabulary to keep in sync. The mapping every editor uses —
-/// nothing held replaces, Shift adds, Ctrl toggles — lives above this type, in
-/// the editing layer, because it is a keymap decision.
-/// </remarks>
 public enum SelectionUpdate
 {
     /// <summary>The batch becomes the selection; whatever was selected is dropped.</summary>

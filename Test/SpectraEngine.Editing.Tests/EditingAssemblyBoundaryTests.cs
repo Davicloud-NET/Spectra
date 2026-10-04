@@ -6,13 +6,9 @@ using System.Reflection;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// Guards the seam the whole editing layer is built on: SpectraEngine.Editing
-/// must not depend on the windowing/input backend. Silk.NET flows into the
-/// project transitively through SpectraEngine.Core, so nothing stops a careless
-/// <c>using Silk.NET.Input;</c> at compile time — this test is what does. If it
-/// fails, some editing type started naming a backend type and re-hosting the
-/// editor (in Uno or anything else) just stopped being a swap.
+/// SpectraEngine.Editing must not depend on the windowing or input backend.
 /// </summary>
+// Silk.NET is reachable transitively through Core, so the compiler won't stop it.
 public sealed class EditingAssemblyBoundaryTests
 {
     [Fact]
@@ -20,9 +16,8 @@ public sealed class EditingAssemblyBoundaryTests
     {
         Assembly editing = typeof(EditorInputFrame).Assembly;
 
-        // GetReferencedAssemblies lists what the compiler actually emitted a
-        // reference for — i.e. what the assembly's metadata genuinely uses,
-        // not what was merely available to it.
+        // GetReferencedAssemblies lists only what the assembly uses, not what
+        // was available to it.
         string[] offenders = editing.GetReferencedAssemblies()
             .Select(reference => reference.Name ?? string.Empty)
             .Where(name =>
@@ -37,8 +32,7 @@ public sealed class EditingAssemblyBoundaryTests
     [Fact]
     public void The_editing_assembly_still_references_the_engine_core()
     {
-        // Sanity check on the assertion above: if the reference list were empty
-        // for some unrelated reason, the backend test would pass vacuously.
+        // Guard: an empty reference list would make the test above pass for nothing.
         Assembly editing = typeof(EditorInputFrame).Assembly;
 
         editing.GetReferencedAssemblies()

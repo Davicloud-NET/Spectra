@@ -6,19 +6,14 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// Grid snapping, both as arithmetic (<see cref="GridSnapSettings"/>) and as it
-/// is felt through a drag: the <em>displacement</em> is what quantizes by
-/// default (sub-grid offsets survive, as in Studio and Blender), the opt-in
-/// <see cref="TranslateSnapMode.AbsoluteGrid"/> pulls the reference node onto
-/// absolute grid coordinates instead, and the axes a handle does not free are
-/// never quantized behind the user's back.
+/// Grid snapping: <see cref="GridSnapSettings"/> arithmetic and a live drag.
+/// The displacement snaps by default; <see cref="TranslateSnapMode.AbsoluteGrid"/>
+/// snaps the destination.
 /// </summary>
 public sealed class GizmoSnappingTests
 {
     private const float AlongAxis = 0.8f;
     private const float RoundTrip = 1e-3f;
-
-    // --- The settings --------------------------------------------------------
 
     [Fact]
     public void The_default_increment_is_one_world_unit()
@@ -56,9 +51,7 @@ public sealed class GizmoSnappingTests
         var snap = new GridSnapSettings();
         var value = new Vector3(4.2f, 0.3f, -7.9f);
 
-        // An x-axis drag frees x alone; y and z must survive untouched, or the
-        // gizmo would silently drag an off-grid brush onto the grid on axes the
-        // user never moved.
+        // An x-axis drag frees x only.
         snap.SnapMasked(value, GizmoHandles.FreeAxisMask(GizmoHandle.AxisX))
             .ShouldBe(new Vector3(4f, 0.3f, -7.9f));
 
@@ -76,7 +69,6 @@ public sealed class GizmoSnappingTests
 
         snap.IsActiveWith(KeyModifiers.None).ShouldBeTrue();
         snap.IsActiveWith(KeyModifiers.Alt).ShouldBeFalse();
-        // Other modifiers are irrelevant, and Alt still wins when combined.
         snap.IsActiveWith(KeyModifiers.Shift).ShouldBeTrue();
         snap.IsActiveWith(KeyModifiers.Alt | KeyModifiers.Shift).ShouldBeFalse();
 
@@ -84,7 +76,7 @@ public sealed class GizmoSnappingTests
         snap.IsActiveWith(KeyModifiers.None).ShouldBeFalse();
         snap.IsActiveWith(KeyModifiers.Alt).ShouldBeTrue();
 
-        // An unassigned modifier disables the override entirely.
+        // No modifier assigned: no override.
         snap.ToggleModifier = KeyModifiers.None;
         snap.IsActiveWith(KeyModifiers.Alt).ShouldBeFalse();
     }
@@ -101,7 +93,7 @@ public sealed class GizmoSnappingTests
         snap.CyclePreset(-3).ShouldBe(0.25f);
         snap.CyclePreset(-1).ShouldBe(0.25f);
 
-        // An increment typed in by hand enters the ladder at its nearest rung.
+        // An off-ladder increment enters at its nearest rung.
         snap.Increment = 3f;
         snap.CyclePreset(0).ShouldBe(4f);
     }
@@ -116,8 +108,6 @@ public sealed class GizmoSnappingTests
         Should.Throw<ArgumentOutOfRangeException>(() => snap.SelectPreset(GridSnapSettings.Presets.Count));
         Should.Throw<ArgumentOutOfRangeException>(() => snap.SelectPreset(-1));
     }
-
-    // --- Snapping through a drag ---------------------------------------------
 
     [Fact]
     public void A_snapped_drag_lands_on_absolute_grid_multiples()
@@ -136,12 +126,8 @@ public sealed class GizmoSnappingTests
     [Fact]
     public void A_snapped_drag_preserves_the_sub_grid_offset_by_default()
     {
-        // This is the test that distinguishes snapping the DELTA from snapping
-        // the RESULT. A node at 0.3 dragged by 3.9 lands at 4.2 unsnapped; the
-        // default delta rule rounds the movement to 4.0 and lands the node at
-        // 4.3, its sub-grid offset intact, which is what Studio and Blender
-        // both do, and what an earlier revision of this tool got wrong while
-        // citing Studio for the opposite.
+        // 0.3 dragged by 3.9: the movement rounds to 4.0, so the node lands on
+        // 4.3. Snapping the result would give 4.0.
         var harness = GizmoHarness.ThreeQuarterView();
         var start = new Vector3(0.3f, 0f, 0f);
         SceneNode node = harness.AddSelectedNode(start);
@@ -157,9 +143,6 @@ public sealed class GizmoSnappingTests
     [Fact]
     public void Absolute_grid_mode_pulls_an_off_grid_selection_onto_the_grid()
     {
-        // The old default, retained as the opt-in Hammer-style mode: the
-        // destination is rounded, so the first snapped drag lands the node on
-        // absolute grid coordinates and keeps it there.
         var harness = GizmoHarness.ThreeQuarterView();
         harness.Translate.Snap.Mode = TranslateSnapMode.AbsoluteGrid;
         var start = new Vector3(0.3f, 0f, 0f);
@@ -176,8 +159,6 @@ public sealed class GizmoSnappingTests
     [Fact]
     public void Delta_snapping_preserves_every_offset_of_a_multi_selection()
     {
-        // One quantized movement applied to all: relative offsets survive
-        // exactly, which is Studio's multi-select behavior.
         var harness = GizmoHarness.ThreeQuarterView();
         SceneNode first = harness.AddSelectedNode(Vector3.Zero, "First");
         SceneNode second = harness.AddSelectedNode(new Vector3(1.5f, 0f, 0f), "Second");
@@ -195,12 +176,8 @@ public sealed class GizmoSnappingTests
     [Fact]
     public void Absolute_grid_mode_anchors_on_the_reference_node_of_a_multi_selection()
     {
-        // The rounding must anchor on the node the user is looking at (the
-        // reference node, last selected), never on the invisible pivot
-        // average: anchored there, NO node lands on the grid, the defect the
-        // anchor exists to prevent. Here the reference starts at 1.5 and the
-        // drag asks for ~1.2, so the reference lands on 3.0 exactly and the
-        // other node keeps its relative offset.
+        // Anchored on the reference node (last selected), not the pivot
+        // average, or no node lands on the grid. Reference: 1.5 + ~1.2 -> 3.0.
         var harness = GizmoHarness.ThreeQuarterView();
         harness.Translate.Snap.Mode = TranslateSnapMode.AbsoluteGrid;
         SceneNode first = harness.AddSelectedNode(Vector3.Zero, "First");
@@ -219,8 +196,6 @@ public sealed class GizmoSnappingTests
     [Fact]
     public void A_snapped_axis_drag_leaves_the_other_axes_untouched()
     {
-        // The off-grid y and z of the start must survive a snapped x drag
-        // exactly — see the masking rationale on GizmoHandles.FreeAxisMask.
         var harness = GizmoHarness.ThreeQuarterView();
         var start = new Vector3(0f, 0.37f, -1.62f);
         SceneNode node = harness.AddSelectedNode(start);
@@ -259,15 +234,12 @@ public sealed class GizmoSnappingTests
 
         harness.Grab(Vector3.UnitX * (length * AlongAxis));
 
-        // Snapped by default...
         harness.DragBy(Vector3.UnitX * 4.2f);
         node.LocalPosition.X.ShouldBe(4f, RoundTrip);
 
-        // ...and free while the modifier is held, without ending the gesture.
         harness.DragBy(Vector3.UnitX * 4.2f, KeyModifiers.Alt);
         node.LocalPosition.X.ShouldBe(4.2f, RoundTrip);
 
-        // Releasing the modifier snaps again — the setting was never mutated.
         harness.DragBy(Vector3.UnitX * 4.2f);
         node.LocalPosition.X.ShouldBe(4f, RoundTrip);
 
@@ -291,26 +263,19 @@ public sealed class GizmoSnappingTests
         harness.DragBy(new Vector3(3.7f, 5.4f, 0f));
         harness.Release();
 
-        // Delta snapping: the movement rounds to (4, 5) and the start's
-        // sub-grid offsets ride along.
+        // The movement rounds to (4, 5); the start's offsets ride along.
         node.LocalPosition.X.ShouldBe(4.3f, RoundTrip);
         node.LocalPosition.Y.ShouldBe(5.4f, RoundTrip);
-        // The plane's normal axis is not free, so z keeps its exact start.
         node.LocalPosition.Z.ShouldBe(start.Z, RoundTrip);
     }
-
-    // --- Snapping must not invent movement -----------------------------------
 
     [Theory]
     [InlineData(GizmoHandle.Screen)]
     [InlineData(GizmoHandle.AxisX)]
     public void A_held_frame_that_never_moved_the_cursor_leaves_an_off_grid_selection_alone(GizmoHandle handle)
     {
-        // Every real click is a press, one or more held frames, and a release.
-        // With the grid on — the default — a held frame used to snap the
-        // ABSOLUTE destination even at a zero cursor delta, so simply clicking
-        // an off-grid object teleported it onto the grid and committed a "Move"
-        // nobody asked for.
+        // A plain click is press, held frames, release. It must not snap an
+        // off-grid object onto the grid.
         var harness = GizmoHarness.ThreeQuarterView();
         var start = new Vector3(3.7f, 2.2f, -0.4f);
         SceneNode node = harness.AddSelectedNode(start);
@@ -327,8 +292,7 @@ public sealed class GizmoSnappingTests
         node.LocalPosition.ShouldBe(start);
         harness.Translate.DragDelta.ShouldBe(Vector3.Zero);
 
-        // A gesture that changed nothing is a click: it cancels, so the history
-        // stays clean and the viewport can still read it as "not a drag".
+        // A gesture that changed nothing cancels.
         harness.Release().ShouldBe(GizmoUpdateResult.DragCancelled);
         node.LocalPosition.ShouldBe(start);
         harness.Undo.Count.ShouldBe(0);
@@ -337,8 +301,6 @@ public sealed class GizmoSnappingTests
     [Fact]
     public void The_grid_still_takes_effect_on_the_first_frame_the_cursor_actually_moves()
     {
-        // The guard above must not be a way of turning snapping off: one frame
-        // of real movement and the displacement quantizes, offset preserved.
         var harness = GizmoHarness.ThreeQuarterView();
         var start = new Vector3(3.7f, 2.2f, -0.4f);
         SceneNode node = harness.AddSelectedNode(start);

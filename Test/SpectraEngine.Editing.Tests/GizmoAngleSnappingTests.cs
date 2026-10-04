@@ -6,16 +6,7 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// Angle snapping, both as arithmetic (<see cref="AngleSnapSettings"/>) and as
-/// it behaves inside a live rotate drag.
-/// </summary>
-/// <remarks>
-/// The policy — default on, Alt inverts it, the ladder clamps at its ends — is
-/// <see cref="SnapSettings"/>' and is shared with the grid and factor snaps;
-/// what is specific here is the unit (degrees) and the ladder, so those are what
-/// the arithmetic tests pin.
-/// </remarks>
+/// <summary>Angle snapping: <see cref="AngleSnapSettings"/> arithmetic and a live rotate drag.</summary>
 public sealed class GizmoAngleSnappingTests
 {
     private const float Tolerance = 0.02f;
@@ -47,8 +38,7 @@ public sealed class GizmoAngleSnappingTests
     {
         var snap = new AngleSnapSettings(); // 15°
 
-        // 1.6 rad is 91.67°, which rounds to 90 — and the answer must be exactly
-        // the float for 90°, not whatever a radian-space rounding produced.
+        // 1.6 rad is 91.67°.
         snap.SnapRadians(1.6f).ShouldBe(90f * MathF.PI / 180f, 1e-6f);
         snap.SnapRadians(0.05f).ShouldBe(0f);
     }
@@ -64,8 +54,7 @@ public sealed class GizmoAngleSnappingTests
         snap.CyclePreset(5).ShouldBe(90f);
         snap.CyclePreset(1).ShouldBe(90f);
 
-        // A value typed into a property panel enters at its nearest rung rather
-        // than being rejected: 20° is nearer 15 than 45 by ratio.
+        // An off-ladder value enters at its nearest rung by ratio: 20 is nearer 15.
         snap.Increment = 20f;
         snap.CyclePreset(1).ShouldBe(45f);
     }
@@ -79,7 +68,6 @@ public sealed class GizmoAngleSnappingTests
         rotate.Snap.Enabled = true;
         rotate.Snap.Increment = 15f;
 
-        // 37° of cursor sweep, which is nearest 30.
         RotateGizmoDragTests.Sweep(harness, GizmoHandle.AxisY, 37f * MathF.PI / 180f);
 
         var expected = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 30f * MathF.PI / 180f);
@@ -99,15 +87,13 @@ public sealed class GizmoAngleSnappingTests
         var expected = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 37f * MathF.PI / 180f);
         RotateGizmoDragTests.ShouldRotateLike(node.LocalRotation, expected);
 
-        // And the setting itself is untouched — the modifier is a per-gesture
-        // override, not a toggle.
         rotate.Snap.Enabled.ShouldBeTrue();
     }
 
     [Theory]
     [InlineData(5f, 37f, 35f)]
     [InlineData(45f, 37f, 45f)]
-    [InlineData(90f, 37f, 0f)]    // less than half a rung: the coarse ladder refuses to move at all
+    [InlineData(90f, 37f, 0f)]    // less than half a rung
     [InlineData(90f, 100f, 90f)]
     public void Each_preset_increment_quantises_a_sweep_to_its_own_ladder(
         float increment, float sweepDegrees, float expectedDegrees)
@@ -133,8 +119,6 @@ public sealed class GizmoAngleSnappingTests
 
         RotateGizmoDragTests.Sweep(harness, GizmoHandle.AxisZ, 4f * MathF.PI / 180f);
 
-        // Snapped to zero, so the node is exactly as it was and the history is
-        // clean — no entry for a gesture that changed nothing.
         node.LocalRotation.ShouldBe(Quaternion.Identity);
         harness.Undo.Count.ShouldBe(0);
     }
@@ -151,12 +135,10 @@ public sealed class GizmoAngleSnappingTests
         harness.Rotate.Snap.Enabled.ShouldBeFalse();
         harness.Scale.Snap.Enabled.ShouldBeFalse();
 
-        // The increments are per-tool, but "finer" means finer everywhere.
+        // Increments are per tool; FinerSnap steps all three.
         harness.Gizmos.Apply(GizmoCommand.FinerSnap).ShouldBeTrue();
         harness.Translate.Snap.Increment.ShouldBe(0.5f);
         harness.Rotate.Snap.Increment.ShouldBe(5f);
-        // Move and resize are both world units on the same ladder, so "finer"
-        // lands them on the same rung.
         harness.Scale.Snap.Increment.ShouldBe(0.5f, Tolerance);
     }
 }

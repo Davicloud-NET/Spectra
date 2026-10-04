@@ -3,11 +3,7 @@ using Silk.NET.OpenGL;
 
 namespace SpectraEngine.Core.Graphics.OpenGL;
 
-/// <summary>
-/// A dynamic VBO that uploads interleaved (position + colour) line vertices
-/// and draws them as <c>GL_LINES</c>. Grows on demand via <c>BufferData</c>;
-/// reuses the existing allocation via <c>BufferSubData</c> otherwise.
-/// </summary>
+// Dynamic VBO of interleaved position + colour line vertices, drawn as GL_LINES.
 internal sealed class OpenGLLineBatch : IDisposable
 {
     private const int FloatsPerVertex = 6;
@@ -27,7 +23,7 @@ internal sealed class OpenGLLineBatch : IDisposable
         gl.BindVertexArray(_vao);
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
 
-        // Layout matches the DebugLine shader: location 0 = position, 1 = colour.
+        // Matches the DebugLine shader: location 0 position, 1 colour.
         int stride = FloatsPerVertex * sizeof(float);
         gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, (uint)stride, (void*)0);
         gl.EnableVertexAttribArray(0);

@@ -8,23 +8,9 @@ using System.Numerics;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// What the inspector shows for a selection of more than one node.
+/// What the inspector shows for a multi-selection: the union of rows, with
+/// disagreement tracked per axis.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The union, never the intersection.</b> A row carried by only some of the
-/// selection is still shown and still editable, with the edit reaching the
-/// nodes that have it. Hiding it would mean that selecting one extra object
-/// silently removed the field somebody was about to type into.
-/// </para>
-/// <para>
-/// <b>And disagreement is per AXIS.</b> "Put all of these on the floor" sets y
-/// and must leave x and z alone; a row that could only report that vectors
-/// differ, and only write all three back, would turn that gesture into a way to
-/// stack the whole selection at one point. That is the single most
-/// consequential thing in this file.
-/// </para>
-/// </remarks>
 public sealed class NodeInspectorSelectionTests
 {
     private static Brush Box() => Brush.CreateBox(new Vector3(-1f), new Vector3(1f), default);
@@ -38,8 +24,6 @@ public sealed class NodeInspectorSelectionTests
 
     private static PropertyRow Row(List<PropertyRow> rows, PropertyId id) =>
         rows.Single(r => r.Id == id);
-
-    // --- agreement ----------------------------------------------------------
 
     [Fact]
     public void Values_that_agree_across_the_selection_are_shown_as_ordinary_rows()
@@ -76,14 +60,9 @@ public sealed class NodeInspectorSelectionTests
         rows.ShouldBeEmpty();
     }
 
-    // --- disagreement, per axis ---------------------------------------------
-
     [Fact]
     public void One_differing_axis_leaves_the_other_two_settled()
     {
-        // The whole point. Two objects at different heights but the same x and
-        // z must show x and z as ordinary values, so that typing into y is a
-        // bulk edit and typing into x is not a way to move everything.
         var a = new SceneNode("A") { LocalPosition = new Vector3(5f, 0f, 7f) };
         var b = new SceneNode("B") { LocalPosition = new Vector3(5f, 3f, 7f) };
 
@@ -96,8 +75,7 @@ public sealed class NodeInspectorSelectionTests
     [Fact]
     public void Disagreement_accumulates_across_every_node_rather_than_the_first_pair()
     {
-        // Three nodes where no single PAIR disagrees on everything, but the set
-        // does. Comparing only against the first node would miss the z.
+        // No single pair differs on both x and z; the set does.
         var a = new SceneNode("A") { LocalPosition = new Vector3(0f, 0f, 0f) };
         var b = new SceneNode("B") { LocalPosition = new Vector3(1f, 0f, 0f) };
         var c = new SceneNode("C") { LocalPosition = new Vector3(0f, 0f, 2f) };
@@ -136,25 +114,19 @@ public sealed class NodeInspectorSelectionTests
     [Fact]
     public void Exact_comparison_reports_a_one_ulp_difference_as_mixed()
     {
-        // A tolerance here would report two different positions as settled and
-        // then write one over the other on the next bulk edit.
         var a = new SceneNode("A") { LocalPosition = new Vector3(1f, 0f, 0f) };
         var b = new SceneNode("B") { LocalPosition = new Vector3(1f + float.Epsilon * 8f, 0f, 0f) };
 
         PropertyRow position = Row(Describe(a, b), PropertyId.Position);
 
-        // Only meaningful if the two floats really are distinct.
+        // 1f + 8 * Epsilon may round back to 1f.
         if (a.LocalPosition.X != b.LocalPosition.X)
             position.MixedAxes.ShouldBe(PropertyAxes.X);
     }
 
-    // --- properties only some of the selection has --------------------------
-
     [Fact]
     public void A_property_only_part_of_the_selection_has_is_still_shown_and_editable()
     {
-        // Selecting a light as well as a brush must not make the brush fields
-        // vanish out from under somebody who was about to type into them.
         var brush = new SceneNode("Wall") { Brush = Box() };
         var light = new SceneNode("Lamp") { Light = new Light() };
 
@@ -184,9 +156,7 @@ public sealed class NodeInspectorSelectionTests
             NodeInspector.BrushGroup,
             NodeInspector.LightGroup,
 
-            // A brush is surfaced with something, so it grows a Material
-            // section too. Last, because these ids are appended and the merged
-            // panel lays out in PropertyId order.
+            // Last: the merged panel lays out in PropertyId order.
             NodeInspector.MaterialGroup,
         ]);
     }
@@ -194,9 +164,6 @@ public sealed class NodeInspectorSelectionTests
     [Fact]
     public void The_merged_order_does_not_depend_on_which_node_was_selected_first()
     {
-        // Merging in first-seen order would lay the panel out differently
-        // depending on click order, and would break the group-by-run assumption
-        // the panel renders with.
         var brush = new SceneNode("Wall") { Brush = Box() };
         var light = new SceneNode("Lamp") { Light = new Light() };
 

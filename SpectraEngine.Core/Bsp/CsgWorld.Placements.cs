@@ -9,8 +9,7 @@ public sealed partial class CsgWorld
     private CsgWorld? _canonicalWorld;
 
     // Public placement/chunk views and cooking use dense authored indices.
-    // Live compiler and query paths stay on stable slots; materialization is
-    // deliberately outside their edit-neighborhood work.
+    // Live compiler and query paths stay on stable slots and never pay for this.
     private CsgWorld CanonicalWorld
     {
         get

@@ -2,9 +2,7 @@ using SpectraShade.Compiler.Lexing;
 
 namespace SpectraShade.Compiler.Syntax;
 
-/// <summary>
-/// Base class for all AST nodes.
-/// </summary>
+/// <summary>Base class for all AST nodes.</summary>
 public abstract class SyntaxNode
 {
     public SourceSpan Span { get; }
@@ -15,13 +13,7 @@ public abstract class SyntaxNode
     }
 }
 
-// ─── Top-level ───────────────────────────────────────────────
-
-/// <summary>
-/// Root of the AST. One per .spectrashade file.
-///
-/// Contains imports, struct declarations (outside shader), and the shader block.
-/// </summary>
+/// <summary>Root of the AST. One per .spectrashade file.</summary>
 public sealed class CompilationUnit : SyntaxNode
 {
     public IReadOnlyList<ImportDirective> Imports { get; }
@@ -47,10 +39,7 @@ public sealed class ImportDirective : SyntaxNode
     }
 }
 
-/// <summary>
-/// shader Name { ... }
-/// Contains cbuffers, sampler declarations, shared functions, and stage functions.
-/// </summary>
+/// <summary>shader Name { ... }</summary>
 public sealed class ShaderDeclaration : SyntaxNode
 {
     public string Name { get; }
@@ -63,12 +52,7 @@ public sealed class ShaderDeclaration : SyntaxNode
     }
 }
 
-// ─── Attributes ──────────────────────────────────────────────
-
-/// <summary>
-/// [Name] or [Name(arg1, arg2)]
-/// Examples: [Vertex], [Location(0)], [Binding(1)], [Target(0)]
-/// </summary>
+/// <summary>[Name] or [Name(arg1, arg2)], such as [Vertex] or [Location(0)].</summary>
 public sealed class AttributeSyntax : SyntaxNode
 {
     public string Name { get; }
@@ -80,8 +64,6 @@ public sealed class AttributeSyntax : SyntaxNode
         Arguments = arguments;
     }
 }
-
-// ─── Declarations ────────────────────────────────────────────
 
 public sealed class StructDeclaration : SyntaxNode
 {
@@ -109,9 +91,7 @@ public sealed class FieldDeclaration : SyntaxNode
     }
 }
 
-/// <summary>
-/// [Binding(N)] cbuffer Name { fields... }
-/// </summary>
+/// <summary>[Binding(N)] cbuffer Name { fields... }</summary>
 public sealed class CBufferDeclaration : SyntaxNode
 {
     public IReadOnlyList<AttributeSyntax> Attributes { get; }
@@ -126,10 +106,7 @@ public sealed class CBufferDeclaration : SyntaxNode
     }
 }
 
-/// <summary>
-/// [Binding(N)] sampler2D name;
-/// A sampler/texture declaration at shader scope.
-/// </summary>
+/// <summary>[Binding(N)] sampler2D name; at shader scope.</summary>
 public sealed class SamplerDeclaration : SyntaxNode
 {
     public IReadOnlyList<AttributeSyntax> Attributes { get; }
@@ -145,11 +122,7 @@ public sealed class SamplerDeclaration : SyntaxNode
 }
 
 /// <summary>
-/// A function declaration, potentially with attributes like [Vertex] or [Fragment].
-/// Stage functions have attributes; shared helper functions don't.
-///
-/// [Vertex]
-/// FragmentInput Main([Location(0)] vec3 position, [Location(1)] vec2 uv) { ... }
+/// A function. Stage functions carry [Vertex] or [Fragment]; shared helpers carry none.
 /// </summary>
 public sealed class FunctionDeclaration : SyntaxNode
 {
@@ -186,8 +159,6 @@ public sealed class ParameterSyntax : SyntaxNode
     }
 }
 
-// ─── Types ───────────────────────────────────────────────────
-
 public sealed class TypeSyntax : SyntaxNode
 {
     public string Name { get; }
@@ -201,8 +172,6 @@ public sealed class TypeSyntax : SyntaxNode
         ArraySize = arraySize;
     }
 }
-
-// ─── Statements ──────────────────────────────────────────────
 
 public abstract class Statement : SyntaxNode
 {
@@ -310,8 +279,6 @@ public sealed class ContinueStatement : Statement
     public ContinueStatement(SourceSpan span) : base(span) { }
 }
 
-// ─── Expressions ─────────────────────────────────────────────
-
 public abstract class Expression : SyntaxNode
 {
     protected Expression(SourceSpan span) : base(span) { }
@@ -368,7 +335,7 @@ public sealed class ConstructorExpression : Expression
     }
 }
 
-/// <summary>new StructName() — for user-defined structs</summary>
+/// <summary>new StructName(), for user-defined structs.</summary>
 public sealed class NewExpression : Expression
 {
     public TypeSyntax Type { get; }

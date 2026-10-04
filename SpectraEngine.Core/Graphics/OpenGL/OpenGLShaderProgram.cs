@@ -103,10 +103,8 @@ internal sealed class OpenGLShaderProgram : ShaderProgram
         int location = GetLocation(name);
         if (location < 0 || values.Length == 0) return;
 
-        // GL guarantees that a basic-type array's name resolves to element zero,
-        // so one location plus a count fills the whole array. No per-element
-        // "name[i]" lookup, and therefore no string allocated per light per
-        // frame.
+        // An array's name resolves to element zero, so one location plus a
+        // count fills the whole array.
         fixed (Vector4* p = values)
             _gl.Uniform4(location, (uint)values.Length, (float*)p);
     }
@@ -116,8 +114,7 @@ internal sealed class OpenGLShaderProgram : ShaderProgram
         int location = GetLocation(name);
         if (location < 0 || values.Length == 0) return;
 
-        // transpose: false, matching the single-matrix overload below. See the
-        // base class for why that is correct and why "fixing" it is not.
+        // transpose: false is correct, see ShaderProgram.
         fixed (Matrix4x4* p = values)
             _gl.UniformMatrix4(location, (uint)values.Length, false, (float*)p);
     }

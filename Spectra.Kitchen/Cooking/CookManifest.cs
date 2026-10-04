@@ -9,26 +9,10 @@ namespace Spectra.Kitchen.Cooking;
 
 /// <summary>
 /// The cook manifest: every asset, its id, its inputs and its output hash, as
-/// canonical JSON.
+/// canonical JSON. This is the file CI diffs.
 /// </summary>
-/// <remarks>
-/// <para><b>This is the artifact CI diffs.</b> An output hash that moved when no
-/// input hash did is a determinism failure, and finding one here costs a text diff
-/// where finding it later costs a patch that will not apply on a player's machine.
-/// </para>
-/// <para><b>The missing probes are in it, and they are the interesting half.</b>
-/// A manifest listing only the files a rule found cannot answer "why did adding
-/// this file change that artifact", which is the question an incremental-build bug
-/// is always asked as.</para>
-/// <para><b>Canonical JSON, through the one implementation.</b> The settings in it
-/// fail silently: <c>NewLine</c> defaults to the platform's, so byte identity would
-/// hold only within one operating system, and the default encoder escapes
-/// non-ASCII into unmergeable noise. A manifest that differs by the OS that wrote
-/// it is a manifest nobody can diff.</para>
-/// <para><b>No timestamps, no absolute paths, no machine name.</b> Same rule the
-/// pack writer follows and for the same reason: two cooks of one tree must produce
-/// one file.</para>
-/// </remarks>
+// No timestamps, absolute paths or machine names: two cooks of one tree must
+// write the same bytes.
 public static class CookManifest
 {
     /// <summary>Format version of the manifest document itself.</summary>
@@ -85,11 +69,6 @@ public static class CookManifest
         writer.WriteString("rule", ToWire(asset.Rule));
         writer.WriteNumber("ruleVersion", asset.RuleVersion);
 
-        // Written only when true, so a clean cook's manifest is not carrying a
-        // "skipped": false against every asset in the project. A diff between a
-        // clean run and a cached one legitimately shows this member appearing:
-        // that IS the difference between the two runs, and the pack they produced
-        // is byte-identical regardless.
         if (asset.FromCache) writer.WriteBoolean("skipped", true);
 
         writer.WritePropertyName("inputs");
@@ -107,8 +86,6 @@ public static class CookManifest
         }
         writer.WriteEndArray();
 
-        // Separate from inputs rather than a kind inside it, because this list is
-        // the one a reviewer is pointed at when an artifact did not rebuild.
         writer.WritePropertyName("missing");
         writer.WriteStartArray();
         foreach (RuleDependency dependency in asset.Dependencies)

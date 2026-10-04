@@ -9,21 +9,8 @@ using System.Linq;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// The flat projection a virtualizing panel binds to.
+/// The flat list of visible rows a virtualizing panel binds to, and how it is patched.
 /// </summary>
-/// <remarks>
-/// <b>What this pins is that the panel is handed only what can be seen.</b> A
-/// tree control realises a container per node whether or not it is visible,
-/// which at the engine's own ceiling of 25,000 nodes means building
-/// twenty-five thousand rows to show thirty-five. The projection is the fix,
-/// and it fails silently in both directions: too many rows is just a slow
-/// panel, too few is a node the user cannot find.
-/// <para>
-/// The patching matters as much as the contents. Replacing the collection
-/// would reset the scroll position and the selection, so expanding one group
-/// would throw the user back to the top of the scene.
-/// </para>
-/// </remarks>
 public sealed class SceneTreeRowTests
 {
     private static readonly Guid Root = Guid.NewGuid();
@@ -48,10 +35,7 @@ public sealed class SceneTreeRowTests
             Added(Leaf, Branch, "Leaf", 0),
             Added(Sibling, Root, "Sibling", 1)));
 
-        // Closed deliberately. A top-level row now OPENS by default, so a
-        // freshly opened project shows its scene rather than the word "Root";
-        // these tests are about the projection's mechanics, so they start from
-        // the fully closed state and say which rows they opened.
+        // Top-level rows open by default; these tests start fully closed.
         tree.ToggleExpanded(tree.Roots[0]);
         return tree;
     }
@@ -64,12 +48,9 @@ public sealed class SceneTreeRowTests
 
     private static string[] Names(SceneTreeModel tree) => [.. tree.Rows.Select(r => r.Name)];
 
-    // --- What is visible -----------------------------------------------------
-
     [Fact]
     public void A_collapsed_tree_projects_only_its_roots()
     {
-        // Four nodes in the scene, one row on screen. This is the whole point.
         SceneTreeModel tree = Nested();
 
         Names(tree).ShouldBe(["Root"]);
@@ -112,13 +93,9 @@ public sealed class SceneTreeRowTests
         Node(tree, Branch).IsExpanded.ShouldBeTrue("collapsing a parent does not close what is under it");
     }
 
-    // --- What each row carries ----------------------------------------------
-
     [Fact]
     public void Each_row_carries_its_own_depth()
     {
-        // A flat list has no nesting left to indent by, so the depth travels
-        // with the row or the hierarchy is invisible.
         SceneTreeModel tree = Nested();
         tree.ToggleExpanded(tree.Rows[0]);
         tree.ToggleExpanded(tree.Rows[1]);
@@ -163,8 +140,6 @@ public sealed class SceneTreeRowTests
 
         Node(tree, Leaf).Depth.ShouldBe(1);
     }
-
-    // --- Structural changes through the projection ---------------------------
 
     [Fact]
     public void A_node_added_under_a_collapsed_parent_adds_no_row()
@@ -212,13 +187,10 @@ public sealed class SceneTreeRowTests
         Names(tree).ShouldBe(["Root", "Branch", "Leaf", "Sibling"]);
     }
 
-    // --- How it is applied ---------------------------------------------------
-
     [Fact]
     public void Expanding_inserts_rather_than_resetting_the_collection()
     {
-        // A Reset drops the scroll position and the selection, so expanding one
-        // group would throw the user back to the top of the scene.
+        // A Reset drops the scroll position and the selection.
         SceneTreeModel tree = Nested();
         var actions = new List<NotifyCollectionChangedAction>();
         ((INotifyCollectionChanged)tree.Rows).CollectionChanged += (_, e) => actions.Add(e.Action);
@@ -247,9 +219,6 @@ public sealed class SceneTreeRowTests
     [Fact]
     public void An_unchanged_tree_notifies_nothing()
     {
-        // Structural batches arrive whenever anything moves in the graph, and a
-        // projection that churned on each one would rebuild the panel's rows
-        // for nothing.
         SceneTreeModel tree = Nested();
         tree.ToggleExpanded(tree.Rows[0]);
 
@@ -265,8 +234,7 @@ public sealed class SceneTreeRowTests
     [Fact]
     public void Toggling_a_leaf_does_nothing()
     {
-        // Its chevron is hidden, but a keyboard Right arrow reaches the same
-        // call and must not put the node into a state its row cannot show.
+        // No chevron, but the Right arrow key reaches the same call.
         SceneTreeModel tree = Nested();
         tree.ToggleExpanded(tree.Rows[0]);
         SceneTreeNode sibling = Node(tree, Sibling);

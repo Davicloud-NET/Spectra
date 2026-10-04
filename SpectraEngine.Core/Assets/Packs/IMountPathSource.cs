@@ -8,20 +8,10 @@ namespace SpectraEngine.Core.Assets.Packs;
 public readonly record struct MountPath(string Path, bool IsTombstone);
 
 /// <summary>
-/// A content source that can list every logical path it DECIDES, deletions
-/// included.
+/// A content source that can list every logical path it decides, tombstones
+/// included. Optional: a source without it is flattened from its enumeration.
 /// </summary>
-/// <remarks>
-/// <para><b>Why this is not just <c>TryEnumerate</c>.</b> Enumeration answers
-/// "what can be served", which is the right answer for a content browser and the
-/// wrong one for a mount stack: a tombstone serves nothing and is the entire
-/// mechanism by which a higher band removes content a lower one shipped, so a
-/// flatten built from enumeration alone would never see a deletion and the
-/// tombstone would silently do nothing.</para>
-/// <para>It is optional. A source that does not implement it is flattened from
-/// its enumeration, which is correct for anything that cannot express a deletion
-/// in the first place — the loose file tree, for one.</para>
-/// </remarks>
+// TryEnumerate skips tombstones, so a mount stack built from it would never see a deletion.
 public interface IMountPathSource
 {
     /// <summary>Appends every path this source decides to <paramref name="results"/>.</summary>

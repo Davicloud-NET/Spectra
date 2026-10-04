@@ -10,18 +10,8 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// Editing a brush's material and one face's texture frame from the property
-/// panel.
-/// </summary>
-/// <remarks>
-/// <b>A face is named by the plane index in the edit's KEY.</b> That is the
-/// mechanism an entity keyvalue already uses for the same reason: one
-/// <c>PropertyId</c> covers a family of rows that only a string can tell apart.
-/// An edit arriving without one names no face at all, and the editor refuses it
-/// rather than guessing at "the first face", which would retexture a wall
-/// nobody clicked.
-/// </remarks>
+/// <summary>Editing a brush's material and one face's texture frame from the property panel.</summary>
+// A face edit names its face by plane index in PropertyEdit.Key.
 public sealed class FacePropertyEditTests
 {
     private const string Wall = "Materials/wall.spectramat";
@@ -38,8 +28,6 @@ public sealed class FacePropertyEditTests
 
     private static int Apply(SceneNode node, PropertyEdit edit) =>
         PropertyEditor.Apply(new UndoStack(node.Owner!), [node], edit);
-
-    // --- The whole brush -----------------------------------------------------
 
     [Fact]
     public void A_brush_material_edit_paints_every_face_in_one_entry()
@@ -72,9 +60,7 @@ public sealed class FacePropertyEditTests
         Apply(node, new PropertyEdit { Id = PropertyId.BrushMaterial, Text = Wall })
             .ShouldBe(0);
 
-        // Reference identity is the change detector for the carve and the
-        // part-mesh cache: a fresh instance here recompiles the world to draw
-        // the picture it already had.
+        // The carve and the part-mesh cache detect change by Brush reference.
         node.Brush.ShouldBeSameAs(before);
     }
 
@@ -98,9 +84,7 @@ public sealed class FacePropertyEditTests
         SceneNode node = BoxNode(scene);
         Brush before = node.Brush!;
 
-        // The registry interns whatever it is handed, so a path outside the
-        // content root becomes a reference nothing can resolve, written into a
-        // map and carried to whoever opens it next.
+        // MaterialRegistry interns anything, so the editor has to refuse this.
         Apply(node, new PropertyEdit
         {
             Id = PropertyId.BrushMaterial,
@@ -109,8 +93,6 @@ public sealed class FacePropertyEditTests
 
         node.Brush.ShouldBeSameAs(before);
     }
-
-    // --- One face ------------------------------------------------------------
 
     [Fact]
     public void A_face_material_edit_paints_only_that_plane()
@@ -176,9 +158,8 @@ public sealed class FacePropertyEditTests
         SceneNode node = BoxNode(scene);
         Brush before = node.Brush!;
 
-        // FaceSurface's own constructor throws on a zero scale, and a command
-        // that threw from inside Do would leave the transaction open and the
-        // scene half-edited. Refused here, where nothing has been built yet.
+        // FaceSurface's constructor throws on these; a throw inside Do would
+        // leave the transaction open.
         Apply(node, new PropertyEdit
         {
             Id = PropertyId.FaceUScale,
@@ -248,9 +229,7 @@ public sealed class FacePropertyEditTests
         var scene = new Scene("Test");
         SceneNode node = BoxNode(scene);
 
-        // Turned and moved: the panel edits in world space and the file stores
-        // local axes, so a write that forgot the inverse would put the texture
-        // somewhere else the moment the brush was rotated.
+        // The panel edits in world space; the brush stores local axes.
         node.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.9f);
         node.LocalPosition = new Vector3(30f, 0f, -12f);
 

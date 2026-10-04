@@ -7,43 +7,20 @@ namespace SpectraEngine.Core.Physics.Character;
 /// <summary>
 /// Exact distance and sweep between a capsule and a convex piece.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Plane distances are the broad phase, never the narrow phase.</b> Taking
-/// the maximum signed distance over a convex's outward planes tests against the
-/// <em>sharp-cornered</em> offset polytope, not the rounded one a capsule
-/// actually sweeps: at a box corner the sharp apex sits <c>r·√3</c> from the
-/// vertex against a true distance of <c>r</c>, so at a 0.35 radius there is a
-/// quarter-unit of phantom solid at every convex corner in the world. Used as a
-/// contact test that is "catching on brush edges" pre-installed, and it would
-/// narrow a 1.0-unit doorway below the width of the character trying to walk
-/// through it.
-/// </para>
-/// <para>
-/// So the plane test is used for what it <em>is</em> exact at — proving
-/// separation, since a positive maximum is a genuine separating axis — and the
-/// real distance comes from the piece's face polygons, which the brush pipeline
-/// already produces and which give the true rounded answer including the corner
-/// direction as the contact normal.
-/// </para>
-/// </remarks>
+// Plane distances only reject. Max plane distance measures the sharp-cornered
+// offset shape, which sticks out r*sqrt(3) at a box corner where the capsule's
+// true distance is r, so it would catch on every brush edge. Contact distance
+// comes from the face polygons.
 public static class CapsuleGeometry
 {
-    /// <summary>Below this, two directions are treated as parallel.</summary>
     private const float ParallelEpsilon = 1e-6f;
 
-    /// <summary>Slack for the "is this point inside the face polygon" test.</summary>
     private const float InsideEpsilon = 1e-5f;
 
     /// <summary>
     /// The largest signed distance from the capsule to any of the piece's
     /// planes. Positive proves separation; non-positive proves nothing.
     /// </summary>
-    /// <remarks>
-    /// Exact as a <em>reject</em>, because a positive value exhibits an actual
-    /// separating plane. Never used as a contact distance — see the type
-    /// remarks for what that costs.
-    /// </remarks>
     public static float MaxPlaneSeparation(
         in CharacterCapsule capsule, ReadOnlySpan<Plane> planes, out int planeIndex)
     {
@@ -80,14 +57,9 @@ public static class CapsuleGeometry
 
     /// <summary>
     /// The exact distance from the capsule's surface to the piece, with the
-    /// outward contact normal and the closest point on the piece.
+    /// outward contact normal and the closest point on the piece. Negative
+    /// means penetrating.
     /// </summary>
-    /// <remarks>
-    /// Negative means penetrating. When penetrating, the normal and depth come
-    /// from the least-violated plane, which is the correct minimum-translation
-    /// axis for a convex and is what lets depenetration push along the shortest
-    /// way out rather than the way it happened to arrive.
-    /// </remarks>
     public static float Distance(
         in CharacterCapsule capsule,
         ReadOnlySpan<Plane> planes,
@@ -98,9 +70,8 @@ public static class CapsuleGeometry
         normal = Vector3.UnitY;
         pointOnPiece = capsule.Center1;
 
-        // A positive maximum is a real separating plane, so the capsule is
-        // certainly clear — but the VALUE is the sharp-corner underestimate, so
-        // it is used only to skip the expensive path when comfortably clear.
+        // The plane value underestimates near corners, so only trust it when
+        // well clear.
         float planeSeparation = MaxPlaneSeparation(in capsule, planes, out int planeIndex);
         if (planeSeparation > capsule.Radius)
         {
@@ -110,17 +81,10 @@ public static class CapsuleGeometry
             return planeSeparation;
         }
 
-        // Penetrating: the capsule's AXIS passes through the solid.
-        //
-        // This must be an exact segment-versus-convex test, not a guess from the
-        // face distance. A capsule straddling a face has its nearest axis point
-        // OUTSIDE the solid — so the face path measures a small positive gap and
-        // reports "barely touching" while half the body is still buried, and
-        // depenetration converges to a resting position inside the wall.
-        //
-        // The depth is the LEAST-violated plane's separation, which is the
-        // smallest push that frees the capsule and therefore the correct
-        // minimum-translation direction for a convex.
+        // Axis passes through the solid. Needs the exact segment test: a
+        // capsule straddling a face has its nearest axis point outside, so the
+        // face path would report a small gap with half the body buried.
+        // Depth is the least-violated plane, the shortest way out.
         if (planeSeparation < 0f &&
             SegmentIntersectsConvex(capsule.Center1, capsule.Center2, planes))
         {
@@ -130,10 +94,8 @@ public static class CapsuleGeometry
             return planeSeparation;
         }
 
-        // The real answer: nearest approach between the capsule's axis and the
-        // piece's surface, minus the radius. This is the rounded distance, and
-        // near a corner its normal is the corner direction rather than a face
-        // normal — which is the entire reason this path exists.
+        // Nearest approach of the axis to the surface, minus the radius. Near
+        // a corner the normal is the corner direction, not a face normal.
         float bestSquared = float.MaxValue;
         Vector3 bestOnFace = default;
         Vector3 bestOnAxis = default;
@@ -155,8 +117,7 @@ public static class CapsuleGeometry
 
         if (bestSquared == float.MaxValue)
         {
-            // No faces at all — a degenerate piece. Fall back to the plane
-            // answer rather than claiming contact.
+            // No faces: fall back to the plane answer.
             normal = planeIndex >= 0 ? planes[planeIndex].Normal : Vector3.UnitY;
             return planeSeparation;
         }
@@ -171,13 +132,11 @@ public static class CapsuleGeometry
         }
         else if (planeIndex >= 0)
         {
-            // Axis exactly on the surface: no direction to derive, so take the
-            // touched plane's.
+            // Axis on the surface: no direction to derive.
             normal = planes[planeIndex].Normal;
         }
 
-        // If the axis is INSIDE the solid the surface distance is negative, and
-        // the sign cannot come from the face distance alone.
+        // Face distance is unsigned. Axis inside the solid means negative.
         if (ContainsPoint(bestOnAxis, planes, InsideEpsilon))
             return -(axisDistance + capsule.Radius);
 
@@ -187,21 +146,9 @@ public static class CapsuleGeometry
     /// <summary>
     /// Conservative advancement: the fraction of <paramref name="translation"/>
     /// the capsule may travel before its surface is <paramref name="skinWidth"/>
-    /// from the piece.
+    /// from the piece. Returns 1 when unobstructed and 0 with a valid plane
+    /// when the capsule already overlaps.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Returns 1 when unobstructed, and <b>0 with a valid plane when the capsule
-    /// already overlaps</b> — never "no hit", because a character that spawned
-    /// inside geometry must be pushed out rather than sweeping through the
-    /// world.
-    /// </para>
-    /// <para>
-    /// <b>On iteration exhaustion this reports a hit at the current fraction,
-    /// never a miss.</b> Being blocked slightly early is survivable for a
-    /// character; tunnelling through a wall is not.
-    /// </para>
-    /// </remarks>
     public static float Sweep(
         in CharacterCapsule capsule,
         Vector3 translation,
@@ -231,17 +178,10 @@ public static class CapsuleGeometry
             CharacterCapsule probe = capsule.Translated(direction * travelled);
             float distance = Distance(in probe, planes, faces, out normal, out pointOnPiece);
 
-            // How fast the gap closes along the travel direction — tested
-            // BEFORE the contact check, and the order is load-bearing.
-            //
-            // A capsule resting against a surface is already at contact
-            // distance, so a contact-first test reports "blocked at fraction
-            // zero" for motion that is tangential to that surface or moving
-            // away from it. That is what stops a step probe from ever rising:
-            // the character is touching the riser, so its upward sweep returns
-            // zero, the probe advances nothing, and a perfectly climbable step
-            // becomes a wall. Only motion that closes the gap can be blocked by
-            // this piece.
+            // Check closing speed before contact. A capsule resting on a
+            // surface is already at contact distance, and a contact-first test
+            // would block tangential or separating motion at fraction 0, which
+            // stops a step probe from rising past the riser it touches.
             float closing = -Vector3.Dot(direction, normal);
             if (closing <= ParallelEpsilon)
                 return 1f;
@@ -255,17 +195,11 @@ public static class CapsuleGeometry
                 return 1f;
         }
 
-        // Out of iterations while still approaching: stop here rather than
-        // letting the capsule through.
+        // Out of iterations: report a hit here. Stopping early beats tunnelling.
         return travelled / length;
     }
 
     /// <summary>Whether a segment intersects the convex solid bounded by the planes.</summary>
-    /// <remarks>
-    /// Parametric slab clipping: keep shrinking the interval the segment could
-    /// be inside on, and it either survives or empties. Exact and branch-cheap,
-    /// which matters because it runs for every candidate every query.
-    /// </remarks>
     public static bool SegmentIntersectsConvex(Vector3 a, Vector3 b, ReadOnlySpan<Plane> planes)
     {
         Vector3 direction = b - a;
@@ -279,8 +213,6 @@ public static class CapsuleGeometry
 
             if (MathF.Abs(rate) < ParallelEpsilon)
             {
-                // Parallel to this plane: either wholly inside its half-space or
-                // wholly outside, for the entire segment.
                 if (distance > 0f)
                     return false;
                 continue;
@@ -312,12 +244,6 @@ public static class CapsuleGeometry
     }
 
     /// <summary>Nearest points between two segments.</summary>
-    /// <remarks>
-    /// The standard clamped-parameter solve, with the parallel case falling back
-    /// to clamping one segment against the other — which is exactly the
-    /// configuration a capsule makes with a wall edge it is sliding along, so it
-    /// is not a rare branch.
-    /// </remarks>
     public static void ClosestBetweenSegments(
         Vector3 p1, Vector3 q1, Vector3 p2, Vector3 q2, out Vector3 c1, out Vector3 c2)
     {
@@ -377,12 +303,6 @@ public static class CapsuleGeometry
     }
 
     /// <summary>Nearest points between a segment and a convex polygon.</summary>
-    /// <remarks>
-    /// Two cases, both needed: the segment may pass over the polygon's
-    /// <em>interior</em> — the common one, a character standing on a floor — or
-    /// its nearest approach may be to an <em>edge</em>, which is the corner case
-    /// the plane test gets wrong and this exists to get right.
-    /// </remarks>
     public static void ClosestBetweenSegmentAndPolygon(
         Vector3 a, Vector3 b, in Polygon polygon, out Vector3 onSegment, out Vector3 onPolygon)
     {
@@ -401,8 +321,7 @@ public static class CapsuleGeometry
 
         float bestSquared = float.MaxValue;
 
-        // Interior case: project each segment endpoint onto the polygon's plane
-        // and accept it when the projection lands inside.
+        // Interior: an endpoint that projects inside the polygon.
         Vector3 normal = polygon.Surface.Normal;
         for (int end = 0; end < 2; end++)
         {
@@ -422,7 +341,7 @@ public static class CapsuleGeometry
             }
         }
 
-        // Edge case, and the one that produces correct behaviour at corners.
+        // Edges: this is what gets corners right.
         for (int i = 0; i < verts.Length; i++)
         {
             Vector3 e0 = verts[i];

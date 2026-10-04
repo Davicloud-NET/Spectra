@@ -12,29 +12,16 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// The editor's verb surface: the calls a toolbar makes instead of a key press.
+/// The editor host's command surface: the verbs a toolbar posts, and the state
+/// it reads back.
 /// </summary>
-/// <remarks>
-/// <b>What is being pinned is that there is ONE path, not two.</b> Every verb
-/// here was previously reachable only as a key chord inside the host's own
-/// shortcut handler. A shell needs the same verbs, and the tempting shortcut is
-/// to synthesise fake key presses at it; that is a second input path free to
-/// drift from the real one, and it would drift silently because both look right
-/// in isolation. These tests assert the public verbs do what the chords do.
-/// <para>
-/// The reporting half matters just as much: a three-button tool row needs to
-/// know which button is lit, and the label it reads has to be a value rather
-/// than a string somebody splits.
-/// </para>
-/// </remarks>
 public sealed class SceneEditorHostCommandTests
 {
     private static SceneEditorHost NewHost(Scene scene)
     {
         var renderer = new CompilingRenderer();
 
-        // The host measures its viewport from the renderer's latch in its
-        // constructor, and a zero-sized one makes every later pick undefined.
+        // The host reads the viewport size in its constructor; zero breaks picking.
         renderer.SetFramebufferSize(new Vector2D<int>(1280, 720));
 
         return new SceneEditorHost(
@@ -51,15 +38,9 @@ public sealed class SceneEditorHostCommandTests
         return node;
     }
 
-    // --- Reporting -----------------------------------------------------------
-
     [Fact]
     public void The_tool_and_its_handle_style_are_reported_separately()
     {
-        // They used to be one combined label ("move/Studio"), which reads fine
-        // in a log line and is useless to a toolbar: three buttons need to know
-        // which one is lit, and splitting a string to find out is a contract
-        // nobody wrote down.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -77,9 +58,7 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void The_labels_are_interned_constants_rather_than_formatted_strings()
     {
-        // The periodic stats line reads these on an otherwise allocation-free
-        // path, so a formatted enum here is a per-frame allocation nothing
-        // reports.
+        // Read every frame by the stats line, so they must not allocate.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -103,9 +82,7 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void The_snap_increment_is_the_live_tools_own_unit()
     {
-        // All three snaps are absolute quantities of the thing being edited,
-        // never a multiplier, so the number means world units under move and
-        // degrees under rotate. A UI showing one must show which tool is live.
+        // World units under move, degrees under rotate.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -130,13 +107,8 @@ public sealed class SceneEditorHostCommandTests
         host.SnapEnabled.ShouldBeTrue();
     }
 
-    // --- Idempotent state verbs ----------------------------------------------
-    //
-    // The Use*/Enable*/Disable* verbs exist for controls that name a state
-    // rather than flip one: a toggle sent against a snapshot one publish stale
-    // flips the wrong way exactly when the user clicks fastest. What is pinned
-    // is that naming the current state changes nothing and says so.
-
+    // Set verbs, not toggles: a toggle sent against a stale snapshot flips
+    // the wrong way.
     [Fact]
     public void An_idempotent_verb_names_a_state_and_reports_whether_it_changed()
     {
@@ -158,14 +130,9 @@ public sealed class SceneEditorHostCommandTests
         host.SnapEnabled.ShouldBeFalse();
     }
 
-    // --- Snap increments -----------------------------------------------------
-
     [Fact]
     public void Every_tools_increment_is_readable_without_switching_tools()
     {
-        // A command surface shows the move grid and the rotate angle side by
-        // side, so the per-tool values are named properties rather than
-        // whatever the live tool happens to be.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -191,9 +158,6 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void A_bad_increment_is_refused_before_anything_is_written()
     {
-        // The property panel's rule: a value the setting would throw on is
-        // refused up front, because clamping writes a number nobody asked for
-        // and reports nothing.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -204,14 +168,9 @@ public sealed class SceneEditorHostCommandTests
         host.MoveSnapIncrement.ShouldBe(1f);
     }
 
-    // --- Select all / clear --------------------------------------------------
-
     [Fact]
     public void Select_all_takes_the_top_level_not_the_whole_graph()
     {
-        // Moving the top level moves everything anyway, and a selection of
-        // every descendant would make the property union scale with the graph
-        // instead of with what the user can see.
         var scene = new Scene("Editor");
         SceneNode a = AddChild(scene, "A");
         a.CreateChild("Grandchild");
@@ -227,8 +186,6 @@ public sealed class SceneEditorHostCommandTests
         host.Apply(EditorHostCommand.ClearSelection);
         scene.Selection.Count.ShouldBe(0);
     }
-
-    // --- Insert --------------------------------------------------------------
 
     [Fact]
     public void Insert_creates_selects_and_is_one_undo_entry()
@@ -250,8 +207,6 @@ public sealed class SceneEditorHostCommandTests
         host.Apply(EditorHostCommand.Undo);
         scene.Root.Children.ShouldBeEmpty();
 
-        // Redo brings it back under the same id, like every structural verb,
-        // so a shell holding the id keeps working.
         host.Apply(EditorHostCommand.Redo);
         scene.Root.Children.Count.ShouldBe(1);
         scene.Root.Children[0].Id.ShouldBe(id);
@@ -260,8 +215,7 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void An_inserted_hole_is_subtractive_and_world_kind()
     {
-        // The one pairing that cancels: a subtractive PART carves nothing and
-        // draws nothing, so the insert must never produce one.
+        // A subtractive part carves nothing and draws nothing.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -302,20 +256,14 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void A_brush_rests_on_the_aimed_surface_and_a_hole_bites_into_it()
     {
-        // The two clearances are one decision each: an additive brush pushed
-        // out by its half extent rests flush, while a subtractive one pushed
-        // out the same way would share only the boundary plane with the solid
-        // and the carve treats a resting negative as a no-op - a hole that
-        // never cuts. The hole's centre therefore lands ON the surface,
-        // half-buried, and the snap must not disturb either (it aligns along
-        // the surface and never along the normal).
+        // A hole resting flush on a surface only shares a plane with it and
+        // carves nothing, so its centre goes on the surface.
         var scene = new Scene("Editor");
         SceneNode plate = scene.Root.CreateChild("Plate");
         plate.Brush = SpectraEngine.Core.Bsp.Brush.CreateBox(
             new System.Numerics.Vector3(-8f, -1f, -8f), new System.Numerics.Vector3(8f, 1f, 8f));
 
-        // The centre ray hits exactly the look target when the target sits on
-        // the plate's top plane (y = 1).
+        // Look target is on the plate's top plane (y = 1).
         scene.Camera.Position = new System.Numerics.Vector3(0.5f, 8f, 4f);
         scene.Camera.LookAt(new System.Numerics.Vector3(0.5f, 1f, 0.5f));
 
@@ -325,9 +273,8 @@ public sealed class SceneEditorHostCommandTests
         SceneNode hole = scene.Root.Children[^1];
         hole.LocalPosition.Y.ShouldBe(1f, 0.001f, "a hole starts half-buried in the surface");
 
-        // Undone first, because the placement ray sees every pickable node -
-        // deliberately, that is the fix this test pins - and the second
-        // insert would otherwise rest on the first one.
+        // Undo first: the placement ray sees every pickable node, so the
+        // second insert would rest on the first.
         host.Apply(EditorHostCommand.Undo);
 
         host.Insert(InsertKind.WorldBrush);
@@ -338,8 +285,6 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void Inserts_land_on_the_move_grid_while_snap_is_on()
     {
-        // Snap defaults on with a grid of one world unit, so a fresh insert
-        // starts life aligned instead of needing a corrective nudge.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
         host.SnapEnabled.ShouldBeTrue();
@@ -351,8 +296,6 @@ public sealed class SceneEditorHostCommandTests
         position.Y.ShouldBe(MathF.Round(position.Y));
         position.Z.ShouldBe(MathF.Round(position.Z));
     }
-
-    // --- Insert entity -------------------------------------------------------
 
     [Fact]
     public void Inserting_an_entity_is_one_history_entry_and_leaves_it_selected()
@@ -381,13 +324,8 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void A_fresh_entity_carries_no_keyvalues_at_all()
     {
-        // OMIT AT DEFAULT, which is the rule the map format already keeps. The
-        // panel shows the schema's declared defaults for keys nobody has
-        // authored, and a commit that produces the value the entity already
-        // effectively has records nothing - so a key appears in the file
-        // exactly when somebody changed it. Seeding the declared defaults here
-        // would write the whole schema into every map, and a later change to a
-        // default would then reach no level ever saved.
+        // Defaults are omitted from the map, so a later change to a schema
+        // default still reaches saved levels.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -400,11 +338,8 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void An_inserted_entity_is_named_after_its_class()
     {
-        // The name IS the targetname; there is no second identity to invent one
-        // from. Duplicates are legal and MEAN something - firing at a name
-        // fires every match - and every other insert produces a duplicate name
-        // too, so numbering this one alone would make it behave unlike the
-        // other six for no reason a user could predict.
+        // The node name is the targetname. Duplicates are legal: firing at a
+        // name fires every match.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -417,9 +352,6 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void An_entity_with_no_class_is_refused()
     {
-        // A class with no name resolves in no catalogue and would save as an
-        // entity nothing can bind: a node that reads as an entity in the tree
-        // and is not one anywhere else.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -432,9 +364,6 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void Inserting_an_entity_is_refused_while_play_mode_owns_the_scene()
     {
-        // The same RefuseEdit gate every other mutating verb goes through: a
-        // shell gates its buttons on a snapshot up to a publish interval old,
-        // so a click landing in that window arrives at a suspended editor.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
         host.Suspend();
@@ -448,8 +377,6 @@ public sealed class SceneEditorHostCommandTests
         host.InsertEntity("logic_relay");
         scene.Root.Children.Count.ShouldBe(1);
     }
-
-    // --- Structural verbs ----------------------------------------------------
 
     [Fact]
     public void Duplicate_copies_the_selection_and_undo_takes_the_copy_back()
@@ -474,8 +401,6 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void Delete_removes_the_selection_and_redo_puts_it_back_under_the_same_id()
     {
-        // Structural commands address nodes by id precisely so an undone delete
-        // can recreate one; a shell holding that id has to keep working.
         var scene = new Scene("Editor");
         SceneNode target = AddChild(scene, "Doomed");
         Guid id = target.Id;
@@ -514,7 +439,6 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void A_verb_with_nothing_selected_is_a_no_op_rather_than_a_throw()
     {
-        // A toolbar button is always clickable; refusing has to be ordinary.
         var scene = new Scene("Editor");
         SceneEditorHost host = NewHost(scene);
 
@@ -526,8 +450,6 @@ public sealed class SceneEditorHostCommandTests
 
         host.UndoDepth.ShouldBe(0);
     }
-
-    // --- Selection by id -----------------------------------------------------
 
     [Fact]
     public void Selecting_by_id_replaces_the_selection()
@@ -565,9 +487,7 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void An_id_the_scene_no_longer_has_is_ordinary_rather_than_exceptional()
     {
-        // A UI's view of the graph is a frame or two behind, so it can honestly
-        // ask for a node that has just been deleted. Replacing with nothing is
-        // the right answer; throwing into a click handler is not.
+        // A UI's view of the graph lags, so it can ask for a node just deleted.
         var scene = new Scene("Editor");
         SceneNode a = AddChild(scene, "A");
         SceneEditorHost host = NewHost(scene);
@@ -576,13 +496,10 @@ public sealed class SceneEditorHostCommandTests
         Should.NotThrow(() => host.SelectById(Guid.NewGuid()));
         scene.Selection.Count.ShouldBe(0);
 
-        // ...and an extend against a missing id leaves what was there alone.
         scene.Selection.Select(a);
         host.SelectById(Guid.NewGuid(), SelectionUpdate.Add);
         scene.Selection.Count.ShouldBe(1);
     }
-
-    // --- Camera and navigation ----------------------------------------------
 
     [Fact]
     public void The_navigation_toggle_swaps_the_reported_camera()
@@ -613,8 +530,7 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void The_interaction_state_names_are_interned_constants()
     {
-        // Read once per snapshot at up to 120Hz while a drag is live. A
-        // formatted string here is per-publish garbage forever.
+        // Read once per snapshot, so it must not allocate.
         var scene = new Scene("Test");
         SceneEditorHost host = NewHost(scene);
 
@@ -628,8 +544,6 @@ public sealed class SceneEditorHostCommandTests
     [Fact]
     public void A_suspended_editor_reports_suspended_whatever_else_is_true()
     {
-        // Play mode owns the scene, so nothing a tool would do applies. First in
-        // the order for that reason.
         var scene = new Scene("Test");
         SceneEditorHost host = NewHost(scene);
         host.Suspend();

@@ -4,16 +4,7 @@ using System.Numerics;
 
 namespace SpectraEngine.Editor.Tests;
 
-/// <summary>
-/// The colour picker's arithmetic and its state.
-/// </summary>
-/// <remarks>
-/// <b>The swatch was an inert Border with a tooltip.</b> Choosing a warmer or
-/// less saturated light meant knowing a hex code or leaving the editor for one.
-/// What is pinned here is the part a test can reach: the conversions, and the
-/// model's behaviour at the edges where hue and saturation stop being
-/// recoverable.
-/// </remarks>
+/// <summary>The colour picker's conversions.</summary>
 public sealed class ColorMathTests
 {
     [Theory]
@@ -37,8 +28,6 @@ public sealed class ColorMathTests
     [Fact]
     public void A_grey_has_no_saturation_and_reports_hue_zero()
     {
-        // Rather than an undefined one, so a picker opened on white does not
-        // jump to a random corner of the strip.
         (float hue, float saturation, float value) = ColorMath.SrgbToHsv(new Vector3(0.5f, 0.5f, 0.5f));
 
         Assert.Equal(0f, hue);
@@ -71,9 +60,7 @@ public sealed class ColorMathTests
     [InlineData(null)]
     public void A_partial_or_alpha_hex_is_refused(string? text)
     {
-        // Six digits only, the same rule the panel's own hex cell keeps:
-        // accepting a spelling here that the box beside it refuses would be
-        // worse than refusing both.
+        // Six digits only, same as the panel's hex cell.
         Assert.False(ColorMath.TryParseHex(text, out _));
     }
 
@@ -89,15 +76,14 @@ public sealed class ColorMathTests
     [Fact]
     public void An_over_bright_linear_colour_clamps_rather_than_wrapping()
     {
-        // A light's colour is not bounded at 1, and a picker has to show
-        // something: the brightest displayable colour, not a wrapped one.
+        // A light's colour is not bounded at 1.
         string hex = ColorMath.ToHex(ColorMath.LinearToSrgb(new Vector3(4f, 4f, 4f)));
 
         Assert.Equal("#FFFFFF", hex);
     }
 }
 
-/// <summary>The picker's own state, including the two edges that lose it.</summary>
+/// <summary>The picker's state.</summary>
 public sealed class ColorPickerModelTests
 {
     [Fact]
@@ -127,16 +113,13 @@ public sealed class ColorPickerModelTests
         Vector3 only = Assert.Single(raised);
         Assert.Equal(model.Linear, only);
 
-        // Linear, because that is what the scene stores. sRGB 0.5 is about
-        // 0.21 linear, so the two are not interchangeable.
+        // The scene stores linear. sRGB 0.5 is about 0.21 linear.
         Assert.True(only.X < ColorMath.SrgbToLinear(new Vector3(0.5f)).X + 0.01f);
     }
 
     [Fact]
     public void Dragging_to_black_keeps_the_hue_the_user_chose()
     {
-        // Black has no hue to recover, so a model that derived one back would
-        // send the strip's marker somewhere the user did not put it.
         var model = new ColorPickerModel();
         model.SetHue(200f);
         model.SetSaturationValue(1f, 0f);
@@ -177,8 +160,6 @@ public sealed class ColorPickerModelTests
     [Fact]
     public void A_typed_grey_leaves_the_hue_strip_where_it_was()
     {
-        // A grey has no hue, and snapping the strip back to red on the way
-        // through one is the kind of jump that makes a picker feel broken.
         var model = new ColorPickerModel();
         model.SetHue(200f);
 

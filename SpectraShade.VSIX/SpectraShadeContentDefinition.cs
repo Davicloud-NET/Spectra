@@ -4,10 +4,7 @@ using Microsoft.VisualStudio.Utilities;
 
 namespace SpectraShade.VSIX;
 
-/// <summary>
-/// Registers the .spectrashade file extension with Visual Studio
-/// and associates it with the SpectraShade content type.
-/// </summary>
+/// <summary>Registers the .spectrashade extension and its content type with Visual Studio.</summary>
 public static class SpectraShadeContentDefinition
 {
     [Export]

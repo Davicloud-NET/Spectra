@@ -4,16 +4,8 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Selection;
 
 /// <summary>
-/// An axis-aligned rectangle in viewport pixels, in the engine's screen
-/// convention: origin top-left, y growing downward — the same coordinates
-/// <see cref="Input.EditorInputFrame.CursorPosition"/> reports and
-/// <c>Camera.ScreenPointToRay</c> consumes.
+/// An axis-aligned rectangle in viewport pixels, origin top-left, y down.
 /// </summary>
-/// <remarks>
-/// Built from two drag corners in any order (<see cref="FromCorners"/>
-/// normalizes), so the marquee behaves the same dragged up-left as down-right.
-/// A readonly struct passed by value — building one allocates nothing.
-/// </remarks>
 public readonly struct ScreenRect
 {
     /// <summary>Creates a rectangle from an already-normalized corner pair.</summary>
@@ -38,11 +30,7 @@ public readonly struct ScreenRect
     /// <summary>The rectangle's centre, in viewport pixels.</summary>
     public Vector2 Center => (Min + Max) * 0.5f;
 
-    /// <summary>
-    /// The longer of the two sides, in pixels — the measure a click-versus-drag
-    /// threshold is applied to, so a drag that is long but one pixel tall still
-    /// counts as a drag.
-    /// </summary>
+    /// <summary>The longer of the two sides, in pixels.</summary>
     public float LongestSide => MathF.Max(Width, Height);
 
     /// <summary>Normalizes two drag corners into a rectangle.</summary>

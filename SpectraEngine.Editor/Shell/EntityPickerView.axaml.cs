@@ -10,26 +10,12 @@ namespace SpectraEngine.Editor.Shell;
 
 /// <summary>One row in the entity picker.</summary>
 /// <param name="Name">What picking it writes into the target field.</param>
-/// <param name="ClassName">What it is, for telling twelve doors apart.</param>
 public sealed record EntityPickerRow(string Name, string ClassName);
 
 /// <summary>
-/// The entities a wire can aim at, searchable.
+/// The entities a wire can aim at, searchable. The runtime tokens
+/// (!self, !activator, !caller) are listed first.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The three runtime TOKENS come first, because they are the ones nobody can
-/// guess.</b> <c>!self</c>, <c>!activator</c> and <c>!caller</c> are the
-/// runtime's own vocabulary and name nothing in the scene, so sorting them with
-/// the entities would bury exactly the three a person reaching for a picker has
-/// most likely never seen.
-/// </para>
-/// <para>
-/// <b>It fills the field rather than replacing it.</b> A wildcard is a legal
-/// target and so is a name typed before the entity exists; a control that could
-/// only offer what is there now would make those unreachable.
-/// </para>
-/// </remarks>
 public partial class EntityPickerView : UserControl
 {
     private readonly List<EntityPickerRow> _rows = [];
@@ -37,7 +23,6 @@ public partial class EntityPickerView : UserControl
     private bool _truncated;
     private string _current = string.Empty;
 
-    /// <summary>Creates the view.</summary>
     public EntityPickerView()
     {
         InitializeComponent();
@@ -50,7 +35,7 @@ public partial class EntityPickerView : UserControl
     /// <summary>The name somebody chose.</summary>
     public event Action<string>? Picked;
 
-    /// <summary>Escape, so the caller can close and put the keyboard back.</summary>
+    /// <summary>Raised on Escape.</summary>
     public event Action? Cancelled;
 
     /// <summary>How many rows the last search produced, for tests.</summary>
@@ -77,8 +62,6 @@ public partial class EntityPickerView : UserControl
 
         _rows.Clear();
 
-        // The tokens are matched against the query like everything else, so
-        // typing "act" finds !activator rather than only the entities.
         AddIfMatching(TargetNameIndex.SelfToken, "this entity", query);
         AddIfMatching(TargetNameIndex.ActivatorToken, "whoever triggered it", query);
         AddIfMatching(TargetNameIndex.CallerToken, "whoever sent the output", query);
@@ -94,9 +77,7 @@ public partial class EntityPickerView : UserControl
                 int byClass = CommandScore.Of(target.ClassName, query);
                 if (byClass == CommandScore.NoMatch) continue;
 
-                // A class match ranks below a name match, because the name is
-                // what is being chosen: somebody typing "door" means the entity
-                // called door, not every func_door in the level.
+                // A class match ranks below a name match.
                 score = byClass - 8;
             }
 

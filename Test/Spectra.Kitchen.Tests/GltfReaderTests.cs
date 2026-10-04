@@ -6,21 +6,9 @@ using System.Text;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The managed glTF reader on its own: no cook, no pack, no filesystem - bytes in
-/// and geometry out.
+/// The managed glTF reader on its own: bytes in, geometry out. Refusals are
+/// checked by what the message names, not only that something threw.
 /// </summary>
-/// <remarks>
-/// <para><b>Half of these are refusals, and that is the shape the file
-/// wants.</b> The reader's whole stance is that a construct it does not implement
-/// is named rather than guessed at, because the failure of guessing is not an
-/// exception: it is an accessor walked at a stride the file never meant, which
-/// produces a model that draws and is wrong. A refusal that stopped naming what
-/// it refused would still pass a test asserting only that something threw, so
-/// every one of these asserts on the WORDS.</para>
-/// <para><b>The other half is the conversion arithmetic</b> - the column-major
-/// matrix, the v flip, the mirrored winding - each of which is silent when it is
-/// wrong and each of which has exactly one right answer.</para>
-/// </remarks>
 public class GltfReaderTests
 {
     private const float Tolerance = 1e-5f;
@@ -46,10 +34,7 @@ public class GltfReaderTests
 
             submesh.Vertices[(v * 8) + 5].ShouldBe(1f, Tolerance, "the file's normals must be carried");
 
-            // u passes through and v is flipped, because glTF puts v = 0 at the
-            // top of an image and this engine samples v = 0 at the bottom. The
-            // fixture's v values are away from 0 and 1 precisely so that a flip
-            // and a swap are different numbers.
+            // v is flipped: glTF has v = 0 at the top, the engine at the bottom.
             submesh.Vertices[(v * 8) + 6].ShouldBe(GltfFixture.AuthoredUvs[v * 2], Tolerance);
             submesh.Vertices[(v * 8) + 7].ShouldBe(1f - GltfFixture.AuthoredUvs[(v * 2) + 1], Tolerance);
         }
@@ -71,11 +56,9 @@ public class GltfReaderTests
     [Fact]
     public void A_node_matrix_is_read_column_major_and_lands_where_the_TRS_form_does()
     {
-        // The classic failure this pins: glTF stores a matrix column-major for
-        // column vectors, so reading its sixteen floats into Matrix4x4's
-        // row-major fields IN ORDER is exactly the transpose the row-vector
-        // convention wants. Writing an explicit transpose undoes it, and the
-        // symptom is a part of a model somewhere nobody asked for.
+        // glTF is column-major for column vectors. Read in order into
+        // Matrix4x4's row-major fields, that is already right for row vectors.
+        // An explicit transpose would undo it.
         var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 5f);
         Matrix4x4 expected =
             Matrix4x4.CreateScale(new Vector3(2f, 3f, 4f))
@@ -110,9 +93,7 @@ public class GltfReaderTests
     [Fact]
     public void A_mirroring_transform_reverses_the_winding()
     {
-        // A negative determinant mirrors, and a mirrored triangle keeps its index
-        // order while its geometric winding reverses - so it renders inside out
-        // under backface culling with nothing anywhere reporting it.
+        // Negative determinant: the geometric winding reverses.
         float[] mirror =
         [
             -1f, 0f, 0f, 0f,
@@ -123,18 +104,14 @@ public class GltfReaderTests
 
         Read(GltfFixture.Json(nodeMatrix: mirror)).Submeshes[0].Indices.ShouldBe([0u, 2u, 1u]);
 
-        // And an ordinary transform leaves it alone, or the test above would pass
-        // against a reader that reversed everything.
+        // Control: a reader that reversed everything must not pass.
         Read(GltfFixture.Json(nodeTranslation: [1f, 0f, 0f])).Submeshes[0].Indices.ShouldBe([0u, 1u, 2u]);
     }
 
     [Fact]
     public void A_primitive_with_no_normals_gets_flat_ones_and_one_vertex_per_corner()
     {
-        // The glTF specification's own rule. It needs one vertex per corner, so
-        // the primitive is expanded rather than smoothed: smoothing would need a
-        // weld by position, which would make the cooked model differ from the
-        // file for a reason the file did not state.
+        // glTF spec: no normals means flat shading.
         GltfSubmesh submesh = Read(GltfFixture.Json(omitNormals: true)).Submeshes[0];
 
         submesh.VertexCount.ShouldBe(3);
@@ -185,8 +162,7 @@ public class GltfReaderTests
                 return expected;
             });
 
-        // The uri is joined against the MODEL's own folder and normalised, which
-        // is what makes it a content path a rule can record as a dependency.
+        // Resolved against the model's folder.
         asked.ShouldBe("Models/fixture.bin");
         model.Submeshes[0].VertexCount.ShouldBe(3);
     }
@@ -197,9 +173,7 @@ public class GltfReaderTests
         GltfReader.ResolveSiblingPath("Models/props/sign.gltf", "../../Textures/wall.png")
             .ShouldBe("Textures/wall.png");
 
-        // Percent encoding is undone, because a glTF uri is a URI: a file with a
-        // space in its name arrives as %20 and would otherwise be looked for
-        // under that name.
+        // A glTF uri is percent-encoded.
         GltfReader.ResolveSiblingPath("Models/sign.gltf", "sign%20base.bin")
             .ShouldBe("Models/sign base.bin");
     }
@@ -209,8 +183,6 @@ public class GltfReaderTests
     {
         Refuse(GltfFixture.Json(bufferUri: "fixture.bin"), "Models/fixture.bin", resolve: _ => null);
     }
-
-    // ---- refusals, each naming what it refused -----------------------------
 
     [Fact]
     public void A_primitive_that_is_not_triangles_is_refused_by_its_mode_number()
@@ -222,8 +194,6 @@ public class GltfReaderTests
     [Fact]
     public void A_sparse_accessor_is_refused_by_name()
     {
-        // Reading only its base array would drop exactly the values a sparse
-        // accessor exists to carry, which is geometry that is silently wrong.
         Refuse(GltfFixture.Json(sparsePositions: true), "sparse");
     }
 
@@ -238,8 +208,7 @@ public class GltfReaderTests
     [Fact]
     public void An_index_component_type_gltf_forbids_is_refused_by_number()
     {
-        // 5122 is SHORT. Read anyway, a negative index becomes a very large
-        // vertex index rather than an error, which is why the allowlist exists.
+        // 5122 is SHORT, a signed type.
         Refuse(GltfFixture.Json(indexComponentType: 5122), "5122", "SHORT");
     }
 
@@ -256,8 +225,7 @@ public class GltfReaderTests
         Refuse("not json", "not readable JSON");
         Refuse("[ 1, 2 ]", "does not begin with a JSON object");
 
-        // Shorter than a magic number, which is its own message: a file too
-        // small to identify has not failed a parse, it has nothing in it.
+        // Shorter than a magic number.
         RefuseBytes([1, 2], "too short to be glTF");
     }
 
@@ -269,9 +237,7 @@ public class GltfReaderTests
         RefuseBytes(glb.AsSpan(0, 8).ToArray(), "too short");
         RefuseBytes(GltfFixture.Glb(GltfFixture.GlbJson(), GltfFixture.Buffer(), version: 1), "version 1");
 
-        // A declared length past the file. The chunk walk bounds itself with a
-        // SUBTRACTION rather than an addition, because a sum near uint.MaxValue
-        // wraps and passes a naive bound.
+        // Declared length past the end of the file.
         RefuseBytes(
             GltfFixture.Glb(GltfFixture.GlbJson(), GltfFixture.Buffer(), declaredLengthDelta: 64),
             "truncated");
@@ -316,8 +282,6 @@ public class GltfReaderTests
 
         Refuse(Empty, "no drawable triangles");
     }
-
-    // ---- helpers ------------------------------------------------------------
 
     private static GltfModel Read(string json) =>
         GltfReader.Read(Encoding.UTF8.GetBytes(json), "Models/fixture.gltf", NoBuffers);

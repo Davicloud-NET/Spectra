@@ -9,23 +9,10 @@ using CursorMode = SpectraEngine.Core.Input.CursorMode;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// The neutral input path: what a host submits, and what the engine's state
-/// machine makes of it.
-/// </summary>
-/// <remarks>
-/// <b>Every claim here is about the two hosts agreeing.</b> The standalone
-/// window and an embedded shell now feed the same submission method, so a press
-/// edge, an auto-repeat, a captured-cursor delta and a focus loss have to mean
-/// one thing rather than two — and a viewport that behaves subtly differently
-/// from the standalone window would be the hardest kind of bug to see, because
-/// both halves look right on their own.
-/// </remarks>
+/// <summary>What a host submits, and what the input state machine makes of it.</summary>
 public sealed class InputSubmissionTests
 {
     private static InputManager CreateInput() => new(NullLogger<InputManager>.Instance);
-
-    // --- Keys ----------------------------------------------------------------
 
     [Fact]
     public void A_submitted_key_is_held_until_it_is_released()
@@ -56,8 +43,6 @@ public sealed class InputSubmissionTests
     [Fact]
     public void Auto_repeat_does_not_re_arm_the_press_edge()
     {
-        // A held key repeats at the OS rate, and a tool that switched mode on
-        // every repeat would flicker between modes while the key was down.
         InputManager input = CreateInput();
 
         input.Submit(InputEvent.KeyDown(InputKey.R));
@@ -72,9 +57,7 @@ public sealed class InputSubmissionTests
     [Fact]
     public void An_unnameable_key_is_dropped_rather_than_held()
     {
-        // Every key the engine has no name for arrives as Unknown, so admitting
-        // them to the held set would make them a single shared entry: press two
-        // of them, release one, and the other silently comes up too.
+        // All unnamed keys arrive as Unknown; held, they would share one entry.
         InputManager input = CreateInput();
 
         input.Submit(InputEvent.KeyDown(InputKey.Unknown));
@@ -83,8 +66,6 @@ public sealed class InputSubmissionTests
         input.IsKeyDown(InputKey.Unknown).ShouldBeFalse();
         input.WasKeyPressed(InputKey.Unknown).ShouldBeFalse();
     }
-
-    // --- Pointer buttons -----------------------------------------------------
 
     [Fact]
     public void A_button_press_and_release_report_on_their_own_frames()
@@ -122,9 +103,7 @@ public sealed class InputSubmissionTests
     [Fact]
     public void A_release_for_a_button_that_was_never_down_reports_nothing()
     {
-        // A shell can legitimately deliver one: press inside another control,
-        // release over the viewport. It must not manufacture a release edge
-        // that ends a gesture nobody started.
+        // Happens for real: press in another control, release over the viewport.
         InputManager input = CreateInput();
 
         input.Submit(InputEvent.PointerUp(PointerButtons.Middle));
@@ -149,8 +128,6 @@ public sealed class InputSubmissionTests
         input.PointerButtonsReleased.ShouldBe(PointerButtons.Left);
     }
 
-    // --- Motion --------------------------------------------------------------
-
     [Fact]
     public void An_absolute_move_reports_the_position_and_differences_the_motion()
     {
@@ -169,9 +146,6 @@ public sealed class InputSubmissionTests
     [Fact]
     public void The_first_absolute_move_produces_no_motion()
     {
-        // There is nothing to difference against, and reporting the position
-        // itself as a delta would fling a freelook across the world on the
-        // first frame the pointer is seen.
         InputManager input = CreateInput();
 
         input.Submit(InputEvent.PointerMove(new Vector2(640f, 360f)));
@@ -183,9 +157,7 @@ public sealed class InputSubmissionTests
     [Fact]
     public void A_raw_delta_moves_the_camera_without_moving_the_reported_position()
     {
-        // This is the captured-cursor case: there is no meaningful position to
-        // report, and overwriting the frozen one would corrupt the point the
-        // cursor is put back at when the lock is released.
+        // Captured cursor: the frozen position is where the cursor is restored to.
         InputManager input = CreateInput();
 
         input.Submit(InputEvent.PointerMove(new Vector2(200f, 200f)));
@@ -213,13 +185,9 @@ public sealed class InputSubmissionTests
         input.ScrollDelta.ShouldBe(Vector2.Zero);
     }
 
-    // --- Focus ---------------------------------------------------------------
-
     [Fact]
     public void A_submitted_focus_loss_releases_everything_the_window_event_would()
     {
-        // The shell's viewport losing focus and the standalone window losing it
-        // are the same event, so they must leave the same state behind.
         InputManager input = CreateInput();
         input.Submit(InputEvent.KeyDown(InputKey.ShiftLeft));
         input.Submit(InputEvent.PointerDown(PointerButtons.Right));
@@ -249,13 +217,9 @@ public sealed class InputSubmissionTests
             CursorMode.Normal, "the pending request is overwritten too, or the next pump re-takes the lock");
     }
 
-    // --- The two hosts meet --------------------------------------------------
-
     [Fact]
     public void The_window_and_a_host_reach_the_same_state_machine()
     {
-        // The standalone window's device callbacks are now submissions, which
-        // is what makes every rule above true of both hosts rather than of one.
         InputManager viaWindow = CreateInput();
         InputManager viaHost = CreateInput();
 
@@ -282,15 +246,11 @@ public sealed class InputSubmissionTests
         viaHost.ScrollDelta.ShouldBe(viaWindow.ScrollDelta);
     }
 
-    // --- The translation table -----------------------------------------------
-
     [Fact]
     public void Every_engine_key_has_the_silk_key_of_the_same_name()
     {
-        // The table in SilkInputKeys is a hundred hand-written pairs, and a
-        // transposition in it is invisible: the wrong key simply stops working.
-        // Both enums spell their members identically on purpose, so the names
-        // are an oracle the table can be checked against mechanically.
+        // Both enums spell their members the same, so the names check the
+        // hand-written table.
         foreach (InputKey key in Enum.GetValues<InputKey>())
         {
             if (key is InputKey.Unknown)
@@ -312,9 +272,7 @@ public sealed class InputSubmissionTests
     [Fact]
     public void The_keypad_digits_are_their_own_keys_and_not_the_number_row()
     {
-        // The views are bound to the keypad precisely so the number row stays
-        // free for the tools: a keypad 7 arriving as Number7 would fire whatever
-        // that digit binds, which is how a plan view becomes a tool switch.
+        // Views bind the keypad, tools the number row.
         SilkInputKeys.ToInputKey(Key.Keypad7).ShouldBe(InputKey.Keypad7);
         SilkInputKeys.ToInputKey(Key.Keypad7).ShouldNotBe(InputKey.Number7);
         SilkInputKeys.ToInputKey(Key.Keypad0).ShouldBe(InputKey.Keypad0);

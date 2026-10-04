@@ -11,27 +11,15 @@ namespace SpectraEngine.Core.Projects;
 /// it.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>The layout is a contract, not a convention.</b> A person opening the
-/// folder in VS Code, a cook walking it, and the editor listing maps all have
-/// to agree on where things are, and the only way three tools agree is if one
-/// place says so.
-/// </para>
 /// <code>
 /// MyGame/
-///   MyGame.spectraproj    the manifest, and the double-clickable identity
-///   Assets/               the content root, unchanged
+///   MyGame.spectraproj    the manifest
+///   Assets/               the content root
 ///   Maps/                 Lobby.smap/, Arena.smap/  (folders, not files)
 ///   Scripts/              shared script modules
-///   cooked/               cook output; derived, gitignored, never authored
+///   cooked/               cook output, gitignored
 /// </code>
-/// <para>
-/// <b>Nothing authored here is binary.</b> The manifest, the map bundles, the
-/// materials and the shader sources are all text; binary exists only under
-/// <c>cooked/</c> as build output. That is the one lesson taken hardest from
-/// the platform this engine is aimed at, where an opaque place file is the
-/// reason an entire third-party sync tool had to exist.
-/// </para>
+/// Everything authored is text. Only <c>cooked/</c> is binary.
 /// </remarks>
 public sealed class ProjectLayout
 {
@@ -56,7 +44,7 @@ public sealed class ProjectLayout
     public string ScriptsPath => Path.Combine(Root, ProjectFormat.ScriptsFolder);
     public string CookedPath => Path.Combine(Root, ProjectFormat.CookedFolder);
 
-    /// <summary>Resolves a project-relative path (a map bundle, say) to a full one.</summary>
+    /// <summary>Resolves a project-relative path to a full one.</summary>
     public string Resolve(string projectRelativePath) =>
         Path.Combine(Root, projectRelativePath.Replace('/', Path.DirectorySeparatorChar));
 
@@ -64,12 +52,7 @@ public sealed class ProjectLayout
     /// Opens the project whose manifest is at <paramref name="manifestPath"/>,
     /// or which lives in the folder <paramref name="manifestPath"/> names.
     /// </summary>
-    /// <remarks>
-    /// Both are accepted because both are what a person means. Double-clicking
-    /// gives the file; dragging a folder onto the editor, or typing a path on a
-    /// command line, gives the directory.
-    /// </remarks>
-    /// <exception cref="FileNotFoundException">No manifest was found.</exception>
+    /// <exception cref="FileNotFoundException">No manifest was found, or the folder holds several.</exception>
     /// <exception cref="ProjectFormatException">The manifest is malformed.</exception>
     public static ProjectLayout Open(string manifestPath)
     {
@@ -101,10 +84,7 @@ public sealed class ProjectLayout
         if (File.Exists(ManifestPath) && File.ReadAllBytes(ManifestPath).AsSpan().SequenceEqual(content))
             return false;
 
-        // Temp file plus rename, exactly as a map bundle saves: a crash between
-        // the open and the last byte must not leave half a manifest where a
-        // whole one was, because a project that will not open is worse than one
-        // with a stale field in it.
+        // Temp file plus rename, so a crash cannot leave half a manifest.
         string temporary = ManifestPath + ".tmp";
         File.WriteAllBytes(temporary, content);
         File.Move(temporary, ManifestPath, overwrite: true);
@@ -112,16 +92,10 @@ public sealed class ProjectLayout
     }
 
     /// <summary>
-    /// Creates a project folder with the canonical layout and an empty
-    /// manifest.
+    /// Creates a project folder with the canonical layout, an empty manifest,
+    /// and a <c>.gitignore</c> and <c>.gitattributes</c>. Existing files are
+    /// kept.
     /// </summary>
-    /// <remarks>
-    /// The template ships <c>.gitignore</c> and <c>.gitattributes</c> because
-    /// both are load-bearing rather than nice to have: the first keeps
-    /// <c>cooked/</c> and per-user sidecars out of history, and the second pins
-    /// bundle text to LF so a Windows checkout does not rewrite every map
-    /// underneath the person editing it.
-    /// </remarks>
     public static ProjectLayout Create(string root, string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
@@ -143,17 +117,9 @@ public sealed class ProjectLayout
     }
 
     /// <summary>
-    /// Every map bundle actually present under <c>Maps/</c>, as
-    /// project-relative paths, sorted.
+    /// Every map bundle present under <c>Maps/</c>, as project-relative paths,
+    /// sorted. May differ from the manifest's list.
     /// </summary>
-    /// <remarks>
-    /// <b>Discovery and the manifest are both real, and neither is the whole
-    /// truth.</b> The manifest is the author's ordered list and is what a cook
-    /// bakes; the folder is what a person actually put there. An editor shows
-    /// the difference and offers to reconcile it, because silently ignoring a
-    /// map somebody added is the same class of surprise as silently adding one
-    /// they were not ready to ship.
-    /// </remarks>
     public IReadOnlyList<string> DiscoverMaps()
     {
         if (!Directory.Exists(MapsPath)) return [];
@@ -165,9 +131,7 @@ public sealed class ProjectLayout
             found.Add($"{ProjectFormat.MapsFolder}/{Path.GetFileName(directory)}");
         }
 
-        // Sorted, because Directory.EnumerateDirectories has no documented
-        // order and a list that reshuffles between runs is a list nobody can
-        // review.
+        // EnumerateDirectories has no documented order.
         found.Sort(StringComparer.Ordinal);
         return found;
     }
@@ -187,8 +151,7 @@ public sealed class ProjectLayout
                 Path.Combine(folder, "project" + ProjectFormat.Extension));
         }
 
-        // Refused rather than picking the first: which project a folder IS is
-        // not something to guess at, and the guess would be alphabetical.
+        // Several manifests: refuse, don't guess.
         Array.Sort(candidates, StringComparer.Ordinal);
         throw new FileNotFoundException(
             $"'{folder}' contains {candidates.Length} project files "
@@ -198,9 +161,6 @@ public sealed class ProjectLayout
 
     private static void WriteIfAbsent(string path, string content)
     {
-        // Never overwritten: these are the user's files the moment the folder
-        // exists, and a scaffold that clobbers a hand-edited .gitignore is a
-        // scaffold nobody runs twice.
         if (!File.Exists(path))
             File.WriteAllText(path, content);
     }

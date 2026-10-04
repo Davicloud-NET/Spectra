@@ -8,44 +8,16 @@ using System.Threading.Tasks;
 
 namespace SpectraEngine.Editor.Shell;
 
-/// <summary>
-/// Asks Windows for a one-millisecond timer, for as long as an engine session
-/// is open.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Without this an 8ms timer does not exist.</b> Windows' default timer
-/// granularity is 15.6ms, so a <c>DispatcherTimer</c> asking for 8 silently
-/// fires at 15.6 and sometimes 31.2 - which is most of the shell's measured
-/// worst-case lag, and it is invisible because the timer reports success.
-/// </para>
-/// <para>
-/// <b>Scoped to the session, not to the process.</b> A raised timer interrupt
-/// rate is measurable battery draw on a laptop, and the start page has nothing
-/// to pump - so the resolution's lifetime is exactly the lifetime of the thing
-/// that needs it.
-/// </para>
-/// <para>
-/// <b>The classic objection is obsolete on the OS this shell already
-/// requires.</b> Since Windows 10 2004 <c>timeBeginPeriod</c> affects only the
-/// calling process, so the old "you are slowing down the whole machine"
-/// argument does not apply; and this shell already depends on Windows 11-era
-/// DWM attributes and <c>GetSystemMetricsForDpi</c>.
-/// </para>
-/// <para>
-/// <b>The achieved resolution is measured and logged once</b>, rather than
-/// assumed. A performance fix that silently stops working is worse than none -
-/// the same discipline the engine's debug-layer switch already follows, where a
-/// gate that quietly weakens is treated as a failure.
-/// </para>
-/// </remarks>
+// Asks Windows for a 1 ms timer while an engine session is open. The default
+// granularity is 15.6 ms, so an 8 ms DispatcherTimer would fire at 15.6.
+// Held per session, not per process: a raised interrupt rate costs battery
+// and the start page has nothing to pump.
 internal static partial class TimerResolution
 {
     private const uint Period = 1;
 
     private static bool _held;
 
-    /// <summary>Raises the timer resolution, if the OS supports it.</summary>
     public static void Acquire(ILogger logger)
     {
         if (!OperatingSystem.IsWindows() || _held)
@@ -61,11 +33,7 @@ internal static partial class TimerResolution
 
             _held = true;
 
-            // OFF THE UI THREAD. The measurement is a hundred one-millisecond
-            // sleeps, which is a tenth of a second - taken here it would be a
-            // visible stall at the exact moment a session opens, which is a
-            // strange price to pay for a line confirming that the shell is
-            // fast.
+            // Off the UI thread: the measurement sleeps for about 100 ms.
             _ = Task.Run(() => logger.LogInformation(
                 "Timer resolution raised; measured granularity {Granularity:F2} ms", Measure()));
         }
@@ -79,7 +47,7 @@ internal static partial class TimerResolution
         }
     }
 
-    /// <summary>Gives the timer resolution back. Idempotent.</summary>
+    // Safe to call twice.
     public static void Release()
     {
         if (!OperatingSystem.IsWindows() || !_held)
@@ -95,10 +63,8 @@ internal static partial class TimerResolution
         catch (EntryPointNotFoundException) { }
     }
 
-    // The median of a hundred one-tick sleeps. The MEDIAN rather than the mean
-    // because a single scheduling hiccup during startup would otherwise report
-    // a granularity nothing actually has; and one tick rather than zero because
-    // Sleep(0) yields without ever touching the timer.
+    // Median, so one scheduling hiccup at startup does not skew it.
+    // Sleep(1), because Sleep(0) yields without touching the timer.
     private static double Measure()
     {
         Span<double> gaps = stackalloc double[100];

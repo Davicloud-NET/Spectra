@@ -12,11 +12,8 @@ using System.Text;
 
 namespace SpectraEngine.Core.Graphics.D3D11;
 
-/// <summary>
-/// A linked VS+PS pair plus the metadata needed to drive them: per-cbuffer GPU
-/// buffers with CPU shadows for dirty-tracked uniform updates, and a name → slot
-/// map for texture/sampler bindings, both populated via D3D11 shader reflection.
-/// </summary>
+// A VS+PS pair. Uniforms are staged in CPU shadows of each cbuffer and
+// uploaded by Use(). Layout comes from shader reflection.
 internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
 {
     private readonly D3DCompiler _compiler;
@@ -27,23 +24,20 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
     private ComPtr<ID3D11PixelShader> _ps;
     private byte[] _vsBytecode;
 
-    // One slot per HLSL cbuffer the shader uses; index matches D3D register(bN).
     private CBufferSlot[] _cbuffers = Array.Empty<CBufferSlot>();
 
-    // Variable name → (cbuffer index, offset bytes, size bytes).
     private Dictionary<string, UniformLocation> _uniforms = new(StringComparer.Ordinal);
 
-    // Texture/sampler register slot lookup. SpectraShade emits the SRV and the
-    // SamplerState at the same register index, so one number serves both.
+    // SpectraShade emits the SRV and its sampler at the same register, so one
+    // slot number serves both.
     private Dictionary<string, uint> _textureSlots = new(StringComparer.Ordinal);
 
-    // Shared with the renderer, which resets it wherever the context's SRV
-    // slots are cleared. See D3D11BindCache for why it must not live here.
+    // The renderer's cache, not ours: it resets it when the context's SRV slots are cleared.
     private readonly D3D11BindCache _bindCache;
 
     private bool _disposed;
 
-    /// <summary>The VS bytecode used for input-layout creation by D3D11Mesh.</summary>
+    // Input layouts are created against this.
     public ReadOnlyMemory<byte> VertexBytecode => _vsBytecode;
 
     private D3D11ShaderProgram(
@@ -135,7 +129,6 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
             return false;
         }
 
-        // Swap atomically; release old GPU resources after the new ones are in.
         var oldVs = _vs;
         var oldPs = _ps;
         DisposeCBuffers();
@@ -208,15 +201,12 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
         return Encoding.UTF8.GetString((byte*)ptr, (int)len).TrimEnd('\0', '\n', '\r');
     }
 
-    // ─── Reflection ──────────────────────────────────────────
-
     private void BuildReflection(byte[] psBytecode)
     {
         _uniforms = new Dictionary<string, UniformLocation>(StringComparer.Ordinal);
         _textureSlots = new Dictionary<string, uint>(StringComparer.Ordinal);
         var cbuffers = new List<CBufferSlot>();
 
-        // Both VS and PS contribute uniforms; reflect both and merge.
         ReflectStage(_vsBytecode, cbuffers, isPs: false);
         ReflectStage(psBytecode, cbuffers, isPs: true);
 
@@ -239,9 +229,7 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
         ShaderDesc shaderDesc = default;
         SilkMarshal.ThrowHResult(reflPtr->GetDesc(&shaderDesc));
 
-        // Each constant buffer used by this stage. ConstantBuffers is indexed
-        // by declaration order, not register slot — we look up the bind slot
-        // separately via GetResourceBindingDescByName.
+        // Indexed by declaration order, not register slot.
         for (uint i = 0; i < shaderDesc.ConstantBuffers; i++)
         {
             ID3D11ShaderReflectionConstantBuffer* cb = reflPtr->GetConstantBufferByIndex(i);
@@ -253,8 +241,7 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
             SilkMarshal.ThrowHResult(reflPtr->GetResourceBindingDescByName(bufDesc.Name, &bindDesc));
             uint slot = bindDesc.BindPoint;
 
-            // If we already saw this cbuffer in a previous stage, reuse its
-            // backing buffer + shadow and just record stage visibility.
+            // Already seen in the other stage: share its buffer.
             int existing = cbuffers.FindIndex(c => c.Slot == slot && c.Name == name);
             if (existing >= 0)
             {
@@ -276,7 +263,6 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
             cbuffers.Add(slotInfo);
             int newIdx = cbuffers.Count - 1;
 
-            // Register every member of this cbuffer in the uniform map.
             for (uint v = 0; v < bufDesc.Variables; v++)
             {
                 ID3D11ShaderReflectionVariable* variable = cb->GetVariableByIndex(v);
@@ -287,9 +273,7 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
             }
         }
 
-        // Texture and sampler bindings (textures: D3D_SIT_TEXTURE; samplers: D3D_SIT_SAMPLER).
-        // The HLSL generator emits both at the same register index per source-level
-        // sampler, so storing one slot for the texture name is sufficient.
+        // Textures only: the sampler sits at the same register.
         for (uint i = 0; i < shaderDesc.BoundResources; i++)
         {
             ShaderInputBindDesc bind = default;
@@ -326,13 +310,10 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
         return Encoding.UTF8.GetString(ptr, len);
     }
 
-    // ─── Use / SetUniform / SetTexture ───────────────────────
-
     public override void Use()
     {
         var ctx = (ID3D11DeviceContext*)_context.Handle;
 
-        // Flush any dirty cbuffer shadows to GPU, then bind shaders and cbuffers.
         for (int i = 0; i < _cbuffers.Length; i++)
         {
             ref var slot = ref _cbuffers[i];
@@ -366,9 +347,7 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
     public override void SetUniform(string name, Vector4 value) => Write(name, MemoryMarshal.AsBytes(MemoryMarshal.CreateReadOnlySpan(ref value, 1)));
     public override void SetUniform(string name, Vector3 value)
     {
-        // Pad to 16 bytes since HLSL cbuffer fields don't cross 16-byte
-        // boundaries. The reflected size for a float3 field is 12, so we only
-        // write the 12 bytes the reflection asked for.
+        // Write clips this to the reflected size, 12 bytes for a float3.
         Span<float> tmp = stackalloc float[4] { value.X, value.Y, value.Z, 0f };
         Write(name, MemoryMarshal.AsBytes(tmp));
     }
@@ -382,30 +361,14 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
     public override void SetUniform(string name, ReadOnlySpan<Matrix4x4> values)
         => WriteArray(name, MemoryMarshal.AsBytes(values), values.Length, sizeof(float) * 16, "mat4");
 
-    // Bulk-copies an array uniform, refusing anything whose byte length does not
-    // exactly fill the shader's array.
-    //
-    // Refusing rather than clamping is the whole point. Math.Min would leave a
-    // stale tail from whatever was uploaded last -- a ten-light frame drawn
-    // after a sixty-light frame lit by fifty lights that are no longer there --
-    // which renders as plausible nonsense and gives nothing to trace back to
-    // this line. The reflected Size already accounts for HLSL's element padding,
-    // so it is the authority on what fits.
+    // An array uniform must fill the shader's array. Clamping instead would
+    // leave a stale tail: ten lights uploaded over sixty still shades with fifty old ones.
     private void WriteArray(string name, ReadOnlySpan<byte> bytes, int count, int stride, string elementType)
     {
-        // An unknown name is ignored, exactly as the scalar path ignores it: a
-        // pipeline sets uniforms that a given material's shader may not declare,
-        // and that is ordinary rather than an error.
+        // Unknown names are ignored: pipelines set uniforms a shader may not declare.
         if (!_uniforms.TryGetValue(name, out var loc)) return;
         if (count == 0) return;
 
-        // A length mismatch throws, because it is a caller bug rather than
-        // content: the shader says how many elements it has and the code either
-        // agrees or does not. SetTexture already throws for a wrong-typed
-        // argument, and this is the same class of mistake. The alternative,
-        // clamping, leaves a stale tail from whatever was uploaded last -- a
-        // ten-light frame lit by fifty lights that are no longer there -- which
-        // renders as plausible nonsense and points nowhere near this line.
         if (bytes.Length != (int)loc.Size)
         {
             throw new ArgumentException(
@@ -424,10 +387,7 @@ internal sealed unsafe class D3D11ShaderProgram : ShaderProgram
         WriteBytes(loc, bytes[..copyLen]);
     }
 
-    // Skipping an identical write is what keeps a cbuffer clean across draws,
-    // which is what lets Use() skip the Map/Unmap: pipelines re-set the view
-    // and projection on every draw of a pass, and most draws actually change
-    // only the model matrix.
+    // Skipping identical writes keeps the cbuffer clean, so Use() can skip the Map.
     private void WriteBytes(UniformLocation loc, ReadOnlySpan<byte> bytes)
     {
         ref var slot = ref _cbuffers[loc.CBufferIndex];

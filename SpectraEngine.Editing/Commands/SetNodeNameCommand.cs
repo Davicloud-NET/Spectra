@@ -3,24 +3,7 @@ using System;
 
 namespace SpectraEngine.Editing.Commands;
 
-/// <summary>
-/// Renames a node.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>A name is not an identity, which is why this is a plain property
-/// write.</b> Every command in this history addresses its target by
-/// <see cref="SceneNode.Id"/>, so renaming breaks nothing: no other command
-/// goes stale, no reference is invalidated, and the tree row updates because
-/// the node raises change notification. If names were the addressing scheme
-/// this would have to be a structural edit instead.
-/// </para>
-/// <para>
-/// <b>Absolute before/after, like every other command here.</b> Replaying a
-/// name the node already has is free, which is what makes undo and redo
-/// idempotent rather than merely reversible.
-/// </para>
-/// </remarks>
+/// <summary>Renames a node.</summary>
 public sealed class SetNodeNameCommand : IEditorCommand
 {
     private WeakReference<SceneNode>? _lastApplied;
@@ -37,8 +20,8 @@ public sealed class SetNodeNameCommand : IEditorCommand
     }
 
     /// <summary>
-    /// Captures <paramref name="node"/>'s current name as the before-state.
-    /// Call this <em>before</em> applying the edit.
+    /// Captures the node's current name as the before state. Call before
+    /// applying the edit.
     /// </summary>
     public static SetNodeNameCommand Capture(SceneNode node, string after)
     {
@@ -75,8 +58,8 @@ public sealed class SetNodeNameCommand : IEditorCommand
             return;
         }
 
-        // A node that left the scene mid-gesture still has to be restored, or
-        // it is stranded at a half-applied value with nothing left to fix it.
+        // Node left the scene mid-gesture: restore it anyway. A cancel
+        // discards its commands, so nothing else will.
         if (_lastApplied is not null && _lastApplied.TryGetTarget(out SceneNode? detached))
             detached.Name = Before;
     }
@@ -85,8 +68,6 @@ public sealed class SetNodeNameCommand : IEditorCommand
     {
         ArgumentNullException.ThrowIfNull(scene);
 
-        // Missing target = no-op, per the IEditorCommand contract: replaying
-        // history behind an undone delete must not fail.
         if (!scene.TryFindById(NodeId, out SceneNode? node))
             return;
 

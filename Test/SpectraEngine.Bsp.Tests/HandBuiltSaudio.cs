@@ -3,22 +3,9 @@ using System.Buffers.Binary;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Builds <c>.saudio</c> bytes from the format specification, touching none of
-/// the engine's own types.
-/// </summary>
-/// <remarks>
-/// <para><b>Every offset here is spelled out rather than taken from
-/// <c>SaudioFormat</c>.</b> A reader checked against its own constants proves
-/// the two agree rather than that either is right, and every failure in this
-/// format is a misinterpreted buffer rather than an exception - so a second
-/// opinion is the only thing that can catch a layout drift. It is the same
-/// argument <c>HandBuiltSmodel</c> makes one format over.</para>
-/// <para><b>The files it produces are VALID, and the tests damage them.</b> One
-/// field patched per test is what makes each refusal its own case with its own
-/// message, instead of one fixture that is wrong in six ways and passes on
-/// whichever check happens to run first.</para>
-/// </remarks>
+// Builds valid .saudio bytes from the format spec. Offsets are literals, not
+// SaudioFormat constants, so the reader is not checked against itself.
+// Tests patch one field each to make an invalid file.
 internal static class HandBuiltSaudio
 {
     public const int HeaderSize = 48;
@@ -38,11 +25,10 @@ internal static class HandBuiltSaudio
     public const int SeekTableOffsetOffset = 0x28;
     public const int DataOffsetOffset = 0x2C;
 
-    // "SAUD" little-endian, spelled as the four characters rather than as a
-    // number, so a transposition in the magic is visible here.
+    // "SAUD" little-endian.
     public const uint Magic = 'S' | ('A' << 8) | ('U' << 16) | ((uint)'D' << 24);
 
-    /// <summary>A valid resident sound: no streaming flag, no seek table.</summary>
+    // No streaming flag, no seek table.
     public static byte[] Resident(
         int frames = 16,
         int channels = 1,
@@ -59,7 +45,7 @@ internal static class HandBuiltSaudio
         return file;
     }
 
-    /// <summary>A valid streaming sound: the streaming flag and a matching seek table.</summary>
+    // Streaming flag plus a matching seek table.
     public static byte[] Streaming(
         int frames = 64,
         int channels = 1,
@@ -89,7 +75,6 @@ internal static class HandBuiltSaudio
         return file;
     }
 
-    /// <summary>Where the first seek entry's <c>u64</c> sits, for a test that wants to move one.</summary>
     public static int SeekEntryOffset(int index) =>
         HeaderSize + SeekTableHeaderSize + index * SeekTableEntrySize;
 
@@ -118,8 +103,7 @@ internal static class HandBuiltSaudio
         BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(DataOffsetOffset), (uint)dataOffset);
     }
 
-    // A ramp rather than zeros, so a test that reads the payload back can tell
-    // "the right bytes" from "a buffer nobody wrote".
+    // A ramp, not zeros, so an unwritten buffer reads differently.
     private static void FillPayload(byte[] file, int at, int bytes)
     {
         for (int i = 0; i < bytes / 2; i++)

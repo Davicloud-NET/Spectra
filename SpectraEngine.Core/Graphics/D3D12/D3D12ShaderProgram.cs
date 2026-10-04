@@ -12,14 +12,9 @@ using System.Text;
 
 namespace SpectraEngine.Core.Graphics.D3D12;
 
-/// <summary>
-/// A linked VS+PS pair plus the D3D12 state derived from them: a root signature
-/// (one root CBV per cbuffer register, one SRV table + one sampler table when
-/// textures are present), CPU shadow copies for dirty-tracked uniform updates,
-/// and a PSO cache keyed by input layout, fill mode, and topology. Uniform data
-/// is written into per-draw slices of the renderer's frame upload ring, so one
-/// program can be drawn many times per frame with different constants.
-/// </summary>
+// A VS+PS pair with its root signature, cbuffer shadows and PSO cache.
+// Uniforms go into per-draw slices of the frame upload ring, so one program
+// can draw many times a frame with different constants.
 internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
 {
     private readonly D3D12Renderer _renderer;
@@ -29,41 +24,26 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
     private byte[] _vsBytecode = Array.Empty<byte>();
     private byte[] _psBytecode = Array.Empty<byte>();
 
-    // One entry per HLSL cbuffer register; RootParamIndex is its root CBV slot.
+    // One per HLSL cbuffer register. The index is also its root CBV slot.
     private CBufferSlot[] _cbuffers = Array.Empty<CBufferSlot>();
     private Dictionary<string, UniformLocation> _uniforms = new(StringComparer.Ordinal);
 
-    // Texture name → SRV/sampler register. The HLSL generator emits both at the
-    // same register index, so one number serves both tables.
+    // The HLSL generator emits SRV and sampler at the same register, so one
+    // number serves both tables.
     private Dictionary<string, uint> _textureSlots = new(StringComparer.Ordinal);
     private uint _srvCount;
 
-    // Textures staged by SetTexture since the last Use(); flushed into the
-    // shader-visible descriptor rings when the draw is prepared.
+    // Staged by SetTexture, consumed by the next Use().
     private readonly Dictionary<uint, D3D12Texture> _pendingTextures = new();
 
-    // Root parameter layout: cbuffer root CBVs first (in _cbuffers order), then
-    // optionally the SRV table and the sampler table.
+    // Root parameters: cbuffer CBVs first, then the SRV and sampler tables.
     private int _srvTableParam = -1;
     private int _samplerTableParam = -1;
 
     private readonly Dictionary<D3D12PsoKey, ComPtr<ID3D12PipelineState>> _psoCache = new();
     private bool _disposed;
 
-    /// <summary>
-    /// When false, every PSO this program builds bakes depth test and depth
-    /// writes OFF — used by the debug-line shader so overlays draw always-on-top,
-    /// matching the OpenGL backend's depth-disabled flush. Set before the first
-    /// draw and never toggled afterwards (the flag is a per-program constant, so
-    /// it deliberately does not participate in the PSO cache key).
-    /// </summary>
-
-    /// <summary>
-    /// Descriptors one draw with this program consumes from each shader-visible
-    /// ring — the SRV table's size, which the sampler table mirrors. Read by
-    /// <see cref="D3D12Renderer"/> before a frame is recorded, to size the rings
-    /// for the draw list it is about to submit.
-    /// </summary>
+    // Descriptors one draw takes from each shader-visible ring.
     internal uint SrvCount => _srvCount;
 
     public ReadOnlyMemory<byte> VertexBytecode => _vsBytecode;
@@ -162,8 +142,6 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         return Encoding.UTF8.GetString((byte*)ptr, (int)len).TrimEnd('\0', '\n', '\r');
     }
 
-    // ─── Reflection ──────────────────────────────────────────
-
     private void BuildReflection()
     {
         _uniforms = new Dictionary<string, UniformLocation>(StringComparer.Ordinal);
@@ -237,8 +215,6 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         while (ptr[len] != 0) len++;
         return Encoding.UTF8.GetString(ptr, len);
     }
-
-    // ─── Root signature ──────────────────────────────────────
 
     private void BuildRootSignature()
     {
@@ -337,13 +313,6 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         error.Dispose();
     }
 
-    // ─── PSO cache ───────────────────────────────────────────
-
-    /// <summary>
-    /// Returns (creating on first use) the pipeline state for this program with
-    /// the given draw configuration. See <see cref="D3D12PsoKey"/> for why every
-    /// one of these arguments has to be part of the cache identity.
-    /// </summary>
     internal ID3D12PipelineState* GetPso(
         D3D12VertexLayout layout,
         FillMode fill,
@@ -362,7 +331,7 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         return (ID3D12PipelineState*)pso.Handle;
     }
 
-    /// <summary>Distinct pipeline states compiled for this program. Test and diagnostic use.</summary>
+    // For tests and diagnostics.
     internal int PipelineStateCount => _psoCache.Count;
 
     private ComPtr<ID3D12PipelineState> CreatePso(
@@ -409,10 +378,8 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
             {
                 desc.VS = new ShaderBytecode { PShaderBytecode = vs, BytecodeLength = (nuint)_vsBytecode.Length };
                 desc.PS = new ShaderBytecode { PShaderBytecode = ps, BytecodeLength = (nuint)_psBytecode.Length };
-                // Zero colour targets is legal: that is a depth-only pass. Every
-                // bound attachment's format must appear here, not just the
-                // first: a pipeline compiled for one RTV and bound to three is a
-                // validation failure rather than a wrong pixel.
+                // Every bound attachment's format, not just the first. Zero is a
+                // depth-only pass.
                 for (int i = 0; i < (int)target.RenderTargetCount; i++)
                     desc.RTVFormats[i] = target.ColorAt(i);
 
@@ -432,18 +399,14 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
                     RenderTargetWriteMask = (byte)ColorWriteEnable.All,
                 };
 
-                // Match the D3D11/OpenGL defaults: back-face culling, CCW front,
-                // depth Less with write. Wireframe pipelines disable culling so
-                // both sides of every triangle edge stay visible.
+                // Same defaults as D3D11 and GL. Wireframe turns culling off.
                 desc.RasterizerState = new RasterizerDesc
                 {
                     FillMode = fill,
                     CullMode = fill == FillMode.Wireframe ? CullMode.None : CullMode.Back,
                     FrontCounterClockwise = 1,
                     DepthBias = bias.Constant,
-                    // Unclamped on purpose: the clamp exists to bound a
-                    // near-edge-on triangle's offset, and a shadow caster seen
-                    // edge-on from the light shades nothing anyway.
+                    // Unclamped: a caster edge-on to the light shades nothing anyway.
                     DepthBiasClamp = 0f,
                     SlopeScaledDepthBias = bias.SlopeScaled,
                     DepthClipEnable = 1,
@@ -493,14 +456,6 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         }
     }
 
-    // ─── Use / SetUniform / SetTexture ───────────────────────
-
-    /// <summary>
-    /// Prepares the current command list for draws with this program: sets the
-    /// root signature, uploads every dirty (or first-use-this-frame) cbuffer
-    /// into a fresh upload-ring slice bound as a root CBV, and stages pending
-    /// textures into the shader-visible descriptor rings.
-    /// </summary>
     public override void Use()
     {
         var list = _renderer.CurrentList;
@@ -509,11 +464,8 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         _renderer.BindRootSignature(list, (nint)_rootSignature.Handle);
         _renderer.CurrentProgram = this;
 
-        // A clean cbuffer rebinds the slice it already uploaded this frame:
-        // issued slices are never rewritten (linear allocator; an outgrown
-        // ring is retired, not freed, until the frame fence), so the cached
-        // GPU VA stays valid. First use in a new frame must re-upload because
-        // the upload ring restarts every frame.
+        // A clean cbuffer rebinds this frame's slice. The ring restarts every
+        // frame, so the first use in a frame always uploads.
         ulong frame = _renderer.FrameNumber;
         for (int i = 0; i < _cbuffers.Length; i++)
         {
@@ -532,9 +484,7 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         if (_srvTableParam >= 0 && _srvCount > 0)
         {
             var (srvTable, samplerTable) = _renderer.StageDescriptors(_pendingTextures, _srvCount);
-            // Consume the staged set: without this, a draw that binds fewer
-            // textures would silently inherit the previous draw's bindings
-            // (unset slots fall back to the white texture inside staging).
+            // Otherwise a draw that binds fewer textures inherits the last draw's.
             _pendingTextures.Clear();
             list->SetGraphicsRootDescriptorTable((uint)_srvTableParam, srvTable);
             list->SetGraphicsRootDescriptorTable((uint)_samplerTableParam, samplerTable);
@@ -558,30 +508,14 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
     public override void SetUniform(string name, ReadOnlySpan<Matrix4x4> values)
         => WriteArray(name, MemoryMarshal.AsBytes(values), values.Length, sizeof(float) * 16, "mat4");
 
-    // Bulk-copies an array uniform, refusing anything whose byte length does not
-    // exactly fill the shader's array.
-    //
-    // Refusing rather than clamping is the whole point. Math.Min would leave a
-    // stale tail from whatever was uploaded last -- a ten-light frame drawn
-    // after a sixty-light frame lit by fifty lights that are no longer there --
-    // which renders as plausible nonsense and gives nothing to trace back to
-    // this line. The reflected Size already accounts for HLSL's element padding,
-    // so it is the authority on what fits.
     private void WriteArray(string name, ReadOnlySpan<byte> bytes, int count, int stride, string elementType)
     {
-        // An unknown name is ignored, exactly as the scalar path ignores it: a
-        // pipeline sets uniforms that a given material's shader may not declare,
-        // and that is ordinary rather than an error.
+        // A shader may not declare every uniform a pipeline sets.
         if (!_uniforms.TryGetValue(name, out var loc)) return;
         if (count == 0) return;
 
-        // A length mismatch throws, because it is a caller bug rather than
-        // content: the shader says how many elements it has and the code either
-        // agrees or does not. SetTexture already throws for a wrong-typed
-        // argument, and this is the same class of mistake. The alternative,
-        // clamping, leaves a stale tail from whatever was uploaded last -- a
-        // ten-light frame lit by fifty lights that are no longer there -- which
-        // renders as plausible nonsense and points nowhere near this line.
+        // Throw, don't clamp: a short write leaves the last upload's tail in
+        // place, e.g. lights that are no longer there.
         if (bytes.Length != (int)loc.Size)
         {
             throw new ArgumentException(
@@ -605,8 +539,7 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         ref var slot = ref _cbuffers[loc.CBufferIndex];
         var target = slot.Shadow.AsSpan((int)loc.Offset, bytes.Length);
 
-        // A write that changes nothing keeps the slot clean, letting Use()
-        // rebind this frame's existing slice instead of uploading a new one.
+        // An unchanged write keeps the slot clean, so Use() uploads nothing.
         if (bytes.SequenceEqual(target)) return;
         bytes.CopyTo(target);
         slot.Dirty = true;
@@ -647,9 +580,7 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
         public byte[] Shadow;
         public bool Dirty;
 
-        // Upload-ring slice most recently bound for this cbuffer, and the
-        // frame it was uploaded in. The VA is only valid to rebind while
-        // LastUploadFrame is the current frame (the ring restarts per frame).
+        // Valid to rebind only while LastUploadFrame is the current frame.
         public ulong GpuVa;
         public ulong LastUploadFrame;
 
@@ -665,17 +596,10 @@ internal sealed unsafe class D3D12ShaderProgram : ShaderProgram
     }
 }
 
-/// <summary>
-/// A mesh's vertex layout in D3D12 terms: TEXCOORD-semantic elements with
-/// formats and byte offsets, plus a precomputed hash for PSO-cache bucketing.
-/// </summary>
 internal sealed class D3D12VertexLayout
 {
-    /// <param name="SemanticIndex">The TEXCOORD index, i.e. the shader's location.</param>
-    /// <param name="Format">The element's format, from its component count.</param>
-    /// <param name="ByteOffset">Byte offset within its OWN slot, not within a concatenation of both.</param>
-    /// <param name="InputSlot">Which bound vertex buffer it reads from: 0 the mesh, 1 the instance buffer.</param>
-    /// <param name="PerInstance">Whether it advances per instance rather than per vertex.</param>
+    // SemanticIndex is the TEXCOORD index. ByteOffset is within the element's
+    // own slot. InputSlot 0 is the mesh, 1 the instance buffer.
     public readonly record struct Element(
         uint SemanticIndex,
         Format Format,
@@ -686,7 +610,7 @@ internal sealed class D3D12VertexLayout
     public Element[] Elements { get; }
     public uint StrideBytes { get; }
 
-    /// <summary>Hash of the element data. Bucketing only — PSO identity compares the elements themselves (see <c>D3D12PsoKey</c>).</summary>
+    // Hash for bucketing only. PSO identity compares the elements.
     public int Key { get; }
 
     public D3D12VertexLayout(Element[] elements, uint strideBytes)
@@ -701,9 +625,6 @@ internal sealed class D3D12VertexLayout
             hash.Add(e.SemanticIndex);
             hash.Add((int)e.Format);
             hash.Add(e.ByteOffset);
-            // Part of PSO identity: a pipeline compiled for a per-vertex layout
-            // and handed an instanced draw binds slot 1 to nothing, and every
-            // instance lands on top of the first.
             hash.Add(e.InputSlot);
             hash.Add(e.PerInstance);
         }

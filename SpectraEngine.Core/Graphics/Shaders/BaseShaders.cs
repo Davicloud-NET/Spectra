@@ -7,27 +7,19 @@ using System.Threading;
 namespace SpectraEngine.Core.Graphics.Shaders;
 
 /// <summary>
-/// Accessor for the engine's built-in SpectraShade sources. The files are
-/// embedded as assembly resources so they survive AOT publishing; when running
-/// from a developer build the original source file on disk can also be located,
-/// enabling hot-reload.
+/// The engine's built-in SpectraShade sources. They are embedded in the
+/// assembly, and in a developer build the files on disk can be located for
+/// hot-reload.
 /// </summary>
 public static class BaseShaders
 {
-    /// <summary>The extension a SpectraShade source file is written with.</summary>
+    /// <summary>The extension of a SpectraShade source file.</summary>
     public const string SourceExtension = ".spectrashade";
 
     /// <summary>
-    /// The content folder a shader resolves under, so a built-in has one
-    /// identity whether it came from a folder, a pack or the embedded copy.
+    /// The content folder a built-in shader resolves under, whether it comes
+    /// from a folder, a pack or the embedded copy.
     /// </summary>
-    /// <remarks>
-    /// A built-in is an ASSET PATH before it is an embedded resource. Without
-    /// that, a cooked pack has nowhere to put a compiled shader that the engine
-    /// would then look for, and a project could never override one; with it,
-    /// <c>Shaders/Lit.specshadecomp</c> in a pack is what a shipped game binds
-    /// and the embedded copy is the fallback for a build that cooked none.
-    /// </remarks>
     public const string ContentFolder = "Shaders";
 
     /// <summary>File name of the built-in lit shader.</summary>
@@ -55,18 +47,11 @@ public static class BaseShaders
     /// <summary>File name of the world line's deferred, blended half.</summary>
     public const string WorldLineBlendFileName = "WorldLineBlend.spectrashade";
 
-    // The resource name MSBuild computes for Graphics\BaseShaders\<file>: root
-    // namespace, then the folder path with separators as dots. Naming it as a
-    // constant is the point of this class's lookup - a suffix match over
-    // GetManifestResourceNames answers "some resource ends this way", which a
-    // rename of an unrelated file can satisfy, and the wrong shader then
-    // compiles and renders rather than failing.
+    // MSBuild's resource name for Graphics\BaseShaders\<file>. Exact name, not
+    // a suffix match, which an unrelated file could satisfy.
     private const string ResourcePrefix = "SpectraEngine.Core.Graphics.BaseShaders.";
 
-    // Every file this class exposes, in declaration order. Surfaced through
-    // FileNames so a test can assert the constants and the embedded set have
-    // not drifted apart: dropping a file from the EmbeddedResource glob is a
-    // build-configuration failure the compiler cannot see.
+    // A test checks this list against the embedded resources.
     private static readonly string[] AllFileNames =
     [
         LitFileName,
@@ -80,41 +65,40 @@ public static class BaseShaders
         WorldLineBlendFileName,
     ];
 
-    // One-shot latch for the hot-reload verdict below.
     private static int _hotReloadStateLogged;
 
-    /// <summary>File names of every built-in shader. Any thread.</summary>
+    /// <summary>File names of every built-in shader.</summary>
     public static IReadOnlyList<string> FileNames => AllFileNames;
 
-    /// <summary>The built-in lit shader — diffuse + ambient from one directional light, modulated by a diffuse texture.</summary>
+    /// <summary>The built-in forward lit shader.</summary>
     public static string Lit => ReadEmbedded(LitFileName);
 
-    /// <summary>The unlit per-vertex-coloured shader used by the debug-draw renderer.</summary>
+    /// <summary>The unlit vertex-coloured shader debug draw uses.</summary>
     public static string DebugLine => ReadEmbedded(DebugLineFileName);
 
-    /// <summary>The tone-mapping resolve: the one place linear light becomes a display image.</summary>
+    /// <summary>The tone-mapping resolve.</summary>
     public static string PostResolve => ReadEmbedded(PostResolveFileName);
 
-    /// <summary>The deferred geometry pass: writes surface properties, never light.</summary>
+    /// <summary>The deferred geometry pass.</summary>
     public static string GBufferFill => ReadEmbedded(GBufferFillFileName);
     public static string GBufferFillCompact => ReadEmbedded(GBufferFillCompactFileName);
 
-    /// <summary>The deferred light pass: a Cook-Torrance BRDF over the G-buffer.</summary>
+    /// <summary>The deferred light pass.</summary>
     public static string DeferredLight => ReadEmbedded(DeferredLightFileName);
 
-    /// <summary>The shadow map's depth pass: writes depth from the light, and nothing else.</summary>
+    /// <summary>The shadow map's depth pass.</summary>
     public static string ShadowDepth => ReadEmbedded(ShadowDepthFileName);
 
     /// <summary>The depth-tested world line, single target.</summary>
     public static string WorldLine => ReadEmbedded(WorldLineFileName);
 
-    /// <summary>The world line's deferred half: post-light, alpha-blended, depth tested in the shader.</summary>
+    /// <summary>The world line's deferred half: blended after the light pass, depth tested in the shader.</summary>
     public static string WorldLineBlend => ReadEmbedded(WorldLineBlendFileName);
 
 
     /// <summary>
-    /// The content-relative path <paramref name="fileName"/> resolves under -
-    /// <c>Shaders/Lit.spectrashade</c> for the built-in lit shader. Any thread.
+    /// The content-relative path of <paramref name="fileName"/>, e.g.
+    /// <c>Shaders/Lit.spectrashade</c>.
     /// </summary>
     public static string ContentPath(string fileName)
     {
@@ -123,23 +107,17 @@ public static class BaseShaders
     }
 
     /// <summary>
-    /// The content-relative path the COOKED form of <paramref name="fileName"/>
-    /// resolves under - <c>Shaders/Lit.specshadecomp</c>. Any thread.
+    /// The content-relative path of the cooked form of <paramref name="fileName"/>,
+    /// e.g. <c>Shaders/Lit.specshadecomp</c>.
     /// </summary>
-    /// <remarks>
-    /// The same string the shader cook rule emits, derived the same way from the
-    /// source path, so the pack's entry and the engine's lookup cannot be spelled
-    /// differently. A mismatch here is not an error anywhere: the lookup misses,
-    /// the engine falls back to compiling source, and a shipped build silently
-    /// pays for a compiler it was meant to have left behind.
-    /// </remarks>
+    // Must match what the shader cook rule emits. A mismatch is no error: the
+    // lookup misses and the engine compiles from source.
     public static string CookedContentPath(string fileName) =>
         ContentPath(Path.ChangeExtension(fileName, CompiledShaderFile.FileExtension));
 
     /// <summary>
-    /// Resolves the absolute path of <paramref name="fileName"/> on disk if the
-    /// engine is running from a developer build (the source tree is present),
-    /// or returns null if only the embedded resource is available.
+    /// The absolute path of <paramref name="fileName"/> in the source tree, or
+    /// null when the engine is not running from a developer build.
     /// </summary>
     public static string? TryResolveSourcePath(string fileName)
     {
@@ -175,7 +153,7 @@ public static class BaseShaders
 
     /// <summary>
     /// Opens the embedded source for <paramref name="fileName"/> (a bare file
-    /// name, e.g. <c>Lit.spectrashade</c>). The caller owns the stream. Any thread.
+    /// name, e.g. <c>Lit.spectrashade</c>). The caller owns the stream.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// No resource is embedded under that name.
@@ -194,7 +172,7 @@ public static class BaseShaders
 
     /// <summary>
     /// The embedded source text for <paramref name="fileName"/> (a bare file
-    /// name). The floor every other shader lookup falls back to. Any thread.
+    /// name). Every other shader lookup falls back to this.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// No resource is embedded under that name.
@@ -209,19 +187,9 @@ public static class BaseShaders
     }
 
     /// <summary>
-    /// States once, at startup, whether shader hot-reload is live and why not
-    /// when it is not. Repeated calls do nothing. Any thread.
+    /// Logs once whether shader hot-reload is live, and why not when it is off.
+    /// Later calls do nothing.
     /// </summary>
-    /// <remarks>
-    /// Hot-reload needs the SpectraShade sources on disk, which
-    /// <see cref="TryFindSourceRoot"/> can only find by walking up to a solution
-    /// file. A NativeAOT-published developer build has no such tree above it, so
-    /// the engine silently falls back to the embedded copies and every save is
-    /// ignored for the rest of the session. Losing it is a legitimate state, not
-    /// an error - so the engine keeps running and says so at Warning, rather
-    /// than leaving somebody to work out from an unchanging picture that their
-    /// edits stopped arriving.
-    /// </remarks>
     public static void LogHotReloadState(ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(logger);
@@ -252,10 +220,7 @@ public static class BaseShaders
         logger.LogInformation("Shader hot-reload on; sources under {Directory}", directory);
     }
 
-    // Walks up from the executable directory looking for the solution file —
-    // identifies a developer build (bin/Debug or bin/Release somewhere under
-    // the source tree). Returns null for deployed builds where no parent
-    // contains the .slnx (so hot-reload silently no-ops).
+    // A solution file above the executable marks a developer build.
     private static string? TryFindSourceRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

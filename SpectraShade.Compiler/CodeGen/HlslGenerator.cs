@@ -9,9 +9,8 @@ using SpectraShade.Compiler.Syntax;
 namespace SpectraShade.Compiler.CodeGen;
 
 /// <summary>
-/// Generates HLSL (Shader Model 5.0 compatible) source from a SpectraShade AST.
-/// Emits identical source for D3D11 and D3D12 — the runtime picks the compiler
-/// (FXC for SM 5.0, DXC for SM 5.1+/DXIL) based on backend.
+/// Generates Shader Model 5.0 HLSL from a SpectraShade AST. D3D11 and D3D12 get
+/// the same source; the runtime picks FXC or DXC.
 /// </summary>
 public sealed class HlslGenerator : ICodeGenerator
 {
@@ -30,17 +29,14 @@ public sealed class HlslGenerator : ICodeGenerator
     private bool _isGeometry;
     private bool _isCompute;
 
-    // Geometry-stage context. Set when emitting a [Geometry] function body.
+    // Set while emitting a [Geometry] function body.
     private StructDeclaration? _geomOutputStruct;
     private string? _geomPositionField;
     private HashSet<string>? _geomOutputFieldNames;
     private const string GeomOutLocal = "_out";
     private const string GeomStreamParam = "_stream";
 
-    // Shared name → SpectraShade-type environment (see TypeInference). Populated
-    // with globals (cbuffer fields, samplers), function parameters, and local var
-    // declarations. Used for var inference and to decide when a binary '*' needs
-    // lowering to mul() for matrix multiplication.
+    // For var inference and for lowering a matrix '*' to mul().
     private readonly TypeInference _types = new();
 
     public HlslGenerator(GraphicsBackend backend)
@@ -107,14 +103,9 @@ public sealed class HlslGenerator : ICodeGenerator
             FragmentData = fragmentData,
             GeometryData = geometryData,
             ComputeData = computeData,
-            // Reported from the same resolver the TEXCOORD semantics above came
-            // from, so the declared layout and the reported layout cannot
-            // disagree.
             VertexInputs = VertexInputLayout.DescribeFor(vertexFunc, _structs),
         };
     }
-
-    // ─── Stage emission ──────────────────────────────────────
 
     private string EmitVertexStage(FunctionDeclaration func)
     {
@@ -130,11 +121,8 @@ public sealed class HlslGenerator : ICodeGenerator
         EmitSamplers(sb);
         EmitHelpers(sb);
 
-        // A struct return carries SV_Position on its [Position] field; a bare
-        // (non-struct) vertex return IS the clip-space position, so the entry
-        // signature itself must declare the semantic — FXC/DXC reject a vertex
-        // entry with no position output. Mirrors the fragment stage's bare
-        // SV_Target return.
+        // A bare vertex return is the clip-space position, so the entry itself
+        // needs SV_Position. FXC and DXC reject a vertex entry without one.
         string? entrySem = outputStruct is null ? ": SV_Position" : null;
         EmitEntryPoint(sb, func, entrySem);
         return sb.ToString();
@@ -146,12 +134,9 @@ public sealed class HlslGenerator : ICodeGenerator
         SetStage(isFragment: true);
         var sb = new StringBuilder();
 
-        // D3D links VS→PS by hardware register, not by semantic name: the PS
-        // input signature must mirror the upstream (vertex/geometry) output
-        // signature element-for-element, including SV_Position. So the entry
-        // point takes the vertex stage's output struct — cross-stage fields are
-        // matched by name, per the language contract — and the source-declared
-        // fragment input struct is used only for fragment-only compiles.
+        // D3D links VS to PS by register, not semantic name, so the PS input must
+        // mirror the upstream output signature, SV_Position included. Take the
+        // vertex output struct; the declared input is for fragment-only compiles.
         var declaredInput = func.Parameters.Count > 0 ? FindStruct(func.Parameters[0].Type.Name) : null;
         var upstreamOutput = vertexFunc is not null ? FindStruct(vertexFunc.ReturnType.Name) : null;
         var inputStruct = declaredInput is not null ? (upstreamOutput ?? declaredInput) : null;
@@ -165,8 +150,7 @@ public sealed class HlslGenerator : ICodeGenerator
         if (func.HasAttribute("EarlyDepthStencil"))
             sb.AppendLine("[earlydepthstencil]");
 
-        // No semantic on a void fragment stage: it has no render-target output
-        // to name, which is exactly what a depth-only pass wants.
+        // A void fragment stage (depth-only pass) has no target to name.
         string? entrySem = null;
         if (outputStruct is null && func.ReturnType.Name != "void")
             entrySem = $": SV_Target{GetIntArg(func.Attributes, "Target", 0)}";
@@ -180,17 +164,14 @@ public sealed class HlslGenerator : ICodeGenerator
         SetStage(isGeometry: true);
         var sb = new StringBuilder();
 
-        // Input: first parameter must be T[] where T is the vertex output struct.
-        // Same register-linkage rule as the fragment stage: the GS input
-        // signature must mirror the vertex output signature, so prefer the
-        // vertex stage's return struct over the source-declared input type.
+        // Same register linkage as the fragment stage: prefer the vertex output
+        // struct over the declared input type.
         var inputParam = func.Parameters.Count > 0 ? func.Parameters[0] : null;
         var declaredInput = inputParam is not null ? FindStruct(inputParam.Type.Name) : null;
         var vertexOutput = vertexFunc is not null ? FindStruct(vertexFunc.ReturnType.Name) : null;
         var inputStruct = declaredInput is not null ? (vertexOutput ?? declaredInput) : null;
 
-        // Output: the vertex stage return struct (has [Position]). The geometry
-        // stream outputs this same struct so it reaches the rasterizer/fragment.
+        // The stream outputs the vertex return struct, which has [Position].
         var outputStruct = vertexFunc is not null ? FindStruct(vertexFunc.ReturnType.Name) : inputStruct;
         _geomOutputStruct = outputStruct;
         _geomPositionField = outputStruct?.Fields
@@ -199,7 +180,6 @@ public sealed class HlslGenerator : ICodeGenerator
             ? new HashSet<string>(outputStruct.Fields.Select(f => f.Name), StringComparer.Ordinal)
             : new HashSet<string>(StringComparer.Ordinal);
 
-        // Emit structs with varying semantics on the output (shared with the vertex stage).
         var emitted = new HashSet<string>(StringComparer.Ordinal);
         if (inputStruct is not null)
         {
@@ -314,8 +294,6 @@ public sealed class HlslGenerator : ICodeGenerator
         return sb.ToString();
     }
 
-    // ─── Struct / resource emitters ──────────────────────────
-
     private void EmitInterfaceStructs(StringBuilder sb, StructDeclaration? inputStruct, StructDeclaration? outputStruct,
         InterfaceKind inputKind, InterfaceKind outputKind)
     {
@@ -358,9 +336,7 @@ public sealed class HlslGenerator : ICodeGenerator
             string arr = EmitArraySuffix(f.Type);
             string semantic = kind switch
             {
-                // Same resolver as the GLSL layout qualifier and the reported
-                // signature. A float4x4 here takes TEXCOORDn through
-                // TEXCOORDn+3, which is why the span travels with the element.
+                // A float4x4 takes TEXCOORDn through TEXCOORDn+3.
                 InterfaceKind.VertexInput
                     => $" : TEXCOORD{VertexInputLayout.ResolveLocation(f, i)}",
                 InterfaceKind.Varying when HasAttr(f.Attributes, "Position")
@@ -450,8 +426,6 @@ public sealed class HlslGenerator : ICodeGenerator
         sb.AppendLine("}");
     }
 
-    // ─── Statements ──────────────────────────────────────────
-
     private void EmitStatement(StringBuilder sb, SyntaxNode node, int indent)
     {
         string pad = new(' ', indent * 4);
@@ -487,8 +461,7 @@ public sealed class HlslGenerator : ICodeGenerator
                 sb.Append($"{pad}for (");
                 if (f.Initializer is VariableDeclaration fv)
                 {
-                    // Loop counters declared `var` infer from the initializer,
-                    // defaulting to int (matches the GLSL generator).
+                    // A `var` loop counter defaults to int, as in the GLSL generator.
                     string fSpec = fv.Type.Name == "var"
                         ? (fv.Initializer is not null ? _types.Infer(fv.Initializer) ?? "int" : "int")
                         : fv.Type.Name;
@@ -533,8 +506,7 @@ public sealed class HlslGenerator : ICodeGenerator
 
     private bool TryEmitGeometryStmt(StringBuilder sb, Expression expr, string pad)
     {
-        // Assignment rewrites: `Position = X;` → `_out.<posField> = X;`
-        // and bare `<fieldName> = X;` where fieldName is a geometry output field.
+        // `Position = X;` and `<outputField> = X;` become writes to the _out local.
         if (expr is AssignmentExpression a && a.Target is IdentifierExpression lhs)
         {
             string? mapped = null;
@@ -588,8 +560,6 @@ public sealed class HlslGenerator : ICodeGenerator
         else EmitStatement(sb, stmt, indent + 1);
     }
 
-    // ─── Expressions ─────────────────────────────────────────
-
     private string EmitExpression(Expression expr)
     {
         switch (expr)
@@ -614,9 +584,7 @@ public sealed class HlslGenerator : ICodeGenerator
 
             case ConstructorExpression ctor:
             {
-                // matN(singleMatrix) → (floatNxN)matrix. HLSL has no single-matrix
-                // constructor; the GLSL idiom mat3(uModel) for upper-left
-                // extraction has to lower to an explicit truncating cast.
+                // matN(matrix) → (floatNxN)matrix. HLSL has no single-matrix constructor.
                 if (TypeInference.IsMatrixType(ctor.Type.Name) && ctor.Arguments.Count == 1
                     && TypeInference.IsMatrixType(_types.Infer(ctor.Arguments[0])))
                 {
@@ -628,7 +596,7 @@ public sealed class HlslGenerator : ICodeGenerator
             }
 
             case NewExpression ne:
-                // HLSL has no 'new'. A default-initialized struct is spelled '(StructName)0'.
+                // HLSL has no 'new'.
                 return $"({ne.Type.Name})0";
 
             case CallExpression call:
@@ -654,8 +622,7 @@ public sealed class HlslGenerator : ICodeGenerator
         {
             var lt = _types.Infer(bin.Left);
             var rt = _types.Infer(bin.Right);
-            // HLSL '*' is componentwise on matrices/vectors — mul() is required for actual
-            // linear-algebra multiply whenever a matrix is involved.
+            // HLSL '*' is componentwise; a matrix product needs mul().
             if (TypeInference.IsMatrixType(lt) || TypeInference.IsMatrixType(rt))
                 return $"mul({EmitExpression(bin.Left)}, {EmitExpression(bin.Right)})";
         }
@@ -664,7 +631,6 @@ public sealed class HlslGenerator : ICodeGenerator
 
     private string EmitCall(CallExpression call)
     {
-        // Math.X(...) → hlslName(...)
         if (call.Target is MemberAccessExpression ma && ma.Object is IdentifierExpression math
             && math.Name == "Math" && MathBuiltins.TryGetValue(ma.Member, out string? hlslName))
         {
@@ -680,14 +646,12 @@ public sealed class HlslGenerator : ICodeGenerator
             return $"{EmitExpression(sa.Object)}.Sample({samplerRef}, {args})";
         }
 
-        // Compute-stage sync primitives
         if (_isCompute && call.Target is IdentifierExpression fid)
         {
             if (fid.Name == "Barrier") return "GroupMemoryBarrierWithGroupSync()";
             if (fid.Name == "MemoryBarrier") return "GroupMemoryBarrier()";
         }
 
-        // Geometry-stage stream primitives
         if (_isGeometry && call.Target is IdentifierExpression gid)
         {
             if (gid.Name == "EmitVertex") return $"{GeomStreamParam}.Append({GeomOutLocal})";
@@ -701,16 +665,12 @@ public sealed class HlslGenerator : ICodeGenerator
 
     private string EmitSamplerRef(Expression obj)
     {
-        // Plain sampler: `tex` → `tex_sampler`
         if (obj is IdentifierExpression id)
             return $"{id.Name}_sampler";
-        // Array sampler: `textures[i]` → `textures_sampler[i]`
         if (obj is IndexExpression idx && idx.Object is IdentifierExpression arrId)
             return $"{arrId.Name}_sampler[{EmitExpression(idx.Index)}]";
         return "/* unresolved sampler ref */";
     }
-
-    // ─── Helpers ─────────────────────────────────────────────
 
     private enum InterfaceKind { None, VertexInput, Varying, FragmentOutput }
 
@@ -755,12 +715,10 @@ public sealed class HlslGenerator : ICodeGenerator
     private static string FormatFloat(float v)
     {
         string s = v.ToString("R", CultureInfo.InvariantCulture);
-        // Ensure it parses as a float literal and not an int in HLSL.
+        // Without a '.', HLSL reads it as an int.
         if (!s.Contains('.') && !s.Contains('e') && !s.Contains('E')) s += ".0";
         return s;
     }
-
-    // ─── Type / builtin tables ───────────────────────────────
 
     private static string HlslType(string name) => name switch
     {
@@ -862,6 +820,6 @@ public sealed class HlslGenerator : ICodeGenerator
         ["Log2"] = "log2",
         ["Transpose"] = "transpose",
         ["Determinant"] = "determinant",
-        // Note: HLSL has no built-in 'inverse'. Users must provide their own helper.
+        // No 'inverse': HLSL has no builtin for it.
     };
 }

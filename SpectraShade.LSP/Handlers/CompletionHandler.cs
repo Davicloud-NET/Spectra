@@ -4,9 +4,6 @@ using OmniSharp.Extensions.LanguageServer.Protocol.Models;
 
 namespace SpectraShade.LSP.Handlers;
 
-/// <summary>
-/// Provides keyword and type completions for SpectraShade files.
-/// </summary>
 internal sealed class CompletionHandler : CompletionHandlerBase
 {
     private static readonly CompletionItem[] KeywordCompletions =

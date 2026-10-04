@@ -7,18 +7,9 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// The Silk-to-editing input adapter: it must read the viewport from the
-/// renderer's framebuffer latch (never from the window, which only the main
-/// thread may query), rebase the cursor onto a sub-rect viewport, and carry
-/// the input manager's latched edges, modifiers and wheel across the seam in
-/// the engine's own backend-neutral vocabulary.
-/// </summary>
-/// <remarks>
-/// The input manager is driven through its OS-event entry points directly —
-/// they are internal precisely so a headless suite can exercise the state
-/// machine without a real device; the device argument is unused by them.
-/// </remarks>
+/// <summary>The Silk-to-editing input adapter.</summary>
+// InputManager is driven through its OS-event entry points; they ignore the
+// device argument, hence the null!.
 public sealed class EngineEditorInputSourceTests
 {
     [Fact]
@@ -66,8 +57,7 @@ public sealed class EngineEditorInputSourceTests
         input.OnMouseMove(null!, new Vector2(300f, 200f));
         input.Update(0.016);
 
-        // A docked editor viewport: 640x480 panel whose top-left sits at
-        // (250, 150) in window client pixels.
+        // 640x480 panel at (250, 150) in window client pixels.
         EditorInputFrame frame = source.CaptureFrame(
             0.016f, new Vector2(250f, 150f), new Vector2(640f, 480f));
 
@@ -86,8 +76,7 @@ public sealed class EngineEditorInputSourceTests
         EditorInputFrame frame = source.CaptureFrame(
             0.016f, new Vector2(250f, 150f), new Vector2(640f, 480f));
 
-        // Negative, not clamped: a drag that runs off the panel must keep
-        // tracking.
+        // Not clamped: a drag that runs off the panel keeps tracking.
         frame.CursorPosition.ShouldBe(new Vector2(-240f, -130f));
         frame.IsCursorInsideViewport.ShouldBeFalse();
     }
@@ -104,7 +93,6 @@ public sealed class EngineEditorInputSourceTests
         pressFrame.IsDown(PointerButtons.Left).ShouldBeTrue();
         pressFrame.WasReleased(PointerButtons.Left).ShouldBeFalse();
 
-        // Held, no edges.
         input.Update(0.016);
         EditorInputFrame heldFrame = source.CaptureFrame(0.016f);
         heldFrame.WasPressed(PointerButtons.Left).ShouldBeFalse();
@@ -116,7 +104,6 @@ public sealed class EngineEditorInputSourceTests
         releaseFrame.WasReleased(PointerButtons.Left).ShouldBeTrue();
         releaseFrame.IsDown(PointerButtons.Left).ShouldBeFalse();
 
-        // The edge is one frame wide.
         input.Update(0.016);
         source.CaptureFrame(0.016f).WasReleased(PointerButtons.Left).ShouldBeFalse();
     }
@@ -165,7 +152,6 @@ public sealed class EngineEditorInputSourceTests
         input.Update(0.016);
         source.CaptureFrame(0.016f).ScrollDelta.ShouldBe(new Vector2(0f, 3f));
 
-        // Scroll is a delta, not a state: an idle frame reports zero.
         input.Update(0.016);
         source.CaptureFrame(0.016f).ScrollDelta.ShouldBe(Vector2.Zero);
     }

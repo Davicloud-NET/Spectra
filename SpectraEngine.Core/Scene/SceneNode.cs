@@ -5,11 +5,8 @@ using System.Numerics;
 namespace SpectraEngine.Core.Scene;
 
 /// <summary>
-/// A node in the scene graph: a named element with a local <see cref="Transform"/>,
-/// an optional renderable, and a parent/child hierarchy. World transforms are
-/// derived by composing local transforms down the tree and are cached until the
-/// node (or an ancestor) changes. All members are render-thread-only, like the
-/// <see cref="Scene"/> that owns the graph.
+/// A node in the scene graph: a name, a local <see cref="Transform"/>,
+/// optional payloads, and a parent/child hierarchy. Render thread only.
 /// </summary>
 public class SceneNode
 {
@@ -24,28 +21,9 @@ public class SceneNode
     private PhysicsFlags _physicsFlags = PhysicsFlags.Default;
     private byte _collisionGroup;
 
-    // Two lanes, one writer. Both count brushes in this node's subtree (itself
-    // included) and are maintained on the whole ancestor chain by the Brush
-    // setter, the BrushKind setter and reparenting, so both reads are O(1).
-    //
-    // They answer DIFFERENT questions and neither can be derived from the
-    // other, which is why the split is not a rename:
-    //
-    //   _subtreeBrushCount            "is there a brush of ANY kind below me?"
-    //                                 — rigidity. A scale written anywhere above
-    //                                   a brush makes its placement non-rigid,
-    //                                   and that is true of part brushes too, so
-    //                                   ScaleGizmo's group refusal must read it.
-    //   _subtreeStaticWorldBrushCount "is there a brush below me that the CSG
-    //                                 compile can SEE?" — dirtying. A transform
-    //                                   edit only costs a recompile when this is
-    //                                   non-zero.
-    //
-    // Deliberately two int fields rather than two lanes packed into one long:
-    // packing buys nothing here (render-thread only, adjacent fields, same cache
-    // line) and costs a real hazard — a decrement that borrows across the lane
-    // boundary corrupts BOTH counts silently. What actually makes desync
-    // impossible is that AdjustSubtreeBrushCounts is the only writer of either.
+    // Brushes in this subtree, this node included. The first counts every
+    // kind (rigidity: no scale above any brush), the second only World brushes
+    // (dirtying). AdjustSubtreeBrushCounts is the only writer of either.
     private int _subtreeBrushCount;
     private int _subtreeStaticWorldBrushCount;
 
@@ -56,12 +34,8 @@ public class SceneNode
     }
 
     /// <summary>
-    /// Creates a node that re-uses an existing identity instead of minting a
-    /// fresh one. This is how undo resurrects a deleted node: edit history is
-    /// addressed by <see cref="Id"/>, so a node recreated by an undo must come
-    /// back under the id the recorded commands still name, or every command
-    /// behind the delete would target a node that no longer exists.
-    /// Deserialization will use the same door.
+    /// Creates a node under an existing id. Undo of a delete and map loading
+    /// use this, so commands that name the id still resolve.
     /// </summary>
     public SceneNode(string name, Guid id)
     {
@@ -70,31 +44,19 @@ public class SceneNode
     }
 
     /// <summary>
-    /// The node's identity, assigned at construction and stable for the node's
-    /// entire lifetime — reparenting, renaming, and moving between scenes never
-    /// change it. This is the reference that serialization and undo/redo use to
-    /// name nodes across saves and edit history: editor commands store this id
-    /// rather than an object reference, because undoing a delete produces a new
-    /// instance with the same id (see <see cref="SceneNode(string, Guid)"/>),
-    /// and <see cref="Scene.TryFindById"/> resolves it back to the live node.
-    /// The id is immutable after construction.
+    /// The node's identity, fixed at construction. Saves and edit history name
+    /// nodes by this id; <see cref="Scene.TryFindById"/> resolves it.
     /// </summary>
     public Guid Id { get; }
-    // Compiler identity is separate from authored ids: public duplicate ids
-    // are tolerated by the scene index and must not collapse two placements.
+    // Separate from Id: the scene index tolerates duplicate ids, and they
+    // must not collapse two placements.
     internal Guid PlacementIdentity { get; } = Guid.NewGuid();
 
-    // Backing field for Name so the setter can notify the owning scene. The
-    // early-out matters: replaying an absolute-value rename command (undo/redo)
-    // writes the same string again, and that must not re-raise the event.
     private string _name = "Node";
 
     /// <summary>
     /// The node's display name. Renaming an attached node raises
-    /// <see cref="Scene.NodeRenamed"/> so a mirror (the editor's tree) learns
-    /// about it: a rename is neither a membership change nor a reparent, so
-    /// without its own event the tree keeps showing the old name until the next
-    /// structural change happens to rewrite the row.
+    /// <see cref="Scene.NodeRenamed"/>.
     /// </summary>
     public string Name
     {
@@ -110,13 +72,8 @@ public class SceneNode
 
     public SceneNode? Parent { get; private set; }
 
-    /// <summary>
-    /// The scene whose graph this node is attached to, or null while detached.
-    /// Set for whole subtrees at once: the <see cref="Scene"/> constructor
-    /// claims its root, and (re)parenting propagates the new parent's owner to
-    /// every node in the moved subtree. Used to mark the owning scene's static
-    /// world dirty automatically on brush-affecting edits.
-    /// </summary>
+    // The scene this node is attached to, or null. A whole subtree always
+    // shares one owner.
     internal Scene? Owner { get; private set; }
 
     public IReadOnlyList<SceneNode> Children => _children;
@@ -131,9 +88,8 @@ public class SceneNode
     }
 
     /// <summary>
-    /// Renderable geometry attached to this node, if any. Assigning, clearing,
-    /// or replacing it on an owned node updates the scene's spatial index
-    /// automatically.
+    /// Renderable geometry attached to this node, if any. Setting it updates
+    /// the scene's spatial index.
     /// </summary>
     public MeshRenderer? MeshRenderer
     {
@@ -143,44 +99,25 @@ public class SceneNode
             if (ReferenceEquals(_meshRenderer, value))
                 return;
             _meshRenderer = value;
-            // A source describes the renderer that was there; it cannot survive
-            // one being swapped out from under it. Clearing here rather than
-            // trusting callers is what keeps a save from naming a model that has
-            // nothing to do with the mesh the node is actually drawing.
+            // Or a save would name a model the node no longer draws.
             if (value is null)
                 MeshSource = null;
-            // The node just became spatial, stopped being spatial, or changed
-            // its renderable bounds — the owning scene's BVH must follow.
             Owner?.OnNodeSpatialComponentChanged(this);
         }
     }
 
     /// <summary>
-    /// Where <see cref="MeshRenderer"/> came from, when it came from a model
-    /// file, or null when it was built in code or there is no renderer.
+    /// The model file <see cref="MeshRenderer"/> came from, or null when it was
+    /// built in code. Set it after the renderer; clearing the renderer clears it.
     /// </summary>
-    /// <remarks>
-    /// <b>Set alongside the renderer, never on its own.</b> It is provenance,
-    /// not a payload: nothing in the engine reads it to draw anything, and its
-    /// one consumer is the map codec, which cannot otherwise recover a mesh
-    /// node's geometry at all. Detaching the renderer clears it, so the two
-    /// cannot drift into describing different meshes.
-    /// </remarks>
     public MeshSource? MeshSource { get; set; }
 
     /// <summary>
-    /// The light this node emits, or null. Attaching one registers the node with
-    /// the owning scene's light list; detaching removes it.
+    /// The light this node emits, or null. The owning scene tracks lit nodes
+    /// in its own list.
     /// </summary>
-    /// <remarks>
-    /// <b>A light does not make a node spatial.</b> It stays out of the BVH on
-    /// purpose: the BVH is what <c>Raycast</c> and the physics queries walk, and
-    /// <see cref="PhysicsFlags.Default"/> includes both <c>CanCollide</c> and
-    /// <c>CanQuery</c>, so admitting light-only nodes would quietly make every
-    /// lamp in a level something a picking ray hits and a character walks into.
-    /// Lights are collected from the scene's own small list instead, which is
-    /// O(lights) rather than O(nodes) and needs no bounds at all.
-    /// </remarks>
+    // A light does not put the node in the BVH: default physics flags would
+    // make every lamp pickable and collidable.
     public Light? Light
     {
         get => _light;
@@ -194,46 +131,16 @@ public class SceneNode
     }
 
     /// <summary>
-    /// The entity this node IS, or null. Carries the class name, the authored
-    /// keyvalues and the wires leaving this entity's outputs.
+    /// Entity data for this node, or null: class name, keyvalues and output
+    /// wiring. Names a class, so an unknown class still loads and saves.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A plain property with no scene-side hook, deliberately.</b> There is no
-    /// entity runtime yet: nothing spawns from this, nothing indexes it, and
-    /// nothing dirties when it changes. A membership set (the shape
-    /// <see cref="Light"/> uses) belongs with the runtime that would read it, and
-    /// one added now would be a list nothing consumes, maintained at three sites,
-    /// with no test able to say whether it is correct.
-    /// </para>
-    /// <para>
-    /// <b>It names a class rather than referencing a definition</b>, so a node
-    /// whose class this build has never heard of still loads, still shows in the
-    /// tree and still saves unchanged. See <see cref="Entities.EntityData"/>.
-    /// </para>
-    /// </remarks>
     public Entities.EntityData? Entity { get; set; }
 
     /// <summary>
-    /// Brush geometry this node contributes to the scene's static world, if any.
-    /// Brushes are the authoring primitive: all brush nodes are carved together
-    /// into one derived <see cref="Bsp.CsgWorld"/> instead of being rendered
-    /// per-node. The node's world transform drives the brush's placement, so a
-    /// Brush instance must not be attached to more than one node. Attaching,
-    /// detaching, or replacing a brush marks the owning scene's static world
-    /// dirty automatically — no manual <see cref="Scene.MarkStaticWorldDirty"/>
-    /// call is needed.
+    /// Brush geometry this node contributes, if any. The node's world
+    /// transform places it, not <see cref="Bsp.Brush.Transform"/>, so build
+    /// the brush with node-local extents and attach an instance to one node only.
     /// </summary>
-    /// <remarks>
-    /// <b>The node's world transform — not <see cref="Bsp.Brush.Transform"/> —
-    /// places the brush.</b> Every compile snapshots the node's world matrix as
-    /// the brush's placement and ignores whatever transform the brush itself
-    /// carries, including the centering translation
-    /// <see cref="Bsp.Brush.CreateBox"/> derives from its min/max arguments. A
-    /// brush destined for a node should therefore be built with node-local
-    /// (typically centred) extents; position it by moving the node, not by
-    /// baking world coordinates into the brush.
-    /// </remarks>
     public Bsp.Brush? Brush
     {
         get => _brush;
@@ -244,31 +151,15 @@ public class SceneNode
 
             bool had = _brush is not null;
             bool has = value is not null;
-            // Read the CURRENT kind, so both assignment orders are safe:
-            // stamping the kind first costs nothing at all, and attaching the
-            // brush first costs one dirty plus one admission bump when the kind
-            // follows. Neither order can corrupt, so neither needs a convention.
             bool world = _brushKind == BrushKind.World;
             _brush = value;
 
-            // Attach/detach changes the subtree brush population on the whole
-            // ancestor chain; a brush-for-brush swap leaves the counts alone.
-            // The static-world lane moves with it only for a World brush.
             if (had != has)
                 AdjustSubtreeBrushCounts(this, has ? 1 : -1, world ? (has ? 1 : -1) : 0);
 
-            // Any change to a WORLD brush — attach, detach, or replace —
-            // changes the carved world. Attach/detach changes the PLACEMENT
-            // COUNT, which the scene's retained snapshot cannot patch (slots
-            // shift), so it goes through the conservative full-walk dirtying;
-            // a brush-for-brush swap keeps the slot layout and reports just
-            // this node.
-            //
-            // A PART brush is not in the placement list at all, so none of this
-            // applies to one: attaching, swapping or detaching a part brush must
-            // signal NOTHING. This is the gate the whole zero-cost claim rests
-            // on — MarkStaticWorldDirty sets the force-full flag, so an ungated
-            // attach makes every script-spawned part cost an O(world) walk.
+            // Attach or detach shifts placement slots, so it needs the full
+            // walk; a swap keeps the layout and dirties only this node. A part
+            // brush is not in the placement list and must dirty nothing.
             if (world)
             {
                 if (had != has)
@@ -277,32 +168,16 @@ public class SceneNode
                     Owner?.MarkBrushSubtreeDirty(this);
             }
 
-            // It also changes what (or whether) the spatial index tracks here —
-            // and THIS one is deliberately kind-blind. The BVH indexes brush
-            // nodes and unions their bounds regardless of kind, because part
-            // brushes must still be frustum-culled and must still be pickable
-            // in the editor. Gating it here would make them invisible to both.
+            // Not gated on kind: part brushes are culled and picked through
+            // the BVH too.
             Owner?.OnNodeSpatialComponentChanged(this);
         }
     }
 
     /// <summary>
-    /// Whether this node's brush is fused into the compiled static world, or
-    /// stands alone as a movable object. Defaults to
-    /// <see cref="BrushKind.World"/>, whose own documentation carries the
-    /// argument for why the bit is declared rather than derived, and never
-    /// inherited.
+    /// Whether this node's brush is fused into the compiled static world or
+    /// stands alone as a movable part. Not inherited by children.
     /// </summary>
-    /// <remarks>
-    /// The one admission write in the graph, and deliberately conditional and
-    /// idempotent: an equal write does nothing (the same exact-equality
-    /// discipline the transform setters use), and a kind flip on a node
-    /// carrying no brush signals nothing at all — it is a stamp for a brush
-    /// that may arrive later. On a real change to a brush-bearing node it moves
-    /// the node between the counter's two lanes and tells the scene that the
-    /// set of admitted brushes changed, which is the one thing the incremental
-    /// compile's trusted diff cannot infer for itself.
-    /// </remarks>
     public BrushKind BrushKind
     {
         get => _brushKind;
@@ -313,8 +188,6 @@ public class SceneNode
 
             _brushKind = value;
 
-            // No brush here: nothing is admitted or un-admitted, so nothing is
-            // counted and nothing is dirtied.
             if (_brush is null)
                 return;
 
@@ -323,26 +196,13 @@ public class SceneNode
         }
     }
 
-    /// <summary>
-    /// True when this node carries a brush that the static-world compile is
-    /// allowed to see. This is the single predicate the CSG snapshot path asks;
-    /// everything downstream of it — rigidity validation, placement slots, the
-    /// per-cell BSP, the chunk meshes — inherits the world/part split for free
-    /// by consuming the one placement list.
-    /// </summary>
+    /// <summary>True when this node's brush is part of the static-world compile.</summary>
     public bool IsStaticWorldBrush => _brush is not null && _brushKind == BrushKind.World;
 
     /// <summary>
-    /// The node's physics and query bits. See <see cref="Scene.PhysicsFlags"/>
-    /// for what each one means and why they are a byte rather than a payload.
+    /// The node's physics and query bits; see <see cref="Scene.PhysicsFlags"/>.
+    /// Writing them dirties nothing.
     /// </summary>
-    /// <remarks>
-    /// A plain field with no side effects, deliberately: none of these bits
-    /// changes the compiled static world, the spatial index, or anything the
-    /// CSG snapshot reads. They are consulted at query time and at body-creation
-    /// time, so writing one must not dirty anything — which is also what makes
-    /// a script toggling <c>CanCollide</c> on a world brush free.
-    /// </remarks>
     public PhysicsFlags PhysicsFlags
     {
         get => _physicsFlags;
@@ -358,9 +218,7 @@ public class SceneNode
 
     /// <summary>
     /// Whether this node's geometry is visible to spatial queries. Independent
-    /// of <see cref="CanCollide"/>, and honoured for every kind of node —
-    /// including static world brushes, because <see cref="Scene.Raycast"/>
-    /// traverses the spatial index per node rather than the compiled BSP.
+    /// of <see cref="CanCollide"/>.
     /// </summary>
     public bool CanQuery
     {
@@ -377,7 +235,7 @@ public class SceneNode
 
     /// <summary>
     /// Whether this node is exempt from simulation. Default <c>true</c>; see
-    /// <see cref="PhysicsFlags.Anchored"/> for why that differs from Roblox.
+    /// <see cref="PhysicsFlags.Anchored"/>.
     /// </summary>
     public bool Anchored
     {
@@ -386,16 +244,11 @@ public class SceneNode
     }
 
     /// <summary>
-    /// Which collision group this node belongs to — an id from the scene's
+    /// The node's collision group, an id from the scene's
     /// <see cref="Scene.CollisionGroups"/> registry. Zero
-    /// (<see cref="Scene.CollisionGroups.DefaultGroup"/>) unless assigned, so a
-    /// world that never mentions groups behaves as one without the feature.
+    /// (<see cref="Scene.CollisionGroups.DefaultGroup"/>) unless assigned.
     /// </summary>
-    /// <remarks>
-    /// Stored as a byte and validated only against the 64-group ceiling here:
-    /// the registry that gives ids their meaning belongs to a scene, and a node
-    /// may be assigned its group before it is attached to one.
-    /// </remarks>
+    // Only range-checked: a node can get its group before it has a scene.
     public int CollisionGroup
     {
         get => _collisionGroup;
@@ -415,20 +268,15 @@ public class SceneNode
             _physicsFlags &= ~flag;
     }
 
-    /// <summary>The node's transform relative to its parent.</summary>
-    /// <remarks>
-    /// All transform setters (this one and the component properties below)
-    /// early-out when the written value exactly equals the current one: a
-    /// no-op write invalidates nothing, dirties no static world, and raises no
-    /// <see cref="Scene.NodeTransformChanged"/>.
-    /// </remarks>
+    /// <summary>
+    /// The node's transform relative to its parent. Writing an equal value
+    /// changes nothing and raises no event.
+    /// </summary>
     public Transform LocalTransform
     {
         get => _localTransform;
         set
         {
-            // Transform is a plain mutable struct without equality operators,
-            // so compare field-wise (component-exact, like the setters below).
             if (value.Position == _localTransform.Position &&
                 value.Rotation == _localTransform.Rotation &&
                 value.Scale == _localTransform.Scale)
@@ -475,36 +323,16 @@ public class SceneNode
     }
 
     /// <summary>
-    /// How many brushes are attached in this node's subtree, this node's own
-    /// <see cref="Brush"/> included. Maintained incrementally by the brush
-    /// setter and by reparenting, so reading it is O(1).
+    /// How many brushes of any kind are in this node's subtree, its own
+    /// included. Check this before writing <see cref="LocalScale"/>: a scale
+    /// anywhere above a brush makes its placement non-rigid.
     /// </summary>
-    /// <remarks>
-    /// <b>Rigidity is a subtree property, not a node property.</b> A brush's
-    /// placement is the world matrix of the node it hangs under, so a scale
-    /// written <em>anywhere</em> above a brush makes that brush's placement
-    /// non-rigid and the static-world compile rejects the whole snapshot — not
-    /// just that brush. Any tool that is about to write
-    /// <see cref="LocalScale"/> must therefore ask this, not
-    /// <c>node.Brush is not null</c>: a group node carrying no brush of its own
-    /// can still be the root of a subtree full of them.
-    /// </remarks>
     public int SubtreeBrushCount => _subtreeBrushCount;
 
     /// <summary>
-    /// How many brushes in this node's subtree are admitted to the static world
-    /// — that is, how many of the <see cref="SubtreeBrushCount"/> are
-    /// <see cref="BrushKind.World"/>. Always between zero and that total.
+    /// How many <see cref="BrushKind.World"/> brushes are in this node's
+    /// subtree. Moving the node costs a recompile only when this is non-zero.
     /// </summary>
-    /// <remarks>
-    /// This is the <em>dirtying</em> question, and it is the one the transform
-    /// path asks: a subtree full of part brushes can be moved every frame for
-    /// free, because nothing in it is in the placement list. It is deliberately
-    /// NOT the question a tool about to write <see cref="LocalScale"/> asks —
-    /// see <see cref="SubtreeBrushCount"/>, which is about rigidity and stays
-    /// kind-blind, because a scale above a <em>part</em> brush is just as
-    /// illegal as a scale above a world one.
-    /// </remarks>
     public int SubtreeStaticWorldBrushCount => _subtreeStaticWorldBrushCount;
 
     /// <summary>The node's accumulated world matrix (local composed with all ancestors).</summary>
@@ -525,25 +353,15 @@ public class SceneNode
     public Vector3 WorldPosition => WorldMatrix.Translation;
 
     /// <summary>
-    /// This node's position among its parent's children, or −1 when it has no
-    /// parent. The coordinate a structural edit has to record to be reversible.
+    /// This node's position among its parent's children, or -1 with no parent.
+    /// Sibling order is carve order, so a structural edit must record it to be
+    /// reversible. Linear in the sibling count.
     /// </summary>
-    /// <remarks>
-    /// <b>Sibling index is not cosmetic here.</b> Traversal order is child-list
-    /// order, traversal order is the static world's placement-slot order, and
-    /// placement order breaks ties in the carve's overlap ordering, so a node
-    /// that comes back from an undo at a different index produces geometry that
-    /// is valid, different, and bit-unequal to what was there before. Linear in
-    /// the sibling count, which is why it is read at gesture time and stored,
-    /// never consulted per frame.
-    /// </remarks>
     public int IndexInParent => Parent?._children.IndexOf(this) ?? -1;
 
     /// <summary>
-    /// Attaches an existing node as a child at the end of the child list,
-    /// detaching it from any previous parent. See
-    /// <see cref="InsertChild(int, SceneNode)"/>, which this is the append case
-    /// of.
+    /// Attaches an existing node as the last child, detaching it from any
+    /// previous parent.
     /// </summary>
     public SceneNode AddChild(SceneNode child)
     {
@@ -553,37 +371,20 @@ public class SceneNode
 
     /// <summary>
     /// Attaches an existing node as a child at a chosen position, detaching it
-    /// from any previous parent. When the moved subtree contains brushes, both
-    /// the old and the new owning scene (if any) get their static world marked
-    /// dirty — the brushes' placements changed on both sides.
+    /// from any previous parent. Throws when the node is this node or one of
+    /// its ancestors.
     /// </summary>
     /// <param name="index">
     /// Where in the child list the node lands. Clamped to the list's length
-    /// <em>after</em> the detach, so a node moved within its own parent may name
-    /// the end of the list, and an undo may restore into a parent that has since
-    /// lost other siblings.
+    /// after the detach.
     /// </param>
     /// <param name="child">The node to attach.</param>
-    /// <exception cref="ArgumentException">
-    /// The node is this node, or an ancestor of it: either would make the graph
-    /// a cycle, and every walk over it non-terminating.
-    /// </exception>
-    /// <remarks>
-    /// <b>Restoring the index is the whole reason this exists.</b> Appending is
-    /// the right answer when a node is first created and the wrong one when a
-    /// node is coming back: see <see cref="IndexInParent"/> for what re-ordering
-    /// costs.
-    /// </remarks>
     public SceneNode InsertChild(int index, SceneNode child)
     {
         ArgumentNullException.ThrowIfNull(child);
         ArgumentOutOfRangeException.ThrowIfNegative(index);
 
-        // A cycle is not a bug that surfaces here: it surfaces as a hang the
-        // first time anything walks the graph, which is every frame. Reparenting
-        // is the operation that can reach it (dragging a parent onto its own
-        // child in a tree view is an ordinary slip), so the guard belongs on the
-        // one attach path rather than in each caller.
+        // A cycle would hang the next graph walk.
         for (SceneNode? ancestor = this; ancestor is not null; ancestor = ancestor.Parent)
         {
             if (ReferenceEquals(ancestor, child))
@@ -597,8 +398,6 @@ public class SceneNode
 
         Scene? previousOwner = child.Owner;
 
-        // Detach from the old parent first, unwinding the subtree brush count
-        // from the old ancestor chain before the chain is severed.
         if (child.Parent is { } oldParent)
         {
             child.UnlinkSiblings();
@@ -606,17 +405,14 @@ public class SceneNode
             if (child._subtreeBrushCount > 0)
             {
                 AdjustSubtreeBrushCounts(oldParent, -child._subtreeBrushCount, -child._subtreeStaticWorldBrushCount);
-                // Both lanes move, but only admitted brushes changed the
-                // compiled world: a folder of parts can be reparented for free.
+                // Only world brushes change the compiled world.
                 if (child._subtreeStaticWorldBrushCount > 0)
                     child.Owner?.MarkStructuralWorldDirty();
             }
         }
 
-        // Clamped after the detach, never before: moving a node to the end of
-        // its own parent's list names an index the list only has once the node
-        // has left it, and an undo restores into a parent that may have lost
-        // other siblings in the same gesture.
+        // Clamp after the detach: a move within one parent, or an undo into a
+        // parent that lost siblings, can name an index past the end.
         if (index > _children.Count)
             index = _children.Count;
 
@@ -626,9 +422,7 @@ public class SceneNode
         if (child.PreviousSibling is { } previousSibling) previousSibling._nextSibling = child;
         if (child._nextSibling is { } nextSibling) nextSibling.PreviousSibling = child;
         _children.Insert(index, child);
-        // Invalidate the cached world matrices BEFORE announcing the node to
-        // its new scene: NodeAdded handlers (the spatial index in particular)
-        // read WorldMatrix, which must already reflect the new parent chain.
+        // Before SetOwner: NodeAdded handlers read WorldMatrix.
         child.MarkWorldDirty();
         child.SetOwner(Owner);
 
@@ -639,9 +433,8 @@ public class SceneNode
                 Owner?.MarkStructuralWorldDirty();
         }
 
-        // A reparent WITHIN one scene raises no membership events (the subtree
-        // never left), yet it still moves every node in it — tell the scene so
-        // the spatial index can refit the affected leaves.
+        // A reparent inside one scene raises no membership events, but the
+        // spatial index still has to refit.
         if (previousOwner is not null && ReferenceEquals(previousOwner, Owner))
             previousOwner.OnNodeSubtreeMoved(child);
 
@@ -656,74 +449,29 @@ public class SceneNode
     }
 
     /// <summary>
-    /// A detached copy of this node under a <b>fresh identity</b>, ready to be
-    /// attached wherever the caller wants it.
+    /// A detached copy of this node with a new id, for the caller to attach.
+    /// The mesh renderer is shared; the brush, light and entity are copied.
     /// </summary>
     /// <param name="deep">
-    /// True (the default) to copy the whole subtree; false for this node's
-    /// payloads alone, which leaves a group node empty.
+    /// True (the default) to copy the whole subtree; false for this node alone.
     /// </param>
-    /// <remarks>
-    /// <b>Each of the four payloads a node can carry is copied differently, and
-    /// the differences are not stylistic.</b>
-    /// <list type="bullet">
-    ///   <item><description>
-    ///     <see cref="MeshRenderer"/> is <em>shared by reference</em>. It is
-    ///     immutable and its GPU resources are owned by the renderer, so a
-    ///     thousand duplicates of a prop cost one mesh.
-    ///   </description></item>
-    ///   <item><description>
-    ///     <see cref="Brush"/> gets its own instance through
-    ///     <c>Brush.CloneShape()</c>. Sharing would be geometrically correct but
-    ///     the CSG carve cache keys on reference identity and holds one entry
-    ///     per instance, so every duplicate past the first would re-carve on
-    ///     every compile forever.
-    ///   </description></item>
-    ///   <item><description>
-    ///     <see cref="Light"/> gets a copy, because it is MUTABLE. Sharing it
-    ///     would make dimming the copy dim the original.
-    ///   </description></item>
-    ///   <item><description>
-    ///     <see cref="Entity"/> gets a copy, for the same reason the light does:
-    ///     it is mutable, so a shared instance would have the duplicate's
-    ///     keyvalues rewritten by every edit to the original.
-    ///   </description></item>
-    /// </list>
-    /// <para>
-    /// <b>Returned detached, deliberately.</b> The caller decides the parent and
-    /// the sibling index, and attaching is what raises the membership events,
-    /// indexes the new ids and dirties the static world, so a clone that
-    /// attached itself would take that decision away from the one place that
-    /// has to record it for undo.
-    /// </para>
-    /// <para>
-    /// <see cref="PhysicsFlags.HasBody"/> is stripped: it is owned by the
-    /// physics layer and says a body exists in its side table for the ORIGINAL
-    /// node. A copy that claimed it would send every body lookup for the
-    /// duplicate to a table entry that is not there.
-    /// </para>
-    /// </remarks>
     public SceneNode Clone(bool deep = true)
     {
         var copy = new SceneNode(Name);
 
         copy._localTransform = _localTransform;
+        // HasBody names the original's entry in the physics side table.
         copy._physicsFlags = _physicsFlags & ~PhysicsFlags.HasBody;
         copy._collisionGroup = _collisionGroup;
 
-        // The kind is stamped before the brush arrives, so the brush setter
-        // counts the new node into the right subtree lane on the first write
-        // rather than counting it twice through an admission change.
+        // Kind before brush, so the brush setter counts it once.
         copy._brushKind = _brushKind;
 
-        // Through the properties from here down: they are what maintain the
-        // subtree counters. The scene-side hooks they also call are all
-        // null-guarded on Owner, which a detached copy does not have.
+        // Through the properties: they maintain the subtree counters.
         copy.MeshRenderer = _meshRenderer;
-        // After the renderer, never before: the renderer's setter clears the
-        // source when it is handed a null, so an earlier assignment would be
-        // wiped on any node whose renderer is null.
+        // After the renderer: its setter clears the source on null.
         copy.MeshSource = MeshSource;
+        // Own brush instance: the carve cache keys on reference identity.
         copy.Brush = _brush?.CloneShape();
         copy.Light = _light?.Clone();
         copy.Entity = Entity?.Clone();
@@ -745,8 +493,6 @@ public class SceneNode
             child.Parent = null;
             if (child._subtreeBrushCount > 0)
             {
-                // The removed subtree's admitted brushes leave the compiled
-                // world; its part brushes were never in it.
                 AdjustSubtreeBrushCounts(this, -child._subtreeBrushCount, -child._subtreeStaticWorldBrushCount);
                 if (child._subtreeStaticWorldBrushCount > 0)
                     Owner?.MarkStructuralWorldDirty();
@@ -757,14 +503,12 @@ public class SceneNode
     }
 
     /// <summary>
-    /// Enumerates this node and all of its descendants depth-first, in
-    /// pre-order with children visited in list order.
+    /// Enumerates this node and all of its descendants in pre-order, children
+    /// in list order.
     /// </summary>
     public IEnumerable<SceneNode> Traverse()
     {
-        // Explicit stack instead of nested iterators: recursive `yield` chains
-        // cost O(depth) per element and allocate an enumerator per node, and
-        // debug visualisations walk the whole tree several times per frame.
+        // Explicit stack: recursive yield allocates an enumerator per node.
         var stack = new Stack<SceneNode>();
         stack.Push(this);
         while (stack.Count > 0)
@@ -772,33 +516,23 @@ public class SceneNode
             var node = stack.Pop();
             yield return node;
 
-            // Push in reverse so the first child is popped (visited) first,
-            // preserving the visit order of the old recursive version.
+            // Reversed so the first child pops first.
             var children = node._children;
             for (int i = children.Count - 1; i >= 0; i--)
                 stack.Push(children[i]);
         }
     }
 
-    // Propagates a scene-ownership change to the whole subtree, raising the
-    // scenes' membership events as it goes: every node whose owner actually
-    // changes fires NodeRemoved on the scene it leaves and NodeAdded on the
-    // scene it enters (both, in that order, on a cross-scene move), pre-order
-    // so parents are announced before their children. Descendants always share
-    // their root's owner (only construction and (re)parenting change it, and
-    // both keep subtrees consistent), so an unchanged owner means the entire
-    // subtree is already correct and the walk can stop — which is also exactly
-    // what makes a reparent WITHIN one scene fire no membership events: the
-    // moved subtree neither enters nor leaves the scene.
+    // Moves the whole subtree to another scene, raising NodeRemoved then
+    // NodeAdded per node, parents first. An unchanged owner stops the walk,
+    // which is why a reparent inside one scene raises neither.
     internal void SetOwner(Scene? owner)
     {
         if (Owner == owner)
             return;
 
         Scene? previous = Owner;
-        // Owner is updated before the events fire, so handlers observe the
-        // node's new membership (a NodeRemoved handler sees Owner as null or
-        // as the destination scene, never as the scene raising the event).
+        // Set before the events, so handlers see the new membership.
         Owner = owner;
         previous?.OnNodeRemoved(this);
         owner?.OnNodeAdded(this);
@@ -807,9 +541,7 @@ public class SceneNode
             _children[i].SetOwner(owner);
     }
 
-    // The ONLY writer of either subtree lane. Walks `node` and every ancestor
-    // once, moving both counts together — which is what makes it structurally
-    // impossible for the two to disagree about the same subtree.
+    // The only writer of either count.
     private static void AdjustSubtreeBrushCounts(SceneNode node, int totalDelta, int worldDelta)
     {
         for (SceneNode? n = node; n is not null; n = n.Parent)
@@ -819,33 +551,18 @@ public class SceneNode
         }
     }
 
-    // Shared tail of every transform setter, run only after the value actually
-    // changed (the setters early-out on equal writes).
     private void OnLocalTransformChanged()
     {
         MarkWorldDirty();
 
-        // A transform edit only affects the static world when an ADMITTED
-        // brush sits somewhere in this node's subtree — its placement derives
-        // from this node's world matrix. The subtree count makes that an O(1)
-        // test. Node-scoped dirtying: the scene records WHICH subtree moved, so
-        // the next compile launch re-captures only it (the per-frame drag path
-        // must stay O(edit neighbourhood) end to end).
-        //
-        // The static-world lane, not the total: a subtree of part brushes may
-        // be moved by physics every tick and must cost nothing here, which is
-        // the entire reason the kind exists.
+        // World brushes only: moving a subtree of parts must cost no recompile.
         if (_subtreeStaticWorldBrushCount > 0)
             Owner?.MarkBrushSubtreeDirty(this);
 
-        // The change event, by contrast, fires for every owned node — editors
-        // track cameras and props too, not just brush geometry.
         Owner?.OnNodeTransformChanged(this);
     }
 
-    // Eagerly propagates the dirty flag. A child's cached world matrix depends on
-    // its parent's, so any change must invalidate the whole subtree. Cheap for the
-    // shallow trees we have today; revisit if hierarchies grow deep.
+    // Eager, whole subtree. Fine for shallow trees.
     private void MarkWorldDirty()
     {
         _worldDirty = true;

@@ -9,20 +9,8 @@ using SpectraShade.Compiler.Syntax;
 namespace SpectraShade.Compiler.CodeGen;
 
 /// <summary>
-/// Generates GLSL source from a SpectraShade AST. Stages target 330 core by
-/// default; a stage's #version is raised only when the features it actually
-/// emits require it (see <see cref="FinishStage"/>).
-///
-/// Transforms:
-///   [Vertex] function params     → layout(location=N) in declarations + void main()
-///   [Fragment] function params   → in declarations from vertex output struct + void main()
-///   Position = expr              → gl_Position = expr
-///   return result                → assigns stage outputs + bare return (at any nesting depth)
-///   cbuffer fields               → uniform declarations
-///   tex.Sample(uv)               → texture(tex, uv)
-///   Math.Func(args)              → func(args) (lowercase GLSL builtins)
-///   vec3(args)                   → vec3(args) (pass-through)
-///   new Struct()                 → Struct() (GLSL constructor syntax)
+/// Generates GLSL source from a SpectraShade AST. Stages target 330 core;
+/// a stage's #version rises only when a feature it emits needs it.
 /// </summary>
 public sealed class GlslGenerator : ICodeGenerator
 {
@@ -31,45 +19,34 @@ public sealed class GlslGenerator : ICodeGenerator
 
     private CompilationUnit _unit = null!;
 
-    // Current emit context — set before emitting each stage, used by EmitExpression/EmitStatement
+    // Set before each stage is emitted.
     private bool _isVertex;
     private bool _isGeometry;
     private bool _isCompute;
     private StructDeclaration? _inputStruct;
     private string? _inputParam;
 
-    // Geometry-stage output mapping (GLSL counterpart of HlslGenerator's
-    // _geomOutputStruct context): bare output-struct field names assigned in a
-    // geometry body become the loose g_* varyings; the [Position] field becomes
-    // gl_Position. Set while emitting a [Geometry] body.
+    // Set while emitting a [Geometry] body. Output field names assigned there
+    // become g_* varyings; the [Position] field becomes gl_Position.
     private string? _geomPositionField;
     private HashSet<string>? _geomOutputFieldNames;
 
-    // Fragment inputs read the vertex stage's v_* varyings — unless a geometry
-    // stage sits in between, in which case they read its g_* outputs instead.
+    // "g_" when a geometry stage feeds the fragment stage.
     private string _fragmentVaryingPrefix = "v_";
 
-    // Stage-entry return lowering: GLSL entry points compile to void main(), so
-    // every `return expr;` in a [Vertex]/[Fragment] body — top-level or nested
-    // inside control flow — must assign the stage outputs and then emit a bare
-    // return. Mode is None while emitting helper functions, whose returns stay
-    // real returns.
+    // GLSL entries are void main(), so `return expr;` in a stage body assigns the
+    // stage outputs and then returns bare. None while emitting helper functions.
     private enum StageReturnMode { None, Vertex, Fragment }
     private StageReturnMode _returnMode;
     private StructDeclaration? _stageReturnStruct;
     private int _returnTempCounter;
 
-    // Minimum #version the current stage requires; see FinishStage.
     private int _minVersion;
 
-    // Shared name → SpectraShade-type environment (see TypeInference), populated
-    // with globals, parameters, and locals per stage. Used to resolve `var`
-    // declarations to concrete GLSL types.
+    // Resolves `var` declarations to concrete GLSL types.
     private readonly TypeInference _types = new();
 
-    // GLSL reserved words (used or reserved-for-future-use) that must not appear
-    // as user identifiers. Names matching this set are prefixed with `_ss_` at every
-    // emission site. Source: GLSL 4.6 spec §3.6.
+    // GLSL 4.6 reserved words (spec 3.6). User identifiers matching one get an _ss_ prefix.
     private static readonly HashSet<string> GlslReservedWords = new(StringComparer.Ordinal)
     {
         "input", "output", "common", "partition", "active", "asm", "class", "union",
@@ -81,21 +58,15 @@ public sealed class GlslGenerator : ICodeGenerator
         "restrict", "readonly", "writeonly", "noperspective", "centroid", "precise",
     };
 
-    // Generator-owned interface names for the stage currently being emitted:
-    // the invented fragment output (fragColor) plus the active a_* attribute
-    // and v_*/g_* varying names. A user local or parameter reusing one of
-    // these would silently shadow the interface variable — the stage output
-    // would never be written — so colliding user identifiers get the same
-    // _ss_ escape as reserved words. Uniform/cbuffer names are deliberately
-    // NOT tracked here: shadowing a uniform with a local is legitimate and
-    // stays untouched. Populated at the top of each stage emitter (before
-    // ANY emission) so declaration and reference sites escape identically.
+    // Names the generator invents for the current stage: fragColor, a_*, v_*, g_*.
+    // A user local with the same name would shadow the interface variable and the
+    // output would never be written, so those get the _ss_ escape too.
+    // Uniform names are not tracked; shadowing a uniform with a local is legal.
     private readonly HashSet<string> _stageOwnedNames = new(StringComparer.Ordinal);
 
     private string EscapeId(string name)
         => GlslReservedWords.Contains(name) || _stageOwnedNames.Contains(name) ? "_ss_" + name : name;
 
-    // Built-in Math.X → GLSL function name mapping
     private static readonly Dictionary<string, string> MathBuiltins = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Normalize"] = "normalize",
@@ -156,7 +127,6 @@ public sealed class GlslGenerator : ICodeGenerator
             !f.HasAttribute("Vertex") && !f.HasAttribute("Fragment")
             && !f.HasAttribute("Geometry") && !f.HasAttribute("Compute")).ToList();
 
-        // Resolve structs (from CompilationUnit and inside shader)
         var allStructs = new List<StructDeclaration>(unit.Structs);
         allStructs.AddRange(shader.Members.OfType<StructDeclaration>());
         _types.Configure(allStructs, helperFunctions);
@@ -201,8 +171,6 @@ public sealed class GlslGenerator : ICodeGenerator
             FragmentData = fragmentData,
             GeometryData = geometryData,
             ComputeData = computeData,
-            // Reported from the same resolver the emission above used, so the
-            // declared layout and the reported layout cannot disagree.
             VertexInputs = VertexInputLayout.DescribeFor(vertexFunc, allStructs),
         };
     }
@@ -220,7 +188,6 @@ public sealed class GlslGenerator : ICodeGenerator
         _types.Reset();
         _types.DeclareGlobals(cbuffers, samplers);
 
-        // Vertex inputs: the input struct's fields become attribute declarations.
         StructDeclaration? inputStruct = null;
         string inputParamName = "input";
         if (func.Parameters.Count > 0)
@@ -230,8 +197,7 @@ public sealed class GlslGenerator : ICodeGenerator
         }
         var returnStruct = FindStruct(func.ReturnType.Name, structs);
 
-        // Register the stage-owned interface names (see EscapeId) before any
-        // emission happens.
+        // Fill before anything is emitted.
         _stageOwnedNames.Clear();
         if (inputStruct is not null)
             foreach (var field in inputStruct.Fields)
@@ -248,12 +214,7 @@ public sealed class GlslGenerator : ICodeGenerator
             for (int i = 0; i < inputStruct.Fields.Count; i++)
             {
                 var field = inputStruct.Fields[i];
-                // A [Location] without a literal argument falls back to the field
-                // index — the argument list must never be indexed unguarded.
-                // Resolved through VertexInputLayout, which is also what the
-                // reported signature and the HLSL semantics come from: three
-                // copies of this rule is how a shader ends up declaring one
-                // layout and reporting another.
+                // A [Location] with no literal argument falls back to the field index.
                 string layout = GetAttribute(field.Attributes, "Location") is not null
                     ? $"layout(location = {VertexInputLayout.ResolveLocation(field, i)}) "
                     : "";
@@ -262,27 +223,23 @@ public sealed class GlslGenerator : ICodeGenerator
             sb.AppendLine();
         }
 
-        // Vertex outputs from return struct fields → out declarations
         if (returnStruct is not null)
         {
             foreach (var field in returnStruct.Fields)
             {
                 if (HasAttribute(field.Attributes, "Position"))
-                    continue; // Position is gl_Position, not an out variable
+                    continue; // written through gl_Position
                 sb.AppendLine($"out {GlslType(field.Type.Name)} v_{field.Name};");
             }
             sb.AppendLine();
         }
 
-        // Uniforms from cbuffers
         EmitUniforms(sb, cbuffers);
         EmitSamplerUniforms(sb, samplers);
 
-        // Helper functions
         foreach (var helper in helpers)
             EmitFunction(sb, helper);
 
-        // Main function
         sb.AppendLine("void main()");
         sb.AppendLine("{");
         EmitVertexBody(sb, func, returnStruct, inputStruct, inputParamName, 1);
@@ -305,12 +262,9 @@ public sealed class GlslGenerator : ICodeGenerator
         _types.Reset();
         _types.DeclareGlobals(cbuffers, samplers);
 
-        // When a geometry stage sits between vertex and fragment, the fragment
-        // must consume the geometry stage's g_* outputs instead of the vertex
-        // stage's v_* ones — GLSL links stages by matching varying names.
+        // GLSL links stages by varying name.
         _fragmentVaryingPrefix = hasGeometry ? "g_" : "v_";
 
-        // Fragment inputs: matching upstream (vertex or geometry) outputs
         StructDeclaration? inputStruct = null;
         string inputParamName = "input";
         if (func.Parameters.Count > 0)
@@ -320,16 +274,13 @@ public sealed class GlslGenerator : ICodeGenerator
         }
         var returnStruct = FindStruct(func.ReturnType.Name, structs);
 
-        // Register the stage-owned interface names (see EscapeId) before any
-        // emission happens. A non-struct return owns the invented fragColor
-        // output; struct-return target names are user-authored field names
-        // and already escape consistently through EscapeId.
+        // Fill before anything is emitted.
         _stageOwnedNames.Clear();
         if (inputStruct is not null)
             foreach (var field in inputStruct.Fields)
                 if (!HasAttribute(field.Attributes, "Position"))
                     _stageOwnedNames.Add($"{_fragmentVaryingPrefix}{field.Name}");
-        // A void fragment stage owns no output name: it writes depth only.
+        // A void fragment stage writes depth only.
         if (returnStruct is null && func.ReturnType.Name != "void")
             _stageOwnedNames.Add("fragColor");
 
@@ -346,10 +297,7 @@ public sealed class GlslGenerator : ICodeGenerator
             sb.AppendLine();
         }
 
-        // Depth testing hints. Both fragment-depth layout qualifiers were
-        // introduced in GLSL 4.20 (layout(depth_*) is otherwise only available
-        // through GL_ARB_conservative_depth), so using them raises the stage
-        // version above the 330 baseline.
+        // Both depth layout qualifiers need GLSL 4.20.
         if (func.HasAttribute("EarlyDepthStencil"))
         {
             Require(420);
@@ -377,16 +325,12 @@ public sealed class GlslGenerator : ICodeGenerator
         if (func.HasAttribute("EarlyDepthStencil") || depthWriteAttr is not null)
             sb.AppendLine();
 
-        // Fragment output
-        // If return type is vec4 or a struct with [Target] attributes
         if (returnStruct is not null)
         {
             for (int i = 0; i < returnStruct.Fields.Count; i++)
             {
                 var field = returnStruct.Fields[i];
-                // A [Target] without a literal argument falls back to the field
-                // index (same recovery as HlslGenerator.GetIntArg) — the argument
-                // list must never be indexed unguarded.
+                // A [Target] with no literal argument falls back to the field index.
                 string layout = GetAttribute(field.Attributes, "Target") is not null
                     ? $"layout(location = {GetIntArg(field.Attributes, "Target", i)}) "
                     : "";
@@ -395,20 +339,16 @@ public sealed class GlslGenerator : ICodeGenerator
         }
         else if (func.ReturnType.Name != "void")
         {
-            // Simple return type: out vec4
             sb.AppendLine($"out {GlslType(func.ReturnType.Name)} fragColor;");
         }
         sb.AppendLine();
 
-        // Uniforms
         EmitUniforms(sb, cbuffers);
         EmitSamplerUniforms(sb, samplers);
 
-        // Helper functions
         foreach (var helper in helpers)
             EmitFunction(sb, helper);
 
-        // Main function
         sb.AppendLine("void main()");
         sb.AppendLine("{");
         EmitFragmentBody(sb, func, inputStruct, inputParamName, returnStruct, 1);
@@ -431,7 +371,6 @@ public sealed class GlslGenerator : ICodeGenerator
         _types.Reset();
         _types.DeclareGlobals(cbuffers, samplers);
 
-        // Input primitive layout
         string inputPrimitive = "triangles";
         var inputPrimAttr = GetAttribute(func.Attributes, "InputPrimitive");
         if (inputPrimAttr is not null && inputPrimAttr.Arguments.Count > 0
@@ -449,7 +388,6 @@ public sealed class GlslGenerator : ICodeGenerator
         }
         sb.AppendLine($"layout({inputPrimitive}) in;");
 
-        // Output primitive layout + max vertices
         string outputPrimitive = "triangle_strip";
         var outputPrimAttr = GetAttribute(func.Attributes, "OutputPrimitive");
         if (outputPrimAttr is not null && outputPrimAttr.Arguments.Count > 0
@@ -468,24 +406,18 @@ public sealed class GlslGenerator : ICodeGenerator
         sb.AppendLine($"layout({outputPrimitive}, max_vertices = {maxVerts}) out;");
         sb.AppendLine();
 
-        // Geometry inputs: loose per-vertex arrays. GLSL links separately
-        // compiled stages by matching varying names, so these must carry the
-        // exact v_* names the vertex stage declares — an interface block on one
-        // side and loose varyings on the other never link. For the same reason
-        // the vertex stage's return struct is preferred over the declared
-        // parameter type (they only differ in malformed shaders).
+        // Inputs are loose arrays under the vertex stage's v_* names: an interface
+        // block on one side and loose varyings on the other never link. Hence
+        // also the vertex return struct over the declared parameter type.
         var declaredInput = func.Parameters.Count > 0 ? FindStruct(func.Parameters[0].Type.Name, structs) : null;
         var vertexOutput = vertexFunc is not null ? FindStruct(vertexFunc.ReturnType.Name, structs) : null;
         var inputStruct = declaredInput is not null ? (vertexOutput ?? declaredInput) : null;
         string inputParamName = func.Parameters.Count > 0 ? func.Parameters[0].Name : "vertices";
 
-        // Geometry outputs: loose g_* varyings from the vertex return struct
-        // (the per-vertex stream type, mirroring HlslGenerator). The fragment
-        // stage consumes the g_* names whenever a geometry stage is present.
+        // Outputs are g_* varyings from the vertex return struct.
         var outputStruct = vertexOutput ?? inputStruct;
 
-        // Register the stage-owned interface names (see EscapeId) before any
-        // emission happens.
+        // Fill before anything is emitted.
         _stageOwnedNames.Clear();
         if (inputStruct is not null)
             foreach (var field in inputStruct.Fields)
@@ -503,7 +435,7 @@ public sealed class GlslGenerator : ICodeGenerator
             foreach (var field in inputStruct.Fields)
             {
                 if (HasAttribute(field.Attributes, "Position"))
-                    continue; // read through the gl_in[i].gl_Position built-in instead
+                    continue; // read through gl_in[i].gl_Position
                 sb.AppendLine($"in {GlslType(field.Type.Name)} v_{field.Name}[];");
             }
             sb.AppendLine();
@@ -514,21 +446,18 @@ public sealed class GlslGenerator : ICodeGenerator
             foreach (var field in outputStruct.Fields)
             {
                 if (HasAttribute(field.Attributes, "Position"))
-                    continue; // Position is gl_Position, not a user varying
+                    continue; // written through gl_Position
                 sb.AppendLine($"out {GlslType(field.Type.Name)} g_{field.Name};");
             }
             sb.AppendLine();
         }
 
-        // Uniforms
         EmitUniforms(sb, cbuffers);
         EmitSamplerUniforms(sb, samplers);
 
-        // Helper functions
         foreach (var helper in helpers)
             EmitFunction(sb, helper);
 
-        // Main function
         sb.AppendLine("void main()");
         sb.AppendLine("{");
         EmitGeometryBody(sb, func, inputStruct, inputParamName, outputStruct, 1);
@@ -544,17 +473,15 @@ public sealed class GlslGenerator : ICodeGenerator
         List<FunctionDeclaration> helpers,
         List<StructDeclaration> structs)
     {
-        // Compute shaders don't exist before GLSL 4.30.
+        // Compute needs GLSL 4.30.
         _minVersion = 430;
         var sb = new StringBuilder();
 
         _types.Reset();
         _types.DeclareGlobals(cbuffers, samplers);
 
-        // Compute stages have no generator-invented interface names.
         _stageOwnedNames.Clear();
 
-        // Local size from [NumThreads(x, y, z)]
         var numThreadsAttr = GetAttribute(func.Attributes, "NumThreads");
         string x = "1", y = "1", z = "1";
         if (numThreadsAttr is not null)
@@ -569,15 +496,12 @@ public sealed class GlslGenerator : ICodeGenerator
         sb.AppendLine($"layout(local_size_x = {x}, local_size_y = {y}, local_size_z = {z}) in;");
         sb.AppendLine();
 
-        // Uniforms
         EmitUniforms(sb, cbuffers);
         EmitSamplerUniforms(sb, samplers);
 
-        // Helper functions
         foreach (var helper in helpers)
             EmitFunction(sb, helper);
 
-        // Main function
         sb.AppendLine("void main()");
         sb.AppendLine("{");
         EmitComputeBody(sb, func, 1);
@@ -662,10 +586,6 @@ public sealed class GlslGenerator : ICodeGenerator
         SetStageContext();
     }
 
-    // ─── Shared emit ─────────────────────────────────────────
-
-    // Emits GLSL struct declarations so locals such as the vertex-output
-    // struct (and any user structs) resolve in the generated source.
     private void EmitStructs(StringBuilder sb, List<StructDeclaration> structs)
     {
         foreach (var s in structs)
@@ -729,17 +649,14 @@ public sealed class GlslGenerator : ICodeGenerator
         switch (node)
         {
             case VariableDeclaration v:
-                // `var` resolves through inference (GLSL has no auto); when the
-                // initializer's type can't be determined we fall back to float,
-                // mirroring the HLSL generator.
+                // GLSL has no auto. Unknown `var` types fall back to float, as in the HLSL generator.
                 string specType = v.Type.Name == "var"
                     ? _types.Infer(v.Initializer!) ?? "float"
                     : v.Type.Name;
                 string varType = GlslType(specType);
                 _types.Declare(v.Name, specType);
 
-                // GLSL has no zero-argument struct constructor — `new T()` lowers
-                // to a default-initialized declaration with no initializer.
+                // GLSL has no zero-argument struct constructor, so `new T()` gets no initializer.
                 string init;
                 if (v.Initializer is NewExpression ne && ne.Arguments.Count == 0)
                     init = "";
@@ -750,9 +667,6 @@ public sealed class GlslGenerator : ICodeGenerator
                 break;
 
             case ReturnStatement r:
-                // Inside a stage entry body every return — at any nesting
-                // depth — routes through the stage outputs: main() is void,
-                // so `return expr;` would not compile.
                 if (_returnMode != StageReturnMode.None)
                 {
                     EmitStageReturn(sb, r, pad);
@@ -782,8 +696,7 @@ public sealed class GlslGenerator : ICodeGenerator
                 sb.Append($"{pad}for (");
                 if (f.Initializer is VariableDeclaration fv)
                 {
-                    // Loop counters declared `var` infer from the initializer,
-                    // defaulting to int (matches the HLSL generator).
+                    // A `var` loop counter defaults to int, as in the HLSL generator.
                     string fSpec = fv.Type.Name == "var"
                         ? (fv.Initializer is not null ? _types.Infer(fv.Initializer) ?? "int" : "int")
                         : fv.Type.Name;
@@ -793,9 +706,7 @@ public sealed class GlslGenerator : ICodeGenerator
                 }
                 else if (f.Initializer is ExpressionStatement fes)
                 {
-                    // Assignment to a pre-declared counter (matches the HLSL
-                    // generator) — dropping it would run the loop on an
-                    // uninitialized counter.
+                    // Assignment to a counter declared earlier.
                     sb.Append(EmitExpression(fes.Expression));
                 }
                 sb.Append("; ");
@@ -831,9 +742,7 @@ public sealed class GlslGenerator : ICodeGenerator
         }
     }
 
-    // Lowers `return expr;` in a stage entry body: assign the stage outputs
-    // (gl_Position + v_* varyings for vertex, render targets / fragColor for
-    // fragment) from the returned value, then exit with a bare return.
+    // Lowers `return expr;` in a stage body to output assignments plus a bare return.
     private void EmitStageReturn(StringBuilder sb, ReturnStatement ret, string pad)
     {
         if (ret.Value is not null)
@@ -859,33 +768,26 @@ public sealed class GlslGenerator : ICodeGenerator
             }
             else if (_returnMode == StageReturnMode.Fragment)
             {
-                // Simple (non-struct) fragment return: the single render target.
                 sb.AppendLine($"{pad}fragColor = {EmitExpression(ret.Value)};");
             }
             else
             {
-                // Simple (non-struct) vertex return: the returned value is the
-                // clip-space position itself. The analyzer only rejects *void*
-                // vertex returns, so this shape reaches the generator and must
-                // route to gl_Position — dropping it would leave the position
-                // unwritten while the shader still compiles cleanly.
+                // A bare vertex return is the clip-space position. The analyzer
+                // only rejects void vertex returns, so this case is reachable.
                 sb.AppendLine($"{pad}gl_Position = {EmitExpression(ret.Value)};");
             }
         }
         sb.AppendLine($"{pad}return;");
     }
 
-    // A `return <identifier>;` expands its fields straight off the named local.
-    // Any other returned expression (helper call, constructor, ...) is
-    // materialized into a uniquely named temporary first so field expansion has
-    // a valid source — main() is void, so the value itself cannot be returned.
+    // An identifier is used as is. Any other returned expression goes into a
+    // temporary first, so its fields can be read.
     private string MaterializeReturnValue(StringBuilder sb, Expression value, StructDeclaration returnStruct, string pad)
     {
         if (value is IdentifierExpression id)
             return EscapeId(id.Name);
 
         string temp = $"_ss_ret{_returnTempCounter++}";
-        // `new T()` has no GLSL constructor equivalent — default-initialized local.
         if (value is NewExpression ne && ne.Arguments.Count == 0)
             sb.AppendLine($"{pad}{GlslType(returnStruct.Name)} {temp};");
         else
@@ -893,10 +795,8 @@ public sealed class GlslGenerator : ICodeGenerator
         return temp;
     }
 
-    // GLSL counterpart of HlslGenerator.TryEmitGeometryStmt: geometry bodies
-    // write varyings by bare output-struct field name. Those lower to the loose
-    // g_* outputs; the [Position] field lowers to gl_Position. (A `Position =`
-    // assignment is already covered by the identifier mapping in EmitExpression.)
+    // Geometry bodies assign output fields by bare name: those become g_*
+    // outputs, and the [Position] field becomes gl_Position.
     private bool TryEmitGeometryStmt(StringBuilder sb, Expression expr, string pad)
     {
         if (expr is AssignmentExpression a && a.Target is IdentifierExpression lhs
@@ -917,14 +817,9 @@ public sealed class GlslGenerator : ICodeGenerator
             return;
         }
 
-        // Inside a stage entry a single source statement can lower to SEVERAL
-        // sibling statements: EmitStageReturn expands one `return expr;` into
-        // an optional temp declaration, the output assignments, and a bare
-        // return. A brace-less if/else/for/while body would then guard only
-        // the first lowered statement while the rest escape the control flow —
-        // a silent miscompile (the leaked GLSL still compiles cleanly). Emit
-        // every non-block body as a single-statement block to keep the
-        // lowering contained.
+        // In a stage body one `return expr;` lowers to several statements. A
+        // brace-less if/for/while would guard only the first, so wrap the body
+        // in a block.
         if (_returnMode != StageReturnMode.None)
         {
             string pad = new(' ', indent * 4);
@@ -937,9 +832,6 @@ public sealed class GlslGenerator : ICodeGenerator
         EmitStatement(sb, stmt, indent + 1);
     }
 
-    // ─── Expression emit ─────────────────────────────────────
-
-    // Compute built-in variable mappings
     private static readonly Dictionary<string, string> ComputeBuiltins = new(StringComparer.Ordinal)
     {
         ["GlobalInvocationID"] = "gl_GlobalInvocationID",
@@ -950,13 +842,8 @@ public sealed class GlslGenerator : ICodeGenerator
         ["WorkGroupSize"] = "gl_WorkGroupSize",
     };
 
-    // GLSL has no implicit int-to-float conversion in an arithmetic context that
-    // matters here: `1.0 / 3.0` written by an author becomes `(1 / 3)` if the
-    // literals lose their decimal point, and that is INTEGER division evaluating
-    // to zero. Silently, with no diagnostic from the driver, on OpenGL only,
-    // while HLSL (which has always had this helper) computes it correctly.
-    // A shader is one source file targeting three backends; two of them
-    // agreeing is not a majority, it is a bug.
+    // Keep the decimal point: `1.0 / 3.0` emitted as `(1 / 3)` is integer
+    // division in GLSL and evaluates to zero.
     private static string FormatFloat(float value)
     {
         string s = value.ToString("R", CultureInfo.InvariantCulture);
@@ -978,13 +865,10 @@ public sealed class GlslGenerator : ICodeGenerator
                 return b.Value ? "true" : "false";
 
             case IdentifierExpression id:
-                // Position → gl_Position in vertex/geometry stage
                 if (id.Name == "Position" && (_isVertex || _isGeometry))
                     return "gl_Position";
-                // Compute built-in variables
                 if (_isCompute && ComputeBuiltins.TryGetValue(id.Name, out string? computeBuiltin))
                     return computeBuiltin;
-                // Geometry built-in: PrimitiveID → gl_PrimitiveIDIn
                 if (_isGeometry && id.Name == "PrimitiveID")
                     return "gl_PrimitiveIDIn";
                 return EscapeId(id.Name);
@@ -1000,7 +884,7 @@ public sealed class GlslGenerator : ICodeGenerator
                 return $"{GlslType(ctor.Type.Name)}({ctorArgs})";
 
             case NewExpression newExpr:
-                // new Struct() → Struct() — GLSL doesn't have 'new', structs are constructed by name
+                // GLSL has no 'new'.
                 string newArgs = string.Join(", ", newExpr.Arguments.Select(a => EmitExpression(a)));
                 return $"{newExpr.Type.Name}({newArgs})";
 
@@ -1019,8 +903,6 @@ public sealed class GlslGenerator : ICodeGenerator
                 return $"{target} {MapOperator(assign.Operator)} {value}";
 
             default:
-                // Every parser-produced node is handled above; failing loudly
-                // beats silently emitting source that cannot compile.
                 throw new NotSupportedException(
                     $"GLSL generator has no emission for expression node '{expr.GetType().Name}'.");
         }
@@ -1028,7 +910,6 @@ public sealed class GlslGenerator : ICodeGenerator
 
     private string EmitCall(CallExpression call)
     {
-        // Math.Func(args) → func(args)
         if (call.Target is MemberAccessExpression ma && ma.Object is IdentifierExpression obj && obj.Name == "Math")
         {
             if (MathBuiltins.TryGetValue(ma.Member, out string? glslFunc))
@@ -1046,8 +927,7 @@ public sealed class GlslGenerator : ICodeGenerator
             return $"texture({texName}, {args})";
         }
 
-        // Geometry: EmitVertex() / EndPrimitive() are direct GLSL calls
-        // Compute: Barrier() → barrier(), MemoryBarrier() → memoryBarrier()
+        // EmitVertex() and EndPrimitive() pass through as ordinary calls.
         if (call.Target is IdentifierExpression funcId)
         {
             if (funcId.Name == "Barrier" && _isCompute)
@@ -1056,7 +936,6 @@ public sealed class GlslGenerator : ICodeGenerator
                 return "memoryBarrier()";
         }
 
-        // Regular function call
         string callTarget = EmitExpression(call.Target);
         string callArgs = string.Join(", ", call.Arguments.Select(a => EmitExpression(a)));
         return $"{callTarget}({callArgs})";
@@ -1064,9 +943,7 @@ public sealed class GlslGenerator : ICodeGenerator
 
     private string EmitMemberAccess(MemberAccessExpression ma)
     {
-        // input.field → a_field in the vertex stage (vertex attributes) and
-        // v_field / g_field in the fragment stage (varyings from the vertex or
-        // geometry shader, depending on which stage feeds the fragment).
+        // input.field → a_field in the vertex stage, v_field or g_field in the fragment stage.
         if (!_isGeometry && _inputStruct is not null && _inputParam is not null
             && ma.Object is IdentifierExpression id && id.Name == _inputParam)
         {
@@ -1075,8 +952,7 @@ public sealed class GlslGenerator : ICodeGenerator
                 return _isVertex ? $"a_{ma.Member}" : $"{_fragmentVaryingPrefix}{ma.Member}";
         }
 
-        // Geometry: vertices[i].field → the vertex stage's loose varying arrays
-        // (v_field[i]); the [Position] field reads the gl_in built-in block.
+        // vertices[i].field → v_field[i], or gl_in[i].gl_Position for the [Position] field.
         if (_isGeometry && _inputStruct is not null && _inputParam is not null
             && ma.Object is IndexExpression idx
             && idx.Object is IdentifierExpression arrayId && arrayId.Name == _inputParam)
@@ -1088,9 +964,7 @@ public sealed class GlslGenerator : ICodeGenerator
             return $"v_{ma.Member}[{index}]";
         }
 
-        // Swizzle or regular member access. Member is escaped to match struct-field
-        // declarations (a struct field named `output` is declared as `_ss_output`).
-        // Swizzle component names (xyzw/rgba/stpq) are never reserved, so this is safe.
+        // Escaped to match the struct field declaration. Swizzle names are never reserved.
         return $"{EmitExpression(ma.Object)}.{EscapeId(ma.Member)}";
     }
 
@@ -1099,17 +973,8 @@ public sealed class GlslGenerator : ICodeGenerator
         return $"{EmitExpression(idx.Object)}[{EmitExpression(idx.Index)}]";
     }
 
-    // ─── Helpers ─────────────────────────────────────────────
-
-    // Each stage declares the minimum #version its emitted features require, so
-    // plain shaders stay on 330 core — the engine's GL 3.3 baseline — and the
-    // existing engine shaders compile byte-for-byte against the same profile:
-    //   330 — baseline vertex/fragment/geometry stages
-    //   400 — double-precision types
-    //   420 — layout(early_fragment_tests) / layout(depth_*) fragment qualifiers
-    //   430 — compute stages
-    // Emission sites report their needs through Require; FinishStage prepends
-    // the resulting header once the stage body is complete.
+    // Raises the stage's #version so plain shaders stay on 330 core, the GL 3.3 baseline:
+    //   400 double, 420 early_fragment_tests and depth_* qualifiers, 430 compute.
     private void Require(int version)
     {
         if (version > _minVersion)
@@ -1140,9 +1005,7 @@ public sealed class GlslGenerator : ICodeGenerator
         return attrs.Any(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
     }
 
-    // Guarded attribute-argument read, mirroring HlslGenerator.GetIntArg: an
-    // absent attribute, missing argument, or non-literal argument yields the
-    // fallback instead of throwing.
+    // Fallback when the attribute or argument is missing or not a literal.
     private static int GetIntArg(IReadOnlyList<AttributeSyntax> attrs, string name, int fallback, int argIndex = 0)
     {
         var attr = GetAttribute(attrs, name);
@@ -1187,7 +1050,6 @@ public sealed class GlslGenerator : ICodeGenerator
 
     private string GlslType(string name)
     {
-        // Double-precision scalars only exist from GLSL 4.00 on.
         if (name == "double")
             Require(400);
 

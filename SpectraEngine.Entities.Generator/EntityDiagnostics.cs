@@ -2,30 +2,12 @@ using Microsoft.CodeAnalysis;
 
 namespace SpectraEngine.Entities.Generator;
 
-/// <summary>
-/// Every diagnostic this generator can report.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>All of them are errors, and that is the design.</b> Each one describes a
-/// declaration the generator cannot turn into working code, and the alternative
-/// to failing the build is emitting a class that compiles and behaves as
-/// nothing: a keyvalue that is never bound, an input a map wires and no entity
-/// answers. Both are silent, and both are found by a level designer rather than
-/// by the person who wrote the class.
-/// </para>
-/// <para>
-/// <b>The ids are frozen.</b> They travel in build logs and suppression files,
-/// so a renumber invalidates somebody's <c>NoWarn</c> and their build changes
-/// meaning without anything being edited. New diagnostics take the next free
-/// number.
-/// </para>
-/// </remarks>
+// All errors: each is a declaration the generator cannot turn into working code.
+// Ids are frozen (they sit in NoWarn lists). New ones take the next free number.
 internal static class EntityDiagnostics
 {
     private const string Category = "SpectraEntities";
 
-    /// <summary>SPE001: the class carries the attribute and is not partial.</summary>
     public static readonly DiagnosticDescriptor NotPartial = new(
         id: "SPE001",
         title: "Entity class must be partial",
@@ -36,7 +18,6 @@ internal static class EntityDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    /// <summary>SPE002: two classes in one compilation claim the same wire name.</summary>
     public static readonly DiagnosticDescriptor DuplicateClassName = new(
         id: "SPE002",
         title: "Duplicate entity class name",
@@ -47,7 +28,6 @@ internal static class EntityDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    /// <summary>SPE003: no <c>KeyvalueType</c> can be inferred from the member's own type.</summary>
     public static readonly DiagnosticDescriptor UnsupportedKeyvalueType = new(
         id: "SPE003",
         title: "Unsupported keyvalue member type",
@@ -59,7 +39,6 @@ internal static class EntityDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    /// <summary>SPE004: an input method is not shaped the way the dispatch switch calls one.</summary>
     public static readonly DiagnosticDescriptor InvalidInputSignature = new(
         id: "SPE004",
         title: "Entity input has the wrong signature",
@@ -70,7 +49,6 @@ internal static class EntityDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    /// <summary>SPE005: a keyvalue claims the name that IS the node's identity.</summary>
     public static readonly DiagnosticDescriptor ReservedKeyvalueName = new(
         id: "SPE005",
         title: "Reserved keyvalue name",
@@ -81,7 +59,6 @@ internal static class EntityDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    /// <summary>SPE006: the declared <c>KeyvalueType</c> cannot be stored in the member.</summary>
     public static readonly DiagnosticDescriptor KeyvalueTypeMismatch = new(
         id: "SPE006",
         title: "Keyvalue type does not match the member",
@@ -91,7 +68,6 @@ internal static class EntityDiagnostics
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    /// <summary>SPE007: the generated binder has nothing it can assign to.</summary>
     public static readonly DiagnosticDescriptor KeyvalueNotAssignable = new(
         id: "SPE007",
         title: "Keyvalue member cannot be assigned",

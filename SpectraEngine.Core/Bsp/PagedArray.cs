@@ -4,30 +4,12 @@ using System.Collections.Generic;
 
 namespace SpectraEngine.Core.Bsp;
 
-/// <summary>
-/// An immutable, page-structured array of <typeparamref name="T"/> supporting
-/// O(pages touched) copy-on-write replacement — the storage that keeps the
-/// incremental static-world compile's per-placement carry (carved surfaces,
-/// welded surfaces, carve neighbours, weld candidates) from costing an
-/// O(world) array copy on every one-brush edit (open-world pillar). A derived
-/// instance shares every untouched page with its ancestor; only pages
-/// containing a replaced slot are cloned, plus the page table itself
-/// (<c>count / PageSize</c> references — bytes, not megabytes, at any world
-/// size).
-/// </summary>
-/// <remarks>
-/// Immutable after construction, like every other compiled CSG artifact:
-/// sharing pages between the previous world's carry and the next one is safe
-/// because neither can write. Also serves as the read-only backing of the
-/// world's ordered per-cell lists (<c>ChunkGrid.OrderedChunks</c>,
-/// <c>CsgWorld.ChunkMeshes</c>), hence the <see cref="IReadOnlyList{T}"/>
-/// face for their public exposure.
-/// </remarks>
+// Immutable paged array with copy-on-write replacement: a derived instance
+// clones only the pages it touches and shares the rest, so a one-brush edit
+// does not copy a world-sized array.
 internal sealed class PagedArray<T> : IReadOnlyList<T>
 {
-    // 1024 slots per page: small enough that an edit's handful of touched
-    // slots clones kilobytes, large enough that the page table stays tiny
-    // (49 pages at 50k placements).
+    // 1024 slots: an edit clones kilobytes, and the page table stays tiny.
     private const int PageShift = 10;
     private const int PageSize = 1 << PageShift;
     private const int PageMask = PageSize - 1;
@@ -40,16 +22,11 @@ internal sealed class PagedArray<T> : IReadOnlyList<T>
         Count = count;
     }
 
-    /// <summary>Number of slots.</summary>
     public int Count { get; }
 
-    /// <summary>Reads slot <paramref name="index"/>.</summary>
     public T this[int index] => _pages[index >> PageShift][index & PageMask];
 
-    /// <summary>
-    /// Packs a flat array into pages. O(n) — used by the full compile path,
-    /// where an O(n) copy is noise next to the compile itself.
-    /// </summary>
+    // O(n). For the full compile path only.
     public static PagedArray<T> From(IReadOnlyList<T> source)
     {
         int count = source.Count;
@@ -65,12 +42,7 @@ internal sealed class PagedArray<T> : IReadOnlyList<T>
         return new PagedArray<T>(pages, count);
     }
 
-    /// <summary>
-    /// Derives a copy with the given slots replaced, cloning only the pages
-    /// those slots live in (plus the page table). <paramref name="replacements"/>
-    /// slot indices must be valid; duplicate indices are allowed (last write
-    /// wins, though callers never produce duplicates).
-    /// </summary>
+    // Copy with the given slots replaced. Duplicate indices: last write wins.
     public PagedArray<T> WithReplacements(IReadOnlyList<(int Index, T Value)> replacements)
     {
         if (replacements.Count == 0) return this;
@@ -78,8 +50,7 @@ internal sealed class PagedArray<T> : IReadOnlyList<T>
         foreach ((int index, T value) in replacements)
         {
             int p = index >> PageShift;
-            // Clone-on-first-touch: reference equality with the ancestor's
-            // page marks "not yet cloned in this derivation".
+            // Still the ancestor's page: clone before the first write.
             if (ReferenceEquals(pages[p], _pages[p]))
                 pages[p] = (T[])_pages[p].Clone();
             pages[p][index & PageMask] = value;
@@ -87,7 +58,7 @@ internal sealed class PagedArray<T> : IReadOnlyList<T>
         return new PagedArray<T>(pages, Count);
     }
 
-    /// <summary>Grows stable slot storage without moving any existing index.</summary>
+    // Grows to count without moving any existing index.
     public PagedArray<T> WithReplacements(int count, IReadOnlyList<(int Index, T Value)> replacements)
     {
         if (count == Count) return WithReplacements(replacements);
@@ -117,13 +88,6 @@ internal sealed class PagedArray<T> : IReadOnlyList<T>
         return new PagedArray<T>(pages, count);
     }
 
-    /// <summary>
-    /// Copies <paramref name="length"/> slots starting at
-    /// <paramref name="sourceIndex"/> into <paramref name="destination"/> —
-    /// one <see cref="Array.Copy(Array, int, Array, int, int)"/> per touched
-    /// page, for the rare splices that must re-pack (cell insertions or
-    /// removals in an ordered list).
-    /// </summary>
     public void CopyTo(int sourceIndex, T[] destination, int destinationIndex, int length)
     {
         while (length > 0)

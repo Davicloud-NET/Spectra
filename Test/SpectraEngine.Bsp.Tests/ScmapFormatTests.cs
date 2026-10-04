@@ -11,10 +11,8 @@ using SpectraEngine.Core.Maps.Compiled;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// Raw file bytes are cast into every one of these structs, so their size and
-/// field order ARE the compiled-map format. A field reordered or retyped by an
-/// edit compiles cleanly and produces a file that parses into the wrong numbers
-/// with nothing reporting it, which is what these pins exist to catch.
+/// Pins the size and field order of the compiled-map structs. File bytes are cast
+/// straight into them, so their layout is the format.
 /// </summary>
 public class ScmapFormatTests
 {
@@ -42,9 +40,7 @@ public class ScmapFormatTests
         Unsafe.SizeOf<ScmapMeta>().ShouldBe(48);
         Unsafe.SizeOf<ScmapMeta>().ShouldBe(ScmapFormat.MetaPreambleSize);
 
-        // The three framework types the records embed. None of them documents its
-        // field layout as a contract, and this format casts raw bytes into all of
-        // them.
+        // Framework types the records embed. Their layout is not a documented contract.
         Unsafe.SizeOf<Vector3>().ShouldBe(12);
         Unsafe.SizeOf<Quaternion>().ShouldBe(16);
         Unsafe.SizeOf<UInt128>().ShouldBe(16);
@@ -53,8 +49,8 @@ public class ScmapFormatTests
     [Fact]
     public void Every_record_array_starts_and_strides_sixteen_byte_aligned()
     {
-        // A section starts 16-byte aligned, so an array inside it is only castable
-        // in place when both its preamble and its stride are multiples of 16.
+        // Sections start 16-aligned, so an array casts in place only if its
+        // preamble and stride are multiples of 16 too.
         (ScmapFormat.HeaderSize % ScmapFormat.PayloadAlignment).ShouldBe(0);
         (ScmapFormat.SectionSize % ScmapFormat.PayloadAlignment).ShouldBe(0);
         (ScmapFormat.NodePreambleSize % ScmapFormat.PayloadAlignment).ShouldBe(0);
@@ -160,10 +156,8 @@ public class ScmapFormatTests
     [Fact]
     public void A_node_id_is_stored_in_RFC_4122_byte_order()
     {
-        // The authored map spells an id as hex in RFC order, so a hex dump of the
-        // compiled map must carry the same characters. System.Guid's in-memory
-        // layout byte-swaps its first three components on a little-endian machine,
-        // which is exactly what the encode exists to undo.
+        // So an id in map.json can be found in a hex dump. Guid's in-memory layout
+        // byte-swaps its first three components on little-endian.
         var id = Guid.Parse("3f2a1c88-4b6d-4a19-9d0e-77c1f0a2b3e4");
 
         var record = new ScmapNodeRecord(
@@ -192,9 +186,7 @@ public class ScmapFormatTests
         record.DeclaredState.ShouldBe(ScmapNodeState.Dormant);
         record.IsSubtractiveBrush.ShouldBeTrue();
 
-        // Bit 7 is meaningful only on a brush. A future payload kind is free to
-        // leave it zero, so a reader must ignore it rather than error, and the
-        // accessor is where that rule lives.
+        // Bit 7 only means something on a brush; other kinds ignore it.
         var mesh = new ScmapNodeRecord(
             Guid.Empty, 0, -1, Vector3.Zero, Quaternion.Identity, Vector3.One,
             ScmapPayloadKind.MeshInstance,
@@ -206,8 +198,6 @@ public class ScmapFormatTests
     [Fact]
     public void A_flag_inside_the_realm_or_state_field_is_refused_rather_than_folded()
     {
-        // A two-bit field spelled as flags is how a realm of Server gets written
-        // into bit 1 and read back as something else entirely.
         Should.Throw<ArgumentException>(() => ScmapNodeRecord.ComposeFlags(
             (ScmapPayloadFlags)(1 << ScmapNodeRecord.RealmShift),
             ScmapNodeRealm.Inherit,
@@ -217,9 +207,6 @@ public class ScmapFormatTests
     [Fact]
     public void The_vertex_layout_id_is_the_models_own_hash_of_the_same_attributes()
     {
-        // One implementation, borrowed rather than copied. Two cooked formats
-        // naming one geometry shape must hash it the same way, or one of the two
-        // gates is reporting nonsense.
         ScmapFormat.StandardVertexLayoutId.ShouldBe(
             SmodelFormat.ComputeVertexLayoutId(ScmapFormat.StandardVertexLayout));
 
@@ -243,8 +230,6 @@ public class ScmapFormatTests
     [Fact]
     public void The_compiled_map_version_is_declared_and_gated_exactly()
     {
-        // Not a floor. The refusal message says recook, which is only honest
-        // because a compiled map is a build output.
         EngineInfo.CompiledMapFormatVersion.ShouldBe((ushort)1);
     }
 
@@ -267,7 +252,7 @@ public class ScmapFormatTests
     {
         byte[] section = BuildStringSection(string.Empty, "one", "two");
 
-        // Offsets live after the u32 count; index 2 is the second entry.
+        // Offsets follow the u32 count.
         int offsetOfSecond = ScmapFormat.StringCountSize + sizeof(uint);
         BinaryPrimitives.WriteUInt32LittleEndian(section.AsSpan(offsetOfSecond), 99u);
 
@@ -279,8 +264,7 @@ public class ScmapFormatTests
     {
         byte[] section = BuildStringSection(string.Empty, "one", "two");
 
-        // The last offset IS the blob length, which is what makes every string's
-        // extent a subtraction with no special case for the final one.
+        // The last offset is the blob length.
         int offsetOfTerminator = ScmapFormat.StringCountSize + (3 * sizeof(uint));
         BinaryPrimitives.WriteUInt32LittleEndian(section.AsSpan(offsetOfTerminator), 5u);
 
@@ -300,8 +284,7 @@ public class ScmapFormatTests
 
     private static int Offset<T>(string field) => (int)Marshal.OffsetOf<T>(field);
 
-    // The section body, laid out by hand so the reader is tested against bytes
-    // rather than against the writer that produces them.
+    // Built by hand so the reader is tested against bytes, not against the writer.
     private static byte[] BuildStringSection(params string[] strings)
     {
         var blob = new System.IO.MemoryStream();

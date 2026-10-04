@@ -7,23 +7,10 @@ using System.Numerics;
 namespace SpectraEngine.Core.Assets;
 
 /// <summary>
-/// The pure-CPU result of importing a model file: engine-ready vertex/index
-/// arrays split into single-material submeshes, the material descriptions those
-/// submeshes reference, and the node hierarchy that places them.
+/// The CPU result of importing a model file: single-material submeshes, the
+/// materials they reference and the node hierarchy that places them. Holds no
+/// GPU objects, so it can be built off the render thread. Never mutate its arrays.
 /// </summary>
-/// <remarks>
-/// <para><b>Why a CPU-only artifact.</b> Exactly like the static-world compile,
-/// model import runs on the thread pool and must not touch anything the render
-/// thread owns — no <see cref="Graphics.Mesh"/>, no <see cref="Graphics.Texture"/>,
-/// no <see cref="Graphics.Material"/>. Everything here is plain values and
-/// arrays, so the whole graph can be built off-thread and handed across the
-/// upload queue by reference. <see cref="AssetManager"/> turns it into GPU
-/// resources on the render thread; <c>ModelInstantiator</c> turns the hierarchy
-/// into scene nodes.</para>
-/// <para><b>Immutable by contract.</b> The arrays are exposed directly so the
-/// GPU upload is zero-copy — the same deal <see cref="Bsp.ChunkSubmesh"/>
-/// makes. Never mutate them.</para>
-/// </remarks>
 public sealed class ModelData
 {
     internal ModelData(
@@ -55,71 +42,42 @@ public sealed class ModelData
     /// <summary>Absolute path of the file this was imported from.</summary>
     public string SourcePath { get; }
 
-    /// <summary>
-    /// Every drawable piece of the model, one per (source mesh, material) pair —
-    /// the importer never merges two materials into one array, because one
-    /// submesh is one GPU mesh and one draw call.
-    /// </summary>
+    /// <summary>Every drawable piece of the model, one per (source mesh, material) pair.</summary>
     public IReadOnlyList<ModelMesh> Meshes { get; }
 
     /// <summary>
-    /// The materials <see cref="ModelMesh.MaterialIndex"/> indexes into. Kept
-    /// index-aligned with the source file's material table — including slots no
-    /// mesh references, which importers routinely emit — so an index read out of
-    /// the file always means what the file said it meant.
+    /// The materials <see cref="ModelMesh.MaterialIndex"/> indexes into,
+    /// index-aligned with the source file's material table, unused slots included.
     /// </summary>
     public IReadOnlyList<ModelMaterial> Materials { get; }
 
-    /// <summary>
-    /// Root of the imported hierarchy. Always present, even for a flat file: a
-    /// format with no scene graph of its own still yields one root holding every
-    /// mesh.
-    /// </summary>
+    /// <summary>Root of the imported hierarchy. A flat file gets one root holding every mesh.</summary>
     public ModelNode Root { get; }
 
     /// <summary>
-    /// AABB enclosing the whole model in its own space — every submesh's
-    /// geometry transformed by the accumulated transform of the nodes that
-    /// reference it, so a part placed by a node transform is enclosed where it
-    /// actually sits rather than where its raw vertices are.
+    /// AABB of the whole model in its own space, with node transforms applied.
     /// </summary>
     public Aabb LocalBounds { get; }
 
     /// <summary>Total vertices across every submesh.</summary>
     public int VertexCount { get; }
 
-    /// <summary>Total indices across every submesh (three per triangle).</summary>
+    /// <summary>Total indices across every submesh.</summary>
     public int IndexCount { get; }
 
     /// <summary>
-    /// Content problems that were degraded rather than raised: a texture path
-    /// that escaped the content root, a mesh dropped for not being triangles, a
-    /// node transform that would not decompose. The importer only throws when
-    /// there is no usable model at all; everything survivable lands here and is
-    /// logged by the caller.
+    /// Content problems the importer degraded instead of throwing on, e.g. a
+    /// dropped non-triangle mesh or a node transform that would not decompose.
     /// </summary>
     public IReadOnlyList<string> Warnings { get; }
 }
 
 /// <summary>
-/// One single-material piece of a model: its own interleaved vertex array and
-/// index array in the engine's standard 8-float layout (position, normal, uv —
-/// see <see cref="Graphics.VertexAttribute.StandardLayout"/>), self-contained
-/// and zero-based, ready to become one GPU mesh and one draw call.
+/// One single-material piece of a model, in the standard 8-float vertex layout
+/// (<see cref="Graphics.VertexAttribute.StandardLayout"/>). One GPU mesh, one
+/// draw call. When the source had no UVs, <see cref="HadTextureCoordinates"/>
+/// is false and every uv is zero.
 /// </summary>
-/// <param name="Name">The source mesh's name, for logs and editor UI.</param>
-/// <param name="MaterialIndex">Index into <see cref="ModelData.Materials"/>.</param>
-/// <param name="Vertices">Interleaved vertex data, 8 floats per vertex. Treat as immutable.</param>
-/// <param name="Indices">Index data, three entries per triangle. Treat as immutable.</param>
-/// <param name="LocalBounds">AABB of this piece's raw vertex positions.</param>
-/// <param name="HadNormals">
-/// False when the source file carried no normals and they were generated.
-/// </param>
-/// <param name="HadTextureCoordinates">
-/// False when the source file carried no UV channel — the uv components are then
-/// zero for every vertex, which samples one texel rather than leaving garbage in
-/// the stream.
-/// </param>
 public readonly record struct ModelMesh
 {
     private readonly LegacySlice? _legacy;
@@ -133,8 +91,7 @@ public readonly record struct ModelMesh
     public int VertexCount { get; }
     public int IndexCount => checked((int)DrawRange.IndexCount);
 
-    // Compatibility arrays are materialized only when explicitly requested.
-    // Upload and picking consume Geometry/DrawRange and never make these copies.
+    // Copied lazily on first access. Upload and picking use Geometry/DrawRange.
     public float[] Vertices => _legacy?.Vertices ?? [];
     public uint[] Indices => _legacy?.Indices ?? [];
 
@@ -153,7 +110,7 @@ public readonly record struct ModelMesh
         _legacy = new(geometry, range, firstVertex, vertexCount);
     }
 
-    /// <summary>Number of triangles, i.e. <see cref="Indices"/> length over 3.</summary>
+    /// <summary>Number of triangles.</summary>
     public int TriangleCount => IndexCount / 3;
 
     private sealed class LegacySlice(ModelGeometry geometry, MeshDrawRange range, int firstVertex, int vertexCount)
@@ -189,41 +146,22 @@ public readonly record struct ModelMesh
 }
 
 /// <summary>
-/// A material as the model file described it — a name, an optional diffuse
-/// texture, and a base colour. Deliberately not a <see cref="Graphics.Material"/>:
-/// that needs a shader and GPU textures, which only the render thread may touch.
-/// <see cref="AssetManager"/> resolves this into a real material at load time.
+/// A material as the model file described it. <see cref="AssetManager"/>
+/// resolves it into a real <see cref="Graphics.Material"/> at load time.
 /// </summary>
 /// <param name="Name">
-/// The material's name in the source file. This is also the lookup key for an
-/// engine-authored override: <c>Materials/&lt;name&gt;.spectramat</c> wins over
-/// whatever the file itself said, which is how a designer re-shades imported
-/// content without touching the model.
+/// The material's name in the source file. Also the lookup key for an override:
+/// <c>Materials/&lt;name&gt;.spectramat</c> wins over what the file said.
 /// </param>
 /// <param name="DiffuseTexturePath">
-/// Content-root-relative path of the diffuse/base-colour texture, or null when
-/// the material named none, named one that could not be located under the
-/// content root, or named an embedded texture (not supported).
+/// Content-root-relative path of the diffuse texture. Null when the material
+/// named none, one outside the content root, or an embedded texture.
 /// </param>
-/// <param name="BaseColor">
-/// The material's diffuse colour, defaulting to white when the file carried
-/// none. Applied as the <c>uBaseColor</c> tint over the diffuse texture.
-/// </param>
+/// <param name="BaseColor">Diffuse colour, white when the file carried none.</param>
 /// <param name="AssetPath">
-/// The content path of the <c>.spectramat</c> this material IS, when the model
-/// named one rather than describing one. Null for an imported material, which
-/// describes itself and is matched to an override by <see cref="Name"/>.
+/// The <c>.spectramat</c> path a cooked model recorded for this material. Null
+/// for an imported material. Use it as given; do not rebuild it from the name.
 /// </param>
-/// <remarks>
-/// <b><see cref="AssetPath"/> is what a COOKED model carries, and it is a path
-/// rather than a name for one reason.</b> A cooked submesh's material reference
-/// is a logical asset path resolved once, at cook time, and recorded; a loader
-/// that rebuilt <c>Materials/&lt;name&gt;.spectramat</c> from the stem would be a
-/// second spelling of a rule the cooker already applied, agreeing with it exactly
-/// until a material lives somewhere else and then missing silently. The two
-/// fields are therefore not alternatives: a name is a lookup KEY, a path is an
-/// answer.
-/// </remarks>
 public readonly record struct ModelMaterial(
     string Name,
     string? DiffuseTexturePath,
@@ -231,10 +169,8 @@ public readonly record struct ModelMaterial(
     string? AssetPath = null);
 
 /// <summary>
-/// A node in the imported hierarchy: a name, a local transform, the submeshes
-/// attached to it, and its children. Mirrors <see cref="Scene.SceneNode"/>
-/// closely enough that instantiation is a direct walk, but stays a pure value
-/// tree so it can be built on the thread pool and instantiated many times.
+/// A node in the imported hierarchy: a name, a local transform, its submeshes
+/// and its children.
 /// </summary>
 public sealed class ModelNode
 {
@@ -262,8 +198,8 @@ public sealed class ModelNode
     public string Name { get; }
 
     /// <summary>
-    /// The node's transform relative to its parent, exactly as the file stored
-    /// it (already converted to the engine's row-vector convention).
+    /// The node's transform relative to its parent, in the engine's row-vector
+    /// convention.
     /// </summary>
     public Matrix4x4 LocalMatrix { get; }
 
@@ -277,18 +213,12 @@ public sealed class ModelNode
     public Vector3 Scale { get; }
 
     /// <summary>
-    /// False when <see cref="LocalMatrix"/> could not be decomposed into
-    /// position/rotation/scale — a sheared or mirrored node, which the scene
-    /// graph's TRS transform cannot represent. The components then hold an
-    /// identity fallback and a warning was recorded; the raw matrix is still
-    /// exact.
+    /// False when <see cref="LocalMatrix"/> could not be decomposed (a sheared
+    /// or mirrored node). Position, rotation and scale are then identity.
     /// </summary>
     public bool TransformIsExact { get; }
 
-    /// <summary>
-    /// Indices into <see cref="ModelData.Meshes"/> drawn at this node. Empty for
-    /// pure grouping nodes, which most hierarchies are mostly made of.
-    /// </summary>
+    /// <summary>Indices into <see cref="ModelData.Meshes"/> drawn at this node.</summary>
     public IReadOnlyList<int> MeshIndices { get; }
 
     /// <summary>Child nodes, in the source file's order.</summary>

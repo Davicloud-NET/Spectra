@@ -72,10 +72,8 @@ internal sealed class OpenGLMesh : Mesh
         _gl.DrawElementsBaseVertex(PrimitiveType.Triangles, range.IndexCount, DrawElementsType.UnsignedInt, (void*)((nuint)range.FirstIndex * sizeof(uint)), range.BaseVertex);
     }
 
-    // Which instance buffer's attributes are currently wired into this mesh's
-    // vertex array, and at what base offset. Keyed by generation rather than by
-    // GL name: names are recycled, so a freed buffer and a fresh one can share
-    // one and the check would pass against different storage. Zero means none.
+    // Instance buffer currently wired into the VAO, by generation (GL recycles
+    // names). Zero means none.
     private uint _wiredInstanceGeneration;
     private int _wiredFirstInstance;
 
@@ -94,16 +92,9 @@ internal sealed class OpenGLMesh : Mesh
 
         _gl.BindVertexArray(_vao);
 
-        // Wire the instance attributes into this mesh's vertex array once per
-        // buffer. GL stores attribute pointers and divisors IN the vertex array,
-        // so this cannot be done per draw call without paying for it per draw
-        // call; and it cannot be done at mesh creation either, because the
-        // buffer does not exist yet and one mesh may be drawn from more than
-        // one of them over its life.
-        // GL 3.3 has no BaseInstance, so the base offset is folded into the
-        // attribute pointers and a batch drawn from a different slice of the
-        // same buffer is a rewire rather than a draw parameter. Four calls per
-        // batch, against one draw per instance saved.
+        // GL keeps attribute pointers and divisors in the VAO, so wire them
+        // only when the buffer or offset changes. GL 3.3 has no BaseInstance,
+        // so firstInstance is folded into the pointer offset.
         if (_wiredInstanceGeneration != gl.Generation || _wiredFirstInstance != firstInstance)
         {
             _gl.BindBuffer(BufferTargetARB.ArrayBuffer, gl.Handle);
@@ -116,9 +107,7 @@ internal sealed class OpenGLMesh : Mesh
                     VertexAttribPointerType.Float, false, gl.Stride, (void*)offset);
                 _gl.EnableVertexAttribArray(attr.Location);
 
-                // The divisor is the whole feature. Without it the attribute
-                // advances per vertex, every instance reads the first few
-                // matrices, and the draw succeeds.
+                // Without the divisor the attribute advances per vertex.
                 _gl.VertexAttribDivisor(attr.Location, 1);
 
                 offset += attr.ComponentCount * sizeof(float);

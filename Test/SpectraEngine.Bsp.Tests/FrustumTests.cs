@@ -5,15 +5,12 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// <see cref="Frustum"/> extraction and containment. The culling guarantee
-/// under test: <see cref="Frustum.Intersects"/> may report a not-quite-visible
-/// box as visible (a false positive merely costs a draw call), but must NEVER
-/// reject a box that contains a visible point — a false negative would make
-/// geometry pop out of existence.
+/// <see cref="Frustum"/> extraction and containment. False positives are
+/// allowed; rejecting a box that contains a visible point is not.
 /// </summary>
 public sealed class FrustumTests
 {
-    /// <summary>Camera at an arbitrary offset looking down -Z (yaw -π/2, pitch 0).</summary>
+    // Looks down -Z (yaw -π/2, pitch 0) from an arbitrary offset.
     private static Camera CreateCamera() => new()
     {
         Position = new Vector3(1f, 2f, 3f),
@@ -51,9 +48,8 @@ public sealed class FrustumTests
     [Fact]
     public void Point_closer_than_the_near_plane_is_excluded()
     {
-        // 0.07 with near = 0.1 sits between the true near plane and the plane a
-        // wrong GL-style [-1, 1] extraction would yield (~near/2 in front of the
-        // eye), so this probe pins the [0, 1] clip-depth adaptation specifically.
+        // 0.07 with near = 0.1 lies between the true near plane and the one a
+        // GL-style [-1, 1] extraction would give (~near/2).
         Camera camera = CreateCamera();
         camera.NearPlane.ShouldBe(0.1f);
 
@@ -67,9 +63,7 @@ public sealed class FrustumTests
         Frustum frustum = camera.GetFrustum();
         float halfTan = MathF.Tan(camera.FieldOfView * 0.5f);
 
-        // Probe points constructed to be inside the view pyramid (fractions of
-        // the half-extents at each depth, staying clear of the ±1 boundary),
-        // spanning near-plane-adjacent to almost-far.
+        // Probe points inside the view pyramid, from just past near to almost far.
         float[] depths = [0.2f, 1f, 5f, 20f, 100f, 900f];
         float[] fractions = [-0.9f, -0.5f, 0f, 0.5f, 0.9f];
         float[] halfSizes = [0.01f, 1f, 50f];
@@ -87,8 +81,7 @@ public sealed class FrustumTests
             frustum.Contains(point).ShouldBeTrue(
                 $"probe at depth {depth}, fx {fx}, fy {fy} should be visible by construction");
 
-            // Boxes containing that point — tiny to frustum-dwarfing, centered
-            // on it and with it sitting exactly on opposite corners.
+            // Boxes containing the point: centred on it, and with it on each of two opposite corners.
             foreach (float half in halfSizes)
             {
                 var extent = new Vector3(half);
@@ -102,9 +95,7 @@ public sealed class FrustumTests
     [Fact]
     public void Intersects_rejects_boxes_fully_outside()
     {
-        // Not demanded by the conservative contract (false positives are legal),
-        // but it pins that the grid test above is not passing vacuously: boxes
-        // well clear of the frustum on either depth end must be culled.
+        // Guards against Intersects returning true for everything.
         Camera camera = CreateCamera();
         Frustum frustum = camera.GetFrustum();
 

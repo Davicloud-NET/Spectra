@@ -12,26 +12,9 @@ namespace SpectraEngine.Core.Maps;
 /// Reads a canonical map document into a <see cref="MapDocument"/>, carrying
 /// through every member it does not recognise.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The document must arrive as one contiguous span, and that is a real
-/// constraint rather than an implementation convenience.</b> Preservation works
-/// by slicing the original bytes between
-/// <see cref="Utf8JsonReader.TokenStartIndex"/> and
-/// <see cref="Utf8JsonReader.BytesConsumed"/>, and both are relative to the
-/// reader's own input - so a multi-segment sequence, or a reader fed in chunks
-/// with <c>isFinalBlock: false</c>, would slice the wrong bytes silently rather
-/// than fail. A map is a hand-sized text file; reading it whole costs nothing
-/// and removes the entire failure mode.
-/// </para>
-/// <para>
-/// <b>Every failure names the node and the byte offset.</b> Including the ones
-/// raised from inside CSG code that has never heard of a file: a hand-edited
-/// plane set that is duplicated or unbounded throws out of <c>Brush</c>'s
-/// constructor, and unwrapped that reads as a complaint about plane indices in
-/// a map with hundreds of brushes.
-/// </para>
-/// </remarks>
+// The document must be one contiguous span. Preservation slices the source
+// between TokenStartIndex and BytesConsumed, which are relative to the reader's
+// own input; chunked input would slice the wrong bytes without failing.
 public static class MapReader
 {
     /// <summary>Parses a canonical map document.</summary>
@@ -69,8 +52,6 @@ public static class MapReader
     {
         public string? NodeName;
     }
-
-    // --- document -----------------------------------------------------------
 
     private static void ReadDocument(
         ref Utf8JsonReader reader, ReadOnlySpan<byte> utf8, MapDocument document, ReadState state)
@@ -126,16 +107,8 @@ public static class MapReader
             RefuseUnreadable(document.MinimumReadableVersion, ref reader, state);
     }
 
-    /// <summary>
-    /// A document may be newer than this engine and still readable; it may not
-    /// require a reader this engine does not implement.
-    /// </summary>
-    /// <remarks>
-    /// The asymmetry is deliberate and is what lets an old engine open a new
-    /// map without destroying it: unknown members are carried, so "newer" is
-    /// survivable, while <c>minimumReadableVersion</c> is the author's own
-    /// statement that it is not.
-    /// </remarks>
+    // A newer document is fine, since unknown members are carried. One whose
+    // minimumReadableVersion is above this engine's is refused.
     private static void RefuseUnreadable(int minimumReadable, ref Utf8JsonReader reader, ReadState state)
     {
         if (minimumReadable > EngineInfo.MapFormatVersion)
@@ -161,15 +134,11 @@ public static class MapReader
             }
             else
             {
-                // 'spawn' lands here: it is specified, and nothing on Scene
-                // carries a gameplay spawn yet, so it round-trips untouched
-                // rather than being decoded into a value with no meaning.
+                // Includes 'spawn': Scene has nothing to bind it to yet.
                 scene.Unknown.Add(Preserve(ref reader, utf8, member, anchor));
             }
         }
     }
-
-    // --- nodes --------------------------------------------------------------
 
     private static void ReadNodeArray(
         ref Utf8JsonReader reader, ReadOnlySpan<byte> utf8, List<MapNode> into, ReadState state)
@@ -202,7 +171,7 @@ public static class MapReader
 
                 case MapFormat.NameMember:
                     node.Name = ReadString(ref reader, member, state);
-                    // From here on, errors inside this node name it.
+                    // Later errors inside this node name it.
                     state.NodeName = node.Name;
                     anchor = 1;
                     break;
@@ -258,8 +227,7 @@ public static class MapReader
                     break;
 
                 default:
-                    // 'script' lands here: it is specified, nothing in Core
-                    // executes Luau, and it rides through untouched.
+                    // Includes 'script', which nothing in Core runs yet.
                     node.Unknown.Add(Preserve(ref reader, utf8, member, anchor));
                     break;
             }
@@ -276,9 +244,7 @@ public static class MapReader
         {
             MapFormat.WorldKind => BrushKind.World,
             MapFormat.PartKind => BrushKind.Part,
-            // Not a fall-through to World. A mistyped "prt" widening to World
-            // re-admits a simulated brush to the carve, which is a world
-            // topology change on load.
+            // No fall-through to World: a typo would admit a part brush to the carve.
             _ => throw Fail(ref reader,
                 $"'{MapFormat.KindMember}' must be '{MapFormat.WorldKind}' or '{MapFormat.PartKind}', not '{value}'",
                 state),
@@ -299,8 +265,7 @@ public static class MapReader
 
     private static MapTransform ReadTransform(ref Utf8JsonReader reader, ReadState state)
     {
-        // Identity, never default: a default Transform has a zero scale and a
-        // zero quaternion, so an omitted 's' would load the node collapsed.
+        // Identity, not default: default has zero scale and a zero quaternion.
         MapTransform transform = MapTransform.Identity;
         Expect(ref reader, JsonTokenType.StartObject, "'transform' must be an object", state);
 
@@ -325,8 +290,6 @@ public static class MapReader
 
         return transform;
     }
-
-    // --- brush --------------------------------------------------------------
 
     private static MapBrush ReadBrush(ref Utf8JsonReader reader, ReadOnlySpan<byte> utf8, ReadState state)
     {
@@ -363,15 +326,12 @@ public static class MapReader
                     break;
 
                 default:
-                    // A closed vocabulary, unlike a face record: every member of
-                    // a brush is load-bearing geometry, and one quietly ignored
-                    // is a wall where a doorway was.
+                    // Closed record: an ignored brush member could change the solid.
                     throw Fail(ref reader, $"'brush' has no member '{member}'", state);
             }
         }
 
-        // faces is indexed BY PLANE INDEX, which is the whole convention, so a
-        // length mismatch is not something to pad out silently.
+        // Faces are indexed by plane index, so the counts must match.
         if (sawFaces && brush.Faces.Count != brush.Planes.Count)
         {
             throw Fail(ref reader,
@@ -395,8 +355,7 @@ public static class MapReader
         {
             MapFormat.AdditiveOperation => BrushOperation.Additive,
             MapFormat.SubtractiveOperation => BrushOperation.Subtractive,
-            // A mistyped "subtracive" widening to Additive turns a doorway into
-            // a wall, silently, on load.
+            // No fall-through to Additive: a typo would turn a doorway into a wall.
             _ => throw Fail(ref reader,
                 $"'{MapFormat.OperationMember}' must be '{MapFormat.AdditiveOperation}' or "
                 + $"'{MapFormat.SubtractiveOperation}', not '{value}'", state),
@@ -469,8 +428,7 @@ public static class MapReader
                     anchor = 6;
                     break;
                 default:
-                    // Open, unlike 'brush': per-face authoring is where the
-                    // format grows, and none of it changes what the solid is.
+                    // Open record, unlike 'brush'.
                     face.Unknown.Add(Preserve(ref reader, utf8, member, anchor));
                     break;
             }
@@ -506,9 +464,8 @@ public static class MapReader
             }
         }
 
-        // A mesh record with no model names nothing. Refused rather than
-        // dropped, because a node that silently loses its geometry looks
-        // exactly like a node that never had any.
+        // Refuse a mesh with no model. Dropping it would look like a node that
+        // never had geometry.
         if (!sawModel || string.IsNullOrWhiteSpace(mesh.Model))
             throw Fail(ref reader, $"'mesh' needs a '{MapFormat.ModelMember}' path", state);
 
@@ -538,9 +495,7 @@ public static class MapReader
                         MapFormat.RectLight => LightKind.Rect,
                         MapFormat.DiscLight => LightKind.Disc,
 
-                        // Refused, never widened to a default. A mistyped kind
-                        // falling through to directional is a map that loads,
-                        // renders, and is not the level that was saved.
+                        // No default kind: a typo must not load as directional.
                         _ => throw Fail(ref reader,
                             $"a light '{MapFormat.KindMember}' must be one of "
                             + $"'{MapFormat.DirectionalLight}', '{MapFormat.PointLight}', "
@@ -594,8 +549,6 @@ public static class MapReader
         return light;
     }
 
-    // --- entity -------------------------------------------------------------
-
     private static MapEntity ReadEntity(
         ref Utf8JsonReader reader, ReadOnlySpan<byte> utf8, ReadState state)
     {
@@ -609,9 +562,8 @@ public static class MapReader
             switch (member)
             {
                 case MapFormat.ClassMember:
-                    // Never validated against a catalogue. A map authored for a
-                    // game this build does not have must still load and still
-                    // save unchanged, which a lookup here would make impossible.
+                    // Not checked against a catalogue: a class this build lacks
+                    // must still load and save unchanged.
                     entity.Class = ReadString(ref reader, member, state);
                     sawClass = true;
                     anchor = 0;
@@ -628,17 +580,13 @@ public static class MapReader
                     break;
 
                 default:
-                    // Open, like a face record: an entity payload is where this
-                    // format grows, and none of it changes what the solid is.
                     entity.Unknown.Add(Preserve(ref reader, utf8, member, anchor));
                     break;
             }
         }
 
-        // A record naming no class names no entity, the same refusal a 'mesh'
-        // with no 'model' gets. The EMPTY string is a different fact and is
-        // accepted: EntityData models an entity carrying no class yet, so the
-        // writer can produce one and must be able to read it back.
+        // A missing class is refused. An empty one is accepted: EntityData
+        // allows an entity with no class yet, and the writer can produce it.
         if (!sawClass)
             throw Fail(ref reader, $"'entity' needs a '{MapFormat.ClassMember}' name", state);
 
@@ -652,18 +600,13 @@ public static class MapReader
 
         while (NextMember(ref reader, out string key))
         {
-            // Appended, never merged: a hand-written duplicate must survive, and
-            // EntityData.TryGetValue is first-match-wins for exactly that reason.
+            // Append, don't merge: a hand-written duplicate key must survive.
             into.Add(new KeyValuePair<string, string>(key, ReadKeyvalue(ref reader, key, state)));
         }
     }
 
-    /// <summary>
-    /// Reads one keyvalue. Values are STRINGS on the wire, always: a schema is
-    /// what says whether <c>"100"</c> is a speed or a count, and a reader that
-    /// accepted a bare number would have to invent a spelling to write it back
-    /// with.
-    /// </summary>
+    // Keyvalues are strings on the wire. A bare number is refused, since the
+    // writer could not reproduce its spelling.
     private static string ReadKeyvalue(ref Utf8JsonReader reader, string key, ReadState state)
     {
         Read(ref reader, state);
@@ -729,24 +672,12 @@ public static class MapReader
         return connection;
     }
 
-    // --- preservation -------------------------------------------------------
-
-    /// <summary>
-    /// Captures an unrecognised member's value exactly as it appears in the
-    /// source, along with where it sat in the canonical member order.
-    /// </summary>
-    /// <remarks>
-    /// The specification's own recipe reads <c>TokenStartIndex</c> at the
-    /// <i>property name</i> and then replays with
-    /// <c>WritePropertyName</c> + <c>WriteRawValue</c>, which emits the name
-    /// twice: the captured span already contains it. The name is taken
-    /// separately here and the span starts at the value.
-    /// </remarks>
+    // Captures an unknown member's raw value and its anchor in the canonical
+    // order. The span starts at the value, not the name, or the writer would
+    // emit the name twice.
     private static PreservedMember Preserve(
         ref Utf8JsonReader reader, ReadOnlySpan<byte> utf8, string member, int anchor) =>
         new(member, CanonicalJson.CaptureValue(ref reader, utf8), anchor);
-
-    // --- primitives ---------------------------------------------------------
 
     private static bool NextMember(ref Utf8JsonReader reader, out string member)
     {
@@ -827,7 +758,7 @@ public static class MapReader
         return ReadFloatsInArray(ref reader, count, $"'{member}'", state);
     }
 
-    /// <summary>Reads exactly <paramref name="count"/> numbers, the reader already on StartArray.</summary>
+    // Reads exactly count numbers. The reader is already on StartArray.
     private static float[] ReadFloatsInArray(
         ref Utf8JsonReader reader, int count, string what, ReadState state)
     {

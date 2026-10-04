@@ -7,17 +7,9 @@ using System.Numerics;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// <see cref="ModelInstantiator"/>: a loaded model becoming a live scene
-/// subtree.
+/// <see cref="ModelInstantiator"/>: a loaded model becomes a scene subtree
+/// that raises events, is indexed and can be raycast like hand-built nodes.
 /// </summary>
-/// <remarks>
-/// The interesting property is not the shape of the subtree — it is that the
-/// subtree lands in the scene the same way hand-built nodes do. Membership
-/// events must fire for every node, the spatial index must end up holding every
-/// renderable one with correct world bounds, and a raycast must be able to hit
-/// the imported triangles. Those are what make an imported prop a first-class
-/// citizen of the graph instead of geometry bolted onto its side.
-/// </remarks>
 public sealed class ModelInstantiationTests
 {
     private const string Crate = "Models/crate.obj";
@@ -42,7 +34,6 @@ public sealed class ModelInstantiationTests
         sides.Name.ShouldBe("Crate_Sides");
         caps.Name.ShouldBe("Crate_Caps");
 
-        // Each node references the shared asset meshes, in import order.
         sides.MeshRenderer.ShouldNotBeNull().Mesh.ShouldBeSameAs(model.Meshes[0]);
         caps.MeshRenderer.ShouldNotBeNull().Mesh.ShouldBeSameAs(model.Meshes[1]);
         sides.MeshRenderer!.Material.Name.ShouldBe("crate_body");
@@ -59,8 +50,6 @@ public sealed class ModelInstantiationTests
         var scene = new Scene("Test");
 
         SceneNode root = ModelInstantiator.InstantiateInto(scene.Root, model, "Signpost A");
-        // Place the whole instance somewhere: local transforms are the model's,
-        // world transforms compose with wherever the instance was put.
         root.LocalPosition = new Vector3(100f, 0f, -50f);
 
         root.Name.ShouldBe("Signpost A");
@@ -73,7 +62,7 @@ public sealed class ModelInstantiationTests
         signWorld.Y.ShouldBe(26f, Tolerance);
         signWorld.Z.ShouldBe(-50f, Tolerance);
 
-        // The yaw survived too: the sign's local +X points 20 degrees off world +X.
+        // The sign is yawed 20 degrees in the file.
         Vector3 axis = Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitX, sign.WorldMatrix));
         axis.X.ShouldBe(MathF.Cos(MathF.PI * 20f / 180f), Tolerance);
         axis.Z.ShouldBe(-MathF.Sin(MathF.PI * 20f / 180f), Tolerance);
@@ -93,7 +82,7 @@ public sealed class ModelInstantiationTests
 
         SceneNode root = ModelInstantiator.InstantiateInto(scene.Root, model);
 
-        // Root plus its two parts, parents before children.
+        // Parents before children.
         added.Count.ShouldBe(3);
         added[0].ShouldBeSameAs(root);
         added.ShouldContain(root.Children[0]);
@@ -117,7 +106,6 @@ public sealed class ModelInstantiationTests
         added.ShouldBe(0);
         scene.Bvh.LeafCount.ShouldBe(0);
 
-        // Editing before attaching is the point of the detached overload.
         root.LocalPosition = new Vector3(0f, 64f, 0f);
         scene.Root.AddChild(root);
 
@@ -138,7 +126,7 @@ public sealed class ModelInstantiationTests
         SceneNode root = ModelInstantiator.InstantiateInto(scene.Root, model);
         root.LocalPosition = new Vector3(200f, 0f, 0f);
 
-        // Two mesh nodes; the group node is not spatial and must not be indexed.
+        // The group node is not spatial and is not indexed.
         scene.Bvh.LeafCount.ShouldBe(2);
         scene.Bvh.Validate();
 
@@ -161,7 +149,7 @@ public sealed class ModelInstantiationTests
         SceneNode root = ModelInstantiator.InstantiateInto(scene.Root, model);
         root.LocalPosition = new Vector3(0f, 0f, 0f);
 
-        // Straight at the crate's -Z wall, which sits 16 units from the origin.
+        // The crate's -Z wall is 16 units from the origin.
         var ray = new Ray3(new Vector3(0f, 16f, -100f), Vector3.UnitZ);
         scene.Raycast(ray, out SceneRaycastHit hit).ShouldBeTrue();
 
@@ -169,8 +157,6 @@ public sealed class ModelInstantiationTests
         hit.Distance.ShouldBe(84f, Tolerance);
         hit.Point.Z.ShouldBe(-16f, Tolerance);
 
-        // Moving the instance moves what the ray finds — the index follows the
-        // node, not the asset.
         root.LocalPosition = new Vector3(0f, 0f, 400f);
         scene.Raycast(ray, out hit).ShouldBeTrue();
         hit.Distance.ShouldBe(484f, Tolerance);
@@ -191,7 +177,6 @@ public sealed class ModelInstantiationTests
 
         a.Children[0].MeshRenderer!.Mesh.ShouldBeSameAs(b.Children[0].MeshRenderer!.Mesh);
         a.Children[0].MeshRenderer!.Material.ShouldBeSameAs(b.Children[0].MeshRenderer!.Material);
-        // Two instances, still two GPU meshes.
         renderer.CreatedMeshes.Count.ShouldBe(2);
         scene.Bvh.LeafCount.ShouldBe(4);
         scene.Bvh.Validate();
@@ -204,8 +189,7 @@ public sealed class ModelInstantiationTests
     {
         string root = CreateTempContentRoot();
         CopyTexture(root, "dev_grid.png");
-        // One object, two material groups: the importer splits it into two
-        // meshes hanging off the same node.
+        // One object, two material groups.
         WriteModel(root, "twotone.obj", """
             mtllib twotone.mtl
             o Twotone
@@ -254,15 +238,12 @@ public sealed class ModelInstantiationTests
         var (assets, _) = CreateAttached();
 
         ModelAsset model = assets.RequestModel(Crate);
-        // Deliberately not pumped: the handle exists but has no geometry, and
-        // silently producing an empty subtree would be far worse than throwing.
+        // Not pumped, so the handle has no geometry yet.
         Should.Throw<InvalidOperationException>(() => ModelInstantiator.Instantiate(model))
             .Message.ShouldContain(Crate);
 
         assets.ReleaseGraphicsResources();
     }
-
-    // ---- helpers ---------------------------------------------------------
 
     private static (AssetManager Assets, FakeRenderer Renderer) CreateAttached()
         => CreateAttached(ContentRoot.Path);

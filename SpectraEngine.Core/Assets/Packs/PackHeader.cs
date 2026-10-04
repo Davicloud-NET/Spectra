@@ -3,23 +3,10 @@ using System.Runtime.InteropServices;
 namespace SpectraEngine.Core.Assets.Packs;
 
 /// <summary>
-/// The 64 bytes at offset 0 of a <c>.spack</c> file, exactly as they sit on disk.
+/// The 64 bytes at offset 0 of a <c>.spack</c> file, as they sit on disk.
 /// </summary>
-/// <remarks>
-/// <para><b><c>Pack = 1</c> is what makes this struct the format rather than a
-/// description of it.</b> Without it the CLR is free to insert padding, and the
-/// bytes written from a struct value would stop matching the bytes a reader casts
-/// back out of a mapped view; with it there is no padding at all, so no reserved
-/// byte can pick up whatever was on the stack. Every one of the 64 bytes is a
-/// declared field, and <c>PackFormatLayoutTests</c> pins both that size and the
-/// offset of each field, because a field reordered by an edit compiles cleanly
-/// and produces a file that parses into the wrong numbers.</para>
-/// <para><b>Endianness is the machine's, and the machine is asserted to be
-/// little-endian</b> (<see cref="PackFormat.RequireLittleEndian"/>). A struct
-/// written and read as raw bytes is little-endian on every host this engine
-/// targets and would silently be big-endian on one that is not, which is why the
-/// assertion is a refusal rather than a comment.</para>
-/// </remarks>
+// Written and read as raw bytes. Field order and Pack = 1 are the file layout,
+// and all 64 bytes are declared fields so nothing is left unwritten.
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public readonly struct PackHeader
 {
@@ -33,11 +20,6 @@ public readonly struct PackHeader
     /// The oldest reader that can still make sense of this pack. A reader refuses
     /// the file when this exceeds the version it implements.
     /// </summary>
-    /// <remarks>
-    /// It is a floor carried per pack rather than a global exact-match rule
-    /// because the alternative refuses every pack the moment anything is added,
-    /// including the overwhelming majority that carry nothing new.
-    /// </remarks>
     public readonly ushort MinReaderVersion;
 
     /// <summary>Whole-pack properties. See <see cref="PackFlags"/>.</summary>
@@ -47,8 +29,7 @@ public readonly struct PackHeader
     public readonly uint EntryCount;
 
     /// <summary>
-    /// Absolute offset of the entry table. 64 in v1, and written explicitly
-    /// anyway so the header can grow without a version bump.
+    /// Absolute offset of the entry table. 64 in v1.
     /// </summary>
     public readonly ulong EntryTableOffset;
 
@@ -59,16 +40,13 @@ public readonly struct PackHeader
     public readonly ulong NameTableLength;
 
     /// <summary>
-    /// Monotonic ordering key among patch packs, so a mount order is decided by
-    /// the packs rather than by whatever order a directory listing came back in.
+    /// Monotonic ordering key among patch packs.
     /// </summary>
     public readonly uint PackSequence;
 
     /// <summary>
     /// <c>(Major &lt;&lt; 20) | (Minor &lt;&lt; 10) | Revision</c> of the engine that
-    /// wrote this pack. <b>Informational, never a load gate</b>: what gates a load
-    /// is <see cref="MinReaderVersion"/>, which is a statement about the bytes,
-    /// while this is a statement about the build and is here for bug reports.
+    /// wrote this pack. Informational only; <see cref="MinReaderVersion"/> gates a load.
     /// </summary>
     public readonly uint EngineVersion;
 
@@ -79,12 +57,11 @@ public readonly struct PackHeader
     public readonly ulong DataSectionOffset;
 
     /// <summary>
-    /// Size of the whole file including the trailing digest, so a truncated pack
-    /// is detectable from its own bytes without a stat call.
+    /// Size of the whole file including the trailing digest. Detects truncation.
     /// </summary>
     public readonly ulong TotalFileSize;
 
-    /// <summary>Builds a header. Every field is assigned; there are no reserved bytes.</summary>
+    /// <summary>Builds a header.</summary>
     public PackHeader(
         uint magic,
         ushort formatVersion,
@@ -113,7 +90,7 @@ public readonly struct PackHeader
         TotalFileSize = totalFileSize;
     }
 
-    /// <summary><see cref="Flags"/> as the enum it is.</summary>
+    /// <summary><see cref="Flags"/> as its enum.</summary>
     public PackFlags PackFlags => (PackFlags)Flags;
 
     /// <summary>Whether the entry table may be binary-searched.</summary>

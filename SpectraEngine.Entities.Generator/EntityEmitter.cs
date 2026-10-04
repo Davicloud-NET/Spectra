@@ -4,28 +4,13 @@ using System.Text;
 
 namespace SpectraEngine.Entities.Generator;
 
-/// <summary>
-/// Writes the other half of an attributed entity class: the keyvalue binder, the
-/// input dispatch, the output declarations, the schema and the registration.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Every emitted type name is <c>global::</c>-qualified and no using is
-/// emitted.</b> The generated file lands in the author's namespace, where a type
-/// of theirs called <c>Entity</c> or a namespace called <c>System</c> is
-/// perfectly legal, and a generator that resolved names the way hand-written
-/// code does would break on it with an error in a file the author cannot edit.
-/// </para>
-/// <para>
-/// <b>The emitter reads a model and nothing else.</b> It never sees a symbol, so
-/// there is no route by which a compilation could reach the cached output.
-/// </para>
-/// </remarks>
+// Writes the generated half of an entity class. Every emitted type name is
+// global::-qualified and no using is emitted: the file lands in the author's
+// namespace, where a type called Entity or a namespace called System is legal.
 internal static class EntityEmitter
 {
     private const string Ns = "global::SpectraEngine.Core.Entities";
 
-    /// <summary>The file name the generated source is added under.</summary>
     public static string HintName(EntityModel model)
     {
         var name = new StringBuilder(model.FullTypeName.Length + 8);
@@ -35,7 +20,6 @@ internal static class EntityEmitter
         return name.Append(".g.cs").ToString();
     }
 
-    /// <summary>The generated half of <paramref name="model"/>'s class.</summary>
     public static string Emit(EntityModel model)
     {
         var w = new SourceWriter();
@@ -101,8 +85,7 @@ internal static class EntityEmitter
 
             if (row.Reader is null)
             {
-                // The wire form IS the value, so there is nothing to read and
-                // nothing that can be refused.
+                // The wire form is the value: nothing to parse.
                 w.Indent();
                 w.Line($"this.{keyvalue.MemberName} = value;");
                 w.Line("return true;");
@@ -116,9 +99,7 @@ internal static class EntityEmitter
 
             if (keyvalue.Type == KeyvalueBinding.NodeRefValue)
             {
-                // The empty string is how "no reference" is written, and the
-                // reader refuses it deliberately so an unset reference is never
-                // confused with one pointing at a node that is gone.
+                // Empty means "no reference", which the reader would refuse.
                 w.Open("if (value.Length == 0)");
                 w.Line($"this.{keyvalue.MemberName} = global::System.Guid.Empty;");
                 w.Line("return true;");
@@ -127,8 +108,7 @@ internal static class EntityEmitter
             }
 
             w.Open($"if (!{Ns}.KeyvalueWire.{row.Reader}(value, out {row.CSharpType} parsed))");
-            // Recognised the key, could not read the value: the default stands
-            // and the load continues.
+            // Unreadable value: the default stands and the load continues.
             w.Line("RefuseKeyvalue(key, value);");
             w.Line("return true;");
             w.Close();
@@ -217,8 +197,7 @@ internal static class EntityEmitter
         w.Line($"{Literal(model.Display)},");
         w.Line($"{Literal(model.Group)},");
         w.Line($"{Ns}.EntityPlacement.{model.Placement},");
-        // Always EngineCSharp: nothing branches on Origin (it is an editor badge)
-        // and the generator has no signal that tells a game's own assembly apart
+        // Always EngineCSharp: the generator cannot tell a game's assembly
         // from the engine's.
         w.Line($"{Ns}.EntityOrigin.EngineCSharp,");
         w.Line("keyvalues,");
@@ -311,8 +290,7 @@ internal static class EntityEmitter
         if (float.IsNegativeInfinity(value))
             return "float.NegativeInfinity";
 
-        // Round-trip, invariant: a bound written with the current culture would
-        // emit "1,5" on half the machines in the world and not compile there.
+        // Invariant: the current culture could emit "1,5", which does not compile.
         return value.ToString("R", CultureInfo.InvariantCulture) + "f";
     }
 }

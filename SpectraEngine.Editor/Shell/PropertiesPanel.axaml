@@ -6,34 +6,13 @@
              Background="{StaticResource SpectraBgPanel}">
 
   <!--
-    The inspector, self-contained for the same reason the scene panel is: a
-    docking layout hosts it wherever, and everything its fields need travels
-    with it.
-
-    THREE THINGS DECIDE THE LAYOUT.
-
-    1. A VECTOR ROW IS TWO LINES. The panel is 308px wide by default. A fixed
-       label column plus three cells side by side left about 31px of interior
-       per cell - five characters of monospace - in a panel whose main job is
-       showing positions, so "-125.5" could not be displayed at all. The label
-       and its unit take one line, the three cells take the next, and each cell
-       is then wide enough for a real number.
-
-    2. AN AXIS LETTER IS A HANDLE, NOT A DECORATION. Press it and drag sideways
-       and the value follows the pointer; the whole drag is one undo entry.
-       Every tool this editor's users arrive from does this, and its absence is
-       what made the panel read as a settings dialog rather than as part of an
-       editor. The letter wears its axis's colour, which is the same colour
-       that axis's arrow wears in the viewport.
-
-    3. NOTHING IS SHOWN THAT NOBODY CAN USE. The name is the panel's header
-       rather than a field in a "Node" section, and the node's GUID is not
-       shown at all: it used to be the second row in the panel, permanently
-       truncated, above the properties people came here to edit.
+    The inspector. A vector row is two lines: at 308px three cells beside a
+    label column are too narrow for a real number. Axis letters and row labels
+    are drag handles.
   -->
 
   <UserControl.Styles>
-    <!-- The row's label. Also its drag handle, when the value is a number. -->
+    <!-- Row label. Also the drag handle when the value is a number. -->
     <Style Selector="TextBlock.rowlabel">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
@@ -47,10 +26,7 @@
       <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
     </Style>
 
-    <!-- The unit, at the far right of the label line: it belongs to the whole
-         row rather than to one of three cells, and putting it inside each cell
-         would spend a third of the space that made the cells too narrow in the
-         first place. -->
+    <!-- Unit, on the label line so it costs the cells no width. -->
     <Style Selector="TextBlock.rowunit">
       <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
       <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
@@ -58,8 +34,7 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
-    <!-- The axis letter. Sunken into the cell's left edge so the cell still
-         reads as one control, coloured so a glance finds y without counting. -->
+    <!-- Axis letter, in the colour its arrow has in the viewport. -->
     <Style Selector="TextBlock.axis">
       <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
@@ -72,19 +47,14 @@
     <Style Selector="TextBlock.axis.y"><Setter Property="Foreground" Value="{StaticResource SpectraAxisY}" /></Style>
     <Style Selector="TextBlock.axis.z"><Setter Property="Foreground" Value="{StaticResource SpectraAxisZ}" /></Style>
 
-    <!-- One cell: the axis letter and its field, in one sunken capsule. -->
+    <!-- One cell: axis letter plus field. -->
     <Style Selector="TextBlock.rejection">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextDanger}" />
       <Setter Property="Margin" Value="0,1,0,3" />
     </Style>
 
-    <!-- An asset row's value is a BUTTON, and it is raised rather than sunken
-         because pressing it is the only thing you can do to it: this shell's
-         rule is that anything you press is lighter than the panel it sits on
-         and anything you type into is darker. It carries the whole width so
-         the hit target is the name a person is reading rather than a glyph
-         beside it. -->
+    <!-- Asset value: a button, so raised rather than sunken like a field. -->
     <Style Selector="Button.assetcell">
       <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
@@ -113,9 +83,7 @@
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
-    <!-- A note is amber because it is a WARNING, which in this shell wears the
-         same hue as a lit mode and is told apart by its words and its place.
-         Never the accent, which means selection. -->
+    <!-- A note is a warning: amber, never the accent. -->
     <Style Selector="Border.notebadge">
       <Setter Property="Background" Value="{StaticResource SpectraControlChecked}" />
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
@@ -135,10 +103,8 @@
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
       <Setter Property="Height" Value="{StaticResource SpectraFieldHeight}" />
     </Style>
-    <!-- A refused cell, in the danger colour rather than the accent: the
-         accent means selection in this shell and nothing else. The BORDER
-         only, so nothing moves - Fluent's own focus treatment grows a second
-         pixel and shifts the row, which this panel already refuses. -->
+    <!-- Refused cell: danger colour on the border only, same thickness, so
+         nothing shifts. -->
     <Style Selector="Border.cell.invalid">
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderDanger}" />
     </Style>
@@ -150,9 +116,7 @@
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
     </Style>
 
-    <!-- The field inside a cell draws no chrome of its own: the cell is the
-         control, and a second border one pixel inside the first reads as a
-         rendering fault. -->
+    <!-- The field inside a cell draws no border of its own. -->
     <Style Selector="TextBox.cellfield">
       <Setter Property="Height" Value="20" />
       <Setter Property="MinHeight" Value="20" />
@@ -180,9 +144,7 @@
       <Setter Property="TextAlignment" Value="Right" />
     </Style>
 
-    <!-- The name, in the header. A title that happens to be editable, which is
-         what it is: a field with a box around it would make the panel's own
-         heading look like the first of its properties. -->
+    <!-- The name: an editable title, no box around it. -->
     <Style Selector="TextBox.nametitle">
       <Setter Property="Height" Value="24" />
       <Setter Property="MinHeight" Value="24" />
@@ -211,7 +173,7 @@
       <Setter Property="BorderBrush" Value="{StaticResource SpectraAccent}" />
     </Style>
 
-    <!-- The kind, as a quiet mono chip: Block, Part, Cut, Light, Mesh. -->
+    <!-- Kind chip: Block, Part, Cut, Light, Mesh. -->
     <Style Selector="Border.kindchip">
       <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderControl}" />
@@ -221,9 +183,7 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
-    <!-- A standing warning about the SUBJECT, not about something that just
-         happened: amber, which is this shell's state colour, in a slot of its
-         own under the header rather than on the last-writer-wins message line. -->
+    <!-- Standing warning about the selection, in its own slot under the header. -->
     <Style Selector="Border.classwarn">
       <Setter Property="Background" Value="{StaticResource SpectraControlChecked}" />
       <Setter Property="BorderBrush" Value="{StaticResource SpectraWarning}" />
@@ -241,13 +201,8 @@
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
     </Style>
 
-    <!-- ___ Outputs ______________________________________
-         ONE WIRE IS A BLOCK OF LABELLED FIELDS, NOT A ROW OF SIX CELLS. The
-         panel is 308px wide and a vector's three cells already needed two
-         lines to be readable in it; six columns would leave about fifteen
-         pixels each. So a wire reads down rather than across, and the wires are
-         separated by a hairline - flat, dense rows, never bordered tiles: a
-         list is a list. -->
+    <!-- Outputs: one wire is a block of labelled fields read downwards.
+         Six columns do not fit in 308px. -->
     <Style Selector="Border.wire">
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
       <Setter Property="BorderThickness" Value="0,0,0,1" />
@@ -261,12 +216,8 @@
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
-    <!-- AMBER, WHICH IS THE STATE COLOUR. Not the accent, which means "you
-         selected this", and not the danger colour, which means an error: the
-         map loader keeps a wire whose target is missing rather than dropping
-         it - the target may be spawned at run time, or belong to a level that
-         is not open - so this says "look at this", not "this is broken", and
-         the wire is kept exactly as authored. -->
+    <!-- Amber, not danger: a wire with a missing target is kept as authored.
+         The target may be spawned at run time. -->
     <Style Selector="TextBlock.wirewarn">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraWarning}" />
@@ -277,9 +228,7 @@
 
   <DockPanel>
 
-    <!-- ___ Header _______________________________________
-         The name and the kind, which together answer "what am I editing" -
-         the question "1 selected" could not. -->
+    <!-- Header: name and kind. -->
     <Border DockPanel.Dock="Top"
             BorderBrush="{StaticResource SpectraBorderSoft}"
             BorderThickness="0,0,0,1"
@@ -308,11 +257,8 @@
       </Grid>
     </Border>
 
-    <!-- ___ Unknown entity class _________________________
-         The rows below are still this map's own data, editable and preserved
-         byte for byte; what is missing is the schema that would say which
-         properties EXIST and what their defaults are. Without this the reader
-         cannot tell a mistyped class name from a class with nothing declared. -->
+    <!-- Unknown entity class: the rows below are still editable, only the
+         schema is missing. -->
     <Border DockPanel.Dock="Top" Classes="classwarn"
             IsVisible="{Binding Properties.HasUnknownClass}">
       <TextBlock Text="{Binding Properties.UnknownClassLabel}"
@@ -321,10 +267,7 @@
                  Foreground="{StaticResource SpectraTextBody}" />
     </Border>
 
-    <!-- ___ Empty state __________________________________
-         A panel with nothing selected is the state it is in most often, so it
-         carries the level's own numbers rather than the words "Nothing
-         selected" over 800px of black. -->
+    <!-- Empty state: shows the level's numbers. -->
     <StackPanel DockPanel.Dock="Top" Margin="12,14,12,0" Spacing="10"
                 IsVisible="{Binding !Properties.HasSelection}">
       <TextBlock Classes="prose" TextWrapping="Wrap"
@@ -352,20 +295,13 @@
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                   IsVisible="{Binding Properties.HasSelection}">
-      <!-- The scroller holds TWO things now: the derived property groups, and
-           the Outputs section, which is not one of them. A wire has no
-           (PropertyId, key) identity to be a row under, so it sits beside the
-           groups rather than inside them, and one wrapper is what lets both
-           scroll together. -->
+      <!-- Property groups and the Outputs section scroll together. -->
       <StackPanel>
       <ItemsControl ItemsSource="{Binding Properties.Groups}" Margin="0,2,0,0">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="shell:PropertyGroupModel">
             <StackPanel Margin="0,10,0,0">
 
-              <!-- The section heading is the GROUP, which the inspector derives
-                   from the payload each value came from rather than being told.
-                   A node with no light simply has no Light section. -->
               <TextBlock Classes="sectionhead" Text="{Binding Name}"
                          Margin="12,0,12,5" IsVisible="{Binding HasName}" />
 
@@ -374,16 +310,12 @@
                   <DataTemplate x:DataType="shell:PropertyRowModel">
                     <StackPanel Margin="12,0,12,0">
 
-                      <!-- Why the last commit was not applied. Present only
-                           after a refusal, never on focus or hover: the rows
-                           below shift once, at the moment the user has just
-                           been told no, which is the one moment a shift is
-                           information rather than noise. -->
+                      <!-- Why the last commit was refused. -->
                       <TextBlock Classes="rejection" Text="{Binding Rejection}"
                                  IsVisible="{Binding HasRejection}"
                                  TextWrapping="Wrap" />
 
-                      <!-- ___ Vector: label line, then three cells ___ -->
+                      <!-- Vector: label line, then three cells -->
                       <StackPanel IsVisible="{Binding IsVector}" Margin="0,2,0,4">
                         <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,3">
                           <TextBlock Grid.Column="0" Classes="rowlabel scrub" Text="{Binding Name}"
@@ -401,11 +333,7 @@
                                      IsVisible="{Binding HasUnit}" />
                         </Grid>
 
-                        <!-- The -4 right margin cancels the last cell's
-                             trailing gap: every cell carries 4 to space it
-                             from its neighbour, and without the cancel the
-                             strip ended 4px short of every other row's right
-                             edge, with the unit label overhanging it. -->
+                        <!-- -4 right margin cancels the last cell's trailing gap. -->
                         <ItemsControl ItemsSource="{Binding Fields}" Margin="0,0,-4,0">
                           <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -439,7 +367,7 @@
                         </ItemsControl>
                       </StackPanel>
 
-                      <!-- ___ Everything else: label left, editor right ___ -->
+                      <!-- Everything else: label left, editor right -->
                       <Grid ColumnDefinitions="86,*" Margin="0,1" IsVisible="{Binding !IsVector}">
 
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
@@ -477,13 +405,8 @@
                           </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
-                        <!-- Colour: a swatch and a hex value, never three
-                             linear floats. The box is a real cell over the row's
-                             single field, so Enter and blur commit it and
-                             Escape abandons it - a hex string parsed per
-                             keystroke can never be assembled, because "#8" and
-                             "#80" are both unreadable and each one puts the
-                             last good colour back. -->
+                        <!-- Colour: swatch plus hex. The hex box commits on Enter
+                             or blur, never per keystroke: "#8" does not parse. -->
                         <Grid Grid.Column="1" ColumnDefinitions="Auto,*"
                               IsVisible="{Binding IsColor}">
                           <Border Grid.Column="0" Classes="swatch" Cursor="Hand"
@@ -511,19 +434,15 @@
                                   IsVisible="{Binding IsBoolean}"
                                   VerticalAlignment="Center" />
 
-                        <!-- Bound to the WORDS, which commit the tokens beside
-                             them: a brush's kind is stored and written as
-                             "World" and is called a Block by everything a
-                             person reads. -->
+                        <!-- Shows the display words. The commit writes the tokens. -->
                         <ComboBox Grid.Column="1" ItemsSource="{Binding ChoiceLabels}"
                                   SelectedItem="{Binding ChoiceLabel, Mode=TwoWay}"
                                   IsVisible="{Binding IsChoice}"
                                   ToolTip.Tip="{Binding Help}"
                                   HorizontalAlignment="Stretch" />
 
-                        <!-- A target: a text box, because a wildcard and a
-                             runtime token are legal values no list can offer,
-                             with a picker beside it for the common case. -->
+                        <!-- Target: a text box plus picker. Wildcards and runtime
+                             tokens are legal and no list can offer them. -->
                         <Grid Grid.Column="1" ColumnDefinitions="*,Auto"
                               IsVisible="{Binding IsTarget}">
                           <Border Grid.Column="0" Classes="cell"
@@ -542,11 +461,8 @@
                                   ToolTip.Tip="Pick an entity in this scene." />
                         </Grid>
 
-                        <!-- An asset: the file's stem, a note when something
-                             is wrong with it, and the whole cell opens the
-                             picker. The path is in the tooltip, because
-                             "Materials/dev/wall_brick_02" does not fit in a
-                             300px panel at any font this shell uses. -->
+                        <!-- Asset: file stem, full path in the tooltip. The whole
+                             cell opens the picker. -->
                         <Button Grid.Column="1" Classes="assetcell"
                                 IsVisible="{Binding IsAsset}"
                                 Click="OnAssetCellPressed"
@@ -579,11 +495,7 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <!-- ___ Outputs ____________________________________
-           The wires leaving this entity. Present only for a single-node entity
-           selection, which is all the engine publishes: merging several
-           entities' wiring has no honest answer, because a connection has no
-           key to merge on the way a keyvalue does. -->
+      <!-- Outputs: the wires leaving this entity. Single-entity selection only. -->
       <StackPanel Margin="12,12,12,14" Spacing="4"
                   IsVisible="{Binding Properties.Wiring.HasEntity}">
 
@@ -594,10 +506,7 @@
                   ToolTip.Tip="Wire one of this entity's outputs to another entity's input." />
         </Grid>
 
-        <!-- The dropdowns below are text boxes when this fires, and the reader
-             is entitled to know why: without a schema there is no list of
-             outputs to offer, and an empty dropdown would leave the wiring
-             visible and permanently uneditable. -->
+        <!-- No schema: the output dropdowns below become text boxes. -->
         <TextBlock Classes="wirewarn" TextWrapping="Wrap"
                    IsVisible="{Binding Properties.Wiring.ShowsUnknownOutputs}"
                    Text="No schema for this class, so its outputs are typed rather than picked." />
@@ -606,8 +515,7 @@
                    IsVisible="{Binding Properties.Wiring.IsEmpty}"
                    Text="Nothing wired yet." />
 
-        <!-- What the picker left out. Said once for the panel rather than per
-             row, because it is a fact about the scene. -->
+        <!-- What the picker left out. -->
         <TextBlock Classes="micro" TextWrapping="Wrap"
                    Text="{Binding Properties.Wiring.TargetsNote}"
                    IsVisible="{Binding Properties.Wiring.TargetsTruncated}" />
@@ -618,23 +526,17 @@
               <Border Classes="wire">
                 <StackPanel Spacing="3">
 
-                  <!-- The output, and the button that takes the wire away. -->
                   <Grid ColumnDefinitions="*,Auto">
                     <ComboBox Grid.Column="0" ItemsSource="{Binding OutputChoices}"
                               SelectedItem="{Binding Output, Mode=TwoWay}"
                               IsVisible="{Binding HasOutputChoices}"
                               HorizontalAlignment="Stretch" />
-                    <!-- The output typed rather than picked, for a class no
-                         schema declares. A field model, not a two-way string:
-                         a two-way Text binding writes per keystroke, so typing
-                         one output name would post five wiring edits. -->
+                    <!-- Typed output, for a class with no schema. A field model:
+                         a two-way Text binding would post an edit per keystroke. -->
                     <Border Grid.Column="0" Classes="cell"
                             IsVisible="{Binding !HasOutputChoices}">
-                      <!-- The DataContext moves on the TEXTBOX rather than on
-                           the Border, because the Border carries a binding of
-                           its own: an element's other bindings resolve against
-                           the context it was just given, so IsVisible would
-                           have been asked of the field model. -->
+                      <!-- DataContext is set on the TextBox, not the Border: the
+                           Border's IsVisible binding must resolve against the row. -->
                       <TextBox DataContext="{Binding OutputField}"
                                Classes="cellfield" TextAlignment="Left" Padding="6,0"
                                Text="{Binding Text, Mode=TwoWay}"
@@ -649,16 +551,9 @@
                   </Grid>
 
                   <!-- Each cell's DataContext is its own PropertyFieldModel, so
-                       the panel's existing focus, blur and key handlers reach it
-                       unchanged - which is the whole reason these are field
-                       models and not bound strings: one commit contract, one
-                       implementation of "a focused box stops taking
-                       refreshes". -->
-                  <!-- The target stays a TEXT BOX with a picker beside it,
-                       never a dropdown: a wildcard and a runtime token are
-                       legal values no list can offer, and a control that could
-                       not show its own value would render blank and then write
-                       that blank back. -->
+                       the panel's focus, blur and key handlers apply unchanged.
+                       The target is a text box, not a dropdown, for the same
+                       reason as a Target property row. -->
                   <Grid ColumnDefinitions="52,*,Auto">
                     <TextBlock Grid.Column="0" Classes="wirelabel" Text="Target" />
                     <Border Grid.Column="1" Classes="cell" DataContext="{Binding TargetField}">
@@ -677,11 +572,8 @@
 
                   <Grid ColumnDefinitions="52,*">
                     <TextBlock Grid.Column="0" Classes="wirelabel" Text="Input" />
-                    <!-- A DROPDOWN when the target resolves to one entity of a
-                         class this build knows, and a text box otherwise: two
-                         entities sharing a name, a wildcard or a runtime token
-                         all leave the class unknown, and a list guessed from
-                         one of them would offer inputs the others do not have. -->
+                    <!-- Dropdown only when the target resolves to one entity of
+                         a known class. Otherwise a text box. -->
                     <ComboBox Grid.Column="1" ItemsSource="{Binding InputChoices}"
                               SelectedItem="{Binding Input, Mode=TwoWay}"
                               IsVisible="{Binding HasInputChoices}"
@@ -749,24 +641,16 @@
       </StackPanel>
     </ScrollViewer>
 
-    <!-- ONE picker for the panel, moved to whichever swatch opened it.
-
-         A Popup because it is the only surface in this shell that may cross the
-         viewport: on Windows a popup is a real OS window, so it composites over
-         a native child, where anything drawn in this window's own layer would
-         be painted and thrown away. Light dismiss COMMITS, which is what a
-         click outside means everywhere else in this panel; Escape is the only
-         cancel. -->
-    <!-- The entity picker, which shares the asset picker's list and keyboard:
-         somebody who has used one already knows the other. -->
+    <!-- One picker for the panel, moved to whichever swatch opened it.
+         The pickers are Popups: a popup is a real OS window, the only thing
+         that draws over a native-child viewport. -->
+    <!-- The entity picker. -->
     <Popup x:Name="TargetPopup" Placement="BottomEdgeAlignedLeft"
            IsLightDismissEnabled="True">
       <shell:EntityPickerView x:Name="TargetPicker" />
     </Popup>
 
-    <!-- The asset picker, a Popup for the same airspace reason the colour one
-         is: a real OS window is the only surface that may cross a native-child
-         viewport, and this panel can be docked anywhere. -->
+    <!-- The asset picker. -->
     <Popup x:Name="AssetPopup" Placement="BottomEdgeAlignedLeft"
            IsLightDismissEnabled="True" Closed="OnAssetPopupClosed">
       <shell:AssetPickerView x:Name="AssetPicker" />

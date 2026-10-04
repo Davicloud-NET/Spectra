@@ -6,38 +6,13 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The skeleton, clip and pose primitives — the arithmetic every animated thing
-/// in the engine will rest on.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Two of these pin a matrix convention rather than a behaviour</b>, and they
-/// are the most valuable tests here — both were rewritten after mutation testing
-/// showed the obvious versions could not distinguish a reversed composition at
-/// all. This engine composes row-vector style
-/// (<c>p · M</c>), so a hierarchy composes as <c>local · parentModel</c> and a
-/// vertex skins as <c>v · inverseBind · boneModel</c>. Getting either backwards
-/// still compiles, still runs, and produces a mesh turned inside out on the
-/// first animated frame — so the order is asserted, not commented.
-/// </para>
-/// <para>
-/// The rest are the classic silent failures: the long-way-round quaternion
-/// interpolation, a clip leaving bones it does not animate carrying the previous
-/// clip's pose, and a divide by zero on coincident keyframe times producing a
-/// character that vanishes.
-/// </para>
-/// </remarks>
+// Row-vector convention: a hierarchy composes as local * parentModel and a
+// vertex skins as v * inverseBind * boneModel.
 public sealed class AnimationTests
 {
-    // --- Skeleton invariants -------------------------------------------------
-
     [Fact]
     public void A_bone_whose_parent_comes_after_it_is_refused()
     {
-        // Topological order is what makes posing one forward pass. A skeleton
-        // that breaks it poses one limb wrongly and everything else correctly,
-        // which is far harder to find than a throw at construction.
         var bones = new List<SkeletonBone>
         {
             Bone("child", parent: 1),
@@ -51,8 +26,7 @@ public sealed class AnimationTests
     [Fact]
     public void Two_bones_with_one_name_are_refused()
     {
-        // Clips bind to bones by name, so an ambiguous name silently drives
-        // whichever joint the importer emitted first.
+        // Clips bind to bones by name.
         var bones = new List<SkeletonBone>
         {
             Bone("root", parent: -1),
@@ -63,17 +37,11 @@ public sealed class AnimationTests
         Assert.Throws<ArgumentException>(() => new Skeleton(bones));
     }
 
-    // --- The two convention tests --------------------------------------------
-
     [Fact]
     public void At_the_bind_pose_every_skinning_matrix_cancels_to_the_identity()
     {
-        // A smoke check, and NOT a test of the multiplication order — mutation
-        // testing showed it cannot be. The inverse bind pose is the exact
-        // inverse of the bind model matrix, and A·A⁻¹ and A⁻¹·A are both the
-        // identity, so reversing the skinning composition passes this happily.
-        // What it does catch is a skinning matrix built from the wrong bone, or
-        // not built at all. The order is pinned by the posed test below.
+        // Cannot see the multiplication order: A*inv(A) and inv(A)*A are both
+        // identity. The posed test below pins the order.
         Skeleton skeleton = Chain();
         var pose = new SkeletonPose(skeleton);
 
@@ -84,12 +52,8 @@ public sealed class AnimationTests
     [Fact]
     public void A_skinning_matrix_carries_a_bind_pose_vertex_to_where_its_bone_moved()
     {
-        // THE test for the skinning multiplication order, and it asserts what a
-        // skinning matrix is FOR rather than what it is made of: a vertex sitting
-        // at a bone's rest position, skinned by that bone alone, must land
-        // exactly where the bone ended up. Reverse the composition and the vertex
-        // goes somewhere else entirely — which on a real mesh is the character
-        // turning inside out on the first animated frame.
+        // Pins the skinning multiplication order: a vertex at a bone's rest
+        // position must land where the bone ended up.
         Skeleton skeleton = Chain();
         var pose = new SkeletonPose(skeleton);
 
@@ -108,8 +72,7 @@ public sealed class AnimationTests
         Assert.True(Vector3.Distance(skinned, expected) < 1e-3f,
             $"a rest-pose vertex on the hand skinned to {skinned}, but the hand moved to {expected}");
 
-        // And the bone genuinely moved, so the assertion above is not comparing
-        // two copies of the rest pose.
+        // Guard: the bone has to have moved, or the check above compares rest to rest.
         Assert.True(Vector3.Distance(expected, restPoint) > 1f,
             "the pose did not actually move the hand, so this test proved nothing");
     }
@@ -120,8 +83,6 @@ public sealed class AnimationTests
         Skeleton skeleton = Chain();
         var pose = new SkeletonPose(skeleton);
 
-        // Rotate the root and nothing else; the child must follow it, which is
-        // only true if the composition order is local · parentModel.
         pose.Local[0] = pose.Local[0] with
         {
             Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f),
@@ -131,15 +92,11 @@ public sealed class AnimationTests
         Matrix4x4 expected = pose.Local[1].Model * pose.Model[0];
         AssertMatrixClose(expected, pose.Model[1], "child model");
 
-        // And the child really moved in the world, rather than only in its own
-        // frame: the root turned a quarter turn about Y, so the child's offset
-        // along +x should now point along -z.
+        // Quarter turn about Y: the child's +x offset now points along -z.
         Vector3 childOrigin = pose.Model[1].Translation;
         Assert.True(childOrigin.Z < -0.5f,
             $"the child should have swung to -z with its parent, but sits at {childOrigin}");
     }
-
-    // --- Sampling ------------------------------------------------------------
 
     [Fact]
     public void A_bone_the_clip_does_not_animate_keeps_its_bind_pose()
@@ -161,8 +118,6 @@ public sealed class AnimationTests
     [Fact]
     public void Playing_a_clip_after_another_gives_the_same_pose_as_playing_it_cold()
     {
-        // A clip that leaves untouched bones alone makes the result depend on
-        // whatever ran before it — one limb carrying the previous animation.
         Skeleton skeleton = Chain();
 
         var first = new AnimationClip("first", 1f,
@@ -228,8 +183,7 @@ public sealed class AnimationTests
     [Fact]
     public void Coincident_keyframe_times_do_not_produce_a_broken_pose()
     {
-        // Authoring tools emit these. A naive (time - start) / (end - start)
-        // divides by zero and the character vanishes rather than stutters.
+        // Authoring tools emit these; (time - start) / (end - start) divides by zero.
         Skeleton skeleton = Chain();
         var pose = new SkeletonPose(skeleton);
 
@@ -246,12 +200,10 @@ public sealed class AnimationTests
         Assert.True(float.IsFinite(pose.Local[0].Position.X), "a coincident key pair produced a NaN pose");
     }
 
-    // --- Time ----------------------------------------------------------------
-
     [Theory]
     [InlineData(0.5f, 0.5f)]
     [InlineData(2.5f, 0.5f)]
-    [InlineData(-0.5f, 1.5f)]   // negative wrap: a rewind must not fall off the start
+    [InlineData(-0.5f, 1.5f)]   // negative wrap
     public void A_looping_clip_wraps_its_play_head(float input, float expected)
     {
         var clip = new AnimationClip("loop", 2f, [], looping: true);
@@ -267,19 +219,12 @@ public sealed class AnimationTests
         Assert.Equal(expected, clip.NormalizeTime(input), 4);
     }
 
-    // --- Shortest path, twice ------------------------------------------------
-
     [Fact]
     public void Interpolating_two_keys_on_opposite_hemispheres_takes_the_short_way()
     {
-        // An exporter may emit q or -q for the same orientation. Interpolated
-        // naively, a 20-degree turn becomes a 340-degree one — the forearm that
-        // whips round between two frames that look identical.
-        //
-        // Measured limitation: this passes even with our explicit hemisphere fix
-        // deleted, because System.Numerics.Slerp does it too. It is a CONTRACT
-        // test — it would catch a future swap to a naive lerp-and-normalise —
-        // not a test of the line above it.
+        // An exporter may emit q or -q for the same orientation.
+        // Passes without our own hemisphere fix too, since System.Numerics.Slerp
+        // also does it. It guards against a swap to lerp-and-normalise.
         Skeleton skeleton = Chain();
         var pose = new SkeletonPose(skeleton);
 
@@ -320,8 +265,6 @@ public sealed class AnimationTests
             $"a crossfade midpoint should be about 10 degrees from the start, but it is {degrees:0.0}");
     }
 
-    // --- Blending ------------------------------------------------------------
-
     [Theory]
     [InlineData(0f)]
     [InlineData(1f)]
@@ -344,8 +287,7 @@ public sealed class AnimationTests
     [Fact]
     public void A_blend_may_write_into_one_of_its_own_sources()
     {
-        // What a crossfade does every frame: fade the live pose toward the new
-        // one without a third buffer.
+        // A crossfade does this every frame.
         Skeleton skeleton = Chain();
         var live = new SkeletonPose(skeleton);
         var target = new SkeletonPose(skeleton);
@@ -366,8 +308,6 @@ public sealed class AnimationTests
         Assert.Throws<ArgumentException>(() => SkeletonPose.Blend(a, b, 0.5f, a));
     }
 
-    // --- Sockets -------------------------------------------------------------
-
     [Fact]
     public void A_named_bones_model_matrix_is_reachable_for_attachments()
     {
@@ -379,8 +319,6 @@ public sealed class AnimationTests
         Assert.False(pose.TryGetBoneMatrix("tail", out _));
     }
 
-    // --- Fixtures ------------------------------------------------------------
-
     private static SkeletonBone Bone(string name, int parent) => new()
     {
         Name = name,
@@ -389,13 +327,8 @@ public sealed class AnimationTests
         InverseBindPose = Matrix4x4.Identity,
     };
 
-    /// <summary>
-    /// A three-bone chain, each offset one unit along +x from its parent, with
-    /// inverse bind poses DERIVED by composing and inverting — so
-    /// <see cref="At_the_bind_pose_every_skinning_matrix_is_the_identity"/> is
-    /// testing the runtime's composition rather than a hand-typed constant that
-    /// could be wrong in the same direction.
-    /// </summary>
+    // Three bones, each one unit along +x from its parent. Inverse bind poses
+    // are derived by composing and inverting, not typed in.
     private static Skeleton Chain()
     {
         (string Name, int Parent, Vector3 Offset)[] layout =
@@ -405,8 +338,7 @@ public sealed class AnimationTests
             ("hand", 1, new Vector3(1f, 0f, 0f)),
         ];
 
-        // Bone 0's bind sits one unit out too, so the chain's tip lands at x = 3
-        // and the socket assertion above has a number worth checking.
+        // Bone 0 sits one unit out too, so the tip lands at x = 3.
         var bones = new List<SkeletonBone>(layout.Length);
         var models = new Matrix4x4[layout.Length];
 

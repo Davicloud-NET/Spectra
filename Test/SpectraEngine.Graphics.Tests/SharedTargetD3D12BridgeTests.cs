@@ -20,26 +20,10 @@ namespace SpectraEngine.Graphics.Tests;
 /// bridge, the keyed mutex on the texture it owns, and the debug layer staying
 /// silent across the wrapped-resource bracket.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A bridge and not a direct handle, because that was measured.</b>
-/// <c>--interop-probe</c> imports real textures rather than reading capability
-/// flags, and on this machine the compositor refuses a D3D12-created handle with
-/// <c>E_NOINTERFACE</c> inside its own import while a D3D11On12 device over the
-/// same D3D12 device works. So nothing here asks a D3D12 resource for a shared
-/// handle; the frame lands in an ordinary private target and one copy per frame
-/// carries it across.
-/// </para>
-/// <para>
-/// <b>The debug-layer assertion is the actual gate on this stage.</b> A wrapped
-/// resource acquired from a state it is not in, or released back into one the
-/// next frame's barrier will not expect, is a D3D12 resource-state error and
-/// nothing else reports it: there is no swap chain to present, no offscreen
-/// probe, and the picture would be right on this machine and wrong on another.
-/// The pixel round-trip proves the copy happened; the counter proves it was
-/// legal.
-/// </para>
-/// </remarks>
+// The compositor refuses a D3D12-created handle (E_NOINTERFACE), so the frame
+// lands in a private target and one copy per frame carries it across the bridge.
+// A wrong resource state on the wrapped resource shows up only on the debug
+// layer, hence the error-count assertions.
 [Collection(D3DDeviceCollection.Name)]
 public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture fixture)
 {
@@ -51,8 +35,8 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
         var buffers = new List<(uint Size, ComPtr<ID3D12Resource> Resource)>();
         try
         {
-            // Five full buckets exceed the global allowance while each fits
-            // separately. Nothing is returned until all resources are distinct.
+            // Five full buckets exceed the global limit while each fits its own.
+            // Rent all before returning any, so every resource is distinct.
             for (uint size = 1024 * 1024; size <= 16 * 1024 * 1024; size *= 2)
                 for (int i = 0; i < 16 * 1024 * 1024 / size; i++)
                     buffers.Add((size, renderer.RentMeshBuffer(size)));
@@ -65,7 +49,7 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
         fixture.Present();
         renderer.MeshBufferMemory.Retired.ShouldBe(0UL);
         renderer.MeshBufferMemory.Pooled.ShouldBeLessThanOrEqualTo(D3D12Renderer.MeshPoolLimit);
-        // Returned buffers must expire even if no future mesh asks for them.
+        // Idle buffers expire even if no mesh asks for them.
         var target = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8));
         try
         {
@@ -83,11 +67,6 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void A_composited_surface_brings_a_device_up_with_no_swap_chain()
     {
-        // The split's own assertion. A surface the engine does not present to
-        // still needs a device, a queue, a command list, the base shaders and
-        // every pipeline; only the chain and the back-buffer views drop out -
-        // and the queue matters MORE here than on a window, because it is the
-        // queue the bridge records its copy into.
         Require();
 
         fixture.Renderer.CurrentPipelineName.ShouldNotBe("None");
@@ -110,9 +89,6 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void The_handle_opens_on_a_second_device_that_knows_nothing_about_this_renderer()
     {
-        // The whole point of routing through D3D11 at all: this is the claim a
-        // D3D12-created handle failed, and no amount of reading creation flags
-        // establishes it.
         Require();
         fixture.Renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle handle).ShouldBeTrue();
 
@@ -125,11 +101,6 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void The_imported_resource_is_unorm_so_the_engines_srgb_write_is_not_encoded_twice()
     {
-        // Same claim the D3D11 path makes, and it holds here for the same reason
-        // rather than a parallel one: the shared texture is built by D3D11's own
-        // CreateRenderTargetTexture, so the UNORM-resource plus sRGB-view split
-        // is one decision in one place. The D3D12 side has already encoded on
-        // its own sRGB render-target view, and the copy across is a bit copy.
         Require();
         fixture.Renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle handle).ShouldBeTrue();
 
@@ -143,9 +114,6 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void The_producer_and_the_consumer_take_turns_on_keys_zero_and_one()
     {
-        // The numbers are pure convention with nothing in the API to enforce
-        // them, and the two backends must agree about them or a host wired for
-        // one deadlocks on the other.
         Require();
         fixture.Renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle handle).ShouldBeTrue();
 
@@ -157,8 +125,7 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
         consumer.Acquire(Renderer.SharedConsumerKey, 1000).ShouldBe(0);
         consumer.Release(Renderer.SharedProducerKey).ShouldBe(0);
 
-        // And round again, because a protocol that works once and deadlocks on
-        // the second turn is exactly what releasing the wrong key looks like.
+        // Twice: releasing the wrong key works once and deadlocks on the second turn.
         fixture.Renderer.BeginSharedWrite(1000).ShouldBeTrue();
         fixture.Renderer.EndSharedWrite();
         consumer.Acquire(Renderer.SharedConsumerKey, 1000).ShouldBe(0);
@@ -168,12 +135,8 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void A_turn_the_consumer_never_takes_times_out_instead_of_blocking_the_render_thread()
     {
-        // AcquireSync's timeout is WAIT_TIMEOUT, 0x00000102 - a POSITIVE
-        // HRESULT, so the ordinary `hr < 0` failure test reads a stalled
-        // consumer as a successful acquisition and the frame copies into a
-        // texture the consumer is still reading. This is the assertion that
-        // catches that, on a backend where the same mistake is a fresh
-        // opportunity.
+        // AcquireSync times out with WAIT_TIMEOUT (0x102), a positive HRESULT,
+        // so an `hr < 0` check reads a stalled consumer as success.
         Require();
         fixture.Renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle handle).ShouldBeTrue();
 
@@ -189,8 +152,7 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
             fixture.Renderer.BeginSharedWrite(50).ShouldBeFalse();
             waited.Stop();
 
-            // Generous, because a machine under test load is not a stopwatch.
-            // What it rules out is a wait that never returns at all.
+            // Generous: only rules out a wait that never returns.
             waited.ElapsedMilliseconds.ShouldBeLessThan(2000);
         }
         finally
@@ -198,7 +160,7 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
             consumer.Release(Renderer.SharedProducerKey).ShouldBe(0);
         }
 
-        // And the skip is a skip, not a poisoning: the next frame goes through.
+        // The next frame still goes through.
         fixture.Renderer.BeginSharedWrite(1000).ShouldBeTrue();
         fixture.Renderer.EndSharedWrite();
         consumer.Acquire(Renderer.SharedConsumerKey, 1000).ShouldBe(0);
@@ -208,13 +170,8 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void A_frame_published_through_the_bridge_arrives_on_the_other_device_encoded_once()
     {
-        // Three claims in one readback, and they are only true together. The
-        // bytes arriving at all is the wrapped resource and the copy working;
-        // arriving with the right value is the sRGB render-target view on the
-        // D3D12 side; the debug layer staying quiet is the state bracket. Linear
-        // 0.5 encodes to sRGB 0.7354, which is 188 of 255 - so 128 would mean
-        // the target's view never encoded and the compositor would show a
-        // picture too dark, and 0 would mean the copy never landed.
+        // Linear 0.5 encodes to sRGB 188 of 255. 128 means the view never
+        // encoded, 0 means the copy never landed.
         Require();
         fixture.Renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle handle).ShouldBeTrue();
 
@@ -237,11 +194,6 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void The_debug_layer_stays_silent_across_a_bridged_frame()
     {
-        // The gate, stated on its own so a failure names the right thing. It is
-        // skipped rather than passed when the layer is not running, because
-        // zero-and-off and zero-and-clean are the same number and mean opposite
-        // things - a green run on a machine with no Graphics Tools would be
-        // proof of nothing at all.
         Require();
         Assert.SkipWhen(
             !fixture.Renderer.DebugLayerActive,
@@ -252,12 +204,9 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
 
         int errorsBefore = fixture.Renderer.DebugLayerErrorCount;
 
-        // Several, because the state bracket's failure mode is cumulative: a
-        // release that puts the resource back into the wrong state is legal on
-        // the frame that does it and wrong on the frame after. The consumer
-        // takes its turn between them for the reason the timeout test states -
-        // a producer that publishes twice with nobody consuming is skipping the
-        // second one, which would make this measure nothing.
+        // Several frames: a release into the wrong state only fails on the
+        // frame after. The consumer takes its turn between them, or the
+        // producer skips every publish after the first.
         for (int i = 0; i < 4; i++)
         {
             fixture.WriteAndPublish(new Vector4(0f, 1f, 0f, 1f));
@@ -273,9 +222,6 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void A_resize_mints_a_new_generation_and_a_new_handle()
     {
-        // What the consumer's re-import is keyed on. The old handle staying
-        // valid is not enough and is not the point: it names a resource pair
-        // being retired, and the generation is the only thing that says so.
         Require();
 
         fixture.Renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle before).ShouldBeTrue();
@@ -290,15 +236,12 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
             after.Width.ShouldBe(SharedTargetD3D12Fixture.Width + 32);
             after.Height.ShouldBe(SharedTargetD3D12Fixture.Height + 16);
 
-            // The retired pair is held rather than freed until the consumer says
-            // it is done, so the acknowledgement must be accepted and must not
-            // disturb the live generation.
+            // The retired pair is held until the consumer acknowledges it.
             Should.NotThrow(() => fixture.Renderer.NotifySharedTargetReleased(before.Generation));
             fixture.Renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle still).ShouldBeTrue();
             still.ShouldBe(after);
 
-            // And the fresh pair works, which is what says the bridge rebuilt
-            // its alias rather than keeping one that names the retired target.
+            // The bridge must have rebuilt its wrap for the new target.
             using var consumer = new ConsumerDevice(after.NtHandle);
             fixture.WriteAndPublish(new Vector4(0f, 1f, 0f, 1f));
             (byte r, byte g, byte b, _) = consumer.ReadFirstPixel();
@@ -308,7 +251,7 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
         }
         finally
         {
-            // Back to the size every other test in this class expects.
+            // Back to the size the other tests expect.
             fixture.Resize(SharedTargetD3D12Fixture.Width, SharedTargetD3D12Fixture.Height);
             fixture.Renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle restored);
             fixture.Renderer.NotifySharedTargetReleased(restored.Generation - 1);
@@ -320,13 +263,9 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void A_shared_target_write_needs_no_swap_chain_to_end_its_frame()
     {
-        // Present is skipped every frame on a composited surface, which is
-        // exactly why the wait and the drain had to move OUT of the swap-chain
-        // guard: the upload ring rewinds per recording, the mesh buffer pool
-        // hands freed buffers straight back out, and the descriptor rings are
-        // swapped here - all three are safe only because the GPU is idle at this
-        // point. Dropping the wait because there is nothing to present corrupts
-        // every one of them, and this is what says it did not happen.
+        // With no chain to present, the frame end must still wait for the GPU:
+        // the upload ring, the mesh buffer pool and the descriptor rings all
+        // assume it is idle there.
         Require();
         fixture.Renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle handle).ShouldBeTrue();
         using var consumer = new ConsumerDevice(handle.NtHandle);
@@ -345,13 +284,8 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void The_bridged_route_and_an_ordinary_srgb_target_encode_a_colour_the_same_way()
     {
-        // The `--viewport-compare` claim, and it carries MORE here than on
-        // D3D11: over there the shared texture is the thing the frame is written
-        // into, and here the frame lands in a private D3D12 target that the
-        // bridge copies across. That copy is between an _SRGB-typed resource and
-        // a _UNORM one within one format family, so it must be a bit copy and
-        // not a conversion - and a conversion would produce a washed-out picture
-        // with no error, no HRESULT and nothing on the debug layer.
+        // The bridge copies from an _SRGB resource to a _UNORM one. It must be
+        // a bit copy; a conversion washes the picture out with no error.
         Require();
 
         var linear = new Vector4(0.5f, 0.25f, 0.75f, 1f);
@@ -375,12 +309,8 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
     [Fact]
     public void A_double_encode_on_the_bridged_route_is_caught_rather_than_absorbed()
     {
-        // A gate never seen to fail is not known to work, so the defect is
-        // MANUFACTURED: the present target is written the value that has already
-        // been through the transfer function once, so its own sRGB view applies
-        // it a second time and the bridge faithfully copies the washed-out
-        // result across. That is precisely the shape of the failure this whole
-        // probe exists for.
+        // The present target is written an already-encoded value, so its sRGB
+        // view encodes it a second time.
         Require();
 
         var linear = new Vector4(0.5f, 0.25f, 0.75f, 1f);
@@ -406,20 +336,14 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
         }
     }
 
-    /// <summary>
-    /// An ordinary sRGB colour target the size of the shared one: byte for byte
-    /// what the window's back buffer holds on this backend.
-    /// </summary>
+    // Same format as the window's back buffer on this backend.
     private RenderTarget CreateReferenceTarget() => fixture.Renderer.CreateRenderTarget(new RenderTargetDesc(
         SharedTargetD3D12Fixture.Width, SharedTargetD3D12Fixture.Height,
         TextureFormat.Rgba8, TextureColorSpace.Srgb, Depth: false));
 
-    /// <summary>
-    /// Reads both pictures back and compares them. The shared read goes through
-    /// the BRIDGE's texture rather than the present target, which is the only
-    /// place the copy can be observed - and it takes the consumer's turn, which
-    /// is what every test in this class that publishes owes the ones after it.
-    /// </summary>
+    // The shared read goes through the bridge's texture, not the present
+    // target, so it sees the copy. It also takes the consumer's turn, which
+    // later tests rely on.
     private ViewportCompare.Reading CompareSharedAgainst(RenderTarget reference)
     {
         var window = new byte[reference.Width * reference.Height * 4];
@@ -432,16 +356,8 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
         return ViewportCompare.Compare(window, shared);
     }
 
-    /// <summary>
-    /// The consumer's half of one frame: acquire key 1, release key 0.
-    /// </summary>
-    /// <remarks>
-    /// Every test that publishes more than once owes this between publishes.
-    /// The producer's key comes back only when the consumer hands it over, so a
-    /// test that skips it is measuring a skipped write - and leaves the mutex
-    /// standing on key 1 for every test that runs after it, which is a whole
-    /// class going red for one test's arrangement.
-    /// </remarks>
+    // Needed between publishes. Without it the next write is skipped and the
+    // mutex is left on key 1 for every later test.
     private static void TakeTurn(ConsumerDevice consumer)
     {
         consumer.Acquire(Renderer.SharedConsumerKey, 1000).ShouldBe(0);
@@ -453,30 +369,11 @@ public sealed unsafe class SharedTargetD3D12BridgeTests(SharedTargetD3D12Fixture
 /// A <see cref="D3D12Renderer"/> initialized against a composited surface, or a
 /// recorded reason why not.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Self-skipping rather than failing.</b> A machine with no D3D12 driver is
-/// not a broken build, and a suite that goes red on one teaches people to ignore
-/// it.
-/// </para>
-/// <para>
-/// <b>But the skip is decided by ONE question asked first, and nothing after it
-/// is caught.</b> Wrapping the whole construction in a catch looks like the same
-/// thing and is the opposite: the D3D11 fixture did exactly that at first, and a
-/// real defect - a null device pointer out of a successful create - was reported
-/// as "no device on this machine" on a machine with two. In particular the
-/// D3D11On12 bridge is NOT part of the availability question: an 11On12 device
-/// that cannot be created on a machine with a working D3D12 one is a defect and
-/// is allowed to be a failure.
-/// </para>
-/// <para>
-/// Registered on <see cref="D3DDeviceCollection"/>, beside the D3D11 fixture and
-/// not in a collection of its own: see that type for the measured reason.
-/// </para>
-/// </remarks>
+// Tests skip on a machine with no D3D12 driver. Availability is probed with a
+// throwaway device and nothing after that is caught, the 11On12 bridge
+// included: a failure past the probe is a real defect.
 public sealed unsafe class SharedTargetD3D12Fixture : IDisposable
 {
-    /// <summary>Big enough to be a real target, small enough to cost nothing.</summary>
     public const int Width = 64;
 
     public const int Height = 48;
@@ -496,10 +393,7 @@ public sealed unsafe class SharedTargetD3D12Fixture : IDisposable
 
         var renderer = new D3D12Renderer(_log, new SpectraShadeCompiler()) { EnableDebugLayer = true };
 
-        // The engine publishes this from the main thread before the render
-        // thread starts, so a renderer that has never been told its size is not
-        // a state the engine can be in - and on a composited surface it is the
-        // ONLY size there is, since there is no swap chain to ask.
+        // A composited surface has no swap chain to ask, so this is the only size.
         renderer.SetFramebufferSize(new Vector2D<int>(Width, Height));
         renderer.Initialize(_surface);
 
@@ -508,11 +402,6 @@ public sealed unsafe class SharedTargetD3D12Fixture : IDisposable
         UnavailableReason = string.Empty;
     }
 
-    /// <summary>
-    /// Whether this machine can make a D3D12 device at all, asked with a
-    /// throwaway one so the answer cannot be confused with anything the engine
-    /// does afterwards.
-    /// </summary>
     private static bool DeviceIsAvailable(out string reason)
     {
         ID3D12Device* device = null;
@@ -537,27 +426,15 @@ public sealed unsafe class SharedTargetD3D12Fixture : IDisposable
         ?? throw new InvalidOperationException("No D3D12 device; the test should have skipped.");
 
     /// <summary>
-    /// Everything the renderer logged at warning or above, newest last, so a
-    /// failed debug-layer assertion says what the layer actually complained
-    /// about.
+    /// Everything the renderer logged at warning or above, for assertion messages.
     /// </summary>
-    /// <remarks>
-    /// A counter that says "1" and nothing else is the least useful possible
-    /// form of this gate: the message names the resource and the state, and
-    /// without it the only way to read one is to attach a native debugger.
-    /// </remarks>
     public string Diagnostics => _log.Text;
 
     /// <summary>
     /// Clears the present target to <paramref name="color"/>, publishes it
-    /// through the bridge, and ends the frame the way the engine does.
+    /// through the bridge, and ends the frame.
     /// </summary>
-    /// <remarks>
-    /// The <see cref="Present"/> is not decoration: on a composited surface it
-    /// is the only thing that waits on the fence and drains the debug layer, so
-    /// leaving it out would make every debug-layer assertion in this class read
-    /// a counter nothing had updated.
-    /// </remarks>
+    // Present is what drains the debug layer; without it the error count is stale.
     public void WriteAndPublish(Vector4 color)
     {
         Renderer.WriteAndPublishForTest(color);
@@ -567,27 +444,18 @@ public sealed unsafe class SharedTargetD3D12Fixture : IDisposable
     /// <summary>Ends a frame: the fence wait, the ring maintenance and the debug-layer drain.</summary>
     public void Present() => Renderer.Present(_surface);
 
-    /// <summary>
-    /// Moves the size latch and pumps one frame's worth of target maintenance,
-    /// which is what a host resize does.
-    /// </summary>
+    /// <summary>Resizes the present target the way a host resize does.</summary>
     public void Resize(int width, int height)
     {
         Renderer.SetFramebufferSize(new Vector2D<int>(width, height));
 
-        // Rendering a frame is how the engine picks a resize up, and a frame
-        // needs a scene. The target maintenance is reachable on its own, and
-        // driving exactly it is what keeps this a test of the target rather than
-        // of the pipelines.
+        // The engine picks a resize up by rendering a frame, which needs a
+        // scene. This runs the target maintenance alone.
         Renderer.EnsurePresentTargetForTest();
     }
 
     public void Dispose() => _renderer?.Shutdown();
 
-    /// <summary>
-    /// A surface with no window, no handle and no GL context: exactly what an
-    /// embedded host that composites the engine's output offers.
-    /// </summary>
     private sealed class CompositedSurface(int width, int height) : IRenderSurface
     {
         public RenderSurfaceKind Kind => RenderSurfaceKind.Composited;
@@ -602,7 +470,6 @@ public sealed unsafe class SharedTargetD3D12Fixture : IDisposable
         }
     }
 
-    /// <summary>Keeps every warning and error the renderer logs, so a gate can quote them.</summary>
     private sealed class RecordingLogger : ILogger<Renderer>
     {
         private readonly List<string> _lines = [];
@@ -613,9 +480,7 @@ public sealed unsafe class SharedTargetD3D12Fixture : IDisposable
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-        // Information and below are dropped rather than kept: the D3D12 renderer
-        // logs a line per shader and per target, and a gate's failure message
-        // that has to be scrolled is one nobody reads.
+        // Warning and up only: the renderer logs a line per shader and target.
         public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
 
         public void Log<TState>(

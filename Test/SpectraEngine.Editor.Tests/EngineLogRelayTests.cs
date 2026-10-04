@@ -3,19 +3,9 @@ using SpectraEngine.Editor.Shell;
 
 namespace SpectraEngine.Editor.Tests;
 
-/// <summary>
-/// The engine's own log on its way into the window.
-/// </summary>
-/// <remarks>
-/// <b>What this closes is a diagnostic surface that reported to nobody.</b>
-/// Serilog's three sinks leave the process; the shell's panel only ever showed
-/// what the shell itself wrote. So a texture that would not decode, a material
-/// naming a file that is not there, a map node that lost its mesh - all of them
-/// went to a file, and the editor said nothing at all.
-/// </remarks>
+/// <summary>The relay that carries engine log lines into the editor window.</summary>
 public sealed class EngineLogRelayTests
 {
-    /// <summary>A relay wired to a real Serilog logger, delivering inline.</summary>
     private static (EngineLogRelay Relay, ILogger Logger, List<EngineLogLine> Lines) Rig(
         bool attach = true)
     {
@@ -23,8 +13,6 @@ public sealed class EngineLogRelayTests
         var lines = new List<EngineLogLine>();
         relay.LineArrived += lines.Add;
 
-        // Delivered inline: the poster is the seam that keeps this class free of
-        // any UI type, and a test is allowed to be the thread.
         if (attach) relay.Attach(work => work());
 
         ILogger logger = new LoggerConfiguration()
@@ -47,8 +35,7 @@ public sealed class EngineLogRelayTests
         EngineLogLine line = Assert.Single(lines);
         Assert.Equal(OutputSeverity.Warning, line.Severity);
 
-        // The TEMPLATE, not the rendered text: it is what makes two reports
-        // about one file a count and two reports about two files two rows.
+        // The template, not the rendered text: the problem list keys on it.
         Assert.Contains("{Path}", line.Template);
         Assert.Equal("Materials/wall.spectramat", line.Subject);
         Assert.Contains("Textures/gone.png", line.Message);
@@ -70,9 +57,6 @@ public sealed class EngineLogRelayTests
     {
         (_, ILogger logger, List<EngineLogLine> lines) = Rig();
 
-        // The engine logs at Information constantly - every texture, every
-        // compile, the stats line every five seconds. Carrying that into the
-        // panel would bury the two lines that matter.
         logger.Debug("Asset manager attached to {Backend} renderer", "D3D11");
         logger.Information("Loaded texture {Path} (128x128)", "Textures/wall.png");
 
@@ -122,9 +106,7 @@ public sealed class EngineLogRelayTests
         var lines = new List<EngineLogLine>();
         relay.LineArrived += lines.Add;
 
-        // The poster is captured rather than run, so this counts the dispatcher
-        // jobs a burst would have scheduled. A compile can warn once per frame;
-        // one job per line would queue hundreds behind the frame producing them.
+        // The poster is captured, not run, so this counts dispatcher jobs.
         var posted = new List<Action>();
         relay.Attach(posted.Add);
 
@@ -137,8 +119,6 @@ public sealed class EngineLogRelayTests
         posted[0]();
         Assert.Equal(50, lines.Count);
 
-        // In order, because a diagnostic read out of sequence is worse than one
-        // read late.
         Assert.Contains("m0.spectramat", lines[0].Subject);
         Assert.Contains("m49.spectramat", lines[49].Subject);
     }
@@ -154,8 +134,6 @@ public sealed class EngineLogRelayTests
         logger.Warning("first");
         Assert.Single(posted);
 
-        // The flag clears before the queue drains, so a line written while the
-        // drain runs is not left sitting until something else happens to log.
         posted[0]();
         logger.Warning("second");
         Assert.Equal(2, posted.Count);
@@ -168,9 +146,7 @@ public sealed class EngineLogRelayTests
         var lines = new List<EngineLogLine>();
         relay.LineArrived += lines.Add;
 
-        // The window does not exist when the logger is configured, and the lines
-        // written in between are exactly the ones somebody needs when a session
-        // opens wrong.
+        // The logger is configured before the window exists.
         ILogger logger = new LoggerConfiguration().WriteTo.Sink(relay).CreateLogger();
         logger.Warning("Pack {Path} would not mount", "cooked/Demo.spack");
         Assert.Empty(lines);
@@ -195,8 +171,7 @@ public sealed class EngineLogRelayTests
         relay.Attach(work => work());
         Assert.Equal(7, Assert.Single(dropped));
 
-        // And the counter resets, so the next overflow reports its own count
-        // rather than a running total nobody can act on.
+        // The counter resets, so the next overflow reports its own count.
         Assert.Equal(0, relay.Dropped);
     }
 

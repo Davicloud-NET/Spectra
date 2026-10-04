@@ -3,46 +3,22 @@ using System;
 namespace SpectraEngine.Editor.Viewport;
 
 /// <summary>Where the viewport pane lives in the shell's layout.</summary>
-/// <remarks>
-/// <b>Two values, because there are two viewports and the layout is a
-/// consequence of which one is running.</b> It is not a preference and there is
-/// no UI for it: a native child window cannot be re-parented without destroying
-/// the HWND and the engine session behind it, and a composited pane is an
-/// ordinary control with nothing to destroy. Naming the two rather than testing
-/// a bool at each site is what makes the mapping a function with a test on it,
-/// and what stops a third viewport kind landing in a dock by defaulting.
-/// </remarks>
 public enum ViewportPlacement
 {
-    /// <summary>
-    /// A plain grid cell nothing may re-parent. The native child's placement,
-    /// and the one the shell has always had.
-    /// </summary>
+    /// <summary>A plain grid cell nothing may re-parent. The native child's placement.</summary>
     PinnedCell,
 
-    /// <summary>
-    /// A dock tool like every other panel: re-stackable, tabbable, floatable.
-    /// Only ever a composited pane.
-    /// </summary>
+    /// <summary>A dock tool like every other panel. Only ever a composited pane.</summary>
     DockedTool,
 }
 
-/// <summary>
-/// What a placement permits, so a dock tool cannot be handed a capability its
-/// hosting model does not survive.
-/// </summary>
-/// <param name="Docked">Whether the pane is a dock tool at all.</param>
-/// <param name="CanFloat">Whether it may be dragged out into its own window.</param>
+/// <summary>What a placement permits.</summary>
 /// <param name="CanPin">
-/// Whether it may be collapsed to a pinned flyout. <b>This is the airspace rule
-/// wearing a different name</b>: Dock draws a pinned flyout in the main window's
-/// own Avalonia layer, which a native child composites over, so unpinning a pane
-/// beside a native viewport would make it invisible exactly where it was asked
-/// for.
+/// Dock draws a pinned flyout in the main window's own layer, which a native
+/// child composites over.
 /// </param>
 /// <param name="ToolsMayShareTheWindow">
-/// Whether anything Avalonia draws in this window may cross the viewport's
-/// rectangle. False is the airspace rule; true is what a composited pane buys.
+/// Whether anything Avalonia draws in this window may cross the viewport's rectangle.
 /// </param>
 public readonly record struct ViewportPlacementRules(
     bool Docked,
@@ -50,46 +26,16 @@ public readonly record struct ViewportPlacementRules(
     bool CanPin,
     bool ToolsMayShareTheWindow);
 
-/// <summary>
-/// The layout half of the viewport decision: pinned cell or dock tool, and what
-/// each one permits.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Pure, and derived from the SAME decision that built the viewport.</b> The
-/// shell knows whether a session composited exactly once, in
-/// <see cref="ViewportModePolicy.Decide"/>'s answer; a layout that asked the
-/// question a second way - a settings read, a type test on the viewport, a flag
-/// set at the call site - would be free to disagree with it, and the way that
-/// disagreement presents is a native child docked into a tool, which destroys
-/// the HWND and takes the engine session with it the first time anybody drags a
-/// tab.
-/// </para>
-/// <para>
-/// <b>The rules are DATA rather than three properties on a strategy object</b>,
-/// exactly as <c>GizmoStyle</c>'s roster is: everything that varies between the
-/// two placements turned out to be a bool, so there is one table and the shell
-/// reads it rather than each site re-deciding what "docked" implies.
-/// </para>
-/// </remarks>
+/// <summary>Maps the viewport decision to a placement and its rules.</summary>
 public static class ViewportLayout
 {
     /// <summary>Where a session's pane goes, given the viewport it chose.</summary>
-    /// <remarks>
-    /// <b>Takes the decision rather than a bool</b>, so the coupling is
-    /// structural: there is no way to call this with an answer the policy did
-    /// not give.
-    /// </remarks>
+    // Takes the decision, not a bool: docking a native child destroys its HWND
+    // and the engine session with it.
     public static ViewportPlacement For(in ViewportDecision decision) =>
         decision.UseComposition ? ViewportPlacement.DockedTool : ViewportPlacement.PinnedCell;
 
-    /// <summary>What a placement permits.</summary>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// A placement with no rules. Thrown rather than defaulted, because the
-    /// permissive default would admit a native child to a dock and the
-    /// restrictive one would silently take docking away from a composited
-    /// session with nothing reporting it.
-    /// </exception>
+    /// <summary>What a placement permits. Throws for a placement with no rules.</summary>
     public static ViewportPlacementRules RulesFor(ViewportPlacement placement) => placement switch
     {
         ViewportPlacement.PinnedCell => new ViewportPlacementRules(
@@ -101,16 +47,7 @@ public static class ViewportLayout
         _ => throw new ArgumentOutOfRangeException(nameof(placement), placement, "No rules for this placement."),
     };
 
-    /// <summary>
-    /// One sentence per placement, for the log line every session writes.
-    /// </summary>
-    /// <remarks>
-    /// <b>For the same reason <see cref="ViewportModePolicy.Describe"/>
-    /// exists.</b> A pinned pane and a docked one render the same picture, so a
-    /// session that silently got the restricted layout would show up weeks
-    /// later as a tab that refuses to be dragged, on one machine, with nothing
-    /// anywhere saying why.
-    /// </remarks>
+    /// <summary>One sentence per placement, for the session's log line.</summary>
     public static string Describe(ViewportPlacement placement) => placement switch
     {
         ViewportPlacement.PinnedCell =>
@@ -126,12 +63,6 @@ public static class ViewportLayout
     };
 
     /// <summary>The viewport tool never closes, in either placement.</summary>
-    /// <remarks>
-    /// <b>Not a rule that varies, which is why it is a constant rather than a
-    /// field on <see cref="ViewportPlacementRules"/>.</b> There is no Window
-    /// menu and no reopen verb, so a closed viewport is a session with a running
-    /// engine and no way to see it; the honest answer to "I do not want this
-    /// pane" is closing the session.
-    /// </remarks>
+    // Nothing reopens it, so a closed viewport would be a running engine nobody can see.
     public const bool ViewportCanClose = false;
 }

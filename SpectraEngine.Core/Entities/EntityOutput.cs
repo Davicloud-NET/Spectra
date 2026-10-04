@@ -4,27 +4,11 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Entities;
 
 /// <summary>
-/// One of an entity's outputs, holding the RUNTIME copy of the wires the map
-/// authored on it.
+/// One of an entity's outputs, holding the runtime copy of the wires the map
+/// authored on it. Wires fire in authored order.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The copy is the whole point of this type.</b> A wire may be authored to
-/// fire a limited number of times, and something has to count down. That counter
-/// belongs here, on a per-session object, and never on the
-/// <see cref="EntityConnection"/> stored in <see cref="EntityData"/>: writing it
-/// back would edit the author's document as a side effect of playing the level,
-/// the edited value would ride the next save out to disk, and nothing anywhere
-/// would report it - a map that quietly stops working the third time it is
-/// opened, with a diff as the only evidence.
-/// </para>
-/// <para>
-/// <b>Order is the authored order.</b> Wires fire in the order the file lists
-/// them, so two wires with the same delay are delivered in that order too (the
-/// queue's sequence tiebreak carries it through), which is the only ordering
-/// promise a person editing a map can act on.
-/// </para>
-/// </remarks>
+// Remaining fire counts live here, never on the EntityConnection in EntityData,
+// or playing a level would edit the map that gets saved.
 public sealed class EntityOutput
 {
     private readonly List<Wire> _wires = [];
@@ -55,8 +39,7 @@ public sealed class EntityOutput
 
     /// <summary>
     /// The fires remaining on the wire at <paramref name="index"/>, negative for
-    /// unlimited. This is the runtime counter; the authored value is unchanged
-    /// in <see cref="EntityData.Connections"/>.
+    /// unlimited.
     /// </summary>
     public int FiresLeftAt(int index) => _wires[index].FiresLeft;
 
@@ -72,8 +55,7 @@ public sealed class EntityOutput
         for (int i = 0; i < _wires.Count; i++)
         {
             Wire wire = _wires[i];
-            // Zero is exhausted. Negative is infinite and is never decremented,
-            // so a count cannot wrap out of infinity into a finite one.
+            // Zero is exhausted. Negative is infinite and never decremented.
             if (wire.FiresLeft == 0)
                 continue;
 
@@ -82,16 +64,12 @@ public sealed class EntityOutput
             if (wire.FiresLeft > 0)
             {
                 wire.FiresLeft--;
-                // Write-back, because Wire is a struct held in a List: the local
-                // above is a copy and decrementing it alone would make every
-                // limited wire fire forever.
+                // Wire is a struct; the local is a copy.
                 _wires[i] = wire;
             }
         }
     }
 
-    // A struct in a list rather than an object per wire: a level's wires are
-    // counted in thousands and the only mutable state is one int.
     private struct Wire
     {
         public EntityConnection Connection;

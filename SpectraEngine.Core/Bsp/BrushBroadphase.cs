@@ -4,9 +4,8 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Bsp;
 
 /// <summary>
-/// Broadphase overlap detection over brush bounding boxes. A sort-and-sweep on
-/// the X axis cuts brush-pair testing from O(n²) toward O(n log n), feeding the
-/// CSG carve only genuine candidates instead of every other brush.
+/// Broadphase overlap detection over brush bounding boxes: a sort-and-sweep
+/// on the X axis.
 /// </summary>
 public static class BrushBroadphase
 {
@@ -21,20 +20,14 @@ public static class BrushBroadphase
         if (n == 0)
             return result;
 
-        // Sweep by min-X to discover pairs, then order each result by authored
-        // placement index. Tied sweep keys no longer affect emitted geometry.
         var order = new int[n];
         for (int i = 0; i < n; i++)
             order[i] = i;
         Array.Sort(order, (a, b) => bounds[a].Min.X.CompareTo(bounds[b].Min.X));
 
-        // Brushes whose X span is still open at the current sweep position.
         var active = new List<int>();
 
-        // Overlapping pairs in discovery order, the sweeping brush packed into
-        // the high 32 bits and its active partner into the low 32. One shared
-        // buffer replaces n growing per-brush lists; the counted fill below
-        // turns it into exact-size arrays with zero intermediate copies.
+        // Sweeping brush in the high 32 bits, its partner in the low 32.
         var pairs = new List<long>();
 
         for (int s = 0; s < n; s++)
@@ -42,7 +35,6 @@ public static class BrushBroadphase
             int i = order[s];
             float minX = bounds[i].Min.X;
 
-            // Retire brushes the sweep line has passed (swap-remove; order is irrelevant).
             for (int a = active.Count - 1; a >= 0; a--)
             {
                 if (bounds[active[a]].Max.X < minX)
@@ -52,7 +44,7 @@ public static class BrushBroadphase
                 }
             }
 
-            // Anything still active overlaps on X; confirm Y and Z.
+            // Active brushes overlap on X. Check Y and Z.
             foreach (int j in active)
             {
                 if (bounds[i].Intersects(bounds[j]))
@@ -62,7 +54,6 @@ public static class BrushBroadphase
             active.Add(i);
         }
 
-        // Allocate exact neighbor storage before filling and canonical sorting.
         var counts = new int[n];
         foreach (long pair in pairs)
         {
@@ -82,8 +73,7 @@ public static class BrushBroadphase
             result[j][cursors[j]++] = i;
         }
 
-        // Geometry v2: clipping order is authored placement order, independent
-        // of sweep discovery and of unrelated brushes leaving the active set.
+        // Clipping order must be placement order, not sweep discovery order.
         foreach (int[] neighbors in result) Array.Sort(neighbors);
         return result;
     }

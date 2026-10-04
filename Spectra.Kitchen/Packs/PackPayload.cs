@@ -35,7 +35,7 @@ public sealed class PackPayload
         finally { ArrayPool<byte>.Shared.Return(buffer); }
     }
 
-    /// <summary>Streams and verifies while copying. A replaced or damaged source cannot silently change a repeated write.</summary>
+    /// <summary>Copies the payload, verifying its hash on the way. Throws if the source changed.</summary>
     public void CopyTo(Stream destination, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -73,7 +73,7 @@ public sealed class PackPayload
         finally { ArrayPool<byte>.Shared.Return(buffer); }
     }
 
-    /// <summary>Compatibility materialization; pack assembly and cache replay use streaming instead.</summary>
+    /// <summary>Reads the whole payload into an array. Prefer <see cref="CopyTo"/> for large payloads.</summary>
     public byte[] ReadAllBytes()
     {
         if (_bytes is not null) return _bytes;

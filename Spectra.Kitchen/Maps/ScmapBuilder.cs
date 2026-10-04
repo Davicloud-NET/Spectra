@@ -11,38 +11,11 @@ using SpectraEngine.Core.Maps.Compiled;
 namespace Spectra.Kitchen.Maps;
 
 /// <summary>
-/// Assembles the five tables of a compiled map, claims the codes the sections that
-/// do not exist yet will use, and hands the result to <see cref="ScmapWriter"/>.
+/// Collects a compiled map's assets, nodes, chunks, spawns and brush sources and
+/// writes them through <see cref="ScmapWriter"/>.
 /// </summary>
-/// <remarks>
-/// <para><b>Strings are interned at BUILD time in a canonical order, never as the
-/// caller calls.</b> The specification asks for first-reference order during the
-/// canonical node walk, and interning as each <c>Add</c> arrives would satisfy
-/// that only while the cook happened to call in walk order: a bake that gathered
-/// its materials before its nodes, or gathered them on a worker, would emit a
-/// different string blob for the same map with nothing failing. Interning here
-/// makes the order a property of the FILE rather than of a control flow, and the
-/// order is fixed: the scene name, then the asset table in its own order, then
-/// node names in pre-order.</para>
-/// <para><b>A material becomes an asset by its PATH, and there is no other way
-/// in.</b> <c>MaterialRef.Id</c> is per-process interning order and means nothing
-/// outside the process that handed it out, so a cook that wrote one produces a
-/// file that loads perfectly in the test that wrote it and mis-textures the whole
-/// world the moment a second map interns first. The only entry point resolves the
-/// ref back to its path and refuses a ref this process cannot name, which makes
-/// the mistake unreachable rather than merely reviewed against.</para>
-/// <para><b>The chunk directory is SORTED here.</b> A cook walks its cells out of
-/// a dictionary, and the canonical order is what makes two cooks of one map
-/// byte-identical and a point lookup a binary search. Nodes are never sorted:
-/// sibling order is authored data, and traversal order is placement order is carve
-/// order.</para>
-/// <para><b>Five four-character codes are claimed as EMPTY sections.</b>
-/// <c>ENTT</c>, <c>ECON</c>, <c>SCPT</c>, <c>LUAB</c> and <c>LUAS</c> carry
-/// nothing until the milestones that fill them, and a reader steps over an unknown
-/// code, so writing them now costs 32 bytes each and buys the guarantee that
-/// nothing else takes the code. <c>RGNI</c> and <c>BMDL</c> are reserved with no
-/// producer and <see cref="ScmapWriter"/> refuses them by name.</para>
-/// </remarks>
+// The chunk directory is sorted at build time; nodes keep the caller's order,
+// because sibling order is authored data.
 public sealed class ScmapBuilder
 {
     private readonly List<ScmapAssetSource> _assets = [];
@@ -54,7 +27,6 @@ public sealed class ScmapBuilder
     private readonly List<ScmapBrushSourceEntry> _brushes = [];
 
     /// <summary>Creates a builder for a scene.</summary>
-    /// <param name="sceneName">The scene's name, interned into <c>STRT</c>.</param>
     public ScmapBuilder(string sceneName)
     {
         ArgumentNullException.ThrowIfNull(sceneName);
@@ -80,15 +52,10 @@ public sealed class ScmapBuilder
     public void AddSpawn(ScmapSpawnSource spawn) => _spawns.Add(spawn);
 
     /// <summary>
-    /// Adds an asset reference, or returns the index one already has.
+    /// Adds an asset reference, or returns the index it already has. Keyed
+    /// case-insensitively on the normalised path. Throws if the path is already
+    /// present under a different kind.
     /// </summary>
-    /// <remarks>
-    /// Keyed case-insensitively on the normalised path, matching the pack's asset
-    /// identity and the engine's own caches: two spellings of one path are one
-    /// asset, and letting them be two would put the same texture in the file twice
-    /// under indices that compare unequal.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">The path is already present under a different kind.</exception>
     public uint AddAsset(ScmapAssetSource asset)
     {
         string normalized = ContentRoot.NormalizeRelativePath(asset.ContentPath);
@@ -114,18 +81,11 @@ public sealed class ScmapBuilder
     }
 
     /// <summary>
-    /// Adds a material reference by resolving it back to the path it was interned
-    /// from.
+    /// Adds a material by the path it was interned from. Throws for the default
+    /// material and for a reference this process never interned.
     /// </summary>
-    /// <remarks>
-    /// The only way a material reaches the asset table, deliberately. See the
-    /// remarks on this class: the id is a per-process number and writing it is the
-    /// shorter, wronger code.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// The reference is the engine default (which names no path) or was never
-    /// interned in this process.
-    /// </exception>
+    // The only way a material gets a row. MaterialRef.Id is per-process and
+    // must not be written.
     public uint AddMaterial(MaterialRef material, ulong contentHash = 0)
     {
         if (material.IsDefault)
@@ -146,16 +106,10 @@ public sealed class ScmapBuilder
         return AddAsset(new ScmapAssetSource(PackEntryKind.Material, path, contentHash));
     }
 
-    /// <summary>Adds a node. Returns the index it was placed at.</summary>
-    /// <remarks>
-    /// Call in pre-order. The parent index is validated against what has been
-    /// added so far, which is the same invariant a forward-pass loader relies on:
-    /// a parent always precedes its child.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// The parent index is not a node already added, or the payload kind or
-    /// declared state has no meaning.
-    /// </exception>
+    /// <summary>
+    /// Adds a node and returns its index. Call in pre-order: the parent must
+    /// already have been added.
+    /// </summary>
     public int AddNode(ScmapNodeSource node)
     {
         int index = _nodes.Count;
@@ -196,26 +150,13 @@ public sealed class ScmapBuilder
         return index;
     }
 
-    /// <summary>Adds a cell to the chunk directory.</summary>
-    /// <remarks>
-    /// Order is free here and canonical in the file: the directory is sorted at
-    /// build time, because a cook walks its cells out of a dictionary and two
-    /// cooks of one map must produce one file.
-    /// <para><b>The duplicate check is a SET, and it was a linear scan.</b> A cook
-    /// calls this once per cell, so a scan over what is already there is quadratic
-    /// in the size of the world - which is invisible on any hand-written fixture and
-    /// is exactly what a chunked open world produces most of. Measured by the
-    /// benchmark's <c>bake</c> scenario before it was a set: 0.2 microseconds per
-    /// cell over 369 cells, 1.5 over 3,666 and 7.0 over 17,992, the per-cell cost
-    /// rising in step with the cell count. See <c>docs/performance.md</c> 9c.</para>
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">
-    /// The cell is already in the directory, its submeshes are not in ascending
-    /// asset order, or a submesh's arrays do not describe whole vertices and whole
-    /// triangles.
-    /// </exception>
+    /// <summary>
+    /// Adds a cell to the chunk directory, in any order. Throws on a duplicate
+    /// cell or on submeshes that are unsorted or not whole triangles.
+    /// </summary>
     public void AddChunk(ScmapChunkSource chunk)
     {
+        // A set, not a scan of _chunks: this runs once per cell of the world.
         if (_chunkCoords.Contains(chunk.Coord))
         {
             throw new InvalidOperationException(
@@ -234,21 +175,16 @@ public sealed class ScmapBuilder
                 "nor a leaf code. A root out of range is a query that walks off the end of the block.");
         }
 
-        // Added together, and only once every refusal above has passed: the set
-        // is the list's membership and nothing else, so a cell that was rejected
-        // must not be able to make a later honest add report a duplicate.
+        // Only after every check has passed, or a rejected cell would later
+        // read as a duplicate.
         _chunks.Add(chunk);
         _chunkCoords.Add(chunk.Coord);
     }
 
-    /// <summary>Adds one authored brush's planes and faces to <c>BRSH</c>.</summary>
-    /// <remarks>
-    /// Call in node pre-order, which is what makes the section a pure function of
-    /// the map. The node index is not validated against the node list here because
-    /// a bake adds nodes and brushes in one pass; <see cref="Write"/> checks every
-    /// one before a byte is emitted.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">The face count does not match the plane count.</exception>
+    /// <summary>
+    /// Adds one authored brush's planes and faces to <c>BRSH</c>. Call in node
+    /// pre-order. The node index is checked in <see cref="Write"/>.
+    /// </summary>
     public void AddBrushSource(ScmapBrushSourceEntry brush)
     {
         ArgumentNullException.ThrowIfNull(brush.Planes);
@@ -277,9 +213,6 @@ public sealed class ScmapBuilder
 
             if (i > 0 && chunk.Submeshes[i - 1].AssetIndex >= submesh.AssetIndex)
             {
-                // Ascending asset index is a total order over a VALUE key, which is
-                // the whole reason two compiles of one cell emit one file. Ascending
-                // material id would not be: an id is per-process interning order.
                 throw new InvalidOperationException(
                     $"Cell ({chunk.Coord.X}, {chunk.Coord.Y}, {chunk.Coord.Z}) has submeshes out of ascending " +
                     $"asset order at {i}: asset {chunk.Submeshes[i - 1].AssetIndex} is followed by asset " +
@@ -304,12 +237,8 @@ public sealed class ScmapBuilder
     }
 
     /// <summary>Builds the whole file.</summary>
-    /// <param name="sourceMapDigest">
-    /// <c>XxHash128</c> of the source bundle's canonical enumeration. See
-    /// <see cref="MapBundleDigest"/>.
-    /// </param>
-    /// <param name="mapFormatVersion">The authored map grammar the bake read.</param>
-    /// <param name="flags">What optional content the cook put in the file.</param>
+    /// <param name="sourceMapDigest">See <see cref="MapBundleDigest"/>.</param>
+    /// <param name="mapFormatVersion">The authored map format version the bake read.</param>
     public byte[] Build(UInt128 sourceMapDigest, uint mapFormatVersion, ScmapFlags flags = ScmapFlags.None)
     {
         using var buffer = new MemoryStream();
@@ -322,9 +251,9 @@ public sealed class ScmapBuilder
     {
         var strings = new ScmapStringTableBuilder();
 
-        // The canonical interning order, and the only place it is stated. Every
-        // string in the file gets its index here rather than wherever a caller
-        // happened to mention it first.
+        // Strings are interned here in a fixed order (scene name, asset paths,
+        // node names), not as callers add things, so the blob does not depend
+        // on call order.
         uint sceneNameString = strings.Intern(SceneName);
 
         var assetPathStrings = new uint[_assets.Count];
@@ -340,10 +269,8 @@ public sealed class ScmapBuilder
         byte[] chunkBody = BuildChunks(out byte[] meshBody, out byte[] bspBody);
         byte[]? brushBody = BuildBrushSource();
 
-        // Derived rather than taken. The flag says a BRSH section is present and
-        // nothing else, and the reader cross-checks the two, so a caller allowed to
-        // set it independently could produce a file whose header and table disagree
-        // about whether a level's brush planes exist.
+        // The reader cross-checks this flag against the section table, so it
+        // is derived, not taken from the caller.
         ScmapFlags fileFlags = brushBody is null
             ? flags & ~ScmapFlags.HasBrushSource
             : flags | ScmapFlags.HasBrushSource;
@@ -358,20 +285,15 @@ public sealed class ScmapBuilder
         writer.AddSection(ScmapFormat.ChunkMeshSection, meshBody);
         writer.AddSection(ScmapFormat.ChunkBspSection, bspBody);
 
-        // Claimed and empty: the four entity and script codes are filled by the
-        // milestones that own them, and a reader steps over a code it does not
-        // know, so writing them now costs 32 bytes each and buys the guarantee that
-        // nothing else takes the code.
+        // Empty for now. Written so nothing else takes these codes.
         writer.AddSection(ScmapFormat.EntitySection, ReadOnlySpan<byte>.Empty);
         writer.AddSection(ScmapFormat.EntityConnectionSection, ReadOnlySpan<byte>.Empty);
         writer.AddSection(ScmapFormat.ScriptSection, ReadOnlySpan<byte>.Empty);
         writer.AddSection(ScmapFormat.ScriptBytecodeSection, ReadOnlySpan<byte>.Empty);
         writer.AddSection(ScmapFormat.ScriptSourceSection, ReadOnlySpan<byte>.Empty);
 
-        // Last, so the sections a load always reads sit at the front of the file.
-        // An absent BRSH is an ABSENT section rather than an empty one, because the
-        // header flag beside it is a claim about presence and an empty section is
-        // still present.
+        // Last, so what a load always reads sits at the front. Omitted when
+        // there is none: an empty BRSH would still count as present.
         if (brushBody is not null) writer.AddSection(ScmapFormat.BrushSourceSection, brushBody);
 
         writer.Write(stream);
@@ -439,22 +361,9 @@ public sealed class ScmapBuilder
         return body;
     }
 
-    /// <summary>
-    /// Sorts the directory and lays the two blob sections out in that same order.
-    /// </summary>
-    /// <remarks>
-    /// <para><b>One pass, so the directory and the blobs cannot disagree about
-    /// order.</b> A second pass over a second ordering is exactly how a cell ends
-    /// up pointing at its neighbour's geometry, and nothing downstream can tell:
-    /// the file parses, every offset is in range, and the level renders somebody
-    /// else's walls.</para>
-    /// <para><b>Every blob's own length is a multiple of the payload alignment</b>,
-    /// because each array inside it is padded up after itself, so the blobs tile
-    /// with no gap and a cell's declared size is the same number whether you count
-    /// its content or its footprint. The padding goes through
-    /// <see cref="ScmapLayout.PaddedSectionSize"/> and nothing else - one function
-    /// decides what a padded run costs, at every scale in this format.</para>
-    /// </remarks>
+    // Sorts the directory and writes both blob sections in the same pass, so
+    // offsets and blobs share one order. Every blob is padded to the payload
+    // alignment through ScmapLayout.PaddedSectionSize.
     private byte[] BuildChunks(out byte[] meshBody, out byte[] bspBody)
     {
         ScmapChunkSource[] sorted = [.. _chunks];
@@ -497,9 +406,7 @@ public sealed class ScmapBuilder
         return body;
     }
 
-    // One cell's CMSH blob, or nothing at all for a cell that owns no render
-    // geometry - which is legal and common, and is what the compile itself does
-    // for a resident-only cell.
+    // One cell's CMSH blob. Writes nothing for a cell with no render geometry.
     private static uint WriteChunkMesh(MemoryStream blobs, in ScmapChunkSource cell)
     {
         if (cell.Submeshes is not { Length: > 0 }) return 0;
@@ -510,10 +417,7 @@ public sealed class ScmapBuilder
         long directory = ScmapLayout.PaddedSectionSize(
             ScmapFormat.ChunkMeshHeaderSize + ((long)submeshes.Length * ScmapFormat.ChunkSubmeshEntrySize));
 
-        // The arrays are placed BEFORE any of them is written, because a directory
-        // record has to carry an offset the writer has not reached yet. Both passes
-        // walk the same list in the same order and both take their padding from the
-        // one function, which is what keeps them in step.
+        // Place the arrays first: the directory needs their offsets before they are written.
         var entries = new ScmapSubmeshEntry[submeshes.Length];
         long cursor = directory;
         for (int i = 0; i < submeshes.Length; i++)
@@ -563,10 +467,8 @@ public sealed class ScmapBuilder
         return (uint)(blobs.Length - start);
     }
 
-    // One cell's CBSP blob. A null node array means the cell has no tree at all;
-    // an EMPTY one is a tree that is a single bare leaf, and it still gets a blob
-    // so that the root's leaf code survives - solid and empty are different
-    // answers, and a missing blob could not tell them apart.
+    // One cell's CBSP blob. Null nodes means no tree. An empty array is a
+    // single leaf and still gets a blob, so the root's solid/empty code survives.
     private static uint WriteChunkBsp(MemoryStream blobs, in ScmapChunkSource cell)
     {
         if (cell.BspNodes is null) return 0;
@@ -585,9 +487,7 @@ public sealed class ScmapBuilder
         return (uint)(blobs.Length - start);
     }
 
-    // The BRSH section, or null when this cook kept no brush source at all. Null
-    // rather than an empty body, because the header flag beside it claims the
-    // section is PRESENT and an empty section is present.
+    // The BRSH section, or null when no brush source was kept.
     private byte[]? BuildBrushSource()
     {
         if (_brushes.Count == 0) return null;
@@ -647,9 +547,7 @@ public sealed class ScmapBuilder
         return body;
     }
 
-    // Padding is written, never seeked over: a seek past the end of a stream leaves
-    // the gap holding whatever the filesystem gives back, which on most filesystems
-    // is zeros and on none of them is a promise.
+    // Padding is written, not seeked over: a gap left by a seek is not guaranteed zero.
     private static void WriteZeros(MemoryStream blobs, long count)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(count);

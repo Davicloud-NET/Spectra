@@ -5,17 +5,9 @@ using System.Numerics;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// <see cref="ModelImporter"/> on its own: no renderer, no asset manager, no
-/// GPU — just a file on disk turning into <see cref="ModelData"/>.
+/// <see cref="ModelImporter"/> on its own. Counts and bounds come from the two
+/// hand-authored models in <c>Assets/Models</c>, so they can be read off the files.
 /// </summary>
-/// <remarks>
-/// The counts and bounds asserted here are pinned to the two models the repo
-/// ships (<c>Assets/Models/crate.obj</c> and <c>Assets/Models/signpost.gltf</c>),
-/// which are hand-authored precisely so those numbers can be derived by reading
-/// the file rather than by trusting the importer. The crate covers the classic
-/// path (OBJ + MTL, multi-material, flat hierarchy); the signpost covers the
-/// modern one (glTF, nested nodes carrying real transforms).
-/// </remarks>
 public sealed class ModelImportTests
 {
     private const string Crate = "Models/crate.obj";
@@ -44,7 +36,6 @@ public sealed class ModelImportTests
         caps.VertexCount.ShouldBe(8);
         caps.TriangleCount.ShouldBe(4);
 
-        // Distinct materials is the whole point of splitting them.
         sides.MaterialIndex.ShouldNotBe(caps.MaterialIndex);
         model.Warnings.ShouldBeEmpty();
     }
@@ -57,9 +48,8 @@ public sealed class ModelImportTests
 
         sides.Vertices.Length.ShouldBe(sides.VertexCount * ModelVertexLayout.FloatsPerVertex);
 
-        // Every vertex is on the crate's shell, carries a unit normal, and has
-        // uvs inside the unit square — which together prove the three streams
-        // landed at the right offsets rather than being shuffled.
+        // Position on the shell, unit normal, uv in the unit square: together
+        // these show the three streams sit at the right offsets.
         for (int v = 0; v < sides.VertexCount; v++)
         {
             int b = v * ModelVertexLayout.FloatsPerVertex;
@@ -93,8 +83,7 @@ public sealed class ModelImportTests
 
         ModelMaterial body = MaterialOf(model, model.Meshes[0]);
         body.Name.ShouldBe("crate_body");
-        // Written in the .mtl as "../Textures/checker_orange.png", relative to
-        // the model file — the importer re-expresses it against the content root.
+        // "../Textures/checker_orange.png" in the .mtl, relative to the model file.
         body.DiffuseTexturePath.ShouldBe("Textures/checker_orange.png");
         body.BaseColor.ShouldBe(Vector3.One);
 
@@ -135,29 +124,26 @@ public sealed class ModelImportTests
         post.Position.ShouldBe(Vector3.Zero);
         post.Rotation.ShouldBe(Quaternion.Identity);
 
-        // The sign is authored 26 units up and yawed 20 degrees. Getting this
-        // wrong is the classic symptom of forgetting that Assimp stores
-        // column-vector matrices where System.Numerics stores row-vector ones.
+        // Authored 26 units up and yawed 20 degrees. Assimp matrices are
+        // column-vector, System.Numerics row-vector.
         ModelNode sign = model.Root.Children[1];
         sign.Name.ShouldBe("Sign");
         sign.Position.X.ShouldBe(0f, Tolerance);
         sign.Position.Y.ShouldBe(26f, Tolerance);
         sign.Position.Z.ShouldBe(0f, Tolerance);
-        // Not exactly one: decomposing a rotation matrix goes through a square
-        // root, so an unscaled node comes back a few ulps off unity.
+        // Decomposition goes through a sqrt, so scale is a few ulps off one.
         sign.Scale.X.ShouldBe(1f, Tolerance);
         sign.Scale.Y.ShouldBe(1f, Tolerance);
         sign.Scale.Z.ShouldBe(1f, Tolerance);
         sign.TransformIsExact.ShouldBeTrue();
 
-        // Yaw the +X axis by the node's rotation and check where it lands.
         Vector3 rotatedX = Vector3.Transform(Vector3.UnitX, sign.Rotation);
         rotatedX.X.ShouldBe(MathF.Cos(MathF.PI * 20f / 180f), 1e-3f);
         rotatedX.Y.ShouldBe(0f, 1e-3f);
         // A +Y yaw of 20 degrees swings +X toward -Z.
         rotatedX.Z.ShouldBe(-MathF.Sin(MathF.PI * 20f / 180f), 1e-3f);
 
-        // Translation lives in the matrix's fourth ROW after conversion.
+        // Translation is in the fourth row after conversion.
         sign.LocalMatrix.M42.ShouldBe(26f, Tolerance);
     }
 
@@ -167,9 +153,7 @@ public sealed class ModelImportTests
         ModelData model = Import(Signpost);
         Aabb bounds = model.LocalBounds;
 
-        // The post alone is 4 units wide; the sign is 24 wide, lifted to y=26
-        // and yawed, so the model box has to be much wider than any single
-        // submesh's raw vertex box and has to reach the sign's full height.
+        // The sign is 24 wide, 1 deep, lifted to y=26 and yawed 20 degrees.
         float yaw = MathF.PI * 20f / 180f;
         float expectedHalfWidth = (12f * MathF.Cos(yaw)) + (0.5f * MathF.Sin(yaw));
         float expectedHalfDepth = (12f * MathF.Sin(yaw)) + (0.5f * MathF.Cos(yaw));
@@ -181,8 +165,6 @@ public sealed class ModelImportTests
         bounds.Min.Y.ShouldBe(0f, Tolerance);
         bounds.Max.Y.ShouldBe(32f, Tolerance);
     }
-
-    // ---- degraded content ------------------------------------------------
 
     [Fact]
     public void A_mesh_without_uvs_gets_zeroed_uvs_and_says_so()
@@ -247,8 +229,6 @@ public sealed class ModelImportTests
 
         ModelData model = Import(root, "Models/bare.obj");
 
-        // The importer always produces a slot, so a submesh's material index is
-        // never dangling; it just describes nothing usable.
         model.Materials.ShouldNotBeEmpty();
         ModelMaterial material = MaterialOf(model, model.Meshes[0]);
         material.DiffuseTexturePath.ShouldBeNull();
@@ -292,7 +272,7 @@ public sealed class ModelImportTests
             v 0 4 0
             f 1 2 3
             """);
-        // What a DCC export from someone else's machine actually looks like.
+        // An absolute path from the exporting machine.
         WriteModel(root, "baked.mtl", """
             newmtl baked
             map_Kd D:/Art/WIP/textures/dev_grid.png
@@ -303,8 +283,6 @@ public sealed class ModelImportTests
         MaterialOf(model, model.Meshes[0]).DiffuseTexturePath.ShouldBe("Textures/dev_grid.png");
         model.Warnings.ShouldContain(w => w.Contains("Textures/dev_grid.png"));
     }
-
-    // ---- failure ---------------------------------------------------------
 
     [Fact]
     public void A_missing_file_throws_FileNotFoundException()
@@ -328,8 +306,6 @@ public sealed class ModelImportTests
     public void A_corrupt_file_fails_cleanly_instead_of_crashing()
     {
         string root = CreateTempContentRoot();
-        // Valid extension, garbage contents: the path a truncated download or a
-        // half-written export takes.
         var noise = new byte[4096];
         new Random(1234).NextBytes(noise);
         File.WriteAllBytes(Path.Combine(root, "Models", "broken.obj"), noise);
@@ -342,7 +318,6 @@ public sealed class ModelImportTests
     public void A_model_with_no_drawable_geometry_is_rejected()
     {
         string root = CreateTempContentRoot();
-        // Points only: nothing the renderer could ever draw.
         WriteModel(root, "points.obj", """
             v 0 0 0
             v 1 0 0
@@ -353,8 +328,6 @@ public sealed class ModelImportTests
         Should.Throw<InvalidDataException>(() => Import(root, "Models/points.obj"))
             .Message.ShouldContain("no triangle geometry");
     }
-
-    // ---- helpers ---------------------------------------------------------
 
     private static ModelData Import(string relativePath)
         => Import(ContentRoot.Path, relativePath);

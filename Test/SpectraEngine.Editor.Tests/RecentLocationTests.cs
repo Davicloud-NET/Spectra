@@ -6,14 +6,8 @@ using System.IO;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// Where a recent project is, shortened so the identifying part survives.
+/// Recent project paths are shortened from the left, so the last folders survive.
 /// </summary>
-/// <remarks>
-/// <b>The start page ellipsized paths at the END.</b> Several projects called
-/// Demo each read <c>D:\Users\David\Projects\Sp...</c>, which is the machine's
-/// name for a folder and never the project's. The last segment is the one that
-/// identifies it.
-/// </remarks>
 public sealed class RecentLocationTests
 {
     private static string P(params string[] segments) =>
@@ -40,7 +34,6 @@ public sealed class RecentLocationTests
     [Fact]
     public void Mixed_and_trailing_separators_normalise()
     {
-        // Two spellings of one folder would otherwise look like two projects.
         RecentLocation.Shorten("D:/Games/Demo/", 3).ShouldBe(P("D:", "Games", "Demo"));
     }
 
@@ -70,8 +63,6 @@ public sealed class RecentLocationTests
     [Fact]
     public void A_row_with_its_own_name_is_not_lengthened_for_somebody_elses_clash()
     {
-        // Widening every row to disambiguate two of them is how a column stops
-        // fitting.
         List<RecentProject> recents =
         [
             Recent("Demo", P("D:", "Work", "ClientA", "Spectra", "Demo")),
@@ -88,8 +79,7 @@ public sealed class RecentLocationTests
     [Fact]
     public void Two_identical_paths_stay_identical_rather_than_growing_forever()
     {
-        // A duplicate entry is the settings layer's problem; this must simply
-        // terminate rather than lengthening until it runs out of path.
+        // Must terminate. Duplicate entries are the settings layer's problem.
         List<RecentProject> recents =
         [
             Recent("Demo", P("D:", "Games", "Demo")),

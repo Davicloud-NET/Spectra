@@ -13,10 +13,8 @@ public partial class App : Application
     /// <inheritdoc/>
     public override void OnFrameworkInitializationCompleted()
     {
-        // The window stops the engine and joins its render thread in its own
-        // closing handler, before the lifetime tears the process down: the
-        // render thread owns the swap chain presenting into the viewport, so
-        // process exit racing that join is a present into a destroyed window.
+        // MainWindow joins the render thread in its closing handler, before
+        // the lifetime tears the process down.
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             desktop.MainWindow = new MainWindow();
 

@@ -7,10 +7,7 @@ using System.Numerics;
 namespace SpectraEngine.Graphics.Tests;
 
 /// <summary>
-/// The imported model meeting a real driver: the headless suites prove the
-/// conversion is correct, but only a real GL context proves the arrays it
-/// produces are something <c>glBufferData</c> and the standard attribute layout
-/// actually accept.
+/// An imported model uploaded through a real GL context.
 /// </summary>
 [Collection(GlRendererCollection.Name)]
 public sealed class ModelGlUploadTests
@@ -38,8 +35,7 @@ public sealed class ModelGlUploadTests
             model.IsReady.ShouldBeTrue();
             model.Meshes.Count.ShouldBe(2);
 
-            // The backend de-interleaved what the importer interleaved: if the
-            // layout and the vertex stride disagreed, these would not line up.
+            // These only line up if the layout and the vertex stride agree.
             for (int i = 0; i < model.Meshes.Count; i++)
             {
                 Mesh mesh = model.Meshes[i];
@@ -51,19 +47,16 @@ public sealed class ModelGlUploadTests
                 mesh.LocalBounds.Max.ShouldBe(source.LocalBounds.Max);
             }
 
-            // The .mtl's textures became real GL textures, not the placeholder.
             Material body = model.MaterialFor(model.Data!.Meshes[0]);
             body.Shader.ShouldNotBeNull();
             body.TryGetTexture("uDiffuse", out _, out Texture? texture).ShouldBeTrue();
             texture.ShouldNotBeSameAs(assets.PlaceholderTexture);
 
-            // And it drops into a scene the same as any other geometry.
             var scene = new Scene("gl-model-test");
             SceneNode instance = ModelInstantiator.InstantiateInto(scene.Root, model);
             instance.Children.Count.ShouldBe(2);
 
-            // Camera in front of the crate, looking down -Z (the Camera
-            // defaults, restated so this does not silently depend on them).
+            // In front of the crate, looking down -Z.
             var camera = new Camera
             {
                 Position = new Vector3(0f, 16f, 120f),

@@ -11,14 +11,6 @@ namespace SpectraEngine.Editor.Tests;
 /// The property panel's commit policy: when a typed value reaches the scene,
 /// and when the scene is allowed to overwrite what somebody is typing.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Pure, and worth testing precisely because the failures are invisible.</b>
-/// A refresh that stole a focused field deletes characters as they are typed
-/// and reads as a broken keyboard; a commit that fired per keystroke pushes an
-/// undo entry per character and applies "1" on the way to "10". Neither throws.
-/// </para>
-/// </remarks>
 public sealed class PropertyPanelTests
 {
     private sealed class Rig
@@ -66,14 +58,9 @@ public sealed class PropertyPanelTests
             Text = value, Choices = options, PresentCount = 1, SelectionCount = 1,
         };
 
-    // --- the focus guard ----------------------------------------------------
-
     [Fact]
     public void A_refresh_does_not_touch_a_field_that_is_being_edited()
     {
-        // A gizmo drag republishes the position about thirty times a second. A
-        // field that took each refresh would delete characters out from under
-        // somebody halfway through typing a number.
         var rig = new Rig();
         rig.Publish(Vector(PropertyId.Position, new Vector3(1f, 2f, 3f)));
 
@@ -113,13 +100,9 @@ public sealed class PropertyPanelTests
         x.Text.ShouldBe("50");
     }
 
-    // --- when a value is applied --------------------------------------------
-
     [Fact]
     public void Committing_a_vector_cell_writes_only_that_axis()
     {
-        // The whole reason a vector row is three cells: typing into y is a bulk
-        // edit that leaves every node's own x and z alone.
         var rig = new Rig();
         rig.Publish(Vector(PropertyId.Position, new Vector3(1f, 2f, 3f)));
 
@@ -137,8 +120,7 @@ public sealed class PropertyPanelTests
     [Fact]
     public void Committing_an_unchanged_field_applies_nothing()
     {
-        // Tabbing through fields without changing anything is an ordinary thing
-        // to do and must not reach the undo stack.
+        // Tabbing through fields must not reach the undo stack.
         var rig = new Rig();
         rig.Publish(Vector(PropertyId.Position, new Vector3(1f, 2f, 3f)));
 
@@ -163,8 +145,6 @@ public sealed class PropertyPanelTests
     [Fact]
     public void Text_that_will_not_parse_reverts_rather_than_sticking()
     {
-        // A field left holding something the scene does not contain disagrees
-        // with the viewport until somebody notices.
         var rig = new Rig();
         rig.Publish(Vector(PropertyId.Position, new Vector3(1f, 2f, 3f)));
 
@@ -180,8 +160,7 @@ public sealed class PropertyPanelTests
     [Fact]
     public void Escape_puts_the_live_value_back_and_applies_nothing()
     {
-        // Escape has to exist precisely because blur commits: without it there
-        // is no way to abandon a half-typed value once a field is holding it.
+        // Blur commits, so Escape is the only way to abandon a typed value.
         var rig = new Rig();
         rig.Publish(Vector(PropertyId.Position, new Vector3(1f, 2f, 3f)));
 
@@ -200,7 +179,7 @@ public sealed class PropertyPanelTests
         var rig = new Rig();
         rig.Publish(Text(PropertyId.NodeName, "Wall"));
 
-        // Through the header's own field, which is where the name lives now.
+        // The name is edited in the panel header.
         PropertyFieldModel field = rig.Panel.NameField;
         field.BeginEdit();
         field.Text = "Doorway";
@@ -209,13 +188,9 @@ public sealed class PropertyPanelTests
         rig.Edits.Single().Text.ShouldBe("Doorway");
     }
 
-    // --- mixed --------------------------------------------------------------
-
     [Fact]
     public void A_mixed_cell_shows_nothing_rather_than_one_nodes_value()
     {
-        // A number sitting in a mixed field is a number somebody will read as
-        // the answer.
         var rig = new Rig();
         rig.Publish(2, Vector(PropertyId.Position, new Vector3(1f, 2f, 3f), PropertyAxes.Y));
 
@@ -232,8 +207,6 @@ public sealed class PropertyPanelTests
     [Fact]
     public void Leaving_a_mixed_cell_empty_applies_nothing()
     {
-        // An empty mixed box already means "leave them all alone", so blurring
-        // out of one must not write a value.
         var rig = new Rig();
         rig.Publish(2, Vector(PropertyId.Position, new Vector3(1f, 2f, 3f), PropertyAxes.Y));
 
@@ -259,8 +232,6 @@ public sealed class PropertyPanelTests
         rig.Edits.Single().Vector.Y.ShouldBe(0f);
     }
 
-    // --- widgets with no typing in them -------------------------------------
-
     [Fact]
     public void A_checkbox_applies_on_the_click_because_there_is_nothing_to_finish()
     {
@@ -276,9 +247,7 @@ public sealed class PropertyPanelTests
     [Fact]
     public void A_refresh_of_a_checkbox_does_not_apply_itself_back_to_the_scene()
     {
-        // Assigning the refreshed value would otherwise look exactly like a
-        // click, and the panel would write the scene's own value back to it
-        // thirty times a second.
+        // Assigning the refreshed value looks like a click unless it is guarded.
         var rig = new Rig();
         rig.Publish(Flag(PropertyId.LightEnabled, true));
         rig.Edits.Clear();
@@ -303,13 +272,10 @@ public sealed class PropertyPanelTests
         rig.Edits.Single().Text.ShouldBe("World");
     }
 
-    // --- the collection -----------------------------------------------------
-
     [Fact]
     public void Rows_are_patched_rather_than_replaced_between_refreshes()
     {
-        // Assigning a fresh collection every snapshot would reset scroll, drop
-        // focus and destroy a half-typed value thirty times a second.
+        // A fresh collection resets scroll, drops focus and loses a half-typed value.
         var rig = new Rig();
         rig.Publish(Vector(PropertyId.Position, Vector3.Zero));
         PropertyRowModel before = rig.Row(PropertyId.Position);
@@ -341,8 +307,7 @@ public sealed class PropertyPanelTests
             Vector(PropertyId.Scale, Vector3.One),
             Choice(PropertyId.BrushKind, "World", "World", "Part"));
 
-        // The name is the panel's HEADER now, not the first row of a "Node"
-        // section, so the sections start at the first real payload.
+        // The name goes to the header, so there is no "Node" section.
         rig.Panel.Groups.Select(g => g.Name).ShouldBe(["Transform", "Brush"]);
         rig.Panel.Groups[0].Rows.Count.ShouldBe(2);
         rig.Panel.NameField.Text.ShouldBe("Wall");
@@ -369,10 +334,8 @@ public sealed class PropertyPanelTests
     [Fact]
     public void Rows_still_refresh_when_a_published_row_is_not_rendered()
     {
-        // The panel skips two of the published rows, so its rows and the
-        // snapshot's are no longer index-for-index. Getting that wrong reads
-        // one row's value into another's box, which is silent and wrong rather
-        // than a crash.
+        // The panel skips two published rows, so its rows and the snapshot's
+        // do not line up by index.
         var rig = new Rig();
         rig.Publish(
             Text(PropertyId.NodeName, "Wall"),
@@ -398,8 +361,7 @@ public sealed class PropertyPanelTests
             Choice(PropertyId.BrushKind, "World", "World", "Part"),
             Choice(PropertyId.BrushOperation, "Subtractive", "Additive", "Subtractive"));
 
-        // Subtractive outranks the kind, exactly as it does in the tree: a cut
-        // renders nothing at all, so it is the fact worth leading with.
+        // Subtractive outranks the kind, as it does in the tree.
         rig.Panel.HeaderKind.ShouldBe("Cut");
     }
 
@@ -417,14 +379,12 @@ public sealed class PropertyPanelTests
         row.Hex.ShouldBe("#FFFFFF");
         row.Fields[0].Text.ShouldBe("#FFFFFF");
 
-        // Through the cell, on the same commit contract as every other field.
         PropertyFieldModel cell = row.Fields[0];
         cell.BeginEdit();
         cell.Text = "#808080";
         cell.Commit();
 
-        // Mid grey in sRGB is about 0.216 in linear light, which is the whole
-        // reason the panel converts rather than showing the stored numbers.
+        // sRGB mid grey is about 0.216 linear.
         rig.Edits.Count.ShouldBe(1);
         rig.Edits[0].Id.ShouldBe(PropertyId.LightColor);
         rig.Edits[0].Vector.X.ShouldBeInRange(0.20f, 0.23f);
@@ -443,9 +403,7 @@ public sealed class PropertyPanelTests
         PropertyRowModel row = rig.Row(PropertyId.LightColor);
         PropertyFieldModel cell = row.Fields[0];
 
-        // A partial value is exactly what typing produces, and it must NOT be
-        // parsed: "#8" and "#80" are both unreadable, and a box that reverted
-        // on each one could never be typed into at all.
+        // A half-typed hex must not be parsed, or the box reverts on every keystroke.
         cell.BeginEdit();
         cell.Text = "#80";
         rig.Publish(new PropertyRow
@@ -457,8 +415,6 @@ public sealed class PropertyPanelTests
         rig.Edits.ShouldBeEmpty();
         cell.Text.ShouldBe("#80");
 
-        // It is only on the commit that an unreadable value puts the last good
-        // one back.
         cell.Commit();
         rig.Edits.ShouldBeEmpty();
         cell.Text.ShouldBe("#FFFFFF");
@@ -467,11 +423,8 @@ public sealed class PropertyPanelTests
     [Fact]
     public void A_committed_field_takes_the_next_refresh()
     {
-        // The regression this exists for: Enter used to commit and then re-open
-        // the edit, so the field stopped taking refreshes for as long as it kept
-        // focus. Type a position, press Enter, drag the object in the viewport,
-        // and the box went on showing the number you typed while the object was
-        // somewhere else.
+        // Commit must end the edit even while the box keeps focus, or the field
+        // shows the typed number after the object has moved.
         var rig = new Rig();
         rig.Publish(Vector(PropertyId.Position, Vector3.Zero));
 
@@ -489,12 +442,8 @@ public sealed class PropertyPanelTests
     [Fact]
     public void A_drag_on_one_axis_leaves_a_sibling_being_typed_into_alone()
     {
-        // The scrub guard and the typing guard were once the same bool, and a
-        // drag clears its guard on EVERY cell of the row (a vector drag writes
-        // all three). So typing into x without committing, then dragging y,
-        // handed x back to the refresh, and the next publish silently replaced
-        // what had been typed. A pointer capture does not move keyboard focus,
-        // so the two states are genuinely independent.
+        // A drag clears the scrub guard on every cell of the row, so the typing
+        // guard has to be separate. Pointer capture does not move keyboard focus.
         var rig = new Rig();
         rig.Publish(Vector(PropertyId.Position, Vector3.Zero));
 
@@ -533,7 +482,7 @@ public sealed class PropertyPanelTests
         row.ScrubTo(field, 1.5f);
         row.ScrubTo(field, 2.5f);
 
-        // A stale publish arriving mid-drag must not pull the number back.
+        // A stale publish mid-drag.
         rig.Publish(Vector(PropertyId.Position, Vector3.Zero));
         field.Text.ShouldBe("2.5");
 
@@ -546,7 +495,6 @@ public sealed class PropertyPanelTests
         rig.Edits.Count.ShouldBe(2);
         rig.Edits.ShouldAllBe(e => e.Axes == PropertyAxes.Y);
 
-        // And it takes refreshes again the moment the drag is over.
         rig.Publish(Vector(PropertyId.Position, new Vector3(0f, 7f, 0f)));
         field.Text.ShouldBe("7");
     }
@@ -576,12 +524,6 @@ public sealed class PropertyPanelTests
         row.PartialLabel.ShouldBe("3 of 5");
     }
 
-    // --- refusals -----------------------------------------------------------
-    //
-    // An unusable value always reverted, and always in silence: the box put the
-    // old number back and nothing said why, which reads as the keyboard having
-    // eaten the input. The scene was never at risk; the sentence was missing.
-
     private static PropertyRow Number(PropertyId id, string name, float value) =>
         new()
         {
@@ -609,9 +551,7 @@ public sealed class PropertyPanelTests
     [Fact]
     public void A_value_the_editor_would_refuse_is_refused_before_it_is_posted()
     {
-        // Light.Range throws rather than clamps, so a posted zero would be
-        // dropped on the render thread and reverted by the next publish with
-        // nothing anywhere saying why. It never leaves the panel now.
+        // Light.Range throws on zero, so the panel has to refuse it first.
         var rig = new Rig();
         rig.Publish(Number(PropertyId.LightRange, "Range", 8f));
 
@@ -671,7 +611,6 @@ public sealed class PropertyPanelTests
         cell.Commit();
         Assert.True(cell.HasRejection);
 
-        // Typing is the answer to the refusal.
         cell.BeginEdit();
         cell.Text = "4";
         Assert.False(cell.HasRejection);
@@ -680,8 +619,7 @@ public sealed class PropertyPanelTests
     [Fact]
     public void A_rejection_survives_a_republish_of_the_same_value()
     {
-        // The engine republishes at 30Hz. Clearing on every publish would erase
-        // the message within a frame of it appearing.
+        // The engine republishes at 30Hz, so clearing on a publish would erase the message at once.
         var rig = new Rig();
         rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 40f));
 
@@ -693,7 +631,7 @@ public sealed class PropertyPanelTests
         rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 40f));
         Assert.True(cell.HasRejection);
 
-        // But a value that really moved makes the message stale.
+        // A value that really moved makes the message stale.
         rig.Publish(Number(PropertyId.LightIntensity, "Intensity", 12f));
         Assert.False(cell.HasRejection);
     }
@@ -718,8 +656,6 @@ public sealed class PropertyPanelTests
     [Fact]
     public void The_row_reports_its_first_refused_cell()
     {
-        // A vector is three cells and one reason line: three lines under one
-        // row would be three times the layout shift for one mistake.
         var rig = new Rig();
         rig.Publish(Vector(PropertyId.Position, new Vector3(1f, 2f, 3f)));
 
@@ -738,9 +674,7 @@ public sealed class PropertyPanelTests
     [Fact]
     public void A_picker_drag_writes_the_whole_colour_every_time()
     {
-        // The picker writes through the scrub path, so a drag is many edits
-        // inside ONE gesture rather than many gestures. Each carries the whole
-        // vector: a colour has no axes to leave alone.
+        // Many edits inside one gesture, each carrying the whole vector.
         var rig = new Rig();
         rig.Publish(new PropertyRow
         {
@@ -765,8 +699,6 @@ public sealed class PropertyPanelTests
     [Fact]
     public void A_picker_drag_shows_its_colour_without_waiting_for_the_engine()
     {
-        // The swatch and the hex follow the pointer: waiting for the echo would
-        // make the picker lag the drag by a publish.
         var rig = new Rig();
         rig.Publish(new PropertyRow
         {
@@ -797,14 +729,10 @@ public sealed class PropertyPanelTests
         Assert.True(float.IsNaN(row.ColorLinear.X));
     }
 
-    // --- the words on a choice ----------------------------------------------
-
     [Fact]
     public void A_choice_shows_its_word_and_commits_its_token()
     {
-        // A brush's kind is stored, parsed and written as "World"; the word for
-        // it in an editor is "Block". Renaming the token would touch the map
-        // format and every authored file.
+        // The map format stores "World"; the editor calls it "Block".
         var rig = new Rig();
         rig.Publish(new PropertyRow
         {
@@ -844,8 +772,6 @@ public sealed class PropertyPanelTests
     [Fact]
     public void A_row_with_no_labels_shows_its_tokens()
     {
-        // Every choice row written before labels existed, and the entity
-        // keyvalue rows, which deliberately show the wire tokens.
         var rig = new Rig();
         rig.Publish(Choice(PropertyId.LightKind, "Point", "Point", "Spot"));
 
@@ -882,13 +808,6 @@ public sealed class PropertyPanelTests
 /// An asset row: a file chosen from the project rather than a value typed into
 /// a box.
 /// </summary>
-/// <remarks>
-/// <b>Not a Choice row, because the options are the PROJECT's rather than this
-/// build's.</b> A choice's list is a shared static array the engine declares; an
-/// asset's list is however many files somebody put in a folder, which is a
-/// search. What the panel owes on top of that is the two words a path cannot
-/// say: what the file is called, and what is wrong with it.
-/// </remarks>
 public sealed class AssetRowTests
 {
     private sealed class Rig
@@ -913,9 +832,7 @@ public sealed class AssetRowTests
             Text = path, Note = note, Choices = [],
             PresentCount = 1, SelectionCount = 1,
 
-            // Mixed is derived from the axis mask, so a one-cell row says so
-            // with All: the same flag a vector row uses for all three of its
-            // components.
+            // A one-cell row is mixed when the mask is All.
             MixedAxes = mixed ? PropertyAxes.All : PropertyAxes.None,
         };
 
@@ -930,8 +847,6 @@ public sealed class AssetRowTests
         row.IsAsset.ShouldBeTrue();
         row.AssetKind.ShouldBe(AssetKind.Material);
 
-        // The stem, because the path does not fit: the panel is 300px wide and
-        // the folder is what the picker shows beside every row.
         row.AssetLabel.ShouldBe("wall_brick_02");
         row.AssetPath.ShouldBe("Materials/dev/wall_brick_02.spectramat");
     }
@@ -942,8 +857,6 @@ public sealed class AssetRowTests
         var rig = new Rig();
         rig.Publish(Asset(PropertyId.BrushMaterial, ""));
 
-        // A word rather than a blank cell: an empty control looks like a value
-        // that failed to load, and "no material" is a real, chosen state.
         rig.Row(PropertyId.BrushMaterial).AssetLabel.ShouldBe("(default)");
     }
 
@@ -964,9 +877,6 @@ public sealed class AssetRowTests
 
         PropertyRowModel row = rig.Row(PropertyId.BrushMaterial);
 
-        // The face draws a magenta checker, which is a picture rather than a
-        // report: this row is the only place somebody is looking when they
-        // wonder why.
         row.HasNote.ShouldBeTrue();
         row.Note.ShouldBe("missing");
     }
@@ -993,8 +903,7 @@ public sealed class AssetRowTests
         rig.Edits.Count.ShouldBe(1);
         rig.Edits[0].Id.ShouldBe(PropertyId.FaceMaterial);
 
-        // Without the key the edit names no face at all, and the editor refuses
-        // it rather than guessing at the first one.
+        // The key is the face's plane index; the editor refuses an edit without one.
         rig.Edits[0].Key.ShouldBe("4");
         rig.Edits[0].Text.ShouldBe("Materials/b.spectramat");
     }

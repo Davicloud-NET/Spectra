@@ -10,41 +10,17 @@ namespace SpectraEngine.Entities.Generator;
 /// input dispatch, the output declarations, a static <c>EntitySchema</c> and the
 /// registration into <c>EntityCatalog</c>.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This assembly does not reference the engine, and must not.</b> The
-/// attribute family is matched by fully qualified METADATA NAME, so the
-/// generator has no compile-time dependency on Core and Core has none on it: the
-/// dependency runs one way, exactly as it does for the editing assembly, and a
-/// game that references the engine as a library gets the attributes by
-/// referencing Core alone.
-/// </para>
-/// <para>
-/// <b>The pipeline is two outputs over one transform, and the split is what
-/// keeps the caching per class.</b> Emission runs per model, so an edit to one
-/// entity re-emits one file; the duplicate-name check is the only thing that
-/// needs to see every class at once and is therefore the only thing behind a
-/// <c>Collect</c>.
-/// </para>
-/// <para>
-/// <b>Nothing reads the compilation.</b> A <c>CompilationProvider</c> anywhere in
-/// this pipeline would make every model depend on every edit in the project,
-/// which is the same caching failure as capturing a symbol and is just as
-/// invisible.
-/// </para>
-/// </remarks>
+// Must not reference the engine: attributes are matched by metadata name.
+// Emission is per model so one edit re-emits one file. Only the duplicate-name
+// check sits behind a Collect. Do not add a CompilationProvider: it would make
+// every model depend on every edit in the project.
 [Generator(LanguageNames.CSharp)]
 public sealed class EntityGenerator : IIncrementalGenerator
 {
     /// <summary>
-    /// The names the incremental steps are tracked under, which is how a test
-    /// asserts that an unrelated edit changed nothing.
+    /// The names the incremental steps are tracked under, so a test can assert
+    /// that an unrelated edit changed nothing.
     /// </summary>
-    /// <remarks>
-    /// Public because the caching oracle is the only real proof this generator
-    /// caches at all: everything still produces correct source when caching is
-    /// broken, so the only symptom is an IDE that has quietly become slow.
-    /// </remarks>
     public static class TrackingNames
     {
         /// <summary>The per-class value model, after the symbols are dropped.</summary>
@@ -78,10 +54,8 @@ public sealed class EntityGenerator : IIncrementalGenerator
         for (int i = 0; i < model.Diagnostics.Count; i++)
             production.ReportDiagnostic(model.Diagnostics[i].ToDiagnostic());
 
-        // A non-partial class cannot be reopened, so there is nothing to add. Every
-        // other refusal is per member: the offending keyvalue or input is left out
-        // and the rest of the class is still emitted, because an author fixing one
-        // field should not have the whole type disappear underneath them.
+        // A non-partial class cannot be reopened. Every other refusal only
+        // drops the offending member.
         if (!model.IsPartial)
             return;
 
@@ -101,9 +75,7 @@ public sealed class EntityGenerator : IIncrementalGenerator
 
             if (seen.TryGetValue(model.ClassName, out EntityModel first))
             {
-                // Reported on the SECOND declaration, which is the one a reader
-                // can delete: the first is as likely as not the one they meant to
-                // keep, and a diagnostic on both makes neither actionable.
+                // Reported on the second declaration only.
                 production.ReportDiagnostic(DiagnosticInfo.Create(
                     EntityDiagnostics.DuplicateClassName,
                     model.Location,

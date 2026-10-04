@@ -6,16 +6,7 @@ using System.Text;
 
 namespace Spectra.Kitchen.Cache;
 
-/// <summary>
-/// The little-endian, length-prefixed primitives both cache files are written
-/// with.
-/// </summary>
-/// <remarks>
-/// <b>One implementation, because two would drift and the drift is silent.</b> A
-/// cache file that a slightly different reader parses to slightly different
-/// numbers does not fail: it produces a key that never matches, which reads as a
-/// cache that simply does not work.
-/// </remarks>
+// Little-endian, length-prefixed primitives shared by both cache files.
 internal static class CacheBytes
 {
     public static void U32(List<byte> into, uint value)
@@ -32,8 +23,7 @@ internal static class CacheBytes
         into.AddRange(span);
     }
 
-    // Two explicit halves rather than a reinterpret of the struct, so the file is
-    // the same on a big-endian machine instead of being silently reversed there.
+    // Two halves, not a struct reinterpret, so byte order is host-independent.
     public static void U128(List<byte> into, UInt128 value)
     {
         U64(into, (ulong)value);
@@ -48,15 +38,8 @@ internal static class CacheBytes
     }
 }
 
-/// <summary>
-/// A bounds-checked cursor over a cache file's bytes.
-/// </summary>
-/// <remarks>
-/// Every overrun throws <see cref="InvalidDataException"/>, which both cache files
-/// catch and answer by starting empty. A cache is derived data: the only correct
-/// response to one that does not parse is to rebuild it, never to fail the cook
-/// that found it.
-/// </remarks>
+// Bounds-checked cursor. An overrun throws InvalidDataException, which the
+// cache files catch and answer by starting empty.
 internal ref struct CacheReader(ReadOnlySpan<byte> bytes)
 {
     private readonly ReadOnlySpan<byte> _bytes = bytes;

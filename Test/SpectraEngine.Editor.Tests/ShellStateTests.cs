@@ -6,16 +6,9 @@ using System.Globalization;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// The shell's two new pieces of local state: the bounded optimistic value
-/// every command-bar control now holds, and the output log the status line
-/// became a view of.
+/// The optimistic value a command-bar control shows between a click and the
+/// engine's echo.
 /// </summary>
-/// <remarks>
-/// Headless, with no window and no engine, because both are plain models. That
-/// is the point of them being models: the behaviour that matters - a control
-/// lighting on the click and the engine still winning - is arithmetic over an
-/// echo, and arithmetic can be pinned.
-/// </remarks>
 public sealed class OptimisticValueTests
 {
     [Fact]
@@ -37,9 +30,7 @@ public sealed class OptimisticValueTests
         value.Apply("rotate");
         Assert.False(value.HasPending);
 
-        // With nothing pending, the engine is authoritative immediately: this
-        // is the case where something OTHER than the user changed the value -
-        // a key press, another panel, the engine itself.
+        // Nothing pending, so a change from elsewhere applies at once.
         value.Apply("resize");
         Assert.Equal("resize", value.Value);
     }
@@ -50,8 +41,7 @@ public sealed class OptimisticValueTests
         var value = new OptimisticValue<string>("move") { HoldTicks = 6 };
         value.Request("rotate");
 
-        // Five snapshots still describing frames from before the click. The
-        // displayed value must not flicker back and forth across them.
+        // Snapshots from before the click.
         for (int i = 0; i < 5; i++)
         {
             Assert.False(value.Apply("move"));
@@ -69,9 +59,7 @@ public sealed class OptimisticValueTests
         value.Apply("move");
         Assert.Equal("rotate", value.Value);
 
-        // Three disagreeing snapshots is not lag any more, it is a refusal -
-        // play mode owns the scene, or the editor is mid-gesture - and it has
-        // to become visible or the user clicks again.
+        // Past the hold this is a refusal, not lag, and has to show.
         Assert.True(value.Apply("move"));
         Assert.Equal("move", value.Value);
         Assert.False(value.HasPending);
@@ -87,8 +75,7 @@ public sealed class OptimisticValueTests
         value.Request("resize");
         Assert.Equal("resize", value.Value);
 
-        // The hold restarted, so the two ticks already spent against the
-        // previous request do not count against this one.
+        // The hold restarts with the new request.
         value.Apply("move");
         value.Apply("move");
         Assert.Equal("resize", value.Value);
@@ -102,8 +89,6 @@ public sealed class OptimisticValueTests
         value.Request((3, 2));
         Assert.Equal((3, 2), value.Value);
 
-        // Predicting only half of it would light the redo button against a
-        // depth that had not moved.
         value.Apply((3, 2));
         Assert.False(value.HasPending);
     }
@@ -114,9 +99,7 @@ public sealed class OptimisticValueTests
         var value = new OptimisticValue<string>("move");
         value.Request("rotate");
 
-        // A session closing: the engine those requests were aimed at is gone,
-        // and holding them would make the next session ignore its own first
-        // snapshots.
+        // Session close. A held request would make the next session ignore its first snapshots.
         value.Reset("move");
 
         Assert.False(value.HasPending);
@@ -144,10 +127,8 @@ public sealed class OutputLogTests
     [Fact]
     public void The_header_says_what_it_is_and_never_claims_no_problems()
     {
-        // It used to answer "are there problems" off a BOUNDED history, so
-        // enough chatter after a failure turned the header back to "no
-        // problems" over a project that was still broken. That question moved
-        // to ProblemList; this header may only describe itself.
+        // The history is bounded, so it cannot say whether problems remain.
+        // ProblemList answers that.
         var log = new OutputLog();
         Assert.DoesNotContain("problem", log.HistoryLabel, StringComparison.OrdinalIgnoreCase);
 
@@ -159,8 +140,6 @@ public sealed class OutputLogTests
     [Fact]
     public void A_repeated_line_grows_a_count_instead_of_a_row()
     {
-        // A compile that warns every frame must not push the whole history out
-        // of the buffer with five hundred copies of one sentence.
         var log = new OutputLog();
 
         log.Append(OutputSeverity.Warning, "a texture is missing");
@@ -171,16 +150,13 @@ public sealed class OutputLogTests
         Assert.Equal(3, only.Count);
         Assert.Equal("x3", only.CountLabel);
 
-        // Counted once, because it is one condition.
         Assert.Equal(1, log.WarningCount);
     }
 
     [Fact]
     public void Two_lines_alternating_stay_two_rows()
     {
-        // Only the LAST entry is compared, so an alternating pair is two
-        // conditions and keeps two rows. Stated because merging them would
-        // hide which one came back.
+        // Only the last entry is compared.
         var log = new OutputLog();
 
         log.Append(OutputSeverity.Warning, "first");
@@ -203,9 +179,7 @@ public sealed class OutputLogTests
     {
         var log = new OutputLog();
 
-        // One error, then a full capacity of ordinary lines pushing it out. The
-        // count has to follow the entry, or a log that has scrolled past an old
-        // failure claims problems it can no longer show.
+        // The error count has to drop when the error scrolls out.
         log.Append(OutputSeverity.Error, "the first failure");
         for (int i = 0; i < OutputLog.Capacity; i++)
             log.Append(OutputSeverity.Info, $"line {i}");
@@ -227,11 +201,7 @@ public sealed class ConsoleCommandsTests
             postGizmo: c => Record(log, $"gizmo:{c}", sessionOpen),
             postCamera: c => Record(log, $"camera:{c}", sessionOpen),
             insert: k => Record(log, $"insert:{k}", sessionOpen),
-            // Formatted INVARIANTLY here, deliberately: this machine's culture
-            // writes 0,25, and a test that recorded the culture's rendering
-            // would pass on an English machine and fail here while the code
-            // under test was correct either way. The parse being invariant is
-            // the thing being pinned.
+            // Invariant, or the test fails on a machine whose culture writes 0,25.
             setSnap: (tool, value) => Record(
                 log, $"snap:{tool}={value.ToString(CultureInfo.InvariantCulture)}", sessionOpen),
             setPipeline: n => Record(log, $"pipeline:{n}", sessionOpen),
@@ -276,9 +246,7 @@ public sealed class ConsoleCommandsTests
         Assert.Equal(OutputSeverity.Info, console.Execute("grid 0.25").Severity);
         Assert.Equal(["snap:Translate=0.25"], log);
 
-        // Zero, negative and non-numeric are all refused rather than clamped:
-        // a grid of zero is not a smaller grid, it is a division by zero
-        // somewhere downstream.
+        // Refused, not clamped: a grid of zero divides by zero downstream.
         Assert.Equal(OutputSeverity.Error, console.Execute("grid 0").Severity);
         Assert.Equal(OutputSeverity.Error, console.Execute("grid -2").Severity);
         Assert.Equal(OutputSeverity.Error, console.Execute("grid wide").Severity);
@@ -295,8 +263,7 @@ public sealed class ConsoleCommandsTests
         console.Execute("snap off");
         console.Execute("snap on");
 
-        // Never a toggle. The console has to agree with the button, and the
-        // button posts a SET so a stale echo cannot flip it the wrong way.
+        // Set verbs, not toggles: a stale echo cannot flip a set the wrong way.
         Assert.Equal(["gizmo:EnableSnap", "gizmo:DisableSnap", "gizmo:EnableSnap"], log);
     }
 
@@ -329,16 +296,8 @@ public sealed class ConsoleCommandsTests
 }
 
 /// <summary>
-/// The graphics detector's standing slot. Once the viewport is a texture handed
-/// to something else there is no offscreen probe behind it, and this counter is
-/// the only continuous report of a missing barrier or a pipeline state bound to
-/// a format it was not compiled for - both of which draw a picture, so the
-/// viewport itself can never show them.
+/// The status bar's standing slot for graphics debug-layer errors.
 /// </summary>
-/// <remarks>
-/// Headless: <c>ApplySnapshot</c> is a copy from an immutable value into fields,
-/// which is exactly what makes binding to the model safe in the first place.
-/// </remarks>
 public sealed class DebugLayerStatusTests
 {
     private static ShellModel Apply(int errors, bool active)
@@ -370,9 +329,7 @@ public sealed class DebugLayerStatusTests
         Assert.Equal("3 graphics errors", model.DebugLayerLabel);
         Assert.Contains("3", model.DebugLayerTip);
 
-        // The slot is standing state, not a message: nothing the shell writes
-        // to the message line may displace it, and nothing it says may land
-        // there either.
+        // A standing slot, kept off the message line.
         Assert.False(model.HasMessage);
     }
 
@@ -385,10 +342,8 @@ public sealed class DebugLayerStatusTests
     [Fact]
     public void A_layer_that_is_not_running_does_not_read_as_clean()
     {
-        // The whole reason the snapshot carries both fields. On D3D the count
-        // exists only while validation runs, so zero-and-off and zero-and-clean
-        // are the same number and mean opposite things: "nothing is watching"
-        // must not display as "nothing is wrong".
+        // On D3D the count only exists while validation runs, so zero with the
+        // layer off must not read as clean.
         ShellModel model = Apply(errors: 0, active: false);
 
         Assert.False(model.DebugLayerClean);
@@ -399,8 +354,6 @@ public sealed class DebugLayerStatusTests
     [Fact]
     public void The_count_going_back_to_zero_clears_the_slot()
     {
-        // A fresh session against the same shell: the previous run's count must
-        // not stand over a renderer that has reported nothing.
         var model = new ShellModel();
         model.ApplySnapshot(new FrameSnapshot { DebugLayerErrorCount = 2, DebugLayerActive = true });
         Assert.True(model.HasDebugLayerErrors);
@@ -412,16 +365,9 @@ public sealed class DebugLayerStatusTests
 }
 
 /// <summary>
-/// The standing missing-asset slot: how many references are drawing the magenta
-/// checker right now.
+/// The status bar's standing slot for missing assets: how many references are
+/// bound to the magenta placeholder.
 /// </summary>
-/// <remarks>
-/// <b>The third standing slot, and the one whose failure is otherwise invisible
-/// from the chrome.</b> A reference that will not resolve degrades to the
-/// placeholder so the level still opens; the evidence is then a magenta surface
-/// somewhere in the world and one line in a log. This slot is what makes the
-/// count reachable without hunting for the surface.
-/// </remarks>
 public sealed class PlaceholderBoundStatusTests
 {
     private static ShellModel Apply(int count)
@@ -448,8 +394,7 @@ public sealed class PlaceholderBoundStatusTests
         Assert.Equal("3 missing assets", model.PlaceholderBoundLabel);
         Assert.Contains("3", model.PlaceholderBoundTip);
 
-        // Standing state, not a message: nothing may displace it and it says
-        // nothing on the message line.
+        // A standing slot, kept off the message line.
         Assert.False(model.HasMessage);
     }
 
@@ -462,8 +407,6 @@ public sealed class PlaceholderBoundStatusTests
     [Fact]
     public void The_tip_says_that_unnamed_geometry_is_not_a_missing_asset()
     {
-        // The distinction the whole fix turns on, said where somebody reading
-        // the slot can find it: grey is healthy, magenta is not.
         string tip = Apply(1).PlaceholderBoundTip;
 
         Assert.Contains("names no material", tip);

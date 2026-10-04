@@ -5,15 +5,10 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// Automatic static-world dirtying: <see cref="SceneNode"/> must mark the
-/// owning scene's world dirty for exactly the edits that change brush
-/// placements — brush attach/detach/replace, transform edits on any node with
-/// a brush somewhere in its subtree, and (re)parenting of subtrees containing
-/// brushes — and for nothing else, or every camera move would trigger a CSG
-/// recompile. The subtree brush counters that make the transform test O(1)
-/// are private, so counter correctness after reparenting is verified through
-/// the observable dirty behaviour of moving each affected ancestor chain.
+/// Which <see cref="SceneNode"/> edits mark the static world dirty, and which must not.
 /// </summary>
+// The subtree brush counters are private, so the reparenting tests check them
+// by moving each ancestor chain and watching the dirty flag.
 public sealed class SceneAutoDirtyTests
 {
     [Fact]
@@ -33,7 +28,7 @@ public sealed class SceneAutoDirtyTests
     {
         var (scene, node, _) = CreateCleanSceneWithBrushNode();
 
-        node.Brush = CreateUnitBrush(); // different instance, same shape — still a world edit
+        node.Brush = CreateUnitBrush(); // same shape, new instance
 
         scene.StaticWorldDirty.ShouldBeTrue();
     }
@@ -71,11 +66,10 @@ public sealed class SceneAutoDirtyTests
     [Fact]
     public void Moving_a_brushless_node_does_not_mark_the_world_dirty()
     {
-        // A brush exists elsewhere in the scene, so a compiled world is live —
-        // but the moved node has no brush in its subtree and must not touch it.
+        // A brush elsewhere in the scene keeps a compiled world live.
         var (scene, _, _) = CreateCleanSceneWithBrushNode();
         SceneNode plain = scene.Root.CreateChild("plain");
-        scene.RebuildStaticWorld(new FakeRenderer()); // adding the node itself never dirties
+        scene.RebuildStaticWorld(new FakeRenderer());
 
         plain.LocalPosition = new Vector3(0f, 7f, 0f);
 
@@ -107,21 +101,18 @@ public sealed class SceneAutoDirtyTests
         brushNode.Brush = CreateUnitBrush();
         scene.RebuildStaticWorld(renderer);
 
-        // The move itself changes the brush's placement chain: dirty.
         newParent.AddChild(brushNode);
         scene.StaticWorldDirty.ShouldBeTrue();
         scene.RebuildStaticWorld(renderer);
 
-        // Old chain lost its brush count: moving it must NOT recompile.
+        // Old chain no longer holds a brush.
         oldParent.LocalPosition = new Vector3(1f, 0f, 0f);
         scene.StaticWorldDirty.ShouldBeFalse();
 
-        // New chain gained the count: moving it must recompile.
         newParent.LocalPosition = new Vector3(0f, 1f, 0f);
         scene.StaticWorldDirty.ShouldBeTrue();
         scene.RebuildStaticWorld(renderer);
 
-        // And the node's own counter survived the move.
         brushNode.LocalPosition = new Vector3(0f, 0f, 1f);
         scene.StaticWorldDirty.ShouldBeTrue();
     }
@@ -129,8 +120,6 @@ public sealed class SceneAutoDirtyTests
     [Fact]
     public void Reparenting_a_group_with_a_brush_descendant_updates_both_ancestor_chains()
     {
-        // Same contract one level up: the counters must travel with a whole
-        // moved subtree, not just with the brush node itself.
         var scene = new Scene("Test");
         var renderer = new FakeRenderer();
         SceneNode oldParent = scene.Root.CreateChild("old-parent");
@@ -158,8 +147,7 @@ public sealed class SceneAutoDirtyTests
     private static Brush CreateUnitBrush() =>
         Brush.CreateBox(new Vector3(-1f, -1f, -1f), new Vector3(1f, 1f, 1f));
 
-    // A scene with one brush node whose dirty flag has been cleared by a real
-    // (headless) rebuild, so each test observes only the edit it performs.
+    // Rebuilt once, so the dirty flag starts clear.
     private static (Scene Scene, SceneNode Node, FakeRenderer Renderer) CreateCleanSceneWithBrushNode()
     {
         var scene = new Scene("Test");

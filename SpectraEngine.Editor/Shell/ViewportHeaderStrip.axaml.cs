@@ -5,14 +5,6 @@ using System;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>What a control on the viewport header asks for.</summary>
-/// <remarks>
-/// <b>A closed enum rather than the handler's name as a string.</b> The strip
-/// knows which control was pressed and the window is the only thing that knows
-/// whether there is a session, what the current state is and which optimistic
-/// value to hold - so the strip raises an intent and the window dispatches it
-/// through the handlers it already had. A string would compile with a typo in
-/// it and do nothing.
-/// </remarks>
 public enum HeaderAction
 {
     ToggleNavigation,
@@ -36,15 +28,12 @@ public enum HeaderAction
     DebugSceneGraph,
 }
 
-/// <summary>The row above the picture: view-scoped state and readouts.</summary>
-/// <remarks>
-/// No behaviour of its own, exactly like the ribbon pages: every control raises
-/// an intent the window dispatches. This exists so the markup is declared once
-/// and can be constructed - and MEASURED - by something other than a window.
-///
-/// Deliberately NO hand-written InitializeComponent: a parameterless one shadows
-/// the generated overload, the XAML loads, and every x:Name field stays null.
-/// </remarks>
+/// <summary>
+/// The row above the picture: view-scoped state and readouts. Every control
+/// raises a <see cref="HeaderAction"/> the window dispatches.
+/// </summary>
+// Don't hand-write InitializeComponent: a parameterless one shadows the
+// generated overload and every x:Name field stays null.
 public partial class ViewportHeaderStrip : UserControl
 {
     /// <summary>Creates the strip.</summary>

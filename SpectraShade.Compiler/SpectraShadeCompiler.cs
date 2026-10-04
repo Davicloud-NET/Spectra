@@ -8,15 +8,7 @@ using SpectraShade.Compiler.Syntax;
 
 namespace SpectraShade.Compiler;
 
-/// <summary>
-/// Main entry point for the SpectraShade compiler.
-/// Implements IShaderCompiler to integrate with the engine's asset pipeline.
-///
-/// Usage:
-///   var compiler = new SpectraShadeCompiler();
-///   var result = compiler.Compile(source, [GraphicsBackend.OpenGL, GraphicsBackend.Vulkan]);
-///   ShaderFileWriter.WriteToFile("output.specshadecomp", result);
-/// </summary>
+/// <summary>Compiles SpectraShade source into per-backend pipeline blobs.</summary>
 public sealed class SpectraShadeCompiler : IShaderCompiler
 {
     private readonly Dictionary<GraphicsBackend, ICodeGenerator> _generators = [];
@@ -36,23 +28,19 @@ public sealed class SpectraShadeCompiler : IShaderCompiler
 
     public CompiledShaderFile Compile(string source, ReadOnlySpan<GraphicsBackend> targets)
     {
-        // Lex
         var lexer = new Lexer(source);
         var tokens = lexer.Tokenize();
 
-        // Parse
         var parser = new Parser(tokens);
         var unit = parser.Parse();
 
         if (parser.Diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
             throw new ShaderCompilationException("Parse errors", parser.Diagnostics);
 
-        // Analyze
         var analyzer = new SemanticAnalyzer();
         if (!analyzer.Analyze(unit))
             throw new ShaderCompilationException("Semantic errors", analyzer.Diagnostics);
 
-        // Generate per-backend
         var pipelines = new List<PipelineBlob>();
         var allStages = ShaderStageFlags.None;
 
@@ -64,9 +52,8 @@ public sealed class SpectraShadeCompiler : IShaderCompiler
 
             var blob = generator.Generate(unit);
 
-            // The instanced twin, from the SAME generator over a rewritten AST.
-            // Running the generator twice is what keeps both stages in step:
-            // there is no second emission path that could drift from the first.
+            // Instanced variant: same generator over a rewritten AST, so the two
+            // vertex stages cannot drift.
             if (InstancedVariant.TryBuild(unit, out CompilationUnit? instancedUnit))
                 blob = InstancedBlob.With(blob, generator.Generate(instancedUnit));
 

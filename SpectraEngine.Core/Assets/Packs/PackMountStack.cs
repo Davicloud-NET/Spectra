@@ -11,13 +11,6 @@ namespace SpectraEngine.Core.Assets.Packs;
 /// One shadowing decision: a source higher in the stack took a logical path from
 /// a source lower in it.
 /// </summary>
-/// <remarks>
-/// Recorded rather than only logged, because "two identical mount lists produce
-/// byte-identical resolution" is a claim about the decisions as well as about the
-/// bytes: two stacks that serve the same content while disagreeing about which
-/// pack served it are two different installs, and the difference shows up later
-/// as a patch that appears not to apply.
-/// </remarks>
 public readonly record struct MountShadowing(
     string Path,
     string Winner,
@@ -35,31 +28,12 @@ public readonly record struct MountShadowing(
 
 /// <summary>
 /// The mount stack: priority bands flattened into one dictionary at mount, so a
-/// lookup is one hash rather than a probe per source.
+/// lookup is one hash rather than a probe per source. A tombstone wins its path
+/// like any entry and then resolves to a miss.
 /// </summary>
-/// <remarks>
-/// <para><b>Flattened rather than probed, and the reason is measurable.</b>
-/// Probing sources in reverse per lookup is <c>O(sources)</c> per asset, which is
-/// free with two packs and a real cost with forty mods — i.e. it gets expensive
-/// exactly in the case it exists to support. The flatten is <c>O(total
-/// entries)</c> once.</para>
-/// <para><b>A tombstone hides what is beneath it.</b> It is an entry that says
-/// the path it names does not exist, which is how a higher band removes content a
-/// lower one shipped; it wins the path like any other entry and then resolves to
-/// a miss. Sources that cannot express a deletion (the loose file tree) are
-/// flattened from their enumeration instead, which is the same thing with no
-/// tombstones in it.</para>
-/// <para><b>Every shadowing decision is recorded and logged at mount.</b> The
-/// first question when content resolves wrongly is always which source answered,
-/// and the answer is only cheap to give while the stack is being built.</para>
-/// <para><b>The flatten runs once for a batch of mounts, not once per mount.</b>
-/// Rebuilding inside <see cref="Mount"/> would make assembling a forty-mod stack
-/// quadratic in the entry count; it still happens before the first lookup, so no
-/// lookup ever probes.</para>
-/// <para><b>Thread-safe once flattened.</b> The map is published whole and never
-/// mutated in place, so a lookup on another thread sees one map or another and
-/// never a half-built one. Mounting is a start-up operation; lookups are not.</para>
-/// </remarks>
+// Mount only invalidates; the flatten runs once before the next lookup, so a batch
+// of mounts is not quadratic. The map is published whole and never mutated, which
+// makes lookups thread-safe.
 public sealed class PackMountStack : IContentSource, IDisposable
 {
     private readonly ILogger _logger;
@@ -113,12 +87,8 @@ public sealed class PackMountStack : IContentSource, IDisposable
 
     /// <summary>
     /// Mounts <paramref name="source"/> at its own <see cref="IContentSource.Priority"/>.
+    /// The stack takes ownership and disposes it in <see cref="Dispose"/>.
     /// </summary>
-    /// <remarks>
-    /// The stack takes ownership: <see cref="Dispose"/> unmounts everything
-    /// mounted into it, which is what makes shutting a session down one call
-    /// rather than a list somebody has to keep in step.
-    /// </remarks>
     public void Mount(IContentSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -165,12 +135,7 @@ public sealed class PackMountStack : IContentSource, IDisposable
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Answered from the flattened map rather than by asking each source, so a
-    /// path a higher band shadows appears once and a tombstoned one not at all.
-    /// The additions are sorted, because a listing whose order depends on hash
-    /// iteration is not a listing two identical installs can be compared by.
-    /// </remarks>
+    // Sorted, so the listing does not depend on hash iteration order.
     public void TryEnumerate(string prefix, string extension, List<string> results)
     {
         ArgumentNullException.ThrowIfNull(results);
@@ -192,7 +157,7 @@ public sealed class PackMountStack : IContentSource, IDisposable
 
     /// <summary>
     /// One line per mounted source in resolution order, highest priority first,
-    /// followed by every shadowing decision. What the engine logs at start-up.
+    /// followed by every shadowing decision.
     /// </summary>
     public string Describe()
     {
@@ -243,10 +208,7 @@ public sealed class PackMountStack : IContentSource, IDisposable
     /// <inheritdoc/>
     public override string ToString() => $"mount stack of {_mounted.Count} source(s)";
 
-    // A raw key first, because the contract says callers hand over normalised
-    // paths and normalising again allocates a string on the path that resolves
-    // content. The retry is what keeps a caller that spelled it differently from
-    // silently getting a miss.
+    // Raw key first: callers normally pass normalised paths, and normalising allocates.
     private bool TryResolve(string path, out Resolution resolution)
     {
         resolution = default;
@@ -284,11 +246,8 @@ public sealed class PackMountStack : IContentSource, IDisposable
         }
     }
 
-    // Lowest band first, so each higher source overwrites what it shadows and the
-    // decision is recorded at the moment it is made. Ties keep mount order, which
-    // is what makes an overlay assembled the same way resolve the same way, and
-    // each source's own paths are sorted so the decision LIST is identical too and
-    // not merely the map it produces.
+    // Lowest priority first, so each higher source overwrites what it shadows.
+    // Each source's paths are sorted so the shadowing list is deterministic too.
     private Dictionary<string, Resolution> Build()
     {
         _shadowings.Clear();
@@ -341,10 +300,7 @@ public sealed class PackMountStack : IContentSource, IDisposable
         var order = new int[count];
         for (int i = 0; i < count; i++) order[i] = i;
 
-        // Priority ascending, mount order breaking ties. The tie-break is on the
-        // INDEX rather than left to the sort's stability, because Array.Sort is
-        // introsort and unstable, so two sources in one band would otherwise
-        // resolve in an order that depends on how many were mounted.
+        // Ties break on mount index. Array.Sort is not stable.
         List<IContentSource> mounted = _mounted;
         Array.Sort(order, (a, b) =>
         {
@@ -365,8 +321,6 @@ public sealed class PackMountStack : IContentSource, IDisposable
             return;
         }
 
-        // A source that cannot express a deletion is flattened from what it can
-        // serve, which is the same list with no tombstones in it.
         var served = new List<string>();
         source.TryEnumerate(string.Empty, string.Empty, served);
         for (int i = 0; i < served.Count; i++)
@@ -382,9 +336,6 @@ public sealed class PackMountStack : IContentSource, IDisposable
         }
         catch (ArgumentException ex)
         {
-            // A path a source offers that no caller could ever ask for. Dropping
-            // it silently would leave a mount whose count disagrees with what it
-            // can serve and nothing saying why.
             _logger.LogWarning("{Source} offers '{Path}', which is not a content path: {Message}", source, path, ex.Message);
             key = string.Empty;
             return false;

@@ -4,15 +4,8 @@ namespace SpectraEngine.Core.Maps.Compiled;
 
 /// <summary>
 /// Whole-file properties of a <c>.scmap</c>, in the header's <c>Flags</c> word.
+/// Each says what the cook put in the file, not what a loader should do with it.
 /// </summary>
-/// <remarks>
-/// Each one says what the cook PUT IN the file, never what a runtime should do
-/// with it. A flag that meant "re-carve on load" would be a policy stored in an
-/// artifact, and the double-geometry hazard is exactly what happens when a loader
-/// takes such a hint: baked chunks plus a live carve draws every wall twice, with
-/// z-fighting that reads as a depth-precision bug rather than as a map loader
-/// deciding something.
-/// </remarks>
 [Flags]
 public enum ScmapFlags : uint
 {
@@ -20,20 +13,18 @@ public enum ScmapFlags : uint
     None = 0,
 
     /// <summary>
-    /// A <c>BRSH</c> section is present: authored brush planes, kept so a brush
-    /// can be re-carved at runtime.
+    /// A <c>BRSH</c> section is present: authored brush planes.
     /// </summary>
     HasBrushSource = 1u << 0,
 
-    /// <summary>A <c>LUAS</c> section is present: Luau source, which is the ground truth.</summary>
+    /// <summary>A <c>LUAS</c> section is present: Luau source.</summary>
     HasScriptSource = 1u << 1,
 
     /// <summary>Debug information was kept rather than stripped.</summary>
     HasDebugInfo = 1u << 2,
 
     /// <summary>
-    /// The file was laid out region-major for streaming. Reserved: the chunk grid
-    /// is a compile partition rather than a residency one, and nothing sets this.
+    /// The file was laid out region-major for streaming. Reserved; nothing sets this.
     /// </summary>
     Streamable = 1u << 3,
 }
@@ -49,9 +40,8 @@ public enum ScmapSectionFlags : ushort
 
     /// <summary>
     /// The section's bytes are compressed, so <c>Size</c> and
-    /// <c>UncompressedSize</c> differ. Reserved and never set by this engine's
-    /// cook: compression and a mapped zero-copy read are mutually exclusive, and
-    /// geometry is where the bytes are.
+    /// <c>UncompressedSize</c> differ. Reserved; the cook never sets it, since a
+    /// compressed section cannot be read in place from a mapped view.
     /// </summary>
     Compressed = 1 << 0,
 }

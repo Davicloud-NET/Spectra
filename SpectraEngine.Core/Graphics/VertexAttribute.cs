@@ -5,20 +5,12 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// One attribute of a vertex layout: which location it feeds, how many floats
-/// it carries, which buffer it comes from and how often it advances.
+/// One attribute of a vertex layout. There is one per location, not per shader
+/// field: a <c>mat4</c> is four attributes.
 /// </summary>
-/// <remarks>
-/// <b>One attribute per LOCATION, never per shader field.</b> A <c>mat4</c> is a
-/// single field in a shader and four entries here, because that is what both
-/// APIs want: GL binds an attribute pointer per location and D3D an input
-/// element per semantic index. <see cref="FromShaderInputs"/> is what performs
-/// that expansion, from the signature the compiler now reports, so no caller
-/// has to know the rule.
-/// </remarks>
 public readonly struct VertexAttribute
 {
-    /// <summary>The per-vertex buffer's slot. The mesh's own vertices.</summary>
+    /// <summary>The per-vertex buffer's slot.</summary>
     public const uint VertexSlot = 0;
 
     /// <summary>The per-instance buffer's slot.</summary>
@@ -31,16 +23,8 @@ public readonly struct VertexAttribute
     /// Which bound buffer this attribute reads from:
     /// <see cref="VertexSlot"/> or <see cref="InstanceSlot"/>.
     /// </summary>
-    /// <remarks>
-    /// Separate from <see cref="InputRate"/> on purpose. The rate is what the
-    /// hardware does between elements; the slot is which buffer they come from.
-    /// They travel together in every layout the engine builds, but conflating
-    /// them into one flag would make a per-vertex attribute in a second buffer
-    /// inexpressible, and that is an ordinary thing to want.
-    /// </remarks>
     public uint InputSlot { get; }
 
-    /// <summary>Whether this attribute advances per vertex or per instance.</summary>
     public VertexInputRate InputRate { get; }
 
     public VertexAttribute(
@@ -64,8 +48,7 @@ public readonly struct VertexAttribute
 
     /// <summary>
     /// The engine's standard interleaved vertex layout (8 floats): position (3),
-    /// normal (3), uv (2). Matches <c>Primitives.Cube</c> and
-    /// <c>CsgWorld.BuildMesh</c> output.
+    /// normal (3), uv (2).
     /// </summary>
     public static ReadOnlySpan<VertexAttribute> StandardLayout => _standardLayout;
 
@@ -79,41 +62,17 @@ public readonly struct VertexAttribute
 
     /// <summary>
     /// The engine's standard per-instance layout: one <c>mat4</c> world matrix
-    /// at locations 3 through 6, sixteen floats per instance.
+    /// at locations 3 through 6, directly after <see cref="StandardLayout"/>.
     /// </summary>
-    /// <remarks>
-    /// Locations 3 to 6 rather than 0 to 3 because they sit past
-    /// <see cref="StandardLayout"/>, which is what lets one shader declare both
-    /// and one input layout describe both.
-    /// </remarks>
     public static ReadOnlySpan<VertexAttribute> StandardInstanceLayout => _standardInstanceLayout;
 
     /// <summary>Floats per instance in <see cref="StandardInstanceLayout"/>.</summary>
     public const int StandardInstanceFloats = 16;
 
     /// <summary>
-    /// Expands a compiled shader's declared vertex inputs into one attribute per
-    /// location, assigning per-vertex inputs to <see cref="VertexSlot"/> and
-    /// per-instance inputs to <see cref="InstanceSlot"/>.
-    /// </summary>
-    /// <remarks>
-    /// <b>The bridge from what a shader says to what a backend binds.</b> The
-    /// expansion rule (a <c>mat4</c> is four locations of four components) lives
-    /// here and in the compiler's resolver, and nowhere else; a backend
-    /// re-deriving it from a type name would be the third copy, which is how the
-    /// two stop agreeing.
-    /// </remarks>
-    /// <summary>
     /// The subset of <paramref name="attributes"/> bound to
     /// <paramref name="slot"/>, in order.
     /// </summary>
-    /// <remarks>
-    /// The companion to <see cref="FromShaderInputs"/>: a shader reports one
-    /// layout covering both buffers, and the two buffers are created from its
-    /// two halves. <see cref="Renderer.CreateInstanceBuffer"/> refuses a layout
-    /// carrying anything but instance-slot attributes, so this is how a caller
-    /// gets one from a shader's full signature.
-    /// </remarks>
     public static VertexAttribute[] ForSlot(ReadOnlySpan<VertexAttribute> attributes, uint slot)
     {
         int count = 0;
@@ -130,6 +89,11 @@ public readonly struct VertexAttribute
         return result;
     }
 
+    /// <summary>
+    /// Expands a compiled shader's vertex inputs into one attribute per location.
+    /// Per-vertex inputs go to <see cref="VertexSlot"/>, per-instance ones to
+    /// <see cref="InstanceSlot"/>.
+    /// </summary>
     public static VertexAttribute[] FromShaderInputs(IReadOnlyList<VertexInputElement> inputs)
     {
         ArgumentNullException.ThrowIfNull(inputs);

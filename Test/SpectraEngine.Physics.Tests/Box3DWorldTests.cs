@@ -10,16 +10,8 @@ namespace SpectraEngine.Physics.Tests;
 /// The binding against the real library: does a world come up, step at a fixed
 /// timestep, and go down again.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>These need <c>box3d.dll</c>, which the ABI tests deliberately do not.</b>
-/// The DLL is build output of the pinned submodule rather than a committed
-/// binary, so a fresh clone that has not run <c>native/build-box3d.ps1</c> does
-/// not have one. When it is missing these <em>skip with the reason and the
-/// command</em> — a named skip, visible in the run summary. They must never
-/// quietly pass, which would report a green binding nobody exercised.
-/// </para>
-/// </remarks>
+// Needs box3d.dll, which is build output and not committed. Without it these
+// skip with a reason; they must not pass.
 [Collection(NativeWorldCollection.Name)]
 public sealed class Box3DWorldTests
 {
@@ -35,10 +27,8 @@ public sealed class Box3DWorldTests
     [Fact]
     public void The_loaded_library_is_the_float_build()
     {
-        // The single most important assertion in this file. Every managed struct
-        // in the binding assumes the float build; a double DLL silently widens
-        // positions and every struct containing one. This is the only runtime
-        // proof that the library on disk matches the layouts in the manifest.
+        // Every managed struct assumes the float build. A double DLL widens
+        // positions and every struct containing one.
         RequireNative();
 
         B3.IsDoublePrecision().ShouldBeFalse(
@@ -49,9 +39,8 @@ public sealed class Box3DWorldTests
     [Fact]
     public void The_library_reports_its_own_version()
     {
-        // Also the cheapest end-to-end proof that a struct RETURNED BY VALUE
-        // crosses the boundary correctly: 12 bytes comes back through a hidden
-        // return pointer, and getting that wrong would garble this.
+        // Also checks a struct returned by value: 12 bytes through a hidden
+        // return pointer.
         RequireNative();
 
         B3Version version = B3.GetVersion();
@@ -63,8 +52,6 @@ public sealed class Box3DWorldTests
     [Fact]
     public void One_world_unit_is_one_metre()
     {
-        // The units decision, exercised against the real library rather than
-        // asserted in a doc.
         RequireNative();
 
         B3.SetLengthUnitsPerMeter(PhysicsDefaults.MetresPerUnit);
@@ -75,11 +62,9 @@ public sealed class Box3DWorldTests
     [Fact]
     public void A_default_world_def_arrives_serial()
     {
-        // The library's three-way branch takes the external-task path when the
-        // worker count is non-zero AND both callbacks are non-null, and spawns
-        // its own OS threads when the count exceeds one. The default def sits in
-        // neither case — and this test is what notices if that ever changes
-        // under a moved pin.
+        // The library uses external tasks when the worker count is non-zero and
+        // both callbacks are set, and spawns its own threads when the count
+        // exceeds one. The default def must be neither.
         RequireNative();
 
         B3WorldDef def = B3.DefaultWorldDef();
@@ -108,14 +93,11 @@ public sealed class Box3DWorldTests
             B3.World_IsValid(world).ShouldBeTrue();
             B3.GetWorldCount().ShouldBe(worldsBefore + 1);
 
-            // The serial branch is observable, so assert it rather than trusting
-            // the def: a world that quietly spawned threads would still pass
-            // every other test here.
+            // A world that spawned threads would still pass every other test here.
             B3.World_GetWorkerCount(world).ShouldBe(1);
 
             B3.World_GetGravity(world).ToVector3().Y.ShouldBe(PhysicsDefaults.Gravity.Y, 1e-4f);
 
-            // Fixed step, always — the frame delta must never reach here.
             for (int tick = 0; tick < 10; tick++)
                 B3.World_Step(world, PhysicsDefaults.FixedDeltaTime, 4);
 
@@ -133,10 +115,7 @@ public sealed class Box3DWorldTests
     [Fact]
     public void Gravity_survives_a_round_trip_through_the_boundary()
     {
-        // b3Vec3 passes by value in and comes back by value out. A layout or
-        // convention mistake here would show up as gravity pointing somewhere
-        // unexpected — which reads as a physics tuning problem, not a binding
-        // one, and is therefore worth pinning.
+        // b3Vec3 passes by value in both directions.
         RequireNative();
 
         B3WorldDef def = B3.DefaultWorldDef();

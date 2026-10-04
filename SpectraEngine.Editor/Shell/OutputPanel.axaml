@@ -5,13 +5,6 @@
              x:DataType="shell:ShellModel"
              Background="{StaticResource SpectraBgPanel}">
 
-  <!--
-    Everything the editor has reported, oldest first.
-
-    A LIST, not a grid, and flat rows rather than cards: this is the idiom the
-    scene tree, the maps pane and the launcher's recents already share, and an
-    output log is the most list-shaped thing in the application.
-  -->
 
   <Grid RowDefinitions="Auto,*">
 
@@ -28,9 +21,7 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="shell:OutputEntry">
             <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,0" ColumnSpacing="8">
-              <!-- Top-aligned for wrapped messages, nudged 2 so the 11px mono
-                   time and the 12px sans first line share a baseline instead
-                   of sitting a ragged pixel apart in every row. -->
+              <!-- Top margin 2: lines the 11px mono time up with the 12px text baseline. -->
               <TextBlock Grid.Column="0" Classes="value" VerticalAlignment="Top"
                          Margin="0,2,0,0"
                          Foreground="{StaticResource SpectraTextDisabled}"
@@ -38,8 +29,6 @@
               <TextBlock Grid.Column="1" Classes="line" Text="{Binding Text}"
                          Foreground="{Binding SeverityBrush}"
                          TextWrapping="Wrap" />
-              <!-- A repeated line grows this instead of a row, so a compile
-                   warning every frame stays one line that says how many. -->
               <TextBlock Grid.Column="2" Classes="value" VerticalAlignment="Top"
                          Margin="0,2,0,0"
                          Foreground="{StaticResource SpectraTextDisabled}"
@@ -52,9 +41,6 @@
   </Grid>
 
   <UserControl.Styles>
-    <!-- The message is set in the UI face, not mono: these are sentences. The
-         TIME beside it is a value and wears mono, which is also what keeps the
-         column from jittering as the seconds change. -->
     <Style Selector="TextBlock.line">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />

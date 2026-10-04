@@ -5,15 +5,8 @@
              x:DataType="shell:ShellModel"
              Background="{StaticResource SpectraBgPanel}">
 
-  <!--
-    A command line over the verbs the editor already has.
-
-    It shares the OUTPUT LOG rather than keeping a scrollback of its own, which
-    is the whole reason this is worth having at day one: a command and the error
-    it caused sit in one place, in order, instead of in two panes the user has to
-    correlate by memory. See ConsoleCommands for why there is no cvar system
-    behind it and why that is stated rather than faked.
-  -->
+  <!-- A command line over the editor's verbs. Shares the output log, so a
+       command and the error it caused sit together in order. -->
 
   <Grid RowDefinitions="*,Auto">
     <Grid.Styles>
@@ -25,10 +18,7 @@
     </Grid.Styles>
 
     <ScrollViewer Grid.Row="0" Name="Scroller" HorizontalScrollBarVisibility="Disabled">
-      <!-- The SAME rows the Output tab shows, in the same geometry and the
-           same face: the two tabs share one log, and switching between them
-           used to re-typeset identical lines (10px vs 8px inset, 11px mono vs
-           12px sans). Mono is for values; a log line is a sentence. -->
+      <!-- Keep geometry and font identical to the Output tab: same log, same rows. -->
       <ItemsControl ItemsSource="{Binding Output.Entries}" Margin="0,6,0,4">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="shell:OutputEntry">
@@ -40,8 +30,6 @@
               <TextBlock Grid.Column="1" Classes="line" Text="{Binding Text}"
                          Foreground="{Binding SeverityBrush}"
                          TextWrapping="Wrap" />
-              <!-- A repeated line grows this instead of a row, so a compile
-                   warning every frame stays one line that says how many. -->
               <TextBlock Grid.Column="2" Classes="value" VerticalAlignment="Top"
                          Margin="0,2,0,0"
                          Foreground="{StaticResource SpectraTextDisabled}"
@@ -52,10 +40,6 @@
       </ItemsControl>
     </ScrollViewer>
 
-    <!-- The prompt is a chevron, not a word: it is the one place in this shell
-         where a mono glyph IS the label, because that is what a command line
-         looks like everywhere and inventing a different one would only make it
-         harder to recognise. -->
     <Grid Grid.Row="1" ColumnDefinitions="Auto,*" Margin="8,4,8,8" ColumnSpacing="6">
       <TextBlock Grid.Column="0" Classes="value" VerticalAlignment="Center"
                  Foreground="{StaticResource SpectraMode}" Text="&gt;" />

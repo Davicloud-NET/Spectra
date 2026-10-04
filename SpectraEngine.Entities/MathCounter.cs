@@ -7,32 +7,10 @@ namespace SpectraEngine.Entities;
 /// Holds a number a level can add to, subtract from and read back, with optional
 /// bounds that announce themselves when the count reaches them.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b><c>OnHitMax</c> fires on the TRANSITION, never on every hit.</b> A counter
-/// pinned at its ceiling by five more <c>Add</c>s fires once, on the arrival, and
-/// nothing on the four that follow; it arms again by leaving the ceiling. The
-/// other reading - fire on every change that lands at the bound - turns "the
-/// third crate is on the pressure plate, open the door" into "open the door five
-/// times", and every level built on it then has to defend against its own
-/// counter. The same rule governs <c>OnHitMin</c>.
-/// </para>
-/// <para>
-/// <b>The transition memory is DERIVED from the value, not stored beside it.</b>
-/// "Was it at the bound before this change?" is read off the value that was
-/// there, so <c>SetValueNoFire</c> needs no special handling to stay consistent:
-/// it moves the value, fires nothing, and the next arrival at a bound is judged
-/// against where the counter actually is. A stored "already announced" flag is
-/// the same thing with one more way to be wrong.
-/// </para>
-/// <para>
-/// <b>Bounds are active only while <c>max</c> is above <c>min</c></b>, which is
-/// why both default to zero: a pair of zeros is an unclamped counter, and there
-/// is no separate "clamping" switch to leave in the wrong position. Setting a
-/// bound re-clamps the value and fires nothing, because changing the shape of a
-/// counter is configuration rather than counting.
-/// </para>
-/// </remarks>
+// OnHitMax and OnHitMin fire when the count arrives at a bound, not on every
+// change that lands there. Whether it was already at the bound is read off the
+// previous value, so SetValueNoFire needs no special case.
+// Bounds apply only while max is above min. Setting a bound re-clamps and fires nothing.
 [SpectraEntity("math_counter", Group = "Logic", Placement = EntityPlacement.Abstract)]
 public sealed partial class MathCounter : Entity
 {
@@ -40,11 +18,11 @@ public sealed partial class MathCounter : Entity
     [EntityOutput]
     public const string OutValue = nameof(OutValue);
 
-    /// <summary>Fired when the count ARRIVES at its ceiling, once per arrival.</summary>
+    /// <summary>Fired when the count arrives at its ceiling, once per arrival.</summary>
     [EntityOutput]
     public const string OnHitMax = nameof(OnHitMax);
 
-    /// <summary>Fired when the count ARRIVES at its floor, once per arrival.</summary>
+    /// <summary>Fired when the count arrives at its floor, once per arrival.</summary>
     [EntityOutput]
     public const string OnHitMin = nameof(OnHitMin);
 
@@ -78,34 +56,18 @@ public sealed partial class MathCounter : Entity
     /// <summary>Whether the bounds are in force.</summary>
     public bool IsClamped => Maximum > Minimum;
 
-    /// <summary>
-    /// How many inputs carried an argument this counter could not use.
-    /// </summary>
-    /// <remarks>
-    /// Counted rather than logged, because an entity has no reporting channel for
-    /// a refused INPUT the way it has <c>RefuseKeyvalue</c> for a refused
-    /// keyvalue. A count is at least visible to a test and to a future debug
-    /// panel, which "nothing happened" is not.
-    /// </remarks>
+    /// <summary>How many inputs carried an argument this counter could not use.</summary>
     public int RefusedInputCount { get; private set; }
 
     /// <inheritdoc/>
     protected override void OnSpawn() => Value = Clamp(StartValue);
 
-    /// <summary>Adds the parameter to the count. No argument adds one.</summary>
-    /// <remarks>
-    /// One is the default because the commonest wiring in any level is a trigger
-    /// counting the things that pass through it, and writing <c>1</c> on every
-    /// such wire is ceremony that buys nothing.
-    /// </remarks>
     [EntityInput("Add")]
     private void Add(ref EntityInputContext context) => Move(Amount(ref context), ref context);
 
-    /// <summary>Subtracts the parameter from the count. No argument subtracts one.</summary>
     [EntityInput("Subtract")]
     private void Subtract(ref EntityInputContext context) => Move(-Amount(ref context), ref context);
 
-    /// <summary>Sets the count, firing the outputs the new value earns.</summary>
     [EntityInput("SetValue")]
     private void SetValue(ref EntityInputContext context)
     {
@@ -113,7 +75,6 @@ public sealed partial class MathCounter : Entity
             Assign(value, context.Activator, announce: true);
     }
 
-    /// <summary>Sets the count silently, firing nothing.</summary>
     [EntityInput("SetValueNoFire")]
     private void SetValueNoFire(ref EntityInputContext context)
     {
@@ -121,7 +82,6 @@ public sealed partial class MathCounter : Entity
             Assign(value, context.Activator, announce: false);
     }
 
-    /// <summary>Sets the ceiling and re-clamps the count, firing nothing.</summary>
     [EntityInput("SetHitMax")]
     private void SetHitMax(ref EntityInputContext context)
     {
@@ -132,7 +92,6 @@ public sealed partial class MathCounter : Entity
         Value = Clamp(Value);
     }
 
-    /// <summary>Sets the floor and re-clamps the count, firing nothing.</summary>
     [EntityInput("SetHitMin")]
     private void SetHitMin(ref EntityInputContext context)
     {
@@ -143,7 +102,6 @@ public sealed partial class MathCounter : Entity
         Value = Clamp(Value);
     }
 
-    /// <summary>Fires <c>OutValue</c> with the current count, changing nothing.</summary>
     [EntityInput("GetValue")]
     private void GetValue(ref EntityInputContext context) =>
         FireOutValue(context.Activator, KeyvalueWire.Format(Value));
@@ -153,9 +111,7 @@ public sealed partial class MathCounter : Entity
 
     private void Assign(float value, Entity? activator, bool announce)
     {
-        // An arithmetic overflow reaches infinity, which KeyvalueWire.Format
-        // refuses to write because it cannot be read back. Refusing the change is
-        // the only answer that keeps the counter's own output readable.
+        // Overflow reaches infinity, which KeyvalueWire.Format cannot write.
         if (!float.IsFinite(value))
         {
             RefusedInputCount++;
@@ -181,8 +137,7 @@ public sealed partial class MathCounter : Entity
 
     private float Clamp(float value) => IsClamped ? Math.Clamp(value, Minimum, Maximum) : value;
 
-    // An absent or unreadable argument means one, which is what makes Add and
-    // Subtract total: every wire into them does something.
+    // An absent or unreadable argument means one.
     private float Amount(ref EntityInputContext context)
     {
         if (context.Parameter.Length == 0)
@@ -195,8 +150,7 @@ public sealed partial class MathCounter : Entity
         return 1f;
     }
 
-    // Nothing to default to here: an unreadable argument to SetValue names no
-    // value at all, so the count is left where it was.
+    // No default here: an unreadable argument leaves the count alone.
     private bool TryRead(ref EntityInputContext context, out float value)
     {
         if (KeyvalueWire.TryParseFloat(context.Parameter, out value))

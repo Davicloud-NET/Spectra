@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace SpectraEngine.Core.Bsp;
 
-/// <summary>Immutable placement storage plus authored order. Slots never shift on edits.</summary>
+// Immutable placement storage plus authored order. Slots never shift on edits.
 internal sealed class PlacementSnapshot : IReadOnlyList<BrushPlacement>
 {
     internal readonly record struct Entry(Guid Identity, int Slot, UInt128 Order, BrushPlacement Placement);
@@ -158,7 +158,7 @@ internal sealed class PlacementSnapshot : IReadOnlyList<BrushPlacement>
     }
 }
 
-/// <summary>Compiler-only slot view; a vacant slot has a default placement.</summary>
+// Slot view for the compiler. A vacant slot has a default placement.
 internal sealed class PlacementSlotView(PlacementSnapshot snapshot) : IReadOnlyList<BrushPlacement>, IComparer<int>
 {
     internal PlacementSnapshot Snapshot { get; } = snapshot;
@@ -176,7 +176,7 @@ internal sealed class PlacementSlotView(PlacementSnapshot snapshot) : IReadOnlyL
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
-/// <summary>Render-thread journal; snapshots contain no scene-node references.</summary>
+// Render thread only. Snapshots hold no scene-node references.
 internal sealed class PlacementJournal
 {
     private readonly Dictionary<Guid, PlacementSnapshot.Entry> _live = [];

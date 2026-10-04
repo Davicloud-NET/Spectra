@@ -48,7 +48,7 @@ internal unsafe sealed class D3D12GpuTimer : GpuTimestampTimer
         _renderer.CurrentList->ResolveQueryData((ID3D12QueryHeap*)_heap.Handle, QueryType.Timestamp,
             (uint)(slot * Marks), (uint)count, (ID3D12Resource*)_readback.Handle, (ulong)(slot * Marks * sizeof(ulong)));
 
-    // Called AFTER the query-resolving command list has been submitted.
+    // Call after the query-resolving command list is submitted.
     internal void Submitted()
     {
         if (EndedSlot < 0) return;

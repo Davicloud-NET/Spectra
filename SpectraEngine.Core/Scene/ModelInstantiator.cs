@@ -7,34 +7,18 @@ namespace SpectraEngine.Core.Scene;
 /// <summary>
 /// Turns a loaded <see cref="ModelAsset"/> into a <see cref="SceneNode"/>
 /// subtree: one node per imported <see cref="ModelNode"/>, carrying that node's
-/// local transform, with a <see cref="MeshRenderer"/> per submesh.
+/// local transform, with a <see cref="MeshRenderer"/> per submesh. Instances
+/// share the model's GPU meshes, so remove them from the scene before
+/// <see cref="AssetManager.UnloadModel"/>. Render thread only.
 /// </summary>
-/// <remarks>
-/// <para><b>Instances share the asset.</b> The nodes reference the model's GPU
-/// meshes and materials directly — instantiating the same model fifty times
-/// creates fifty nodes and zero GPU resources. Which also means the subtree must
-/// be removed from the scene before its model is unloaded; the asset manager
-/// owns those meshes and will destroy them on
-/// <see cref="AssetManager.UnloadModel"/>.</para>
-/// <para><b>Build detached, attach once.</b> The subtree is assembled while it
-/// belongs to no scene and attached in a single
-/// <see cref="SceneNode.AddChild"/>. That is what makes it interact correctly
-/// with the scene's events and spatial index: the one attach walks the finished
-/// subtree in pre-order, raising <see cref="Scene.NodeAdded"/> for every node
-/// and inserting each mesh-bearing one into the BVH with its world matrix
-/// already composed. Assembling in place instead would raise an event per node
-/// as it appeared and churn the index with half-built bounds.</para>
-/// <para>Render thread only, like everything else that touches the scene graph.</para>
-/// </remarks>
+// The subtree is built detached and attached once, so the scene sees finished
+// nodes with composed world matrices.
 public static class ModelInstantiator
 {
     /// <summary>
     /// Builds the subtree and attaches it under <paramref name="parent"/>,
-    /// returning its root. The usual entry point — the attach is what registers
-    /// the nodes with the parent's scene.
+    /// returning its root.
     /// </summary>
-    /// <param name="parent">Node to attach under; may be any node in any scene.</param>
-    /// <param name="model">A loaded model. Must be <see cref="ModelAsset.IsReady"/>.</param>
     /// <param name="name">
     /// Name for the root node; null uses the model's own root name, falling back
     /// to the file name.
@@ -47,10 +31,8 @@ public static class ModelInstantiator
     }
 
     /// <summary>
-    /// Builds the subtree without attaching it, returning its detached root. Use
-    /// this to position or edit the instance before it becomes visible to the
-    /// scene; attaching it later raises the membership events for the whole
-    /// subtree at once.
+    /// Builds the subtree without attaching it, so it can be positioned before
+    /// the scene sees it.
     /// </summary>
     /// <exception cref="InvalidOperationException">The model is not loaded yet.</exception>
     public static SceneNode Instantiate(ModelAsset model, string? name = null)
@@ -71,12 +53,10 @@ public static class ModelInstantiator
         }
 
         string rootName = FirstNonEmpty(name, data.Root.Name, model.RelativePath);
-        // Depth is bounded by the importer (see ModelImporter.MaxNodeDepth), so
-        // the recursion below cannot run away on hostile content.
+        // Recursion depth is bounded by ModelImporter.MaxNodeDepth.
         return BuildNode(data.Root, model, data, rootName);
     }
 
-    // One scene node per imported node, then the submeshes.
     private static SceneNode BuildNode(
         ModelNode source, ModelAsset model, ModelMetadata data, string name)
     {
@@ -102,10 +82,8 @@ public static class ModelInstantiator
         return node;
     }
 
-    // A scene node holds one renderable, so a model node drawing several
-    // submeshes (one per material) becomes a node per submesh. Attaching the
-    // single-submesh case directly keeps the common prop a one-node instance
-    // instead of gratuitously nesting it.
+    // A scene node holds one renderable, so several submeshes become child
+    // nodes. A single submesh attaches directly.
     private static void AttachMeshes(
         SceneNode node, ModelNode source, ModelAsset model, ModelMetadata data)
     {
@@ -128,17 +106,7 @@ public static class ModelInstantiator
         }
     }
 
-    /// <summary>
-    /// Attaches the renderer and records where it came from.
-    /// </summary>
-    /// <remarks>
-    /// <b>The pair is written here because here is the only place that knows
-    /// it.</b> A <c>Mesh</c> carries no origin and <c>Renderer.CreateMesh</c>
-    /// takes raw spans, so once this method returns, the link between the node
-    /// and the file its geometry came from exists nowhere else in the process.
-    /// Order matters: the renderer's setter clears the source when handed a
-    /// null, so the source is written second.
-    /// </remarks>
+    // Source second: the MeshRenderer setter can clear MeshSource.
     private static void Attach(SceneNode node, ModelAsset model, ModelMetadata data, int meshIndex)
     {
         node.MeshRenderer = CreateRenderer(model, data, meshIndex);

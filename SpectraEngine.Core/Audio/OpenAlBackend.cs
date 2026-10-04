@@ -7,35 +7,13 @@ using Silk.NET.OpenAL;
 namespace SpectraEngine.Core.Audio;
 
 /// <summary>
-/// <see cref="IAudioBackend"/> over Silk.NET's OpenAL bindings: opens the
-/// default device, creates one context, and forwards every call the engine
-/// makes.
+/// <see cref="IAudioBackend"/> over Silk.NET's OpenAL bindings: the default
+/// device and one context.
 /// </summary>
-/// <remarks>
-/// <para><b>Opening is allowed to fail, and failing is not an exception.</b>
-/// A machine with no sound card, a headless CI agent and a remote-desktop
-/// session with audio redirection off are all ordinary, and none of them is a
-/// reason a game engine may not start. <see cref="TryCreate"/> therefore
-/// returns false with a sentence rather than throwing, and
-/// <see cref="AudioManager"/> turns that into disabled mode. This is the same
-/// division the rest of the engine already makes: content and hardware
-/// failures degrade, build steps refuse.</para>
-/// <para><b>Errors are checked at creation and upload sites, not per property
-/// write.</b> <c>alGetError</c> is a single latch per context and reading it
-/// costs a round trip through the driver; checking it after every gain write in
-/// a per-frame loop would spend more time asking than playing. The sites that
-/// are checked are the ones whose failure is otherwise invisible: a buffer that
-/// did not upload plays silence, and a source that was not created is handle
-/// zero, which AL accepts and ignores.</para>
-/// <para><b>The context is process-wide current, deliberately.</b> Core
-/// <c>alcMakeContextCurrent</c> sets the current context for the PROCESS, not
-/// for the calling thread. That is what lets the main thread open the device
-/// in <c>Engine.InitializeSubsystems</c> and the render thread own every call
-/// after it. OpenAL Soft's <c>ALC_EXT_thread_local_context</c> would change
-/// that, so it is deliberately not used: a thread-local current context would
-/// make every AL call the render thread makes a silent no-op against a null
-/// context.</para>
-/// </remarks>
+// The context is current for the process (core alcMakeContextCurrent), so the
+// main thread can open it and the render thread use it. Don't switch to
+// ALC_EXT_thread_local_context.
+// alGetError is checked on create and upload only, not per property write.
 public sealed unsafe class OpenAlBackend : IAudioBackend
 {
     private readonly ILogger _logger;
@@ -61,9 +39,7 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
 
     /// <summary>
     /// Opens the default device and makes a context current, or reports why it
-    /// could not. Never throws: every failure the OpenAL loader can produce
-    /// (no library, no device, no context) arrives here as false plus a
-    /// sentence.
+    /// could not. Never throws.
     /// </summary>
     public static bool TryCreate(
         ILogger logger,
@@ -77,9 +53,7 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         ALContext alc;
         try
         {
-            // GetApi resolves the native OpenAL library. On a machine with no
-            // OpenAL runtime at all this is where it fails, and it fails by
-            // throwing rather than returning null.
+            // GetApi throws when no OpenAL runtime is installed.
             SilkPlatform.UsePortableRuntimeId();
             alc = ALContext.GetApi();
             al = AL.GetApi();
@@ -135,10 +109,7 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
 
         string name = alc.GetContextProperty(device, GetContextString.DeviceSpecifier) ?? "unnamed device";
 
-        // Inverse-distance-clamped is OpenAL's own default and what every
-        // ReferenceDistance/MaxDistance number a designer authors assumes. It
-        // is set explicitly because the default is per-context state a previous
-        // context in the same process could have changed.
+        // AL's default, set anyway.
         al.DistanceModel(DistanceModel.InverseDistanceClamped);
 
         backend = new OpenAlBackend(logger, al, alc, device, context, name);
@@ -165,9 +136,7 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         fixed (short* data = pcm)
             _al.BufferData(buffer, alFormat, data, pcm.Length * AudioFormat.BytesPerSample, sampleRate);
 
-        // Silent failure here is the expensive one: an upload that did not take
-        // leaves the previous contents queued, so a stream repeats a chunk of
-        // itself forever with nothing anywhere reporting a problem.
+        // A failed upload leaves the old contents, so a stream would repeat a chunk.
         CheckError("uploading PCM");
     }
 
@@ -179,9 +148,7 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         if (error == AudioError.NoError && source != 0)
             return true;
 
-        // A driver with a hard source limit reports OutOfMemory here rather than
-        // failing later, which is exactly what the pool wants: it sizes itself
-        // to what the device actually granted instead of assuming 32.
+        // A driver at its source limit reports OutOfMemory here.
         if (source != 0) _al.DeleteSource(source);
         source = 0;
         return false;
@@ -199,13 +166,8 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         _al.SetSourceProperty(source, SourceVector3.Velocity, settings.Velocity.X, settings.Velocity.Y, settings.Velocity.Z);
         _al.SetSourceProperty(source, SourceBoolean.SourceRelative, settings.Relative);
 
-        // AL_LOOPING is cleared, never set, and this is the one line that
-        // enforces the engine's loop policy at the driver. The flag repeats the
-        // whole buffer and cannot express a region inside one, so loops are
-        // buffer-queue arithmetic (see AudioLoopCursor) instead. Clearing it
-        // explicitly matters because a pooled source is reused: a previous
-        // voice that had somehow set it would leave the next sound looping with
-        // nothing in this engine's own code to blame.
+        // Never set AL_LOOPING, loops go through the buffer queue. Cleared
+        // here because pooled sources are reused.
         _al.SetSourceProperty(source, SourceBoolean.Looping, false);
     }
 
@@ -270,8 +232,7 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         _al.SetListenerProperty(ListenerVector3.Position, position.X, position.Y, position.Z);
         _al.SetListenerProperty(ListenerVector3.Velocity, velocity.X, velocity.Y, velocity.Z);
 
-        // AL_ORIENTATION is one six-float array, at (forward, up). Writing it as
-        // two three-float calls is not the same thing and AL rejects it.
+        // AL_ORIENTATION is one six-float array (forward, up). Two vec3 calls are rejected.
         float* orientation = stackalloc float[6]
         {
             forward.X, forward.Y, forward.Z,
@@ -283,17 +244,14 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
     /// <inheritdoc />
     public void SetListenerGain(float gain) => _al.SetListenerProperty(ListenerFloat.Gain, gain);
 
-    /// <summary>
-    /// Drops the context and closes the device. Idempotent, because a faulted
-    /// render loop can reach shutdown twice.
-    /// </summary>
+    /// <summary>Drops the context and closes the device. Idempotent.</summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
 
-        // Unbind before destroying: destroying the current context is undefined
-        // in the ALC spec and crashes rather than erroring on some drivers.
+        // Unbind first: destroying the current context is undefined in ALC
+        // and crashes on some drivers.
         _alc.MakeContextCurrent(null);
 
         if (_context is not null)

@@ -7,34 +7,18 @@ using System.Text;
 namespace SpectraEngine.Core.Graphics.Shaders;
 
 /// <summary>
-/// Reads a .specshadecomp file. Can either load the full file or
-/// extract only the blob for a specific backend.
+/// Reads a .specshadecomp file, whole or one backend's blob.
 /// </summary>
-/// <remarks>
-/// <para><b>There are two parsers here, over one layout.</b> A stream seeks; a
-/// mounted pack hands out a span into a memory-mapped view that is already
-/// there, and wrapping one in a <c>MemoryStream</c> to read it copies the whole
-/// file to reach one blob, which is the copy the container exists to avoid.
-/// Both take every offset from <see cref="ShaderFileLayout"/>, so the layout is
-/// stated once, and <c>ShaderFileCodecTests</c> asserts the two agree byte for
-/// byte on a multi-pipeline file - a divergence between them is a stage read
-/// out of the middle of somebody else's bytes rather than an exception.</para>
-/// <para><b>The span parser refuses a truncated file where the stream parser
-/// returns what it found.</b> <c>BinaryReader.ReadBytes</c> short-reads at the
-/// end of a stream and hands back a shorter array; the span parser cannot,
-/// because it is looking at a fixed extent, so it throws. Both answers are
-/// correct on a valid file, which is what the agreement test compares.</para>
-/// </remarks>
+// Two parsers over one layout: a stream one, and a span one for mapped pack
+// views (a MemoryStream would copy the whole file). The span parser throws on a
+// truncated file; BinaryReader.ReadBytes returns a short array instead.
 public static class ShaderFileReader
 {
-    /// <summary>
-    /// Reads the full compiled shader file from a stream.
-    /// </summary>
+    /// <summary>Reads the full compiled shader file from a stream.</summary>
     public static CompiledShaderFile Read(Stream stream)
     {
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
 
-        // Header
         Span<byte> magic = stackalloc byte[4];
         if (reader.Read(magic) != 4 || !magic.SequenceEqual(CompiledShaderFile.MagicBytes))
             throw new InvalidDataException("Not a valid .specshadecomp file (bad magic bytes)");
@@ -43,7 +27,6 @@ public static class ShaderFileReader
         var stages = (ShaderStageFlags)reader.ReadByte();
         byte pipelineCount = reader.ReadByte();
 
-        // Pipeline entry table
         var entries = new ShaderPipelineEntry[pipelineCount];
         for (int i = 0; i < pipelineCount; i++)
         {
@@ -74,15 +57,11 @@ public static class ShaderFileReader
         };
     }
 
-    /// <summary>
-    /// Reads only the pipeline blob for a specific backend, skipping all others.
-    /// Returns null if the file doesn't contain data for that backend.
-    /// </summary>
+    /// <summary>Reads one backend's pipeline blob, or null if the file has none for it.</summary>
     public static PipelineBlob? ReadPipeline(Stream stream, GraphicsBackend backend)
     {
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
 
-        // Header
         Span<byte> magic = stackalloc byte[4];
         if (reader.Read(magic) != 4 || !magic.SequenceEqual(CompiledShaderFile.MagicBytes))
             throw new InvalidDataException("Not a valid .specshadecomp file (bad magic bytes)");
@@ -91,7 +70,6 @@ public static class ShaderFileReader
         reader.ReadByte();   // stages
         byte pipelineCount = reader.ReadByte();
 
-        // Scan entry table for the requested backend
         ShaderPipelineEntry? target = null;
         for (int i = 0; i < pipelineCount; i++)
         {
@@ -112,30 +90,17 @@ public static class ShaderFileReader
         if (target is null)
             return null;
 
-        // The scan above stops at the matching entry, so the stream is parked
-        // mid-table and only the layout can say where the data section begins.
+        // The scan stopped mid-table, so the stream position is not the data section start.
         stream.Position = ShaderFileLayout.DataSectionStart(pipelineCount) + target.Value.DataOffset;
 
         return DeserializePipelineBlob(reader, target.Value);
     }
 
     /// <summary>
-    /// Reads only the pipeline blob for <paramref name="backend"/> out of a
-    /// whole .specshadecomp file that is already in memory. Returns null when
-    /// the file carries no data for that backend.
+    /// Reads one backend's pipeline blob out of a whole file already in memory,
+    /// or null if the file has none for it. The result holds no reference to the span.
     /// </summary>
-    /// <remarks>
-    /// The span twin of <see cref="ReadPipeline(Stream, GraphicsBackend)"/>, and
-    /// the one a mounted pack uses: a <c>ContentBlob</c> over a mapped view is a
-    /// span already, so this reads the two blobs it needs (the entry table and
-    /// one pipeline) straight out of the file's own bytes. Only the stage
-    /// payloads and the input names are copied, because
-    /// <see cref="PipelineBlob"/> outlives the mapping.
-    /// </remarks>
-    /// <exception cref="InvalidDataException">
-    /// The bytes are not a .specshadecomp file this engine reads, or are
-    /// truncated.
-    /// </exception>
+    /// <exception cref="InvalidDataException">Not a readable .specshadecomp file, or truncated.</exception>
     public static PipelineBlob? ReadPipeline(ReadOnlySpan<byte> file, GraphicsBackend backend)
     {
         var cursor = new SpanCursor(file);
@@ -154,27 +119,16 @@ public static class ShaderFileReader
         if (target is null)
             return null;
 
-        // The scan above stops at the matching entry, so the cursor is parked
-        // mid-table and only the layout can say where the data section begins.
+        // The scan stopped mid-table, so the cursor is not at the data section start.
         cursor.Seek(ShaderFileLayout.DataSectionStart(pipelineCount) + target.Value.DataOffset);
 
         return DeserializePipelineBlob(ref cursor, target.Value);
     }
 
     /// <summary>
-    /// Every backend a .specshadecomp file carries a blob for, in table order,
-    /// without deserialising any of them.
+    /// Every backend the file carries a blob for, in table order. Reads only the entry table.
     /// </summary>
-    /// <remarks>
-    /// The question a cooked-pack verify asks: which backends did this shader
-    /// actually come out for. Reading the entry table alone answers it without
-    /// paying for the stage payloads, and it shares the header parse above, so
-    /// a verify cannot disagree with a load about what is in the file.
-    /// </remarks>
-    /// <exception cref="InvalidDataException">
-    /// The bytes are not a .specshadecomp file this engine reads, or are
-    /// truncated.
-    /// </exception>
+    /// <exception cref="InvalidDataException">Not a readable .specshadecomp file, or truncated.</exception>
     public static GraphicsBackend[] ReadBackends(ReadOnlySpan<byte> file)
     {
         var cursor = new SpanCursor(file);
@@ -199,15 +153,7 @@ public static class ShaderFileReader
         return ReadPipeline(stream, backend);
     }
 
-    /// <summary>
-    /// Refuses a file this engine's format does not describe.
-    /// </summary>
-    /// <remarks>
-    /// A compiled shader is a build output, so it versions the way every cooked
-    /// artifact does: an exact match, and a message that says recook. There is
-    /// nothing to carry forward and nothing to degrade to, because the bytes
-    /// past the header only mean anything under the version that wrote them.
-    /// </remarks>
+    // Exact match, not a floor: a compiled shader is a build output, recook it.
     private static ushort RequireSupportedVersion(ushort formatVersion)
     {
         if (formatVersion != EngineInfo.ShaderFormatVersion)
@@ -272,9 +218,7 @@ public static class ShaderFileReader
     {
         uint count = reader.ReadUInt32();
 
-        // The blob's declared size bounds the table: every element costs at
-        // least a fixed record, so a larger count is a corrupt file rather than
-        // an allocation to attempt.
+        // Bound the count by the blob size before allocating for it.
         if (count > blobSize / ShaderFileLayout.VertexInputRecordSize)
             throw new InvalidDataException(
                 $"Vertex input table declares {count} elements, more than the {blobSize}-byte pipeline blob can hold");
@@ -304,11 +248,7 @@ public static class ShaderFileReader
         return inputs;
     }
 
-    // ---- the span half ---------------------------------------------------
-
-    // Header and version, returning the pipeline count every later offset is
-    // measured from. Shared by both span entry points so a backend listing and a
-    // blob load cannot disagree about what the file is.
+    // Returns the pipeline count.
     private static int ReadFileHeader(ref SpanCursor cursor)
     {
         if (!cursor.Take(4).SequenceEqual(CompiledShaderFile.MagicBytes))
@@ -380,9 +320,7 @@ public static class ShaderFileReader
     {
         uint count = cursor.U32();
 
-        // The blob's declared size bounds the table exactly as it does on the
-        // stream path: every element costs at least a fixed record, so a larger
-        // count is a corrupt file rather than an allocation to attempt.
+        // Bound the count by the blob size before allocating for it.
         if (count > blobSize / ShaderFileLayout.VertexInputRecordSize)
             throw new InvalidDataException(
                 $"Vertex input table declares {count} elements, more than the {blobSize}-byte pipeline blob can hold");
@@ -409,16 +347,8 @@ public static class ShaderFileReader
         return inputs;
     }
 
-    /// <summary>
-    /// A read position inside a whole .specshadecomp file, bounds-checked.
-    /// </summary>
-    /// <remarks>
-    /// A <c>ref struct</c> because the span it walks may be a window into a
-    /// mapped pack view, which must never be captured on the heap: the mapping
-    /// is released when the <c>ContentBlob</c> is disposed, and reading it
-    /// afterwards is an access violation with no managed stack rather than an
-    /// exception anyone can catch.
-    /// </remarks>
+    // Bounds-checked read position. A ref struct because the span may be a mapped
+    // pack view, which must not outlive its ContentBlob.
     private ref struct SpanCursor
     {
         private readonly ReadOnlySpan<byte> _bytes;
@@ -439,9 +369,7 @@ public static class ShaderFileReader
             _at = (int)position;
         }
 
-        // Takes a uint length so a corrupt 32-bit size cannot wrap into a small
-        // positive int: anything past int.MaxValue is larger than any span and
-        // fails the bounds test below rather than silently reading a short slice.
+        // uint, so a corrupt 32-bit size cannot wrap into a small positive int.
         public ReadOnlySpan<byte> Take(uint count) =>
             count > int.MaxValue ? throw Truncated(count) : Take((int)count);
 

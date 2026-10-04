@@ -2,25 +2,7 @@ using SpectraShade.Compiler.Lexing;
 
 namespace SpectraShade.Compiler.Syntax;
 
-/// <summary>
-/// Recursive descent parser for SpectraShade.
-///
-/// Top-level syntax:
-///   import "path.spectrashade";
-///
-///   struct FragmentInput { vec2 uv; vec3 normal; }
-///
-///   shader MyShader {
-///       [Binding(0)] cbuffer Camera { mat4 view; mat4 projection; }
-///       [Binding(1)] sampler2D albedoTex;
-///
-///       [Vertex]
-///       FragmentInput Main([Location(0)] vec3 position, [Location(1)] vec2 uv) { ... }
-///
-///       [Fragment]
-///       vec4 Main(FragmentInput input) { ... }
-///   }
-/// </summary>
+/// <summary>Recursive descent parser for SpectraShade.</summary>
 public sealed class Parser
 {
     private readonly List<Token> _tokens;
@@ -41,7 +23,6 @@ public sealed class Parser
         var imports = new List<ImportDirective>();
         var structs = new List<StructDeclaration>();
 
-        // Parse imports and top-level structs before the shader block
         while (!Check(TokenKind.Shader) && !Check(TokenKind.EndOfFile))
         {
             if (Check(TokenKind.Import))
@@ -57,7 +38,7 @@ public sealed class Parser
 
         var shader = ParseShader();
 
-        // Structs can also appear after the shader block
+        // Structs may also follow the shader block.
         while (!Check(TokenKind.EndOfFile))
         {
             if (Check(TokenKind.Struct))
@@ -72,8 +53,6 @@ public sealed class Parser
         return new CompilationUnit(imports, structs, shader, Span(start));
     }
 
-    // ─── Top-level ───────────────────────────────────────────
-
     private ImportDirective ParseImport()
     {
         var start = Current.Span;
@@ -81,7 +60,6 @@ public sealed class Parser
         var pathToken = Expect(TokenKind.StringLiteral, "Expected import path string");
         Expect(TokenKind.Semicolon, "Expected ';'");
 
-        // Strip quotes from path
         string path = pathToken.Text.Length >= 2
             ? pathToken.Text[1..^1]
             : pathToken.Text;
@@ -112,22 +90,17 @@ public sealed class Parser
 
     private SyntaxNode? ParseShaderMember()
     {
-        // Parse leading attributes
         var attributes = ParseAttributes();
 
-        // cbuffer
         if (Check(TokenKind.CBuffer))
             return ParseCBuffer(attributes);
 
-        // Struct inside shader
         if (Check(TokenKind.Struct))
             return ParseStruct();
 
-        // Sampler declaration: [Binding(N)] sampler2D name;
         if (IsSamplerType(Current.Kind))
             return ParseSamplerDeclaration(attributes);
 
-        // Function (possibly a stage function with [Vertex]/[Fragment] attributes)
         if (IsTypeToken(Current.Kind) || Check(TokenKind.Void))
             return ParseFunction(attributes);
 
@@ -135,8 +108,6 @@ public sealed class Parser
         Advance();
         return null;
     }
-
-    // ─── Attributes ──────────────────────────────────────────
 
     private List<AttributeSyntax> ParseAttributes()
     {
@@ -169,8 +140,6 @@ public sealed class Parser
         Expect(TokenKind.RightBracket, "Expected ']'");
         return new AttributeSyntax(name, args, Span(start));
     }
-
-    // ─── Declarations ────────────────────────────────────────
 
     private StructDeclaration ParseStruct()
     {
@@ -257,8 +226,6 @@ public sealed class Parser
         return new FunctionDeclaration(attributes, returnType, name, parameters, body, Span(start));
     }
 
-    // ─── Statements ──────────────────────────────────────────
-
     private BlockStatement ParseBlock()
     {
         var start = Current.Span;
@@ -319,15 +286,12 @@ public sealed class Parser
             return new ContinueStatement(Span(span));
         }
 
-        // var name = expr;
         if (Check(TokenKind.Var))
             return ParseVarDeclaration();
 
-        // Type name ... (variable declaration)
         if (IsTypeToken(Current.Kind) && _pos + 1 < _tokens.Count && _tokens[_pos + 1].Kind == TokenKind.Identifier)
         {
-            // Disambiguate: is this "Type name" (declaration) or "Type(" (constructor in expression)?
-            // Look ahead: if token after identifier is = or ; it's a declaration
+            // "Type name" followed by = or ; is a declaration, not a constructor call.
             if (_pos + 2 < _tokens.Count)
             {
                 var afterIdent = _tokens[_pos + 2].Kind;
@@ -348,7 +312,7 @@ public sealed class Parser
         var init = ParseExpression();
         Expect(TokenKind.Semicolon, "Expected ';'");
 
-        // "var" is represented as a special type name that the analyzer resolves
+        // The analyzer resolves the "var" type name.
         var varType = new TypeSyntax("var", false, null, Span(start));
         return new VariableDeclaration(varType, name, init, Span(start));
     }
@@ -365,14 +329,9 @@ public sealed class Parser
         return new VariableDeclaration(type, name, init, Span(start));
     }
 
-    // Brace-less if/for/while bodies parse through ParseStatement, which can
-    // legitimately produce a VariableDeclaration — a SyntaxNode that is NOT a
-    // Statement. A blind cast turned typeable input like
-    // `if (flag) float y = 1.0;` into an unhandled InvalidCastException — a
-    // compiler crash escaping the diagnostics contract (reachable from the
-    // engine's shader hot-reload mid-edit). Such a declaration is also
-    // meaningless (its scope ends immediately), so report an error and wrap
-    // it in a synthesized block to keep parsing.
+    // A brace-less body can parse to a VariableDeclaration, which is not a
+    // Statement (`if (flag) float y = 1.0;`). Report it and wrap it in a block
+    // instead of casting.
     private Statement ParseEmbeddedStatement()
     {
         var start = Current.Span;
@@ -389,8 +348,7 @@ public sealed class Parser
                 return new BlockStatement([declaration], declaration.Span);
 
             default:
-                // ParseStatement yields no other node kinds (nor null) today;
-                // recover with an empty block rather than crash if that changes.
+                // Not reachable today. Recover with a block if ParseStatement grows a new node kind.
                 var statements = new List<SyntaxNode>();
                 if (stmt is not null)
                     statements.Add(stmt);
@@ -421,14 +379,9 @@ public sealed class Parser
         SyntaxNode? init = null;
         if (!Check(TokenKind.Semicolon))
         {
-            // Declaration initializers lead with a type keyword (`int i = 0`)
-            // or a custom struct type, which is only recognizable as two
-            // adjacent identifiers (`MyType x = ...`). A lone leading
-            // identifier is the canonical assignment to a pre-declared
-            // counter (`i = 0`) — IsTypeToken alone would consume `i` as a
-            // type name — so one token of lookahead routes an identifier
-            // followed by anything but another identifier (`=`, `.`, `[`,
-            // any operator) to the expression branch.
+            // A struct-typed declaration is two adjacent identifiers (`MyType x = ...`).
+            // A lone identifier is an assignment (`i = 0`); IsTypeToken alone would
+            // take `i` as a type name.
             bool isStructTypeDecl = Check(TokenKind.Identifier)
                 && _pos + 1 < _tokens.Count
                 && _tokens[_pos + 1].Kind == TokenKind.Identifier;
@@ -499,8 +452,6 @@ public sealed class Parser
         Expect(TokenKind.Semicolon, "Expected ';'");
         return new ExpressionStatement(expr, Span(start));
     }
-
-    // ─── Expressions (precedence climbing) ───────────────────
 
     private Expression ParseExpression() => ParseAssignment();
 
@@ -591,7 +542,6 @@ public sealed class Parser
     {
         var start = Current.Span;
 
-        // new Type(args) — user-defined struct constructor
         if (Check(TokenKind.New))
         {
             Advance();
@@ -600,7 +550,6 @@ public sealed class Parser
             return new NewExpression(type, args, Span(start));
         }
 
-        // Built-in type constructor: vec3(...), mat4(...)
         if (IsBuiltinType(Current.Kind))
         {
             var type = ParseType();
@@ -674,8 +623,6 @@ public sealed class Parser
         return args;
     }
 
-    // ─── Type parsing ────────────────────────────────────────
-
     private TypeSyntax ParseType()
     {
         var start = Current.Span;
@@ -703,8 +650,6 @@ public sealed class Parser
 
         return new TypeSyntax(name, isArray, arraySize, Span(start));
     }
-
-    // ─── Helpers ─────────────────────────────────────────────
 
     private Token Current => _pos < _tokens.Count ? _tokens[_pos] : _tokens[^1];
 

@@ -6,14 +6,9 @@ using System.Collections.Generic;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// Which entities a wire can aim at, and where that list comes from.
+/// Which entities a wire can aim at. The picker's list and the unknown-target
+/// warning come from the same walk.
 /// </summary>
-/// <remarks>
-/// <b>ONE walk answers both questions.</b> The picker's list and the "nothing
-/// here is named that" warning are the same fact read two ways: two walks would
-/// eventually produce a picker offering a name the warning calls dead, which is
-/// the worst possible pair of answers to give somebody at once.
-/// </remarks>
 public sealed class EntityTargetTests
 {
     private static SceneNode Entity(SceneNode parent, string name, string className)
@@ -54,9 +49,8 @@ public sealed class EntityTargetTests
         scene.Root.CreateChild("wall");
         Entity(scene.Root, "relay", "logic_relay");
 
-        // The runtime resolves entities and nothing else, so a wire aimed at a
-        // brush node named "door" delivers to nothing: a picker that offered it
-        // would invite exactly the dead wire the warning beside it catches.
+        // The runtime resolves entities only, so a wire aimed at a brush node
+        // named "door" delivers to nothing.
         List<EntityTargetInfo> targets = Targets(scene, out _);
         targets.Count.ShouldBe(1);
         targets[0].Name.ShouldBe("relay");
@@ -91,8 +85,6 @@ public sealed class EntityTargetTests
 
         info.Targets.Count.ShouldBe(2);
 
-        // The picker's list and the warning are one walk: a name in the list
-        // resolves, and one that is not does not.
         info.Connections[0].TargetResolves.ShouldBeTrue();
         info.Connections[1].TargetResolves.ShouldBeFalse();
     }
@@ -106,9 +98,7 @@ public sealed class EntityTargetTests
 
         EntityPanelInfo info = EntityPanelInfo.Capture(timer, null, scene)!;
 
-        // The picker is offered on an entity with no wires at all, which is what
-        // somebody adding their first one has: a list gated on there already
-        // being a wire would be empty exactly when it is first needed.
+        // The picker is needed most when adding the first wire.
         info.Connections.Count.ShouldBe(0);
         info.Targets.Count.ShouldBe(2);
     }

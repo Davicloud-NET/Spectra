@@ -3,12 +3,7 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Picking-ray math on <see cref="Camera"/>: screen convention is top-left
-/// origin with y-down pixels (raw window mouse coordinates), unprojection goes
-/// through the inverse view-projection. Pure CPU math — no renderer, window,
-/// or driver involved.
-/// </summary>
+// Screen convention: top-left origin, y-down pixels.
 public sealed class CameraRayTests
 {
     private static readonly Vector2 Viewport = new(1920f, 1080f);
@@ -35,7 +30,7 @@ public sealed class CameraRayTests
 
         ray.Direction.Length().ShouldBe(1f, 1e-5f);
         (ray.Direction - camera.Forward).Length().ShouldBe(0f, 1e-5f);
-        // The documented origin contract: on the near plane, straight ahead.
+        // The origin is on the near plane.
         (ray.Origin - (camera.Position + camera.Forward * camera.NearPlane)).Length()
             .ShouldBe(0f, 1e-3f);
     }
@@ -52,21 +47,16 @@ public sealed class CameraRayTests
         Vector3 bottomLeft = camera.ScreenPointToRay(new Vector2(0f, Viewport.Y), Viewport).Direction;
         Vector3 bottomRight = camera.ScreenPointToRay(Viewport, Viewport).Direction;
 
-        // Screen y grows downward, so the top-left corner must tilt toward +Up
-        // and -Right. This pins the y-flip convention — the mirror checks
-        // below would pass even with a flipped y.
+        // Pins the y flip; the mirror checks below pass with y flipped too.
         Vector3.Dot(topLeft, camera.Right).ShouldBeLessThan(0f);
         Vector3.Dot(topLeft, camera.Up).ShouldBeGreaterThan(0f);
 
-        // Horizontal mirror pairs: equal magnitude, opposite sign along Right.
         Vector3.Dot(topLeft, camera.Right).ShouldBe(-Vector3.Dot(topRight, camera.Right), 1e-5f);
         Vector3.Dot(bottomLeft, camera.Right).ShouldBe(-Vector3.Dot(bottomRight, camera.Right), 1e-5f);
 
-        // Vertical mirror pairs: equal magnitude, opposite sign along Up.
         Vector3.Dot(topLeft, camera.Up).ShouldBe(-Vector3.Dot(bottomLeft, camera.Up), 1e-5f);
         Vector3.Dot(topRight, camera.Up).ShouldBe(-Vector3.Dot(bottomRight, camera.Up), 1e-5f);
 
-        // All four corners make the same angle with Forward.
         float alongForward = Vector3.Dot(topLeft, camera.Forward);
         Vector3.Dot(topRight, camera.Forward).ShouldBe(alongForward, 1e-5f);
         Vector3.Dot(bottomLeft, camera.Forward).ShouldBe(alongForward, 1e-5f);
@@ -85,8 +75,7 @@ public sealed class CameraRayTests
 
         camera.GetFrustum().Contains(point).ShouldBeTrue();
 
-        // Project: world → clip → NDC → top-left y-down pixels (the inverse of
-        // the mapping ScreenPointToRay documents).
+        // World to clip to NDC to y-down pixels.
         Vector4 clip = Vector4.Transform(new Vector4(point, 1f), camera.GetViewProjection());
         var screen = new Vector2(
             (clip.X / clip.W + 1f) * 0.5f * Viewport.X,
@@ -94,7 +83,7 @@ public sealed class CameraRayTests
 
         Ray3 ray = camera.ScreenPointToRay(screen, Viewport);
 
-        // Point-to-line distance; Direction is unit length per the Ray3 contract.
+        // Point-to-line distance. Direction is unit length.
         Vector3.Cross(point - ray.Origin, ray.Direction).Length().ShouldBeLessThan(1e-3f);
     }
 }

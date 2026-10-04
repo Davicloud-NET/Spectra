@@ -4,43 +4,26 @@ using System.Threading;
 
 namespace SpectraEngine.Core.Assets.Sources;
 
-/// <summary>
-/// The one place content bytes are read off the filesystem.
-/// </summary>
-/// <remarks>
-/// The retry exists because a hot-reload notification arrives while the art tool
-/// that saved the file may still hold a write lock on it, and one transient
-/// sharing violation must not drop the reload. It lives here rather than in
-/// <see cref="ImageDecoder"/>, where it started, so that
-/// <see cref="LooseFileSource"/> and the decoder's own file convenience cannot
-/// end up with two sets of retry constants that drift apart.
-/// </remarks>
+// The one place content bytes are read off the filesystem.
+// Retries because a hot-reload notification can arrive while the tool that
+// saved the file still holds a write lock.
 internal static class FileContent
 {
-    // How long an editor may plausibly hold a write lock on a file it is saving.
     private const int ReadRetryDelayMs = 20;
     private const int ReadAttempts = 3;
 
-    /// <summary>
-    /// Reads the whole file into a pooled blob the caller disposes. Any thread.
-    /// </summary>
-    /// <exception cref="IOException">The file could not be read.</exception>
+    // Reads the whole file into a pooled blob the caller disposes. Any thread.
     public static ContentBlob Read(string absolutePath)
     {
         for (int attempt = 0; attempt < ReadAttempts; attempt++)
         {
             try
             {
-                // FileShare.ReadWrite: a file being written elsewhere is exactly
-                // the case the retry exists for, so opening must not add a lock
-                // of its own on top of it.
+                // FileShare.ReadWrite: don't add a lock while another tool is writing.
                 using var stream = new FileStream(
                     absolutePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
-                // The length is read once and the blob sized to it: a file that
-                // grows between the two would leave the tail of the rented
-                // buffer holding the previous tenant's bytes, and ReadExactly is
-                // what turns a short read into a failure instead of that.
+                // ReadExactly below: a short read would leave stale pooled bytes in the blob.
                 long length = stream.Length;
                 if (length > int.MaxValue)
                     throw new IOException($"Content file '{absolutePath}' is larger than 2 GB.");

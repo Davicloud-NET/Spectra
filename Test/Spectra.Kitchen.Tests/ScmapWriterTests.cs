@@ -8,18 +8,9 @@ using SpectraEngine.Core.Maps.Compiled;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The container half of a compiled map: the header, the section table, the
-/// padding between sections, and the assertion that a section landed where the
-/// layout put it.
+/// The compiled-map container: header, section table, padding, and the check
+/// that each section lands where the layout put it.
 /// </summary>
-/// <remarks>
-/// <b>The offset assertion is the reason this file exists.</b> The named hazard of
-/// this format is a section landing at a non-16-aligned offset because the layout
-/// pass and the write pass disagreed about a size including its padding, and its
-/// symptom is arbitrary: the section table is then full of plausible offsets, so
-/// the file parses and a chunk mesh comes out of the middle of the string blob. A
-/// disagreement has to fail at the section that disagreed, by name, at cook time.
-/// </remarks>
 public class ScmapWriterTests
 {
     [Fact]
@@ -41,9 +32,6 @@ public class ScmapWriterTests
     [Fact]
     public void A_section_that_writes_more_bytes_than_it_declared_is_refused_by_name()
     {
-        // The mirror case, and the more dangerous one: by the time anything
-        // notices, the overrun has already been written over the bytes the next
-        // section was going to occupy.
         var writer = new ScmapWriter(ScmapFlags.None, 0, EngineInfo.MapFormatVersion);
         writer.AddSection(ScmapFormat.StringSection, bodySize: 16, stream => stream.Write(new byte[17]));
         writer.AddSection(ScmapFormat.NodeSection, new byte[16]);
@@ -94,11 +82,7 @@ public class ScmapWriterTests
     [Fact]
     public void The_padding_between_sections_is_written_rather_than_seeked_over()
     {
-        // Against a destination pre-filled with a byte that is not zero, so a gap
-        // the writer skipped rather than wrote is visible. A seek past the end
-        // leaves the gap holding whatever the filesystem gives back, which on most
-        // filesystems is zeros and on none of them is a promise, and byte identity
-        // between two cooks is what that would quietly break.
+        // Pre-filled with 0xCD, so a gap that was seeked over shows.
         var backing = new byte[512];
         backing.AsSpan().Fill(0xCD);
 
@@ -111,11 +95,10 @@ public class ScmapWriterTests
         int expected = ScmapFormat.HeaderSize + ScmapFormat.SectionSize + ScmapFormat.PayloadAlignment;
         buffer.Position.ShouldBe(expected);
 
-        // The one declared byte, then fifteen bytes of padding the writer put down.
         backing[expected - 16].ShouldBe((byte)0xAB);
         for (int i = expected - 15; i < expected; i++) backing[i].ShouldBe((byte)0, $"padding byte {i}");
 
-        // And nothing past the file's end was touched.
+        // Nothing past the end was touched.
         backing[expected].ShouldBe((byte)0xCD);
     }
 

@@ -2,13 +2,7 @@
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!--
-      The engine ships NativeAOT (see SpectraEngine.Executable). Without this,
-      the trim/AOT/single-file analysers only run when an executable publishes,
-      so a library-side violation is found minutes later at ILC time and
-      attributed to the exe. IsAotCompatible turns them on for this project's
-      ordinary build, which is where the offending line actually lives.
-    -->
+    <!-- Runs the trim/AOT analysers on this project's ordinary build, not only at publish. -->
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
@@ -18,12 +12,9 @@
   </ItemGroup>
 
   <!--
-    Repo content (textures, and later materials/models) ships as real files, not
-    embedded resources: the asset pipeline loads them from disk and hot-reloads
-    them on save. Copying them under <output>\Assets mirrors the repo's Assets\
-    layout so AssetManager's content root resolves identically in a deployed
-    build, where the source tree is gone. TargetPath (not just Link) is what
-    makes the copy flow to projects that reference this one.
+    Content is copied to <output>\Assets so a deployed build resolves the same
+    relative paths. TargetPath, not just Link, makes the copy flow to
+    referencing projects.
   -->
   <ItemGroup>
     <Content Include="..\Assets\Textures\**\*.*"
@@ -34,10 +25,7 @@
              Link="Assets\Materials\%(RecursiveDir)%(Filename)%(Extension)"
              TargetPath="Assets\Materials\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
-    <!--
-      Models ship whole: a .obj needs its .mtl beside it and a .gltf may need a
-      .bin, so this copies the folder rather than a single extension.
-    -->
+    <!-- Whole folder: a .obj needs its .mtl, a .gltf may need a .bin. -->
     <Content Include="..\Assets\Models\**\*.*"
              Link="Assets\Models\%(RecursiveDir)%(Filename)%(Extension)"
              TargetPath="Assets\Models\%(RecursiveDir)%(Filename)%(Extension)"
@@ -45,18 +33,13 @@
   </ItemGroup>
 
   <!--
-    Every Silk.NET package here is named by a using in this project, with one
-    declared exception. The metapackage (Silk.NET), OpenCL, Vulkan and XInput
-    were referenced and consumed by nothing: they widened the AOT publish's
-    input set and the restore graph for no code, which is exactly what makes
-    the publish gate meaningless. Vulkan is a planned backend and comes back
-    with the SPIR-V generator, not before.
+    Only reference Silk.NET packages that code here uses. No metapackage:
+    unused packages widen the AOT publish and the restore graph.
   -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="StbImageSharp" />
-    <!-- XxHash128, for the .spack asset id and content digest. Core owns both
-         because the reader and the cooker's writer must agree on them exactly. -->
+    <!-- XxHash128, for the .spack asset id and content digest. -->
     <PackageReference Include="System.IO.Hashing" />
     <PackageReference Include="Silk.NET.Assimp" />
     <PackageReference Include="Silk.NET.Direct3D11" />
@@ -67,18 +50,10 @@
     <PackageReference Include="Silk.NET.Input" />
     <PackageReference Include="Silk.NET.Input.Glfw" />
     <PackageReference Include="Silk.NET.Maths" />
-    <!--
-      No longer the declared exception: Audio/OpenAlBackend.cs names it. The
-      device, the context, the source pool and the streaming buffer queues all
-      come from here.
-    -->
     <PackageReference Include="Silk.NET.OpenAL" />
     <!--
-      The native runtime beside those bindings, and the one package here no C#
-      file names. It is not the old declared exception coming back: Windows has
-      shipped no OpenAL since 2007, so with bindings alone the loader finds
-      nothing, every machine falls into AudioManager's disabled mode, and the
-      audio path is dead in a way that looks like a deliberate degradation.
+      Native OpenAL runtime. No C# file names it, but Windows ships no OpenAL,
+      so without it audio always falls into disabled mode.
     -->
     <PackageReference Include="Silk.NET.OpenAL.Soft.Native" />
     <PackageReference Include="Silk.NET.OpenGL" />

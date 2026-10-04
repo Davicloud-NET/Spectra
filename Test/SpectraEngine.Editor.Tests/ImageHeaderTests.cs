@@ -5,16 +5,7 @@ using System.IO;
 
 namespace SpectraEngine.Editor.Tests;
 
-/// <summary>
-/// An image's size, read from its header rather than by decoding it.
-/// </summary>
-/// <remarks>
-/// <b>A decode to learn two numbers is the wrong price</b>: a 4K texture costs
-/// 32 MB of managed memory to produce a line of text saying "4096 x 4096". Every
-/// shape this cannot read is refused rather than guessed at, because the failure
-/// of guessing at a header is a length read out of the middle of pixel data,
-/// which then allocates or loops on a number nobody wrote.
-/// </remarks>
+/// <summary>An image's size, read from its header without decoding it.</summary>
 public sealed class ImageHeaderTests
 {
     private static MemoryStream Png(int width, int height)
@@ -47,14 +38,12 @@ public sealed class ImageHeaderTests
 
         buffer.WriteByte(0xFF); buffer.WriteByte(0xD8);
 
-        // An APP0 segment first, so the frame header is genuinely walked to
-        // rather than found at a fixed offset.
+        // APP0 first, so the frame header is not at a fixed offset.
         buffer.WriteByte(0xFF); buffer.WriteByte(0xE0);
         buffer.WriteByte(0x00); buffer.WriteByte(0x10);
         for (int i = 0; i < 14; i++) buffer.WriteByte(0);
 
-        // Fill bytes are legal between segments and a walker that stopped at the
-        // first one would find nothing on a file some encoders really produce.
+        // 0xFF fill bytes are legal between segments.
         if (withPadding) { buffer.WriteByte(0xFF); buffer.WriteByte(0xFF); }
 
         buffer.WriteByte(0xFF); buffer.WriteByte(0xC0);
@@ -94,9 +83,7 @@ public sealed class ImageHeaderTests
     [Fact]
     public void A_top_down_bmp_reports_a_positive_height()
     {
-        // A negative height means the rows are stored top-down. It is still a
-        // size, and reporting "-32" would be a fact about the storage rather
-        // than about the picture.
+        // A negative BMP height means the rows are stored top-down.
         using MemoryStream stream = Bmp(64, -32);
 
         ImageHeader.TryRead(stream, out _, out int height).ShouldBeTrue();
@@ -126,8 +113,7 @@ public sealed class ImageHeaderTests
     [Fact]
     public void A_truncated_header_is_refused_rather_than_read_past()
     {
-        // The signature is there and the dimensions are not, which is exactly
-        // what a half-copied file looks like on disk.
+        // PNG signature with no dimensions after it.
         using var stream = new MemoryStream([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0]);
 
         ImageHeader.TryRead(stream, out _, out _).ShouldBeFalse();
@@ -138,8 +124,6 @@ public sealed class ImageHeaderTests
     {
         using MemoryStream stream = Png(0, 512);
 
-        // Not a picture, and a zero here is the shape a length read from the
-        // wrong offset usually takes.
         ImageHeader.TryRead(stream, out _, out _).ShouldBeFalse();
     }
 

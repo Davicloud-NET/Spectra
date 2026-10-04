@@ -4,22 +4,9 @@ namespace SpectraEngine.Core.Input;
 
 /// <summary>
 /// Translates the standalone window's Silk.NET input vocabulary into the
-/// engine's own. The one place in the engine where the two meet.
+/// engine's own. A Silk key with no counterpart maps to <see cref="InputKey.Unknown"/>.
 /// </summary>
-/// <remarks>
-/// <b>This is an adapter, not a seam.</b> The standalone path owns a Silk
-/// window and therefore receives Silk devices; that is a fact about how the
-/// engine creates its own window, and it stops here. An embedded host submits
-/// <see cref="InputKey"/> values directly and never reaches this file.
-/// <para>
-/// <b>Names match on both sides deliberately</b>, so the table below is a
-/// mechanical one-to-one and a test can check every pair by name instead of a
-/// human reading a hundred lines for a transposition. A Silk key with no
-/// counterpart maps to <see cref="InputKey.Unknown"/>, which matches no binding
-/// — dropping a key the engine has no name for is correct, and it is why
-/// <see cref="InputKey.Unknown"/> exists at all.
-/// </para>
-/// </remarks>
+// Names match on both sides; a test checks every pair by name.
 internal static class SilkInputKeys
 {
     /// <summary>The engine's name for a Silk key, or <see cref="InputKey.Unknown"/>.</summary>

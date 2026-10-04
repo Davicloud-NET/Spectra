@@ -17,43 +17,12 @@ using System.Numerics;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The bake oracle, over a corpus: cook a map, load it, and assert that every
-/// array the runtime received is element-identical to a fresh cache-free compile
-/// of the same source.
+/// Cooks each corpus map, loads it, and checks what the runtime received is
+/// bit-identical to a fresh cache-free compile of the same source.
 /// </summary>
-/// <remarks>
-/// <para><b>This is the guard that replaces <c>ROADMAP.md</c>'s <c>P11b</c>.</b>
-/// That milestone pinned the shipping map format with "binary-load, text-save,
-/// byte-identical to the original text map", and the test is unsatisfiable for the
-/// artifact anybody actually wants: welding, T-junction repair and per-cell carving
-/// are not invertible, so <c>.scmap</c> to <c>.smap</c> is not a valid operation
-/// and must not be attempted. What CAN be claimed, and is claimed here, is that the
-/// bake loses nothing on the way through: the file holds, and the load delivers,
-/// exactly what a compile of the same source produces.</para>
-/// <para><b>Stated against what the RUNTIME received, not against what the file
-/// holds.</b> <c>MapRuleTests</c> already asserts the file's own side of this over
-/// one room; the load adds the <c>ASTB</c> remap, the vertex spans handed to
-/// <c>CreateMesh</c> and the <c>FlatBspTree</c> built over the mapped bytes, and
-/// every one of those is a place the bake's arrays could arrive intact and be
-/// delivered wrongly.</para>
-/// <para><b>Element-identical means BIT-identical, never a tolerance.</b> The
-/// compile cache keys on exact equality and the determinism oracles compare bytes,
-/// so a comparison here that forgave a last-place difference would forgive exactly
-/// the class of bug this file exists to catch - and it would forgive the two
-/// float values that compare equal and are not the same number, <c>0f</c> against
-/// <c>-0f</c>, which is a real bit in a real vertex buffer.</para>
-/// <para><b>The corpus is the coverage.</b> One room exercises one submesh
-/// directory of two entries and no cell that carries a tree without a mesh, so
-/// three quarters of the format's shapes are never written by it. See
-/// <see cref="BakeCorpus"/> for what each fixture alone reaches, and
-/// <see cref="Every_fixture_exercises_what_it_claims"/> for the measurement that
-/// stops a fixture quietly ceasing to bite.</para>
-/// </remarks>
 [Trait("Suite", "Determinism")]
 public class BakeOracleTests
 {
-    // --- the oracle -----------------------------------------------------------
-
     [Theory]
     [InlineData(BakeCorpus.FlushCoplanarRoom)]
     [InlineData(BakeCorpus.Cavities)]
@@ -63,15 +32,10 @@ public class BakeOracleTests
     {
         using Baked baked = Bake(fixture);
 
-        // Not a blind instrument. A bake that emitted nothing would satisfy every
-        // loop below by iterating none of them.
+        // An empty bake would pass every loop below.
         baked.Fresh.ChunkMeshes.Count.ShouldBeGreaterThan(0, "the fixture compiled to no geometry");
         baked.Scene.StaticWorldChunkMeshes.Count.ShouldBe(baked.Fresh.ChunkMeshes.Count);
 
-        // The loader's own arithmetic, which the arrays below do not cover: this
-        // is the number the double-geometry guard is graded on, so a load that
-        // counted a submesh twice would report a level drawn twice while every
-        // array it uploaded was still correct.
         baked.Report.TriangleCount.ShouldBe(Triangles(baked.Fresh));
 
         foreach (ChunkMesh expected in baked.Fresh.ChunkMeshes)
@@ -83,19 +47,14 @@ public class BakeOracleTests
             ShouldBeBits(loaded.RenderBounds.Min, expected.RenderBounds.Min, $"{expected.Coord} bounds min");
             ShouldBeBits(loaded.RenderBounds.Max, expected.RenderBounds.Max, $"{expected.Coord} bounds max");
 
-            // The directory as a whole: same length, and no material named twice,
-            // which is what makes the per-material match below a bijection rather
-            // than a lookup that happens to find something.
             loaded.Submeshes.Length.ShouldBe(
                 expected.Submeshes.Count, $"cell {expected.Coord} submesh count");
 
             loaded.Submeshes.Select(s => s.SourceMaterial).Distinct().Count()
                 .ShouldBe(loaded.Submeshes.Length, $"cell {expected.Coord} names a material twice");
 
-            // Matched by MATERIAL, never positionally: the file is in ascending
-            // asset-table row and the compile is in ascending material id, and
-            // those are different orders on purpose. The Palette fixture is the
-            // one that makes them genuinely differ.
+            // Matched by material, not position: the file sorts by asset row,
+            // the compile by material id.
             foreach (ChunkSubmesh submesh in expected.Submeshes)
             {
                 StaticWorldSubmesh actual = loaded.Submeshes
@@ -124,11 +83,7 @@ public class BakeOracleTests
         CompiledStaticWorld adopted = baked.Scene.CompiledStaticWorld.ShouldNotBeNull();
         IReadOnlyList<WorldChunk> cells = baked.Fresh.Chunks.OrderedChunks;
 
-        // The chunk directory is written in ChunkCoord.CompareTo order and read
-        // back in file order, which is the same order OrderedChunks is in, so the
-        // two lists are compared position for position rather than by lookup: a
-        // cell that moved is a defect here and not something to paper over with a
-        // dictionary.
+        // File order is OrderedChunks order, so compare by position.
         adopted.Chunks.Count.ShouldBe(cells.Count, "cell count");
         adopted.Chunks.Count.ShouldBeGreaterThan(0);
 
@@ -139,10 +94,7 @@ public class BakeOracleTests
 
             loaded.Coord.ShouldBe(cell.Coord, $"cell {i} is out of order");
 
-            // A cell nothing draws in is never culled - its directory entry says
-            // MeshSize zero - so the bake writes the CELL CUBE rather than a
-            // fabricated box. Only the Sprawl fixture reaches this at all, which
-            // is the one shape a single-cell map structurally cannot have.
+            // A cell with no mesh gets the cell cube as its bounds.
             if (loaded.TriangleCount == 0)
             {
                 ShouldBeBits(loaded.RenderBounds.Min, cell.Coord.Bounds.Min, $"cell {cell.Coord} empty min");
@@ -167,11 +119,6 @@ public class BakeOracleTests
             {
                 string what = $"cell {cell.Coord} node {n}";
 
-                // The plane bit for bit: a split plane an ulp out of place moves
-                // the boundary between solid and empty by a distance no point
-                // query in a test is going to be standing on, so a value
-                // comparison here would pass a tree that answers differently
-                // somewhere nobody looked.
                 ShouldBeBits(actual[n].Plane.Normal, expected[n].Plane.Normal, $"{what} normal");
                 ShouldBeBits(actual[n].Plane.D, expected[n].Plane.D, $"{what} d");
 
@@ -188,12 +135,8 @@ public class BakeOracleTests
     [InlineData(BakeCorpus.Sprawl)]
     public void The_adopted_trees_answer_a_LATTICE_of_points_exactly_as_a_fresh_compile_does(string fixture)
     {
-        // Element-identical nodes make this redundant on paper and it is kept
-        // anyway, because the two claims fail differently: identical arrays
-        // routed to the wrong cell answer wrongly everywhere, and only a query
-        // that goes through ChunkCoord.FromPosition on both sides can see it. A
-        // lattice rather than a handful of probes, because a hand-placed point is
-        // exactly where somebody already knows the answer.
+        // Identical node arrays can still be routed to the wrong cell. Only a
+        // query through ChunkCoord.FromPosition sees that.
         using Baked baked = Bake(fixture);
 
         CompiledStaticWorld adopted = baked.Scene.CompiledStaticWorld.ShouldNotBeNull();
@@ -223,8 +166,6 @@ public class BakeOracleTests
             }
         }
 
-        // Not a blind instrument: a world that answered one way everywhere would
-        // agree with itself perfectly.
         solid.ShouldBeGreaterThan(0, "the lattice never landed inside the level");
         empty.ShouldBeGreaterThan(0, "the lattice never landed outside the level");
     }
@@ -253,8 +194,6 @@ public class BakeOracleTests
             foreach (ScmapProbe.SubmeshCopy submesh in cell.Submeshes) seen.Add(submesh.AssetIndex);
         }
 
-        // A sort over one-entry directories proves nothing about a sort, so the
-        // fixture has to have produced a directory with something to order.
         seen.Count.ShouldBeGreaterThan(0);
     }
 
@@ -265,17 +204,12 @@ public class BakeOracleTests
     [InlineData(BakeCorpus.Sprawl)]
     public void Loading_any_fixture_in_the_corpus_runs_no_carve_at_all(string fixture)
     {
-        // The stage's own claim, restated per fixture rather than per room: a
-        // shipped game runs zero CSG, and a re-carved world draws the same walls
-        // twice with nothing in a frame reporting it.
         using Baked baked = Bake(fixture);
 
         baked.CarvesDuringLoad.ShouldBe(0, "a compiled map must reach the GPU with no CSG at all");
         baked.Scene.StaticWorld.ShouldBeNull();
         baked.Scene.StaticWorldCompileCount.ShouldBe(0);
     }
-
-    // --- the corpus is not four copies of one test ----------------------------
 
     [Theory]
     [InlineData(BakeCorpus.FlushCoplanarRoom)]
@@ -284,10 +218,7 @@ public class BakeOracleTests
     [InlineData(BakeCorpus.Sprawl)]
     public void Every_fixture_exercises_what_it_claims(string fixture)
     {
-        // MEASURED off the compile, never trusted from the comment beside the
-        // fixture. A fixture that has quietly stopped biting - a cut that no
-        // longer reaches its solid, a box that drifted inside one cell - reports
-        // coverage that does not exist, which is worse than not being written.
+        // Measured off the compile, so a fixture that drifts fails here.
         using Baked baked = Bake(fixture);
 
         CompiledStaticWorld adopted = baked.Scene.CompiledStaticWorld.ShouldNotBeNull();
@@ -297,8 +228,6 @@ public class BakeOracleTests
         switch (fixture)
         {
             case BakeCorpus.FlushCoplanarRoom:
-                // The coincident-plane case, and the two materials that make a
-                // directory orderable at all.
                 widest.ShouldBeGreaterThanOrEqualTo(2);
                 HasSubtractiveBrush(baked.Source).ShouldBeTrue();
                 break;
@@ -306,18 +235,11 @@ public class BakeOracleTests
             case BakeCorpus.Cavities:
                 HasSubtractiveBrush(baked.Source).ShouldBeTrue();
 
-                // The cuts CUT, measured against the same level with every
-                // negative deleted. Without this the whole fixture could be four
-                // subtractive brushes floating clear of everything, agreeing
-                // perfectly with a compile that also carved nothing.
                 CsgWorld uncut = Compile(baked.Corpus.BuildSceneWithoutCuts());
                 Triangles(baked.Fresh).ShouldNotBe(
                     Triangles(uncut), "the cuts changed no geometry at all");
 
-                // The sealed pocket is really sealed and the tunnel is really
-                // open: empty space in the carved world, solid in the uncut one.
-                // That pair is what distinguishes a cavity the seeding built from
-                // a hole somebody could have reached from outside.
+                // Pocket and tunnel centres: empty when carved, solid when not.
                 foreach (Vector3 inside in new[] { new Vector3(5f, 0f, 5f), Vector3.Zero })
                 {
                     baked.Fresh.ContainsPoint(inside).ShouldBeFalse($"nothing was removed at {inside}");
@@ -327,12 +249,9 @@ public class BakeOracleTests
                 break;
 
             case BakeCorpus.Palette:
-                // Seven in one directory: six painted faces and the bare brush.
+                // Six painted faces and the bare brush.
                 widest.ShouldBeGreaterThanOrEqualTo(7);
 
-                // And the two orders genuinely disagree, which is the whole point
-                // of interning backwards. Compare the compile's ascending-id order
-                // against the file's ascending-row order over the same cell.
                 AssetOrderDiffersFromMaterialIdOrder(baked).ShouldBeTrue(
                     "the file's asset order is the compile's material order, so the sort is untested here");
                 break;
@@ -340,19 +259,11 @@ public class BakeOracleTests
             case BakeCorpus.Sprawl:
                 adopted.Chunks.Count.ShouldBeGreaterThanOrEqualTo(12, "cells");
 
-                // The shape no single-cell fixture can reach: a cell carrying a
-                // tree built from a resident brush it does not own, and therefore
-                // no mesh of its own.
                 treesWithoutMeshes.ShouldBeGreaterThan(0);
 
-                // One material everywhere, deliberately: this fixture is the
-                // control that proves the corpus is not four copies of one test.
+                // One material everywhere: the control for submesh ordering.
                 widest.ShouldBe(1);
 
-                // And the tilted brush really tilted. Every other plane in the
-                // corpus is a number somebody could have typed, so without this
-                // the bit comparison is only ever run over exact binary
-                // fractions - which is the one input on which a float bug hides.
                 HasObliquePlane(adopted).ShouldBeTrue("nothing in this level is off-axis");
                 break;
 
@@ -364,37 +275,31 @@ public class BakeOracleTests
     [Fact]
     public void The_corpus_is_enumerated_in_one_place()
     {
-        // The [InlineData] rows above are the runner's view of the corpus and
-        // BakeCorpus.Names is everything else's; two lists is how a fixture gets
-        // added and silently never run.
+        // InlineData cannot read BakeCorpus.Names, so the rows above repeat it.
         BakeCorpus.Names.ShouldBe(
             [BakeCorpus.FlushCoplanarRoom, BakeCorpus.Cavities, BakeCorpus.Palette, BakeCorpus.Sprawl]);
     }
 
-    // --- helpers --------------------------------------------------------------
-
-    /// <summary>One fixture, cooked, loaded, and compiled again beside itself.</summary>
+    // One fixture, cooked, loaded, and compiled again beside itself.
     private sealed class Baked : IDisposable
     {
         public required BakeCorpus Corpus { get; init; }
         public required TempProject Project { get; init; }
         public required byte[] File { get; init; }
 
-        /// <summary>The scene the compiled map was adopted into.</summary>
+        // The scene the compiled map was loaded into.
         public required SpectraEngine.Core.Scene.Scene Scene { get; init; }
 
         public required FakeRenderer Renderer { get; init; }
 
-        /// <summary>The authored scene, re-bound from the bundle on disk.</summary>
+        // The authored scene, re-bound from the bundle on disk.
         public required SpectraEngine.Core.Scene.Scene Source { get; init; }
 
-        /// <summary>A fresh cache-free compile of that scene: the oracle's other side.</summary>
+        // Cache-free compile of Source.
         public required CsgWorld Fresh { get; init; }
 
-        /// <summary>What the load itself said it did.</summary>
         public required CompiledMapLoadReport Report { get; init; }
 
-        /// <summary>Carves counted across the load, on the loading thread.</summary>
         public required long CarvesDuringLoad { get; init; }
 
         public void Dispose()
@@ -424,18 +329,13 @@ public class BakeOracleTests
             var renderer = new FakeRenderer();
             var scene = new SpectraEngine.Core.Scene.Scene("empty");
 
-            // Thread-static, so this suite may run beside every other one: a
-            // process-wide counter would be moved by any unrelated compile on any
-            // thread and a real regression would be indistinguishable from an
-            // unlucky schedule.
+            // Thread-static counter, so parallel suites cannot move it.
             long before = Csg.CarveInvocationsOnThisThread;
             CompiledMapLoadReport report =
                 CompiledMapLoader.Load(scene, renderer, ContentBlob.CopyOf(file), "Maps/Level.scmap");
             long carves = Csg.CarveInvocationsOnThisThread - before;
 
-            // Re-bound from the bundle ON DISK rather than from the scene object
-            // the fixture built, so the round trip through the authored text is
-            // inside the oracle rather than beside it.
+            // From the bundle on disk, so the text round trip is covered too.
             MapDocument document = MapBundle.Load(Path.Combine(project.Layout.MapsPath, "Level.smap"));
             var source = new SpectraEngine.Core.Scene.Scene(document.Scene.Name);
             MapSceneBinder.ApplyTo(document, source);
@@ -465,14 +365,10 @@ public class BakeOracleTests
         IReadOnlyList<BrushPlacement> placements =
             scene.CaptureStaticWorldPlacements(out string? defect).ShouldNotBeNull(defect);
 
-        // Cache-free, which is the bake's own rule: the incremental overloads
-        // carry state across compiles to make an EDIT cheap, and a build artifact
-        // must not depend on build history.
+        // Cache-free, as the bake is.
         return CsgWorld.Build(placements);
     }
 
-    // True when some baked split plane points off every axis, which is what a
-    // rotated brush produces and an axis-aligned one never can.
     private static bool HasObliquePlane(CompiledStaticWorld world)
     {
         foreach (CompiledStaticWorldChunk chunk in world.Chunks)
@@ -493,8 +389,7 @@ public class BakeOracleTests
     private static float Lerp(float min, float max, int step, int steps) =>
         min + ((max - min) * step / (steps - 1));
 
-    // The union of every cell's render bounds, inflated so the lattice lands
-    // outside the level as well as inside it.
+    // Inflated so the lattice also lands outside the level.
     private static Aabb WorldBounds(CsgWorld world)
     {
         Aabb bounds = world.ChunkMeshes[0].RenderBounds;
@@ -523,8 +418,6 @@ public class BakeOracleTests
     private static bool HasSubtractiveBrush(SpectraEngine.Core.Scene.Scene scene) =>
         scene.Root.Traverse().Any(n => n.Brush is { Operation: BrushOperation.Subtractive });
 
-    // True when the file's ascending-asset-row order over some cell is a real
-    // permutation of the compile's ascending-material-id order for the same cell.
     private static bool AssetOrderDiffersFromMaterialIdOrder(Baked baked)
     {
         ScmapProbe map = ScmapProbe.Read(baked.File);
@@ -536,9 +429,6 @@ public class BakeOracleTests
 
             if (cell is null || cell.Submeshes.Count < 2) continue;
 
-            // The compile's own order, expressed as the asset rows it would land
-            // on. Equal to the file's order exactly when the sort was the
-            // identity.
             var asCompiled = mesh.Submeshes.Select(s => RowOf(map, s.Material)).ToArray();
             var asWritten = cell.Submeshes.Select(s => s.AssetIndex).ToArray();
 
@@ -565,8 +455,6 @@ public class BakeOracleTests
             ? "(default material)"
             : path;
 
-    // --- bit comparisons ------------------------------------------------------
-
     private static void ShouldBeBits(float[] actual, float[] expected, string what)
     {
         actual.Length.ShouldBe(expected.Length, $"{what}: length");
@@ -580,15 +468,7 @@ public class BakeOracleTests
         ShouldBeBits(actual.Z, expected.Z, $"{what}.z");
     }
 
-    /// <summary>
-    /// Raw bits, never <c>==</c>.
-    /// </summary>
-    /// <remarks>
-    /// Two floats can compare equal and be different numbers - <c>0f</c> and
-    /// <c>-0f</c> - and two can be the same number and compare unequal, which is
-    /// every NaN. A cooked vertex buffer is bytes, so the comparison that matches
-    /// what the format promises is the one over bits.
-    /// </remarks>
+    // Bits, not ==: 0f equals -0f and NaN never equals itself.
     private static void ShouldBeBits(float actual, float expected, string what)
     {
         int actualBits = BitConverter.SingleToInt32Bits(actual);

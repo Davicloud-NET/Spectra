@@ -9,18 +9,9 @@ using System.Text;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Where a built-in shader comes from: a cooked blob, a source file the content
-/// stack holds, or the copy embedded in the engine assembly.
-/// </summary>
-/// <remarks>
-/// <b>Every one of these failures renders the right picture.</b> A cooked blob
-/// that is not found makes the engine compile from source and draw exactly the
-/// same frame, at the cost of the compiler front end the cook exists to remove;
-/// a source override that is not found falls through to the embedded copy and
-/// draws the frame the author was trying to change. Nothing throws and nothing
-/// looks wrong, so the resolution ORDER is only ever observable here.
-/// </remarks>
+// Resolution order: cooked blob, then source in the content stack, then the
+// embedded copy. A wrong order still renders the same frame, so only these
+// tests can see it.
 public class BaseShaderResolverTests : IDisposable
 {
     private readonly string _root = Path.Combine(
@@ -31,11 +22,7 @@ public class BaseShaderResolverTests : IDisposable
     [Fact]
     public void With_no_content_source_a_built_in_comes_from_the_engines_own_copy()
     {
-        // The floor, and the behaviour every build had before packs existed: a
-        // renderer nobody handed a content stack still gets its programs. Which
-        // copy answers depends on whether the source tree is there - the file in
-        // a developer build, the embedded resource in a deployed one - and the
-        // two are the same text, which is what makes the choice invisible.
+        // The file in a developer tree, the embedded resource otherwise. Same text.
         ResolvedShader resolved = Resolve(content: null);
 
         resolved.Cooked.ShouldBeNull();
@@ -53,9 +40,7 @@ public class BaseShaderResolverTests : IDisposable
         resolved.Cooked.ShouldBeNull();
         resolved.Source.ShouldBe(authored);
 
-        // A loose file has a watch path, so hot-reload keeps working for a
-        // project that authored its own shader. A packed one has none and is
-        // simply not watched, which is the rule for every other asset.
+        // A loose file has a watch path; a packed one has none.
         resolved.WatchPath.ShouldNotBeNull();
         Path.GetFullPath(resolved.WatchPath).ShouldBe(
             Path.GetFullPath(Path.Combine(_root, "Shaders", "Lit.spectrashade")));
@@ -69,15 +54,11 @@ public class BaseShaderResolverTests : IDisposable
 
         ResolvedShader resolved = Resolve(LooseStack(), GraphicsBackend.D3D11);
 
-        // The whole point of cooking one. If this order ever inverts, a shipped
-        // build compiles every shader at startup with the answer sitting in the
-        // file next to it and nothing anywhere says so.
         resolved.Source.ShouldBeNull();
         resolved.Cooked.ShouldNotBeNull().Backend.ShouldBe(GraphicsBackend.D3D11);
 
-        // No watch path on a cooked blob: the thing to watch would be the source
-        // it was built from, and re-reading the blob when that changes would
-        // serve the old shader under a new timestamp.
+        // A cooked blob is not watched: re-reading it when the source changes
+        // would serve the old shader.
         resolved.WatchPath.ShouldBeNull();
     }
 
@@ -88,10 +69,7 @@ public class BaseShaderResolverTests : IDisposable
         WriteContent("Shaders/Lit.spectrashade", authored);
         WriteContent("Shaders/Lit.specshadecomp", CookedBytes(GraphicsBackend.D3D11));
 
-        // A pack cooked for a target list this run is not in. It is reported at
-        // Error and then degraded, because refusing to render over it turns a
-        // mis-targeted pack into a black window while the source path still
-        // produces the right frame.
+        // Cooked for d3d11, run on GL: logged at Error, then compiled from source.
         ResolvedShader resolved = Resolve(LooseStack(), GraphicsBackend.OpenGL);
 
         resolved.Cooked.ShouldBeNull();
@@ -105,8 +83,7 @@ public class BaseShaderResolverTests : IDisposable
         WriteContent("Shaders/Lit.spectrashade", authored);
         WriteContent("Shaders/Lit.specshadecomp", [1, 2, 3, 4, 5, 6, 7, 8]);
 
-        // Content failures never reach the draw loop. The cooker is where a
-        // payload like this is fatal - see PackVerifier's shader arm.
+        // Content failures never reach the draw loop; the cooker is where this is fatal.
         ResolvedShader resolved = Resolve(LooseStack());
 
         resolved.Cooked.ShouldBeNull();
@@ -126,9 +103,7 @@ public class BaseShaderResolverTests : IDisposable
 
         WriteContent("Shaders/Lit.spectrashade", bytes);
 
-        // A content source hands out bytes, so nothing strips this on the way
-        // past. Left in, U+FEFF sits in front of the first token and the lexer
-        // reports a syntax error on line one of a file that looks ordinary.
+        // Left in, U+FEFF is a syntax error on line one.
         Resolve(LooseStack()).Source.ShouldBe(authored);
     }
 
@@ -142,7 +117,7 @@ public class BaseShaderResolverTests : IDisposable
         }
         catch (IOException)
         {
-            // Failing a test on its own cleanup helps nobody.
+            // Don't fail a test on its own cleanup.
         }
     }
 
@@ -168,9 +143,7 @@ public class BaseShaderResolverTests : IDisposable
         File.WriteAllBytes(full, bytes);
     }
 
-    // A real .specshadecomp, written by the engine's own writer: a hand-built
-    // byte array here would prove the resolver reads what this test thinks the
-    // format is rather than what the writer emits.
+    // Written by the engine's own writer, so the resolver reads the real format.
     private static byte[] CookedBytes(GraphicsBackend backend)
     {
         var file = new CompiledShaderFile

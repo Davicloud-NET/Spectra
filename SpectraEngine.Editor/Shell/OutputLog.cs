@@ -23,12 +23,6 @@ public enum OutputSeverity
 }
 
 /// <summary>One line in the output, and how many times it has been said.</summary>
-/// <remarks>
-/// <b>A class rather than a record now, because a repeat updates in place.</b>
-/// A background compile can report the same line every frame, and five hundred
-/// identical rows push everything else out of a bounded history while telling
-/// the reader nothing the first one did not.
-/// </remarks>
 public sealed class OutputEntry : ObservableObject
 {
     private int _count = 1;
@@ -83,16 +77,8 @@ public sealed class OutputEntry : ObservableObject
     /// <summary>Whether this line is something the user typed.</summary>
     public bool IsCommand => Severity == OutputSeverity.Command;
 
-    /// <summary>
-    /// The colour this line is set in, from the token dictionary.
-    /// </summary>
-    /// <remarks>
-    /// <b>An error is TextDanger, not the accent.</b> The accent as text is
-    /// 4.0:1 on the panel, which is not an error message - the split exists in
-    /// the palette precisely so this row can be red and legible at the same
-    /// time. A command echo is muted, because the reply beneath it is the part
-    /// worth reading; the user already knows what they typed.
-    /// </remarks>
+    /// <summary>The colour this line is set in, from the token dictionary.</summary>
+    // Errors use TextDanger: the accent as text is only 4.0:1 on the panel.
     public IBrush? SeverityBrush => Resource(Severity switch
     {
         OutputSeverity.Error => "SpectraTextDanger",
@@ -106,27 +92,9 @@ public sealed class OutputEntry : ObservableObject
 }
 
 /// <summary>
-/// The editor's diagnostic history: everything that used to be a single
-/// status-bar sentence.
+/// The editor's diagnostic history. Bounded, oldest lines dropped first.
+/// UI thread only.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The whole diagnostic surface of this application was one line of text that
-/// anything could overwrite.</b> About thirty call sites wrote to it, none of
-/// them knew what was already there, and a failure reported while the user was
-/// looking elsewhere was gone by the time they looked back - which for a save
-/// failure or a content error is the difference between a problem and a lost
-/// afternoon. The status line still exists and still shows the newest entry;
-/// what changed is that the entry before it survives.
-/// </para>
-/// <para>
-/// <b>Bounded, like every other queue in this shell, and for the same reason.</b>
-/// A background compile can report a content warning per frame, and an unbounded
-/// list is a memory leak with a scrollbar. The oldest lines go first, which is
-/// the right end to lose: the newest failure is the one being investigated.
-/// </para>
-/// <para>UI thread only.</para>
-/// </remarks>
 public sealed class OutputLog : ObservableObject
 {
     /// <summary>How many lines are kept.</summary>
@@ -159,14 +127,8 @@ public sealed class OutputLog : ObservableObject
     }
 
     /// <summary>What this panel is, and how full it is.</summary>
-    /// <remarks>
-    /// <b>It used to answer "are there problems", and it could not.</b> This log
-    /// is bounded, so its error count falls back to zero as failures scroll out
-    /// of the buffer: enough chatter after a broken material and the header said
-    /// "no problems" over a level that was still broken. That question belongs
-    /// to <see cref="ProblemList"/>, which keeps standing conditions rather than
-    /// recent lines. This header says what it can actually see.
-    /// </remarks>
+    // Not a verdict: errors scroll out of a bounded log. ProblemList answers
+    // "is anything wrong".
     public string HistoryLabel => $"Shell output, {Entries.Count} of {Capacity} lines";
 
     /// <summary>Raised after an entry is appended, so a view can scroll to it.</summary>
@@ -178,14 +140,10 @@ public sealed class OutputLog : ObservableObject
         if (string.IsNullOrWhiteSpace(text))
             return;
 
-        // Wall-clock rather than a frame number: the reader is a person
-        // correlating this against something they just did.
         string time = DateTime.Now.ToString("HH:mm:ss");
 
-        // A repeat of the line already at the bottom grows a count instead of a
-        // row. Compared against the LAST entry only: two lines alternating are
-        // two conditions and still get two rows, which is stated here because
-        // the cheaper-looking "search the whole log" would merge them.
+        // A repeat of the last line grows its count. Last entry only:
+        // two alternating lines are two conditions.
         if (Entries.Count > 0)
         {
             OutputEntry last = Entries[^1];

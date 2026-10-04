@@ -19,7 +19,7 @@ namespace SpectraEngine.Editor.Shell;
 /// <summary>What kind of thing one row in the content browser is.</summary>
 public enum ContentKind
 {
-    /// <summary>A directory. Double-click descends.</summary>
+    /// <summary>A directory.</summary>
     Folder,
 
     /// <summary>An image the shell can decode and show.</summary>
@@ -52,10 +52,7 @@ public sealed class ContentEntry : ObservableObject
     /// <summary>Size on disk, formatted, or empty for a folder.</summary>
     public required string SizeLabel { get; init; }
 
-    /// <summary>
-    /// The decoded preview, once a background decode has landed. Null until
-    /// then, and null forever for anything that is not an image.
-    /// </summary>
+    /// <summary>The decoded preview. Null until the decode lands, and for non-images.</summary>
     public Bitmap? Thumbnail
     {
         get => _thumbnail;
@@ -78,26 +75,13 @@ public sealed class ContentEntry : ObservableObject
         internal set => Set(ref _isSelected, value);
     }
 
-    /// <summary>The file's own name without its extension.</summary>
+    /// <summary>The file name without its extension.</summary>
     public string Stem => System.IO.Path.GetFileNameWithoutExtension(Name);
 
-    /// <summary>
-    /// The content-relative path, or empty for a folder.
-    /// </summary>
-    /// <remarks>
-    /// Carried on the row rather than derived where it is needed, because the
-    /// browser is the only thing that knows the root and a second derivation
-    /// somewhere else is a fifth spelling of asset identity.
-    /// </remarks>
+    /// <summary>The content-relative path, or empty for a folder.</summary>
     public string ContentPath { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Where this file is, content-relative, shown beside a search result.
-    /// </summary>
-    /// <remarks>
-    /// A search is flat and crosses the whole project, so two files called
-    /// "brick" are one row apart with nothing to tell them apart but this.
-    /// </remarks>
+    /// <summary>The content-relative folder, shown beside a search result.</summary>
     public string FolderLabel { get; init; } = string.Empty;
 
     /// <summary>When this file last changed, for keying a decoded preview.</summary>
@@ -116,17 +100,7 @@ public sealed class ContentEntry : ObservableObject
 
     public bool IsFolder => Kind == ContentKind.Folder;
 
-    /// <summary>
-    /// The glyph for this kind, pulled from the theme dictionary.
-    /// </summary>
-    /// <remarks>
-    /// <b>Resolved here rather than by a selector or a converter</b>, because
-    /// the alternative is a DataTemplate per kind - six near-identical copies of
-    /// one tile - or a value converter class per lookup, which is what this
-    /// codebase already refuses elsewhere for exactly this reason. A null
-    /// resource simply draws nothing, and the name beneath still says what the
-    /// file is.
-    /// </remarks>
+    /// <summary>The glyph for this kind, from the theme dictionary.</summary>
     public Geometry? Icon => Resource<Geometry>(Kind switch
     {
         ContentKind.Folder => "IconOpenFolder",
@@ -137,7 +111,7 @@ public sealed class ContentEntry : ObservableObject
         _ => "IconEmpty",
     });
 
-    /// <summary>The kind's tint, from the same palette the scene tree uses.</summary>
+    /// <summary>The kind's tint.</summary>
     public IBrush? KindBrush => Resource<IBrush>(Kind switch
     {
         ContentKind.Folder => "SpectraMode",
@@ -152,51 +126,16 @@ public sealed class ContentEntry : ObservableObject
         => Application.Current?.TryFindResource(key, out object? value) == true ? value as T : null;
 }
 
-/// <summary>
-/// The project's <c>Assets/</c> folder, browsed.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>The headline absence.</b> Nothing in the shell showed a texture, a
-/// material or a model, and there was no milestone for one anywhere in the
-/// roadmap either - a hole in the plan rather than only in the window. An
-/// editor whose content root is real files on disk and which cannot show you
-/// those files is asking you to keep a file manager open beside it.
-/// </para>
-/// <para>
-/// <b>It reads the filesystem directly, and the shell decodes the
-/// thumbnails.</b> Not through <c>AssetManager</c>: that is the render thread's,
-/// its caches are keyed for rendering, and asking it for a preview would create
-/// a GPU texture for a picture the user is only looking at. An Avalonia
-/// <c>Bitmap</c> off a background thread costs nothing the engine can see.
-/// </para>
-/// <para>
-/// <b>Every listing is a snapshot, and it says when it was taken.</b> There is
-/// no file watcher here: one per folder is the shape the texture hot-reload
-/// already uses and it is the right eventual answer, but a browser that
-/// silently showed a stale folder would be worse than one with a refresh
-/// button, which is what this has.
-/// </para>
-/// <para>UI thread, except the decode.</para>
-/// </remarks>
+/// <summary>The project's <c>Assets/</c> folder, browsed. UI thread only.</summary>
+// Thumbnails are decoded by the shell, not AssetManager: that belongs to the
+// render thread and would create a GPU texture per preview.
 public sealed class ContentBrowserModel : ObservableObject
 {
     /// <summary>How many search results one query shows.</summary>
-    /// <remarks>
-    /// A cap rather than the whole project, because a texture folder is
-    /// unbounded and a list nobody can reach the end of is a search box with
-    /// extra scrolling. The footer says how many were hidden, because a capped
-    /// list with no count looks exactly like a complete one.
-    /// </remarks>
     public const int MaxSearchResults = 200;
 
     /// <summary>How many tiles the grid draws before it asks for the list.</summary>
-    /// <remarks>
-    /// <b>The grid does not virtualise and the list does.</b> Stock Avalonia has
-    /// no virtualising wrap panel, so a folder of four thousand textures would
-    /// realise four thousand tiles; the cap is what keeps that from happening,
-    /// and the footer names the way out rather than silently truncating.
-    /// </remarks>
+    // Avalonia has no virtualising wrap panel, so the grid realises every tile.
     public const int GridCap = 400;
 
     private readonly ILogger _logger;
@@ -211,10 +150,7 @@ public sealed class ContentBrowserModel : ObservableObject
     private ContentViewMode _viewMode = ContentViewMode.Grid;
     private string _resultNote = string.Empty;
 
-    // Bumped on every navigation, so a decode that lands after the user has
-    // moved on is dropped rather than writing a thumbnail into a row that is
-    // no longer on screen. Same shape as the asset manager's per-asset
-    // sequence ticket, and for the same reason.
+    // Bumped on every relist so a thumbnail decode that lands late is dropped.
     private int _generation;
 
     public ContentBrowserModel(ILogger logger)
@@ -222,8 +158,6 @@ public sealed class ContentBrowserModel : ObservableObject
         _logger = logger;
         _index = new ContentIndex(logger);
 
-        // One reader, two views: the folder listing and the search both come off
-        // the index, so a rename cannot show up in one and not the other.
         _index.Changed += Relist;
         _index.PropertyChanged += (_, args) =>
         {
@@ -232,16 +166,13 @@ public sealed class ContentBrowserModel : ObservableObject
         };
     }
 
-    /// <summary>The index behind both views, for the picker that shares it.</summary>
+    /// <summary>The index behind the folder view and the search.</summary>
     public ContentIndex Index => _index;
 
-    /// <summary>What is being searched for, across the whole project.</summary>
-    /// <remarks>
-    /// <b>A query replaces the folder view rather than filtering it.</b> Somebody
-    /// typing "brick" is asking where the bricks are, not which of the files in
-    /// this one folder is called brick; a filter over the current folder answers
-    /// a question nobody asked and reports nothing when the file is one level up.
-    /// </remarks>
+    /// <summary>
+    /// The search text. A non-empty query replaces the folder view with matches
+    /// from the whole project.
+    /// </summary>
     public string Query
     {
         get => _query;
@@ -278,14 +209,7 @@ public sealed class ContentBrowserModel : ObservableObject
     public bool IsFilterMaterials => _filter == ContentFilter.Materials;
     public bool IsFilterModels => _filter == ContentFilter.Models;
 
-    /// <summary>Tiles or dense rows.</summary>
-    /// <remarks>
-    /// <b>A grid for pictures and a list for everything else, and the choice is
-    /// the user's.</b> A texture's picture IS the information, which is the one
-    /// case where a tile beats a row; a folder of shaders in a grid is a wall of
-    /// identical glyphs. The list also virtualises, so it is the mode for a big
-    /// folder whatever is in it.
-    /// </remarks>
+    /// <summary>Tiles or dense rows. Only the list virtualises.</summary>
     public ContentViewMode ViewMode
     {
         get => _viewMode;
@@ -350,16 +274,7 @@ public sealed class ContentBrowserModel : ObservableObject
     public bool CanGoUp => _root is not null &&
         !string.Equals(_currentPath, _root, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Turns one browsed entry into a drag payload, or refuses it.
-    /// </summary>
-    /// <remarks>
-    /// <b>Here rather than in the panel, because the ROOT lives here.</b> The
-    /// conversion from an absolute path to the engine's own content-relative
-    /// identity needs the root the browser was pointed at, and a panel that
-    /// reached for it would be the second place that knows where a project's
-    /// assets are.
-    /// </remarks>
+    /// <summary>Turns one browsed entry into a drag payload, or refuses it.</summary>
     public bool TryDescribe(
         ContentEntry entry, [NotNullWhen(true)] out ContentDragPayload? payload)
     {
@@ -377,13 +292,8 @@ public sealed class ContentBrowserModel : ObservableObject
 
         _currentPath = assetsPath ?? string.Empty;
 
-        // BEFORE the index is pointed anywhere, and the order is the whole of
-        // it. This call fills the pane in the meantime, so it is never blank
-        // with no message; the walk publishes its own listing when it lands. In
-        // the other order the two overlap - the walk can finish while this one
-        // is still adding rows - and two writers on one ObservableCollection is
-        // an IndexOutOfRangeException from inside a list control rather than
-        // anything that names itself.
+        // Must run before _index.SetRoot. The walk relists when it lands, and
+        // in the other order the two can overlap and write Entries at once.
         Relist();
 
         _index.SetRoot(assetsPath);
@@ -404,13 +314,9 @@ public sealed class ContentBrowserModel : ObservableObject
     }
 
     /// <summary>
-    /// Navigates to the folder holding a content-relative path and selects it.
+    /// Navigates to the folder holding a content-relative path and selects the
+    /// file. Clears the query.
     /// </summary>
-    /// <remarks>
-    /// How "Reveal in Content" works, and how a picker sends somebody to the
-    /// file they just assigned. It clears the query, because a reveal into a
-    /// filtered list would show the file and hide its neighbours.
-    /// </remarks>
     public void Reveal(string contentPath)
     {
         if (_root is null || string.IsNullOrWhiteSpace(contentPath)) return;
@@ -472,14 +378,8 @@ public sealed class ContentBrowserModel : ObservableObject
     public bool HasSelected => _selected is not null;
 
     /// <summary>
-    /// One line about the selection: what it is, where it is and how big.
+    /// One line about the selection: its kind, content-relative path and size.
     /// </summary>
-    /// <remarks>
-    /// <b>The content-relative path, not the absolute one.</b> That string is
-    /// what a material writes down, what a map records and what the pack hashes
-    /// its id from, so it is the name this file HAS as far as the engine is
-    /// concerned. The absolute path is a fact about this machine.
-    /// </remarks>
     public string SelectedDetails
     {
         get
@@ -515,16 +415,8 @@ public sealed class ContentBrowserModel : ObservableObject
 
     /// <summary>
     /// What the file itself says: a texture's size, a material's shader and
-    /// textures. Empty until the read lands, and empty when it cannot.
+    /// textures. Empty until the background read lands, or when it fails.
     /// </summary>
-    /// <remarks>
-    /// <b>Read in the background and never by decoding.</b> A texture's
-    /// dimensions are in the first bytes of its header (<see cref="ImageHeader"/>)
-    /// and a material is a small text file, so this is two open-and-read calls;
-    /// decoding a 4K image to learn two numbers would cost 32 MB for a line of
-    /// text. A read that lands after the selection moved on is dropped by
-    /// generation, the same ticket the thumbnails use.
-    /// </remarks>
     public string SelectedExtra
     {
         get => _selectedExtra;
@@ -545,6 +437,7 @@ public sealed class ContentBrowserModel : ObservableObject
         SelectedExtra = text;
     }
 
+    // Header read only. Decoding a 4K image for two numbers costs 32 MB.
     private static string DescribeTexture(string fullPath) =>
         ImageHeader.TryReadFile(fullPath, out int width, out int height)
             ? $"{width} x {height}"
@@ -560,10 +453,7 @@ public sealed class ContentBrowserModel : ObservableObject
                 ? named
                 : MaterialParser.BuiltInShaderName;
 
-            // The parser is forward-compatible by design: an unknown key warns
-            // rather than throwing, and that warning is invisible everywhere
-            // else in the shell. Saying it here is the whole reason a details
-            // strip is worth having for a material.
+            // Parser warnings (an unknown key, say) show nowhere else in the shell.
             if (definition.Warnings.Count > 0)
                 return $"shader {shader}  ({definition.Warnings.Count} warning(s) in this file)";
 
@@ -578,21 +468,10 @@ public sealed class ContentBrowserModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Rebuilds the list from the index: this folder, or the whole project when
-    /// there is a query.
-    /// </summary>
-    /// <remarks>
-    /// <b>The collection is rebuilt rather than patched, and that is a
-    /// deliberate difference from the scene tree.</b> The tree is patched
-    /// because it holds a user's expansion state and scroll position across
-    /// thousands of rows that mostly do not change; a content listing changes
-    /// wholesale on every navigation and every keystroke of a query, so a diff
-    /// would be a diff of two unrelated lists.
-    /// </remarks>
+    // Rebuilds Entries from the index: this folder, or the whole project when
+    // there is a query. Not patched like the scene tree; a listing changes wholesale.
     private void Relist()
     {
-        // Every in-flight decode is now stale.
         int generation = ++_generation;
 
         Entries.Clear();
@@ -670,8 +549,7 @@ public sealed class ContentBrowserModel : ObservableObject
 
     private bool Admits(ContentKind kind) => _filter switch
     {
-        // A folder is navigation rather than content, so it survives every
-        // filter: hiding it would make a filtered view a dead end.
+        // Folders survive every filter, or a filtered view is a dead end.
         _ when kind == ContentKind.Folder => !IsSearching,
 
         ContentFilter.All => true,
@@ -681,17 +559,7 @@ public sealed class ContentBrowserModel : ObservableObject
         _ => true,
     };
 
-    /// <summary>
-    /// The best matches across the whole project, ranked.
-    /// </summary>
-    /// <remarks>
-    /// <b>A name match outranks a path match by a fixed margin.</b> Somebody
-    /// typing "brick" means the file called brick, not every file in a folder
-    /// that happens to contain those letters; but a path match still beats no
-    /// match, because folders are how people organise. The same rule the asset
-    /// picker uses, and the same scorer, so a file found in one is found in the
-    /// other.
-    /// </remarks>
+    // A name match outranks a path match. Same rule as AssetCatalog.Search.
     private List<ContentIndexEntry> Search()
     {
         List<(ContentIndexEntry Row, int Score)> matches = [];
@@ -731,8 +599,7 @@ public sealed class ContentBrowserModel : ObservableObject
 
     private string FolderLabelFor(ContentIndexEntry row)
     {
-        // Only a search needs it: in a folder view every row shares the folder
-        // the breadcrumb already names, and repeating it on each tile is noise.
+        // Only for a search; in a folder view the breadcrumb already says it.
         if (!IsSearching || row.ContentPath.Length == 0) return string.Empty;
 
         int slash = row.ContentPath.LastIndexOf('/');
@@ -774,10 +641,7 @@ public sealed class ContentBrowserModel : ObservableObject
     {
         try
         {
-            // DecodeToWidth rather than a full decode: a 4K texture decoded at
-            // full size costs 32 MB of managed memory to draw at 72 pixels, and
-            // a folder of them is how a content browser becomes the reason an
-            // editor runs out of memory.
+            // DecodeToWidth: a full decode of a 4K texture is 32 MB per tile.
             Bitmap bitmap = await Task.Run(() =>
             {
                 using FileStream stream = File.OpenRead(entry.FullPath);
@@ -794,8 +658,7 @@ public sealed class ContentBrowserModel : ObservableObject
         }
         catch (Exception ex)
         {
-            // A file that is not really an image, a truncated download, a lock.
-            // The row keeps its kind glyph, which is a correct answer.
+            // Not an image, truncated or locked. The row keeps its kind glyph.
             _logger.LogDebug(ex, "No preview for {Path}", entry.FullPath);
         }
     }

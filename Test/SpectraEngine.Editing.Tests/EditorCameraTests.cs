@@ -10,25 +10,13 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// The orbit camera's felt behaviour, asserted as maths: the wheel really does
-/// pull the point under the cursor toward you, framing really does fit the
-/// selection, orbit and pan really do leave alone what they promise to, and
-/// none of it degrades at open-world coordinates.
+/// The editor camera: zoom to cursor, orbit, pan, framing and damping, including
+/// at open-world coordinates.
 /// </summary>
-/// <remarks>
-/// <b>The invariants are stated in screen space wherever the user would state
-/// them there.</b> "Zoom toward the cursor" is not a claim about a vector, it is
-/// a claim that a specific world point keeps projecting to a specific pixel —
-/// so that is what these tests measure, through the harness's exact projection.
-/// A test written against the vector maths instead would pass on a sign error
-/// that any user would spot in one wheel notch.
-/// </remarks>
+// Where a behaviour is about the screen, the test measures pixels, not vectors.
 public sealed class EditorCameraTests
 {
-    // Pixel slack for a value that made the round trip world → clip → pixels.
     private const float PixelTolerance = 0.05f;
-
-    // --- Zoom to cursor ------------------------------------------------------
 
     [Theory]
     [InlineData(600f, 180f)]
@@ -41,13 +29,11 @@ public sealed class EditorCameraTests
         harness.Orbit(new Vector3(2f, 1f, -3f), 20f, 0.6f, -0.35f);
         var cursor = new Vector2(px, py);
 
-        // A real world point: where the cursor ray crosses the focus plane.
         Vector3 anchor = FocusPlanePoint(harness, cursor);
         harness.WorldToScreen(anchor).ShouldBeCloseTo(cursor, PixelTolerance);
 
         harness.EditorCamera.Update(harness.Frame(cursor, scroll: new Vector2(0f, 1f)));
 
-        // The whole point of zoom-to-cursor: it did not drift.
         harness.WorldToScreen(anchor).ShouldBeCloseTo(cursor, PixelTolerance);
     }
 
@@ -67,9 +53,8 @@ public sealed class EditorCameraTests
         Vector3 toward = anchor - before;
 
         moved.Length().ShouldBeGreaterThan(0f);
-        // Parallel to the ray's crossing of the focus plane, and pointing at it.
         Vector3.Dot(Vector3.Normalize(moved), Vector3.Normalize(toward)).ShouldBe(1f, 1e-4f);
-        // Exactly the derived fraction: 1 − s, where s is the distance ratio.
+        // The focus moves by 1 − s of the way, s being the distance ratio.
         float ratio = harness.EditorCamera.Distance / 20f;
         moved.Length().ShouldBe(toward.Length() * (1f - ratio), toward.Length() * 1e-3f);
     }
@@ -97,7 +82,7 @@ public sealed class EditorCameraTests
 
         harness.EditorCamera.Update(harness.Frame(harness.CenterPixel, scroll: new Vector2(0f, 3f)));
 
-        // The centre ray passes through the focus, so there is nowhere to slide.
+        // The centre ray passes through the focus.
         (harness.EditorCamera.Focus - before).Length().ShouldBe(0f, 1e-3f);
     }
 
@@ -126,12 +111,8 @@ public sealed class EditorCameraTests
         harness.EditorCamera.Update(harness.Frame(new Vector2(700f, 150f), scroll: new Vector2(0f, 5f)));
 
         harness.EditorCamera.Distance.ShouldBe(20f);
-        // A clamped dolly that still crept toward the cursor would walk the
-        // camera across the level while appearing to do nothing.
         (harness.EditorCamera.Focus - before).Length().ShouldBe(0f);
     }
-
-    // --- Orbit ---------------------------------------------------------------
 
     [Fact]
     public void Orbiting_turns_the_camera_around_a_fixed_focus_at_a_fixed_distance()
@@ -146,11 +127,9 @@ public sealed class EditorCameraTests
         harness.EditorCamera.Focus.ShouldBe(focus);
         harness.EditorCamera.Distance.ShouldBe(15f);
         (harness.Scene.Camera.Position - focus).Length().ShouldBe(15f, 1e-3f);
-        // The camera still looks straight at what it orbits.
         Vector3.Dot(
             Vector3.Normalize(focus - harness.Scene.Camera.Position),
             harness.Scene.Camera.Forward).ShouldBe(1f, 1e-5f);
-        // And it actually moved.
         (harness.Scene.Camera.Position - startPosition).Length().ShouldBeGreaterThan(0.1f);
     }
 
@@ -160,8 +139,8 @@ public sealed class EditorCameraTests
         var harness = new ViewportHarness();
         harness.Orbit(Vector3.Zero, 15f, 0.3f, -0.2f);
 
-        // Cursor jumps a long way and the button goes down on the same frame:
-        // that jump is where the user moved the mouse BEFORE deciding to orbit.
+        // The cursor jump and the press land on the same frame. The jump
+        // happened before the orbit began.
         harness.EditorCamera.Update(harness.Frame(new Vector2(20f, 20f)));
         harness.EditorCamera.Update(harness.Frame(
             new Vector2(700f, 500f),
@@ -194,9 +173,6 @@ public sealed class EditorCameraTests
     [Fact]
     public void Alt_is_what_turns_a_right_drag_from_a_look_into_an_orbit()
     {
-        // The whole semantic change in one assertion: the same drag, the same
-        // button, and the modifier decides whether the camera turns in place or
-        // swings around the focus.
         var look = new ViewportHarness();
         look.Orbit(new Vector3(3f, 1f, -2f), 15f, 0.3f, -0.2f);
         Vector3 lookStart = look.Scene.Camera.Position;
@@ -230,7 +206,7 @@ public sealed class EditorCameraTests
         var harness = new ViewportHarness();
         harness.Orbit(Vector3.Zero, 15f, 0f, 0f);
 
-        // Far more than a quarter turn of drag, both ways.
+        // Well over a quarter turn of drag, both ways.
         OrbitDrag(harness, new Vector2(400f, 900f), new Vector2(400f, -900f));
         harness.EditorCamera.Pitch.ShouldBeLessThan(MathF.PI / 2f);
         harness.Scene.Camera.Forward.Length().ShouldBe(1f, 1e-5f);
@@ -239,8 +215,6 @@ public sealed class EditorCameraTests
         harness.EditorCamera.Pitch.ShouldBeGreaterThan(-MathF.PI / 2f);
         harness.Scene.Camera.Forward.Length().ShouldBe(1f, 1e-5f);
     }
-
-    // --- Pan -----------------------------------------------------------------
 
     [Fact]
     public void Panning_drags_the_world_along_with_the_cursor()
@@ -255,8 +229,6 @@ public sealed class EditorCameraTests
         harness.EditorCamera.Update(harness.Frame(start, down: PointerButtons.Middle, pressed: PointerButtons.Middle));
         harness.EditorCamera.Update(harness.Frame(end, down: PointerButtons.Middle));
 
-        // The world point that was under the cursor when the pan began has
-        // travelled exactly as far as the cursor did.
         harness.WorldToScreen(anchor).ShouldBeCloseTo(end, 0.25f);
     }
 
@@ -275,11 +247,9 @@ public sealed class EditorCameraTests
         harness.EditorCamera.Yaw.ShouldBe(0.9f);
         harness.EditorCamera.Pitch.ShouldBe(-0.3f);
         harness.Scene.Camera.Forward.ShouldBe(forward);
-        // The focus stayed in the view plane it started in.
+        // The focus stays in its view plane.
         Vector3.Dot(harness.EditorCamera.Focus - new Vector3(1f, 2f, -4f), forward).ShouldBe(0f, 1e-3f);
     }
-
-    // --- Frame selection -----------------------------------------------------
 
     [Theory]
     [InlineData(0f, 0f)]
@@ -316,7 +286,6 @@ public sealed class EditorCameraTests
         harness.EditorCamera.SnapToTarget();
 
         harness.EditorCamera.Focus.ShouldBeCloseTo(Vector3.Zero, 1e-4f);
-        // The selection projects around the middle of the viewport.
         harness.WorldToScreen(Vector3.Zero).ShouldBeCloseTo(harness.CenterPixel, 0.5f);
     }
 
@@ -330,8 +299,6 @@ public sealed class EditorCameraTests
         harness.EditorCamera.FrameSelection().ShouldBeTrue();
         harness.EditorCamera.SnapToTarget();
 
-        // Framing is a dolly and a re-centre, never a re-orientation: the user
-        // keeps the viewpoint they had chosen.
         harness.EditorCamera.Yaw.ShouldBe(1.4f);
         harness.EditorCamera.Pitch.ShouldBe(-0.6f);
     }
@@ -396,8 +363,6 @@ public sealed class EditorCameraTests
         EditorCameraShortcuts.TryResolve(null, out _).ShouldBeFalse();
     }
 
-    // --- Damping -------------------------------------------------------------
-
     [Fact]
     public void After_exactly_one_time_constant_the_gap_has_closed_by_one_e_fold()
     {
@@ -405,13 +370,12 @@ public sealed class EditorCameraTests
         harness.EditorCamera.SmoothingTimeConstant = 0.1f;
         harness.Orbit(Vector3.Zero, 10f, 0f, 0f);
 
-        // Move only the focus target: a degenerate (point) bounds leaves the
-        // distance alone, so this isolates the filter.
+        // Point bounds move only the focus target and leave the distance alone.
         var target = new Vector3(10f, 0f, 0f);
         harness.EditorCamera.FrameBounds(new Aabb(target, target));
 
-        // Ten steps of 0.01 s is one 0.1 s time constant, and the discrete
-        // filter is exact at any step size: (e^(−Δt/τ))^n = e^(−nΔt/τ).
+        // Ten 0.01 s steps make one time constant. The filter is exact at any
+        // step size: (e^(−Δt/τ))^n = e^(−nΔt/τ).
         for (int i = 0; i < 10; i++)
             harness.EditorCamera.Update(harness.Frame(harness.CenterPixel, deltaTime: 0.01f));
 
@@ -444,14 +408,11 @@ public sealed class EditorCameraTests
         harness.EditorCamera.Update(harness.Frame(harness.CenterPixel)).ShouldBeFalse();
     }
 
-    // --- Open-world coordinates ----------------------------------------------
-
     [Fact]
     public void The_orbit_maths_is_identical_at_the_origin_and_a_million_units_out()
     {
-        // The whole reason focus/distance/angles are the authority and the
-        // position is derived: the orbit must not inherit the quantization of
-        // the coordinate it happens to be sitting at.
+        // Orbit state is focus, distance and angles. Position is derived, so the
+        // state doesn't pick up float quantisation far from the origin.
         var near = new ViewportHarness();
         var far = new ViewportHarness();
         var origin = Vector3.Zero;
@@ -490,9 +451,8 @@ public sealed class EditorCameraTests
         float.IsFinite(position.Z).ShouldBeTrue();
         harness.Scene.Camera.Forward.Length().ShouldBe(1f, 1e-5f);
 
-        // A float at 1e6 resolves to about 1/16 of a unit, so the DERIVED
-        // position can only be right to a few of those ulps; the orbit state
-        // itself is exact.
+        // A float at 1e6 resolves to about 1/16 unit, so the derived position
+        // gets a loose tolerance. The orbit state is exact.
         (position - distant).Length().ShouldBe(12f, 0.25f);
         harness.EditorCamera.Distance.ShouldBe(12f);
     }
@@ -510,8 +470,6 @@ public sealed class EditorCameraTests
         harness.Scene.Camera.Forward.Length().ShouldBe(1f, 1e-5f);
     }
 
-    // --- Handover ------------------------------------------------------------
-
     [Fact]
     public void Adopting_a_camera_keeps_its_position_and_its_view_direction()
     {
@@ -526,12 +484,10 @@ public sealed class EditorCameraTests
 
         harness.Scene.Camera.Forward.ShouldBe(forward);
         (harness.Scene.Camera.Position - position).Length().ShouldBe(0f, 1e-3f);
-        // The focus lands on what the camera was already looking at.
         (harness.EditorCamera.Focus - (position + forward * 25f)).Length().ShouldBe(0f, 1e-3f);
     }
 
-    // --- Helpers -------------------------------------------------------------
-
+    // Where the cursor ray crosses the focus plane.
     private static Vector3 FocusPlanePoint(ViewportHarness harness, Vector2 cursor)
     {
         Camera camera = harness.Scene.Camera;
@@ -541,9 +497,7 @@ public sealed class EditorCameraTests
         return ray.PointAt(travel);
     }
 
-    // Orbit is the MODIFIER gesture now that plain right-drag is a freelook, so
-    // every orbit here holds Alt. See EditorFreelookTests for the unmodified
-    // gesture.
+    // Plain right-drag is freelook. Orbit needs Alt.
     private static void OrbitDrag(ViewportHarness harness, Vector2 from, Vector2 to)
     {
         harness.EditorCamera.Update(harness.Frame(
@@ -552,8 +506,7 @@ public sealed class EditorCameraTests
             harness.Frame(to, down: PointerButtons.Right, modifiers: KeyModifiers.Alt));
     }
 
-    // One held-button step: the press edge is already behind us, so both frames
-    // carry the delta.
+    // No press edge, so both frames apply their delta.
     private static void OrbitStep(ViewportHarness harness, Vector2 from, Vector2 to)
     {
         harness.EditorCamera.Update(
@@ -562,35 +515,28 @@ public sealed class EditorCameraTests
             harness.Frame(to, down: PointerButtons.Right, modifiers: KeyModifiers.Alt));
     }
 
-    // --- Frames the arbiter withheld -----------------------------------------
-
     [Fact]
     public void Cursor_travel_withheld_by_a_marquee_never_arrives_as_one_look_step()
     {
-        // The controller measures its drag against the cursor position it last
-        // SAW, and it only sees the frames it is given. A marquee owns the
-        // pointer for its whole duration, so without being told it was skipped
-        // the controller applies every withheld pixel at once on the first frame
-        // it runs again — a frame on which the cursor did not move at all.
+        // The camera measures a drag from the last cursor position it saw, and
+        // it sees no frames while a marquee owns the pointer.
         var harness = new ViewportHarness();
         harness.Orbit(Vector3.Zero, 20f, 0f, 0f);
 
-        // A real look first, so the anchor the camera would snap from is a
-        // position it genuinely saw rather than a default.
+        // A real look first, so the camera has a stale anchor to jump from.
         harness.Viewport.Update(harness.Frame(
             new Vector2(400f, 300f), down: PointerButtons.Right, pressed: PointerButtons.Right));
         harness.Viewport.Update(harness.Frame(new Vector2(410f, 300f), down: PointerButtons.Right));
 
         float yaw = harness.EditorCamera.Yaw;
         float pitch = harness.EditorCamera.Pitch;
-        yaw.ShouldBe(10f * harness.EditorCamera.LookSensitivity, 1e-5f); // it really was looking
+        yaw.ShouldBe(10f * harness.EditorCamera.LookSensitivity, 1e-5f);
 
         harness.Viewport.Update(harness.Frame(new Vector2(410f, 300f), released: PointerButtons.Right));
         harness.EditorCamera.IsNavigating.ShouldBeFalse();
 
-        // Now a marquee across most of the viewport. The camera sits out every
-        // frame of it — and the right button arriving mid-marquee does not take
-        // the pointer back, so it sits out those frames too.
+        // A marquee. The right button going down mid-marquee does not take the
+        // pointer back.
         harness.Viewport.Update(harness.Frame(
             new Vector2(410f, 300f),
             down: PointerButtons.Left,
@@ -605,15 +551,12 @@ public sealed class EditorCameraTests
             new Vector2(700f, 500f), down: PointerButtons.Right, released: PointerButtons.Left))
             .ShouldBe(ViewportDragMode.None);
 
-        // The first frame the camera runs again. The cursor has not moved since
-        // the release, so the camera must not move either — 290 px of withheld
-        // travel is sitting in the stale anchor.
+        // First frame the camera runs again. The cursor hasn't moved since the
+        // release, but the stale anchor is 290 px away.
         harness.Viewport.Update(harness.Frame(new Vector2(700f, 500f), down: PointerButtons.Right));
         harness.EditorCamera.Yaw.ShouldBe(yaw);
         harness.EditorCamera.Pitch.ShouldBe(pitch);
 
-        // And navigation resumes from where the cursor now is, not from where
-        // it was before the marquee.
         harness.Viewport.Update(harness.Frame(new Vector2(710f, 500f), down: PointerButtons.Right));
         harness.EditorCamera.Yaw.ShouldBe(yaw + 10f * harness.EditorCamera.LookSensitivity, 1e-5f);
     }
@@ -638,10 +581,8 @@ public sealed class EditorCameraTests
             harness.ViewportSize, harness.Gizmos.Active.HandlePixelSize).AxisLength;
         Vector2 handlePixel = harness.WorldToScreen(Vector3.UnitX * (axisLength * 0.8f));
 
-        // Grab the x arrow, then bring the look button down mid-drag. Right is
-        // pressed while the manipulator owns the pointer, so it reaches the
-        // gizmo's cancel binding and not the camera; either way the camera is
-        // skipped for the whole gesture.
+        // Grab the x arrow, then press right mid-drag. That press goes to the
+        // gizmo as a cancel, not to the camera.
         harness.Viewport.Update(harness.Frame(
             handlePixel, down: PointerButtons.Left, pressed: PointerButtons.Left))
             .ShouldBe(ViewportDragMode.Manipulate);
@@ -661,9 +602,7 @@ public sealed class EditorCameraTests
     [Fact]
     public void Resetting_the_viewport_also_re_anchors_the_camera()
     {
-        // Same hazard through a different door: a host that resets while the
-        // look button is down (a minimized window, an undo mid-gesture) skips
-        // the camera for as long as it takes to come back.
+        // A reset while the look button is down also leaves a stale anchor.
         var harness = new ViewportHarness();
         harness.Orbit(Vector3.Zero, 20f, 0f, 0f);
 
@@ -702,13 +641,8 @@ public sealed class EditorCameraTests
     ];
 }
 
-/// <summary>
-/// Pixel-space assertions the viewport suites share — the screen-space
-/// counterpart of <see cref="VectorAssertions"/>.
-/// </summary>
 internal static class PixelAssertions
 {
-    /// <summary>Distance in pixels, so a failure reads as "it drifted N pixels".</summary>
     public static void ShouldBeCloseTo(this Vector2 actual, Vector2 expected, float tolerance) =>
         (actual - expected).Length().ShouldBe(0f, tolerance,
             $"expected {expected} but was {actual}");

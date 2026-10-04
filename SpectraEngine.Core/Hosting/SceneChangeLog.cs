@@ -6,41 +6,15 @@ namespace SpectraEngine.Core.Hosting;
 
 /// <summary>
 /// Accumulates the scene's structural events between snapshots, so a shell's
-/// tree view can be updated incrementally instead of rebuilt.
+/// tree view can be updated incrementally instead of rebuilt. Render thread only.
 /// </summary>
-/// <remarks>
-/// <b>A tree view that rebuilds itself every frame is not an option at this
-/// engine's scale.</b> The measured ceiling is around 25,000 nodes; re-walking
-/// that to refresh a panel would cost more than rendering the frame, and would
-/// throw away every expansion and scroll position the user had. So the engine
-/// reports what changed, and the shell applies it.
-/// <para>
-/// <b>Three events, not two.</b> Adds and removes come from the membership
-/// events, but a reparent within one scene raises neither, because nothing
-/// entered or left the graph. <c>Scene.NodeReparented</c> exists for exactly
-/// that hole, and a log without it desynchronises silently the first time
-/// somebody drags a node onto another in the very tree this feeds.
-/// </para>
-/// <para>
-/// <b>Transform changes are deliberately NOT logged.</b> They fire for every
-/// moved node every frame an animation runs, which at the engine's own demo
-/// rate is hundreds a second, and a tree view does not show positions. An
-/// inspector wants them, and wants the current value rather than the history,
-/// so it reads the selection's values out of the snapshot instead.
-/// </para>
-/// <para>
-/// <b>Threading:</b> the engine calls every member on the render thread, inside
-/// the scene's own event dispatch. <see cref="Drain"/> hands ownership of the
-/// batch across to whoever consumes the snapshot, and the log starts a fresh
-/// one, so nothing is shared after the hand-off.
-/// </para>
-/// </remarks>
+// Transform changes are not logged: they fire per moved node per frame, and
+// an inspector reads current values from the snapshot instead.
 public sealed class SceneChangeLog
 {
     /// <summary>
-    /// How many changes may pile up before the log stops recording individual
-    /// ones and reports a reset instead. A shell that has fallen this far
-    /// behind is better served rebuilding than replaying.
+    /// How many changes may pile up before the log stops recording and reports
+    /// an overflow instead.
     /// </summary>
     public const int DefaultCapacity = 4096;
 
@@ -66,11 +40,6 @@ public sealed class SceneChangeLog
     /// incomplete and a consumer must rebuild rather than replay. Cleared by
     /// <see cref="Drain"/> along with the batch.
     /// </summary>
-    /// <remarks>
-    /// <b>Reported rather than silently truncated.</b> A tree view fed a partial
-    /// log looks right and is wrong, which is far worse than one told to start
-    /// over: the engine's standing rule is that nothing degrades silently.
-    /// </remarks>
     public bool Overflowed { get; private set; }
 
     /// <summary>How many changes are waiting in the current batch.</summary>
@@ -79,13 +48,8 @@ public sealed class SceneChangeLog
     /// <summary>
     /// Starts recording <paramref name="scene"/>'s structural events, detaching
     /// from whichever scene was previously observed. Passing null detaches.
+    /// A swap is reported as an overflow, so the consumer rebuilds.
     /// </summary>
-    /// <remarks>
-    /// A scene swap is reported as an overflow rather than as a list of removes
-    /// and adds: the shell's view of the old graph is worthless either way, and
-    /// enumerating a whole scene into a change log to say so would be the
-    /// rebuild it is trying to avoid, done twice.
-    /// </remarks>
     public void Observe(Scene.Scene? scene)
     {
         if (ReferenceEquals(_scene, scene))
@@ -109,15 +73,13 @@ public sealed class SceneChangeLog
             scene.NodeRenamed += OnNodeRenamed;
         }
 
-        // Whatever was queued described a graph that is no longer on screen.
         _changes.Clear();
         Overflowed = true;
     }
 
     /// <summary>
     /// Hands the accumulated batch to the caller and starts a fresh one,
-    /// reporting whether the batch is complete. Returns an empty list and false
-    /// when nothing happened, which is the common case.
+    /// reporting whether the batch overflowed.
     /// </summary>
     public (IReadOnlyList<SceneChange> Changes, bool Overflowed) Drain()
     {
@@ -127,10 +89,8 @@ public sealed class SceneChangeLog
         if (_changes.Count == 0)
             return (Array.Empty<SceneChange>(), overflowed);
 
-        // Hand the list over rather than copying it: the consumer holds it as
-        // an immutable batch, and the log allocates the next one. Reusing a
-        // single list would mean the snapshot's contents changed underneath a
-        // UI thread that had not read it yet.
+        // Hand the list over and allocate a new one: reusing it would change
+        // a snapshot's contents under a UI thread still reading it.
         List<SceneChange> batch = _changes;
         _changes = new List<SceneChange>(Math.Min(batch.Count, _capacity));
         return (batch, overflowed);
@@ -148,9 +108,7 @@ public sealed class SceneChangeLog
     {
         if (_changes.Count >= _capacity)
         {
-            // Stop recording rather than grow without bound: a shell this far
-            // behind is going to rebuild anyway, and an unbounded list on the
-            // render thread is how a stalled UI thread becomes an engine leak.
+            // Bounded, so a stalled UI thread cannot grow this without limit.
             Overflowed = true;
             return;
         }

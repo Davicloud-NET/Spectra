@@ -6,18 +6,11 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The W4 scene swap path: a landing background compile must create GPU
-/// meshes ONLY for the chunks an edit actually changed and destroy ONLY the
-/// replaced/removed chunks' meshes (dirty-cell-only churn, observed through
-/// <see cref="FakeRenderer"/>), and a CreateMesh failure mid-swap must leave
-/// the previous world — every chunk of it — renderable (create-before-destroy,
-/// per cell). Headless like the other scene compile suites: the test thread
-/// plays the render thread and pumps
-/// <see cref="Scene.ProcessStaticWorldCompilation"/> exactly as the engine
-/// does. Cell landmarks: with a 2-unit cube brush, position (16,16,16) sits
-/// mid-cell (0,0,0), (80,16,16) mid-cell (2,0,0), and (144,16,16) mid-cell
-/// (4,0,0).
+/// The chunk mesh swap: a landed compile creates and destroys GPU meshes only for
+/// changed cells, and a failed swap leaves the previous world renderable.
 /// </summary>
+// With a 2-unit cube brush, (16,16,16) is mid-cell (0,0,0), (80,16,16) mid-cell
+// (2,0,0) and (144,16,16) mid-cell (4,0,0).
 public sealed class SceneChunkMeshTests
 {
     [Fact]
@@ -29,7 +22,7 @@ public sealed class SceneChunkMeshTests
         AddUnitBoxNode(scene, "far", new Vector3(144f, 16f, 16f));                      // cell (4,0,0)
 
         PumpUntil(scene, renderer, logger, () => scene.StaticWorldCompileCount == 1);
-        renderer.CreatedMeshes.Count.ShouldBe(3); // one GPU mesh per occupied cell
+        renderer.CreatedMeshes.Count.ShouldBe(3);
         scene.StaticWorldChunkMeshes.Count.ShouldBe(3);
         scene.TryGetStaticWorldChunkMesh(new ChunkCoord(0, 0, 0), out StaticWorldChunkMesh editedBefore).ShouldBeTrue();
         scene.TryGetStaticWorldChunkMesh(new ChunkCoord(2, 0, 0), out StaticWorldChunkMesh midBefore).ShouldBeTrue();
@@ -38,8 +31,6 @@ public sealed class SceneChunkMeshTests
         edited.LocalPosition = new Vector3(18f, 16f, 16f); // still mid-cell (0,0,0)
         PumpUntil(scene, renderer, logger, () => scene.StaticWorldCompileCount == 2);
 
-        // Exactly one cell re-meshed and re-uploaded; the other two chunks
-        // kept their artifact AND their GPU mesh, untouched.
         scene.StaticWorld.ShouldNotBeNull().MeshStats.ShouldBe(new CsgMeshStats(Reused: 2, Built: 1));
         renderer.CreatedMeshes.Count.ShouldBe(4);
         editedBefore.SingleFakeMesh().Disposed.ShouldBeTrue();
@@ -72,8 +63,6 @@ public sealed class SceneChunkMeshTests
         mover.LocalPosition = new Vector3(48f, 16f, 16f); // into cell (1,0,0)
         PumpUntil(scene, renderer, logger, () => scene.StaticWorldCompileCount == 2);
 
-        // The departed cell's mesh is destroyed (nothing owns geometry there
-        // any more), the arrival cell gets a fresh one, the anchor is carried.
         scene.StaticWorldChunkMeshes.Count.ShouldBe(2);
         scene.TryGetStaticWorldChunkMesh(new ChunkCoord(0, 0, 0), out _).ShouldBeFalse();
         oldCell.SingleFakeMesh().Disposed.ShouldBeTrue();
@@ -96,16 +85,13 @@ public sealed class SceneChunkMeshTests
         StaticWorldChunkMesh[] before = [.. scene.StaticWorldChunkMeshes];
         before.Length.ShouldBe(3);
 
-        // Two cells go dirty, but the swap's budget covers only ONE creation:
-        // the second CreateMesh throws mid-batch, exercising the rollback of
-        // an already-created replacement.
+        // Two dirty cells, budget for one: the second CreateMesh throws after
+        // the first replacement already exists.
         a.LocalPosition = new Vector3(18f, 16f, 16f);
         c.LocalPosition = new Vector3(146f, 16f, 16f);
         renderer.CreateMeshBudget = 1;
         PumpUntilCreateMeshFails(scene, renderer, logger);
 
-        // The previous world — every chunk of it — is still what renders:
-        // same world, same map entries, no old mesh destroyed.
         scene.StaticWorld.ShouldBeSameAs(previousWorld);
         scene.StaticWorldChunkMeshes.Count.ShouldBe(3);
         for (int i = 0; i < before.Length; i++)
@@ -114,35 +100,27 @@ public sealed class SceneChunkMeshTests
             before[i].SingleFakeMesh().Disposed.ShouldBeFalse();
         }
 
-        // The one replacement that WAS created got rolled back, not leaked.
+        // The replacement that was created is rolled back, not leaked.
         renderer.CreatedMeshes.Count.ShouldBe(4);
         renderer.CreatedMeshes[3].Disposed.ShouldBeTrue();
 
-        // With the budget restored, a re-armed pump completes the swap.
         renderer.CreateMeshBudget = int.MaxValue;
         scene.MarkStaticWorldDirty();
         PumpUntil(scene, renderer, logger, () => scene.StaticWorldCompileCount == 2);
 
         scene.StaticWorldChunkMeshes.Count.ShouldBe(3);
-        before[0].SingleFakeMesh().Disposed.ShouldBeTrue(); // cell (0,0,0): replaced now
-        before[2].SingleFakeMesh().Disposed.ShouldBeTrue(); // cell (4,0,0): replaced now
+        before[0].SingleFakeMesh().Disposed.ShouldBeTrue(); // cell (0,0,0)
+        before[2].SingleFakeMesh().Disposed.ShouldBeTrue(); // cell (4,0,0)
         scene.TryGetStaticWorldChunkMesh(new ChunkCoord(2, 0, 0), out StaticWorldChunkMesh untouched).ShouldBeTrue();
-        untouched.SingleMesh().ShouldBeSameAs(before[1].SingleMesh()); // cell (2,0,0): still carried
+        untouched.SingleMesh().ShouldBeSameAs(before[1].SingleMesh());
         untouched.SingleFakeMesh().Disposed.ShouldBeFalse();
     }
 
     [Fact]
     public void Failed_swap_restores_the_consumed_dirty_cells_for_the_next_compile()
     {
-        // Regression: the harvest used to commit its compile bookkeeping
-        // (dirty cells consumed, carry advanced to the landed-but-unpublished
-        // world) BEFORE the fallible GPU swap. After a mid-swap CreateMesh
-        // throw the edits' dirty cells were silently dropped: the published
-        // world still lacked them, and the fault-restoration path could later
-        // re-pair the OLD world with a dirty set that no longer covered the
-        // changed brushes — stale geometry (or a debug trusted-diff fault
-        // loop). The swap failure must fold the consumed dirty cells back so
-        // the next compile re-covers them against the still-published world.
+        // If a failed swap dropped the dirty cells it consumed, the published
+        // world would keep stale geometry for those edits.
         var (scene, renderer, logger) = CreateScene();
         SceneNode a = AddUnitBoxNode(scene, "a", new Vector3(16f, 16f, 16f));   // cell (0,0,0)
         AddUnitBoxNode(scene, "b", new Vector3(80f, 16f, 16f));                 // cell (2,0,0)
@@ -154,10 +132,8 @@ public sealed class SceneChunkMeshTests
         renderer.CreateMeshBudget = 1;
         PumpUntilCreateMeshFails(scene, renderer, logger);
 
-        // Re-arm with NO further edits: the next compile's dirty set must be
-        // exactly the failed swap's restored cells, proving they were folded
-        // back rather than dropped (an unchanged scene would otherwise report
-        // an empty set).
+        // No further edits: an unchanged scene would report an empty dirty
+        // set, so these cells can only come from the failed swap.
         renderer.CreateMeshBudget = int.MaxValue;
         scene.MarkStaticWorldDirty();
         PumpUntil(scene, renderer, logger, () => scene.StaticWorldCompileCount == 2);
@@ -165,21 +141,17 @@ public sealed class SceneChunkMeshTests
         scene.LastCompileDirtyCells.ShouldBe(
             new[] { new ChunkCoord(0, 0, 0), new ChunkCoord(4, 0, 0) });
 
-        // And the recovered world actually carries the edits: a and c render
-        // at their new positions (fresh meshes for their cells), b untouched.
         CsgWorld world = scene.StaticWorld.ShouldNotBeNull();
         world.ContainsPoint(new Vector3(18f, 16f, 16f)).ShouldBeTrue();
         world.ContainsPoint(new Vector3(146f, 16f, 16f)).ShouldBeTrue();
         world.ContainsPoint(new Vector3(15.5f, 16f, 16f)).ShouldBeFalse(); // vacated by a's move
     }
 
-    // --- Helpers ------------------------------------------------------------
-
     private static (Scene Scene, FakeRenderer Renderer, CapturingLogger Logger) CreateScene() =>
         (new Scene("Test"), new FakeRenderer(), new CapturingLogger());
 
-    // A 2-unit cube brush node at `position` — comfortably inside one cell
-    // unless placed within a brush-half-extent (plus weld band) of a border.
+    // A 2-unit cube. Stays inside one cell unless it is within a half extent
+    // plus the weld band of a border.
     private static SceneNode AddUnitBoxNode(Scene scene, string name, Vector3 position)
     {
         SceneNode node = scene.Root.CreateChild(name);
@@ -188,7 +160,6 @@ public sealed class SceneChunkMeshTests
         return node;
     }
 
-    // Same slow-machine-proof pump loop as the other scene compile suites.
     private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(30);
 
     private static void PumpUntil(Scene scene, FakeRenderer renderer, CapturingLogger logger, Func<bool> condition)
@@ -206,8 +177,6 @@ public sealed class SceneChunkMeshTests
         }
     }
 
-    // Pumps until the harvest attempts its GPU swap and the budgeted
-    // CreateMesh throws out of the pump — the failure mode under test.
     private static void PumpUntilCreateMeshFails(Scene scene, FakeRenderer renderer, CapturingLogger logger)
     {
         var stopwatch = Stopwatch.StartNew();

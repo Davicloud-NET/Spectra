@@ -3,16 +3,7 @@ using SpectraEngine.Editing.Commands;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// What a property will accept, and the words for saying it did not.
-/// </summary>
-/// <remarks>
-/// <b>One rule, two readers.</b> The editor refuses a light range of zero
-/// because the setter throws rather than clamps, and a command carrying one
-/// would throw halfway through an open transaction. The panel refuses the same
-/// value before posting so it can say why. Two hand-written copies of that rule
-/// would agree exactly until one of them was corrected.
-/// </remarks>
+/// <summary>What a property will accept, and the refusal text when it does not.</summary>
 public sealed class PropertyLimitsTests
 {
     [Theory]
@@ -24,8 +15,6 @@ public sealed class PropertyLimitsTests
     {
         string refusal = PropertyLimits.Refusal(PropertyId.LightRange, value).ShouldNotBeNull();
 
-        // The bound is NAMED, because "invalid" tells somebody nothing about
-        // what to type instead.
         refusal.ShouldContain("greater than 0");
     }
 
@@ -52,9 +41,7 @@ public sealed class PropertyLimitsTests
     [Fact]
     public void Everything_else_is_allowed_here()
     {
-        // The angles and extents clamp in Light's own setters rather than
-        // throwing, so a value past their ends means "as far as it goes" and is
-        // not this class's business.
+        // Angles and extents clamp in Light's setters; they do not throw.
         PropertyLimits.Refusal(PropertyId.LightOuterAngle, -20f).ShouldBeNull();
         PropertyLimits.Refusal(PropertyId.LightWidth, 0f).ShouldBeNull();
         PropertyLimits.Refusal(PropertyId.Position, float.NaN).ShouldBeNull();

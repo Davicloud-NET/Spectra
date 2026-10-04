@@ -4,24 +4,11 @@
              x:Class="SpectraEngine.Editor.Shell.StartPage"
              Background="{StaticResource SpectraBgApp}">
 
-  <!--
-    The launch experience: what shows instead of a viewport until a project is
-    open. This page exists BEFORE any engine session, so it is ordinary
-    Avalonia with no airspace constraint - the one place in the shell that can
-    lay out freely.
-
-    It lays out like the rest of the tool rather than like a landing page:
-    full-bleed columns instead of a centred island, a dense keyboard-navigable
-    list instead of a grid of tiles, and one slim header instead of a hero.
-    Every editor a Spectra user already knows (VS, Rider, Studio) opens onto a
-    list of things to reopen with the verbs beside it, because the common case
-    is "carry on with what I had", not "admire the logo".
-  -->
+  <!-- Shown until a project is open. No engine session exists yet. -->
 
   <UserControl.Resources>
-    <!-- Shared by every recent row; DataContext arrives from the row that
-         opened it. Remove is list hygiene, not deletion: it forgets the entry
-         and touches nothing on disk, and the wording says so. -->
+    <!-- Shared by every recent row; DataContext comes from the row that
+         opened it. Remove only forgets the entry, nothing on disk changes. -->
     <ContextMenu x:Key="RecentMenu" x:DataType="shell:RecentProjectRow">
       <MenuItem Header="Open" Click="OnRecentMenuOpen" />
       <MenuItem Header="Show in Explorer" Click="OnRecentMenuReveal" />
@@ -31,10 +18,7 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
-    <!-- Dense list rows, the tool idiom: a fill on hover and selection, no
-         border and no card. A bordered rounded tile per entry is what a
-         marketing page does with a list of six things; it costs three times
-         the vertical space and still says less. -->
+    <!-- Flat list rows: a fill on hover and selection, no border, no card. -->
     <Style Selector="ListBoxItem">
       <Setter Property="Padding" Value="0" />
       <Setter Property="Margin" Value="0" />
@@ -58,9 +42,8 @@
     <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource SpectraRowHover}" />
     </Style>
-    <!-- Without the pressed pair, Fluent's own :pressed trigger wins the tie
-         and clicking a recent project flashed the stock grey - a stock-theme
-         tell on the first screen anyone sees. -->
+    <!-- Without the pressed pair Fluent's own :pressed trigger wins the tie
+         and a click flashes the stock grey. -->
     <Style Selector="ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{StaticResource SpectraRowHover}" />
     </Style>
@@ -74,8 +57,6 @@
       <Setter Property="Background" Value="{StaticResource SpectraRowSelected}" />
     </Style>
 
-    <!-- The action rail. Left-aligned text with a leading glyph, full width:
-         a menu of verbs, not a row of call-to-action buttons. -->
     <Style Selector="Button.action">
       <Setter Property="Height" Value="30" />
       <Setter Property="Padding" Value="8,0" />
@@ -126,8 +107,6 @@
       <Setter Property="Stroke" Value="{StaticResource SpectraAccent}" />
     </Style>
 
-    <!-- Column headings: the quietest text on the page, because they are read
-         once and then never again. -->
     <Style Selector="TextBlock.colhead">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
@@ -135,13 +114,9 @@
     </Style>
   </UserControl.Styles>
 
-  <!-- No header of its own: the window's own bar is directly above this page
-       and already carries the File menu, so identity goes there rather than
-       in a second bar under the first. -->
+  <!-- No header here: the window's own bar sits directly above this page. -->
   <DockPanel>
 
-    <!-- ─── Action rail ────────────────────────────────
-         Fixed width on the left, where a tool's verbs live. -->
     <Border DockPanel.Dock="Left" Width="236"
             Background="{StaticResource SpectraBgPanel}"
             BorderBrush="{StaticResource SpectraBorderStrong}"
@@ -166,14 +141,7 @@
             </StackPanel>
           </Button>
 
-          <!-- Scaffolding, and therefore CONDITIONAL. This paragraph used to be
-               permanent: the one thing a new user read on first launch was a
-               note about the on-disk layout, and it was also the thing a
-               returning user read forever. It is shown while there is nothing
-               to reopen, which is exactly when an explanation is worth reading,
-               and it disappears the moment the page has real content - which is
-               how instructional support should fade, by demonstrated skill
-               rather than by a timer. -->
+          <!-- Shown only while there are no recent projects. -->
           <StackPanel x:Name="FirstRunHelp" Spacing="9">
             <Border Height="1" Background="{StaticResource SpectraBorderSoft}" Margin="8,12,4,3" />
             <TextBlock TextWrapping="Wrap" Margin="8,0,4,0"
@@ -188,9 +156,6 @@
       </StackPanel>
     </Border>
 
-    <!-- ─── Recents ────────────────────────────────────
-         The page's real content, and the reason it exists: reopen what you
-         were working on, by keyboard if you like. -->
     <DockPanel Margin="14,10,14,12">
 
       <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
@@ -198,18 +163,13 @@
                    FontSize="{StaticResource SpectraFontBase}"
                    Foreground="{StaticResource SpectraTextBody}"
                    VerticalAlignment="Center" />
-        <!-- Hidden below a handful of rows: a filter box over three items is a
-             control that can only ever remove things from a list you can
-             already see all of. -->
+        <!-- Hidden while the list is short enough to read at a glance. -->
         <TextBox Grid.Column="2" x:Name="FilterBox" Classes="field" Width="180"
                  PlaceholderText="Filter"
                  TextChanged="OnFilterChanged" KeyDown="OnFilterKeyDown" />
       </Grid>
 
-      <!-- Column headings sit outside the scroll, so they stay put - and are
-           hidden until there is a column's worth of rows to head. Three
-           spreadsheet headings over ONE row is the shape of a table with the
-           table missing. -->
+      <!-- Outside the scroll so they stay put. Hidden for a single row. -->
       <StackPanel x:Name="ColumnHeadings" DockPanel.Dock="Top">
         <Grid ColumnDefinitions="*,1.6*,Auto" Margin="8,0,10,4">
           <TextBlock Grid.Column="0" Classes="colhead" Text="Name" />
@@ -219,9 +179,7 @@
         <Border Height="1" Background="{StaticResource SpectraBorderSoft}" Margin="0,0,0,2" />
       </StackPanel>
 
-      <!-- The page with nothing on it. It gets the three doors again, in the
-           middle of the column where the eye already is, rather than one grey
-           sentence at the top of 750px of nothing. -->
+      <!-- Empty state. Repeats the three actions in the main column. -->
       <StackPanel x:Name="EmptyState" DockPanel.Dock="Top" Margin="8,26,8,0"
                   MaxWidth="480" HorizontalAlignment="Left" Spacing="14">
         <TextBlock x:Name="EmptyTitle" Text="Nothing open yet."
@@ -255,8 +213,6 @@
                            Foreground="{StaticResource SpectraTextEmphasis}"
                            TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center" />
-                <!-- The path is a VALUE, so it wears mono: it is the thing
-                     that tells two same-named projects apart. -->
                 <TextBlock Grid.Column="1" Text="{Binding Location}"
                            FontFamily="{StaticResource SpectraFontMono}"
                            FontSize="{StaticResource SpectraFontSmall}"

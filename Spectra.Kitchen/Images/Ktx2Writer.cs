@@ -8,38 +8,14 @@ using System.Text;
 namespace Spectra.Kitchen.Images;
 
 /// <summary>
-/// Writes a <c>.simage</c>: spec-conformant KTX2 restricted to the profile
-/// <see cref="SimageFormat"/> describes.
+/// Writes a <c>.simage</c>: KTX2 restricted to the <see cref="SimageFormat"/> profile.
+/// The output depends only on the arguments.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The bytes are a pure function of the arguments</b>, which is the whole
-/// reason a cook can be content-addressed at all: no clock, no path, no
-/// dictionary iteration, no host detail. Every reserved and unused field is
-/// written as an explicit zero rather than left to whatever a rented buffer held,
-/// for the reason <c>PackWriter</c> already records - an unzeroed field picks up
-/// stack garbage and turns a byte-identity oracle red in a way that is very hard
-/// to bisect.
-/// </para>
-/// <para>
-/// <b>Level data is stored SMALLEST FIRST while the level index is written base
-/// first.</b> Both are the KTX2 spec's, and they exist for streaming: a reader
-/// that wants a low-resolution image first reads the front of the file. Getting
-/// the pairing backwards produces a file that parses perfectly and uploads the
-/// 1x1 level as the base, which renders as a flat colour up close.
-/// </para>
-/// <para>
-/// <b>The DFD is written and never read back.</b> KTX2 requires one and external
-/// tools use it; <see cref="SimageReader"/> deliberately parses none, because a
-/// conforming DFD parser is most of the reader cost the restricted profile exists
-/// to avoid. It is therefore written from a table keyed on the format rather than
-/// derived, and the table is small enough to read in one sitting.
-/// </para>
-/// </remarks>
+// KTX2 stores level data smallest first but the level index base first.
+// The DFD is required by the spec and used by external tools; SimageReader never parses it.
 public static class Ktx2Writer
 {
-    // KHR_DF_MODEL_*. The BC family starts at 128; RGBSDA is the uncompressed
-    // one. Values from the Khronos Data Format specification 1.3.
+    // KHR_DF_MODEL_*, Khronos Data Format 1.3.
     private const byte ModelRgbsda = 1;
     private const byte ModelBc1A = 128;
     private const byte ModelBc3 = 130;
@@ -52,7 +28,7 @@ public static class Ktx2Writer
     private const byte TransferLinear = 1;
     private const byte TransferSrgb = 2;
 
-    // Sample qualifier bits, packed into the high nibble of the channel byte.
+    // Qualifier bit in the high nibble of the channel byte.
     private const byte ChannelFloat = 0x80;
 
     // KHR_DF_CHANNEL_RGBSDA_*.
@@ -64,21 +40,11 @@ public static class Ktx2Writer
     private const int BasicBlockHeaderBytes = 24;
     private const int SampleBytes = 16;
 
-    /// <summary>
-    /// Assembles the file.
-    /// </summary>
-    /// <param name="format">The block or pixel format every level is stored in.</param>
-    /// <param name="width">Base level width in texels.</param>
-    /// <param name="height">Base level height in texels.</param>
+    /// <summary>Assembles the file.</summary>
     /// <param name="levels">
-    /// Every level's tightly packed bytes, MOST DETAILED FIRST. Each must be
-    /// exactly the size its own dimensions imply, which is checked.
+    /// Each level's tightly packed bytes, most detailed first. Sizes are checked.
     /// </param>
-    /// <param name="rowOrder">Which end of the picture level row 0 is.</param>
     /// <param name="profileVersion">Value of the <c>SpectraProfile</c> key.</param>
-    /// <exception cref="ArgumentException">
-    /// A level is the wrong size for its dimensions, or there are no levels.
-    /// </exception>
     public static byte[] Write(
         TextureFormat format,
         int width,
@@ -93,10 +59,7 @@ public static class Ktx2Writer
         if (levels.Count == 0)
             throw new ArgumentException("A .simage carries at least one level.", nameof(levels));
 
-        // Checked here rather than trusted, because a level that is one block
-        // short still writes a valid-looking index and the reader's own length
-        // check would then reject the cooker's own output at LOAD time - which is
-        // a failure in the wrong build, hours later.
+        // A short level would still write a valid index and only fail at load.
         for (int level = 0; level < levels.Count; level++)
         {
             int levelWidth = Math.Max(1, width >> level);
@@ -120,9 +83,7 @@ public static class Ktx2Writer
         int dfdOffset = SimageFormat.LevelIndexOffset + levelIndexBytes;
         int kvdOffset = dfdOffset + dfd.Length;
 
-        // Every level offset is a multiple of the format's mip padding, and the
-        // levels are laid out smallest first. The alignment is what lets a
-        // mapped payload reach the GPU with no copy.
+        // Smallest level first. Aligned so a mapped payload uploads without a copy.
         int alignment = SimageFormat.LevelAlignment(format);
         var offsets = new long[levels.Count];
         long at = Align(kvdOffset + kvd.Length, alignment);
@@ -132,8 +93,7 @@ public static class Ktx2Writer
             at = Align(at + levels[level].Length, alignment);
         }
 
-        // The trailing pad of the LAST-written (i.e. base) level is not emitted:
-        // padding exists to align what follows, and nothing follows.
+        // No padding after the base level, which is written last.
         long totalBytes = offsets[0] + levels[0].Length;
         var file = new byte[checked((int)totalBytes)];
 
@@ -160,9 +120,7 @@ public static class Ktx2Writer
             WriteU64(file, entry, (ulong)offsets[level]);
             WriteU64(file, entry + 8, (ulong)levels[level].Length);
 
-            // With no supercompression the two lengths are equal by spec. Written
-            // explicitly rather than left zero, because a zero here is a legal
-            // encoding of "unknown" that some readers act on.
+            // Uncompressed length. Zero would mean "unknown" and some readers act on it.
             WriteU64(file, entry + 16, (ulong)levels[level].Length);
         }
 
@@ -174,10 +132,7 @@ public static class Ktx2Writer
         return file;
     }
 
-    // Keys are sorted by codepoint, which KTX2 requires. The two this profile
-    // writes are already in that order ('K' before 'S'), and they are written in
-    // that order literally rather than sorted at runtime, because a sort is a
-    // place a comparer's culture could get in and change the bytes.
+    // KTX2 requires keys sorted by codepoint. The two keys are written in that order by hand.
     private static byte[] BuildKeyValueData(SimageRowOrder rowOrder, int profileVersion)
     {
         string orientation = rowOrder == SimageRowOrder.BottomUp
@@ -187,9 +142,6 @@ public static class Ktx2Writer
         var bytes = new List<byte>(64);
         AppendPair(bytes, SimageFormat.OrientationKey, orientation);
 
-        // Invariant formatting, for the reason the console's number parsing gives:
-        // a value that renders differently on a machine with another culture is a
-        // cooked byte that depends on who ran the cook.
         AppendPair(bytes, SimageFormat.ProfileKey, profileVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         return [.. bytes];
@@ -197,9 +149,8 @@ public static class Ktx2Writer
 
     private static void AppendPair(List<byte> bytes, string key, string value)
     {
-        // Both halves are NUL-terminated: the key because KTX2 says so, the value
-        // because these two are string values and a reader that takes the whole
-        // remainder would otherwise hand back the padding as part of it.
+        // KTX2 requires the NUL after the key. The one after the value keeps
+        // the padding out of a string a reader takes whole.
         byte[] keyBytes = Encoding.UTF8.GetBytes(key);
         byte[] valueBytes = Encoding.UTF8.GetBytes(value);
         int pairLength = keyBytes.Length + 1 + valueBytes.Length + 1;
@@ -215,9 +166,7 @@ public static class Ktx2Writer
         while (bytes.Count % 4 != 0) bytes.Add(0);
     }
 
-    // One basic descriptor block, which is all a single-plane format needs. The
-    // sample table is what varies: a format's channels, where each sits in the
-    // block, and how wide it is.
+    // One basic descriptor block; every format here is single-plane.
     private static byte[] BuildDataFormatDescriptor(TextureFormat format)
     {
         (byte model, Sample[] samples) = DescribeFormat(format);
@@ -232,11 +181,7 @@ public static class Ktx2Writer
         dfd[12] = model;
         dfd[13] = PrimariesBt709;
 
-        // Always LINEAR, because the cooker always writes the UNORM vkFormat: the
-        // colour space is a property of the material SLOT rather than of the
-        // image, so the file must not claim one. The two would otherwise be free
-        // to disagree, and KTX2 carries sRGB-ness twice precisely so that they
-        // cannot.
+        // Linear, to match the UNORM vkFormat. Colour space belongs to the material slot.
         dfd[14] = TransferLinear;
         dfd[15] = 0;                                 // flags: straight (unpremultiplied) alpha
 
@@ -245,20 +190,19 @@ public static class Ktx2Writer
         dfd[18] = 0;                                 // depth: one texel
         dfd[19] = 0;                                 // no fourth dimension
         dfd[20] = (byte)TextureFormatInfo.BytesPerBlock(format);   // bytesPlane0
-        // bytesPlane1..7 stay zero: every format here is single-plane.
+        // bytesPlane1..7 stay zero.
 
         for (int i = 0; i < samples.Length; i++)
         {
             int at = 4 + BasicBlockHeaderBytes + i * SampleBytes;
             Sample sample = samples[i];
 
-            // bitLength is stored one less than the real width, which is what
-            // lets a 128-bit BC7 block fit in eight bits.
+            // bitLength is stored minus one.
             WriteU32(dfd, at, (uint)sample.BitOffset
                 | ((uint)(sample.BitLength - 1) << 16)
                 | ((uint)sample.Channel << 24));
 
-            // samplePosition[0..3] stay zero: no format here is subsampled.
+            // samplePosition stays zero: nothing is subsampled.
             WriteU32(dfd, at + 8, sample.Lower);
             WriteU32(dfd, at + 12, sample.Upper);
         }
@@ -268,13 +212,10 @@ public static class Ktx2Writer
 
     private static (byte Model, Sample[] Samples) DescribeFormat(TextureFormat format) => format switch
     {
-        // One whole 64-bit block is one sample for the BC families whose colour
-        // is not separable into channels; the sample bounds are the conventional
-        // full-range pair the KDF spec gives for them.
+        // BC colour is not separable into channels, so a whole block is one sample.
         TextureFormat.Bc1 => (ModelBc1A, [new Sample(0, 64, ChannelRed, 0, uint.MaxValue)]),
 
-        // BC3 stores alpha in the first 64 bits and colour in the second, which
-        // is why it has two samples and BC7 has one.
+        // Alpha block first, then colour.
         TextureFormat.Bc3 => (ModelBc3,
         [
             new Sample(0, 64, ChannelAlpha, 0, uint.MaxValue),
@@ -289,8 +230,7 @@ public static class Ktx2Writer
             new Sample(64, 64, ChannelGreen, 0, uint.MaxValue),
         ]),
 
-        // The FLOAT qualifier and the float-bit-pattern bounds: BC6H decodes to
-        // half-floats, so a 0..255 range would describe a different format.
+        // BC6H decodes to half-floats: float qualifier, float bit-pattern upper bound.
         TextureFormat.Bc6H => (ModelBc6H,
             [new Sample(0, 128, (byte)(ChannelRed | ChannelFloat), 0, 0x7F7FFFFF)]),
 

@@ -3,36 +3,15 @@ using SpectraEngine.Core.Bsp;
 namespace SpectraEngine.Core.Scene;
 
 /// <summary>
-/// What a node IS, reduced to the one fact a list of names cannot show.
+/// What a node is, for a UI that only holds ids and names. Derived from the
+/// node's payloads, never stored.
 /// </summary>
-/// <remarks>
-/// <b>This exists for the boundary, not for the engine.</b> Nothing inside the
-/// engine asks a node what kind it is; every system reads the payload it cares
-/// about and ignores the rest. A UI cannot do that: it holds ids and names
-/// across a thread boundary and never touches a node, so without a stamp
-/// travelling with the change, a tree of two hundred rows cannot tell a light
-/// from a wall.
-/// <para>
-/// <b>Derived, never stored.</b> It is a pure function of the payloads a node
-/// carries, computed where the change is recorded, so it can never disagree
-/// with the node the way a cached flag would.
-/// </para>
-/// </remarks>
 public enum SceneNodeKind
 {
     /// <summary>Carries no payload and no children: a transform and a name.</summary>
     Empty,
 
-    /// <summary>
-    /// Has children and no payload of its own.
-    /// </summary>
-    /// <remarks>
-    /// <b>There is no "group" marker on a node, and this is the whole of the
-    /// definition.</b> Grouping creates a plain parent (see
-    /// <c>StructuralEditor.TryGroup</c>), so anything with children and nothing
-    /// else is one. That means a node stops reading as a group the moment it is
-    /// emptied, which is exactly what a tree should show.
-    /// </remarks>
+    /// <summary>Has children and no payload of its own.</summary>
     Group,
 
     /// <summary>Draws a mesh.</summary>
@@ -47,30 +26,14 @@ public enum SceneNodeKind
     /// </summary>
     BrushPart,
 
-    /// <summary>
-    /// A brush that removes solid rather than adding it.
-    /// </summary>
-    /// <remarks>
-    /// Called out separately from the two additive kinds because a subtractive
-    /// brush renders nothing at all: in a viewport it is invisible and
-    /// unpickable, so the tree is the only place it can be seen.
-    /// </remarks>
+    /// <summary>A brush that removes solid. Renders nothing, so the tree is where it shows.</summary>
     BrushSubtractive,
 
     /// <summary>Carries a light.</summary>
     Light,
 
-    /// <summary>
-    /// Carries entity data: a class name, keyvalues and output wiring.
-    /// </summary>
-    /// <remarks>
-    /// <b>Appended, and every kind above keeps the number it had.</b> The
-    /// members are ordered rather than numbered, so a kind inserted anywhere but
-    /// the end silently renumbers the ones after it - and this value crosses a
-    /// thread boundary as the only fact about a node beyond its id, its name and
-    /// its place in the graph, which is a wrong icon on every row of that kind
-    /// with nothing reporting it.
-    /// </remarks>
+    /// <summary>Carries entity data: a class name, keyvalues and output wiring.</summary>
+    // Append only: the values cross the thread boundary as numbers.
     Entity,
 }
 
@@ -81,13 +44,9 @@ public static class SceneNodeClassifier
 {
     /// <summary>
     /// Classifies <paramref name="node"/> by the payloads it carries.
-    /// <b>Render thread only</b>: it reads a live node.
+    /// Render thread only: it reads a live node.
     /// </summary>
-    /// <remarks>
-    /// <b>The order is the priority order, and the brush cases come first</b>
-    /// because a brush node legitimately carries a mesh renderer as well and
-    /// what it IS, for a level editor, is the brush.
-    /// </remarks>
+    // Brush first: a brush node can carry a mesh renderer too.
     public static SceneNodeKind Classify(SceneNode node)
     {
         if (node.Brush is { } brush)
@@ -100,11 +59,7 @@ public static class SceneNodeClassifier
                 : SceneNodeKind.BrushWorld;
         }
 
-        // Below the brush cases on purpose: a brush node that also carries entity
-        // data keeps reading as its brush kind, because until brush entities land
-        // there is no such thing as a volume with behaviour and the geometry is
-        // still what a level editor sees. When they do land, this is the line
-        // that decides it, and the brush block above is where the answer moves.
+        // A brush that also carries entity data still reads as its brush kind.
         if (node.Entity is not null)
             return SceneNodeKind.Entity;
 

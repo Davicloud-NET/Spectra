@@ -8,18 +8,14 @@ namespace SpectraEngine.Bsp.Tests;
 /// <summary>
 /// The model half of the asset pipeline against a <see cref="FakeRenderer"/>:
 /// import to GPU meshes, material resolution, the async pump, and unload.
+/// The test thread plays the render thread.
 /// </summary>
-/// <remarks>
-/// Same division of labour as <see cref="AssetManagerTests"/> — the test thread
-/// plays the render thread and only the import itself runs off-thread — so no
-/// assertion depends on how fast the thread pool gets to it.
-/// </remarks>
 public sealed class ModelAssetTests
 {
     private const string Crate = "Models/crate.obj";
     private const string Signpost = "Models/signpost.gltf";
 
-    // Only ever hit when an import never lands, i.e. on a real failure.
+    // Only hit when an import never lands.
     private static readonly TimeSpan PumpTimeout = TimeSpan.FromSeconds(30);
 
     [Fact]
@@ -35,8 +31,6 @@ public sealed class ModelAssetTests
         model.Data.ShouldNotBeNull().Meshes.Count.ShouldBe(2);
         model.Meshes.Count.ShouldBe(2);
 
-        // The arrays that reached the GPU are exactly the ones the import
-        // produced — no re-packing between the two.
         for (int i = 0; i < model.Meshes.Count; i++)
         {
             var uploaded = renderer.CreatedMeshes[i];
@@ -67,8 +61,6 @@ public sealed class ModelAssetTests
         trim.Name.ShouldBe("crate_trim");
         body.ShouldNotBeSameAs(assets.DefaultMaterial);
 
-        // Each one carries the texture its .mtl named, through the shared
-        // texture cache (so nothing was uploaded twice).
         body.TryGetTexture("uDiffuse", out int unit, out Texture? bodyTexture).ShouldBeTrue();
         unit.ShouldBe(0);
         assets.TryGetTexture("Textures/checker_orange.png", out TextureAsset? cached).ShouldBeTrue();
@@ -88,9 +80,8 @@ public sealed class ModelAssetTests
         ModelAsset model = assets.LoadModel(Crate);
         ModelData data = model.Data.ShouldNotBeNull();
 
-        // Assimp's OBJ reader always emits a spare "DefaultMaterial" slot that
-        // no face group uses. It stays in the table (indices must keep meaning
-        // what the file said) but resolves to the shared fallback.
+        // Assimp's OBJ reader always emits a spare "DefaultMaterial" slot
+        // that no face group uses.
         int unreferenced = -1;
         for (int i = 0; i < data.Materials.Count; i++)
         {
@@ -103,7 +94,7 @@ public sealed class ModelAssetTests
         unreferenced.ShouldBeGreaterThanOrEqualTo(0);
         model.Materials[unreferenced].ShouldBeSameAs(assets.DefaultMaterial);
 
-        // Two textures for the two real materials, plus the placeholder.
+        // One per real material.
         assets.TextureCount.ShouldBe(2);
 
         assets.ReleaseGraphicsResources();
@@ -150,8 +141,7 @@ public sealed class ModelAssetTests
         var (assets, renderer) = CreateAttached();
 
         ModelAsset model = assets.RequestModel(Signpost);
-        // The natural "wait for it" shape: ask again every frame. Each of these
-        // must be free, or a slow import turns into a task storm.
+        // Callers that wait by asking again every frame.
         for (int i = 0; i < 50; i++)
             assets.RequestModel(Signpost).ShouldBeSameAs(model);
 
@@ -161,7 +151,6 @@ public sealed class ModelAssetTests
         model.ImportPending.ShouldBeFalse();
         renderer.CreatedMeshes.Count.ShouldBe(2);
 
-        // Ready now, so further requests do not import at all.
         assets.RequestModel(Signpost).ShouldBeSameAs(model);
         model.ImportPending.ShouldBeFalse();
 
@@ -211,8 +200,6 @@ public sealed class ModelAssetTests
             newmtl prop_skin
             map_Kd ../Textures/dev_grid.png
             """);
-        // The engine's own material file wins: it knows about shaders and
-        // sampler states, which an exported .mtl never does.
         File.WriteAllText(
             Path.Combine(root, "Materials", "prop_skin.spectramat"),
             """
@@ -229,7 +216,6 @@ public sealed class ModelAssetTests
         material.SourcePath.ShouldBe("Materials/prop_skin.spectramat");
         material.TryGetVector3("uBaseColor", out var color).ShouldBeTrue();
         color.X.ShouldBe(1f);
-        // Same instance the material cache hands to anything else naming it.
         assets.TryGetMaterial("Materials/prop_skin.spectramat", out Material? cached).ShouldBeTrue();
         material.ShouldBeSameAs(cached);
 
@@ -258,7 +244,6 @@ public sealed class ModelAssetTests
 
         Material material = model.MaterialFor(model.Data.ShouldNotBeNull().Meshes[0]);
         material.ShouldBeSameAs(assets.DefaultMaterial);
-        // Never null and always drawable — that is the whole contract.
         material.TryGetTexture("uDiffuse", out _, out Texture? texture).ShouldBeTrue();
         texture.ShouldBeSameAs(assets.PlaceholderTexture);
 
@@ -273,16 +258,14 @@ public sealed class ModelAssetTests
         assets.RequestModel(Signpost);
         PumpUntil(assets, () => assets.TryGetModel(Signpost, out ModelAsset? m) && m.IsReady);
 
-        // Warm up: JIT the model drain and clear anything the loads left behind.
+        // Warm up the JIT and drain what the loads left behind.
         for (int i = 0; i < 200; i++) assets.PumpPendingUploads();
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 10_000; i++) assets.PumpPendingUploads();
         long after = GC.GetAllocatedBytesForCurrentThread();
 
-        // The model queue joined a pump that runs every frame forever, so it has
-        // to carry the same weight as the texture one: a struct payload and a
-        // TryDequeue that touches no allocator when the queue is empty.
+        // The pump runs every frame.
         (after - before).ShouldBe(0);
 
         assets.ReleaseGraphicsResources();
@@ -304,7 +287,6 @@ public sealed class ModelAssetTests
         assets.ModelCount.ShouldBe(0);
         assets.UnloadModel(Crate).ShouldBeFalse();
 
-        // Loading again is a fresh import, not a resurrection of dead handles.
         ModelAsset reloaded = assets.LoadModel(Crate);
         reloaded.IsReady.ShouldBeTrue();
         renderer.CreatedMeshes.Skip(2).ShouldAllBe(m => !m.Disposed);
@@ -321,23 +303,18 @@ public sealed class ModelAssetTests
         var renderer = new FakeRenderer();
         assets.AttachRenderer(renderer);
 
-        // The editor's load/unload loop: the handle leaves the cache while its
-        // import is still on the thread pool.
+        // The handle leaves the cache while its import is still on the pool.
         const int cycles = 5;
         for (int i = 0; i < cycles; i++)
         {
             ModelAsset requested = assets.RequestModel(Crate);
             assets.UnloadModel(Crate).ShouldBeTrue();
-            // Unloading ends the handle's life; advertising a pending import on
-            // it would be a lie, since no result can ever be applied to it.
             requested.ImportPending.ShouldBeFalse();
 
             int expected = i + 1;
             PumpUntil(assets, () => assets.QueueStatistics.Stale >= expected);
 
-            // Meshes published on an evicted handle are invisible to
-            // ReleaseModelResources, which only walks the cache — before the fix
-            // this leaked one mesh pair per cycle.
+            // Release only walks the cache, so meshes on an evicted handle would leak.
             requested.IsReady.ShouldBeFalse();
             requested.Meshes.ShouldBeEmpty();
         }
@@ -387,8 +364,6 @@ public sealed class ModelAssetTests
         model.IsReady.ShouldBeFalse();
     }
 
-    // ---- helpers ---------------------------------------------------------
-
     private static (AssetManager Assets, FakeRenderer Renderer) CreateAttached()
     {
         var assets = new AssetManager(
@@ -406,7 +381,6 @@ public sealed class ModelAssetTests
         return assets;
     }
 
-    // Imports the pump dropped because their handle had left the cache.
     private static int DroppedImports(CapturingLogger logger)
         => logger.MessagesAt(LogLevel.Debug).Count(m => m.Contains("Dropping the import"));
 
@@ -427,7 +401,6 @@ public sealed class ModelAssetTests
     private static void WriteModel(string root, string fileName, string contents)
         => File.WriteAllText(Path.Combine(root, "Models", fileName), contents);
 
-    // Plays the render loop: pump, then yield, until the condition holds.
     private static void PumpUntil(AssetManager assets, Func<bool> condition)
     {
         var deadline = DateTime.UtcNow + PumpTimeout;

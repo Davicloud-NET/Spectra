@@ -7,20 +7,15 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// What the rotate and resize gizmos put on screen, and what that same shape is
-/// pickable as. The two are asserted together on purpose: a manipulator whose
-/// drawn shape and pickable shape disagree is worse than one that draws nothing,
-/// because it silently does the wrong thing under the cursor.
+/// What the rotate and resize gizmos draw, and that the drawn shape is the
+/// pickable one.
 /// </summary>
 public sealed class RotateScaleGizmoShapeTests
 {
-    // Interleaved position + colour, six floats per vertex, two per line —
-    // DebugDraw's layout.
+    // DebugDraw layout: position then colour.
     private const int FloatsPerVertex = 6;
 
     private const float Tolerance = GizmoHitTesting.DefaultTolerancePixels;
-
-    // --- Rotate --------------------------------------------------------------
 
     [Fact]
     public void The_rotate_gizmo_draws_four_rings()
@@ -33,8 +28,6 @@ public sealed class RotateScaleGizmoShapeTests
         var output = new DebugDraw();
         harness.Gizmo.Draw(output);
 
-        // Three axis rings plus the view ring, each a closed polygon of the
-        // shared chord count.
         output.VertexCount.ShouldBe(4 * GizmoHitTesting.RingSegments * 2);
     }
 
@@ -48,11 +41,7 @@ public sealed class RotateScaleGizmoShapeTests
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
         geometry.AxisPerpendiculars(handle, out Vector3 u, out Vector3 v);
 
-        // Sixteen stations round the circle, including the parts of the ring
-        // furthest from face-on — the ones a plane-intersection hit test would
-        // lose. Points that coincide with another ring (every 90°, where two
-        // rings share an axis) are skipped: there the answer is legitimately
-        // ambiguous and depth decides.
+        // Every 90° two rings cross and depth decides, so those are skipped.
         for (int i = 0; i < 16; i++)
         {
             float angle = MathF.Tau * i / 16f;
@@ -73,12 +62,10 @@ public sealed class RotateScaleGizmoShapeTests
         var harness = GizmoHarness.ThreeQuarterView();
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
 
-        // Dead centre: inside all four rings, on none of them.
         Ray3 centre = harness.Scene.Camera.ScreenPointToRay(
             harness.WorldToScreen(Vector3.Zero), harness.ViewportSize);
         RotateGizmoHitTester.Pick(in geometry, in centre, Tolerance).ShouldBe(GizmoPick.Miss);
 
-        // Well outside the largest ring.
         Ray3 far = harness.Scene.Camera.ScreenPointToRay(
             harness.WorldToScreen(Vector3.UnitY * (geometry.ScreenRingRadius * 3f)), harness.ViewportSize);
         RotateGizmoHitTester.Pick(in geometry, in far, Tolerance).ShouldBe(GizmoPick.Miss);
@@ -92,8 +79,6 @@ public sealed class RotateScaleGizmoShapeTests
 
         geometry.ScreenRingRadius.ShouldBeGreaterThan(geometry.RingRadius);
 
-        // Face-on, the z ring and the view ring are concentric circles far
-        // enough apart that a cursor on one is nowhere near the other.
         float gapPixels = geometry.WorldToPixels(geometry.ScreenRingRadius - geometry.RingRadius);
         gapPixels.ShouldBeGreaterThan(Tolerance * 2f);
     }
@@ -119,16 +104,14 @@ public sealed class RotateScaleGizmoShapeTests
         var dragging = new DebugDraw();
         harness.Gizmo.Draw(dragging);
 
-        // The protractor is extra geometry on top of the four rings.
+        // The sweep is extra geometry on top of the four rings.
         dragging.VertexCount.ShouldBeGreaterThan(idle.VertexCount);
 
-        // And the active ring changed colour rather than being drawn twice.
+        // The active ring is recoloured, not drawn twice.
         CountColour(dragging, GizmoColors.For(GizmoHandle.AxisZ, GizmoHandle.None)).ShouldBe(0);
         CountColour(dragging, GizmoColors.Highlight)
             .ShouldBeGreaterThan(GizmoHitTesting.RingSegments * 2);
     }
-
-    // --- Scale ---------------------------------------------------------------
 
     [Fact]
     public void The_scale_gizmo_draws_three_capped_shafts_and_a_centre_cube()
@@ -141,8 +124,7 @@ public sealed class RotateScaleGizmoShapeTests
         var output = new DebugDraw();
         harness.Gizmo.Draw(output);
 
-        // Three shafts of one line each, three cubes of twelve edges, and one
-        // more twelve-edge cube at the centre.
+        // Three shafts, three cubes of twelve edges, one centre cube.
         const int expectedLines = (3 * 1) + (3 * 12) + 12;
         output.VertexCount.ShouldBe(expectedLines * 2);
     }
@@ -164,8 +146,7 @@ public sealed class RotateScaleGizmoShapeTests
     [Fact]
     public void The_centre_cube_wins_at_the_pivot()
     {
-        // The uniform handle is surrounded by all three shafts; if it lost ties
-        // it could never be grabbed at all.
+        // All three shafts start here too.
         var harness = GizmoHarness.ThreeQuarterView();
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
 
@@ -180,8 +161,6 @@ public sealed class RotateScaleGizmoShapeTests
 
         Pick(harness, in geometry, Vector3.UnitX * (geometry.AxisLength * 4f)).ShouldBe(GizmoPick.Miss);
     }
-
-    // --- Shared ---------------------------------------------------------------
 
     [Theory]
     [InlineData(GizmoMode.Rotate)]
@@ -204,9 +183,6 @@ public sealed class RotateScaleGizmoShapeTests
     [InlineData(GizmoMode.Scale)]
     public void Every_handle_stays_inside_the_constant_screen_footprint(GizmoMode mode)
     {
-        // The whole point of the shared geometry: all three tools are the same
-        // size on screen at any camera distance, so switching mode never makes
-        // the manipulator jump.
         foreach (float distance in new[] { 3f, 50f, 5_000f })
         {
             var harness = GizmoHarness.FrontView(distance);
@@ -227,8 +203,6 @@ public sealed class RotateScaleGizmoShapeTests
             furthest.ShouldBeLessThan(harness.Gizmo.HandlePixelSize * 1.3f);
         }
     }
-
-    // --- Helpers -------------------------------------------------------------
 
     private static GizmoPick Pick(GizmoHarness harness, in GizmoGeometry geometry, Vector3 aimAt)
     {

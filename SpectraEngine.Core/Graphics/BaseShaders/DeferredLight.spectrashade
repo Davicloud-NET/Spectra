@@ -1,21 +1,7 @@
-﻿// DeferredLight.spectrashade — the deferred light pass.
-//
-// Reads the G-buffer and shades it with a Cook-Torrance microfacet BRDF: GGX
-// for the normal distribution, Smith height-correlated for visibility, Schlick
-// for Fresnel. This is the step that turns the roughness and metallic channels
-// from stored bytes into an actual surface response; before it, the engine's
-// lighting was albedo times N dot L, with no specular term of any kind.
-//
-// World position is RECONSTRUCTED from depth rather than read from a G-buffer
-// channel. The pixel's clip-space xy comes down from the vertex shader, the
-// depth buffer gives z, and one inverse view-projection multiply gives the
-// world point. That saves a whole RGBA16F attachment for something already
-// written.
-//
-// Radiance accumulates over a uniform array of lights, which caps them. That is
-// a stepping stone: the deferred answer is a bounding volume drawn per light
-// with additive blending, which removes the cap entirely and needs no storage
-// buffers. It needs blend state, which no backend implements yet.
+﻿// Deferred light pass. Shades the G-buffer with Cook-Torrance: GGX, Smith
+// height-correlated visibility, Schlick Fresnel.
+// World position is rebuilt from depth. Lights come from a fixed-size uniform
+// array, so there is a cap of 8.
 
 struct VertexInput {
     [Location(0)] vec3 position;
@@ -27,14 +13,8 @@ struct VertexOutput {
     [Position] vec4 position;
     vec2 uv;
 
-    // Clip-space xy, carried down rather than derived from uv in the fragment
-    // shader. THE TWO ARE NOT THE SAME MAPPING ON BOTH BACKENDS: the
-    // full-screen triangle bakes a V flip into its vertex data on D3D, because
-    // a render target's origin is top-left there and bottom-left on GL. So uv
-    // is correct for SAMPLING the G-buffer on both, and reconstructing clip y
-    // from it would be upside down on exactly one of them, with nothing
-    // reporting an error. Interpolating the clip position itself is the same
-    // number on both by construction.
+    // Clip-space xy. Not derivable from uv without uUvToNdc: the full-screen
+    // triangle flips V on D3D.
     vec2 ndc;
 }
 
@@ -50,86 +30,58 @@ shader DeferredLight {
         vec3 uCameraPosition;
         float uAmbient;
 
-        // HEMISPHERE ambient: what the surface sees looking up, and looking
-        // down. A flat scalar - which is what this was - lights a floor and a
-        // ceiling identically, so nothing in an unlit corner has any shape at
-        // all; it is the cheapest single thing that makes a scene read as being
-        // lit by a PLACE rather than by a number. Two uniforms and one mix,
-        // against an irradiance probe's cubemap and a convolution pass.
-        //
-        // The two are chosen so their average luminance is one, which is what
-        // lets uAmbient keep meaning exactly what it meant before: the strength,
-        // tuned once for the whole demo.
+        // Hemisphere ambient. The pair averages to luminance one, so uAmbient
+        // alone sets the strength.
         vec3 uAmbientSky;
         vec3 uAmbientGround;
 
-        // What the sky is, for the pixels no geometry wrote. A full-screen
-        // triangle covers every pixel, so the light pass cannot leave the
-        // background alone the way a forward pass does: it has to put the
-        // clear colour back deliberately.
+        // Written where no geometry was drawn; this pass covers every pixel.
         vec3 uSkyColor;
         int uLightCount;
 
-        // Turns a sampled depth texel into this backend's NDC z: (2, -1) where
-        // clip z runs -1..1 and (1, 0) where it runs 0..1. A depth BUFFER
-        // always stores 0..1, so on OpenGL the two disagree, and taking the
-        // texel as NDC directly puts every reconstructed position in the wrong
-        // half of the frustum.
+        // Depth texel (always 0..1) to this backend's NDC z: (2, -1) on GL,
+        // (1, 0) on D3D.
         vec2 uDepthToNdc;
 
-        // The pass's pixel size. Only the shadow filter uses it, to recover a
-        // pixel coordinate from uv and dither its tap rotation with it.
+        // This pass's pixel size. Only the shadow filter's dither uses it.
         vec2 uTargetSize;
 
-        // The G-BUFFER's pixel size, which is NOT uTargetSize: the G-buffer is
-        // sized to the window and this pass may be running into a target of some
-        // other size (an offscreen probe, a preview). See FragmentMain.
+        // Can differ from uTargetSize: the G-buffer is window-sized and this
+        // pass may run into a target of another size.
         vec2 uGBufferSize;
 
-        // uv to clip-space xy for this backend, as (scale.xy, bias.xy). The two
-        // differ by a V flip that FullscreenTriangle bakes into its vertices, so
-        // the mapping cannot be assumed here - deriving ndc from uv with the
-        // wrong sign renders one backend upside down and reports nothing.
+        // uv to clip-space xy as (scale.xy, bias.xy). Per backend because of
+        // the V flip in the full-screen triangle.
         vec4 uUvToNdc;
 
-        // Which light in the array the shadow map was rendered for, or -1 when
-        // nothing casts this frame. One caster today; an index rather than a
-        // flag because the second one costs a second map and not a rewrite.
+        // Index of the light the shadow map was rendered for, or -1.
         int uShadowLightIndex;
 
-        // How many cascades were fitted this frame.
         int uCascadeCount;
 
-        // 0 disables shadowing entirely, 1 is fully dark in shadow. Anything
-        // between fakes the bounce light that an ambient term this crude cannot
-        // provide, which is why it is exposed rather than hardcoded to 1.
+        // 0 disables shadowing, 1 is fully dark in shadow.
         float uShadowStrength;
 
-        // One texel in a CASCADE's own 0..1 space: the filter kernel's step.
+        // One texel in a cascade's own 0..1 space.
         float uShadowTexel;
 
-        // A small constant off the compared depth, against depth-buffer
-        // quantisation. SMALL, because the acne it used to fight is fixed at
-        // raster time now (see DepthBias) rather than here.
+        // Small constant against depth quantisation. Acne is handled by the
+        // raster bias in the depth pass, not here.
         float uShadowDepthBias;
 
-        // Radius of the PCF tap circle, in texels of the chosen cascade.
+        // PCF tap circle radius, in texels of the chosen cascade.
         float uShadowFilterRadius;
     }
 
-    // FOUR parallel vec4 arrays, never a struct array: a struct array
-    // generates valid-looking text and then silently does nothing on OpenGL.
-    // Four is also the minimum - an area light's bitangent is recovered by a
-    // cross product rather than stored.
+    // Parallel vec4 arrays, not a struct array: a struct array does nothing on
+    // OpenGL and reports no error.
     //
     //   uLightPositions  xyz position or travel direction   w range
-    //   uLightColors     rgb colour * intensity             w TYPE
+    //   uLightColors     rgb colour * intensity             w type
     //   uLightAxis       xyz facing                         w cos(outer) | halfHeight | radius
     //   uLightTangent    xyz in-plane right                 w cos(inner) | halfWidth
     //
-    // The type numbers are RenderLightType and are append-only: inserting a
-    // value renumbers every kind after it and lights the wrong shape with no
-    // error anywhere.
+    // Type numbers are RenderLightType. Append only.
     [Binding(1)] cbuffer Lights {
         vec4[8] uLightPositions;
         vec4[8] uLightColors;
@@ -138,16 +90,11 @@ shader DeferredLight {
     }
 
     [Binding(2)] cbuffer Shadows {
-        // World position to a lookup in one cascade's OWN 0..1 space. Every
-        // convention difference between the backends is folded into these on the
-        // CPU (see ShadowMap.WorldToShadow), so nothing here has to know which
-        // way up a render target is.
+        // World position to one cascade's own 0..1 space. Backend conventions
+        // are already folded in on the CPU.
         mat4[4] uWorldToShadow;
 
-        // Per cascade: the atlas quadrant as (u, v, scale), and that cascade's
-        // world texel size in w. The bias reads w because a texel of the far
-        // cascade is many times the size of a near one, and one global offset
-        // would either do nothing out there or eat every near shadow whole.
+        // Per cascade: atlas quadrant as (u, v, scale), world texel size in w.
         vec4[4] uCascadeRects;
     }
 
@@ -169,31 +116,17 @@ shader DeferredLight {
 
     [Fragment] [Target(0)]
     vec4 FragmentMain(FragmentInput input) {
-        // ONE G-BUFFER SAMPLE PER PIXEL, AND ITS OWN NDC WITH IT.
-        //
-        // The G-buffer is sized to the window and deliberately never follows the
-        // frame target, so this pass can be wider or narrower than the surfaces
-        // it reads. When it is, several pixels fall on one depth texel: each
-        // brought its own interpolated clip-space xy, and reconstructing with
-        // that against a depth measured somewhere else puts the world position
-        // on THIS pixel's ray at THAT pixel's distance. The point slides along
-        // the surface, which is invisible on anything facing the camera and
-        // several times the real error on anything grazing - it made a lone
-        // sphere self-shadow by 369 of 765 at a 96 probe against a 64 G-buffer,
-        // where a matched pair reads 45.
-        //
-        // Snapping to the texel centre makes the depth and the ray describe the
-        // same sample again. It is exactly a no-op when the sizes match, since
-        // uv is then already (i + 0.5) / size, which is why the matched path
-        // cannot be disturbed by this.
+        // Snap to the G-buffer texel centre and derive ndc from that, not from
+        // the interpolated one. When the pass and the G-buffer differ in size,
+        // the interpolated ndc and the sampled depth belong to different
+        // points, and grazing surfaces self-shadow. No-op when the sizes match.
         vec2 texel = Math.Floor(input.uv * uGBufferSize) + vec2(0.5, 0.5);
         vec2 uv = texel / uGBufferSize;
         vec2 ndc = uv * uUvToNdc.xy + uUvToNdc.zw;
 
         float depth = uDepth.Sample(uv).r;
 
-        // Nothing was drawn here. Shading it would read a zeroed normal against
-        // a zeroed albedo, which is black rather than sky.
+        // Nothing was drawn here.
         if (depth >= 1.0) {
             return vec4(uSkyColor, 1.0);
         }
@@ -206,24 +139,17 @@ shader DeferredLight {
         float ao = albedoAo.a;
         vec3 n = Math.Normalize(normalRoughness.rgb);
 
-        // Clamped away from zero: a perfectly smooth surface makes the GGX
-        // denominator vanish and the highlight becomes an infinity that shows
-        // up as a single blinding pixel.
+        // Zero roughness makes the GGX denominator vanish.
         float roughness = Math.Max(normalRoughness.a, 0.04);
         float metallic = materialData.r;
 
         vec3 worldPosition = ReconstructWorldPosition(ndc, depth);
         vec3 v = Math.Normalize(uCameraPosition - worldPosition);
 
-        // Dielectrics reflect about 4% at normal incidence; metals have no
-        // diffuse response at all and tint their reflection with the albedo.
-        // One lerp expresses both, which is the whole of the metallic workflow.
+        // 4% reflectance for dielectrics; metals tint with albedo and have no diffuse.
         vec3 f0 = Math.Mix(vec3(0.04, 0.04, 0.04), albedo, metallic);
         vec3 diffuseColor = albedo * (1.0 - metallic);
 
-        // n.y remapped to 0..1: straight up takes the sky, straight down the
-        // ground, and a wall gets the average - which is the whole of the
-        // approximation and the reason it costs one mix.
         vec3 ambient = Math.Mix(uAmbientGround, uAmbientSky, n.y * 0.5 + 0.5);
         vec3 total = diffuseColor * ambient * uAmbient * ao;
 
@@ -240,13 +166,7 @@ shader DeferredLight {
             float attenuation = 1.0;
 
             if (type > 0.5) {
-                // The point the surface is actually lit FROM. For a point and a
-                // spot that is the light's own origin; for an area light it is
-                // the representative point - the spot on the shape closest to
-                // the reflection of the view ray, which is the standard cheap
-                // stand-in for integrating over the surface. LTC would be more
-                // faithful and needs two lookup textures and a data-dependent
-                // clipping loop, which is exactly what fxc refuses to compile.
+                // Area lights are lit from their representative point.
                 vec3 source = posRange.xyz;
 
                 if (type > 2.5) {
@@ -257,10 +177,8 @@ shader DeferredLight {
                 float distance = Math.Length(offset);
                 l = offset / Math.Max(distance, 0.0001);
 
-                // Measured from the shape's CLOSEST point, not its centre.
-                // Without this a four-unit panel goes dark at its own ends,
-                // because the surface directly beneath a corner is two units
-                // from the middle and the falloff does not know why.
+                // Distance is to the shape's closest point, not its centre, or
+                // a wide panel goes dark at its own ends.
                 float window = Math.Max(1.0 - distance / posRange.w, 0.0);
                 attenuation = window * window / (1.0 + distance * distance);
 
@@ -268,10 +186,7 @@ shader DeferredLight {
                     if (type < 2.5) {
                         attenuation = attenuation * SpotFactor(axis, tangent, l);
                     } else {
-                        // ONE-SIDED. A panel emits from its front face only, and
-                        // without this a ceiling light also lights the room
-                        // above it - which is invisible from below and wrong
-                        // everywhere else.
+                        // One-sided: a ceiling panel must not light the room above.
                         attenuation = attenuation * Math.Max(Math.Dot(axis.xyz, -l), 0.0);
                     }
                 }
@@ -287,53 +202,32 @@ shader DeferredLight {
             total = total + Shade(n, v, l, diffuseColor, f0, roughness) * radiance * attenuation * shadow;
         }
 
-        // Emissive is added after shading, never lit: a surface that emits does
-        // not also receive its own light.
         return vec4(total + uEmissive.Sample(uv).rgb, 1.0);
     }
 
-    // A spot's cone falloff: full strength inside the inner half-angle, zero
-    // outside the outer one, smoothed between. The comparison is against
-    // COSINES, computed on the CPU once per frame, because converting to an
-    // angle per pixel would put a transcendental in the inner loop for a value
-    // that does not change.
-    //
-    // -l because l points from the surface TOWARD the light, and the cone axis
-    // points the way the light travels. Getting this backwards lights a cone
-    // pointing exactly opposite to the one drawn over it in the viewport.
+    // Cone falloff between the inner and outer half-angles, both passed as cosines.
+    // -l: l points toward the light, the axis points the way the light travels.
     float SpotFactor(vec4 axis, vec4 tangent, vec3 l) {
         float cosAngle = Math.Dot(axis.xyz, -l);
         float outer = axis.w;
         float inner = tangent.w;
 
-        // Max, not a bare subtraction: the CPU clamps inner to outer, and a
-        // zero denominator here would be a division by zero rather than a hard
-        // edge.
+        // inner can equal outer.
         float t = (cosAngle - outer) / Math.Max(inner - outer, 0.0001);
         t = Math.Clamp(t, 0.0, 1.0);
 
-        // Squared, so the rim fades rather than stepping. A linear ramp reads
-        // as a visible band at the cone's edge.
+        // Squared: a linear ramp shows as a band at the cone's edge.
         return t * t;
     }
 
-    // The representative point on an area light: the point on the shape closest
-    // to where the view ray reflects off this surface.
-    //
-    // ONE point for both diffuse and specular here, which is the honest
-    // simplification. Separate points are more faithful - the diffuse response
-    // wants the shape's centroid and the specular wants the reflection - but a
-    // second Shade call per light is a second full BRDF evaluation, and this
-    // path already carries the frame's whole lighting cost. The visible
-    // difference is confined to a tight highlight on a smooth surface.
+    // Representative point: the point on the shape closest to the reflected
+    // view ray. One point serves both diffuse and specular, which saves a
+    // second BRDF evaluation per light.
     vec3 AreaPoint(vec3 center, vec4 axis, vec4 tangent, float type, vec3 world, vec3 n, vec3 v, float roughness) {
         vec3 r = Math.Reflect(-v, n);
 
-        // Where the reflection ray meets the light's plane. A ray parallel to
-        // the plane, or pointing away from it, has no useful intersection and
-        // falls back to the centre - which is the point light this shape
-        // degrades to, and the right answer for a surface that cannot see a
-        // specular highlight on it at all.
+        // Intersect the reflection ray with the light's plane. Parallel or
+        // pointing away: fall back to the centre.
         float denom = Math.Dot(r, axis.xyz);
         if (Math.Abs(denom) < 0.0001) {
             return center;
@@ -347,23 +241,20 @@ shader DeferredLight {
         vec3 hit = world + r * t;
         vec3 local = hit - center;
 
-        // The bitangent is a cross product rather than a fourth uploaded
-        // vector: the axis and the tangent are orthonormal by construction, so
-        // it carries no information they do not already.
         vec3 bitangent = Math.Cross(axis.xyz, tangent.xyz);
 
         float u = Math.Dot(local, tangent.xyz);
         float vv = Math.Dot(local, bitangent);
 
         if (type > 3.5) {
-            // A disc: clamp the offset's LENGTH rather than its components.
+            // Disc: clamp the offset's length.
             float radius = axis.w;
             float len = Math.Sqrt(u * u + vv * vv);
             float scale = Math.Min(len, radius) / Math.Max(len, 0.0001);
             u = u * scale;
             vv = vv * scale;
         } else {
-            // A rect: clamp each axis to its own half extent.
+            // Rect: clamp each axis to its half extent.
             u = Math.Clamp(u, -tangent.w, tangent.w);
             vv = Math.Clamp(vv, -axis.w, axis.w);
         }
@@ -371,18 +262,14 @@ shader DeferredLight {
         return center + tangent.xyz * u + bitangent * vv;
     }
 
-    // One texel of the chosen cascade, compared. Clamped inside the cascade
-    // BEFORE the atlas offset: a tap that walked off the edge of one quadrant
-    // would land in the next cascade's and read a different projection.
+    // Clamp inside the cascade before the atlas offset, or a tap at the edge
+    // reads the neighbouring cascade.
     float CompareTexel(vec2 texel, vec4 rect, float reference) {
         vec2 local = Math.Clamp(texel * uShadowTexel, vec2(0.0, 0.0), vec2(1.0, 1.0));
         return Math.Step(reference, uShadowMap.Sample(rect.xy + local * rect.z).r);
     }
 
-    // One shadow comparison, bilinearly weighted across the four texels the
-    // sample falls between. The comparison happens per texel and the RESULTS are
-    // blended; blending the depths instead would average two distances into one
-    // that lies on neither surface.
+    // Compare per texel, then blend the results. Blending depths first is wrong.
     float CompareBilinear(vec2 local, vec4 rect, float reference) {
         vec2 texels = local / uShadowTexel;
         vec2 corner = Math.Floor(texels - vec2(0.5, 0.5)) + vec2(0.5, 0.5);
@@ -396,25 +283,20 @@ shader DeferredLight {
         return Math.Mix(Math.Mix(s00, s10, weight.x), Math.Mix(s01, s11, weight.x), weight.y);
     }
 
-    // Clip space back to world space. ndc is already -1..1 across the screen;
-    // depth is 0..1 out of the buffer and needs this backend's remap.
     vec3 ReconstructWorldPosition(vec2 ndc, float depth) {
         vec4 clip = vec4(ndc.x, ndc.y, depth * uDepthToNdc.x + uDepthToNdc.y, 1.0);
         vec4 world = uInverseViewProjection * clip;
         return world.xyz / world.w;
     }
 
-    // How much of this light reaches the point: 1 fully lit, 0 fully shadowed.
+    // 1 fully lit, 0 fully shadowed.
     float ShadowFactor(vec3 worldPosition, vec2 pixel) {
         if (uShadowStrength <= 0.0) {
             return 1.0;
         }
 
-        // Pick the sharpest cascade that contains this point. The near ones are
-        // small and are tested first, so most of the screen resolves on the
-        // first iteration; a point past the last cascade falls out of the loop
-        // unchosen and is simply lit, which is the shadow distance showing
-        // itself honestly rather than as a hard black edge.
+        // First (sharpest) cascade containing the point. Past the last
+        // cascade the point is lit.
         int chosen = -1;
         for (int k = 0; k < uCascadeCount; k = k + 1) {
             if (chosen < 0) {
@@ -435,47 +317,17 @@ shader DeferredLight {
 
         vec4 rect = uCascadeRects[chosen];
 
-        // NO NORMAL OFFSET. There was one, scaled by tan of the angle between
-        // the surface and the light and clamped at eight, and removing it is
-        // most of what this shader gained. It existed to stop acne, which it
-        // did by pushing the sample up to twelve texels off its own surface;
-        // since the push is along the NORMAL, the shadow slid several
-        // centimetres sideways, by a DIFFERENT amount on every face, so a
-        // shadow crossing a corner visibly failed to meet itself. The depth
-        // pass now biases each caster by its own depth slope at raster time,
-        // which is the same fix applied to the actual cause and does not move
-        // the shadow at all. See DepthBias.
+        // No normal offset: it shifts the shadow sideways by a different
+        // amount per face. The depth pass's slope-scaled raster bias handles acne.
         vec4 coords = uWorldToShadow[chosen] * vec4(worldPosition, 1.0);
         vec3 s = coords.xyz / coords.w;
 
         float reference = s.z - uShadowDepthBias;
 
-        // FOUR TAPS ON A CIRCLE, ROTATED PER PIXEL. Each is bilinearly
-        // weighted, so sixteen fetches, measured at 7.01 ms/frame at 1080p on
-        // an Intel UHD 770.
-        //
-        // The weighting is what lets a tap answer "where inside this texel does
-        // the edge fall" rather than only "is this texel's centre shadowed",
-        // which is what a hardware comparison sampler does for free and what
-        // this engine cannot ask for, because SpectraShade has no
-        // sampler2DShadow.
-        //
-        // The ROTATION is the part that matters here, and it is nearly free.
-        //
-        // What is left after the bias work above is not error, it is
-        // RESOLUTION: a caster's silhouette is rasterised onto the map's texel
-        // grid, so a straight edge is stored as a staircase whose steps are one
-        // texel tall and, for an edge at a shallow angle to the grid, many
-        // texels long. Filtering spreads each step into a ramp but cannot
-        // shorten the runs between them, so the edge keeps a periodic
-        // saw-tooth. A hardware comparison sampler would produce exactly the
-        // same one; it is not a defect in this filter.
-        //
-        // Periodicity is what makes it visible. The eye finds a repeating comb
-        // instantly and ignores the same amount of error scattered. Rotating
-        // the tap pattern by a per-pixel angle turns the comb into grain at no
-        // extra fetches, which is the same trade every engine that uses a
-        // rotated Poisson disk is making.
+        // Four bilinear taps on a circle, 16 fetches. Manual because
+        // SpectraShade has no sampler2DShadow.
+        // The circle is rotated per pixel: shadow edges are stored as a
+        // texel staircase, and the rotation turns that regular comb into grain.
         float angle = 6.2831853 * Math.Fract(
             52.9829189 * Math.Fract(0.06711056 * pixel.x + 0.00583715 * pixel.y));
         vec2 spin = vec2(Math.Cos(angle), Math.Sin(angle)) * (uShadowFilterRadius * uShadowTexel);
@@ -488,8 +340,7 @@ shader DeferredLight {
         return Math.Mix(1.0, sum * 0.25, uShadowStrength);
     }
 
-    // Cook-Torrance: D * G * F over 4 (N.L)(N.V), plus a Lambert diffuse for
-    // whatever energy the Fresnel term did not reflect.
+    // Cook-Torrance specular plus Lambert diffuse.
     vec3 Shade(vec3 n, vec3 v, vec3 l, vec3 diffuseColor, vec3 f0, float roughness) {
         float ndotl = Math.Max(Math.Dot(n, l), 0.0);
         if (ndotl <= 0.0) {
@@ -501,26 +352,17 @@ shader DeferredLight {
         float ndoth = Math.Max(Math.Dot(n, h), 0.0);
         float vdoth = Math.Max(Math.Dot(v, h), 0.0);
 
-        // Disney's reparameterisation: perceptual roughness squared, so an
-        // artist's 0..1 slider behaves linearly to the eye rather than
-        // collapsing everything interesting into the bottom tenth.
+        // Perceptual roughness, squared (Disney).
         float a = roughness * roughness;
         float a2 = a * a;
 
-        // GGX / Trowbridge-Reitz normal distribution.
+        // GGX normal distribution.
         float denom = ndoth * ndoth * (a2 - 1.0) + 1.0;
         float d = a2 / Math.Max(3.14159265 * denom * denom, 0.0000001);
 
-        // Smith visibility, HEIGHT-CORRELATED (Heitz 2014), already divided by
-        // the BRDF's 4 (N.L)(N.V) denominator. Folding the two together is both
-        // cheaper and better conditioned than computing G and dividing after.
-        //
-        // The two sqrts are what separates this from Schlick's k approximation,
-        // which is the version most tutorials carry. They buy the correlation
-        // between the shadowing and masking terms, and the difference shows
-        // exactly where a smooth surface turns away from the viewer: the
-        // uncorrelated form overestimates there and rings the silhouette with a
-        // bright rim that is easy to mistake for a working Fresnel.
+        // Height-correlated Smith visibility (Heitz 2014), already divided by
+        // 4 (N.L)(N.V). Keep the two sqrts: Schlick's k approximation puts a
+        // bright rim on smooth silhouettes.
         float lambdaV = ndotl * Math.Sqrt(ndotv * ndotv * (1.0 - a2) + a2);
         float lambdaL = ndotv * Math.Sqrt(ndotl * ndotl * (1.0 - a2) + a2);
         float vis = 0.5 / Math.Max(lambdaV + lambdaL, 0.0000001);
@@ -531,9 +373,7 @@ shader DeferredLight {
 
         vec3 specular = f * (d * vis);
 
-        // Energy conservation: what the surface reflected specularly cannot also
-        // be diffused. Without this a rough metal is brighter than the light
-        // that hit it.
+        // Energy conservation: reflected light is not also diffused.
         vec3 kd = vec3(1.0, 1.0, 1.0) - f;
         vec3 diffuse = kd * diffuseColor / 3.14159265;
 

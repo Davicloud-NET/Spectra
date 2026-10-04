@@ -9,32 +9,17 @@ using SpectraEngine.Core.Scene;
 
 namespace Spectra.Kitchen.Tests;
 
-/// <summary>
-/// The one compiled-map fixture, shared by the in-process tests and by the
-/// two-process determinism oracle.
-/// </summary>
-/// <remarks>
-/// <para><b>Every value in it is a literal</b>: fixed ids, fixed names, fixed
-/// floats, fixed cells. The determinism oracle compares the bytes two separate
-/// processes produce from this function, so anything derived from a clock, a
-/// machine path, a random source or an iteration order would make the oracle
-/// report a difference that is not the one it is hunting.</para>
-/// <para><b>The orders are deliberately wrong three different ways.</b> Assets are
-/// added in an order that is neither alphabetical nor the order their strings
-/// would sort in; nodes are named so pre-order is not alphabetical; and cells are
-/// added in an order the directory must sort out of. A fixture whose natural order
-/// already matched the canonical one would pass just as happily with the ordering
-/// rules removed.</para>
-/// </remarks>
+// The shared compiled-map fixture. Every value is a literal, so two builds
+// give the same bytes. Assets, node names and cells are all added out of
+// sorted order, so the ordering rules have something to do.
 internal static class ScmapFixture
 {
-    /// <summary>How many section codes this build claims and steps over: ENTT, ECON, SCPT, LUAB, LUAS.</summary>
+    // ENTT, ECON, SCPT, LUAB, LUAS.
     public const int ReservedEmptySections = 5;
 
-    /// <summary>The scene name, which is the first string interned after the empty one.</summary>
     public const string SceneName = "Determinism";
 
-    /// <summary>Asset paths, in the order the fixture references them.</summary>
+    // In reference order.
     public static readonly string[] AssetPaths =
     [
         "Materials/zulu.spectramat",
@@ -43,7 +28,7 @@ internal static class ScmapFixture
         "Models/crate.smodel",
     ];
 
-    /// <summary>Node names, in pre-order.</summary>
+    // In pre-order.
     public static readonly string[] NodeNames =
     [
         "World",
@@ -55,10 +40,7 @@ internal static class ScmapFixture
         "Crate",
     ];
 
-    /// <summary>
-    /// The whole string table, in the canonical first-reference order: the empty
-    /// string, the scene name, the asset paths, then the node names.
-    /// </summary>
+    // Empty string, scene name, asset paths, node names.
     public static string[] ExpectedStrings()
     {
         var all = new string[1 + 1 + AssetPaths.Length + NodeNames.Length];
@@ -69,15 +51,8 @@ internal static class ScmapFixture
         return all;
     }
 
-    /// <summary>
-    /// The authored local transform of each node, index-aligned to
-    /// <see cref="NodeNames"/>.
-    /// </summary>
-    /// <remarks>
-    /// Public so the bit-identity test compares the file against what was
-    /// AUTHORED. Reading the expectation back out of the same file would compare
-    /// the file to itself and pass however the floats were mangled on the way in.
-    /// </remarks>
+    // Index-aligned to NodeNames. Public so the bit-identity test compares the
+    // file against the authored values, not against itself.
     public static readonly Transform[] Transforms =
     [
         Identity,
@@ -89,13 +64,10 @@ internal static class ScmapFixture
         Placed(2f, 0.5f, -2f),
     ];
 
-    /// <summary>The fixture's bytes.</summary>
     public static byte[] Build() => CreateBuilder().Build(Digest, EngineInfo.MapFormatVersion);
 
-    /// <summary>The digest the fixture stamps: a literal, so two processes agree.</summary>
     public static UInt128 Digest => new(0x0123456789ABCDEFul, 0xFEDCBA9876543210ul);
 
-    /// <summary>The fixture, before it is written, so a test can perturb it.</summary>
     public static ScmapBuilder CreateBuilder()
     {
         var builder = new ScmapBuilder(SceneName);
@@ -109,7 +81,7 @@ internal static class ScmapFixture
         builder.AddAsset(new ScmapAssetSource(PackEntryKind.Image, AssetPaths[2], 0x9999_AAAA_BBBB_CCCCul));
         builder.AddAsset(new ScmapAssetSource(PackEntryKind.Model, AssetPaths[3], 0xDDDD_EEEE_FFFF_0000ul));
 
-        // Pre-order, parent index strictly less than the child's own.
+        // Pre-order: a parent's index is below its child's.
         builder.AddNode(new ScmapNodeSource(
             NodeId(0), NodeNames[0], -1, Transforms[0], ScmapPayloadKind.None));
 
@@ -136,7 +108,7 @@ internal static class ScmapFixture
             ScmapPayloadFlags.IsEntityOwned,
             PayloadIndex: 3));
 
-        // Out of canonical order on every axis, so the sort has something to do.
+        // Unsorted on every axis.
         builder.AddChunk(Cell(2, 0, -1));
         builder.AddChunk(Cell(-3, 4, 0));
         builder.AddChunk(Cell(2, 0, -9));
@@ -146,7 +118,7 @@ internal static class ScmapFixture
         return builder;
     }
 
-    /// <summary>The cells the fixture carries, in the order the directory must put them.</summary>
+    // The fixture's cells in directory order.
     public static ChunkCoord[] SortedCells =>
     [
         new(-3, 1, 7),
@@ -156,7 +128,6 @@ internal static class ScmapFixture
         new(2, 0, -1),
     ];
 
-    /// <summary>A literal id per node, so two processes stamp the same bytes.</summary>
     public static Guid NodeId(int index) =>
         Guid.Parse($"3f2a1c88-4b6d-4a19-9d0e-77c1f0a2b3{index:x2}");
 
@@ -169,9 +140,7 @@ internal static class ScmapFixture
 
     private static Transform Placed(float x, float y, float z) => new()
     {
-        // A rotation that is not the identity and not axis-aligned, and a scale
-        // that is not one, because the round-trip claim is bit identity of ten
-        // floats rather than of three.
+        // Non-trivial rotation and scale, so all ten floats are exercised.
         Position = new Vector3(x, y, z),
         Rotation = Quaternion.Normalize(new Quaternion(0.1f, -0.7f, 0.3f, 0.64f)),
         Scale = new Vector3(1.5f, 0.25f, 3.0000002f),
@@ -181,8 +150,7 @@ internal static class ScmapFixture
     {
         var coord = new ChunkCoord(x, y, z);
 
-        // Deliberately NOT the cell cube: a border-spanning brush is owned by one
-        // cell and overhangs it, so the directory carries the true render bounds.
+        // Not the cell cube: render bounds can overhang the cell.
         return new ScmapChunkSource(
             coord,
             new Aabb(coord.MinCorner - new Vector3(0.5f), coord.MaxCorner + new Vector3(1.25f)));

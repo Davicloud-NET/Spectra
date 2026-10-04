@@ -5,31 +5,13 @@ using System.Numerics;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// A full-screen shader invocation: the program, plus the values to give it.
+/// A full-screen shader invocation: the program plus the values to give it.
+/// Build one once and refill it each frame.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>It stages values rather than setting them, and that is not fussiness.</b>
-/// The three backends disagree about when a uniform may be written: OpenGL's
-/// <c>glUniform</c> acts on the currently active program, so <c>Use()</c> must
-/// come first, while both D3D backends write into CPU-side constant shadows that
-/// <c>Use()</c> then flushes, so <c>Use()</c> must come last. There is no single
-/// order that works everywhere, which is why the draw itself stays per-backend
-/// and only the intent lives here.
-/// </para>
-/// <para>
-/// The tempting <c>Use(); set values; Use();</c> is worse than either: on D3D12
-/// the first call clears the pending texture table, so the second stages a
-/// descriptor table whose source slot has fallen back to the white placeholder,
-/// and the pass samples white.
-/// </para>
-/// <para>
-/// <b>A pass is meant to be built once and refilled every frame.</b> The staging
-/// maps keep their entries and their array buffers between uses, so the deferred
-/// light pass (which restages a matrix, a handful of scalars and two
-/// eight-element light arrays per frame) allocates nothing after the first one.
-/// </para>
-/// </remarks>
+// Values are staged, not set: GL needs Use() before uniform writes, both D3D
+// backends need it after. Each backend replays them at its own legal point.
+// Use(); set; Use(); is not a way out: D3D12's first Use() clears the pending
+// texture table and the pass samples white.
 public sealed class PostPass
 {
     private readonly Dictionary<string, float> _floats = [];
@@ -93,15 +75,9 @@ public sealed class PostPass
     }
 
     /// <summary>
-    /// Stages a <c>vec4</c> array uniform, copying the values into a buffer this
-    /// pass owns.
+    /// Stages a <c>vec4</c> array uniform. The values are copied, so the
+    /// caller's span can be reused straight away.
     /// </summary>
-    /// <remarks>
-    /// The copy is what makes staging safe: the caller's span is usually a
-    /// scratch buffer that is refilled before this pass ever runs. The buffer is
-    /// reused whenever the length is unchanged, which for a light array is
-    /// always.
-    /// </remarks>
     public PostPass SetUniform(string name, ReadOnlySpan<Vector4> values)
     {
         if (!_vec4Arrays.TryGetValue(name, out Vector4[]? buffer) || buffer.Length != values.Length)
@@ -111,10 +87,7 @@ public sealed class PostPass
         return this;
     }
 
-    /// <summary>
-    /// Stages a <c>mat4</c> array uniform, copying the values into a buffer this
-    /// pass owns. Same contract as the <c>vec4</c> overload.
-    /// </summary>
+    /// <summary>Stages a <c>mat4</c> array uniform. The values are copied.</summary>
     public PostPass SetUniform(string name, ReadOnlySpan<Matrix4x4> values)
     {
         if (!_matrixArrays.TryGetValue(name, out Matrix4x4[]? buffer) || buffer.Length != values.Length)
@@ -131,10 +104,7 @@ public sealed class PostPass
         return this;
     }
 
-    /// <summary>
-    /// Replays the staged values onto the program. Each backend calls this at
-    /// the point in its own sequence where writing uniforms is legal.
-    /// </summary>
+    // Each backend calls this where its own Use() order allows uniform writes.
     internal void ApplyTo(ShaderProgram shader)
     {
         foreach ((string name, float value) in _floats)

@@ -6,18 +6,8 @@ using Texture = SpectraEngine.Core.Graphics.Texture;
 namespace SpectraEngine.Graphics.Tests;
 
 /// <summary>
-/// Offscreen render targets against a real driver: does a pass actually land in
-/// the target, and does the target survive a resize.
+/// Offscreen render targets against a real driver, checked by reading pixels back.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Reading a pixel back is the only assertion that means anything here.</b>
-/// A target that is never bound, a viewport sized from the window instead of
-/// from the target, and a clear that goes to the back buffer instead all leave
-/// every object in this API looking correct and every call returning success.
-/// What they change is the contents of a texture, so that is what gets checked.
-/// </para>
-/// </remarks>
 [Collection(GlRendererCollection.Name)]
 public sealed class GlRenderTargetTests
 {
@@ -35,8 +25,7 @@ public sealed class GlRenderTargetTests
         RenderTarget target = renderer.CreateRenderTarget(new RenderTargetDesc(32, 32));
         try
         {
-            // A colour nothing else in this process clears to, so a pixel that
-            // reads back as this one cannot have come from somewhere else.
+            // Nothing else in this process clears to green.
             var green = new System.Numerics.Vector4(0f, 1f, 0f, 1f);
 
             renderer.BeginPass(target, PassClear.To(green));
@@ -55,11 +44,8 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void The_pass_size_comes_from_the_target_not_the_window()
     {
-        // The trap the whole seam exists to avoid: every pipeline used to build
-        // its viewport and its camera aspect from the window size, which is
-        // right only while the window is the only target. The fixture's window
-        // is 64x64 and this target is not square, so a leaked window size would
-        // show up as the wrong aspect here.
+        // The fixture's window is 64x64; this target is not square, so a
+        // leaked window size shows as the wrong aspect.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget target = renderer.CreateRenderTarget(new RenderTargetDesc(80, 20));
         try
@@ -90,9 +76,7 @@ public sealed class GlRenderTargetTests
 
             target.Resize(48, 24);
 
-            // Identity, not equality: a material that sampled this target holds
-            // this exact object. Replacing it on resize is how every editor
-            // viewport would end up pointing at a destroyed texture.
+            // Materials sampling this target hold this object.
             target.ColorTexture!.ShouldBeSameAs(before);
             ((OpenGLTexture)target.ColorTexture!).Handle.ShouldBe(handleBefore);
 
@@ -110,9 +94,8 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void A_resized_target_still_renders()
     {
-        // The framebuffer has to be re-completed after its attachment's storage
-        // is respecified. Skipping that leaves an incomplete FBO, which draws
-        // nothing and reports no error until something reads the result.
+        // An FBO whose attachment storage was respecified must be re-completed,
+        // or it draws nothing with no error.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget target = renderer.CreateRenderTarget(new RenderTargetDesc(16, 16));
         try
@@ -139,8 +122,6 @@ public sealed class GlRenderTargetTests
         RenderTarget target = renderer.CreateRenderTarget(new RenderTargetDesc(24, 24));
         try
         {
-            // Called every frame by anything that keeps a target matched to a
-            // viewport, so it has to be free rather than a reallocation.
             target.Resize(24, 24);
             target.Width.ShouldBe(24);
             target.Height.ShouldBe(24);
@@ -154,8 +135,7 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void An_srgb_target_encodes_what_is_written_into_it()
     {
-        // Same hardware conversion R2 gave the back buffer, now on a texture
-        // something else will sample. 0.2140 linear is byte 128.
+        // 0.2140 linear is byte 128.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget target = renderer.CreateRenderTarget(
             new RenderTargetDesc(8, 8, ColorSpace: TextureColorSpace.Srgb));
@@ -178,8 +158,7 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void A_linear_target_leaves_what_is_written_alone()
     {
-        // The control for the test above, and the case an HDR chain needs: a
-        // target carrying light values between passes must not encode.
+        // Control for the test above.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget target = renderer.CreateRenderTarget(
             new RenderTargetDesc(8, 8, ColorSpace: TextureColorSpace.Linear));
@@ -200,9 +179,6 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void Ending_a_target_pass_puts_the_window_back()
     {
-        // Otherwise the next pipeline that forgets to open a pass keeps drawing
-        // into a texture nobody is looking at, and the window simply stops
-        // updating with no error anywhere.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget target = renderer.CreateRenderTarget(new RenderTargetDesc(16, 16));
         try
@@ -235,18 +211,13 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void An_hdr_target_stores_values_above_one()
     {
-        // The entire reason for an intermediate target. An 8-bit buffer clamps
-        // this to 1.0 and the tone curve downstream then has nothing left to
-        // work with; the whole point of rendering offscreen first is that the
-        // highlights survive as far as the resolve.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget target = renderer.CreateRenderTarget(
             new RenderTargetDesc(8, 8, TextureFormat.Rgba16Float));
         try
         {
             target.ColorTexture!.Format.ShouldBe(TextureFormat.Rgba16Float);
-            // A float format has no sRGB variant, so a request for one resolves
-            // to linear rather than throwing.
+            // Float formats have no sRGB variant.
             target.ColorTexture!.ColorSpace.ShouldBe(TextureColorSpace.Linear);
 
             renderer.BeginPass(target, PassClear.To(new System.Numerics.Vector4(4f, 2f, 0.5f, 1f)));
@@ -266,9 +237,7 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void An_eight_bit_target_clamps_the_same_value()
     {
-        // The control, and the evidence that the test above is measuring the
-        // format rather than the clear. Same clear, an Rgba8 target: 4.0 comes
-        // back as 1.0, which is what an LDR intermediate would cost.
+        // Control for the test above: same clear, Rgba8 target.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget target = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8));
         try
@@ -289,9 +258,6 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void A_float_format_is_refused_as_an_uploaded_texture()
     {
-        // Nothing decodes an image file to half-floats, so a byte array cannot
-        // fill one. Refusing beats reinterpreting the bytes, which produces a
-        // texture full of denormals and no error anywhere.
         var pixels = new byte[] { 255, 255, 255, 255 };
 
         Should.Throw<ArgumentOutOfRangeException>(() => _fixture.Renderer.CreateTexture(
@@ -302,11 +268,7 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void A_multi_target_pass_writes_every_attachment()
     {
-        // The G-buffer's whole premise. The failure this catches is specific and
-        // silent: a framebuffer writes attachment 0 only unless the draw-buffer
-        // list says otherwise, so a shader emitting three outputs into three
-        // attached textures fills one and leaves two untouched, with no error
-        // from the driver, the API or the compiler.
+        // An FBO writes attachment 0 only unless the draw-buffer list says otherwise.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget a = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8));
         RenderTarget b = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8, Depth: false));
@@ -319,8 +281,6 @@ public sealed class GlRenderTargetTests
             renderer.BeginPass(targets, PassClear.To(new System.Numerics.Vector4(0.5f, 0f, 0f, 1f)));
             renderer.EndPass();
 
-            // The clear reaches all three, which is what proves they were bound
-            // rather than merely created.
             ReadPixel(a).R.ShouldBeInRange(126, 130);
             ReadPixel(b).R.ShouldBeInRange(126, 130);
             ReadPixelFloat(c).R.ShouldBe(0.5f, 0.01f);
@@ -336,8 +296,6 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void Targets_of_different_sizes_are_refused()
     {
-        // One rasterisation writes all of them, so a mismatch is a driver error
-        // on some backends and a silently clipped attachment on others.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget a = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8));
         RenderTarget b = renderer.CreateRenderTarget(new RenderTargetDesc(16, 8, Depth: false));
@@ -357,9 +315,6 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void A_multi_target_pass_leaves_the_framebuffer_single_target()
     {
-        // Otherwise the next ordinary pass through the same target still has
-        // three draw buffers enabled and writes garbage into two textures it was
-        // never told about.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget a = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8));
         RenderTarget b = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8, Depth: false));
@@ -370,7 +325,6 @@ public sealed class GlRenderTargetTests
             renderer.BeginPass(targets, PassClear.To(new System.Numerics.Vector4(1f, 0f, 0f, 1f)));
             renderer.EndPass();
 
-            // Now a single-target pass on `a` alone must not touch `b`.
             renderer.BeginPass(a, PassClear.To(new System.Numerics.Vector4(0f, 0f, 0f, 1f)));
             renderer.EndPass();
 
@@ -387,10 +341,6 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void Depth_is_a_sampleable_texture_carrying_what_was_written()
     {
-        // Deferred reconstructs world position from depth rather than storing
-        // it, which is worth a whole RGB of G-buffer. That only works if depth
-        // is readable, so this asserts the value rather than the existence of
-        // the object.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget target = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8));
 
@@ -399,8 +349,7 @@ public sealed class GlRenderTargetTests
             target.DepthTexture.ShouldNotBeNull();
             target.DepthTexture!.Format.ShouldBe(TextureFormat.Depth32Float);
 
-            // Clear to a depth that is neither of the defaults, so reading back
-            // the right number cannot be a coincidence.
+            // Neither default depth, so the read-back can't be a coincidence.
             renderer.BeginPass(target, new PassClear(null, 0.25f));
             renderer.EndPass();
 
@@ -431,8 +380,6 @@ public sealed class GlRenderTargetTests
     [Fact]
     public void A_resize_keeps_the_depth_texture_identity_too()
     {
-        // Same reason as the colour attachment: anything sampling depth holds
-        // this object, and replacing it on resize strands them.
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget target = renderer.CreateRenderTarget(new RenderTargetDesc(8, 8));
 
@@ -445,7 +392,6 @@ public sealed class GlRenderTargetTests
             before.Width.ShouldBe(32);
             before.Height.ShouldBe(16);
 
-            // And it still works as a depth attachment afterwards.
             renderer.BeginPass(target, new PassClear(null, 0.75f));
             renderer.EndPass();
             ReadDepth(target).ShouldBe(0.75f, 0.001f);
@@ -473,9 +419,7 @@ public sealed class GlRenderTargetTests
         return value;
     }
 
-    // Reads texel (0,0) of an HDR target, as floats. The byte reader below
-    // cannot see what makes an HDR target HDR: it clamps to [0,1] on the way
-    // out and quantises what survives.
+    // Texel (0,0) as floats. The byte reader clamps to [0,1].
     private unsafe (float R, float G, float B) ReadPixelFloat(RenderTarget target)
     {
         GL gl = _fixture.Gl;
@@ -494,7 +438,7 @@ public sealed class GlRenderTargetTests
         return (pixel[0], pixel[1], pixel[2]);
     }
 
-    // Reads texel (0,0) of a target's colour attachment as bytes.
+    // Texel (0,0) as bytes.
     private unsafe (int R, int G, int B) ReadPixel(RenderTarget target)
     {
         GL gl = _fixture.Gl;

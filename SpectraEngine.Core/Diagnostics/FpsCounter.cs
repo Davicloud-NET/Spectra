@@ -1,9 +1,6 @@
 namespace SpectraEngine.Core.Diagnostics;
 
-/// <summary>
-/// Accumulates frame timings and exposes a smoothed frame rate. Averaging over
-/// a short interval avoids the jitter of a per-frame reading.
-/// </summary>
+/// <summary>Frame rate averaged over a short interval.</summary>
 public sealed class FpsCounter
 {
     private readonly double _refreshInterval;

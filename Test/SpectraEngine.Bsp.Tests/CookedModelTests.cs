@@ -9,23 +9,10 @@ using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The runtime half of the model cook: the redirection that decides which of two
-/// files a model IS, and the load that turns a <c>.smodel</c> into the same
-/// <see cref="ModelData"/> an import produces.
-/// </summary>
-/// <remarks>
-/// <para><b>The <c>.smodel</c> here is built by <see cref="HandBuiltSmodel"/>,
-/// not by the cooker.</b> The cook's own tests live beside the cook and prove
-/// that what it writes is readable; this file's claim is the other one, that the
-/// engine loads a conforming file whatever wrote it - which is only a real claim
-/// if the bytes come from a transcription of the specification rather than from
-/// the writer whose output is already the reader's input everywhere else.</para>
-/// <para><b>No <c>.gltf</c> is ever written in these fixtures.</b> A cooked model
-/// that quietly fell back to the authored file would pass every assertion about
-/// its contents; the only way to prove it did not is for there to be nothing to
-/// fall back to.</para>
-/// </remarks>
+/// <summary>Loading a cooked <c>.smodel</c> in place of its authored model.</summary>
+// Fixtures come from HandBuiltSmodel, not the cooker, so the reader is held to
+// the spec and not to its own writer. No .gltf is written: a load that fell
+// back to the authored file would otherwise pass.
 public class CookedModelTests : IDisposable
 {
     private const string Authored = "Models/prop.gltf";
@@ -50,9 +37,6 @@ public class CookedModelTests : IDisposable
     [Fact]
     public void The_cooked_file_wins_where_one_exists_and_the_authored_path_stays_the_name()
     {
-        // A model is named by its SOURCE path forever - a map, a script and a
-        // scene node all say Models/prop.gltf - so cooking is a source swap
-        // rather than a migration of everything that names a prop.
         ModelContentPath.CookedPathFor(Authored).ShouldBe(Cooked);
         ModelContentPath.CookedPathFor(Cooked).ShouldBe(Cooked);
         ModelContentPath.IsCooked(Cooked).ShouldBeTrue();
@@ -84,8 +68,7 @@ public class CookedModelTests : IDisposable
         model.Data!.Meshes[0].Geometry.ShouldBeSameAs(model.Data.Meshes[1].Geometry);
         model.Meshes[0].Positions.ShouldBeSameAs(model.Meshes[1].Positions);
 
-        // The whole model's bounds ride the header, so Mesh.LocalBounds and the
-        // BVH cost no vertex walk at load.
+        // Bounds come from the header, not from a vertex walk.
         data.LocalBounds.Min.ShouldBe(new Vector3(-1f, -2f, -3f));
         data.LocalBounds.Max.ShouldBe(new Vector3(4f, 5f, 6f));
 
@@ -95,12 +78,9 @@ public class CookedModelTests : IDisposable
     [Fact]
     public void Each_submesh_gets_a_zero_based_slice_of_the_shared_vertex_buffer()
     {
-        // The format keeps ONE vertex buffer with submeshes as index ranges,
-        // because an LOD switch has to be a draw-range change. ModelMesh predates
-        // it and wants a self-contained zero-based array per submesh, so the load
-        // gathers - and the gather is by the MINIMUM index in the range, never by
-        // an assumed partition, or a file whose submeshes interleave their
-        // vertices would be mis-addressed rather than merely copied widely.
+        // The file has one vertex buffer with submeshes as index ranges.
+        // ModelMesh wants a zero-based array per submesh, so the load rebases
+        // each range on its minimum index.
         Write(Cooked, Model((0u, 3u, 0u), (3u, 3u, 0u)));
 
         using AssetManager assets = Attach(out _);
@@ -110,8 +90,7 @@ public class CookedModelTests : IDisposable
         data.Meshes[0].VertexCount.ShouldBe(3);
         data.Meshes[0].Vertices[0].ShouldBe(0f, 1e-5f);
 
-        // The second range names vertices 3, 4 and 5, so its slice starts at 3
-        // and its indices come back rebased on it.
+        // Second range names vertices 3 to 5.
         data.Meshes[1].Indices.ShouldBe([0u, 1u, 2u]);
         data.Meshes[1].VertexCount.ShouldBe(3);
         data.Meshes[1].Vertices[0].ShouldBe(30f, 1e-5f);
@@ -122,10 +101,6 @@ public class CookedModelTests : IDisposable
     [Fact]
     public void A_submesh_binds_the_material_the_file_named_by_path()
     {
-        // By PATH, not by name: the cook resolved this once and recorded the
-        // answer, and a loader that rebuilt "Materials/<name>.spectramat" from
-        // the stem would be a second spelling of that rule, agreeing exactly
-        // until a material lives somewhere else.
         Write(Cooked, Model((0u, 3u, 0u)));
         WriteMaterial();
 
@@ -144,9 +119,6 @@ public class CookedModelTests : IDisposable
     [Fact]
     public void A_submesh_that_names_no_material_degrades_to_the_default_one()
     {
-        // The cook says so at SC3002 where the author's file is in hand; here it
-        // is the runtime's ordinary soft landing, which content errors must never
-        // escape.
         Write(Cooked, Model((0u, 3u, HandBuiltSmodel.NameOffsetAbsent)));
 
         using AssetManager assets = Attach(out _);
@@ -160,10 +132,7 @@ public class CookedModelTests : IDisposable
     [Fact]
     public void A_layout_this_build_cannot_upload_is_refused_naming_both_ids()
     {
-        // The format reserves a stride-copying fallback for the day
-        // VertexAttribute.StandardLayout grows a tangent, and this build has
-        // none. Refusing names the moment that arrives; converting silently would
-        // upload floats in an order nothing agreed on.
+        // An 11-float layout with a tangent, which this build has no upload path for.
         byte[] file = new HandBuiltSmodel()
             .VertexLayout(
                 strideFloats: 11,
@@ -190,9 +159,6 @@ public class CookedModelTests : IDisposable
     [Fact]
     public void With_no_cooked_file_the_authored_one_is_imported_as_before()
     {
-        // The loose path is untouched, which is what makes the whole layer a
-        // source swap: the repo's own crate has no .smodel and still loads
-        // through the importer.
         using var assets = new AssetManager(
             NullLogger<AssetManager>.Instance, ContentRoot.Path, hotReloadEnabled: false);
         assets.AttachRenderer(new FakeRenderer());
@@ -203,12 +169,8 @@ public class CookedModelTests : IDisposable
         assets.ReleaseGraphicsResources();
     }
 
-    // ---- fixtures -----------------------------------------------------------
-
-    // Six vertices in the engine's standard layout, two triangles, and whatever
-    // submesh records the caller asks for. The x of vertex v is v * 10, so a
-    // slice that started at the wrong vertex is a different number rather than a
-    // different arrangement of the same ones.
+    // Six vertices, two triangles. Vertex v has x = v * 10, so a slice starting
+    // at the wrong vertex shows up as a different number.
     private static byte[] Model(params (uint Start, uint Count, uint MaterialName)[] submeshes)
     {
         var vertices = new float[6 * 8];

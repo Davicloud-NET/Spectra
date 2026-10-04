@@ -8,24 +8,12 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// The one rule that keeps three gestures from fighting over the same button:
-/// a press on a handle manipulates, a press on an object selects and moves it,
-/// a press on empty space box-selects — and whichever wins owns the pointer
-/// until the release.
+/// Press arbitration: a handle manipulates, an object selects and moves,
+/// empty space box-selects, and the winner owns the pointer until release.
 /// </summary>
-/// <remarks>
-/// <b>The failure this suite exists to catch is silent and infuriating:</b> a
-/// grab that starts a marquee instead of moving the brush you were pointing at,
-/// or an object drag that swallows a gizmo handle drawn on top of it. Both are
-/// ordering bugs, both look like "the editor is janky" rather than like a
-/// defect, and neither shows up in a test of any single component — so the
-/// arbitration is asserted here directly, through
-/// <see cref="ViewportInteractionController.ClassifyPress"/>, which is a pure
-/// function of the frame.
-/// </remarks>
 public sealed class ViewportArbitrationTests
 {
-    // Well past the plane quads, so an aim here can only be the x shaft.
+    // Past the plane quads, so an aim here can only hit the x shaft.
     private const float AlongAxis = 0.8f;
 
     private static ViewportHarness Fixture()
@@ -34,8 +22,6 @@ public sealed class ViewportArbitrationTests
         harness.Orbit(Vector3.Zero, 24f, 0.9f, -0.4f);
         return harness;
     }
-
-    // --- Classification ------------------------------------------------------
 
     [Fact]
     public void A_press_on_a_gizmo_handle_classifies_as_manipulate()
@@ -54,8 +40,7 @@ public sealed class ViewportArbitrationTests
         harness.AddSelectedBrush(Vector3.Zero, 4f);
         Vector3 aim = Vector3.UnitX * (AxisLength(harness) * AlongAxis);
 
-        // The conflict has to be real for the test to mean anything: the very
-        // same pixel does hit the brush.
+        // The same pixel must really hit the brush.
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(harness.WorldToScreen(aim), harness.ViewportSize);
         harness.Scene.Raycast(in ray, out _).ShouldBeTrue();
 
@@ -108,8 +93,6 @@ public sealed class ViewportArbitrationTests
         harness.Undo.IsTransactionOpen.ShouldBeFalse();
     }
 
-    // --- The gestures the classification leads to ----------------------------
-
     [Fact]
     public void A_handle_drag_manipulates_and_never_starts_a_marquee()
     {
@@ -126,7 +109,7 @@ public sealed class ViewportArbitrationTests
 
         harness.Viewport.DragMode.ShouldBe(ViewportDragMode.None);
         node.LocalPosition.X.ShouldBe(3f, 1e-2f);
-        node.LocalPosition.Y.ShouldBe(0f, 1e-4f); // the axis constraint held
+        node.LocalPosition.Y.ShouldBe(0f, 1e-4f);
         harness.Undo.UndoCount.ShouldBe(1);
     }
 
@@ -166,8 +149,6 @@ public sealed class ViewportArbitrationTests
         harness.Undo.IsTransactionOpen.ShouldBeFalse();
     }
 
-    // --- Multi-selection ------------------------------------------------------
-
     [Fact]
     public void Pressing_a_member_of_a_multi_selection_does_not_collapse_it_yet()
     {
@@ -177,8 +158,7 @@ public sealed class ViewportArbitrationTests
 
         harness.Press(harness.WorldToScreen(a.WorldPosition));
 
-        // Collapsing here would drop B at the instant the user grabbed A to
-        // drag both.
+        // Collapsing on the press would drop B before the user can drag both.
         harness.Scene.Selection.Items.ShouldBe(new[] { a, b });
     }
 
@@ -194,7 +174,7 @@ public sealed class ViewportArbitrationTests
         harness.Release(press);
 
         harness.Scene.Selection.Items.ShouldBe(new[] { a });
-        harness.Undo.UndoCount.ShouldBe(0); // a click is not an edit
+        harness.Undo.UndoCount.ShouldBe(0);
     }
 
     [Fact]
@@ -209,8 +189,7 @@ public sealed class ViewportArbitrationTests
         harness.Viewport.Update(
             harness.Frame(press, down: PointerButtons.Left), cancelRequested: true);
 
-        // Escape means "forget this gesture happened" — including the pending
-        // collapse a release would have applied.
+        // Escape also drops the collapse a release would have applied.
         harness.Scene.Selection.Items.ShouldBe(new[] { a, b });
         harness.Viewport.DragMode.ShouldBe(ViewportDragMode.None);
         harness.Undo.UndoCount.ShouldBe(0);
@@ -228,16 +207,13 @@ public sealed class ViewportArbitrationTests
         harness.Drag(press + new Vector2(50f, 20f));
         harness.Release(press + new Vector2(50f, 20f));
 
-        harness.Scene.Selection.Items.ShouldBe(new[] { a, b }); // still both
+        harness.Scene.Selection.Items.ShouldBe(new[] { a, b });
         a.LocalPosition.ShouldNotBe(new Vector3(-8f, 0f, 0f));
         b.LocalPosition.ShouldNotBe(new Vector3(8f, 0f, 0f));
-        // Rigid: they moved by the same world delta.
         (a.LocalPosition - new Vector3(-8f, 0f, 0f)).ShouldBeCloseTo(
             b.LocalPosition - new Vector3(8f, 0f, 0f), 1e-3f);
         harness.Undo.UndoCount.ShouldBe(1);
     }
-
-    // --- Modifiers ------------------------------------------------------------
 
     [Fact]
     public void Shift_pressing_an_object_adds_it_to_the_selection()
@@ -263,8 +239,6 @@ public sealed class ViewportArbitrationTests
         harness.Scene.Selection.Items.ShouldBe(new[] { a });
     }
 
-    // --- Tools without a free-move handle ------------------------------------
-
     [Theory]
     [InlineData(GizmoMode.Rotate)]
     [InlineData(GizmoMode.Scale)]
@@ -279,7 +253,6 @@ public sealed class ViewportArbitrationTests
 
         harness.Scene.Selection.Items.ShouldBe(new[] { node });
         harness.Drag(press + new Vector2(60f, -30f));
-        // Dragging an unselected object must never silently spin or stretch it.
         node.LocalPosition.ShouldBe(new Vector3(3f, 0f, 0f));
         harness.Undo.UndoCount.ShouldBe(0);
     }
@@ -307,14 +280,11 @@ public sealed class ViewportArbitrationTests
         SceneNode a = harness.AddSelectedBrush(new Vector3(-8f, 0f, 0f), 1f, "A");
         harness.AddSelectedBrush(new Vector3(8f, 0f, 0f), 1f, "B");
 
-        // No drag will ever come back to resolve the deferred collapse, so it
-        // has to happen on the press instead of being lost.
+        // No drag follows to resolve a deferred collapse, so it happens on the press.
         harness.Press(harness.WorldToScreen(a.WorldPosition));
 
         harness.Scene.Selection.Items.ShouldBe(new[] { a });
     }
-
-    // --- Camera arbitration ---------------------------------------------------
 
     [Fact]
     public void The_camera_runs_only_while_nothing_owns_the_pointer()
@@ -322,13 +292,13 @@ public sealed class ViewportArbitrationTests
         var harness = Fixture();
         harness.AddSelectedBrush(Vector3.Zero, 1f);
 
-        // Free: a right-drag orbits.
+        // Free: a right-drag turns the camera.
         harness.Viewport.Update(harness.Frame(new Vector2(400f, 300f), down: PointerButtons.Right));
         harness.Viewport.Update(harness.Frame(new Vector2(440f, 300f), down: PointerButtons.Right));
         harness.EditorCamera.Yaw.ShouldNotBe(0.9f);
         float afterOrbit = harness.EditorCamera.Yaw;
 
-        // Claimed by a marquee: the same right-drag does nothing to the camera.
+        // Claimed by a marquee: the same right-drag does nothing.
         harness.Press(new Vector2(8f, 8f)).ShouldBe(ViewportDragMode.BoxSelect);
         harness.Viewport.Update(harness.Frame(new Vector2(200f, 200f),
             down: PointerButtons.Left | PointerButtons.Right));
@@ -337,8 +307,6 @@ public sealed class ViewportArbitrationTests
 
         harness.EditorCamera.Yaw.ShouldBe(afterOrbit);
     }
-
-    // --- Teardown -------------------------------------------------------------
 
     [Fact]
     public void Resetting_abandons_whichever_gesture_was_live()
@@ -355,7 +323,7 @@ public sealed class ViewportArbitrationTests
         harness.Viewport.BoxSelect.IsActive.ShouldBeFalse();
         harness.Undo.IsTransactionOpen.ShouldBeFalse();
         harness.Undo.UndoCount.ShouldBe(0);
-        node.LocalPosition.ShouldBe(new Vector3(3f, 0f, 0f)); // restored exactly
+        node.LocalPosition.ShouldBe(new Vector3(3f, 0f, 0f));
     }
 
     [Fact]
@@ -372,16 +340,11 @@ public sealed class ViewportArbitrationTests
         seen.ShouldBe(new[] { ViewportDragMode.BoxSelect, ViewportDragMode.None });
     }
 
-    // --- A click is a click, even on an off-grid object -----------------------
-
     [Fact]
     public void A_click_held_for_a_frame_neither_moves_an_off_grid_object_nor_lands_history()
     {
-        // The shape of every human click: press, at least one held frame with
-        // the cursor perfectly still, release. With grid snapping on (the
-        // default) the held frame used to quantize the object's absolute
-        // position, so clicking to select an off-grid brush moved it, wrote a
-        // "Move" into the history, and recompiled the cells it landed in.
+        // A real click has a held frame with the cursor still. With snapping on,
+        // that frame must not quantize the off-grid position.
         var harness = Fixture();
         var start = new Vector3(3.7f, 2.2f, -0.4f);
         SceneNode node = harness.AddSelectedBrush(start, 1f, "OffGrid");
@@ -391,11 +354,8 @@ public sealed class ViewportArbitrationTests
         harness.Scene.RebuildStaticWorld(renderer);
         harness.Scene.StaticWorldDirty.ShouldBeFalse();
 
-        // A single selection puts the gizmo's centre disc over the node's own
-        // pixel, so this press grabs the free-move handle directly rather than
-        // through the object route — the same Screen handle either way. The
-        // object route is covered by the multi-selection test below, whose
-        // shared pivot sits away from the node.
+        // With one node selected the centre disc covers its pixel, so this is a
+        // handle grab. The next test covers the object route.
         Vector2 pixel = harness.WorldToScreen(node.WorldPosition);
         harness.Press(pixel).ShouldBe(ViewportDragMode.Manipulate);
         harness.Drag(pixel).ShouldBe(ViewportDragMode.Manipulate);
@@ -409,9 +369,8 @@ public sealed class ViewportArbitrationTests
     [Fact]
     public void Clicking_one_member_of_an_off_grid_multi_selection_still_isolates_it()
     {
-        // The second face of the same bug: the deferred collapse only runs when
-        // the gesture reports as a click, so a snap-manufactured edit made
-        // click-to-isolate stop working — and moved both nodes on the way.
+        // The deferred collapse only runs when the gesture counts as a click,
+        // so a snap on the held frame would break it.
         var harness = Fixture();
         var startA = new Vector3(-3.4f, 0.2f, 0f);
         var startB = new Vector3(3.1f, 0.2f, 0f);
@@ -429,14 +388,11 @@ public sealed class ViewportArbitrationTests
         harness.Undo.UndoCount.ShouldBe(0);
     }
 
-    // --- Cancelling a gesture reaches every node it touched -------------------
-
     [Fact]
     public void Escape_restores_even_a_node_that_left_the_scene_mid_drag()
     {
-        // A cancel discards its commands, so a node removed while the gesture
-        // was open gets exactly one chance to be put back. Missing it strands
-        // the node at a mid-drag value that nothing in the history can undo.
+        // A cancel discards its commands, so this is the only chance to put
+        // the removed node's value back.
         var harness = Fixture();
         var startA = new Vector3(-3f, 0f, 0f);
         var startB = new Vector3(3f, 0f, 0f);
@@ -449,8 +405,7 @@ public sealed class ViewportArbitrationTests
         a.LocalPosition.ShouldNotBe(startA);
         b.LocalPosition.ShouldNotBe(startB);
 
-        // The host deletes B while the drag is live; SelectionSet drops it, so
-        // nothing else would ever notice it was left behind.
+        // Deleted mid-drag. The selection drops it too.
         harness.Scene.Root.RemoveChild(b);
 
         harness.Viewport.Update(

@@ -38,40 +38,11 @@ public enum LightHandle
 }
 
 /// <summary>
-/// The light's own manipulator: reach and aim, dragged in the viewport rather
-/// than typed into the inspector.
+/// The light's own manipulator: range, aim and shape, dragged in the viewport.
+/// Runs beside the transform gizmo, which gets the press first.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A standalone tool, deliberately NOT a fourth <c>GizmoMode</c>.</b> Adding
-/// one would touch twelve switches with no exhaustiveness check anywhere, each
-/// with a silent <c>_ =&gt;</c> default - and it would be wrong on its own
-/// terms: range and aim are PAYLOAD edits, not transform edits, and you need to
-/// move a lamp constantly, so a mode would force a keypress between two halves
-/// of one job. Deriving from <see cref="GizmoTool"/> drags <c>Mode</c> back in,
-/// because it is abstract there and feeds <c>GizmoGeometry.Build</c>. The honest
-/// cost of standing alone is the hit-grab-drag-commit machine below; it buys
-/// zero silent-default sites and no change to <c>SceneEditorHost</c>,
-/// <c>FrameSnapshot</c>, <c>ISceneEditor</c>, <c>Engine</c>, <c>ShellModel</c>,
-/// <c>MainWindow</c> or the keyboard reference.
-/// </para>
-/// <para>
-/// <b>It runs BESIDE the transform gizmo, not instead of it.</b> The transform
-/// handles are tested first and win every tie, so a lamp is still moved,
-/// rotated and resized by the tool the user already knows; these handles sit
-/// where those do not.
-/// </para>
-/// <para>
-/// <b>Every drag frame recomputes from the GRAB CAPTURE</b>, never from the
-/// previous frame - the rule the whole gizmo spine already follows, so rounding
-/// and snapping leave no residue and a cancel restores exactly.
-/// </para>
-/// <para>
-/// <b>No fourth snap ladder.</b> A range is a length, so it quantises on the
-/// translate tool's grid; there is nothing new to configure and nothing that
-/// can drift out of step with the grid drawn on the floor.
-/// </para>
-/// </remarks>
+// Not a GizmoMode: range and aim are payload edits, and a lamp is moved all
+// the time, so a mode would put a keypress between the two.
 public sealed class LightGizmo
 {
     private readonly Scene _scene;
@@ -81,9 +52,8 @@ public sealed class LightGizmo
     private LightHandle _handle;
     private SetLightCommand? _command;
 
-    // The grab capture: everything a drag frame needs, taken once. Every drag
-    // frame recomputes from THIS, never from the previous frame, so rounding and
-    // snapping leave no residue and a cancel restores exactly.
+    // Grab capture. Every drag frame recomputes from this, never from the
+    // previous frame.
     private float _grabScalar;
     private Vector2 _grabCursor;
     private Vector2 _grabAxis;
@@ -98,17 +68,15 @@ public sealed class LightGizmo
     /// <summary>Whether the tool draws and answers presses at all.</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>The snap policy for the range handle. Shared with the move tool.</summary>
+    /// <summary>The snap policy for length handles. Shared with the move tool.</summary>
     public SnapSettings? Snap { get; set; }
 
     /// <summary>Whether a drag is in progress.</summary>
     public bool IsDragging => _handle != LightHandle.None;
 
     /// <summary>
-    /// Whether the live drag edits a LENGTH — range or an extent — which are
-    /// the handles that snap on the move grid. The ground grid's auto mode
-    /// asks, because those are the gestures the grid on the floor is the
-    /// ladder for; an angle drags in degrees and a grid says nothing about it.
+    /// Whether the live drag edits a length (range or an extent), which snaps
+    /// on the move grid.
     /// </summary>
     public bool IsDraggingLength => _handle is LightHandle.Range or LightHandle.Width
         or LightHandle.Height or LightHandle.Radius;
@@ -125,12 +93,8 @@ public sealed class LightGizmo
     /// <summary>How far the aim knob sits from the lamp, in screen pixels.</summary>
     public const float AimReachPixels = 74f;
 
-    /// <summary>
-    /// Advances the tool by one frame.
-    /// </summary>
-    /// <param name="frame">This frame's input.</param>
+    /// <summary>Advances the tool by one frame. True while it owns the pointer.</summary>
     /// <param name="cancelRequested">Escape, or a viewport that lost focus.</param>
-    /// <returns>True while this tool owns the pointer.</returns>
     public bool Update(in EditorInputFrame frame, bool cancelRequested)
     {
         if (IsDragging)
@@ -161,7 +125,7 @@ public sealed class LightGizmo
 
     /// <summary>
     /// Which handle a press at this frame's cursor would grab, and on which
-    /// node. Pure - the hover oracle, and the same answer the press uses.
+    /// node. Changes no state.
     /// </summary>
     public LightHandle Pick(in EditorInputFrame frame, out SceneNode? node)
     {
@@ -180,10 +144,6 @@ public sealed class LightGizmo
         node = lamp;
         float grab = GrabPixels + KnobPixels;
 
-        // The AIM knob first, because it sits away from the lamp while the range
-        // ring passes through wherever the reach happens to land - and at some
-        // camera angles the two coincide. Aim is the one that moves the light's
-        // meaning, so it wins.
         if (light!.Kind == LightKind.Directional)
         {
             if (TryAimKnob(camera, lamp, viewport, out Vector2 knob) &&
@@ -192,14 +152,12 @@ public sealed class LightGizmo
                 return LightHandle.Aim;
             }
 
-            // A sun has no reach to drag.
+            // A directional light has no range.
             return LightHandle.None;
         }
 
-        // The SHAPE handles before the range one, because a spot's cone rim and
-        // its reach ring can coincide at some angles and the shape is the more
-        // specific answer - the same "most specific wins" the gizmo handles
-        // already use.
+        // Shape handles before range: a cone rim and the range knob can
+        // coincide, and the shape is the more specific answer.
         foreach (LightHandle candidate in ShapeHandles(light.Kind))
         {
             if (TryKnobWorld(camera, lamp, light, candidate, viewport, out Vector3 world) &&
@@ -210,9 +168,6 @@ public sealed class LightGizmo
             }
         }
 
-        // The range handle is a knob on the reach ring, placed along screen
-        // RIGHT: one unambiguous direction, so the drag axis and the handle
-        // agree without the user having to work out which way the ring faces.
         if (TryKnobWorld(camera, lamp, light, LightHandle.Range, viewport, out Vector3 rangeWorld) &&
             TryProject(camera, rangeWorld, viewport, out Vector2 rangeKnob) &&
             Vector2.Distance(frame.CursorPosition, rangeKnob) <= grab)
@@ -224,8 +179,7 @@ public sealed class LightGizmo
         return LightHandle.None;
     }
 
-    // Which extra handles a kind offers, in pick order. A kind with none simply
-    // yields nothing, which is what makes the loop above kind-agnostic.
+    // In pick order.
     private static LightHandle[] ShapeHandles(LightKind kind) => kind switch
     {
         LightKind.Spot => [LightHandle.ConeInner, LightHandle.ConeOuter],
@@ -258,8 +212,7 @@ public sealed class LightGizmo
 
         if (TryKnobWorld(camera, lamp, light, LightHandle.Range, viewportSize, out Vector3 rangeKnob))
         {
-            // The line back to the lamp is what says the knob BELONGS to it: a
-            // floating dot beside a light icon is a second light.
+            // The line ties the knob to its lamp. A loose dot reads as a second light.
             output.Line(at, rangeKnob, Colour(LightHandle.Range) * 0.5f);
             DrawKnob(output, rangeKnob, camera, viewportSize, Colour(LightHandle.Range), out _);
         }
@@ -283,8 +236,6 @@ public sealed class LightGizmo
         Hovered = LightHandle.None;
     }
 
-    // --- The gesture ---------------------------------------------------------
-
     private bool TryBeginDrag(in EditorInputFrame frame)
     {
         if (Pick(in frame, out SceneNode? lamp) is var handle &&
@@ -301,16 +252,9 @@ public sealed class LightGizmo
             _scene.Camera, frame.ViewportSize.Y,
             MathF.Max(GizmoMath.ViewDepth(_scene.Camera, lamp.WorldPosition), 0.01f));
 
-        // The drag axis is the direction the KNOB moves on screen when the
-        // scalar grows, measured once from the knob's own placement. Without
-        // this every handle would drag along screen-right, which is right for
-        // the range knob (it is placed along screen-right) and wrong for a
-        // height knob placed along the light's own up axis.
         _grabAxis = ScreenAxisFor(lamp, lamp.Light!, handle, frame.ViewportSize);
 
-        // ONE transaction for the whole gesture, exactly as the transform tools
-        // do it: a drag that pushed a command per frame would need sixty
-        // Ctrl+Z presses to undo one adjustment.
+        // One transaction per gesture, so one Ctrl+Z undoes the drag.
         _undo.BeginTransaction(TransactionName(handle));
         _command = null;
         return true;
@@ -332,46 +276,27 @@ public sealed class LightGizmo
 
     private void DragScalar(in EditorInputFrame frame, Light light)
     {
-        // From the GRAB, never from the previous frame: the drag's travel along
-        // this handle's own screen axis.
         float travelPixels = Vector2.Dot(frame.CursorPosition - _grabCursor, _grabAxis);
 
         bool angular = _handle is LightHandle.ConeInner or LightHandle.ConeOuter;
 
-        // DEGREES per pixel for an angle, WORLD UNITS per pixel for a length -
-        // and the length conversion is the lamp's own depth, so a knob follows
-        // the cursor exactly whatever the camera distance.
         float value = angular
             ? _grabScalar + (travelPixels * DegreesPerPixel)
             : _grabScalar + (travelPixels * _grabWorldPerPixel);
 
-        // IsActiveWith, not Enabled: Alt inverts the snap for the duration of a
-        // gesture, and asking the setting directly would ignore the modifier
-        // the user is holding right now. An ANGLE takes the rotate ladder and a
-        // length takes the move one - the same two units the tools already have,
-        // and no third ladder to keep in step.
+        // IsActiveWith, not Enabled: Alt inverts the snap for one gesture.
         SnapSettings? snap = angular ? AngleSnap : Snap;
         if (snap is { } live && live.IsActiveWith(frame.Modifiers))
             value = live.SnapScalar(value);
 
-        // CLAMPED HERE, not in the command. Light's own setters throw on a range
-        // at or below zero, so a command carrying one would throw from inside
-        // Do, halfway through an open transaction, leaving the history open and
-        // the scene half-edited. Running the cursor past the end means "as far
-        // as it goes"; the typed field in the inspector still gets a refusal,
-        // which is the right answer there.
+        // Apply clamps. Light.Range throws at or below zero, and a throw from
+        // Do would leave the transaction open.
         Record(Apply(SetLightCommand.Settings.From(light), _handle, value));
     }
 
-    // How fast a cone opens under the cursor. A quarter of a degree per pixel
-    // puts the whole 0-89 range inside a comfortable drag without making the
-    // rim jump between frames.
     private const float DegreesPerPixel = 0.25f;
 
-    /// <summary>
-    /// The snap ladder for angular handles. Shared with the ROTATE tool, for
-    /// the same reason the lengths share the move tool's.
-    /// </summary>
+    /// <summary>The snap policy for angular handles. Shared with the rotate tool.</summary>
     public SnapSettings? AngleSnap { get; set; }
 
     private static float ScalarOf(Light light, LightHandle handle) => handle switch
@@ -387,9 +312,7 @@ public sealed class LightGizmo
     private static SetLightCommand.Settings Apply(
         SetLightCommand.Settings settings, LightHandle handle, float value) => handle switch
     {
-        // The angles clamp in Light's own setters (0..89, and outer never below
-        // inner), and the extents clamp to a minimum there too - so what is
-        // guarded HERE is only the one that throws.
+        // Light's setters clamp the angles themselves.
         LightHandle.ConeInner => settings with { InnerAngle = value },
         LightHandle.ConeOuter => settings with { OuterAngle = value },
         LightHandle.Width => settings with { Width = MathF.Max(value, Light.MinimumExtent) },
@@ -414,9 +337,7 @@ public sealed class LightGizmo
         Camera camera = _scene.Camera;
         Vector3 at = lamp.WorldPosition;
 
-        // The cursor ray, taken at the lamp's own view depth: the knob follows
-        // the pointer on the plane through the lamp facing the camera, which is
-        // the only interpretation under which dragging left aims left.
+        // Intersect the cursor ray with the camera-facing plane through the lamp.
         Ray3 ray = camera.ScreenPointToRay(frame.CursorPosition, frame.ViewportSize);
         float depth = GizmoMath.ViewDepth(camera, at);
         if (depth <= 0.01f)
@@ -433,10 +354,7 @@ public sealed class LightGizmo
         if (travel.LengthSquared() < 1e-8f)
             return;
 
-        // RotationForDirection takes the direction the light TRAVELS, which is
-        // away from the lamp toward the knob. Backwards gives a sun shining out
-        // of the ground, which is silent, dark, and exactly what that method's
-        // own remarks were written to prevent.
+        // RotationForDirection takes the direction light travels: lamp toward knob.
         Quaternion rotation = Light.RotationForDirection(Vector3.Normalize(travel));
 
         var command = new SetLocalTransformCommand(
@@ -455,9 +373,7 @@ public sealed class LightGizmo
         if (_node is not { } lamp)
             return;
 
-        // One command retargeted per frame rather than one command per frame:
-        // SetLightCommand coalesces, so the transaction holds a single entry
-        // whose before-state is the grab's.
+        // Retarget one command per frame so its before state stays the grab's.
         if (_command is { } existing)
         {
             existing.SetAfter(after);
@@ -475,9 +391,7 @@ public sealed class LightGizmo
         _node = null;
         _command = null;
 
-        // A drag that moved nothing records nothing: CommitTransaction lands no
-        // history entry for an empty transaction, which is what makes a click
-        // that turned out not to move anything free.
+        // An empty transaction lands no history entry.
         _undo.CommitTransaction();
     }
 
@@ -490,21 +404,12 @@ public sealed class LightGizmo
     }
 
     /// <summary>
-    /// The smallest range a drag may produce.
+    /// The smallest range a drag may produce. Not zero:
+    /// <see cref="Light.Range"/> throws at or below it.
     /// </summary>
-    /// <remarks>
-    /// Not zero: <see cref="Light.Range"/> refuses anything at or below it, and
-    /// a light with no reach is indistinguishable from one that is switched off
-    /// while being much harder to notice.
-    /// </remarks>
     public const float MinimumRange = 0.05f;
 
-    // --- Placement -----------------------------------------------------------
-
-    // The tool acts on a SINGLE selected light. A multi-light drag would have to
-    // decide whether the ranges move together or converge, and both answers are
-    // wrong for half the cases; the inspector's bulk edit already covers "make
-    // these all the same".
+    // One selected light only. Bulk edits go through the inspector.
     private bool TrySoleLight(out SceneNode? node, out Light? light)
     {
         node = null;
@@ -523,9 +428,7 @@ public sealed class LightGizmo
     {
         LightHandle.Aim => new Vector3(1f, 0.85f, 0.35f),
 
-        // The cone knobs share a hue and differ in value, the same
-        // one-colour-two-weights rule the selection outline follows: inner and
-        // outer are two ends of one quantity, not two quantities.
+        // Cone knobs share a hue: inner and outer are one quantity.
         LightHandle.ConeOuter => new Vector3(0.55f, 1f, 0.75f),
         LightHandle.ConeInner => new Vector3(0.28f, 0.55f, 0.4f),
 
@@ -549,15 +452,8 @@ public sealed class LightGizmo
         return true;
     }
 
-    /// <summary>
-    /// Where one handle's knob sits in the world.
-    /// </summary>
-    /// <remarks>
-    /// <b>One function, used by the pick AND the draw.</b> Two would drift, and
-    /// the symptom of drift is grabbing something other than what is on screen -
-    /// the least reportable class of bug there is, and the same reason the light
-    /// icon's radius is one shared constant.
-    /// </remarks>
+    // Where a handle's knob sits in the world. Pick and draw both use this,
+    // so what is grabbed is what is on screen.
     private static bool TryKnobWorld(
         Camera camera, SceneNode lamp, Light light, LightHandle handle, Vector2 viewport, out Vector3 knob)
     {
@@ -570,9 +466,7 @@ public sealed class LightGizmo
         switch (handle)
         {
             case LightHandle.Range:
-                // Along SCREEN right, not a world axis: one unambiguous
-                // direction, so the drag and the handle agree without the user
-                // working out which way the reach ring faces.
+                // Screen right, not a world axis: the range sphere has no facing.
                 knob = at + (camera.Right * light.Range);
                 return true;
 
@@ -580,9 +474,7 @@ public sealed class LightGizmo
                 return TryAimKnobWorld(camera, lamp, viewport, out knob);
         }
 
-        // Everything else is a SHAPE handle and lives on the light's own basis,
-        // because that is what the shape is drawn in: a width knob has to sit on
-        // the panel's edge, not somewhere on screen beside it.
+        // Shape handles sit on the light's own basis, where the shape is drawn.
         Basis(lamp, out Vector3 forward, out Vector3 right, out Vector3 up);
 
         switch (handle)
@@ -605,9 +497,7 @@ public sealed class LightGizmo
                 float degrees = handle == LightHandle.ConeOuter ? light.OuterAngle : light.InnerAngle;
                 float radians = degrees * (MathF.PI / 180f);
 
-                // ON the cone's rim at the light's own reach, which is where the
-                // overlay draws that ring - so the knob is a point of the shape
-                // rather than a marker floating near it.
+                // On the cone's rim at the light's range, where the overlay draws the ring.
                 knob = at
                     + (forward * light.Range * MathF.Cos(radians))
                     + (right * light.Range * MathF.Sin(radians));
@@ -627,17 +517,9 @@ public sealed class LightGizmo
         up = Vector3.Normalize(new Vector3(world.M21, world.M22, world.M23));
     }
 
-    /// <summary>
-    /// The direction, in SCREEN pixels, that this handle's knob moves when its
-    /// scalar grows.
-    /// </summary>
-    /// <remarks>
-    /// Measured from the knob's own placement rather than assumed, because the
-    /// handles do not share an axis: the range knob is placed along screen
-    /// right, a height knob along the light's own up axis, and a cone knob
-    /// along the rim. Assuming screen-right for all of them makes four of the
-    /// six drag sideways when the user pulls them outward.
-    /// </remarks>
+    // Screen direction the knob moves when its scalar grows. Measured, not
+    // assumed: handles do not share an axis (screen right, the light's up,
+    // the cone rim).
     private Vector2 ScreenAxisFor(SceneNode lamp, Light light, LightHandle handle, Vector2 viewport)
     {
         Camera camera = _scene.Camera;
@@ -648,9 +530,7 @@ public sealed class LightGizmo
             return new Vector2(1f, 0f);
         }
 
-        // A probe one per cent larger, projected: the finite difference IS the
-        // screen direction, and it costs two projections at grab time rather
-        // than a derivation per handle kind.
+        // Finite difference: project the knob again with a slightly larger scalar.
         float scalar = ScalarOf(light, handle);
         float probe = MathF.Max(scalar * 1.01f, scalar + 0.01f);
 
@@ -683,11 +563,8 @@ public sealed class LightGizmo
         if (travel.LengthSquared() < 1e-8f)
             return false;
 
-        // A CONSTANT SCREEN distance from the lamp, not a constant world one:
-        // the knob has to stay grabbable whatever the camera is doing, and the
-        // aim it expresses is a direction, which has no length to be faithful
-        // to. Deliberately not the range, either - a light whose reach changes
-        // would otherwise move the knob that aims it.
+        // Constant screen distance, so the knob stays grabbable at any zoom.
+        // Not the range, which would move the aim knob when the range changes.
         float reach = AimReachPixels * GizmoMath.WorldPerPixel(camera, viewport.Y, depth);
         knob = at + (Vector3.Normalize(travel) * reach);
         return true;
@@ -709,9 +586,7 @@ public sealed class LightGizmo
         Vector3 right = camera.Right * radius;
         Vector3 up = camera.Up * radius;
 
-        // A filled-looking diamond: four edges plus the two diagonals, which at
-        // ten pixels across reads as solid without needing a triangle path the
-        // line renderer does not have.
+        // Diamond plus diagonals: reads as filled, and DebugDraw has no triangles.
         output.Line(at + right, at + up, colour);
         output.Line(at + up, at - right, colour);
         output.Line(at - right, at - up, colour);

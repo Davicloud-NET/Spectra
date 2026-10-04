@@ -3,19 +3,12 @@
              xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
              x:Class="SpectraEngine.Editor.Shell.CommandPaletteView">
 
-  <!--
-    A control of its own rather than markup inside the window, so the render
-    suite can construct and measure the real thing. A palette declared inline
-    would have to be declared a second time to be rendered, and a second
-    declaration is what every convention test in this shell exists to prevent.
-  -->
+  <!-- Its own control so the render suite can construct and measure it. -->
   <Border Classes="palette">
     <DockPanel>
       <TextBox x:Name="Query" DockPanel.Dock="Top" Classes="field"
                PlaceholderText="Type a command" />
-      <!-- How much was hidden. Twelve rows with no count looks identical
-           whether twelve matched or thirty did, and the other eighteen were
-           unreachable by any means the user could see. -->
+      <!-- Count of matches the capped list is not showing. -->
       <TextBlock x:Name="Footer" DockPanel.Dock="Bottom" Classes="palettefoot"
                  IsVisible="False" />
       <ListBox x:Name="Rows" Classes="palettelist" MaxHeight="320">

@@ -2,16 +2,8 @@ using SpectraEngine.Core.Audio;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// An <see cref="IAudioSampleProvider"/> whose sample at frame <c>n</c> IS
-/// <c>n</c>, so a test can read a buffer the streaming voice uploaded and say
-/// exactly which source frames went into it.
-/// </summary>
-/// <remarks>
-/// Silence would prove the plumbing and nothing about the loop arithmetic: the
-/// whole question is which frames came out and in what order, and against a
-/// constant signal every wrap looks identical to no wrap at all.
-/// </remarks>
+// Sample at frame n is n, so an uploaded buffer says which source frames it holds.
+// A constant signal could not tell a wrap from no wrap.
 internal sealed class RampSampleProvider : IAudioSampleProvider
 {
     public RampSampleProvider(AudioFormat format, long frameCount, LoopRegion loop)
@@ -27,7 +19,7 @@ internal sealed class RampSampleProvider : IAudioSampleProvider
 
     public LoopRegion Loop { get; }
 
-    /// <summary>Frames handed out since construction, for asserting a fill is not doing extra work.</summary>
+    // Total frames handed out, to catch a fill doing extra work.
     public long FramesRead { get; private set; }
 
     public int ReadFrames(long offsetFrames, Span<short> destination, int frameCount)

@@ -2,10 +2,7 @@ using SpectraEngine.Core.Entities;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The schema vocabulary's two rules that a reader gets wrong by writing the
-/// obvious thing: NaN bounds, and reserved flag bits.
-/// </summary>
+/// <summary>Entity schema rules: NaN bounds and reserved flag bits.</summary>
 public sealed class EntitySchemaTests
 {
     private static KeyvalueDescriptor Speed(float min = float.NaN, float max = float.NaN, uint flags = 0) =>
@@ -15,9 +12,7 @@ public sealed class EntitySchemaTests
     [Fact]
     public void An_unbounded_descriptor_reports_no_bounds()
     {
-        // NaN is unequal to itself, so the obvious `Min == float.NaN` test says
-        // "bounded" for every descriptor ever written and then clamps against a
-        // NaN, which yields NaN. HasMin/HasMax are the comparison.
+        // NaN is unequal to itself, so `Min == float.NaN` always says bounded.
         KeyvalueDescriptor unbounded = Speed();
 
         unbounded.HasMin.ShouldBeFalse();
@@ -34,17 +29,14 @@ public sealed class EntitySchemaTests
     [Fact]
     public void A_zero_bound_is_a_real_bound()
     {
-        // The failure a sentinel of 0 would have: "at least zero" is the most
-        // common bound anyone writes.
+        // Zero must be a real bound, not a sentinel.
         Speed(min: 0f).HasMin.ShouldBeTrue();
     }
 
     [Fact]
     public void The_defined_flag_bits_are_kept_and_the_reserved_ones_are_dropped()
     {
-        // Bits 3 to 7 are claimed by later work. A definition produced by a newer
-        // tool must lose what this engine does not understand rather than acting
-        // on it by accident.
+        // Bits 3 to 7 are reserved; a newer tool's bits are dropped on read.
         uint written = KeyvalueFlags.ReadOnly | KeyvalueFlags.RequiresRestart | (1u << 5);
 
         KeyvalueFlags.Mask(written).ShouldBe(KeyvalueFlags.ReadOnly | KeyvalueFlags.RequiresRestart);
@@ -66,8 +58,7 @@ public sealed class EntitySchemaTests
     [Fact]
     public void A_schema_carries_its_keyvalues_in_declaration_order()
     {
-        // Declaration order is layout order in a property panel and record order
-        // in an exported schema, so it is data rather than presentation.
+        // Declaration order is panel layout order and exported record order.
         var schema = new EntitySchema(
             "func_door",
             displayName: "Door",
@@ -90,8 +81,6 @@ public sealed class EntitySchemaTests
     [Fact]
     public void A_schema_with_no_class_name_is_refused()
     {
-        // It could not be registered, looked up or written; refused here rather
-        // than three layers down where the message names none of that.
         Should.Throw<ArgumentException>(() => new EntitySchema(""));
     }
 

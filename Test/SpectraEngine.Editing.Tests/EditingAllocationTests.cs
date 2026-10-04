@@ -13,9 +13,7 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// The editing spine sits on the per-frame path (an input snapshot every frame,
-/// a coalesced command every frame of a drag), so its steady-state work has to
-/// stay allocation-free — same bar as the asset pump and the render-view build.
+/// The per-frame editing paths (input capture, drags, hover, camera) must not allocate.
 /// </summary>
 public sealed class EditingAllocationTests
 {
@@ -29,7 +27,7 @@ public sealed class EditingAllocationTests
         input.OnKeyDown(null!, Silk.NET.Input.Key.ShiftLeft, 0);
         input.Update(0.016);
 
-        // Warm up: JIT the capture path and the flag mapping behind it.
+        // Warm up the JIT.
         for (int i = 0; i < 200; i++)
             _ = source.CaptureFrame(0.016f);
 
@@ -38,8 +36,6 @@ public sealed class EditingAllocationTests
             _ = source.CaptureFrame(0.016f);
         long after = GC.GetAllocatedBytesForCurrentThread();
 
-        // EditorInputFrame is a readonly struct returned by value, and the
-        // neutral flag mapping is three hash probes per set — nothing boxes.
         (after - before).ShouldBe(0);
     }
 
@@ -50,8 +46,7 @@ public sealed class EditingAllocationTests
         var node = scene.Root.CreateChild("Box");
         var stack = new UndoStack(scene);
 
-        // The zero-allocation drag path: the tool creates ONE command on grab
-        // and retargets it each frame instead of pushing a new one.
+        // One command created on grab, retargeted each frame.
         stack.BeginTransaction("Move");
         var command = SetTransformCommand.Move(node, Vector3.Zero);
         stack.Record(command);
@@ -90,8 +85,8 @@ public sealed class EditingAllocationTests
 
         const int frames = 10_000;
 
-        // Baseline: what the per-frame commands cost on their own, with no
-        // recording at all. `escape` keeps the loop from being optimised away.
+        // Baseline: the commands alone, no recording. `escape` stops the loop
+        // being optimised away.
         SetTransformCommand? escape = null;
         long baselineBefore = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < frames; i++)
@@ -104,9 +99,6 @@ public sealed class EditingAllocationTests
             stack.Record(SetTransformCommand.Move(node, new Vector3(i, 0f, 0f)));
         long after = GC.GetAllocatedBytesForCurrentThread();
 
-        // The push-per-frame style costs exactly one command object per frame
-        // and nothing else: the absorb keeps the transaction list at one entry,
-        // so neither it nor the history grows.
         (after - before).ShouldBe(baseline);
 
         stack.CommitTransaction();
@@ -120,8 +112,7 @@ public sealed class EditingAllocationTests
         harness.AddSelectedNode(Vector3.Zero);
         float length = harness.GeometryAt(Vector3.Zero).AxisLength;
 
-        // Aimed at the x arrow, so the hit test runs its whole priority ladder
-        // — disc, three quads, three arrows — rather than bailing out early.
+        // Aimed at the x arrow, so the hit test runs every check before it hits.
         EditorInputFrame frame = harness.Frame(
             harness.WorldToScreen(Vector3.UnitX * (length * 0.8f)));
 
@@ -134,19 +125,13 @@ public sealed class EditingAllocationTests
             harness.Gizmo.Update(in frame);
         long after = GC.GetAllocatedBytesForCurrentThread();
 
-        // Geometry, the picking ray, and the pick result are all structs, and
-        // the pivot sum walks the selection by index.
         (after - before).ShouldBe(0);
     }
 
     [Fact]
     public void Hovering_a_studio_style_gizmo_allocates_nothing_despite_measuring_the_selection()
     {
-        // The Studio style stands its handles on the selection's box and puts the
-        // pivot at that box's centre, so every frame measures the selection
-        // instead of averaging three floats. That measurement is on the per-frame
-        // path and has to hold the same bar: one pass by index, an oriented-box
-        // projection per node, and a record struct carrying the answer out.
+        // Studio style measures the selection's box every frame.
         var harness = GizmoHarness.ThreeQuarterView(GizmoStyle.Studio);
         harness.AddSelectedBrushNode(Vector3.Zero, halfExtent: 1f, name: "Brush");
         harness.AddSelectedMeshNode(new Vector3(4f, 0f, 0f), halfExtent: 0.5f, name: "Mesh");
@@ -174,15 +159,13 @@ public sealed class EditingAllocationTests
         harness.AddSelectedNode(Vector3.Zero, "A");
         harness.AddSelectedNode(new Vector3(2f, 1f, 0f), "B");
 
-        // Two nodes, so the per-frame loop really does walk a target list.
         var pivot = new Vector3(1f, 0.5f, 0f);
         float length = harness.GeometryAt(pivot).AxisLength;
 
         harness.Grab(pivot + Vector3.UnitX * (length * 0.8f))
             .ShouldBe(GizmoUpdateResult.DragBegan);
 
-        // The grab already allocated its one command per node; from here the
-        // drag only retargets and re-applies them.
+        // The grab allocated one command per node. The drag only retargets them.
         for (int i = 0; i < 200; i++)
             harness.DragBy(Vector3.UnitX * (i * 0.01f));
 
@@ -204,9 +187,7 @@ public sealed class EditingAllocationTests
         harness.AddSelectedNode(Vector3.Zero);
         harness.Use(GizmoMode.Rotate);
 
-        // Aimed at the z ring 45° round, where no other ring passes, so the hit
-        // test walks all four — four fixed loops over the same chord count the
-        // renderer draws.
+        // 45° round the z ring, where no other ring passes, so all four are tested.
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
         EditorInputFrame frame = harness.Frame(harness.WorldToScreen(
             RingPoint(geometry.RingRadius, MathF.PI / 4f)));
@@ -236,8 +217,6 @@ public sealed class EditingAllocationTests
         float radius = geometry.RingRadius;
         harness.Grab(RingPoint(radius, MathF.PI / 4f)).ShouldBe(GizmoUpdateResult.DragBegan);
 
-        // The grab already allocated its one command per node; from here the
-        // drag only retargets and re-applies them.
         for (int i = 0; i < 200; i++)
             harness.DragTo(RingPoint(radius, MathF.PI / 4f + i * 0.001f));
 
@@ -255,12 +234,9 @@ public sealed class EditingAllocationTests
     [Fact]
     public void Dragging_the_scale_gizmo_over_mesh_nodes_allocates_nothing_per_frame()
     {
-        // Mesh nodes only. A BRUSH resize deliberately allocates — brushes are
-        // immutable, so a new size is a new instance — and ScaleGizmo documents
-        // that as the one gesture in the editing layer that cannot be free.
+        // Mesh nodes only: a brush resize allocates, since brushes are immutable.
+        // Real meshes, so this isn't the proportional fallback a bare node takes.
         var harness = GizmoHarness.ThreeQuarterView();
-        // Real meshes, so this measures the ordinary measured-size path rather
-        // than the proportional fallback a bare node would take.
         harness.AddSelectedMeshNode(new Vector3(-1f, 0f, 0f), 0.5f, "A");
         harness.AddSelectedMeshNode(new Vector3(1f, 0f, 0f), 0.5f, "B");
         ScaleGizmo scale = (ScaleGizmo)harness.Use(GizmoMode.Scale);
@@ -281,7 +257,7 @@ public sealed class EditingAllocationTests
         (after - before).ShouldBe(0);
     }
 
-    // A point on the world z ring, which lies in the xy plane.
+    // The world z ring lies in the xy plane.
     private static Vector3 RingPoint(float radius, float angle) =>
         new(MathF.Cos(angle) * radius, MathF.Sin(angle) * radius, 0f);
 
@@ -302,24 +278,19 @@ public sealed class EditingAllocationTests
             stack.Record(command);
         long after = GC.GetAllocatedBytesForCurrentThread();
 
-        // Eviction is a head bump in a preallocated ring, not a list shuffle.
         (after - before).ShouldBe(0);
     }
-
-    // --- The viewport per-frame path -----------------------------------------
 
     [Fact]
     public void Driving_the_editor_camera_allocates_nothing_per_frame()
     {
-        // The whole navigation path in one loop: freelook (the unmodified
-        // right-drag), the fly axis, the speed trim, and the damping filter.
+        // Freelook, fly, speed trim and damping in one loop.
         var harness = new ViewportHarness();
         harness.Orbit(Vector3.Zero, 20f, 0.4f, -0.2f);
-        harness.EditorCamera.SmoothingTimeConstant = 0.1f; // damping on: the real path
+        harness.EditorCamera.SmoothingTimeConstant = 0.1f; // damping on
         EditorNavigationInput fly = EditorNavigationInput.FromKeys(
             forward: true, back: false, left: false, right: true, up: true, down: false, boost: true);
 
-        // Warm up the whole filter, including the transcendentals.
         for (int i = 0; i < 200; i++)
             harness.EditorCamera.Update(harness.Frame(
                 new Vector2(400f + i % 5, 300f), down: PointerButtons.Right,
@@ -372,8 +343,6 @@ public sealed class EditingAllocationTests
             harness.Move(new Vector2(400f + i % 7, 300f));
         long after = GC.GetAllocatedBytesForCurrentThread();
 
-        // Gizmo hover, camera settle check, no picking: the cost of a frame the
-        // user is not interacting with must be zero.
         (after - before).ShouldBe(0);
     }
 
@@ -395,8 +364,7 @@ public sealed class EditingAllocationTests
             BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, results);
         long after = GC.GetAllocatedBytesForCurrentThread();
 
-        // A marquee is re-queried every frame it is dragged, so the query — BVH
-        // descent plus the in-place refinement compaction — has to be free.
+        // A marquee is re-queried every frame it is dragged.
         (after - before).ShouldBe(0);
     }
 }

@@ -5,23 +5,9 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The one combination of the two brush bits that cancels itself.
+/// A subtractive part brush carves nothing and draws nothing, so the scene
+/// counts it.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <c>BrushKind</c> decides admission and <c>BrushOperation</c> decides sign,
-/// and they are independent on purpose. But <see cref="BrushKind.Part"/> means
-/// "not in the placement list", and a subtractive brush does its entire job
-/// from inside that list: the two together produce a brush that carves nothing
-/// and, because only additive parts get a mesh, draws nothing either.
-/// </para>
-/// <para>
-/// <b>The failure is total silence.</b> No exception, no geometry, no hole, and
-/// nothing in the scene that looks different from a brush that was never
-/// created. Counting it is the difference between a mistake an author can see
-/// and one they cannot.
-/// </para>
-/// </remarks>
 public sealed class InertPartBrushTests
 {
     private static SceneNode AddBrush(Scene scene, string name, BrushKind kind, BrushOperation operation)
@@ -50,9 +36,8 @@ public sealed class InertPartBrushTests
     [Fact]
     public void Converting_a_negative_to_a_part_makes_it_inert_and_back_again()
     {
-        // This is the path that actually produces one: the editor converts a
-        // whole selection between world geometry and parts in one command, and
-        // a doorway cut caught up in that selection stops being a doorway.
+        // How one comes about in practice: the editor converts a whole selection
+        // to parts, and a doorway cut is in it.
         var scene = new Scene("convert");
         SceneNode doorway = AddBrush(scene, "DoorwayCut", BrushKind.World, BrushOperation.Subtractive);
         scene.InertPartBrushCount.ShouldBe(0);
@@ -67,8 +52,6 @@ public sealed class InertPartBrushTests
     [Fact]
     public void An_inert_part_is_in_neither_the_draw_list_nor_the_carve()
     {
-        // Both halves asserted, because the count above would be satisfied by a
-        // brush that was merely mislabelled rather than genuinely absent.
         var scene = new Scene("absent");
         SceneNode node = AddBrush(scene, "Nothing", BrushKind.Part, BrushOperation.Subtractive);
 

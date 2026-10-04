@@ -3,15 +3,7 @@ using SpectraEngine.Editor.Shell;
 
 namespace SpectraEngine.Editor.Tests;
 
-/// <summary>
-/// What the status bar says the mouse does right now.
-/// </summary>
-/// <remarks>
-/// <b>The editor had no contextual disclosure at all</b>, and spent the space on
-/// five engine counters instead. Continuous hints are the only teaching
-/// mechanism that reaches people who never read documentation, which is nearly
-/// everybody: they start clicking and learn by doing.
-/// </remarks>
+/// <summary>What the status bar says the mouse does right now.</summary>
 public sealed class GestureHintTests
 {
     [Theory]
@@ -37,9 +29,7 @@ public sealed class GestureHintTests
     [Fact]
     public void Alt_is_described_by_what_it_would_do_rather_than_by_its_name()
     {
-        // Alt INVERTS the snap for a gesture, so what it does depends on the
-        // state snapping is in. A hint that always said "Alt snaps" would be
-        // wrong half the time.
+        // Alt inverts the snap for one gesture.
         GestureHints.For("drag-manipulate", "move", snapEnabled: true).ShouldContain("Alt drags freely");
         GestureHints.For("drag-manipulate", "move", snapEnabled: false).ShouldContain("Alt snaps");
     }
@@ -53,8 +43,6 @@ public sealed class GestureHintTests
     [Fact]
     public void An_unknown_state_reads_as_idle_rather_than_as_nothing()
     {
-        // A blank status bar looks broken, and a state this table has not heard
-        // of is a state where the general advice still applies.
         string idle = GestureHints.For("idle", "move", false);
 
         GestureHints.For("something-new", "move", false).ShouldBe(idle);
@@ -75,7 +63,6 @@ public sealed class GestureHintTests
         model.ApplySnapshot(new FrameSnapshot { InteractionStateName = "look" });
         model.GestureHint.ShouldContain("look");
 
-        // A steady state republishing at 30Hz must not raise per publish.
         int after = raised.Count;
         model.ApplySnapshot(new FrameSnapshot { InteractionStateName = "look" });
         raised.Count.ShouldBe(after);

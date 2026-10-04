@@ -16,7 +16,7 @@ internal static class ModuleInitializer
                 typeName: type.Name,
                 methodName: method.Name));
 
-        // Shader source extensions are text — Verify needs to know so it diffs as text.
+        // So Verify diffs shader output as text.
         FileExtensions.AddTextExtension("hlsl");
         FileExtensions.AddTextExtension("glsl");
         FileExtensions.AddTextExtension("vert");

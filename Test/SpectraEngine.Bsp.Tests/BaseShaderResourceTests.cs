@@ -2,14 +2,8 @@ using SpectraEngine.Core.Graphics.Shaders;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The embedded base-shader lookup. It resolves by a constant resource name
-/// rather than by scanning the manifest for a suffix match, so the failure this
-/// pins is a build-configuration one: a shader file dropped from the
-/// EmbeddedResource glob, or moved to a folder that changes its resource name,
-/// is invisible to the compiler and surfaces as a shader that will not compile
-/// at renderer start-up.
-/// </summary>
+// Catches a shader dropped from the EmbeddedResource glob or moved to a folder
+// that changes its resource name. The compiler cannot see either.
 public sealed class BaseShaderResourceTests
 {
     [Fact]
@@ -37,9 +31,7 @@ public sealed class BaseShaderResourceTests
     [Fact]
     public void A_bare_suffix_of_a_real_shader_name_does_not_resolve()
     {
-        // The defect the constant name closes: a suffix match answers "some
-        // resource ends this way", so "Line.spectrashade" used to hand back
-        // DebugLine or WorldLine depending on manifest order.
+        // A suffix match would return DebugLine or WorldLine for "Line.spectrashade".
         Should.Throw<InvalidOperationException>(
             () => BaseShaders.OpenEmbedded("Line.spectrashade"));
     }
@@ -47,10 +39,7 @@ public sealed class BaseShaderResourceTests
     [Fact]
     public void Every_declared_file_name_reads_as_source()
     {
-        // The accessors go through the same lookup, so this catches a constant
-        // that names a file the glob does not embed. The count ties the two
-        // lists together: a tenth accessor added without a tenth entry in
-        // FileNames would otherwise leave the enumeration test still green.
+        // The count ties the accessors below to FileNames: add one, add both.
         BaseShaders.FileNames.Count.ShouldBe(9);
 
         foreach (string source in new[]

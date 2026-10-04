@@ -6,21 +6,9 @@ using System;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The writer against the reader: what <see cref="SaudioWriter"/> produces, the
-/// engine's own <see cref="SaudioReader"/> takes back, value for value.
+/// <see cref="SaudioWriter"/> against the engine's <see cref="SaudioReader"/>.
+/// The byte layout itself is pinned by <c>SaudioFormatTests</c> in the engine suite.
 /// </summary>
-/// <remarks>
-/// <para><b>This is the pair test, and <c>SaudioFormatTests</c> in the engine's
-/// own suite is the second opinion.</b> A writer checked only against its own
-/// reader proves the two agree rather than that either is right, so the refusals
-/// and the byte geometry are pinned over there against hand-written bytes; what
-/// is pinned HERE is that the cooker's output is inside what the engine
-/// accepts.</para>
-/// <para><b>Byte identity, not equivalence.</b> The cook cache is
-/// content-addressed, so a writer that produced two different-but-equivalent
-/// files for one input would make every cache entry a lie while producing sounds
-/// nobody could tell apart.</para>
-/// </remarks>
 public class SaudioCodecTests
 {
     [Fact]
@@ -41,8 +29,6 @@ public class SaudioCodecTests
         info.IsPositional.ShouldBeFalse();
         info.SeekTable.ShouldBeEmpty();
 
-        // Sample for sample, not length for length: a payload written at the
-        // wrong offset has exactly the right length and none of the right values.
         ReadOnlySpan<short> back = info.Pcm(file);
         back.Length.ShouldBe(pcm.Length);
         for (int i = 0; i < pcm.Length; i++) back[i].ShouldBe(pcm[i]);
@@ -56,9 +42,6 @@ public class SaudioCodecTests
 
         byte[] file = SaudioWriter.Write(new AudioFormat(48_000, 2), pcm, loop, positional: false);
 
-        // 17 and 83 exactly. As bytes they would be frames 4 and 20 of a stereo
-        // file, and as seconds they would be nothing at all - both of which are
-        // legal, playable loops in the wrong place.
         SaudioReader.Read(file, "probe").Loop.ShouldBe(loop);
     }
 
@@ -75,9 +58,7 @@ public class SaudioCodecTests
         info.IsStreaming.ShouldBeTrue();
         info.FramesPerSeekEntry.ShouldBe(32);
 
-        // Four entries for a hundred frames at thirty-two: the last one covers a
-        // partial block, which is the case a table sized by division rather than
-        // by rounding up gets wrong.
+        // 100 frames at 32 per entry: the fourth entry covers a partial block.
         info.SeekTable.Length.ShouldBe(4);
         info.SeekTable[0].ShouldBe(info.DataOffset);
         info.SeekTable[3].ShouldBe(info.DataOffset + 96 * 2);
@@ -86,8 +67,7 @@ public class SaudioCodecTests
     [Fact]
     public void A_stereo_sound_is_never_written_as_positional()
     {
-        // OpenAL plays a stereo buffer unpositioned whatever any flag says, so
-        // recording the intent would put a promise in the file no driver keeps.
+        // OpenAL never spatialises a stereo buffer.
         short[] pcm = Ramp(frames: 8, channels: 2);
 
         byte[] file = SaudioWriter.Write(new AudioFormat(48_000, 2), pcm, LoopRegion.None, positional: true);
@@ -121,9 +101,6 @@ public class SaudioCodecTests
     [Fact]
     public void Every_reserved_byte_is_written_zero()
     {
-        // Deliberate rather than incidental: an unzeroed field picks up whatever
-        // was in the buffer and turns the byte-identity oracle red in a field
-        // nothing reads, which is very hard to bisect.
         byte[] file = SaudioWriter.Write(
             new AudioFormat(48_000, 1), Ramp(frames: 4, channels: 1), LoopRegion.None, positional: true);
 
@@ -134,9 +111,7 @@ public class SaudioCodecTests
     [Fact]
     public void A_loop_past_the_end_of_the_sound_is_refused_at_write_rather_than_shipped()
     {
-        // The reader refuses it, so writing one produces a file nothing can open.
-        // Thrown rather than clamped, because a clamped loop is a sound that is
-        // merely wrong and a cook log that says it was fine.
+        // Thrown, not clamped: a clamped loop plays wrong and the cook log says fine.
         short[] pcm = Ramp(frames: 8, channels: 1);
 
         Should.Throw<ArgumentException>(() => SaudioWriter.Write(
@@ -150,8 +125,7 @@ public class SaudioCodecTests
             new AudioFormat(48_000, 2), new short[7], LoopRegion.None, positional: false));
     }
 
-    // A ramp with a per-channel offset, so a channel swap or an off-by-one
-    // offset is a value mismatch rather than two arrays that happen to match.
+    // Per-channel offset, so a channel swap or an off-by-one shows as a mismatch.
     private static short[] Ramp(int frames, int channels)
     {
         var pcm = new short[frames * channels];

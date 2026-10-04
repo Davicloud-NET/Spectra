@@ -7,10 +7,8 @@ using System.Numerics;
 namespace SpectraEngine.Core.Graphics.D3D12;
 
 /// <summary>
-/// Wireframe variant of <see cref="D3D12ForwardPipeline"/>: same draw list, but
-/// with <see cref="FillMode.Wireframe"/> selected for the scene pass (fill mode
-/// lives in the PSO on D3D12, so the mode is just a per-draw PSO key here).
-/// Restored to solid before the debug flush so lines rasterize normally.
+/// Wireframe variant of <see cref="D3D12ForwardPipeline"/>: same draw list,
+/// drawn with <see cref="FillMode.Wireframe"/>.
 /// </summary>
 public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
 {
@@ -18,7 +16,7 @@ public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
 
     public string Name => "Wireframe";
 
-    /// <summary>Ambient light level, added to every surface regardless of the lights.</summary>
+    /// <summary>Ambient light level added to every surface.</summary>
     public float Ambient { get; set; } = 0.05f;
 
     public void Initialize(D3D12Renderer renderer) => _renderer = renderer;
@@ -27,10 +25,7 @@ public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
     {
         var renderer = _renderer!;
 
-        // Clear to black for contrast against the wireframe lines.
-        // Outside the pass, beside where the deferred pipelines do the same:
-        // a program created inside an open pass is a state change in the
-        // middle of a recorded command list.
+        // Before the pass opens: this may create a program.
         renderer.PrepareWorldLines(gbuffer: false);
 
         renderer.BeginPass(renderer.FrameTarget, PassClear.To(ClearColors.Wireframe));
@@ -39,8 +34,6 @@ public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
             if (context.Scene is null) return;
 
             var camera = context.Scene.Camera;
-            // From the PASS, not the window: the two are the same only while
-            // every pass goes to the back buffer.
             if (renderer.PassAspectRatio is { } aspect)
                 camera.AspectRatio = aspect;
 
@@ -48,10 +41,7 @@ public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
             DrawView(context.View, camera);
             renderer.CurrentFillMode = FillMode.Solid;
 
-            // The world-line lane, INSIDE this pass, because this pass owns the
-            // scene's depth. A ground grid is world content and must be
-            // occluded by the geometry it lies under; the depth-off overlay
-            // that carries gizmo handles would draw it straight through walls.
+            // Inside this pass: world lines need the scene's depth.
             renderer.FlushWorldLines(camera);
         }
         finally
@@ -60,9 +50,6 @@ public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
         }
     }
 
-    // Draws the engine-built view: the flat, frustum-culled item list replaces
-    // the recursive scene walk that used to live here (the walk now happens
-    // once per frame in Scene.BuildRenderView, shared by every backend).
     private void DrawView(RenderView view, Camera camera)
     {
         IReadOnlyList<RenderItem> items = view.Items;
@@ -73,10 +60,6 @@ public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
                 DrawRenderable(item.Mesh, material, item.World, camera, view);
         }
 
-        // The derived static world's chunks arrive pre-culled like the items,
-        // one item per (chunk, material) with the material already resolved by
-        // the swap; chunk meshes are already in world space, so each draws with
-        // the identity model matrix its item carries.
         IReadOnlyList<RenderItem> worldItems = view.WorldItems;
         for (int i = 0; i < worldItems.Count; i++)
         {
@@ -88,9 +71,7 @@ public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
 
     private void DrawRenderable(Mesh mesh, Material material, Matrix4x4 model, Camera camera, RenderView view)
     {
-        // A material with no program (the fallback built before a renderer had
-        // one, or a shader that failed to resolve) is skipped rather than
-        // dereferenced: one bad material must not take the frame down.
+        // A material with no program is skipped, not a crash.
         if (material.Shader is not { } shader) return;
 
         shader.SetUniform("uModel", model);

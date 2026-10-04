@@ -3,15 +3,8 @@ using System;
 namespace SpectraEngine.Core.Projects;
 
 /// <summary>
-/// A project manifest could not be read, reported against the place in the file
-/// that caused it.
+/// A project manifest could not be read. Carries the byte offset that caused it.
 /// </summary>
-/// <remarks>
-/// Separate from the map's exception rather than shared, because the two name
-/// different things: a map failure points at a node, and a project failure
-/// points at a member. A single type carrying both would have one of them null
-/// on every throw, which is a shape that teaches callers to check nothing.
-/// </remarks>
 public sealed class ProjectFormatException : Exception
 {
     public ProjectFormatException(string message, long byteOffset, Exception? inner = null)

@@ -2,13 +2,7 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// <see cref="SelectionSet"/> semantics: Select replaces, Add appends in
-/// stable insertion order, Toggle flips, and SelectionChanged fires exactly
-/// once per operation that actually changed something. Only nodes belonging
-/// to the owning scene are admissible, and nodes leaving the scene are
-/// deselected automatically via the scene's NodeRemoved event.
-/// </summary>
+/// <summary><see cref="SelectionSet"/>: select, add, toggle, ownership and auto-deselection.</summary>
 public sealed class SelectionTests
 {
     [Fact]
@@ -23,7 +17,7 @@ public sealed class SelectionTests
         scene.Selection.Select(c);
 
         scene.Selection.Items.ShouldBe(new[] { c });
-        fired.ShouldBe(1); // one replace, not one clear + one add
+        fired.ShouldBe(1); // not a clear plus an add
     }
 
     [Fact]
@@ -49,7 +43,7 @@ public sealed class SelectionTests
         scene.Selection.Add(a);
         scene.Selection.Add(c);
 
-        // Stable insertion order, not tree or alphabetical order.
+        // Insertion order, not tree or alphabetical.
         scene.Selection.Items.ShouldBe(new[] { b, a, c });
         scene.Selection.Count.ShouldBe(3);
     }
@@ -143,8 +137,6 @@ public sealed class SelectionTests
         fired.ShouldBe(0);
     }
 
-    // --- Ownership rules ----------------------------------------------------
-
     [Fact]
     public void Selecting_a_node_from_another_scene_throws()
     {
@@ -169,8 +161,6 @@ public sealed class SelectionTests
         Should.Throw<ArgumentException>(() => scene.Selection.Toggle(detached));
         scene.Selection.Count.ShouldBe(0);
     }
-
-    // --- Auto-deselection ---------------------------------------------------
 
     [Fact]
     public void Removing_a_selected_node_auto_deselects_it()
@@ -200,7 +190,6 @@ public sealed class SelectionTests
 
         scene.Root.RemoveChild(group);
 
-        // Both departed nodes are dropped; the unrelated node survives.
         scene.Selection.Items.ShouldBe(new[] { kept });
     }
 
@@ -221,8 +210,6 @@ public sealed class SelectionTests
     [Fact]
     public void Reparenting_within_the_scene_keeps_the_selection()
     {
-        // A move inside the scene fires no NodeRemoved, so the selection must
-        // survive it untouched.
         var scene = new Scene("Test");
         SceneNode oldParent = scene.Root.CreateChild("old-parent");
         SceneNode newParent = scene.Root.CreateChild("new-parent");
@@ -247,7 +234,6 @@ public sealed class SelectionTests
         other.Root.AddChild(a);
 
         scene.Selection.Count.ShouldBe(0);
-        // And it never leaked into the destination's selection.
         other.Selection.Count.ShouldBe(0);
     }
 

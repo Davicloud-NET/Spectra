@@ -9,19 +9,9 @@ using System.Text;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The seam between <see cref="AssetManager"/> and the filesystem: content comes
-/// from an <see cref="IContentSource"/> stack, and the engine may not care which
-/// one answered.
+/// <see cref="AssetManager"/> reads content through an
+/// <see cref="IContentSource"/> stack, never straight from disk.
 /// </summary>
-/// <remarks>
-/// The first test is the load-bearing one. The asset manager reaches for content
-/// in three separate places — the decode behind a texture load, the existence
-/// probe that decides whether a material's texture slot gets real content, and
-/// the parse behind a material load — and if any one of them still goes straight
-/// to disk, a packed build resolves no material texture at all while every log
-/// line reads healthy. Mounting a source the filesystem knows nothing about, over
-/// an empty content root, is what turns that silent failure into a red test.
-/// </remarks>
 public sealed class ContentSourceTests
 {
     private const string PackedMaterial = "Materials/packed.spectramat";
@@ -39,8 +29,6 @@ public sealed class ContentSourceTests
                 texture uDiffuse = Textures/packed.png
                 color uBaseColor = #FFFFFF
                 """);
-            // Real PNG bytes, so the decode is the engine's own and the picture
-            // that comes out is checkable.
             packed.Add(
                 PackedTexture,
                 File.ReadAllBytes(ContentRoot.ResolveAbsolute(ContentRoot.Path, "Textures/dev_grid.png")));
@@ -49,20 +37,17 @@ public sealed class ContentSourceTests
             stack.Mount(packed);
 
             var logger = new CapturingLogger();
-            // The content root exists and is empty: nothing under it can be
-            // found, so any probe that still goes to disk misses.
+            // Empty content root: any probe that still goes to disk misses.
             var assets = new AssetManager(logger, emptyRoot, stack, hotReloadEnabled: false);
             assets.AttachRenderer(new FakeRenderer());
 
             Material material = assets.LoadMaterial(PackedMaterial);
 
-            // Probe 1 (the material existence check) and probe 2 (the parse):
-            // either one going to disk lands here as the default material.
+            // The existence check or the parse going to disk gives the default material.
             material.ShouldNotBeSameAs(assets.DefaultMaterial, "the material was read from the mounted source");
             material.SourcePath.ShouldBe(PackedMaterial);
 
-            // Probe 3 (the texture existence check) and the decode behind it:
-            // either one going to disk lands here as the magenta placeholder.
+            // The texture probe or the decode going to disk gives the placeholder.
             material.TryGetTexture("uDiffuse", out int unit, out Texture? texture).ShouldBeTrue();
             unit.ShouldBe(0);
             texture.ShouldNotBeSameAs(
@@ -70,7 +55,6 @@ public sealed class ContentSourceTests
             ((FakeTexture)texture).Width.ShouldBe(128);
             ((FakeTexture)texture).Format.ShouldBe(TextureFormat.Rgba8);
 
-            // And the source really is what served all of it.
             packed.Opened.ShouldContain(PackedMaterial);
             packed.Opened.ShouldContain(PackedTexture);
             packed.Probed.ShouldContain(PackedTexture);
@@ -98,19 +82,14 @@ public sealed class ContentSourceTests
         lenient.TryOpen("Textures/absent.png", out ContentBlob? nothing).ShouldBeFalse();
         nothing.ShouldBeNull();
 
-        // A cook would rather stop than ship a hole; the engine would rather
-        // draw magenta. Same lookup, and the difference is a property of the
-        // stack that was mounted, never of the caller.
         Should.Throw<FileNotFoundException>(() => strict.TryOpen("Textures/absent.png", out _));
 
-        // A hit is a hit either way.
         strict.TryOpen(PackedTexture, out ContentBlob? found).ShouldBeTrue();
         using (found)
             found.Span.ToArray().ShouldBe(new byte[] { 1, 2, 3 });
 
-        // Exists stays an ordinary question even here: it is what the asset
-        // manager uses to choose its documented fallback before asking for
-        // bytes, and a throwing probe would turn that degradation into a crash.
+        // Exists must not throw even when strict: the asset manager probes
+        // with it before choosing a fallback.
         Should.NotThrow(() => strict.Exists("Textures/absent.png")).ShouldBeFalse();
     }
 
@@ -129,9 +108,6 @@ public sealed class ContentSourceTests
             watchPath.ShouldBe(file);
             loose.TryGetWatchPath("Textures/absent.png", out _).ShouldBeFalse();
 
-            // A packed source names no file on disk, so it supplies no watch
-            // path and is simply not watched — which is the correct behaviour,
-            // not a limitation to work around.
             var packed = new FakeContentSource();
             packed.Add(PackedTexture, [1, 2, 3]);
             packed.TryGetWatchPath(PackedTexture, out _).ShouldBeFalse();
@@ -165,8 +141,6 @@ public sealed class ContentSourceTests
         stack.Mount(high);
         stack.Mount(alsoLow);
 
-        // Ordering is decided when a source is mounted, not per lookup, so the
-        // walk below is over an already-sorted array.
         stack.Count.ShouldBe(3);
         stack.Sources[0].ShouldBeSameAs(high);
         stack.Sources[1].ShouldBeSameAs(low, "equal priorities keep mount order");
@@ -176,7 +150,6 @@ public sealed class ContentSourceTests
         using (blob)
             blob.Span.ToArray().ShouldBe(new byte[] { 2 });
 
-        // Nothing below the first hit is even asked.
         high.Opened.ShouldContain(PackedTexture);
         low.Opened.ShouldBeEmpty();
         alsoLow.Opened.ShouldBeEmpty();
@@ -189,11 +162,7 @@ public sealed class ContentSourceTests
         return Path.GetFullPath(root);
     }
 
-    /// <summary>
-    /// A source with no filesystem behind it at all — the shape a packed archive
-    /// will have. It records what it was asked for, so a test can prove which
-    /// lookups went through the seam rather than around it.
-    /// </summary>
+    // In-memory source that records what it was asked for.
     private sealed class FakeContentSource(int priority = 0) : IContentSource
     {
         private readonly Dictionary<string, byte[]> _entries = new(StringComparer.OrdinalIgnoreCase);

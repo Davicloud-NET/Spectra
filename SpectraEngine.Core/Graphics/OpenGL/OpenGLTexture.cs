@@ -8,7 +8,7 @@ internal sealed class OpenGLTexture : Texture
     private readonly GL _gl;
     private readonly TextureFilter _filter;
 
-    /// <summary>The GL texture name. Stable across <see cref="ReallocateStorage"/>.</summary>
+    // GL texture name. Survives ReallocateStorage.
     public uint Handle { get; }
 
     private bool _disposed;
@@ -40,12 +40,8 @@ internal sealed class OpenGLTexture : Texture
         (InternalFormat internalFormat, PixelFormat pixelFormat, PixelType pixelType) = GlFormats(format, resolved);
         bool compressed = TextureFormatInfo.IsBlockCompressed(format);
 
-        // Decoded image rows are tightly packed, but GL assumes 4-byte row
-        // alignment by default and would then read past each row (skewing the
-        // image) whenever the stride is not a multiple of 4 — which R8 hits at
-        // any odd width and RGB8 hits at any width not divisible by 4. RGBA8 is
-        // always 4-aligned, so it keeps the faster default. Compressed uploads
-        // do not consult the unpack alignment at all.
+        // Rows are tightly packed; GL's default 4-byte unpack alignment skews
+        // R8 and RGB8 at widths whose stride is not a multiple of 4.
         if (!compressed && pixelFormat != PixelFormat.Rgba)
             gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
 
@@ -61,18 +57,14 @@ internal sealed class OpenGLTexture : Texture
                     (uint)mip.Width, (uint)mip.Height, 0, pixelFormat, pixelType, null);
             }
 
-        // A supplied chain is never regenerated: it is what the cooker produced,
-        // and a compressed one cannot be regenerated at all (GenerateMipmap has
-        // no path that re-encodes blocks).
+        // Keep a supplied chain as cooked. GenerateMipmap can't re-encode blocks.
         bool wantsMipmaps = filter == TextureFilter.LinearMipmap;
         bool generate = wantsMipmaps && !desc.HasSuppliedMipChain && !compressed;
         if (generate && !deferred)
             gl.GenerateMipmap(TextureTarget.Texture2D);
 
-        // A texture with only SOME of its levels defined is INCOMPLETE, and an
-        // incomplete texture samples as black with no error from the driver.
-        // GenerateMipmap fills the whole chain so the default max level of 1000
-        // is fine there; a supplied chain that stops at 8x8 has to say so.
+        // A chain that stops short of 1x1 must set the max level, or the
+        // texture is incomplete and samples black with no GL error.
         if (desc.HasSuppliedMipChain)
         {
             gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureBaseLevel, 0);
@@ -93,14 +85,6 @@ internal sealed class OpenGLTexture : Texture
         return new OpenGLTexture(gl, handle, width, height, format, resolved, filter);
     }
 
-    /// <summary>
-    /// Hands every declared level to GL, tightly packed.
-    /// </summary>
-    /// <remarks>
-    /// The tight repack lives in <see cref="TextureUploadLayout.TightLevel"/>
-    /// and returns a slice with no copy when the file was already tight, which
-    /// is every uncompressed upload the engine makes today.
-    /// </remarks>
     private static unsafe void UploadLevels(
         GL gl,
         in TextureUploadDesc desc,
@@ -109,9 +93,6 @@ internal sealed class OpenGLTexture : Texture
         PixelType pixelType,
         bool compressed)
     {
-        // Copied out of the `in` parameter once: a helper cannot return a span
-        // derived from a ref-struct passed by reference, and slicing here keeps
-        // every level's bytes rooted in the caller's payload.
         ReadOnlySpan<byte> payload = desc.Payload;
         TextureFormat format = desc.Format;
 
@@ -136,21 +117,12 @@ internal sealed class OpenGLTexture : Texture
                 }
             }
 
-            // Named rather than discarded, so the repacked buffer is provably
-            // alive across the fixed block above.
+            // Keeps the repacked buffer alive across the fixed block.
             GC.KeepAlive(repacked);
         }
     }
 
-    /// <summary>
-    /// Creates a texture with storage but no pixel data: the colour attachment
-    /// of a render target, which the GPU fills rather than the CPU.
-    /// </summary>
-    /// <remarks>
-    /// Mipmaps are deliberately not generated. There is nothing to generate them
-    /// from at creation, and a render target's contents change every frame, so a
-    /// chain would be stale the moment it was built.
-    /// </remarks>
+    // Storage with no pixel data, for a render target attachment. No mip chain.
     internal static unsafe OpenGLTexture CreateEmpty(
         GL gl,
         int width,
@@ -169,8 +141,7 @@ internal sealed class OpenGLTexture : Texture
         gl.TexImage2D(TextureTarget.Texture2D, 0, internalFormat,
             (uint)width, (uint)height, 0, pixelFormat, pixelType, null);
 
-        // Never LinearMipmapLinear here: with no mip chain that filter samples a
-        // level that does not exist and the texture reads as black.
+        // No mip chain, so a mipmap min filter would read black.
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)MagFilter(filter));
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)MagFilter(filter));
 
@@ -182,17 +153,8 @@ internal sealed class OpenGLTexture : Texture
         return new OpenGLTexture(gl, handle, width, height, format, resolved, filter);
     }
 
-    /// <summary>
-    /// Reallocates this texture's storage at a new size, <b>keeping the same GL
-    /// name and the same wrapper</b>. What a render-target resize needs.
-    /// </summary>
-    /// <remarks>
-    /// Identity is the whole point. Every material that sampled this texture
-    /// holds this object; replacing it on resize would leave each of them
-    /// pointing at something destroyed, which is a black viewport at best.
-    /// Sampler state lives on the texture object and survives, so only the
-    /// storage is respecified.
-    /// </remarks>
+    // Resizes in place. Materials hold this wrapper and GL name, so a render
+    // target resize must not replace either.
     internal unsafe void ReallocateStorage(int width, int height)
     {
         (InternalFormat internalFormat, PixelFormat pixelFormat, PixelType pixelType) = GlFormats(Format, ColorSpace);
@@ -252,11 +214,8 @@ internal sealed class OpenGLTexture : Texture
         _gl.BindTexture(TextureTarget.Texture2D, 0);
     }
 
-    // Only the INTERNAL format carries the colour space; the pixel format
-    // describes the bytes being handed over, which are the same either way. The
-    // sRGB internal formats make the driver decode on every sample -- including
-    // the samples GenerateMipmap takes below, which is why the mip chain of an
-    // sRGB texture is an average of light rather than of display codes.
+    // Colour space lives in the internal format only. An sRGB one makes the
+    // driver decode before filtering, GenerateMipmap included.
     private static (InternalFormat Internal, PixelFormat Pixel, PixelType Type) GlFormats(
         TextureFormat format, TextureColorSpace colorSpace)
     {
@@ -267,40 +226,27 @@ internal sealed class OpenGLTexture : Texture
                 (srgb ? InternalFormat.Srgb8Alpha8 : InternalFormat.Rgba8, PixelFormat.Rgba, PixelType.UnsignedByte),
             TextureFormat.Rgb8 =>
                 (srgb ? InternalFormat.Srgb8 : InternalFormat.Rgb8, PixelFormat.Rgb, PixelType.UnsignedByte),
-            // No SR8 exists; TextureFormatInfo.Resolve has already forced linear.
+            // No sRGB R8 exists; TextureFormatInfo.Resolve forces linear.
             TextureFormat.R8 => (InternalFormat.R8, PixelFormat.Red, PixelType.UnsignedByte),
-            // The pixel type matters even with a null data pointer: the driver
-            // validates the (format, type) pair against the internal format, and
-            // UnsignedByte against RGBA16F is rejected on some drivers.
+            // Type matters even with a null pointer: some drivers reject
+            // UnsignedByte against RGBA16F.
             TextureFormat.Rgba16Float => (InternalFormat.Rgba16f, PixelFormat.Rgba, PixelType.Float),
-            // Sampled with an ordinary sampler2D, which returns the depth in .r.
-            // GL_TEXTURE_COMPARE_MODE stays at its GL_NONE default, so this is a
-            // plain texture read and not a shadow comparison.
+            // Compare mode stays GL_NONE, so sampler2D reads the depth in .r.
             TextureFormat.Depth32Float =>
                 (InternalFormat.DepthComponent32f, PixelFormat.DepthComponent, PixelType.Float),
 
-            // The block-compressed family. The pixel format and type are unused
-            // by glCompressedTexImage2D and are filled in with the shape the
-            // blocks decode to, so a future glTexSubImage path over one of these
-            // has something honest to start from rather than a zero.
-            //
-            // S3TC's RGBA DXT1 rather than its RGB one, because DXGI's
-            // BC1_UNORM is the alpha-carrying form and a mismatch here would
-            // make one backend drop the alpha bit silently.
+            // Compressed uploads ignore pixel format and type.
+            // RGBA DXT1, not RGB: DXGI's BC1_UNORM carries the alpha bit.
             TextureFormat.Bc1 => (
                 srgb ? InternalFormat.CompressedSrgbAlphaS3TCDxt1Ext : InternalFormat.CompressedRgbaS3TCDxt1Ext,
                 PixelFormat.Rgba, PixelType.UnsignedByte),
             TextureFormat.Bc3 => (
                 srgb ? InternalFormat.CompressedSrgbAlphaS3TCDxt5Ext : InternalFormat.CompressedRgbaS3TCDxt5Ext,
                 PixelFormat.Rgba, PixelType.UnsignedByte),
-            // RGTC has no sRGB form in the API at all; Resolve has already
-            // forced these two to linear.
+            // RGTC has no sRGB form.
             TextureFormat.Bc4 => (InternalFormat.CompressedRedRgtc1, PixelFormat.Red, PixelType.UnsignedByte),
             TextureFormat.Bc5 => (InternalFormat.CompressedRGRgtc2, PixelFormat.RG, PixelType.UnsignedByte),
-            // Unsigned BPTC float: the half-float family the cooker targets. The
-            // signed variant is a different internal format and would need its
-            // own TextureFormat member, since the two decode the same bits
-            // differently.
+            // Unsigned BPTC float. The signed form would need its own TextureFormat.
             TextureFormat.Bc6H => (
                 InternalFormat.CompressedRgbBptcUnsignedFloat, PixelFormat.Rgb, PixelType.HalfFloat),
             TextureFormat.Bc7 => (

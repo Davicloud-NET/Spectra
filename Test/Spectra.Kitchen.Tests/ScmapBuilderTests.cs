@@ -14,16 +14,9 @@ using SpectraEngine.Core.Scene;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The five tables of a compiled map, written and read back.
+/// The five tables of a compiled map, written and read back. Reader refusals
+/// are tested by editing the bytes of a valid file.
 /// </summary>
-/// <remarks>
-/// Every refusal here is reproduced by editing the BYTES of a valid file rather
-/// than by asking the builder to produce an invalid one, wherever the claim is
-/// about a reader. The two are different statements: the builder refusing is a
-/// fact about this cook, and the reader refusing is a fact about the file, which
-/// is the only one of the two that survives the file being written by something
-/// else or edited afterwards.
-/// </remarks>
 public class ScmapBuilderTests
 {
     [Fact]
@@ -60,16 +53,9 @@ public class ScmapBuilderTests
     [Fact]
     public void Every_authored_transform_round_trips_bit_for_bit()
     {
-        // Not approximately. A compiled map stores the authored ten floats rather
-        // than a composed world matrix precisely so replaying the composition
-        // reproduces bit-identical matrices, which is what the compile cache's
-        // exact-equality keying and the bake oracle both depend on. A tolerance
-        // here would pass while quietly giving that away.
+        // Bits, not a tolerance: the compile cache keys on exact equality.
         ScmapProbe probe = ScmapProbe.Read(ScmapFixture.Build());
 
-        // The AUTHORED values, not values read back out of the same file: an
-        // expectation taken from the file compares it to itself and passes however
-        // the floats were mangled on the way in.
         Transform[] expected = ScmapFixture.Transforms;
         probe.Nodes.Count.ShouldBe(expected.Length);
         for (int i = 0; i < expected.Length; i++)
@@ -94,9 +80,7 @@ public class ScmapBuilderTests
     [Fact]
     public void Strings_are_emitted_in_first_reference_order_during_the_canonical_walk()
     {
-        // The empty string, the scene name, the asset table in its own order, then
-        // node names in pre-order. Interning as each Add arrives would satisfy this
-        // only while the cook happened to call in that order.
+        // Empty string, scene name, asset table order, node names in pre-order.
         ScmapProbe probe = ScmapProbe.Read(ScmapFixture.Build());
         probe.Strings.ShouldBe(ScmapFixture.ExpectedStrings());
     }
@@ -114,23 +98,19 @@ public class ScmapBuilderTests
             probe.Chunks[i].Y.ShouldBe(expected.Y);
             probe.Chunks[i].Z.ShouldBe(expected.Z);
 
-            // A cell with no owned render geometry is legal and common: the compile
-            // produces no artifact for a resident-only cell.
+            // A cell with no geometry of its own is legal.
             probe.Chunks[i].MeshSize.ShouldBe(0u);
             probe.Chunks[i].BspSize.ShouldBe(0u);
         }
 
-        // The true render bounds, never the cell cube.
+        // Render bounds, not the cell cube.
         probe.Chunks[2].BoundsMin.ShouldBe(new Vector3(-0.5f));
     }
 
     [Fact]
     public void An_unsorted_chunk_directory_in_a_FILE_is_refused()
     {
-        // A claim about the bytes rather than about the writer, which is the only
-        // one of the two that survives the file being edited: a binary search over
-        // an unsorted directory answers "no such cell" for a cell that is right
-        // there, which reads as a player falling through a floor they can see.
+        // A binary search over an unsorted directory misses cells that are there.
         byte[] file = ScmapFixture.Build();
         (int offset, _) = FindSection(file, ScmapFormat.ChunkDirectorySection);
 
@@ -166,7 +146,7 @@ public class ScmapBuilderTests
             size.ShouldBe(0, ScmapFormat.DescribeFourCc(kind));
         }
 
-        // The two with no producer are never written at all.
+        // These two have no producer and are never written.
         Should.Throw<InvalidOperationException>(() => FindSection(file, ScmapFormat.RegionIndexSection));
         Should.Throw<InvalidOperationException>(() => FindSection(file, ScmapFormat.BrushModelSection));
 
@@ -177,8 +157,7 @@ public class ScmapBuilderTests
     [Fact]
     public void A_section_code_this_build_has_no_meaning_for_is_skipped_rather_than_refused()
     {
-        // The forward-compatibility mechanism: a lightmap or a navmesh section
-        // written by a later cooker must not make a map unreadable today.
+        // A section a later cooker adds must not make the map unreadable.
         byte[] file = ScmapFixture.Build();
         (int offset, _) = FindSection(file, ScmapFormat.EntitySection);
         int record = TableRecordOffset(file, ScmapFormat.EntitySection);
@@ -206,9 +185,7 @@ public class ScmapBuilderTests
     [Fact]
     public void A_retired_payload_kind_in_a_FILE_is_refused_naming_the_node()
     {
-        // The value was burned rather than reused although no compiled map has ever
-        // shipped, because an enum value in a shipped format must never mean two
-        // things. Guessing that it meant a part brush is how a door becomes a wall.
+        // Payload kind 3 is retired and must never be reused.
         byte[] file = ScmapFixture.Build();
         (int offset, _) = FindSection(file, ScmapFormat.NodeSection);
 
@@ -224,13 +201,8 @@ public class ScmapBuilderTests
     [Fact]
     public void A_material_reaches_the_asset_table_as_a_PATH_and_never_as_its_interned_id()
     {
-        // An id is per-process interning order and means nothing in a file. A cook
-        // that wrote one produces a map that loads perfectly in the test that wrote
-        // it and mis-textures the whole world the moment a second map interns
-        // first, and the wrong version is SHORTER CODE.
-        //
-        // The unrelated intern is load-bearing: without it the ids and the table
-        // indices can agree by coincidence and the bug hides completely.
+        // An id is per-process interning order and means nothing in a file.
+        // The unrelated intern stops ids and table indices agreeing by coincidence.
         MaterialRegistry.Intern("Materials/scmap_unrelated_first.spectramat");
 
         MaterialRef wall = MaterialRegistry.Intern("Materials/scmap_wall.spectramat");
@@ -252,9 +224,6 @@ public class ScmapBuilderTests
         probe.Assets[1].Path.ShouldBe("Materials/scmap_trim.spectramat");
         probe.Assets[0].Kind.ShouldBe(PackEntryKind.Material);
 
-        // The row is a kind, a STRING INDEX and a content hash, and the string
-        // index is the table's own first-reference position: index 0 is the empty
-        // string, 1 is the scene name, and the asset paths follow.
         probe.Strings[0].ShouldBe(string.Empty);
         probe.Strings[1].ShouldBe("MaterialOrder");
         probe.Strings[2].ShouldBe("Materials/scmap_wall.spectramat");
@@ -301,11 +270,6 @@ public class ScmapBuilderTests
     [Fact]
     public void One_cell_added_twice_is_refused()
     {
-        // One cell owns one entry: a duplicate makes a binary search answer
-        // whichever of the two it happens to land on. Pinned because the check
-        // became a SET when the bake benchmark measured the linear scan it used to
-        // be as quadratic in the size of the world, and a membership structure
-        // beside a list is exactly the kind of thing that stops being consulted.
         var builder = new ScmapBuilder("Twice");
         var cell = new ChunkCoord(3, -1, 7);
         var bounds = new Aabb(Vector3.Zero, Vector3.One);
@@ -322,11 +286,7 @@ public class ScmapBuilderTests
     [Fact]
     public void A_cell_the_builder_REFUSED_may_still_be_added()
     {
-        // The set is the list's membership and nothing else. Recording a coord
-        // before the later refusals ran would make one rejected cell permanently
-        // unaddable, and the message a cook then gets names a duplicate that is
-        // not there - a refusal blaming the wrong thing, which is worse than the
-        // one it replaced.
+        // The duplicate set must only record a cell once every refusal has passed.
         var builder = new ScmapBuilder("Rejected");
         var cell = new ChunkCoord(2, 2, 2);
         var bounds = new Aabb(Vector3.Zero, Vector3.One);
@@ -346,11 +306,7 @@ public class ScmapBuilderTests
     [Fact]
     public void A_cell_whose_submeshes_are_out_of_ascending_asset_order_is_refused()
     {
-        // The builder places every blob itself, so a caller can no longer point a
-        // directory entry anywhere - what it CAN still get wrong is the order the
-        // submeshes arrive in, and ascending asset index is what makes two compiles
-        // of one cell emit one file. Ascending material id would not be: an id is
-        // per-process interning order.
+        // Asset index order, not material id order: ids vary per process.
         var builder = new ScmapBuilder("Blobs");
 
         Should.Throw<InvalidOperationException>(() => builder.AddChunk(new ScmapChunkSource(
@@ -366,8 +322,6 @@ public class ScmapBuilderTests
     [Fact]
     public void A_compile_constant_that_does_not_match_this_engine_is_refused_naming_both_numbers()
     {
-        // A map baked on another lattice is not an error anywhere at load: it is
-        // sporadic collision bugs, or seams exactly where two cells meet.
         byte[] file = ScmapFixture.Build();
         (int offset, _) = FindSection(file, ScmapFormat.MetaSection);
 
@@ -383,10 +337,7 @@ public class ScmapBuilderTests
     [Fact]
     public void A_section_that_does_not_start_on_a_sixteen_byte_boundary_is_refused()
     {
-        // The last line of defence behind the writer's own assertions, and the one
-        // that survives a file written by something else: every payload in this
-        // format is reinterpreted in place, so an unaligned section start is a
-        // plane straddling a boundary rather than an exception.
+        // Payloads are cast in place, so sections must start 16-aligned.
         byte[] file = ScmapFixture.Build();
         int record = TableRecordOffset(file, ScmapFormat.NodeSection);
 
@@ -400,8 +351,7 @@ public class ScmapBuilderTests
     [Fact]
     public void A_format_version_this_engine_does_not_read_is_refused_rather_than_carried()
     {
-        // Exact, never a floor: a compiled map is a build output that can always be
-        // regenerated, so there is nothing to degrade to.
+        // Exact match, not a minimum: a compiled map can always be recooked.
         byte[] file = ScmapFixture.Build();
         BinaryPrimitives.WriteUInt16LittleEndian(file.AsSpan(0x04), 99);
 
@@ -422,10 +372,8 @@ public class ScmapBuilderTests
     [Fact]
     public void Two_builds_of_one_fixture_are_byte_identical_in_this_process()
     {
-        // The weak half of the determinism claim. The strong half needs two
-        // PROCESSES, because .NET randomises the string hash seed per process and
-        // an in-process comparison structurally cannot see an order that leaked
-        // from one; see ScmapDeterminismTests.
+        // In-process only. ScmapDeterminismTests covers two processes, where the
+        // string hash seed differs.
         ScmapFixture.Build().ShouldBe(ScmapFixture.Build());
     }
 

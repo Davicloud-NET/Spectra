@@ -47,9 +47,8 @@ namespace SpectraEngine.Core.Graphics.Shaders;
 ///       2 bytes  - Name length in UTF-8 bytes (uint16)
 ///       N bytes  - Name, UTF-8, no terminator
 ///
-/// The stage flags in the entry are what tell a reader where the stage sections
-/// stop and the vertex input table starts, so the tables can only be appended
-/// after them.
+/// A reader finds the end of the stage sections from the entry's stage flags,
+/// so the vertex input tables have to come after them.
 /// </summary>
 public static class ShaderFileWriter
 {
@@ -64,14 +63,13 @@ public static class ShaderFileWriter
         header[7] = (byte)file.Pipelines.Count;
         writer.Write(header);
 
-        // Build blobs first so we know offsets and sizes
+        // Blobs first: the entry table needs their sizes.
         var blobs = new byte[file.Pipelines.Count][];
         for (int i = 0; i < file.Pipelines.Count; i++)
         {
             blobs[i] = SerializePipelineBlob(file.Pipelines[i]);
         }
 
-        // Pipeline entry table
         Span<byte> entry = stackalloc byte[ShaderFileLayout.EntrySize];
         uint dataOffset = 0;
         for (int i = 0; i < file.Pipelines.Count; i++)
@@ -87,7 +85,6 @@ public static class ShaderFileWriter
             dataOffset += (uint)blobs[i].Length;
         }
 
-        // Data section
         for (int i = 0; i < blobs.Length; i++)
         {
             writer.Write(blobs[i]);
@@ -112,10 +109,8 @@ public static class ShaderFileWriter
 
         WriteVertexInputs(writer, blob.VertexInputs);
 
-        // The instanced inputs describe the instanced stage, so they ride inside
-        // its presence flag. A blob carrying the inputs without the stage is
-        // refused rather than written, because writing it drops them and a
-        // dropped vertex layout is a wrong input layout rather than an error.
+        // Instanced inputs are only written with the instanced stage, so inputs
+        // without a stage would be dropped. Refuse instead.
         if (blob.InstancedVertexData is null)
         {
             if (blob.InstancedVertexInputs.Count > 0)

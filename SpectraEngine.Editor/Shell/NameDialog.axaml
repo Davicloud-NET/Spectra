@@ -8,13 +8,8 @@
         Background="{StaticResource SpectraBgApp}"
         Title="Name">
 
-  <!--
-    A real modal WINDOW, not an in-window overlay, and that distinction is the
-    airspace rule rather than a style choice: the viewport is a native child
-    window that composites above anything Avalonia draws, so a panel floated
-    over the shell would be invisible wherever it crossed the viewport. A
-    separate top-level window has its own surface and is unaffected.
-  -->
+  <!-- A top-level window, not an overlay: a native viewport composites above
+       anything drawn inside the main window. -->
   <Border Padding="16" BorderThickness="1" BorderBrush="{StaticResource SpectraBorderSoft}">
     <StackPanel Spacing="12">
       <TextBlock x:Name="PromptText"
@@ -22,11 +17,8 @@
                  FontSize="{StaticResource SpectraFontBase}"
                  TextWrapping="Wrap" />
 
-      <!-- The .field recipe, not inline brushes: control-level values only
-           reach the template part at TemplateBinding priority, so Fluent's
-           hover and focus triggers replaced them with stock fills. The one
-           text box in the shell with zero authored state behaviour was the
-           one in a modal asking for a name. -->
+      <!-- Use the .field class, not inline brushes: Fluent's hover and focus
+           triggers override control-level values. -->
       <TextBox x:Name="Input" Classes="field"
                Height="30" MinHeight="30"
                Padding="8,4"
@@ -39,9 +31,6 @@
                  TextWrapping="Wrap"
                  IsVisible="False" />
 
-      <!-- The dialog recipe, not toolbar chips with hand-painted fills: a
-           chip dressed as a confirm button is two controls dressed as each
-           other, the exact failure the affordance rule exists to prevent. -->
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
         <Button Classes="secondary" Content="Cancel" Click="OnCancel" MinWidth="104" />
         <Button Classes="primary" Content="OK" Click="OnAccept" MinWidth="104" />

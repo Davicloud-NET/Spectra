@@ -5,18 +5,7 @@ using System.Collections.Generic;
 
 namespace SpectraEngine.Entities.Tests;
 
-/// <summary>
-/// The already-built runtime, run against generated entities.
-/// </summary>
-/// <remarks>
-/// <b>This is the test that proves the generator and the runtime agree, and it is
-/// why the runtime was built first.</b> Every other test here reads generated
-/// text or counts diagnostics; this one wires a relay to a counter through a real
-/// <see cref="EntityWorld"/> and asserts on what a level would actually do. A
-/// binder that assigned into the wrong member, a dispatch switch that fell
-/// through to <c>base</c>, a schema naming an output nothing fires: none of them
-/// is visible in a diff, and all of them fail here.
-/// </remarks>
+/// <summary>Generated entities run through a real <see cref="EntityWorld"/>.</summary>
 public sealed class BuiltinEntityBehaviourTests
 {
     private const float Tick = 1f / 60f;
@@ -24,10 +13,8 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void A_relay_wired_to_a_counter_fires_OnHitMax_once_when_the_count_arrives_at_its_ceiling()
     {
-        // THE TRANSITION PIN. Three triggers into a counter whose ceiling is two:
-        // the count arrives at the ceiling on the second and stays there on the
-        // third, and OnHitMax fires exactly once. The other reading of "hit max" -
-        // fire whenever a change lands at the bound - turns one door into three.
+        // Three triggers, ceiling of two: the third stays at the ceiling and
+        // must not fire OnHitMax again.
         var log = new List<string>();
         var scene = new Scene("Entities");
 
@@ -48,8 +35,7 @@ public sealed class BuiltinEntityBehaviourTests
         for (int i = 0; i < 3; i++)
         {
             EntityRuntime.Send(live, "Trigger").ShouldBeTrue();
-            // Zero-delay wires are due the instant they are queued, so the whole
-            // relay -> counter -> sink cascade drains inside one tick.
+            // Zero-delay wires: the whole cascade drains in one tick.
             world.Tick(Tick);
         }
 
@@ -61,9 +47,6 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void A_counter_that_leaves_its_ceiling_and_returns_announces_the_second_arrival()
     {
-        // The other half of the transition rule: firing once per ARRIVAL is not
-        // firing once ever. A counter that could only announce its ceiling one
-        // time would be a counter no level could reuse.
         var log = new List<string>();
         var scene = new Scene("Entities");
 
@@ -90,8 +73,7 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void An_unclamped_counter_announces_neither_bound()
     {
-        // A pair of zeros is the unclamped counter, which is why both bounds
-        // default to zero and there is no separate clamping switch.
+        // Min and max both zero means unclamped.
         var log = new List<string>();
         var scene = new Scene("Entities");
 
@@ -117,8 +99,6 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void A_counter_reports_its_value_on_the_wire_as_the_parameter()
     {
-        // The generated fire helper's parameterOverride, and the one thing that
-        // makes OutValue worth having: the value travels with it.
         var log = new List<string>();
         var scene = new Scene("Entities");
 
@@ -160,9 +140,6 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void A_relay_that_starts_disabled_passes_nothing_until_it_is_enabled()
     {
-        // The generated keyvalue binder is the subject here: startdisabled is a
-        // string on the wire and a bool on the class, and nothing but the emitted
-        // switch converts between them.
         var log = new List<string>();
         var scene = new Scene("Entities");
 
@@ -191,9 +168,7 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void A_relay_refires_while_an_earlier_trigger_is_still_pending()
     {
-        // v1's declared answer, and the one the wire model can implement
-        // honestly: the delay lives on the wire, so "pending" is not a state the
-        // relay has. Two triggers inside one delay deliver two outputs.
+        // The delay lives on the wire, so the relay has no pending state.
         var log = new List<string>();
         var scene = new Scene("Entities");
 
@@ -220,9 +195,6 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void A_timer_fires_on_its_interval_and_Enable_restarts_it()
     {
-        // The declared semantics, measured: a timer re-enabled part way through an
-        // interval waits a WHOLE interval, so the fire that the old schedule would
-        // have produced at 1.0 does not happen.
         var log = new List<string>();
         var scene = new Scene("Entities");
 
@@ -238,8 +210,7 @@ public sealed class BuiltinEntityBehaviourTests
         live.RefireInterval.ShouldBe(0.5f);
         live.IsEnabled.ShouldBeTrue();
 
-        // Quarter-second steps, which are exact in binary: an interval test that
-        // accumulated 1/60ths would be asserting on the rounding.
+        // Quarter-second steps are exact in binary; 1/60ths would not be.
         world.Tick(0.25f);
         log.ShouldBeEmpty();
 
@@ -286,11 +257,7 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void A_timer_floors_a_refire_time_that_would_be_due_every_tick()
     {
-        // A zero interval is a think that is always due, which the world would
-        // dispatch until MaxDispatchesPerTick tripped and reported a runaway with
-        // this timer's name on it. Refusing with a throw is not available: the
-        // binder assigns straight into the property, and one unreadable field
-        // must not take down the load of a whole level.
+        // A zero interval would be due forever and trip the dispatch budget.
         var log = new List<string>();
         var scene = new Scene("Entities");
 
@@ -306,10 +273,6 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void A_keyvalue_the_binder_cannot_read_keeps_the_default_and_is_reported()
     {
-        // The generated binder's refusal path: the key is recognised (so nothing
-        // reports a missing property) and the value is not, so the default stands
-        // and the load continues. A throw here would take down a level over one
-        // hand-edited field.
         var log = new List<string>();
         var scene = new Scene("Entities");
 
@@ -329,9 +292,6 @@ public sealed class BuiltinEntityBehaviourTests
     [Fact]
     public void An_input_no_built_in_class_declares_is_refused_rather_than_swallowed()
     {
-        // The generated switch falls through to base, which returns false, which
-        // is how EntityWorld knows to report it. A switch that returned true on
-        // the default would make every typo in a map a silent no-op.
         var log = new List<string>();
         var scene = new Scene("Entities");
         SceneNode relay = EntityRuntime.Place(scene.Root, "relay", "logic_relay");

@@ -13,68 +13,22 @@ using System.Threading.Tasks;
 
 namespace SpectraEngine.Editor.Viewport;
 
-/// <summary>
-/// Reports what this machine's compositor can actually accept from the engine:
-/// which adapter it runs on, which shared-texture handle kinds it imports, and
-/// how each of those can be synchronised.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is step zero of replacing the viewport's native child window, and it
-/// blocks the rest.</b> The viewport is a real Win32 child today, which
-/// composites above everything Avalonia draws and is the single fact behind
-/// every layout limitation the shell has: no overlays over the 3D view, no
-/// split views, no dockable viewport, no drag-and-drop into the scene. The
-/// replacement hands the compositor a texture the engine rendered - and whether
-/// that is possible AT ALL is a per-driver fact.
-/// </para>
-/// <para>
-/// <b>It is a probe rather than an assumption because Avalonia's Windows
-/// interop is ANGLE - GL ES over D3D11 - and whether it accepts a handle
-/// created by a D3D12 device is not something to guess at.</b> Three routes
-/// follow from the answer: import the D3D12 handle directly (which also means a
-/// second synchronisation path, since D3D12 has no keyed mutex); bridge through
-/// a D3D11On12 device, paying one copy per frame to keep exactly one
-/// synchronisation implementation in the codebase; or refuse and keep the
-/// native child, with the reason logged.
-/// </para>
-/// <para>
-/// <b>A capability flag is not proof, so the probe imports real textures.</b>
-/// The capability query answers what a compositor advertises, and a machine can
-/// advertise a handle kind it cannot actually synchronise. So after the report
-/// it creates four textures and hands each one over for real: D3D11 with an NT
-/// handle, D3D11 with a global shared handle, D3D12 with an NT handle, and
-/// D3D11On12 with an NT handle. Each route catches its own failures and the
-/// next one still runs, because the machine's behaviour is the unknown being
-/// measured and a probe that stops at the first refusal measures one thing
-/// instead of four.
-/// </para>
-/// <para>
-/// <b>It reports rather than decides.</b> The answer belongs in a commit
-/// message and a roadmap entry, taken on real hardware - ideally NVIDIA, AMD,
-/// Intel, a hybrid laptop and a remote-desktop session, because those are the
-/// five configurations where the answer plausibly differs.
-/// </para>
-/// </remarks>
+// Reports what this machine's compositor accepts from the engine: adapter,
+// importable shared-texture handle kinds, and how each can be synchronised.
+// Capability flags are not proof (Avalonia's Windows interop is ANGLE over
+// D3D11), so it also imports four real textures: D3D11 NT handle, D3D11 global
+// handle, D3D12 NT handle, D3D11On12 NT handle. Each route catches its own
+// failure so the rest still run.
 internal static class InteropProbe
 {
-    /// <summary>The switch that runs this instead of opening the editor.</summary>
+    // Runs the probe instead of opening the editor.
     public const string Switch = "--interop-probe";
 
-    /// <summary>Whether the command line asked for the probe.</summary>
     public static bool Requested(IReadOnlyList<string> args) =>
         args.Any(a => string.Equals(a, Switch, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Runs the probe against <paramref name="window"/>'s compositor and logs
-    /// the result.
-    /// </summary>
-    /// <remarks>
-    /// <b>It needs a real window.</b> The compositor is created by the platform
-    /// when a top level exists, and the GPU interop is negotiated with the
-    /// render backend that window is attached to - so there is no headless form
-    /// of this question.
-    /// </remarks>
+    // Needs a real window: the compositor and its GPU interop only exist once
+    // a top level does.
     public static async Task RunAsync(Window window, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(window);
@@ -104,16 +58,12 @@ internal static class InteropProbe
 
             logger.LogInformation("Interop probe:\n{Report}", Describe(interop));
 
-            // After the report, because the routes only make sense against the
-            // list of kinds this compositor claims to take.
             logger.LogInformation(
                 "Interop probe routes:\n{Report}", await RunRoutesAsync(compositor, interop, logger));
         }
         catch (Exception ex)
         {
-            // A probe that takes the shell down with it would be worse than no
-            // probe: this runs on a machine whose driver is exactly the unknown
-            // being measured.
+            // The driver is the unknown here, so the probe must not crash the shell.
             logger.LogError(ex, "Interop probe: the query itself failed");
         }
     }
@@ -142,11 +92,8 @@ internal static class InteropProbe
 
             try
             {
-                // The synchronisation capabilities are what decide HOW a frame
-                // is handed over, and they are per handle kind rather than per
-                // device: a machine can accept a handle it cannot synchronise
-                // with a keyed mutex, which is exactly the case that decides
-                // between the direct route and the D3D11On12 bridge.
+                // Per handle kind, not per device: a machine can accept a
+                // handle it cannot synchronise with a keyed mutex.
                 sb.Append(interop.GetSynchronizationCapabilities(kind));
             }
             catch (Exception ex)
@@ -157,8 +104,6 @@ internal static class InteropProbe
             sb.Append('\n');
         }
 
-        // The one sentence a reader actually needs, rather than leaving them to
-        // work it out from the enum names.
         sb.Append("  verdict       ").Append(Verdict(kinds)).Append('\n');
         return sb.ToString();
     }
@@ -191,24 +136,13 @@ internal static class InteropProbe
             ? "(none)"
             : string.Concat(bytes.Select(b => b.ToString("x2", CultureInfo.InvariantCulture)));
 
-    // --- the measured routes -------------------------------------------------
-
     private const string Route1 = "1  D3D11 texture, NT handle";
     private const string Route2 = "2  D3D11 texture, global shared handle";
     private const string Route3 = "3  D3D12 resource, NT handle";
     private const string Route4 = "4  D3D11On12 texture, NT handle";
 
-    /// <summary>
-    /// A single hand-over attempt: what was tried, how far it got, and why it
-    /// stopped.
-    /// </summary>
-    /// <remarks>
-    /// <b><paramref name="KeyedMutex"/> is a fact about the texture this side
-    /// created</b>, not about the compositor, and it is reported because it is
-    /// what makes a route's failure legible: a D3D12 resource carries no keyed
-    /// mutex and cannot be made to, so an E_NOINTERFACE out of the import is a
-    /// different thing from a driver refusing the handle.
-    /// </remarks>
+    // KeyedMutex is about the texture this side created, not the compositor.
+    // A D3D12 resource has none, which explains an E_NOINTERFACE on import.
     private sealed record RouteResult(
         string Route,
         bool Imported,
@@ -217,10 +151,6 @@ internal static class InteropProbe
         bool KeyedMutex,
         string? Failure);
 
-    /// <summary>
-    /// Nothing here may take the shell down and nothing here may hang it: the
-    /// driver under test is the unknown.
-    /// </summary>
     private static async Task<string> RunRoutesAsync(
         Compositor compositor, ICompositionGpuInterop interop, ILogger logger)
     {
@@ -280,9 +210,8 @@ internal static class InteropProbe
                     Height = texture.Height,
                     Format = PlatformGraphicsExternalImageFormat.R8G8B8A8UNorm,
 
-                    // A D3D render target's first row is its top one, unlike a
-                    // GL framebuffer's; getting this wrong flips the picture
-                    // rather than failing the import.
+                    // D3D render targets are top-left origin. Wrong here flips
+                    // the picture without failing the import.
                     TopLeftOrigin = true,
                 });
 
@@ -303,9 +232,8 @@ internal static class InteropProbe
         }
         finally
         {
-            // The image goes first: it is the compositor's view of the texture,
-            // and destroying the texture underneath it is exactly the crash
-            // this whole path exists to avoid in production.
+            // Image first: it is the compositor's view of the texture, and
+            // freeing the texture under it crashes.
             if (image is not null)
             {
                 try { await image.DisposeAsync(); }
@@ -317,16 +245,8 @@ internal static class InteropProbe
         }
     }
 
-    /// <summary>
-    /// Awaits <paramref name="task"/> with a ceiling, because a keyed-mutex
-    /// acquire against a resource that carries no keyed mutex has nothing to
-    /// time it out.
-    /// </summary>
-    /// <remarks>
-    /// The abandoned task is deliberately left running: the probe closes its
-    /// window immediately afterwards, and cancelling a compositor hand-over
-    /// mid-flight is not something the API offers.
-    /// </remarks>
+    // A keyed-mutex acquire on a resource with no keyed mutex never times out
+    // on its own. The abandoned task is left running; the API cannot cancel it.
     private static async Task Bounded(Task task, string what)
     {
         Task first = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(10)));
@@ -369,9 +289,6 @@ internal static class InteropProbe
         return sb.ToString();
     }
 
-    /// <summary>
-    /// The one sentence the milestone is waiting on: which D3D12 route works.
-    /// </summary>
     private static string RouteVerdict(IReadOnlyList<RouteResult> results)
     {
         bool direct = Succeeded(results, Route3);
@@ -405,8 +322,7 @@ internal static class InteropProbe
     private static bool Succeeded(IReadOnlyList<RouteResult> results, string route) =>
         results.Any(r => r.Route == route && r.Updated);
 
-    // An HRESULT is the whole content of most failures here, and a bare
-    // "Exception has been thrown" says nothing about a driver.
+    // Most failures here are only meaningful by their HRESULT.
     private static string Explain(Exception ex)
     {
         Exception real = ex is AggregateException aggregate && aggregate.InnerExceptions.Count == 1

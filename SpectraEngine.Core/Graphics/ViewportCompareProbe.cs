@@ -4,57 +4,17 @@ using System;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// Renders ONE frame into a shared present target and into an ordinary sRGB
-/// target at the same time, reads both back, and reports the largest
-/// per-channel difference.
+/// Renders one frame into the shared present target and an ordinary sRGB
+/// target, reads both back, and reports the largest per-channel difference.
+/// Catches a double sRGB encode on the shared route, which raises no error.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Why this exists.</b> A composited surface hands its frame to somebody
-/// else's device instead of presenting it, and the colour route it takes to get
-/// there is not the window's: on D3D11 the resolve writes through an
-/// <c>_SRGB</c> view over a UNORM shared resource, and on D3D12 it lands in a
-/// private sRGB target that a D3D11On12 bridge copies across. Either route
-/// encoding twice washes the picture out and reports NOTHING - no exception, no
-/// HRESULT, no debug-layer message - so the only detector available is a byte
-/// comparison against what the window path would have produced. See
-/// <see cref="ViewportCompare"/> for the arithmetic and the numbers.
-/// </para>
-/// <para>
-/// <b>One frame, two targets, one command list</b>, which is the whole reason
-/// this is a probe inside the frame rather than two runs compared afterwards:
-/// two frames are two pictures, and a difference between them would be the
-/// animation rather than the colour space. <see cref="Renderer.CompareTarget"/>
-/// is the hook, and it is the same shape <see cref="Renderer.ProbeTarget"/>
-/// already established.
-/// </para>
-/// <para>
-/// <b>It stands in for the consumer as well as measuring it.</b> With nobody
-/// importing the handle, the producer writes exactly one shared frame and every
-/// frame after it skips the write on a <c>WAIT_TIMEOUT</c> - correct behaviour,
-/// and it would leave the shared texture holding a picture several frames older
-/// than the one resolved beside it, i.e. a guaranteed false failure with a
-/// plausible cause. So every update takes the consumer's turn and hands the key
-/// straight back, exactly as a compositor that had nothing to draw would.
-/// </para>
-/// <para>
-/// Render thread only, in the same slot <see cref="OffscreenProbe"/> occupies:
-/// before <see cref="Renderer.Render"/>, because it decides what that frame
-/// also writes.
-/// </para>
-/// </remarks>
+// Both targets are written in the same frame: two frames would differ by the
+// animation. Each update also takes the consumer's turn on the keyed mutex,
+// or the producer skips every shared write after the first.
+// Render thread only, before Renderer.Render.
 public sealed class ViewportCompareProbe
 {
-    /// <summary>
-    /// Frames rendered before the comparison is armed.
-    /// </summary>
-    /// <remarks>
-    /// Not needed for correctness - both pictures come out of one source
-    /// texture in one frame, so anything still loading is identical on both
-    /// sides - and kept because a settled frame is the one worth reporting a
-    /// measurement of, and because the shared target does not exist until the
-    /// first frame has created it.
-    /// </remarks>
+    // The shared target does not exist until the first frame has created it.
     private const int WarmupFrames = 4;
 
     private readonly ILogger _logger;
@@ -75,10 +35,7 @@ public sealed class ViewportCompareProbe
 
     public ViewportCompareProbe(ILogger logger) => _logger = logger;
 
-    /// <summary>
-    /// Called once per frame on the render thread, before
-    /// <see cref="Renderer.Render"/>. Returns when the probe is finished.
-    /// </summary>
+    /// <summary>Call once per frame on the render thread, before <see cref="Renderer.Render"/>.</summary>
     public void Update(Renderer renderer)
     {
         ArgumentNullException.ThrowIfNull(renderer);
@@ -89,20 +46,15 @@ public sealed class ViewportCompareProbe
             if (_frames == 0) Begin(renderer);
             _frames++;
 
-            // The armed frame has now been rendered, so read it - and take NO
-            // turn first. The read takes the consumer's turn itself, and taking
-            // it twice hands key 0 back to the producer before the read asks
-            // for key 1, which times out and reports as a shared target nobody
-            // ever wrote. That was the first thing this probe got wrong.
+            // No consumer turn before the read: the read takes it itself, and a
+            // second turn hands key 0 back so the read's acquire of key 1 times out.
             if (_armed)
             {
                 Measure(renderer);
                 return;
             }
 
-            // The compositor's half of the handshake on every other frame: the
-            // producer released key 1 at the end of the last one and nothing
-            // else in this process will ever hand key 0 back.
+            // Nothing else in this process hands key 0 back to the producer.
             renderer.TakeSharedConsumerTurn();
 
             if (_frames >= WarmupFrames) Arm(renderer);
@@ -123,9 +75,6 @@ public sealed class ViewportCompareProbe
             "{Threshold} or less.",
             WarmupFrames, renderer.Backend, ViewportCompare.Threshold);
 
-        // Stated rather than counted: the debug layer is the only continuous
-        // detector a composited surface has, and a run with it off proves the
-        // colours and nothing about barriers or pipeline states.
         if (!renderer.DebugLayerActive && renderer.Backend != GraphicsBackend.OpenGL)
         {
             _logger.LogWarning(
@@ -146,10 +95,8 @@ public sealed class ViewportCompareProbe
             return;
         }
 
-        // Refused rather than worked around: with HDR off the pipeline draws
-        // straight into the presented target and there is no intermediate to
-        // resolve a second time from, so a run would report a comparison it
-        // never made.
+        // With HDR off the pipeline draws straight into the presented target,
+        // so there is no intermediate to resolve a second time.
         if (!renderer.HdrEnabled)
         {
             _logger.LogError(
@@ -159,12 +106,7 @@ public sealed class ViewportCompareProbe
             return;
         }
 
-        // Rgba8 sRGB and nothing else, because that is byte-for-byte what the
-        // window's back buffer is on both backends: the encode happens once, on
-        // the write, and the readback returns the stored codes. Depth is off -
-        // a resolve is a full-screen triangle with depth testing already
-        // disabled, and a full-screen depth surface nothing reads is memory
-        // spent for nothing.
+        // Rgba8 sRGB: the same format as the window's back buffer on both backends.
         _reference = renderer.CreateRenderTarget(new RenderTargetDesc(
             handle.Width, handle.Height, TextureFormat.Rgba8, TextureColorSpace.Srgb, Depth: false));
         renderer.CompareTarget = _reference;
@@ -180,17 +122,13 @@ public sealed class ViewportCompareProbe
         RenderTarget reference = _reference
             ?? throw new InvalidOperationException("The compare probe measured before it armed.");
 
-        // Disarmed FIRST: the read below can throw, and a compare target left
-        // set would go on costing every remaining frame a second resolve into a
-        // target nothing reads.
+        // Disarm first: the read below can throw.
         renderer.CompareTarget = null;
 
         byte[] windowPicture = new byte[PixelReadback.ByteCount(reference.Width, reference.Height)];
         renderer.ReadTargetPixels(reference, windowPicture);
 
-        // Before the comparison, because two blank pictures agree perfectly: a
-        // frame that drew nothing would otherwise report the strongest possible
-        // PASS while proving nothing about the colour route at all.
+        // Two blank pictures agree perfectly, so a frame that drew nothing must fail.
         if (!ViewportCompare.HasVariation(windowPicture))
         {
             _logger.LogError(
@@ -220,9 +158,6 @@ public sealed class ViewportCompareProbe
         }
         else
         {
-            // Named, because a large delta has one overwhelmingly likely cause
-            // and a verdict that only reports a number leaves the reader to
-            // rediscover it.
             _logger.LogError(
                 "Viewport compare on {Backend}: {Verdict} - {Reading}. A delta of this size on a picture " +
                 "both routes drew in one frame is a transfer function applied twice: check that the shared " +
@@ -242,9 +177,7 @@ public sealed class ViewportCompareProbe
             _reference = null;
         }
 
-        // Same verdict rule the offscreen probe uses: the picture being right
-        // and the layer staying quiet are two claims, and a run that proves one
-        // must not report the other.
+        // A matching picture still fails if the debug layer reported errors.
         int newErrors = renderer.DebugLayerErrorCount - _errorsAtStart;
         if (passed && newErrors > 0)
         {

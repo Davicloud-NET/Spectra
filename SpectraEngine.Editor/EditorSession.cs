@@ -26,28 +26,8 @@ namespace SpectraEngine.Editor;
 
 /// <summary>
 /// One running engine inside the shell: the subsystems, the editor, and the
-/// lifetime that ties them to a viewport surface.
+/// lifetime that ties them to a viewport surface. D3D11 and D3D12 only.
 /// </summary>
-/// <remarks>
-/// <b>The same wiring the standalone demo does, minus the window.</b> The shell
-/// is a peer host rather than a layer above the demo: it builds the renderer,
-/// the managers and the editor exactly as <c>Program.cs</c> does, then calls
-/// <see cref="Engine.Start"/> with a surface it already has instead of
-/// <c>Engine.Run</c>, which would create a second window and block the UI
-/// thread.
-/// <para>
-/// <b>The editor is installed here, through the same factory the demo uses.</b>
-/// That is what makes the shell's viewport a real editor viewport rather than a
-/// preview: picking, gizmos, box select, undo and the editor camera are the
-/// engine's, and the shell adds nothing to them.
-/// </para>
-/// <para>
-/// <b>OpenGL is refused rather than attempted.</b> An embedded GL surface has to
-/// create its own context against the child window and supply a proc-address
-/// loader, which is real work that does not exist yet; offering the option and
-/// failing inside the renderer would report it as a driver problem.
-/// </para>
-/// </remarks>
 public sealed class EditorSession : IDisposable
 {
     private readonly ILoggerFactory _loggerFactory;
@@ -56,16 +36,11 @@ public sealed class EditorSession : IDisposable
     private readonly Engine _engine;
 
     /// <summary>Builds a session on the given backend, without starting it.</summary>
-    /// <param name="loggerFactory">Owned by the caller; used for every subsystem.</param>
-    /// <param name="backend">D3D11 or D3D12. See the remarks on OpenGL.</param>
+    /// <param name="loggerFactory">Owned by the caller.</param>
+    /// <param name="backend">D3D11 or D3D12.</param>
     /// <param name="contentRoot">
-    /// The asset content root, or null for the engine's default. A project
-    /// session passes the project's <c>Assets/</c> folder — and it is a
-    /// constructor argument rather than a setter, because the asset manager
-    /// resolves every path against the root it was built with and a root
-    /// swapped mid-session would leave every cached texture keyed to a folder
-    /// nothing looks in any more. Opening a different project is a new
-    /// session, the way it is a new window in every IDE.
+    /// The asset content root, or null for the engine's default. Fixed for the
+    /// session's life; opening another project is a new session.
     /// </param>
     public EditorSession(ILoggerFactory loggerFactory, GraphicsBackend backend, string? contentRoot = null)
     {
@@ -84,42 +59,21 @@ public sealed class EditorSession : IDisposable
                 "WGL context and proc-address loader, which is not built. Use d3d11 or d3d12."),
         };
 
-        // The editor viewport paces to the display. Uncapped, the render thread
-        // presents thousands of frames a second on a child window nobody can see
-        // the difference in: a saturated core, the per-frame allocation rate
-        // multiplied into real gen0 pressure (whose pauses stop the UI thread
-        // too), and uneven present pacing that reads as sluggishness. The demo
-        // stays uncapped because it is the measurement instrument.
+        // Uncapped, the viewport presents thousands of frames a second and the
+        // gen0 pauses stall the UI thread too.
         _renderer.VSync = true;
 
-        // THE ROUND TRIP IS THE POINT, and it happens once here rather than
-        // once per scene load.
-        //
-        // The editor reads entity schemas from a .sentdef image and from
-        // nothing else, which is what makes parity between a generated C# class
-        // and a Luau definition structural instead of something to keep
-        // checking. Handing the shell EntityCatalog.Shared's own EntitySchema
-        // objects would satisfy every panel today and silently fork that
-        // property: the in-process editor would read the catalogue directly,
-        // the out-of-process one would read the file, and the two would drift
-        // with nothing failing.
-        //
-        // It is built HERE, rather than left to SceneManager's per-load
-        // default, because the shell needs the same catalogue on the UI thread
-        // - the Insert menu is a list of what a session can place, and a menu
-        // built from a different source than the panel reads is exactly the
-        // drift this exists to prevent. One instance, assigned to the manager
-        // so every scene it loads is stamped with it: the catalogue is
-        // immutable once loaded and documented as free to share.
+        // Schemas go through .sentdef bytes, never straight from EntityCatalog:
+        // the editor must read the same thing whether a class came from C# or
+        // from a file. One instance, shared with the scene manager, so the UI
+        // thread and the render thread see the same catalogue.
         EntitySchemas = EntitySchemaCatalog.LoadFromSentDef(
             SentDef.Write(EntityCatalog.Shared.Schemas));
 
         var sceneManager = new SceneManager(loggerFactory.CreateLogger<SceneManager>())
         {
-            // The shell edits projects; the authored demo belongs to the demo
-            // executable. A session boots into the baseplate and whatever map
-            // it should show is opened through OpenMap, where a bad bundle
-            // reports instead of logging and falling back.
+            // Boot into the baseplate; the real map opens through OpenMap,
+            // where a bad bundle reports.
             Startup = StartupSceneKind.Baseplate,
             EntitySchemas = EntitySchemas,
         };
@@ -129,10 +83,7 @@ public sealed class EditorSession : IDisposable
         var audioManager = new AudioManager(loggerFactory.CreateLogger<AudioManager>());
         var inputManager = new InputManager(loggerFactory.CreateLogger<InputManager>());
 
-        // The same seam the demo installs the editing layer through, invoked on
-        // the render thread once the scene exists. No probe: the self-test is
-        // the demo's instrumentation, and a person is sitting in front of this
-        // one.
+        // Runs on the render thread once the scene exists.
         sceneManager.EditorFactory = scene =>
             new SceneEditorHost(loggerFactory, scene, _renderer, inputManager);
 
@@ -153,15 +104,9 @@ public sealed class EditorSession : IDisposable
     public SceneManager SceneManager { get; }
 
     /// <summary>
-    /// What entity classes this session can place and describe, parsed from a
-    /// <c>.sentdef</c> image of the running catalogue.
+    /// The entity classes this session can place and describe. Immutable, and
+    /// the same instance every scene it loads uses.
     /// </summary>
-    /// <remarks>
-    /// <b>The same instance every scene this session loads is stamped with</b>,
-    /// so the Insert menu, the property panel's unknown-class badge and the
-    /// render thread's row derivation cannot disagree about which classes
-    /// exist. Immutable, so reading it from the UI thread is sound.
-    /// </remarks>
     public EntitySchemaCatalog EntitySchemas { get; }
 
     /// <summary>The surface a UI thread drives this engine through.</summary>
@@ -178,21 +123,9 @@ public sealed class EditorSession : IDisposable
         _logger.LogInformation("Editor session started on {Backend}", _renderer.GetType().Name);
     }
 
-    // --- Driving the editor from the UI thread -------------------------------
-    //
-    // Every one of these marshals onto the render thread through the host's
-    // command queue, and every one reaches the editor through the SAME verbs a
-    // key chord uses. The alternative — synthesising key presses at the engine
-    // — is a second input path free to drift from the real one, and it would
-    // not even work: the letter-row bindings deliberately stand down while a
-    // camera is driving, so a toolbar built on them would go inert exactly
-    // while somebody was navigating.
-    //
-    // The cast happens INSIDE the queued command, on the render thread, because
-    // that is the only thread allowed to read SceneManager.Editor at all. It
-    // also means there is no editor instance to capture and publish across a
-    // thread boundary: the factory builds one later, on that thread, and this
-    // simply asks for whatever is installed when the command runs.
+    // Everything below posts to the render thread and uses the same verbs a
+    // key chord does. Editor is read inside the queued command because only
+    // the render thread may read SceneManager.Editor.
 
     /// <summary>Runs one host verb: history, a structural edit, a mode toggle.</summary>
     public void Post(EditorHostCommand command) =>
@@ -206,44 +139,27 @@ public sealed class EditorSession : IDisposable
     public void Post(EditorCameraCommand command) =>
         Host.EnqueueCommand(_ => Editor?.Apply(command));
 
-    /// <summary>
-    /// Sets one tool's snap increment — the payload-carrying sibling of the
-    /// snap verbs, for the command surface's typed fields.
-    /// </summary>
+    /// <summary>Sets one tool's snap increment.</summary>
     public void SetSnapIncrement(GizmoMode tool, float increment) =>
         Host.EnqueueCommand(_ => Editor?.SetSnapIncrement(tool, increment));
 
     /// <summary>
-    /// Creates one thing where the user is looking — the Model strip's insert
-    /// buttons, and the viewport context menu's "insert here" (which passes
-    /// the right-click position instead of the view centre).
+    /// Creates one thing at a viewport point, or at the view centre when
+    /// none is given.
     /// </summary>
     public void Insert(InsertKind kind, Vector2? viewportPoint = null) =>
         Host.EnqueueCommand(_ => Editor?.Insert(kind, viewportPoint));
 
-    /// <summary>
-    /// Creates one entity of a named class where the user is looking - the
-    /// Insert menu's entity submenu, whose entries come from
-    /// <see cref="EntitySchemas"/>.
-    /// </summary>
+    /// <summary>Creates one entity of a named class where the user is looking.</summary>
     public void InsertEntity(string className, Vector2? viewportPoint = null) =>
         Host.EnqueueCommand(_ => Editor?.InsertEntity(className, viewportPoint));
 
     /// <summary>
-    /// Places a model file in the scene - the content browser's drag, dropped
-    /// into the viewport.
+    /// Places a model file in the scene. A model that cannot be resolved still
+    /// places a node; the report says which happened.
     /// </summary>
-    /// <remarks>
-    /// <b>The one insert verb that reports back, because it is the one that can
-    /// half-succeed.</b> Every other insert builds its node out of constants and
-    /// cannot fail; this one names a file, and a file the project no longer has
-    /// still places a node with no geometry. <paramref name="done"/> runs on the
-    /// RENDER thread, like <c>OpenMap</c>'s and <c>SaveMap</c>'s, so a caller
-    /// that wants to touch the UI marshals back deliberately rather than by
-    /// accident.
-    /// </remarks>
     /// <param name="contentPath">The model, relative to the content root.</param>
-    /// <param name="viewportPoint">Where the drop landed, in viewport pixels.</param>
+    /// <param name="viewportPoint">Where to place it, in viewport pixels.</param>
     /// <param name="done">Called on the render thread with what happened.</param>
     public void InsertModel(string contentPath, Vector2? viewportPoint, Action<ModelInsertReport> done)
     {
@@ -253,22 +169,14 @@ public sealed class EditorSession : IDisposable
         Host.EnqueueCommand(_ => done(
             Editor is { } editor
                 ? editor.InsertModel(contentPath, viewportPoint)
-                // Not an error and not silence: the render thread has a scene
-                // but no editing layer only while a session is still coming up,
-                // and a drop that lands in that window has to say so rather
-                // than look like a drag the shell dropped on the floor.
+                // Only while the session is still coming up.
                 : ModelInsertReport.RefusedBecause(contentPath, "the session has no editor yet")));
     }
 
     /// <summary>
     /// Paints a material onto the face under a viewport point, or onto the whole
-    /// brush there.
+    /// brush there. An empty path means no material.
     /// </summary>
-    /// <remarks>
-    /// An empty path is allowed and means the engine default, so this cannot
-    /// use <c>ThrowIfNullOrWhiteSpace</c> the way the model insert does: putting
-    /// a face back to no material at all is a thing people mean.
-    /// </remarks>
     public void AssignMaterial(
         string contentPath, Vector2? viewportPoint, MaterialDropScope scope,
         Action<MaterialAssignReport> done)
@@ -296,35 +204,22 @@ public sealed class EditorSession : IDisposable
 
     /// <summary>
     /// Says whether a material drag is over the viewport, so the outline can
-    /// show what letting go would paint.
+    /// show what letting go would paint. Post on a change, not per pointer move.
     /// </summary>
-    /// <remarks>
-    /// <b>One command per STATE CHANGE, never per pointer move.</b> A drag
-    /// raises its hover event several hundred times over a viewport-sized pane
-    /// and every one carries the same answer, so the window compares before it
-    /// posts; a queue of identical commands would drain in front of the compile
-    /// pump on every frame of the gesture.
-    /// </remarks>
     public void SetMaterialDrag(MaterialDropScope? scope) =>
         Host.EnqueueCommand(_ => Editor?.SetMaterialDrag(scope));
 
-    /// <summary>
-    /// Selects the node with this id. An id the scene no longer has is
-    /// ordinary: a UI's view of the graph is a frame or two behind.
-    /// </summary>
+    /// <summary>Selects the node with this id. An id the scene no longer has is ignored.</summary>
     public void Select(Guid nodeId, SelectionUpdate mode = SelectionUpdate.Replace) =>
         Host.EnqueueCommand(_ => Editor?.SelectById(nodeId, mode));
 
-    /// <summary>
-    /// Selects a whole set of ids in one batch — how the tree reports a
-    /// multi-select. Unresolvable ids are skipped on the render thread.
-    /// </summary>
+    /// <summary>Selects a set of ids in one batch. Unresolvable ids are skipped.</summary>
     public void SelectMany(IReadOnlyList<Guid> nodeIds, SelectionUpdate mode = SelectionUpdate.Replace) =>
         Host.EnqueueCommand(_ => Editor?.SelectByIds(nodeIds, mode));
 
     /// <summary>
     /// Selects whatever sits under a viewport point unless it is already
-    /// selected — the right-click rule, run before a context menu opens.
+    /// selected. Run before a context menu opens.
     /// </summary>
     public void SelectAtPoint(Vector2 viewportPoint) =>
         Host.EnqueueCommand(_ => Editor?.SelectAtPoint(viewportPoint));
@@ -335,7 +230,7 @@ public sealed class EditorSession : IDisposable
 
     /// <summary>
     /// Moves nodes under a new parent at an index (-1 appends), keeping world
-    /// transforms — what a tree drag-and-drop posts.
+    /// transforms.
     /// </summary>
     public void Reparent(IReadOnlyList<Guid> nodeIds, Guid newParentId, int insertIndex) =>
         Host.EnqueueCommand(_ => Editor?.ReparentByIds(nodeIds, newParentId, insertIndex));
@@ -348,14 +243,8 @@ public sealed class EditorSession : IDisposable
     /// Opens one history entry to hold a continuous property gesture, such as
     /// a drag across a numeric field.
     /// </summary>
-    /// <remarks>
-    /// <b>Posted, like every other edit, so it lands on the render thread in
-    /// order with the edits it wraps.</b> The UI thread never learns whether
-    /// the editor accepted it, and does not need to: a refused gesture makes
-    /// every edit inside it its own history entry, which is the behaviour
-    /// before this existed, and the matching End is a no-op on a gesture that
-    /// never opened.
-    /// </remarks>
+    // If the editor refuses, each edit becomes its own history entry and the
+    // matching End does nothing.
     public void BeginPropertyGesture(string name) =>
         Host.EnqueueCommand(_ => Editor?.BeginPropertyGesture(name));
 
@@ -363,42 +252,24 @@ public sealed class EditorSession : IDisposable
     public void EndPropertyGesture(bool commit) =>
         Host.EnqueueCommand(_ => Editor?.EndPropertyGesture(commit));
 
-    /// <summary>
-    /// Replaces the wiring on one entity node - what the Outputs section posts
-    /// for an add, a remove and every field edit alike.
-    /// </summary>
-    /// <remarks>
-    /// <b>The node is named by ID rather than left to the selection.</b> A
-    /// property edit resolves the selection on the render thread because it
-    /// writes one named value; this writes a whole list, and a stale selection
-    /// would overwrite the wrong entity's wiring entirely. The panel already
-    /// knows the id, because the snapshot it was built from carried it.
-    /// </remarks>
+    /// <summary>Replaces the whole connection list on one entity node.</summary>
+    // By id, not by selection: a stale selection would overwrite another
+    // entity's wiring.
     public void ApplyEntityConnections(Guid nodeId, IReadOnlyList<EntityConnection> connections) =>
         Host.EnqueueCommand(_ => Editor?.ApplyEntityConnections(nodeId, connections));
 
-    // Render thread only. Null before the scene has loaded, and null for a host
-    // that installed no editing layer at all.
+    // Render thread only. Null before the scene has loaded.
     private SceneEditorHost? Editor => SceneManager.Editor as SceneEditorHost;
 
-    // --- Documents -----------------------------------------------------------
-    //
-    // Both of these run on the RENDER thread, which is not a detail: the scene
-    // graph, the static-world compile and every GPU resource belong to it, and
-    // a UI thread that touched any of them would be racing the frame it is
-    // watching. The completion callback is invoked there too, so a caller that
-    // wants to touch its own UI has to marshal back deliberately rather than by
-    // accident.
+    // The document verbs run on the render thread, and so do their callbacks.
 
     /// <summary>
     /// Writes the live scene into a map bundle.
     /// </summary>
     /// <param name="bundlePath">The <c>.smap</c> directory to write.</param>
     /// <param name="done">
-    /// Called on the render thread with the save report, or the failure. A
-    /// report that is not complete is still a successful save: it means the
-    /// scene held something the format cannot name, such as a mesh built in
-    /// code.
+    /// Called on the render thread with the save report, or the failure. An
+    /// incomplete report is still a successful save.
     /// </param>
     public void SaveMap(string bundlePath, Action<MapSaveReport?, Exception?> done)
     {
@@ -421,19 +292,9 @@ public sealed class EditorSession : IDisposable
     }
 
     /// <summary>
-    /// Replaces the live scene's graph with a map bundle's.
+    /// Replaces the live scene's graph with a map bundle's. <c>done</c> runs on
+    /// the render thread.
     /// </summary>
-    /// <remarks>
-    /// <b>The editor is reset BEFORE the graph is replaced, and the world is
-    /// recompiled after.</b> The reset is not housekeeping: an open gesture
-    /// would be manipulating nodes that are about to leave the graph, the
-    /// selection holds live node references that would outlive their scene, and
-    /// the undo history addresses the old graph by id, where undo no-ops on a
-    /// missing target rather than failing. The recompile uses the synchronous
-    /// cache-free path, which is what a load is for: the incremental compiler
-    /// carries caches from a previous world and a world just replaced wholesale
-    /// has none worth carrying.
-    /// </remarks>
     public void OpenMap(string bundlePath, Action<MapLoadReport?, Exception?> done)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(bundlePath);
@@ -445,11 +306,9 @@ public sealed class EditorSession : IDisposable
             {
                 MapDocument document = MapBundle.Load(bundlePath);
 
-                // The engine's half of the same event, and it is not the
-                // editor's: a live entity runtime holds nodes that are about to
-                // leave the graph, and a load preserves node ids, so a world
-                // kept across one would be rebound onto the fresh nodes with
-                // last map's state in it.
+                // Reset before the graph changes: the entity runtime, the
+                // selection and the undo history all refer to the old nodes,
+                // and a load keeps node ids.
                 SceneManager.OnSceneReplaced();
                 Editor?.OnSceneReplaced();
 
@@ -468,13 +327,9 @@ public sealed class EditorSession : IDisposable
     }
 
     /// <summary>
-    /// Empties the scene, leaving a graph with nothing but the root in it.
+    /// Replaces the scene with a fresh baseplate. <c>done</c> runs on the
+    /// render thread.
     /// </summary>
-    /// <remarks>
-    /// The same reset as a load, because it is the same event from the editor's
-    /// point of view: every node the selection, the history and any open
-    /// gesture referred to is about to be gone.
-    /// </remarks>
     public void NewMap(string name, Action<Exception?> done)
     {
         ArgumentNullException.ThrowIfNull(done);
@@ -483,9 +338,7 @@ public sealed class EditorSession : IDisposable
         {
             try
             {
-                // The same event as a load, for the same two subjects: every
-                // node the runtime, the selection and the history referred to
-                // is about to be gone.
+                // Same reset as OpenMap.
                 SceneManager.OnSceneReplaced();
                 Editor?.OnSceneReplaced();
 
@@ -493,9 +346,6 @@ public sealed class EditorSession : IDisposable
                 empty.Scene.Name = string.IsNullOrWhiteSpace(name) ? "Scene" : name;
                 MapSceneBinder.ApplyTo(empty, scene);
 
-                // A new map is a baseplate, not a void: lit, with a floor to
-                // stand things on — the same starter a fresh project boots
-                // into, so "new" means one thing everywhere.
                 SceneManager.PopulateBaseplate(scene);
                 scene.RebuildStaticWorld(_renderer);
 

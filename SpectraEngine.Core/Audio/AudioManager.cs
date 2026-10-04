@@ -7,52 +7,17 @@ namespace SpectraEngine.Core.Audio;
 
 /// <summary>
 /// The engine's audio device: one OpenAL context, one listener, a fixed pool of
-/// sources, and the voices currently feeding them.
+/// sources, and the voices playing on them. Render thread only, except
+/// <see cref="Initialize"/> and <see cref="Shutdown"/>. With no device every
+/// call is a no-op.
 /// </summary>
-/// <remarks>
-/// <para><b>Threading, and the failure it prevents.</b> The render thread owns
-/// this class, exactly as it owns the asset manager's GPU half, and every
-/// member except <see cref="Initialize"/> and <see cref="Shutdown"/> is render
-/// thread only. The reason is not thread affinity: core OpenAL's
-/// <c>alcMakeContextCurrent</c> makes a context current for the PROCESS, so any
-/// thread may legally call AL. What cannot be shared is the calling, for two
-/// reasons that both fail silently. <c>alGetError</c> is a single latch per
-/// context, so two threads interleaving turns every error check into a coin
-/// flip: one thread clears the error the other was about to read, a failed
-/// upload reports success, and the sound simply never plays. And every
-/// interesting operation here is read-then-act on driver state that the other
-/// thread is also writing: the pool reads <c>AL_SOURCE_STATE</c> and hands the
-/// source out, the streaming pump reads <c>AL_BUFFERS_PROCESSED</c> and
-/// unqueues exactly that many, so two callers either hand the same source to
-/// two sounds or unqueue a buffer that is not theirs.</para>
-/// <para><b>No new channel was invented for it.</b> <see cref="Initialize"/> and
-/// <see cref="Shutdown"/> run on the main thread from
-/// <c>Engine.InitializeSubsystems</c>/<c>ShutdownSubsystems</c>, which is safe
-/// for the single reason it is safe for <c>AssetManager</c>: the render thread
-/// provably does not exist yet, or has already been joined. Anything else that
-/// wants to start a sound posts through <c>EngineHost.EnqueueCommand</c>, which
-/// already drains on the render thread once a frame.</para>
-/// <para><b>No device is DISABLED MODE, never a crash.</b> A machine with no
-/// sound card, a CI agent and a remote session with audio redirection off are
-/// all ordinary. Opening the device is allowed to fail; it logs one line naming
-/// the reason and every call afterwards is a safe no-op returning null or zero.
-/// This is the engine's standing division: hardware and content failures
-/// degrade, build steps refuse.</para>
-/// <para><b>Loops are never <c>AL_LOOPING</c>.</b> That flag repeats a whole
-/// buffer and cannot express a region inside one, which is what music with an
-/// intro and ambience with a pickup bar actually need. A clip carrying loop
-/// points is played through <see cref="StreamingVoice"/>, whose
-/// <see cref="AudioLoopCursor"/> does the wrap in sample frames; the flag is
-/// explicitly cleared on every source the pool hands out.</para>
-/// </remarks>
+// One thread for all AL calls: alGetError is a single latch per context, and
+// the pool and the stream pump both read driver state and then act on it.
+// Other threads post through EngineHost.EnqueueCommand.
+// Loops never use AL_LOOPING, see AudioLoopCursor.
 public sealed class AudioManager : IDisposable
 {
-    /// <summary>
-    /// Sources asked of the driver. Thirty-two is the number every OpenAL
-    /// implementation grants and roughly the number of simultaneous sounds a
-    /// listener can distinguish; a driver granting fewer is honoured rather
-    /// than argued with (see <see cref="AudioSourcePool.Capacity"/>).
-    /// </summary>
+    /// <summary>Sources asked of the driver. It may grant fewer.</summary>
     public const int DefaultSourceCount = 32;
 
     private readonly ILogger _logger;
@@ -73,12 +38,7 @@ public sealed class AudioManager : IDisposable
     {
     }
 
-    /// <summary>
-    /// Creates a manager over a supplied backend factory. The seam exists so
-    /// the pool, the reclaim policy, the loop arithmetic and this class's
-    /// disabled path have an oracle on a machine with no sound card, which is
-    /// every CI machine.
-    /// </summary>
+    /// <summary>Creates a manager over a supplied backend factory, for tests with no sound card.</summary>
     public AudioManager(ILogger logger, AudioBackendFactory factory, int sourceCount = DefaultSourceCount)
     {
         if (sourceCount <= 0)
@@ -104,17 +64,13 @@ public sealed class AudioManager : IDisposable
     /// <summary>Voices currently playing.</summary>
     public int ActiveVoiceCount => _voices.Count;
 
-    /// <summary>Sounds cut off because every source was busy. See <see cref="AudioSourcePool.StolenCount"/>.</summary>
+    /// <summary>Sounds cut off because every source was busy.</summary>
     public int StolenVoiceCount => _pool?.StolenCount ?? 0;
 
-    /// <summary>Sounds dropped because every source was carrying a stream. See <see cref="AudioSourcePool.StarvedCount"/>.</summary>
+    /// <summary>Sounds dropped because every source was carrying a stream.</summary>
     public int DroppedVoiceCount => _pool?.StarvedCount ?? 0;
 
-    /// <summary>
-    /// Master gain, applied by the driver after every source's own. Clamped at
-    /// zero rather than throwing, because a fader running slightly negative is
-    /// an ordinary rounding result and silence is the obvious answer to it.
-    /// </summary>
+    /// <summary>Master gain, applied after every source's own. Negative values clamp to zero.</summary>
     public float MasterGain
     {
         get => _masterGain;
@@ -131,15 +87,15 @@ public sealed class AudioManager : IDisposable
     /// <summary>Which way the listener faces.</summary>
     public Vector3 ListenerForward { get; private set; } = -Vector3.UnitZ;
 
-    /// <summary>The listener's up axis. Paired with forward, which is how AL takes orientation.</summary>
+    /// <summary>The listener's up axis.</summary>
     public Vector3 ListenerUp { get; private set; } = Vector3.UnitY;
 
-    /// <summary>The listener's velocity, for Doppler. Zero unless a caller supplies one.</summary>
+    /// <summary>The listener's velocity, for Doppler.</summary>
     public Vector3 ListenerVelocity { get; private set; }
 
     /// <summary>
-    /// Opens the audio device, or turns disabled mode on with one line saying
-    /// why. Main thread, before the render thread starts. Idempotent.
+    /// Opens the audio device, or disables audio and logs why. Main thread,
+    /// before the render thread starts. Idempotent.
     /// </summary>
     public void Initialize()
     {
@@ -150,9 +106,7 @@ public sealed class AudioManager : IDisposable
         {
             DisabledReason = string.IsNullOrEmpty(failureReason) ? "the audio device could not be opened" : failureReason;
 
-            // One line, at Warning rather than Error: a machine with no sound
-            // card is a machine the engine still runs on, and an ERR here would
-            // fail every smoke gate that greps for one.
+            // Warning, not Error: smoke gates grep for ERR and no sound card is fine.
             _logger.LogWarning("Audio disabled: {Reason}. Every audio call is a no-op for this session", DisabledReason);
             return;
         }
@@ -218,9 +172,7 @@ public sealed class AudioManager : IDisposable
     }
 
     /// <summary>
-    /// Places the listener. Render thread, once a frame: the engine feeds it the
-    /// active camera, without which every positional sound plays at the world
-    /// origin and the whole feature reads as broken.
+    /// Places the listener. Render thread, once a frame, from the active camera.
     /// </summary>
     public void SetListener(Vector3 position, Vector3 forward, Vector3 up) =>
         SetListener(position, forward, up, Vector3.Zero);
@@ -237,14 +189,10 @@ public sealed class AudioManager : IDisposable
 
     /// <summary>
     /// Uploads decoded PCM16 and returns the clip that owns it, or null when
-    /// audio is disabled. Render thread, because the AL buffer is created here.
+    /// audio is disabled. Render thread.
     /// </summary>
-    /// <param name="format">Rate and channel count of <paramref name="pcm"/>.</param>
     /// <param name="pcm">Interleaved samples. Length must be a whole number of frames.</param>
-    /// <param name="loop">
-    /// The region to repeat, in sample frames. A clip carrying one keeps its CPU
-    /// samples, because the loop is played by feeding a buffer queue from them.
-    /// </param>
+    /// <param name="loop">The region to repeat, in sample frames.</param>
     public AudioClip? CreateClip(AudioFormat format, ReadOnlySpan<short> pcm, LoopRegion loop = default)
     {
         if (_backend is null) return null;
@@ -259,10 +207,7 @@ public sealed class AudioManager : IDisposable
         AudioClip clip;
         if (loop.IsLooping)
         {
-            // Kept, not uploaded: a looping clip is played through a queue this
-            // array feeds, and one AL buffer holding the whole sound could only
-            // be looped with AL_LOOPING, which is the thing this engine refuses
-            // to use.
+            // No AL buffer: a looping clip is queued from this array.
             clip = new AudioClip(format, loop, frames, buffer: 0, samples: pcm.ToArray());
         }
         else
@@ -277,9 +222,7 @@ public sealed class AudioManager : IDisposable
     }
 
     /// <summary>
-    /// Stops every voice playing the clip and frees it. Render thread.
-    /// Idempotent, and safe on a clip from a different manager (it is simply not
-    /// found).
+    /// Stops every voice playing the clip and frees it. Render thread. Idempotent.
     /// </summary>
     public void DestroyClip(AudioClip? clip)
     {
@@ -288,11 +231,8 @@ public sealed class AudioManager : IDisposable
 
         if (clip.Buffer != 0)
         {
-            // The voices holding it go first, and go all the way back to the
-            // pool rather than merely stopping: deleting a buffer a source
-            // still has BOUND is an AL_INVALID_OPERATION, and AL answers it by
-            // leaving the buffer alive, so the leak is silent. Releasing the
-            // source is what detaches it.
+            // Release the sources first. Deleting a buffer still bound to a
+            // source is AL_INVALID_OPERATION and the buffer leaks.
             RetireVoicesPlaying(clip);
             _backend.DestroyBuffer(clip.Buffer);
         }
@@ -345,22 +285,14 @@ public sealed class AudioManager : IDisposable
     }
 
     /// <summary>
-    /// Refills every streaming queue and hands finished sources back to the
-    /// pool. Render thread, once a frame, in the same slot the asset manager's
-    /// upload pump runs. Returns the number of voices still playing.
+    /// Refills every streaming queue and returns finished sources to the pool.
+    /// Render thread, every frame: a skipped frame makes streams stutter.
+    /// Returns the number of voices still playing.
     /// </summary>
-    /// <remarks>
-    /// A frame that skips this does not merely stop reclaiming: a streaming
-    /// voice is only ever refilled here, so its queue drains and the sound
-    /// stutters. That is why it sits beside the asset pump rather than behind a
-    /// condition.
-    /// </remarks>
     public int Update()
     {
         if (_backend is null || _pool is null) return 0;
 
-        // Iterated backwards so a voice that finishes can be removed without
-        // moving an index the loop has not reached yet.
         for (int i = _voices.Count - 1; i >= 0; i--)
         {
             AudioVoice voice = _voices[i];
@@ -375,7 +307,7 @@ public sealed class AudioManager : IDisposable
         return _voices.Count;
     }
 
-    /// <summary>Shuts down if it has not already. Present so a host can use a <c>using</c>.</summary>
+    /// <summary>Shuts down if it has not already.</summary>
     public void Dispose()
     {
         if (_disposed) return;
@@ -385,9 +317,7 @@ public sealed class AudioManager : IDisposable
 
     private AudioVoice Track(AudioVoice voice, uint source)
     {
-        // A voice can finish inside its own constructor: a zero-length stream
-        // queues nothing and is over before it is tracked. Handing the source
-        // straight back is what keeps the pool from leaking one per such call.
+        // A zero-length stream finishes in its constructor. Give the source back.
         if (voice.IsFinished)
         {
             voice.Detach();
@@ -399,9 +329,7 @@ public sealed class AudioManager : IDisposable
         return voice;
     }
 
-    // A static voice is the only kind that binds a clip's buffer directly; a
-    // streaming voice owns its own buffers and merely READS the clip's samples,
-    // so it survives the clip's AL buffer going away.
+    // Only static voices bind the clip's buffer. Streaming voices own theirs.
     private void RetireVoicesPlaying(AudioClip clip)
     {
         for (int i = _voices.Count - 1; i >= 0; i--)

@@ -4,14 +4,8 @@
              x:Class="SpectraEngine.Editor.Shell.ColorPickerView"
              x:DataType="shell:ColorPickerModel">
 
-  <!--
-    A saturation/value square over a hue strip, which is the whole of what a
-    colour picker needs and the only part of one anybody uses.
-
-    Three stacked fills rather than a shader: the hue underneath, white to
-    transparent across, black up from the bottom. That is the standard
-    construction and it composites to the same thing.
-  -->
+  <!-- Saturation/value square over a hue strip. The square is three stacked
+       fills: hue, white to transparent across, black up from the bottom. -->
 
   <Border Classes="picker">
     <StackPanel Spacing="8">
@@ -24,8 +18,7 @@
         <Border Background="{StaticResource SpectraSaturationRamp}" CornerRadius="2" />
         <Border Background="{StaticResource SpectraValueRamp}" CornerRadius="2" />
 
-        <!-- The marker never takes the pointer: a drag that started on it must
-             keep reaching the square underneath. -->
+        <!-- Not hit-testable: a drag starting on the marker must reach the square. -->
         <Canvas IsHitTestVisible="False">
           <Ellipse x:Name="SquareMarker" Width="10" Height="10"
                    Stroke="White" StrokeThickness="1.5" />

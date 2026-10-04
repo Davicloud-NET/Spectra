@@ -9,11 +9,6 @@ namespace SpectraEngine.Editor.Shell;
 /// <summary>
 /// The console's view: one input line, and the shared output above it.
 /// </summary>
-/// <remarks>
-/// <b>Up and Down walk a history the panel owns.</b> Not the output log's
-/// entries, which contain replies as well as commands and would make Up cycle
-/// through error messages the user never typed.
-/// </remarks>
 public partial class ConsolePanel : UserControl
 {
     private const int MaxHistory = 64;
@@ -27,11 +22,7 @@ public partial class ConsolePanel : UserControl
         DataContextChanged += (_, _) => Subscribe();
     }
 
-    /// <summary>Raised with a line the user submitted.</summary>
-    /// <remarks>
-    /// The panel resolves nothing itself: the window owns the session, so it
-    /// owns the verb table. Same split as every other panel here.
-    /// </remarks>
+    /// <summary>Raised with a line the user submitted. The window resolves it.</summary>
     public event Action<string>? CommandSubmitted;
 
     /// <summary>Puts the caret in the input line.</summary>
@@ -50,9 +41,7 @@ public partial class ConsolePanel : UserControl
             _log.Appended += OnAppended;
     }
 
-    // The console always follows the tail, unlike the Output pane. A console is
-    // a conversation: the reply to what you just typed is the only line that
-    // matters, and it is always the last one.
+    // Always follows the tail, unlike the Output pane.
     private void OnAppended(OutputEntry entry) =>
         Dispatcher.UIThread.Post(() => Scroller?.ScrollToEnd(), DispatcherPriority.Background);
 
@@ -76,9 +65,6 @@ public partial class ConsolePanel : UserControl
                 break;
 
             case Key.Escape:
-                // Empties the line rather than closing anything: a console with
-                // a half-typed command and no way to abandon it is the same
-                // trap a property field without Escape has.
                 Input.Text = string.Empty;
                 e.Handled = true;
                 break;
@@ -91,9 +77,7 @@ public partial class ConsolePanel : UserControl
         if (string.IsNullOrWhiteSpace(line))
             return;
 
-        // Recorded before it runs, so a command that fails is still recallable -
-        // which is the case where Up is most wanted, because the usual next step
-        // is to fix a typo in it.
+        // Recorded before it runs, so a failed command can still be recalled.
         _history.Remove(line);
         _history.Add(line);
         if (_history.Count > MaxHistory)
@@ -113,8 +97,7 @@ public partial class ConsolePanel : UserControl
         int index = Math.Clamp(_historyIndex + direction, 0, _history.Count);
         _historyIndex = index;
 
-        // Past the newest entry means a blank line, not the newest entry again:
-        // otherwise Down has no way back to an empty prompt.
+        // Past the newest entry is a blank line.
         Input.Text = index >= _history.Count ? string.Empty : _history[index];
         Input.CaretIndex = Input.Text.Length;
     }

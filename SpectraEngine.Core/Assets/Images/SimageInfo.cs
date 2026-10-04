@@ -4,25 +4,9 @@ using System;
 namespace SpectraEngine.Core.Assets.Images;
 
 /// <summary>
-/// What <see cref="SimageReader"/> found in a <c>.simage</c>: the format, the
-/// shape, and the per-mip layout over the file's own bytes.
+/// What <see cref="SimageReader"/> found in a <c>.simage</c>: format, shape and
+/// per-mip layout. Holds no bytes, so it may outlive the span it describes.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b><see cref="Mips"/> offsets are into the WHOLE FILE, not into a payload
-/// slice</b>, so a caller builds its upload straight over the mapped span with
-/// no copy and no arithmetic of its own:
-/// <c>new TextureUploadDesc(info.Format, requested, fileSpan, info.Mips, ...)</c>.
-/// Slicing off a payload region would put the same offset arithmetic in every
-/// caller, and each one would be free to get it slightly wrong.
-/// </para>
-/// <para>
-/// <b>A class rather than a ref struct, holding an array rather than a span.</b>
-/// It carries no bytes - only numbers - so it may outlive the span it describes,
-/// which is what lets a background read hand it to the render thread beside the
-/// <c>ContentBlob</c> whose reference keeps the mapping alive.
-/// </para>
-/// </remarks>
 public sealed class SimageInfo
 {
     internal SimageInfo(
@@ -45,9 +29,8 @@ public sealed class SimageInfo
     public TextureFormat Format { get; }
 
     /// <summary>
-    /// The colour space the file's <c>vkFormat</c> DECLARES, which is not what a
-    /// texture built from it gets. See
-    /// <see cref="SimageFormat.TryResolveVkFormat"/>.
+    /// The colour space the file's <c>vkFormat</c> declares. The texture gets
+    /// the one its caller asks for instead.
     /// </summary>
     public TextureColorSpace DeclaredColorSpace { get; }
 
@@ -58,7 +41,8 @@ public sealed class SimageInfo
     public int ProfileVersion { get; }
 
     /// <summary>
-    /// Every level, most detailed first, with offsets into the whole file.
+    /// Every level, most detailed first. Offsets are into the whole file, so an
+    /// upload can be built straight over the file span.
     /// </summary>
     public TextureMipDesc[] Mips { get; }
 

@@ -6,90 +6,44 @@ using System.Threading.Tasks;
 namespace SpectraEngine.Core.Bsp;
 
 /// <summary>
-/// Constructive Solid Geometry over convex brushes. Carving removes the parts
-/// of each brush's faces that are buried inside other brushes, leaving only the
-/// visible exterior skin of the solid union — the crack-free, non-overlapping
-/// surface set a BSP needs to build a correct partition.
+/// CSG over convex brushes. Carving removes the parts of each brush's faces
+/// buried inside other brushes, leaving the visible skin of the solid.
 /// </summary>
-/// <remarks>
-/// Each brush's faces are carved in <em>its own local frame</em>: the carver's
-/// planes and bounds are transformed into the carved brush's space before
-/// clipping. Vertex magnitudes during splits are bounded by the brush's extent,
-/// so a brush 10 km from the world origin has the same numerical accuracy as
-/// one at the origin. Local fragments are pushed to world coordinates only at
-/// the very end, in one matrix multiply per vertex.
-/// </remarks>
+// Each brush is carved in its own local frame, so precision does not depend
+// on distance from the world origin. Fragments go to world space at the end.
 public static class Csg
 {
     private const float NormalEpsilon = 1e-4f;
     private const float OffsetEpsilon = 1e-3f;
 
-    // The instrument behind "a shipped game runs ZERO CSG at load", and the
-    // reason it is thread-static rather than a plain static.
-    //
-    // The claim a compiled map makes is not that the picture is right - a load
-    // that helpfully re-carved would draw a perfectly plausible frame, and every
-    // wall twice. It is that the carve NEVER RAN, which nothing about the
-    // resulting scene can be asked. So the carve counts itself, and a test brackets
-    // a load with a delta.
-    //
-    // Thread-static because the test suite runs in parallel: a process-wide
-    // counter would be moved by any other test compiling a world on any other
-    // thread, so a real regression and an unlucky schedule would look identical
-    // and the oracle would be quietly abandoned as flaky. Carving happens on the
-    // render thread (the synchronous rebuild) and on thread-pool workers (the
-    // async pump); a caller measures the thread it loads on, which is the only
-    // thread its own load could have carved on.
+    // Thread-static: tests run in parallel, and a process-wide counter would
+    // be moved by a compile on any other thread.
     [ThreadStatic]
     private static long _carveInvocations;
 
     /// <summary>
-    /// How many times a carve has been entered on the CALLING thread, ever.
+    /// How many times a carve has been entered on the calling thread.
+    /// Diagnostics only: take a delta, on one thread.
     /// </summary>
-    /// <remarks>
-    /// <b>Diagnostics only, and a DELTA is the only meaningful reading.</b> It
-    /// counts entries to the full carve (<c>CarvePerBrush</c>, once per compile)
-    /// and to the single-brush carve the incremental compiler re-runs (once per
-    /// re-carved brush), so it moves for any work the CSG pipeline does and for
-    /// nothing else. It is thread-static: read it on the thread you are measuring,
-    /// and never compare readings taken on two.
-    /// </remarks>
     public static long CarveInvocationsOnThisThread => _carveInvocations;
 
     /// <summary>
-    /// Carves a set of brushes placed by their own <see cref="Brush.Transform"/>,
-    /// returning the visible surface polygons of their union in world space.
-    /// Convenience overload for standalone/test use; scene compiles go through
-    /// the <see cref="BrushPlacement"/> overload with snapshot transforms.
+    /// Carves brushes placed by their own <see cref="Brush.Transform"/> and returns
+    /// the visible surface polygons in world space. For standalone and test use.
     /// </summary>
     public static Polygon[] Carve(IReadOnlyList<Brush> brushes)
         => Carve(ToPlacements(brushes));
 
     /// <summary>
-    /// Carves a set of placed brushes, returning the visible surface polygons
-    /// of their union in world space. Reads only the placements (and each
-    /// brush's immutable local geometry) — never <see cref="Brush.Transform"/> —
-    /// so a snapshot can be carved on a background thread while the live scene
-    /// keeps moving. One <see cref="Brush"/> instance may back any number of
-    /// placements: its local geometry, including every face's eagerly-computed
-    /// <see cref="Polygon.Bounds"/>, is immutable after construction, so the
-    /// parallel per-placement workers below (and concurrent Carve calls) can
-    /// share it freely.
+    /// Carves placed brushes and returns the visible surface polygons in world space.
+    /// Reads only the placements, so a snapshot can be carved on a background thread.
     /// </summary>
     public static Polygon[] Carve(IReadOnlyList<BrushPlacement> placements)
         => Concatenate(CarvePerBrush(placements));
 
     /// <summary>
-    /// Incremental variant of <see cref="Carve(IReadOnlyList{BrushPlacement})"/>:
-    /// consumes the cache a previous compile produced, reuses each brush's
-    /// cached surfaces when its placement and carver sequence are bitwise
-    /// unchanged (the contract is documented on <see cref="CsgCompileCache"/>),
-    /// and produces the cache for the next compile. Output is bit-identical to
-    /// the cache-free overload for the same placements, whatever mix of hits
-    /// and misses occurred — surfaces are always emitted in placement order,
-    /// and a hit only ever substitutes the exact polygons a fresh carve of
-    /// that brush would compute. <paramref name="previousCache"/> is read-only
-    /// here and stays valid for further use.
+    /// Carves with a cache from the previous compile and produces the cache for the
+    /// next one. Output is bit-identical to the cache-free overload.
     /// </summary>
     public static Polygon[] Carve(
         IReadOnlyList<BrushPlacement> placements,
@@ -98,22 +52,13 @@ public static class Csg
         out CsgCacheStats stats)
         => Concatenate(CarvePerBrush(placements, previousCache, out nextCache, out stats));
 
-    /// <summary>
-    /// Like <see cref="Carve(IReadOnlyList{BrushPlacement})"/> but keeps the
-    /// result grouped per placement (index-aligned with
-    /// <paramref name="placements"/>) instead of concatenating — the shape the
-    /// chunked compile needs to bucket each brush's surfaces under its owner
-    /// cell. <see cref="Concatenate(Polygon[][])"/> of the result equals the
-    /// flat overload's output bit for bit.
-    /// </summary>
+    // Result is index-aligned with the placements.
     internal static Polygon[][] CarvePerBrush(IReadOnlyList<BrushPlacement> placements)
         => CarveCore(placements, previousCache: null, cacheEntries: null, out _, out _);
 
-    /// <summary>Cache-free variant that also reports the broadphase neighbour lists (see the caching counterpart).</summary>
     internal static Polygon[][] CarvePerBrush(IReadOnlyList<BrushPlacement> placements, out int[][] neighbors)
         => CarveCore(placements, previousCache: null, cacheEntries: null, out _, out neighbors);
 
-    /// <summary>Per-brush-grouped variant of the caching <see cref="Carve(IReadOnlyList{BrushPlacement}, CsgCompileCache?, out CsgCompileCache, out CsgCacheStats)"/> overload.</summary>
     internal static Polygon[][] CarvePerBrush(
         IReadOnlyList<BrushPlacement> placements,
         CsgCompileCache? previousCache,
@@ -121,12 +66,8 @@ public static class Csg
         out CsgCacheStats stats)
         => CarvePerBrush(placements, previousCache, out nextCache, out stats, out _);
 
-    /// <summary>
-    /// Like the caching <see cref="CarvePerBrush(IReadOnlyList{BrushPlacement}, CsgCompileCache?, out CsgCompileCache, out CsgCacheStats)"/>
-    /// but also reports each brush's broadphase neighbour list in carve order —
-    /// the carry the incremental (previous-world) compile patches instead of
-    /// re-running the whole broadphase (see <see cref="CsgIncrementalCompiler"/>).
-    /// </summary>
+    // neighbors: each brush's broadphase list in carve order. The incremental
+    // compile patches it rather than re-running the broadphase.
     internal static Polygon[][] CarvePerBrush(
         IReadOnlyList<BrushPlacement> placements,
         CsgCompileCache? previousCache,
@@ -141,12 +82,7 @@ public static class Csg
         return perBrush;
     }
 
-    // Shared carve core. `previousCache` enables per-brush reuse; a non-null
-    // `cacheEntries` array is filled with one entry per placement (reused on
-    // hit, freshly captured on miss) for the caller to assemble into the next
-    // cache. `hitCount` is 0 when no cache was consulted. `neighbors` reports
-    // the broadphase result (per-brush lists in carve order) for callers that
-    // retain it as incremental-compile carry.
+    // A non-null cacheEntries is filled with one entry per placement.
     private static Polygon[][] CarveCore(
         IReadOnlyList<BrushPlacement> placements,
         CsgCompileCache? previousCache,
@@ -154,9 +90,7 @@ public static class Csg
         out int hitCount,
         out int[][] neighborsOut)
     {
-        // Counted before the empty-list early-out below: a carve of nothing is
-        // still the carve having been entered, and a loader that ran one would be
-        // running CSG whatever the placement list happened to hold.
+        // Counted before the early-out: carving nothing is still a carve.
         _carveInvocations++;
 
         hitCount = 0;
@@ -167,7 +101,6 @@ public static class Csg
             return [];
         }
 
-        // Broadphase works in world space so it remains scale-independent.
         var worldBounds = new Aabb[n];
         for (int i = 0; i < n; i++)
             worldBounds[i] = placements[i].WorldBounds;
@@ -175,27 +108,19 @@ public static class Csg
         int[][] neighbors = BrushBroadphase.FindOverlaps(worldBounds);
         neighborsOut = neighbors;
 
-        // Geometry v2 clips in authored placement order. Cache validation
-        // compares that ordered sequence; the broadphase only selects members.
+        // Clipping is in authored placement order. The broadphase only picks
+        // the members; cache validation compares the ordered sequence.
 
         bool[]? hitFlags = previousCache is not null ? new bool[n] : null;
         var perBrush = new Polygon[n][];
 
-        // The thread-local overload gives each worker one CarveScratch reused
-        // across every brush it processes, so the per-brush list/buffer churn
-        // of the plain overload disappears. Output is written to perBrush[b],
-        // which depends only on b's own input — partitioning cannot affect
-        // the result.
+        // One CarveScratch per worker, reused across its brushes.
         Parallel.For(0, n,
             static () => CarveScratch.Rent(),
             (b, _, scratch) =>
             {
                 int[] neighborIndices = neighbors[b];
 
-                // Cache hit: this brush's placement and carver sequence are
-                // bitwise identical to the previous compile's, so its cached
-                // surfaces ARE what the carve below would produce — reuse them
-                // verbatim (the array is immutable and never written through).
                 if (previousCache is not null &&
                     previousCache.TryGetValid(placements, b, neighborIndices, out CsgCompileCache.Entry? cachedEntry))
                 {
@@ -226,13 +151,9 @@ public static class Csg
         return perBrush;
     }
 
-    // Carves ONE placed brush against the given carvers, in the given order —
-    // the exact per-brush body of the parallel carve loop, factored out so the
-    // incremental compile (CsgIncrementalCompiler) re-carves an edit's
-    // neighbourhood through the identical code path: same clip order, same
-    // arithmetic, bit-identical fragments. `neighborIndices` must be in carve
-    // order (broadphase discovery order for full compiles; the patched carry
-    // order for incremental ones).
+    // Carves one brush against the given carvers. Shared with the incremental
+    // compile so both produce identical fragments. neighborIndices must be in
+    // carve order.
     internal static Polygon[] CarveSingle(
         IReadOnlyList<BrushPlacement> placements, int b, int[] neighborIndices, CarveScratch scratch)
     {
@@ -241,10 +162,8 @@ public static class Csg
         BrushPlacement placement = placements[b];
         if (placement.Brush is null) return []; // vacant stable slot
 
-        // Pre-transform each neighbour into this brush's local frame
-        // once. All carvers' planes are packed back-to-back into the
-        // worker's reusable buffer (sized up front so it never grows
-        // mid-fill); each CarverInFrame records its slice.
+        // Size the plane buffer up front: CarverInFrame slices must not move
+        // while it is being filled.
         int planeTotal = 0;
         for (int k = 0; k < neighborIndices.Length; k++)
             planeTotal += placements[neighborIndices[k]].Brush.LocalPlanes.Count;
@@ -266,13 +185,8 @@ public static class Csg
         List<Polygon> next = scratch.Next;
         localSurfaces.Clear();
 
-        // SKIN SUPPRESSION. A subtractive brush emits no outward skin of its
-        // own, ever — its contribution is the cavity walls seeded into the
-        // brushes it cuts, below. So its carved array is ALWAYS length 0: an
-        // invariant, not a case, and a fully supported shape everywhere
-        // downstream (Concatenate copies it, ChunkGrid.AddOwned no-ops, and
-        // ChunkMeshBuilder's non-empty filter stops a subtractive-only cell
-        // ever reaching the artifact bounds seed).
+        // A subtractive brush emits no skin of its own, so its carved array is
+        // always empty. Its cavity walls are seeded into the brushes it cuts.
         bool additive = placement.Brush.Operation == BrushOperation.Additive;
         if (additive)
         {
@@ -295,18 +209,13 @@ public static class Csg
                 localSurfaces.AddRange(current);
             }
 
-            // CAVITY WALLS, attributed to the CUT brush's slot — which is what
-            // makes every downstream stage (chunk ownership, weld candidate
-            // sets, render bounds) correct with no formula changes: a wall is
-            // inside this brush's convex solid, hence inside its LocalBounds.
+            // Cavity walls belong to the cut brush's slot. A wall lies inside
+            // this brush's solid, so ownership, weld candidates and render
+            // bounds need no changes.
             //
-            // Emitted AFTER every face seed, in carver-list order, and within a
-            // carver in the negative's LocalFaces order. Order is output-visible
-            // three times over (Concatenate copies verbatim, BspTree's splitter
-            // choice strides positionally, BuildMeshArrays packs in array
-            // order), so leaving it loose would be a determinism hole — and
-            // appending after the faces is what makes the no-subtractive-brush
-            // non-regression positional rather than argued.
+            // Order is fixed (after the faces, carver-list order, then the
+            // negative's LocalFaces order) because the BSP and mesh output
+            // depend on it.
             for (int k = 0; k < neighborIndices.Length; k++)
             {
                 if (!carvers[k].Subtractive || !carvers[k].Bounds.Intersects(placement.Brush.LocalBounds))
@@ -315,21 +224,14 @@ public static class Csg
                 Brush negative = placements[neighborIndices[k]].Brush;
                 foreach (Polygon negativeFace in negative.LocalFaces)
                 {
-                    // (a) into this brush's frame — Transformed maps the
-                    // FaceSurface payload too, which is the whole of why a
-                    // cavity wears the negative's materials with no plumbing.
-                    // (b) flipped HERE, at seed construction: a wall is born as
-                    // the boundary of the REMOVED region, so it obeys the same
-                    // solid-behind-Surface convention as every other polygon
-                    // from the moment it exists. Flipping later would run it
-                    // through the clip loops under the wrong convention.
+                    // Transformed carries the FaceSurface, so the wall wears
+                    // the negative's material. Flip before clipping: the clip
+                    // loops assume solid is behind the surface.
                     Polygon? wall = negativeFace.Transformed(carvers[k].Combined).Flipped();
 
-                    // (c) clip to inside(this brush). Load-bearing twice: it
-                    // confines the wall to where solid is actually removed, and
-                    // — because Split reports a Coplanar polygon on the FRONT
-                    // side, and we keep the back — it kills a wall coincident
-                    // with one of this brush's own planes with no special case.
+                    // Clip to inside this brush. Split puts a coplanar polygon
+                    // on the front and we keep the back, so a wall lying on one
+                    // of this brush's own planes is dropped here.
                     IReadOnlyList<Plane> ownPlanes = placement.Brush.LocalPlanes;
                     for (int i = 0; i < ownPlanes.Count && wall is not null; i++)
                     {
@@ -340,8 +242,6 @@ public static class Csg
                     if (wall is null)
                         continue;
 
-                    // (d) the same carver ping-pong the faces use, skipping
-                    // carver k itself — see the origin-skip row of the table.
                     current.Clear();
                     current.Add(wall);
 
@@ -361,20 +261,14 @@ public static class Csg
             }
         }
 
-        // Push this brush's local fragments out to world coordinates,
-        // straight into the exact-size array that becomes part of the
-        // result (freshly allocated — never scratch, never pooled).
+        // Fresh array: this becomes part of the result, never scratch.
         var worldSurfaces = new Polygon[localSurfaces.Count];
         for (int i = 0; i < worldSurfaces.Length; i++)
             worldSurfaces[i] = localSurfaces[i].Transformed(placement.Transform);
         return worldSurfaces;
     }
 
-    // Concatenates per-brush surface groups in placement-index order into one
-    // exact-size array (a List+ToArray would pay growth doubling plus a full
-    // final copy). DETERMINISM: emission order is by placement index
-    // regardless of which brushes hit the cache, so cached and fresh compiles
-    // of the same placements produce the same surface list bit for bit.
+    // Placement-index order, whichever brushes hit the cache.
     internal static Polygon[] Concatenate(Polygon[][] perBrush)
     {
         int total = 0;
@@ -391,11 +285,6 @@ public static class Csg
         return all;
     }
 
-    /// <summary>
-    /// <see cref="Concatenate(Polygon[][])"/> over a paged carry — same
-    /// placement-index emission order, same exact-size result. Used by the
-    /// lazy flat-surface materialization of incrementally built worlds.
-    /// </summary>
     internal static Polygon[] Concatenate(PagedArray<Polygon[]> perBrush, int totalSurfaces)
     {
         var all = new Polygon[totalSurfaces];
@@ -409,14 +298,9 @@ public static class Csg
         return all;
     }
 
-    // Worker-local scratch for Carve's Parallel.For. OWNERSHIP RULES: each
-    // instance is owned by exactly one worker at a time (Parallel.For never
-    // shares thread-local state across concurrently-running workers), and
-    // nothing stored here may ever escape into Carve's results — result
-    // polygons and per-brush arrays are always freshly allocated at exact
-    // size. Buffers are bounded and cleared between jobs; entries past the counts a brush
-    // wrote are stale and must never be read. Internal (not private) so the
-    // incremental compile can drive CarveSingle with one too.
+    // Worker-local scratch, owned by one worker at a time. Nothing stored here
+    // may escape into a result. Entries past the counts the current brush
+    // wrote are stale.
     internal sealed class CarveScratch : IDisposable
     {
         [ThreadStatic] private static CarveScratch? _available;
@@ -453,24 +337,14 @@ public static class Csg
         public readonly List<Polygon> Current = [];
         public readonly List<Polygon> Next = [];
 
-        /// <summary>
-        /// Carver descriptors for the brush currently being carved. Valid only
-        /// until the next brush begins on this worker.
-        /// </summary>
+        // Both valid only for the brush currently being carved. PlaneBuffer
+        // holds every carver's planes back to back.
         public CarverInFrame[] Carvers = [];
 
-        /// <summary>
-        /// Backing storage for every current carver's transformed planes,
-        /// packed back-to-back; each <see cref="CarverInFrame"/> addresses its
-        /// own [PlaneStart, PlaneStart + PlaneCount) slice. Same lifetime as
-        /// <see cref="Carvers"/>.
-        /// </summary>
         public Plane[] PlaneBuffer = [];
 
         public void EnsureCarverCapacity(int carverCount, int planeCount)
         {
-            // Geometric growth so a worker settles at its high-water mark
-            // after a few brushes instead of reallocating per brush.
             if (Carvers.Length < carverCount)
                 Carvers = new CarverInFrame[Math.Max(carverCount, Carvers.Length * 2)];
             if (PlaneBuffer.Length < planeCount)
@@ -478,7 +352,6 @@ public static class Csg
         }
     }
 
-    /// <summary>Captures each brush's own <see cref="Brush.Transform"/> into a placement list.</summary>
     internal static BrushPlacement[] ToPlacements(IReadOnlyList<Brush> brushes)
     {
         var placements = new BrushPlacement[brushes.Count];
@@ -487,31 +360,24 @@ public static class Csg
         return placements;
     }
 
-    // Appends to `output` the parts of `fragment` that lie OUTSIDE the carver.
-    // `planes` is the worker's packed plane buffer; the carver's planes occupy
-    // [carver.PlaneStart, carver.PlaneStart + carver.PlaneCount).
+    // Appends the parts of fragment that lie outside the carver.
+    // seedIsWall: the fragment comes from a cavity wall, not a face.
+    // seedOrigin: carver-list position of the negative that made the wall, -1 for a face.
     //
-    // `seedIsWall` says whether the fragment descends from a cavity-wall seed
-    // rather than one of the carved brush's own faces; `seedOrigin` is the
-    // carver-list position of the subtractive brush that produced that wall
-    // (-1 for a face seed); `carverIndex` is this carver's list position.
-    //
-    // THE VERDICT TABLE, five rows:
-    //
-    //   FACE / ADDITIVE      today's code, character for character.
-    //   FACE / SUBTRACTIVE   bypass CoplanarOrientation; drop the footprint on
-    //                        Split-Coplanar AND same-facing, else generic.
-    //   WALL / its ORIGIN    skip the carver (mandatory, not an optimisation).
-    //   WALL / ADDITIVE      Wins ? generic : skip the carver.
-    //   WALL / other SUBTR.  as FACE/SUBTRACTIVE, plus an opposite-facing
-    //                        coincidence tie-break on list position.
+    // Seed / carver:
+    //   face / additive      coplanar rule by precedence, else split.
+    //   face / subtractive   drop the footprint when Split-coplanar and
+    //                        same-facing, else split.
+    //   wall / its origin    skip the carver.
+    //   wall / additive      Wins ? as face/additive : skip the carver.
+    //   wall / other subtr.  as face/subtractive, plus a tie-break on list
+    //                        position when opposite-facing.
     private static void CarveFragment(
         Polygon fragment, CarverInFrame[] carvers, int carverCount, Plane[] planes, List<Polygon> output,
         bool seedIsWall, int seedOrigin, int carverIndex)
     {
         ref readonly CarverInFrame carver = ref carvers[carverIndex];
 
-        // Whole fragment clear of the carver: nothing to remove.
         if (!fragment.Bounds.Intersects(carver.Bounds))
         {
             output.Add(fragment);
@@ -520,18 +386,12 @@ public static class Csg
 
         if (seedIsWall)
         {
-            // A wall meeting its OWN negative would find that negative's plane
-            // coincident-and-opposite and the wall/wall tie-break would compare
-            // the origin position against itself with a strict <, deleting the
-            // wall. Skipping is mandatory.
+            // Must skip the wall's own negative: its plane is coincident and
+            // opposite, and the tie-break below would delete the wall.
             //
-            // A wall meeting an ADDITIVE carver it does not lose to is also
-            // skipped: by the wall/face partition theorem every point of a
-            // surviving wall is in the OPEN INTERIOR of the brush it was seeded
-            // into, so a coincident additive carver's plane only touches the
-            // wall's boundary and can remove nothing. The carver's own face is
-            // deleted at exactly the wall's points by the ordinary path, so
-            // precisely one surface exists on that plane everywhere.
+            // Also skip an additive carver that does not win. The wall is in
+            // the open interior of the brush it was seeded into, so that
+            // carver can only touch its boundary.
             if (carverIndex == seedOrigin || (!carver.Subtractive && !carver.Wins))
             {
                 output.Add(fragment);
@@ -551,36 +411,19 @@ public static class Csg
 
             if (carver.Subtractive)
             {
-                // DELIBERATELY NOT CoplanarOrientation. That predicate accepts
-                // |dD| < 1e-3 while Polygon.Split classifies at 1e-4 — ten
-                // times looser, and per-plane rather than per-vertex. In the
-                // band where they disagree the rule's own premise ("the
-                // fragment lies ON this plane") is false, and the footprint
-                // would be dropped while the replacement wall, sitting delta
-                // away, survives its own clip — leaving the boundary open in a
-                // delta-tall ring all round the cavity mouth. Using Split's own
-                // classification is not merely tighter, it is the SAME
-                // tolerance that decides whether the wall survives, so the two
-                // decisions cannot disagree.
+                // Not CoplanarOrientation: its offset tolerance is 1e-3 against
+                // Split's 1e-4. The footprint must be dropped at the same
+                // tolerance that decides whether the cavity wall survives, or a
+                // thin ring opens around the cavity mouth.
                 if (remaining.Classify(plane) == PolygonClassification.Coplanar)
                 {
                     bool sameFacing = Vector3.Dot(remaining.Surface.Normal, plane.Normal) > 0f;
 
-                    // Same-facing: the negative's interior is behind this
-                    // surface, so it removes exactly the material this surface
-                    // bounded. Drop the footprint — this is the flush
-                    // through-cut, and both sides of a slab hit it at once.
-                    //
-                    // Opposite-facing: the negative merely RESTS on this
-                    // surface and removes nothing, so the fragment survives
-                    // whole. (Unmodified code fails precisely here:
-                    // CoplanarOrientation returns -1 for that pair and the
-                    // interior-interface rule would delete a face under a
-                    // negative that took nothing away — an open solid.)
-                    // Two coincident negatives produce two identical walls and
-                    // exactly one must emit: list position breaks the tie, and
-                    // it decides only which negative's material paints the
-                    // shared patch, never a topology.
+                    // Same-facing: a flush through-cut, drop the footprint.
+                    // Opposite-facing: the negative only rests on this surface
+                    // and removes nothing, so the fragment stays. Two coincident
+                    // negatives make two identical walls; list position picks
+                    // the one that emits.
                     if (sameFacing)
                         continue;
 
@@ -601,9 +444,8 @@ public static class Csg
             int orientation = CoplanarOrientation(remaining.Surface, plane);
             if (orientation != 0)
             {
-                // Opposite-facing coincidence is an interior interface — drop the
-                // shared footprint from both brushes. Same-facing coincidence is
-                // a duplicate surface — resolved by brush precedence.
+                // Opposite-facing: interior interface, both brushes drop the
+                // footprint. Same-facing: duplicate surface, precedence decides.
                 bool removeFootprint = orientation < 0 || carver.Wins;
                 if (!removeFootprint)
                 {
@@ -611,49 +453,30 @@ public static class Csg
                     return;
                 }
 
-                // Skip the coincident plane; the remaining planes carve the
-                // footprint, and whatever survives behind them is dropped.
+                // The other planes carve out the footprint.
                 onCarverPlane = true;
                 continue;
             }
 
             remaining.Split(plane, out Polygon? front, out Polygon? back);
             if (front is not null)
-                output.Add(front);   // in front of an outward plane => outside the carver
+                output.Add(front);
             remaining = back;
         }
 
-        // Anything still behind every plane is buried inside the carver:
-        // dropped — with ONE exception, the interior interface over a hollow.
+        // What is left is buried in the carver and dropped, with one exception.
+        // When a negative cuts flush through the carver on the coincident
+        // plane, the carver's face is gone over the cut and the cavity wall
+        // was dropped at seeding, so nothing bounds the cavity. Re-emit that part.
         //
-        // The rule above deletes the shared footprint of an opposite-facing
-        // coincidence because the carver's own face on that plane covers exactly
-        // it, so precisely one surface survives there. That pairing breaks when a
-        // negative cuts flush through the carver ON THAT PLANE: the carver's own
-        // face is deleted over the cut by the flush-through-cut rule, and the
-        // cavity wall that would replace it is killed at seeding by the clip to
-        // inside(cut brush) — Split reports a coplanar seed on the front. Nobody
-        // is left to bound the cavity, the compiled skin is open, and the solid
-        // reconstruction leaks through the hole. Re-emit the hollowed part.
-        //
-        // Only after a coincident-plane skip: a fragment buried in the carver's
-        // OPEN interior is bounded by a cavity wall the seeding kept (it is not
-        // coplanar with any of the cut brush's own planes there), and re-emitting
-        // would duplicate that wall.
+        // Only after a coincident-plane skip: elsewhere the seeded cavity wall
+        // exists and this would duplicate it.
         if (onCarverPlane && remaining is not null && !carver.Subtractive)
             EmitHollowedRemainder(remaining, 0, carvers, carverCount, carverIndex, planes, output);
     }
 
-    // Emits the parts of a buried fragment that lie inside one of the
-    // subtractive carvers at [first, carverCount) — i.e. the parts the carver
-    // that buried it no longer actually fills. Parts inside none of them stay
-    // buried and are dropped, exactly as before.
-    //
-    // A part strictly inside a negative is boundary the negative itself removes,
-    // and the ordinary ping-pong deletes it again when the fragment meets that
-    // negative (or already did, if it came earlier in the list), so this cannot
-    // resurrect material: what survives is the patch RESTING on the negative's
-    // own face, which is precisely the cavity floor nothing else emits.
+    // Emits the parts of a buried fragment that lie inside one of the negatives
+    // at [first, carverCount). The rest stays buried.
     private static void EmitHollowedRemainder(
         Polygon buried, int first, CarverInFrame[] carvers, int carverCount, int carverIndex,
         Plane[] planes, List<Polygon> output)
@@ -666,14 +489,9 @@ public static class Csg
             if (!negative.Bounds.Intersects(carvers[carverIndex].Bounds) || !negative.Bounds.Intersects(buried.Bounds))
                 continue;
 
-            // The patch has to REST on one of the negative's own faces —
-            // coplanar with it and facing into the cavity — because that face
-            // is the cavity wall the seeding would have emitted, and this patch
-            // is the only other surface that can bound the same hollow.
-            // Classified with Polygon's per-vertex tolerance, not
-            // CoplanarOrientation's ten-times-looser one, for the reason the
-            // FACE/SUBTRACTIVE row states: the decision has to be taken at the
-            // same tolerance that decides whether the seed survives.
+            // The patch must rest on one of the negative's faces, coplanar and
+            // facing into the cavity. Classify, not CoplanarOrientation: same
+            // tolerance as the seed clip.
             int rest = -1;
             int end = negative.PlaneStart + negative.PlaneCount;
             for (int p = negative.PlaneStart; p < end; p++)
@@ -686,10 +504,9 @@ public static class Csg
                 }
             }
 
-            // And that face has to lie on one of the carver's OWN planes, which
-            // is exactly when the seeding clip killed the cavity wall. A cut
-            // that stops inside the carver keeps its wall, and re-emitting here
-            // would put two coincident surfaces on the plane.
+            // Only when that face lies on one of the carver's own planes, which
+            // is when the seed clip dropped the cavity wall. Otherwise the wall
+            // exists and this would duplicate it.
             if (rest < 0 || !LiesOnOwnPlane(in carvers[carverIndex], planes, planes[rest]))
                 continue;
 
@@ -711,9 +528,7 @@ public static class Csg
         }
     }
 
-    // Whether `plane` is one of the carver's own planes, at the tolerance
-    // Polygon.Split classifies with — the same decision the cavity-wall clip
-    // takes when it kills a seed lying on a plane of the brush it cuts.
+    // Uses Polygon.Epsilon to agree with the cavity-wall seed clip.
     private static bool LiesOnOwnPlane(in CarverInFrame carver, Plane[] planes, in Plane plane)
     {
         int end = carver.PlaneStart + carver.PlaneCount;
@@ -727,8 +542,7 @@ public static class Csg
         return false;
     }
 
-    // 0 = not coplanar; +1 = same geometric plane, normals agree;
-    // -1 = same geometric plane, normals opposed.
+    // 0 = not coplanar, +1 = same plane and facing, -1 = same plane, opposed.
     private static int CoplanarOrientation(Plane a, Plane b)
     {
         float dot = Vector3.Dot(a.Normal, b.Normal);
@@ -739,13 +553,9 @@ public static class Csg
         return 0;
     }
 
-    // A carver brush re-expressed in another brush's local frame so the inner
-    // loop never has to think about world coordinates or two transforms at once.
-    // Planes live in the owning worker's packed plane buffer at
-    // [PlaneStart, PlaneStart + PlaneCount) — this struct is only valid while
-    // that buffer segment is, i.e. for the one brush currently being carved
-    // (the buffer is overwritten when the worker moves to its next brush).
-    // Internal only because CarveScratch (which stores these) is.
+    // A carver in the carved brush's local frame. Its planes sit in the worker's
+    // plane buffer at [PlaneStart, PlaneStart + PlaneCount), so this is valid
+    // only while that brush is being carved.
     internal readonly struct CarverInFrame
     {
         public int PlaneStart { get; }
@@ -753,14 +563,9 @@ public static class Csg
         public Aabb Bounds { get; }
         public bool Wins { get; }
 
-        /// <summary>Whether this carver removes solid rather than adding it.</summary>
         public bool Subtractive { get; }
 
-        /// <summary>
-        /// The carver-local to carved-local matrix. Build already computes it;
-        /// cavity-wall seeding needs it to bring a subtractive brush's own
-        /// faces into the frame of the brush it cuts.
-        /// </summary>
+        // Carver-local to carved-local.
         public Matrix4x4 Combined { get; }
 
         private CarverInFrame(
@@ -775,18 +580,11 @@ public static class Csg
             Combined = combined;
         }
 
-        // Writes the carver's transformed planes into `planeBuffer` starting
-        // at `planeStart` (the caller sized the buffer for all carvers up
-        // front) and returns a descriptor addressing that slice.
+        // Writes the carver's planes into planeBuffer at planeStart.
         public static CarverInFrame Build(in BrushPlacement carver, in BrushPlacement carved, bool carverWins, Plane[] planeBuffer, int planeStart)
         {
-            // Going from carver-local → world → carved-local:
-            //   v_carved = v_carver * carver.Transform * Invert(carved.Transform)
-            // A singular transform has no carved-local frame to carve in; any
-            // fallback would silently produce geometrically wrong output.
-            // Scene snapshots reject non-rigid node transforms before they
-            // reach here, so this only fires for placements built outside the
-            // scene graph.
+            // v_carved = v_carver * carver.Transform * Invert(carved.Transform)
+            // Throw on a singular transform; any fallback gives wrong geometry.
             if (!Matrix4x4.Invert(carved.Transform, out Matrix4x4 carvedInverse))
                 throw new InvalidOperationException(
                     "Carved brush transform is singular and cannot be inverted. " +

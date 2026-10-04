@@ -5,22 +5,7 @@ using SpectraEngine.Core.Graphics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The render-pass seam: who decides where a frame goes, and how big it is.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>These are the assertions a GPU test cannot make.</b> A pass that leaked,
-/// a viewport sized from the window instead of from the target, or a clear that
-/// quietly stopped happening all still produce a picture on a real device, and
-/// often a plausible one. What they break is the next thing that draws
-/// somewhere other than the back buffer, which is the entire point of the seam.
-/// </para>
-/// <para>
-/// <see cref="FakeRenderer"/> records passes rather than performing them, so
-/// the shape of a frame is observable without a driver.
-/// </para>
-/// </remarks>
+/// <summary>Render passes: which target a frame goes to, and at what size.</summary>
 public sealed class RenderPassTests
 {
     [Fact]
@@ -41,8 +26,6 @@ public sealed class RenderPassTests
     [Fact]
     public void A_resize_between_frames_is_picked_up_by_the_next_pass()
     {
-        // The latch is written by the main thread and read here; a pass that
-        // cached the size once would render the old viewport forever.
         var renderer = new FakeRenderer();
 
         renderer.SetFramebufferSize(new Vector2D<int>(800, 600));
@@ -60,10 +43,8 @@ public sealed class RenderPassTests
     [Fact]
     public void A_zero_height_target_has_no_aspect_ratio_rather_than_infinity()
     {
-        // A minimised window, and the moment mid-resize when the latch has the
-        // new size but the target does not. Dividing here would put a NaN or an
-        // infinity into the projection matrix, and every subsequent frustum
-        // test would silently answer nonsense.
+        // Happens when minimised and mid-resize. Dividing would put NaN or
+        // infinity into the projection.
         var renderer = new FakeRenderer();
         renderer.SetFramebufferSize(new Vector2D<int>(1280, 0));
 
@@ -80,9 +61,6 @@ public sealed class RenderPassTests
 
         renderer.BeginPass(PassClear.Keep);
 
-        // Throwing beats leaving the wrong target bound for the rest of the
-        // frame, which is a corrupt picture on one backend and a debug-layer
-        // message on another.
         Should.Throw<InvalidOperationException>(() => renderer.BeginPass(PassClear.Keep));
 
         renderer.EndPass();
@@ -98,9 +76,8 @@ public sealed class RenderPassTests
     [Fact]
     public void A_clear_can_name_colour_depth_both_or_neither()
     {
-        // "Do not touch this attachment" is a distinct instruction from "clear
-        // it to black": an overlay pass keeps colour, a shadow pass has no
-        // colour attachment to clear at all.
+        // Null means leave the attachment alone, which is not the same as
+        // clearing it to black.
         PassClear.To(new Vector4(1f, 0f, 0f, 1f)).Color.ShouldBe(new Vector4(1f, 0f, 0f, 1f));
         PassClear.To(Vector4.One).Depth.ShouldBe(1f);
 
@@ -114,10 +91,6 @@ public sealed class RenderPassTests
     [Fact]
     public void The_sky_a_pass_clears_to_is_the_one_shared_linear_constant()
     {
-        // All three backends clear through PassClear now, so a divergence
-        // between them can only come from the constant. Pinning it here means
-        // one of them drifting is a test failure rather than a screenshot
-        // somebody happens to compare.
         PassClear sky = PassClear.To(ClearColors.Sky);
 
         sky.Color!.Value.ShouldBe(ClearColors.Sky);

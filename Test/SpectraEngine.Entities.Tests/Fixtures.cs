@@ -1,28 +1,10 @@
 namespace SpectraEngine.Entities.Tests;
 
-/// <summary>
-/// The fixture classes the generator tests compile.
-/// </summary>
-/// <remarks>
-/// <b>Inline rather than on disk, because each one IS the statement of its
-/// test.</b> Every diagnostic fixture exists to be wrong in exactly one way, and
-/// a reader has to be able to see the wrongness beside the assertion; a file
-/// reference would put a six-line class in another window. The representative
-/// fixture is here for the same reason: it is the input the committed snapshot
-/// describes.
-/// </remarks>
+// Source the generator tests compile. Each diagnostic fixture is wrong in one way.
 internal static class Fixtures
 {
-    /// <summary>
-    /// The representative class: one keyvalue of every binding shape, two inputs
-    /// and two outputs.
-    /// </summary>
-    /// <remarks>
-    /// It carries an inferred bool, an explicitly typed <c>Color</c> and
-    /// <c>AssetSound</c> (the two shapes inference deliberately refuses), a float
-    /// with both bounds and a widget, and a <c>Guid</c>, which is the one type
-    /// whose empty wire form the binder handles specially.
-    /// </remarks>
+    // Input of the committed snapshot: one keyvalue of every binding shape,
+    // two inputs, two outputs.
     public const string RepresentativeEntity = """
         using SpectraEngine.Core.Entities;
         using System;
@@ -63,7 +45,6 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>Carries the attribute without being partial.</summary>
     public const string NotPartial = """
         using SpectraEngine.Core.Entities;
 
@@ -75,7 +56,6 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>Two classes claiming one wire name.</summary>
     public const string DuplicateClassName = """
         using SpectraEngine.Core.Entities;
 
@@ -92,7 +72,6 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>A keyvalue on a type nothing is inferred from, with no stated type.</summary>
     public const string UnsupportedKeyvalueType = """
         using SpectraEngine.Core.Entities;
         using System.Collections.Generic;
@@ -107,7 +86,6 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>A stated type the member cannot carry.</summary>
     public const string KeyvalueTypeMismatch = """
         using SpectraEngine.Core.Entities;
 
@@ -121,7 +99,7 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>A keyvalue the binder has nowhere to write.</summary>
+    // Get-only property: nothing for the binder to assign.
     public const string KeyvalueNotAssignable = """
         using SpectraEngine.Core.Entities;
 
@@ -135,7 +113,6 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>An input the dispatch switch could not call.</summary>
     public const string InvalidInputSignature = """
         using SpectraEngine.Core.Entities;
 
@@ -149,7 +126,6 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>A keyvalue claiming the name the node's own identity already has.</summary>
     public const string ReservedKeyvalueName = """
         using SpectraEngine.Core.Entities;
 
@@ -163,7 +139,6 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>A small, correct entity, for the caching oracle's watched file.</summary>
     public const string CachedEntity = """
         using SpectraEngine.Core.Entities;
 
@@ -183,20 +158,9 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>
-    /// <see cref="CachedEntity"/> plus a member the generator does not read,
-    /// appended after everything so no span the model records moves.
-    /// </summary>
-    /// <remarks>
-    /// <b>An edit INSIDE the class is what forces the transform to run again.</b>
-    /// Roslyn reuses the green node for a class declaration that did not change,
-    /// so appending a comment to the end of the FILE leaves the attribute
-    /// provider's entry cached and the transform never runs; that proves the
-    /// provider is scoped and says nothing about whether the model compares by
-    /// value. A new member does change the class node, so the transform runs,
-    /// builds a fresh model, and only value equality can then keep the emitter
-    /// from re-running.
-    /// </remarks>
+    // CachedEntity plus a member the generator ignores, appended last so no
+    // recorded span moves. The edit must be inside the class: Roslyn reuses
+    // an unchanged class node and the transform would not re-run.
     public const string CachedEntityWithSpareMember = """
         using SpectraEngine.Core.Entities;
 
@@ -218,10 +182,7 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>
-    /// <see cref="CachedEntity"/> with a real change to what it declares, which
-    /// is the caching oracle's control.
-    /// </summary>
+    // CachedEntity with one more keyvalue: the caching tests' control.
     public const string CachedEntityWithExtraKeyvalue = """
         using SpectraEngine.Core.Entities;
 
@@ -244,7 +205,6 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>A file carrying no entity at all, which the caching oracle edits.</summary>
     public const string UnrelatedFile = """
         namespace TestGame.Support;
 
@@ -254,7 +214,6 @@ internal static class Fixtures
         }
         """;
 
-    /// <summary>The same file after an edit that touches no entity.</summary>
     public const string UnrelatedFileEdited = """
         namespace TestGame.Support;
 

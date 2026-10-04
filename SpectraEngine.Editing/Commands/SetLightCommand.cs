@@ -5,37 +5,15 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Commands;
 
 /// <summary>
-/// Writes a node's light settings.
+/// Writes a node's light settings. The caller must pass a valid range:
+/// <c>Light.Range</c> throws on zero or less and this does not clamp.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b><c>Light</c> is the one MUTABLE payload, which is exactly why this
-/// captures values rather than the object.</b> A brush is immutable, so a brush
-/// command can hold the instance itself and swapping it back is a complete
-/// undo. A light is not: holding a reference and "restoring" it would restore a
-/// pointer to an object whose fields the redo had already overwritten, so undo
-/// would appear to do nothing. The five settings are copied by value on both
-/// sides.
-/// </para>
-/// <para>
-/// <b>The node's light instance is edited in place rather than replaced.</b>
-/// <c>SceneNode.Light</c>'s setter early-outs on reference equality and
-/// otherwise re-registers the node with the scene's light list; assigning a
-/// fresh instance per keystroke-committed edit would churn that list for a
-/// value change it does not care about.
-/// </para>
-/// <para>
-/// <b>Range is validated by the property setter and can refuse.</b>
-/// <c>Light.Range</c> throws on anything not strictly positive, so a command
-/// carrying zero would throw from inside <c>Do</c>, halfway through a
-/// transaction. The caller is responsible for not building one; this type does
-/// not silently clamp, because a clamp would write a number the user did not
-/// ask for and report nothing.
-/// </para>
-/// </remarks>
+// Light is mutable, so capture values, not the instance: a held reference
+// would already carry the redo's fields. Edited in place so the scene's
+// light list is not re-registered per edit.
 public sealed class SetLightCommand : ICoalescingCommand
 {
-    /// <summary>The five settings a light carries, as a value.</summary>
+    /// <summary>A light's settings, as a value.</summary>
     public readonly record struct Settings(
         LightKind Kind, Vector3 Color, float Intensity, float Range, bool Enabled,
         float InnerAngle, float OuterAngle, float Width, float Height, float Radius)
@@ -50,12 +28,6 @@ public sealed class SetLightCommand : ICoalescingCommand
         }
 
         /// <summary>Writes these settings onto a light.</summary>
-        /// <remarks>
-        /// <b>Inner before outer.</b> <see cref="Light.OuterAngle"/> reports at
-        /// least the inner one, so assigning them the other way round makes the
-        /// result depend on which was written last - the same ordering the map
-        /// binder has to respect, and for the same reason.
-        /// </remarks>
         public void ApplyTo(Light light)
         {
             ArgumentNullException.ThrowIfNull(light);
@@ -64,6 +36,7 @@ public sealed class SetLightCommand : ICoalescingCommand
             light.Intensity = Intensity;
             light.Range = Range;
             light.Enabled = Enabled;
+            // Inner before outer: OuterAngle clamps against the inner one.
             light.InnerAngle = InnerAngle;
             light.OuterAngle = OuterAngle;
             light.Width = Width;
@@ -83,10 +56,9 @@ public sealed class SetLightCommand : ICoalescingCommand
     }
 
     /// <summary>
-    /// Captures <paramref name="node"/>'s current light settings as the
-    /// before-state. Call this <em>before</em> applying the edit.
+    /// Captures the node's current light settings as the before state. Call
+    /// before applying the edit. Throws when the node carries no light.
     /// </summary>
-    /// <exception cref="InvalidOperationException">The node carries no light.</exception>
     public static SetLightCommand Capture(SceneNode node, Settings after)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -107,18 +79,9 @@ public sealed class SetLightCommand : ICoalescingCommand
     public Settings Before { get; }
 
     /// <summary>The settings the light carries after the edit.</summary>
-    /// <remarks>
-    /// Private setter, retargeted through <see cref="SetAfter"/> and
-    /// <see cref="TryAbsorb"/> while the command is still inside an open
-    /// transaction - the zero-allocation drag path every other gesture command
-    /// here already has, and the piece the light gizmo could not exist without:
-    /// a per-frame drag would otherwise push one history entry per frame.
-    /// </remarks>
     public Settings After { get; private set; }
 
-    /// <summary>
-    /// Retargets the after-state, keeping the captured before-state.
-    /// </summary>
+    /// <summary>Retargets the after state, keeping the captured before state.</summary>
     public void SetAfter(Settings after) => After = after;
 
     /// <inheritdoc/>
@@ -163,8 +126,6 @@ public sealed class SetLightCommand : ICoalescingCommand
     {
         ArgumentNullException.ThrowIfNull(scene);
 
-        // Missing target = no-op, per the IEditorCommand contract. A node whose
-        // light was removed since is the same case: there is nothing to write.
         if (!scene.TryFindById(NodeId, out SceneNode? node) || node.Light is not { } light)
             return;
 

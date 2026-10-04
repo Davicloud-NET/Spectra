@@ -10,24 +10,9 @@ using SpectraShade.Compiler;
 namespace SpectraEngine.Graphics.Tests;
 
 /// <summary>
-/// Every built-in shader, compiled all the way to D3D bytecode. No device.
+/// Compiles the built-in shaders to D3D bytecode. D3DCompile is a library
+/// call, so this needs no device.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is the first thing in the repo that verifies the D3D shader path
-/// without a GPU.</b> <c>D3DCompile</c> is a library call, so the whole chain
-/// from SpectraShade through the HLSL generator to real bytecode runs anywhere.
-/// </para>
-/// <para>
-/// <b>It matters because nothing else catches an HLSL-side codegen mistake.</b>
-/// The semantic analyser does no name resolution and no type checking: a
-/// misspelled builtin, a construct one generator handles and the other does not,
-/// or a bare identifier that only means something in GLSL all emit happily and
-/// are first rejected by a driver. The OpenGL fixture catches the GLSL half. Its
-/// D3D counterpart needs a window and a device, so before this the HLSL half was
-/// only ever checked by running the demo and looking.
-/// </para>
-/// </remarks>
 public sealed unsafe class BaseShaderHlslCompilationTests
 {
     public static TheoryData<string> AllBaseShaders() =>
@@ -62,10 +47,7 @@ public sealed unsafe class BaseShaderHlslCompilationTests
         Compile(compiler, Encoding.ASCII.GetString(blob.VertexData), "vs_5_0", shaderName);
         Compile(compiler, Encoding.ASCII.GetString(blob.FragmentData), "ps_5_0", shaderName);
 
-        // The compiler-generated instanced stage, where the shader declares one.
-        // Nobody authored it, so nothing else would ever compile it, and a
-        // rewrite that produced invalid HLSL would first be noticed by a driver
-        // at run time in whichever pass happened to use batches.
+        // The generated instanced stage, where the shader has one.
         if (blob.InstancedVertexData is { } instanced)
             Compile(compiler, Encoding.ASCII.GetString(instanced), "vs_5_0", shaderName + " (instanced)");
     }
@@ -81,8 +63,7 @@ public sealed unsafe class BaseShaderHlslCompilationTests
         fixed (byte* pEntry = "main\0"u8)
         fixed (byte* pName = Encoding.ASCII.GetBytes(label + "\0"))
         {
-            // Flag words 0, 0: the same ones the engine passes, so this measures
-            // the engine's configuration rather than a friendlier one.
+            // Flags 0, 0: what the engine passes.
             int hr = compiler.Compile(
                 pSrc, (nuint)source.Length, pName, null,
                 ref Unsafe.NullRef<ID3DInclude>(), pEntry, pProfile, 0u, 0u,

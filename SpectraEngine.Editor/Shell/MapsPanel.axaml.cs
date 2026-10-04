@@ -5,9 +5,7 @@ using System;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
-/// The project's maps list. Raises clicks and menu verbs; opening, confirming,
-/// manifest writes and path resolution stay with the window, which owns the
-/// document and the session.
+/// The project's maps list. Only raises intents; the window acts on them.
 /// </summary>
 public partial class MapsPanel : UserControl
 {
@@ -31,8 +29,7 @@ public partial class MapsPanel : UserControl
             MapClicked?.Invoke(row);
     }
 
-    // Menu handlers read the row from the menu item's DataContext, inherited
-    // from the row card the shared menu was opened over.
+    // The shared menu inherits its DataContext from the row it opened over.
     private static ProjectMapRow? MenuRow(object? sender) =>
         (sender as Control)?.DataContext as ProjectMapRow;
 

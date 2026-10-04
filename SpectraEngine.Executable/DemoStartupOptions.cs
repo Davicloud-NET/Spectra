@@ -4,50 +4,20 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 
-// Argument parsing is the one part of this host that is pure — no window, no
-// renderer, no GLFW — so the editing suite pins the self-test gate rather than
-// trusting a comment about it. Nothing else in this assembly is exposed.
+// For the argument-parsing tests.
 [assembly: InternalsVisibleTo("SpectraEngine.Editing.Tests")]
 
 namespace SpectraEngine.Executable;
 
-/// <summary>
-/// Where the demo's self-test switch came from. Reported at startup so a log
-/// says not just that the synthetic editing run is on but who asked for it.
-/// </summary>
 internal enum SelfTestSource
 {
-    /// <summary>Nobody asked; the self-test is off, which is the default.</summary>
     Default,
-
-    /// <summary>A command-line switch decided it.</summary>
     CommandLine,
-
-    /// <summary>The environment variable decided it.</summary>
     Environment,
 }
 
-/// <summary>
-/// Everything the demo host takes from its command line: which graphics
-/// backend to build, and whether to run the synthetic editing self-test.
-/// </summary>
-/// <remarks>
-/// <b>The self-test defaults to OFF, and that is a correctness rule rather
-/// than a preference.</b> <see cref="Editing.EditingSelfTest"/> is gate
-/// instrumentation: it really drags a real brush node a whole world unit and
-/// leaves it there for the frames the async recompile needs, so with it on the
-/// demo scene visibly pops every few seconds with no human touching anything.
-/// That is exactly right for a smoke gate and exactly wrong for somebody
-/// looking at the editor, so it has to be asked for — <c>--selftest</c>, or
-/// <see cref="SelfTestEnvironmentVariable"/> for a harness that would rather
-/// not rewrite an argument list.
-/// <para>
-/// <b>Parsing lives here, not in <c>Program</c>, because it is testable.</b>
-/// Handing in the environment value rather than reading it makes the whole
-/// decision a pure function of two arguments, which is what lets a headless
-/// test pin "off unless asked" for good.
-/// </para>
-/// </remarks>
+// The demo host's command line. The self-test is off unless asked for: it
+// drags a real brush every few seconds, which is wrong for an interactive run.
 internal sealed record DemoStartupOptions(
     GraphicsBackend Backend,
     bool SelfTestEnabled,
@@ -79,13 +49,9 @@ internal sealed record DemoStartupOptions(
     bool Uncapped = false,
     GBufferLayout GBufferLayout = GBufferLayout.Standard)
 {
-    /// <summary>
-    /// Environment variable read when no command-line switch names the
-    /// self-test: any of the accepted truthy spellings turns it on.
-    /// </summary>
+    // Read only when no command-line switch names the self-test.
     public const string SelfTestEnvironmentVariable = "SPECTRA_SELFTEST";
 
-    /// <summary>One line of usage, appended to every argument error.</summary>
     private const string Usage =
         "Usage: SpectraEngine.Executable [opengl|d3d11|d3d12] [--selftest[=true|false]] " +
         "[--fullscreen-cycle[=seconds]] [--play[=true|false]] [--offscreen-probe[=true|false]] " +
@@ -98,22 +64,8 @@ internal sealed record DemoStartupOptions(
         "[--export-entity-schema=<file.sentdef>] [--viewport-compare[=true|false]] " +
         "[--pacing-probe[=true|false]].";
 
-    /// <summary>
-    /// Resolves the command line (and the self-test environment variable) into
-    /// the options the host runs with.
-    /// </summary>
-    /// <param name="args">The process arguments, in order; may be empty.</param>
-    /// <param name="selfTestEnvironmentValue">
-    /// The value of <see cref="SelfTestEnvironmentVariable"/>, or null/empty if
-    /// it is not set. Consulted only when no command-line switch names the
-    /// self-test, so an explicit <c>--selftest=false</c> always wins.
-    /// </param>
-    /// <returns>The parsed options; the backend defaults to OpenGL.</returns>
-    /// <exception cref="ArgumentException">
-    /// An argument is not a recognised backend or switch, or a switch carries a
-    /// value that is not a boolean. Program turns this into a logged usage
-    /// error rather than a stack trace.
-    /// </exception>
+    // Throws ArgumentException on a bad argument; Program logs it as a usage error.
+    // An explicit --selftest=false beats the environment value.
     public static DemoStartupOptions Parse(IReadOnlyList<string> args, string? selfTestEnvironmentValue)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -153,10 +105,7 @@ internal sealed record DemoStartupOptions(
             if (string.IsNullOrWhiteSpace(raw))
                 continue;
 
-            // Leading dashes and slashes are optional and interchangeable, and
-            // `name=value` is accepted for every switch — the same shape the
-            // pre-existing `backend=` spelling used, kept so an old command
-            // line still runs.
+            // Leading dashes and slashes are optional; every switch takes name=value.
             string token = raw.Trim();
             string body = token.TrimStart('-', '/');
             int equals = body.IndexOf('=');
@@ -177,50 +126,31 @@ internal sealed record DemoStartupOptions(
                     fullscreenCycle = ParseInterval(value, token);
                     continue;
 
-                // Enters play mode as the scene finishes loading rather than
-                // waiting for F8. Off by default for the same reason the
-                // self-test is: the resting state of this host is an editor, and
-                // a build that seizes the cursor on its own is a surprise.
                 case "play":
                     play = ParseBoolean(value, token);
                     continue;
 
-                // Renders each of a handful of startup frames into an offscreen
-                // target as well as the window, which is the only coverage the
-                // D3D render-target paths get: those two backends have no
-                // headless device fixture, and their failure modes are debug
-                // layer messages rather than wrong pixels. Off by default
-                // because it draws the scene twice while it runs.
+                // Draws startup frames into an offscreen target too. The D3D
+                // backends have no headless fixture, so this is their coverage.
                 case "offscreen-probe" or "offscreenprobe":
                     offscreenProbe = ParseBoolean(value, token);
                     continue;
 
-                // Which rendering strategy the run starts on, by name. The
-                // rotation key is fine for a person and useless to an
-                // unattended run, so a pipeline that is never selected is a
-                // pipeline nothing ever gates. Names are not validated here:
-                // the set is the renderer's, it differs per backend, and this
-                // type deliberately knows nothing about either.
+                // Not validated here: the pipeline set is the renderer's and
+                // differs per backend.
                 case "pipeline":
                     pipeline = ParseName(value, token);
                     continue;
 
-                // Shadows off, for measuring what they cost and for telling a
-                // shadow bug from a lighting one in a single run.
                 case "shadows":
                     shadows = ParseBoolean(value, token);
                     continue;
 
-                // Per-phase frame timing in the periodic stats line. Off by
-                // default because a profile nobody reads is still work, and the
-                // scopes would otherwise be paid for in a shipped game.
                 case "profile":
                     profile = ParseBoolean(value, token);
                     continue;
 
-                // Pace Present to the display. Off by default because the demo
-                // is the measurement instrument and a frame time taken under
-                // vsync measures the monitor; the editor shell turns it on.
+                // Off by default: a frame time under vsync measures the monitor.
                 case "vsync" or "v-sync":
                     vsync = ParseBoolean(value, token);
                     continue;
@@ -249,145 +179,96 @@ internal sealed record DemoStartupOptions(
                     };
                     continue;
 
-                // The graphics validation layer. Defaults to the build flavour
-                // (on in Debug, off in Release); this overrides either way.
-                // Any measurement taken with it on is measuring validation.
+                // Overrides the build default (on in Debug, off in Release).
                 case "debug-layer" or "debuglayer":
                     debugLayer = ParseBoolean(value, token);
                     continue;
 
-                // Which GPU to run on, matched as a substring of the adapter
-                // name. On a desktop with both a discrete and an integrated
-                // part this is the whole low-power test rig.
+                // Substring of the adapter name.
                 case "adapter" or "gpu":
                     adapter = ParseName(value, token);
                     continue;
 
-                // Window size, for measuring how frame cost scales with pixels.
                 case "size" or "resolution":
                     windowSize = ParseSize(value, token);
                     continue;
 
-                // Side length of the demo's scattered-brush grid. The world
-                // grows with it, so this adds content without changing density.
+                // Side length of the scattered-brush grid.
                 case "parts" or "scatter":
                     scatterGrid = ParseCount(value, token);
                     continue;
 
-                // How many shared-brush props to scatter. A COUNT, not a grid
-                // side, because the question this one answers is "what do N
-                // repeats of one thing cost" and N is the axis.
+                // A count, not a grid side.
                 case "props":
                     propCount = ParseCount(value, token);
                     continue;
 
-                // Run a .smap bundle from disk instead of the authored demo
-                // scene. The path names a DIRECTORY, because a map is a folder
-                // of text: map.json now, scripts beside it later.
+                // A .smap bundle is a directory.
                 case "map" or "load-map" or "loadmap":
                     loadMapPath = ParseName(value, token);
                     continue;
 
-                // Write the finished scene out as a bundle. Naming both paths
-                // copies one map to another through the engine's own reader and
-                // writer, which is the cheapest end-to-end check the format has.
                 case "save-map" or "savemap":
                     saveMapPath = ParseName(value, token);
                     continue;
 
-                // Open a project folder: its Assets become the content root and
-                // its startup map is what runs. The path names the .spectraproj
-                // file or the folder containing it, because both are what a
-                // person means.
+                // The .spectraproj file or the folder containing it.
                 case "project":
                     projectPath = ParseName(value, token);
                     continue;
 
-                // Export the running scene as a standalone project folder.
                 case "save-project" or "saveproject":
                     saveProjectPath = ParseName(value, token);
                     continue;
 
-                // Boot out of the project's cooked packs instead of its loose
-                // Assets folder. This is the only configuration in which the
-                // cook is actually being tested: a run with loose files
-                // available resolves everything the pack is missing without
-                // saying so.
+                // Boot from the cooked packs, with no loose files to fall back on.
                 case "pack" or "packs":
                     bootFromPacks = ParseBoolean(value, token);
                     continue;
 
-                // ...with loose files laid over the packs, so an edited texture
-                // shadows the cooked one with no rebuild. Only means anything
-                // beside --pack; on its own it is what the demo already does.
+                // Loose files over the packs. Only valid with --pack.
                 case "dev":
                     devContentOverlay = ParseBoolean(value, token);
                     continue;
 
-                // Shut the session down once the export has been written, so an
-                // unattended caller gets its bundle and its process back.
-                //
-                // It cannot be an exit-before-a-window like
-                // --export-entity-schema is: a schema is a fact about the build
-                // and a saved scene is the scene, which does not exist until the
-                // render thread has created its meshes and textures. So the run
-                // is real and it is exactly one frame long, which is the shortest
-                // honest form of the switch.
+                // The run lasts one real frame: a scene can't be saved before
+                // the render thread has created its meshes and textures.
                 case "exit-after-save" or "exitaftersave":
                     exitAfterSave = ParseBoolean(value, token);
                     continue;
 
-                // Write this build's entity schemas out as a .sentdef and exit
-                // without opening a window. A measurement of the process rather
-                // than a session, like --interop-probe: an editor that has never
-                // loaded this assembly reads the file, and there is no scene,
-                // no renderer and no frame involved in producing it.
+                // Writes the .sentdef and exits without opening a window.
                 case "export-entity-schema" or "exportentityschema":
                     exportEntitySchemaPath = ParseName(value, token);
                     continue;
 
-                // Render one frame into the shared present target and into an
-                // ordinary sRGB target at once, compare the two byte for byte,
-                // print a verdict and exit. A measurement rather than a session,
-                // like --interop-probe: it runs on a COMPOSITED surface with no
-                // window at all, because the shared target it exists to check
-                // only exists there, and it ends itself once it has an answer.
+                // Runs on a composited surface with no window, then exits.
                 case "viewport-compare" or "viewportcompare":
                     viewportCompare = ParseBoolean(value, token);
                     continue;
 
-                // Measure how the engine's frame rate follows the shared
-                // target's consumer, print the table and exit. A composited
-                // surface with no window, like --viewport-compare, and for the
-                // same reason: the hand-over being paced exists nowhere else.
+                // Same: no window, prints its table and exits.
                 case "pacing-probe" or "pacingprobe":
                     pacingProbe = ParseBoolean(value, token);
                     continue;
             }
 
-            // Anything else is the positional backend — once. A second one is
-            // a typo worth failing on rather than silently ignoring, which is
-            // how a misspelled switch used to disappear.
+            // Anything else is the positional backend. A second one is a typo.
             if (backend is not null)
                 throw new ArgumentException($"Unexpected argument '{token}'. {Usage}");
 
             backend = ParseBackend(body, token);
         }
 
-        // Refused rather than ignored. On its own the switch would end the run
-        // one frame in with nothing written, which reads as the engine crashing
-        // at startup; and a caller who meant to name a path and mistyped it would
-        // get exactly that with no message.
+        // Alone it would end the run one frame in with nothing written.
         if (exitAfterSave && saveMapPath is null && saveProjectPath is null)
         {
             throw new ArgumentException(
                 $"'--exit-after-save' needs something to save: name --save-map or --save-project. {Usage}");
         }
 
-        // Refused rather than ignored, for the reason above. A pack list is a
-        // PROJECT's, so --pack with nothing to read one from would silently run
-        // the authored demo scene off loose files and look like a passing cooked
-        // run; and --dev alone asks for an overlay over packs nobody mounted.
+        // Without a project, --pack would run the demo scene off loose files
+        // and look like a passing cooked run.
         if (bootFromPacks && projectPath is null)
         {
             throw new ArgumentException(
@@ -400,12 +281,8 @@ internal sealed record DemoStartupOptions(
                 $"'--dev' only means something over a pack mount: name --pack too. {Usage}");
         }
 
-        // Refused BY NAME rather than attempted, exactly as the editor shell
-        // refuses an embedded GL viewport: a composited surface carries no GL
-        // context and no window handle, so letting the renderer discover that
-        // would report a design boundary as a driver failure. OpenGL also has
-        // no shared-target implementation at all, so there would be nothing to
-        // compare against even with a context.
+        // OpenGL has no shared render target, and a composited surface has no
+        // GL context. Refuse here so it doesn't surface as a driver failure.
         if (viewportCompare && (backend ?? GraphicsBackend.OpenGL) == GraphicsBackend.OpenGL)
         {
             throw new ArgumentException(
@@ -413,9 +290,6 @@ internal sealed record DemoStartupOptions(
                 Usage);
         }
 
-        // Refused for exactly the same reason, said separately rather than
-        // folded together: a shared message naming two switches is a message
-        // that names the one the caller did not type.
         if (pacingProbe && (backend ?? GraphicsBackend.OpenGL) == GraphicsBackend.OpenGL)
         {
             throw new ArgumentException(
@@ -448,9 +322,6 @@ internal sealed record DemoStartupOptions(
                 exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout);
     }
 
-    // A switch that takes a name needs one: a bare --pipeline says nothing
-    // about which, and silently meaning "leave it alone" would make a typo in
-    // the name look like a working run of the default pipeline.
     private static string ParseName(string? value, string origin)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -459,8 +330,7 @@ internal sealed record DemoStartupOptions(
         return value.Trim();
     }
 
-    // "1280x720" or "1280X720". Both halves must be positive: a zero-sized
-    // window is not creatable and the failure would surface three layers down.
+    // "1280x720" or "1280X720".
     private static (int Width, int Height) ParseSize(string? value, string origin)
     {
         string[] parts = (value ?? string.Empty).Split('x', 'X');
@@ -483,7 +353,7 @@ internal sealed record DemoStartupOptions(
         return count;
     }
 
-    // Aliases mirror the SpectraShade compiler CLI for consistency.
+    // Same aliases as the ssc CLI.
     private static GraphicsBackend ParseBackend(string value, string token) =>
         value.ToLowerInvariant() switch
         {
@@ -494,10 +364,7 @@ internal sealed record DemoStartupOptions(
             _ => throw new ArgumentException($"Unknown backend '{token}'. Try: opengl, d3d11, d3d12."),
         };
 
-    // A bare --fullscreen-cycle means the harness's own default interval; a
-    // value overrides it. Zero or negative would spin the window-mode latch as
-    // fast as the pump runs, which measures nothing and cannot be watched, so
-    // it is refused rather than clamped.
+    // No value means the harness default.
     private static TimeSpan ParseInterval(string? value, string origin)
     {
         if (value is null)
@@ -514,8 +381,7 @@ internal sealed record DemoStartupOptions(
         return TimeSpan.FromSeconds(seconds);
     }
 
-    // A bare switch means "on"; an explicit value is honoured so a harness can
-    // pass --selftest=false to override an inherited environment variable.
+    // A bare switch means on.
     private static bool ParseBoolean(string? value, string origin)
     {
         if (value is null)

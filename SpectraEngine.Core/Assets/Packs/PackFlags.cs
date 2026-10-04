@@ -14,15 +14,9 @@ public enum PackFlags : uint
 
     /// <summary>
     /// The entry table is sorted ascending by <see cref="PackEntry.AssetId"/>
-    /// compared as an unsigned 128-bit value. <b>Required to be set in v1.</b>
+    /// compared as an unsigned 128-bit value. Required in v1, so a reader can
+    /// refuse an unsorted table instead of binary-searching it.
     /// </summary>
-    /// <remarks>
-    /// It is a flag rather than an unstated invariant so a reader can refuse an
-    /// unsorted table outright instead of binary-searching one and silently
-    /// missing entries. A miss on a lookup degrades to a magenta placeholder, so
-    /// an unsorted pack would present as content that is intermittently absent
-    /// rather than as a corrupt file.
-    /// </remarks>
     EntriesSortedByAssetId = 1u << 0,
 
     /// <summary>
@@ -37,9 +31,8 @@ public enum PackFlags : uint
     IsModPack = 1u << 2,
 
     /// <summary>
-    /// A name table is present. Emitted by default: it costs roughly 40 bytes an
-    /// asset and it is what makes every log line, every inspect row and every bug
-    /// report readable rather than a list of 128-bit numbers.
+    /// A name table is present. Emitted by default, so logs and inspect output
+    /// can show paths instead of ids.
     /// </summary>
     NameTablePresent = 1u << 3,
 }

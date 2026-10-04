@@ -6,16 +6,9 @@ using System.IO;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// The colour verdict <c>--viewport-compare</c> leaves behind for the shell.
+/// The colour verdict <c>--viewport-compare</c> leaves on disk for the shell,
+/// which runs in another process.
 /// </summary>
-/// <remarks>
-/// <b>It exists because a double sRGB encode is invisible to everything else.</b>
-/// The comparison runs in the demo executable against a windowless composited
-/// surface, and the thing that has to act on it is the editor shell, which is a
-/// different process. What matters here is that a verdict can only be claimed for
-/// the machine it was actually measured on, and that nothing about the file can
-/// stop a shell from starting.
-/// </remarks>
 public sealed class ViewportCompareStampTests
 {
     private static string TempPath() =>
@@ -47,8 +40,7 @@ public sealed class ViewportCompareStampTests
 
         ViewportCompareStamp.IsGreenFor(stamp, GraphicsBackend.D3D11).ShouldBeTrue();
 
-        // D3D11 hands its resolve target over directly and D3D12 goes through a
-        // D3D11On12 bridge, so a verdict for one says nothing about the other.
+        // D3D12 goes through a D3D11On12 bridge, D3D11 does not.
         ViewportCompareStamp.IsGreenFor(stamp, GraphicsBackend.D3D12).ShouldBeFalse();
     }
 
@@ -62,8 +54,7 @@ public sealed class ViewportCompareStampTests
     [Fact]
     public void A_red_verdict_is_recorded_and_read_back_as_red()
     {
-        // Recorded either way. A stamp that only ever appeared on success would
-        // let a machine keep the previous run's green answer after breaking.
+        // Otherwise a broken machine keeps the last run's green stamp.
         string path = TempPath();
         new ViewportCompareStamp("Adapter A", GraphicsBackend.D3D11, false, DateTime.UtcNow)
             .Save(path).ShouldBeTrue();
@@ -83,9 +74,7 @@ public sealed class ViewportCompareStampTests
         File.WriteAllText(path, "{ \"adapter\": \"Adapter A\", ");
         ViewportCompareStamp.Load(path).ShouldBeNull();
 
-        // A stamp naming no backend is a verdict about nothing, so it is the
-        // same as no stamp at all rather than one that matches whatever it is
-        // asked about.
+        // No backend named: must not match whatever backend is asked about.
         File.WriteAllText(path, "{ \"green\": true }");
         ViewportCompareStamp.Load(path).ShouldBeNull();
     }

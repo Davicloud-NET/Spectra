@@ -12,72 +12,17 @@ using System.Numerics;
 namespace SpectraEngine.Core.Assets;
 
 /// <summary>
-/// Loads on-disk content and owns the GPU resources it creates from it.
+/// Loads content and owns the GPU resources it creates from it. Callers never
+/// dispose what they get from here; they call an <c>Unload*</c> method or let
+/// <see cref="ReleaseGraphicsResources"/> clean up. Decoding runs on the thread
+/// pool; GPU creation and destruction happen on the render thread. Missing
+/// content degrades to <see cref="DefaultMaterial"/> or the placeholder texture
+/// with a warning instead of throwing.
 /// </summary>
-/// <remarks>
-/// <para><b>Ownership.</b> Every <see cref="Texture"/> handed out by this class
-/// was created by the manager and is destroyed by it — through
-/// <see cref="Renderer.DestroyTexture"/>, so the creating renderer also drops it
-/// from its tracking list. Callers must never dispose a texture they got from
-/// here; they call <see cref="UnloadTexture"/>, or let
-/// <see cref="ReleaseGraphicsResources"/> clean up at shutdown. Textures a
-/// caller creates itself (e.g. a procedural one) stay the caller's problem.
-/// </para>
-/// <para><b>Threading.</b> Image decoding is pure CPU and runs on the thread
-/// pool; GPU texture creation and destruction happen on the render thread only,
-/// matching the engine's contract. Decoded pixel buffers cross the boundary
-/// through a <see cref="ConcurrentQueue{T}"/> that
-/// <see cref="PumpPendingUploads"/> drains once per frame — the same shape as
-/// <see cref="ShaderHotReloader.PumpPendingReloads"/>. Every public member below
-/// documents which thread may call it.
-/// </para>
-/// <para><b>Materials.</b> <see cref="LoadMaterial"/> parses a
-/// <c>.spectramat</c> file (see <see cref="MaterialParser"/>) and resolves its
-/// texture references through the same texture cache, so materials naming an
-/// image with the same sampler state share one GPU texture (differing
-/// filter/wrap/colour-space gets its own — see <see cref="LoadTexture"/>). Content problems
-/// never propagate as exceptions:
-/// a missing material falls back to <see cref="DefaultMaterial"/> and a missing
-/// texture to the placeholder checker, both with a warning.
-/// </para>
-/// <para><b>Models.</b> <see cref="LoadModel"/> and <see cref="RequestModel"/>
-/// live in <c>AssetManager.Models.cs</c> and follow the same division of labour:
-/// the import (see <see cref="ModelImporter"/>) is pure CPU and may run on the
-/// thread pool, while mesh creation and material resolution happen on the render
-/// thread inside <see cref="PumpPendingUploads"/>.
-/// </para>
-/// <para><b>Where the bytes come from.</b> Every texture and material read goes
-/// through <see cref="Content"/>, the mounted <see cref="ContentSourceStack"/>,
-/// and never through <see cref="System.IO.File"/> directly — so a packed build
-/// changes what is mounted and nothing else. That matters most because there are
-/// <i>three</i> such reads and they must agree: the decode behind
-/// <see cref="LoadTexture"/>, the existence probe that decides whether a
-/// material's texture slot gets real content or the placeholder, and the parse
-/// behind <see cref="LoadMaterial"/>. Convert two of the three and a packed
-/// build resolves no material texture at all while every log line still reads
-/// healthy.</para>
-/// <para><b>An image read FORKS, and the fork is a fourth thing those reads must
-/// agree about.</b> A texture's bytes are the cooked <c>.simage</c> beside the
-/// authored file when a mounted source has one, and the authored file otherwise;
-/// <see cref="ImageContentPath.Resolve"/> is the single expression of that rule,
-/// shared with <c>scook verify</c>, and the material slot's existence probe asks
-/// it too. The cooked branch runs no decoder and performs no row flip - a
-/// block-compressed payload cannot be flipped at all - and the flip that
-/// establishes the engine's v = 0 convention has therefore already happened, at
-/// cook time, through this same <see cref="ImageDecoder"/>.</para>
-/// <para><b>A cooked upload carries its <see cref="ContentBlob"/> across the
-/// queue.</b> The payload is a span straight into a mounted pack's memory-mapped
-/// view, so whatever hands it to the render thread has to hand the reference over
-/// with it: unmapping a view under a live span is an access violation with no
-/// managed stack rather than an exception. Every path that drops a queued upload
-/// disposes it, which is why the disposal sits in the pump's loop rather than
-/// inside <c>ApplyUpload</c>'s several early returns.</para>
-/// <para><b>Degradation is not conditional on the stack.</b> A missing material
-/// is <see cref="DefaultMaterial"/> and a missing texture is the magenta
-/// checker, whatever is mounted and whether or not the stack is strict: the
-/// probes use <see cref="IContentSource.Exists"/>, which never throws, and every
-/// open sits inside the same try that already caught an unreadable file.</para>
-/// </remarks>
+// Every texture and material read goes through Content, never System.IO.File,
+// and every existence probe asks the same stack on the same resolved path
+// (ImageContentPath.Resolve). If a probe and an open disagree, a packed build
+// binds the placeholder into every material and logs nothing.
 public sealed partial class AssetManager : IDisposable
 {
     /// <summary>Name carried by <see cref="DefaultMaterial"/>.</summary>
@@ -86,18 +31,11 @@ public sealed partial class AssetManager : IDisposable
     /// <summary>Name carried by <see cref="NeutralMaterial"/>.</summary>
     public const string NeutralMaterialName = "neutral";
 
-    // The built-in lit shader's diffuse sampler and tint uniform. The fallback
-    // material fills them by name because it is built without ever reading a
-    // material file.
     private const string DiffuseSlotName = "uDiffuse";
     private const string BaseColorParameter = "uBaseColor";
 
-    // The surface set the deferred geometry pass writes into the G-buffer. Not
-    // read by the forward lit shader, which ignores them by name like any other
-    // unknown uniform; seeded on every material anyway so an existing
-    // .spectramat that predates PBR renders as a plausible surface in both
-    // paths instead of a fully metallic mirror, which is what a zeroed
-    // roughness and a metallic left over from the previous draw would give.
+    // Seeded on every material: one program draws every deferred surface, so an
+    // unset parameter keeps the previous draw's value.
     private const string RoughnessParameter = "uRoughness";
     private const string MetallicParameter = "uMetallic";
     private const string AmbientOcclusionParameter = "uAmbientOcclusion";
@@ -106,73 +44,44 @@ public sealed partial class AssetManager : IDisposable
 
     private readonly ILogger _logger;
 
-    // Guards _textures (and the TextureAsset.LoadFailed / PendingDecodes flags)
-    // only. Held for dictionary operations, never across a decode or a GPU call.
+    // Guards _textures and the TextureAsset.LoadFailed / PendingDecodes flags.
+    // Never held across a decode or a GPU call.
     private readonly object _sync = new();
 
-    // Path -> the variants loaded for it. One image can legitimately be loaded
-    // more than once, because sampler state is baked into the GPU texture on
-    // every backend: a material asking for nearest/clamp and one asking for
-    // linearmipmap/repeat need DIFFERENT textures, and collapsing them onto
-    // whichever loaded first silently rendered one of the two wrong (a clamped
-    // tiling floor smears its edge texels instead of repeating). Variants are
-    // in load order, so a path-only lookup resolves deterministically to the
-    // first one loaded; buckets hold exactly one entry for all normal content.
+    // Path -> variants, in load order. Sampler state is baked into the GPU
+    // texture, so one image loaded with two filter/wrap/colour-space
+    // combinations needs two textures.
     private readonly Dictionary<string, List<TextureAsset>> _textures =
         new(StringComparer.OrdinalIgnoreCase);
 
-    // Guards _materials only. A separate lock from _sync because building a
-    // material calls LoadTexture, which takes _sync — nesting the two would be
-    // a lock-ordering hazard waiting to happen.
+    // Separate from _sync: building a material calls LoadTexture, which takes _sync.
     private readonly object _materialSync = new();
     private readonly Dictionary<string, Material> _materials = new(StringComparer.OrdinalIgnoreCase);
 
-    // Interned material paths that path normalisation rejects outright, so
-    // ResolveMaterial warns about each exactly once instead of once per compile.
-    // They never reach _materials — there is no key to file them under. Guarded
-    // by _materialSync.
+    // Paths normalisation rejects, so each is warned about once. Guarded by _materialSync.
     private readonly HashSet<string> _unusableMaterialPaths = new(StringComparer.OrdinalIgnoreCase);
 
-    // Built in the constructor, never replaced: DefaultMaterial has to be
-    // non-null from the moment the manager exists, including before a renderer
-    // is attached and after teardown. AttachRenderer fills in its shader and
-    // placeholder binding; ReleaseGraphicsResources strips them again.
+    // Never replaced, so DefaultMaterial is non-null before attach and after teardown.
     private readonly Material _defaultMaterial;
 
-    // The surface a face wearing MaterialRef.Default gets. Built beside the
-    // default material and completed by AttachRenderer in the same way, because
-    // the two differ in exactly one thing: what they MEAN. The default material
-    // is the answer to a reference that failed and wears the magenta checker so
-    // the failure is unmistakable; this one is the answer to a face that never
-    // named a material at all, which is not a failure and must not look like one.
+    // For faces that name no material. Not the default material: that one
+    // means a reference failed.
     private readonly Material _neutralMaterial;
 
-    // One white texel, so the neutral material is its base colour and nothing
-    // else. Written on the render thread in AttachRenderer, read from any thread
-    // in PlaceholderBoundCount, so volatile for the same reason _placeholder is.
+    // One white texel. Written on the render thread, read from any thread.
     private volatile Texture? _white;
 
     // Watcher thread -> render thread: absolute paths of files that changed.
     private readonly ConcurrentQueue<string> _changedFiles = new();
 
-    // One watcher per directory, not per file: a texture folder holds many
-    // assets, and a watcher costs a native buffer plus a thread-pool
-    // registration. Render thread only. (ShaderHotReloader's leak bug was
-    // overwriting a registration without disposing the old watcher — here a
-    // directory is registered at most once, and every watcher is disposed in
-    // StopWatchingIfUnused / ReleaseGraphicsResources.)
+    // One watcher per directory, not per file. Render thread only.
     private readonly Dictionary<string, FileSystemWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
 
-    // Reused across pumps so a frame with pending reloads does not allocate a
-    // fresh set; null until the first reload ever arrives.
+    // Reused across pumps to avoid a per-frame allocation.
     private HashSet<string>? _reloadScratch;
-
-    // Same reuse for the handles a change resolves to. Collected under the lock
-    // and re-decoded outside it, so no decode is ever queued while _sync is held.
     private List<TextureAsset>? _reloadTargets;
 
-    // Written on the render thread in AttachRenderer, read from any thread in
-    // RequestTexture — volatile so background callers see the publication.
+    // Written on the render thread, read from any thread.
     private volatile Texture? _placeholder;
 
     private Renderer? _renderer;
@@ -189,30 +98,20 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// Creates a manager over an explicit content root — used by tests, and by
-    /// tools that ship content somewhere other than beside the executable. The
-    /// content stack is a single <see cref="LooseFileSource"/> over that folder.
+    /// Creates a manager over an explicit content root. The content stack is a
+    /// single <see cref="LooseFileSource"/> over that folder.
     /// </summary>
-    /// <param name="hotReloadEnabled">
-    /// Whether to watch loaded files for changes. Defaults to on for the
-    /// convenience constructor when the content root came from the source tree.
-    /// </param>
     public AssetManager(ILogger logger, string contentRoot, bool hotReloadEnabled = true)
         : this(logger, contentRoot, CreateLooseStack(logger, contentRoot), hotReloadEnabled)
     {
     }
 
     /// <summary>
-    /// Creates a manager over an explicit content stack — the entry point a
-    /// packed build, a mod overlay or a cook uses.
+    /// Creates a manager over an explicit content stack, for a packed build, a
+    /// mod overlay or a cook. The stack decides where texture and material
+    /// bytes come from; <paramref name="contentRoot"/> stays the filesystem
+    /// anchor for model import and source paths.
     /// </summary>
-    /// <remarks>
-    /// <paramref name="contentRoot"/> is still required and is still the
-    /// filesystem anchor: model import and the tools that copy content around
-    /// work in real paths, and an asset's <see cref="TextureAsset.SourcePath"/>
-    /// is stated against it. What the stack decides is where the <i>bytes</i> of
-    /// a texture or a material come from.
-    /// </remarks>
     public AssetManager(
         ILogger logger, string contentRoot, ContentSourceStack content, bool hotReloadEnabled = true)
     {
@@ -221,36 +120,22 @@ public sealed partial class AssetManager : IDisposable
         ArgumentNullException.ThrowIfNull(content);
 
         _logger = logger;
-        // Resolved once here, not recomputed per lookup: resolution walks the
-        // filesystem, and every Load/Request would otherwise pay for it.
         ContentRootPath = Path.GetFullPath(contentRoot);
         HotReloadEnabled = hotReloadEnabled;
         Content = content;
 
-        // Seeded like every other material the manager builds, which leaves it
-        // with a white base colour: the magenta placeholder checker
-        // AttachRenderer binds shows through unmodulated, so a surface that fell
-        // back to the default material is unmistakable on screen.
         _defaultMaterial = new Material(null) { Name = DefaultMaterialName };
         SeedBuiltInParameters(_defaultMaterial);
 
-        // Seeded the same way, then tinted: the white texel AttachRenderer binds
-        // shows the base colour through unmodulated, so this is a flat grey
-        // surface and nothing more. #8C8C99 is the value dev_grid.spectramat
-        // names, and it goes through the same sRGB-to-linear conversion the
-        // material parser applies to a colour directive, so the two agree.
         _neutralMaterial = new Material(null) { Name = NeutralMaterialName };
         SeedBuiltInParameters(_neutralMaterial);
         _neutralMaterial.SetVector3(BaseColorParameter, NeutralBaseColorLinear);
     }
 
-    // #8C8C99 in linear light. Computed rather than written out, because a
-    // transcribed linear triple is a number nobody can check against the hex.
+    // #8C8C99, the base colour dev_grid.spectramat names.
     private static readonly Vector3 NeutralBaseColorLinear =
         ColorSpace.SrgbToLinear(new Vector3(140f / 255f, 140f / 255f, 153f / 255f));
 
-    // The stack a content-root-only caller gets: one loose folder, not strict,
-    // which is what the engine has always done.
     private static ContentSourceStack CreateLooseStack(ILogger logger, string contentRoot)
     {
         ArgumentNullException.ThrowIfNull(logger);
@@ -263,13 +148,11 @@ public sealed partial class AssetManager : IDisposable
 
     /// <summary>
     /// Absolute content root every relative asset path resolves against.
-    /// Immutable; any thread.
     /// </summary>
     public string ContentRootPath { get; }
 
     /// <summary>
-    /// Where content bytes come from. Immutable reference; the stack itself is
-    /// thread-safe to read and is only mounted at start-up. Any thread.
+    /// Where content bytes come from. Mounted at start-up; safe to read from any thread.
     /// </summary>
     public ContentSourceStack Content { get; }
 
@@ -281,16 +164,14 @@ public sealed partial class AssetManager : IDisposable
     public bool HotReloadEnabled { get; set; }
 
     /// <summary>
-    /// The 8x8 magenta/black checker bound while an async load is still in
-    /// flight (and after a failed load), so nothing ever renders untextured.
-    /// Null until <see cref="AttachRenderer"/> runs. Render thread.
+    /// The magenta/black checker bound while an async load is in flight and
+    /// after a failed load. Null until <see cref="AttachRenderer"/> runs.
     /// </summary>
     public Texture? PlaceholderTexture => _placeholder;
 
     /// <summary>
-    /// Number of texture assets currently cached. Counts sampler-state variants
-    /// separately, so one image loaded with two different filter/wrap
-    /// combinations counts twice. Any thread.
+    /// Number of texture assets currently cached, counting each sampler-state
+    /// variant of an image. Any thread.
     /// </summary>
     public int TextureCount
     {
@@ -307,16 +188,10 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// Whether this material path is known not to resolve.
+    /// Whether this material path is known not to resolve. Answered from the
+    /// cache without touching the disk, so a material nothing has tried to load
+    /// reports false.
     /// </summary>
-    /// <remarks>
-    /// <b>Answered from the CACHE, never from the disk.</b> The inspector asks
-    /// this per publish, and a filesystem probe there would be a stat per face
-    /// per frame inside the snapshot path. It therefore reports what has been
-    /// LEARNED: a path whose load fell back, or one normalisation refused.
-    /// A material that has never been asked for reports false, which is right -
-    /// nothing is known to be wrong with it.
-    /// </remarks>
     public bool IsMaterialMissing(string relativePath)
     {
         if (string.IsNullOrWhiteSpace(relativePath)) return false;
@@ -328,8 +203,6 @@ public sealed partial class AssetManager : IDisposable
         }
         catch (ArgumentException)
         {
-            // A path that cannot even be normalised is missing in the only
-            // sense that matters: nothing will ever resolve it.
             return true;
         }
 
@@ -344,15 +217,10 @@ public sealed partial class AssetManager : IDisposable
 
     /// <summary>
     /// Forgets that a material path failed, so the next load reads the disk.
-    /// </summary>
-    /// <remarks>
-    /// <b>A failed load is cached as the fallback, which makes it permanent.</b>
-    /// Authoring the file afterwards changes nothing for the rest of the
-    /// session, and the editor is exactly where somebody authors one. Called
-    /// before an assignment so that a material created a moment ago resolves.
+    /// A failed load is otherwise cached as the fallback for the whole session.
     /// Render thread.
-    /// </remarks>
-    /// <returns>Whether an entry was actually dropped.</returns>
+    /// </summary>
+    /// <returns>Whether an entry was dropped.</returns>
     public bool ForgetFailedMaterial(string relativePath)
     {
         if (string.IsNullOrWhiteSpace(relativePath)) return false;
@@ -371,8 +239,7 @@ public sealed partial class AssetManager : IDisposable
         {
             bool forgotten = _unusableMaterialPaths.Remove(key);
 
-            // Only an entry that IS the fallback: a real material cached here is
-            // shared with everything already drawing it.
+            // Only the fallback. A real material here is shared with what draws it.
             if (_materials.TryGetValue(key, out Material? material) &&
                 ReferenceEquals(material, _defaultMaterial))
             {
@@ -391,64 +258,27 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// The built-in fallback material, used whenever a surface names a material
-    /// that is missing or unreadable — and by anything that has no material of
-    /// its own yet.
+    /// The fallback for a material that is missing or unreadable: the lit
+    /// shader with the magenta checker. Never null; it has no shader or texture
+    /// until <see cref="AttachRenderer"/> runs.
     /// </summary>
-    /// <remarks>
-    /// Never null, at any point in this manager's life: that is the whole point
-    /// of it. It is what keeps a bad content reference a magenta surface and a
-    /// warning line instead of a null-reference crash in the draw loop. Before
-    /// <see cref="AttachRenderer"/> it carries no shader and no texture (nothing
-    /// can draw yet anyway); afterwards it is the renderer's default lit shader,
-    /// a white tint, and the placeholder checker.
-    /// </remarks>
     public Material DefaultMaterial => _defaultMaterial;
 
     /// <summary>
     /// The surface for geometry that names no material at all: a face carrying
-    /// <see cref="Bsp.MaterialRef.Default"/>. Flat grey, never the magenta
-    /// checker.
+    /// <see cref="Bsp.MaterialRef.Default"/>. Flat grey, not the error checker.
+    /// Never null; it has no shader or texture until
+    /// <see cref="AttachRenderer"/> runs.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Naming nothing is not the same as naming something that is missing,
-    /// and this is the whole distinction.</b> A brush face with no material is
-    /// the ordinary state of blockout geometry: the baseplate of a new project,
-    /// every freshly inserted block. Answering it with
-    /// <see cref="DefaultMaterial"/> put the engine's error texture under the
-    /// first thing every user ever builds, with nothing wrong and nothing to
-    /// report. A reference that was made and could not be resolved still gets
-    /// the checker and still gets a warning line; that path is untouched.
-    /// </para>
-    /// <para>
-    /// Never null, like <see cref="DefaultMaterial"/>. Before
-    /// <see cref="AttachRenderer"/> it carries no shader and no texture, so a
-    /// headless scene draws nothing with it, which is what the default material
-    /// does at that point too.
-    /// </para>
-    /// </remarks>
     public Material NeutralMaterial => _neutralMaterial;
 
     /// <summary>
     /// How many cached references are standing on a failure right now: textures
     /// whose decode failed, materials whose file could not be read, and sampler
-    /// slots left holding the magenta checker. Any thread.
+    /// slots left holding the magenta checker. A decode still in flight is not
+    /// counted. Any thread.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Standing failures only.</b> A texture whose decode is still in flight
-    /// is bound to the placeholder and is not counted, or the number would flash
-    /// on every load and teach that it means nothing. <see cref="TextureAsset.LoadFailed"/>
-    /// is what separates the two.
-    /// </para>
-    /// <para>
-    /// <b>What it cannot see:</b> a material handed out by a path that never
-    /// entered the cache. Everything in this class routes through
-    /// <see cref="LoadMaterial"/>, so there is no such site today; a new one
-    /// would go uncounted, which is why this remark exists.
-    /// </para>
-    /// </remarks>
+    // Only sees materials in the cache, so every hand-out must go through LoadMaterial.
     public int PlaceholderBoundCount
     {
         get
@@ -466,17 +296,15 @@ public sealed partial class AssetManager : IDisposable
                 }
             }
 
-            // Never nested with _sync: the two locks are taken one after the
-            // other, and nothing inside either one reaches for the other.
+            // The two locks are never nested.
             Texture? placeholder = _placeholder;
             lock (_materialSync)
             {
                 count += _unusableMaterialPaths.Count;
                 foreach (Material material in _materials.Values)
                 {
-                    // A path cached as the fallback is a material file that
-                    // could not be read. Its own bindings are the fallback's, so
-                    // counting them again would count one failure twice.
+                    // A path cached as the fallback counts once, not once more
+                    // for the checker in its slot.
                     if (ReferenceEquals(material, _defaultMaterial)) count++;
                     else count += material.CountBindingsTo(placeholder);
                 }
@@ -492,13 +320,6 @@ public sealed partial class AssetManager : IDisposable
     /// null (or leaving it unset) falls back to
     /// <see cref="Renderer.DefaultShader"/>.
     /// </summary>
-    /// <remarks>
-    /// The asset manager deliberately does not know how to compile shaders — it
-    /// would have to own SpectraShade compilation, backend selection and
-    /// hot-reload registration to do it. A delegate keeps that knowledge in the
-    /// host (which already has all three) without any reflection or runtime
-    /// codegen, so the AOT constraint is untouched.
-    /// </remarks>
     public Func<string, ShaderProgram?>? ShaderResolver { get; set; }
 
     /// <summary>
@@ -507,9 +328,6 @@ public sealed partial class AssetManager : IDisposable
     /// </summary>
     public void Initialize()
     {
-        // First, and unconditionally: when content resolves wrongly the first
-        // question is always which source answered, and every line below this
-        // one is about the loose folder alone.
         _logger.LogInformation("Content sources: {Sources}", Content.Describe());
 
         if (!Directory.Exists(ContentRootPath))
@@ -526,11 +344,7 @@ public sealed partial class AssetManager : IDisposable
             return;
         }
 
-        // Loud and once, naming the reason: the engine keeps working off the
-        // copy beside the executable, so the only symptom of a lost content
-        // root is that saving an asset stops doing anything. A NativeAOT
-        // developer build hits this every run. A host that asked for it gets
-        // the plain line instead, because that is not a loss.
+        // Warn only when hot reload was lost, not when the host turned it off.
         string? reason = ContentRoot.NotFromSourceTreeReason;
         if (reason is null)
         {
@@ -549,7 +363,7 @@ public sealed partial class AssetManager : IDisposable
     /// <summary>
     /// Binds the renderer that will own every texture created from here and
     /// builds the placeholder. Render thread only, after
-    /// <see cref="Renderer.Initialize"/> — it creates a GPU resource.
+    /// <see cref="Renderer.Initialize"/>.
     /// </summary>
     public void AttachRenderer(Renderer renderer)
     {
@@ -569,13 +383,10 @@ public sealed partial class AssetManager : IDisposable
         Texture white = CreateWhiteTexel(renderer);
         _white = white;
 
-        // Complete the fallback material now that a shader and a GPU texture
-        // exist. The instance is reused, not replaced, so anything already
-        // holding it (a mesh, a brush face) starts drawing correctly.
+        // Same instance, so anything already holding it starts drawing.
         _defaultMaterial.Shader = renderer.DefaultShader;
         _defaultMaterial.SetTexture(DiffuseSlotName, 0, placeholder);
 
-        // The same completion for the neutral surface, one texture apart.
         _neutralMaterial.Shader = renderer.DefaultShader;
         _neutralMaterial.SetTexture(DiffuseSlotName, 0, white);
         if (renderer.DefaultShader is null)
@@ -589,22 +400,12 @@ public sealed partial class AssetManager : IDisposable
 
     /// <summary>
     /// Loads a texture synchronously: decode and GPU upload both happen on the
-    /// calling thread, which must be the render thread. This is the load-time
-    /// path — use <see cref="RequestTexture"/> for anything loaded while frames
-    /// are running. Returns the cached handle if the path is already loaded
-    /// <i>with the same sampler state</i>.
+    /// calling thread, which must be the render thread. Use
+    /// <see cref="RequestTexture"/> for anything loaded while frames are
+    /// running. Filter, wrap and colour space are part of the cache identity,
+    /// so the same image with different ones is a second texture. A load that
+    /// failed earlier is retried into the same handle.
     /// </summary>
-    /// <remarks>
-    /// <para><b>Sampler state and colour space are part of the identity.</b>
-    /// Every backend bakes filter, wrap and sRGB-ness into the GPU texture, so
-    /// asking for the same image with different ones loads a second variant
-    /// rather than handing back the first one's — which would silently give one
-    /// of the two callers the wrong mode. The colour space matters most: one
-    /// image legitimately serves as albedo in one material and as a mask in
-    /// another, and those need two GPU textures.</para>
-    /// <para><b>A previously failed load is retried</b>, into the same handle, so
-    /// a material already bound to it picks the result up.</para>
-    /// </remarks>
     /// <param name="relativePath">Path under the content root, e.g. <c>Textures/dev_grid.png</c>.</param>
     /// <exception cref="InvalidOperationException">No renderer is attached.</exception>
     /// <exception cref="IOException">The file could not be read.</exception>
@@ -622,17 +423,13 @@ public sealed partial class AssetManager : IDisposable
         lock (_sync)
         {
             TextureAsset? cached = FindVariant(key, filter, wrap, colorSpace);
-            // A handle whose decode failed is NOT a cache hit: this method is
-            // documented to read the disk, and the file may well be readable now
-            // (authored late, or an art tool that was holding the write lock).
+            // A failed handle is not a hit; the file may be readable now.
             if (cached is not null && !cached.LoadFailed && !cached.IsPlaceholder) return cached;
             failed = cached;
         }
 
         string absolute = ContentRoot.ResolveAbsolute(ContentRootPath, key);
-        // The ticket is taken before the decode so a background decode that
-        // finishes while this one reads loses the race instead of overwriting
-        // the newer result.
+        // Ticket before the decode, so a background decode landing meanwhile is stale.
         long sequence = failed?.NextRequestSequence() ?? 0;
         ImageSource image = ReadImageThroughContent(key);
         Texture texture;
@@ -642,18 +439,13 @@ public sealed partial class AssetManager : IDisposable
         }
         finally
         {
-            // The upload is over the moment CreateTexture returns, so a cooked
-            // image's pack reference is released here rather than being held for
-            // the texture's life. Held longer it would keep a mount alive
-            // forever, which is a leak that presents as an unmountable patch
-            // pack much later.
+            // Release the pack reference now; holding it would keep the mount alive.
             image.Dispose();
         }
 
         if (failed is not null)
         {
-            // Retry: rebind the existing handle rather than making a new one, so
-            // every material that resolved through it recovers.
+            // Rebind the existing handle so materials bound to it recover.
             Texture previous = failed.Texture;
             failed.Texture = texture;
             failed.IsPlaceholder = false;
@@ -670,18 +462,15 @@ public sealed partial class AssetManager : IDisposable
 
         var asset = new TextureAsset(key, absolute, filter, wrap, colorSpace, texture, isPlaceholder: false)
         {
-            // Version 1 means "one texture has been bound", the same state an
-            // async load reaches after its first pump; a hot-reload takes it to 2.
+            // Same state an async load reaches after its first pump.
             Version = 1,
         };
         asset.AppliedSequence = asset.NextRequestSequence();
 
         lock (_sync)
         {
-            // RequestTexture may run on any thread and could have inserted the
-            // same variant while we were decoding; the cache stays
-            // single-instance per variant, so the loser's GPU texture is
-            // destroyed rather than leaked.
+            // RequestTexture on another thread may have inserted the variant
+            // while this one decoded. Theirs wins.
             if (FindVariant(key, filter, wrap, colorSpace) is { } raced)
             {
                 renderer.DestroyTexture(texture);
@@ -696,21 +485,12 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// Requests a texture asynchronously. Returns immediately with a handle
-    /// bound to the placeholder; the file is decoded on the thread pool and the
-    /// real texture is created and swapped in by the next
-    /// <see cref="PumpPendingUploads"/>. Callable from any thread — but
-    /// <see cref="AttachRenderer"/> must already have run, because the
-    /// placeholder is a GPU resource.
+    /// Requests a texture asynchronously. Returns at once with a handle bound
+    /// to the placeholder; the file is decoded on the thread pool and the real
+    /// texture is swapped in by a later <see cref="PumpPendingUploads"/>. Any
+    /// thread, once <see cref="AttachRenderer"/> has run. Asking again while a
+    /// decode is in flight is free; asking again after a failure retries.
     /// </summary>
-    /// <remarks>
-    /// <para>Sampler state and colour space are part of the cache identity,
-    /// exactly as in <see cref="LoadTexture"/>.</para>
-    /// <para>Asking again while a decode is in flight is free (at most one
-    /// decode per handle is queued at a time), and asking again <i>after a
-    /// failure retries</i> — the same contract <see cref="RequestModel"/>
-    /// documents, so the two halves of the manager behave alike.</para>
-    /// </remarks>
     /// <exception cref="InvalidOperationException">No renderer is attached yet.</exception>
     public TextureAsset RequestTexture(
         string relativePath,
@@ -730,9 +510,8 @@ public sealed partial class AssetManager : IDisposable
         {
             if (FindVariant(key, filter, wrap, colorSpace) is { } cached)
             {
-                // Retry a failed handle, but only when nothing is already on its
-                // way back: polling this from a frame loop must not pile up one
-                // decode per frame.
+                // Retry only when no decode is in flight, so polling per frame
+                // does not queue one each time.
                 if (!cached.LoadFailed || cached.PendingDecodes > 0)
                     return cached;
 
@@ -762,11 +541,9 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// Looks up an already-loaded texture without touching the disk — the first
-    /// sampler-state variant loaded for the path (see <see cref="LoadTexture"/>);
-    /// use the overload to ask for a specific one. Any thread, though the
-    /// returned handle's <see cref="TextureAsset.Texture"/> is only safe to read
-    /// on the render thread.
+    /// Looks up an already-loaded texture without touching the disk: the first
+    /// sampler-state variant loaded for the path. Any thread, but read the
+    /// handle's <see cref="TextureAsset.Texture"/> on the render thread only.
     /// </summary>
     public bool TryGetTexture(string relativePath, [MaybeNullWhen(false)] out TextureAsset asset)
     {
@@ -785,9 +562,8 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// Looks up the already-loaded texture for a path <i>and</i> a specific
-    /// sampler state — the exact handle <see cref="LoadTexture"/> would return
-    /// for the same arguments. Any thread.
+    /// Looks up the already-loaded texture for a path and a specific sampler
+    /// state. Any thread.
     /// </summary>
     public bool TryGetTexture(
         string relativePath,
@@ -804,21 +580,11 @@ public sealed partial class AssetManager : IDisposable
 
     /// <summary>
     /// Loads a <c>.spectramat</c> material file and returns the cached instance
-    /// for that path — see <see cref="MaterialParser"/> for the format. Textures
-    /// it references are resolved through the texture cache, so two materials
-    /// naming the same image share one GPU texture.
+    /// for that path; see <see cref="MaterialParser"/> for the format. Render
+    /// thread only. Never throws for content reasons: a missing or unreadable
+    /// file yields <see cref="DefaultMaterial"/>, a missing texture the
+    /// placeholder, each with a warning.
     /// </summary>
-    /// <remarks>
-    /// <para>Render thread only, and synchronous: a material is load-time content
-    /// that should be correct on the frame it first draws, and resolving its
-    /// textures creates GPU resources.</para>
-    /// <para><b>This never throws for content reasons.</b> A missing or
-    /// unreadable file yields <see cref="DefaultMaterial"/>; a missing or
-    /// undecodable texture yields the placeholder checker in that slot; a
-    /// malformed line is skipped. Every one of those is logged as a warning and
-    /// the frame keeps rendering. Only a caller error (no renderer attached, a
-    /// path escaping the content root) is raised.</para>
-    /// </remarks>
     /// <param name="relativePath">Path under the content root, e.g. <c>Materials/wall.spectramat</c>.</param>
     /// <exception cref="InvalidOperationException">No renderer is attached.</exception>
     public Material LoadMaterial(string relativePath)
@@ -835,9 +601,6 @@ public sealed partial class AssetManager : IDisposable
         Material material;
         if (!Content.Exists(key))
         {
-            // The single most common content bug (a renamed or never-authored
-            // material) must degrade, not crash — that is what DefaultMaterial
-            // is for.
             _logger.LogWarning("Material {Path} not found; using the default material", key);
             material = _defaultMaterial;
         }
@@ -849,8 +612,7 @@ public sealed partial class AssetManager : IDisposable
             }
             catch (Exception ex)
             {
-                // Only I/O can land here: the parser reports its problems as
-                // warnings rather than exceptions.
+                // I/O only. The parser warns instead of throwing.
                 _logger.LogError(ex, "Reading material {Path} failed; using the default material", key);
                 material = _defaultMaterial;
             }
@@ -858,9 +620,8 @@ public sealed partial class AssetManager : IDisposable
 
         lock (_materialSync)
         {
-            // Cache the fallback under the requested key too: a repeat request
-            // then costs a dictionary probe instead of another stat() and
-            // another identical warning every time the caller asks.
+            // The fallback is cached too, so a repeat request does not probe
+            // and warn again. ForgetFailedMaterial undoes it.
             if (_materials.TryGetValue(key, out Material? raced))
                 return raced;
             _materials[key] = material;
@@ -871,20 +632,10 @@ public sealed partial class AssetManager : IDisposable
 
     /// <summary>
     /// Turns the interned <see cref="MaterialRef"/> a compiled surface carries
-    /// into a real material — the one point where the CSG pipeline's pure-value
-    /// material references become asset objects.
+    /// into a real material. Render thread only, at mesh-upload time; the
+    /// background compile must not call it. Anything unresolvable yields
+    /// <see cref="DefaultMaterial"/>.
     /// </summary>
-    /// <remarks>
-    /// <para>Render thread only, and intended for mesh-upload time: the compile
-    /// itself must never call this (it runs on a background thread and would be
-    /// touching GPU-owned state). Resolution is a dictionary probe once the
-    /// material is loaded, so resolving a mesh's
-    /// <see cref="Bsp.ChunkMesh.Submeshes"/> per upload is cheap.</para>
-    /// <para>Degrades exactly like <see cref="LoadMaterial"/>: the default
-    /// reference, an id this process never interned, and a path whose file is
-    /// missing all yield <see cref="DefaultMaterial"/> rather than throwing or
-    /// returning null.</para>
-    /// </remarks>
     /// <exception cref="InvalidOperationException">No renderer is attached.</exception>
     public Material ResolveMaterial(MaterialRef reference)
     {
@@ -897,14 +648,9 @@ public sealed partial class AssetManager : IDisposable
         }
         catch (ArgumentException ex)
         {
-            // An interned path is content — MaterialRegistry only trims it and
-            // folds separators, so "../evil.spectramat", "C:/x.spectramat" and
-            // "/" all survive interning and are rejected by path normalisation
-            // here. This runs inside the static-world GPU swap on the render
-            // thread, where a throw is an unrecoverable render-thread crash that
-            // repeats on every compile — the whole point of this method is that
-            // it degrades. Warn once per bad path, then behave like any other
-            // unusable material reference.
+            // MaterialRegistry interns paths like "../x" that normalisation
+            // rejects. This runs inside the static-world swap on the render
+            // thread, so degrade and warn once per path instead of throwing.
             bool first;
             lock (_materialSync) first = _unusableMaterialPaths.Add(path);
             if (first)
@@ -918,9 +664,9 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// Looks up an already-loaded material without touching the disk. Note that
-    /// a path whose file was missing is cached as <see cref="DefaultMaterial"/>,
-    /// so a hit does not prove the file existed. Any thread.
+    /// Looks up an already-loaded material without touching the disk. A path
+    /// whose file was missing is cached as <see cref="DefaultMaterial"/>, so a
+    /// hit does not prove the file existed. Any thread.
     /// </summary>
     public bool TryGetMaterial(string relativePath, [MaybeNullWhen(false)] out Material material)
     {
@@ -931,10 +677,8 @@ public sealed partial class AssetManager : IDisposable
 
     /// <summary>
     /// Advances ready textures and models under their shared upload budget,
-    /// publishes completed assets, and turns file-change notifications into
-    /// coalesced decode requests. Render thread only; the engine
-    /// calls it once per frame. Returns the number of assets applied (textures
-    /// and models together). Allocation-free when nothing is pending.
+    /// publishes completed assets, and queues re-decodes for changed files.
+    /// Render thread only, once per frame. Returns the number of assets applied.
     /// </summary>
     public int PumpPendingUploads()
     {
@@ -944,11 +688,10 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// Drops a texture from the cache — every sampler-state variant loaded for
-    /// the path — and destroys its GPU resources through the creating renderer
-    /// (which also deregisters them). Any handle still held by a caller degrades
-    /// to the placeholder rather than to a disposed texture. Returns false if
-    /// the path was not loaded. Render thread only.
+    /// Drops every sampler-state variant of a texture from the cache and
+    /// destroys its GPU resources. Handles still held by a caller fall back to
+    /// the placeholder. Returns false if the path was not loaded. Render thread
+    /// only.
     /// </summary>
     public bool UnloadTexture(string relativePath)
     {
@@ -968,7 +711,6 @@ public sealed partial class AssetManager : IDisposable
             asset.IsPlaceholder = true;
         }
 
-        // Every variant shares the file, so one call covers them all.
         StopWatchingIfUnused(key);
 
         _logger.LogInformation("Unloaded texture {Path}", key);
@@ -977,10 +719,8 @@ public sealed partial class AssetManager : IDisposable
 
     /// <summary>
     /// Destroys every GPU resource this manager owns and stops all file
-    /// watching. Render thread only — it calls
-    /// <see cref="Renderer.DestroyTexture"/> — and must run BEFORE
-    /// <see cref="Renderer.Shutdown"/>, i.e. inside the render loop, not in the
-    /// engine's main-thread teardown. Idempotent.
+    /// watching. Render thread only, before <see cref="Renderer.Shutdown"/>.
+    /// Idempotent.
     /// </summary>
     public void ReleaseGraphicsResources()
     {
@@ -994,15 +734,9 @@ public sealed partial class AssetManager : IDisposable
             watcher.Dispose();
         _watchers.Clear();
 
-        // Late arrivals from decodes still in flight have nowhere to go - but a
-        // cooked one holds a pack reference, so they are drained THROUGH their
-        // disposal rather than discarded. Dropped silently, a session teardown
-        // would leave every in-flight texture pinning its mount.
         while (_changedFiles.TryDequeue(out _)) { }
 
-        // Models first: their meshes are destroyed through the renderer, which
-        // is still attached here, and their materials reference textures the
-        // texture pass below is about to destroy.
+        // Models first: their materials reference textures destroyed below.
         ReleaseModelResources();
 
         var assets = new List<TextureAsset>();
@@ -1020,19 +754,12 @@ public sealed partial class AssetManager : IDisposable
             asset.IsPlaceholder = true;
         }
 
-        // Materials own no GPU state of their own, but their bindings point at
-        // textures that are being destroyed right now — drop the cache and strip
-        // the fallback back to its pre-attach state so nothing resolves to a
-        // disposed object afterwards. DefaultMaterial itself survives: callers
-        // may still be holding it, and it must never become null.
+        // Material bindings point at the textures just destroyed. The two
+        // built-in materials survive, stripped back to their pre-attach state.
         lock (_materialSync) _materials.Clear();
         _defaultMaterial.ClearTextures();
         _defaultMaterial.Shader = null;
 
-        // The neutral surface is stripped for the same reason and at the same
-        // moment: its texture is about to be destroyed, and a material left
-        // pointing at a freed one would draw through a dangling handle in the
-        // next session.
         _neutralMaterial.ClearTextures();
         _neutralMaterial.Shader = null;
 
@@ -1054,26 +781,18 @@ public sealed partial class AssetManager : IDisposable
     }
 
     /// <summary>
-    /// CPU-side teardown, mirroring <see cref="Initialize"/>. Safe on the main
-    /// thread: GPU resources must already have gone through
-    /// <see cref="ReleaseGraphicsResources"/> on the render thread — if they
-    /// have not, this says so rather than touching the GPU from the wrong thread.
+    /// CPU-side teardown. Safe on the main thread, after
+    /// <see cref="ReleaseGraphicsResources"/> has run on the render thread; if
+    /// it has not, this warns and leaves the GPU alone.
     /// </summary>
     public void Shutdown()
     {
         _uploadPipeline?.StopWorkers();
+        // Again: a decode can land after ReleaseGraphicsResources drained the
+        // queue, and a cooked one holds a pack reference.
         if (_graphicsReleased || _renderer is null) _uploadPipeline?.ReleaseUploads();
-        // Again, and deliberately: a background decode can land in the window
-        // between ReleaseGraphicsResources draining the queue and the manager
-        // being disposed, and the pump is no longer running to take it. A cooked
-        // one holds a pack reference, so leaving it there would defer that
-        // pack's unmount for the life of the process - which in a shell that
-        // opens and closes sessions is a mount leaked per session.
 
-        // Sounds hold content references rather than GPU objects, so they are
-        // released here rather than in ReleaseGraphicsResources - and they must
-        // be released somewhere, because an open one pins its pack's mapping for
-        // the life of the process.
+        // An open sound pins its pack's mapping.
         ReleaseAudioResources();
 
         if (!_graphicsReleased && _renderer is not null)
@@ -1082,7 +801,6 @@ public sealed partial class AssetManager : IDisposable
                 "Asset manager shut down with GPU textures still live; " +
                 "ReleaseGraphicsResources must run on the render thread before Shutdown");
 
-            // Watchers are not GPU state, so they can still be cleaned up here.
             foreach (FileSystemWatcher watcher in _watchers.Values)
                 watcher.Dispose();
             _watchers.Clear();
@@ -1099,44 +817,22 @@ public sealed partial class AssetManager : IDisposable
     /// <inheritdoc cref="Shutdown"/>
     public void Dispose() => Shutdown();
 
-    // ---- internals -------------------------------------------------------
-
-    /// <summary>
-    /// Records that a file changed on disk, exactly as the watcher callback
-    /// does. Any thread (the watcher raises on a thread-pool thread); the
-    /// re-decode is started by the next <see cref="PumpPendingUploads"/>.
-    /// Tests drive this directly so the reload path is covered without
-    /// depending on filesystem-notification timing.
-    /// </summary>
+    // What the watcher callback does. Any thread. Tests call it directly so
+    // reload coverage does not depend on filesystem-notification timing.
     internal void NotifyFileChanged(string absolutePath)
         => _changedFiles.Enqueue(Path.GetFullPath(absolutePath));
 
-    /// <summary>Directories currently watched for texture changes. Render thread.</summary>
+    // Render thread.
     internal int WatchedDirectoryCount => _watchers.Count;
 
-    /// <summary>
-    /// Writes the built-in lit shader's material-facing parameters at their
-    /// neutral values. Every material this manager builds starts from these, so
-    /// a surface never inherits another material's value for a parameter its own
-    /// file did not mention.
-    /// </summary>
-    /// <remarks>
-    /// Only the built-in shader's own parameters are seeded, because they are
-    /// the only ones whose neutral value the engine knows. A material naming a
-    /// custom shader still has to set that shader's parameters itself —
-    /// SpectraShade has no notion of a uniform default to read one from.
-    /// </remarks>
+    // Every material starts from these, so a parameter its file omits has a
+    // defined value instead of the previous draw's. Built-in shader only; a
+    // custom shader's parameters have no known defaults.
     private static void SeedBuiltInParameters(Material material)
     {
-        // White: the diffuse texture (or the magenta placeholder) shows through
-        // unmodulated, which is what makes a fallback surface unmistakable.
         material.SetVector3(BaseColorParameter, Vector3.One);
 
-        // A plain dielectric. These are what a material file overrides to be
-        // anything else, and leaving them unset is not an option: the deferred
-        // geometry pass draws every surface with one program, so an omitted
-        // parameter inherits the previous draw's value rather than a default,
-        // and a wall would wear whatever the last metal it followed was wearing.
+        // A plain dielectric.
         material.SetFloat(RoughnessParameter, 0.65f);
         material.SetFloat(MetallicParameter, 0f);
         material.SetFloat(AmbientOcclusionParameter, 1f);
@@ -1144,9 +840,7 @@ public sealed partial class AssetManager : IDisposable
         material.SetFloat(ShadingModelParameter, 0f);
     }
 
-    // Parses the material and turns the definition into a live material. Content
-    // problems become warnings and a degraded binding; nothing here throws
-    // except the read itself, which LoadMaterial catches.
+    // Only the read can throw; LoadMaterial catches it.
     private Material BuildMaterial(string key) => BuildMaterial(key, ParseMaterialThroughContent(key), false);
 
     private Material BuildMaterial(string key, MaterialDefinition definition, bool asynchronous)
@@ -1160,15 +854,7 @@ public sealed partial class AssetManager : IDisposable
             SourcePath = key,
         };
 
-        // Seed the built-in shader's parameters BEFORE the file's own, so a
-        // material that omits one still pushes a defined value for it. Without
-        // this, an omitted uniform is simply never written: the shader keeps
-        // whatever the previous draw's material left in it (a red tint bleeding
-        // onto an untinted surface, flipping with draw order as culling
-        // reorders the batches), and on the very first draw it is whatever the
-        // backend zero-initialised — uBaseColor = 0 renders a fully textured
-        // surface solid black. The engine's fallback material seeds the same
-        // value in the constructor; file-built materials get it here.
+        // Before the file's own parameters, which override them.
         SeedBuiltInParameters(material);
 
         IReadOnlyList<MaterialParameter> parameters = definition.Parameters;
@@ -1194,9 +880,8 @@ public sealed partial class AssetManager : IDisposable
         return material;
     }
 
-    // Resolves one texture slot, degrading to the placeholder (never to an
-    // unbound sampler, which would read whatever the last draw left on the unit)
-    // whenever the image cannot be loaded.
+    // Falls back to the placeholder, never an unbound sampler: that would read
+    // whatever the last draw left on the unit.
     private void BindTextureSlot(Material material, string materialKey, in MaterialTextureSlot slot, bool asynchronous = false)
     {
         string textureKey;
@@ -1213,11 +898,7 @@ public sealed partial class AssetManager : IDisposable
             return;
         }
 
-        // The same stack AND the same fork the read below uses, deliberately: an
-        // existence probe that asked the filesystem while the open asked an
-        // archive - or that looked for the PNG while the open took the cooked
-        // .simage - would bind the placeholder into every packed material and log
-        // nothing wrong.
+        // Must ask the same stack and resolved path as the read below.
         if (!asynchronous && !ImageExists(textureKey))
         {
             _logger.LogWarning(
@@ -1231,8 +912,7 @@ public sealed partial class AssetManager : IDisposable
         {
             TextureAsset asset = asynchronous ? RequestTexture(textureKey, slot.Filter, slot.Wrap, slot.ColorSpace)
                 : LoadTexture(textureKey, slot.Filter, slot.Wrap, slot.ColorSpace);
-            // Bound as a handle, not a Texture: the material then follows the
-            // asset through hot-reloads instead of pinning today's GPU object.
+            // The handle, not its Texture, so the material follows hot reloads.
             material.SetTexture(slot.Name, slot.Unit, asset);
         }
         catch (Exception ex)
@@ -1275,58 +955,35 @@ public sealed partial class AssetManager : IDisposable
                 "AssetManager has no renderer; call AttachRenderer on the render thread first.");
     }
 
-    // Where an image's bytes come from, asked exactly once per read and shared
-    // with the material slot's existence probe below. The whole redirection is
-    // ImageContentPath's, so the cooker, the verifier and this class cannot
-    // disagree about which of two files an image is.
+    // The cooked .simage beside the authored file if a source has one.
     private string ResolveImagePath(string key) => ImageContentPath.Resolve(Content, key);
 
-    // The probe half of the same rule. It asks the SAME stack the open asks, on
-    // the SAME resolved path, which is the whole reason it is expressed here
-    // rather than inline: a probe that looked only for the authored file would
-    // bind the magenta placeholder into every material of a build whose textures
-    // are all cooked, and every log line would read healthy.
     private bool ImageExists(string key) => Content.Exists(ResolveImagePath(key));
 
-    // One of the content reads, and the only one that forks. Any thread: opening,
-    // decoding and parsing a .simage header are all pure CPU, which is what lets
-    // the async path run this on the thread pool.
+    // Any thread.
     private ImageSource ReadImageThroughContent(string key)
     {
-        // A miss is reported as the I/O failure LoadTexture documents and
-        // QueueDecode catches, so the caller sees no difference between content
-        // that is absent and content that could not be read — neither is
-        // recoverable at this level.
         string resolved = ResolveImagePath(key);
         ContentBlob blob = OpenOrThrow(resolved);
 
         if (!ImageContentPath.IsCooked(resolved))
         {
-            // The loose path, unchanged: decode, and flip the rows on the way in.
-            // Nothing needs the blob's bytes past this call.
             using (blob) return new ImageSource(ImageDecoder.Decode(blob.Span, key), null, null);
         }
 
         try
         {
-            // No decode, no row flip, no copy. The blob TRAVELS with the result,
-            // because the mips it describes are offsets into these very bytes.
+            // The result keeps the blob: its mips are offsets into these bytes.
             SimageInfo cooked = SimageReader.Read(blob.Span, resolved);
             return new ImageSource(null, blob, cooked);
         }
         catch
         {
-            // A refusal here leaves nobody holding the reference, so it is
-            // released before the message goes up. Without this a project whose
-            // .simage files are one version stale would leak a pack reference per
-            // texture.
             blob.Dispose();
             throw;
         }
     }
 
-    // The two ways a texture reaches the GPU, in one place so the colour-space
-    // warning and the sampler state cannot be applied to one and not the other.
     private Texture CreateTextureFrom(
         Renderer renderer,
         string key,
@@ -1343,8 +1000,6 @@ public sealed partial class AssetManager : IDisposable
         renderer.FlushUploads(waitForCompletion: true);
         return texture;
     }
-    // The second of the three. The bytes never touch the filesystem, so a packed
-    // material parses with no temporary file in between.
     private MaterialDefinition ParseMaterialThroughContent(string key)
     {
         using ContentBlob blob = OpenOrThrow(key);
@@ -1359,18 +1014,12 @@ public sealed partial class AssetManager : IDisposable
         return blob;
     }
 
-    // Decode off the render thread and hand the pixels back through the queue.
-    // Failures are queued too, so the pump can log them on the render thread
-    // instead of them vanishing into an unobserved task.
-    // Claims one in-flight decode slot on a handle. RequestTexture claims its
-    // own inside the lock it already holds (it has to decide whether to queue at
-    // all in the same critical section); the hot-reload path uses this.
+    // For the hot-reload path. RequestTexture claims its slot inside its own lock.
     private void BeginDecode(TextureAsset asset)
     {
         lock (_sync) asset.PendingDecodes++;
     }
 
-    // Releases the slot when a result comes back, whatever the result was.
     private void EndDecode(TextureAsset asset)
     {
         lock (_sync)
@@ -1379,6 +1028,7 @@ public sealed partial class AssetManager : IDisposable
         }
     }
 
+    // Failures are queued too, so the pump logs them on the render thread.
     private void QueueDecode(TextureAsset asset)
     {
         long sequence = asset.NextRequestSequence();
@@ -1392,11 +1042,8 @@ public sealed partial class AssetManager : IDisposable
     {
         TextureAsset asset = request.Asset;
 
-        // The handle may have left the cache while the decode ran — UnloadTexture,
-        // or an unload-then-reload that put a fresh handle under the same key.
-        // Creating a GPU texture for it now would produce one that nothing ever
-        // destroys (ReleaseGraphicsResources only walks _textures) and would
-        // resurrect the directory watcher the unload just disposed.
+        // The handle left the cache while the decode ran. A texture created
+        // for it now would never be destroyed.
         if (!IsCachedVariant(asset))
         {
             _logger.LogDebug(
@@ -1405,19 +1052,14 @@ public sealed partial class AssetManager : IDisposable
             return false;
         }
 
-        // A newer decode already landed (rapid saves, or a reload racing the
-        // initial load) — this one is stale and must not overwrite it.
+        // Stale: a newer decode already landed.
         if (request.Sequence <= asset.AppliedSequence)
             return false;
 
         if (!request.Image.HasContent)
         {
             _logger.LogError("Texture load failed ({Path}): {Error}", asset.RelativePath, request.Error);
-            // Keep whatever is bound (placeholder, or the previous version on a
-            // failed hot-reload) so the frame still draws something sane, and
-            // mark the handle retryable: the entry is already in the cache, so
-            // without this every later request would hand back this placeholder
-            // for the rest of the process's life.
+            // Keep what is bound and mark the handle retryable; it stays cached.
             asset.AppliedSequence = request.Sequence;
             lock (_sync) asset.LoadFailed = true;
             return false;
@@ -1454,13 +1096,9 @@ public sealed partial class AssetManager : IDisposable
         return true;
     }
 
-    // Destroys a texture this manager created; the shared placeholder is not
-    // per-asset state and outlives every swap, so it is skipped here.
+    // Skips the placeholder and the white texel: they are shared and only go at teardown.
     private bool DestroyOwned(Texture? texture)
     {
-        // The two manager-owned textures are shared by every asset that fell
-        // back to them, so releasing one asset must never destroy them; they go
-        // at teardown and nowhere else.
         if (texture is null ||
             ReferenceEquals(texture, _placeholder) ||
             ReferenceEquals(texture, _white))
@@ -1472,8 +1110,7 @@ public sealed partial class AssetManager : IDisposable
         return true;
     }
 
-    // Coalesce the watcher's notifications (one save often fires several) and
-    // kick off a background re-decode per affected asset.
+    // One save often fires several notifications, so coalesce first.
     private void DispatchFileChanges()
     {
         if (!_changedFiles.TryDequeue(out string? first)) return;
@@ -1486,9 +1123,8 @@ public sealed partial class AssetManager : IDisposable
 
         foreach (string path in seen)
         {
-            // Every sampler-state variant of the changed file needs its own
-            // re-decode: they are separate GPU textures, so reloading only one
-            // would leave the others showing the pre-edit image.
+            // Every variant of the file is its own GPU texture and needs a re-decode.
+            // Collected under the lock, queued outside it.
             _reloadTargets ??= [];
             _reloadTargets.Clear();
             lock (_sync)
@@ -1512,13 +1148,8 @@ public sealed partial class AssetManager : IDisposable
         }
     }
 
-    // Whether a changed file is one this handle would read. BOTH names count,
-    // because the read resolves between them every time: a cook landing a
-    // .simage beside a PNG must reach a texture already loaded from the PNG, and
-    // an edit to the PNG must reach one already loaded from a .simage that is now
-    // stale. Compared as strings rather than probed, because this runs once per
-    // variant per change notification and a probe here would be a stack lookup
-    // per texture per save.
+    // Both the authored file and the .simage beside it count: the read picks
+    // between them every time.
     private static bool IsSourceOf(TextureAsset asset, string fullPath) =>
         string.Equals(asset.SourcePath, fullPath, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(
@@ -1526,22 +1157,15 @@ public sealed partial class AssetManager : IDisposable
             fullPath,
             StringComparison.OrdinalIgnoreCase);
 
-    // Watching is a property of LOOSE content: a source that cannot name a file
-    // on disk (a packed archive) supplies no watch path and is simply not
-    // watched, which is why this takes the content-relative path and asks the
-    // stack rather than resolving one against the content root itself.
+    // A source with no file on disk (a pack) has no watch path and is not watched.
     private void EnsureWatching(string relativePath)
     {
         if (!HotReloadEnabled || _graphicsReleased) return;
-        // The RESOLVED path, so a tree whose textures are all cooked still gets a
-        // watcher: asking for the authored PNG in a folder that holds only
-        // .simage files finds no watch path and silently watches nothing.
+        // The resolved path, so a folder holding only .simage files is still watched.
         if (!Content.TryGetWatchPath(ResolveImagePath(relativePath), out string? watchPath)) return;
 
         string? directory = Path.GetDirectoryName(watchPath);
         if (directory is null || !Directory.Exists(directory)) return;
-        // Exactly one watcher per directory, ever: creating a second would leak
-        // the first's native buffer and double every change notification.
         if (_watchers.ContainsKey(directory)) return;
 
         FileSystemWatcher watcher;
@@ -1555,14 +1179,11 @@ public sealed partial class AssetManager : IDisposable
         }
         catch (Exception ex)
         {
-            // Watching is a developer convenience; a platform that refuses it
-            // must not break loading.
             _logger.LogWarning("Not watching {Directory} for texture changes: {Message}", directory, ex.Message);
             return;
         }
 
-        // Events arrive on a thread-pool thread — enqueue only, never decode or
-        // touch the cache from here.
+        // Thread-pool thread: enqueue only.
         watcher.Changed += (_, e) => NotifyFileChanged(e.FullPath);
         watcher.Created += (_, e) => NotifyFileChanged(e.FullPath);
         watcher.Renamed += (_, e) => NotifyFileChanged(e.FullPath);
@@ -1599,10 +1220,7 @@ public sealed partial class AssetManager : IDisposable
         _watchers.Remove(directory);
     }
 
-    // ---- texture cache helpers -------------------------------------------
-    // All three assume _sync is already held, except IsCachedVariant which takes
-    // it itself (it is called from the pump, outside any critical section).
-
+    // Caller holds _sync.
     private TextureAsset? FindVariant(
         string key, TextureFilter filter, TextureWrap wrap, TextureColorSpace colorSpace)
     {
@@ -1617,20 +1235,18 @@ public sealed partial class AssetManager : IDisposable
         return null;
     }
 
+    // Caller holds _sync.
     private void AddVariant(string key, TextureAsset asset)
     {
         if (!_textures.TryGetValue(key, out List<TextureAsset>? variants))
         {
-            // Capacity 1: a second sampler-state variant of one image is the
-            // exception, not the rule.
             variants = new List<TextureAsset>(1);
             _textures[key] = variants;
         }
         variants.Add(asset);
     }
 
-    // Whether this exact handle is still the cache's entry for its path and
-    // sampler state — false once it was unloaded, or replaced by a reload.
+    // False once the handle was unloaded or replaced. Takes _sync itself.
     private bool IsCachedVariant(TextureAsset asset)
     {
         lock (_sync)
@@ -1638,8 +1254,7 @@ public sealed partial class AssetManager : IDisposable
                 FindVariant(asset.RelativePath, asset.Filter, asset.Wrap, asset.ColorSpace), asset);
     }
 
-    // 8x8 magenta/black checker: unmistakable on screen, and nearest-filtered
-    // so it stays a hard checker instead of blurring into flat pink.
+    // 8x8 magenta/black checker. Nearest, so it does not blur into flat pink.
     private static Texture CreatePlaceholder(Renderer renderer)
     {
         const int size = 8;
@@ -1656,16 +1271,12 @@ public sealed partial class AssetManager : IDisposable
             }
         }
 
-        // sRGB: it stands in for colour textures, and #FF00FF has to be the same
-        // magenta on screen as the same value typed into a material would be.
+        // sRGB, because it stands in for colour textures.
         return renderer.CreateTexture(
             pixels, size, size, TextureFormat.Rgb8, TextureColorSpace.Srgb,
             TextureFilter.Nearest, TextureWrap.Repeat);
     }
 
-    // One white texel: the identity texture for a base colour, so the neutral
-    // material is exactly its own tint. Nearest and Repeat because there is
-    // nothing to filter and nothing to wrap.
     private static Texture CreateWhiteTexel(Renderer renderer)
     {
         byte[] pixels = [255, 255, 255];
@@ -1674,10 +1285,7 @@ public sealed partial class AssetManager : IDisposable
             TextureFilter.Nearest, TextureWrap.Repeat);
     }
 
-    // The one place an unhonourable sRGB request is reported, because it is the
-    // only layer that knows which file it was. The backends silently resolve to
-    // linear (TextureFormatInfo.Resolve) so that all three behave alike; without
-    // this line the downgrade would be invisible.
+    // The backends fall back to linear without a word; only this layer knows the path.
     private void WarnIfSrgbUnavailable(string key, TextureFormat format, TextureColorSpace requested)
     {
         if (requested != TextureColorSpace.Srgb || TextureFormatInfo.SupportsSrgb(format))
@@ -1689,48 +1297,28 @@ public sealed partial class AssetManager : IDisposable
             key, format);
     }
 
-    // Struct, so an empty drain does not allocate.
     private readonly record struct UploadRequest(
         TextureAsset Asset, long Sequence, ImageSource Image, string? Error);
 
-    /// <summary>
-    /// One image read, in whichever of the two forms the content actually holds
-    /// it, plus the pack reference that keeps a cooked one alive.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The blob is not a convenience.</b> A cooked payload is a span straight
-    /// into a mounted pack's memory-mapped view, and this value crosses from a
-    /// thread-pool decode to the render thread through a queue, so the thing
-    /// keeping those bytes valid has to travel with it rather than with the call
-    /// that opened them. Unmapping under a live span is an access violation with
-    /// no managed stack, not an exception anybody can catch.
-    /// </para>
-    /// <para>
-    /// A struct, so an empty drain allocates nothing, and
-    /// <see cref="Dispose"/> is idempotent because <see cref="ContentBlob"/>'s
-    /// is.
-    /// </para>
-    /// </remarks>
+    // One image read, decoded or cooked. A cooked payload is a span into a
+    // mapped pack view, and this value crosses the upload queue, so the blob
+    // that keeps the view alive travels with it.
     private readonly record struct ImageSource(DecodedImage? Decoded, ContentBlob? Blob, SimageInfo? Cooked, PreparedTextureData? Prepared = null)
     {
-        /// <summary>Whether this carries a real image rather than standing for a failure.</summary>
+        // False for a failure value.
         public bool HasContent => Decoded is not null || Cooked is not null || Prepared is not null;
 
         public ReadOnlySpan<byte> Payload => Prepared is { } prepared ? prepared.Payload
             : Decoded is { } decoded ? decoded.Pixels : Blob is { } blob ? blob.Span : [];
 
-        /// <summary>The format the texture will be created in.</summary>
         public TextureFormat Format => Prepared?.Format ?? Decoded?.Format ?? Cooked!.Format;
 
-        /// <summary>One phrase for a log line, naming which of the two forms this was.</summary>
         public string Describe() => Prepared is { } prepared
             ? $"{prepared.Mips[0].Width}x{prepared.Mips[0].Height}, {prepared.Mips.Length} prepared mips, {prepared.Format}"
             : Decoded is { } decoded
             ? $"{decoded.Width}x{decoded.Height}, {decoded.Channels}ch, {decoded.Format}"
             : $"{Cooked!.Width}x{Cooked.Height}, {Cooked.MipCount} mips, {Cooked.Format}, cooked";
 
-        /// <summary>Releases the pack reference a cooked read holds. Safe on a failure value.</summary>
         public void Dispose() => Blob?.Dispose();
     }
 }

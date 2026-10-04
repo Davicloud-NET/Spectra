@@ -7,35 +7,12 @@ namespace SpectraEngine.Core.Assets.Sources;
 
 /// <summary>
 /// A block of content bytes handed out by an <see cref="IContentSource"/>, owned
-/// by the caller and released with <see cref="Dispose"/>.
+/// by the caller and released with <see cref="Dispose"/>. Single owner: one blob
+/// belongs to one thread at a time.
 /// </summary>
-/// <remarks>
-/// <para><b>Why a disposable wrapper rather than a <c>byte[]</c>.</b> The bytes
-/// may live in a pooled array, where <see cref="Dispose"/> returns it, or they
-/// may be a window straight into a memory-mapped pack, where the release is not
-/// optional: unmapping a view under a live span is an access violation rather
-/// than an exception. Putting the disposal contract in place while the backing
-/// store was still trivially forgiving is what let the mapped store be swapped in
-/// underneath without auditing every call site again.</para>
-/// <para><b>A blob from a pack holds a <see cref="PackHandle"/> reference, and
-/// the reference travels with the blob.</b> That is the whole lifetime design in
-/// one sentence: a blob opened on the thread pool and consumed on the render
-/// thread outlives the stack frame that opened it, so the thing keeping its bytes
-/// alive has to be the blob rather than the call. A pooled blob from a pack holds
-/// one too, because one rule ("a blob from a pack holds a reference") is a rule,
-/// while two rules that differ by codec is how a call site ends up correct only
-/// against the codec it was tested with.</para>
-/// <para><b>The bytes are only readable through <see cref="Span"/></b>, never as
-/// an array, because a pooled buffer is longer than the content in it and a
-/// mapped view is not an array at all. A consumer that genuinely needs an
-/// exactly-sized array (StbImageSharp's entry point does) copies one.</para>
-/// <para><b>Single owner.</b> The span is valid until <see cref="Dispose"/>, and
-/// disposing twice from two threads would return one buffer to the pool twice and
-/// drop one pack reference twice. One blob belongs to one thread at a time, which
-/// is how every producer here uses it; the disposal flag is interlocked anyway,
-/// because the consequence of losing that race on a mapped blob is a process that
-/// dies with no managed stack.</para>
-/// </remarks>
+// The bytes are a pooled array or a window into a mapped pack. A blob from a pack
+// holds a PackHandle reference, because unmapping under a live span is an access
+// violation and the blob can outlive the call that opened it.
 public sealed class ContentBlob : IDisposable
 {
     private readonly ulong _offset;
@@ -51,7 +28,7 @@ public sealed class ContentBlob : IDisposable
         Length = length;
     }
 
-    /// <summary>Number of content bytes, which is never the backing array's length.</summary>
+    /// <summary>Number of content bytes. A pooled backing array may be longer.</summary>
     public int Length { get; }
 
     /// <summary>The content bytes. Valid until <see cref="Dispose"/>.</summary>
@@ -60,9 +37,7 @@ public sealed class ContentBlob : IDisposable
     {
         get
         {
-            // Checked before either store is touched: on a mapped blob the store
-            // is address space the last release may already have unmapped, and
-            // reading it after that is not an exception anybody can catch.
+            // Checked first: a mapped blob's bytes may already be unmapped.
             if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(ContentBlob));
 
             byte[]? buffer = _buffer;
@@ -74,15 +49,9 @@ public sealed class ContentBlob : IDisposable
     }
 
     /// <summary>
-    /// Rents a blob of <paramref name="length"/> bytes and hands the producer a
-    /// writable view of exactly that many.
+    /// Rents a blob of <paramref name="length"/> bytes. The caller must fill
+    /// <paramref name="destination"/> completely: a pooled buffer is not cleared.
     /// </summary>
-    /// <remarks>
-    /// A pooled buffer arrives holding whatever the previous tenant left in it,
-    /// so the producer must fill <paramref name="destination"/> completely; a
-    /// short read leaves stale bytes where content should be, which decodes as a
-    /// corrupt file rather than as a failure.
-    /// </remarks>
     public static ContentBlob Rent(int length, out Span<byte> destination)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(length);
@@ -93,8 +62,7 @@ public sealed class ContentBlob : IDisposable
     }
 
     /// <summary>
-    /// Rents a blob holding a copy of <paramref name="bytes"/> — for sources that
-    /// already hold their content in memory.
+    /// Rents a blob holding a copy of <paramref name="bytes"/>.
     /// </summary>
     public static ContentBlob CopyOf(ReadOnlySpan<byte> bytes)
     {
@@ -103,15 +71,8 @@ public sealed class ContentBlob : IDisposable
         return blob;
     }
 
-    /// <summary>
-    /// A window straight into a mounted pack's mapped view: no copy, no decode,
-    /// nothing between the caller and the file's own bytes.
-    /// </summary>
-    /// <remarks>
-    /// The caller must already have taken the reference this blob then owns and
-    /// releases; taking it here would leave a failure between the two impossible
-    /// to unwind, since a half-built blob has no owner to dispose it.
-    /// </remarks>
+    // A window into a mounted pack's mapped view, no copy.
+    // The caller must already hold the reference; this blob takes it over and releases it.
     internal static ContentBlob OverPack(PackHandle handle, ulong offset, int length)
     {
         ArgumentNullException.ThrowIfNull(handle);
@@ -120,15 +81,8 @@ public sealed class ContentBlob : IDisposable
         return new ContentBlob(buffer: null, handle, offset, length);
     }
 
-    /// <summary>
-    /// Rents a blob a pack decompresses into, holding a reference to that pack for
-    /// as long as the blob lives.
-    /// </summary>
-    /// <remarks>
-    /// The reference is not what keeps the inflated bytes valid — a pooled array
-    /// outlives any mount — it is what keeps the compressed bytes valid while they
-    /// are being read, and what keeps the rule uniform afterwards.
-    /// </remarks>
+    // A pooled blob a pack reads or inflates into. Takes over the caller's pack
+    // reference, which keeps the compressed bytes mapped while they are read.
     internal static ContentBlob RentUnderPack(PackHandle handle, int length, out Span<byte> destination)
     {
         ArgumentNullException.ThrowIfNull(handle);

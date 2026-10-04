@@ -8,26 +8,17 @@ using SpectraEngine.Core.Graphics.Shaders;
 namespace SpectraShade.Compiler.Tests;
 
 /// <summary>
-/// The .specshadecomp container: what survives a trip through disk, what a file
-/// from another format version does, and whether the two read paths agree about
-/// where the data section begins.
+/// The .specshadecomp container: what survives a round trip, how another format
+/// version is handled, and whether the stream and span readers agree.
 /// </summary>
-/// <remarks>
-/// <b>Everything here is latent while shaders are compiled in-process.</b> The
-/// engine builds its base shaders at startup and hands the blob straight to the
-/// renderer, so nothing the container drops has ever been missed. A cooked pack
-/// ships the blob instead, and then a dropped vertex input table is a D3D11
-/// input layout built from nothing and a missing instanced stage is a batched
-/// draw with no program to run it - neither of which throws.
-/// </remarks>
+// Only a cooked pack reads these files, and a dropped input table or instanced
+// stage there does not throw.
 public sealed class ShaderFileCodecTests
 {
     [Fact]
     public void A_pipeline_written_to_disk_round_trips_its_vertex_inputs_and_instanced_variant()
     {
-        // The engine's own shadow pass, because it is the shader the renderer
-        // actually instances: it marks uModel, so the compiler attaches a second
-        // vertex stage and a second input table to the blob.
+        // ShadowDepth marks uModel, so its blob has the instanced stage and table.
         CompiledShaderFile compiled = new SpectraShadeCompiler()
             .Compile(BaseShaders.ShadowDepth, [GraphicsBackend.OpenGL]);
 
@@ -41,8 +32,7 @@ public sealed class ShaderFileCodecTests
         PipelineBlob whole = ShaderFileReader.Read(new MemoryStream(bytes))
             .GetPipeline(GraphicsBackend.OpenGL).ShouldNotBeNull();
 
-        // The path Renderer.LoadCompiledShader takes, which is the one that
-        // matters once a pack ships blobs rather than source.
+        // The path Renderer.LoadCompiledShader takes.
         PipelineBlob partial = ShaderFileReader
             .ReadPipeline(new MemoryStream(bytes), GraphicsBackend.OpenGL)
             .ShouldNotBeNull();
@@ -60,8 +50,6 @@ public sealed class ShaderFileCodecTests
     [Fact]
     public void A_shader_with_no_instanced_variant_reads_back_without_one()
     {
-        // "No variant" has to be an ordinary answer, or every shader that does
-        // not want one fails to load.
         PipelineBlob source = Blob(GraphicsBackend.OpenGL, instanced: false);
         byte[] bytes = WriteToBytes(File(source));
 
@@ -85,8 +73,6 @@ public sealed class ShaderFileCodecTests
         var partial = Should.Throw<InvalidDataException>(
             () => ShaderFileReader.ReadPipeline(new MemoryStream(bytes), GraphicsBackend.OpenGL));
 
-        // Both numbers, or the reader has told the user their file is wrong
-        // without saying what would be right.
         foreach (InvalidDataException error in new[] { whole, partial })
         {
             error.Message.ShouldContain(bogus.ToString());
@@ -98,8 +84,6 @@ public sealed class ShaderFileCodecTests
     [Fact]
     public void A_file_this_engine_wrote_declares_this_engines_format_version()
     {
-        // The mirror of the refusal above: the strict check is only safe while
-        // the writer and the constant cannot disagree.
         byte[] bytes = WriteToBytes(File(Blob(GraphicsBackend.OpenGL, instanced: true)));
 
         ShaderFileReader.Read(new MemoryStream(bytes))
@@ -109,8 +93,7 @@ public sealed class ShaderFileCodecTests
     [Fact]
     public void ReadPipeline_and_Read_agree_on_the_data_section_start()
     {
-        // Three, because the two paths derive that origin differently and a
-        // divergence only moves a blob that is not the first one.
+        // Three pipelines: a wrong data-section origin only moves a blob past the first.
         CompiledShaderFile file = File(
             Blob(GraphicsBackend.OpenGL, instanced: false),
             Blob(GraphicsBackend.D3D11, instanced: true),
@@ -130,17 +113,14 @@ public sealed class ShaderFileCodecTests
         partial.VertexInputs.ShouldBe(whole.VertexInputs);
         partial.InstancedVertexInputs.ShouldBe(whole.InstancedVertexInputs);
 
-        // And the third blob is genuinely the third one, not the first read
-        // twice from a data section start both paths got equally wrong.
+        // Rules out both paths reading the first blob from the same wrong origin.
         partial.VertexData.ShouldBe(StageData(GraphicsBackend.D3D12, "vertex"));
     }
 
     [Fact]
     public void The_span_reader_and_the_stream_reader_agree_byte_for_byte()
     {
-        // Three pipelines, so the comparison covers a blob at a non-zero offset:
-        // the two parsers derive the data section's origin separately, and a
-        // divergence between them cannot move the first blob.
+        // Three pipelines, so a blob at a non-zero offset is compared too.
         CompiledShaderFile file = File(
             Blob(GraphicsBackend.OpenGL, instanced: false),
             Blob(GraphicsBackend.D3D11, instanced: true),
@@ -156,10 +136,8 @@ public sealed class ShaderFileCodecTests
             PipelineBlob span = ShaderFileReader
                 .ReadPipeline(bytes.AsSpan(), backend).ShouldNotBeNull();
 
-            // Two parsers over one layout: they exist because a stream seeks and
-            // a mapped pack view is already there, and this is the only thing
-            // keeping them in step. A divergence is a stage read out of the
-            // middle of somebody else's bytes rather than an exception.
+            // If the two parsers diverge, a stage is read from the wrong bytes
+            // and nothing throws.
             span.Backend.ShouldBe(stream.Backend);
             span.Format.ShouldBe(stream.Format);
             span.Stages.ShouldBe(stream.Stages);
@@ -176,10 +154,7 @@ public sealed class ShaderFileCodecTests
     [Fact]
     public void The_span_reader_answers_null_for_a_backend_the_file_does_not_carry()
     {
-        // The same ordinary answer the stream reader gives, because the engine
-        // uses it to decide between a cooked blob and compiling from source: an
-        // exception here would turn a pack cooked for another target list into a
-        // crash rather than a fallback.
+        // Null, not a throw: the engine falls back to compiling from source.
         byte[] bytes = WriteToBytes(File(Blob(GraphicsBackend.D3D11, instanced: true)));
 
         ShaderFileReader.ReadPipeline(bytes.AsSpan(), GraphicsBackend.OpenGL).ShouldBeNull();
@@ -193,9 +168,7 @@ public sealed class ShaderFileCodecTests
             Blob(GraphicsBackend.D3D11, instanced: true),
             Blob(GraphicsBackend.OpenGL, instanced: false));
 
-        // Table order, not sorted: a verify reports what the file says in the
-        // order the file says it, so its diagnostics do not reorder themselves
-        // because an enum's numbering changed.
+        // Table order, not sorted, so verify output does not depend on enum values.
         ShaderFileReader.ReadBackends(WriteToBytes(file))
             .ShouldBe([GraphicsBackend.D3D11, GraphicsBackend.OpenGL]);
     }
@@ -205,14 +178,10 @@ public sealed class ShaderFileCodecTests
     {
         byte[] bytes = WriteToBytes(File(Blob(GraphicsBackend.OpenGL, instanced: true)));
 
-        // Half a file. The span parser is looking at a fixed extent, so it can
-        // say so; BinaryReader.ReadBytes would hand back a shorter array and the
-        // caller would build a shader program out of half a stage.
+        // Half a file. BinaryReader.ReadBytes would return a short array instead.
         Should.Throw<InvalidDataException>(
             () => ShaderFileReader.ReadPipeline(bytes.AsSpan(0, bytes.Length / 2), GraphicsBackend.OpenGL));
     }
-
-    // --- helpers -------------------------------------------------------------
 
     private static byte[] WriteToBytes(CompiledShaderFile file)
     {
@@ -228,8 +197,7 @@ public sealed class ShaderFileCodecTests
         Pipelines = pipelines,
     };
 
-    // Per-backend stage bytes of differing length, so a blob read from the wrong
-    // offset cannot accidentally match the right one.
+    // Lengths differ per backend, so a blob read at the wrong offset can't match.
     private static byte[] StageData(GraphicsBackend backend, string stage) =>
         Encoding.UTF8.GetBytes($"{backend}:{stage}:{new string('x', (int)backend * 7)}");
 
@@ -258,8 +226,7 @@ public sealed class ShaderFileCodecTests
             : [],
     };
 
-    // Written by hand rather than through ShaderFileWriter: a test that takes
-    // its header from the code under test cannot catch that header changing.
+    // Written by hand, not through ShaderFileWriter, so a header change is caught.
     private static byte[] HeaderOnly(ushort formatVersion) =>
     [
         (byte)'S', (byte)'S', (byte)'C', (byte)'O',

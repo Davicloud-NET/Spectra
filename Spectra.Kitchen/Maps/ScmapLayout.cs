@@ -4,39 +4,16 @@ using SpectraEngine.Core.Maps.Compiled;
 
 namespace Spectra.Kitchen.Maps;
 
-/// <summary>One section's four-character code and the size it claims its body will be.</summary>
-/// <param name="Kind">The section's four-character code.</param>
+/// <summary>One section's four-character code and its declared body size.</summary>
 /// <param name="BodySize">Bytes the body occupies, padding excluded.</param>
 public readonly record struct ScmapSectionSize(uint Kind, long BodySize);
 
 /// <summary>
-/// Where every section of a <c>.scmap</c> lands, computed whole before a byte is
-/// written.
+/// Where every section of a <c>.scmap</c> lands, computed before a byte is written.
 /// </summary>
-/// <remarks>
-/// <para><b>This class exists to make one named hazard structurally impossible
-/// rather than merely tested for.</b> The hazard is a blob landing at a
-/// non-16-aligned offset because the layout pass and the write pass disagreed
-/// about a size including its padding: a one-byte disagreement puts every later
-/// section somewhere other than where the table says it is, and the symptom is
-/// arbitrary. It is not an exception, because a section table full of plausible
-/// offsets parses; it is a chunk mesh read out of the middle of the string blob.</para>
-/// <para><b>The defence is that exactly ONE function knows what a section costs</b>
-/// (<see cref="PaddedSectionSize"/>), and both passes call it: the layout pass to
-/// place the next section, and the write pass to know how many zero bytes to put
-/// after the body. There is no second expression of the arithmetic anywhere, so
-/// there is nothing to fall out of step.</para>
-/// <para><b>The defence is not sufficient on its own, which is why the writer
-/// asserts.</b> The layout is computed from DECLARED sizes and the bodies are
-/// written by their producers, and those two are separate statements: a producer
-/// that declares one length and emits another is exactly the way a two-pass writer
-/// goes wrong, and it is the shape the compiled map needs, because a chunk mesh
-/// blob wants to be streamed rather than materialised whole. So
-/// <c>ScmapWriter</c> checks the stream's position against this layout at every
-/// section boundary and refuses, naming the section that disagreed, rather than
-/// producing a file that reads back as different numbers than it was written
-/// from.</para>
-/// </remarks>
+// Layout and write passes must agree on padded sizes, or every later
+// section sits somewhere other than where the table says and the file still
+// parses. Both go through PaddedSectionSize; ScmapWriter also checks positions.
 public sealed class ScmapLayout
 {
     private readonly uint[] _kinds;
@@ -52,13 +29,9 @@ public sealed class ScmapLayout
     }
 
     /// <summary>
-    /// What one section occupies in the file: its body plus the zero bytes that
-    /// carry the next section to a 16-byte boundary.
+    /// What one section occupies in the file: its body plus padding to the
+    /// next 16-byte boundary. The only place this is computed.
     /// </summary>
-    /// <remarks>
-    /// The one function. Everything that needs to know a section's cost, in either
-    /// pass, calls this.
-    /// </remarks>
     public static long PaddedSectionSize(long bodySize)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(bodySize);
@@ -67,14 +40,8 @@ public sealed class ScmapLayout
 
     /// <summary>
     /// Places every section, in the order given, after the header and the section
-    /// table.
+    /// table. Throws if a section code appears twice.
     /// </summary>
-    /// <remarks>
-    /// Order is the caller's and is preserved exactly: a compiled map's section
-    /// order is part of its byte identity, so a layout that sorted would make the
-    /// file a function of a comparison rather than of what the cook emitted.
-    /// </remarks>
-    /// <exception cref="InvalidOperationException">A section code appears twice.</exception>
     public static ScmapLayout Compute(IReadOnlyList<ScmapSectionSize> sections)
     {
         ArgumentNullException.ThrowIfNull(sections);
@@ -111,21 +78,21 @@ public sealed class ScmapLayout
         return new ScmapLayout(kinds, bodySizes, offsets, cursor);
     }
 
-    /// <summary>How many sections this layout places.</summary>
+    /// <summary>Number of sections.</summary>
     public int Count => _kinds.Length;
 
     /// <summary>Total bytes in the file, the last section's padding included.</summary>
     public long TotalSize { get; }
 
-    /// <summary>The four-character code of section <paramref name="index"/>.</summary>
+    /// <summary>The four-character code of a section.</summary>
     public uint KindAt(int index) => _kinds[index];
 
-    /// <summary>The declared body size of section <paramref name="index"/>, padding excluded.</summary>
+    /// <summary>The declared body size of a section, padding excluded.</summary>
     public long BodySizeAt(int index) => _bodySizes[index];
 
-    /// <summary>The absolute offset of section <paramref name="index"/>. Always 16-byte aligned.</summary>
+    /// <summary>The absolute offset of a section. Always 16-byte aligned.</summary>
     public long OffsetAt(int index) => _offsets[index];
 
-    /// <summary>What section <paramref name="index"/> occupies, its padding included.</summary>
+    /// <summary>What a section occupies, padding included.</summary>
     public long PaddedSizeAt(int index) => PaddedSectionSize(_bodySizes[index]);
 }

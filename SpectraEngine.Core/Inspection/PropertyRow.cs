@@ -5,16 +5,8 @@ using System.Numerics;
 namespace SpectraEngine.Core.Inspection;
 
 /// <summary>
-/// Every property the inspector can show, named once.
+/// Every property the inspector can show. Declaration order is the panel's display order.
 /// </summary>
-/// <remarks>
-/// <b>An enum rather than a string key, and that is what keeps this
-/// AOT-safe.</b> The obvious property grid reflects over an object and
-/// discovers its members, which is exactly the pattern this engine cannot use:
-/// trimming removes what only reflection names. Enumerating the properties by
-/// hand costs one line each and turns "does this build under NativeAOT" from a
-/// question into a non-question.
-/// </remarks>
 public enum PropertyId
 {
     /// <summary>Not a property; the default value of an unset row.</summary>
@@ -37,9 +29,6 @@ public enum PropertyId
     LightRange,
     LightEnabled,
 
-    // Appended, and the ORDER here is the display order: a light-plus-brush
-    // selection lays out the same whichever was clicked first, and every group
-    // stays one contiguous run.
     LightInnerAngle,
     LightOuterAngle,
     LightWidth,
@@ -49,13 +38,7 @@ public enum PropertyId
     MeshModel,
     MeshSubmesh,
 
-    // Appended, and appended TOGETHER with PropertyRow.Key, because an entity's
-    // properties are named by the class it declares rather than by this engine:
-    // one id cannot stand for one row. Minting a PropertyId per key string is
-    // the obvious alternative and it is a hash with unreported collisions - two
-    // keys landing on one id would edit each other, silently, in whichever map
-    // happened to name both. So EntityKeyvalue is ONE id worn by every keyvalue
-    // row, and (Id, Key) is the identity every comparison of rows has to use.
+    // Every keyvalue row shares EntityKeyvalue. Row identity is (Id, PropertyRow.Key).
     EntityClassname,
     EntityKeyvalue,
 
@@ -87,15 +70,6 @@ public enum PropertyId
     FaceRotation,
 }
 
-/// <summary>How a row is edited.</summary>
-/// <remarks>
-/// <b>A small closed vocabulary, deliberately.</b> The panel renders one editor
-/// per kind, so a component added later gets an editor for free as long as its
-/// properties fit these shapes. That is the whole trade: a fixed set of widgets
-/// against never hand-writing a panel per component. It is also the same
-/// vocabulary an entity property panel will need, which is why it is worth
-/// fixing now rather than growing one control at a time.
-/// </remarks>
 /// <summary>Which kind of file an asset row names.</summary>
 public enum AssetKind
 {
@@ -115,6 +89,7 @@ public enum AssetKind
     Sound,
 }
 
+/// <summary>How a row is edited. The panel renders one editor per kind.</summary>
 public enum PropertyKind
 {
     /// <summary>Shown, never edited: an id, a resolved asset path.</summary>
@@ -138,40 +113,19 @@ public enum PropertyKind
     /// <summary>One of a fixed set of names.</summary>
     Choice,
 
-    /// <summary>
-    /// A path into the project's content, chosen from a picker.
-    /// </summary>
-    /// <remarks>
-    /// <b>Not a Choice, because the options are the PROJECT's rather than this
-    /// build's.</b> A choice row's list is a shared static array the engine
-    /// declares; an asset row's list is however many files somebody put in a
-    /// folder, which is a search rather than a dropdown.
-    /// </remarks>
+    /// <summary>A path into the project's content, chosen from a picker.</summary>
     Asset,
 
     /// <summary>
-    /// The name of an entity in this scene, chosen from a picker.
+    /// The name of an entity in this scene. Free text with a picker beside it,
+    /// since wildcards and runtime tokens are legal values.
     /// </summary>
-    /// <remarks>
-    /// <b>Not a Choice, and not an Asset either.</b> A choice's list is fixed by
-    /// the build; an asset's is the project's files; a target's is the SCENE's
-    /// own entities, which change as somebody builds the level. It is also the
-    /// one of the three whose free text is genuinely useful - a wildcard, or a
-    /// runtime token - so the picker fills the box rather than replacing it.
-    /// </remarks>
     Target,
 }
 
 /// <summary>
 /// Which components of a three-number value a row or an edit refers to.
 /// </summary>
-/// <remarks>
-/// <b>Per component, because that is the bulk edit people actually reach
-/// for.</b> "Put all of these on the floor" sets y and must leave x and z
-/// alone; a row that could only report "these vectors differ" and only write
-/// all three would turn that gesture into a way to stack every selected object
-/// at one point.
-/// </remarks>
 [Flags]
 public enum PropertyAxes
 {
@@ -184,33 +138,12 @@ public enum PropertyAxes
 
 /// <summary>
 /// One row of the inspector: what it is, which group it belongs to, and its
-/// current value.
+/// current value. Only the value field matching <see cref="Kind"/> is meaningful.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A value that crosses the thread boundary, like everything else the host
-/// publishes.</b> It carries no <c>SceneNode</c>, no <c>Brush</c> and no asset
-/// handle, because a UI holding one of those would be holding something the
-/// render thread mutates the instant the frame ends.
-/// </para>
-/// <para>
-/// <b>The fields are a union that is not one.</b> Only the field matching
-/// <see cref="Kind"/> is meaningful. A real discriminated union would be
-/// tidier and would allocate or box; this is a struct of a few words that the
-/// inspector fills a dozen of per frame, and the cost of the unused fields is
-/// less than the cost of the allocation avoided.
-/// </para>
-/// </remarks>
+// Crosses to the UI thread, so it holds no SceneNode, Brush or asset handle.
 public readonly record struct PropertyRow
 {
-    /// <summary>The section this row is filed under, derived from where the value lives.</summary>
-    /// <remarks>
-    /// <b>Grouping is automatic rather than authored.</b> A row's group is the
-    /// payload it came from, so a node that carries a light grows a Light
-    /// section and one that does not simply has no such rows. Hand-laid-out
-    /// sections would mean editing the panel every time the engine grows a
-    /// component, which is the cost this design exists to avoid.
-    /// </remarks>
+    /// <summary>The section this row is filed under: the payload the value came from.</summary>
     public string Group { get; init; }
 
     /// <summary>The label shown to the left of the editor.</summary>
@@ -220,18 +153,9 @@ public readonly record struct PropertyRow
     public PropertyId Id { get; init; }
 
     /// <summary>
-    /// Which keyvalue this row is, for the ids whose <see cref="Id"/> alone
-    /// does not name one. Empty on every other row.
+    /// Which keyvalue or face this row is, for ids shared by several rows. Empty otherwise.
+    /// Row identity is the pair (<see cref="Id"/>, <see cref="Key"/>).
     /// </summary>
-    /// <remarks>
-    /// <b>Row identity is the PAIR (<see cref="Id"/>, <see cref="Key"/>).</b>
-    /// An entity's properties are named by the class it declares, not by this
-    /// engine, so every keyvalue row wears one id
-    /// (<see cref="PropertyId.EntityKeyvalue"/>) and is told apart by this
-    /// string. Anything that matches, merges or compares rows must use both
-    /// halves - see <see cref="PropertyRowShape"/> for what happens to a panel
-    /// that uses only the id.
-    /// </remarks>
     public string Key { get; init; }
 
     /// <summary>Which editor to render.</summary>
@@ -249,37 +173,18 @@ public readonly record struct PropertyRow
     /// <summary>The value, for <see cref="PropertyKind.Boolean"/>.</summary>
     public bool Flag { get; init; }
 
-    /// <summary>The options, for <see cref="PropertyKind.Choice"/>.</summary>
-    /// <remarks>
-    /// Shared static arrays rather than a list built per row: the choices for a
-    /// brush kind are the same two strings on every node in the scene, and
-    /// allocating them per row per frame would be garbage proportional to the
-    /// panel's refresh rate.
-    /// </remarks>
+    /// <summary>The options, for <see cref="PropertyKind.Choice"/>. These are the stored tokens.</summary>
+    // Shared arrays, not built per row: rows are refilled every publish.
     public IReadOnlyList<string> Choices { get; init; }
 
     /// <summary>
-    /// The words shown for <see cref="Choices"/>, index for index.
+    /// The words shown for <see cref="Choices"/>, index for index. Defaults to the tokens.
     /// </summary>
-    /// <remarks>
-    /// <b>Display and wire are different strings, and conflating them is a
-    /// migration nobody can afford.</b> A brush's kind is stored, parsed and
-    /// written as <c>World</c>; the word for it in an editor is <c>Block</c>.
-    /// Renaming the token would touch the map format, the command that parses
-    /// it and every authored file; keeping one list and showing another costs a
-    /// parallel array. Defaults to <see cref="Choices"/>, so every existing row
-    /// shows exactly what it always did.
-    /// </remarks>
     public IReadOnlyList<string> ChoiceLabels { get; init; }
 
     /// <summary>
     /// One line explaining what this row's choices mean, or empty.
     /// </summary>
-    /// <remarks>
-    /// Two of this engine's most consequential words are Block and Part, and
-    /// which is which is not guessable from either. The tooltip is where that
-    /// gets said without spending a panel row on it.
-    /// </remarks>
     public string Help { get; init; }
 
     /// <summary>Which kind of content an <see cref="PropertyKind.Asset"/> row names.</summary>
@@ -293,28 +198,17 @@ public readonly record struct PropertyRow
     public string Note { get; init; }
 
     /// <summary>
-    /// How many of the selected nodes carry this property at all.
+    /// How many of the selected nodes carry this property. An edit reaches only those.
     /// </summary>
-    /// <remarks>
-    /// Less than <see cref="SelectionCount"/> means the property is unique to
-    /// part of the selection: a brush field with a light also selected, say.
-    /// Such a row is still shown and still editable, and the edit reaches only
-    /// the nodes that have it.
-    /// </remarks>
     public int PresentCount { get; init; }
 
     /// <summary>How many nodes the selection held when this row was built.</summary>
     public int SelectionCount { get; init; }
 
     /// <summary>
-    /// Which parts of the value differ across the nodes that carry it.
+    /// Which parts of the value differ across the nodes that carry it. Per axis for a
+    /// three-number value; <see cref="PropertyAxes.All"/> or nothing for every other kind.
     /// </summary>
-    /// <remarks>
-    /// For a three-number value these are the axes that disagree, so a row can
-    /// show two settled components and one mixed one. For every other kind it
-    /// is <see cref="PropertyAxes.All"/> or nothing, since there is only one
-    /// value to disagree about.
-    /// </remarks>
     public PropertyAxes MixedAxes { get; init; }
 
     /// <summary>Whether anything about this value differs across the selection.</summary>
@@ -329,20 +223,8 @@ public readonly record struct PropertyRow
     /// <summary>
     /// The unit the value is measured in, or empty when it has none.
     /// </summary>
-    /// <remarks>
-    /// <b>A fact about the value, so it lives with the value.</b> Without it
-    /// the panel showed a light's range as "10" and a brush's size as "6 0.2
-    /// 6", and the reader had to already know that one is world units and the
-    /// other is not a length at all. Deriving it in the shell from the
-    /// <see cref="PropertyId"/> would have worked exactly as well until the
-    /// second consumer - a console readout, a tooltip, a generated document -
-    /// derived it slightly differently.
-    /// </remarks>
     public string Unit { get; init; }
 
-    // Every factory takes the key last and defaults it to empty, so a row whose
-    // id names it outright says nothing about a key it does not have. Only the
-    // entity rows pass one.
     internal static PropertyRow ReadOnly(string group, string name, PropertyId id, string text, string key = "") =>
         new() { Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.ReadOnlyText, Text = text, Unit = "", Choices = [], PresentCount = 1, SelectionCount = 1 };
 
@@ -364,7 +246,6 @@ public readonly record struct PropertyRow
     internal static PropertyRow OfFlag(string group, string name, PropertyId id, bool value, string key = "") =>
         new() { Group = group, Name = name, Id = id, Key = key, Kind = PropertyKind.Boolean, Flag = value, Unit = "", Choices = [], PresentCount = 1, SelectionCount = 1 };
 
-    /// <summary>A row naming a file in the project.</summary>
     internal static PropertyRow OfAsset(
         string group, string name, PropertyId id, string path, AssetKind kind,
         string note = "", string key = "") =>

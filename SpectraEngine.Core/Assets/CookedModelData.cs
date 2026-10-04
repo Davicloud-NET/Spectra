@@ -10,21 +10,16 @@ namespace SpectraEngine.Core.Assets;
 /// Turns a validated <c>.smodel</c> into the <see cref="ModelData"/> the rest of
 /// the engine already knows how to upload, instantiate and draw.
 /// </summary>
-/// <remarks>
-/// One owned copy of VBUF and IBUF leaves the mapped input free to close. All
-/// submeshes refer to ranges in that backing; compatibility arrays are lazy.
-/// </remarks>
+// Copies VBUF and IBUF once, so the mapped input can be closed afterwards.
 public static class CookedModelData
 {
     /// <summary>
-    /// Builds the CPU model. Pure, thread-safe, no GPU and no filesystem, so it
-    /// runs on the thread pool exactly as an import does.
+    /// Builds the CPU model. Pure and thread-safe: no GPU, no filesystem.
     /// </summary>
     /// <param name="model">The validated file.</param>
     /// <param name="relativePath">
-    /// The content path the caller asked for - the AUTHORED one, so the model's
-    /// <see cref="ModelData.SourcePath"/> reads the same whether it was cooked or
-    /// imported.
+    /// The authored content path the caller asked for, which becomes
+    /// <see cref="ModelData.SourcePath"/>.
     /// </param>
     /// <exception cref="SmodelFormatException">
     /// The file declares a vertex layout this build cannot upload.
@@ -42,9 +37,7 @@ public static class CookedModelData
         var geometry = new ModelGeometry(model.Vertices.ToArray(), indices);
         var materials = new List<ModelMaterial>(submeshCount);
 
-        // Path -> slot, so two submeshes wearing one material share a slot and
-        // AssetManager's own "which slots are referenced" pass keeps meaning what
-        // it means. First appearance order, which is the file's order.
+        // Path -> slot, so submeshes sharing a material share a slot.
         var slots = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         for (int i = 0; i < submeshCount; i++)
@@ -53,15 +46,11 @@ public static class CookedModelData
             meshes[i] = BuildMesh(model, geometry, submesh, i, MaterialSlot(model, submesh, materials, slots));
         }
 
-        // A model with no material at all still gets one slot, for the reason the
-        // importer gives: a submesh's material index must never dangle.
+        // Always at least one slot, so a submesh's material index never dangles.
         if (materials.Count == 0) materials.Add(new ModelMaterial(string.Empty, null, Vector3.One));
 
-        // ONE node holding every submesh, because a .smodel has no hierarchy to
-        // rebuild: the cook baked every node transform into the vertices, which
-        // is what one shared vertex buffer means. Said out loud here rather than
-        // left for somebody to discover from an instantiated subtree that is one
-        // node deep.
+        // One node for every submesh: the cook baked the node transforms into
+        // the vertices, so a .smodel has no hierarchy.
         var root = new ModelNode(
             NameWithoutExtension(relativePath),
             Matrix4x4.Identity,
@@ -89,10 +78,7 @@ public static class CookedModelData
             return;
         }
 
-        // Refused rather than converted. See SmodelStandardLayout: the format
-        // reserves a stride-copying fallback and this build has none, so the
-        // honest answer is a message naming both layout ids rather than an
-        // upload of floats in an order nothing agreed on.
+        // No conversion path for other layouts in this build.
         throw new SmodelFormatException(
             $"'{model.Source}' declares vertex layout 0x{model.VertexLayoutId:X8} at " +
             $"{model.VertexStrideFloats} floats per vertex, and this build uploads only the standard " +
@@ -100,7 +86,6 @@ public static class CookedModelData
             "the model.");
     }
 
-    // The material slot this submesh draws with, creating one per distinct path.
     private static int MaterialSlot(
         in SmodelModel model,
         in SmodelSubmesh submesh,
@@ -109,10 +94,7 @@ public static class CookedModelData
     {
         if (!submesh.HasMaterial)
         {
-            // The cook found no authored material for whatever the source file
-            // named, and said so in its own log. Here it is one shared slot
-            // resolving to the default material, which is what the loose path
-            // does for a material with nothing usable on it.
+            // One shared slot that resolves to the default material.
             return Slot(string.Empty, null, materials, slots);
         }
 
@@ -128,12 +110,7 @@ public static class CookedModelData
         int slot = materials.Count;
         slots[key] = slot;
 
-        // The NAME is the stem and the PATH is what gets loaded. Both, because
-        // the name is what a log line and an editor row read, and the path is the
-        // only thing that must not be re-derived: a loader that rebuilt
-        // "Materials/<name>.spectramat" from the stem would be a second spelling
-        // of a rule the cooker already applied, and it would silently stop
-        // working the day a material lives anywhere else.
+        // Keep the cooked path. Don't rebuild it from the name at load.
         materials.Add(new ModelMaterial(NameWithoutExtension(key), null, Vector3.One, assetPath));
         return slot;
     }
@@ -162,10 +139,7 @@ public static class CookedModelData
 
         if (max >= (uint)vertexCount)
         {
-            // The one index check the reader deliberately does not make, made
-            // here because this is where the arithmetic would go out of range.
-            // O(indices) is already paid by the copy above, so it costs nothing
-            // that the load was not spending anyway.
+            // The reader does not validate index values; this is the only check.
             throw new SmodelFormatException(
                 $"'{model.Source}' submesh {index} names vertex {max}, past the {vertexCount} in VBUF.");
         }
@@ -181,9 +155,8 @@ public static class CookedModelData
         return indices;
     }
 
-    // Path-shaped or not, and never through Path.GetFileNameWithoutExtension:
-    // a material path is content, so it may be the empty string, and the engine's
-    // own separator is '/' whatever the host filesystem prefers.
+    // Not Path.GetFileNameWithoutExtension: content paths use '/' on every host
+    // and may be empty.
     private static string NameWithoutExtension(string path)
     {
         if (path.Length == 0) return string.Empty;

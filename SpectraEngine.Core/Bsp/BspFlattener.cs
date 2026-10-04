@@ -9,33 +9,21 @@ namespace SpectraEngine.Core.Bsp;
 /// </summary>
 public static class BspFlattener
 {
-    // Sentinel for the root's "parent" slot. Deliberately not spelled
-    // FlatBspNode.EmptyLeaf even though both are -1: one addresses the node
-    // array, the other is a child code, and conflating them is how a future
-    // edit patches the wrong thing.
+    // An index into the node array, not a child code like FlatBspNode.EmptyLeaf.
     private const int NoParent = -1;
 
     /// <summary>
-    /// Flattens <paramref name="tree"/> pre-order depth first with the FRONT
-    /// child emitted first, and reports the root's child code in
-    /// <paramref name="rootIndex"/> (0 for any tree with a split at its root,
-    /// a leaf code for a tree that is one bare leaf).
+    /// Flattens <paramref name="tree"/> pre-order, front child first, so every
+    /// child index is greater than its parent's. <paramref name="rootIndex"/>
+    /// is 0, or a leaf code when the tree is one bare leaf.
     /// </summary>
-    /// <remarks>
-    /// The order is a pure function of the tree, so two flattens of one tree
-    /// produce element-identical arrays. Emitting a node before its subtrees
-    /// also makes every child index strictly greater than its parent's, which
-    /// is what makes a cycle unrepresentable in a well-formed array.
-    /// </remarks>
     public static FlatBspNode[] Flatten(BspTree tree, out int rootIndex)
     {
         ArgumentNullException.ThrowIfNull(tree);
 
         var nodes = new List<FlatBspNode>();
 
-        // An explicit stack rather than recursion: the live builder recurses
-        // and so bounds its own depth, but this walk will also run over trees
-        // read back from a file this process did not build.
+        // Explicit stack: tree depth is not bounded here.
         var pending = new Stack<PendingChild>();
         pending.Push(new PendingChild(tree.Root, NoParent, IsFront: false));
 
@@ -53,14 +41,11 @@ public static class BspFlattener
             }
             else
             {
-                // The slot is claimed BEFORE descending, which is what makes
-                // the emission pre-order; the children patch it on their way
-                // out.
+                // Children patch this slot when they are emitted.
                 child = nodes.Count;
                 nodes.Add(new FlatBspNode(live.Plane, FlatBspNode.EmptyLeaf, FlatBspNode.EmptyLeaf));
 
-                // Back pushed first so Front pops first: the whole front
-                // subtree is emitted before the back one.
+                // Back first so Front pops first.
                 pending.Push(new PendingChild(live.Back!, child, IsFront: false));
                 pending.Push(new PendingChild(live.Front!, child, IsFront: true));
             }

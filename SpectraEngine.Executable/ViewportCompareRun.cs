@@ -8,65 +8,21 @@ using System.Threading;
 
 namespace SpectraEngine.Executable;
 
-/// <summary>
-/// Runs the engine against a windowless composited surface for as long as
-/// <see cref="ViewportCompareProbe"/> needs, then stops it.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>A measurement of the machine rather than a session</b>, the same shape
-/// <c>--interop-probe</c> and <c>--export-entity-schema</c> take: it replaces
-/// the ordinary run instead of riding along beside it, and it ends itself. What
-/// makes it different from those two is that it needs REAL FRAMES - the thing
-/// being measured is the colour route a resolved frame takes on its way out of
-/// a composited surface, which does not exist until a scene has been loaded and
-/// drawn. <c>--exit-after-save</c> is the precedent for that half.
-/// </para>
-/// <para>
-/// <b>No window at all, deliberately.</b> A shared present target only exists on
-/// a <see cref="RenderSurfaceKind.Composited"/> surface, so a probe that opened
-/// a window would have to build a second one beside it and would then be
-/// measuring a target the frame does not go through. <see cref="Engine.Start"/>
-/// already takes a surface somebody else owns, which is exactly this.
-/// </para>
-/// <para>
-/// <b>The wait is bounded.</b> The engine ends the run itself when the probe
-/// reports, so the loop here is waiting on a shutdown that has already been
-/// decided; a timeout exists because a probe that never finished would
-/// otherwise hang an unattended caller forever with nothing on screen, and a
-/// hang reported as a timeout is a bug report somebody can act on.
-/// </para>
-/// </remarks>
+// Runs the engine on a windowless composited surface until ViewportCompareProbe
+// reports. No window: the shared present target only exists on a composited
+// surface, and a window would give the frame a swap chain instead.
 internal static class ViewportCompareRun
 {
-    /// <summary>
-    /// A real viewport's shape rather than a token one: the comparison is over
-    /// every texel of the picture, and a 64-square target would leave most of
-    /// the frame's content out of the measurement.
-    /// </summary>
+    // Viewport-sized, so the comparison covers a whole real frame.
     private const int Width = 1280;
 
     private const int Height = 720;
 
-    /// <summary>
-    /// How long to wait for the probe before giving up. Generous, because a
-    /// cold shader compile plus a first static-world build on a slow machine is
-    /// seconds; what it rules out is a wait that never returns.
-    /// </summary>
+    // The engine ends the run itself; this only guards against a hang.
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// Starts the engine, waits for the probe, stops it, and returns whether
-    /// the two pictures agreed.
-    /// </summary>
-    /// <remarks>
-    /// <b>The verdict is left on disk as well as in the log,</b> because the one
-    /// thing that has to act on it is the editor shell, which is a different
-    /// process and cannot watch this run happen. See
-    /// <see cref="ViewportCompareStamp"/>: without it the shell's
-    /// composited-viewport flip policy would have a colour condition nothing
-    /// could ever satisfy, and a gate that cannot open is worse than no gate.
-    /// </remarks>
+    // True when the two pictures agreed. The verdict is also written to disk,
+    // because the editor shell reads it from another process.
     internal static bool Run(Engine engine, Renderer renderer, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(engine);
@@ -93,21 +49,13 @@ internal static class ViewportCompareRun
         }
         finally
         {
-            // Blocks until the render thread has finished, which is not
-            // optional: it owns every GPU resource in the process, the shared
-            // texture included.
+            // Blocks until the render thread, which owns every GPU resource, is done.
             engine.Stop();
         }
 
-        // Faulted covers the case the probe never got to run at all, which
-        // would otherwise read as a pass through a null verdict.
         bool passed = engine.ViewportComparePassed == true && !engine.Faulted;
 
-        // Recorded either way. A red verdict is exactly as much information as a
-        // green one, and a stamp that only ever appeared on success would let a
-        // machine keep the previous run's green answer after breaking.
-        // AdapterName is only real once the render thread has initialised the
-        // renderer, which the wait above has already happened after.
+        // Record a failure too, or a broken machine keeps its last green stamp.
         RecordVerdict(renderer, passed, logger);
         return passed;
     }

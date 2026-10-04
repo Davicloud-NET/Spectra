@@ -14,67 +14,32 @@ namespace SpectraEngine.Editor.Shell;
 /// One map in the open project's panel: the manifest's, the folder's, or both.
 /// </summary>
 /// <param name="RelativePath">Project-relative bundle path, the manifest's key.</param>
-/// <param name="Name">The bundle's folder name without its extension.</param>
-/// <param name="IsStartup">Whether the manifest boots this one.</param>
-/// <param name="IsUnlisted">
-/// On disk but not in the manifest — the reconciliation the format docs assign
-/// to the editor, shown rather than silently resolved either way.
-/// </param>
+/// <param name="IsUnlisted">On disk but not in the manifest.</param>
 public sealed record ProjectMapRow(string RelativePath, string Name, bool IsStartup, bool IsUnlisted);
 
 /// <summary>
 /// Everything the window binds to: the engine's reported state, the readouts,
-/// and the one message line the engine never writes.
+/// and the message line.
 /// </summary>
-/// <remarks>
-/// <b>Written only by the UI thread's pump, from an immutable snapshot.</b>
-/// Nothing here reads the engine directly, and nothing the engine owns is
-/// referenced: the model holds numbers, strings and booleans copied out of a
-/// <see cref="FrameSnapshot"/>, which is what makes binding to it from XAML
-/// safe at all.
-/// <para>
-/// <b>The message line is deliberately not snapshot-driven.</b> Startup
-/// failures and platform refusals are written here once and must survive every
-/// subsequent frame; a pump that rewrote the whole status line each tick would
-/// erase the one diagnostic a user has when the viewport never appears.
-/// </para>
-/// </remarks>
+// UI thread only. Holds values copied out of a FrameSnapshot, never anything
+// the engine owns. The message line is not snapshot-driven, so a startup
+// failure written once survives later frames.
 public sealed class ShellModel : ObservableObject
 {
-    // ─── Optimistic state ────────────────────────────────
-    //
-    // Every one of these is a control the user clicks and the engine answers,
-    // and every one of them used to sit unchanged for a publish plus a pump
-    // after the click. See OptimisticValue for the mechanism and for why a
-    // BOUND on the local opinion is the whole design rather than a detail.
-    //
-    // What is NOT here, deliberately: the pipeline dropdown, because switching
-    // a pipeline legitimately takes time and can legitimately fail, so the
-    // engine's answer is the one worth showing; and the snap increment, which
-    // is a typed field with its own focus guard - a field that stopped taking
-    // refreshes AND held an unconfirmed value would have two reasons to
-    // disagree with the engine and no way to tell them apart.
-
+    // Values shown on the click and confirmed by the engine later. The
+    // pipeline dropdown and the snap increment are left out: a pipeline
+    // switch can fail, and the snap field has its own focus guard.
     private readonly OptimisticValue<string> _modeOpt = new("move", StringComparer.Ordinal);
     private readonly OptimisticValue<string> _styleOpt = new("Studio", StringComparer.Ordinal);
     private readonly OptimisticValue<string> _orientationOpt = new("world", StringComparer.Ordinal);
     private readonly OptimisticValue<bool> _snapOpt = new(false);
     private readonly OptimisticValue<DebugVisualization> _debugOpt = new(DebugVisualization.None);
 
-    // Play mode holds longer than the rest: entering it is real work (the
-    // editor is suspended, a gesture is rolled back, the cursor changes hands)
-    // and it is legitimately refused on a scene with no character, so twelve
-    // ticks is the difference between "it is starting" and "it said no".
+    // Longer hold: entering play mode takes real work and can be refused.
     private readonly OptimisticValue<bool> _playOpt = new(false) { HoldTicks = 12 };
 
-    // Undo and redo depth move TOGETHER, so they are one value. The pair is
-    // what makes the prediction possible at all: undo means one fewer to undo
-    // and one more to redo, and predicting only half of that would light the
-    // redo button against a depth that had not moved.
-    //
-    // This is the nastiest of the lot without optimism: click Undo, the button
-    // stays lit for up to 65ms because the depth has not come back yet, click
-    // again, and two edits are gone.
+    // One value, because undo and redo depth move together. Without the
+    // prediction a second quick click on Undo would undo two edits.
     private readonly OptimisticValue<(int Undo, int Redo)> _historyOpt = new((0, 0));
 
     private SceneTreeModel? _tree;
@@ -118,9 +83,8 @@ public sealed class ShellModel : ObservableObject
     private bool _hasSession;
 
     /// <summary>
-    /// Whether an engine session is running — what separates the editor view
-    /// from the start page, and what the toolbar and the session-only menu
-    /// items key their visibility and enabling on.
+    /// Whether an engine session is running. Separates the editor view from
+    /// the start page.
     /// </summary>
     public bool HasSession
     {
@@ -143,14 +107,7 @@ public sealed class ShellModel : ObservableObject
     private bool _isValidatingCooked;
 
     /// <summary>Whether a cooked-content validation is running right now.</summary>
-    /// <remarks>
-    /// <b>It gates its own menu item.</b> A cook is seconds of real work on a
-    /// background thread, and a second run started on top of the first would have
-    /// two cooks writing one <c>cooked/</c> folder - which the cache and the
-    /// writer are both safe against per file and neither promises for a whole
-    /// artifact. The item greys out instead, which is also the only thing on
-    /// screen saying the first run is still going.
-    /// </remarks>
+    // Gates its own menu item: two cooks must not write one cooked/ folder.
     public bool IsValidatingCooked
     {
         get => _isValidatingCooked;
@@ -161,28 +118,14 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>Whether the Validate Cooked verb can be asked for.</summary>
-    /// <remarks>
-    /// A project rather than a session, deliberately: the cook reads the folder
-    /// on disk and never touches the scene, so it is answerable with the engine
-    /// stopped and while play mode owns the graph.
-    /// </remarks>
+    // Needs a project, not a session: the cook only reads the folder on disk.
     public bool CanValidateCooked => _hasProject && !_isValidatingCooked;
 
     /// <summary>
     /// The open project's maps: the manifest's list in the author's order,
-    /// then anything on disk the manifest does not name. Rebuilt whole on the
-    /// UI thread when the project or its manifest changes — it is at most a
-    /// handful of rows, so the patch discipline the tree needs would be
-    /// ceremony here.
+    /// then anything on disk the manifest does not name.
     /// </summary>
     public ObservableCollection<ProjectMapRow> ProjectMaps { get; } = [];
-
-    // ─── Document identity ───────────────────────────────
-    //
-    // Mirrored from EditorDocument rather than bound through it, for the same
-    // reason everything else here is a copy: the window binds to ONE model, and
-    // a second DataContext half way down a StackPanel is a thing every later
-    // reader has to notice.
 
     private string _documentName = "untitled";
     private string _projectName = string.Empty;
@@ -219,8 +162,6 @@ public sealed class ShellModel : ObservableObject
 
     /// <summary>The Help menu's version line.</summary>
     public string AboutLabel { get; set; } = "Spectra Editor";
-
-    // ─── Command bar ─────────────────────────────────────
 
     private bool _isPlaying;
     private bool _canPlay;
@@ -261,7 +202,7 @@ public sealed class ShellModel : ObservableObject
             ? "Walk the level in first person.  F8"
             : "This level has no character to walk with.";
 
-    /// <summary>The play button's word. It is a button with room for one.</summary>
+    /// <summary>The play button's word.</summary>
     public string PlayLabel => _isPlaying ? "Stop" : "Play";
 
     private DebugVisualization _debugFlags;
@@ -281,16 +222,7 @@ public sealed class ShellModel : ObservableObject
     /// <summary>Whether the scene-graph overlay is on.</summary>
     public bool DebugSceneGraph => (_debugFlags & DebugVisualization.SceneGraph) != 0;
 
-    /// <summary>
-    /// Whether one overlay is on, for a caller holding the FLAG rather than the
-    /// name.
-    /// </summary>
-    /// <remarks>
-    /// The ribbon's overlay buttons carry their flag in the roster, so they ask
-    /// this rather than switching over five named properties: a sixth overlay
-    /// would otherwise need a case here as well as a row there, and the one
-    /// that got forgotten would silently always request "turn it on".
-    /// </remarks>
+    /// <summary>Whether one overlay is on, by flag.</summary>
     public bool IsDebugEnabled(DebugVisualization flag) => (_debugFlags & flag) != 0;
 
     private IReadOnlyList<string> _pipelineNames = Array.Empty<string>();
@@ -304,15 +236,10 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>
-    /// The live pipeline. Two-way: the dropdown writes a USER choice here,
-    /// which raises <see cref="PipelineRequested"/>; the snapshot writes the
-    /// engine's answer back under the guard, which raises nothing.
+    /// The live pipeline. Two-way: a user choice raises
+    /// <see cref="PipelineRequested"/>; a snapshot writing the engine's answer
+    /// back raises nothing.
     /// </summary>
-    /// <remarks>
-    /// The guard is the checkbox rule from the property panel: assigning the
-    /// published value back looks exactly like a selection, and without the
-    /// flag every snapshot would re-request the pipeline it just reported.
-    /// </remarks>
     public string? PipelineName
     {
         get => _pipelineName;
@@ -321,8 +248,8 @@ public sealed class ShellModel : ObservableObject
             if (!Set(ref _pipelineName, value))
                 return;
 
-            // Null is the dropdown clearing itself while its items change,
-            // not a person choosing nothing; there is no "no pipeline".
+            // Null is the dropdown clearing itself while its items change.
+            // The snapshot guard stops a published value re-requesting itself.
             if (!_applyingSnapshot && value is { Length: > 0 } requested)
                 PipelineRequested?.Invoke(requested);
         }
@@ -333,10 +260,8 @@ public sealed class ShellModel : ObservableObject
 
     private bool _applyingSnapshot;
 
-    // ─── Tool state ──────────────────────────────────────
-    // Mirrored as booleans as well as labels, because a toolbar needs to know
-    // which of three buttons is lit and a XAML class binding cannot compare
-    // strings.
+    // Tool state is mirrored as booleans too: a XAML class binding cannot
+    // compare strings.
 
     /// <summary>The live manipulator: <c>move</c>, <c>rotate</c> or <c>resize</c>.</summary>
     public string GizmoMode
@@ -383,12 +308,8 @@ public sealed class ShellModel : ObservableObject
     /// <summary>Whether the Studio handle roster is live.</summary>
     public bool IsStudioStyle => _gizmoStyle == "Studio";
 
-    // ─── What the user just asked for ────────────────────
-    //
-    // Each of these shows the requested value at once and starts the hold-off.
-    // The caller still posts the verb to the engine; these do not talk to it,
-    // because a model that also drove the engine would be a second path from a
-    // gesture to an edit, and there is exactly one.
+    // The Request* methods show the value at once and start the hold-off.
+    // They never talk to the engine; the caller still posts the verb.
 
     /// <summary>The user picked a tool. Lights it now; the engine confirms.</summary>
     public void RequestGizmoMode(string mode)
@@ -437,11 +358,6 @@ public sealed class ShellModel : ObservableObject
     /// The user asked to undo. Predicts the depths so the buttons settle on
     /// the click rather than a snapshot later.
     /// </summary>
-    /// <remarks>
-    /// A refused undo - the editor is mid-gesture, or suspended - re-lights the
-    /// button when the engine disagrees for long enough, which is the visible
-    /// refusal the plain version never gave.
-    /// </remarks>
     public void RequestUndo() =>
         ApplyHistory(_historyOpt.Request((Math.Max(0, _undoDepth - 1), _redoDepth + 1)));
 
@@ -457,28 +373,15 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>How many overlays are shown one chip at a time.</summary>
-    /// <remarks>
-    /// <b>Measured, not chosen.</b> The strip has to fit 644px - the viewport's
-    /// width in the compact workspace at the window's own minimum - and five
-    /// chips want about 340px on a row with 141 to spare. Two is what fits, so
-    /// two is the threshold.
-    /// </remarks>
+    // Two is what fits the header strip at its narrowest (644px).
     public const int MaxOverlayChips = 2;
 
     /// <summary>How many debug overlays are latched.</summary>
     public int OverlayCount { get; private set; }
 
     /// <summary>
-    /// Whether the overlays are shown as ONE chip rather than one each.
+    /// Whether the overlays are shown as one chip rather than one each.
     /// </summary>
-    /// <remarks>
-    /// <b>Collapsed rather than clipped, because a chip that scrolled off the
-    /// end would take the only thing on screen saying WHY the picture looks
-    /// wrong with it.</b> A fat-fingered F1 leaves a wireframe viewport and
-    /// nothing else to explain it, which is the entire reason these chips
-    /// exist: the answer to five of them is one chip that still says so, never
-    /// silence.
-    /// </remarks>
     public bool OverlaysCollapsed => OverlayCount > MaxOverlayChips;
 
     /// <summary>Whether each latched overlay gets its own chip.</summary>
@@ -522,15 +425,9 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>
-    /// Drops every unconfirmed request, because the engine they were aimed at
-    /// is gone.
+    /// Drops every unconfirmed request. Call when a session closes, or the
+    /// next session briefly shows the old one's pending values.
     /// </summary>
-    /// <remarks>
-    /// Called when a session closes. Without it, a tool picked in the last
-    /// second of one project is still pending when the next one opens, and its
-    /// first six snapshots are ignored - so a fresh session shows the previous
-    /// session's tool for a tenth of a second, on a scene that never had it.
-    /// </remarks>
     public void ResetOptimisticState()
     {
         _modeOpt.Reset(_gizmoMode);
@@ -543,12 +440,9 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>
-    /// Raised when the engine reports a different live tool.
+    /// Raised on the UI thread when the live tool changes, so the snap field
+    /// can re-read its increment.
     /// </summary>
-    /// <remarks>
-    /// The command bar's single snap field belongs to whichever tool is live,
-    /// so switching tools has to re-read the increment into it. UI thread.
-    /// </remarks>
     public event Action? GizmoModeChanged;
 
     /// <summary>The axis frame: <c>world</c> or <c>local</c>.</summary>
@@ -568,15 +462,7 @@ public sealed class ShellModel : ObservableObject
     /// <summary>Whether drags resolve against world axes.</summary>
     public bool IsWorldSpace => _orientation == "world";
 
-    /// <summary>
-    /// The Edit menu's wording for the axis toggle.
-    /// </summary>
-    /// <remarks>
-    /// A menu item that toggles state should say what the state IS, not name
-    /// the mechanism. "Drag axes: world" toggles to local and reads correctly
-    /// either way; "Toggle orientation" tells the reader nothing about what
-    /// they will get.
-    /// </remarks>
+    /// <summary>The Edit menu's wording for the axis toggle.</summary>
     public string OrientationMenuLabel => $"Drag axes: {_orientation}";
 
     /// <summary>Whether the live manipulator quantises its drags.</summary>
@@ -585,10 +471,7 @@ public sealed class ShellModel : ObservableObject
         get => _snapEnabled;
         private set
         {
-            // Inside the guard, both of them: these setters run on every pump,
-            // and an unguarded Raise makes every binding re-read (and the
-            // summary re-interpolate its string) hundreds of times a second
-            // for a value that has not moved.
+            // Raise only on a change: this setter runs on every pump.
             if (Set(ref _snapEnabled, value))
             {
                 Raise(nameof(SnapUnitLabel));
@@ -613,27 +496,14 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>
-    /// The unit the LIVE tool's snap increment is measured in.
+    /// The unit the live tool's snap increment is measured in: degrees under
+    /// rotate, world units otherwise.
     /// </summary>
-    /// <remarks>
-    /// <b>Not decoration.</b> The three snaps are absolute quantities of the
-    /// thing being edited, so the same number means world units under move and
-    /// degrees under rotate; a bare "0.25" beside a rotate tool would be a lie.
-    /// The command bar shows one increment field rather than three, and this is
-    /// what stops that being ambiguous: the unit beside the number changes when
-    /// the tool does.
-    /// </remarks>
     public string SnapUnitLabel => _gizmoMode == "rotate" ? "deg" : "su";
 
     /// <summary>
     /// Snap state as one phrase, for the inspector's empty state.
     /// </summary>
-    /// <remarks>
-    /// The command bar shows the increment as a field beside a lit toggle, which
-    /// is the right shape for something you change. This is the right shape for
-    /// something you are merely being told, in a panel that would otherwise be
-    /// blank.
-    /// </remarks>
     public string SnapSummary => _snapEnabled
         ? $"{_snapIncrement:0.##} {SnapUnitLabel}"
         : "off";
@@ -658,17 +528,9 @@ public sealed class ShellModel : ObservableObject
     public string NavigationMenuLabel => $"Camera: {_navigation}";
 
     /// <summary>
-    /// The first word of it, for the header chip.
+    /// The first word of <see cref="Navigation"/>, for the header chip, which
+    /// has no room for the full phrase.
     /// </summary>
-    /// <remarks>
-    /// <b>The strip is the narrowest crowded row in the shell and this chip was
-    /// the widest thing on it.</b> "editor freelook" and "fly camera" differ in
-    /// their first word and agree in their second, so the first word carries the
-    /// whole distinction; the full phrase stays in the tooltip and in the menu,
-    /// where there is room for it. Measured: the resting strip wanted 706px
-    /// against the 644px the compact workspace gives a viewport at the window's
-    /// own minimum, and this is most of the difference.
-    /// </remarks>
     public string NavigationChipLabel
     {
         get
@@ -678,8 +540,7 @@ public sealed class ShellModel : ObservableObject
         }
     }
 
-    // The engine's answer, snapshot-followed with no optimistic hold: the menu
-    // is closed by the time the echo lands, so there is nothing to flicker.
+    // No optimistic hold: the menu is closed by the time the echo lands.
     private string _gridMode = "auto";
 
     /// <summary>Whether the grid shows during move/resize gestures only.</summary>
@@ -707,17 +568,8 @@ public sealed class ShellModel : ObservableObject
     public bool IsViewRight => _viewName == "Right";
     public bool IsViewLeft => _viewName == "Left";
 
-    /// <summary>
-    /// Follows the engine, with no optimistic hold.
-    /// </summary>
-    /// <remarks>
-    /// <b>An unrequested return to perspective is REPORTED</b>, because it is
-    /// the one camera change somebody did not ask for: looking around or
-    /// orbiting leaves a plan view, which is the right behaviour and is
-    /// invisible if the chip simply changes. Saying it once, and only when the
-    /// shell had not asked, is what turns a surprise into a rule somebody
-    /// learns.
-    /// </remarks>
+    // Follows the engine, no optimistic hold. Looking around leaves a plan
+    // view; that return to perspective is reported unless the shell asked.
     private void ApplyViewName(string name)
     {
         if (_viewName == name) return;
@@ -764,8 +616,6 @@ public sealed class ShellModel : ObservableObject
         Raise(nameof(GridModeLabel));
     }
 
-    // ─── Selection and history ───────────────────────────
-
     /// <summary>How many nodes the engine reports as selected.</summary>
     public int SelectionCount
     {
@@ -785,11 +635,8 @@ public sealed class ShellModel : ObservableObject
     public bool HasSelection => _selectionCount > 0;
 
     /// <summary>
-    /// The selection as a phrase, NAMING the object in hand: "1 selected"
-    /// answers how-many, never what, and every engine editor's status surface
-    /// says what. The name resolves through the tree mirror, which the pump
-    /// has already brought up to date by the time the snapshot is applied, so
-    /// a rename is reflected on the same pump.
+    /// The selection as a phrase, naming the first selected node where the
+    /// tree mirror knows it.
     /// </summary>
     public string SelectionLabel => _selectionCount switch
     {
@@ -847,40 +694,21 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>Whether the undo button should be live.</summary>
-    /// <remarks>
-    /// <b>Depth is not the whole answer, and the other half was missing.</b>
-    /// Undo goes through <c>RefuseEdit</c>, which refuses it while play mode
-    /// owns the scene - and <c>Suspend()</c> never clears the selection or the
-    /// history, so both buttons stayed lit and inert for a whole play session
-    /// with a Debug log line as the only evidence. The command bar wears the
-    /// mode colour during play precisely so greying things there reads as
-    /// suspended rather than broken.
-    /// </remarks>
+    // Play mode refuses edits but keeps the history, so depth alone is not enough.
     public bool CanUndo => _undoDepth > 0 && !_isPlaying;
 
     /// <summary>Whether the redo button should be live. See <see cref="CanUndo"/>.</summary>
     public bool CanRedo => _redoDepth > 0 && !_isPlaying;
 
     /// <summary>
-    /// Whether the verbs that CHANGE the selection should be live: duplicate,
-    /// delete, convert, group, ungroup.
+    /// Whether the verbs that change the selection should be live: duplicate,
+    /// delete, convert, group, ungroup. False during play.
     /// </summary>
-    /// <remarks>
-    /// Separate from <see cref="HasSelection"/>, which stays a plain question
-    /// about the selection and still answers for framing and for the property
-    /// panel. All five of these go through <c>RefuseEdit</c> and were refused
-    /// throughout play while their controls stayed enabled.
-    /// </remarks>
     public bool CanEditSelection => _selectionCount > 0 && !_isPlaying;
 
     /// <summary>
     /// The undo button's tooltip, which says how deep the history is.
     /// </summary>
-    /// <remarks>
-    /// A disabled icon button with a bare "Undo" tooltip leaves the user
-    /// guessing whether the tool refused them or had nothing to do. The depth
-    /// answers that, and it is already published on every snapshot.
-    /// </remarks>
     public string UndoTip => _undoDepth == 0
         ? "Nothing to undo"
         : $"Undo, {_undoDepth} step(s) back.  Ctrl+Z";
@@ -889,8 +717,6 @@ public sealed class ShellModel : ObservableObject
     public string RedoTip => _redoDepth == 0
         ? "Nothing to redo"
         : $"Redo, {_redoDepth} step(s) forward.  Ctrl+Y";
-
-    // ─── Readouts ────────────────────────────────────────
 
     /// <summary>The engine's smoothed frame rate.</summary>
     public double Fps
@@ -927,19 +753,9 @@ public sealed class ShellModel : ObservableObject
 
     /// <summary>
     /// The longest wait the render thread spent on the shared target's key in
-    /// the last publish window, in milliseconds.
+    /// the last publish window, in milliseconds. When it rises with a falling
+    /// frame rate, the UI thread is holding the engine up.
     /// </summary>
-    /// <remarks>
-    /// <b>A composited viewport's frame rate is coupled to this window's own
-    /// responsiveness, and no other instrument can see it.</b> The keyed mutex
-    /// is the clock: the engine cannot begin a frame until the consumer
-    /// releases key 0, and the consumer releases it from a continuation on this
-    /// dispatcher. So a frame rate that falls while this stays near zero is the
-    /// engine's own drawing cost, and a frame rate that falls while this rises
-    /// is the UI thread holding the engine up, which no amount of render work
-    /// will fix. The distinction is invisible in frame time, because the wait
-    /// happens inside the frame.
-    /// </remarks>
     public float SharedAcquirePeakMs
     {
         get => _sharedAcquirePeakMs;
@@ -956,23 +772,9 @@ public sealed class ShellModel : ObservableObject
     /// <summary>
     /// Whether the producer waited long enough to be worth showing.
     /// </summary>
-    /// <remarks>
-    /// <b>The floor is one refresh interval plus a margin, and it was wrong
-    /// first time in the direction that matters.</b> It shipped at 3.3 ms, a
-    /// fifth of a 60 Hz frame, on the reasoning that anything smaller cannot be
-    /// felt. That reads the wait backwards: the mutex IS the clock, so a
-    /// producer paced by a healthy 60 Hz consumer waits most of an interval by
-    /// design. Measured with <c>--pacing-probe</c> against a real consumer at a
-    /// set cadence: a 60 Hz turn costs 15.15 ms average and 15.74 ms peak, a
-    /// 40 Hz turn 23.45 and 24.13, a 30 Hz turn 31.97 and 32.34. So the old
-    /// floor reported every healthy composited session as stalling, which
-    /// teaches people to ignore the one continuous instrument this path has.
-    /// <para>
-    /// 20 ms sits above a healthy 60 Hz peak and below a 40 Hz one, so the chip
-    /// appears when turns are actually being missed and stays hidden when the
-    /// producer is simply waiting its turn.
-    /// </para>
-    /// </remarks>
+    // The mutex paces the producer, so a healthy 60 Hz consumer already costs
+    // about 15.7 ms peak (measured with --pacing-probe). 20 ms sits above that
+    // and below a 40 Hz turn (24 ms), so the chip shows only for missed turns.
     public bool SharedAcquireVisible => _sharedAcquirePeakMs >= 20f;
 
     /// <summary>The wait, as the status bar shows it.</summary>
@@ -989,14 +791,12 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>
-    /// The viewport camera's position, formatted for the header strip: mono,
-    /// one decimal, invariant, so it reads as an instrument.
+    /// The viewport camera's position, formatted for the header strip.
     /// </summary>
     public string CameraPositionLabel { get; private set; } = string.Empty;
 
-    // Compared ROUNDED, so the label re-formats only when a shown digit
-    // actually moves rather than on every sub-millimetre drift; NaN seeds the
-    // first publish, since NaN never equals itself.
+    // Compared rounded, so the label re-formats only when a shown digit moves.
+    // NaN never equals itself, which forces the first publish.
     private System.Numerics.Vector3 _cameraShown = new(float.NaN);
 
     private void UpdateCameraReadout(System.Numerics.Vector3 position)
@@ -1047,7 +847,7 @@ public sealed class ShellModel : ObservableObject
 
     /// <summary>
     /// The tree's population, shown as a fraction only while a filter narrows
-    /// it. An unfiltered "284 / 284" is noise.
+    /// it.
     /// </summary>
     public string TreeCountLabel =>
         _matchCount == _nodeCount ? $"{_nodeCount}" : $"{_matchCount} / {_nodeCount}";
@@ -1055,14 +855,8 @@ public sealed class ShellModel : ObservableObject
     /// <summary>
     /// Whether a filter is on and nothing passes it.
     /// </summary>
-    /// <remarks>
-    /// <b>The tree DIMS rather than hides</b>, which is right - removing rows
-    /// collapses the hierarchy around every match and destroys the only thing a
-    /// user has after two hundred nodes, which is knowing where things live. It
-    /// does mean a zero-match filter looks exactly like a panel that stopped
-    /// working: every row is still there, greyed, and the only signal is a
-    /// counter reading "0 /". Hence this, and the line the panel shows.
-    /// </remarks>
+    // The tree dims non-matches instead of hiding them, so zero matches would
+    // otherwise look like a broken panel.
     public bool HasNoMatches => _filterText.Length > 0 && _matchCount == 0;
 
     /// <summary>What to say when the filter matched nothing.</summary>
@@ -1082,21 +876,12 @@ public sealed class ShellModel : ObservableObject
         Raise(nameof(ViewportLabel));
     }
 
-    // ─── The drop overlay ────────────────────────────────
-
     private ViewportDropPrompt _dropPrompt = ViewportDropPrompt.None;
 
     /// <summary>
     /// What the viewport draws over the picture while an asset drag is over it.
     /// </summary>
-    /// <remarks>
-    /// <b>Assigned whole and compared whole, because the source fires at
-    /// pointer rate.</b> A record struct's equality is the guard: an unchanged
-    /// prompt raises nothing, so a drag crossing the pane costs one comparison
-    /// per pointer move rather than five property-changed notifications and the
-    /// bindings behind them. The four bindable halves below are read-only views
-    /// of this one value, so they cannot disagree with each other.
-    /// </remarks>
+    // Set at pointer rate; an unchanged prompt raises nothing.
     public ViewportDropPrompt DropPrompt
     {
         get => _dropPrompt;
@@ -1132,36 +917,20 @@ public sealed class ShellModel : ObservableObject
     /// <summary>Why not, when the answer is no.</summary>
     public string DropReason => _dropPrompt.Reason;
 
-    /// <summary>
-    /// What exactly would be covered, and which key changes it.
-    /// </summary>
-    /// <remarks>
-    /// The modifier is advertised HERE rather than left to be discovered,
-    /// because a drag has no menu beside it and no shortcut printed anywhere:
-    /// the only moment "hold Ctrl for the whole block" can be read is while
-    /// somebody is holding the mouse down over the face it describes.
-    /// </remarks>
+    /// <summary>What would be covered, and which key changes it.</summary>
     public string DropHint => _dropPrompt.Hint;
 
     /// <summary>Whether there is a hint line to draw.</summary>
     public bool DropHasHint => _dropPrompt.Hint.Length > 0;
 
     /// <summary>
-    /// The glyph beside the verdict, resolved from the theme by name.
+    /// The glyph beside the verdict, resolved from the theme by name. Null
+    /// when the resource is missing.
     /// </summary>
-    /// <remarks>
-    /// One bound Path rather than three with two hidden: the arms share a hue
-    /// by design, so the icon is half of how they are told apart, and a third
-    /// arm would have made that a chain of negated visibility bindings nobody
-    /// can read. A missing resource draws nothing, and the words still say what
-    /// would happen.
-    /// </remarks>
     public Geometry? DropIcon =>
         Application.Current?.TryFindResource(_dropPrompt.IconKey, out object? value) == true
             ? value as Geometry
             : null;
-
-    // ─── Message line ────────────────────────────────────
 
     /// <summary>The transient message zone, at the left of the status bar.</summary>
     public string Message
@@ -1189,13 +958,8 @@ public sealed class ShellModel : ObservableObject
     /// <summary>
     /// Why the level has stopped rebuilding, or null when it is current.
     /// </summary>
-    /// <remarks>
-    /// <b>Its own channel, not the message line.</b> The message line is
-    /// last-writer-wins and every save, open and refusal writes to it, so a
-    /// standing failure put there is gone by the next thing that happens. This
-    /// one is a state rather than an event: it is true until it is fixed, and it
-    /// means edits are landing in a level the viewport is no longer showing.
-    /// </remarks>
+    // Not on the message line: that is last-writer-wins and this stands until
+    // it is fixed.
     public string? WorldDefect
     {
         get => _worldDefect;
@@ -1222,13 +986,6 @@ public sealed class ShellModel : ObservableObject
     /// <summary>
     /// How many errors the graphics validation layer has reported this session.
     /// </summary>
-    /// <remarks>
-    /// <b>Its own standing slot beside the world defect, for the same reason
-    /// that one has one.</b> The faults this counts - a missing barrier, a
-    /// pipeline state bound to a format it was not compiled for - still draw a
-    /// picture, so the viewport cannot show them and the message line, which is
-    /// last-writer-wins, would lose them to the next thing that happens.
-    /// </remarks>
     public int DebugLayerErrors
     {
         get => _debugLayerErrors;
@@ -1262,14 +1019,9 @@ public sealed class ShellModel : ObservableObject
     public bool HasDebugLayerErrors => _debugLayerErrors > 0;
 
     /// <summary>
-    /// Whether the detector is running AND has reported nothing.
+    /// Whether the detector is running and has reported nothing.
     /// </summary>
-    /// <remarks>
-    /// <b>Deliberately not "the count is zero".</b> On D3D the count exists only
-    /// while validation is on, so an inactive layer reports zero for the same
-    /// reason a clean session does, and reading the number alone turns "nothing
-    /// is watching" into "nothing is wrong".
-    /// </remarks>
+    // Not just "count is zero": an inactive layer also reports zero.
     public bool DebugLayerClean => _debugLayerActive && _debugLayerErrors == 0;
 
     /// <summary>What the graphics detector has to say, for the slot's tooltip.</summary>
@@ -1300,14 +1052,6 @@ public sealed class ShellModel : ObservableObject
     /// How many asset references are standing on a failure and drawing the
     /// magenta checker.
     /// </summary>
-    /// <remarks>
-    /// <b>A third standing slot, because this failure's only other report is a
-    /// colour somewhere in the level.</b> A material that will not resolve
-    /// degrades to the placeholder and warns once into a log; the surface itself
-    /// says something is wrong but not what, and a level big enough to scroll
-    /// can hide it entirely. The slot says how many, and the Problems panel says
-    /// which.
-    /// </remarks>
     public int PlaceholderBoundCount
     {
         get => _placeholderBound;
@@ -1360,27 +1104,15 @@ public sealed class ShellModel : ObservableObject
     }
 
     /// <summary>
-    /// Everything the shell has reported, oldest first.
+    /// Everything the shell has reported, oldest first. The status line shows
+    /// its newest entry.
     /// </summary>
-    /// <remarks>
-    /// <b>The status line is a VIEW of this, not the storage.</b> It used to be
-    /// the storage, which meant about thirty call sites shared one string and
-    /// each one silently destroyed whatever the last had written - so a failure
-    /// reported while the user was looking somewhere else was gone by the time
-    /// they looked back. The line still shows the newest entry; what changed is
-    /// that the entry before it survives.
-    /// </remarks>
     public OutputLog Output { get; } = new();
 
     /// <summary>
-    /// What is wrong right now, as distinct from what has been said.
+    /// What is wrong right now: one row per standing condition, kept until
+    /// something ends it.
     /// </summary>
-    /// <remarks>
-    /// <b>Separate from <see cref="Output"/> because they answer different
-    /// questions.</b> The log is bounded and its counts fall back to zero as
-    /// lines scroll away, so it can only report what was recently said; this
-    /// keeps one row per standing condition until something ends it.
-    /// </remarks>
     public ProblemList Problems { get; } = new();
 
     private WorkspacePreset _workspacePreset = WorkspacePreset.Compact;
@@ -1388,10 +1120,7 @@ public sealed class ShellModel : ObservableObject
     private bool _viewportMaximised;
     private bool _showDiagnostics;
 
-    /// <summary>
-    /// How the window is arranged. Shell state, so no optimistic hold: there is
-    /// no engine echo to wait for.
-    /// </summary>
+    /// <summary>How the window is arranged.</summary>
     public WorkspacePreset WorkspacePreset
     {
         get => _workspacePreset;
@@ -1430,11 +1159,6 @@ public sealed class ShellModel : ObservableObject
     /// <summary>
     /// What the mouse and the modifiers do right now.
     /// </summary>
-    /// <remarks>
-    /// Recomputed only when one of its three inputs moved, because it is read
-    /// from a snapshot that arrives up to 120 times a second while a drag is
-    /// live and the answer changes a handful of times in a session.
-    /// </remarks>
     public string GestureHint
     {
         get => _gestureHint;
@@ -1444,49 +1168,25 @@ public sealed class ShellModel : ObservableObject
     private void RefreshGestureHint() =>
         GestureHint = GestureHints.For(_interactionState, _gizmoMode, _snapEnabled);
 
-    /// <summary>Whether the status bar shows the engine counters.</summary>
-    /// <remarks>
-    /// <b>Off by default.</b> Node count, compile count, viewport size and frame
-    /// rate are instruments for somebody working on the engine; for somebody
-    /// building a level they are five numbers in the space where the current
-    /// gesture should be.
-    /// </remarks>
+    /// <summary>Whether the status bar shows the engine counters. Off by default.</summary>
     public bool ShowDiagnostics
     {
         get => _showDiagnostics;
         set => Set(ref _showDiagnostics, value);
     }
 
-    /// <summary>
-    /// The project's assets, browsed. Assigned by the window, which is the only
-    /// thing that knows where a project's content root is.
-    /// </summary>
+    /// <summary>The project's assets, browsed. Assigned by the window.</summary>
     public ContentBrowserModel? Content { get; set; }
 
     /// <summary>
     /// The project's files, for the pickers that assign them.
     /// </summary>
-    /// <remarks>
-    /// Beside the browser rather than inside it: a picker asks a different
-    /// question (every file of one kind, anywhere in the project) from the one
-    /// the browser answers (this folder, in order), and a picker that read the
-    /// browser's current folder would offer whatever the user last navigated
-    /// to.
-    /// </remarks>
     public AssetCatalog? Assets { get; set; }
-
-    // ─── Filter ──────────────────────────────────────────
 
     /// <summary>
     /// The scene filter's text. Applied to the tree after a short pause rather
-    /// than per keystroke.
+    /// than per keystroke, because a filter pass touches every node.
     /// </summary>
-    /// <remarks>
-    /// <b>Debounced because a filter pass touches every node.</b> Typing five
-    /// characters into an unthrottled filter runs five full walks in under a
-    /// second, and the visible symptom is a keyboard that lags rather than a
-    /// tree that is slow, which is much harder to attribute.
-    /// </remarks>
     public string FilterText
     {
         get => _filterText;
@@ -1523,32 +1223,19 @@ public sealed class ShellModel : ObservableObject
     public bool HasProperties => _properties is not null;
 
     /// <summary>
-    /// The entity classes the Insert menu offers, in catalogue order.
+    /// The entity classes the Insert menu offers, in catalogue order. They
+    /// come from the open project's <c>.sentdef</c>; see
+    /// <see cref="EntityInsertMenu"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>A list rather than six more Click handlers</b>, because which classes
-    /// exist is a fact about the open project rather than about this build:
-    /// they are read out of a <c>.sentdef</c> at session start and cannot be
-    /// written into XAML at all. See <see cref="EntityInsertMenu"/> for why the
-    /// source has to be the PARSED catalogue.
-    /// </remarks>
     public ObservableCollection<EntityInsertItem> EntityClasses { get; } = [];
 
-    /// <summary>
-    /// Whether there is anything to put in the entity submenu, so an empty one
-    /// is hidden rather than opened onto nothing.
-    /// </summary>
+    /// <summary>Whether there is anything to put in the entity submenu.</summary>
     public bool HasEntityClasses => EntityClasses.Count > 0;
 
     /// <summary>
     /// Replaces the entity submenu's entries. Called when a session opens with
     /// its catalogue, and with null when one closes.
     /// </summary>
-    /// <remarks>
-    /// Patched by replacement rather than reused, unlike the tree's rows and
-    /// the panel's: this list changes exactly twice per session and holds no
-    /// state a user can be halfway through.
-    /// </remarks>
     public void SetEntityClasses(IReadOnlyList<EntityInsertItem>? items)
     {
         EntityClasses.Clear();
@@ -1565,14 +1252,8 @@ public sealed class ShellModel : ObservableObject
     /// <summary>
     /// Whether the ribbon's Entity split button can do anything.
     /// </summary>
-    /// <remarks>
-    /// Derived rather than composed in the markup, because Avalonia has no way
-    /// to AND two bindings without a converter and the two halves of a split
-    /// button must agree: a caret that opens a list over a main half that
-    /// refuses is a control disagreeing with itself. Raised from both setters
-    /// it reads, since a derived property nobody raises is a control that
-    /// stops updating and reports nothing.
-    /// </remarks>
+    // Gates both halves of the split. Raised from SetEntityClasses and from
+    // the IsPlaying setter.
     public bool CanInsertEntity => EntityClasses.Count > 0 && !_isPlaying;
 
     /// <summary>Whether a filter is narrowing the tree, for the clear button.</summary>
@@ -1595,29 +1276,20 @@ public sealed class ShellModel : ObservableObject
         tree.ApplyFilter(_filterText);
         MatchCount = tree.MatchCount;
 
-        // Raised unconditionally, because FilterIsUnknown can flip while the
-        // count does not: going from "t:zz" to "zzz" leaves MatchCount at 0, so
-        // its setter stays silent and the panel would go on offering a list of
-        // kind names for a filter that is now an ordinary name search.
+        // Always raised: FilterIsUnknown can flip while the count stays 0
+        // ("t:zz" to "zzz").
         Raise(nameof(NoMatchLabel));
     }
-
-    // ─── The one crossing ────────────────────────────────
 
     /// <summary>
     /// Copies one finished frame's values in. UI thread, from the pump.
     /// </summary>
-    /// <remarks>
-    /// Every property here is guarded by an equality check, so a steady frame
-    /// with nothing moving raises nothing and the binding layer does no work.
-    /// </remarks>
     public void ApplySnapshot(FrameSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        // Guards the two-way bindings (the pipeline dropdown today): writing
-        // the engine's reported value back must not read as the user picking
-        // it and echo a request straight back at the engine.
+        // So writing the engine's value into a two-way binding is not taken
+        // for a user choice.
         _applyingSnapshot = true;
         try
         {
@@ -1630,9 +1302,7 @@ public sealed class ShellModel : ObservableObject
             CompileCount = snapshot.StaticWorldCompileCount;
             WorldDefect = snapshot.StaticWorldDefect;
 
-            // Active first: the count's meaning depends on it, and writing the
-            // count against a stale activity flag makes the tooltip describe a
-            // detector state that is one publish out of date.
+            // Active first: the tooltip reads the count against it.
             DebugLayerActive = snapshot.DebugLayerActive;
             DebugLayerErrors = snapshot.DebugLayerErrorCount;
             PlaceholderBoundCount = snapshot.PlaceholderBoundCount;
@@ -1644,9 +1314,6 @@ public sealed class ShellModel : ObservableObject
                 RefreshGestureHint();
             }
 
-            // Everything below that goes through an OptimisticValue is reported
-            // BY the engine and possibly still pending FROM the user; Apply is
-            // what decides which of the two the UI shows this tick.
             _historyOpt.Apply((snapshot.UndoDepth, snapshot.RedoDepth));
             ApplyHistory(true);
 
@@ -1662,10 +1329,8 @@ public sealed class ShellModel : ObservableObject
             _snapOpt.Apply(snapshot.SnapEnabled);
             SnapEnabled = _snapOpt.Value;
 
-            // The increment belongs to whichever tool is LIVE, so while a tool
-            // switch is unconfirmed the reported increment still describes the
-            // previous tool. Writing it would put the move grid in a field
-            // labelled degrees for one tick.
+            // While a tool switch is unconfirmed the reported increment still
+            // belongs to the previous tool.
             if (!_modeOpt.HasPending)
                 SnapIncrement = snapshot.SnapIncrement;
 

@@ -10,23 +10,12 @@ using System.Text.RegularExpressions;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The command line's contract: the exit code, and the exact shape of a line on
-/// stderr.
+/// The command line's contract: exit codes, and stderr lines MSBuild can parse.
+/// Driven in process through <c>Program.Run</c>.
 /// </summary>
-/// <remarks>
-/// <para><b>Both halves are a contract with something that is not a person.</b>
-/// The exit code is read by a build script and the stderr line is parsed by
-/// MSBuild and every IDE that wraps it, so "the message is still helpful" is not
-/// the property under test: the property is that the line matches the canonical
-/// form and carries the code.</para>
-/// <para>Driven through <c>Program.Run</c> with its writers rather than by
-/// spawning <c>scook</c>, which is what keeps these as fast as the rest of the
-/// suite.</para>
-/// </remarks>
 public class ScookCliTests
 {
-    // The ANSI introducer, spelled by code point: a raw escape byte in a source
-    // file is invisible in every diff it ever appears in.
+    // By code point: a raw escape byte in source is invisible in a diff.
     private static readonly string Escape = ((char)0x1B).ToString();
 
     private const int ExitSuccess = 0;
@@ -34,8 +23,7 @@ public class ScookCliTests
     private const int ExitUsageError = 2;
     private const int ExitIoError = 3;
 
-    // MSBuild's canonical diagnostic form, in its two shapes: an origin that is a
-    // file (with or without a position) or the tool's own name.
+    // MSBuild's canonical diagnostic form. The origin is a file or the tool name.
     private static readonly Regex BuildLine = new(
         @"^(?<origin>.*?)\s*:\s*(?<severity>error|warning|info)\s+(?<code>[A-Z]{2}\d{4}):\s+(?<text>.+)$",
         RegexOptions.Compiled);
@@ -60,8 +48,7 @@ public class ScookCliTests
         Invoke("cook", ".", "-t", "metal").ExitCode.ShouldBe(ExitUsageError);
         Invoke("verify").ExitCode.ShouldBe(ExitUsageError);
 
-        // Refused rather than ignored: a switch that silently does nothing on
-        // the wrong verb leaves the caller believing they got JSON.
+        // --json on the wrong verb is refused, not ignored.
         Invoke("cook", ".", "--json").ExitCode.ShouldBe(ExitUsageError);
     }
 
@@ -86,9 +73,7 @@ public class ScookCliTests
     {
         var run = Invoke("verify", "some.spack", "--no-color");
 
-        // Exit 3, not 1, and the line between them is who is at fault: a typo in
-        // a path and a material missing its texture want different people looking
-        // at them, and the exit code is how a CI step says which happened.
+        // Exit 3, not 1: a bad path is not a broken pack.
         run.ExitCode.ShouldBe(ExitIoError);
         MatchSingleDiagnostic(run.Stderr).Groups["code"].Value.ShouldBe("SC9003");
     }
@@ -110,20 +95,15 @@ public class ScookCliTests
         passed.Stderr.ShouldBeEmpty();
         passed.Stdout.ShouldContain("1 reference(s) resolved");
 
-        // Remove the texture and recook: the COOK is now the first thing that
-        // refuses it, under the same SC5001 the verify reports below, because the
-        // material rule reads what a material names instead of copying it unread.
-        // One code at one loudness from both verbs, because CookGate decides it
-        // once for both.
+        // Without the texture the cook refuses with the same SC5001 verify reports.
         File.Delete(Path.Combine(project.Layout.AssetsPath, "Textures", "wall_brick.png"));
 
         var recooked = Invoke("cook", project.Root, "-q");
         recooked.ExitCode.ShouldBe(ExitCookError);
         MatchSingleDiagnostic(recooked.Stderr).Groups["code"].Value.ShouldBe("SC5001");
 
-        // And the pack on disk is still the good one, untouched, because a failed
-        // cook writes nothing - which is the reason the verify half below needs a
-        // pack built by hand rather than one the cook was talked into producing.
+        // A failed cook writes nothing, so the old pack is still good and the
+        // broken one below has to be built by hand.
         Invoke("verify", pack).ExitCode.ShouldBe(ExitSuccess);
 
         var failed = Invoke("verify", WriteHolePack(project));
@@ -131,10 +111,7 @@ public class ScookCliTests
         MatchSingleDiagnostic(failed.Stderr).Groups["code"].Value.ShouldBe("SC5001");
     }
 
-    // A pack carrying a material and not the texture it names: the artifact a cook
-    // now refuses to produce, and exactly the artifact `verify` exists for -
-    // somebody's older build, an edited file, or two rules that each succeeded
-    // while the entry one of them needed never reached the container.
+    // A pack with a material and not the texture it names.
     private static string WriteHolePack(TempProject project)
     {
         string path = Path.Combine(project.Root, "hole.spack");
@@ -161,17 +138,12 @@ public class ScookCliTests
         var text = Invoke("inspect", pack);
         text.ExitCode.ShouldBe(ExitSuccess);
 
-        // The COOKED name, which is also this surface's only statement that the
-        // image rule ran at all: a pack whose textures still said .png would be a
-        // pack of raw copies, and it would mount and render perfectly.
+        // The cooked name: a .png here would mean a raw copy.
         text.Stdout.ShouldContain("Textures/wall_brick.simage");
         text.Stdout.ShouldNotContain("Textures/wall_brick.png");
         text.Stdout.ShouldContain("sorted, names");
         text.Stdout.ShouldContain("1 entries");
 
-        // The form for anything that is not a person: the table's columns widen
-        // to whatever the longest name in that particular pack is, so parsing it
-        // means parsing a layout that changes per file.
         var json = Invoke("inspect", pack, "--json");
         json.ExitCode.ShouldBe(ExitSuccess);
         json.Stdout.ShouldContain("\"scookInspect\": 1");
@@ -187,8 +159,6 @@ public class ScookCliTests
 
         var run = Invoke("cook", project.Root, "--watch");
 
-        // Cooking once and exiting would report success for a loop that is not
-        // running, which is worse than refusing.
         run.ExitCode.ShouldBe(ExitCookError);
         MatchSingleDiagnostic(run.Stderr).Groups["code"].Value.ShouldBe("SC0002");
     }
@@ -203,8 +173,6 @@ public class ScookCliTests
 
         run.ExitCode.ShouldBe(ExitSuccess);
 
-        // -o defaults to ProjectFormat.CookedFolder, the constant that has been in
-        // the layout since it was written and has never had a consumer.
         string[] packs = Directory.GetFiles(project.CookedPath, "*.spack");
         packs.Length.ShouldBe(1);
         run.Stdout.ShouldContain(packs[0]);
@@ -229,15 +197,10 @@ public class ScookCliTests
         using var project = new TempProject();
         project.WriteAsset("Data/strings.bin", TempProject.Bytes(40));
 
-        // --script-source strip, because the script rule is genuinely unbuilt.
-        // This case has now been spelled three ways: -t stopped being an example
-        // of anything the moment the shader rule acted on it, and
-        // --keep-brush-source stopped the moment the map rule did.
+        // --script-source: there is no script rule yet, so nothing acts on it.
         var run = Invoke("cook", project.Root, "--script-source", "strip", "--strict");
 
-        // A warning rather than an error even under --strict: the request is
-        // legitimate and the cook it asked for still happened. It is reported by
-        // the CLI rather than through the session for exactly that reason.
+        // Still a warning under --strict: the cook itself happened.
         run.ExitCode.ShouldBe(ExitSuccess);
 
         Match match = MatchSingleDiagnostic(run.Stderr);
@@ -254,10 +217,6 @@ public class ScookCliTests
 
         var run = Invoke("cook", project.Root, "-j", "8");
 
-        // This used to be the tool's own example of a switch it accepted and
-        // ignored. A tool that keeps apologising for something it now does is
-        // worse than one that never said anything, because the warning is what a
-        // reader would believe over the behaviour.
         run.ExitCode.ShouldBe(ExitSuccess);
         run.Stderr.ShouldBeEmpty();
     }
@@ -269,13 +228,10 @@ public class ScookCliTests
         for (int i = 0; i < 3; i++)
             project.WriteAsset($"Data/t{i}.bin", TempProject.Bytes(16, seed: (byte)i));
 
-        // Three assets under -j8 is three workers, and saying "8" would hide the
-        // clamp, which is the one thing somebody asking why -j16 is no faster
-        // needs to see.
+        // Three assets clamp -j8 to three workers.
         Invoke("cook", project.Root, "-j", "8").Stdout.ShouldContain("3 workers");
 
-        // One worker is the resting state of every default cook, so it is not
-        // printed at all: a number that never changes is not information.
+        // A single worker is not printed.
         using var single = new TempProject();
         single.WriteAsset("Data/one.bin", TempProject.Bytes(16));
         Invoke("cook", single.Root).Stdout.ShouldNotContain("worker");
@@ -293,8 +249,7 @@ public class ScookCliTests
         Invoke("clean", project.Root).ExitCode.ShouldBe(ExitSuccess);
         Directory.Exists(project.CookedPath).ShouldBeFalse();
 
-        // The one destructive thing the tool does, so the guard is explicit: a
-        // clean only ever removes derived output.
+        // Clean only removes derived output.
         var refused = Invoke("clean", project.Root, "-o", project.Layout.AssetsPath);
         refused.ExitCode.ShouldBe(ExitCookError);
         MatchSingleDiagnostic(refused.Stderr).Groups["code"].Value.ShouldBe("SC0005");
@@ -347,10 +302,8 @@ public class ScookCliTests
         var stdout = new StringWriter();
         var stderr = new StringWriter();
 
-        // --no-color on every invocation, because whether a test host redirects
-        // its streams is not something a test should depend on. Prepended rather
-        // than appended: appended, it is swallowed as the argument of a trailing
-        // option, which is exactly what the dangling-option cases pass.
+        // Always --no-color, so output does not depend on stream redirection.
+        // Prepended: appended, a trailing option swallows it as its argument.
         string[] withNoColor = args.Contains("--no-color") ? args : ["--no-color", .. args];
         int exit = Program.Run(withNoColor, stdout, stderr);
 

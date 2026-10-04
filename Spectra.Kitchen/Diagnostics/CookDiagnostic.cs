@@ -5,17 +5,6 @@ namespace Spectra.Kitchen.Diagnostics;
 /// <summary>
 /// One thing the cook has to say, in the form an IDE can jump to.
 /// </summary>
-/// <remarks>
-/// <para><b>The MSBuild-parseable line is rendered HERE, not in the CLI.</b> The
-/// library is hosted in process by the editor as well as run from
-/// <c>scook</c>, and two renderings of one diagnostic drift the first time one of
-/// them is fixed; the CLI adds colour around this text and nothing else.</para>
-/// <para><b>A diagnostic with no file is legitimate and has its own form.</b>
-/// "this folder is not a project" has no line to point at, and MSBuild's
-/// canonical format covers it: <c>origin : category code: text</c>, where the
-/// origin is the tool name. Inventing <c>(1,1)</c> against the project folder
-/// would make an IDE open a directory as a file.</para>
-/// </remarks>
 public sealed record CookDiagnostic
 {
     private CookDiagnostic(
@@ -88,23 +77,15 @@ public sealed record CookDiagnostic
         $"{Origin(toolName)} {SeverityText(Severity)} {Id}: {Message}";
 
     /// <summary>
-    /// The part before the severity, terminating colon included, which is where
-    /// the two forms differ. Split out so the CLI can colour the middle without
-    /// re-deriving either.
+    /// The part before the severity, colon included: <c>scook :</c> or
+    /// <c>file(1,1):</c>.
     /// </summary>
-    /// <remarks>
-    /// The colon belongs to the origin rather than to the joiner, because the
-    /// tool form wants a space before it (<c>scook : error</c>) and the file form
-    /// must not have one (<c>file(1,1): error</c>). Joining with <c>": "</c>
-    /// instead produces a doubled colon on the file form, which no IDE matches.
-    /// </remarks>
+    // MSBuild wants a space before the colon in the tool form and none in the
+    // file form, so the colon is part of the origin.
     public string Origin(string toolName)
     {
         if (File is null) return $"{toolName} :";
 
-        // A file with no position still gets the file form: an IDE that cannot
-        // find a line opens the file, which is the right answer, whereas the tool
-        // form would lose the path entirely.
         return Line > 0
             ? $"{File}({Math.Max(1, Line)},{Math.Max(1, Column)}):"
             : $"{File}:";

@@ -20,26 +20,11 @@ using System.Numerics;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The runtime load path for a baked map: a level arrives on the GPU with no
-/// carve anywhere in its history, and the scene then refuses to carve it.
+/// Loading a baked map: it reaches the GPU without a carve, and the scene then
+/// refuses to carve it. Refusals are tested by editing the file's bytes.
 /// </summary>
-/// <remarks>
-/// <para><b>The gate is MEASURED, not asserted.</b> A test that only checked the
-/// picture would pass just as happily with a carve running behind it - the
-/// re-carved world draws the same walls, twice - so every load here is bracketed
-/// by <see cref="Csg.CarveInvocationsOnThisThread"/> and the delta is the claim.
-/// The counter is thread-static precisely so this suite can run beside every
-/// other one without a parallel compile moving it.</para>
-/// <para><b>Every refusal is driven by EDITING BYTES rather than by asking the
-/// builder to misbehave</b>, which is the rule D-Stage 19 established for this
-/// format: a builder refusing is a fact about this cook, a reader refusing is a
-/// fact about the bytes, and only the second survives a file written by something
-/// else.</para>
-/// </remarks>
 public class CompiledMapLoadTests
 {
-    // --- the gate -------------------------------------------------------------
-
     [Fact]
     public void Loading_a_baked_map_runs_no_carve_at_all()
     {
@@ -55,11 +40,8 @@ public class CompiledMapLoadTests
         CompiledMapLoadReport report = Load(scene, renderer, file);
         long carves = Csg.CarveInvocationsOnThisThread - before;
 
-        // The whole point of the stage, in one number.
         carves.ShouldBe(0, "a compiled map must reach the GPU with no CSG at all");
 
-        // And the corroborating facts, which are what would be left if somebody
-        // ever found a way to carve without going through Csg.
         scene.StaticWorld.ShouldBeNull("a compiled world is not the output of a compile");
         scene.StaticWorldCompileCount.ShouldBe(0);
         scene.StaticWorldDirty.ShouldBeFalse();
@@ -111,15 +93,13 @@ public class CompiledMapLoadTests
         var scene = new SpectraEngine.Core.Scene.Scene("empty");
         Load(scene, renderer, Bake(project, "Maps/Room.smap"));
 
-        // The three doors into the dirty machinery, each through the API a real
-        // edit would come through rather than through the mark itself.
         scene.MarkStaticWorldDirty();
 
         SceneNode added = scene.Root.CreateChild("LateWall");
-        added.Brush = Brush.CreateBox(-Vector3.One, Vector3.One);   // a WORLD brush: attach dirties
+        added.Brush = Brush.CreateBox(-Vector3.One, Vector3.One);   // world brush: attaching marks dirty
 
         SceneNode part = FindPartBrushNode(scene).ShouldNotBeNull();
-        part.BrushKind = BrushKind.World;                            // an admission change
+        part.BrushKind = BrushKind.World;                            // admission change
 
         scene.RefusedStaticWorldDirtyMarks.ShouldBeGreaterThanOrEqualTo(3);
         scene.StaticWorldDirty.ShouldBeFalse("a refused mark must not arm the pump");
@@ -132,8 +112,7 @@ public class CompiledMapLoadTests
         (Csg.CarveInvocationsOnThisThread - before).ShouldBe(0);
         scene.StaticWorld.ShouldBeNull();
 
-        // Said out loud exactly once: the marks run from property setters on the
-        // editing hot path, so a line per call would be a line per frame.
+        // Logged once: the marks fire from property setters, per frame.
         List<string> warnings = logger
             .MessagesAt(Microsoft.Extensions.Logging.LogLevel.Warning)
             .Where(m => m.Contains("Static world guard"))
@@ -143,16 +122,11 @@ public class CompiledMapLoadTests
         warnings[0].ShouldContain("dirty mark(s) refused");
     }
 
-    // --- the ASTB remap -------------------------------------------------------
-
     [Fact]
     public void A_submesh_resolves_through_the_asset_TABLE_and_never_through_a_material_id()
     {
-        // Interned FIRST, and unrelated to this map, because a MaterialRef.Id and
-        // an ASTB row index agree by coincidence in a process that interned
-        // nothing else - and under that coincidence a loader reading the index as
-        // an id passes every assertion below. Five, so the ids are pushed well
-        // clear of the two rows this map will have.
+        // Unrelated materials interned first, so material ids and ASTB row
+        // indices cannot agree by coincidence.
         for (int i = 0; i < 5; i++)
             MaterialRegistry.Intern($"Materials/unrelated_{Guid.NewGuid():N}.spectramat");
 
@@ -164,9 +138,6 @@ public class CompiledMapLoadTests
         var scene = new SpectraEngine.Core.Scene.Scene("empty");
         Load(scene, renderer, Bake(project, "Maps/Room.smap"));
 
-        // Every material the loaded world wears is one of the fixture's two, by
-        // PATH. A loader that read the row index as an id would resolve to
-        // whichever material this process happened to intern fifth.
         var worn = new HashSet<string>(StringComparer.Ordinal);
         foreach (StaticWorldChunkMesh chunk in scene.StaticWorldChunkMeshes)
         {
@@ -206,8 +177,6 @@ public class CompiledMapLoadTests
         path.ShouldBe(fixture.FloorMaterial);
     }
 
-    // --- the bake oracle, from the LOADED arrays -------------------------------
-
     [Fact]
     public void The_loaded_arrays_are_element_identical_to_a_fresh_cache_free_compile()
     {
@@ -219,9 +188,6 @@ public class CompiledMapLoadTests
         var scene = new SpectraEngine.Core.Scene.Scene("empty");
         Load(scene, renderer, Bake(project, "Maps/Room.smap"));
 
-        // The same source, compiled here and now, with no cache: the guard that
-        // replaces P11b's unsatisfiable text round trip, stated against what the
-        // GPU actually received rather than against what the file holds.
         MapDocument document = MapBundle.Load(Path.Combine(project.Layout.MapsPath, "Room.smap"));
         var authored = new SpectraEngine.Core.Scene.Scene(document.Scene.Name);
         MapSceneBinder.ApplyTo(document, authored);
@@ -241,9 +207,8 @@ public class CompiledMapLoadTests
             loaded.RenderBounds.Max.ShouldBe(expected.RenderBounds.Max);
             loaded.Submeshes.Length.ShouldBe(expected.Submeshes.Count);
 
-            // Matched by MATERIAL, never positionally: the file is in ascending
-            // asset-table row and the compile is in ascending material id, and
-            // those are different orders on purpose.
+            // Matched by material, not position: the file sorts by asset row,
+            // the compile by material id.
             foreach (ChunkSubmesh submesh in expected.Submeshes)
             {
                 StaticWorldSubmesh actual = loaded.Submeshes.Single(s => s.SourceMaterial == submesh.Material);
@@ -272,9 +237,7 @@ public class CompiledMapLoadTests
 
         CompiledStaticWorld adopted = scene.CompiledStaticWorld.ShouldNotBeNull();
 
-        // Inside the floor slab, in the air above it, in the wall, and in the
-        // doorway cut flush through the wall's base - which is the fixture's whole
-        // reason for being.
+        // Floor slab, air above it, wall, doorway.
         Vector3[] probes =
         [
             new(0f, -0.25f, 0f),
@@ -289,13 +252,10 @@ public class CompiledMapLoadTests
                 fresh.ContainsPoint(probe), $"the baked tree disagrees at {probe}");
         }
 
-        // Not a blind instrument: the probes have to disagree with each other, or
-        // a tree that answered false everywhere would pass.
+        // A tree answering false everywhere must not pass.
         probes.Select(fresh.ContainsPoint).Distinct().Count().ShouldBe(2);
         adopted.BspChunkCount.ShouldBeGreaterThan(0);
     }
-
-    // --- the double-geometry guard, from the file's own side --------------------
 
     [Fact]
     public void A_baked_brush_is_not_rebuilt_even_when_the_file_carries_its_planes()
@@ -313,24 +273,17 @@ public class CompiledMapLoadTests
         CompiledMapLoadReport keptReport =
             Load(kept, keptRenderer, Bake(project, "Maps/Room.smap", keepBrushSource: true));
 
-        // The file offered the world brushes' planes, and the load declined them.
         keptReport.BakedBrushSourcesSkipped.ShouldBeGreaterThan(0);
         plainReport.BakedBrushSourcesSkipped.ShouldBe(0);
 
-        // The oracle is a triangle count: a loader that rebuilt them would arm a
-        // compile whose surfaces are already in the chunks, and every wall would
-        // be drawn twice.
+        // Rebuilt brushes would draw every wall twice.
         keptReport.TriangleCount.ShouldBe(plainReport.TriangleCount);
         keptRenderer.LiveMeshes.Count.ShouldBe(plainRenderer.LiveMeshes.Count);
 
-        // And no node in the kept-source scene carries a world brush at all, which
-        // is the mechanism behind the number above.
         CountStaticWorldBrushes(kept.Root).ShouldBe(0);
         kept.StaticWorld.ShouldBeNull();
         kept.RefusedStaticWorldDirtyMarks.ShouldBe(0, "attaching nothing dirties nothing");
     }
-
-    // --- the graph -------------------------------------------------------------
 
     [Fact]
     public void The_graph_is_rebuilt_in_one_forward_pass_with_ids_parents_and_order_intact()
@@ -348,9 +301,7 @@ public class CompiledMapLoadTests
         world.Name.ShouldBe("World");
         world.Id.ShouldBe(ScmapFixture.NodeId(0));
 
-        // Sibling order is authored data: traversal order is placement order is
-        // the order the carve breaks its overlap ties in, so a load that appended
-        // in any other order rebuilds a level that is valid and different.
+        // Sibling order is authored: it decides how the carve breaks ties.
         world.Children.Select(c => c.Name).ShouldBe(new[] { "zeta_room", "alpha_room" });
         world.Children[0].Children.Select(c => c.Name).ShouldBe(new[] { "Wall", "Cut" });
         world.Children[1].Children.Select(c => c.Name).ShouldBe(new[] { "Lamp", "Crate" });
@@ -361,7 +312,6 @@ public class CompiledMapLoadTests
         wall.LocalRotation.ShouldBe(ScmapFixture.Transforms[2].Rotation);
         wall.LocalScale.ShouldBe(ScmapFixture.Transforms[2].Scale);
 
-        // A baked brush gets NO brush, whatever else it gets.
         wall.Brush.ShouldBeNull();
         scene.TryFindById(ScmapFixture.NodeId(3), out SceneNode? cut).ShouldBeTrue();
         cut.ShouldNotBeNull().Brush.ShouldBeNull();
@@ -380,8 +330,6 @@ public class CompiledMapLoadTests
         report.IsComplete.ShouldBeFalse();
         report.Describe().ShouldNotBeNull().ShouldContain("Crate");
 
-        // The node is still there, in its place, with its id: what is missing is
-        // its geometry, not the level's shape.
         scene.TryFindById(ScmapFixture.NodeId(6), out SceneNode? crate).ShouldBeTrue();
         crate.ShouldNotBeNull().MeshRenderer.ShouldBeNull();
     }
@@ -389,9 +337,6 @@ public class CompiledMapLoadTests
     [Fact]
     public void The_format_gaps_are_stated_rather_than_discovered()
     {
-        // A constant, printed on every load. The failure being guarded against is
-        // a level that quietly loses its lights: a lamp's node arrives and nothing
-        // anywhere says the lamp did not.
         string said = CompiledMapLoadReport.DescribeFormatGaps();
 
         said.ShouldContain("lights");
@@ -401,8 +346,6 @@ public class CompiledMapLoadTests
         said.ShouldContain("collision");
         CompiledMapLoadReport.FormatGaps.Count.ShouldBe(7);
     }
-
-    // --- refusals, all by BYTE SURGERY ----------------------------------------
 
     [Fact]
     public void A_map_at_another_format_version_is_refused_naming_both_numbers()
@@ -423,10 +366,7 @@ public class CompiledMapLoadTests
     {
         byte[] file = ScmapFixture.Build();
 
-        // META's preamble: SceneNameString, SpawnCount, then the three compile
-        // constants. A world chunked on another lattice mis-routes every point and
-        // ray query, which reads as sporadic collision bugs rather than a version
-        // problem - and its chunks do not line up, which renders as gaps.
+        // META: SceneNameString, SpawnCount, then the three compile constants.
         (int offset, _) = FindSection(file, ScmapFormat.MetaSection);
         BitConverter.GetBytes(ChunkCoord.CellSize * 2f).CopyTo(file, offset + 8);
 
@@ -456,10 +396,8 @@ public class CompiledMapLoadTests
     [Fact]
     public void A_refused_map_releases_the_bytes_it_was_handed()
     {
-        // Not housekeeping. On a mounted pack the blob holds a PackHandle
-        // reference, so one left undisposed by a failed load is a mount that can
-        // never be released, for the life of the process, with no message
-        // anywhere.
+        // On a mounted pack the blob holds a PackHandle reference. Leaking it
+        // keeps the pack mounted for the life of the process.
         byte[] file = ScmapFixture.Build();
         BitConverter.GetBytes((ushort)(EngineInfo.CompiledMapFormatVersion + 1)).CopyTo(file, 0x04);
 
@@ -470,8 +408,6 @@ public class CompiledMapLoadTests
 
         Should.Throw<ObjectDisposedException>(() => blob.Span.Length);
     }
-
-    // --- lifetime -------------------------------------------------------------
 
     [Fact]
     public void Releasing_an_adopted_world_destroys_its_meshes_and_frees_its_bytes()
@@ -495,12 +431,9 @@ public class CompiledMapLoadTests
         renderer.LiveMeshes.ShouldBeEmpty("DestroyMesh, so the tracking list loses them too");
         scene.StaticWorldChunkMeshes.ShouldBeEmpty();
 
-        // The nodes were a window into the released bytes, so a query afterwards
-        // is an exception naming the blob rather than a read of address space the
-        // pack no longer owns.
+        // The tree's nodes were a view into the released bytes.
         Should.Throw<ObjectDisposedException>(() => tree.ContainsPoint(Vector3.Zero));
 
-        // And the guard is lifted: an authored scene can be compiled again.
         long before = Csg.CarveInvocationsOnThisThread;
         scene.Root.CreateChild("Block").Brush = Brush.CreateBox(-Vector3.One, Vector3.One);
         scene.RebuildStaticWorld(renderer);
@@ -509,8 +442,6 @@ public class CompiledMapLoadTests
         scene.StaticWorld.ShouldNotBeNull();
         scene.RefusedStaticWorldRebuilds.ShouldBe(0);
     }
-
-    // --- helpers ---------------------------------------------------------------
 
     private static CompiledMapLoadReport Load(
         SpectraEngine.Core.Scene.Scene scene, Renderer renderer, byte[] file) =>

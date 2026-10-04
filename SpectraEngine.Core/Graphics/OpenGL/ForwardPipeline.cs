@@ -6,9 +6,8 @@ using System.Numerics;
 namespace SpectraEngine.Core.Graphics.OpenGL;
 
 /// <summary>
-/// The default rendering strategy: clear, draw the frame's pre-culled
-/// <see cref="RenderView"/> items with their materials' shaders, then flush
-/// the debug-draw overlay with depth-test off so wires sit on top of geometry.
+/// Forward shading: draws the frame's pre-culled <see cref="RenderView"/> items
+/// with their materials' own shaders.
 /// </summary>
 public sealed class ForwardPipeline : IOpenGLRenderPipeline
 {
@@ -16,15 +15,7 @@ public sealed class ForwardPipeline : IOpenGLRenderPipeline
 
     public string Name => "Forward";
 
-    /// <summary>
-    /// Ambient light level, added to every surface regardless of the lights.
-    /// </summary>
-    /// <remarks>
-    /// A uniform rather than the constant it used to be in the shader: with
-    /// more than one light, a floor that every light stacks on top of makes
-    /// the scene brighter with each light added even where none of them
-    /// reach.
-    /// </remarks>
+    /// <summary>Ambient light level, added to every surface.</summary>
     public float Ambient { get; set; } = 0.18f;
 
     public void Initialize(OpenGLRenderer renderer)
@@ -34,10 +25,7 @@ public sealed class ForwardPipeline : IOpenGLRenderPipeline
 
     public void Execute(in OpenGLRenderContext context)
     {
-        // The clear colour is linear because the target encodes; see ClearColors.
-        // Outside the pass, beside where the deferred pipelines do the same:
-        // a program created inside an open pass is a state change in the
-        // middle of a recorded command list.
+        // May compile a program, which must not happen inside an open pass.
         context.Renderer.PrepareWorldLines(gbuffer: false);
 
         context.Renderer.BeginPass(context.Renderer.FrameTarget, PassClear.To(ClearColors.Sky));
@@ -47,17 +35,13 @@ public sealed class ForwardPipeline : IOpenGLRenderPipeline
                 return;
 
             var camera = context.Scene.Camera;
-            // From the PASS, not the window: the two are the same only while
-            // every pass goes to the back buffer.
+            // Aspect from the pass, not the window.
             if (context.Renderer.PassAspectRatio is { } aspect)
                 camera.AspectRatio = aspect;
 
             DrawView(context.View, camera);
 
-            // The world-line lane, INSIDE this pass, because this pass owns the
-            // scene's depth. A ground grid is world content and must be
-            // occluded by the geometry it lies under; the depth-off overlay
-            // that carries gizmo handles would draw it straight through walls.
+            // Inside the pass: world lines are depth-tested against the scene.
             context.Renderer.FlushWorldLines(camera);
         }
         finally
@@ -66,9 +50,6 @@ public sealed class ForwardPipeline : IOpenGLRenderPipeline
         }
     }
 
-    // Draws the engine-built view: the flat, frustum-culled item list replaces
-    // the recursive scene walk that used to live here (the walk now happens
-    // once per frame in Scene.BuildRenderView, shared by every backend).
     private void DrawView(RenderView view, Camera camera)
     {
         IReadOnlyList<RenderItem> items = view.Items;
@@ -79,10 +60,7 @@ public sealed class ForwardPipeline : IOpenGLRenderPipeline
                 DrawRenderable(item.Mesh, material, item.World, camera, view);
         }
 
-        // The derived static world's chunks arrive pre-culled like the items,
-        // one item per (chunk, material) with the material already resolved by
-        // the swap; chunk meshes are already in world space, so each draws with
-        // the identity model matrix its item carries.
+        // Static-world chunks, one item per (chunk, material), already in world space.
         IReadOnlyList<RenderItem> worldItems = view.WorldItems;
         for (int i = 0; i < worldItems.Count; i++)
         {
@@ -94,9 +72,6 @@ public sealed class ForwardPipeline : IOpenGLRenderPipeline
 
     private void DrawRenderable(Mesh mesh, Material material, Matrix4x4 model, Camera camera, RenderView view)
     {
-        // A material with no program (the fallback built before a renderer had
-        // one, or a shader that failed to resolve) is skipped rather than
-        // dereferenced: one bad material must not take the frame down.
         if (material.Shader is not { } shader) return;
 
         shader.Use();

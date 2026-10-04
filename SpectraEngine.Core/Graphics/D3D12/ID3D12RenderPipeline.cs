@@ -4,9 +4,8 @@ using System;
 namespace SpectraEngine.Core.Graphics.D3D12;
 
 /// <summary>
-/// A swappable D3D12 rendering strategy (forward, wireframe, ...). Executes
-/// once per frame against an open command list owned by the renderer; the
-/// renderer handles begin/end barriers, submission, and presentation.
+/// A swappable D3D12 rendering strategy (forward, wireframe, ...). Runs once
+/// per frame against the renderer's open command list.
 /// </summary>
 public interface ID3D12RenderPipeline : IDisposable
 {
@@ -16,22 +15,15 @@ public interface ID3D12RenderPipeline : IDisposable
 }
 
 /// <summary>
-/// Everything a D3D12 pipeline needs for one frame. Deliberately excludes the
-/// window: GLFW window queries are main-thread-only, so pipelines read sizes
-/// from the renderer's <see cref="Graphics.Renderer.PassSize"/> instead. It also
-/// no longer carries the back-buffer descriptors: where a pipeline's output goes
-/// is <see cref="Graphics.Renderer.BeginPass"/>'s business, not a per-frame
-/// input.
+/// Everything a D3D12 pipeline needs for one frame. No window: GLFW queries are
+/// main-thread-only, so sizes come from <see cref="Graphics.Renderer.PassSize"/>.
 /// </summary>
 public readonly struct D3D12RenderContext
 {
     public required D3D12Renderer Renderer { get; init; }
     public required Scene.Scene? Scene { get; init; }
 
-    /// <summary>
-    /// The engine-built, frustum-culled draw list for this frame; pipelines
-    /// iterate it instead of walking the scene graph themselves.
-    /// </summary>
+    /// <summary>The frustum-culled draw list for this frame.</summary>
     public required RenderView View { get; init; }
 
     public required double DeltaTime { get; init; }

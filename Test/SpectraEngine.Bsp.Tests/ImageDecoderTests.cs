@@ -4,16 +4,13 @@ using SpectraEngine.Core.Graphics;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// Decoding of the dev textures the repo actually ships. Every expectation here
-/// is a property of the committed PNG files: the shipped set covers all three
-/// GPU formats (RGBA8, RGB8, R8), and the known-pixel checks pin the row order,
-/// since a decoder that forgot the top-down-to-bottom-up flip would still
-/// produce the right dimensions and channel count.
+/// Decoding of the committed dev textures (RGBA8, RGB8, R8). The known-pixel
+/// checks pin the row flip.
 /// </summary>
 public sealed class ImageDecoderTests
 {
-    // Bottom-up storage: GetPixel(x, 0) is the BOTTOM row of the picture, so a
-    // marker drawn along the file's top edge must show up at y = Height - 1.
+    // Bottom-up storage: row 0 is the bottom of the picture, so the file's top
+    // edge is at y = Height - 1.
     private const int GridSize = 128;
     private const int GridTop = GridSize - 1;
 
@@ -29,13 +26,11 @@ public sealed class ImageDecoderTests
         image.Stride.ShouldBe(128 * 4);
         image.Pixels.Length.ShouldBe(128 * 128 * 4);
 
-        // Green marks the file's top edge, red its left edge; after the flip the
-        // green band has to sit at the TOP of the bottom-up buffer.
+        // Green marks the file's top edge, red its left edge.
         ShouldBePixel(image, 0, GridTop, [60, 180, 75, 255]);
         ShouldBePixel(image, 64, GridTop, [60, 180, 75, 255]);
-        // Left edge (red) away from the top band.
         ShouldBePixel(image, 0, 0, [220, 60, 50, 255]);
-        // Interior background: not on a grid line, not in either edge band.
+        // Interior background.
         ShouldBePixel(image, 8, GridTop - 8, [40, 44, 52, 255]);
         // A minor grid line every 16 texels.
         ShouldBePixel(image, 16, GridTop - 40, [90, 96, 110, 255]);
@@ -51,8 +46,8 @@ public sealed class ImageDecoderTests
         image.Channels.ShouldBe(3);
         image.Format.ShouldBe(TextureFormat.Rgb8);
 
-        // Top-left of the file is a light cell; 128/16 = 8 cells per side, so
-        // the bottom-left of the flipped buffer lands on a dark one.
+        // The file's top-left cell is light. 8 cells per side, so the buffer's
+        // bottom-left is dark.
         ShouldBePixel(image, 0, GridTop, [200, 200, 200]);
         ShouldBePixel(image, 0, 0, [120, 120, 120]);
         ShouldBePixel(image, 20, GridTop, [120, 120, 120]);
@@ -109,7 +104,7 @@ public sealed class ImageDecoderTests
         image.Stride.ShouldBe(64);
         image.Pixels.Length.ShouldBe(64 * 64);
 
-        // Horizontal ramp: value = x * 4, identical on every row.
+        // Horizontal ramp: value = x * 4 on every row.
         ShouldBePixel(image, 0, 0, [0]);
         ShouldBePixel(image, 10, 0, [40]);
         ShouldBePixel(image, 63, 63, [252]);

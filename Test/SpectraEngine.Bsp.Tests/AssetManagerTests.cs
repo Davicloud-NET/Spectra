@@ -5,22 +5,16 @@ using SpectraEngine.Core.Graphics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The texture asset pipeline, exercised headlessly: the test thread plays the
-/// render thread (attaching the renderer, calling the pump once per "frame",
-/// unloading) and a <see cref="FakeRenderer"/> stands in for the GPU, so only
-/// the image decode runs off-thread — the same division of labour as in the
-/// engine. Waits poll the pump with a generous ceiling that is only reached on
-/// genuine failure: textures are only ever swapped in by pump calls on this
-/// thread, so no assertion depends on how fast the thread pool decodes.
-/// </summary>
+// The test thread plays the render thread and FakeRenderer the GPU; only the
+// decode runs off-thread. Textures swap in on pump calls from this thread, so
+// nothing depends on decode speed.
 public sealed class AssetManagerTests
 {
     private const string Grid = "Textures/dev_grid.png";
     private const string CheckerGray = "Textures/checker_gray.png";
     private const string Mask = "Textures/gradient_mask.png";
 
-    // Only ever hit when a decode never lands, i.e. on a real failure.
+    // Only reached when a decode never lands.
     private static readonly TimeSpan PumpTimeout = TimeSpan.FromSeconds(30);
 
     [Fact]
@@ -42,7 +36,6 @@ public sealed class AssetManagerTests
         texture.Wrap.ShouldBe(TextureWrap.Clamp);
         texture.Pixels.Length.ShouldBe(128 * 128 * 4);
 
-        // The built-ins plus this one; all registered with the renderer.
         renderer.LiveTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 1);
 
         assets.ReleaseGraphicsResources();
@@ -55,14 +48,12 @@ public sealed class AssetManagerTests
 
         TextureAsset first = assets.LoadTexture(Grid);
         TextureAsset second = assets.LoadTexture(Grid);
-        // Different spelling, same asset: the cache key is normalised.
         TextureAsset third = assets.LoadTexture("Textures\\dev_grid.png");
 
         second.ShouldBeSameAs(first);
         third.ShouldBeSameAs(first);
         second.Texture.ShouldBeSameAs(first.Texture);
         assets.TextureCount.ShouldBe(1);
-        // Built-ins + one upload: the repeat loads never touched the GPU.
         renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 1);
 
         TextureAsset other = assets.LoadTexture(CheckerGray);
@@ -95,11 +86,9 @@ public sealed class AssetManagerTests
 
         TextureAsset asset = assets.RequestTexture(Mask, TextureFilter.Linear, TextureWrap.Clamp);
 
-        // Immediately usable: bound to the placeholder, nothing rendered untextured.
         asset.IsPlaceholder.ShouldBeTrue();
         asset.Texture.ShouldBeSameAs(placeholder);
         asset.Version.ShouldBe(0);
-        // A second request before the decode lands must not queue a second one.
         assets.RequestTexture(Mask, TextureFilter.Linear, TextureWrap.Clamp).ShouldBeSameAs(asset);
 
         PumpUntil(assets, () => !asset.IsPlaceholder);
@@ -113,7 +102,7 @@ public sealed class AssetManagerTests
         texture.Filter.ShouldBe(TextureFilter.Linear);
         texture.Wrap.ShouldBe(TextureWrap.Clamp);
 
-        // The placeholder is shared, so the swap must not have destroyed it.
+        // The placeholder is shared; the swap must not destroy it.
         ((FakeTexture)placeholder).Disposed.ShouldBeFalse();
         renderer.LiveTextures.ShouldContain((FakeTexture)placeholder);
 
@@ -128,7 +117,7 @@ public sealed class AssetManagerTests
 
         assets.PumpPendingUploads().ShouldBe(0);
         assets.PumpPendingUploads().ShouldBe(0);
-        renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 1); // + the one sync load
+        renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 1);
 
         assets.ReleaseGraphicsResources();
     }
@@ -139,16 +128,13 @@ public sealed class AssetManagerTests
         var (assets, _) = CreateAttached();
         assets.LoadTexture(Grid);
 
-        // Warm up: JIT the pump and drain anything the load left behind.
+        // Warm up the JIT and drain what the load left behind.
         for (int i = 0; i < 200; i++) assets.PumpPendingUploads();
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 10_000; i++) assets.PumpPendingUploads();
         long after = GC.GetAllocatedBytesForCurrentThread();
 
-        // The pump runs once per frame forever; steady-state per-frame work has
-        // to stay allocation-free, which is why both queues carry structs and
-        // the coalescing set is reused rather than rebuilt.
         (after - before).ShouldBe(0);
 
         assets.ReleaseGraphicsResources();
@@ -163,9 +149,7 @@ public sealed class AssetManagerTests
 
         TextureAsset asset = assets.RequestTexture("Textures/does_not_exist.png");
 
-        // The decode failure crosses back on the same queue a success would, so
-        // it is reported on the render thread instead of vanishing into an
-        // unobserved task.
+        // A decode failure comes back on the upload queue and is logged by the pump.
         PumpUntil(assets, () => logger.MessagesAt(LogLevel.Error).Count > 0);
 
         asset.IsPlaceholder.ShouldBeTrue();
@@ -191,14 +175,12 @@ public sealed class AssetManagerTests
         renderer.LiveTextures.ShouldNotContain(texture, "DestroyTexture must deregister, not just dispose");
         assets.TryGetTexture(Grid, out _).ShouldBeFalse();
         assets.TextureCount.ShouldBe(0);
-        // A handle someone is still holding degrades to the placeholder rather
-        // than pointing at a disposed GPU object.
+        // A handle still held falls back to the placeholder.
         asset.IsPlaceholder.ShouldBeTrue();
         asset.Texture.ShouldBeSameAs(assets.PlaceholderTexture);
 
         assets.UnloadTexture(Grid).ShouldBeFalse();
 
-        // Reloading afterwards makes a fresh instance, not a resurrected one.
         TextureAsset reloaded = assets.LoadTexture(Grid);
         reloaded.ShouldNotBeSameAs(asset);
 
@@ -211,7 +193,7 @@ public sealed class AssetManagerTests
         var (assets, renderer) = CreateAttached();
         assets.LoadTexture(Grid);
         assets.LoadTexture(CheckerGray);
-        renderer.LiveTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 2); // + two textures
+        renderer.LiveTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 2);
 
         assets.ReleaseGraphicsResources();
 
@@ -220,7 +202,7 @@ public sealed class AssetManagerTests
         assets.TextureCount.ShouldBe(0);
         assets.PlaceholderTexture.ShouldBeNull();
 
-        // Idempotent: the engine calls it on both the normal and the crash path.
+        // The engine calls it on both the normal and the crash path.
         Should.NotThrow(assets.ReleaseGraphicsResources);
     }
 
@@ -232,8 +214,6 @@ public sealed class AssetManagerTests
         assets.AttachRenderer(new FakeRenderer());
         assets.LoadTexture(Grid);
 
-        // The engine's order: GPU teardown on the render thread, then the
-        // CPU-side shutdown on the main thread.
         assets.ReleaseGraphicsResources();
         assets.Shutdown();
 
@@ -251,8 +231,7 @@ public sealed class AssetManagerTests
 
         assets.Shutdown();
 
-        // Destroying a GPU texture from the main thread would violate the
-        // threading contract, so it is reported rather than done.
+        // Shutdown runs on the main thread, which may not destroy GPU textures.
         logger.MessagesAt(LogLevel.Warning).ShouldContain(
             m => m.Contains("ReleaseGraphicsResources"), customMessage: logger.Describe());
         ((FakeTexture)asset.Texture).Disposed.ShouldBeFalse();
@@ -287,12 +266,9 @@ public sealed class AssetManagerTests
             original.Format.ShouldBe(TextureFormat.Rgb8);
             asset.Version.ShouldBe(1);
 
-            // Loading registered a watcher for the folder, and exactly one.
             assets.WatchedDirectoryCount.ShouldBe(1);
 
-            // Swap the file's contents for a differently-shaped image, then
-            // drive the reload through the same queue the watcher feeds — the
-            // notification itself is OS-timed, the reload logic is not.
+            // Notify by hand: the watcher event is OS-timed.
             File.Copy(SourceTexture("gradient_mask.png"), file, overwrite: true);
             assets.NotifyFileChanged(file);
 
@@ -305,10 +281,9 @@ public sealed class AssetManagerTests
             reloaded.Height.ShouldBe(64);
             reloaded.Format.ShouldBe(TextureFormat.R8);
 
-            // The superseded texture is destroyed, not leaked.
             original.Disposed.ShouldBeTrue();
             renderer.LiveTextures.ShouldNotContain(original);
-            // Same handle throughout: materials bound to it follow the swap.
+            // Same handle, so materials bound to it follow the swap.
             assets.TryGetTexture("Textures/swap_me.png", out TextureAsset? current).ShouldBeTrue();
             current.ShouldBeSameAs(asset);
 
@@ -330,8 +305,6 @@ public sealed class AssetManagerTests
         assets.LoadTexture(CheckerGray);
         assets.LoadTexture(Mask);
 
-        // The bug this guards against is a leaked FileSystemWatcher per load:
-        // native buffers plus duplicated change notifications.
         assets.WatchedDirectoryCount.ShouldBe(1);
 
         assets.UnloadTexture(Grid);
@@ -352,28 +325,24 @@ public sealed class AssetManagerTests
         var renderer = new FakeRenderer();
         assets.AttachRenderer(renderer);
 
-        // The editor's load/unload (and unload-then-reload) loop: the handle
-        // leaves the cache while its decode is still on the thread pool.
+        // The handle leaves the cache while its decode is still on the thread pool.
         const int cycles = 20;
         for (int i = 0; i < cycles; i++)
         {
             assets.RequestTexture(Grid);
             assets.UnloadTexture(Grid).ShouldBeTrue();
 
-            // Wait for this cycle's decode to be drained before the next one, so
-            // the count below is exact rather than timing-dependent.
+            // Drain this cycle's decode first so the count is not timing-dependent.
             int expected = i + 1;
             PumpUntil(assets, () => assets.QueueStatistics.Stale >= expected);
         }
 
         assets.ReleaseGraphicsResources();
 
-        // A texture created for a handle that is no longer in the cache is a
-        // texture nothing will ever destroy: ReleaseGraphicsResources only walks
-        // the cache. Before the fix this left one leaked GPU texture per cycle.
+        // ReleaseGraphicsResources only walks the cache, so a texture made for
+        // an uncached handle would leak.
         renderer.LiveTextures.ShouldBeEmpty("every GPU texture must be owned by a cached handle");
         renderer.CreatedTextures.ShouldAllBe(t => t.Disposed);
-        // And the watcher StopWatchingIfUnused disposed must not come back.
         assets.WatchedDirectoryCount.ShouldBe(0);
     }
 
@@ -387,9 +356,7 @@ public sealed class AssetManagerTests
             var assets = new AssetManager(logger, root, hotReloadEnabled: false);
             assets.AttachRenderer(new FakeRenderer());
 
-            // The file is not there yet — the classic case is an art tool still
-            // holding the write lock, which ImageDecoder's retries cannot always
-            // outlast.
+            // File not there yet, e.g. an art tool still holding the write lock.
             TextureAsset asset = assets.RequestTexture("Textures/late.png");
             PumpUntil(assets, () => logger.MessagesAt(LogLevel.Error).Count > 0);
             asset.IsPlaceholder.ShouldBeTrue();
@@ -397,7 +364,6 @@ public sealed class AssetManagerTests
 
             File.Copy(SourceTexture("checker_gray.png"), Path.Combine(root, "Textures", "late.png"));
 
-            // Same handle, so every material already bound to it recovers too.
             assets.RequestTexture("Textures/late.png").ShouldBeSameAs(asset);
             PumpUntil(assets, () => !asset.IsPlaceholder);
 
@@ -428,8 +394,6 @@ public sealed class AssetManagerTests
 
             File.Copy(SourceTexture("dev_grid.png"), Path.Combine(root, "Textures", "late.png"));
 
-            // LoadTexture is documented to read the disk; a poisoned cache entry
-            // must not turn it into a silent placeholder hand-back.
             TextureAsset loaded = assets.LoadTexture("Textures/late.png");
 
             loaded.ShouldBeSameAs(asset);
@@ -455,8 +419,7 @@ public sealed class AssetManagerTests
         TextureAsset asset = assets.RequestTexture("Textures/does_not_exist.png");
         PumpUntil(assets, () => logger.MessagesAt(LogLevel.Error).Count > 0);
 
-        // Polling a failed handle from a frame loop retries, but must not pile
-        // up one decode (and one error line) per call before the first returns.
+        // A frame loop polling a failed handle must not queue a decode per call.
         for (int i = 0; i < 5; i++)
             assets.RequestTexture("Textures/does_not_exist.png").ShouldBeSameAs(asset);
 
@@ -475,10 +438,7 @@ public sealed class AssetManagerTests
         TextureAsset sharp = assets.LoadTexture(Grid, TextureFilter.Nearest, TextureWrap.Clamp);
         TextureAsset tiled = assets.LoadTexture(Grid, TextureFilter.LinearMipmap, TextureWrap.Repeat);
 
-        // Sampler state is baked into the GPU texture on every backend, so
-        // sharing one handle would silently give the second caller the first
-        // one's mode — a repeat-tiled floor rendered with clamp smears its edge
-        // texels across the whole surface.
+        // Sampler state is baked into the GPU texture on every backend.
         tiled.ShouldNotBeSameAs(sharp);
         ((FakeTexture)sharp.Texture).Wrap.ShouldBe(TextureWrap.Clamp);
         ((FakeTexture)sharp.Texture).Filter.ShouldBe(TextureFilter.Nearest);
@@ -486,24 +446,20 @@ public sealed class AssetManagerTests
         ((FakeTexture)tiled.Texture).Filter.ShouldBe(TextureFilter.LinearMipmap);
         assets.TextureCount.ShouldBe(2);
 
-        // Asking again for either one still hits the cache.
         assets.LoadTexture(Grid, TextureFilter.Nearest, TextureWrap.Clamp).ShouldBeSameAs(sharp);
         assets.LoadTexture(Grid).ShouldBeSameAs(tiled);
-        renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 2); // + the two variants
+        renderer.CreatedTextures.Count.ShouldBe(AssetTestFacts.BuiltInTextures + 2);
 
-        // A path-only lookup resolves to the first variant loaded; the exact
-        // overload picks one out.
+        // A path-only lookup returns the first variant loaded.
         assets.TryGetTexture(Grid, out TextureAsset? first).ShouldBeTrue();
         first.ShouldBeSameAs(sharp);
         assets.TryGetTexture(Grid, TextureFilter.LinearMipmap, TextureWrap.Repeat, out TextureAsset? exact)
             .ShouldBeTrue();
         exact.ShouldBeSameAs(tiled);
 
-        // Unloading the path drops every variant of it.
+        // Unloading the path drops every variant.
         assets.UnloadTexture(Grid).ShouldBeTrue();
         assets.TextureCount.ShouldBe(0);
-        // Indexed past the built-ins rather than from zero: these are the first
-        // and second textures THIS test loaded.
         ((FakeTexture)renderer.CreatedTextures[AssetTestFacts.BuiltInTextures]).Disposed.ShouldBeTrue();
         ((FakeTexture)renderer.CreatedTextures[AssetTestFacts.BuiltInTextures + 1]).Disposed.ShouldBeTrue();
 
@@ -529,8 +485,6 @@ public sealed class AssetManagerTests
             File.Copy(SourceTexture("gradient_mask.png"), file, overwrite: true);
             assets.NotifyFileChanged(file);
 
-            // Both variants are separate GPU textures of the same file: reloading
-            // only one would leave the other showing the pre-edit image forever.
             PumpUntil(assets, () => sharp.Version > 1 && tiled.Version > 1);
 
             ((FakeTexture)sharp.Texture).Width.ShouldBe(64);
@@ -557,12 +511,9 @@ public sealed class AssetManagerTests
         assets.ReleaseGraphicsResources();
     }
 
-    // ---- helpers ---------------------------------------------------------
-
     private static (AssetManager Assets, FakeRenderer Renderer) CreateAttached()
     {
-        // Hot-reload off by default here: these tests assert on loading, and a
-        // watcher on the shared repo folder would only add OS noise.
+        // Hot reload off: a watcher on the shared repo folder only adds OS noise.
         var assets = new AssetManager(
             NullLogger<AssetManager>.Instance, ContentRoot.Path, hotReloadEnabled: false);
         var renderer = new FakeRenderer();
@@ -570,7 +521,6 @@ public sealed class AssetManagerTests
         return (assets, renderer);
     }
 
-    // Decodes the pump dropped because their handle had left the cache.
     private static int DroppedDecodes(CapturingLogger logger)
         => logger.MessagesAt(LogLevel.Debug).Count(m => m.Contains("Dropping the decode"));
 
@@ -584,32 +534,11 @@ public sealed class AssetManagerTests
         return root;
     }
 
-    /// <summary>
-    /// Removes a temp content root, tolerating a decode that has not let go of
-    /// its file yet.
-    /// </summary>
-    /// <remarks>
-    /// A hot-reload test writes a texture, and the write raises a real watcher
-    /// event as well as the explicit notification the test sends. Windows
-    /// raises more than one event for a single write, so a re-decode can still
-    /// be reading the file on a thread-pool thread after the assertions have
-    /// passed, and deleting the directory into that window throws
-    /// <see cref="IOException"/> from the cleanup rather than from anything the
-    /// test was checking. That failure names the wrong subsystem and appears
-    /// roughly one run in ten, which is worse than a test that simply fails.
-    /// </remarks>
+    // Retries the delete: Windows raises several watcher events per write, so a
+    // re-decode on the thread pool can still hold the file after the test passed.
     private static void DeleteTempContentRoot(string root)
     {
-        // Budgeted in TIME rather than in attempts. The first version spent
-        // twenty tries of 25 ms, which is half a second, and that was enough on
-        // an idle machine and not enough on a loaded one: two separate runs on a
-        // box with several builds and a driver test suite going reported one
-        // failed test in this assembly and neither could reproduce it afterwards.
-        // A decode holding the file for longer than the budget is the same
-        // situation either way, so the budget should be set by how long a stuck
-        // handle is worth waiting for, not by a count that silently means
-        // different things on different hardware. The happy path returns on the
-        // first attempt and pays none of it.
+        // A time budget, not a retry count: a loaded machine needs longer.
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         int delayMs = 5;
 
@@ -630,7 +559,6 @@ public sealed class AssetManagerTests
         }
     }
 
-    // Plays the render loop: pump, then yield, until the condition holds.
     private static void PumpUntil(AssetManager assets, Func<bool> condition)
     {
         var deadline = DateTime.UtcNow + PumpTimeout;

@@ -2,26 +2,14 @@ using SpectraEngine.Core.Audio;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The source pool's reclaim policy: free first, then the OLDEST finished
-/// source, and only then anything that can still be heard.
-/// </summary>
-/// <remarks>
-/// The rule the tests exist to hold is "never steal a playing source ahead of a
-/// finished one". A finished source is capacity nobody has claimed back yet, so
-/// taking it costs nothing audible; a playing one is a sound somebody can hear.
-/// Getting the order wrong does not fail, it just quietly cuts sounds off, and
-/// the report that comes back is "audio drops out when it gets busy", which
-/// points at nothing.
-/// </remarks>
+// Reclaim order: free, then the oldest finished source, then a playing one.
 public sealed class AudioSourcePoolTests
 {
     [Fact]
     public void A_pool_sizes_itself_to_what_the_driver_actually_granted()
     {
-        // A driver with a hard limit refuses partway through, and the pool
-        // honours that rather than assuming its request was met. Assuming would
-        // hand out handle 0, which AL accepts and silently ignores.
+        // A driver with a hard limit refuses partway through. Handing out
+        // handle 0 afterwards would be accepted by AL and ignored.
         var backend = new FakeAudioBackend(maxSources: 5);
         var pool = new AudioSourcePool(backend, 32);
 
@@ -42,10 +30,7 @@ public sealed class AudioSourcePoolTests
         backend.Play(second);
         backend.Play(third);
 
-        // Two are over, in the opposite order to the one they were acquired in.
-        // The pool must pick by ACQUIRE order, not by which finished first:
-        // recycling the longest-held handle is what keeps them cycling instead
-        // of thrashing one entry.
+        // Finished in reverse of acquire order: the pool picks by acquire order.
         backend.Finish(third);
         backend.Finish(second);
 
@@ -53,9 +38,7 @@ public sealed class AudioSourcePoolTests
         reclaimed.ShouldBe(second);
         pool.StolenCount.ShouldBe(0);
 
-        // A voice plays the source the moment it gets it, so the reclaimed one
-        // is audible again immediately. Modelling that is what makes the next
-        // acquire a real question rather than a choice between two idle entries.
+        // A voice plays its source at once, so the reclaimed one is busy again.
         backend.Play(reclaimed);
 
         pool.TryAcquire(streaming: false, out uint next).ShouldBeTrue();
@@ -63,8 +46,7 @@ public sealed class AudioSourcePoolTests
         pool.StolenCount.ShouldBe(0);
         backend.Play(next);
 
-        // Only now, with nothing finished left, is a playing source taken, and
-        // the pool says so rather than doing it silently.
+        // Nothing finished is left, so a playing source is stolen and counted.
         pool.TryAcquire(streaming: false, out uint stolen).ShouldBeTrue();
         stolen.ShouldBe(first);
         pool.StolenCount.ShouldBe(1);
@@ -73,10 +55,7 @@ public sealed class AudioSourcePoolTests
     [Fact]
     public void A_streaming_source_is_never_reclaimed_by_the_state_scan()
     {
-        // The trap this closes: a streaming source that ran dry reports Stopped
-        // exactly as a finished one does. A pool trusting the driver's state
-        // would hand the music track's source to a footstep the first time a
-        // frame hitched, and nothing anywhere would report it.
+        // A starved streaming source reports Stopped, the same as a finished one.
         var backend = new FakeAudioBackend(maxSources: 2);
         var pool = new AudioSourcePool(backend, 2);
 
@@ -88,7 +67,6 @@ public sealed class AudioSourcePoolTests
         backend.Starve(music);
         backend.Finish(shot);
 
-        // Both read as Stopped; only the one-shot may be taken.
         backend.StateOf(music).ShouldBe(AudioSourceState.Stopped);
         pool.TryAcquire(streaming: false, out uint reclaimed).ShouldBeTrue();
         reclaimed.ShouldBe(shot);
@@ -103,8 +81,6 @@ public sealed class AudioSourcePoolTests
         pool.TryAcquire(streaming: true, out _).ShouldBeTrue();
         pool.TryAcquire(streaming: true, out _).ShouldBeTrue();
 
-        // Dropping a footstep is the right answer; the alternative is stopping
-        // the music to play it.
         pool.TryAcquire(streaming: false, out uint source).ShouldBeFalse();
         source.ShouldBe(0u);
         pool.StarvedCount.ShouldBe(1);
@@ -114,9 +90,7 @@ public sealed class AudioSourcePoolTests
     [Fact]
     public void A_released_source_is_detached_before_it_is_handed_out_again()
     {
-        // AL refuses a queue operation on a source that still holds a static
-        // buffer, so a source that once played a one-shot would accept no
-        // queued buffers as a streaming voice and play silence with no error.
+        // AL refuses to queue onto a source that still holds a static buffer.
         var backend = new FakeAudioBackend(maxSources: 1);
         var pool = new AudioSourcePool(backend, 1);
 
@@ -140,11 +114,8 @@ public sealed class AudioSourcePoolTests
         pool.Release(source);
         pool.InUse.ShouldBe(0);
 
-        // Releasing the same free entry again, and a handle from no pool at
-        // all, must both change nothing. The case this does NOT cover is a
-        // STALE release of a reused handle, which no handle comparison can
-        // detect: AudioManager buys that guarantee instead, by dropping a voice
-        // in the same step it releases the source.
+        // Not covered: a stale release of a reused handle. The pool cannot
+        // detect that; AudioManager drops the voice when it releases the source.
         pool.Release(source);
         pool.Release(9999);
         pool.InUse.ShouldBe(0);

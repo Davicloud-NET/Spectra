@@ -5,28 +5,9 @@ namespace SpectraEngine.Core.Scene;
 
 /// <summary>
 /// The named collision groups of one world, and the 64×64 matrix saying which
-/// pairs of them interact.
+/// pairs of them interact. Group 0 is <c>Default</c>, and every pair
+/// interacts until one is disabled.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Sixty-four, not thirty-two.</b> Roblox caps at 32; the filter this maps
-/// onto is a pair of <c>uint64</c> category and mask words, so 64 is what the
-/// representation actually affords and there is no reason to ship a smaller
-/// number than the hardware gives.
-/// </para>
-/// <para>
-/// <b>The 65th group is a named error, never a silent drop.</b> Same rule the
-/// node-identity seam applies to duplicate ids: running out of a fixed
-/// resource is a thing the author must be told about at the moment it happens,
-/// because the alternative is geometry that silently collides with everything.
-/// </para>
-/// <para>
-/// <b>Group 0 is <c>Default</c> and cannot be removed or renamed.</b> Every
-/// node starts in it, so a world that never mentions collision groups behaves
-/// exactly as one without the feature — and the matrix starts all-true, so
-/// adding a group changes nothing until a pair is explicitly disabled.
-/// </para>
-/// </remarks>
 public sealed class CollisionGroups
 {
     /// <summary>The maximum number of groups one world may name.</summary>
@@ -42,10 +23,8 @@ public sealed class CollisionGroups
     private readonly Dictionary<string, int> _ids =
         new(StringComparer.Ordinal) { [DefaultGroupName] = DefaultGroup };
 
-    // One mask word per group: bit j of _masks[i] means "group i collides with
-    // group j". Kept symmetric by construction — every write touches both
-    // halves — because a matrix that can disagree with itself is a bug with no
-    // symptom until two objects pass through each other from one side only.
+    // Bit j of _masks[i]: group i collides with group j. Every write must
+    // touch both halves to keep it symmetric.
     private readonly ulong[] _masks = new ulong[MaxGroups];
 
     /// <summary>Creates a registry holding only <see cref="DefaultGroupName"/>, with everything colliding.</summary>
@@ -99,10 +78,7 @@ public sealed class CollisionGroups
         return _names[id];
     }
 
-    /// <summary>
-    /// Sets whether two groups interact. Symmetric: setting (a, b) sets (b, a),
-    /// so the matrix cannot disagree with itself.
-    /// </summary>
+    /// <summary>Sets whether two groups interact. Symmetric.</summary>
     public void SetCollidable(int groupA, int groupB, bool collidable)
     {
         ValidateId(groupA, nameof(groupA));
@@ -121,11 +97,8 @@ public sealed class CollisionGroups
     }
 
     /// <summary>
-    /// Whether two groups interact. <b>The strict, author-facing accessor:</b>
-    /// an id that names no registered group is out of range and throws, because
-    /// asking about a group you never made is a mistake worth reporting. A
-    /// query traversal must use <see cref="Interacts"/> instead — see there for
-    /// why the two cannot be the same method.
+    /// Whether two groups interact. Throws on an id that names no registered
+    /// group; a query traversal should use <see cref="Interacts"/>.
     /// </summary>
     public bool AreCollidable(int groupA, int groupB)
     {
@@ -135,30 +108,19 @@ public sealed class CollisionGroups
     }
 
     /// <summary>
-    /// Whether two ids interact, treating an id that is in range but not yet
-    /// named as <em>interacting</em> — which is the value its all-ones mask
-    /// word already holds.
+    /// Whether two ids interact, without throwing. An id in range but not yet
+    /// named interacts with everything.
     /// </summary>
-    /// <remarks>
-    /// <b>This is the accessor a query traversal uses, and the split is not a
-    /// convenience.</b> <see cref="SceneNode.CollisionGroup"/> is deliberately
-    /// validated only against the 64 ceiling, because a node may be assigned a
-    /// group before it is attached to any scene and a deserializer may restore
-    /// ids before names. So a node can legally carry an id this registry has
-    /// not named — and a broad-phase walk is the worst possible place to
-    /// discover that: the throw fires only when a box happens to overlap, from
-    /// inside the traversal, leaving the caller's results list partially
-    /// filled. Answering "interacts" is both the safe verdict and the one the
-    /// default mask already encodes.
-    /// </remarks>
+    // A node can carry an id this registry has not named (assigned before
+    // attach, or restored before the names), and a broad-phase walk must not
+    // throw halfway through.
     public bool Interacts(int groupA, int groupB) =>
         (uint)groupA < MaxGroups && (uint)groupB < MaxGroups &&
         (_masks[groupA] & (1UL << groupB)) != 0;
 
     /// <summary>
-    /// The raw mask word for <paramref name="group"/> — bit <c>j</c> set means
-    /// it interacts with group <c>j</c>. This is the value a physics backend's
-    /// filter consumes directly.
+    /// The raw mask word for <paramref name="group"/>: bit <c>j</c> set means
+    /// it interacts with group <c>j</c>.
     /// </summary>
     public ulong GetMask(int group)
     {

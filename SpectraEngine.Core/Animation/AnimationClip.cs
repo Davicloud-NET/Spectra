@@ -12,23 +12,9 @@ public readonly record struct Vector3Key(float Time, Vector3 Value);
 public readonly record struct QuaternionKey(float Time, Quaternion Value);
 
 /// <summary>
-/// One bone's animation: independent position, rotation and scale tracks.
+/// One bone's animation: independent position, rotation and scale tracks. An
+/// empty track keeps the bind value. Position and scale lerp, rotation slerps.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The three tracks are separate and any of them may be empty</b>, which is
-/// what every authoring tool exports and what makes additive and partial clips
-/// possible at all. An empty track means "keep the bind value", never "use
-/// zero" — the difference between a clip that animates only a character's arms
-/// and a clip that collapses its legs to the origin.
-/// </para>
-/// <para>
-/// Interpolation is linear for position and scale and spherical for rotation.
-/// Nothing here resamples to a fixed rate: an exporter's own key times are kept,
-/// so a clip authored at 24 fps and played at 144 fps is interpolated rather
-/// than stepped.
-/// </para>
-/// </remarks>
 public sealed class AnimationChannel
 {
     private static readonly Vector3Key[] NoVectors = [];
@@ -49,11 +35,6 @@ public sealed class AnimationChannel
     }
 
     /// <summary>The bone this channel drives, resolved against the skeleton at import time.</summary>
-    /// <remarks>
-    /// An index rather than a name, deliberately: sampling runs every frame for
-    /// every bone, and a dictionary lookup per bone per frame is a cost paid
-    /// forever to avoid one paid once.
-    /// </remarks>
     public int BoneIndex { get; }
 
     public Vector3Key[] Positions { get; }
@@ -105,18 +86,8 @@ public sealed class AnimationChannel
 
         float t = SegmentFraction(keys[i].Time, keys[i + 1].Time, time);
 
-        // Shortest path, explicitly. A quaternion and its negation are the same
-        // orientation, so an exporter is free to emit either — and interpolating
-        // between two that happen to be on opposite hemispheres takes the long
-        // way round, which is the classic "the character's forearm spins a full
-        // turn between two frames that look identical" bug.
-        //
-        // MEASURED: System.Numerics.Quaternion.Slerp already does this itself,
-        // so today this line changes nothing — a mutation test that deletes it
-        // passes. It stays because shortest-path is not a DOCUMENTED guarantee
-        // of that method, only its current implementation, and the failure mode
-        // if it ever changed is a limb whipping through a full turn. The tests
-        // pin the behaviour; they cannot pin this line, and say so.
+        // Shortest path: q and -q are the same orientation. Slerp does this
+        // itself today, but that is not documented, so the flip stays.
         Quaternion a = keys[i].Value;
         Quaternion b = keys[i + 1].Value;
         if (Quaternion.Dot(a, b) < 0f)
@@ -125,13 +96,9 @@ public sealed class AnimationChannel
         return Quaternion.Normalize(Quaternion.Slerp(a, b, t));
     }
 
-    // The index of the key at or before `time`, or −1 when time precedes the
-    // first key. Binary search rather than a scan: a long clip has thousands of
-    // keys and this runs per bone per frame.
-    //
-    // Written twice rather than once over a key-time selector: a delegate here
-    // is an indirect call per search step on the hottest path the animation
-    // system has, to save nine lines.
+    // Index of the key at or before time, or -1 before the first key.
+    // Duplicated per key type: a shared version would need a delegate call per
+    // search step, and this runs per bone per frame.
     private static int FindSegment(Vector3Key[] keys, float time)
     {
         if (time < keys[0].Time)
@@ -166,9 +133,7 @@ public sealed class AnimationChannel
         return low;
     }
 
-    // Guarded against coincident key times, which authoring tools do emit and
-    // which would otherwise be a divide by zero producing a NaN pose — a
-    // character that vanishes rather than one that stutters.
+    // Authoring tools do emit coincident key times; unguarded that is a NaN pose.
     private static float SegmentFraction(float start, float end, float time)
     {
         float span = end - start;
@@ -178,11 +143,8 @@ public sealed class AnimationChannel
 
 /// <summary>
 /// One animation: a duration, a loop flag, and the channels that drive bones.
+/// Immutable, so one clip is shared by every character playing it.
 /// </summary>
-/// <remarks>
-/// Immutable and shareable, like <see cref="Skeleton"/> — one clip serves every
-/// character playing it, and what differs per instance is the play head.
-/// </remarks>
 public sealed class AnimationClip
 {
     private readonly AnimationChannel[] _channels;
@@ -205,12 +167,7 @@ public sealed class AnimationClip
 
     public string Name { get; }
 
-    /// <summary>Length in SECONDS — never in an exporter's ticks.</summary>
-    /// <remarks>
-    /// The conversion belongs at import, once, because a tick rate that survives
-    /// into the runtime is a unit that every consumer has to remember to divide
-    /// by and one of them eventually will not.
-    /// </remarks>
+    /// <summary>Length in seconds. Exporter ticks are converted at import.</summary>
     public float Duration { get; }
 
     public bool Looping { get; }
@@ -219,12 +176,8 @@ public sealed class AnimationClip
 
     /// <summary>
     /// Maps a play head onto the clip: wrapped when looping, clamped when not.
+    /// Negative times wrap too.
     /// </summary>
-    /// <remarks>
-    /// Negative times wrap correctly too (C#'s <c>%</c> keeps the sign of the
-    /// dividend, so the naive form plays a looping clip backwards off its own
-    /// start), which is what makes a rewind or a negative playback rate work.
-    /// </remarks>
     public float NormalizeTime(float time)
     {
         if (Duration <= 0f)

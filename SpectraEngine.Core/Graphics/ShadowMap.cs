@@ -6,48 +6,13 @@ namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
 /// A directional light's cascaded depth map, and the transforms that read it.
+/// Cascades are fitted to slices of the camera frustum out to <see cref="Distance"/>.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The world is unbounded, so the map cannot be fitted to it.</b> A sealed
-/// level would fit one ortho box around the whole map and be done; here there is
-/// no whole map, so boxes are fitted to SLICES of the camera frustum, and
-/// everything past <see cref="Distance"/> is lit but never shadowed.
-/// </para>
-/// <para>
-/// <b>Cascades are not a quality setting, they are what makes the near shadow
-/// sharp at all.</b> One box over the whole shadow distance has to be as wide as
-/// the far end of the view, and a texel of it is then centimetres across
-/// wherever you are actually looking: the 3x3 filter kernel spans three of those
-/// texels, so a 40 cm post gets a penumbra a third of its own width and reads as
-/// a smudge rather than a shadow. Splitting the range means the slice nearest
-/// the camera is metres across instead of tens of metres, and its texels shrink
-/// by the same factor. The far cascades stay coarse, which is invisible because
-/// they are far away.
-/// </para>
-/// <para>
-/// <b>Two things make a cascade stop crawling, and both are mandatory rather
-/// than polish.</b> Each slice is bounded by a SPHERE rather than a box, so the
-/// box's size cannot change when the camera merely turns; and the box's centre
-/// is then snapped to whole texels, so it cannot slide by a fraction of one
-/// between frames. Fixing one and not the other fixes nothing, because the snap
-/// is only meaningful once the texel size is constant.
-/// </para>
-/// <para>
-/// <b>One depth-only texture, split into quadrants.</b> An atlas rather than N
-/// textures because the light pass then samples ONE sampler with one filter
-/// kernel: N textures would need the kernel written out N times, since
-/// SpectraShade cannot pass a sampler to a function.
-/// </para>
-/// </remarks>
+// One depth atlas in quadrants, not N textures: SpectraShade cannot pass a
+// sampler to a function, so N textures would mean the filter kernel N times.
 public sealed class ShadowMap : IDisposable
 {
-    /// <summary>Square resolution of the whole atlas when a caller does not say.</summary>
-    /// <remarks>
-    /// 2048 holds four 1024-square cascades in 16 MB. Doubling it doubles the
-    /// sharpness everywhere and costs 64 MB, which is the same memory four
-    /// 2048-square cascades would need and strictly better spent here.
-    /// </remarks>
+    /// <summary>Default square resolution of the whole atlas: four 1024 cascades, 16 MB.</summary>
     public const int DefaultResolution = 2048;
 
     /// <summary>Cascades in the 2x2 atlas.</summary>
@@ -98,101 +63,41 @@ public sealed class ShadowMap : IDisposable
         {
             _cascadeCount = Math.Clamp(value, 1, MaxCascades);
 
-            // Clamped now rather than at the next Fit: the spans above are read
-            // between the two, and one longer than the setting would hand the
-            // shader a slot nothing has fitted.
+            // The spans are read before the next Fit and must not cover unfitted slots.
             FittedCascadeCount = Math.Min(FittedCascadeCount, _cascadeCount);
         }
     }
 
     /// <summary>
     /// How far from the camera shadows are drawn. Beyond it surfaces are lit but
-    /// never shadowed, which is the open-world trade this type documents.
+    /// never shadowed. Not the camera's far plane.
     /// </summary>
-    /// <remarks>
-    /// Not the camera's far plane, deliberately: fitting the last cascade to a
-    /// kilometre would make even the coarsest one useless. It can be much larger
-    /// than a single-cascade map could afford, because only the last cascade
-    /// pays for it.
-    /// </remarks>
     public float Distance { get; set; } = 60f;
 
     /// <summary>
     /// How the range is divided between cascades: 0 splits it evenly, 1
     /// logarithmically.
     /// </summary>
-    /// <remarks>
-    /// Even splits waste the near cascades on slivers of view; logarithmic
-    /// splits waste the far ones. The blend is the standard practical scheme,
-    /// and this leans toward the log end because texel size is what matters and
-    /// the log split is what equalises it.
-    /// </remarks>
     public float SplitBlend { get; set; } = 0.88f;
 
     /// <summary>
-    /// The rasterizer's depth offset while the map is drawn: THE acne fix.
+    /// The rasterizer's depth offset while the map is drawn. This is the acne fix.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>This is the bias that costs nothing, and <see cref="CompareBias"/>
-    /// only exists for the sliver it cannot reach.</b> Acne comes from a
-    /// receiver comparing its own
-    /// ramping depth against a stored depth that is constant across each texel;
-    /// their difference is a sawtooth at texel frequency, and the slope-scaled
-    /// term is multiplied by exactly the quantity that sets that sawtooth's
-    /// height. See <see cref="Graphics.DepthBias"/>.
-    /// </para>
-    /// <para>
-    /// The numbers are in the graphics API's own units and are the standard
-    /// shadow-map starting point. They need no per-cascade scaling, unlike
-    /// everything else here, because a depth-buffer unit is already a fraction
-    /// of that cascade's own ortho depth range.
-    /// </para>
-    /// <para>
-    /// <b>THE SLOPE TERM MUST COVER THE FILTER'S WHOLE FOOTPRINT, NOT ONE
-    /// TEXEL, and that is why this is 8 rather than the 2.5 it shipped as.</b>
-    /// A tap does not compare the receiver against its own texel: it compares
-    /// against one up to <see cref="FilterRadius"/> away, plus the texel the
-    /// bilinear weighting straddles. The stored depth there belongs to a
-    /// different part of the surface, and on a surface grazing to the light
-    /// that difference is large - so the bias has to cover the depth change
-    /// across the footprint, and the value tuned for a point sample does not.
-    /// The old value was below what even a zero-radius filter needs.
-    /// </para>
-    /// <para>
-    /// Measured on a lone sphere at a resolution where the artifact has
-    /// converged, as the smallest slope term leaving no false self-shadowing at
-    /// all: radius 0, 0.4 and 0.8 need 6; radius 1.2 (the default) needs 8;
-    /// radius 2 needs 10 and radius 3 needs 14. <b>Widening
-    /// <see cref="FilterRadius"/> without raising this brings the acne
-    /// back.</b> The cost is real but small, and it is paid in cast-shadow area
-    /// rather than in acne: at the default radius, going from 2.5 to 8 removes
-    /// a worst-case false darkening of 102 of 765 and shrinks the measured
-    /// shadow a hair over one and a half percent.
-    /// </para>
-    /// </remarks>
+    // The slope term has to cover the PCF filter's whole footprint, not one texel.
+    // Smallest value with no self-shadowing, measured: radius up to 0.8 needs 6,
+    // 1.2 needs 8, 2 needs 10, 3 needs 14. Raise it when FilterRadius is widened.
     public DepthBias RasterBias { get; set; } = new(Constant: 2000, SlopeScaled: 8f);
 
     /// <summary>
-    /// Radius of the PCF tap circle, in texels of the chosen cascade.
+    /// Radius of the PCF tap circle, in texels of the chosen cascade. The fetch
+    /// count does not depend on it. See <see cref="RasterBias"/> before widening.
     /// </summary>
-    /// <remarks>
-    /// Four taps, each bilinearly weighted, so sixteen fetches whatever this
-    /// says: widening the filter costs nothing but softness. It is a real dial
-    /// rather than a constant because what it trades is a shadow's crispness
-    /// against how much of the map's own texel staircase survives, and those
-    /// are worth different amounts at different map resolutions.
-    /// </remarks>
     public float FilterRadius { get; set; } = 1.2f;
 
-    /// <summary>Constant subtracted from the compared depth, for the sliver <see cref="RasterBias"/> misses.</summary>
-    /// <remarks>
-    /// Small, and deliberately not slope-scaled: with the raster bias doing the
-    /// real work this is a floor against depth-buffer quantisation rather than a
-    /// tuning dial. Raising it detaches shadows from their casters, which is the
-    /// one failure the light pass cannot compensate for. Named for what it does
-    /// rather than <c>DepthBias</c>, which is the TYPE the raster bias uses.
-    /// </remarks>
+    /// <summary>
+    /// Constant subtracted from the compared depth, for what <see cref="RasterBias"/> misses.
+    /// Raising it detaches shadows from their casters.
+    /// </summary>
     public float CompareBias { get; set; } = 0.0002f;
 
     /// <summary>World-to-light-clip for one cascade, for the depth pass to draw with.</summary>
@@ -200,21 +105,14 @@ public sealed class ShadowMap : IDisposable
 
     /// <summary>
     /// Per cascade: world position to a lookup in that cascade's own 0..1 space,
-    /// with z directly comparable against what the map stores.
+    /// with z directly comparable against what the map stores. The backend's Y
+    /// flip and depth range are already folded in.
     /// </summary>
-    /// <remarks>
-    /// <b>Every convention difference between the backends is folded in here, on
-    /// the CPU, so the shader has none.</b> The Y flip (render targets are
-    /// bottom-left on OpenGL and top-left on D3D) and the clip-Z-to-depth-buffer
-    /// mapping are both baked in. Doing either in the shader means a shadow that
-    /// is upside down or offset in depth on exactly one backend, which produces
-    /// no error anywhere.
-    /// </remarks>
     public ReadOnlySpan<Matrix4x4> WorldToShadow => _worldToShadow.AsSpan(0, FittedCascadeCount);
 
     /// <summary>
     /// Per cascade: the atlas quadrant as (u, v, scale), plus that cascade's
-    /// world texel size in w, which is what scales the normal offset.
+    /// world texel size in w.
     /// </summary>
     public ReadOnlySpan<Vector4> CascadeRects => _rects.AsSpan(0, FittedCascadeCount);
 
@@ -238,8 +136,7 @@ public sealed class ShadowMap : IDisposable
     /// Fits every cascade to its slice of <paramref name="camera"/>'s frustum,
     /// lit from <paramref name="lightDirection"/>.
     /// </summary>
-    /// <param name="camera">The camera whose view is being shadowed.</param>
-    /// <param name="lightDirection">The direction the light TRAVELS, as a <see cref="RenderLight"/> carries it.</param>
+    /// <param name="lightDirection">The direction the light travels, as a <see cref="RenderLight"/> carries it.</param>
     /// <returns>False when nothing could be fitted and no shadow should be drawn.</returns>
     public bool Fit(Camera camera, Vector3 lightDirection)
     {
@@ -248,15 +145,8 @@ public sealed class ShadowMap : IDisposable
         float near = camera.NearPlane;
         float far = MathF.Min(Distance, camera.FarPlane);
 
-        // An orthographic camera's slab is symmetric about the eye, so its
-        // "near" is behind it: fitting from the near plane forward would leave
-        // everything between the eye and the focus plane out of every cascade,
-        // which in a top view is every roof in the level. The range is
-        // therefore centred on the eye, and the cost is stated rather than
-        // hidden: a plan view gets one coarser fit around the focus plane
-        // instead of four graded ones, which is right for a view somebody is
-        // measuring in rather than playing in. The perspective path is
-        // untouched, bit for bit.
+        // An orthographic slab is symmetric about the eye, so centre the range
+        // on it. Fitting from the near plane forward would miss what is behind.
         if (camera.ProjectionKind == CameraProjectionKind.Orthographic)
         {
             near = -Distance * 0.5f;
@@ -265,10 +155,7 @@ public sealed class ShadowMap : IDisposable
 
         if (far <= near) return false;
 
-        // ONE cascade in a plan view, and the trade is stated rather than
-        // discovered: cascades exist to spend texels where perspective puts
-        // them, and a parallel projection has no near and far to grade between.
-        // Four slices of one slab would be four fits of nearly the same box.
+        // One cascade under a parallel projection: there is no foreshortening to grade.
         int cascades = camera.ProjectionKind == CameraProjectionKind.Orthographic
             ? 1
             : _cascadeCount;
@@ -284,9 +171,7 @@ public sealed class ShadowMap : IDisposable
         {
             float sliceFar = splits[i];
 
-            // Slices OVERLAP slightly at their boundary. Without it a receiver
-            // sitting exactly on a split can fall outside both cascades for a
-            // pixel or two and flicker as the camera moves.
+            // Slight overlap, or a receiver on a split can fall outside both cascades and flicker.
             float overlappedNear = i == 0 ? sliceNear : sliceNear * 0.96f;
 
             if (!TryFitLightMatrix(
@@ -306,40 +191,22 @@ public sealed class ShadowMap : IDisposable
             sliceNear = sliceFar;
         }
 
-        // Published rather than left implicit, and everything downstream reads
-        // it: the depth pass draws this many tiles, the light pass is told this
-        // many, and the two spans below stop here. Leaving the configured count
-        // in place would let the shader pick a slot still holding the fit from
-        // before the view changed, which shadows part of the screen against a
-        // box nowhere near it.
+        // Slots past this still hold an older fit, so the shader must not read them.
         FittedCascadeCount = cascades;
         return true;
     }
 
     /// <summary>
-    /// How many cascades the last <see cref="Fit"/> actually produced.
+    /// How many cascades the last <see cref="Fit"/> produced. Usually
+    /// <see cref="CascadeCount"/>; an orthographic camera fits one.
     /// </summary>
-    /// <remarks>
-    /// Usually <see cref="CascadeCount"/>. An orthographic camera fits ONE:
-    /// cascades exist to spend texels where perspective puts them, and a
-    /// parallel projection has no near and far to grade between, so four slices
-    /// of one slab would be four fits of nearly the same box.
-    /// </remarks>
     public int FittedCascadeCount { get; private set; } = MaxCascades;
 
-    /// <summary>
-    /// Where each cascade ends, from <paramref name="near"/> to
-    /// <paramref name="far"/>.
-    /// </summary>
+    // Writes where each cascade ends.
     internal static void ComputeSplits(float near, float far, int count, float blend, Span<float> splits)
     {
-        // The logarithmic term is undefined for a near at or below zero -
-        // Pow of a negative base is NaN, and a NaN split fits a light matrix
-        // full of NaNs that renders a black frame with nothing reporting a
-        // problem. An orthographic slab is centred on the eye and its near IS
-        // negative, so that arm falls back to uniform, which is the right
-        // distribution there anyway: parallel projection has no foreshortening
-        // for a logarithmic split to compensate for.
+        // Pow of a negative base is NaN, and an orthographic slab has a negative
+        // near. Uniform splits there.
         bool logarithmicUsable = near > 0f && far > 0f;
 
         for (int i = 1; i <= count; i++)
@@ -357,17 +224,11 @@ public sealed class ShadowMap : IDisposable
             splits[i - 1] = blend * logarithmic + (1f - blend) * uniform;
         }
 
-        // The last one is the shadow distance exactly, whatever the blend
-        // rounded it to: it is the number the caller set and the number the
-        // documentation quotes.
+        // Not whatever the blend rounded it to.
         splits[count - 1] = far;
     }
 
-    /// <summary>
-    /// The fitting itself: pure geometry, no renderer and no GPU, so the two
-    /// properties that make a shadow stable can be tested without one.
-    /// </summary>
-    /// <returns>False when there is nothing sensible to fit.</returns>
+    // No renderer involved, so tests can call it. False when there is nothing to fit.
     internal static bool TryFitLightMatrix(
         Camera camera,
         Vector3 lightDirection,
@@ -388,40 +249,27 @@ public sealed class ShadowMap : IDisposable
         BoundSlice(camera, near, far, out Vector3 center, out float radius);
         if (radius <= 0f) return false;
 
-        // Behind the visible slice by its own diameter, so a wall or a hill just
-        // outside the view still casts into it. In an unbounded world this can
-        // never be complete; it is a depth range, not a guarantee.
+        // Extend toward the light so casters just outside the view still cast into it.
         float casterMargin = radius * 2f;
 
-        // Any up that is not parallel to the light. A sun pointing straight down
-        // is the case world-up fails on, and is also the most likely direction.
+        // World up fails for a sun pointing straight down.
         Vector3 up = MathF.Abs(forward.Y) > 0.99f ? Vector3.UnitZ : Vector3.UnitY;
 
-        // LIGHT SPACE IS ANCHORED AT THE WORLD ORIGIN, not at the slice. Putting
-        // the eye at the slice's centre would be the obvious choice and it
-        // quietly destroys the snap below: the centre moves continuously with
-        // the camera, so light space itself would slide, and quantising a
-        // coordinate inside a sliding frame quantises nothing. The frame has to
-        // be the same every frame for whole-texel steps to mean anything.
+        // Light space is anchored at the world origin, not at the slice centre.
+        // A frame that moves with the camera would make the texel snap below useless.
         Matrix4x4 lightView = Matrix4x4.CreateLookAt(Vector3.Zero, forward, up);
 
-        // THE SNAP. The slice's centre wanders by fractions of a texel as the
-        // camera moves; quantising it to whole texels is what stops every shadow
-        // edge from shimmering. It is only correct because the radius above is
-        // rotation-independent, so the texel size is constant.
+        // Snap the centre to whole texels so shadow edges do not shimmer as the
+        // camera moves. Needs the constant texel size the bounding sphere gives.
         float diameter = radius * 2f;
         float texelsPerUnit = resolution / diameter;
         Vector3 centerInLight = Vector3.Transform(center, lightView);
         float snappedX = MathF.Floor(centerInLight.X * texelsPerUnit) / texelsPerUnit;
         float snappedY = MathF.Floor(centerInLight.Y * texelsPerUnit) / texelsPerUnit;
 
-        // CreateLookAt is right-handed, so anything in front of the light lies at
-        // NEGATIVE light-space z while the ortho's near and far are distances
-        // measured forward from the eye: hence the negation. Depth is
-        // deliberately not snapped. A uniform shift in z moves the caster's
-        // stored depth and the receiver's computed depth by the same amount,
-        // because both go through this same matrix, so it cancels in the
-        // comparison and cannot shimmer.
+        // CreateLookAt is right-handed: in front of the light is negative z, and
+        // the ortho planes are forward distances. Depth needs no snap, a z shift
+        // moves caster and receiver alike.
         float zNear = -(centerInLight.Z + radius + casterMargin);
         float zFar = -(centerInLight.Z - radius);
 
@@ -435,17 +283,8 @@ public sealed class ShadowMap : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Clip space to a shadow-map lookup: NDC xy to texture coordinates, NDC z
-    /// to whatever the depth buffer actually stores.
-    /// </summary>
-    /// <remarks>
-    /// The z row is the exact inverse of <see cref="Renderer.DepthToNdcZ"/>, so
-    /// the two directions cannot drift apart. The y row carries the sign of the
-    /// backend's target origin, which is the same flip
-    /// <see cref="FullscreenTriangle"/> bakes into its vertices and for the same
-    /// reason.
-    /// </remarks>
+    // NDC xy to texture coordinates, NDC z to what the depth buffer stores.
+    // The z row inverts Renderer.DepthToNdcZ; the y sign follows the target origin.
     internal static Matrix4x4 NdcToShadowTexture(Vector2 depthToNdc, bool topLeftOrigin)
     {
         float zScale = 1f / depthToNdc.X;
@@ -459,10 +298,8 @@ public sealed class ShadowMap : IDisposable
             0.5f, 0.5f, zBias, 1f);
     }
 
-    // The eight corners of the frustum slice, reduced to the sphere that
-    // contains them. A sphere rather than a box because a box built from the
-    // same corners changes size when the camera turns, and a shadow map whose
-    // extents change every frame cannot be texel-snapped into stability.
+    // A sphere, not a box: a box changes size when the camera turns, and the
+    // texel snap needs a constant size.
     private static void BoundSlice(Camera camera, float near, float far, out Vector3 center, out float radius)
     {
         float tanHalfFov = MathF.Tan(camera.FieldOfView * 0.5f);
@@ -471,11 +308,7 @@ public sealed class ShadowMap : IDisposable
         Vector3 right = camera.Right;
         Vector3 up = camera.Up;
 
-        // An orthographic camera's view is a BOX rather than a wedge, so the
-        // slice's half extents are the same at both ends and come from the
-        // height the viewport spans. The corners are otherwise built the same
-        // way, which is what keeps the snap, the margin and the light-space
-        // anchoring below untouched.
+        // Orthographic: same half extents at both ends.
         bool orthographic = camera.ProjectionKind == CameraProjectionKind.Orthographic;
         float orthoHalfHeight = camera.OrthographicHeight * 0.5f;
 
@@ -503,8 +336,7 @@ public sealed class ShadowMap : IDisposable
         for (int i = 0; i < corners.Length; i++)
             furthest = MathF.Max(furthest, Vector3.DistanceSquared(corners[i], center));
 
-        // Rounded up a little: the snap moves the box by up to a texel, and a
-        // radius that exactly touches the corners would clip them afterwards.
+        // A little slack: the snap moves the box by up to a texel.
         radius = MathF.Sqrt(furthest) * 1.02f;
     }
 

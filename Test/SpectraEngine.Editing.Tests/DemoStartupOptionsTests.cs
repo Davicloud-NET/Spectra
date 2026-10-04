@@ -5,20 +5,9 @@ using System;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// The demo host's startup switch, and above all its default. The synthetic
-/// editing self-test drags a real brush node a real world unit and leaves it
-/// displaced for the frames the async recompile needs, so an accidentally
-/// always-on self-test is indistinguishable — to somebody using the editor —
-/// from a brush that jitters every few seconds. It was exactly that once.
-/// These tests pin the gate so it cannot come back on by accident: OFF unless
-/// a command-line switch or the environment variable asks for it, and ON, with
-/// an attributable source, when one does.
+/// The demo host's startup switches and their defaults. The self-test moves a
+/// real brush, so it must stay off unless asked for.
 /// </summary>
-/// <remarks>
-/// Headless by construction: <see cref="DemoStartupOptions.Parse"/> takes the
-/// environment value as an argument instead of reading it, so nothing here
-/// needs a window, a renderer, or process-wide state.
-/// </remarks>
 public sealed class DemoStartupOptionsTests
 {
     [Theory]
@@ -91,8 +80,6 @@ public sealed class DemoStartupOptionsTests
     [Fact]
     public void The_switch_composes_with_a_backend_in_either_order()
     {
-        // The gate runs this exact shape on all three backends, so both orders
-        // have to work — the backend used to be read positionally as args[0].
         DemoStartupOptions backendFirst = DemoStartupOptions.Parse(["d3d11", "--selftest"], null);
         DemoStartupOptions switchFirst = DemoStartupOptions.Parse(["--selftest", "d3d11"], null);
 
@@ -129,8 +116,6 @@ public sealed class DemoStartupOptionsTests
     [Fact]
     public void An_explicit_command_line_no_overrides_an_inherited_environment_yes()
     {
-        // A harness that exported the variable once must still be able to run a
-        // quiet session without unsetting it.
         DemoStartupOptions options = DemoStartupOptions.Parse(["--selftest=false"], "true");
 
         options.SelfTestEnabled.ShouldBeFalse();
@@ -140,8 +125,7 @@ public sealed class DemoStartupOptionsTests
     [Fact]
     public void An_unparsable_environment_value_is_a_usage_error()
     {
-        // Silently ignoring it would mean a gate that believes it enabled the
-        // self-test and a log that never says otherwise.
+        // Ignoring it would leave a gate script thinking the self-test ran.
         Should.Throw<ArgumentException>(() => DemoStartupOptions.Parse([], "maybe"));
     }
 
@@ -170,10 +154,8 @@ public sealed class DemoStartupOptionsTests
     [Fact]
     public void Booting_from_packs_is_off_unless_a_project_is_named_with_it()
     {
-        // A pack list belongs to a project, so --pack alone would silently run
-        // the authored demo scene off loose files and look exactly like a
-        // passing cooked run - which is the one thing this switch exists to
-        // tell apart.
+        // --pack alone would run the demo scene off loose files and look like a
+        // passing cooked run.
         DemoStartupOptions.Parse(["d3d11", "--project=Game"], null).BootFromPacks.ShouldBeFalse();
 
         Should.Throw<ArgumentException>(() => DemoStartupOptions.Parse(["--pack"], null))
@@ -189,8 +171,6 @@ public sealed class DemoStartupOptionsTests
         options.BootFromPacks.ShouldBeTrue();
         options.DevContentOverlay.ShouldBeTrue();
 
-        // Refused rather than ignored: on its own it asks for loose files over
-        // packs nobody mounted, which is what the demo already does.
         Should.Throw<ArgumentException>(
             () => DemoStartupOptions.Parse(["--project=Game", "--dev"], null))
             .Message.ShouldContain("--pack");
@@ -199,9 +179,8 @@ public sealed class DemoStartupOptionsTests
     [Fact]
     public void The_pack_switches_survive_the_self_test_environment_path()
     {
-        // The three Parse exits each construct the record separately, so a new
-        // field has to be threaded through all of them - this pins the one an
-        // environment-driven gate run takes.
+        // Parse builds the record at three separate exits. This covers the
+        // environment one.
         DemoStartupOptions options = DemoStartupOptions.Parse(
             ["d3d11", "--project=Game", "--pack"], "true");
 
@@ -220,9 +199,6 @@ public sealed class DemoStartupOptionsTests
     [Fact]
     public void The_fullscreen_cycle_is_off_when_nothing_asks_for_it()
     {
-        // Same gate, same reason as the self-test above: a window that resizes
-        // itself every couple of seconds is right for an automated run and
-        // wrong for anybody trying to use the editor.
         DemoStartupOptions.Parse(["d3d12"], null).FullscreenCycleInterval.ShouldBeNull();
     }
 
@@ -239,9 +215,7 @@ public sealed class DemoStartupOptionsTests
     [Fact]
     public void The_fullscreen_cycle_interval_is_read_invariantly()
     {
-        // Parsed with the invariant culture on purpose: this switch is typed by
-        // gate scripts, and on a comma-decimal machine a current-culture parse
-        // would reject the seconds value every script writes.
+        // Gate scripts write "0.5". A comma-decimal culture would reject it.
         DemoStartupOptions.Parse(["--fullscreen-cycle=0.5"], null).FullscreenCycleInterval
             .ShouldBe(TimeSpan.FromSeconds(0.5));
     }
@@ -252,17 +226,14 @@ public sealed class DemoStartupOptionsTests
     [InlineData("--fullscreen-cycle=soon")]
     public void A_non_positive_or_unparsable_interval_is_a_usage_error(string argument)
     {
-        // Clamping a zero would spin the window-mode latch as fast as the event
-        // pump runs, which measures nothing and cannot be watched.
         Should.Throw<ArgumentException>(() => DemoStartupOptions.Parse([argument], null));
     }
 
     [Fact]
     public void The_fullscreen_cycle_survives_the_self_test_environment_path()
     {
-        // The three Parse exits each construct the record separately, so the
-        // cycle interval has to be threaded through all of them — this pins the
-        // one an environment-driven gate run takes.
+        // Parse builds the record at three separate exits. This covers the
+        // environment one.
         DemoStartupOptions options = DemoStartupOptions.Parse(["d3d11", "--fullscreen-cycle=1"], "true");
 
         options.SelfTestEnabled.ShouldBeTrue();
@@ -294,10 +265,8 @@ public sealed class DemoStartupOptionsTests
     [Fact]
     public void The_pacing_probe_refuses_opengl_by_name()
     {
-        // Refused where the argument is read rather than three layers down in a
-        // renderer: OpenGL has no shared target at all, so there is nothing to
-        // pace and the failure would otherwise be reported as a driver problem.
-        // The default backend is OpenGL, so naming no backend is the same case.
+        // OpenGL has no shared target. It is also the default backend, so naming
+        // none is the same case.
         Should.Throw<ArgumentException>(
             () => DemoStartupOptions.Parse(["opengl", "--pacing-probe"], selfTestEnvironmentValue: null));
         Should.Throw<ArgumentException>(

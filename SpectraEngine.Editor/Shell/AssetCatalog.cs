@@ -7,42 +7,20 @@ using System.IO;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>One file a picker can offer.</summary>
-/// <param name="ContentPath">
-/// The normalized content-relative path, which is the name the engine knows this
-/// file by: what a material writes down, what a map records, what a pack hashes
-/// its id from.
-/// </param>
-/// <param name="Stem">The file name without its extension, for reading.</param>
-/// <param name="Folder">Its folder, content-relative, for telling two alike names apart.</param>
-/// <param name="FullPath">Where it is on this machine.</param>
-/// <param name="Kind">What it is.</param>
+/// <param name="ContentPath">Normalized content-relative path, the engine's identity for the file.</param>
+/// <param name="Folder">Content-relative folder.</param>
 public sealed record AssetCatalogEntry(
     string ContentPath, string Stem, string Folder, string FullPath, ContentKind Kind);
 
-/// <summary>
-/// What a project has, for the pickers that assign it.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>A walk rather than a query of the asset manager.</b> The manager knows
-/// what has been LOADED, which for a fresh session is almost nothing; a picker
-/// has to offer what exists. The registry cannot answer either: it interns paths
-/// and never enumerates.
-/// </para>
-/// <para>
-/// <b>The content path comes from <see cref="ContentDragPayload"/>'s own rule</b>,
-/// so a material picked here and a material dragged from the browser produce the
-/// same string. A fifth spelling of asset identity is the failure this content
-/// layer specialises in: everything resolves, every log line reads healthy, and
-/// nothing binds.
-/// </para>
-/// </remarks>
+/// <summary>The files a project has on disk, for the asset pickers.</summary>
+// Walks the folder: the asset manager only knows what has been loaded.
+// Content paths come from ContentDragPayload so a pick and a drag agree.
 public sealed class AssetCatalog(ILogger logger)
 {
     private readonly List<AssetCatalogEntry> _entries = [];
     private string? _root;
 
-    /// <summary>Everything found under the root, folders first then alphabetical.</summary>
+    /// <summary>Everything found under the root, sorted by content path.</summary>
     public IReadOnlyList<AssetCatalogEntry> Entries => _entries;
 
     /// <summary>Why the walk found nothing, or null.</summary>
@@ -51,12 +29,7 @@ public sealed class AssetCatalog(ILogger logger)
     /// <summary>The root the last walk covered, or null.</summary>
     public string? Root => _root;
 
-    /// <summary>Re-reads the project's asset folder.</summary>
-    /// <remarks>
-    /// Called when a picker opens rather than watched: a few hundred file names
-    /// is a millisecond, and a watcher here would be a second index beside the
-    /// content browser's.
-    /// </remarks>
+    /// <summary>Re-reads the project's asset folder. Call when a picker opens.</summary>
     public void Rebuild(string? assetsRoot)
     {
         _entries.Clear();
@@ -94,22 +67,12 @@ public sealed class AssetCatalog(ILogger logger)
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A folder the editor cannot read is a report rather than a crash:
-            // the picker is a convenience and the panel still works.
             logger.LogWarning(ex, "Could not walk {Root} for the asset picker", assetsRoot);
             Warning = "Could not read this project's Assets folder.";
         }
     }
 
-    /// <summary>
-    /// The best matches of one kind, ranked.
-    /// </summary>
-    /// <remarks>
-    /// <b>The stem is scored first and the path second, a few points behind.</b>
-    /// Somebody typing "brick" means the file called brick, not every file in a
-    /// folder that happens to contain those letters; but a path match still
-    /// beats no match, because folders are how people organise.
-    /// </remarks>
+    /// <summary>The best matches of one kind, ranked. A name match outranks a folder match.</summary>
     public List<AssetCatalogEntry> Search(string query, ContentKind kind, int max)
     {
         ArgumentNullException.ThrowIfNull(query);

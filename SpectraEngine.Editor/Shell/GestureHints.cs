@@ -1,36 +1,18 @@
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
-/// What the mouse and the modifiers do right now, in words.
+/// What the mouse and the modifiers do right now, in words, for the status bar.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Continuous contextual disclosure is the only teaching mechanism that
-/// reaches people who will never read documentation</b>, which is nearly
-/// everybody: they start clicking immediately and learn by doing. This editor
-/// had none, and spent the space on five engine counters instead.
-/// </para>
-/// <para>
-/// <b>A hand-written table returning literals.</b> No formatting, no
-/// concatenation, so reading it once per snapshot allocates nothing; and the
-/// state it switches on comes from the editor, so the hint cannot advertise a
-/// gesture the next click will not perform.
-/// </para>
-/// </remarks>
+// Literals only: read once per snapshot, so it must not allocate.
 public static class GestureHints
 {
-    /// <summary>What to show for one interaction state.</summary>
-    /// <param name="interactionState">
-    /// The editor's own word for what the pointer would do. An unknown one reads
-    /// as idle rather than as nothing: a blank status bar looks broken.
-    /// </param>
-    /// <param name="gizmoMode">The live tool, for naming what a drag will do.</param>
-    /// <param name="snapEnabled">Whether Alt turns snapping on or off.</param>
+    /// <summary>The hint for one interaction state. An unknown state reads as idle.</summary>
+    /// <param name="interactionState">The editor's word for what the pointer would do.</param>
+    /// <param name="snapEnabled">Whether snapping is on, which decides what Alt does.</param>
     public static string For(string? interactionState, string gizmoMode, bool snapEnabled) =>
         interactionState switch
         {
-            // Play mode has its own standing chip, which says more than this
-            // could and says it in the standing-state area.
+            // Play mode has its own chip.
             "suspended" => "",
 
             "look" => "look  ·  W A S D fly  ·  Q E down and up  ·  wheel trims speed",

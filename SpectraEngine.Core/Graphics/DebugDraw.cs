@@ -6,14 +6,12 @@ using System.Runtime.InteropServices;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// Per-frame line-primitive accumulator for debug visualisations. Subsystems
-/// push lines, boxes, crosses, arrows, and polylines; the renderer uploads the
-/// resulting interleaved vertex stream as <c>GL_LINES</c> at the end of the
-/// frame. Cleared each frame by the engine.
+/// Per-frame line buffer for debug visualisations. The renderer draws it as
+/// lines at the end of the frame and the engine clears it.
 /// </summary>
 public sealed class DebugDraw
 {
-    // Interleaved: pos.xyz, color.rgb — 6 floats per vertex.
+    // pos.xyz, color.rgb
     private const int FloatsPerVertex = 6;
 
     private readonly List<float> _data = [];
@@ -23,25 +21,13 @@ public sealed class DebugDraw
     /// <summary>Interleaved vertex stream (position + colour) ready for GPU upload.</summary>
     public ReadOnlySpan<float> Vertices => CollectionsMarshal.AsSpan(_data);
 
-    /// <summary>
-    /// A fade start beyond any real distance: the default, meaning "no fade",
-    /// without a flag the shader would have to branch on.
-    /// </summary>
+    /// <summary>A fade start beyond any real distance, meaning no fade.</summary>
     public const float NoFade = 1e30f;
 
-    /// <summary>Where the world-line fade is measured from, in world space.</summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Metadata for the WORLD-LINE flush, ignored by the overlay's.</b> The
-    /// fade is a pure function of world position, so it rides here as four
-    /// values per frame instead of widening every line vertex by an alpha
-    /// channel: the emitter (the editor's ground grid) writes them beside its
-    /// lines, and each backend uploads them as uniforms at its own point in
-    /// the documented <c>Use()</c> order. Reset by <see cref="Clear"/> with
-    /// the vertices, so one frame's fade cannot leak onto another emitter's
-    /// lines.
-    /// </para>
-    /// </remarks>
+    /// <summary>
+    /// Where the world-line fade is measured from, in world space. The fade
+    /// values apply to the world-line flush only and are reset by <see cref="Clear"/>.
+    /// </summary>
     public Vector3 FadeCenter { get; set; }
 
     /// <summary>Distance from <see cref="FadeCenter"/> at which the fade begins.</summary>

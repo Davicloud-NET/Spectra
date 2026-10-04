@@ -11,21 +11,7 @@ namespace SpectraEngine.Editor.Shell;
 /// One wire in the Outputs section: which output fires it, what it sends and to
 /// whom.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>On the panel's existing commit contract, not a second one.</b> Every
-/// text cell here is a <see cref="PropertyFieldModel"/>, so Enter and losing
-/// focus commit, Escape reverts, a focused cell stops taking refreshes, and
-/// text that will not parse reverts rather than sticking. The output dropdown
-/// applies on the click and guards its refresh, exactly as a choice row does.
-/// </para>
-/// <para>
-/// <b>Every commit posts the WHOLE list.</b> The command carries absolute
-/// arrays - see <c>SetEntityConnectionsCommand</c> for why a delta cannot be
-/// replayed - so a row's job is to hold its own six values and let the section
-/// above it gather them.
-/// </para>
-/// </remarks>
+// Every commit posts the whole wire list; the command carries absolute arrays.
 public sealed class ConnectionRowModel : ObservableObject
 {
     private readonly Action _changed;
@@ -43,19 +29,14 @@ public sealed class ConnectionRowModel : ObservableObject
     {
         _changed = changed;
 
-        // PropertyId.None and PropertyAxes.All: these cells belong to no
-        // inspector row and write no component of a vector. The field model is
-        // reused for its COMMIT CONTRACT, which is the whole point - a second
-        // implementation of "a focused box stops taking refreshes" is a second
-        // thing that can drift from the first.
+        // PropertyFieldModel is reused for its commit behaviour; these cells
+        // belong to no inspector row, hence PropertyId.None.
         TargetField = new PropertyFieldModel(
             PropertyId.None, PropertyAxes.All, string.Empty, CommitTarget);
         InputField = new PropertyFieldModel(
             PropertyId.None, PropertyAxes.All, string.Empty, CommitInput);
 
-        // The one cell where an empty value is a value: "send no argument" is
-        // both legal and common, so a field that reverted a cleared box could
-        // never take a parameter back out once one had been typed.
+        // Empty is a real value here: send no argument.
         ParameterField = new PropertyFieldModel(
             PropertyId.None, PropertyAxes.All, string.Empty, CommitParameter)
         { AllowsEmpty = true };
@@ -65,19 +46,17 @@ public sealed class ConnectionRowModel : ObservableObject
         TimesField = new PropertyFieldModel(
             PropertyId.None, PropertyAxes.All, string.Empty, CommitTimes);
 
-        // The output's OTHER editor, for a class no schema declares. A field
-        // model rather than a string bound two-way, because a two-way Text
-        // binding writes per keystroke: typing "OnFoo" would post five wiring
-        // edits and put five entries in the history for one word.
+        // Text editor for an output the schema does not declare. A field model,
+        // because a two-way Text binding would post an edit per keystroke.
         OutputField = new PropertyFieldModel(
             PropertyId.None, PropertyAxes.All, string.Empty, CommitOutput)
         { AllowsEmpty = true };
     }
 
-    /// <summary>Who to send to. Free text in v1; an entity picker is deferred.</summary>
+    /// <summary>Who to send to.</summary>
     public PropertyFieldModel TargetField { get; }
 
-    /// <summary>Which input to send. Free text in v1; cross-entity validation is deferred.</summary>
+    /// <summary>Which input to send.</summary>
     public PropertyFieldModel InputField { get; }
 
     /// <summary>The argument to send, empty for none.</summary>
@@ -89,30 +68,13 @@ public sealed class ConnectionRowModel : ObservableObject
     /// <summary>How many times this wire may fire, or -1 for forever.</summary>
     public PropertyFieldModel TimesField { get; }
 
-    /// <summary>
-    /// The output, typed rather than picked, for a class nothing declares.
-    /// </summary>
+    /// <summary>The output as typed text, for one the class does not declare.</summary>
     public PropertyFieldModel OutputField { get; }
 
-    /// <summary>
-    /// The output that fires this wire, as the dropdown edits it.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Guarded against its own refresh</b>, because assigning the published
-    /// value back into a dropdown is indistinguishable from a user picking it,
-    /// and would post an edit per publish for as long as an entity stayed
-    /// selected.
-    /// </para>
-    /// <para>
-    /// <b>An empty assignment is refused, and that is not tidiness.</b> A
-    /// <c>ComboBox</c> clears its own <c>SelectedItem</c> when its item source
-    /// is replaced, and a two-way binding delivers that here looking exactly
-    /// like a click - so a refresh that widened the choice list would post a
-    /// wire with no output at all. Nothing in the list is ever empty, so no
-    /// real choice is lost by refusing.
-    /// </para>
-    /// </remarks>
+    /// <summary>The output that fires this wire, as the dropdown edits it.</summary>
+    // Ignored during a refresh: a published value assigned back looks like a pick.
+    // Empty is refused: a ComboBox clears SelectedItem when its item source is
+    // replaced, and the binding delivers that here like a click.
     public string Output
     {
         get => _output;
@@ -130,22 +92,10 @@ public sealed class ConnectionRowModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// The outputs offered by the dropdown: exactly what the class declares.
-    /// </summary>
-    /// <remarks>
-    /// <b>EXACTLY what it declares, and never widened by the authored value.</b>
-    /// That was the first design, and it is wrong in a way that only a running
-    /// shell shows: replacing a bound item source makes the control discard its
-    /// selection, and a binding will not re-push a value it has already pushed,
-    /// so the dropdown sits permanently blank over a model that knows the
-    /// answer. Handing it the schema's own list instance means the source never
-    /// changes at all after the row is built, and the whole failure mode is
-    /// gone rather than compensated for. The authored value is not lost: a
-    /// value the class does not declare is shown in a text box instead, which
-    /// is also the more honest reading - a menu should offer what the class
-    /// really has.
-    /// </remarks>
+    /// <summary>The outputs the class declares, offered by the dropdown.</summary>
+    // Must be the schema's own list instance, never a copy widened by the
+    // authored value. Replacing a bound item source makes the ComboBox drop its
+    // selection, and the binding will not push the value again.
     public IReadOnlyList<string> OutputChoices
     {
         get => _outputChoices;
@@ -161,19 +111,9 @@ public sealed class ConnectionRowModel : ObservableObject
     }
 
     /// <summary>
-    /// Whether this wire's output can be PICKED, so the row shows a dropdown
-    /// rather than a text box.
+    /// Whether the class declares this wire's output, so the row shows a
+    /// dropdown. Otherwise it shows a text box.
     /// </summary>
-    /// <remarks>
-    /// <b>A class nothing declares gets a typed field, and so does an output
-    /// the class does not name.</b> The design is "a dropdown from the schema",
-    /// and a dropdown that cannot show its own value is worse than a plain
-    /// field: it would render blank and then write that blank back the first
-    /// time somebody touched the row beside it. A map may legitimately carry
-    /// either - a class this build has no schema for, or an output a newer
-    /// version of the class dropped - and both must stay visible and editable,
-    /// because keeping the payload as strings is exactly what that is for.
-    /// </remarks>
     public bool HasOutputChoices => Declares(_outputChoices, _output);
 
     private IReadOnlyList<EntityTargetInfo> _targets = [];
@@ -185,13 +125,6 @@ public sealed class ConnectionRowModel : ObservableObject
     /// What the target picker offers: the three runtime tokens, then every
     /// entity in the scene.
     /// </summary>
-    /// <remarks>
-    /// <b>The tokens FIRST, because they are the ones nobody can guess.</b>
-    /// <c>!self</c>, <c>!activator</c> and <c>!caller</c> are the runtime's own
-    /// vocabulary and are not names of anything in the scene, so a list sorted
-    /// with the entities would bury them; they are also the three a person
-    /// reaching for a picker is most likely to have never seen.
-    /// </remarks>
     public IReadOnlyList<string> TargetChoices => _targetChoices;
 
     /// <summary>Whether the scene has more entities than the picker lists.</summary>
@@ -203,41 +136,17 @@ public sealed class ConnectionRowModel : ObservableObject
         : string.Empty;
 
     /// <summary>
-    /// The inputs the TARGET's class declares, when there is exactly one.
+    /// The inputs the target's class declares. Empty unless the target names
+    /// one entity.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Exactly ONE exact match, and the arithmetic is the whole rule.</b> A
-    /// wildcard aims at several classes; two entities may share a name, which is
-    /// legal and means something; a runtime token names whatever is chosen while
-    /// the level runs. In every one of those the class is not known, so there is
-    /// nothing honest to list, and a dropdown that guessed would offer inputs
-    /// half the targets do not have.
-    /// </para>
-    /// <para>
-    /// It is the schema's OWN list instance, never widened by the authored
-    /// value, for the reason <see cref="OutputChoices"/> gives at length:
-    /// replacing an item source makes the control discard its selection and a
-    /// binding will not re-push a value it has already pushed, so the dropdown
-    /// would sit permanently blank over a model that knows the answer.
-    /// </para>
-    /// </remarks>
+    // The schema's own list instance, as with OutputChoices.
     public IReadOnlyList<string> InputChoices => _inputChoices;
 
-    /// <summary>
-    /// Whether this wire's input can be PICKED, so the row shows a dropdown.
-    /// </summary>
+    /// <summary>Whether the target's class declares this wire's input, so the row shows a dropdown.</summary>
     public bool HasInputChoices => Declares(_inputChoices, _input);
 
-    /// <summary>
-    /// The dropdown's value, when there is one.
-    /// </summary>
-    /// <remarks>
-    /// The twin of <see cref="Output"/>, with the same empty refusal and for the
-    /// same reason: replacing an item source delivers an empty assignment here
-    /// that looks exactly like a click, and taking it would post a wire with no
-    /// input at all.
-    /// </remarks>
+    /// <summary>The input, as the dropdown edits it.</summary>
+    // Empty is refused, as with Output.
     public string Input
     {
         get => _input;
@@ -257,21 +166,14 @@ public sealed class ConnectionRowModel : ObservableObject
     }
 
     /// <summary>Writes a picked target through the field's own commit path.</summary>
-    /// <remarks>
-    /// Through the FIELD rather than straight into the model, so a pick and a
-    /// typed name take the same route: the panel's commit contract, the warning
-    /// recompute and the one-post-per-change rule all live there.
-    /// </remarks>
     public void PickTarget(string name)
     {
         if (string.IsNullOrEmpty(name)) return;
 
         PropertyFieldModel field = TargetField;
-        // BeginEdit first, because Commit is the END of an edit and returns
-        // early without one - a pick that only assigned the text would show the
-        // new name and post nothing. SetScrubText is the wrong door too: it
-        // writes the LIVE value as well, so the commit would compare the new
-        // name against itself and record no change.
+        // BeginEdit first: Commit returns early without an open edit. Not
+        // SetScrubText, which also writes the live value, so the commit would
+        // see no change.
         field.BeginEdit();
         field.Text = name;
         field.Commit();
@@ -295,16 +197,9 @@ public sealed class ConnectionRowModel : ObservableObject
     public bool HasTargetWarning => !_targetResolves;
 
     /// <summary>
-    /// Why the target does not resolve, in words.
+    /// Why the target does not resolve, in words. A warning only: the wire is
+    /// kept, since the target may be spawned later.
     /// </summary>
-    /// <remarks>
-    /// <b>Amber - the shell's STATE colour - and the wire is kept.</b> Not the
-    /// accent, which means selection, and not the danger colour, which means an
-    /// error: the map loader already keeps a wire whose target is missing
-    /// rather than dropping it, because the target may be spawned later or may
-    /// belong to a level that is not open, and a panel that quietly disagreed
-    /// with the loader would be the one place a person's wiring disappeared.
-    /// </remarks>
     public string TargetWarning => _targetResolves
         ? string.Empty
         : _target.Length == 0
@@ -315,7 +210,6 @@ public sealed class ConnectionRowModel : ObservableObject
     public EntityConnection ToConnection() =>
         new(_output, _target, _input, _parameter, _delay, _times);
 
-    /// <summary>Takes a fresh value from a published snapshot.</summary>
     internal void Refresh(
         EntityConnectionInfo info,
         IReadOnlyList<string> declared,
@@ -331,11 +225,8 @@ public sealed class ConnectionRowModel : ObservableObject
         _delay = wire.Delay;
         _times = wire.TimesToFire;
 
-        // The choices FIRST and the value second, because a dropdown cannot
-        // select an item its list does not hold yet - and both inside the
-        // guard, since replacing the list is what makes the control clear its
-        // own selection. After the row's first refresh the list is the schema's
-        // own instance and stops changing, which is the point.
+        // Choices before the value: a dropdown cannot select an item its list
+        // does not hold yet. Both inside the guard.
         bool pickable = HasOutputChoices;
 
         _applyingRefresh = true;
@@ -343,11 +234,7 @@ public sealed class ConnectionRowModel : ObservableObject
         Set(ref _output, wire.Output, nameof(Output));
         _applyingRefresh = false;
 
-        // Guarded, because Refresh runs for every wire on every pump and an
-        // unconditional raise is binding churn for a panel that has not
-        // changed - the same rule the property rows above follow. It CAN move
-        // without the choices moving: an engine echo that changes the output to
-        // one the class does not declare flips this row to a text box.
+        // Can change without the choices changing, when the output itself did.
         if (pickable != HasOutputChoices)
             Raise(nameof(HasOutputChoices));
 
@@ -364,10 +251,8 @@ public sealed class ConnectionRowModel : ObservableObject
         RefreshInputs(schemas);
     }
 
-    // Rebuilt only when the TARGET LIST INSTANCE changed, which the engine
-    // reuses across publishes when nothing structural happened: the guard is
-    // what keeps a dropdown from discarding its selection thirty times a second
-    // while somebody is looking at it.
+    // Rebuilt only when the list instance changed. The engine reuses it across
+    // publishes, and rebuilding each time would reset the dropdown's selection.
     private void RefreshTargets(IReadOnlyList<EntityTargetInfo> targets, bool truncated)
     {
         if (ReferenceEquals(_targets, targets) && _targetsTruncated == truncated) return;
@@ -409,13 +294,7 @@ public sealed class ConnectionRowModel : ObservableObject
             Raise(nameof(HasInputChoices));
     }
 
-    /// <summary>
-    /// The inputs a target's class declares, or an empty list.
-    /// </summary>
-    /// <remarks>
-    /// Static and pure, because this is the rule the whole feature turns on and
-    /// it is the one part a test can hold without a shell.
-    /// </remarks>
+    // The inputs a target's class declares, or an empty list.
     internal static IReadOnlyList<string> InputsFor(
         string target,
         IReadOnlyList<EntityTargetInfo> targets,
@@ -423,8 +302,7 @@ public sealed class ConnectionRowModel : ObservableObject
     {
         if (schemas is null || string.IsNullOrEmpty(target)) return [];
 
-        // A token names whatever the runtime picks and a wildcard names several
-        // things, so neither has a class to read inputs from.
+        // A runtime token or a wildcard has no single class.
         if (target[0] == '!' || target[^1] == '*') return [];
 
         string? className = null;
@@ -432,9 +310,7 @@ public sealed class ConnectionRowModel : ObservableObject
         {
             if (!string.Equals(targets[i].Name, target, StringComparison.Ordinal)) continue;
 
-            // A second match means two entities share the name, which is legal
-            // and means something: the wire fires at both, and offering one of
-            // their input lists would be a guess about which.
+            // Two entities share the name (legal: the wire fires at both).
             if (className is not null) return [];
 
             className = targets[i].ClassName;
@@ -461,9 +337,7 @@ public sealed class ConnectionRowModel : ObservableObject
         if (!Set(ref _output, typed, nameof(Output)))
             return;
 
-        // Typing a name the class DOES declare flips this row from the text box
-        // back to the dropdown, so the switch has to be announced here as well
-        // as on a refresh.
+        // A declared name switches the row back to the dropdown.
         Raise(nameof(HasOutputChoices));
         _changed();
     }
@@ -473,10 +347,7 @@ public sealed class ConnectionRowModel : ObservableObject
         _target = typed;
         Raise(nameof(TargetWarning));
 
-        // Retyping the target changes which class the input list comes from, and
-        // the answer must not wait for the next publish: the two cells are read
-        // in one gesture, and a dropdown still offering the previous target's
-        // inputs is a list of verbs the new one does not have.
+        // Recompute the input list now rather than on the next publish.
         RefreshInputs(_schemas);
 
         _changed();
@@ -489,8 +360,6 @@ public sealed class ConnectionRowModel : ObservableObject
         _input = typed;
         Raise(nameof(Input));
 
-        // Typing a name the class DOES declare flips this row from the text box
-        // back to the dropdown, exactly as the output cell does.
         Raise(nameof(HasInputChoices));
         _changed();
     }
@@ -505,11 +374,6 @@ public sealed class ConnectionRowModel : ObservableObject
 
     private void CommitDelay(PropertyFieldModel field, string typed)
     {
-        // Reverts rather than sticking, exactly as an unparseable position
-        // does: a box left holding something the scene does not contain
-        // disagrees with the scene until somebody notices. A negative delay is
-        // the same case - the queue keys on a fire time, so a wire scheduled
-        // into the past is not a shorter delay, it is a different bug.
         if (!PropertyFieldModel.TryParseNumber(typed, out float value) || value < 0f)
         {
             field.Reject("Not applied: expected a delay of 0 or more seconds.");
@@ -520,26 +384,14 @@ public sealed class ConnectionRowModel : ObservableObject
         _changed();
     }
 
-    /// <summary>What an unlimited fire count is called on screen.</summary>
-    /// <remarks>
-    /// <b>A word rather than the sentinel.</b> The file stores -1 because
-    /// <c>EntityConnection.Infinite</c> is -1, and showing that asked every
-    /// reader to know it: a wire that fires forever read as a wire with a
-    /// negative count, which is either a bug or a number nobody can explain.
-    /// The value written is still the canonical -1.
-    /// </remarks>
+    /// <summary>What an unlimited fire count is called on screen. The file still stores -1.</summary>
     public const string ForeverLabel = "Forever";
 
     /// <summary>The fire count as it is shown.</summary>
     public static string FormatTimes(int timesToFire) =>
         timesToFire < 0 ? ForeverLabel : timesToFire.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>Reads a typed fire count, in either spelling.</summary>
-    /// <remarks>
-    /// The word is accepted in any case, because a field that displays
-    /// "Forever" and refuses "forever" is a field that punishes retyping what
-    /// it just showed.
-    /// </remarks>
+    /// <summary>Reads a typed fire count: a whole number, or the word in any case.</summary>
     public static bool TryParseTimes(string typed, out int timesToFire)
     {
         if (string.Equals(typed?.Trim(), ForeverLabel, StringComparison.OrdinalIgnoreCase))
@@ -559,15 +411,11 @@ public sealed class ConnectionRowModel : ObservableObject
             return;
         }
 
-        // Any negative reads as infinite, which is EntityConnection's own rule -
-        // stated there so a count decremented past the end cannot wrap into a
-        // finite one. Normalised here so the file gets the canonical -1 rather
-        // than whatever was typed.
+        // Any negative means infinite; write the canonical -1.
         _times = value < 0 ? EntityConnection.Infinite : value;
         _changed();
     }
 
-    /// <summary>Seeds a brand new row, for the Add button.</summary>
     internal void Seed(
         IReadOnlyList<string> declared,
         IReadOnlyList<EntityTargetInfo> targets,
@@ -585,38 +433,17 @@ public sealed class ConnectionRowModel : ObservableObject
 }
 
 /// <summary>
-/// The Outputs section: the wires leaving the selected entity, and the two
-/// buttons that add and remove one.
+/// The Outputs section: the wires leaving the selected entity. Present only
+/// when one entity is selected. UI thread only.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Present only for a single-node entity selection</b>, because that is all
-/// the engine publishes: merging several entities' wiring has no honest answer
-/// and is a named deferral. See <c>EntityPanelInfo</c>.
-/// </para>
-/// <para>
-/// <b>The rows are the user's while an edit is in flight.</b> A snapshot
-/// published between an add and the engine's echo still describes the list the
-/// add replaced, and writing that back would make the new row appear and
-/// vanish. The hold is the same bounded local opinion
-/// <see cref="OptimisticValue{T}"/> documents: after
-/// <see cref="HoldSnapshots"/> disagreeing snapshots the engine wins visibly,
-/// because the value a user asks for is not always the value they get - a
-/// wiring edit is refused outright while play mode owns the scene.
-/// </para>
-/// <para>UI thread only, like everything else on the panel.</para>
-/// </remarks>
+// After an edit, stale snapshots are ignored until the engine echoes it, or
+// until HoldSnapshots have passed and the engine's list wins (an edit can be
+// refused, for example during play mode).
 public sealed class EntityWiringModel : ObservableObject
 {
     /// <summary>
     /// How many disagreeing snapshots to ignore before the engine wins.
     /// </summary>
-    /// <remarks>
-    /// The same six <see cref="OptimisticValue{T}"/> uses, and for the same
-    /// reason: about a tenth of a second at the resting publish rate, and
-    /// deliberately short, because a refusal the user cannot see is worse than
-    /// a slow echo.
-    /// </remarks>
     public const int HoldSnapshots = 6;
 
     private readonly Action<Guid, IReadOnlyList<EntityConnection>> _apply;
@@ -640,20 +467,12 @@ public sealed class EntityWiringModel : ObservableObject
         ? $"This scene has more than {EntityPanelInfo.MaxTargets} entities; the picker shows the first of them."
         : string.Empty;
 
-    /// <summary>
-    /// What this session can describe, for the target's input list.
-    /// </summary>
-    /// <remarks>
-    /// Assigned by the panel that owns this, which is the one thing holding the
-    /// session's single catalogue: a second one built here would answer a
-    /// different question the day a project ships a <c>.sentdef</c> this build
-    /// has no C# for.
-    /// </remarks>
+    /// <summary>The session's schema catalogue, assigned by the owning panel.</summary>
     public EntitySchemaCatalog? Schemas { get; set; }
 
     internal EntityWiringModel(Action<Guid, IReadOnlyList<EntityConnection>> apply) => _apply = apply;
 
-    /// <summary>The wires, in AUTHORED ORDER, which is never re-sorted.</summary>
+    /// <summary>The wires, in authored order.</summary>
     public ObservableCollection<ConnectionRowModel> Rows { get; } = [];
 
     /// <summary>Whether the selection is one node carrying an entity.</summary>
@@ -692,10 +511,6 @@ public sealed class EntityWiringModel : ObservableObject
     {
         if (info is null)
         {
-            // A selection that is not one entity drops everything, the pending
-            // edit included: it was aimed at a node this panel is no longer
-            // showing, and holding it would make the next entity selected open
-            // with the previous one's wiring on screen.
             _pending = null;
             _ticks = 0;
             _nodeId = Guid.Empty;
@@ -710,8 +525,7 @@ public sealed class EntityWiringModel : ObservableObject
             return;
         }
 
-        // A different node is a different subject, so an edit still in flight
-        // for the previous one has nothing to reconcile against here.
+        // A pending edit belongs to the previous node.
         if (info.NodeId != _nodeId)
         {
             _nodeId = info.NodeId;
@@ -734,9 +548,7 @@ public sealed class EntityWiringModel : ObservableObject
             }
             else if (++_ticks < HoldSnapshots)
             {
-                // Still in flight. This snapshot describes a frame from before
-                // the edit; writing it back would undo it on screen and then
-                // redo it.
+                // Snapshot predates the edit.
                 return;
             }
             else
@@ -750,13 +562,6 @@ public sealed class EntityWiringModel : ObservableObject
     }
 
     /// <summary>Adds an empty wire and posts the new list.</summary>
-    /// <remarks>
-    /// <b>Posted immediately, rather than staged until it is filled in.</b> An
-    /// unwired row is a legal connection - the target is resolved when the
-    /// output fires and not before - so there is no half-built state to protect
-    /// anybody from, and staging would mean a row that survives a snapshot only
-    /// while the panel remembers it.
-    /// </remarks>
     public void Add()
     {
         if (!_hasEntity)
@@ -779,9 +584,7 @@ public sealed class EntityWiringModel : ObservableObject
         Post();
     }
 
-    // Gathers every row, in the order they are shown, which IS the order they
-    // are stored in: connection order is authored data and round-trips through
-    // map.json, so nothing here may sort or de-duplicate.
+    // Connection order is authored data in map.json: never sort or de-duplicate.
     private void Post()
     {
         if (!_hasEntity)
@@ -796,9 +599,8 @@ public sealed class EntityWiringModel : ObservableObject
         _apply(_nodeId, wires);
     }
 
-    // Patched, never replaced. Assigning a fresh collection per publish would
-    // reset scroll and destroy a half-typed value at the publish rate, which is
-    // the same reason the property rows above are patched.
+    // Patch in place: a fresh collection per publish resets scroll and drops
+    // a half-typed value.
     private void SyncRows(IReadOnlyList<EntityConnectionInfo> wires)
     {
         bool countChanged = Rows.Count != wires.Count;

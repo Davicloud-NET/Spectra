@@ -1,10 +1,5 @@
-// ForExpressionInitializer.spectrashade — for loops whose initializer is an
-// assignment to a pre-declared counter (an ExpressionStatement rather than a
-// VariableDeclaration). The generator must keep the initializer; dropping it
-// runs the loop on an uninitialized counter. Both spellings must parse: the
-// natural `i = 0` (one token of lookahead keeps a lone leading identifier out
-// of the type position) and the parenthesized `(j = 0)` form that used to be
-// the only way to reach this shape from source.
+// For loops whose initializer assigns a pre-declared counter. The generator
+// must keep the initializer. Both `i = 0` and `(j = 0)` must parse.
 
 struct VertexInput {
     [Location(0)] vec3 position;

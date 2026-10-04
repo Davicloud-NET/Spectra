@@ -7,30 +7,9 @@ using System.Runtime.InteropServices;
 namespace Spectra.Kitchen.Packs;
 
 /// <summary>
-/// A <c>.spack</c>'s header and tables, read out into arrays: what a tool needs
-/// in order to talk ABOUT a pack rather than to read content out of one.
+/// A <c>.spack</c>'s header and tables read into arrays, for tools that list or
+/// check a pack. Does not validate the pack; mounting does that.
 /// </summary>
-/// <remarks>
-/// <para><b>It is not a second reader, and the line is worth stating.</b>
-/// <see cref="PackSource"/> answers "give me the bytes at this path" and keeps
-/// its tables private, in place, behind a binary search - which is right for the
-/// thing a frame calls and useless to <c>scook inspect</c>, which wants to print
-/// every row, and to <see cref="PackVerifier"/>, which wants to make its own
-/// claim about the ORDER of those rows. Both of those are questions about the
-/// table itself.</para>
-/// <para><b>Every offset comes from <see cref="PackFormat"/> and every record
-/// through <see cref="PackEntryTable"/>.</b> That is what keeps this one
-/// expression of the layout rather than two: nothing here recomputes a region
-/// the header already states, and a header that grows moves this reader with it
-/// for free. The bounds checks below are this reader's own reads being kept
-/// inside the file, not a copy of the mount validation - a length taken from a
-/// corrupt header would otherwise ask for a multi-gigabyte array before anything
-/// had a chance to refuse the file.</para>
-/// <para><b>Validation stays where it is.</b> A pack that is going to be refused
-/// is refused by <see cref="PackSourceBase"/>'s mount, which is the sequence a
-/// shipped game runs; a verifier that validated here as well would be proving
-/// its own arithmetic rather than the file.</para>
-/// </remarks>
 public sealed class PackContents
 {
     private readonly PackEntry[] _entries;
@@ -47,15 +26,7 @@ public sealed class PackContents
         _nameTable = nameTable;
     }
 
-    /// <summary>
-    /// The file these tables came from, resolved to a full path.
-    /// </summary>
-    /// <remarks>
-    /// Full rather than as it was given, because it labels every diagnostic and
-    /// every report this feeds: a line naming a relative path means something
-    /// different in each directory it is read from, and CI logs are read from
-    /// somewhere else by definition.
-    /// </remarks>
+    /// <summary>Full path of the file these tables came from.</summary>
     public string Path { get; }
 
     /// <summary>Bytes in the file.</summary>
@@ -65,30 +36,22 @@ public sealed class PackContents
     public PackHeader Header { get; }
 
     /// <summary>The trailing digest the file declares, unverified.</summary>
-    /// <remarks>
-    /// Read rather than checked: whether it MATCHES is the mount's claim, and
-    /// this is here so <c>inspect</c> can print the value that a bug report will
-    /// be quoting.
-    /// </remarks>
     public UInt128 StoredDigest { get; }
 
     /// <summary>The entry table, in table order.</summary>
     public IReadOnlyList<PackEntry> Entries => _entries;
 
-    /// <summary>Whether the pack carries a name table at all.</summary>
+    /// <summary>Whether the pack carries a name table.</summary>
     public bool HasNameTable => _nameTable.Length > 0;
 
-    /// <summary>
-    /// The name of entry <paramref name="index"/>, or the empty string when the
-    /// pack carries none for it.
-    /// </summary>
+    /// <summary>The name of an entry, or the empty string when the pack carries none.</summary>
     public string NameOf(int index) => PackEntryTable.ReadName(_nameTable, in _entries[index]);
 
-    /// <summary>Reads the tables of the pack at <paramref name="path"/>.</summary>
-    /// <exception cref="PackMountException">
-    /// The file is too short, is not a pack, or points a region outside itself.
-    /// </exception>
-    /// <exception cref="IOException">The file could not be read.</exception>
+    /// <summary>
+    /// Reads the tables of the pack at <paramref name="path"/>. Throws
+    /// <see cref="PackMountException"/> when the file is not a pack or a table
+    /// lies outside it.
+    /// </summary>
     public static PackContents Read(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
@@ -135,12 +98,7 @@ public sealed class PackContents
         return new PackContents(path, length, in header, entries, names, PackDigest.Read(digestBytes));
     }
 
-    // A length this reader is about to allocate and read, so a header claiming
-    // one that does not fit inside the file is refused BEFORE the array is asked
-    // for rather than after: an EntryCount of 2^31 is one edited field and would
-    // otherwise be an out-of-memory exception naming nothing. The int cap is the
-    // same one the mount applies, and for the same reason: both regions are
-    // addressed as a single span.
+    // Checked before allocating: a corrupt count would otherwise ask for gigabytes.
     private static int RequireInside(string path, ulong offset, long bytes, long fileLength, string what)
     {
         if (bytes is >= 0 and <= int.MaxValue &&

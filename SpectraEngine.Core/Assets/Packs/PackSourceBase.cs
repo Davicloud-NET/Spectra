@@ -12,40 +12,21 @@ using System.Runtime.InteropServices;
 namespace SpectraEngine.Core.Assets.Packs;
 
 /// <summary>
-/// Everything a <c>.spack</c> reader does that does not depend on where the bytes
-/// came from: the mount-time validation, the id lookup, the tombstone rule and
-/// the enumeration.
+/// What a <c>.spack</c> reader does regardless of where the bytes come from:
+/// mount-time validation, id lookup, the tombstone rule and enumeration.
+/// Mounting throws; every lookup after it reports a miss instead.
 /// </summary>
-/// <remarks>
-/// <para><b>One mount sequence, not two.</b> <see cref="PackSource"/> reads
-/// through a mapped view and <see cref="StreamPackSource"/> through
-/// <see cref="System.IO.RandomAccess"/>, and the whole value of the fallback is
-/// that it answers the same file the same way. A second copy of the validation
-/// would drift the first time one of them was fixed, and the symptom would be a
-/// pack one reader refuses and the other serves.</para>
-/// <para><b>Mounting throws; every lookup after it degrades.</b> A truncated
-/// pack, a bad digest or a pack demanding a newer reader is refused loudly and
-/// never becomes a source, because none of its answers could be trusted. After
-/// that a miss is a miss and an unreadable entry is a miss with a warning, which
-/// is the <see cref="IContentSource"/> contract and the reason the engine's
-/// degrade-don't-crash policy does not depend on which source answered.</para>
-/// <para><b>Validation is at MOUNT, not at first read.</b> A pack that is going
-/// to be refused should be refused while there is still a start-up log to say so
-/// in, rather than in the middle of a frame that wanted one texture — and the
-/// per-entry bounds pass is exactly what lets a read be a bare slice with no
-/// checking of its own.</para>
-/// </remarks>
+// All validation happens at mount. The per-entry bounds pass there is what lets
+// a later read be a bare slice.
 public abstract class PackSourceBase : IContentSource, IMountPathSource, IDisposable
 {
     private readonly ILogger _logger;
     private bool _disposed;
 
-    /// <summary>Creates the source over <paramref name="handle"/>, which it owns.</summary>
-    /// <remarks>
-    /// The derived constructor must call <see cref="Mount"/> once its own storage
-    /// fields are set, and must unmount the handle if that throws: a constructor
-    /// that threw produced no object for anybody to dispose.
-    /// </remarks>
+    /// <summary>
+    /// Creates the source over <paramref name="handle"/>, which it owns. The derived
+    /// constructor must call <see cref="Mount"/>, and unmount the handle if that throws.
+    /// </summary>
     protected PackSourceBase(ILogger logger, string packPath, int priority, PackHandle handle)
     {
         ArgumentNullException.ThrowIfNull(logger);
@@ -65,8 +46,8 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
     public int Priority { get; }
 
     /// <summary>
-    /// The pack's refcounted lifetime. Public because the hazard is: anything
-    /// holding a span into this pack has to be able to say so.
+    /// The pack's refcounted lifetime. Anything holding a span into this pack
+    /// must hold a reference.
     /// </summary>
     public PackHandle Handle { get; }
 
@@ -74,22 +55,19 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
     public PackHeader Header { get; private set; }
 
     /// <summary>Records in the entry table, tombstones included.</summary>
-    /// <remarks>
-    /// Stored rather than read off <see cref="Entries"/>, which for a mapped pack
-    /// is a slice of a view that an unmount may already have taken away.
-    /// </remarks>
+    // Stored, not read off Entries: an unmount may already have taken the view away.
     public int EntryCount { get; private set; }
 
-    /// <summary>Records that delete the path they name rather than serving it.</summary>
+    /// <summary>Number of tombstone records.</summary>
     public int TombstoneCount { get; private set; }
 
     /// <summary>Whether <see cref="Dispose"/> has been called.</summary>
     public bool IsUnmounted => _disposed;
 
-    /// <summary>The logger every degradation is reported through.</summary>
+    /// <summary>The logger for warnings.</summary>
     protected ILogger Logger => _logger;
 
-    /// <summary>Bytes in the file, which the header is checked against.</summary>
+    /// <summary>Bytes in the file.</summary>
     protected abstract long FileLength { get; }
 
     /// <summary>The entry table, in place. Empty until <see cref="LoadTables"/> has run.</summary>
@@ -102,9 +80,8 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
     protected abstract void ReadRaw(long offset, Span<byte> destination);
 
     /// <summary>
-    /// Makes <see cref="Entries"/> and <see cref="NameTable"/> answer: a slice for
-    /// a mapped pack, a read for a streamed one. The regions are already known to
-    /// be inside the file when this runs.
+    /// Makes <see cref="Entries"/> and <see cref="NameTable"/> available. The
+    /// regions are already validated to be inside the file.
     /// </summary>
     protected abstract void LoadTables(in PackHeader header);
 
@@ -115,31 +92,11 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
     protected abstract bool TryReadPayload(in PackEntry entry, [NotNullWhen(true)] out ContentBlob? blob);
 
     /// <summary>
-    /// Validates the file and makes it answerable. The order is the whole point,
-    /// so it is stated once, here:
+    /// Validates the file and makes it ready for lookups.
     /// </summary>
-    /// <remarks>
-    /// <list type="number">
-    /// <item>the file is long enough to hold a header and a digest;</item>
-    /// <item>the magic is <c>SPAK</c>;</item>
-    /// <item>the format version is non-zero and not below the reader floor the
-    /// pack itself declares, which is a self-consistency check no writer can
-    /// legitimately fail;</item>
-    /// <item>that declared floor does not exceed the version this engine
-    /// implements, naming both numbers;</item>
-    /// <item>the sorted-entries flag is set, because binary-searching an unsorted
-    /// table misses entries silently rather than failing;</item>
-    /// <item><see cref="PackHeader.TotalFileSize"/> equals the real length, which
-    /// is how truncation is caught with no stat call;</item>
-    /// <item>every declared region — entry table, name table, data section — lies
-    /// inside the file and is aligned as the in-place cast requires;</item>
-    /// <item>every entry: ids strictly ascending, payload windows inside the data
-    /// region, sizes a blob can address, name records inside the name table;</item>
-    /// <item>the trailing content digest matches, which is last because it is the
-    /// only check that reads the whole file.</item>
-    /// </list>
-    /// </remarks>
     /// <exception cref="PackMountException">The pack is refused.</exception>
+    // Order matters: header, then regions, then tables, then entries.
+    // The digest is last because it reads the whole file.
     protected void Mount()
     {
         PackFormat.RequireLittleEndian();
@@ -179,9 +136,8 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or ObjectDisposedException)
         {
-            // Present but unreadable degrades exactly as a miss does, or the
-            // engine's fallback would depend on which source answered. This line
-            // is the only place the difference between the two is recorded.
+            // Unreadable is treated as a miss, like every other source. The log
+            // line is the only record of the difference.
             _logger.LogWarning("Could not read content '{Path}' from {Source}: {Message}", path, this, ex.Message);
             blob = null;
             return false;
@@ -192,13 +148,12 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
     public bool Exists(string path) => TryFindLive(path, out PackEntry entry) && !entry.IsTombstone;
 
     /// <summary>
-    /// Whether the pack carries a deletion for <paramref name="path"/>: the entry
-    /// exists and says the path does not.
+    /// Whether the pack carries a tombstone for <paramref name="path"/>.
     /// </summary>
     public bool IsTombstone(string path) => TryFindLive(path, out PackEntry entry) && entry.IsTombstone;
 
     /// <inheritdoc/>
-    /// <remarks>Always false: a pack cannot be watched, so it is simply not watched.</remarks>
+    // Always false: a pack has no file to watch.
     public bool TryGetWatchPath(string path, [NotNullWhen(true)] out string? fullPath)
     {
         fullPath = null;
@@ -228,10 +183,6 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Tombstones are included, because a deletion is a decision this pack makes
-    /// about a logical path and the mount stack cannot flatten what it cannot see.
-    /// </remarks>
     public void EnumerateMountPaths(List<MountPath> results)
     {
         ArgumentNullException.ThrowIfNull(results);
@@ -266,18 +217,11 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
 
     /// <summary>
     /// Inflates <paramref name="stored"/> into <paramref name="destination"/>,
-    /// which must be exactly the entry's uncompressed size.
+    /// which must be the entry's uncompressed size.
     /// </summary>
-    /// <remarks>
-    /// The compressed bytes are copied into a pooled array first because
-    /// <see cref="DeflateStream"/> reads from a <see cref="Stream"/> and there is
-    /// no span-taking deflate decoder in the box. That copy is affordable here and
-    /// nowhere else: a compressed entry has already forfeited the zero-copy read
-    /// the container exists for, which is why <see cref="PackCodec.None"/> is the
-    /// default for everything cooked.
-    /// </remarks>
     protected static void Inflate(ReadOnlySpan<byte> stored, Span<byte> destination, string what)
     {
+        // DeflateStream needs a Stream; there is no span-taking decoder in the box.
         byte[] rented = ArrayPool<byte>.Shared.Rent(stored.Length);
         try
         {
@@ -288,9 +232,7 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
 
             deflate.ReadExactly(destination);
 
-            // An entry that inflates to more than it declared is corruption the
-            // digest would normally have caught, and reading only the declared
-            // length would quietly hand back a truncated asset.
+            // More data than declared means a corrupt entry, not a short read.
             if (deflate.ReadByte() != -1)
             {
                 throw new InvalidDataException(
@@ -303,9 +245,7 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
         }
     }
 
-    // A lookup on a disposed source is a miss rather than a throw: an unmount can
-    // race a decode that was already queued, and the caller is in the middle of
-    // choosing between real content and a fallback either way.
+    // A disposed source reports a miss, not a throw: an unmount can race a queued decode.
     private bool TryFindLive(string path, out PackEntry entry)
     {
         entry = default;
@@ -384,8 +324,7 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
                 $"[{PackFormat.HeaderSize}, {tail}] body.");
         }
 
-        // The table is cast in place, so its start must be as aligned as the ids
-        // inside it need to be.
+        // The table is cast in place, so its start must be aligned.
         if (header.EntryTableOffset % PackFormat.PayloadAlignment != 0)
         {
             throw new PackMountException(
@@ -460,10 +399,7 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
         {
             ref readonly PackEntry entry = ref entries[i];
 
-            // Strictly ascending, so this checks the sorted flag's claim rather
-            // than trusting it, and rejects duplicate ids in the same pass: two
-            // entries with one id make a binary search's answer depend on where
-            // it happened to land.
+            // Strictly ascending: verifies the sorted flag and rejects duplicate ids.
             if (i > 0 && entry.AssetId <= entries[i - 1].AssetId)
             {
                 throw new PackMountException(
@@ -547,9 +483,7 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
                 $"{header.NameTableLength}-byte name table.");
         }
 
-        // The record's own prefix is what the table can be walked end to end with,
-        // and the entry's copy is what a reader that skipped the table would use;
-        // a disagreement makes those two walks return different names.
+        // The record's length prefix and the entry's copy must agree.
         ushort prefix = BinaryPrimitives.ReadUInt16LittleEndian(names[(int)record..]);
         if (prefix != entry.NameLength)
         {
@@ -584,8 +518,7 @@ public abstract class PackSourceBase : IContentSource, IMountPathSource, IDispos
         }
         catch (ArgumentException)
         {
-            // A prefix that cannot be normalised cannot match a normalised name,
-            // which is the same answer as an empty result set.
+            // Matches no normalised name.
             return " ";
         }
     }

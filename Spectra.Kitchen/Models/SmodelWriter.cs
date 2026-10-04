@@ -9,82 +9,36 @@ using System.Text;
 
 namespace Spectra.Kitchen.Models;
 
-/// <summary>
-/// One drawable range a cooked model will carry.
-/// </summary>
-/// <param name="IndexStart">First index of the range within the shared index buffer.</param>
-/// <param name="IndexCount">How many indices the range covers.</param>
+/// <summary>One drawable range a cooked model will carry.</summary>
+/// <param name="IndexStart">First index of the range in the shared index buffer.</param>
 /// <param name="MaterialPath">
-/// The content path of the material this range wears, or null when the cook found
-/// none.
+/// Content path of the material, or null for none. A path, never a
+/// <c>MaterialRef.Id</c>.
 /// </param>
-/// <remarks>
-/// <b>A PATH, and the writer has no way to take an id, which is the point.</b>
-/// <c>MaterialRef.Id</c> is per-process interning order: a file carrying one
-/// loads correctly in the test that wrote it and mis-textures the world the day a
-/// second asset interns first, with nothing reporting it. The standing invariant
-/// is that an id is never written to disk, and the cheapest way to keep an
-/// invariant is to make the wrong value inexpressible.
-/// </remarks>
 public readonly record struct SmodelSubmeshSpec(uint IndexStart, uint IndexCount, string? MaterialPath);
 
 /// <summary>
-/// Writes a <c>.smodel</c>: the 64-byte header and section table
-/// <see cref="SmodelFormat"/> declares, then <c>VTXL</c>, <c>VBUF</c>,
-/// <c>IBUF</c>, <c>SUBM</c> and <c>NAME</c>.
+/// Writes a <c>.smodel</c>: header, section table, then <c>VTXL</c>, <c>VBUF</c>,
+/// <c>IBUF</c>, <c>SUBM</c> and <c>NAME</c>. Bounds and index width are derived
+/// from the geometry.
 /// </summary>
-/// <remarks>
-/// <para><b>Every offset and every size comes from <see cref="SmodelFormat"/>,
-/// never from a literal here.</b> A writer that computes a section start from
-/// its own running cursor and a reader that recomputes it from a constant agree
-/// exactly until one of them is edited, and then disagree as a read into the
-/// middle of somebody else's bytes rather than as an exception. That is the
-/// lesson <c>PackFormat</c> and <c>ShaderFileLayout</c> both already
-/// record.</para>
-/// <para><b>The bounds are COMPUTED here, from the geometry, rather than taken
-/// from the caller.</b> A box that disagrees with the vertices it describes is
-/// not an error anywhere: it culls a model that is on screen or fails to cull one
-/// that is not, and the only symptom is geometry that flickers at the edge of the
-/// frustum. Deriving them is a walk the writer is already making to check the
-/// index ranges.</para>
-/// <para><b>The index width is DERIVED from the vertex count</b>, sixteen bits
-/// whenever they fit, because that halves the index buffer of every prop in a
-/// game and costs one widening at load. The header flag is written from the same
-/// decision that sized the buffer, so the two provably agree - the reader checks
-/// that they do, and a disagreement there is a buffer read at the wrong element
-/// size.</para>
-/// <para><b>Padding is explicitly zero.</b> A managed array arrives zeroed so it
-/// costs nothing, and it buys the thing the pack writer learned the hard way: an
-/// unzeroed byte in a field nothing reads turns a byte-identity oracle red in a
-/// way that is very hard to bisect.</para>
-/// <para><b>What this writes is v1's SUBSET of the format, and the omissions are
-/// free.</b> <c>LODS</c>, <c>SKEL</c>, <c>COLL</c> and <c>ANIM</c> are designed
-/// and unwritten; the reader skips a FourCC it does not know and derives presence
-/// from the section table, so a later cooker adding one needs no version
-/// bump.</para>
-/// </remarks>
 public static class SmodelWriter
 {
     /// <summary>
-    /// The largest vertex count that still fits 16-bit indices, which is what
-    /// decides <see cref="SmodelFlags.Index32"/>.
+    /// The largest vertex count that still fits 16-bit indices. Above it the file
+    /// sets <see cref="SmodelFlags.Index32"/>.
     /// </summary>
     public const int MaxVertexCountForIndex16 = ushort.MaxValue + 1;
 
     /// <summary>
-    /// Writes one cooked model.
+    /// Writes one cooked model. Throws <see cref="ArgumentException"/> on input
+    /// the format cannot hold.
     /// </summary>
     /// <param name="vertices">
-    /// The whole model's interleaved vertices in
-    /// <see cref="SmodelStandardLayout"/>: eight floats each.
+    /// Interleaved vertices in <see cref="SmodelStandardLayout"/>: eight floats each.
     /// </param>
-    /// <param name="indices">The whole model's index buffer, three per triangle.</param>
+    /// <param name="indices">Three per triangle.</param>
     /// <param name="submeshes">Ranges into <paramref name="indices"/>, in draw order.</param>
-    /// <exception cref="ArgumentException">
-    /// The inputs describe a file this format cannot hold. Thrown rather than
-    /// clamped or repaired, because every one of these is a cooker bug and a
-    /// repaired one ships a model that is merely wrong.
-    /// </exception>
     public static byte[] Write(
         ReadOnlySpan<float> vertices,
         ReadOnlySpan<uint> indices,
@@ -174,19 +128,12 @@ public static class SmodelWriter
             (SmodelFormat.SubmeshSection, submeshTable),
         };
 
-        // Only when something names one. The reader treats NAME as optional and a
-        // zero-length section would be a claim about a region that carries
-        // nothing, which is a thing to reason about later for no benefit now.
+        // NAME is optional to the reader.
         if (nameBlob.Length > 0) sections.Add((SmodelFormat.NameSection, nameBlob));
 
         return Assemble(sections, index32, min, max);
     }
 
-    // Lays the sections out on their alignment and writes the whole file. The
-    // layout pass and the write pass are one loop rather than two, because two
-    // passes over the same list that must agree on every size INCLUDING padding
-    // is exactly the shape that produces a one-byte disagreement and an
-    // arbitrary symptom three sections later.
     private static byte[] Assemble(
         List<(uint FourCc, byte[] Payload)> sections, bool index32, Vector3 min, Vector3 max)
     {
@@ -201,11 +148,8 @@ public static class SmodelWriter
             at += sections[i].Payload.Length;
         }
 
-        // The file ENDS at the last payload rather than on the alignment. Every
-        // section START obeys the rule, which is what the in-place casts need; a
-        // padded tail would be bytes no reader ever looks at, and it would make
-        // this writer's output differ from a byte-for-byte transcription of the
-        // format specification for no reason anybody could see.
+        // No padding after the last payload. Only section starts need the
+        // alignment, and the codec tests compare against unpadded bytes.
         var file = new byte[at];
 
         BinaryPrimitives.WriteUInt32LittleEndian(file, SmodelFormat.Magic);
@@ -218,9 +162,7 @@ public static class SmodelWriter
         WriteVector3(file.AsSpan(0x1C), max);
         BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(0x28), SmodelStandardLayout.LayoutId);
 
-        // 0x2C to 0x40 stays zero: it is the header's reserved tail, and the
-        // reader refuses any file whose format version this build does not know
-        // long before it could look at those bytes.
+        // 0x2C to 0x40 is reserved and stays zero.
 
         for (int i = 0; i < sections.Count; i++)
         {
@@ -290,10 +232,7 @@ public static class SmodelWriter
         BinaryPrimitives.WriteSingleLittleEndian(destination[8..], value.Z);
     }
 
-    // The NAME section: u16 length plus UTF-8 per record, mirroring the pack's
-    // own name table. One record per DISTINCT string, so two submeshes wearing
-    // one material share it - which is the whole reason a material reference is a
-    // path rather than an inline description.
+    // The NAME section: u16 length plus UTF-8 per record, one record per distinct string.
     private sealed class NameBlob
     {
         private readonly List<byte> _bytes = [];
@@ -314,10 +253,7 @@ public static class SmodelWriter
 
             var offset = (uint)_bytes.Count;
 
-            // Ordinal, and the dictionary is keyed ordinally too: two paths that
-            // differ only in case are two assets, because asset identity is the
-            // normalized path and nothing upstream folds case. Deduplicating them
-            // here would silently give one submesh the other's material.
+            // Ordinal keys: paths differing only in case are two assets here.
             _offsets[name] = offset;
 
             _bytes.Add((byte)(utf8.Length & 0xFF));

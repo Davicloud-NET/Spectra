@@ -4,19 +4,9 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Scene change events and node identity. NodeAdded/NodeRemoved must track
-/// scene membership exactly: one event per node entering or leaving the owned
-/// graph (pre-order for subtrees), and none for a reparent within the same
-/// scene — the moved subtree neither enters nor leaves. NodeTransformChanged
-/// must fire only for writes that actually change an owned node's local
-/// transform; equal-value writes are silent no-ops that also must not dirty
-/// the static world.
-/// </summary>
+/// <summary>Scene change events and node identity.</summary>
 public sealed class SceneEventsTests
 {
-    // --- Node identity ------------------------------------------------------
-
     [Fact]
     public void Node_ids_are_assigned_at_construction_and_unique()
     {
@@ -46,8 +36,6 @@ public sealed class SceneEventsTests
         node.Id.ShouldBe(id);
     }
 
-    // --- Membership events --------------------------------------------------
-
     [Fact]
     public void Adding_a_node_fires_NodeAdded_once()
     {
@@ -63,8 +51,6 @@ public sealed class SceneEventsTests
     [Fact]
     public void Attaching_a_detached_subtree_fires_NodeAdded_per_node_pre_order()
     {
-        // Built while detached — no owner, so construction fires nothing —
-        // then attached in one AddChild, which must announce every node.
         var group = new SceneNode("group");
         SceneNode childA = group.CreateChild("a");
         SceneNode grandchild = childA.CreateChild("a1");
@@ -110,8 +96,6 @@ public sealed class SceneEventsTests
     [Fact]
     public void Reparenting_to_a_detached_parent_fires_NodeRemoved()
     {
-        // AddChild onto an unowned parent is a scene exit for the child even
-        // though the child is never explicitly "removed".
         var scene = new Scene("Test");
         SceneNode node = scene.Root.CreateChild("n");
         List<SceneNode> removed = [];
@@ -156,7 +140,6 @@ public sealed class SceneEventsTests
         int wrongSceneEvents = 0;
         sceneA.NodeRemoved += removedFromA.Add;
         sceneB.NodeAdded += addedToB.Add;
-        // The move must not masquerade as an add on A or a remove on B.
         sceneA.NodeAdded += _ => wrongSceneEvents++;
         sceneB.NodeRemoved += _ => wrongSceneEvents++;
 
@@ -170,12 +153,8 @@ public sealed class SceneEventsTests
     [Fact]
     public void NodeRemoved_handlers_observe_the_node_as_already_outside_the_scene()
     {
-        // Documented contract: ownership is updated before the event fires, so
-        // an auto-cleanup handler (like the selection's) can rely on the node
-        // no longer claiming membership in the scene announcing the loss.
-        // Owner itself is internal, so observe it through the selection's
-        // ownership check: re-adding the departing node to the selection must
-        // already be rejected while the handler runs.
+        // Owner is internal, so check it through the selection, which refuses
+        // a node the scene does not own.
         var scene = new Scene("Test");
         SceneNode node = scene.Root.CreateChild("n");
         bool handlerRan = false;
@@ -191,14 +170,11 @@ public sealed class SceneEventsTests
         node.Parent.ShouldBeNull();
     }
 
-    // --- Transform events ---------------------------------------------------
-
     [Fact]
     public void Changing_local_position_fires_NodeTransformChanged()
     {
         var scene = new Scene("Test");
-        // Deliberately brushless: the change event covers every owned node,
-        // not just brush geometry (static-world dirtying is separate).
+        // No brush: the event covers every owned node.
         SceneNode node = scene.Root.CreateChild("plain");
         List<SceneNode> changed = [];
         scene.NodeTransformChanged += changed.Add;
@@ -245,8 +221,6 @@ public sealed class SceneEventsTests
     [Fact]
     public void Equal_value_write_does_not_dirty_the_static_world()
     {
-        // The early-out sits in front of the brush-dirty logic too: writing
-        // back the identical placement must not trigger a CSG recompile.
         var scene = new Scene("Test");
         SceneNode node = scene.Root.CreateChild("brush");
         node.Brush = Brush.CreateBox(new Vector3(-1f, -1f, -1f), new Vector3(1f, 1f, 1f));

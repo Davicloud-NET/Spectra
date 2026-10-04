@@ -11,16 +11,6 @@ internal enum CliMode
     UsageError,
 }
 
-/// <summary>
-/// What the tool was asked to do.
-/// </summary>
-/// <remarks>
-/// <b>Four verbs, and one tool rather than three.</b> Map compilation is a cook
-/// rule inside <c>scook</c>, not a separate <c>smapc</c>: a whole-project build
-/// tool that shells out to siblings has to reproduce their dependency graph to
-/// know when to call them. <c>ssc</c> stays separate for the opposite reason, that
-/// it compiles ONE file and has a different argument grammar.
-/// </remarks>
 internal enum CliVerb
 {
     Cook,
@@ -33,10 +23,7 @@ internal sealed class CliOptions
 {
     public required CliVerb Verb { get; init; }
 
-    /// <summary>
-    /// The project folder or manifest for <c>cook</c> and <c>clean</c>; the pack
-    /// for <c>verify</c> and <c>inspect</c>.
-    /// </summary>
+    // Project folder or manifest for cook and clean; the pack for verify and inspect.
     public required string Target { get; init; }
 
     public string? Output { get; init; }
@@ -54,25 +41,14 @@ internal sealed class CliOptions
     public bool Quiet { get; init; }
     public bool UseColor { get; init; }
 
-    /// <summary>
-    /// Whether <c>inspect</c> prints machine-readable JSON instead of a table.
-    /// </summary>
-    /// <remarks>
-    /// The table's columns are widened to whatever the longest name in that
-    /// particular pack is, so parsing it means parsing a layout that changes per
-    /// file. This is the form for anything that is not a person.
-    /// </remarks>
     public bool Json { get; init; }
 
-    // Which switches were TYPED, kept separately from their values so the tool can
-    // say "this build does not act on your --target" without saying it to everybody
-    // who never passed one.
+    // Whether the switch was typed, as opposed to left at its default.
     public bool ProfileGiven { get; init; }
     public bool TargetsGiven { get; init; }
     public bool JobsGiven { get; init; }
     public bool CacheGiven { get; init; }
 
-    /// <summary>The library-side settings this command line asks for.</summary>
     public CookSettings ToCookSettings() => new()
     {
         OutputPath = Output,
@@ -80,8 +56,7 @@ internal sealed class CliOptions
         Targets = Targets.Count > 0 ? Targets : DefaultTargets(),
         Jobs = Jobs,
         UseCache = UseCache,
-        // --watch implies --loose: a watch loop exists to feed the editor's
-        // cooked-accurate preview, which overlays a tree on the loose files.
+        // --watch implies --loose
         Loose = Loose || Watch,
         KeepBrushSource = KeepBrushSource,
         ScriptSource = ScriptSource,
@@ -90,11 +65,7 @@ internal sealed class CliOptions
         ManifestPath = ManifestPath,
     };
 
-    /// <summary>
-    /// The backends a bare invocation cooks for: the same three <c>ssc</c>
-    /// defaults to, and for the same reason. Vulkan is excluded until SPIR-V
-    /// emission exists, or every default cook would fail.
-    /// </summary>
+    // Same three as ssc. No Vulkan until SPIR-V emission exists.
     public static IReadOnlyList<GraphicsBackend> DefaultTargets() =>
         [GraphicsBackend.OpenGL, GraphicsBackend.D3D11, GraphicsBackend.D3D12];
 
@@ -148,9 +119,6 @@ internal sealed class CliOptions
                 case "--jobs":
                     if (!TryNext(args, ref i, out var j))
                         return ParseResult.Usage($"'{a}' requires a worker count");
-                    // Invariant, because a console is typed by a person who expects
-                    // a plain number and a value that parses on one machine and not
-                    // another is the worst kind of bug report to receive.
                     if (!int.TryParse(j, System.Globalization.NumberStyles.Integer,
                             System.Globalization.CultureInfo.InvariantCulture, out jobs) || jobs < 1)
                     {
@@ -216,9 +184,8 @@ internal sealed class CliOptions
                     if (a.StartsWith('-'))
                         return ParseResult.Usage($"unknown option: {a}");
 
-                    // The first bare word is the verb when it names one. A folder
-                    // genuinely called "cook" is reachable as './cook' or after
-                    // '--', which is the same escape every tool of this shape uses.
+                    // First bare word is the verb if it names one. A folder called
+                    // "cook" is reachable as './cook' or after '--'.
                     if (verb is null && target is null && TryParseVerb(a, out var parsedVerb))
                     {
                         verb = parsedVerb;
@@ -234,19 +201,12 @@ internal sealed class CliOptions
 
         CliVerb effective = verb ?? CliVerb.Cook;
 
-        // Refused rather than ignored, the same rule every dead control in this
-        // project follows: a switch that silently does nothing teaches within one
-        // session that the flags here are decorative, and a person who typed it
-        // on the wrong verb would go on believing they had machine-readable
-        // output.
+        // Refuse rather than ignore a switch on the wrong verb.
         if (json && effective != CliVerb.Inspect)
             return ParseResult.Usage($"'--json' is only meaningful for 'inspect', not '{ToWire(effective)}'");
 
         if (target is null)
         {
-            // A pack has no sensible default and a project does: running the tool
-            // inside the folder you are working in is the common case, and it is
-            // what every build tool of this shape does.
             if (effective is CliVerb.Verify or CliVerb.Inspect)
                 return ParseResult.Usage($"'{ToWire(effective)}' requires a path to a pack");
 
@@ -288,9 +248,7 @@ internal sealed class CliOptions
         _ => "cook",
     };
 
-    // Hand-written, never Enum.Parse: reflection over enum names is what trimming
-    // removes, so the parse would work in every debug run and fail in a published
-    // one.
+    // Not Enum.Parse: enum names do not survive trimming.
     private static bool TryParseVerb(string value, out CliVerb verb)
     {
         switch (value)
@@ -345,9 +303,7 @@ internal sealed class CliOptions
         return true;
     }
 
-    // ssc's grammar exactly, including the aliases: a person who has typed
-    // '-t dx11' at one of these tools should not discover the other wants
-    // something else.
+    // Same grammar and aliases as ssc.
     private static bool TryParseTargets(string value, List<GraphicsBackend> into, out string error)
     {
         var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

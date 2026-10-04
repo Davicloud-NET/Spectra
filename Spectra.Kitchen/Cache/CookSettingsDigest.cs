@@ -9,18 +9,8 @@ namespace Spectra.Kitchen.Cache;
 
 /// <summary>
 /// Renders the settings a rule declared into the sorted key/value pairs the cache
-/// key hashes.
+/// key hashes. Values are spelled as on the command line.
 /// </summary>
-/// <remarks>
-/// <para><b>Sorted ordinal by key, so no dictionary's iteration order can leak
-/// into an artifact's identity.</b> The flags could be walked in bit order and get
-/// a deterministic answer for free; sorting is written out anyway because the
-/// property being relied on is "the order is decided here", and a bit order is a
-/// property of the numbers somebody chose in an enum.</para>
-/// <para><b>Every value is spelled the way the command line spells it.</b> Two
-/// vocabularies for one setting is how a cache key ends up disagreeing with a
-/// manifest about which profile produced an artifact.</para>
-/// </remarks>
 public static class CookSettingsDigest
 {
     /// <summary>
@@ -50,10 +40,6 @@ public static class CookSettingsDigest
 
         if ((declared & CookSettingKeys.AudioSampleRate) != 0)
         {
-            // Invariant, like every other number that reaches a cache key: a
-            // culture that groups thousands would spell 48000 as "48,000" on one
-            // machine and "48000" on another, which is two cache entries for one
-            // setting and a pack that can never be byte-identical between them.
             pairs.Add(new(
                 "audioSampleRate",
                 settings.AudioSampleRate.ToString(CultureInfo.InvariantCulture)));
@@ -89,10 +75,8 @@ public static class CookSettingsDigest
         _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "Unknown graphics backend."),
     };
 
-    // In the order they were given, NOT sorted: a shader rule emits one blob per
-    // target and the order it was asked for is a declared order, exactly as a
-    // rule's inputs are. Sorting here would make two command lines that ask for
-    // different blob orders share one cache entry.
+    // Not sorted: a shader rule emits one blob per target in the order given,
+    // so a different order is a different output.
     private static string DescribeTargets(IReadOnlyList<GraphicsBackend> targets)
     {
         if (targets.Count == 0) return string.Empty;

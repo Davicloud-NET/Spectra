@@ -4,27 +4,12 @@ using System.Runtime.InteropServices;
 namespace SpectraEngine.Core.Bsp;
 
 /// <summary>
-/// One INTERNAL node of a solid-leaf BSP tree in its flat, blittable form: the
-/// shape the compiled map format stores and the shape
-/// <see cref="FlatBspTree"/> queries directly.
+/// One internal node of a solid-leaf BSP tree in flat, blittable form, as the
+/// compiled map format stores it and <see cref="FlatBspTree"/> queries it.
 /// </summary>
-/// <remarks>
-/// The layout is a file format, not an implementation detail. Raw bytes are
-/// cast into this struct, so its size is pinned by a test rather than assumed:
-/// <c>Plane</c> is 16 bytes and this struct is 24, and neither is a documented
-/// contract of <see cref="System.Numerics.Plane"/>.
-///
-/// Holding a real <see cref="System.Numerics.Plane"/> rather than four loose
-/// floats is what makes answer-identity with the live <see cref="BspTree"/> a
-/// structural property: both forms call the identical
-/// <see cref="Plane.DotCoordinate"/> on the identical value, so there is no
-/// argument to have about float evaluation order.
-///
-/// Children are Quake-encoded: a value at or above zero is an index into the
-/// node array, and the two negative codes are the leaves themselves. Leaves
-/// therefore occupy no array slots at all, and a solid-leaf BSP is roughly half
-/// leaves.
-/// </remarks>
+// The layout is a file format: raw bytes are cast into this struct (24 bytes,
+// pinned by a test). Children at or above zero index the node array, negative
+// values are leaf codes. A real Plane, so queries match BspTree bit for bit.
 [StructLayout(LayoutKind.Sequential)]
 public readonly struct FlatBspNode
 {

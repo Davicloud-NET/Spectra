@@ -12,29 +12,13 @@ using System.Text.Json;
 namespace SpectraEngine.Core.Maps;
 
 /// <summary>
-/// Writes a <see cref="MapDocument"/> as canonical UTF-8 JSON.
+/// Writes a <see cref="MapDocument"/> as canonical UTF-8 JSON: the same bytes
+/// for the same document on every platform.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Every rule here exists to make a diff small.</b> The file is reviewed,
-/// merged and hand-edited, so the writer's job is not merely to produce valid
-/// JSON but to produce the <i>same</i> JSON for the same document, on every
-/// platform and every run - otherwise a save with no edits in it lands in
-/// someone's pull request as a thousand changed lines.
-/// </para>
-/// <para>
-/// <b>Records that are just numbers are written on one line, and not by hand.</b>
-/// <see cref="Utf8JsonWriter"/> with <c>Indented</c> breaks every array across
-/// lines, which turns a six-plane brush into forty of them and makes a changed
-/// plane a multi-line hunk. The fix is to render those records through a
-/// <i>second</i>, un-indented writer and emit the result with
-/// <see cref="Utf8JsonWriter.WriteRawValue(ReadOnlySpan{byte}, bool)"/> - which
-/// is documented not to re-indent or re-encode raw content. Doing it that way
-/// rather than concatenating strings means escaping and float formatting stay
-/// the library's problem, so the compact path and the indented path cannot
-/// disagree about how a number is spelled.
-/// </para>
-/// </remarks>
+// Records that are only numbers (a plane, a face, a transform) go on one line
+// so a changed plane is a one-line diff. They are rendered by a second,
+// un-indented Utf8JsonWriter and emitted with WriteRawValue, so number
+// formatting and escaping match the indented path.
 public static class MapWriter
 {
     /// <summary>Renders <paramref name="document"/> to canonical UTF-8 bytes, with no BOM.</summary>
@@ -96,14 +80,13 @@ public static class MapWriter
 
         CanonicalJson.Flush(writer, node.Unknown, -1);
 
-        // Lowercase "D" format, per the format's GUID rule.
         writer.WriteString(MapFormat.IdMember, node.Id.ToString("D"));
         CanonicalJson.Flush(writer, node.Unknown, 0);
 
         writer.WriteString(MapFormat.NameMember, node.Name);
         CanonicalJson.Flush(writer, node.Unknown, 1);
 
-        // Omitted iff the node declares nothing, which is what "inherit" is.
+        // Omitted means inherit.
         if (node.Realm is { } realm)
             writer.WriteString(MapFormat.RealmMember, realm);
         CanonicalJson.Flush(writer, node.Unknown, 2);
@@ -112,8 +95,8 @@ public static class MapWriter
             writer.WriteString(MapFormat.StateMember, state);
         CanonicalJson.Flush(writer, node.Unknown, 3);
 
-        // Omitted iff World. Never a numeric enum: the file is merged by people,
-        // and a renumbering would silently re-admit part brushes to the carve.
+        // Omitted when World. A name, not a number, so renumbering the enum
+        // cannot change a file's meaning.
         if (node.Kind is { } kind && kind != BrushKind.World)
             writer.WriteString(MapFormat.KindMember, MapFormat.ToWire(kind));
         CanonicalJson.Flush(writer, node.Unknown, 4);
@@ -171,9 +154,7 @@ public static class MapWriter
     {
         writer.WriteStartObject();
 
-        // First inside the record, and omitted iff Additive. Position is fixed
-        // because this is the member that decides whether the brush adds solid
-        // or removes it, and a reader scanning a diff should not have to hunt.
+        // First in the record so it is easy to spot in a diff. Omitted when Additive.
         if (brush.Operation != BrushOperation.Additive)
             writer.WriteString(MapFormat.OperationMember, MapFormat.ToWire(brush.Operation));
 
@@ -199,28 +180,14 @@ public static class MapWriter
         writer.WriteEndObject();
     }
 
-    /// <summary>
-    /// Writes an entity record on the INDENTED writer, following the brush
-    /// precedent rather than the light one.
-    /// </summary>
-    /// <remarks>
-    /// <b>An entity is not a row of numbers.</b> A light is six values a person
-    /// reads at a glance and edits as a unit, so it is one compact line; an entity
-    /// carries a class, a keyvalue set and a wiring list, each of which is edited
-    /// on its own. So the record is indented, the class gets its own line, the
-    /// keyvalues are one compact object (a keyvalue set is small and is read
-    /// together) and each connection is its own line - a wire is the unit a person
-    /// edits and reviews, which is exactly the argument that gives a plane its own
-    /// line.
-    /// </remarks>
+    // Indented like a brush, not compact like a light: the class, the keyvalue
+    // set and each wire are edited on their own, so each gets its own line.
     private static void WriteEntity(Utf8JsonWriter writer, MapEntity entity)
     {
         writer.WriteStartObject();
         CanonicalJson.Flush(writer, entity.Unknown, -1);
 
-        // Always written, and the reader refuses a record without it: a class is
-        // what an entity IS, and one that names nothing is not an entity with a
-        // missing detail.
+        // Always written, even when empty: the reader refuses a record without it.
         writer.WriteString(MapFormat.ClassMember, entity.Class);
         CanonicalJson.Flush(writer, entity.Unknown, 0);
 
@@ -245,15 +212,11 @@ public static class MapWriter
 
     private const int IndentSize = 2;
 
-    // --- compact records ----------------------------------------------------
-
     private static byte[] CompactTransform(MapTransform transform) => CanonicalJson.Compact(w =>
     {
         w.WriteStartObject();
 
-        // Always written, even at the origin: it is the one member whose
-        // absence would read as "this node has no placement" rather than
-        // "this node is at zero".
+        // Always written, even at the origin.
         w.WritePropertyName(MapFormat.PositionMember);
         WriteNumbers(w, transform.Position.X, transform.Position.Y, transform.Position.Z);
 
@@ -277,16 +240,12 @@ public static class MapWriter
         w.WriteStartObject();
         CanonicalJson.Flush(w, face.Unknown, -1);
 
-        // Absent means the engine default material. There is no path to write
-        // for it: MaterialRegistry hands out id 0 for "default" and refuses to
-        // resolve a path back from it.
+        // Absent means the default material, which has no path.
         if (!string.IsNullOrEmpty(face.Material))
             w.WriteString(MapFormat.MaterialMember, face.Material);
         CanonicalJson.Flush(w, face.Unknown, 0);
 
-        // A world-aligned face omits both axes entirely, which is already how
-        // FaceSurface encodes it: a zero axis means "derive the projection from
-        // the face normal by the dominant-axis rule".
+        // A world-aligned face omits both axes.
         if (face.UAxis is { } u)
         {
             w.WritePropertyName(MapFormat.UAxisMember);
@@ -324,8 +283,6 @@ public static class MapWriter
         w.WriteString(MapFormat.ModelMember, mesh.Model);
         CanonicalJson.Flush(w, mesh.Unknown, 0);
 
-        // Omitted at zero, which is the single-submesh prop: the overwhelmingly
-        // common case, and the one where the number carries no information.
         if (mesh.Submesh != 0)
             w.WriteNumber(MapFormat.SubmeshMember, mesh.Submesh);
         CanonicalJson.Flush(w, mesh.Unknown, 1);
@@ -352,19 +309,15 @@ public static class MapWriter
         if (light.Intensity != 1f) WriteFinite(w, MapFormat.IntensityMember, light.Intensity);
         CanonicalJson.Flush(w, light.Unknown, 2);
 
-        // Never written as zero: Light.Range refuses anything not strictly
-        // positive, so a zero on disk throws out of the property setter halfway
-        // through a load.
+        // Never zero on disk: Light.Range throws on anything not positive.
         if (light.Range != 10f) WriteFinite(w, MapFormat.RangeMember, light.Range);
         CanonicalJson.Flush(w, light.Unknown, 3);
 
         if (!light.Enabled) w.WriteBoolean(MapFormat.EnabledMember, false);
         CanonicalJson.Flush(w, light.Unknown, 4);
 
-        // Written only when they differ from the default, like everything above
-        // - which is also what makes byte identity hold for every file written
-        // before these members existed: a directional light or a point light
-        // carries the defaults, so nothing new appears in its object.
+        // Written only when not the default, so a file without these members
+        // still round-trips byte for byte.
         if (light.InnerAngle != 25f) WriteFinite(w, MapFormat.InnerAngleMember, light.InnerAngle);
         CanonicalJson.Flush(w, light.Unknown, 5);
 
@@ -383,16 +336,8 @@ public static class MapWriter
         w.WriteEndObject();
     });
 
-    /// <summary>
-    /// The keyvalue set as one compact JSON object, in AUTHORED ORDER and never
-    /// sorted.
-    /// </summary>
-    /// <remarks>
-    /// Sorting is the obvious tidy-up and it is exactly wrong here: the order is
-    /// the file's own, a person put it there, and reshuffling it turns every save
-    /// into a whole-record diff. Duplicates are emitted as they were read, because
-    /// a reader that preserves a hand-written duplicate has to write both back.
-    /// </remarks>
+    // One compact object in authored order. Don't sort it and don't drop
+    // duplicates: both would rewrite a hand-edited file.
     private static byte[] CompactKeys(List<KeyValuePair<string, string>> keys) =>
         CanonicalJson.Compact(w =>
         {
@@ -407,9 +352,7 @@ public static class MapWriter
         w.WriteStartObject();
         CanonicalJson.Flush(w, connection.Unknown, -1);
 
-        // The three that identify the wire are always written, even when empty:
-        // a connection missing one of them is broken data worth seeing rather
-        // than data worth hiding.
+        // Output, target and input are always written, even when empty.
         w.WriteString(MapFormat.OutputMember, connection.Output);
         CanonicalJson.Flush(w, connection.Unknown, 0);
 
@@ -427,7 +370,6 @@ public static class MapWriter
             WriteFinite(w, MapFormat.DelayMember, connection.Delay);
         CanonicalJson.Flush(w, connection.Unknown, 4);
 
-        // Omitted at Infinite, which is what almost every wire is.
         if (connection.Times != Entities.EntityConnection.Infinite)
             w.WriteNumber(MapFormat.TimesMember, connection.Times);
         CanonicalJson.Flush(w, connection.Unknown, 5);
@@ -455,12 +397,8 @@ public static class MapWriter
     private static void WriteFinite(Utf8JsonWriter writer, string member, float value) =>
         writer.WriteNumber(member, Finite(value, member));
 
-    /// <summary>
-    /// JSON has no NaN and no infinity, so a non-finite float cannot be written
-    /// at all. Refusing it here names the member; letting it reach
-    /// <see cref="Utf8JsonWriter"/> raises an <see cref="ArgumentException"/>
-    /// that says only that some number was not supported.
-    /// </summary>
+    // JSON has no NaN or infinity. Refusing here names the member, which
+    // Utf8JsonWriter's own exception does not.
     private static float Finite(float value, string member) =>
         float.IsFinite(value)
             ? value

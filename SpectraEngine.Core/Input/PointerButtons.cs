@@ -3,11 +3,8 @@ using System;
 namespace SpectraEngine.Core.Input;
 
 /// <summary>
-/// Backend-neutral mouse-button set. Deliberately mirrors only the three
-/// buttons an editor actually binds, and deliberately names no Silk.NET type:
-/// this is the vocabulary layers that must not depend on the windowing backend
-/// (the editing assembly, and any future Uno/WinUI host) speak instead of
-/// <c>Silk.NET.Input.MouseButton</c>.
+/// Mouse buttons, independent of the windowing backend. Only the three the
+/// engine binds.
 /// </summary>
 [Flags]
 public enum PointerButtons

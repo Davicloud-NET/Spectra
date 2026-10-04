@@ -7,51 +7,24 @@ namespace Spectra.Kitchen.Audio;
 
 /// <summary>
 /// Reads a RIFF/WAVE file into interleaved PCM16 at the file's own rate.
+/// Loop points come from the <c>smpl</c> chunk.
 /// </summary>
-/// <remarks>
-/// <para><b>WAV is the authored format because it is the one every tool writes
-/// and nothing has to be verified to read.</b> Vorbis and Opus are both
-/// plausible sources and both would drag a decoder whose NativeAOT posture is
-/// inferred rather than measured into the cooker, which this arc has a standing
-/// rule against; see <c>docs/formats-and-pipeline.md</c> 2.4. A DAW exports WAV,
-/// and the cooked side is where compression belongs anyway.</para>
-/// <para><b>It lives in the KITCHEN and not in Core, and that is the same
-/// division every other authored format already follows.</b> A source-format
-/// reader runs at cook time; a shipped game reads <c>.saudio</c> and opens no
-/// WAV ever, so a parser in Core would be a parser inside every game binary for
-/// a file none of them touch.</para>
-/// <para><b>Loop points come from the <c>smpl</c> chunk, and its ends are
-/// INCLUSIVE.</b> Every DAW that writes loop points writes them there, and the
-/// chunk's <c>end</c> field names the last frame that plays, while
-/// <see cref="LoopRegion"/> is half-open. Off by one in that conversion is a
-/// single dropped or repeated frame per pass round the loop, which is a click
-/// once a bar, forever, and is not visible in any waveform anybody would think
-/// to look at.</para>
-/// <para><b>Every refusal is an <see cref="InvalidDataException"/> naming what
-/// was wrong</b>, which is the same type <c>ImageDecoder</c> refuses with and
-/// the same type the rule catches, so a broken sound and a broken picture reach
-/// a build log the same way.</para>
-/// </remarks>
 public static class WaveDecoder
 {
-    // WAVE_FORMAT tags, from the RIFF specification. EXTENSIBLE wraps one of the
-    // other two in a GUID whose first two bytes are the real tag, which is what a
-    // multichannel or high-bit-depth export from a modern DAW writes.
+    // WAVE_FORMAT tags. Extensible wraps one of the other two in a GUID.
     private const ushort FormatPcm = 0x0001;
     private const ushort FormatIeeeFloat = 0x0003;
     private const ushort FormatExtensible = 0xFFFE;
 
-    // smpl loop types. Only forward is expressible: AudioLoopCursor plays a
-    // region in one direction and has no other mode, so an alternating or
-    // backward loop would have to be silently played forward.
+    // The runtime only loops forward.
     private const uint LoopTypeForward = 0;
 
     /// <summary>
-    /// Decodes <paramref name="file"/>, or refuses it saying which rule it broke.
+    /// Decodes a whole WAV file. Throws <see cref="InvalidDataException"/> naming
+    /// what was wrong when it cannot.
     /// </summary>
     /// <param name="file">The whole file.</param>
     /// <param name="originForErrors">Path or label naming the file in messages.</param>
-    /// <exception cref="InvalidDataException">The bytes are not a WAV this cooker can read.</exception>
     public static DecodedAudio Decode(ReadOnlySpan<byte> file, string originForErrors = "<memory>")
     {
         if (file.Length < 12 || !Matches(file, 0, "RIFF") || !Matches(file, 8, "WAVE"))
@@ -79,10 +52,7 @@ public static class WaveDecoder
         {
             uint size = BinaryPrimitives.ReadUInt32LittleEndian(file[(at + 4)..]);
 
-            // A chunk claiming more bytes than the file holds is truncation, and
-            // a decoder that clamped it would hand back a sound that is merely
-            // short - which sounds exactly like an author's mistake and is not
-            // one.
+            // Truncated file. Refuse, don't clamp to a shorter sound.
             if (size > (uint)(file.Length - at - 8))
             {
                 throw Refuse(
@@ -108,10 +78,7 @@ public static class WaveDecoder
                 haveLoop = TryReadLoop(body, out loopStart, out loopEnd, out loopRefused);
             }
 
-            // Chunks are word-aligned: an odd body is followed by one pad byte
-            // that is NOT counted in the size. Walking without it puts the next
-            // chunk id one byte late, which reads as garbage of a plausible size
-            // rather than as a failure.
+            // Chunks are word-aligned: an odd body has a pad byte not counted in size.
             at += 8 + (int)size + ((int)size & 1);
         }
 
@@ -126,22 +93,15 @@ public static class WaveDecoder
                 $"its data chunk holds {samples.Length} samples, which is less than one {channels}-channel frame.");
         }
 
-        // Trailing samples that do not complete a frame are dropped rather than
-        // refused: a file whose data chunk is a byte long is a broken exporter,
-        // and half a frame is inaudible. What must not happen is carrying them,
-        // because every length below is frames * channels and a remainder would
-        // shift one channel by one sample for the whole sound.
+        // Drop a trailing partial frame; carrying it would misalign the channels.
         int frames = samples.Length / channels;
         if (samples.Length != frames * channels) Array.Resize(ref samples, frames * channels);
 
         LoopRegion loop = LoopRegion.None;
         if (haveLoop)
         {
-            // The smpl end is INCLUSIVE and LoopRegion is half-open, so the +1 is
-            // the whole conversion. Bounds are checked here rather than trusted:
-            // a loop past the end of the data is a file a DAW can legitimately
-            // write after an edit, and LoopRegion's own constructor would throw
-            // rather than say which number was wrong.
+            // smpl end is inclusive, LoopRegion is half-open. A DAW can write a
+            // loop past the end of the data after an edit, so check bounds here.
             long end = loopEnd + 1;
             if (loopStart >= 0 && end > loopStart && end <= frames)
                 loop = new LoopRegion(loopStart, end);
@@ -170,10 +130,7 @@ public static class WaveDecoder
 
         if (tag == FormatExtensible)
         {
-            // The real tag is the first two bytes of the SubFormat GUID, 24 bytes
-            // into the extension. Reading the outer tag alone would refuse every
-            // 24-bit and every multichannel export from a modern DAW, which is
-            // most of what a person would actually hand this cooker.
+            // The real tag is the first two bytes of the SubFormat GUID at byte 24.
             if (body.Length < 40)
             {
                 throw Refuse(
@@ -205,12 +162,8 @@ public static class WaveDecoder
             throw Refuse(origin, $"its sample rate is {sampleRate}.");
     }
 
-    // Every supported bit depth widened to PCM16, which is the one representation
-    // everything downstream works in. The shifts rather than divisions are not an
-    // optimisation: an arithmetic shift of a negative sample is exactly the
-    // truncation toward negative infinity that keeps a symmetric waveform
-    // symmetric, where a division truncates toward zero and puts a DC step at
-    // every zero crossing.
+    // Shifts, not divisions: division truncates toward zero and leaves a DC
+    // step at every zero crossing.
     private static short[] Widen(ReadOnlySpan<byte> data, ushort tag, int bitsPerSample, string origin)
     {
         if (tag == FormatIeeeFloat)
@@ -236,10 +189,7 @@ public static class WaveDecoder
         };
     }
 
-    // 8-bit WAV samples are UNSIGNED with 128 as silence, alone among the depths.
-    // Reading them as signed puts the whole file half a scale off, which is a
-    // click at the start and a permanent DC offset rather than anything that
-    // fails.
+    // 8-bit WAV is unsigned with 128 as silence.
     private static short[] WidenPcm8(ReadOnlySpan<byte> data)
     {
         var samples = new short[data.Length];
@@ -263,9 +213,7 @@ public static class WaveDecoder
         {
             int at = i * 3;
 
-            // Sign-extended by placing the three bytes in the TOP of an int and
-            // shifting back down arithmetically. Assembling them in the low bytes
-            // and masking would make every negative sample a large positive one.
+            // Bytes go in the top of the int so the shift down sign-extends.
             int value = (data[at] << 8) | (data[at + 1] << 16) | (data[at + 2] << 24);
             samples[i] = (short)(value >> 16);
         }
@@ -289,10 +237,7 @@ public static class WaveDecoder
         {
             float value = BinaryPrimitives.ReadSingleLittleEndian(data[(i * 4)..]);
 
-            // NaN maps to silence rather than to whatever a cast produces, and
-            // the clamp is what stops a mastering chain's overshoot from wrapping
-            // to full-scale opposite polarity - which is not quiet distortion, it
-            // is a bang.
+            // NaN becomes silence. Clamp so an overshoot does not wrap.
             if (float.IsNaN(value)) value = 0f;
             double scaled = Math.Clamp(value, -1.0, 1.0) * short.MaxValue;
             samples[i] = (short)Math.Round(scaled, MidpointRounding.AwayFromZero);
@@ -301,10 +246,7 @@ public static class WaveDecoder
         return samples;
     }
 
-    // The FIRST forward loop, and only that. LoopRegion is one region, so a file
-    // with several is expressing something the runtime cannot play; taking the
-    // first is the only answer that does not silently pick a different one from
-    // run to run.
+    // Takes the first forward loop; LoopRegion holds one region.
     private static bool TryReadLoop(ReadOnlySpan<byte> body, out long start, out long end, out bool refused)
     {
         start = 0;
@@ -324,11 +266,8 @@ public static class WaveDecoder
             uint type = BinaryPrimitives.ReadUInt32LittleEndian(body[(at + 4)..]);
             if (type != LoopTypeForward)
             {
-                // Alternating and backward loops are dropped rather than played
-                // forward, and said out loud by the rule: a ping-pong loop played
-                // one way is a sound that is merely wrong, and the author has no
-                // way to tell from listening that the engine ignored half of what
-                // they asked for.
+                // Ping-pong and backward loops are dropped and reported, not
+                // played forward.
                 refused = true;
                 continue;
             }

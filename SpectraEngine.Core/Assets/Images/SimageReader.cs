@@ -9,42 +9,16 @@ namespace SpectraEngine.Core.Assets.Images;
 
 /// <summary>
 /// Reads a <c>.simage</c>: the strict KTX2 subset described by
-/// <see cref="SimageFormat"/>.
+/// <see cref="SimageFormat"/>. Anything outside the profile is refused with a
+/// message naming the rule it broke.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>It validates and REFUSES, naming what was wrong.</b> Every field this
-/// reader checks has a failure that renders a picture rather than raising
-/// anything - a wrong block size shears the image, a wrong level offset uploads
-/// somebody else's bytes, an unrecognised format computes a row pitch for a
-/// layout the file does not have - and the last of those is a read past the end
-/// of a memory-mapped view, which on Windows is an access violation with no
-/// managed stack. So the answer to every uncertainty here is a message, not a
-/// guess.
-/// </para>
-/// <para>
-/// <b>It WRITES a DFD and never parses one.</b> The Data Format Descriptor is in
-/// the file because KTX2 requires it and because external tools read it; nothing
-/// in this reader looks at it. The level index and the <c>vkFormat</c> carry
-/// everything an uploader needs, and a conforming DFD parser is most of the
-/// reader-cost this restricted profile exists to avoid. The one thing that would
-/// change that is a format whose block size the DFD alone states, which the
-/// allowlist cannot contain by construction.
-/// </para>
-/// <para>
-/// <b>A span in, no streams.</b> A mounted pack hands out a span into a mapped
-/// view, and wrapping one in a <c>MemoryStream</c> copies the whole file to read
-/// eighty bytes of header - the copy the container exists to avoid. Every field
-/// is read through <see cref="BinaryPrimitives"/> rather than by reinterpreting a
-/// struct, because KTX2 fixes little-endian and a struct cast on a big-endian
-/// host produces enormous plausible dimensions instead of a failure.
-/// </para>
-/// </remarks>
+// The DFD is never parsed: vkFormat and the level index are enough.
+// Spans, not streams: a pack hands out a mapped view and a stream would copy it.
 public static class SimageReader
 {
     /// <summary>
-    /// Whether <paramref name="file"/> opens with KTX2's identifier. Cheap, and
-    /// says nothing about whether the rest of the file is in the profile.
+    /// Whether <paramref name="file"/> opens with KTX2's identifier. Says nothing
+    /// about the rest of the file.
     /// </summary>
     public static bool LooksLikeSimage(ReadOnlySpan<byte> file) =>
         file.Length >= SimageFormat.Identifier.Length &&
@@ -87,24 +61,16 @@ public static class SimageReader
         uint kvdOffset = ReadU32(file, 56);
         uint kvdLength = ReadU32(file, 60);
 
-        // Supercompression first, because it decides whether the level bytes are
-        // the payload at all: everything measured below is meaningless under a
-        // scheme this reader cannot undo.
+        // Checked first: the level sizes below only make sense for raw payloads.
         if (supercompression != SimageFormat.SupercompressionNone)
         {
             throw Refuse(originForErrors, supercompression switch
             {
-                // Named, and permanently: BasisLZ needs a full transcoder, which
-                // is precisely the reader cost the restricted profile exists to
-                // refuse. Recook without it.
                 SimageFormat.SupercompressionBasisLz =>
                     "it uses BasisLZ supercompression (scheme 1), which this engine will never support; " +
                     "cook it to an uncompressed BC format instead.",
 
-                // Named separately because it is a "not yet" rather than a
-                // "never": the profile admits Zstandard and .NET ships no
-                // Zstandard decoder, so saying so beats reading the levels as if
-                // they were raw blocks and rendering noise.
+                // In the profile, but .NET ships no Zstandard decoder.
                 SimageFormat.SupercompressionZstd =>
                     "it uses Zstandard supercompression (scheme 2), which is in the .simage profile and is " +
                     "not implemented yet; cook it with supercompression off.",
@@ -118,19 +84,13 @@ public static class SimageReader
 
         if (!SimageFormat.TryResolveVkFormat(vkFormat, out TextureFormat format, out TextureColorSpace declared))
         {
-            // The number is in the message on purpose: a person can look it up
-            // in vulkan_core.h, and a build log saying "an unsupported format"
-            // cannot be acted on at all.
             throw Refuse(
                 originForErrors,
                 $"its vkFormat is {vkFormat}, which is not on the .simage allowlist " +
                 "(R8, RGBA8, BC1, BC3, BC4, BC5, BC6H and BC7).");
         }
 
-        // 1 for every format on the allowlist, which is what the KTX2 spec
-        // requires for a block-compressed format and for an 8-bit one. A file
-        // saying otherwise disagrees with its own vkFormat about how wide a
-        // component is.
+        // KTX2 requires 1 for block-compressed and 8-bit formats.
         if (typeSize != 1)
             throw Refuse(originForErrors, $"its typeSize is {typeSize}; every format in this profile is 1.");
 
@@ -156,10 +116,7 @@ public static class SimageReader
                 $"its faceCount is {faceCount}; a KTX2 file has 1 face or 6.");
         }
 
-        // Cube maps are IN the profile and have no uploader: Renderer.CreateTexture
-        // has no cube path at all, which is also why point-light shadows are
-        // unbuilt. Refused here rather than uploaded as its first face, which
-        // would light a scene from a sixth of a sky and report nothing.
+        // In the profile, but Renderer.CreateTexture has no cube path.
         if (faceCount == 6)
         {
             throw Refuse(
@@ -169,21 +126,14 @@ public static class SimageReader
 
         if (levelCount == 0)
         {
-            // Zero legally means "generate the chain at load", and this engine's
-            // uploaders do generate one for a single supplied level - but a
-            // block-compressed level cannot be downsampled on the GPU, so the
-            // request is one no cooked image can honour and silence would be a
-            // texture with no mips and no report.
+            // 0 means "generate mips at load", which a BC level cannot do on the GPU.
             throw Refuse(
                 originForErrors,
                 "its levelCount is 0, which asks the loader to generate the mip chain; a cooked image must " +
                 "carry its own levels.");
         }
 
-        // The upper bound is not a policy about how big a texture may be: it is
-        // what keeps the width a positive int through the shift below, since a
-        // value past int.MaxValue casts negative and every derived size then
-        // computes off a number nobody wrote.
+        // The bound keeps the int casts below positive.
         const uint maxDimension = 65536;
         if (pixelWidth is 0 or > maxDimension || pixelHeight is 0 or > maxDimension)
         {
@@ -208,11 +158,8 @@ public static class SimageReader
 
         for (int level = 0; level < mips.Length; level++)
         {
-            // Index entry 0 is the BASE level, while the level DATA is stored
-            // smallest-first in the file. Both facts are the spec's; conflating
-            // them uploads the 1x1 level as the base and the base as the 1x1,
-            // which renders as a flat colour up close and is the single easiest
-            // KTX2 mistake to make.
+            // KTX2: index entry 0 is the base level, but level data is stored
+            // smallest-first.
             int entry = SimageFormat.LevelIndexOffset + level * SimageFormat.LevelIndexEntrySize;
             ulong byteOffset = ReadU64(file, entry);
             ulong byteLength = ReadU64(file, entry + 8);
@@ -221,12 +168,8 @@ public static class SimageReader
             int width = Math.Max(1, (int)pixelWidth >> level);
             int height = Math.Max(1, (int)pixelHeight >> level);
 
-            // The pitch is DERIVED here and that is not a contradiction of the
-            // rule stated on TextureMipDesc. That rule is about not
-            // second-guessing a file; KTX2's own contract is that a level's rows
-            // are tightly packed, so the tight pitch IS the file's stated pitch -
-            // and the check below is what makes it a reading rather than an
-            // assumption.
+            // KTX2 rows are tightly packed, so the pitch can be derived; the
+            // length check below confirms it.
             int rowPitch = TextureFormatInfo.TightRowPitch(format, width);
             long expected = (long)TextureFormatInfo.RowCount(format, height) * rowPitch;
 
@@ -271,9 +214,7 @@ public static class SimageReader
         return new SimageInfo(format, declared, rowOrder, profile, mips, payloadBytes);
     }
 
-    // The two keys this profile requires, read in one pass. Everything else in
-    // the KV block is skipped rather than refused: KTX2's key space is open and
-    // a writer that adds its own metadata has not broken anything.
+    // Unknown keys are skipped: KTX2's key space is open.
     private static void ReadKeyValues(
         ReadOnlySpan<byte> file,
         uint kvdOffset,
@@ -318,20 +259,13 @@ public static class SimageReader
                     else if (key == SimageFormat.ProfileKey) profile = value;
                 }
 
-                // Every entry is padded up to a four-byte boundary, and skipping
-                // the padding is what keeps the walk aligned: without it the
-                // next length is read out of the middle of this entry's tail and
-                // the block parses as garbage of a plausible size.
+                // Entries are padded to four bytes.
                 at += (int)pairLength;
                 at = (at + 3) & ~3;
             }
         }
 
-        // Both keys are REQUIRED, and requiring them is the point of a profile.
-        // An arbitrary KTX2 file has neither, which is exactly the file this
-        // engine cannot upload correctly: it does not know which way up the rows
-        // are, and it does not know whether the cooker that wrote it agreed with
-        // this build about what a .simage is.
+        // Both keys are required. A plain KTX2 file has neither.
         if (profile is null)
         {
             throw Refuse(
@@ -346,10 +280,7 @@ public static class SimageReader
                 $"its '{SimageFormat.ProfileKey}' key reads '{profile}', which is not a version number.");
         }
 
-        // A cooked artifact versions the STRICT way: exact match or refuse, and
-        // the message names both numbers and says recook, because a cooked
-        // artifact is a build output that can always be regenerated and the bytes
-        // past this header only mean anything under the version that wrote them.
+        // Exact match, not a floor: a cooked file can always be recooked.
         if (profileVersion != EngineInfo.TextureFormatVersion)
         {
             throw Refuse(
@@ -370,10 +301,7 @@ public static class SimageReader
         {
             SimageFormat.OrientationBottomUp => SimageRowOrder.BottomUp,
 
-            // Named rather than accepted, because this is the one refusal whose
-            // alternative is a picture: uploading a top-down payload renders the
-            // whole world upside down, raises nothing, and looks like an art
-            // problem.
+            // Uploading it anyway would render every texture upside down.
             SimageFormat.OrientationTopDown => throw Refuse(
                 origin,
                 $"its rows are stored top-down ('{SimageFormat.OrientationKey}' = " +
@@ -399,11 +327,8 @@ public static class SimageReader
     private static ulong ReadU64(ReadOnlySpan<byte> bytes, int at) =>
         BinaryPrimitives.ReadUInt64LittleEndian(bytes[at..]);
 
-    // InvalidDataException rather than a type of this format's own, because it
-    // is what ImageDecoder throws for a file it cannot read and what
-    // AssetManager's texture path already catches and degrades on: a cooked
-    // image that will not parse must land on the magenta placeholder exactly as
-    // an unreadable PNG does, not take a frame down.
+    // InvalidDataException is what AssetManager's texture path catches, so a
+    // bad cooked image degrades to the placeholder like an unreadable PNG.
     private static InvalidDataException Refuse(string origin, string because) =>
         new($"'{origin}' is not a .simage this engine can read: {because}");
 }

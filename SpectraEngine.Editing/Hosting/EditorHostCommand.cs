@@ -1,28 +1,11 @@
 namespace SpectraEngine.Editing.Hosting;
 
 /// <summary>
-/// The editor verbs that belong to the HOST rather than to a manipulator or a
-/// camera: history, structural edits, and the two mode toggles.
+/// The editor verbs that belong to the host rather than to a manipulator or a
+/// camera: history, structural edits, selection and mode switches. Applied
+/// through <see cref="SceneEditorHost.Apply(EditorHostCommand)"/> on the render
+/// thread; a UI thread reaches it through <c>EngineHost.EnqueueCommand</c>.
 /// </summary>
-/// <remarks>
-/// <b>A third command enum, beside <c>GizmoCommand</c> and
-/// <c>EditorCameraCommand</c>, because these are the verbs neither of those
-/// owns.</b> Undo is not a gizmo concern, a duplicate is not a camera concern,
-/// and folding them into either would make that type know about the other two.
-/// <para>
-/// <b>It exists so a UI can drive the editor without a keyboard.</b> Every one
-/// of these was reachable only as a key chord inside
-/// <see cref="SceneEditorHost"/>; a shell with a toolbar and a menu needs the
-/// same verbs, and synthesising fake key presses to reach them would be a
-/// second input path that can drift from the real one.
-/// </para>
-/// <para>
-/// <b>Threading:</b> every verb here mutates the scene, so
-/// <see cref="SceneEditorHost.Apply(EditorHostCommand)"/> is render-thread only,
-/// like everything else that touches it. A UI thread reaches it through
-/// <c>EngineHost.EnqueueCommand</c>.
-/// </para>
-/// </remarks>
 public enum EditorHostCommand
 {
     /// <summary>Steps one entry back through the undo history.</summary>
@@ -56,29 +39,17 @@ public enum EditorHostCommand
     ToggleNavigation,
 
     /// <summary>
-    /// Selects the root's direct children — everything in the scene, at the
-    /// granularity a group move wants.
+    /// Selects the root's direct children. Top-level nodes only: moving them
+    /// moves everything, and the property panel stays proportional to the tree.
     /// </summary>
-    /// <remarks>
-    /// Top-level nodes rather than the whole graph, deliberately: moving them
-    /// moves everything anyway, a selection of every descendant would make the
-    /// structural verbs' root-filtering do the same reduction the slow way,
-    /// and the property union — rebuilt per publish while selected — would
-    /// scale with the graph instead of with what the user can see in the tree.
-    /// </remarks>
     SelectAll,
 
     /// <summary>Empties the selection.</summary>
     ClearSelection,
 
-    /// <summary>
-    /// Ground grid shows during move and resize gestures only — the default.
-    /// </summary>
-    /// <remarks>
-    /// Three SET verbs rather than a cycle, the same rule every displayed
-    /// state follows: a cycle sent against a snapshot one publish stale lands
-    /// on the wrong mode exactly when the user clicks fastest.
-    /// </remarks>
+    /// <summary>Ground grid shows during move and resize gestures only. The default.</summary>
+    // Three set verbs, not a cycle: a cycle sent against a stale snapshot
+    // lands on the wrong mode.
     GridAuto,
 
     /// <summary>Ground grid always drawn.</summary>

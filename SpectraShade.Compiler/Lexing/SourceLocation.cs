@@ -1,8 +1,6 @@
 namespace SpectraShade.Compiler.Lexing;
 
-/// <summary>
-/// Points to a specific position in source code. Used for diagnostics.
-/// </summary>
+/// <summary>A position in source code, for diagnostics.</summary>
 public readonly struct SourceLocation
 {
     public string File { get; }
@@ -21,9 +19,7 @@ public readonly struct SourceLocation
     public override string ToString() => $"{File}({Line},{Column})";
 }
 
-/// <summary>
-/// A span of source code between two locations.
-/// </summary>
+/// <summary>A range of source code between two locations.</summary>
 public readonly struct SourceSpan
 {
     public SourceLocation Start { get; }

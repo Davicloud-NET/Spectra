@@ -4,18 +4,13 @@ using System.Numerics;
 namespace SpectraEngine.Core.Scene;
 
 /// <summary>
-/// A free-standing view/projection source for a <see cref="Scene"/>.
-/// Maintains an orthonormal basis from yaw/pitch angles. The view and
-/// projection matrices are cached and rebuilt only when an input changed,
-/// because they are read once per renderable per frame; the combined
-/// view-projection and its inverse (frustum extraction, picking rays) share
-/// the same lazy scheme.
+/// A view and projection source for a <see cref="Scene"/>, oriented by yaw
+/// and pitch. Matrices are cached and rebuilt only when an input changes.
 /// </summary>
 public sealed class Camera
 {
-    // Pitch stops just short of ±90°: exactly vertical makes Forward parallel
-    // to world up, the Cross in RecomputeBasis collapses to zero, and
-    // normalizing that zero vector would NaN the whole basis and view matrix.
+    // Just short of vertical: at ±90° the cross with world up is zero and the
+    // basis goes NaN.
     private const float PitchLimit = MathF.PI / 2f - 0.01f;
 
     private Vector3 _position = new(0f, 0f, 3f);
@@ -31,11 +26,8 @@ public sealed class Camera
     private bool _viewDirty = true;
     private bool _projectionDirty = true;
 
-    // The combined view-projection and its inverse (for unprojection) depend on
-    // BOTH matrices, and the View/Projection getters clear their own flags on
-    // read — so the pair gets its own flag, set at every site that dirties
-    // either input. Render thread only, like all camera state — the flags are
-    // deliberately unsynchronized because scene updates are single-threaded.
+    // Own dirty flag: the View and Projection getters clear theirs on read.
+    // Render thread only, so nothing here is synchronized.
     private Matrix4x4 _viewProjection;
     private Matrix4x4 _inverseViewProjection;
     private bool _viewProjectionDirty = true;
@@ -73,8 +65,7 @@ public sealed class Camera
         get => _aspectRatio;
         set
         {
-            // Pipelines write this every frame; the early-out keeps the cached
-            // projection valid as long as the framebuffer size is stable.
+            // Pipelines write this every frame.
             if (value == _aspectRatio) return;
             _aspectRatio = value;
             _projectionDirty = true;
@@ -132,16 +123,7 @@ public sealed class Camera
     private CameraProjectionKind _projectionKind = CameraProjectionKind.Perspective;
     private float _orthographicHeight = 10f;
 
-    /// <summary>
-    /// Whether this camera projects perspective or orthographic.
-    /// </summary>
-    /// <remarks>
-    /// <b>A plan view is a different PROJECTION, not a distant perspective one.</b>
-    /// Backing a perspective camera far off and narrowing its field of view gets
-    /// close and is never right: parallel walls still converge, so a wall a
-    /// person is trying to align by eye is a fraction of a degree off and the
-    /// number they read off the screen is not the number in the file.
-    /// </remarks>
+    /// <summary>Whether this camera projects perspective or orthographic.</summary>
     public CameraProjectionKind ProjectionKind
     {
         get => _projectionKind;
@@ -156,15 +138,9 @@ public sealed class Camera
     }
 
     /// <summary>
-    /// How many world units the viewport's HEIGHT spans, orthographic only.
+    /// How many world units the viewport's height spans, orthographic only.
+    /// A value that is not finite and positive is ignored.
     /// </summary>
-    /// <remarks>
-    /// The zoom of a plan view, and the one number every screen-space size on
-    /// this path derives from. A value at or below zero keeps the previous one
-    /// rather than throwing: this is written from the render thread every frame,
-    /// and a throw there ends the session over a number a controller can simply
-    /// decline to apply.
-    /// </remarks>
     public float OrthographicHeight
     {
         get => _orthographicHeight;
@@ -180,15 +156,8 @@ public sealed class Camera
 
     /// <summary>
     /// Points the camera straight down or straight up, which the pitch clamp
-    /// cannot express.
+    /// cannot express. The yaw decides which way is up on screen.
     /// </summary>
-    /// <remarks>
-    /// <b>The clamp exists because the ordinary basis collapses at the poles</b>:
-    /// crossing a vertical forward with world up gives a zero right vector and
-    /// every derived axis becomes NaN. A top view needs exactly that pitch, so
-    /// the basis is built from the YAW instead, which is what decides which way
-    /// north points on the screen.
-    /// </remarks>
     public void SetVerticalView(bool lookingDown, float yaw)
     {
         _yaw = yaw;
@@ -203,18 +172,11 @@ public sealed class Camera
         _viewProjectionDirty = true;
     }
 
-    /// <summary>Exactly vertical, for the two views that need it.</summary>
     private const float PitchLimitVertical = MathF.PI * 0.5f;
 
     /// <summary>
     /// The orthonormal basis for a yaw and a pitch, including the vertical case.
     /// </summary>
-    /// <remarks>
-    /// Shared with <c>EditorCameraController</c>, which used to carry its own
-    /// copy: two expressions of one basis drift exactly where nothing fails, and
-    /// the way that presents is a gizmo whose handles point somewhere other than
-    /// the axes the camera is showing.
-    /// </remarks>
     public static void BasisFor(float yaw, float pitch, out Vector3 forward, out Vector3 right, out Vector3 up)
     {
         float cosPitch = MathF.Cos(pitch);
@@ -223,8 +185,7 @@ public sealed class Camera
             MathF.Sin(pitch),
             MathF.Sin(yaw) * cosPitch));
 
-        // At the poles the world-up cross collapses to zero and every axis
-        // derived from it becomes NaN, so the screen frame comes from the yaw.
+        // At the poles the world-up cross is zero, so build the frame from yaw.
         if (MathF.Abs(MathF.Sin(pitch)) >= 1f - 1e-6f)
         {
             up = new Vector3(MathF.Cos(yaw), 0f, MathF.Sin(yaw));
@@ -256,13 +217,9 @@ public sealed class Camera
         {
             if (_projectionDirty)
             {
-                // A SLAB symmetric about the eye, rather than a box starting at
-                // the near plane. The controller puts the eye at the focus under
-                // orthographic, so geometry on both sides of the focus plane has
-                // to render: a box from the eye forward would clip away
-                // everything between the camera and what it is looking at, which
-                // in a top view is the ceiling of every room. Depth is linear
-                // here, so a range this wide costs nothing in precision.
+                // Ortho slab is symmetric about the eye: the eye sits at the
+                // focus, so geometry behind it has to render too. Depth is
+                // linear here, so the wide range costs no precision.
                 _projection = _projectionKind == CameraProjectionKind.Orthographic
                     ? Matrix4x4.CreateOrthographic(
                         _orthographicHeight * _aspectRatio, _orthographicHeight, -_farPlane, _farPlane)
@@ -278,12 +235,10 @@ public sealed class Camera
     {
         var offset = target - _position;
         if (offset.LengthSquared() < 1e-12f)
-            return; // no defined direction — keep the current orientation
+            return;
 
         var direction = Vector3.Normalize(offset);
         _yaw = MathF.Atan2(direction.Z, direction.X);
-        // Same clamp as the Pitch setter: a straight-up/straight-down target
-        // would otherwise put the basis into the degenerate ±90° case.
         _pitch = Math.Clamp(MathF.Asin(direction.Y), -PitchLimit, PitchLimit);
         RecomputeBasis();
     }
@@ -299,10 +254,8 @@ public sealed class Camera
     }
 
     /// <summary>
-    /// The combined world→clip matrix in the engine's row-vector convention:
-    /// <c>clip = world · View · Projection</c>. Cached (together with its
-    /// inverse) behind the same dirty-flag scheme as <see cref="View"/> and
-    /// <see cref="Projection"/>, so repeated per-frame reads are free.
+    /// The world to clip matrix, row-vector convention:
+    /// <c>clip = world · View · Projection</c>. Cached.
     /// </summary>
     public Matrix4x4 GetViewProjection()
     {
@@ -310,81 +263,45 @@ public sealed class Camera
         return _viewProjection;
     }
 
-    /// <summary>
-    /// The camera's current view frustum in world space, for visibility
-    /// queries and culling. A stack-only value snapshot — cheap to build, no
-    /// allocation.
-    /// </summary>
+    /// <summary>The camera's view frustum in world space.</summary>
     public Frustum GetFrustum() => Frustum.FromViewProjection(GetViewProjection());
 
     /// <summary>
     /// Builds the world-space picking ray through a screen point.
-    /// Convention: <paramref name="screenPos"/> is in pixels with the origin at
-    /// the TOP-LEFT of the viewport and y growing DOWNWARD — i.e. raw window
-    /// mouse coordinates; <paramref name="viewportSize"/> is the viewport extent
-    /// in the same units. The ray origin lies on the near plane and the
-    /// normalized direction points toward the far plane through that pixel.
+    /// <paramref name="screenPos"/> is in pixels, origin top-left, y down. The
+    /// ray starts on the near plane.
     /// </summary>
     public Ray3 ScreenPointToRay(Vector2 screenPos, Vector2 viewportSize)
     {
-        // Pixel → NDC: x maps to [-1, 1] left→right; y is flipped because
-        // screen y grows down while NDC y grows up.
         float ndcX = 2f * screenPos.X / viewportSize.X - 1f;
         float ndcY = 1f - 2f * screenPos.Y / viewportSize.Y;
 
         EnsureViewProjection();
 
-        // CreatePerspectiveFieldOfView maps depth to the D3D-style [0, 1] clip
-        // range, so the near plane unprojects at z = 0 and the far plane at 1.
+        // Clip depth is [0, 1]: near at z = 0, far at 1.
         Vector3 nearWorld = UnprojectNdc(ndcX, ndcY, 0f);
         Vector3 farWorld = UnprojectNdc(ndcX, ndcY, 1f);
 
-        // far − near rather than near − Position for the direction: both
-        // unprojected points carry absolute float error proportional to their
-        // distance, and the long near→far baseline divides that error away.
+        // far - near, not near - Position: the long baseline divides away the
+        // float error in the unprojected points.
         return new Ray3(nearWorld, Vector3.Normalize(farWorld - nearWorld));
     }
 
     /// <summary>
-    /// Builds the sub-frustum of this camera bounded by a screen-space
-    /// rectangle — the volume a marquee/box selection sweeps. The two corners
-    /// are given in the same pixel convention as
-    /// <see cref="ScreenPointToRay"/> (top-left origin, y growing downward) and
-    /// in either order; the near and far planes are the camera's own, so the
-    /// result is exactly this camera's frustum with its four side planes pulled
-    /// in to the rectangle.
+    /// Builds the sub-frustum bounded by a screen-space rectangle, as swept by
+    /// a box selection. Corners use the pixel convention of
+    /// <see cref="ScreenPointToRay"/> and may come in either order. A rectangle
+    /// thinner than one pixel is widened to one.
     /// </summary>
-    /// <remarks>
-    /// <b>Why a matrix and not four corner rays.</b> The rectangle's side
-    /// planes are derived by post-multiplying the view-projection with the
-    /// affine NDC remap that stretches the rectangle back out to the full
-    /// [-1, 1] clip square, then running the same Gribb–Hartmann extraction
-    /// <see cref="GetFrustum"/> uses. That reuses one tested plane derivation
-    /// instead of adding a second one built from cross products of corner ray
-    /// directions, and it gets the near and far planes right for free.
-    /// Cross-checked against <see cref="ScreenPointToRay"/> in the tests: every
-    /// corner ray lies on the two side planes that meet at its corner.
-    /// <para>
-    /// A rectangle thinner than one pixel in either axis is widened to one
-    /// pixel rather than producing degenerate (zero-normal) side planes: a
-    /// click is a one-pixel rectangle, not an empty volume, so a caller that
-    /// forwards a click here still gets a usable frustum. Callers that want
-    /// click-versus-drag semantics decide that above this call.
-    /// </para>
-    /// </remarks>
-    /// <param name="cornerA">One corner of the rectangle, in viewport pixels.</param>
-    /// <param name="cornerB">The opposite corner, in viewport pixels.</param>
-    /// <param name="viewportSize">Viewport extent in the same pixel units.</param>
     public Frustum ScreenRectToFrustum(Vector2 cornerA, Vector2 cornerB, Vector2 viewportSize)
     {
         if (viewportSize.X <= 0f || viewportSize.Y <= 0f)
-            return GetFrustum(); // Nothing has been laid out yet; the rect means nothing.
+            return GetFrustum();
 
         Vector2 min = Vector2.Min(cornerA, cornerB);
         Vector2 max = Vector2.Max(cornerA, cornerB);
 
-        // One pixel is the floor on either axis (see the remarks): half a pixel
-        // out from the rectangle's own centre on the offending axis.
+        // One pixel minimum, or the side planes get zero normals.
         if (max.X - min.X < 1f)
         {
             float centerX = 0.5f * (min.X + max.X);
@@ -398,8 +315,7 @@ public sealed class Camera
             max.Y = centerY + 0.5f;
         }
 
-        // Pixels → NDC, with the same y flip ScreenPointToRay applies. Note the
-        // flip swaps which pixel edge is the NDC minimum on y.
+        // The y flip swaps which pixel edge is the NDC minimum.
         float ndcMinX = 2f * min.X / viewportSize.X - 1f;
         float ndcMaxX = 2f * max.X / viewportSize.X - 1f;
         float ndcMaxY = 1f - 2f * min.Y / viewportSize.Y;
@@ -410,10 +326,9 @@ public sealed class Camera
         float halfNdcX = 0.5f * (ndcMaxX - ndcMinX);
         float halfNdcY = 0.5f * (ndcMaxY - ndcMinY);
 
-        // The remap, in the engine's row-vector convention: after the
-        // perspective divide it sends the rectangle's NDC box to [-1, 1]², and
-        // it leaves z and w alone so the near and far planes survive untouched.
-        // Expressed pre-divide it is x' = x/hx − (cx/hx)·w, y' likewise.
+        // Stretch the rectangle's NDC box out to [-1, 1]² and reuse the normal
+        // plane extraction. z and w are untouched, so near and far survive.
+        // Pre-divide: x' = x/hx - (cx/hx)·w, y' likewise.
         var remap = Matrix4x4.Identity;
         remap.M11 = 1f / halfNdcX;
         remap.M22 = 1f / halfNdcY;
@@ -424,13 +339,9 @@ public sealed class Camera
         return Frustum.FromViewProjection(_viewProjection * remap);
     }
 
-    /// <summary>Maps an NDC point back to world space through the cached inverse view-projection.</summary>
     private Vector3 UnprojectNdc(float x, float y, float z)
     {
         Vector4 h = Vector4.Transform(new Vector4(x, y, z, 1f), _inverseViewProjection);
-        // The inverse of a perspective transform lands at w ≠ 1; dividing by w
-        // restores the affine world-space point (the unproject counterpart of
-        // the forward perspective divide).
         return new Vector3(h.X, h.Y, h.Z) / h.W;
     }
 
@@ -439,9 +350,7 @@ public sealed class Camera
         if (!_viewProjectionDirty) return;
 
         _viewProjection = View * Projection;
-        // A perspective view-projection built from valid parameters is always
-        // invertible; the guard only keeps degenerate inputs (e.g. zero fov)
-        // from poisoning later unprojections with NaNs.
+        // Only fails on degenerate input such as a zero fov.
         if (!Matrix4x4.Invert(_viewProjection, out _inverseViewProjection))
             _inverseViewProjection = Matrix4x4.Identity;
         _viewProjectionDirty = false;

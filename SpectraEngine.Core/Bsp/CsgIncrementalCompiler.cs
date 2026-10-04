@@ -6,64 +6,25 @@ using System.Threading.Tasks;
 
 namespace SpectraEngine.Core.Bsp;
 
-/// <summary>
-/// The incremental static-world compile: derives a new <see cref="CsgWorld"/>
-/// from the previous one by re-running each pipeline stage over exactly the
-/// edit's neighbourhood — changed brushes, their carve neighbours, the brushes
-/// welded against those, and the cells any of them touch — while every other
-/// artifact (carved and welded arrays, chunk instances with their BSP trees,
-/// chunk mesh artifacts) is carried forward by reference. No step reads,
-/// copies, or validates per-brush or per-cell state outside that
-/// neighbourhood (the carry is paged copy-on-write, the chunk map layered),
-/// which is what makes a one-part edit cost the same in a 50k-part world as
-/// in a 1k-part world — the open-world pillar's requirement.
-/// </summary>
-/// <remarks>
-/// <b>Scoping rules (mirroring the validation-driven full path exactly):</b>
-/// <list type="bullet">
-/// <item><description><b>Changed set C:</b> placements at dirty-cell residents
-/// whose (brush, matrix) differs from the previous compile's — complete by the
-/// trusted-diff contract (every changed placement's old footprint is dirty,
-/// and its old residency makes it a dirty-cell resident of the previous
-/// grid).</description></item>
-/// <item><description><b>Re-carve set R = C ∪ neighbours(C):</b> a brush's
-/// carve is a function of its placement and its ordered carver sequence, so
-/// exactly the changed brushes and the brushes whose carver sequence contains
-/// one re-carve — the same set the carve cache's validation would
-/// miss.</description></item>
-/// <item><description><b>Re-weld set W = residents of R's (old and new)
-/// footprints:</b> b re-welds iff some candidate's carve array changed, and
-/// r ∈ candidates(b) ⇔ footprint(r) ∩ footprint(b) ≠ ∅ ⇔ b is resident in a
-/// footprint cell of r — the same set the weld cache's validation would
-/// miss.</description></item>
-/// <item><description><b>Rebuilt cells = footprint cells of W plus the old
-/// footprints of C:</b> precisely the cells with a resident whose welded
-/// array changed or whose membership changed — the BSP cache's miss set. Mesh
-/// artifacts additionally survive a cell rebuild when the cell's OWNED set
-/// and arrays are untouched — the mesh cache's rule.</description></item>
-/// </list>
-/// <para>
-/// <b>Exactness.</b> Re-run stages go through the same code paths as the full
-/// compile (<see cref="Csg.CarveSingle"/>, <see cref="ChunkWelder.WeldCell"/>,
-/// <see cref="ChunkBspBuilder.BuildCellTree"/>,
-/// <see cref="ChunkMeshBuilder.BuildArtifact"/>), so for the editing gestures
-/// this path accepts the result is bit-identical to a from-scratch compile of
-/// the same placements. Geometry v2 clips in authored placement order, so
-/// new overlaps and sweep-rank crossings can be patched locally.
-/// </para>
-/// <para>
-/// <b>Threading:</b> pure CPU work over the snapshot and the immutable
-/// previous world — background-thread safe, and the previous world (still
-/// live on the render thread) is never mutated: chunks and carry pages are
-/// copy-on-write, the chunk map is layered.
-/// </para>
-/// </remarks>
+// Derives a new CsgWorld from the previous one by re-running each stage over
+// the edit's neighbourhood only. Everything else is carried by reference, so
+// the cost does not depend on world size. The result must be bit-identical to
+// a from-scratch compile, which is why it reuses the full path's per-brush and
+// per-cell functions.
+//
+// Sets, each matching what the corresponding cache would miss:
+//   C  changed: dirty-cell residents whose (brush, matrix) differs.
+//   R  re-carve: C and its carve neighbours.
+//   W  re-weld: residents of R's old and new footprints.
+//   rebuilt cells: W's footprints plus the old footprints of C. A cell keeps
+//   its mesh when its owned set and arrays are untouched.
+//
+// Safe off the render thread. The previous world is still live there and is
+// never mutated.
 internal static class CsgIncrementalCompiler
 {
-    /// <summary>
-    /// Attempts the incremental compile. False means "cannot patch this edit
-    /// exactly" — never an error; the caller falls back to the validated path.
-    /// </summary>
+    // False means this edit cannot be patched exactly. Not an error; the
+    // caller falls back to the validated path.
     internal static bool TryBuild(
         IReadOnlyList<BrushPlacement> placements,
         IReadOnlyList<ChunkCoord> dirtyCells,
@@ -84,7 +45,6 @@ internal static class CsgIncrementalCompiler
         IComparer<int> order = placements as PlacementSlotView ?? (IComparer<int>)Comparer<int>.Default;
 
         using var workspace = CompileWorkspace.Rent();
-        // --- Changed set C: dirty-cell residents whose placement differs. ---
         var changed = workspace.List<int>();
         var candidateSeen = workspace.Set<int>();
         if (snapshot is not null)
@@ -108,8 +68,7 @@ internal static class CsgIncrementalCompiler
 
         if (changed.Count == 0)
         {
-            // No-op recompile: every artifact carries forward verbatim (the
-            // empty mesh delta tells the GPU swap path so explicitly).
+            // Nothing changed. The empty mesh delta tells the GPU swap so.
             world = CsgWorld.CreatePatched(
                 placements, previous.SurfaceCount, prevGrid, previous.ChunkMeshes, dirtyCells, carry,
                 previous, chunkMeshDelta: [],
@@ -118,7 +77,6 @@ internal static class CsgIncrementalCompiler
             return true;
         }
 
-        // --- Bounds and residency footprints of the changed placements. ---
         var oldBounds = workspace.Map<int, Aabb>();
         var newBounds = workspace.Map<int, Aabb>();
         var oldFootprints = workspace.Map<int, ChunkCoord[]>();
@@ -133,10 +91,9 @@ internal static class CsgIncrementalCompiler
             newFootprints[c] = placement.Brush is null ? [] : ChunkGrid.ComputeFootprint(in placement);
         }
 
-        // --- Overlap-pair delta. Candidates for "overlaps a changed brush":
-        // previous-grid residents of every cell the old or new bounds cover,
-        // plus the changed brushes themselves (their previous residency does
-        // not cover where they moved to).
+        // Overlap candidates: previous residents of every cell the old or new
+        // bounds cover, plus the changed brushes, whose previous residency
+        // does not cover where they moved to.
         var overlapCandidates = workspace.Set<int>(changed);
         foreach (int c in changed)
         {
@@ -145,7 +102,6 @@ internal static class CsgIncrementalCompiler
         }
 
         var recarve = workspace.Set<int>(changed);
-        // Symmetric relationship patches for every changed overlap pair.
         var removedPartners = workspace.Map<int, HashSet<int>>();
         var addedPartners = workspace.Map<int, HashSet<int>>();
         var newNeighborSet = workspace.Set<int>();
@@ -186,12 +142,12 @@ internal static class CsgIncrementalCompiler
             }
         }
 
-        // Geometry v2 clips in authored order. New overlaps and min-X rank
-        // crossings therefore have no dependency on the global sweep history.
+        // Clipping is in authored order, so new overlaps can be patched
+        // locally without the broadphase sweep.
         var neighborChanges = workspace.Set<int>(removedPartners.Keys);
         neighborChanges.UnionWith(addedPartners.Keys);
-        // A reordering changes clip order even when overlap membership stays
-        // identical. Sort every recarved brush's dependencies in the new order.
+        // A reorder changes clip order even with the same overlap set, so
+        // every recarved brush gets its neighbours re-sorted.
         neighborChanges.UnionWith(recarve);
         var neighborReplacements = workspace.List<(int, int[])>();
         var partners = workspace.Set<int>();
@@ -207,7 +163,6 @@ internal static class CsgIncrementalCompiler
             neighborReplacements.Add((i, ordered));
         }
         PagedArray<int[]> neighbors = carry.CarveNeighbors.WithReplacements(neighborReplacements);
-        // --- Re-carve R through the same per-brush core as the full path. ---
         var recarveList = workspace.List<int>(recarve);
         recarveList.Sort(order);
         var carveReplacements = new (int Index, Polygon[] Value)[recarveList.Count];
@@ -235,7 +190,7 @@ internal static class CsgIncrementalCompiler
         }
         PagedArray<Polygon[]> carved = carry.CarvedPerBrush.WithReplacements(carveReplacements);
 
-        // --- Residency deltas per cell (only changed brushes move cells). ---
+        // Only changed brushes move between cells.
         var cellDeltas = workspace.Map<ChunkCoord, CellDelta>();
         foreach (int c in changed)
         {
@@ -253,8 +208,7 @@ internal static class CsgIncrementalCompiler
             }
         }
 
-        // --- Re-weld set W: current residents of R's footprints (old and new
-        // for moved brushes) — exactly the weld cache's miss set.
+        // W: current residents of R's footprints, old and new for moved brushes.
         var weldCells = workspace.Set<ChunkCoord>();
         var footprintOf = workspace.Map<int, ChunkCoord[]>();
         foreach (int r in recarveList)
@@ -287,7 +241,7 @@ internal static class CsgIncrementalCompiler
         var weldList = workspace.List<int>(reweld);
         weldList.Sort(order);
 
-        // --- Rebuilt cells: W's footprints plus the old footprints of C. ---
+        // Rebuilt cells: W's footprints plus the old footprints of C.
         var affectedCells = workspace.Set<ChunkCoord>(weldCells);
         foreach (int w in weldList)
         {
@@ -306,8 +260,8 @@ internal static class CsgIncrementalCompiler
         var affectedList = workspace.List<ChunkCoord>(affectedCells);
         affectedList.Sort();
 
-        // --- Fresh WorldChunk per affected cell (the previous instances stay
-        // live in the previous world and are never touched).
+        // Fresh WorldChunk per affected cell. The previous ones are still live
+        // in the previous world.
         var gridChanges = workspace.List<(ChunkCoord Coord, WorldChunk? Chunk)>();
         var ownerCellOf = workspace.Map<int, ChunkCoord>();
         foreach (ChunkCoord cell in affectedList)
@@ -338,9 +292,8 @@ internal static class CsgIncrementalCompiler
 
         ChunkGrid grid = ChunkGrid.Patch(prevGrid, gridChanges);
 
-        // --- Weld W per owner cell through the same core as the full path,
-        // with candidate sets recomputed over the patched grid (same math as
-        // ChunkWelder.ComputeCandidateSets, scoped to W).
+        // Candidate sets are recomputed over the patched grid, same math as
+        // ChunkWelder.ComputeCandidateSets but only for W.
         var candidateReplacements = workspace.List<(int, int[])>();
         foreach (int c in changed)
             if (placements[c].Brush is null) candidateReplacements.Add((c, []));
@@ -429,7 +382,6 @@ internal static class CsgIncrementalCompiler
         foreach ((int i, Polygon[] slice) in weldReplacements)
             surfaceCount += slice.Length - carry.WeldedPerBrush[i].Length;
 
-        // --- Attach welded surfaces and rebuild each fresh cell's tree. ---
         var freshChunks = workspace.List<WorldChunk>();
         foreach ((_, WorldChunk? chunk) in gridChanges)
         {
@@ -440,8 +392,7 @@ internal static class CsgIncrementalCompiler
             freshChunks.Add(chunk);
         }
 
-        // Sequential below a handful of cells: thread-pool dispatch costs more
-        // (and jitters more) than a few small trees; big edits still fan out.
+        // A few small trees are cheaper than thread-pool dispatch.
         if (freshChunks.Count <= 4)
         {
             foreach (WorldChunk chunk in freshChunks)
@@ -452,28 +403,26 @@ internal static class CsgIncrementalCompiler
             Parallel.For(0, freshChunks.Count, k => AttachTree(freshChunks[k]));
         }
 
-        // --- Per-cell meshes: rebuild a fresh cell's artifact only when its
-        // OWNED welded input actually changed (the mesh cache's rule); a cell
-        // rebuilt for resident/BSP reasons alone keeps its artifact instance,
-        // which is also the GPU swap path's "cell unchanged" signal.
+        // Rebuild a cell's mesh only when its owned welded input changed.
+        // Keeping the instance tells the GPU swap the cell is unchanged.
         PagedArray<ChunkMesh> prevMeshes = previous.ChunkMeshesPaged;
         var meshChanges = new List<(ChunkCoord Coord, ChunkMesh? Mesh)>();
         var toBuild = workspace.List<WorldChunk>();
-        var placeholderSlots = workspace.List<int>(); // meshChanges indices awaiting a built artifact, aligned with toBuild
+        var placeholderSlots = workspace.List<int>(); // meshChanges indices, aligned with toBuild
         foreach ((ChunkCoord coord, WorldChunk? chunk) in gridChanges)
         {
             ChunkMesh? prevMesh = FindMesh(prevMeshes, coord);
             if (chunk is null || chunk.WeldedSurfaces.Count == 0)
             {
                 if (prevMesh is not null)
-                    meshChanges.Add((coord, null)); // cell lost its render geometry
+                    meshChanges.Add((coord, null));
                 continue;
             }
 
             if (prevMesh is not null && prevGrid.TryGet(coord, out WorldChunk prevChunk) &&
                 OwnedInputUnchanged(prevChunk, chunk, carry, welded))
             {
-                continue; // artifact carried forward — not a change
+                continue; // mesh carried forward, not a change
             }
 
             placeholderSlots.Add(meshChanges.Count);
@@ -529,18 +478,13 @@ internal static class CsgIncrementalCompiler
             chunk.AttachBsp(ChunkBspBuilder.BuildCellTree(chunk, i => welded[i], out _));
     }
 
-    // Element-wise placement equality: brush reference plus matrix float ==,
-    // the same comparison the carve cache's validation uses (see
-    // CsgCompileCache for why float == is right here).
+    // Same comparison as CsgCompileCache's validation.
     private static bool SamePlacement(in BrushPlacement a, in BrushPlacement b) =>
         ReferenceEquals(a.Brush, b.Brush) && a.Transform == b.Transform;
 
-    // DEBUG-only verification of the trusted-diff contract's order half: every
-    // placement outside the changed set must be bitwise identical to the
-    // previous compile's at the same index. Compiled out in Release — the
-    // whole point of the trusted diff is not paying an O(world) sweep per
-    // edit — so dev builds (tests, the demo) catch contract violations loudly
-    // while release builds trust their callers.
+    // Every placement outside the changed set must equal the previous one at
+    // the same index. Debug only: this is the O(world) sweep the trusted diff
+    // exists to avoid.
     [Conditional("DEBUG")]
     private static void VerifyTrustedDiff(
         IReadOnlyList<BrushPlacement> placements, IReadOnlyList<BrushPlacement> prevPlacements, List<int> changed)
@@ -558,10 +502,8 @@ internal static class CsgIncrementalCompiler
         }
     }
 
-    // Adds every previous-grid resident of every cell the (uninflated) bounds
-    // cover. Any brush intersecting the bounds is resident in one of these
-    // cells (residency covers a brush's own AABB cells), so the union is a
-    // complete overlap-candidate set.
+    // Any brush intersecting the bounds is resident in one of the cells they
+    // cover, so this finds every overlap candidate.
     private static void AddResidentsOfBoundsCells(ChunkGrid grid, in Aabb bounds, HashSet<int> into)
     {
         ChunkCoord min = ChunkCoord.FromPosition(bounds.Min);
@@ -582,9 +524,7 @@ internal static class CsgIncrementalCompiler
         }
     }
 
-    // The cell's resident indices AFTER the edit: the previous residents minus
-    // changed brushes that left, plus changed brushes that entered — ascending,
-    // like every resident list. Fills `into` (cleared first).
+    // Fills into with the cell's residents after the edit, ascending.
     private static void ResidentsAfter(
         ChunkGrid prevGrid, Dictionary<ChunkCoord, CellDelta> deltas, ChunkCoord cell, List<int> into, IComparer<int> order)
     {
@@ -614,7 +554,6 @@ internal static class CsgIncrementalCompiler
         return value;
     }
 
-    // Binary search over the ascending previous mesh list.
     private static ChunkMesh? FindMesh(IReadOnlyList<ChunkMesh> meshes, ChunkCoord coord)
     {
         int lo = 0, hi = meshes.Count - 1;
@@ -632,9 +571,7 @@ internal static class CsgIncrementalCompiler
         return null;
     }
 
-    // The mesh cache's owner-identity rule, expressed over the carry: same
-    // owned index list and, per owned brush, the same welded array instance
-    // (o ∉ W ⇔ the paged slot still holds the carried reference).
+    // Same rule as CsgMeshCache.OwnersMatch, checked against the carry.
     private static bool OwnedInputUnchanged(
         WorldChunk prevChunk, WorldChunk newChunk, CsgWorldCarry carry, PagedArray<Polygon[]> welded)
     {
@@ -651,12 +588,8 @@ internal static class CsgIncrementalCompiler
         return true;
     }
 
-    // Sorted splice of the ascending previous mesh list with the (ascending)
-    // per-cell mesh changes: null removes, non-null replaces or inserts. The
-    // steady-state edit (artifacts replaced, no cell gaining or losing its
-    // mesh) derives by paged copy-on-write — O(changed pages); cell
-    // insertions/removals re-pack via binary-searched block copies
-    // (memcpy-cheap, and rare next to in-place edits).
+    // Both lists ascending. A null mesh removes; otherwise replace or insert.
+    // Replace-only edits go through paged copy-on-write.
     private static PagedArray<ChunkMesh> SpliceMeshes(
         PagedArray<ChunkMesh> previous, List<(ChunkCoord Coord, ChunkMesh? Mesh)> changes)
     {
@@ -710,7 +643,6 @@ internal static class CsgIncrementalCompiler
         return lo;
     }
 
-    // Per-cell residency delta of the changed brushes: who left, who entered.
     private sealed class CellDelta
     {
         public readonly List<int> Removed = [];

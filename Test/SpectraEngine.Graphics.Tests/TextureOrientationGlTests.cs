@@ -11,26 +11,8 @@ namespace SpectraEngine.Graphics.Tests;
 /// Which way up an uploaded texture arrives on OpenGL, measured against a real
 /// driver with an asymmetric fixture.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The question this answers was not answerable from the code.</b>
-/// <c>docs/formats-and-pipeline.md</c> section 2.2 records that nothing in the
-/// engine compensates for the two APIs' differing texture-row conventions and
-/// that nothing has ever caught a disagreement, because every texture in
-/// <c>Assets/Textures</c> is a symmetric checker or grid. An upside-down texture
-/// raises no error on any backend, so the only instrument is a picture: draw the
-/// fixture through a quad whose UVs carry no per-backend adjustment
-/// (<see cref="OrientationQuad"/>), read the four corners back, and say which
-/// arrived where.
-/// </para>
-/// <para>
-/// <b>The readback's own convention is measured before it is trusted.</b> Its
-/// y counts from the bottom of the PICTURE, which each backend converts to its
-/// own row order; if that conversion were wrong the measurement would report a
-/// flip that is entirely the instrument's. So the first test here proves the
-/// readback with geometry alone, with no texture in the path at all.
-/// </para>
-/// </remarks>
+// An upside-down texture raises no error, so the fixture is drawn through a
+// quad with no per-backend UV adjustment and its four corners are read back.
 [Collection(GlRendererCollection.Name)]
 public sealed class TextureOrientationGlTests
 {
@@ -46,14 +28,10 @@ public sealed class TextureOrientationGlTests
     [Fact]
     public void The_fixture_texture_has_four_distinct_corners()
     {
-        // A symmetric fixture would make every other test here pass vacuously,
-        // which is exactly the state the repo was in before this file existed.
+        // A symmetric fixture would make every other test here pass vacuously.
         DecodedImage image = DecodeFixture();
 
-        // Decoded rows are bottom-up, so GetPixel's y = 0 is the picture's
-        // bottom edge. This is the flip ImageDecoder performs, asserted here so
-        // a change to it is a failure with a name rather than a mystery in the
-        // orientation test below.
+        // ImageDecoder flips rows: y = 0 is the picture's bottom edge.
         Corner(image, 0, image.Height - 1).ShouldBe(TextureOrientationProbe.Quadrant.Red);
         Corner(image, image.Width - 1, image.Height - 1).ShouldBe(TextureOrientationProbe.Quadrant.Green);
         Corner(image, 0, 0).ShouldBe(TextureOrientationProbe.Quadrant.Blue);
@@ -63,9 +41,8 @@ public sealed class TextureOrientationGlTests
     [Fact]
     public void The_readback_counts_y_from_the_bottom_of_the_picture()
     {
-        // No texture in this one on purpose: a white 1x1 source makes the quad a
-        // solid block, so the only thing being measured is where clip-space
-        // y > 0 lands and whether the readback agrees about it.
+        // White 1x1 source: this checks the readback itself, with no texture
+        // orientation in the path.
         OpenGLRenderer renderer = _fixture.Renderer;
         Texture white = renderer.CreateTexture(
             [255, 255, 255, 255], 1, 1, TextureFormat.Rgba8, TextureColorSpace.Linear,
@@ -99,9 +76,8 @@ public sealed class TextureOrientationGlTests
         OpenGLRenderer renderer = _fixture.Renderer;
         DecodedImage image = DecodeFixture();
 
-        // Linear on both sides so the only transform between the file's bytes
-        // and the read-back bytes is the tone curve, which is monotone per
-        // channel and cannot turn one quadrant colour into another.
+        // Linear on both sides, so no sRGB conversion sits between the file's
+        // bytes and the readback.
         Texture source = renderer.CreateTexture(
             image.Pixels, image.Width, image.Height, image.Format, TextureColorSpace.Linear,
             TextureFilter.Nearest, TextureWrap.Clamp);
@@ -131,10 +107,7 @@ public sealed class TextureOrientationGlTests
     [Fact]
     public void A_vertically_mirrored_upload_reads_as_flipped()
     {
-        // The falsification. "All three backends agree" is also what a blind
-        // instrument reports, so the instrument has to be shown reporting the
-        // other answer: the same path with the rows reversed must come back
-        // FLIPPED, or the previous test proves nothing.
+        // Shows the probe can report a flip, so the test above is not vacuous.
         OpenGLRenderer renderer = _fixture.Renderer;
         DecodedImage image = DecodeFixture();
 

@@ -6,65 +6,25 @@ namespace SpectraEngine.Editing.Gizmos;
 
 /// <summary>
 /// Picks the translate gizmo's handles from a viewport ray, in screen space
-/// with a pixel tolerance.
+/// with a pixel tolerance. Render thread only.
 /// </summary>
-/// <remarks>
-/// <b>Handles overlap on screen, and the order they are tested in is the whole
-/// design.</b> Near the pivot every handle is within a few pixels of every
-/// other, so the test is not "which handle is closest" but a fixed priority:
-/// the centre disc first, then the plane quads, then the axis arrows.
-/// <list type="bullet">
-///   <item>
-///     The centre wins because it is the smallest target and the only one whose
-///     region is entirely surrounded by its competitors — if it lost ties it
-///     could never be grabbed at all.
-///   </item>
-///   <item>
-///     Plane quads beat axis arrows because an arrow runs <em>underneath</em>
-///     its two quads: a cursor inside a quad is always also within a few pixels
-///     of the arrows bounding it, and the user who aimed at a filled square
-///     meant the square.
-///   </item>
-///   <item>
-///     Within the planes, the nearest hit to the camera wins — they are real
-///     surfaces at different depths, and the one in front is the one you can
-///     see. Within the axes, the smallest pixel distance wins (ties broken by
-///     the nearer hit), because all three arrows share the pivot and so sit at
-///     essentially one depth; proximity to the cursor is the only signal that
-///     distinguishes them.
-///   </item>
-/// </list>
-/// <para>
-/// <b>Threading:</b> render thread only, like everything it reads. Every method
-/// is a pure function and allocates nothing.
-/// </para>
-/// </remarks>
 public static class TranslateGizmoHitTester
 {
-    /// <summary>
-    /// The default pick tolerance in pixels — how far from an axis arrow the
-    /// cursor may sit and still grab it. The same tolerance every gizmo uses;
-    /// see <see cref="GizmoHitTesting.DefaultTolerancePixels"/>.
-    /// </summary>
+    /// <summary>How far from an axis arrow, in pixels, the cursor may sit and still grab it.</summary>
     public const float DefaultTolerancePixels = GizmoHitTesting.DefaultTolerancePixels;
 
     /// <summary>
     /// Picks the handle under <paramref name="ray"/>, or
     /// <see cref="GizmoPick.Miss"/> when the ray comes near none of them.
     /// </summary>
-    /// <param name="geometry">This frame's gizmo geometry — the same one that was drawn.</param>
-    /// <param name="ray">The viewport picking ray, from <see cref="Camera.ScreenPointToRay"/>.</param>
-    /// <param name="tolerancePixels">
-    /// Screen-space slack for the line-shaped axis handles. The surface handles
-    /// ignore it: their tests are exact.
-    /// </param>
+    /// <param name="tolerancePixels">Screen-space slack for the axis arrows. The disc and quads are tested exactly.</param>
     public static GizmoPick Pick(in GizmoGeometry geometry, in Ray3 ray, float tolerancePixels)
     {
-        // A gizmo behind the camera has no coherent projection; picking it
-        // would grab a handle the user cannot see.
         if (geometry.IsBehindCamera)
             return GizmoPick.Miss;
 
+        // Fixed priority, since handles overlap near the pivot: the centre is
+        // the smallest target, and an arrow runs under its two quads.
         GizmoPick centre = PickScreenHandle(in geometry, in ray);
         if (centre.IsHit)
             return centre;
@@ -76,15 +36,10 @@ public static class TranslateGizmoHitTester
         return PickAxisHandles(in geometry, in ray, tolerancePixels);
     }
 
-    // The centre disc, tested in the camera-facing plane through the pivot —
-    // the same plane its drag is constrained to, so what you grab is what you
-    // then move in.
+    // Tested in the camera-facing plane through the pivot, the plane its drag
+    // is constrained to.
     private static GizmoPick PickScreenHandle(in GizmoGeometry geometry, in Ray3 ray)
     {
-        // A style that draws no centre disc offers none to grab. The free-move
-        // constraint behind the handle still exists for a press that landed on
-        // the object itself; that gesture is routed by the viewport, not picked
-        // here.
         if (!geometry.Offers(GizmoHandle.Screen))
             return GizmoPick.Miss;
 
@@ -101,9 +56,7 @@ public static class TranslateGizmoHitTester
     {
         GizmoPick best = GizmoPick.Miss;
 
-        // Fixed order, but the comparison is by depth, so the enumeration order
-        // never decides the winner — only a genuine depth tie would, and a tie
-        // means the two quads are coincident on screen anyway.
+        // Nearest quad to the camera wins.
         for (GizmoHandle handle = GizmoHandle.PlaneYZ; handle <= GizmoHandle.PlaneXY; handle++)
         {
             if (!geometry.TryGetPlaneQuad(handle, out Vector3 corner, out Vector3 u, out Vector3 v, out float size))
@@ -127,31 +80,21 @@ public static class TranslateGizmoHitTester
 
         for (GizmoHandle handle = GizmoHandle.AxisX; handle <= geometry.LastAxisHandle; handle++)
         {
-            // Refuses a handle the style does not offer, exactly as the renderer
-            // draws nothing for one.
             if (!geometry.TryGetAxisSegment(handle, out Vector3 start, out Vector3 end))
                 continue;
 
-            // Pick only what the drag will accept: an axis viewed within the
-            // parallel guard's ~1.8° of end-on still passes the screen-space
-            // proximity test below, but TryPrepareDrag projects through this
-            // very function and will refuse the grab: the arrow would
-            // highlight, promise Manipulate, and then swallow the press (or
-            // hand it to a selection-replacing marquee). The rotate tester
-            // pioneered this pick/drag agreement; this is the translate tool
-            // holding to the same rule.
+            // The drag projects through the same function, so an axis it
+            // refuses (viewed near end-on) must not be pickable. Otherwise the
+            // arrow highlights and then swallows the press.
             if (!GizmoMath.TryClosestPointOnLine(in ray, geometry.Pivot, geometry.Axis(handle), out _))
                 continue;
 
-            // World gap → pixels through the same scale that sized the gizmo,
-            // so the tolerance means what it says on screen.
             float pixels = GizmoHitTesting.SegmentPixelDistance(
                 in geometry, in ray, start, end, out float distance);
             if (pixels > tolerance)
                 continue;
 
-            // Closer to the cursor wins; an exact pixel tie (looking straight
-            // down the corner between two arrows) falls back to depth.
+            // Arrows share the pivot, so cursor proximity decides; depth breaks ties.
             if (pixels < best.PixelDistance ||
                 (pixels == best.PixelDistance && distance < best.RayDistance))
             {

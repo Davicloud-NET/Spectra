@@ -2,22 +2,8 @@ using SpectraEngine.Core.Audio;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The loop-point arithmetic, which is the whole reason the engine feeds a
-/// buffer queue instead of setting <c>AL_LOOPING</c>.
-/// </summary>
-/// <remarks>
-/// <para>OpenAL's looping flag repeats an entire buffer, so it can express
-/// exactly one loop region: the whole sound. Music with an intro, ambience with
-/// a pickup bar and an engine sample with a spin-up all need a region strictly
-/// inside the asset, and the failure mode of getting this wrong is invisible
-/// until somebody authors the first such sound, at which point every looping
-/// asset in the project is wrong at once. So the arithmetic gets the most
-/// tests, and they are all pure: no device, no driver, no sound card.</para>
-/// <para>Everything below is in SAMPLE FRAMES. Bytes change with the channel
-/// count and the sample width, seconds cannot be sample-accurate, and both are
-/// exactly the conversions that drift.</para>
-/// </remarks>
+// AL_LOOPING repeats a whole buffer, so loop regions are planned here and fed
+// to a buffer queue. All positions are sample frames.
 public sealed class AudioLoopCursorTests
 {
     private const int Runs = 16;
@@ -34,8 +20,7 @@ public sealed class AudioLoopCursorTests
         planned.ShouldBe(400);
         cursor.IsExhausted.ShouldBeFalse();
 
-        // The tail is short, and a short fill is the correct answer rather than
-        // a padded one: padding is a click at the end of every sound.
+        // The tail fill is short, not padded: padding clicks.
         cursor.Plan(runs, 400, out _);
         count = cursor.Plan(runs, 400, out planned);
         count.ShouldBe(1);
@@ -50,21 +35,16 @@ public sealed class AudioLoopCursorTests
     [Fact]
     public void An_intro_and_the_first_pass_through_the_loop_are_one_run()
     {
-        // The case AL_LOOPING cannot express at all: a region strictly inside
-        // the sound, with audio before it and after it.
         var cursor = new AudioLoopCursor(1000, new LoopRegion(200, 600));
         Span<AudioSegment> runs = stackalloc AudioSegment[Runs];
 
-        // Frames 0..600 are contiguous in the source, so treating the intro as
-        // its own phase would split this into two runs and put a buffer
-        // boundary, and therefore a possible click, at frame 200 for nothing.
+        // Frames 0..600 are contiguous, so no run boundary at frame 200.
         int count = cursor.Plan(runs, 1000, out long planned);
         count.ShouldBe(2);
         runs[0].ShouldBe(new AudioSegment(0, 600));
         runs[1].ShouldBe(new AudioSegment(200, 400));
         planned.ShouldBe(1000);
 
-        // And the intro is never heard again.
         cursor.Position.ShouldBe(200);
         cursor.IsExhausted.ShouldBeFalse();
     }
@@ -82,8 +62,6 @@ public sealed class AudioLoopCursorTests
         runs[2].ShouldBe(new AudioSegment(0, 200));
         planned.ShouldBe(1200);
 
-        // A loop covering the whole sound is the one case AL_LOOPING would also
-        // have handled, and it must not be the case that stops looping.
         cursor.IsExhausted.ShouldBeFalse();
         cursor.Position.ShouldBe(200);
     }
@@ -91,16 +69,12 @@ public sealed class AudioLoopCursorTests
     [Fact]
     public void A_loop_region_shorter_than_one_buffer_repeats_inside_it()
     {
-        // 150 frames into a 1024-frame fill: six whole repetitions and part of
-        // a seventh. A buffer is not a loop iteration, and this is the case
-        // that proves the two lengths are independent.
+        // A 150-frame loop in a 1024-frame fill: six repetitions and part of a seventh.
         var cursor = new AudioLoopCursor(400, new LoopRegion(100, 250));
         Span<AudioSegment> runs = stackalloc AudioSegment[Runs];
 
         int count = cursor.Plan(runs, 1024, out long planned);
 
-        // First run reaches the loop end from 0; the rest are whole or partial
-        // repetitions of [100, 250).
         runs[0].ShouldBe(new AudioSegment(0, 250));
         for (int i = 1; i < count; i++)
             runs[i].Offset.ShouldBe(100);
@@ -110,7 +84,6 @@ public sealed class AudioLoopCursorTests
         total.ShouldBe(planned);
         planned.ShouldBe(1024);
 
-        // Every frame after the first run comes from inside the region.
         for (int i = 1; i < count; i++)
             (runs[i].Offset + runs[i].Count).ShouldBeLessThanOrEqualTo(250);
     }
@@ -118,10 +91,8 @@ public sealed class AudioLoopCursorTests
     [Fact]
     public void A_loop_shorter_than_the_run_budget_shortens_the_fill_instead_of_running_away()
     {
-        // Ten frames per repetition against a 4096-frame request is 410 runs.
-        // The scratch is what bounds it: planning stops when the span is full
-        // and reports the shorter fill, which is the answer that keeps a
-        // pathological loop from asking for unbounded scratch.
+        // A 10-frame loop against 4096 frames would be 410 runs. Planning stops
+        // when the span is full.
         var cursor = new AudioLoopCursor(100, new LoopRegion(0, 10));
         Span<AudioSegment> runs = stackalloc AudioSegment[4];
 
@@ -135,11 +106,8 @@ public sealed class AudioLoopCursorTests
     [Fact]
     public void A_loop_length_that_is_not_a_multiple_of_the_buffer_crosses_the_wrap_mid_fill()
     {
-        // 700-frame loop against 512-frame buffers: the wrap lands inside a
-        // fill on every pass but the first, and at a different offset each
-        // time. Assembling the sequence and checking it is continuous in
-        // playback order is what catches an off-by-one at the wrap, which is
-        // audible as a click once per loop and nowhere else.
+        // 700-frame loop, 512-frame buffers: the wrap lands mid-fill at a
+        // different offset each pass.
         const int BufferFrames = 512;
         var loop = new LoopRegion(300, 1000);
         var cursor = new AudioLoopCursor(1500, loop);
@@ -153,9 +121,7 @@ public sealed class AudioLoopCursorTests
 
             for (int i = 0; i < count; i++)
             {
-                // Each run must begin exactly where the previous one left off,
-                // in playback order: either the next frame, or the loop start
-                // immediately after the loop end.
+                // Each run starts where the last one ended, in playback order.
                 if (expected == loop.EndFrame) expected = loop.StartFrame;
                 runs[i].Offset.ShouldBe(expected, $"fill {fill}, run {i} is discontinuous");
 
@@ -164,9 +130,6 @@ public sealed class AudioLoopCursorTests
             }
         }
 
-        // Twelve 512-frame fills is 6144 frames from a 700-frame loop: the
-        // sound played its 300-frame intro and then wrapped eight times, and
-        // never once ran off the end of a 1500-frame asset.
         cursor.IsExhausted.ShouldBeFalse();
     }
 
@@ -182,9 +145,7 @@ public sealed class AudioLoopCursorTests
         int count = cursor.Plan(runs, 500, out long planned);
         count.ShouldBe(2);
 
-        // The remainder of this pass, then back to the loop start, never to the
-        // intro: a seek into a loop is a position inside the region and not a
-        // restart of the sound.
+        // Rest of this pass, then the loop start, not the intro.
         runs[0].ShouldBe(new AudioSegment(450, 150));
         runs[1].ShouldBe(new AudioSegment(200, 350));
         planned.ShouldBe(500);
@@ -194,10 +155,7 @@ public sealed class AudioLoopCursorTests
     [Fact]
     public void A_seek_past_the_loop_plays_the_tail_and_finishes()
     {
-        // Somebody who scrubbed past the loop asked to hear the outro. Wrapping
-        // them back into the body would make the end of a looping track
-        // unreachable, and a wrap condition written against the position alone
-        // rather than against what bounded the run does exactly that.
+        // Wrapping back into the loop here would make the outro unreachable.
         var cursor = new AudioLoopCursor(1000, new LoopRegion(200, 600));
         Span<AudioSegment> runs = stackalloc AudioSegment[Runs];
 
@@ -231,7 +189,7 @@ public sealed class AudioLoopCursorTests
         var cursor = new AudioLoopCursor(1000, LoopRegion.None);
         Span<AudioSegment> runs = stackalloc AudioSegment[Runs];
 
-        // Clamped rather than refused: scrubbing to "the end" is a real gesture.
+        // Clamped, not refused: scrubbing to the end is a real gesture.
         cursor.Seek(5000);
         cursor.Position.ShouldBe(1000);
         cursor.IsExhausted.ShouldBeTrue();
@@ -247,17 +205,14 @@ public sealed class AudioLoopCursorTests
     {
         var cursor = new AudioLoopCursor(1000, LoopRegion.None);
 
-        // Clamping would hide a sign error in whatever computed the frame, and
-        // the symptom would be a sound that restarts instead of seeking.
+        // Clamping would hide a sign error in the caller.
         Should.Throw<ArgumentOutOfRangeException>(() => cursor.Seek(-1));
     }
 
     [Fact]
     public void An_empty_loop_region_is_refused_because_it_is_a_hang()
     {
-        // Reading zero frames and asking for zero frames again is an infinite
-        // fill loop, not a silent sound, and there is no sane reading to fall
-        // back to.
+        // A zero-frame region would make the fill loop spin forever.
         Should.Throw<ArgumentOutOfRangeException>(() => new LoopRegion(400, 400));
         Should.Throw<ArgumentOutOfRangeException>(() => new LoopRegion(400, 100));
     }
@@ -271,8 +226,6 @@ public sealed class AudioLoopCursorTests
     [Fact]
     public void Frame_conversions_live_in_one_place()
     {
-        // The whole reason positions are frames: the two conversions that drift
-        // are the two that need the format, and only the format knows them.
         var stereo = new AudioFormat(48000, 2);
         stereo.FramesToSamples(100).ShouldBe(200);
         stereo.SamplesToFrames(200).ShouldBe(100);
@@ -282,8 +235,7 @@ public sealed class AudioLoopCursorTests
         var mono = new AudioFormat(48000, 1);
         mono.FramesToSamples(100).ShouldBe(100);
 
-        // Same frame count, same seconds, different byte counts: which is why
-        // a loop point stored in bytes breaks the moment the channel count does.
+        // Same frames, same seconds, different sample counts.
         mono.FramesToSeconds(48000).ShouldBe(stereo.FramesToSeconds(48000));
         mono.FramesToSamples(48000).ShouldNotBe(stereo.FramesToSamples(48000));
 

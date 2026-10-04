@@ -3,14 +3,8 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// <see cref="Camera.ScreenRectToFrustum"/>: the volume a marquee sweeps. It is
-/// derived by remapping the rectangle's NDC box back onto the clip square and
-/// re-running the Gribb–Hartmann extraction, so these tests exist to prove that
-/// shortcut agrees with the geometry it is standing in for — the camera's own
-/// frustum at full extent, and the corner rays
-/// <see cref="Camera.ScreenPointToRay"/> produces at every other extent.
-/// </summary>
+// ScreenRectToFrustum takes a matrix shortcut. These check it against the
+// camera's own frustum and against ScreenPointToRay's corner rays.
 public sealed class CameraScreenRectTests
 {
     private static readonly Vector2 Viewport = new(1280f, 720f);
@@ -47,7 +41,6 @@ public sealed class CameraScreenRectTests
 
         Frustum rect = camera.ScreenRectToFrustum(new Vector2(300f, 200f), new Vector2(700f, 500f), Viewport);
 
-        // Pulling the sides in must not change how deep the volume reaches.
         ShouldMatch(rect.Near, camera.GetFrustum().Near);
         ShouldMatch(rect.Far, camera.GetFrustum().Far);
     }
@@ -64,9 +57,6 @@ public sealed class CameraScreenRectTests
         var max = new Vector2(maxX, maxY);
         Frustum frustum = camera.ScreenRectToFrustum(min, max, Viewport);
 
-        // This is the cross-check the implementation's remarks promise: the
-        // matrix shortcut and the corner-ray construction must describe the
-        // same volume.
         AssertRayOnPlanes(camera, new Vector2(min.X, min.Y), frustum.Left, frustum.Top);
         AssertRayOnPlanes(camera, new Vector2(max.X, min.Y), frustum.Right, frustum.Top);
         AssertRayOnPlanes(camera, new Vector2(min.X, max.Y), frustum.Left, frustum.Bottom);
@@ -82,9 +72,6 @@ public sealed class CameraScreenRectTests
         Frustum frustum = camera.ScreenRectToFrustum(min, max, Viewport);
         var rectangle = (Min: min, Max: max);
 
-        // Sample the whole viewport on a coarse grid, unproject each pixel to a
-        // point 20 units out, and check the volume's verdict against the plain
-        // "is this pixel in the rectangle" answer.
         for (float x = 10f; x < Viewport.X; x += 37f)
         {
             for (float y = 10f; y < Viewport.Y; y += 29f)
@@ -108,7 +95,7 @@ public sealed class CameraScreenRectTests
 
         Frustum frustum = camera.ScreenRectToFrustum(point, point, Viewport);
 
-        // No NaNs from a division by a zero half-extent...
+        // A zero half-extent must not divide into NaN.
         foreach (Plane plane in new[] { frustum.Left, frustum.Right, frustum.Bottom, frustum.Top })
         {
             float.IsFinite(plane.Normal.X).ShouldBeTrue();
@@ -116,7 +103,6 @@ public sealed class CameraScreenRectTests
             plane.Normal.Length().ShouldBe(1f, 1e-4f);
         }
 
-        // ...and the one pixel the user clicked really is inside.
         frustum.Contains(camera.ScreenPointToRay(point, Viewport).PointAt(20f)).ShouldBeTrue();
     }
 
@@ -139,8 +125,7 @@ public sealed class CameraScreenRectTests
     private static void AssertRayOnPlanes(Camera camera, Vector2 pixel, Plane first, Plane second)
     {
         Ray3 ray = camera.ScreenPointToRay(pixel, Viewport);
-        // Two samples far apart: a plane that merely passes near the ray's
-        // origin would drift away from it further along.
+        // Two samples far apart, so a plane only near the origin fails.
         foreach (float travel in new[] { 1f, 100f })
         {
             Vector3 point = ray.PointAt(travel);

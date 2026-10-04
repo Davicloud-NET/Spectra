@@ -1,9 +1,5 @@
 namespace SpectraEngine.Entities.Tests;
 
-/// <summary>
-/// One test per refusal, because each one describes a declaration that would
-/// otherwise become a class which compiles and behaves as nothing.
-/// </summary>
 public sealed class EntityGeneratorDiagnosticTests
 {
     [Fact]
@@ -17,9 +13,7 @@ public sealed class EntityGeneratorDiagnosticTests
     [Fact]
     public void A_class_that_is_not_partial_has_nothing_emitted_for_it()
     {
-        // The one refusal that stops emission entirely: there is no other half to
-        // add. Every other one drops the offending member and emits the rest, so
-        // an author fixing one field does not watch the whole type disappear.
+        // The only refusal that stops emission; the others drop one member.
         GeneratorRun run = GeneratorHarness.Run(Fixtures.NotPartial);
 
         run.SourceCount.ShouldBe(0);
@@ -32,9 +26,7 @@ public sealed class EntityGeneratorDiagnosticTests
 
         run.DiagnosticIds.ShouldContain("SPE002");
 
-        // Reported once, on the second declaration: the first is as likely as not
-        // the one the author meant to keep, and a diagnostic on both is a pair a
-        // reader cannot act on.
+        // Reported once, on the second declaration.
         run.DiagnosticIds.Count(id => id == "SPE002").ShouldBe(1);
         run.Diagnostics.Single(d => d.Id == "SPE002").GetMessage().ShouldContain("SecondThing");
     }
@@ -42,9 +34,6 @@ public sealed class EntityGeneratorDiagnosticTests
     [Fact]
     public void A_keyvalue_on_a_type_nothing_is_inferred_from_is_refused()
     {
-        // The rule is "require an explicit type rather than guessing", and the
-        // message has to say so: an author who reads only the first line must
-        // know that stating Type is the fix.
         GeneratorRun run = GeneratorHarness.Run(Fixtures.UnsupportedKeyvalueType);
 
         run.DiagnosticIds.ShouldContain("SPE003");
@@ -54,9 +43,7 @@ public sealed class EntityGeneratorDiagnosticTests
     [Fact]
     public void A_keyvalue_whose_stated_type_the_member_cannot_carry_is_refused()
     {
-        // Color is read as a Vector3, so a float member cannot hold one. Without
-        // this the generated binder would not compile, which is a worse report of
-        // the same fact and lands in a file the author cannot edit.
+        // Color is read as a Vector3, so a float member cannot hold one.
         GeneratorRun run = GeneratorHarness.Run(Fixtures.KeyvalueTypeMismatch);
 
         run.DiagnosticIds.ShouldContain("SPE006");
@@ -83,10 +70,7 @@ public sealed class EntityGeneratorDiagnosticTests
     [Fact]
     public void A_keyvalue_named_targetname_is_refused()
     {
-        // targetname IS SceneNode.Name. A second field of that name is a fork in
-        // the identity: a rename in the scene tree updates one of them, every
-        // wire aimed at the other silently stops resolving, and nothing anywhere
-        // reports a disagreement.
+        // targetname is SceneNode.Name; a keyvalue would be a second copy.
         GeneratorRun run = GeneratorHarness.Run(Fixtures.ReservedKeyvalueName);
 
         run.DiagnosticIds.ShouldContain("SPE005");
@@ -95,8 +79,6 @@ public sealed class EntityGeneratorDiagnosticTests
     [Fact]
     public void A_keyvalue_named_TargetName_in_any_casing_is_refused()
     {
-        // Ordinally it is a different key, and to every person who reads it, it
-        // is the same idea. The confusion is the damage.
         const string source = """
             using SpectraEngine.Core.Entities;
 

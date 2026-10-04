@@ -106,7 +106,7 @@ public sealed unsafe partial class D3D12Renderer
         Kernel32.WaitForSingleObject(_fenceEvent, Kernel32.Infinite);
     }
 
-    /// <summary>Transfers an owning reference to the queue's retirement list. Render thread only.</summary>
+    // Takes over the reference; released once the GPU is done with it. Render thread only.
     internal void Retire<T>(ref ComPtr<T> resource) where T : unmanaged, IComVtbl<T>
     {
         if (resource.Handle is null) return;

@@ -20,30 +20,13 @@ public readonly struct Aabb
 
     public Vector3 Size => Max - Min;
 
-    /// <summary>True when this box overlaps <paramref name="other"/> (touching counts).</summary>
-    /// <summary>
-    /// The point of this box closest to <paramref name="point"/> — the point
-    /// itself when it is inside. This is the primitive a sphere overlap is
-    /// built from: a sphere meets a box exactly when the squared distance from
-    /// its centre to this point is within the squared radius, which keeps the
-    /// whole test free of square roots.
-    /// </summary>
+    /// <summary>The point of this box closest to <paramref name="point"/>.</summary>
     public Vector3 ClosestPoint(Vector3 point) => Vector3.Clamp(point, Min, Max);
 
     /// <summary>
-    /// Whether a sphere overlaps this box. <b>Touching counts</b>, matching
-    /// <see cref="Intersects"/>'s inclusive convention — the two must agree, or
-    /// a broad phase would answer differently depending on which shape the
-    /// caller happened to pass.
+    /// Whether a sphere overlaps this box. Touching counts, as in
+    /// <see cref="Intersects"/>. A negative radius overlaps nothing.
     /// </summary>
-    /// <remarks>
-    /// A negative radius describes no sphere and overlaps nothing, which the
-    /// squared comparison delivers without a branch: no squared distance is
-    /// less than a negative number's square... except zero against radius
-    /// zero, so the degenerate point-sphere on the box's surface is treated as
-    /// touching, consistently with the rest of the convention. Callers that
-    /// mean "no query" should not call rather than pass a negative radius.
-    /// </remarks>
     public bool IntersectsSphere(Vector3 center, float radius)
     {
         if (radius < 0f)
@@ -53,6 +36,7 @@ public readonly struct Aabb
         return Vector3.Dot(delta, delta) <= radius * radius;
     }
 
+    /// <summary>True when this box overlaps <paramref name="other"/>. Touching counts.</summary>
     public bool Intersects(in Aabb other) =>
         Min.X <= other.Max.X && Max.X >= other.Min.X &&
         Min.Y <= other.Max.Y && Max.Y >= other.Min.Y &&
@@ -62,8 +46,8 @@ public readonly struct Aabb
         new(Min - new Vector3(margin), Max + new Vector3(margin));
 
     /// <summary>
-    /// Returns the tightest axis-aligned box enclosing this AABB after the
-    /// given transform — exact for translations, conservative for rotations.
+    /// Returns the axis-aligned box enclosing this one after the transform.
+    /// Exact for translations, conservative for rotations.
     /// </summary>
     public Aabb Transform(Matrix4x4 transform)
     {

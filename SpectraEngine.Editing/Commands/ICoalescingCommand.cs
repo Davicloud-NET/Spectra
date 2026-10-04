@@ -1,30 +1,16 @@
 namespace SpectraEngine.Editing.Commands;
 
 /// <summary>
-/// A command that can absorb a later command of the same kind targeting the
-/// same node, keeping its own <em>before</em> state and adopting the newer
-/// <em>after</em> state.
+/// A command that can absorb a later command of the same kind on the same
+/// node, keeping its own before state and taking the newer after state. This
+/// makes a per-frame drag one undo entry.
 /// </summary>
-/// <remarks>
-/// This is what turns a gizmo drag into a single undo entry. A drag pushes one
-/// command per frame; inside an open transaction the
-/// <see cref="Undo.UndoStack"/> offers each new command to the entries already
-/// recorded, and an absorb collapses them — so a 60-frame drag of one node ends
-/// as one command whose before/after span the whole gesture, and a drag of five
-/// nodes ends as five, one per node.
-/// <para>
-/// Absorbing is only ever attempted inside an open transaction. Two separate
-/// user gestures must stay two undo entries, so committed history is never
-/// collapsed.
-/// </para>
-/// </remarks>
+// Only attempted inside an open transaction; committed history is never collapsed.
 public interface ICoalescingCommand : IEditorCommand
 {
     /// <summary>
     /// Absorbs <paramref name="newer"/> if it is the same kind of edit on the
-    /// same node, and returns true when it did. Returning true means the caller
-    /// must drop <paramref name="newer"/>: this command now stands for both.
-    /// Implementations keep their original before-state — that is the point.
+    /// same node. On true the caller drops <paramref name="newer"/>.
     /// </summary>
     bool TryAbsorb(IEditorCommand newer);
 }

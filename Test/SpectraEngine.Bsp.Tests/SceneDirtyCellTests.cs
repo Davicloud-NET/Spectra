@@ -7,14 +7,11 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// Dirty-cell tracking through the scene's footprint diffing: each compile
-/// (synchronous rebuild or background launch) receives exactly the chunk cells
-/// whose brush contents changed since the previous compile, observable via
-/// <see cref="Scene.LastCompileDirtyCells"/> and, for background compiles, via
-/// <see cref="CsgWorld.DirtyCells"/> on the world they build. Cell landmarks:
-/// with a 2-unit cube brush, position (16,16,16) sits mid-cell (0,0,0) and
-/// (48,16,16) mid-cell (1,0,0).
+/// Dirty-cell tracking: each compile gets the chunk cells whose brush contents
+/// changed since the previous one.
 /// </summary>
+// With a 2-unit cube brush, (16,16,16) is mid-cell (0,0,0) and (48,16,16)
+// mid-cell (1,0,0).
 public sealed class SceneDirtyCellTests
 {
     [Fact]
@@ -37,7 +34,7 @@ public sealed class SceneDirtyCellTests
         AddUnitBoxNode(scene, "a", new Vector3(16f, 16f, 16f));
         scene.RebuildStaticWorld(renderer);
 
-        scene.MarkStaticWorldDirty(); // nothing actually changed
+        scene.MarkStaticWorldDirty();
         scene.RebuildStaticWorld(renderer);
 
         scene.LastCompileDirtyCells.ShouldBeEmpty();
@@ -48,7 +45,7 @@ public sealed class SceneDirtyCellTests
     {
         var (scene, renderer, _) = CreateScene();
         SceneNode node = AddUnitBoxNode(scene, "a", new Vector3(10f, 10f, 10f));
-        AddUnitBoxNode(scene, "far", new Vector3(80f, 16f, 16f)); // proves the diff is per-node
+        AddUnitBoxNode(scene, "far", new Vector3(80f, 16f, 16f)); // must stay clean
         scene.RebuildStaticWorld(renderer);
 
         node.LocalPosition = new Vector3(20f, 20f, 20f); // still inside cell (0,0,0)
@@ -78,9 +75,8 @@ public sealed class SceneDirtyCellTests
         SceneNode node = AddUnitBoxNode(scene, "a", new Vector3(16f, 16f, 16f));
         scene.RebuildStaticWorld(renderer);
 
-        // World AABB 30..32 on x: the brush stays inside cell 0, but its
-        // weld-band-inflated footprint now reaches cell 1 — that cell's future
-        // weld results depend on this brush, so it must be dirtied.
+        // AABB 30..32 on x: still inside cell 0, but the weld band reaches
+        // cell 1, whose weld results now depend on this brush.
         node.LocalPosition = new Vector3(31f, 16f, 16f);
         scene.RebuildStaticWorld(renderer);
 
@@ -138,7 +134,7 @@ public sealed class SceneDirtyCellTests
         PumpUntil(scene, renderer, logger, () => scene.StaticWorldCompileCount == 1);
         CsgWorld first = scene.StaticWorld.ShouldNotBeNull();
         first.DirtyCells.ShouldNotBeNull();
-        first.DirtyCells.ShouldBe(new[] { new ChunkCoord(0, 0, 0) }); // first compile: all covered cells
+        first.DirtyCells.ShouldBe(new[] { new ChunkCoord(0, 0, 0) });
         scene.LastCompileDirtyCells.ShouldBe(first.DirtyCells);
 
         node.LocalPosition = new Vector3(48f, 16f, 16f); // into cell (1,0,0)
@@ -152,10 +148,7 @@ public sealed class SceneDirtyCellTests
     [Fact]
     public void Retexturing_a_face_dirties_its_cell_and_reaches_the_compiled_world()
     {
-        // A brush-for-brush swap that changes ONLY a face material must still
-        // travel the whole async patch path: same footprint, so the diff has
-        // nothing geometric to notice, and a compile that skipped the cell
-        // would leave the old material silently on screen.
+        // Same footprint, so the diff has nothing geometric to notice.
         var (scene, renderer, logger) = CreateScene();
         SceneNode node = AddUnitBoxNode(scene, "a", new Vector3(48f, 16f, 16f)); // cell (1,0,0)
         AddUnitBoxNode(scene, "far", new Vector3(144f, 16f, 16f));               // cell (4,0,0)
@@ -171,11 +164,9 @@ public sealed class SceneDirtyCellTests
         CsgWorld world = scene.StaticWorld.ShouldNotBeNull();
         world.DirtyCells.ShouldNotBeNull().ShouldBe(new[] { new ChunkCoord(1, 0, 0) });
 
-        // The retextured face is present in the compiled surfaces...
         world.Surfaces.Count(s => s.Face.Material == accent).ShouldBe(1);
 
-        // ...and in the render artifact of that cell, which is what the render
-        // thread would resolve materials from at upload time.
+        // The render thread resolves materials from the cell's chunk mesh.
         ChunkMesh cell = world.ChunkMeshes.Single(m => m.Coord == new ChunkCoord(1, 0, 0));
         cell.Submeshes.ShouldContain(s => s.Material == accent);
     }
@@ -183,9 +174,8 @@ public sealed class SceneDirtyCellTests
     [Fact]
     public void Synchronously_built_worlds_carry_no_dirty_set()
     {
-        // The synchronous path compiles everything by contract, so its worlds
-        // are built dirty-agnostic; only Scene.LastCompileDirtyCells reports
-        // the diff there.
+        // The synchronous path compiles everything, so only
+        // Scene.LastCompileDirtyCells reports the diff.
         var (scene, renderer, _) = CreateScene();
         AddUnitBoxNode(scene, "a", new Vector3(16f, 16f, 16f));
 
@@ -195,13 +185,11 @@ public sealed class SceneDirtyCellTests
         scene.LastCompileDirtyCells.ShouldBe(new[] { new ChunkCoord(0, 0, 0) });
     }
 
-    // --- Helpers ------------------------------------------------------------
-
     private static (Scene Scene, FakeRenderer Renderer, CapturingLogger Logger) CreateScene() =>
         (new Scene("Test"), new FakeRenderer(), new CapturingLogger());
 
-    // A 2-unit cube brush node at `position` — comfortably inside one cell
-    // unless placed within a brush-half-extent (plus weld band) of a border.
+    // A 2-unit cube. Stays inside one cell unless it is within a half extent
+    // plus the weld band of a border.
     private static SceneNode AddUnitBoxNode(Scene scene, string name, Vector3 position)
     {
         SceneNode node = scene.Root.CreateChild(name);
@@ -210,9 +198,6 @@ public sealed class SceneDirtyCellTests
         return node;
     }
 
-    // Same slow-machine-proof pump loop as SceneAsyncCompileTests: worlds only
-    // ever land on this thread's pump calls, so assertions after PumpUntil are
-    // never timing-sensitive.
     private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(30);
 
     private static void PumpUntil(Scene scene, FakeRenderer renderer, CapturingLogger logger, Func<bool> condition)

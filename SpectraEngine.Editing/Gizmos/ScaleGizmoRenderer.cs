@@ -6,31 +6,13 @@ namespace SpectraEngine.Editing.Gizmos;
 
 /// <summary>
 /// Draws the scale gizmo into a <see cref="DebugDraw"/>: a cube-capped shaft per
-/// axis handle the style offers (three in the classic layout, six per-face in
-/// Studio's), plus a cube at the centre for a uniform resize.
+/// axis handle the style offers, plus a centre cube for a uniform resize.
+/// Render thread only.
 /// </summary>
-/// <remarks>
-/// <b>Cubes, not arrowheads</b> — the shape difference is how a user tells at a
-/// glance that this gizmo resizes rather than moves, and it is the shape both
-/// Hammer's and Roblox Studio's resize handles use. Everything comes out of
-/// <see cref="GizmoGeometry"/>, so the drawn cubes are exactly the boxes
-/// <see cref="ScaleGizmoHitTester"/> tests against.
-/// <para>
-/// <b>Threading:</b> render thread only, like the <see cref="DebugDraw"/> it
-/// fills.
-/// </para>
-/// </remarks>
 public static class ScaleGizmoRenderer
 {
-    /// <summary>
-    /// Pushes the whole gizmo into <paramref name="output"/>.
-    /// </summary>
-    /// <param name="output">The frame's debug line accumulator.</param>
-    /// <param name="geometry">This frame's gizmo geometry.</param>
-    /// <param name="highlighted">
-    /// The handle to draw highlighted — the hovered one while idle, the active
-    /// one during a drag, or <see cref="GizmoHandle.None"/> for neither.
-    /// </param>
+    /// <summary>Pushes the whole gizmo into <paramref name="output"/>.</summary>
+    /// <param name="highlighted">The hovered or active handle, or <see cref="GizmoHandle.None"/>.</param>
     public static void Draw(DebugDraw output, in GizmoGeometry geometry, GizmoHandle highlighted)
     {
         ArgumentNullException.ThrowIfNull(output);

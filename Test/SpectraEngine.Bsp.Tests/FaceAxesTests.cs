@@ -3,17 +3,7 @@ using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// A face's texture frame as a person edits it: an alignment and an angle,
-/// rather than two vectors.
-/// </summary>
-/// <remarks>
-/// <b>Nobody types a U axis.</b> The storage is two vectors because that is what
-/// the UV projection needs; what an author asks for is "turn this 45 degrees"
-/// and "line it up with the face". The conversion between the two is arithmetic
-/// with no picture attached, which is exactly the kind that is wrong for months
-/// without anybody being able to say why a wall looks off.
-/// </remarks>
+/// <summary>A face's texture frame edited as an alignment and an angle.</summary>
 public sealed class FaceAxesTests
 {
     private static readonly Vector3 Up = Vector3.UnitY;
@@ -21,9 +11,6 @@ public sealed class FaceAxesTests
     [Fact]
     public void A_world_aligned_face_reads_zero_rotation()
     {
-        // It has no axes at all: the projection is derived from the normal by
-        // the dominant-axis rule, so there is nothing to measure an angle
-        // against and 0 is the only honest answer.
         FaceSurface.Default.IsWorldAligned.ShouldBeTrue();
         FaceAxes.RotationDegrees(FaceSurface.Default, Up).ShouldBe(0f);
         FaceAxes.AlignmentLabel(FaceSurface.Default).ShouldBe("World");
@@ -42,9 +29,7 @@ public sealed class FaceAxesTests
 
         FaceAxes.RotationDegrees(turned, Up).ShouldBe(degrees, 1e-3f);
 
-        // Writing an angle to a world-aligned face makes it EXPLICIT, which is
-        // what texture lock means: it now has axes, so a later transform can
-        // carry them rather than re-deriving a projection from a moved normal.
+        // Writing an angle gives the face explicit axes (texture lock).
         turned.IsWorldAligned.ShouldBeFalse();
     }
 
@@ -55,9 +40,7 @@ public sealed class FaceAxesTests
         FaceSurface there = FaceAxes.WithRotation(start, Up, 75f);
         FaceSurface back = FaceAxes.WithRotation(there, Up, 30f);
 
-        // Absolute, not relative: every write is computed from the base frame,
-        // so a round trip through any number of angles leaves no residue. The
-        // gizmos follow the same rule for the same reason.
+        // Each write is computed from the base frame, so nothing accumulates.
         Vector3.Distance(back.UAxis, start.UAxis).ShouldBeLessThan(1e-4f);
         Vector3.Distance(back.VAxis, start.VAxis).ShouldBeLessThan(1e-4f);
     }
@@ -86,8 +69,6 @@ public sealed class FaceAxesTests
         FaceAxes.IsFaceAligned(aligned).ShouldBeTrue();
         FaceAxes.AlignmentLabel(aligned).ShouldBe("Face");
 
-        // In the plane means perpendicular to the normal. A frame that drifted
-        // out of it would skew the texture rather than turn it.
         Vector3.Dot(Vector3.Normalize(aligned.UAxis), normal).ShouldBe(0f, 1e-4f);
         Vector3.Dot(Vector3.Normalize(aligned.VAxis), normal).ShouldBe(0f, 1e-4f);
     }
@@ -114,10 +95,7 @@ public sealed class FaceAxesTests
 
         FaceSurface aligned = FaceAxes.AlignedToFace(FaceSurface.Default, normal);
 
-        // A face-aligned surface at rest is 0 degrees, because its base frame is
-        // the in-plane one. Measured against the world projection instead it
-        // would report some arbitrary angle nobody asked for, and typing 0 would
-        // then move the texture.
+        // The angle is measured against the in-plane base frame, so rest is 0.
         FaceAxes.RotationDegrees(aligned, normal).ShouldBe(0f, 1e-3f);
 
         FaceSurface turned = FaceAxes.WithRotation(aligned, normal, 25f);
@@ -128,11 +106,7 @@ public sealed class FaceAxesTests
     [Fact]
     public void An_edit_on_a_placed_brush_round_trips_through_the_world_matrix()
     {
-        // The panel edits in WORLD space and the file stores brush-local axes,
-        // so every face edit is map-in, change, map-back. Exact for the rigid
-        // matrices brush placements are required to have, and this is the test
-        // that says so: a lossy round trip would drift the texture a little on
-        // every keystroke.
+        // The panel edits in world space; the file stores brush-local axes.
         Matrix4x4 world =
             Matrix4x4.CreateFromYawPitchRoll(0.7f, -0.4f, 1.1f) *
             Matrix4x4.CreateTranslation(new Vector3(12f, -3f, 40f));
@@ -153,9 +127,6 @@ public sealed class FaceAxesTests
     [Fact]
     public void A_plane_normal_reaches_world_space_through_the_rotation_only()
     {
-        // A normal is a direction, so translating one is meaningless: a brush
-        // 400 units from the origin would otherwise report a normal pointing at
-        // the origin and every angle measured against it would be wrong.
         var plane = new Plane(Vector3.UnitX, -1f);
         Matrix4x4 world =
             Matrix4x4.CreateFromAxisAngle(Vector3.UnitY, float.Pi * 0.5f) *

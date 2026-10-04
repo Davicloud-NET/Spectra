@@ -6,19 +6,11 @@ using static SpectraEngine.Bsp.Tests.SpatialTestHelpers;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// <see cref="Scene.BuildRenderView"/> — the per-frame draw-list build shared
-/// by every backend pipeline. It must cull mesh nodes against the real camera
-/// frustum, cull the compiled static world PER CHUNK against each chunk's
-/// render AABB (conservatively — a chunk with visible geometry is never
-/// dropped), report accurate visible/total stats for both, emit items in an
-/// order that is stable for an unchanged scene, and allocate nothing in
-/// steady state.
-/// </summary>
+/// <summary><see cref="Scene.BuildRenderView"/>: culling, stats, stable order, no steady-state allocation.</summary>
 public sealed class RenderViewTests
 {
-    // Camera at z = 3 looking down -Z (the Camera defaults, restated
-    // explicitly so the tests don't silently depend on them).
+    // At z = 3 looking down -Z. Same as the Camera defaults, spelled out so
+    // the tests don't depend on them.
     private static Camera MakeCamera() => new()
     {
         Position = new Vector3(0f, 0f, 3f),
@@ -50,13 +42,12 @@ public sealed class RenderViewTests
     public void Brush_nodes_emit_no_items_and_do_not_count_as_mesh_nodes()
     {
         var scene = new Scene("Test");
-        CreateBrushNode(scene.Root, "wall", new Vector3(0f, 0f, -5f)); // squarely in view
+        CreateBrushNode(scene.Root, "wall", new Vector3(0f, 0f, -5f)); // in view
 
         var view = new RenderView();
         scene.BuildRenderView(MakeCamera(), view);
 
-        // Brush geometry renders through the compiled static world, never
-        // per-node — and here nothing was compiled yet.
+        // Brushes draw through the compiled static world, and nothing is compiled here.
         view.Items.ShouldBeEmpty();
         view.VisibleCount.ShouldBe(0);
         view.TotalCount.ShouldBe(0);
@@ -68,8 +59,7 @@ public sealed class RenderViewTests
     public void World_chunks_are_frustum_culled_per_chunk_with_accurate_stats()
     {
         var scene = new Scene("Test");
-        // Two brushes many cells apart: one squarely in view, one far behind
-        // the camera — two chunks, of which only one may survive the cull.
+        // Far enough apart to land in two chunks.
         CreateBrushNode(scene.Root, "front", new Vector3(0f, 0f, -5f));
         CreateBrushNode(scene.Root, "behind", new Vector3(0f, 0f, 100f));
         scene.StaticWorldMaterial = NoopMaterial;
@@ -79,8 +69,7 @@ public sealed class RenderViewTests
         var view = new RenderView();
         scene.BuildRenderView(MakeCamera(), view);
 
-        // Exactly the front chunk survives, drawn with the shared world
-        // material and an identity matrix (chunk vertices are world-space).
+        // Identity matrix: chunk vertices are world-space.
         RenderItem item = view.WorldItems.ShouldHaveSingleItem();
         StaticWorldChunkMesh front = scene.StaticWorldChunkMeshes
             .Single(c => c.RenderBounds.Max.Z < 0f);
@@ -90,17 +79,14 @@ public sealed class RenderViewTests
 
         view.WorldChunksTotal.ShouldBe(2);
         view.WorldChunksVisible.ShouldBe(1);
-        view.Items.ShouldBeEmpty(); // the brush nodes themselves still emit nothing
+        view.Items.ShouldBeEmpty();
     }
 
     [Fact]
     public void Chunk_culling_never_drops_a_chunk_containing_visible_geometry()
     {
-        // A brush field scattered around (and behind) the camera across many
-        // cells. Camera oracle: any chunk with at least one triangle vertex
-        // inside the frustum MUST appear in the world item list —
-        // Frustum.Intersects is conservative, so extra survivors are
-        // legitimate, missing ones never are.
+        // Any chunk with a vertex inside the frustum must be drawn.
+        // Frustum.Intersects is conservative, so extra survivors are fine.
         var scene = new Scene("Test");
         int n = 0;
         for (int x = -2; x <= 2; x++)
@@ -116,8 +102,7 @@ public sealed class RenderViewTests
         var view = new RenderView();
         scene.BuildRenderView(camera, view);
 
-        // The cull must have actually rejected something (chunks behind the
-        // camera), or the oracle below is vacuous.
+        // The cull has to reject something, or the check below proves nothing.
         view.WorldChunksTotal.ShouldBe(scene.StaticWorldChunkMeshes.Count);
         view.WorldChunksVisible.ShouldBeGreaterThan(0);
         view.WorldChunksVisible.ShouldBeLessThan(view.WorldChunksTotal);
@@ -164,21 +149,17 @@ public sealed class RenderViewTests
         scene.BuildRenderView(camera, view);
         view.TotalCount.ShouldBe(1); // the brush node carries no mesh
 
-        // A brush node gaining a renderer starts counting (component swap on
-        // an already-indexed leaf)...
         brushNode.MeshRenderer = new MeshRenderer(CreateCubeMesh(0.5f), NoopMaterial);
         scene.BuildRenderView(camera, view);
         view.TotalCount.ShouldBe(2);
         view.VisibleCount.ShouldBe(2);
 
-        // ...a mesh node losing its renderer stops (the node leaves the index
-        // entirely — it has no brush either)...
+        // No brush either, so this node leaves the index.
         meshNode.MeshRenderer = null;
         scene.BuildRenderView(camera, view);
         view.TotalCount.ShouldBe(1);
         view.VisibleCount.ShouldBe(1);
 
-        // ...and detaching a counted node drops it too.
         scene.Root.RemoveChild(brushNode);
         scene.BuildRenderView(camera, view);
         view.TotalCount.ShouldBe(0);
@@ -201,7 +182,7 @@ public sealed class RenderViewTests
         first.Items.Count.ShouldBeGreaterThan(0);
         second.Items.Count.ShouldBe(first.Items.Count);
         for (int i = 0; i < first.Items.Count; i++)
-            second.Items[i].ShouldBe(first.Items[i]); // record-struct equality: same mesh, material, matrix
+            second.Items[i].ShouldBe(first.Items[i]);
     }
 
     [Fact]
@@ -223,8 +204,7 @@ public sealed class RenderViewTests
         var camera = MakeCamera();
         var view = new RenderView();
 
-        // Warmup: grows the view's item list and the scene's scratch list to
-        // their steady-state capacity and flushes any pending BVH refits.
+        // Warmup: grow the lists to capacity and flush pending BVH refits.
         for (int i = 0; i < 50; i++)
             scene.BuildRenderView(camera, view);
 
@@ -234,7 +214,7 @@ public sealed class RenderViewTests
         long delta = GC.GetAllocatedBytesForCurrentThread() - before;
 
         delta.ShouldBe(0L);
-        view.VisibleCount.ShouldBeGreaterThan(0); // the run actually drew something
-        view.WorldChunksVisible.ShouldBeGreaterThan(0); // ...and the chunk path was exercised
+        view.VisibleCount.ShouldBeGreaterThan(0);
+        view.WorldChunksVisible.ShouldBeGreaterThan(0);
     }
 }

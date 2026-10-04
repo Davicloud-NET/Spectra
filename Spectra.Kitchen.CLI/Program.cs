@@ -9,24 +9,8 @@ using System.Text;
 
 namespace Spectra.Kitchen.CLI;
 
-/// <summary>
-/// <c>scook</c>: the cook tool's command line.
-/// </summary>
-/// <remarks>
-/// <para><b>Shaped after <c>ssc</c> deliberately</b>, down to the exit codes and
-/// the stderr form. Two tools in one solution that disagree about what exit 1
-/// means, or about how a diagnostic is spelled, cost every script that drives
-/// them a special case.</para>
-/// <para><b>Exit codes: 0 success, 1 cook error, 2 usage error, 3 I/O error.</b>
-/// The line between 1 and 3 is who is at fault: a project that is malformed, a
-/// rule that failed, a verb that is unbuilt are all the cook's business and exit
-/// 1, while a path the filesystem refused is 3.</para>
-/// <para><b><see cref="Run"/> takes its writers rather than reaching for
-/// <c>Console</c>.</b> That is what lets the CLI be tested at all: a test asserts
-/// on the exit code and on the exact stderr line, which is the contract an IDE
-/// parses, and spawning a process to get at it would make the fastest tests in the
-/// repo the slowest.</para>
-/// </remarks>
+// scook. Exit codes and stderr format match ssc.
+// 1 is the cook's fault (bad project, failed rule), 3 is the filesystem's.
 internal static class Program
 {
     private const string ToolName = "scook";
@@ -38,10 +22,10 @@ internal static class Program
 
     private static int Main(string[] args) => Run(args, Console.Out, Console.Error);
 
+    // Takes its writers so tests can run it in process.
     internal static int Run(string[] args, TextWriter stdout, TextWriter stderr)
     {
-        // Decided before the parse, because help and usage errors are printed
-        // before there is a CliOptions to read UseColor off.
+        // Before the parse: help and usage errors print without a CliOptions.
         bool noColor = Array.IndexOf(args, "--no-color") >= 0;
         var errStyle = new AnsiStyle(!noColor && ConsoleColor.ShouldUseForStderr());
         var outStyle = new AnsiStyle(!noColor && ConsoleColor.ShouldUseForStdout());
@@ -89,9 +73,6 @@ internal static class Program
     {
         if (opts.Watch)
         {
-            // Refused rather than degraded to a single cook. A --watch that cooks
-            // once and exits reports success for a loop that is not running, which
-            // is the failure this tool refuses everywhere else.
             writer.Write(CookDiagnostic.Error(
                 CookDiagnosticCodes.VerbNotImplemented,
                 "--watch is not built yet: the incremental cache behind it exists, but there is no file " +
@@ -112,15 +93,9 @@ internal static class Program
 
         if (!opts.Quiet)
         {
-            // The cache count is only printed when something was actually skipped:
-            // "0 from cache" on a first cook is a number that answers a question
-            // nobody asked, and it would appear on every clean cook forever.
             string cached = result.CacheHits > 0 ? $", {result.CacheHits} from cache" : string.Empty;
 
-            // The worker count follows the same rule, and it is the count the cook
-            // ACTUALLY ran at: printing "1 worker" on every default cook is noise,
-            // and printing the -j that was typed would hide the clamp, which is the
-            // one thing somebody asking about it wants to see.
+            // The count the cook ran at after clamping, not the -j that was typed.
             string workers = result.Workers > 1 ? $", {result.Workers} workers" : string.Empty;
 
             stdout.WriteLine(
@@ -148,10 +123,7 @@ internal static class Program
             return ExitCookError;
         }
 
-        // The cache goes with the output, and that is what makes the verb true. A
-        // clean that left the cache behind would have the next cook rebuild the
-        // artifact from cached payloads, so "clean then cook" would not be a clean
-        // cook and the one thing people run clean FOR would not happen.
+        // The cache goes too, or "clean then cook" would rebuild from cached payloads.
         string cache = Path.Combine(Path.GetFullPath(layout.Root), CookCache.DirectoryName);
 
         if (!Directory.Exists(target) && !Directory.Exists(cache))
@@ -183,33 +155,19 @@ internal static class Program
         return ExitSuccess;
     }
 
-    /// <summary>
-    /// Proves a cooked pack is one a shipped game can run on.
-    /// </summary>
-    /// <remarks>
-    /// <b>The exit code is the whole contract here</b>, because the caller is a
-    /// CI step rather than a person: 0 for a pack that passed, 1 for one that is
-    /// present and broken, 3 for a path the filesystem refused. The distinction
-    /// between the last two matters to whoever reads the failure - a typo in a
-    /// path and a material missing its texture want different people looking at
-    /// them.
-    /// </remarks>
+    // CI reads the exit code: 1 for a broken pack, 3 for an unreadable path.
     private static int RunVerify(CliOptions opts, TextWriter stdout, DiagnosticWriter writer, AnsiStyle style)
     {
         PackVerifyResult result;
         try
         {
-            // Targets only when the caller actually named some. A pack does not
-            // record what it was cooked for, so an unasked-for default here would
-            // fail every d3d11-only pack for the two backends nobody asked for.
+            // Targets only when named. A pack does not record what it was cooked
+            // for, so a default would fail every single-backend pack.
             result = PackVerifier.Verify(
                 opts.Target,
                 logger: null,
                 targets: opts.TargetsGiven ? opts.Targets : null,
 
-                // Forwarded, because --strict names the RUN rather than the verb:
-                // a CI step that asks a cook to treat warnings as failures means
-                // the same thing when it asks a verify.
                 strict: opts.Strict);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -225,10 +183,6 @@ internal static class Program
 
         if (!opts.Quiet)
         {
-            // The reference count is the number worth printing, because it is the
-            // one a reader cannot get from the cook's own summary line: "12
-            // entries" says the pack was written, "9 references resolved" says
-            // the things inside it point at each other.
             stdout.WriteLine(
                 $"{style.Success}{ToolName}{style.Reset}: verified " +
                 $"{style.Path}{result.PackPath}{style.Reset} " +
@@ -240,21 +194,8 @@ internal static class Program
         return ExitSuccess;
     }
 
-    /// <summary>
-    /// Prints what is in a pack: the tool that makes the format debuggable.
-    /// </summary>
-    /// <remarks>
-    /// <para><b>It states rather than checks.</b> Everything printed is read
-    /// straight off the file, digest included, and none of it is verified - which
-    /// is the point: the first question about a pack that will not mount is what
-    /// the bytes actually say, and a tool that refused to print them would answer
-    /// it by refusing.</para>
-    /// <para><b><c>--json</c> exists because the second reader of this is a
-    /// script.</b> The human table pads columns to whatever the longest name in
-    /// this particular pack is, so parsing it means parsing a layout that changes
-    /// per file. The JSON form goes through the same canonical writer every other
-    /// document does, so it does not differ by the OS that produced it.</para>
-    /// </remarks>
+    // Prints what the file says without verifying any of it, digest included,
+    // so a pack that will not mount can still be looked at.
     private static int RunInspect(CliOptions opts, TextWriter stdout, DiagnosticWriter writer, AnsiStyle style)
     {
         PackContents contents;
@@ -284,10 +225,7 @@ internal static class Program
         return ExitSuccess;
     }
 
-    // A verb that silently does nothing teaches within one session that this
-    // tool's verbs are decorative, so anything left unbuilt says what it will do
-    // and exits non-zero rather than being mistaken for a pass. Empty of verbs
-    // today and kept, because the next one added is added here.
+    // No verb lands here today. Kept so a new, unbuilt verb fails loudly.
     private static int RunUnbuilt(CliOptions opts, DiagnosticWriter writer)
     {
         writer.Write(CookDiagnostic.Error(
@@ -309,9 +247,7 @@ internal static class Program
         }
         catch (Exception ex) when (ex is FileNotFoundException or ProjectFormatException)
         {
-            // A folder that exists and is not a project is a PROJECT error rather
-            // than an I/O one: the filesystem answered every question it was
-            // asked, and the answer was that this is not a Spectra project.
+            // A folder that exists but is not a project is a cook error, not I/O.
             writer.Write(CookDiagnostic.Error(CookDiagnosticCodes.ProjectNotOpened, ex.Message, target));
             layout = null!;
             failure = ExitCookError;
@@ -327,9 +263,8 @@ internal static class Program
         }
     }
 
-    // Reported straight rather than through the session, so --strict does not turn
-    // "this build ignores your -j8" into a failed build: the request is legitimate
-    // and the cook it asked for still happened.
+    // Written directly, not through the session, so --strict does not fail the
+    // build over an option that is merely not wired up.
     private static void ReportUnimplementedOptions(CliOptions opts, DiagnosticWriter writer)
     {
         if (opts.ProfileGiven && opts.Profile != CookProfile.Ship)
@@ -345,8 +280,7 @@ internal static class Program
     private static void Say(DiagnosticWriter writer, string message) =>
         writer.Write(CookDiagnostic.Warning(CookDiagnosticCodes.OptionNotImplemented, message));
 
-    // The one destructive thing this tool does, so the guard is explicit rather
-    // than trusting that -o always names cook output.
+    // -o can name anything, so guard the delete.
     private static bool IsSafeToDelete(ProjectLayout layout, string target, out string why)
     {
         string root = Path.GetFullPath(layout.Root);
@@ -375,8 +309,7 @@ internal static class Program
         return true;
     }
 
-    // Case-insensitively even on a case-sensitive filesystem: for a delete guard,
-    // the conservative direction is to refuse more, not fewer.
+    // Case-insensitive everywhere: a delete guard should refuse too much.
     private static bool PathsEqual(string a, string b) =>
         string.Equals(
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)),

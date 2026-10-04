@@ -3,15 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace SpectraEngine.Editor.Viewport.Windows;
 
-/// <summary>
-/// The Win32 surface the viewport's child window needs, and nothing else.
-/// </summary>
-/// <remarks>
-/// <b>Kept to exactly what <see cref="Win32ViewportWindow"/> calls.</b> A
-/// P/Invoke file grows into a general-purpose Win32 binding if it is allowed
-/// to, and every entry in one is a chance to get a calling convention or a
-/// struct layout subtly wrong in a way that only crashes under load.
-/// </remarks>
+// Only what Win32ViewportWindow and the composited viewport call.
 internal static partial class Win32Interop
 {
     internal const int WS_CHILD = 0x40000000;
@@ -19,10 +11,8 @@ internal static partial class Win32Interop
     internal const int WS_CLIPSIBLINGS = 0x04000000;
     internal const int WS_CLIPCHILDREN = 0x02000000;
 
-    // CS_OWNDC gives the window its own device context for its whole life,
-    // which an OpenGL context must be created against and which costs a D3D
-    // swap chain nothing. Redrawing on both axes stops a resize from tearing a
-    // stale strip down the edge before the next present lands.
+    // CS_OWNDC: an OpenGL context needs the window's own DC. H/VREDRAW: no
+    // stale strip along the edge during a resize.
     internal const int CS_OWNDC = 0x0020;
     internal const int CS_HREDRAW = 0x0002;
     internal const int CS_VREDRAW = 0x0001;
@@ -59,9 +49,7 @@ internal static partial class Win32Interop
     internal const int VK_LSHIFT = 0xA0;
     internal const int VK_RSHIFT = 0xA1;
 
-    // The stock cursors the editor asks for. IDC_HAND is the closest Windows
-    // has to a "grab", and there is no rotate cursor at all - that degrades to
-    // IDC_SIZEALL, in the backend, which is the only layer allowed to know it.
+    // Windows has no grab or rotate cursor: IDC_HAND and IDC_SIZEALL stand in.
     internal const int IDC_ARROW = 32512;
     internal const int IDC_CROSS = 32515;
     internal const int IDC_SIZENWSE = 32642;
@@ -132,33 +120,20 @@ internal static partial class Win32Interop
     [LibraryImport("user32.dll", EntryPoint = "DefWindowProcW")]
     internal static partial nint DefWindowProc(nint hwnd, uint message, nint wParam, nint lParam);
 
-    /// <summary>
-    /// The keyboard state as of the message being processed, not as of now.
-    /// </summary>
-    /// <remarks>
-    /// <c>GetKeyState</c> rather than <c>GetAsyncKeyState</c>, deliberately:
-    /// the async form reports the physical keyboard at the instant it is
-    /// called, which for a message pulled off the queue is a different moment
-    /// from the one that generated it. Reading a chord that way loses the
-    /// modifier whenever the user releases it quickly.
-    /// </remarks>
+    // Not GetAsyncKeyState: that reads the keyboard as of now, not as of the
+    // message, and loses a quickly released modifier.
     [LibraryImport("user32.dll", EntryPoint = "GetKeyState")]
     internal static partial short GetKeyState(int virtualKey);
 
-    /// <summary>Whether a virtual key was down for the message being processed.</summary>
     internal static bool IsKeyDown(int virtualKey) => (GetKeyState(virtualKey) & 0x8000) != 0;
 
     [LibraryImport("user32.dll", EntryPoint = "SetFocus")]
     internal static partial nint SetFocus(nint hwnd);
 
-    /// <summary>SM_CXDRAG: how far a press may travel and still be a click.</summary>
+    // How far a press may travel and still be a click.
     internal const int SM_CXDRAG = 68;
 
-    /// <summary>
-    /// A system metric in the DPI the given window is running at, so a
-    /// pixel-valued threshold means the same physical distance on every
-    /// monitor. Windows 10 1607 and later.
-    /// </summary>
+    // Windows 10 1607 and later.
     [LibraryImport("user32.dll", EntryPoint = "GetSystemMetricsForDpi")]
     internal static partial int GetSystemMetricsForDpi(int index, uint dpi);
 
@@ -184,8 +159,7 @@ internal static partial class Win32Interop
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool SetCursorPos(int x, int y);
 
-    // Two entry points rather than a nullable RECT marshal: the release form
-    // takes NULL, and `in RECT` cannot express that.
+    // Two entry points: the release form takes NULL, which `in RECT` cannot express.
     [LibraryImport("user32.dll", EntryPoint = "ClipCursor")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool ClipCursor(in RECT rect);
@@ -209,14 +183,9 @@ internal static partial class Win32Interop
     [LibraryImport("kernel32.dll", EntryPoint = "GetModuleHandleW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
     internal static partial nint GetModuleHandle(string? moduleName);
 
-    // --- Shared-handle ownership ---------------------------------------------
-    //
-    // The composited viewport imports a shared texture the renderer created, and
-    // the two sides of that handle have separate lifetimes even though they are
-    // in one process: the renderer retires its generation when the viewport
-    // resizes, and Avalonia's importer does NOT take ownership of what it is
-    // handed (measured: it opens the resource and releases only COM references).
-    // So the consumer duplicates, owns and closes its own handle.
+    // Avalonia's importer does not take ownership of a shared-texture handle,
+    // and the renderer may close its own at any resize. The consumer
+    // duplicates, owns and closes its own.
 
     internal const uint DUPLICATE_SAME_ACCESS = 0x00000002;
 
@@ -238,18 +207,8 @@ internal static partial class Win32Interop
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool CloseHandle(nint handle);
 
-    /// <summary>
-    /// A copy of <paramref name="handle"/> this process owns independently of
-    /// whoever made it, or zero if it could not be duplicated.
-    /// </summary>
-    /// <remarks>
-    /// <b>Same process on both sides, which is what makes this cheap and what
-    /// makes it necessary.</b> The producer may retire and close its handle at
-    /// any resize, and handle values are recycled, so a consumer holding the
-    /// producer's own value could end up naming a different kernel object
-    /// entirely. Duplicating at the moment the value is known to be live removes
-    /// that whole class of question.
-    /// </remarks>
+    // Zero if the handle could not be duplicated. Handle values are recycled,
+    // so duplicate while the value is known to be live.
     internal static nint DuplicateForCaller(nint handle)
     {
         if (handle == 0)
@@ -261,9 +220,8 @@ internal static partial class Win32Interop
             : 0;
     }
 
-    /// <summary>Signed low word of an lParam: a coordinate that may be negative.</summary>
+    // Signed: a client coordinate may be negative.
     internal static int LowInt16(nint value) => (short)((long)value & 0xFFFF);
 
-    /// <summary>Signed high word of an lParam or wParam.</summary>
     internal static int HighInt16(nint value) => (short)(((long)value >> 16) & 0xFFFF);
 }

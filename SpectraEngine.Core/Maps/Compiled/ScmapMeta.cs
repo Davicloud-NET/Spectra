@@ -4,23 +4,9 @@ namespace SpectraEngine.Core.Maps.Compiled;
 
 /// <summary>
 /// The 48-byte fixed preamble of the <c>META</c> section: the scene's metadata
-/// and the constants the compile was run with.
+/// and the constants the compile was run with. A load refuses the map when the
+/// three float constants differ from the running engine's. The spawn array follows.
 /// </summary>
-/// <remarks>
-/// <para><b>The three floats exist to be VALIDATED, not to be read.</b> A runtime
-/// that chunks on a different cell size mis-routes every point and ray query
-/// against a directory built for another lattice, and a runtime that welds on a
-/// different grid meets hairline seams exactly where two cells touch. Neither
-/// failure looks like a version problem: the first reads as sporadic collision
-/// bugs and the second as a lighting artifact. So a load refuses on mismatch and
-/// names both numbers, which is the same doctrine the format version follows and
-/// for the same reason: a compiled map is a build output that can always be
-/// regenerated.</para>
-/// <para><b>The spawn array follows this preamble</b>, which is why the preamble
-/// is padded to 48 rather than stopping at the 32 bytes its fields need: the array
-/// then starts 16-byte aligned inside a section that is itself 16-byte aligned, so
-/// it can be cast in place.</para>
-/// </remarks>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public readonly struct ScmapMeta
 {
@@ -55,15 +41,8 @@ public readonly struct ScmapMeta
     public readonly ulong Reserved1;
 
     /// <summary>
-    /// Builds the preamble, stamping the compile constants from the engine that is
-    /// doing the compiling.
+    /// Builds the preamble. The compile constants are stamped from the running engine.
     /// </summary>
-    /// <remarks>
-    /// The constants are taken rather than passed, because a cooker that could
-    /// pass its own numbers could pass numbers the compile did not use, and the
-    /// resulting file would pass its own validation and still be baked on the
-    /// wrong lattice.
-    /// </remarks>
     public ScmapMeta(uint sceneNameString, uint spawnCount, uint bytecodeDebugLevel = 0, uint cookFlags = 0)
     {
         SceneNameString = sceneNameString;

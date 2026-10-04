@@ -6,21 +6,8 @@ namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
 /// An image's dimensions, read from its header rather than by decoding it.
+/// PNG, BMP and JPEG; anything unrecognised or truncated returns false.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A decode to learn two numbers is the wrong price.</b> A 4K texture costs
-/// 32 MB of managed memory to decode and the details strip wants "4096 x 4096";
-/// the numbers are in the first few dozen bytes of every format here.
-/// </para>
-/// <para>
-/// <b>Every read is bounded and every unknown shape is refused.</b> A truncated
-/// or hand-edited file is ordinary in a content folder, and the failure of
-/// guessing at a header is a length read out of the middle of pixel data, which
-/// then allocates or loops on a number nobody wrote. False is the answer, and
-/// the row keeps its kind glyph.
-/// </para>
-/// </remarks>
 public static class ImageHeader
 {
     /// <summary>Reads the pixel dimensions, or returns false.</summary>
@@ -62,8 +49,7 @@ public static class ImageHeader
     private static bool IsPng(ReadOnlySpan<byte> head) =>
         head[0] == 0x89 && head[1] == 0x50 && head[2] == 0x4E && head[3] == 0x47;
 
-    // IHDR is required by the specification to be the first chunk, so its
-    // width and height sit at fixed offsets: 8 signature + 8 chunk header.
+    // IHDR is always the first chunk: 8 signature + 8 chunk header.
     private static bool TryReadPng(ReadOnlySpan<byte> head, int read, out int width, out int height)
     {
         width = 0;
@@ -77,8 +63,7 @@ public static class ImageHeader
         return Plausible(width, height);
     }
 
-    // A BITMAPINFOHEADER's width and height are signed 32-bit at offset 18 and
-    // 22; a negative height means a top-down bitmap and is still a size.
+    // BITMAPINFOHEADER: signed 32-bit at 18 and 22. Negative height means top-down.
     private static bool TryReadBmp(ReadOnlySpan<byte> head, int read, out int width, out int height)
     {
         width = 0;
@@ -92,22 +77,14 @@ public static class ImageHeader
         return Plausible(width, height);
     }
 
-    /// <summary>
-    /// Walks a JPEG's marker chain to the frame header.
-    /// </summary>
-    /// <remarks>
-    /// <b>The size is not at a fixed offset in a JPEG</b>, so this is the one
-    /// format that has to be walked: segments carry their own length and the
-    /// frame marker can sit behind any number of them. The walk is bounded by a
-    /// segment count as well as by the stream, because a corrupt length can
-    /// point at itself.
-    /// </remarks>
+    // JPEG has no fixed offset for the size: walk the segments to the frame
+    // header. Bounded by a segment count because a corrupt length can loop.
     private static bool TryReadJpeg(Stream stream, ReadOnlySpan<byte> head, int read, out int width, out int height)
     {
         width = 0;
         height = 0;
 
-        // Rewind past what was already read: the walk needs the whole chain.
+        // Rewind to just after the SOI marker.
         if (!stream.CanSeek) return false;
         stream.Position = 2;
 
@@ -136,8 +113,7 @@ public static class ImageHeader
                 return Plausible(width, height);
             }
 
-            // Start of scan: the entropy-coded data begins and there is no
-            // frame header after it.
+            // Start of scan: no frame header after this.
             if (marker == 0xDA) return false;
 
             stream.Position += length - 2;
@@ -171,8 +147,7 @@ public static class ImageHeader
         return -1;
     }
 
-    // A dimension of zero is not a picture, and the cap is well above any real
-    // texture: past it the number came from somewhere other than a header.
+    // Past the cap the number did not come from a real header.
     private static bool Plausible(int width, int height) =>
         width > 0 && height > 0 && width <= 65535 && height <= 65535;
 

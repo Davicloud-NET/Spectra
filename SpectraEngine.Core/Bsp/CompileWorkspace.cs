@@ -3,11 +3,9 @@ using System.Collections.Generic;
 
 namespace SpectraEngine.Core.Bsp;
 
-/// <summary>
-/// Exclusive, synchronous compile scratch. Only collections borrowed here are
-/// recycled; published arrays, grids, and mesh deltas always own their storage.
-/// No references to a job survive Dispose. Large edits release their capacity.
-/// </summary>
+// Exclusive, synchronous compile scratch. Only collections borrowed here are
+// recycled; published arrays, grids and mesh deltas own their storage.
+// Nothing references a job after Dispose. Large edits release their capacity.
 internal sealed class CompileWorkspace : IDisposable
 {
     internal const int RetentionLimit = 4096;

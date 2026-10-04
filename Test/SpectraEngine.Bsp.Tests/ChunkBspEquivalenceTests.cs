@@ -3,27 +3,10 @@ using SpectraEngine.Core.Bsp;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The W3 oracle: the per-cell BSP stage (<c>ChunkBspBuilder</c> +
-/// <see cref="CsgBspCache"/>) with routed queries
-/// (<see cref="CsgWorld.ContainsPoint"/> / <see cref="CsgWorld.Raycast"/>)
-/// must be semantically equivalent to one monolithic
-/// <see cref="BspTree.BuildFromSurfaces"/> over the full welded surface list.
-/// Every equivalence test compares the routed answers against that retained
-/// primitive: point containment over dense probe grids (cell-boundary points
-/// included), fixed-seed rays crossing many cells (hit flag, distance within
-/// 1e-4, normal within 1e-3), rays along cell-boundary planes, and rays whose
-/// origin starts inside solid. The incremental tests then pin that
-/// cache-carrying recompiles reuse clean cells' tree INSTANCES while staying
-/// structurally identical to from-scratch compiles, and the determinism test
-/// pins bit-identical per-cell trees for identical inputs.
-/// </summary>
+// Per-cell BSP trees with routed queries must give the same answers as one
+// monolithic BspTree.BuildFromSurfaces over the whole welded surface list.
 public sealed class ChunkBspEquivalenceTests
 {
-    // ------------------------------------------------------------------
-    // (a) Routed queries match the monolithic tree for the W2 worlds.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void Routed_queries_match_monolithic_for_a_two_box_overlap_on_a_cell_border()
     {
@@ -46,8 +29,7 @@ public sealed class ChunkBspEquivalenceTests
         List<BrushPlacement> placements = ScatteredWorld(structures: 50, seed: 0xC0FFEE0DDBA5EBA1UL);
         placements.Count.ShouldBe(200);
 
-        // Guard against a vacuous pass: the scatter must genuinely span many
-        // cells so the probes and rays actually cross chunk borders.
+        // Guard: the scatter has to span many cells or the test proves nothing.
         CsgWorld world = CsgWorld.Build(placements);
         world.Chunks.Count.ShouldBeGreaterThan(20);
 
@@ -63,23 +45,17 @@ public sealed class ChunkBspEquivalenceTests
         AssertRaycastOracle(placements, rayCount: 300, seed: 0xFACEFEEDDEADF00DUL);
     }
 
-    // ------------------------------------------------------------------
-    // (b) Deliberate boundary geometry: rays along cell-boundary planes and
-    // rays starting exactly on cell boundaries, in both axis directions.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void Rays_along_and_across_cell_boundary_planes_match_monolithic()
     {
-        // Both fixtures put real carved geometry at or straddling the x=32
-        // boundary plane — the worst case for interval clamping.
+        // Both fixtures put carved geometry on or across the x=32 boundary plane.
         foreach (IReadOnlyList<BrushPlacement> placements in
                  new IReadOnlyList<BrushPlacement>[] { TwoBoxOverlapOnBorder(), BoundaryExactWorld() })
         {
             CsgWorld world = CsgWorld.Build(placements);
             BspTree mono = BspTree.BuildFromSurfaces(world.Surfaces);
 
-            // Directions strictly inside the x=32 plane, plus both crossings.
+            // Directions inside the x=32 plane, plus both crossings.
             Vector3[] directions =
             [
                 -Vector3.UnitY, Vector3.UnitY, -Vector3.UnitZ, Vector3.UnitZ,
@@ -88,26 +64,20 @@ public sealed class ChunkBspEquivalenceTests
                 -Vector3.UnitX, Vector3.UnitX,
             ];
 
-            // The z lattice is deliberately offset from the y lattice: with
-            // both on the same integer-friendly grid, the diagonal in-plane
-            // directions graze box EDGES exactly (e.g. a ray through the
-            // y=20/z=20 edge line), where two normals are equally valid first
-            // surfaces and the two trees may legitimately pick different
-            // planes. The offset keeps every origin exactly on the x=32
-            // boundary plane while breaking those measure-zero corner hits.
+            // The z lattice is offset from the y lattice. On the same grid the
+            // diagonal rays graze box edges, where two normals are equally
+            // valid and the two trees may pick different ones.
             for (float a = 8f; a <= 44f; a += 1.5f)
             {
                 for (float b = 8.37f; b <= 44f; b += 1.5f)
                 {
-                    // Origin exactly on the x=32 cell-boundary plane.
                     var origin = new Vector3(32f, a, b);
                     foreach (Vector3 direction in directions)
                         CompareRay(world, mono, origin, direction, 120f, $"boundary ray from {origin} along {direction}");
                 }
             }
 
-            // Rays running exactly along a cell-boundary LINE (two coordinates
-            // pinned to boundary planes at once).
+            // Rays along a cell-boundary line: two coordinates on boundary planes.
             for (float a = 8f; a <= 44f; a += 1.5f)
             {
                 CompareRay(world, mono, new Vector3(32f, a, 32f), -Vector3.UnitY, 120f, "boundary-line ray -Y");
@@ -126,9 +96,7 @@ public sealed class ChunkBspEquivalenceTests
         Vector3 direction = Vector3.Normalize(new Vector3(1f, 2f, 3f));
         foreach (BrushPlacement placement in placements)
         {
-            // The world center of a box brush is inside it, and therefore
-            // inside solid space — unless a probe ever lands exactly on a
-            // carved face, both trees must report the immediate-hit contract.
+            // A box brush's centre is inside solid.
             Vector3 origin = placement.WorldBounds.Center;
             bool expected = mono.Raycast(origin, direction, 50f, out BspRaycastHit expectedHit);
             bool actual = world.Raycast(origin, direction, 50f, out BspRaycastHit actualHit);
@@ -146,22 +114,14 @@ public sealed class ChunkBspEquivalenceTests
     {
         CsgWorld world = CsgWorld.Build(TwoBoxOverlapOnBorder());
 
-        // Far from every chunk: no cell, no solid.
         world.ContainsPoint(new Vector3(5000f, -3000f, 800f)).ShouldBeFalse();
 
-        // A ray that never touches an occupied cell stays a miss.
         world.Raycast(new Vector3(500f, 500f, 500f), Vector3.UnitX, 1000f, out _).ShouldBeFalse();
 
-        // A ray starting far outside any chunk and entering the world hits
-        // exactly like the monolithic tree.
         BspTree mono = BspTree.BuildFromSurfaces(world.Surfaces);
         CompareRay(world, mono,
             new Vector3(-400f, 16f, 16f), Vector3.UnitX, 1000f, "long approach from open air");
     }
-
-    // ------------------------------------------------------------------
-    // (c) Determinism: identical inputs produce bit-identical per-cell trees.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void Two_builds_of_the_same_placements_produce_structurally_identical_cell_trees()
@@ -180,17 +140,11 @@ public sealed class ChunkBspEquivalenceTests
         }
     }
 
-    // ------------------------------------------------------------------
-    // (d) Incremental correctness: clean cells keep their tree INSTANCES, and
-    // the carried recompile stays equivalent to a from-scratch compile.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void Clean_cells_keep_their_previous_tree_instances()
     {
-        // The border pair occupies the cells around x=32; the far box lives
-        // many cells away. Moving the far box must leave the pair's cell
-        // trees untouched — the same BspTree instances, not merely equal ones.
+        // The pair sits around x=32, the far box many cells away. Moving it
+        // must leave the pair's trees as the same instances, not just equal ones.
         List<BrushPlacement> placements =
             [.. TwoBoxOverlapOnBorder(), new(Box(1f), Translation(200f, 16f, 16f))];
         CsgWorld first = CsgWorld.Build(
@@ -205,13 +159,12 @@ public sealed class ChunkBspEquivalenceTests
         CsgWorld incremental = CsgWorld.Build(
             edited, dirtyCells: null, first.CompileCache, first.WeldCache, first.BspCache);
 
-        // Exactly the far box's cell rebuilt; the pair's two cells reused.
         incremental.BspStats.ShouldBe(new CsgBspStats(Reused: 2, Built: 1));
 
         foreach (WorldChunk before in first.Chunks.OrderedChunks)
         {
             if (before.Coord.X >= 6)
-                continue; // the far box's moving neighbourhood
+                continue; // the far box's cells
             incremental.Chunks.TryGet(before.Coord, out WorldChunk after).ShouldBeTrue();
             after.Bsp.ShouldBeSameAs(before.Bsp, $"cell {before.Coord} rebuilt its tree needlessly");
         }
@@ -234,16 +187,13 @@ public sealed class ChunkBspEquivalenceTests
             edited, dirtyCells: null, first.CompileCache, first.WeldCache, first.BspCache);
         CsgWorld scratch = CsgWorld.Build(edited);
 
-        // The edit must have stayed local: most cells reuse their tree.
         CsgBspStats stats = incremental.BspStats.ShouldNotBeNull();
         stats.Total.ShouldBe(incremental.Chunks.Count);
         stats.Built.ShouldBeGreaterThan(0);
         stats.Reused.ShouldBeGreaterThan(incremental.Chunks.Count / 2,
             "a one-brush edit rebuilt most of the world's cell trees");
 
-        // Reused or rebuilt, every cell's tree is exactly what a from-scratch
-        // compile produces (the inputs are bit-identical, the build is
-        // deterministic — so the structures must match node for node).
+        // Reused or rebuilt, every cell's tree matches a from-scratch compile.
         incremental.Chunks.Count.ShouldBe(scratch.Chunks.Count);
         for (int c = 0; c < scratch.Chunks.OrderedChunks.Count; c++)
         {
@@ -253,32 +203,22 @@ public sealed class ChunkBspEquivalenceTests
             AssertStructurallyIdentical(e.Bsp, a.Bsp, $"cell {e.Coord}");
         }
 
-        // And the routed answers still match one monolithic tree of the
-        // edited world.
         BspTree mono = BspTree.BuildFromSurfaces(scratch.Surfaces);
         AssertQueriesMatch(incremental, mono, seed: 0x0DDBA11DEADBEEFUL, rayCount: 200);
     }
 
-    // ------------------------------------------------------------------
-    // Fixtures (mirroring ChunkWeldEquivalenceTests)
-    // ------------------------------------------------------------------
-
-    // A cube of half-extent `h` centered on its local origin.
     private static Brush Box(float h) => Brush.CreateBox(new Vector3(-h), new Vector3(h));
 
     private static Matrix4x4 Translation(float x, float y, float z) => Matrix4x4.CreateTranslation(x, y, z);
 
-    // Overlapping pair straddling the x=32 cell border — the minimal world
-    // where routed queries must agree across a border.
+    // Overlapping pair across the x=32 cell border.
     private static BrushPlacement[] TwoBoxOverlapOnBorder() =>
     [
         new(Box(4f), Translation(29f, 16f, 16f)),
         new(Box(4f), Translation(35f, 18f, 16f)),
     ];
 
-    // Faces and centers landing bitwise on x=32 / the (32,32,32) corner: the
-    // fixture where carved geometry sits exactly where cell classification
-    // flips.
+    // Faces and centres bitwise on x=32 and the (32,32,32) corner.
     private static BrushPlacement[] BoundaryExactWorld() =>
     [
         new(Box(4f), Translation(28f, 16f, 16f)),
@@ -287,10 +227,8 @@ public sealed class ChunkBspEquivalenceTests
         new(Box(4f), Translation(35f, 34f, 33f)),
     ];
 
-    // `structures` four-part structures (a floor slab with three overlapping
-    // pillars) scattered by a fixed-seed LCG over a ±160-unit region —
-    // spanning many cells, negative coordinates included, with structures
-    // frequently straddling borders.
+    // Floor slabs with three overlapping pillars each, scattered by a
+    // fixed-seed LCG over ±160 units, negative cells included.
     internal static List<BrushPlacement> ScatteredWorld(int structures, ulong seed)
     {
         ulong state = seed;
@@ -318,8 +256,7 @@ public sealed class ChunkBspEquivalenceTests
         return placements;
     }
 
-    // 6x6x6 size-2 cubes at spacing 1.8, straddling the (32,32,32) cell
-    // corner — dense mutual carving right across cell borders.
+    // 6x6x6 size-2 cubes at spacing 1.8 across the (32,32,32) cell corner.
     internal static List<BrushPlacement> DenseGridWorld()
     {
         var placements = new List<BrushPlacement>(216);
@@ -331,14 +268,8 @@ public sealed class ChunkBspEquivalenceTests
         return placements;
     }
 
-    // ------------------------------------------------------------------
-    // Oracle assertions
-    // ------------------------------------------------------------------
-
-    // Dense ContainsPoint grid over the world's expanded bounds: uniform
-    // samples per axis PLUS every cell-boundary plane in range, so the probe
-    // set contains points exactly on cell boundaries (and, at boundary-exact
-    // fixtures, exactly on carved faces).
+    // Uniform samples per axis plus every cell-boundary plane in range, so
+    // some probes sit on cell boundaries.
     private static void AssertContainsPointOracle(IReadOnlyList<BrushPlacement> placements, int samplesPerAxis)
     {
         CsgWorld world = CsgWorld.Build(placements);
@@ -349,8 +280,7 @@ public sealed class ChunkBspEquivalenceTests
         float[] ys = AxisSamples(bounds.Min.Y, bounds.Max.Y, samplesPerAxis);
         float[] zs = AxisSamples(bounds.Min.Z, bounds.Max.Z, samplesPerAxis);
 
-        // Tens of thousands of probes: compare manually and report the first
-        // divergence (per-probe Shouldly assertions would dominate the run).
+        // Compared by hand: a Shouldly call per probe would dominate the run.
         int probes = 0, solid = 0, mismatches = 0;
         Vector3 firstMismatch = default;
         foreach (float x in xs)
@@ -386,8 +316,6 @@ public sealed class ChunkBspEquivalenceTests
         return [.. values];
     }
 
-    // Fixed-seed rays whose origins and directions span the world (and its
-    // surrounding open air), long enough to cross many cells.
     private static void AssertRaycastOracle(IReadOnlyList<BrushPlacement> placements, int rayCount, ulong seed)
     {
         CsgWorld world = CsgWorld.Build(placements);
@@ -432,10 +360,8 @@ public sealed class ChunkBspEquivalenceTests
         hits.ShouldBeLessThan(rayCount, "every ray hit solid — vacuous oracle");
     }
 
-    // One routed-vs-monolithic ray comparison: hit flag exactly, distance
-    // within 1e-4, normal within 1e-3 per component (node-agnostic — the two
-    // trees may find the same surface through different splitter paths).
-    // Returns whether the ray hit, for vacuousness accounting.
+    // Hit flag exact, distance within 1e-4, normal within 1e-3. Returns
+    // whether the ray hit.
     private static bool CompareRay(
         CsgWorld world, BspTree mono, Vector3 origin, Vector3 direction, float maxDistance, string context)
     {
@@ -467,9 +393,7 @@ public sealed class ChunkBspEquivalenceTests
         return new Aabb(min, max);
     }
 
-    // Structural tree equality, node for node: same topology, same leaf
-    // solidity, same splitter planes (== on Plane compares all four floats;
-    // a deterministic build reproduces them bitwise).
+    // Node for node: same topology, leaf solidity and splitter planes.
     private static void AssertStructurallyIdentical(BspTree expected, BspTree actual, string context)
     {
         var stack = new Stack<(BspNode E, BspNode A)>();

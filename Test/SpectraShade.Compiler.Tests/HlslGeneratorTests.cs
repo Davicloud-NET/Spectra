@@ -31,10 +31,7 @@ public sealed class HlslGeneratorTests
     {
         var hlsl = CompileStageText("ForExpressionInitializer.spectrashade", ShaderStage.Fragment);
 
-        // An assignment initializer on a pre-declared counter must survive
-        // into the emitted for header (it used to emit `for (; ...)`) — in
-        // the natural spelling and in the parenthesized legacy one (the
-        // parens are unwrapped during parsing, so both emit identically).
+        // The parser unwraps `(j = 0)`, so both spellings emit the same.
         hlsl.ShouldContain("for (i = 0; (i < 4); i = (i + 1))", Case.Sensitive);
         hlsl.ShouldContain("for (j = 0; (j < 2); j = (j + 1))", Case.Sensitive);
     }
@@ -44,9 +41,8 @@ public sealed class HlslGeneratorTests
     {
         var hlsl = CompileStageText("BareVertexReturn.spectrashade", ShaderStage.Vertex);
 
-        // A non-struct vertex return has no [Position] struct field to carry
-        // the semantic, so the entry signature itself must declare it —
-        // FXC/DXC reject a vertex entry with no SV_Position output.
+        // No struct field to carry the semantic, and FXC/DXC reject a vertex
+        // entry without SV_Position.
         hlsl.ShouldContain("float4 main(VertexInput input) : SV_Position", Case.Sensitive);
     }
 
@@ -64,15 +60,10 @@ public sealed class HlslGeneratorTests
         return Verify(text, extension: "hlsl");
     }
 
-    // Compiles one stage to text for targeted string assertions. The generator
-    // emits Environment.NewLine (via StringBuilder.AppendLine), so the result
-    // is normalized to LF to keep multi-line ShouldContain checks OS-agnostic.
     [Fact]
     public void Whole_number_float_literals_keep_their_decimal_point()
     {
-        // The HLSL side has always been correct; this pins it so the two
-        // generators cannot drift apart again. See the GLSL test of the same
-        // name for what going wrong looks like.
+        // Keeps the HLSL output in step with the GLSL test of the same name.
         var hlsl = CompileStageText("WholeNumberFloats.spectrashade", ShaderStage.Fragment);
 
         hlsl.ShouldContain("float third = (1.0 / 3.0);", Case.Sensitive);
@@ -82,10 +73,7 @@ public sealed class HlslGeneratorTests
     [Fact]
     public void Array_uniforms_land_inside_their_cbuffer()
     {
-        // The D3D side of the same claim. Element order and declaration order
-        // matter here in a way they do not in GLSL: the runtime learns each
-        // member's byte offset by reflecting this cbuffer out of the compiled
-        // bytecode, so what is declared here is what the engine can address.
+        // The runtime reflects member offsets out of this cbuffer.
         var hlsl = CompileStageText("ArrayUniforms.spectrashade", ShaderStage.Fragment);
 
         hlsl.ShouldContain("cbuffer Lights : register(b0)", Case.Sensitive);
@@ -96,9 +84,8 @@ public sealed class HlslGeneratorTests
     [Fact]
     public void A_matrix_array_gets_its_own_register()
     {
-        // Its own cbuffer, not an extension of Lights: both D3D backends key one
-        // GPU buffer per register, so mixing a frame-constant array into a
-        // per-draw buffer would re-upload the whole array on every draw.
+        // One GPU buffer per register on D3D: sharing with Lights would
+        // re-upload the array on every draw.
         var hlsl = CompileStageText("ArrayUniforms.spectrashade", ShaderStage.Vertex);
 
         hlsl.ShouldContain("cbuffer Cascades : register(b1)", Case.Sensitive);
@@ -114,6 +101,7 @@ public sealed class HlslGeneratorTests
             _ => blob.FragmentData,
         };
         data.ShouldNotBeNull();
+        // The generator emits Environment.NewLine; the assertions expect LF.
         return Encoding.UTF8.GetString(data!).Replace("\r\n", "\n");
     }
 

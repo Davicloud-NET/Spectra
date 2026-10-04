@@ -5,22 +5,10 @@ using System.Runtime.CompilerServices;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
-/// The smallest useful <see cref="INotifyPropertyChanged"/> base: set a field,
-/// notify only when the value actually changed.
+/// <see cref="INotifyPropertyChanged"/> base that notifies only when a value changed.
 /// </summary>
-/// <remarks>
-/// <b>Hand-rolled rather than an MVVM package.</b> The shell needs change
-/// notification and nothing else from that stack: no commands (toolbar clicks
-/// go straight to a method), no messenger, no DI, no navigation. A framework
-/// here would be twenty times this file to obtain one interface.
-/// <para>
-/// <b>The equality guard is load-bearing, not tidiness.</b> Selection is
-/// reapplied from a snapshot about thirty times a second across every node the
-/// tree holds; without the guard that is a notification storm proportional to
-/// the whole scene rather than to what changed. It is the second line of
-/// defence behind the caller only touching what moved.
-/// </para>
-/// </remarks>
+// Keep the equality guard: snapshots reapply state about 30 times a second,
+// and without it every reapply notifies for the whole scene.
 public abstract class ObservableObject : INotifyPropertyChanged
 {
     /// <inheritdoc/>

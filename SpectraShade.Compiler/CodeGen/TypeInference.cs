@@ -2,35 +2,23 @@ using SpectraShade.Compiler.Syntax;
 
 namespace SpectraShade.Compiler.CodeGen;
 
-/// <summary>
-/// Lightweight expression type inference shared by the code generators. Works
-/// entirely in SpectraShade type names ("vec3", "mat4", ...); each backend maps
-/// results through its own type table at emission. Holds a flat name → type
-/// environment the generator populates with globals (cbuffer fields, samplers),
-/// function parameters, and local declarations.
-/// </summary>
-/// <remarks>
-/// A stopgap until semantic analysis produces a typed AST: it resolves the
-/// common shapes (literals, constructors, env lookups, swizzles, struct fields,
-/// Math builtins, helper calls) and returns null when it cannot tell.
-/// </remarks>
+// Expression type inference shared by the code generators, in SpectraShade
+// type names ("vec3", "mat4"). Stopgap until the analyzer produces a typed AST:
+// covers the common shapes and returns null when it cannot tell.
 internal sealed class TypeInference
 {
     private readonly Dictionary<string, string> _env = new();
     private IReadOnlyList<StructDeclaration> _structs = [];
     private IReadOnlyList<FunctionDeclaration> _helpers = [];
 
-    /// <summary>Sets the struct and helper-function declarations member/call inference resolves against.</summary>
     public void Configure(IReadOnlyList<StructDeclaration> structs, IReadOnlyList<FunctionDeclaration> helpers)
     {
         _structs = structs;
         _helpers = helpers;
     }
 
-    /// <summary>Binds a name to a SpectraShade type in the environment.</summary>
     public void Declare(string name, string typeName) => _env[name] = typeName;
 
-    /// <summary>Binds every cbuffer field and sampler name as a global.</summary>
     public void DeclareGlobals(IEnumerable<CBufferDeclaration> cbuffers, IEnumerable<SamplerDeclaration> samplers)
     {
         foreach (var cb in cbuffers)
@@ -51,7 +39,6 @@ internal sealed class TypeInference
             _env[kv.Key] = kv.Value;
     }
 
-    /// <summary>Infers the SpectraShade type of an expression, or null when unknown.</summary>
     public string? Infer(Expression expr)
     {
         switch (expr)

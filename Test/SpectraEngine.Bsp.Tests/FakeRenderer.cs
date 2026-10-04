@@ -8,68 +8,35 @@ using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// A GPU-free <see cref="Renderer"/> for exercising the static-world compile
-/// and asset-loading paths headlessly. Meshes and textures are recorded
-/// CPU-side as <see cref="FakeMesh"/> / <see cref="FakeTexture"/> instances
-/// (keeping the exact byte arrays for determinism assertions); shader creation
-/// still throws — a test reaching it is a test that silently grew a real GPU
-/// dependency.
-/// </summary>
+// GPU-free Renderer for headless static-world and asset tests. Meshes and
+// textures are recorded CPU-side; shader creation throws.
 internal sealed class FakeRenderer : Renderer
 {
-    /// <summary>Every mesh ever created, in creation order (destroyed ones included).</summary>
+    // Creation order, destroyed ones included.
     public List<FakeMesh> CreatedMeshes { get; } = [];
 
-    /// <summary>
-    /// Meshes still registered with this renderer. Mirrors the real backends'
-    /// tracking list (and <see cref="LiveTextures"/>), so a test can prove
-    /// <see cref="Renderer.DestroyMesh"/> deregistered as well as disposed —
-    /// the leak a plain <c>Dispose</c> would hide, because the dead instance
-    /// would sit in the tracking list until shutdown.
-    /// </summary>
+    // Still registered: shows DestroyMesh deregistered as well as disposed.
     public HashSet<FakeMesh> LiveMeshes { get; } = new(ReferenceEqualityComparer.Instance);
 
-    /// <summary>Every texture ever created, in creation order (destroyed ones included).</summary>
+    // Creation order, destroyed ones included.
     public List<FakeTexture> CreatedTextures { get; } = [];
 
-    /// <summary>
-    /// Textures still registered with this renderer. Mirrors the real backends'
-    /// tracking list, so a test can prove <see cref="Renderer.DestroyTexture"/>
-    /// deregistered as well as disposed.
-    /// </summary>
     public HashSet<FakeTexture> LiveTextures { get; } = new(ReferenceEqualityComparer.Instance);
 
-    /// <summary>
-    /// Remaining <see cref="CreateMesh"/> calls that succeed before the
-    /// renderer starts throwing; <see cref="int.MaxValue"/> (the default)
-    /// never fails. Lets swap-atomicity tests fail the Nth creation of a
-    /// multi-chunk batch and observe the rollback.
-    /// </summary>
+    // CreateMesh calls left before it starts throwing. int.MaxValue never fails.
     public int CreateMeshBudget { get; set; } = int.MaxValue;
 
-    /// <summary>
-    /// One entry per <see cref="Renderer.BeginPass"/>, recording what the pass
-    /// asked to clear and how big its target was when it opened.
-    /// </summary>
-    /// <remarks>
-    /// The pass seam is otherwise only observable on a real device, and the
-    /// mistakes it can make are exactly the ones a GPU test would not report as
-    /// a failure: an unbalanced pair, a viewport sized from the window instead
-    /// of the target, a clear that quietly stopped happening.
-    /// </remarks>
+    // One entry per BeginPass: the clear and the target size when it opened.
     public List<(PassClear Clear, Vector2D<int> Size, RenderTarget? Target)> Passes { get; } = [];
 
-    /// <summary>Passes begun and not yet ended. Zero at the end of a well-formed frame.</summary>
+    // Zero at the end of a well-formed frame.
     public int OpenPasses { get; private set; }
 
-    /// <summary>Every render target ever created, in creation order.</summary>
     public List<FakeRenderTarget> CreatedRenderTargets { get; } = [];
 
-    /// <summary>Targets still registered, mirroring the real backends' tracking lists.</summary>
     public List<FakeRenderTarget> LiveRenderTargets { get; } = [];
 
-    /// <summary>Attachment count of each pass, so a multi-target bind is observable.</summary>
+    // Attachment count of each pass.
     public List<int> PassTargetCounts { get; } = [];
 
     protected override void BeginPassCore(
@@ -80,7 +47,6 @@ internal sealed class FakeRenderer : Renderer
         OpenPasses++;
     }
 
-    /// <summary>Overlay lines this stub was asked to draw, one entry per call.</summary>
     public int OverlayFlushes { get; private set; }
 
     protected override void FlushDebugDrawCore(SpectraEngine.Core.Scene.Camera camera) => OverlayFlushes++;
@@ -89,7 +55,6 @@ internal sealed class FakeRenderer : Renderer
     protected override void FlushWorldLinesCore(
         SpectraEngine.Core.Scene.Camera camera, ShaderProgram program, float nudge, GBuffer? gbuffer) { }
 
-    /// <summary>Full-screen passes this renderer was asked to draw.</summary>
     public int FullscreenDraws { get; private set; }
 
     protected override void DrawFullscreen(PostPass pass, Mesh geometry) => FullscreenDraws++;
@@ -113,31 +78,23 @@ internal sealed class FakeRenderer : Renderer
     public FakeRenderer()
         : base(NullLogger<Renderer>.Instance, new ThrowingShaderCompiler())
     {
-        // The real backends set this in Initialize, and material loading reads
-        // it as the fallback program for every material file. A no-op stand-in
-        // keeps the headless path realistic without compiling anything.
+        // Material loading reads this as the fallback program.
         DefaultShader = new NoopShaderProgram();
     }
 
-    /// <summary>
-    /// Drops the default shader, standing in for a backend whose shader
-    /// compilation failed. Lets a test prove the asset manager still produces a
-    /// usable (non-null) default material.
-    /// </summary>
+    // Stands in for a backend whose shader compilation failed.
     public void ClearDefaultShader() => DefaultShader = null;
 
-    // Arbitrary: nothing in the headless paths ever branches on the backend.
+    // Arbitrary: nothing headless branches on the backend.
     public override GraphicsBackend Backend => GraphicsBackend.OpenGL;
 
     public override string CurrentPipelineName => "Fake";
 
     public override string NextPipeline() => "Fake";
 
-    // One pipeline, and it is the one already running.
     public override bool TrySelectPipeline(string name) =>
         string.Equals(name, "Fake", StringComparison.OrdinalIgnoreCase);
 
-    // No rasteriser, so no viewport. Present because the shadow atlas needs one.
     protected override void SetViewportCore(int x, int y, int width, int height) { }
 
     public override Mesh CreateMesh(ReadOnlySpan<float> vertices, ReadOnlySpan<uint> indices,
@@ -149,8 +106,6 @@ internal sealed class FakeRenderer : Renderer
             CreateMeshBudget--;
 
         var mesh = new FakeMesh(vertices.ToArray(), indices.ToArray(), attributes, cpuAccess);
-        // Same wiring CreateTexture uses, so DestroyMesh removes it from the
-        // live list exactly once.
         mesh.Unregister = () => LiveMeshes.Remove(mesh);
         CreatedMeshes.Add(mesh);
         LiveMeshes.Add(mesh);
@@ -163,13 +118,10 @@ internal sealed class FakeRenderer : Renderer
 
     protected override Texture CreateTextureCore(in TextureUploadDesc desc)
     {
-        // Level 0 only: nothing here samples a mip, and copying the whole
-        // payload would make the fake's record depend on a layout it never reads.
+        // Level 0 only: nothing here samples a mip.
         var texture = new FakeTexture(
             desc.Payload.Slice(desc.Mips[0].Offset).ToArray(),
             desc.Width, desc.Height, desc.Format, desc.ColorSpace, desc.Filter, desc.Wrap);
-        // Same wiring the real backends use, so DestroyTexture removes it from
-        // the live list exactly once.
         texture.Unregister = () => LiveTextures.Remove(texture);
         CreatedTextures.Add(texture);
         LiveTextures.Add(texture);
@@ -182,8 +134,7 @@ internal sealed class FakeRenderer : Renderer
     public override ShaderProgram CreateShader(PipelineBlob blob)
         => throw new NotSupportedException("FakeRenderer does not create shaders.");
 
-    // The base constructor wires an IShaderCompiler into the hot-reloader; the
-    // headless tests never compile shaders, so any call is a test defect.
+    // Headless tests never compile shaders, so any call is a test defect.
     private sealed class ThrowingShaderCompiler : IShaderCompiler
     {
         public CompiledShaderFile Compile(string source, ReadOnlySpan<GraphicsBackend> targets)
@@ -191,21 +142,8 @@ internal sealed class FakeRenderer : Renderer
     }
 }
 
-/// <summary>
-/// CPU-only <see cref="Mesh"/> produced by <see cref="FakeRenderer"/>: keeps
-/// the raw arrays it was created from so tests can compare successive compiles
-/// bit-for-bit, and records disposal so mesh-lifetime bugs (leaked or
-/// prematurely destroyed static-world meshes) are observable.
-/// </summary>
-/// <remarks>
-/// It also de-interleaves positions and normals and computes
-/// <see cref="Mesh.LocalBounds"/>, exactly as every real backend's mesh does at
-/// creation time. Without that, anything a headless test uploads through
-/// <see cref="FakeRenderer"/> would be invisible to the scene's spatial index
-/// and its per-triangle raycast, and "the model is in the BVH" would be
-/// untestable. Constructing one with no vertex data still yields no geometry,
-/// which is how tests exercise the raycast's GPU-only-mesh fallback.
-/// </remarks>
+// CPU-only Mesh: keeps the raw arrays it was created from and records disposal.
+// Positions, normals and LocalBounds are filled like a real backend's mesh.
 internal sealed class FakeMesh : Mesh
 {
     public float[] VertexData { get; }
@@ -225,18 +163,13 @@ internal sealed class FakeMesh : Mesh
         IndexData = indices;
         IndexCount = (uint)indices.Length;
 
-        // The shared base helper, deliberately: the fake must starve
-        // Positions/Normals/Indices for a GPU-only mesh exactly as the real
-        // backends do, or the headless suites cannot catch a consumer reading
-        // arrays a MeshCpuAccess.None mesh no longer has. VertexData/IndexData
-        // above stay populated either way; they are this fake's own upload
-        // oracle, not the engine's CPU mirror.
+        // Shared base helper, so a MeshCpuAccess.None mesh has no CPU arrays
+        // here either. VertexData/IndexData above always stay populated.
         InitializeCpuData(vertices, indices, attributes, cpuAccess);
     }
 
     public override void Draw()
     {
-        // Nothing to draw without a GPU.
     }
 
     public override void DrawInstanced(InstanceBuffer instances, int instanceCount, int firstInstance = 0)
@@ -246,17 +179,8 @@ internal sealed class FakeMesh : Mesh
     public override void Dispose() => Disposed = true;
 }
 
-/// <summary>
-/// CPU-only <see cref="Texture"/> produced by <see cref="FakeRenderer"/>: keeps
-/// the uploaded pixel bytes and the sampling state it was created with, and
-/// records disposal so asset-ownership bugs (a texture leaked past unload, or
-/// one destroyed while a handle still points at it) are observable.
-/// </summary>
-/// <summary>
-/// A GPU-free <see cref="RenderTarget"/>. Its colour attachment keeps its
-/// identity across a resize, exactly as the real ones must, so a test can assert
-/// on the property whose absence would strand every material sampling it.
-/// </summary>
+// GPU-free RenderTarget. The colour attachment keeps its identity across a
+// resize, like the real ones.
 internal sealed class FakeRenderTarget : RenderTarget
 {
     private readonly FakeTexture _color;
@@ -279,7 +203,6 @@ internal sealed class FakeRenderTarget : RenderTarget
 
     public bool Disposed { get; private set; }
 
-    /// <summary>Sizes this target has been through, so a test can see a resize actually happened.</summary>
     public List<(int Width, int Height)> Resizes { get; } = [];
 
     public override Texture ColorTexture => _color;
@@ -300,6 +223,7 @@ internal sealed class FakeRenderTarget : RenderTarget
     public override void Dispose() => Disposed = true;
 }
 
+// CPU-only Texture: keeps the uploaded pixels and sampling state, records disposal.
 internal sealed class FakeTexture : Texture
 {
     public byte[] Pixels { get; }
@@ -315,14 +239,12 @@ internal sealed class FakeTexture : Texture
         Width = width;
         Height = height;
         Format = format;
-        // Resolved exactly as the three real backends do, so a test that asserts
-        // on the colour space is asserting on the same rule they follow.
+        // Same resolve the real backends use.
         ColorSpace = TextureFormatInfo.Resolve(format, colorSpace);
         Filter = filter;
         Wrap = wrap;
     }
 
-    /// <summary>Mirrors a real attachment's in-place resize: same object, new size.</summary>
     public void ResizeInPlace(int width, int height)
     {
         Width = width;

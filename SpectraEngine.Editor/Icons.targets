@@ -1,27 +1,15 @@
 <Project>
 
   <!--
-    ICONS ARE FILES, AND THE BUILD TURNS THEM INTO THE RESOURCE THE SHELL BINDS.
+    Generates Theme/Icons.axaml from Assets/Icons/*.svg, one resource per file,
+    keyed by file name.
 
-    Assets/Icons/*.svg is the artwork. Dropping a replacement over one of them
-    and rebuilding changes the glyph; nothing in the markup, the styles or the
-    roster names a file, because every consumer still says
-    {StaticResource IconLgMove} exactly as it did when the geometry was written
-    out by hand in Theme/Icons.axaml.
+    Path data is copied as written. Scaling a 'd' string means handling arcs,
+    relative commands and flags, so width/height against the viewBox becomes a
+    Transform instead. A 24-box glyph drops in with width="16" height="16".
 
-    THE PATH DATA IS COPIED VERBATIM. The generator never parses or rewrites a
-    'd' string - scaling one means understanding arcs, relative commands and
-    flags, and getting that subtly wrong produces artwork that still draws and
-    is silently deformed. Instead the SVG's own width and height against its
-    viewBox become a Transform on the emitted geometry, which is the mechanism
-    SVG already defines for exactly this. So a Lucide glyph drops in by keeping
-    its viewBox="0 0 24 24" and setting width="16" height="16", and the build
-    works out the 0.667.
-
-    Emitted as PathGeometry rather than StreamGeometry because a StreamGeometry
-    in XAML carries its data as element CONTENT and so cannot also carry an
-    attribute: "No Content property or any Add methods found" at compile time,
-    which is a thing to know rather than to rediscover. PathGeometry takes both.
+    PathGeometry, not StreamGeometry: a StreamGeometry takes its data as element
+    content and cannot also carry a Transform attribute.
   -->
 
   <UsingTask TaskName="GenerateIconResources"
@@ -165,9 +153,8 @@
   </UsingTask>
 
   <!--
-    Outside the target, because Inputs is evaluated before the target runs and
-    an ItemGroup declared inside one would be invisible to it - which presents
-    as a generator that never re-runs when an icon changes.
+    Outside the target: Inputs is evaluated before the target runs, so an
+    ItemGroup inside it would never trigger a re-run.
   -->
   <ItemGroup>
     <SpectraIcon Include="$(MSBuildThisFileDirectory)Assets\Icons\*.svg" />

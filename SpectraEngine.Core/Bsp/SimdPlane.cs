@@ -4,10 +4,8 @@ using System.Numerics;
 namespace SpectraEngine.Core.Bsp;
 
 /// <summary>
-/// SIMD-accelerated plane/point classification. Signed distances follow the
-/// <see cref="Plane"/> convention: positive in front of the plane (normal side),
-/// negative behind. Processes <see cref="Vector{T}.Count"/> points per step on
-/// vector-capable hardware and falls back to scalar code for the tail.
+/// SIMD plane/point classification. Distances are positive in front of the
+/// plane (normal side), negative behind.
 /// </summary>
 public static class SimdPlane
 {
@@ -36,7 +34,6 @@ public static class SimdPlane
 
             for (; i + width <= points.Length; i += width)
             {
-                // Deinterleave the lane block into structure-of-arrays form.
                 for (int lane = 0; lane < width; lane++)
                 {
                     Vector3 p = points[i + lane];

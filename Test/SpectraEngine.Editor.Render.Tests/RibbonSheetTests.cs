@@ -14,24 +14,11 @@ using SpectraEngine.Editor.Shell.Ribbon;
 namespace SpectraEngine.Editor.Render.Tests;
 
 /// <summary>
-/// Rasterises both pages to PNG so a person can look at them.
+/// Rasterises shell surfaces to PNG so a person can look at them. Only asserts
+/// that a frame was drawn at the expected size and is not one flat colour.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is the weak half of the suite and it says so.</b> Nothing here
-/// judges how the surface LOOKS - not colour, not contrast, not whether the
-/// hierarchy reads. Everything it asserts is that a frame really rasterised at
-/// the size layout promised and is not one flat colour, which is what a page
-/// that threw inside Render, or drew nothing, produces.
-/// </para>
-/// <para>
-/// <b>Golden images are refused, deliberately.</b> This surface carries five
-/// gradients, seven brush transitions and a <c>DoubleTransition</c> on
-/// <c>Border.sheen</c>, so a frame captured one tick early differs from one
-/// captured a tick late by a few per cent of alpha - a vague twitch rather than
-/// anything nameable, which is precisely the diff nobody can act on.
-/// </para>
-/// </remarks>
+// No golden images: the transitions make a frame differ by a few per cent of
+// alpha from tick to tick.
 [Collection(RibbonSessionCollection.Name)]
 public sealed class RibbonSheetTests(RibbonSession session)
 {
@@ -55,8 +42,7 @@ public sealed class RibbonSheetTests(RibbonSession session)
         {
             using RibbonProbe probe = RibbonProbe.Open(tabId, scaling, Drive(state));
 
-            // Size the window to what the page actually wants, so the sheet is the
-            // surface rather than the surface adrift in a 2600px field.
+            // Shrink the 2600px probe window to the page.
             Size want = probe.Body.DesiredSize;
             probe.Window.Width = Math.Ceiling(want.Width);
             probe.Window.Height = Math.Ceiling(want.Height);
@@ -79,9 +65,6 @@ public sealed class RibbonSheetTests(RibbonSession session)
     [Fact]
     public void The_command_palette_rasterises_into_a_sheet_too()
     {
-        // A NEW VISIBLE SURFACE, so it gets looked at before it ships. That is
-        // the whole premise of this suite, and shipping a palette nobody had
-        // seen would contradict it.
         session.On(() =>
         {
             var palette = new SpectraEngine.Editor.Shell.CommandPaletteView();
@@ -112,9 +95,6 @@ public sealed class RibbonSheetTests(RibbonSession session)
     [Fact]
     public void The_problems_panel_rasterises_into_a_sheet()
     {
-        // The other new visible surface of this pass. It is the panel that says
-        // whether anything is wrong, so shipping one nobody had looked at would
-        // be the same mistake it was written to fix.
         session.On(() =>
         {
             var model = new ShellModel();
@@ -155,9 +135,6 @@ public sealed class RibbonSheetTests(RibbonSession session)
     [Fact]
     public void The_colour_picker_rasterises_into_a_sheet()
     {
-        // A gradient square and a hue strip are the two things in this shell
-        // that are drawn rather than laid out, so a sheet is the only way to
-        // see that they drew at all.
         session.On(() =>
         {
             var picker = new SpectraEngine.Editor.Shell.ColorPickerView();
@@ -176,19 +153,15 @@ public sealed class RibbonSheetTests(RibbonSession session)
             Directory.CreateDirectory(OutputDirectory);
             frame.Save(Path.Combine(OutputDirectory, "picker@2x.png"), quality: null);
 
-            // A gradient square has to draw MANY colours. Eight would pass over
-            // three flat rectangles, which is exactly the failure worth
-            // catching here.
+            // A gradient needs many colours. Eight would pass on flat rectangles.
             DistinctColours(frame).ShouldBeGreaterThan(64);
             window.Close();
         });
     }
 
-    /// <summary>Puts the model into the state the sheet is named for.</summary>
     private static Action<ShellModel>? Drive(string state) => state switch
     {
-        // Everything a page can light at once, plus a selection so the Arrange
-        // group and Frame are enabled.
+        // Everything a page can light at once.
         "active" => m =>
         {
             m.RequestGizmoMode("rotate");
@@ -206,10 +179,7 @@ public sealed class RibbonSheetTests(RibbonSession session)
             }
         },
 
-        // THE STATE THE SURFACE IS ACTUALLY USED IN: something selected and a
-        // project that declares entity classes, so nothing is greyed. A sheet of
-        // an all-disabled page exaggerates how dead the surface looks and hides
-        // whether the enabled one reads.
+        // A selection and entity classes, so nothing is greyed out.
         "working" => m =>
         {
             m.ApplySnapshot(new FrameSnapshot { SelectedIds = [Guid.NewGuid()] });
@@ -217,8 +187,7 @@ public sealed class RibbonSheetTests(RibbonSession session)
                 EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(EntityCatalog.Shared.Schemas))));
         },
 
-        // The default model: no selection and no entity classes, which is what
-        // a session looks like the moment it opens.
+        // Default model: a session that has just opened.
         _ => null,
     };
 
@@ -250,10 +219,6 @@ public sealed class RibbonSheetTests(RibbonSession session)
     [Fact]
     public void The_viewport_header_rasterises_into_a_sheet()
     {
-        // Whether four chips, a dropdown and a monospace readout read as one row
-        // or as a jumble is a question for a person. What the width tests can
-        // say is that it fits; what nothing here can say is whether it looks
-        // like an instrument panel, so the sheet is where that gets looked at.
         session.On(() =>
         {
             var model = new SpectraEngine.Editor.Shell.ShellModel { HasSession = true };
@@ -281,9 +246,7 @@ public sealed class RibbonSheetTests(RibbonSession session)
             Directory.CreateDirectory(OutputDirectory);
             frame.Save(Path.Combine(OutputDirectory, "header@2x.png"), quality: null);
 
-            // Something drew. A blank sheet is what a strip whose bindings all
-            // resolved against the wrong DataContext produces, and Avalonia
-            // raises nothing for a failed binding.
+            // A blank sheet means the bindings failed, which Avalonia does not report.
             DistinctColours(frame).ShouldBeGreaterThan(8);
         });
     }

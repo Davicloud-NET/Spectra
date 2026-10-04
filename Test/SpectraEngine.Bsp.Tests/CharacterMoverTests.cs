@@ -7,31 +7,11 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The first-person character mover, driven headlessly against real compiled
-/// brush geometry.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>What these tests can and cannot prove.</b> They pin the things with a
-/// right answer: does the character stand on the floor at the right height,
-/// does it stop at a wall, does it climb a 0.40 step and refuse a 0.60 one,
-/// does it stay on the ground cresting a ramp, does a jump reach its authored
-/// height, does one jump press fire once across a five-tick catch-up frame.
-/// </para>
-/// <para>
-/// They cannot prove it <em>feels</em> right. Acceleration, friction and
-/// air control are chosen numbers, and catching on seams or jitter against a
-/// wall are the failure modes that only show up under a human hand. Those are
-/// playtesting, and saying so here is more honest than writing a test that
-/// asserts a constant equals itself.
-/// </para>
-/// </remarks>
+// Runs against real compiled brush geometry. Feel (acceleration, friction,
+// air control) is not tested here; that needs playtesting.
 public sealed class CharacterMoverTests
 {
     private const float Dt = PhysicsDefaults.FixedDeltaTime;
-
-    // --- The collision source ----------------------------------------------
 
     [Fact]
     public void A_capsule_resting_on_a_floor_reports_the_floor_as_ground()
@@ -58,8 +38,7 @@ public sealed class CharacterMoverTests
         CharacterState state = world.Settle(CharacterState.AtFeet(new Vector3(0f, 0.1f, 0f)), 30);
         state = world.Walk(state, forward: 1f, yaw: 0f, ticks: 180);
 
-        // Facing +x at yaw 0; the wall's near face is x = 2, so the capsule
-        // centre stops a radius plus skin short of it.
+        // Wall face at x = 2; the centre stops a radius plus skin short.
         state.Position.X.ShouldBeLessThan(2f - world.Tuning.Radius + 0.05f);
         state.Position.X.ShouldBeGreaterThan(0.5f, "the character should have actually moved");
     }
@@ -67,18 +46,14 @@ public sealed class CharacterMoverTests
     [Fact]
     public void The_corner_of_a_brush_does_not_block_early()
     {
-        // The regression this whole narrow phase exists for. A plane-only
-        // contact test measures against the SHARP offset polytope, which at a
-        // 0.35 radius puts a quarter-unit of phantom solid diagonally off every
-        // box corner. Walking diagonally past a pillar corner would catch on
-        // nothing.
+        // A plane-only contact test measures against the sharp offset polytope,
+        // which adds phantom solid diagonally off every box corner.
         var source = TestWorld.SourceFor(
             out CharacterTuning tuning,
             ("pillar", new Vector3(-0.5f, -1f, -0.5f), new Vector3(0.5f, 3f, 0.5f)));
 
-        // A capsule diagonally out from the corner at (0.5, 0.5), 0.5 away
-        // along the diagonal — well clear of a 0.35 radius, but INSIDE the
-        // sharp-corner offset polytope.
+        // 0.5 out along the diagonal from the corner at (0.5, 0.5): clear of
+        // a 0.35 radius, inside the sharp-corner polytope.
         var feet = new Vector3(0.5f + 0.354f, 0f, 0.5f + 0.354f);
         CharacterCapsule capsule = CharacterCapsule.FromFeet(feet, tuning.StandHeight, tuning.Radius);
 
@@ -94,10 +69,8 @@ public sealed class CharacterMoverTests
     [Fact]
     public void A_doorway_cut_by_a_subtractive_brush_is_walkable()
     {
-        // THE HEADLINE. A convex hull per additive brush cannot express the bite
-        // a negative takes out of it, so a hull-based source has this doorway
-        // solid. A plane-set source covers A \ N exactly, so the character walks
-        // through.
+        // One hull per additive brush cannot express a subtractive cut, so a
+        // hull-based source would have this doorway solid.
         var world = new TestWorld();
         world.AddBox("floor", new Vector3(-8f, -1f, -8f), new Vector3(8f, 0f, 8f));
         world.AddBox("wall", new Vector3(-4f, 0f, 1f), new Vector3(4f, 3f, 1.5f));
@@ -114,14 +87,13 @@ public sealed class CharacterMoverTests
     [Fact]
     public void A_wall_beside_the_doorway_still_blocks()
     {
-        // The other half: covering must not open holes nobody authored.
         var world = new TestWorld();
         world.AddBox("floor", new Vector3(-8f, -1f, -8f), new Vector3(8f, 0f, 8f));
         world.AddBox("wall", new Vector3(-4f, 0f, 1f), new Vector3(4f, 3f, 1.5f));
         world.AddNegative("doorway", new Vector3(-0.6f, 0f, 0.5f), new Vector3(0.6f, 2.2f, 2f));
         world.Compile();
 
-        // Start well to the side of the opening.
+        // Start to the side of the opening.
         CharacterState state = world.Settle(CharacterState.AtFeet(new Vector3(3f, 0.1f, -1f)), 30);
         state = world.Walk(state, forward: 1f, yaw: MathF.PI / 2f, ticks: 180);
 
@@ -131,9 +103,7 @@ public sealed class CharacterMoverTests
     [Fact]
     public void A_subtractive_part_brush_does_not_drill_through_a_world_wall()
     {
-        // (Part, Subtractive) is a legal, inert state — the flying projectile of
-        // the destruction design. Letting it into the cover would have it
-        // opening a moving, invisible hole in every wall it passed.
+        // A subtractive part is legal and inert; it must not open a hole in collision.
         var world = new TestWorld();
         world.AddBox("floor", new Vector3(-8f, -1f, -8f), new Vector3(8f, 0f, 8f));
         world.AddBox("wall", new Vector3(-4f, 0f, 1f), new Vector3(4f, 3f, 1.5f));
@@ -152,8 +122,6 @@ public sealed class CharacterMoverTests
         state.Position.Z.ShouldBeLessThan(1f, "an inert part negative must not open the wall");
     }
 
-    // --- Stairs and slopes --------------------------------------------------
-
     [Fact]
     public void A_step_below_the_limit_is_climbed()
     {
@@ -162,10 +130,7 @@ public sealed class CharacterMoverTests
         world.AddBox("step", new Vector3(1f, 0f, -8f), new Vector3(8f, 0.40f, 8f));
         world.Compile();
 
-        // 60 ticks is about 4.5 units of walking — onto the step and along it,
-        // and deliberately NOT far enough to reach its far edge at x = 8. A
-        // longer walk would have the character step up, cross the whole step and
-        // fall off the end, which asserts nothing about stepping.
+        // 60 ticks is about 4.5 units: onto the step, short of its far edge at x = 8.
         CharacterState state = world.Settle(CharacterState.AtFeet(new Vector3(0f, 0.1f, 0f)), 30);
         state = world.Walk(state, forward: 1f, yaw: 0f, ticks: 60);
 
@@ -191,10 +156,8 @@ public sealed class CharacterMoverTests
     [Fact]
     public void Cresting_a_ramp_does_not_launch_the_character()
     {
-        // Walking UP a ramp gives the character a genuine upward velocity, so a
-        // ground snap gated on "falling" refuses to run exactly when it is
-        // needed and the character sails off the top. Zero airborne ticks after
-        // the crest is the assertion.
+        // Walking up a ramp gives real upward velocity, so a ground snap gated
+        // on falling would not run at the crest.
         var world = new TestWorld();
         world.AddBox("floor", new Vector3(-12f, -1f, -8f), new Vector3(0f, 0f, 8f));
         world.AddRamp("ramp", from: new Vector3(0f, 0f, 0f), run: 4f, rise: 2f, halfWidth: 8f);
@@ -203,8 +166,8 @@ public sealed class CharacterMoverTests
 
         CharacterState state = world.Settle(CharacterState.AtFeet(new Vector3(-2f, 0.1f, 0f)), 30);
 
-        // 100 ticks at sprint is about 12 units, which crosses the ramp and
-        // settles on the platform without reaching its far edge at x = 12.
+        // 100 sprint ticks is about 12 units: over the ramp, short of the
+        // platform's far edge at x = 12.
         int airborneTicks = 0;
         for (int tick = 0; tick < 100; tick++)
         {
@@ -216,8 +179,6 @@ public sealed class CharacterMoverTests
         state.Position.X.ShouldBeGreaterThan(5f, "the character should have crossed the ramp");
         airborneTicks.ShouldBe(0, "cresting a ramp must not put the character in the air");
     }
-
-    // --- Jumping -------------------------------------------------------------
 
     [Fact]
     public void A_jump_reaches_roughly_its_authored_height()
@@ -245,17 +206,14 @@ public sealed class CharacterMoverTests
     [Fact]
     public void One_jump_press_fires_once_across_a_catch_up_frame()
     {
-        // The frame loop samples input once and can then run five ticks. If the
-        // edge came from the command rather than from state, one press would
-        // fire five times and launch the character through the ceiling.
+        // Input is sampled once per frame and replayed for up to five ticks,
+        // so the jump edge has to come from state, not from the command.
         var world = new TestWorld();
         world.AddBox("floor", new Vector3(-8f, -1f, -8f), new Vector3(8f, 0f, 8f));
         world.Compile();
 
         CharacterState state = world.Settle(CharacterState.AtFeet(new Vector3(0f, 0.1f, 0f)), 60);
 
-        // The same held-jump command, five ticks in a row — one frame's worth of
-        // catch-up.
         for (int tick = 0; tick < 5; tick++)
             state = world.Step(state, jump: true);
 
@@ -273,7 +231,6 @@ public sealed class CharacterMoverTests
 
         CharacterState state = world.Settle(CharacterState.AtFeet(new Vector3(0f, 0.1f, 0f)), 60);
 
-        // Hold jump through a landing: it must not bounce.
         int jumps = 0;
         bool wasGrounded = state.Grounded;
         for (int tick = 0; tick < 240; tick++)
@@ -287,13 +244,10 @@ public sealed class CharacterMoverTests
         jumps.ShouldBe(1, "a held jump must fire once, not on every landing");
     }
 
-    // --- Purity and state ----------------------------------------------------
-
     [Fact]
     public void The_mover_is_deterministic()
     {
-        // The property rollback will later depend on: identical state plus
-        // identical commands produce an identical result, every time.
+        // Rollback depends on this.
         var world = new TestWorld();
         world.AddBox("floor", new Vector3(-8f, -1f, -8f), new Vector3(8f, 0f, 8f));
         world.AddBox("wall", new Vector3(2f, 0f, -8f), new Vector3(2.5f, 3f, 8f));
@@ -312,8 +266,7 @@ public sealed class CharacterMoverTests
     [Fact]
     public void The_state_is_a_plain_struct_that_copies()
     {
-        // Capturing and restoring must be an assignment. A reference reaching
-        // out of the state would make rollback a rewrite instead of a copy.
+        // Capture and restore must be a plain copy: no references in the state.
         typeof(CharacterState).IsValueType.ShouldBeTrue();
 
         var world = new TestWorld();
@@ -326,7 +279,7 @@ public sealed class CharacterMoverTests
         state = world.Walk(state, forward: 1f, yaw: 0f, ticks: 60);
         state.Position.ShouldNotBe(captured.Position);
 
-        state = captured;   // restore is one assignment
+        state = captured;
         state.Position.ShouldBe(captured.Position);
     }
 
@@ -337,7 +290,7 @@ public sealed class CharacterMoverTests
         world.AddBox("block", new Vector3(-2f, -2f, -2f), new Vector3(2f, 2f, 2f));
         world.Compile();
 
-        // Feet at the block's centre: buried a full body deep.
+        // Feet at the block's centre.
         CharacterState state = world.Settle(CharacterState.AtFeet(Vector3.Zero), 240);
 
         bool outside = state.Position.Y > 1.9f
@@ -353,7 +306,6 @@ public sealed class CharacterMoverTests
         return new Aabb(min, max);
     }
 
-    /// <summary>A scene, a compiled static world and a collision source over it.</summary>
     private sealed class TestWorld
     {
         public Scene Scene { get; } = new("CharacterTest");
@@ -380,7 +332,6 @@ public sealed class CharacterMoverTests
             node.Brush = Brush.CreateBox(-half, half).WithOperation(BrushOperation.Subtractive);
         }
 
-        /// <summary>A wedge rising from <paramref name="from"/> over <paramref name="run"/>.</summary>
         public void AddRamp(string name, Vector3 from, float run, float rise, float halfWidth)
         {
             float length = MathF.Sqrt(run * run + rise * rise);

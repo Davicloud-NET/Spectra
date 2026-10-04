@@ -4,22 +4,9 @@ using System.Numerics;
 
 namespace SpectraEngine.Editor.Shell;
 
-/// <summary>
-/// The colour a picker is showing, in the terms a picker moves in.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Hue, saturation and value are held rather than derived per frame, because
-/// two of the three are unrecoverable at the edges.</b> Drag the value slider to
-/// black and the colour is (0,0,0), which has no hue and no saturation; derive
-/// them back and the marker jumps to a corner the user did not put it in. The
-/// picker keeps what it was told.
-/// </para>
-/// <para>
-/// <b>Pure: no control, no dispatcher, no scene.</b> It raises a linear colour
-/// and something else decides what that means.
-/// </para>
-/// </remarks>
+/// <summary>The colour a picker is showing, as hue, saturation and value.</summary>
+// HSV is stored, not derived from the colour: black has no hue and grey has
+// no saturation, so deriving them would make the markers jump.
 public sealed class ColorPickerModel : ObservableObject
 {
     private float _hue;
@@ -61,25 +48,21 @@ public sealed class ColorPickerModel : ObservableObject
     }
 
     /// <summary>
-    /// Whether the picker opened over a selection that disagreed.
+    /// Whether the picker opened over a selection that disagreed. Cleared by the first movement.
     /// </summary>
-    /// <remarks>
-    /// Cleared by the first movement, because from then on there IS one colour:
-    /// the one being dragged, which every selected node is about to get.
-    /// </remarks>
     public bool IsMixed
     {
         get => _isMixed;
         private set => Set(ref _isMixed, value);
     }
 
-    /// <summary>The colour as a person reads it.</summary>
+    /// <summary>The colour as <c>#RRGGBB</c>.</summary>
     public string Hex => ColorMath.ToHex(Srgb);
 
     /// <summary>The colour, in sRGB.</summary>
     public Vector3 Srgb => ColorMath.HsvToSrgb(_hue, _saturation, _value);
 
-    /// <summary>The colour, in the linear light the scene stores.</summary>
+    /// <summary>The colour, linear.</summary>
     public Vector3 Linear => ColorMath.SrgbToLinear(Srgb);
 
     /// <summary>The fully saturated hue the square is tinted with.</summary>
@@ -88,7 +71,7 @@ public sealed class ColorPickerModel : ObservableObject
     /// <summary>The colour itself, for the preview swatch.</summary>
     public IBrush PreviewBrush => Brush(Srgb);
 
-    /// <summary>Raised whenever the colour moves, in linear light.</summary>
+    /// <summary>Raised whenever the colour moves, with the linear colour.</summary>
     public event Action<Vector3>? Changed;
 
     /// <summary>
@@ -140,8 +123,7 @@ public sealed class ColorPickerModel : ObservableObject
 
         (float hue, float saturation, float value) = ColorMath.SrgbToHsv(srgb);
 
-        // A typed grey has no hue of its own, so the strip stays where the user
-        // last put it rather than snapping to red.
+        // A grey has no hue: keep the strip where it was.
         _hue = saturation <= 1e-6f ? _hue : hue;
         _saturation = saturation;
         _value = value;

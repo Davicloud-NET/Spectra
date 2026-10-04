@@ -1,6 +1,5 @@
-// DebugLine.spectrashade — unlit per-vertex-coloured shader for debug primitives
-// (wireframes, AABBs, normals, crosses). Position and colour come in per
-// vertex; no model matrix, all primitives are pushed in world space.
+// Unlit, per-vertex colour, for debug primitives. Vertices are already in
+// world space, so there is no model matrix.
 
 struct VertexInput {
     [Location(0)] vec3 position;

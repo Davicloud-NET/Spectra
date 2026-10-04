@@ -6,23 +6,17 @@
              x:DataType="shell:ShellModel"
              Background="{StaticResource SpectraBgPanel}">
 
-  <!--
-    The scene tree, self-contained: header, filter, and the flat virtualized
-    list, with every style and handler the rows need INSIDE the control so a
-    docking layout can host it anywhere without the window donating styles.
-  -->
+  <!-- Styles live in the control, not the window: a dock float leaves the
+       window's tree. -->
 
   <UserControl.Resources>
     <shell:SceneNodeKindIconConverter x:Key="KindIcon" />
     <shell:SceneNodeKindBrushConverter x:Key="KindTint" />
     <shell:TreeDepthIndentConverter x:Key="DepthIndent" />
 
-    <!-- One menu, shared by every row: a menu can only be open over one row at
-         a time, and its DataContext arrives from whichever row opened it. The
-         verbs act on the SELECTION, not the row - the right-press handler has
-         already made sure the row is part of it, which is the rule every
-         editor shares. Gestures are display text; the real bindings live in
-         the tree keyboard and the engine keymap. -->
+    <!-- Shared by every row. The verbs act on the selection, not the row.
+         Gestures are display text; the bindings are in the tree's key handler
+         and the engine keymap. -->
     <ContextMenu x:Key="RowMenu" x:DataType="local:SceneTreeNode">
       <MenuItem Header="Rename" InputGesture="F2" Click="OnMenuRename" />
       <MenuItem Header="Frame in viewport" InputGesture="F" Click="OnMenuFrame" />
@@ -40,9 +34,8 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
-    <!-- Tree rows. Selection and hover are drawn here, from model state and
-         the pointer, because Fluent's own row highlight is a different shape
-         and would sit underneath this one. -->
+    <!-- Selection and hover are drawn by Border.row, so Fluent's own row
+         highlight is switched off. -->
     <Style Selector="ListBoxItem">
       <Setter Property="Padding" Value="0" />
       <Setter Property="Margin" Value="0" />
@@ -51,10 +44,8 @@
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="FocusAdorner" Value="{x:Null}" />
     </Style>
-    <!-- Every state, named explicitly. Fluent hangs the row fill on the
-         template's presenter and picks it per state, so a single transparent
-         setter is beaten the moment the row is selected or hovered: the system
-         accent comes through as a bright bar the theme never chose. -->
+    <!-- Fluent sets the presenter's fill per state, so each state needs its
+         own transparent setter or the system accent shows through. -->
     <Style Selector="ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -76,8 +67,6 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
 
-    <!-- The expander. A button rather than a glyph, because it is one, and
-         hidden rather than disabled on a node with nothing under it. -->
     <Style Selector="Button.chevron">
       <Setter Property="Width" Value="14" />
       <Setter Property="Height" Value="{StaticResource SpectraTreeRowHeight}" />
@@ -106,9 +95,8 @@
       <Setter Property="Stroke" Value="{StaticResource SpectraTextEmphasis}" />
     </Style>
     <!-- TransformOperationsTransition, not TransformTransition: "rotate(90deg)"
-         parses to a TransformOperations, and the wrong transition type animates
-         nothing while producing no error. This is the single most-noticed
-         micro-animation in any tree, and it costs three lines. -->
+         parses to TransformOperations, and the other type animates nothing
+         without an error. -->
     <Style Selector="Button.chevron Path">
       <Setter Property="Transitions">
         <Transitions>
@@ -126,12 +114,7 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
       <Setter Property="Height" Value="{StaticResource SpectraTreeRowHeight}" />
-      <!-- The FILL ramps; the BORDER does not, and that split is the whole
-           reason this is one transition instead of two. The border is the drop
-           indicator, which changes at pointer-move rate while a drag crosses
-           rows - a 90ms ramp on it would smear the insertion line behind the
-           cursor and make the drop position unreadable, which is the one thing
-           it exists to say. -->
+      <!-- Fill only. Nothing that changes at pointer-move rate gets a ramp. -->
       <Setter Property="Transitions">
         <Transitions>
           <BrushTransition Property="Background"
@@ -141,18 +124,10 @@
       </Setter>
     </Style>
 
-    <!-- Drop indicators. INTO outlines the whole row (it becomes the parent);
-         BEFORE/AFTER draw the insertion edge. An edge line, not highlighting,
-         because sibling order is placement order here and the drop position
-         must read exactly.
-
-         Drawn by an OVERLAY border inside the row, never by the row's own
-         border: a Border reserves border space inside its bounds, so the old
-         per-class BorderThickness compressed the 24px row's content and the
-         label jittered 1-2px under every drag that crossed it. The overlay
-         paints over the content and participates in no layout. Still no
-         transition on it, for the documented reason: it moves at
-         pointer-move rate and a ramp would smear the insertion line. -->
+    <!-- Drop indicators: into outlines the row, before/after draw an edge.
+         An overlay, not the row's own border: a Border reserves its border
+         inside its bounds, so the label would shift under a drag.
+         No transition: it moves at pointer rate and a ramp would smear it. -->
     <Style Selector="Border.dropink">
       <Setter Property="BorderBrush" Value="{StaticResource SpectraAccent}" />
       <Setter Property="BorderThickness" Value="0" />
@@ -175,13 +150,8 @@
       <Setter Property="Background" Value="{StaticResource SpectraRowSelected}" />
     </Style>
 
-    <!-- The 2px accent bar is what makes a selected row unmistakable at a
-         glance down a long list; the fill alone is too quiet at 22% and too
-         loud above it.
-
-         It GROWS from the row's centre rather than appearing. Scale and opacity
-         only - never Width, which is layout and would re-measure every row in
-         a virtualised list thirty times a second. A transform is composited. -->
+    <!-- Animate scale and opacity, not Width: Width is layout and would
+         re-measure the virtualised rows. -->
     <Style Selector="Border.selbar">
       <Setter Property="Background" Value="{StaticResource SpectraAccent}" />
       <Setter Property="Opacity" Value="0" />
@@ -212,9 +182,7 @@
     <Style Selector="Border.row.selected TextBlock.rowname">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
     </Style>
-    <!-- Filtered out, not hidden: removing rows collapses the hierarchy around
-         every match and destroys the only thing a user has after two hundred
-         nodes, which is knowing where things live. -->
+    <!-- Filtered-out rows are dimmed, not hidden, so the hierarchy keeps its shape. -->
     <Style Selector="Border.row.dim TextBlock.rowname">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
     </Style>
@@ -225,15 +193,8 @@
       <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
     </Style>
 
-    <!-- The in-place rename editor: the same footprint as the name it
-         replaces, so nothing in the row moves when editing starts. -->
-    <!-- A filter matching nothing marks itself and its count. Accent, not
-         warning yellow: an empty result is not a fault, it is a state, and this
-         is the same colour the shell uses for "here is where you are".
-
-         The counter's resting colour is a CLASS, declared before .nomatch so
-         the accent wins its tie: set inline it was a LocalValue, which beats
-         any class rule, and the count never turned. -->
+    <!-- The counter's resting colour is a class declared before .nomatch.
+         Set inline it would be a LocalValue and beat the .nomatch rule. -->
     <Style Selector="TextBlock.treecount">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
     </Style>
@@ -262,10 +223,6 @@
 
   <DockPanel>
 
-    <!-- No panel header: the dock's own tool chrome already names this
-         "Scene", and a second decorative title row was vertical cost for no
-         information. The count rides the filter row instead, where it is
-         also the filter's own feedback. -->
     <Grid DockPanel.Dock="Top" Margin="8,6,8,6" ColumnDefinitions="*,Auto,Auto">
       <TextBox Grid.Column="0" x:Name="FilterBox" Classes="field"
                Classes.nomatch="{Binding HasNoMatches}"
@@ -283,11 +240,8 @@
                  ToolTip.Tip="Nodes shown / nodes in the scene" />
     </Grid>
 
-    <!-- A filter that matches nothing is otherwise indistinguishable from a
-         panel that broke: the rows stay (dimming rather than hiding is what
-         preserves the user's spatial memory of their own scene) so a zero-match
-         filter dims all 253 of them and changes a five-character counter. This
-         says so in words, and offers the way out. -->
+    <!-- A zero-match filter only dims rows, which looks like a broken panel.
+         Say it in words. -->
     <Border DockPanel.Dock="Top" Margin="8,0,8,6" Padding="8,6"
             Background="{StaticResource SpectraBgInput}"
             BorderBrush="{StaticResource SpectraBorderSoft}"
@@ -304,14 +258,8 @@
       </Grid>
     </Border>
 
-    <!--
-      A flat list, not a tree control. A TreeView realises a container per
-      node whether or not it can be seen, which at this engine's own ceiling
-      of 25,000 nodes means building twenty-five thousand rows to show
-      thirty-five. The model flattens to the visible rows and carries each
-      one's depth, so the panel virtualizes like any list and the indent is
-      a margin.
-    -->
+    <!-- A flat ListBox, not a TreeView: TreeView does not virtualize. The model
+         flattens to the visible rows and each carries its depth. -->
     <ListBox x:Name="SceneTree"
              ItemsSource="{Binding Tree.Rows}"
              SelectionMode="Multiple"
@@ -323,20 +271,14 @@
              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
       <ListBox.ItemsPanel>
         <ItemsPanelTemplate>
-          <!-- The default panel already, named so the realisation buffer can
-               be set: it defaults to zero, which realises exactly the
-               visible rows and pops one in at each edge as you scroll. Half
-               a viewport either side costs about thirty more rows. -->
+          <!-- CacheLength defaults to 0, which pops rows in at the edges. -->
           <VirtualizingStackPanel CacheLength="0.5" />
         </ItemsPanelTemplate>
       </ListBox.ItemsPanel>
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="local:SceneTreeNode">
-          <!-- The indent lives on the CONTENT, not the row: hover, selection
-               and the drop indicators span the panel (the way every outliner
-               draws them), and the hover no longer disagrees with the click -
-               the gutter left of a deep row always selected, and used to show
-               no hover at all. The selection bar stays pinned at the edge. -->
+          <!-- Indent is on the content, not the row, so hover, selection and
+               drop lines span the full width. -->
           <Border Classes="row"
                   Classes.selected="{Binding IsSelected}"
                   Classes.dim="{Binding IsDimmed}"
@@ -363,16 +305,11 @@
                         Width="15" Height="15"
                         RenderTransform="scale(1.05)"
                         Margin="2,0,0,0" />
-                  <!-- The tooltip is the whole name. Rows trim with an ellipsis and
-                       the panel does not scroll sideways, so at 288px a name three
-                       levels deep is unreadable and there was no way to see it at
-                       all short of dragging the splitter. -->
                   <TextBlock Grid.Column="2" Classes="rowname" Text="{Binding Name}" Margin="6,0,4,0"
                              IsVisible="{Binding !IsRenaming}"
                              ToolTip.Tip="{Binding Name}" />
-                  <!-- Text is set imperatively when editing begins, never bound:
-                       a binding would let a ~30 Hz snapshot republish rewrite the
-                       box mid-keystroke, which reads as a broken keyboard. -->
+                  <!-- Text is set in code when editing begins. A binding would let
+                       a snapshot republish rewrite the box mid-keystroke. -->
                   <TextBox Grid.Column="2" Classes="renamebox"
                            IsVisible="{Binding IsRenaming}"
                            KeyDown="OnRenameKeyDown"

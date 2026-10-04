@@ -4,21 +4,10 @@ using System;
 namespace Spectra.Kitchen.Cooking;
 
 /// <summary>
-/// Decides which rule cooks which asset.
+/// Decides which rule cooks which asset. A file with no rule is copied raw.
 /// </summary>
-/// <remarks>
-/// <para><b>A hand-written extension table, never a registry built by
-/// reflection.</b> Discovering rules by scanning types is what trimming removes:
-/// the cook would work in every debug run and produce a pack of raw copies in a
-/// published one, with no error anywhere, because a raw copy of a PNG is a
-/// perfectly valid pack entry.</para>
-/// <para><b>The fallback is <see cref="RawCopyRule"/> and it is deliberately not a
-/// refusal.</b> A file the cook has no rule for still has to reach the runtime, or
-/// a packed build resolves less content than a loose one. That is how <c>.png</c>
-/// reached a pack before <see cref="ImageRule"/> existed, and it is still how a
-/// project manifest, a text file a game reads at runtime and anything else with no
-/// cooked format of its own gets there.</para>
-/// </remarks>
+// Hand-written table. Finding rules by reflection would be trimmed away in an
+// AOT build and every asset would fall through to the raw copy.
 public sealed class CookRuleSet
 {
     private readonly RawCopyRule _rawCopy = new();
@@ -31,17 +20,9 @@ public sealed class CookRuleSet
     private readonly MapRule _map = new();
 
     /// <summary>
-    /// The rule that bakes a map bundle.
+    /// The rule that bakes a map bundle. A bundle is a folder, so it does not go
+    /// through <see cref="Resolve"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>Asked for by name rather than resolved from a path, because a bundle is
-    /// a FOLDER.</b> <see cref="Resolve"/> answers for files the content walk
-    /// found, and its floor is the raw copy; a directory that fell through to that
-    /// floor would be copied into the pack as nothing at all, silently, which is
-    /// the one failure a floor must not have. The session already knows which
-    /// entries are maps, because it got them from <c>ProjectLayout.DiscoverMaps</c>
-    /// rather than from the walk.
-    /// </remarks>
     public IRule ResolveMap() => _map;
 
     /// <summary>The rule that cooks <paramref name="contentPath"/>.</summary>
@@ -49,19 +30,12 @@ public sealed class CookRuleSet
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(contentPath);
 
-        // Matched on the EXTENSION through the rule's own predicate rather than
-        // on a string spelled here: the rule already has to name what it cooks in
-        // order to name what it emits, and a second spelling of ".spectrashade"
-        // in this file is a rule that silently stops being reached.
         if (ShaderRule.Handles(contentPath)) return _shader;
         if (ImageRule.Handles(contentPath)) return _image;
         if (MaterialRule.Handles(contentPath)) return _material;
         if (AudioRule.Handles(contentPath)) return _audio;
         if (ModelRule.Handles(contentPath)) return _model;
 
-        // Everything else falls through to the raw copy, which is the floor
-        // rather than a placeholder: content with no cooked format of its own
-        // still has to reach the runtime.
         return _rawCopy;
     }
 }

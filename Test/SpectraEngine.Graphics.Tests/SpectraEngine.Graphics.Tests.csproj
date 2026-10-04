@@ -2,33 +2,19 @@
 
   <PropertyGroup>
     <RootNamespace>SpectraEngine.Graphics.Tests</RootNamespace>
-    <!-- ComOwnershipTests builds a real COM object (vtable + refcount) in
-         native memory to prove ComPtr's AddRef semantics without a GPU. -->
+    <!-- ComOwnershipTests builds a COM object in native memory. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\SpectraEngine.Core\SpectraEngine.Core.csproj" />
     <ProjectReference Include="..\..\SpectraShade.Compiler\SpectraShade.Compiler.csproj" />
-    <!--
-      The cooker, for CookedTextureGlTests. The claim it makes spans two
-      assemblies and cannot be made from either alone: the writer lives in the
-      Kitchen because no shipped game writes a pack, the reader and the uploader
-      live in Core because every shipped game reads one, and what nobody had
-      proved is that bytes the first produces render correctly through the second
-      on a real driver. Cooking a fixture here rather than checking one in also
-      means the oracle re-encodes on every run, so an encoder change cannot leave
-      a stale artifact passing.
-    -->
+    <!-- CookedTextureGlTests cooks its fixture on every run instead of checking one in. -->
     <ProjectReference Include="..\..\Spectra.Kitchen\Spectra.Kitchen.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Linked, not copied: the compiler suite asserts what this source
-         GENERATES and this suite asserts that the generated code actually
-         compiles on a driver. Two copies of the fixture would let those two
-         claims drift apart, which is the one thing the pair exists to rule
-         out. -->
+    <!-- Linked, not copied: the compiler suite and this one must test the same source. -->
     <None Include="..\SpectraShade.Compiler.Tests\Fixtures\InstancedVertex.spectrashade"
           Link="Fixtures\InstancedVertex.spectrashade"
           CopyToOutputDirectory="PreserveNewest" />

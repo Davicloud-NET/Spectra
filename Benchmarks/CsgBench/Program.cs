@@ -8,51 +8,19 @@ using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Scene;
 
-// ============================================================================
-// CsgBench — static-world compile and BSP query benchmark.
+// Static-world compile and BSP query benchmark.
 //
-// Times every pipeline phase (Csg.Carve → VertexSnapper.Snap →
-// TJunctionWelder.Weld → BspTree.BuildFromSurfaces → CsgWorld.BuildMesh) over
-// synthetic scenes, cross-checked against the end-to-end CsgWorld.Build path.
-// Median of 3 timed reps (the perf-gate protocol) after two untimed warmups,
-// forced GC between reps, and a managed-allocation delta per configuration.
-// The run header prints the measurement protocol and JIT configuration —
-// phase medians swing several-fold under different JIT conditions (tiering
-// alone was observed to move carve medians ~5x), so recorded baselines are
-// only comparable to runs whose protocol lines match. The QUERY scenario is
-// the regression guard for BSP splitter and query-routing work (queries go
-// through the routed per-cell API since W3): tree SHAPE may change, but the
-// inside/hit checksums must stay identical. The INCREMENTAL scenario compares
-// the full-recompile cost of a one-brush edit against the incremental path
-// through CsgCompileCache, and cross-checks that both produce bit-identical
-// mesh arrays. The OPENWORLD scenario is the open-world pillar's proof:
-// scattered parts worlds at 1k/10k/50k brushes (constant density, half the
-// world around +8000 units to exercise position-independent precision), with
-// the HEADLINE number being the full-cache-carry recompile cost of moving ONE
-// part — which must stay flat as the world grows — plus the validated
-// fallback floor of ADDING one part (a placement-count change takes the
-// validated caching path, whose all-hit validation cost is O(world) by
-// design and must stay visible to the perf gate), plus the routed
-// point->cell / ray->DDA query rates over the 10k world. The BAKE scenario is
-// the cook's side of the same question: it splits a clean map cook into the
-// compile (cache-free CsgWorld.Build plus the BSP flatten) and the serialize
-// (the ScmapBuilder tables and the CMSH/CBSP blobs), times the two halves
-// independently, and asserts that the serializer stays a small fraction of the
-// compile it writes out.
-//
-// Usage:
 //   dotnet run -c Release --project Benchmarks/CsgBench                # all scenarios
 //   dotnet run -c Release --project Benchmarks/CsgBench -- grid query  # a subset
 //
 // Filters match scenario-name prefixes: grid | floorplan | tower | query |
-// incremental | openworld | bake (so "floor" and "incr" work too).
-// ============================================================================
+// incremental | openworld | bake.
+//
+// Baselines are only comparable between runs whose printed protocol lines match.
 
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
-// Timed repetitions per configuration; the reported value is the median.
-// Pinned to 3 — the perf-gate protocol — so phase medians recorded as
-// baselines are apples-to-apples with gate runs.
+// The perf gate uses 3 too. Keep them equal or baselines stop comparing.
 const int TimedReps = 3;
 
 string[] scenarios = ["grid", "floorplan", "tower", "query", "incremental", "openworld", "bake"];
@@ -71,11 +39,8 @@ bool ShouldRun(string scenario) =>
 Console.WriteLine($"ProcessorCount: {Environment.ProcessorCount}");
 Console.WriteLine($"GC server mode: {System.Runtime.GCSettings.IsServerGC}");
 
-// The measurement protocol is part of every number this program prints.
-// A baseline recorded without these lines cannot be audited later; a
-// baseline recorded WITH them is only comparable to runs where they match.
-// (The csproj sets TieredCompilation=false; the runtime knob is echoed here
-// so a stray environment override is visible in the output it skewed.)
+// The csproj turns tiering off. Echo the runtime knob so an environment
+// override shows up in the output it skewed.
 object? tieredKnob = AppContext.GetData("System.Runtime.TieredCompilation");
 Console.WriteLine($"TieredCompilation: {tieredKnob ?? "runtime default (enabled)"}");
 Console.WriteLine($"Protocol: median of {TimedReps} timed reps, 2 untimed warmups, forced blocking GC between reps");
@@ -113,10 +78,6 @@ if (ShouldRun("bake"))
 
 return 0;
 
-// =====================================================================
-// Scenario generators
-// =====================================================================
-
 static List<BrushPlacement> MakeGrid(int k)
 {
     // k*k*k cubes, size 2.0, spacing 1.8 -> each overlaps its 6 neighbors by 0.2.
@@ -152,14 +113,13 @@ static List<BrushPlacement> MakeFloorplan(int k)
             list.Add(new BrushPlacement(brush, Matrix4x4.CreateTranslation(i * spacing, 0f, j * spacing)));
         }
 
-    float minEdge = -tHalf;                       // outer edge of tile row 0
-    float maxEdge = (k - 1) * spacing + tHalf;    // outer edge of last tile row
-    // Wall bottoms at y=0 -> overlap the floor slab (top at +0.25) by 0.25.
+    float minEdge = -tHalf;
+    float maxEdge = (k - 1) * spacing + tHalf;
+    // Wall bottoms at y=0 overlap the floor slab (top at +0.25) by 0.25.
     float wallY = wallHalfH;
 
     for (int i = 0; i < k; i++)
     {
-        // walls along Z-min and Z-max edges, running in X
         var wx = Brush.CreateBox(
             new Vector3(-tHalf, -wallHalfH, -wallHalfT),
             new Vector3(tHalf, wallHalfH, wallHalfT));
@@ -169,7 +129,6 @@ static List<BrushPlacement> MakeFloorplan(int k)
             new Vector3(tHalf, wallHalfH, wallHalfT));
         list.Add(new BrushPlacement(wx2, Matrix4x4.CreateTranslation(i * spacing, wallY, maxEdge)));
 
-        // walls along X-min and X-max edges, running in Z
         var wz = Brush.CreateBox(
             new Vector3(-wallHalfT, -wallHalfH, -tHalf),
             new Vector3(wallHalfT, wallHalfH, tHalf));
@@ -185,8 +144,7 @@ static List<BrushPlacement> MakeFloorplan(int k)
 
 static List<BrushPlacement> MakeTower(int n)
 {
-    // N size-2 cubes all overlapping the same region, each shifted 0.1 on Y —
-    // the pathological deep-overlap case for the carve phase.
+    // N size-2 cubes on one spot, each shifted 0.1 on Y. Worst case for carve.
     var list = new List<BrushPlacement>(n);
     for (int i = 0; i < n; i++)
     {
@@ -196,15 +154,9 @@ static List<BrushPlacement> MakeTower(int n)
     return list;
 }
 
-// =====================================================================
-// Compile benchmark
-// =====================================================================
-
 static void RunConfig(string name, List<BrushPlacement> placements)
 {
-    // Warmup: whole pipeline twice (phases + end-to-end), untimed. Two rounds
-    // because the Parallel.For phases need the thread pool spun up before the
-    // first timed rep, and one round is not always enough on wide machines.
+    // Two warmup rounds: one does not always spin the thread pool up on wide machines.
     for (int warm = 0; warm < 2; warm++)
     {
         var s = Csg.Carve(placements);
@@ -244,7 +196,7 @@ static void RunConfig(string name, List<BrushPlacement> placements)
         BspTree tree = BspTree.BuildFromSurfaces(welded);
         sw.Stop(); bsp[r] = sw.Elapsed.TotalMilliseconds;
 
-        // End-to-end cross-check (carve+snap+weld+bsp inside CsgWorld.Build).
+        // End-to-end cross-check
         Collect();
         sw.Restart();
         CsgWorld world = CsgWorld.Build(placements);
@@ -260,8 +212,7 @@ static void RunConfig(string name, List<BrushPlacement> placements)
         GC.KeepAlive(tree);
     }
 
-    // Managed-allocation delta for one full compile (Build + BuildMesh),
-    // measured outside the timed reps so the accounting itself is not timed.
+    // Allocation is measured outside the timed reps.
     Collect();
     long allocBefore = GC.GetTotalAllocatedBytes(precise: true);
     {
@@ -281,10 +232,8 @@ static void RunConfig(string name, List<BrushPlacement> placements)
         $"{carveMed,8:F2} | {snapMed,7:F2} | {weldMed,7:F2} | {bspMed,7:F2} | {meshMed,7:F2} | {sum,7:F2} | {e2eMed,8:F2} | {allocBytes / (1024.0 * 1024.0),8:F1}");
 }
 
-// =====================================================================
-// Query benchmark — the regression guard for BSP splitter changes.
-// =====================================================================
-
+// Regression guard for BSP splitter and routing changes: tree shape may
+// change, the checksums must not.
 static void RunQueryBench()
 {
     Console.WriteLine();
@@ -293,17 +242,13 @@ static void RunQueryBench()
     List<BrushPlacement> placements = MakeFloorplan(20);
     CsgWorld world = CsgWorld.Build(placements);
 
-    // Queries route to per-cell BSP trees since W3; the stats aggregate every
-    // occupied cell's tree (resident surfaces appear in several cells' trees,
-    // so node totals are not comparable to pre-W3 global-tree baselines — the
-    // semantic checksums below are the values that must not move).
+    // A surface can sit in several cells' trees, so node totals overcount.
     TreeStats stats = MeasureCellTrees(world);
     Console.WriteLine(
         $"  trees: {world.Chunks.Count:N0} cells, {stats.Nodes:N0} nodes, {stats.Leaves:N0} leaves, " +
         $"avg leaf depth {stats.AvgLeafDepth:F1}, max depth {stats.MaxDepth}");
 
-    // Query volume: the brush bounds plus a margin, so points land inside
-    // solid, in enclosed empty space, and outside the world.
+    // Margin so some points land outside the world.
     Aabb bounds = WorldBounds(placements).Expanded(2f);
     Vector3 min = bounds.Min, size = bounds.Size;
 
@@ -311,9 +256,7 @@ static void RunQueryBench()
     const int RayCount = 100_000;
     const float RayMaxDistance = 40f;
 
-    // Deterministic inputs from a fixed-seed LCG (System.Random's algorithm is
-    // not guaranteed stable across runtimes), pre-generated so the timed loops
-    // measure pure query cost.
+    // Own LCG: System.Random is not stable across runtimes.
     var lcg = new Lcg(0x5EEDC0DE12345678UL);
     var points = new Vector3[PointCount];
     for (int i = 0; i < points.Length; i++)
@@ -338,9 +281,6 @@ static void RunQueryBench()
         $"{RayCount / raySeconds / 1e6:F2} M calls/s | checksum hits={hits:N0} ({100.0 * hits / RayCount:F2} %)");
 }
 
-// Times ContainsPoint over pre-generated inputs — one untimed warmup pass
-// fixes the checksum, then the standard median-of-reps protocol with forced
-// GC between reps. Shared by the QUERY scenario and OPENWORLD's query section.
 static (double Seconds, long Inside) MeasurePointQueries(CsgWorld world, Vector3[] points)
 {
     long inside = 0;
@@ -363,7 +303,6 @@ static (double Seconds, long Inside) MeasurePointQueries(CsgWorld world, Vector3
     return (Median(elapsed), inside);
 }
 
-// Raycast counterpart of MeasurePointQueries — same protocol, same sharing.
 static (double Seconds, long Hits) MeasureRayQueries(
     CsgWorld world, Vector3[] origins, Vector3[] directions, float maxDistance)
 {
@@ -387,8 +326,6 @@ static (double Seconds, long Hits) MeasureRayQueries(
     return (Median(elapsed), hits);
 }
 
-// Aggregates the structural stats of every occupied cell's tree — the routed
-// counterpart of the old single-tree measurement.
 static TreeStats MeasureCellTrees(CsgWorld world)
 {
     int nodes = 0, leaves = 0, maxDepth = 0;
@@ -404,8 +341,7 @@ static TreeStats MeasureCellTrees(CsgWorld world)
     return new TreeStats(nodes, leaves, maxDepth, leaves == 0 ? 0.0 : leafDepthSum / leaves);
 }
 
-// Walks the whole tree once with an explicit stack (depth can exceed what
-// comfortable recursion allows on degenerate splitter orders).
+// Explicit stack: a degenerate splitter order can make the tree very deep.
 static TreeStats MeasureTree(BspTree tree)
 {
     int nodes = 0, leaves = 0, maxDepth = 0;
@@ -446,10 +382,7 @@ static Aabb WorldBounds(List<BrushPlacement> placements)
     return new Aabb(min, max);
 }
 
-// =====================================================================
-// Incremental benchmark — a one-brush edit, full recompile vs the carve cache.
-// =====================================================================
-
+// A one-brush edit: full recompile against the carve cache.
 static void RunIncrementalBench()
 {
     Console.WriteLine();
@@ -458,16 +391,11 @@ static void RunIncrementalBench()
     const int K = 10;
     List<BrushPlacement> placements = MakeGrid(K);
 
-    // The editor starting state: a fully compiled world already exists —
-    // built through the caching path so its per-brush carve results seed the
-    // cache the edited recompile consumes.
+    // Built through the caching path so it seeds the cache the edit consumes.
     CsgWorld before = CsgWorld.Build(placements, previousCache: null);
     _ = before.BuildMesh();
     CsgCompileCache cache = before.CompileCache!;
 
-    // Nudge the center brush 0.3 on X — the canonical "user drags one brush"
-    // edit that incremental compilation must make cheap. Placements are
-    // immutable, so the edit is a list copy with one element replaced.
     int center = (K / 2) * K * K + (K / 2) * K + (K / 2);
     var edited = new List<BrushPlacement>(placements);
     edited[center] = edited[center] with
@@ -477,9 +405,9 @@ static void RunIncrementalBench()
 
     const int reps = TimedReps;
 
-    // --- FULL recompile: the cache-free baseline the cache is measured against.
+    // Full recompile, no cache: the baseline.
     for (int warm = 0; warm < 2; warm++)
-    { // warmup, untimed
+    {
         CsgWorld w = CsgWorld.Build(edited);
         _ = w.BuildMesh();
     }
@@ -505,12 +433,9 @@ static void RunIncrementalBench()
     }
     long fullAllocBytes = GC.GetTotalAllocatedBytes(precise: true) - allocBefore;
 
-    // --- CACHED recompile through the real CsgCompileCache. The cache is
-    // immutable once built, so every rep consumes the same instance (each rep
-    // produces, and discards, a fresh successor cache — exactly what one
-    // editor edit does).
+    // Cached recompile. The cache is immutable, so every rep reuses it.
     for (int warm = 0; warm < 2; warm++)
-    { // warmup, untimed
+    {
         CsgWorld w = CsgWorld.Build(edited, cache);
         _ = w.BuildMesh();
     }
@@ -545,8 +470,7 @@ static void RunIncrementalBench()
     }
     long cachedAllocBytes = GC.GetTotalAllocatedBytes(precise: true) - allocBefore;
 
-    // Correctness cross-check: the cached recompile must be bit-identical to
-    // the full recompile of the same placements (float.Equals semantics).
+    // The cached recompile must be bit-identical to the full one.
     {
         (float[] fullVerts, uint[] fullIdx) = CsgWorld.Build(edited).BuildMesh();
         (float[] cachedVerts, uint[] cachedIdx) = CsgWorld.Build(edited, cache).BuildMesh();
@@ -562,13 +486,8 @@ static void RunIncrementalBench()
     GC.KeepAlive(before);
 }
 
-// =====================================================================
-// Open-world benchmark — the open-world pillar's proof. Scattered "parts"
-// worlds at three sizes with constant density; the headline is the cost of
-// recompiling after moving ONE part with the full cache carry, which must be
-// a function of the part's neighbourhood, not of world size.
-// =====================================================================
-
+// Scattered parts at three world sizes, constant density. Moving one part
+// must cost the same at every size.
 static void RunOpenWorldBench()
 {
     Console.WriteLine();
@@ -592,20 +511,14 @@ static void RunOpenWorldBench()
         (editMedians[i], noopMedians[i], addMedians[i], CsgWorld world, OpenWorld open) = RunOpenWorldSize(sizes[i]);
         if (sizes[i] == 10_000)
         {
-            // Kept alive for the routed-query section below — ~10k parts of
-            // world data, cheap next to the 50k configuration's own peak.
+            // For the query section below.
             world10k = world;
             open10k = open;
         }
     }
 
-    // The world-size-independence verdict — scoped to what it actually
-    // proves: the footprint-stable one-part MOVE gesture at 50k vs 1k.
-    // Medians of 3 reps jitter; 1.5x is the noise band that separates "flat
-    // with jitter" from "scaling with world size" (a true O(world) stage
-    // would show up as ~50x here, not ~1.5x). Add/remove gestures are NOT
-    // covered by this verdict — they pay the validated fallback floor in the
-    // 'add' column, which grows with the world by design.
+    // Covers the move gesture only. 1.5x is the noise band: an O(world) stage
+    // would show about 50x. Add and remove pay the fallback in the 'add' column.
     double ratio = editMedians[^1] / editMedians[0];
     Console.WriteLine(
         $"  verdict (MOVE gesture): one-part edit at 50k parts = {ratio:F2}x the edit at 1k parts -> " +
@@ -613,13 +526,8 @@ static void RunOpenWorldBench()
             ? "world-size independent (within noise)"
             : "NOT world-size independent — investigate before accepting this as a baseline"));
 
-    // Attribution, honestly labeled: the no-op build short-circuits through
-    // the patch path's changed-empty branch (every artifact carries forward
-    // by reference — O(1), no grid re-bucketing, no cache validation), so it
-    // measures the per-compile bookkeeping floor of the PATCH path only.
-    // edit - noop is the edit-scoped stage work. The validated caching path's
-    // own O(world) floor — what every placement-count change pays — is the
-    // 'add' column above, not this number.
+    // The no-op build is the patch path's bookkeeping floor only. The validated
+    // path's O(world) floor is the 'add' column.
     Console.WriteLine(
         $"  attribution: patch-path no-op (changed-empty short-circuit) {string.Join(" / ", noopMedians.Select(m => $"{m:F2}"))} ms; " +
         $"edit-scoped work (edit - noop) {string.Join(" / ", sizes.Select((_, i) => $"{editMedians[i] - noopMedians[i]:F2}"))} ms; " +
@@ -634,11 +542,8 @@ static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld W
     OpenWorld open = MakeOpenWorld(parts);
     List<BrushPlacement> placements = open.Placements;
 
-    // --- Initial full compile through the caching path — how an editor
-    // session starts, and the producer of the caches the edit consumes. One
-    // untimed warmup per size (the scenario runs sizes ascending, so the code
-    // paths are already hot from the smaller sizes; a second warmup at 50k
-    // would only stretch the run).
+    // Initial compile through the caching path. One warmup: sizes run
+    // ascending, so the code is already hot.
     CsgWorld world = OpenWorldCompile(placements);
 
     var initial = new double[TimedReps];
@@ -657,9 +562,7 @@ static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld W
     long initialAlloc = GC.GetTotalAllocatedBytes(precise: true) - allocBefore;
     Collect();
 
-    // --- The headline edit: move one isolated part 0.3 on X — the canonical
-    // "user drags one part" gesture. Placements are immutable, so the edit is
-    // a list copy with one element replaced.
+    // The edit: move one isolated part 0.3 on X.
     BrushPlacement before = placements[open.EditIndex];
     BrushPlacement after = before with
     {
@@ -668,27 +571,18 @@ static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld W
     var edited = new List<BrushPlacement>(placements);
     edited[open.EditIndex] = after;
 
-    // Dirty cells exactly as the scene's footprint diff computes them: the
-    // union of the moved part's old and new residency footprints, sorted.
+    // Dirty cells as the scene computes them: old and new footprints, sorted.
     var dirtySet = new HashSet<ChunkCoord>(ChunkGrid.ComputeFootprint(in before));
     dirtySet.UnionWith(ChunkGrid.ComputeFootprint(in after));
     var dirtyCells = new ChunkCoord[dirtySet.Count];
     dirtySet.CopyTo(dirtyCells);
     Array.Sort(dirtyCells);
 
-    // Deliberately NO monolithic BuildMesh in the timed section: the editor
-    // path renders the per-cell meshes built inside Build and uploads only
-    // the changed cells — a whole-world mesh flatten would be a synthetic
-    // O(world) cost the engine no longer pays. The carry is the previous
-    // WORLD (per-brush and per-cell state included), exactly what the scene
-    // pump hands each background compile.
+    // No BuildMesh in the timed section: the editor uploads per-cell meshes,
+    // so a whole-world flatten would be a cost the engine does not pay.
     //
-    // An incremental edit compile costs ~0.1 ms — far below this machine's
-    // scheduling/cache jitter for a single timed call — so each rep times a
-    // BURST of back-to-back recompiles (the shape of a real drag: one compile
-    // per frame) and reports the per-compile mean; the median-of-reps
-    // protocol above is unchanged. Every burst iteration derives from the
-    // same previous world, so each one is the identical measurement.
+    // One edit compile is about 0.1 ms, below timer jitter, so each rep times
+    // a burst from the same previous world and reports the mean.
     const int BurstIterations = 16;
     for (int warm = 0; warm < 2; warm++)
         _ = CsgWorld.Build(edited, dirtyCells, world);
@@ -711,15 +605,8 @@ static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld W
     long editAlloc = GC.GetTotalAllocatedBytes(precise: true) - allocBefore;
     Collect();
 
-    // No-op recompile: identical placements, full carry, empty dirty set.
-    // This short-circuits through the PATCH path's changed-empty branch —
-    // every artifact carries forward by reference, no grid re-bucketing, no
-    // cache validation, no flat-list assembly runs — so it measures only the
-    // patch path's per-compile bookkeeping floor (scanning the empty dirty
-    // set, wrapping the carried state in a world object). That floor must
-    // NOT scale with world size; subtracting it from the edit time isolates
-    // the edit-scoped stage work. It says NOTHING about the validated
-    // fallback path's floor — that is the 'add' measurement below.
+    // No-op recompile: same placements, empty dirty set. Measures the patch
+    // path's bookkeeping floor, which must not scale with world size.
     for (int warm = 0; warm < 2; warm++)
         _ = CsgWorld.Build(placements, [], world);
 
@@ -735,17 +622,10 @@ static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld W
     }
     Collect();
 
-    // ADD gesture: append one isolated part far from everything. The
-    // placement count changes, so the patch path refuses the edit and the
-    // compile falls back to the fully validated caching path — the same path
-    // every part placement/deletion/reparent takes in the editor. Its cost
-    // has an O(world) validation floor even with every cache hitting; that
-    // floor is a real per-placement latency and must be visible to the perf
-    // gate. `previous` is the PATCHED edited world, the editor's actual
-    // mid-session state, so the warmup also pays (once) the lazy
-    // classic-cache materialization a patched world defers; the timed reps
-    // then measure the steady validated floor. No burst: this path is
-    // milliseconds, far above scheduling jitter.
+    // Add one isolated part. A count change takes the validated caching path,
+    // which has an O(world) floor even when every cache hits. The previous
+    // world is the patched one, so the warmup also pays its lazy cache
+    // materialization. No burst: this path takes milliseconds.
     var addedPlacements = new List<BrushPlacement>(edited)
     {
         new BrushPlacement(
@@ -769,9 +649,7 @@ static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld W
     }
     Collect();
 
-    // Correctness spot-check at the smallest size only (the oracle suites pin
-    // the equivalence exhaustively; this guards the benchmark's own wiring):
-    // the cached edited world must match a cache-free build bit for bit.
+    // Spot-check the benchmark's own wiring at the smallest size.
     if (parts == 1_000)
     {
         (float[] freshVerts, uint[] freshIdx) = CsgWorld.Build(edited).BuildMesh();
@@ -793,18 +671,14 @@ static (double EditMedianMs, double NoopMedianMs, double AddMedianMs, CsgWorld W
     return (Median(edit), Median(noop), Median(add), world, open);
 }
 
-// The initial-compile shape of an editor session: cache-producing (all four
-// successor caches), no previous caches to consume.
+// Produces all four caches and consumes none, like an editor session's first compile.
 static CsgWorld OpenWorldCompile(List<BrushPlacement> placements) =>
     CsgWorld.Build(
         placements, dirtyCells: null, previousCache: null,
         previousWeldCache: null, previousBspCache: null, previousMeshCache: null);
 
-// Routed queries over the 10k openworld: points hash to their cell, rays walk
-// cells via 3D-DDA. Samples alternate between the near-origin and +8,000
-// regions, so the numbers cover both the dense-cell path and the far-from-
-// origin precision pillar; the inter-region void is deliberately not sampled
-// (it would only measure dictionary misses).
+// Samples alternate between the two regions. The void between them is not
+// sampled: it would only measure dictionary misses.
 static void RunOpenWorldQuery(CsgWorld world, OpenWorld open)
 {
     Console.WriteLine();
@@ -845,15 +719,10 @@ static void RunOpenWorldQuery(CsgWorld world, OpenWorld open)
         $"{RayCount / raySeconds / 1e6:F2} M calls/s | checksum hits={hits:N0} ({100.0 * hits / RayCount:F2} %)");
 }
 
-// Deterministic scattered-parts world. Sites live on a fixed grid (spacing 20)
-// split into two equal regions — one centred on the origin, one around
-// +8,000 on X and Z — and every site's geometry is confined to its own square
-// (jitter [5,11] plus a max construct reach of 6 keeps everything within
-// [3,17] of a 20-unit site), so nothing ever touches across sites and the
-// 85/10/5 mix is exact, not probabilistic. Per 100 parts: 85 isolated boxes,
-// 5 touching pairs (coincident faces — the classic CSG case), and 1 cluster
-// of 5 mutually overlapping boxes; part counts must be multiples of 200 so
-// both the mix and the region split come out whole.
+// Sites on a 20-unit grid in two equal regions, one on the origin and one
+// around +8,000 on X and Z. Each site's geometry stays inside its own square
+// (jitter [5,11] plus a reach of 6), so sites never touch and the mix is exact.
+// Per 100 parts: 85 isolated boxes, 5 touching pairs, 1 cluster of 5.
 static OpenWorld MakeOpenWorld(int partCount)
 {
     const int PartsPerBlock = 100;
@@ -871,9 +740,7 @@ static OpenWorld MakeOpenWorld(int partCount)
     int sideSites = (int)MathF.Ceiling(MathF.Sqrt(sitesPerRegion));
     float nearOrigin = -sideSites * SiteSpacing * 0.5f;   // centre region A on the origin
 
-    // The edited part: the isolated site nearest the middle of the near
-    // region's site range — far from any pair/cluster, so the headline
-    // measures the canonical isolated-part edit.
+    // The edited part: the isolated site nearest the middle of the near region.
     int editSite = sitesPerRegion / 2;
     while (editSite % SitesPerBlock >= IsolatedPerBlock)
         editSite--;
@@ -910,17 +777,14 @@ static OpenWorld MakeOpenWorld(int partCount)
         }
         else if (kind < IsolatedPerBlock + PairsPerBlock)
         {
-            // Touching pair: exactly coincident faces on the +X side, same
-            // bottom so the y ranges (heights >= 1) always overlap.
+            // Touching pair: coincident faces on +X, same bottom so y ranges overlap.
             Vector3 halfB = RandomHalfExtent(ref lcg);
             AddPart(new Vector3(cx + halfA.X + halfB.X, bottomA + halfB.Y, cz), halfB);
         }
         else
         {
-            // Cluster: four satellites overlapping the base box. Offsets
-            // (0.3..0.9 per horizontal axis, 0..0.5 vertical) are strictly
-            // below the minimum half-extent sum of 1.0, so every satellite
-            // genuinely interpenetrates the base.
+            // Cluster: four satellites. Offsets stay under the minimum
+            // half-extent sum of 1.0, so each one overlaps the base.
             for (int i = 0; i < 4; i++)
             {
                 Vector3 h = RandomHalfExtent(ref lcg);
@@ -950,20 +814,15 @@ static OpenWorld MakeOpenWorld(int partCount)
 
     return new OpenWorld(placements, editIndex, new Aabb(nearMin, nearMax), new Aabb(farMin, farMax));
 
-    // Half-extents in [0.5, 2.0] per axis — parts stay small next to the
-    // 32-unit cells, like Roblox parts next to their world.
+    // [0.5, 2.0] per axis: small next to the 32-unit cells.
     static Vector3 RandomHalfExtent(ref Lcg lcg) => new(
         0.5f + lcg.NextFloat01() * 1.5f,
         0.5f + lcg.NextFloat01() * 1.5f,
         0.5f + lcg.NextFloat01() * 1.5f);
 }
 
-// =====================================================================
-// Bake benchmark - what a CLEAN cook of a map costs, split into the two
-// halves a cook pays and timed independently. The deliverable is the
-// verdict: the serializer must stay a small fraction of the compile.
-// =====================================================================
-
+// A clean map cook, split into compile and serialize and timed separately.
+// The serializer must stay a small fraction of the compile.
 static void RunBakeBench()
 {
     Console.WriteLine();
@@ -989,16 +848,8 @@ static void RunBakeBench()
     foreach (int parts in new[] { 1_000, 10_000, 50_000 })
         results.Add(RunBakeConfig($"open {parts / 1_000}k", MakeOpenWorld(parts).Placements));
 
-    // The verdict, and it is deliberately NOT about the cook's absolute cost.
-    // A clean cook is O(world) by design; what would be a defect is the writer
-    // growing into a cost of its own beside the compile whose output it writes.
-    // One third is the ceiling because the claim worth holding is that the
-    // COMPILE STAYS AT LEAST THREE TIMES THE WRITER; the worst content set
-    // measured on the development machine sits at 16 to 22% over five runs, so
-    // the band is about 1.5x, which is the shape the openworld verdict uses too.
-    // Two things break it and only one is a defect: a serializer that got
-    // slower, and a compile that got faster without the writer following, which
-    // is a real success and still wants a look.
+    // The compile should stay at least three times the writer. Worst measured
+    // share is 16 to 22%. A faster compile can also trip this.
     const double ShareCeiling = 0.33;
 
     BakeResult worst = results[0];
@@ -1012,20 +863,9 @@ static void RunBakeBench()
             : $"NOT a small fraction (ceiling {ShareCeiling:P0}) - the map writer has become a cost centre in its " +
               "own right, investigate before accepting this as a baseline"));
 
-    // The second verdict, and it exists because the first one cannot see the
-    // failure that actually happened here. A SHARE stays healthy while one of
-    // its halves grows quadratically, as long as the compile beside it is
-    // growing too - which over these content sets it is. So the per-CELL staging
-    // cost is asserted directly against the two LARGEST worlds: a term that
-    // scales with the world is loudest there, and the small-N configurations
-    // measure a couple of microseconds in total and are mostly Stopwatch noise.
-    // A pure per-call O(cells) term would make the per-cell cost track the cell
-    // COUNT's own growth, which is printed beside it, so the two numbers
-    // together say which shape it is. The ceiling sits between the two measured
-    // worlds: 0.7 to 1.6x over five runs of the fixed writer, against 4.7x for
-    // the linear scan `ScmapBuilder.AddChunk` used to do (1.5 to 7.0 us per cell
-    // over this same pair) and 4.9x for the cell growth a pure per-world term
-    // would reproduce exactly.
+    // A share cannot see a quadratic writer while the compile grows too, so
+    // check per-cell staging cost across the two largest worlds. Flat is 0.7
+    // to 1.6x; an O(cells) term per call tracks the cell growth (about 4.9x).
     const double CellCostCeiling = 2.5;
 
     BakeResult[] bySize = [.. results.OrderByDescending(r => r.Cells)];
@@ -1041,9 +881,6 @@ static void RunBakeBench()
             : $"NOT flat per cell (ceiling {CellCostCeiling:F1}x) - the writer has a term that scales with the " +
               "world rather than with the cell, which a share cannot show while the compile grows too"));
 
-    // Attribution, in the shape the openworld scenario reports its own. EMIT is
-    // the byte-producing pass, so it is reported per MiB and is expected to be
-    // flat; cell staging is per cell, and is what the verdict above asserts.
     Console.WriteLine(
         "  attribution: emit " +
         string.Join(" / ", results.Select(r => $"{r.FileMib / (r.EmitMs / 1000.0):F0}")) +
@@ -1056,11 +893,8 @@ static void RunBakeBench()
 
 static BakeResult RunBakeConfig(string name, List<BrushPlacement> placements)
 {
-    // Node identity, name and local transform are gathered ONCE, outside every
-    // timed section. A real bake reads them off scene nodes the binder already
-    // built, so producing them here is fixture cost rather than cook cost. Ids
-    // are derived from the index rather than drawn from Guid.NewGuid, so two
-    // runs of this benchmark write the same bytes.
+    // Fixture data, built outside the timed sections. Ids come from the index
+    // so two runs write the same bytes.
     var ids = new Guid[placements.Count];
     var names = new string[placements.Count];
     var transforms = new Transform[placements.Count];
@@ -1071,9 +905,6 @@ static BakeResult RunBakeConfig(string name, List<BrushPlacement> placements)
         transforms[i] = new Transform { Position = placements[i].Transform.Translation };
     }
 
-    // Warmup: both halves, twice and untimed, for the same reason RunConfig
-    // warms twice - the compile's Parallel.For phases need the thread pool spun
-    // up, and one round is not always enough on a wide machine.
     for (int warm = 0; warm < 2; warm++)
     {
         CsgWorld warmWorld = CsgWorld.Build(placements);
@@ -1104,9 +935,7 @@ static BakeResult RunBakeConfig(string name, List<BrushPlacement> placements)
         FlatCell[] flat = FlattenCells(world);
         sw.Stop(); flatten[r] = sw.Elapsed.TotalMilliseconds;
 
-        // The halves are separated by a collection so the writer is not timed
-        // while paying off the compile's garbage, and so neither half's number
-        // depends on where a gen0 happened to land in the other.
+        // So the writer is not timed while paying for the compile's garbage.
         Collect();
 
         ScmapBuilder builder = new(name);
@@ -1145,11 +974,8 @@ static BakeResult RunBakeConfig(string name, List<BrushPlacement> placements)
     return new BakeResult(name, cells, serialize / compile, cellMed, emitMed, fileMib);
 }
 
-// The BSP flatten, counted as COMPILE: it turns a live tree into the array the
-// format stores, and the array it produces is a function of the TREE rather
-// than of the file. Mirrors the flatten inside ScmapBake.WriteChunks, in the
-// same OrderedChunks order the directory is laid out in, so the index it
-// returns at is the index the staging pass reads it back at.
+// Counted as compile. Same OrderedChunks order as StageCells, which indexes
+// the result by position.
 static FlatCell[] FlattenCells(CsgWorld world)
 {
     IReadOnlyList<WorldChunk> cells = world.Chunks.OrderedChunks;
@@ -1157,9 +983,8 @@ static FlatCell[] FlattenCells(CsgWorld world)
 
     for (int i = 0; i < cells.Count; i++)
     {
-        // A cell with no tree gets a null array and keeps the empty-leaf code,
-        // which is a different answer from an empty array (a tree that is one
-        // bare leaf) and the format tells them apart.
+        // Null means no tree. An empty array is a tree of one bare leaf, and
+        // the format tells them apart.
         flat[i] = cells[i].Bsp is { } tree
             ? new FlatCell(BspFlattener.Flatten(tree, out int root), root)
             : new FlatCell(null, FlatBspNode.EmptyLeaf);
@@ -1168,20 +993,10 @@ static FlatCell[] FlattenCells(CsgWorld world)
     return flat;
 }
 
-// The two staging passes MIRROR ScmapBake.WriteNodes/WriteChunks rather than
-// calling them: the bake's own walk wants a MapDocument and a bound Scene,
-// which these synthetic content sets do not have. Every builder call under them
-// is the production one, and the two details that decide bytes are kept - a
-// submesh row is an ASSET index and never a MaterialRef.Id, and the submeshes
-// are sorted into ascending asset order rather than the ascending material id a
-// ChunkMesh arrives in. They are separate functions so the table can report
-// them separately: one is per brush and the other is per cell, and a single
-// staging number would hide which of the two a change moved.
-//
-// Every placement here is a world brush, so every node is a brush baked into
-// the chunks and no BRSH section is written: the default cook, without
-// --keep-brush-source. All roots, because the content sets are flat lists,
-// which also makes the pre-order invariant ParentIndex < SelfIndex trivial.
+// StageNodes and StageCells mirror ScmapBake.WriteNodes/WriteChunks, which
+// need a MapDocument and a bound Scene these content sets do not have. Keep
+// them in step with the bake: asset indices, never MaterialRef.Id, and
+// submeshes sorted by asset index.
 static void StageNodes(ScmapBuilder builder, Guid[] ids, string[] names, Transform[] transforms)
 {
     for (int i = 0; i < ids.Length; i++)
@@ -1208,8 +1023,7 @@ static void StageCells(ScmapBuilder builder, CsgWorld world, FlatCell[] flat)
         builder.AddChunk(new ScmapChunkSource(
             cell.Coord,
 
-            // The cell's TRUE render bounds where there is geometry to bound;
-            // a cell with no mesh is never culled and gets its own cube.
+            // A cell with no mesh gets its own cube as bounds.
             mesh?.RenderBounds ?? cell.Coord.Bounds,
             BakeSubmeshes(mesh, materials, builder),
             flat[i].Nodes,
@@ -1217,11 +1031,8 @@ static void StageCells(ScmapBuilder builder, CsgWorld world, FlatCell[] flat)
     }
 }
 
-// ScmapBake.SubmeshesOf. Every face in these content sets names the default
-// material, which has no asset row at all, so every submesh takes the
-// NoAssetIndex sentinel and each cell emits exactly one - the shape a default
-// brush world produces, and the reason the strict ascending-asset check inside
-// AddChunk is never tripped here.
+// Mirrors ScmapBake.SubmeshesOf. Every face here wears the default material,
+// so each cell emits one submesh with the NoAssetIndex sentinel.
 static ScmapSubmeshSource[]? BakeSubmeshes(
     ChunkMesh? mesh, Dictionary<int, uint> materials, ScmapBuilder builder)
 {
@@ -1239,9 +1050,7 @@ static ScmapSubmeshSource[]? BakeSubmeshes(
     return submeshes;
 }
 
-// ScmapBake.AssetTable.Material: the default material names no path, so it has
-// no row and the file says so with a sentinel rather than with row 0, which is
-// a real asset.
+// The default material has no asset row. Sentinel, not row 0, which is a real asset.
 static uint BakeMaterialIndex(MaterialRef material, Dictionary<int, uint> lookup, ScmapBuilder builder)
 {
     if (material.IsDefault) return ScmapFormat.NoAssetIndex;
@@ -1251,10 +1060,6 @@ static uint BakeMaterialIndex(MaterialRef material, Dictionary<int, uint> lookup
     lookup[material.Id] = index;
     return index;
 }
-
-// =====================================================================
-// Helpers
-// =====================================================================
 
 static void Collect()
 {
@@ -1270,61 +1075,35 @@ static double Median(double[] values)
     return c[c.Length / 2];
 }
 
-/// <summary>Structural shape of a BSP tree, from one full walk.</summary>
 internal readonly record struct TreeStats(int Nodes, int Leaves, int MaxDepth, double AvgLeafDepth);
 
-/// <summary>
-/// One cell's flattened solid-leaf tree, on its way from the compile half of a
-/// bake to the serialize half. A null <paramref name="Nodes"/> means the cell
-/// has no tree at all; an EMPTY array is a tree that is one bare leaf, and the
-/// format tells the two apart, so the distinction is carried rather than
-/// normalised away.
-/// </summary>
+// Null Nodes: the cell has no tree. Empty: a tree of one bare leaf.
 internal readonly record struct FlatCell(FlatBspNode[]? Nodes, int RootIndex);
 
-/// <summary>
-/// One bake configuration's verdict inputs. <paramref name="CellMs"/> and
-/// <paramref name="EmitMs"/> are carried separately from the share because they
-/// scale against different quantities (cells and bytes), and a per-unit cost is
-/// the only form in which a super-linear term is visible at all - a share can
-/// stay flat while one of its halves is growing quadratically, as long as the
-/// compile beside it is growing too.
-/// </summary>
 internal readonly record struct BakeResult(
     string Name, int Cells, double Share, double CellMs, double EmitMs, double FileMib)
 {
-    /// <summary>Microseconds of cell staging per cell.</summary>
     public double CostPerCellUs => CellMs * 1000.0 / Cells;
 }
 
-/// <summary>
-/// One generated scattered-parts world: the placements, the index of the
-/// isolated part the edit benchmark moves, and the tight bounds of the two
-/// part regions (near the origin and around +8,000) for query sampling.
-/// </summary>
+// EditIndex is the isolated part the edit benchmark moves.
 internal sealed record OpenWorld(
     List<BrushPlacement> Placements, int EditIndex, Aabb NearBounds, Aabb FarBounds);
 
-/// <summary>
-/// Minimal 64-bit linear congruential generator (Knuth MMIX constants). Used
-/// instead of <see cref="Random"/> so benchmark inputs are bit-identical
-/// across runs and runtime versions — the query checksums depend on it.
-/// </summary>
+// 64-bit LCG (Knuth MMIX constants). Not System.Random: the query checksums
+// need inputs that are bit-identical across runtimes.
 internal struct Lcg(ulong seed)
 {
     private ulong _state = seed;
 
-    /// <summary>Uniform float in [0, 1), from the high 24 bits of the state.</summary>
+    // Uniform in [0, 1), from the high 24 bits.
     public float NextFloat01()
     {
         _state = _state * 6364136223846793005UL + 1442695040888963407UL;
         return (_state >> 40) * (1.0f / (1 << 24));
     }
 
-    /// <summary>
-    /// Unit direction via rejection sampling of the cube (keeps the
-    /// distribution uniform over the sphere and avoids near-zero vectors).
-    /// </summary>
+    // Rejection sampling keeps the direction uniform over the sphere.
     public Vector3 NextDirection()
     {
         while (true)

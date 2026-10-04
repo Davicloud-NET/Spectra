@@ -4,9 +4,8 @@ using SpectraEngine.Core.Bsp;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// <see cref="VertexSnapper"/> contract: sub-grid floating-point noise
-/// collapses to bit-identical floats, snapping is idempotent (an
-/// already-snapped value stays put), and inputs are never mutated.
+/// <see cref="VertexSnapper"/>: sub-grid noise collapses to identical floats,
+/// snapping is idempotent, inputs are not mutated.
 /// </summary>
 public sealed class VertexSnapperTests
 {
@@ -18,9 +17,7 @@ public sealed class VertexSnapperTests
     [Fact]
     public void Subgrid_noise_collapses_to_bit_identical_floats()
     {
-        // Two values a hair either side of 0.3 — far closer together than the
-        // 1e-4 grid — must land on the same exact float, or shared edges are
-        // not bit-identical and the rasteriser can drop pixels.
+        // Either side of 0.3, much closer together than the 1e-4 grid.
         Vector3 a = SnapSingle(new Vector3(0.2999999f, -0.2999999f, 7.0000002f));
         Vector3 b = SnapSingle(new Vector3(0.3000001f, -0.3000001f, 6.9999998f));
 
@@ -32,9 +29,7 @@ public sealed class VertexSnapperTests
     {
         Vector3 snapped = SnapSingle(new Vector3(0.12345678f, -3.9876543f, 42.000037f));
 
-        // Dividing a snapped coordinate by the grid size lands (within float
-        // rounding — grid indices reach ~4e5 where a ULP is ~0.03) on a whole
-        // grid index.
+        // Loose tolerance: grid indices reach ~4e5, where a ULP is ~0.03.
         foreach (float c in new[] { snapped.X, snapped.Y, snapped.Z })
         {
             float index = c / VertexSnapper.GridSize;
@@ -48,9 +43,6 @@ public sealed class VertexSnapperTests
     [InlineData(0f, 1f, -256f)]
     public void Snapping_is_idempotent(float x, float y, float z)
     {
-        // "Already snapped stays unchanged" phrased robustly for binary floats:
-        // grid multiples are not decimal-nice values, so the honest contract is
-        // that a second snap is a bit-exact no-op.
         Vector3 once = SnapSingle(new Vector3(x, y, z));
         Vector3 twice = SnapSingle(once);
 
@@ -60,8 +52,7 @@ public sealed class VertexSnapperTests
     [Fact]
     public void Snapping_moves_a_vertex_by_at_most_half_a_grid_step()
     {
-        // Values chosen away from half-grid boundaries so the expected rounding
-        // direction is unambiguous.
+        // Values kept away from half-grid boundaries.
         var v = new Vector3(0.12348f, -7.65432f, 99.99992f);
         Vector3 snapped = SnapSingle(v);
 

@@ -17,19 +17,9 @@ using SpectraEngine.Core.Scene;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The map bake: a <c>.smap</c> bundle in, a <c>.scmap</c> out, and the three
-/// hazards that produce a file which loads perfectly in the test that wrote it.
+/// The map bake: a <c>.smap</c> bundle in, a <c>.scmap</c> out. Runs the real
+/// rule over a real bundle on disk.
 /// </summary>
-/// <remarks>
-/// <para><b>Every case here runs the real rule over a real bundle on a real
-/// filesystem.</b> The cook's whole input is a folder, and the parts most likely to
-/// be wrong - path normalisation, the walk order, which root a path is relative to
-/// - are exactly the parts a fake would paper over.</para>
-/// <para><b>The three hazards are the point of this file</b>, and each was checked
-/// by breaking it: the asset-index remap replaced by <c>MaterialRef.Id</c>, a
-/// section size computed a second way, and a re-carve on top of the baked chunks.
-/// A test that does not bite is not a test.</para>
-/// </remarks>
 public class MapRuleTests
 {
     [Fact]
@@ -45,12 +35,8 @@ public class MapRuleTests
         map.Chunks.Count.ShouldBeGreaterThan(0);
         map.TriangleCount.ShouldBeGreaterThan(0);
 
-        // A shipped game runs zero CSG at load, which means the cells have to
-        // arrive with their trees as well as their triangles.
         map.Geometry.Count(cell => cell.HasBsp).ShouldBe(map.Chunks.Count);
     }
-
-    // --- hazard 1: MaterialRef.Id must never reach the file -------------------
 
     [Fact]
     public void A_submesh_names_an_asset_TABLE_ROW_and_never_a_material_id()
@@ -58,10 +44,8 @@ public class MapRuleTests
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
 
-        // The whole test. MaterialRegistry hands out ids in per-process interning
-        // order, so interning something unrelated FIRST pushes this map's ids past
-        // its own asset indices; without it the two agree by coincidence and a cook
-        // that wrote an id would pass every assertion below.
+        // Unrelated materials interned first, so this map's ids cannot equal
+        // its asset row indices by coincidence.
         for (int i = 0; i < 5; i++) MaterialRegistry.Intern($"Materials/unrelated_{Guid.NewGuid():N}.spectramat");
 
         fixture.WriteBundle(project, "Room.smap");
@@ -70,8 +54,6 @@ public class MapRuleTests
         int wallId = MaterialRegistry.Intern(fixture.WallMaterial).Id;
         int floorId = MaterialRegistry.Intern(fixture.FloorMaterial).Id;
 
-        // The non-vacuity check: an id that happened to equal its row would make
-        // every assertion below true of the wrong file too.
         map.Assets.Count.ShouldBe(2);
         wallId.ShouldBeGreaterThan(map.Assets.Count);
         floorId.ShouldBeGreaterThan(map.Assets.Count);
@@ -81,8 +63,6 @@ public class MapRuleTests
         paths.ShouldContain(fixture.FloorMaterial);
         map.Assets.ShouldAllBe(row => row.Kind == PackEntryKind.Material);
 
-        // Every index a submesh carries is a row of THIS table, and the sentinel is
-        // the only other legal value.
         foreach (ScmapProbe.CellGeometry cell in map.Geometry)
         {
             foreach (ScmapProbe.SubmeshCopy submesh in cell.Submeshes)
@@ -103,10 +83,6 @@ public class MapRuleTests
         fixture.WriteBundle(project, "Room.smap");
         ScmapProbe map = Bake(project, "Maps/Room.smap");
 
-        // The wall is at z = -4.25 and the floor spans y = -1..0, so the cell above
-        // the origin carries wall surfaces and the cell below carries floor ones.
-        // Rather than reason about cells, ask which materials the file claims are
-        // drawn at all: both, exactly once each per cell that wears them.
         var drawn = new HashSet<string>(StringComparer.Ordinal);
         foreach (ScmapProbe.CellGeometry cell in map.Geometry)
         {
@@ -126,9 +102,7 @@ public class MapRuleTests
 
         ScmapProbe map = Bake(project, "Maps/Room.smap");
 
-        // A total order over a VALUE key, which is what makes two compiles of one
-        // cell emit the same submeshes in the same order. The compile's own order is
-        // ascending material ID, which is per-process interning order and would not.
+        // The compile's order is material id, which varies per process.
         bool multi = false;
         foreach (ScmapProbe.CellGeometry cell in map.Geometry)
         {
@@ -142,8 +116,6 @@ public class MapRuleTests
         multi.ShouldBeTrue("no cell in the fixture wears two materials, so the ordering rule was not exercised");
     }
 
-    // --- hazard 2: alignment --------------------------------------------------
-
     [Fact]
     public void Every_section_and_every_blob_starts_on_the_payload_alignment()
     {
@@ -154,8 +126,7 @@ public class MapRuleTests
         byte[] file = BakeBytes(project, "Maps/Room.smap");
         ScmapProbe map = ScmapProbe.Read(file);
 
-        // The section table's own claim, read straight off the bytes rather than
-        // from the layout that wrote them.
+        // Read off the bytes, not from the layout that wrote them.
         for (int i = 0; i < map.Header.SectionCount; i++)
         {
             int at = ScmapFormat.SectionTableOffset + (i * ScmapFormat.SectionSize);
@@ -163,9 +134,6 @@ public class MapRuleTests
             (offset % ScmapFormat.PayloadAlignment).ShouldBe(0ul);
         }
 
-        // And every blob inside the two geometry sections, which the reader checks
-        // on the way past: a blob one byte out is a vertex array read from the
-        // middle of somebody else's.
         foreach (ScmapChunkRecord cell in map.Chunks)
         {
             (cell.MeshOffset % ScmapFormat.PayloadAlignment).ShouldBe(0u);
@@ -176,9 +144,7 @@ public class MapRuleTests
     [Fact]
     public void A_directory_entry_reaching_past_the_mesh_section_is_refused()
     {
-        // A claim about the BYTES rather than about the builder, which is the only
-        // one of the two that survives a file edited afterwards. The builder places
-        // every blob itself, so this state is unreachable through it.
+        // Bytes edited by hand: the builder cannot produce this state.
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
         fixture.WriteBundle(project, "Room.smap");
@@ -186,9 +152,8 @@ public class MapRuleTests
         byte[] file = BakeBytes(project, "Maps/Room.smap");
         (int offset, _) = FindSection(file, ScmapFormat.ChunkDirectorySection);
 
-        // The first record's MeshSize: three cell coordinates, two bounds vectors
-        // and the mesh OFFSET ahead of it, inside a 64-byte record that starts
-        // after the section's 16-byte preamble.
+        // First record's MeshSize: after the preamble, three cell coordinates,
+        // two bounds vectors and the mesh offset.
         int meshSize = offset + ScmapFormat.ChunkPreambleSize
             + (3 * sizeof(int)) + (6 * sizeof(float)) + sizeof(uint);
         BitConverter.GetBytes(uint.MaxValue - 15).CopyTo(file, meshSize);
@@ -197,15 +162,10 @@ public class MapRuleTests
             .Message.ShouldContain("CMSH");
     }
 
-    // --- hazard 3: double geometry --------------------------------------------
-
     [Fact]
     public void Keeping_the_brush_source_draws_the_same_triangles_as_not_keeping_it()
     {
-        // THE guard. When baked chunks and BRSH are both present, a loader that
-        // helpfully re-carves produces a world where every wall is drawn twice, with
-        // z-fighting that reads as a depth-precision bug rather than as a map
-        // loader. The triangle count is the measurement that catches it.
+        // A loader that re-carved the kept brushes would draw every wall twice.
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
         fixture.WriteBundle(project, "Room.smap");
@@ -216,14 +176,9 @@ public class MapRuleTests
         with.TriangleCount.ShouldBe(without.TriangleCount);
         with.TriangleCount.ShouldBeGreaterThan(0);
 
-        // The asset table is a function of the MAP rather than of which brushes a
-        // particular cook kept, which is what ClaimFaceMaterials exists for: without
-        // it the switch renumbers every row and a submesh baked from the same
-        // surfaces points somewhere else, with the triangle count unmoved.
+        // The asset table must not depend on which brushes the cook kept.
         with.Assets.ShouldBe(without.Assets);
 
-        // And the cook really did keep more, or the equality above is the equality
-        // of two identical files.
         with.Brushes.Count.ShouldBeGreaterThan(without.Brushes.Count);
     }
 
@@ -247,15 +202,10 @@ public class MapRuleTests
             if (ScmapBrushSource.IsReCarvable(in node)) reCarvable++;
             else baked++;
 
-            // BakedIntoChunks is the cooked-record name and IsStaticWorldBrush is
-            // the engine name, and neither may take the other's spelling: the
-            // cooked flag says "already baked, do not re-carve" where the engine
-            // predicate says "admitted to the carve".
             node.BakedIntoChunks.ShouldBe(node.PayloadKind == ScmapPayloadKind.StaticWorldBrush);
         }
 
-        // The world brushes are in the section and none of them may be carved
-        // again; the part brush is the only thing a loader may build from planes.
+        // Four world brushes, one part.
         baked.ShouldBe(4);
         reCarvable.ShouldBe(1);
     }
@@ -263,10 +213,7 @@ public class MapRuleTests
     [Fact]
     public void A_part_brush_keeps_its_planes_even_when_the_cook_was_not_asked_to()
     {
-        // Not a convenience. A part is never baked into a chunk and its mesh is
-        // built at runtime from its own Brush, so its planes live nowhere else: a
-        // cook that dropped them ships a level whose parts are invisible with
-        // nothing reporting it.
+        // A part is never baked into a chunk, so its planes live only in BRSH.
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
         fixture.WriteBundle(project, "Room.smap");
@@ -287,15 +234,11 @@ public class MapRuleTests
 
         ScmapProbe map = Bake(project, "Maps/Room.smap", keepBrushSource: false);
 
-        // Absent rather than empty, because the header flag beside it is a claim
-        // about PRESENCE and an empty section is present. The reader cross-checks
-        // the two, so a file where they disagreed would be refused.
+        // Absent, not empty: the header flag says whether the section exists.
         map.HasBrushSource.ShouldBeFalse();
         map.Brushes.ShouldBeEmpty();
         (map.Header.FileFlags & ScmapFlags.HasBrushSource).ShouldBe(ScmapFlags.None);
     }
-
-    // --- the subtractive case -------------------------------------------------
 
     [Fact]
     public void A_subtractive_brush_bakes_its_cavity_rather_than_its_own_skin()
@@ -308,14 +251,9 @@ public class MapRuleTests
         ScmapProbe cut = Bake(project, "Maps/Room.smap");
         ScmapProbe solid = Bake(project, "Maps/Solid.smap");
 
-        // A negative emits no skin of its own and seeds cavity walls into the brush
-        // it cuts, attributed to the CUT brush's slot - so a doorway ADDS triangles
-        // rather than removing them, which is the answer that catches a bake that
-        // dropped the cavity and left a hole in the wall.
+        // A doorway adds triangles: the cavity walls.
         cut.TriangleCount.ShouldBeGreaterThan(solid.TriangleCount);
 
-        // The subtractive node survives as a node with the bit set, because a
-        // SetBrushKindCommand must not become lossy.
         ScmapNodeRecord doorway = cut.Nodes[cut.NodeNames.IndexOf("Doorway")];
         doorway.PayloadKind.ShouldBe(ScmapPayloadKind.StaticWorldBrush);
         doorway.IsSubtractiveBrush.ShouldBeTrue();
@@ -324,10 +262,6 @@ public class MapRuleTests
     [Fact]
     public void The_flush_coplanar_doorway_is_open_in_the_baked_trees()
     {
-        // The repo's coincident-plane regression fixture, asked of the BAKED tree
-        // rather than of the live one: the doorway cuts flush through the wall's own
-        // bottom plane and the floor reaches that same plane, and the arrangement
-        // used to compile solid.
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
         fixture.WriteBundle(project, "Room.smap");
@@ -356,15 +290,9 @@ public class MapRuleTests
         asked.ShouldBeTrue("the cell holding the doorway has no baked tree to ask");
     }
 
-    // --- the bake oracle ------------------------------------------------------
-
     [Fact]
     public void The_baked_arrays_are_element_identical_to_a_fresh_compile_of_the_same_source()
     {
-        // The guard that replaces P11b's unsatisfiable text round trip. Welding,
-        // T-junction repair and per-cell carving are not invertible, so a compiled
-        // map cannot be turned back into a text one; what CAN be claimed is that the
-        // file holds exactly what a compile of the same source produces.
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
         fixture.WriteBundle(project, "Room.smap");
@@ -388,9 +316,8 @@ public class MapRuleTests
 
             cell.Submeshes.Count.ShouldBe(mesh.Submeshes.Count);
 
-            // Compared as a SET keyed on the material's path, because the file is in
-            // ascending asset index and the compile is in ascending material id, and
-            // those are different orders on purpose.
+            // Matched by material path, not position: the file sorts by asset
+            // index, the compile by material id.
             foreach (ChunkSubmesh submesh in mesh.Submeshes)
             {
                 uint index = submesh.Material.IsDefault
@@ -408,8 +335,6 @@ public class MapRuleTests
         }
     }
 
-    // --- refusals -------------------------------------------------------------
-
     [Fact]
     public void A_brush_node_under_a_scale_is_refused_rather_than_baked()
     {
@@ -422,9 +347,7 @@ public class MapRuleTests
 
         (byte[]? file, List<CookDiagnostic> said) = TryBake(project, "Maps/Bad.smap");
 
-        // The runtime degrades and the cooker does not: in the editor this is a
-        // standing status warning and the last good world keeps rendering, which is
-        // exactly the state that must not ship.
+        // The editor only warns here. The cook must refuse.
         file.ShouldBeNull();
         said.Single().Id.ToString().ShouldBe("SC7001");
     }
@@ -446,10 +369,7 @@ public class MapRuleTests
     [Fact]
     public void Per_user_editor_state_is_not_read_and_not_hashed()
     {
-        // It is gitignored, per-user and changes every time somebody moves the
-        // viewport camera. Hashed into the source digest it would put a different
-        // number in every developer's compiled map for one level; read as a
-        // dependency it would miss the cook cache on every launch.
+        // Gitignored, per-user, and changes whenever the viewport camera moves.
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
         string bundle = fixture.WriteBundle(project, "Room.smap");
@@ -473,13 +393,8 @@ public class MapRuleTests
         fixture.WriteBundle(project, "Room.smap", withPart: false);
         ScmapProbe after = Bake(project, "Maps/Room.smap");
 
-        // The negative control for the test above: the digest is a fact about the
-        // bundle, so it has to move for a real edit or it would be measuring
-        // nothing.
         after.Header.SourceMapDigest.ShouldNotBe(before.Header.SourceMapDigest);
     }
-
-    // --- helpers ---------------------------------------------------------------
 
     private static ScmapProbe Bake(TempProject project, string bundlePath, bool keepBrushSource = false) =>
         ScmapProbe.Read(BakeBytes(project, bundlePath, keepBrushSource), bundlePath);
@@ -495,8 +410,7 @@ public class MapRuleTests
     private static (byte[]? File, List<CookDiagnostic> Diagnostics) TryBake(
         TempProject project, string bundlePath, bool keepBrushSource = false)
     {
-        // The map rule's content root is the PROJECT root, because a bundle lives
-        // beside Assets/ rather than inside it.
+        // Content root is the project root: a bundle lives beside Assets/.
         var context = new RuleContext(
             project.Root, bundlePath, CookProfile.Ship, keepBrushSource: keepBrushSource);
 

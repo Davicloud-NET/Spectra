@@ -2,26 +2,19 @@ using Microsoft.Extensions.Logging;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// An <see cref="ILogger"/> that records every formatted message so tests can
-/// assert on logging behaviour — e.g. that a defective static-world snapshot
-/// is reported exactly once instead of throwing or spamming every frame.
-/// Thread-safe because the logger is shared with code under test that also
-/// runs work on the thread pool.
-/// </summary>
+// Records every formatted message so tests can assert on logging.
+// Locked: code under test also logs from the thread pool.
 internal sealed class CapturingLogger : ILogger
 {
     private readonly object _lock = new();
     private readonly List<(LogLevel Level, string Message)> _entries = [];
 
-    /// <summary>All messages logged at <paramref name="level"/>, in order.</summary>
     public IReadOnlyList<string> MessagesAt(LogLevel level)
     {
         lock (_lock)
             return _entries.Where(e => e.Level == level).Select(e => e.Message).ToArray();
     }
 
-    /// <summary>Everything captured so far, one line per entry — for failure diagnostics.</summary>
     public string Describe()
     {
         lock (_lock)

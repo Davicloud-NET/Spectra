@@ -8,33 +8,13 @@ using System.Linq;
 namespace SpectraEngine.Editor.Shell.Ribbon;
 
 /// <summary>
-/// One tab's body: the markup that draws a page of the ribbon, plus the one
-/// click handler every control on it goes through.
+/// One tab's body: a page of the ribbon, plus the one click handler every
+/// control on it goes through.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>ONE handler for the whole page, resolving the control's own <c>Tag</c>
-/// through <see cref="RibbonLayout"/>.</b> A handler per button would put a
-/// verb in a click handler, which is exactly what <c>ROADMAP.md</c>'s ribbon
-/// bullet says not to let happen ("do not let a control grow logic that lives
-/// only in its click handler"), and it would make the roster a description of
-/// the markup rather than the thing the markup is checked against.
-/// </para>
-/// <para>
-/// <b>The page validates itself against the roster at construction</b>, so a
-/// button whose <c>Tag</c> the roster does not know, or a roster entry with no
-/// control, is a refusal at window construction rather than a control that
-/// silently does nothing. That is the runtime half; <c>RibbonLayoutTests</c> is
-/// the CI half, which reads the same fact out of the sources without needing an
-/// Avalonia application.
-/// </para>
-/// <para>
-/// <b>A body is re-parented between the inline host and the flyout popup</b>, so
-/// it is one live instance for the window's life and never a template - the
-/// same rule as <c>SetToolContent</c>, and for the same reason: an instance
-/// keeps its wiring, a template rebuilds it.
-/// </para>
-/// </remarks>
+// One handler for the page, resolving each control's Tag through RibbonLayout,
+// so no verb lives in a click handler.
+// One live instance per window, moved between the inline host and the flyout
+// popup. Not a template: an instance keeps its wiring.
 public abstract class RibbonTabView : UserControl
 {
     /// <summary>A control on this page was clicked, carrying its verb.</summary>
@@ -46,21 +26,11 @@ public abstract class RibbonTabView : UserControl
     /// <summary>
     /// The roster item a clicked control names, or null if it names none.
     /// </summary>
-    /// <remarks>
-    /// Public and static because the strip's own controls are not on a page and
-    /// still have to resolve the same way. Undo and redo used to call their
-    /// handlers directly and carry a <c>Tag</c> only so a test could find them,
-    /// which meant <see cref="RibbonLayout.AlwaysVisible"/>'s verbs were never
-    /// dispatched at all: changing either one left the buttons still doing undo
-    /// and redo with every test green. That is a verb living in a click handler,
-    /// which is the one thing this roster exists to refuse.
-    /// </remarks>
+    // Static: the strip's undo and redo are on no page and resolve the same way.
     public static RibbonItem? ItemOf(object? sender) =>
         sender is Control { Tag: string id } ? RibbonLayout.FindItem(id) : null;
 
-    /// <summary>
-    /// Every control on this page routes here. The <c>Tag</c> is the roster id.
-    /// </summary>
+    /// <summary>Click handler for every control on the page.</summary>
     protected void OnRibbonItemClick(object? sender, RoutedEventArgs e)
     {
         if (ItemOf(sender) is { } item)
@@ -68,16 +38,9 @@ public abstract class RibbonTabView : UserControl
     }
 
     /// <summary>
-    /// Refuses a page whose controls and whose roster entry disagree.
+    /// Throws when the page's controls and its roster entry disagree. Call from
+    /// the derived constructor, after the markup is built.
     /// </summary>
-    /// <remarks>
-    /// Called from the derived control's constructor, after its markup is
-    /// built. Both directions matter and they fail differently: a tagged
-    /// control the roster has never heard of is a button that does nothing, and
-    /// a roster entry with no control is a verb the tests believe is on screen
-    /// and is not - which would let the no-duplicate guard pass over a surface
-    /// that no longer exists.
-    /// </remarks>
     protected void ValidateAgainstRoster()
     {
         RibbonTab tab = RibbonLayout.FindTab(TabId)
@@ -121,11 +84,6 @@ public abstract class RibbonTabView : UserControl
                 $"{string.Join(", ", missing)}.");
         }
 
-        // And the control must be the SHAPE the roster declares. Without this
-        // a page could draw anything it liked under a valid Tag: a check row
-        // rendered as a plain button looks finished, posts the right verb and
-        // has no lit state at all, which is a control that lies about what the
-        // engine is doing.
         var wrong = new List<string>();
         foreach (RibbonItem item in items)
         {

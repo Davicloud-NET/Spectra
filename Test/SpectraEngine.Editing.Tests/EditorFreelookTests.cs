@@ -6,25 +6,11 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// The Roblox-Studio navigation model, asserted as the thing a user would
-/// describe: hold the right button and the camera turns <em>where it stands</em>,
-/// the movement keys fly it along what it is looking at, the wheel means speed
-/// while you look and zoom while you do not, and the cursor is captured for
-/// exactly as long as the gesture lasts.
-/// </summary>
-/// <remarks>
-/// <b>"Rotates in place" is asserted exactly, not within a tolerance.</b> That is
-/// deliberate and it is the regression this file exists for: an implementation
-/// that turned the camera by subtracting a focus offset, rotating, and adding it
-/// back would pass any reasonable tolerance at the origin and drift visibly at
-/// open-world coordinates. Holding the position bit-for-bit is the only
-/// statement that fails on the wrong implementation everywhere.
-/// </remarks>
+/// <summary>Right-drag freelook, fly keys, wheel speed trim and the cursor lock.</summary>
+// Position under a look is compared for equality, not tolerance: rotating about
+// a focus offset passes a tolerance at the origin and drifts far from it.
 public sealed class EditorFreelookTests
 {
-    // --- Looking around ------------------------------------------------------
-
     [Fact]
     public void Looking_turns_the_camera_without_moving_it()
     {
@@ -38,7 +24,6 @@ public sealed class EditorFreelookTests
         harness.EditorCamera.Yaw.ShouldBe(0.4f + 60f * sensitivity, 1e-6f);
         harness.EditorCamera.Pitch.ShouldBe(-0.2f - 40f * sensitivity, 1e-6f);
 
-        // Not "close to" — the same value. See the type remarks.
         harness.Scene.Camera.Position.ShouldBe(eye);
         harness.EditorCamera.Position.ShouldBe(eye);
     }
@@ -46,8 +31,6 @@ public sealed class EditorFreelookTests
     [Fact]
     public void Looking_leaves_the_camera_still_at_a_million_units_out()
     {
-        // The precision claim, exercised where float precision actually bites: a
-        // hundred look frames must not walk the eye across the level.
         var harness = new ViewportHarness();
         var distant = new Vector3(1_000_000f, 250f, -1_000_000f);
         harness.EditorCamera.SetPose(distant, 0.7f, -0.35f);
@@ -67,9 +50,6 @@ public sealed class EditorFreelookTests
     [Fact]
     public void Looking_carries_the_focus_around_with_the_camera()
     {
-        // Freelook derives the focus rather than holding it, so the point the
-        // Alt-orbit will swing around afterwards is whatever you ended up
-        // looking at — which is what makes look-then-orbit feel continuous.
         var harness = new ViewportHarness();
         harness.EditorCamera.SetPose(new Vector3(5f, 3f, -7f), 0.4f, -0.2f, distance: 14f);
 
@@ -86,7 +66,7 @@ public sealed class EditorFreelookTests
         var harness = new ViewportHarness();
         harness.EditorCamera.SetPose(Vector3.Zero, 0f, 0f);
 
-        // Far more than a quarter turn of motion, both ways.
+        // More than a quarter turn each way.
         LookDrag(harness, new Vector2(400f, 900f), new Vector2(400f, -900f));
         harness.EditorCamera.Pitch.ShouldBeLessThan(MathF.PI / 2f);
         harness.Scene.Camera.Pitch.ShouldBe(harness.EditorCamera.Pitch);
@@ -103,7 +83,7 @@ public sealed class EditorFreelookTests
         var harness = new ViewportHarness();
         harness.EditorCamera.SetPose(Vector3.Zero, 0.3f, -0.2f);
 
-        // The cursor moved a long way BEFORE the user decided to look.
+        // Cursor travels a long way before the press.
         harness.EditorCamera.Update(harness.Frame(new Vector2(20f, 20f)));
         harness.EditorCamera.Update(harness.Frame(
             new Vector2(700f, 500f), down: PointerButtons.Right, pressed: PointerButtons.Right));
@@ -115,8 +95,6 @@ public sealed class EditorFreelookTests
     [Fact]
     public void Pressing_alt_mid_look_restarts_the_gesture_rather_than_snapping()
     {
-        // The gesture changed kind under the user's hand: whatever cursor travel
-        // the look had accumulated must not land on the orbit as one step.
         var harness = new ViewportHarness();
         harness.EditorCamera.SetPose(new Vector3(2f, 1f, 3f), 0.3f, -0.2f);
 
@@ -125,15 +103,13 @@ public sealed class EditorFreelookTests
         harness.EditorCamera.Update(harness.Frame(new Vector2(430f, 300f), down: PointerButtons.Right));
         float yaw = harness.EditorCamera.Yaw;
 
-        // Alt goes down; the cursor sits still. Nothing may move.
+        // Alt goes down, cursor still.
         harness.EditorCamera.Update(harness.Frame(
             new Vector2(430f, 300f), down: PointerButtons.Right, modifiers: KeyModifiers.Alt));
 
         harness.EditorCamera.ActiveGesture.ShouldBe(EditorNavigationGesture.Orbit);
         harness.EditorCamera.Yaw.ShouldBe(yaw);
     }
-
-    // --- Flying --------------------------------------------------------------
 
     [Fact]
     public void The_forward_key_moves_the_camera_along_what_it_is_looking_at()
@@ -147,18 +123,16 @@ public sealed class EditorFreelookTests
         Fly(harness, EditorNavigationInput.FromKeys(
             forward: true, back: false, left: false, right: false, up: false, down: false), 0.5f);
 
-        // 10 units/s for half a second, straight ahead.
         harness.Scene.Camera.Position.ShouldBeCloseTo(start + forward * 5f, 1e-4f);
-        // Looking is unaffected by moving.
         harness.EditorCamera.Yaw.ShouldBe(0.6f);
         harness.EditorCamera.Pitch.ShouldBe(-0.25f);
     }
 
     [Theory]
-    [InlineData(true, false, false, false, 1f, 0f)]   // D — camera right
-    [InlineData(false, true, false, false, -1f, 0f)]  // A — camera left
-    [InlineData(false, false, true, false, 0f, 1f)]   // W — camera forward
-    [InlineData(false, false, false, true, 0f, -1f)]  // S — camera back
+    [InlineData(true, false, false, false, 1f, 0f)]   // D
+    [InlineData(false, true, false, false, -1f, 0f)]  // A
+    [InlineData(false, false, true, false, 0f, 1f)]   // W
+    [InlineData(false, false, false, true, 0f, -1f)]  // S
     public void Each_movement_key_moves_along_its_own_camera_axis(
         bool right, bool left, bool forward, bool back, float rightAmount, float forwardAmount)
     {
@@ -181,8 +155,7 @@ public sealed class EditorFreelookTests
     public void The_rise_and_fall_keys_move_along_WORLD_up_however_the_camera_is_pitched(
         bool up, bool down, float sign)
     {
-        // A camera-relative up would make "go up" mean "go up and backwards" the
-        // moment you looked down. Pitched steeply, so a tilted axis would show.
+        // Pitched steeply so a camera-relative up would show.
         var harness = new ViewportHarness();
         harness.EditorCamera.SetPose(new Vector3(3f, 5f, -2f), 0.9f, -1.2f);
         Vector3 start = harness.Scene.Camera.Position;
@@ -255,8 +228,6 @@ public sealed class EditorFreelookTests
         (harness.EditorCamera.Focus - harness.EditorCamera.Position).ShouldBeCloseTo(offset, 1e-3f);
     }
 
-    // --- The wheel -----------------------------------------------------------
-
     [Fact]
     public void The_wheel_while_looking_trims_the_fly_speed_and_does_not_zoom()
     {
@@ -277,9 +248,6 @@ public sealed class EditorFreelookTests
     [Fact]
     public void The_trimmed_fly_speed_persists_after_the_look_ends()
     {
-        // Studio users navigate large places by setting this once and expecting
-        // it to stay set — so releasing the button, and even suspending
-        // navigation entirely, must leave it alone.
         var harness = new ViewportHarness();
         harness.EditorCamera.SetPose(Vector3.Zero, 0f, 0f);
         harness.EditorCamera.FlySpeed = 10f;
@@ -324,21 +292,17 @@ public sealed class EditorFreelookTests
         harness.EditorCamera.FlySpeed.ShouldBe(1f);
     }
 
-    // --- Relative motion while locked ----------------------------------------
-
     [Fact]
     public void A_locked_look_reads_relative_motion_and_ignores_the_frozen_position()
     {
-        // Once the OS captures the cursor its reported position stops changing
-        // (the input manager freezes it deliberately), so a controller that
-        // differenced positions would sit still forever.
+        // A captured cursor reports a frozen position; only the delta moves.
         var harness = new ViewportHarness();
         harness.EditorCamera.SetPose(Vector3.Zero, 0f, 0f);
         Vector2 frozen = harness.CenterPixel;
 
         harness.EditorCamera.Update(harness.Frame(
             frozen, down: PointerButtons.Right, pressed: PointerButtons.Right));
-        // The lock lands: this frame's motion is the backend's own teleport.
+        // Lock lands: this frame's delta is the backend's teleport.
         harness.EditorCamera.Update(harness.Frame(
             frozen, down: PointerButtons.Right, cursorDelta: new Vector2(999f, 999f), locked: true));
         harness.EditorCamera.Yaw.ShouldBe(0f);
@@ -355,8 +319,6 @@ public sealed class EditorFreelookTests
     [Fact]
     public void Releasing_a_locked_look_does_not_read_the_restored_cursor_as_a_flick()
     {
-        // Unlocking teleports the pointer back to where it started. If that
-        // showed up as motion, every look would end with a jolt.
         var harness = new ViewportHarness();
         harness.EditorCamera.SetPose(Vector3.Zero, 0f, 0f);
 
@@ -366,17 +328,14 @@ public sealed class EditorFreelookTests
             new Vector2(400f, 300f), down: PointerButtons.Right, cursorDelta: new Vector2(50f, 0f), locked: true));
         float yaw = harness.EditorCamera.Yaw;
 
-        // Released and unlocked on the same frame, cursor restored elsewhere.
+        // Unlock teleports the pointer back to where the press happened.
         harness.EditorCamera.Update(harness.Frame(new Vector2(120f, 640f), released: PointerButtons.Right));
 
         harness.EditorCamera.Yaw.ShouldBe(yaw);
         harness.EditorCamera.ActiveGesture.ShouldBe(EditorNavigationGesture.None);
     }
 
-    // --- Helpers -------------------------------------------------------------
-
-    // Press, then move: the press frame is deliberately deltaless, so the whole
-    // travel lands on the second frame.
+    // The press frame applies no delta, so all travel lands on the second frame.
     private static void LookDrag(ViewportHarness harness, Vector2 from, Vector2 to)
     {
         harness.EditorCamera.Update(
@@ -384,8 +343,7 @@ public sealed class EditorFreelookTests
         harness.EditorCamera.Update(harness.Frame(to, down: PointerButtons.Right));
     }
 
-    // One movement frame with the look button held, which is how the demo host
-    // gates the movement keys.
+    // Movement keys only count while the look button is held.
     private static void Fly(ViewportHarness harness, EditorNavigationInput navigation, float seconds)
     {
         harness.EditorCamera.Update(harness.Frame(

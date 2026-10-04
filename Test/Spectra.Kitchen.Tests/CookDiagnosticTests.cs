@@ -4,8 +4,8 @@ using System;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// The diagnostic vocabulary: how a code is spelled, which band it names, and the
-/// two shapes of the line an IDE parses.
+/// How a cook diagnostic code is spelled, which band it is in, and the two
+/// line shapes an IDE parses.
 /// </summary>
 public class CookDiagnosticTests
 {
@@ -23,10 +23,6 @@ public class CookDiagnosticTests
     {
         CookDiagnosticId wrapped = CookDiagnosticId.Wrap("SS", 104);
 
-        // A shader error reaching a person through the cooker must be the same
-        // code ssc reports and the same code the language server underlines, or
-        // searching for an error code stops working the moment the build tool is
-        // the one reporting it.
         wrapped.ToString().ShouldBe("SS0104");
         wrapped.IsCookCode.ShouldBeFalse();
     }
@@ -49,10 +45,6 @@ public class CookDiagnosticTests
     [Fact]
     public void No_code_in_use_names_a_retired_number()
     {
-        // Retired codes are never reused: a number that meant one thing in a
-        // shipped build and another in the next makes every old bug report and
-        // every suppression list silently wrong. The list is empty today, and
-        // this is what stops the first retirement from being quietly re-issued.
         CookDiagnosticCodes.IsRetired(CookDiagnosticCodes.ProjectNotOpened.Number).ShouldBeFalse();
         CookDiagnosticCodes.IsRetired(CookDiagnosticCodes.InputMissing.Number).ShouldBeFalse();
         CookDiagnosticCodes.IsRetired(CookDiagnosticCodes.PackWriteFailed.Number).ShouldBeFalse();
@@ -74,9 +66,6 @@ public class CookDiagnosticTests
         CookDiagnostic about = CookDiagnostic.Warning(
             CookDiagnosticCodes.ContentNotCooked, "not cooked", @"C:\game\Game.spectraproj");
 
-        // The file form rather than the tool form: an IDE that cannot find a line
-        // opens the file, which is the right answer, where the tool form would
-        // lose the path entirely.
         about.ToBuildLine("scook")
             .ShouldBe(@"C:\game\Game.spectraproj: warning SC1005: not cooked");
     }
@@ -86,8 +75,7 @@ public class CookDiagnosticTests
     {
         CookDiagnostic about = CookDiagnostic.Error(CookDiagnosticCodes.VerbNotImplemented, "unbuilt");
 
-        // MSBuild's second canonical shape. Inventing a (1,1) against the project
-        // folder would make an IDE try to open a directory as a file.
+        // MSBuild's tool form, for a diagnostic with no file.
         about.ToBuildLine("scook").ShouldBe("scook : error SC0002: unbuilt");
     }
 

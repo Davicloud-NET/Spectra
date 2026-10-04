@@ -8,35 +8,9 @@ using System.Text;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// A real level saved and loaded compiles to the same world, vertex for vertex.
+/// A real level (the demo play area) saved and loaded compiles to the same
+/// world, vertex for vertex.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is the only test in the suite that asks whether a map preserves a
-/// LEVEL rather than a graph.</b> The others check that nodes come back with
-/// their ids, order and payloads, which is necessary and is not the same claim:
-/// a codec can get every node right and still shift a plane by one ulp, drop a
-/// face's texture axis, or reorder two coincident brushes, and the result is a
-/// level that looks correct, passes every graph assertion, and is a different
-/// solid.
-/// </para>
-/// <para>
-/// <b>The fixture is the demo's own obstacle course, not a synthetic scene.</b>
-/// <c>DemoPlayArea</c> is authored content with the constructs that actually
-/// break codecs in it: subtractive brushes cutting a doorway and a tunnel, a
-/// chasm cut clean through a slab, coincident and flush-coplanar faces, a part
-/// brush that must stay out of the carve, and stairs and ramps whose planes are
-/// not axis-aligned. A hand-built fixture tends to contain exactly the cases its
-/// author already thought of.
-/// </para>
-/// <para>
-/// <b>Comparing compiled chunk meshes is what makes it a bit-identity claim.</b>
-/// The engine's own determinism oracles compare vertex and index arrays because
-/// anything weaker cannot distinguish "the same level" from "a level that
-/// renders similarly", and the whole static-world pipeline is built on the
-/// promise that the same placements produce the same bytes.
-/// </para>
-/// </remarks>
 public sealed class MapLevelFidelityTests
 {
     private static Scene BuildPlayArea()
@@ -60,8 +34,7 @@ public sealed class MapLevelFidelityTests
         CsgWorld before = authored.StaticWorld.ShouldNotBeNull();
         CsgWorld after = reloaded.StaticWorld.ShouldNotBeNull();
 
-        // Not vacuous: the course is a real level, and a codec that produced an
-        // empty scene would otherwise compare two empty worlds and pass.
+        // Two empty worlds would compare equal.
         before.ChunkMeshes.Count.ShouldBeGreaterThan(4,
             "the play area must actually compile to something for this comparison to mean anything");
 
@@ -90,12 +63,8 @@ public sealed class MapLevelFidelityTests
     [Fact]
     public void The_demo_play_area_survives_a_second_round_trip_byte_for_byte()
     {
-        // Save, load, save. The first pass is where a scene may legitimately
-        // change the bytes - Brush's constructor re-normalises every plane it is
-        // handed, so an authored value can be canonicalised on the way through.
-        // From the second pass on, nothing may move: an editor that rewrote part
-        // of a map on every open would put a diff in front of the user for
-        // opening a file.
+        // The first save may change bytes: Brush re-normalises its planes.
+        // After that nothing may move.
         Scene authored = BuildPlayArea();
 
         byte[] first = MapWriter.Write(MapSceneBinder.FromScene(authored));
@@ -119,10 +88,7 @@ public sealed class MapLevelFidelityTests
     [Fact]
     public void The_part_brush_in_the_course_is_still_a_part_after_a_load()
     {
-        // BrushKind is the admission bit and is not inherited or derived, so a
-        // codec that lost it would re-admit a part brush to the carve - which
-        // changes the compiled world rather than merely mislabelling a node.
-        // The chunk comparison above would catch it; this says which bit broke.
+        // The chunk comparison would catch a lost BrushKind; this says which bit broke.
         Scene authored = BuildPlayArea();
 
         Scene reloaded = new("Empty");

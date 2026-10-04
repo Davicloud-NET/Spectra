@@ -3,26 +3,9 @@ using System.Text;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// A writer of <c>.smodel</c> bytes built from the format specification rather
-/// than from the engine's own types.
-/// </summary>
-/// <remarks>
-/// <para><b>Deliberately hand-written, and it does not touch <c>SmodelFormat</c>,
-/// <c>SmodelReader</c> or any of the record structs.</b> There is no cook rule
-/// yet, and a reader verified only against its own writer proves the two agree
-/// rather than that either is right: a field reordered in a struct would move in
-/// both at once and every test would stay green. Every offset, width and
-/// constant below is a literal taken from <c>docs/formats-and-pipeline.md</c>
-/// section 2.3, so this file disagreeing with the reader is what a layout
-/// regression looks like.</para>
-/// <para>It is also why the FNV-1a is spelled out again here rather than
-/// imported: the layout id is a value the reader recomputes and compares, so
-/// borrowing the engine's implementation to produce it would make that check
-/// compare a function with itself.</para>
-/// <para>Every field is public and overridable because most of what this fixture
-/// is for is building files that are <em>wrong</em> in one specific way.</para>
-/// </remarks>
+// Writes .smodel bytes from the format spec in docs/formats-and-pipeline.md.
+// Uses no engine types or constants (FNV-1a included), so the reader and
+// writer are checked against something other than themselves.
 internal sealed class HandBuiltSmodel
 {
     public const int HeaderSize = 64;
@@ -31,11 +14,8 @@ internal sealed class HandBuiltSmodel
     public const int PayloadAlignment = 16;
     public const uint NameOffsetAbsent = 0xFFFFFFFFu;
 
-    // Every field below exists to be assigned by a caller building a file that
-    // is wrong in one specific way, so a project that links this fixture and only
-    // builds VALID files legitimately assigns none of them. CS0649 is a report
-    // about this file from that project's point of view and says nothing about
-    // either.
+    // Overrides for building invalid files. A project that links this fixture
+    // and only builds valid ones assigns none of them, hence CS0649.
 #pragma warning disable CS0649
     public uint Magic = FourCc("SMDL");
     public ushort FormatVersion = 1;
@@ -43,10 +23,8 @@ internal sealed class HandBuiltSmodel
     public uint GeometryFormatVersion = SpectraEngine.Core.EngineInfo.GeometryFormatVersion;
     public float[] Bounds = [-1f, -2f, -3f, 4f, 5f, 6f];
 
-    /// <summary>Written instead of the layout hashed from the VTXL payload.</summary>
     public uint? VertexLayoutIdOverride;
 
-    /// <summary>Written instead of the real number of table records.</summary>
     public uint? SectionCountOverride;
 #pragma warning restore CS0649
 
@@ -58,32 +36,22 @@ internal sealed class HandBuiltSmodel
 
     private readonly record struct Entry(uint FourCc, byte[]? Payload, ulong Offset, ulong Length);
 
-    /// <summary>Appends a section whose payload this fixture lays out and aligns.</summary>
     public HandBuiltSmodel Section(string fourCc, byte[] payload)
     {
         _sections.Add(new Entry(FourCc(fourCc), payload, 0, 0));
         return this;
     }
 
-    /// <summary>
-    /// Appends a table record naming a region this fixture does not write, which
-    /// is how a section reaching past the file or landing off the alignment is
-    /// expressed.
-    /// </summary>
+    // A table record with no payload written: for sections past the file end
+    // or off the alignment.
     public HandBuiltSmodel SectionAt(string fourCc, ulong offset, ulong length)
     {
         _sections.Add(new Entry(FourCc(fourCc), null, offset, length));
         return this;
     }
 
-    // ------------------------------------------------------------------
-    // Payload builders, each spelling out its record from the spec.
-    // ------------------------------------------------------------------
-
-    /// <summary>
-    /// <c>VTXL</c>: <c>u32 attributeCount</c>, <c>u32 strideFloats</c>, then eight
-    /// bytes per attribute. Records the layout id the header should carry.
-    /// </summary>
+    // VTXL: u32 attributeCount, u32 strideFloats, then eight bytes per attribute.
+    // Also records the layout id for the header.
     public HandBuiltSmodel VertexLayout(
         uint strideFloats,
         params (byte Semantic, byte ComponentType, byte ComponentCount, ushort ByteOffset)[] attributes)
@@ -110,7 +78,7 @@ internal sealed class HandBuiltSmodel
         return Section("VTXL", buffer.ToArray());
     }
 
-    /// <summary><c>VBUF</c>: interleaved floats, nothing else.</summary>
+    // VBUF: interleaved floats.
     public HandBuiltSmodel VertexBuffer(params float[] floats)
     {
         var buffer = new Buf();
@@ -118,7 +86,7 @@ internal sealed class HandBuiltSmodel
         return Section("VBUF", buffer.ToArray());
     }
 
-    /// <summary><c>IBUF</c> at sixteen bits, which is what the header flag must not say.</summary>
+    // IBUF, 16-bit. The header's 32-bit flag must be clear.
     public HandBuiltSmodel Indices16(params ushort[] indices)
     {
         var buffer = new Buf();
@@ -126,7 +94,7 @@ internal sealed class HandBuiltSmodel
         return Section("IBUF", buffer.ToArray());
     }
 
-    /// <summary><c>IBUF</c> at thirty-two bits, which the header flag must say.</summary>
+    // IBUF, 32-bit. The header's 32-bit flag must be set.
     public HandBuiltSmodel Indices32(params uint[] indices)
     {
         var buffer = new Buf();
@@ -134,10 +102,7 @@ internal sealed class HandBuiltSmodel
         return Section("IBUF", buffer.ToArray());
     }
 
-    /// <summary>
-    /// <c>SUBM</c>: <c>{u32 IndexStart, u32 IndexCount, u32 MaterialNameOffset,
-    /// u32 Flags, f32[6] Bounds}</c>.
-    /// </summary>
+    // SUBM: {u32 IndexStart, u32 IndexCount, u32 MaterialNameOffset, u32 Flags, f32[6] Bounds}.
     public HandBuiltSmodel Submeshes(params (uint Start, uint Count, uint MaterialName)[] submeshes)
     {
         var withBounds = new (uint, uint, uint, float[])[submeshes.Length];
@@ -151,10 +116,7 @@ internal sealed class HandBuiltSmodel
         return Submeshes(withBounds);
     }
 
-    /// <summary>
-    /// The same record with its bounds stated, which a caller comparing this
-    /// fixture's bytes against a real writer's needs.
-    /// </summary>
+    // Same record with explicit bounds, for comparing against a real writer's bytes.
     public HandBuiltSmodel Submeshes(
         params (uint Start, uint Count, uint MaterialName, float[] Bounds)[] submeshes)
     {
@@ -171,7 +133,7 @@ internal sealed class HandBuiltSmodel
         return Section("SUBM", buffer.ToArray());
     }
 
-    /// <summary><c>LODS</c>: <c>{f32 ScreenHeightThreshold, u32 FirstSubmesh, u32 SubmeshCount}</c>.</summary>
+    // LODS: {f32 ScreenHeightThreshold, u32 FirstSubmesh, u32 SubmeshCount}.
     public HandBuiltSmodel Lods(params (float Threshold, uint FirstSubmesh, uint SubmeshCount)[] lods)
     {
         var buffer = new Buf();
@@ -185,7 +147,7 @@ internal sealed class HandBuiltSmodel
         return Section("LODS", buffer.ToArray());
     }
 
-    /// <summary><c>SKEL</c>: <c>{u32 NameOffset, i32 ParentIndex, f32[12] InverseBind}</c>.</summary>
+    // SKEL: {u32 NameOffset, i32 ParentIndex, f32[12] InverseBind}.
     public HandBuiltSmodel Skeleton(params (uint NameOffset, int Parent, float[] InverseBind)[] joints)
     {
         var buffer = new Buf();
@@ -199,10 +161,7 @@ internal sealed class HandBuiltSmodel
         return Section("SKEL", buffer.ToArray());
     }
 
-    /// <summary>
-    /// <c>COLL</c>: <c>u32 hullCount</c>, the hull table, padding to the next
-    /// sixteen-byte boundary, then the flat plane array.
-    /// </summary>
+    // COLL: u32 hullCount, the hull table, padding to 16, then the flat plane array.
     public HandBuiltSmodel Collision(
         (uint PlaneStart, uint PlaneCount)[] hulls,
         (float Nx, float Ny, float Nz, float D)[] planes)
@@ -227,10 +186,7 @@ internal sealed class HandBuiltSmodel
         return Section("COLL", buffer.ToArray());
     }
 
-    /// <summary>
-    /// <c>NAME</c>: <c>u16</c>-prefixed UTF-8 records, back to back. Returns each
-    /// record's offset, because a submesh or a joint has to name one.
-    /// </summary>
+    // NAME: u16-prefixed UTF-8 records, back to back. Returns each record's offset.
     public HandBuiltSmodel Names(out uint[] offsets, params string[] names)
     {
         var buffer = new Buf();
@@ -246,7 +202,6 @@ internal sealed class HandBuiltSmodel
         return Section("NAME", buffer.ToArray());
     }
 
-    /// <summary>Lays the whole file out and returns its bytes.</summary>
     public byte[] Build()
     {
         int cursor = SectionTableOffset + (_sections.Count * SectionSize);
@@ -296,7 +251,7 @@ internal sealed class HandBuiltSmodel
 
     private static int AlignUp(int value, int alignment) => (value + alignment - 1) & ~(alignment - 1);
 
-    /// <summary>A growable little-endian byte writer, so a payload reads as its spec does.</summary>
+    // Growable little-endian byte writer.
     private sealed class Buf
     {
         private readonly List<byte> _bytes = [];

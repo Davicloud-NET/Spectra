@@ -9,34 +9,11 @@ using static SpectraEngine.Bsp.Tests.SpatialTestHelpers;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// What geometry that names no material draws with, and the count that says how
-/// many references are standing on a failure.
+/// A face naming no material draws neutral grey; a face naming a missing one
+/// still draws the magenta placeholder, warns and is counted.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>The defect this closes rendered an error texture under the first thing
-/// every user ever built.</b> A brush face carrying <see cref="MaterialRef.Default"/>
-/// used to resolve to the asset manager's fallback material, which wears the
-/// magenta checker so a BROKEN reference is unmistakable. But naming nothing is
-/// not a broken reference: it is the ordinary state of a baseplate, of a freshly
-/// inserted block, and of most of a blockout. The editor assigns no
-/// <see cref="Scene.StaticWorldMaterial"/>, so every one of those surfaces came
-/// up magenta while every log line read healthy.
-/// </para>
-/// <para>
-/// <b>Both halves are pinned here, because the fix is only correct if the other
-/// half still bites.</b> An unnamed face must be neutral AND a named-but-missing
-/// material must still be magenta and still warn; a change that made the second
-/// one neutral too would look like a success in a screenshot and would have
-/// deleted the engine's only visible content-error report.
-/// </para>
-/// </remarks>
 public sealed class NeutralSurfaceTests
 {
-    // ------------------------------------------------------------------
-    // (a) What an unnamed face draws with.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void An_editor_style_scene_draws_unnamed_faces_neutral_not_magenta()
     {
@@ -45,9 +22,7 @@ public sealed class NeutralSurfaceTests
         var assets = new AssetManager(logger, ContentRoot.Path, hotReloadEnabled: false);
         assets.AttachRenderer(renderer);
 
-        // Exactly how the editor boots: the baseplate, an asset manager, and no
-        // StaticWorldMaterial. That last omission is the whole point - the demo
-        // executable assigns one and was therefore never affected.
+        // How the editor boots: baseplate, asset manager, no StaticWorldMaterial.
         var scene = new Scene("Fresh") { Assets = assets };
         SceneManager.PopulateBaseplate(scene);
         scene.StaticWorldMaterial.ShouldBeNull();
@@ -64,8 +39,6 @@ public sealed class NeutralSurfaceTests
             }
         }
 
-        // And it is a colour, not an error texture: the checker is what the
-        // fallback wears, and this must not be it.
         assets.NeutralMaterial.TryGetTexture("uDiffuse", out _, out Texture? bound).ShouldBeTrue();
         bound.ShouldNotBeSameAs(assets.PlaceholderTexture);
 
@@ -80,9 +53,7 @@ public sealed class NeutralSurfaceTests
     {
         var assets = new AssetManager(NullLogger, ContentRoot.Path, hotReloadEnabled: false);
 
-        // #8C8C99, converted the way MaterialParser converts a colour directive,
-        // so the built-in surface and an authored one agree about what that hex
-        // means. Compared in linear light because that is what is stored.
+        // #8C8C99, stored linear like a parsed colour directive.
         Vector3 expected = ColorSpace.SrgbToLinear(new Vector3(140f / 255f, 140f / 255f, 153f / 255f));
 
         assets.NeutralMaterial.TryGetVector3("uBaseColor", out Vector3 tint).ShouldBeTrue();
@@ -98,8 +69,6 @@ public sealed class NeutralSurfaceTests
         var assets = new AssetManager(NullLogger, ContentRoot.Path, hotReloadEnabled: false);
         assets.AttachRenderer(renderer);
 
-        // A host that states what unnamed geometry should wear keeps stating it.
-        // This is the demo's development grid, one level up.
         var scene = new Scene("Test") { Assets = assets, StaticWorldMaterial = NoopMaterial };
         AddUnnamedBrush(scene, new Vector3(10f, 10f, 10f));
 
@@ -117,8 +86,7 @@ public sealed class NeutralSurfaceTests
     {
         var renderer = new FakeRenderer();
 
-        // The headless case the resolver has always allowed: no manager, no
-        // fallback, so a face resolves to null and the swap skips it.
+        // Headless: no manager, so a face resolves to null and the swap skips it.
         var scene = new Scene("Test");
         AddUnnamedBrush(scene, new Vector3(10f, 10f, 10f));
 
@@ -135,7 +103,6 @@ public sealed class NeutralSurfaceTests
         var renderer = new FakeRenderer();
         var assets = new AssetManager(NullLogger, ContentRoot.Path, hotReloadEnabled: false);
 
-        // Before attach: usable as an object, carrying no GPU state.
         assets.NeutralMaterial.ShouldNotBeNull();
         assets.NeutralMaterial.Name.ShouldBe(AssetManager.NeutralMaterialName);
         assets.NeutralMaterial.ShouldNotBeSameAs(assets.DefaultMaterial);
@@ -145,17 +112,13 @@ public sealed class NeutralSurfaceTests
         assets.NeutralMaterial.Shader.ShouldNotBeNull();
         assets.NeutralMaterial.TryGetTexture("uDiffuse", out _, out _).ShouldBeTrue();
 
-        // After release the instance survives - callers hold it - but it must
-        // not still point at a destroyed texture.
+        // Callers still hold the instance after release; it must not point
+        // at a destroyed texture.
         assets.ReleaseGraphicsResources();
         assets.NeutralMaterial.ShouldNotBeNull();
         assets.NeutralMaterial.Shader.ShouldBeNull();
         assets.NeutralMaterial.TryGetTexture("uDiffuse", out _, out _).ShouldBeFalse();
     }
-
-    // ------------------------------------------------------------------
-    // (b) The half that must keep biting.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void A_named_but_missing_material_still_wears_the_placeholder_and_is_counted()
@@ -172,7 +135,6 @@ public sealed class NeutralSurfaceTests
 
         scene.RebuildStaticWorld(renderer);
 
-        // The two cells answer differently, which is the entire distinction.
         StaticWorldChunkMesh unnamed =
             scene.StaticWorldChunkMeshes.Single(c => c.Coord == new ChunkCoord(0, 0, 0));
         unnamed.Submeshes.ShouldHaveSingleItem().Material.ShouldBeSameAs(assets.NeutralMaterial);
@@ -186,10 +148,6 @@ public sealed class NeutralSurfaceTests
 
         assets.ReleaseGraphicsResources();
     }
-
-    // ------------------------------------------------------------------
-    // (c) The count.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void A_healthy_scene_counts_nothing()
@@ -223,9 +181,6 @@ public sealed class NeutralSurfaceTests
             assets.LoadMaterial("Materials/gone.spectramat");
             assets.PlaceholderBoundCount.ShouldBe(1);
 
-            // The second load is a cache hit, so the standing failure is still
-            // one failure. A count that grew per lookup would be a number nobody
-            // could act on.
             assets.LoadMaterial("Materials/gone.spectramat");
             assets.PlaceholderBoundCount.ShouldBe(1);
 
@@ -245,9 +200,8 @@ public sealed class NeutralSurfaceTests
         var assets = new AssetManager(logger, ContentRoot.Path, hotReloadEnabled: false);
         assets.AttachRenderer(renderer);
 
-        // A path that resolves to the fallback is ONE failure. The fallback's own
-        // slot holds the checker, so counting bindings blindly would report two
-        // for one broken reference.
+        // The fallback material's own slot also holds the checker; that must
+        // not count as a second failure.
         assets.ResolveMaterial(MaterialRegistry.Intern($"Materials/absent_{Guid.NewGuid():N}.spectramat"));
 
         assets.PlaceholderBoundCount.ShouldBe(1);
@@ -266,9 +220,7 @@ public sealed class NeutralSurfaceTests
             var assets = new AssetManager(logger, root, hotReloadEnabled: false);
             assets.AttachRenderer(renderer);
 
-            // Bound to the placeholder from the moment it is asked for, and not a
-            // failure yet: counting it here would make the number flash on every
-            // ordinary load and teach that it means nothing.
+            // A pending load is bound to the placeholder but is not a failure yet.
             TextureAsset pending = assets.RequestTexture("Textures/absent.png");
             pending.IsPlaceholder.ShouldBeTrue();
             assets.PlaceholderBoundCount.ShouldBe(0);
@@ -283,10 +235,6 @@ public sealed class NeutralSurfaceTests
             Directory.Delete(root, recursive: true);
         }
     }
-
-    // ------------------------------------------------------------------
-    // Helpers.
-    // ------------------------------------------------------------------
 
     private static readonly Microsoft.Extensions.Logging.Abstractions.NullLogger NullLogger =
         Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;

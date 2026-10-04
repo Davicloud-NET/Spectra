@@ -89,10 +89,8 @@ internal sealed class CliOptions
 
         if (targets.Count == 0)
         {
-            // Default to the backends with working code generators. Vulkan is
-            // deliberately excluded until SPIR-V emission exists — including it
-            // would make every bare `ssc <file>` invocation fail; request it
-            // explicitly via -t vulkan or -t all.
+            // No Vulkan by default: there is no SPIR-V generator yet, so a bare
+            // `ssc <file>` would fail. Ask for it with -t vulkan or -t all.
             targets.Add(GraphicsBackend.OpenGL);
             targets.Add(GraphicsBackend.D3D11);
             targets.Add(GraphicsBackend.D3D12);

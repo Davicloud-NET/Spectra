@@ -2,20 +2,9 @@ using Spectra.Kitchen.Diagnostics;
 
 namespace Spectra.Kitchen.CLI;
 
-/// <summary>
-/// Writes cook diagnostics to stderr in the form MSBuild and every IDE parse.
-/// </summary>
-/// <remarks>
-/// <para><b>The line's TEXT comes from the diagnostic, not from here.</b>
-/// <see cref="CookDiagnostic.ToBuildLine"/> is the one rendering, because the
-/// editor hosts the cooking library in process and a second rendering would drift
-/// from this one the first time either was fixed. This class adds colour and
-/// nothing else, which is why the coloured path splits the same three pieces
-/// rather than re-deriving them.</para>
-/// <para><b>Everything goes to stderr, warnings and infos included</b>, matching
-/// <c>ssc</c>: stdout carries the tool's result and stderr carries what it has to
-/// say about it, so a caller piping stdout gets a clean answer.</para>
-/// </remarks>
+// Writes cook diagnostics in the form MSBuild and IDEs parse. Only adds colour:
+// the text is CookDiagnostic.ToBuildLine's, which the editor also uses.
+// All severities go to stderr so stdout stays the tool's result.
 internal sealed class DiagnosticWriter(TextWriter output, string toolName, bool color)
 {
     public void WriteAll(IReadOnlyList<CookDiagnostic> diagnostics)

@@ -4,30 +4,19 @@ using SpectraShade.Compiler.Syntax;
 
 namespace SpectraShade.Compiler.CodeGen;
 
-/// <summary>
-/// Generates backend-specific shader code from a SpectraShade AST.
-/// Each backend implements this to emit its own format.
-/// </summary>
+/// <summary>Generates one backend's shader code from a SpectraShade AST.</summary>
 public interface ICodeGenerator
 {
     GraphicsBackend Backend { get; }
     ShaderDataFormat OutputFormat { get; }
 
-    /// <summary>
-    /// Generates compiled output for the given shader.
-    /// Returns a PipelineBlob containing the per-stage data.
-    /// </summary>
+    /// <summary>Generates the per-stage output for <paramref name="unit"/>.</summary>
     PipelineBlob Generate(CompilationUnit unit);
 }
 
-/// <summary>
-/// How a compiled shader's instanced variant is attached to its blob.
-/// </summary>
-/// <remarks>
-/// A separate helper rather than a second interface member: the variant is
-/// produced by running the SAME generator over a rewritten AST, so no generator
-/// needs to know the feature exists.
-/// </remarks>
+/// <summary>Attaches a shader's instanced variant to its blob.</summary>
+// Not an interface member: the variant comes from running the same generator
+// over a rewritten AST.
 public static class InstancedBlob
 {
     /// <summary>

@@ -7,22 +7,11 @@ using SpectraEngine.Physics.Box3D.Native;
 namespace SpectraEngine.Physics.Tests;
 
 /// <summary>
-/// Guards the physics binding's boundary: it must not depend on the windowing
-/// or input backend.
+/// The physics binding must not depend on the windowing or input backend, so
+/// it can run headless on a dedicated server.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Mirrors the editing assembly's boundary test, but for a <b>different
-/// reason</b> — worth stating so nobody generalises the wrong rule. Editing is
-/// kept backend-free so the viewport can be re-hosted; physics is kept
-/// backend-free so it can run <em>headless</em>, on a dedicated server with no
-/// window, no input and no graphics device at all.
-/// </para>
-/// <para>
-/// Silk.NET flows in transitively through <c>SpectraEngine.Core</c>, so nothing
-/// stops a careless <c>using</c> at compile time. This test is what does.
-/// </para>
-/// </remarks>
+// Silk.NET comes in transitively through SpectraEngine.Core, so the compiler
+// won't stop a stray using.
 public sealed class PhysicsAssemblyBoundaryTests
 {
     [Fact]
@@ -30,9 +19,7 @@ public sealed class PhysicsAssemblyBoundaryTests
     {
         Assembly physics = typeof(BrushHullBuilder).Assembly;
 
-        // GetReferencedAssemblies lists what the compiler actually emitted a
-        // reference for — what the metadata genuinely uses, not what happened
-        // to be available.
+        // Only references the metadata uses, not everything available.
         string[] offenders = physics.GetReferencedAssemblies()
             .Select(reference => reference.Name ?? string.Empty)
             .Where(name => name.StartsWith("Silk.", StringComparison.OrdinalIgnoreCase))
@@ -46,8 +33,7 @@ public sealed class PhysicsAssemblyBoundaryTests
     [Fact]
     public void The_physics_assembly_still_references_the_engine_core()
     {
-        // Sanity check on the assertion above: an empty reference list for some
-        // unrelated reason would make the backend test pass vacuously.
+        // Guards the test above against passing on an empty reference list.
         Assembly physics = typeof(BrushHullBuilder).Assembly;
 
         physics.GetReferencedAssemblies()
@@ -58,11 +44,9 @@ public sealed class PhysicsAssemblyBoundaryTests
     [Fact]
     public void Runtime_marshalling_is_disabled_for_the_binding()
     {
-        // The load-bearing assembly setting: with it, a non-blittable P/Invoke
-        // is a COMPILE error rather than a silent reinterpretation at the
-        // boundary. Losing it would not break any test here — it would quietly
-        // re-enable the marshaller and let a C# bool in a struct widen from one
-        // byte to four, shifting every field after it. So it is asserted.
+        // With the attribute a non-blittable P/Invoke is a compile error. Without
+        // it the marshaller widens a bool in a struct to four bytes and shifts
+        // every field after it, and no other test here would notice.
         Assembly physics = typeof(B3Vec3).Assembly;
 
         physics.GetCustomAttributes()

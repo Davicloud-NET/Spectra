@@ -8,17 +8,9 @@ using System.IO;
 namespace SpectraEngine.Editor.Tests;
 
 /// <summary>
-/// What a project has, as the picker that assigns it sees the files.
+/// The asset picker's catalogue. Its entries must carry the normalized
+/// content-relative path the rest of the engine identifies an asset by.
 /// </summary>
-/// <remarks>
-/// <b>The catalogue's whole job is producing the same string the drag does.</b>
-/// Identity in this engine is the normalized content-relative path: it is what
-/// the asset caches key on, what a <c>.spectramat</c> writes down, what a map
-/// records and what the pack's id hash is taken over. A picker that spelled it a
-/// fifth way would produce the quiet failure this content layer specialises in,
-/// where the assignment resolves nothing, the face draws the default material
-/// and every log line reads healthy because the path it names really exists.
-/// </remarks>
 public sealed class AssetCatalogTests : IDisposable
 {
     private readonly string _root =
@@ -83,8 +75,7 @@ public sealed class AssetCatalogTests : IDisposable
 
         AssetCatalogEntry entry = catalog.Search("grid", ContentKind.Material, 5)[0];
 
-        // Forward slashes, no leading separator, relative to the root: the same
-        // string ContentDragPayload produces, because they share the rule.
+        // Same string ContentDragPayload produces.
         entry.ContentPath.ShouldBe("Materials/dev/grid.spectramat");
         entry.Stem.ShouldBe("grid");
         entry.Folder.ShouldBe("Materials/dev");
@@ -98,8 +89,6 @@ public sealed class AssetCatalogTests : IDisposable
         catalog.Search("brick", ContentKind.Material, 10).Count.ShouldBe(1);
         catalog.Search("brick", ContentKind.Texture, 10).Count.ShouldBe(1);
 
-        // A picker for materials must not offer the .png beside it: the two are
-        // one letter apart in a list and only one of them can be assigned.
         catalog.Search("brick", ContentKind.Material, 10)[0].ContentPath
             .ShouldBe("Materials/wall_brick.spectramat");
     }
@@ -118,8 +107,7 @@ public sealed class AssetCatalogTests : IDisposable
     {
         AssetCatalog catalog = Walked();
 
-        // "dev" is a folder for one file and no part of any name. Typing it must
-        // still find that file, and a name match anywhere must beat it.
+        // "dev" is only a folder name, and it still finds the file in it.
         List<AssetCatalogEntry> byFolder = catalog.Search("dev", ContentKind.Material, 10);
         byFolder.Count.ShouldBe(1);
         byFolder[0].Stem.ShouldBe("grid");
@@ -143,8 +131,7 @@ public sealed class AssetCatalogTests : IDisposable
         catalog.Entries.Count.ShouldBe(0);
         catalog.Warning.ShouldNotBeNullOrWhiteSpace();
 
-        // A folder that is not there is the same case: an empty picker with no
-        // sentence in it looks exactly like a control that broke.
+        // A missing folder is the same case.
         catalog.Rebuild(Path.Combine(_root, "nothing-here"));
         catalog.Warning.ShouldNotBeNullOrWhiteSpace();
     }
@@ -168,8 +155,7 @@ public sealed class AssetCatalogTests : IDisposable
         AssetCatalog.KindFor(AssetKind.Texture).ShouldBe(ContentKind.Texture);
         AssetCatalog.KindFor(AssetKind.Model).ShouldBe(ContentKind.Model);
 
-        // Sound has no browser kind yet, and answering Other is what makes the
-        // picker empty rather than full of the wrong files.
+        // No browser kind for sound yet. Other keeps the picker empty.
         AssetCatalog.KindFor(AssetKind.Sound).ShouldBe(ContentKind.Other);
     }
 }

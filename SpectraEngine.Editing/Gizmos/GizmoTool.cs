@@ -10,43 +10,15 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Gizmos;
 
 /// <summary>
-/// Everything the move, rotate and resize tools do identically: place the gizmo
-/// at the selection's pivot in the chosen frame, size it to a constant number of
-/// pixels, hit-test it, run the grab → drag → commit/cancel state machine, open
-/// and close the undo transaction, capture the selection's starting transforms,
-/// and highlight the handle under the cursor.
+/// What the move, rotate and resize tools share: pivot and frame, constant
+/// screen size, hit testing, the grab, drag, commit or cancel state machine,
+/// and one undo transaction per gesture. Render thread only.
 /// </summary>
-/// <remarks>
-/// <b>The three gizmos differ in four hooks and nothing else</b>: what shape they
-/// pick against (<see cref="HitTest"/>), how a grab sets up its constraint
-/// (<see cref="TryPrepareDrag"/>), what one frame of the drag writes
-/// (<see cref="ApplyDrag"/>), and what they draw
-/// (<see cref="DrawHandles"/>). Everything above lives here exactly once — the
-/// renderer's six-copy-pasted-pipelines mistake is not one to repeat one floor
-/// up.
-/// <para>
-/// <b>The gesture is the same shape for all three.</b> The grab captures the
-/// pivot, the constraint, and every selected root's starting transform; each
-/// later frame recomputes the whole answer from that capture (never from the
-/// previous frame — see <see cref="GizmoDragTarget"/>); the release commits one
-/// history entry, and Escape or right-click rolls the transaction back so the
-/// selection is restored exactly.
-/// </para>
-/// <para>
-/// <b>Undo:</b> one transaction per gesture, whatever it lasted. A gesture that
-/// changed nothing (a click that turned out not to be a drag) cancels rather
-/// than committing, so it never litters the history with no-op entries.
-/// </para>
-/// <para>
-/// <b>Threading:</b> render thread only — it mutates the scene, reads the
-/// camera, and fills the frame's <see cref="DebugDraw"/>. Hovering allocates
-/// nothing; what a drag allocates is documented per tool.
-/// </para>
-/// </remarks>
+// Each drag frame recomputes from the grab capture, never from the previous
+// frame, so a cancel restores the selection exactly.
 public abstract class GizmoTool
 {
-    // Retained across gestures so a drag of N nodes allocates only on the first
-    // gesture that wide.
+    // Kept across gestures to avoid reallocating per drag.
     private readonly List<GizmoDragTarget> _targets = [];
 
     private GizmoGeometry _geometry;
@@ -63,13 +35,8 @@ public abstract class GizmoTool
 
     /// <summary>
     /// Creates a tool over a scene and the history its edits land in.
+    /// <paramref name="undo"/> must be the history for <paramref name="scene"/>.
     /// </summary>
-    /// <param name="scene">The scene whose selection this gizmo manipulates.</param>
-    /// <param name="undo">
-    /// The history to open a transaction in per drag. Must be the history for
-    /// <paramref name="scene"/>.
-    /// </param>
-    /// <param name="transactionName">The initial <see cref="TransactionName"/>.</param>
     protected GizmoTool(Scene scene, UndoStack undo, string transactionName)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -96,22 +63,15 @@ public abstract class GizmoTool
     public abstract GizmoMode Mode { get; }
 
     /// <summary>
-    /// Whether <see cref="Orientation"/> means anything for this tool. False for
-    /// <see cref="ScaleGizmo"/>, which is local-only by construction.
+    /// Whether <see cref="Orientation"/> applies to this tool. False for
+    /// <see cref="ScaleGizmo"/>, which is local-only.
     /// </summary>
     public virtual bool SupportsOrientation => true;
 
     /// <summary>
-    /// The manipulator style: which handles exist, where they stand, and what a
-    /// resize holds still. Defaults to <see cref="GizmoStyle.Studio"/>.
+    /// The manipulator style. Defaults to <see cref="GizmoStyle.Studio"/>.
+    /// Set it between gestures, not during a drag.
     /// </summary>
-    /// <remarks>
-    /// <b>Set it between gestures, not during one.</b> The style decides where
-    /// handles stand, so changing it mid-drag would move the constraint out from
-    /// under a live grab. <see cref="GizmoController.Style"/> resets the live
-    /// tool before it writes, which is the same discipline
-    /// <see cref="GizmoController.Orientation"/> follows and for the same reason.
-    /// </remarks>
     public GizmoStyle Style
     {
         get => _style;
@@ -129,8 +89,7 @@ public abstract class GizmoTool
     public GizmoOrientation Orientation { get; set; } = GizmoOrientation.World;
 
     /// <summary>
-    /// The gizmo's on-screen size in pixels — the length of one axis handle,
-    /// held constant at any camera distance.
+    /// The length of one axis handle in pixels, constant at any camera distance.
     /// </summary>
     public float HandlePixelSize { get; set; } = GizmoGeometry.DefaultPixelSize;
 
@@ -140,11 +99,7 @@ public abstract class GizmoTool
     /// <summary>The button that grabs a handle and, on release, commits the drag.</summary>
     public PointerButtons DragButton { get; set; } = PointerButtons.Left;
 
-    /// <summary>
-    /// The button that cancels an in-progress drag. Right-click is the
-    /// universal "never mind" during a manipulation; Escape does the same
-    /// through <see cref="Update"/>'s cancel flag.
-    /// </summary>
+    /// <summary>The button that cancels an in-progress drag.</summary>
     public PointerButtons CancelButton { get; set; } = PointerButtons.Right;
 
     /// <summary>The label a committed drag carries into the undo menu.</summary>
@@ -156,36 +111,25 @@ public abstract class GizmoTool
     /// <summary>The handle under the cursor, or <see cref="GizmoHandle.None"/>.</summary>
     public GizmoHandle HoveredHandle => _hovered;
 
-    /// <summary>
-    /// The handle being dragged, or <see cref="GizmoHandle.None"/> when no drag
-    /// is in progress.
-    /// </summary>
+    /// <summary>The handle being dragged, or <see cref="GizmoHandle.None"/>.</summary>
     public GizmoHandle ActiveHandle => _active;
 
-    /// <summary>
-    /// True when the last <see cref="Update"/> produced drawable geometry — a
-    /// non-empty selection in a sized viewport.
-    /// </summary>
+    /// <summary>True when the last <see cref="Update"/> produced drawable geometry.</summary>
     public bool IsVisible => _hasGeometry;
 
     /// <summary>
-    /// The pivot the last <see cref="Update"/> placed the gizmo at: the
-    /// selection's average world position while idle, and — for a tool that
-    /// moves its own pivot — where the drag has taken it.
-    /// <see cref="Vector3.Zero"/> before the first <see cref="Update"/>: it
-    /// reports where the gizmo <em>is</em>, not where a selection change has just
-    /// decided it should go.
+    /// The pivot the last <see cref="Update"/> placed the gizmo at.
+    /// <see cref="Vector3.Zero"/> before the first <see cref="Update"/>.
     /// </summary>
     public Vector3 Pivot => _livePivot;
 
     /// <summary>
-    /// The last frame's geometry — the same struct picking used, exposed for a
-    /// host that wants to draw the gizmo itself. Meaningless when
-    /// <see cref="IsVisible"/> is false.
+    /// The last frame's geometry, the same struct picking used. Meaningless
+    /// when <see cref="IsVisible"/> is false.
     /// </summary>
     public GizmoGeometry Geometry => _geometry;
 
-    /// <summary>How many nodes the current drag is manipulating; zero when idle.</summary>
+    /// <summary>How many nodes the current drag is manipulating. Zero when idle.</summary>
     public int DragTargetCount => _targets.Count;
 
     /// <summary>The nodes the current drag is manipulating, in capture order.</summary>
@@ -195,47 +139,31 @@ public abstract class GizmoTool
     protected Vector3 GrabPivot => _grabPivot;
 
     /// <summary>The frame rotation the current drag was grabbed in.</summary>
-    /// <remarks>
-    /// Frozen at the grab rather than tracked live: a selection that rotates
-    /// mid-drag (which is exactly what the rotate tool does to it) would
-    /// otherwise swing the constraint out from under the cursor and chase itself.
-    /// </remarks>
+    // Frozen at the grab: a live frame would follow a rotating selection.
     protected Quaternion GrabFrame => _grabFrame;
 
     /// <summary>
-    /// Where the gizmo is drawn during the drag. Defaults to the grab pivot;
-    /// <see cref="TranslateGizmo"/> overrides it so the gizmo travels with what
-    /// it is moving.
+    /// Where the gizmo is drawn during the drag. Defaults to the grab pivot.
     /// </summary>
     protected virtual Vector3 LivePivot => _grabPivot;
 
     /// <summary>
-    /// Whether the current drag has actually changed anything. A gesture that
-    /// ends with this false cancels instead of committing.
+    /// Whether the current drag has changed anything. A gesture that ends with
+    /// this false cancels instead of committing.
     /// </summary>
     protected abstract bool HasEdit { get; }
 
     /// <summary>
-    /// Advances the gizmo by one frame: hit-tests, starts a drag on the grab
-    /// edge, manipulates the selection while dragging, and commits or cancels on
-    /// the release or cancel edge.
+    /// Advances the gizmo by one frame: hover, grab, drag, and commit or cancel.
     /// </summary>
-    /// <param name="frame">This frame's input snapshot.</param>
     /// <param name="cancelRequested">
-    /// True on the frame the user asked to abort — the Escape key, or a viewport
-    /// that lost focus. It arrives as a parameter rather than inside
-    /// <c>EditorInputFrame</c> because the frame deliberately carries no keyboard
-    /// vocabulary: the host owns the keymap and passes the verdict down, which
-    /// keeps the backend-neutral input seam intact.
+    /// True on the frame the user asked to abort, such as Escape or a lost focus.
+    /// The host owns the keymap, so this is not part of the input frame.
     /// </param>
     /// <param name="pointerAvailable">
-    /// False when something else has already claimed this frame's press — the
-    /// viewport camera's own navigation buttons, in practice. The hover still
-    /// updates; only the grab is refused, because a press that belongs to
-    /// navigation must not also start a manipulation. A drag already in progress
-    /// is unaffected: it owns the pointer and nothing may take it away.
+    /// False when something else claimed this frame's press, such as camera
+    /// navigation. Hover still updates and a live drag is unaffected.
     /// </param>
-    /// <returns>What this call did.</returns>
     public GizmoUpdateResult Update(in EditorInputFrame frame, bool cancelRequested = false, bool pointerAvailable = true)
     {
         if (_state == GizmoInteractionState.Dragging)
@@ -245,18 +173,9 @@ public abstract class GizmoTool
     }
 
     /// <summary>
-    /// Hit-tests the gizmo at this frame's cursor <b>without touching any of
-    /// the tool's state</b> — no cached geometry, no hover, no drag. The
-    /// question "would a press here grab a handle?", asked by the viewport's
-    /// drag arbitration before it has committed to an interpretation.
+    /// Hit-tests the gizmo at this frame's cursor without changing the tool's
+    /// state. Works on a frame where <see cref="Update"/> has not run.
     /// </summary>
-    /// <remarks>
-    /// It rebuilds the geometry locally rather than reading
-    /// <see cref="Geometry"/>, so the answer is correct even on a frame where
-    /// <see cref="Update"/> has not run yet — which is what makes the
-    /// arbitration testable on its own, instead of only as a side effect of
-    /// driving the whole tool.
-    /// </remarks>
     public GizmoPick PickAt(in EditorInputFrame frame)
     {
         if (Scene.Selection.Count == 0 ||
@@ -275,16 +194,9 @@ public abstract class GizmoTool
 
     /// <summary>
     /// The geometry this tool would lay out for the current selection at the
-    /// given viewport size, <b>without touching any of its state</b>: the same
-    /// question <see cref="PickAt"/> asks, for a caller that wants the shape
-    /// rather than a pick.
+    /// given viewport size, without changing its state. Default geometry for an
+    /// empty selection or a viewport with no area.
     /// </summary>
-    /// <remarks>
-    /// For a host drawing the gizmo itself, and for a test that needs to aim at
-    /// a handle whose position depends on the style and the selection. Returns a
-    /// default (invisible, zero-length) geometry for an empty selection or a
-    /// viewport with no area.
-    /// </remarks>
     public GizmoGeometry GeometryFor(Vector2 viewportSize)
     {
         if (Scene.Selection.Count == 0 || viewportSize.X <= 0f || viewportSize.Y <= 0f)
@@ -295,44 +207,24 @@ public abstract class GizmoTool
     }
 
     /// <summary>
-    /// The handle a drag that did not start on the gizmo should be routed to —
-    /// the one that means "just move this where the cursor goes".
-    /// <see cref="GizmoHandle.None"/> for a tool that has no such handle, which
-    /// refuses the gesture rather than inventing one.
+    /// The handle a press on an object, rather than on the gizmo, drags with.
+    /// <see cref="GizmoHandle.None"/> for a tool with no free move, which
+    /// leaves the press a plain click-select.
     /// </summary>
-    /// <remarks>
-    /// This is what makes "press on an object and drag it" possible without a
-    /// second manipulation path: the viewport picks the object, selects it, and
-    /// hands the gesture to whatever this tool calls free movement — the centre
-    /// disc for <see cref="TranslateGizmo"/>. Rotate and resize deliberately
-    /// have none: dragging an unselected object must not silently spin or
-    /// stretch it, so the press stays a plain click-select.
-    /// </remarks>
     public virtual GizmoHandle FreeMoveHandle => GizmoHandle.None;
 
     /// <summary>
     /// Starts a drag on <paramref name="handle"/> as if the user had grabbed it
-    /// this frame, without requiring the cursor to be over it. Returns false —
-    /// changing nothing and opening no transaction — when a drag is already in
-    /// progress, the handle is <see cref="GizmoHandle.None"/>, there is nothing
-    /// selected, or the tool refuses the constraint (see
-    /// <see cref="TryPrepareDrag"/>).
+    /// this frame, wherever the cursor is. False, with no transaction opened,
+    /// when a drag is already live, nothing is selected, or the tool refuses.
     /// </summary>
-    /// <remarks>
-    /// The one caller is the viewport's drag arbitration: a press that landed
-    /// on an object rather than on a handle changes the selection first and
-    /// then routes the very same gesture into the ordinary drag machine, so it
-    /// commits one undo entry and behaves identically to a handle drag from the
-    /// second frame onward.
-    /// </remarks>
     public bool TryBeginDrag(in EditorInputFrame frame, GizmoHandle handle)
     {
         if (_state == GizmoInteractionState.Dragging || handle == GizmoHandle.None)
             return false;
 
-        // Geometry is normally built by the hover pass; a synthesized grab has
-        // to build it itself, and at the pivot of the selection as it stands
-        // NOW (the caller has just changed it).
+        // The caller may have just changed the selection, so rebuild here
+        // rather than trust the hover pass.
         if (!TryBuildGeometry(in frame))
             return false;
 
@@ -341,9 +233,8 @@ public abstract class GizmoTool
     }
 
     /// <summary>
-    /// Pushes the gizmo into <paramref name="output"/>, highlighting the active
-    /// handle while dragging and the hovered one otherwise. Draws nothing when
-    /// there is no selection.
+    /// Draws the gizmo, highlighting the active handle while dragging and the
+    /// hovered one otherwise.
     /// </summary>
     public void Draw(DebugDraw output)
     {
@@ -356,10 +247,8 @@ public abstract class GizmoTool
     }
 
     /// <summary>
-    /// Aborts an in-progress drag, restoring every node to the state it had at
-    /// the grab and landing nothing in the history. Returns false when no drag
-    /// was in progress. For a host that must cancel outside the input frame — a
-    /// lost window focus, a scene reload.
+    /// Aborts an in-progress drag, restoring every node to its state at the
+    /// grab. False when no drag was in progress.
     /// </summary>
     public bool CancelDrag()
     {
@@ -372,17 +261,11 @@ public abstract class GizmoTool
     }
 
     /// <summary>
-    /// Returns the tool to a cold state: cancels any drag (restoring the
-    /// selection), forgets the hover, and drops the cached geometry.
+    /// Cancels any drag, forgets the hover and drops the cached geometry.
+    /// Call it on a mode switch.
     /// </summary>
-    /// <remarks>
-    /// <b>This is what a mode switch calls.</b> A tool that was left mid-drag
-    /// would keep an undo transaction open — the next tool's
-    /// <c>BeginTransaction</c> would throw, since transactions do not nest — and
-    /// would report a stale <see cref="ActiveHandle"/> forever. Switching away
-    /// from a half-finished gesture means abandoning it, which is also what the
-    /// user expects: the drag never completed.
-    /// </remarks>
+    // A tool left mid-drag keeps its transaction open, and the next tool's
+    // BeginTransaction throws because transactions do not nest.
     public void Reset()
     {
         CancelDrag();
@@ -392,53 +275,38 @@ public abstract class GizmoTool
         _state = GizmoInteractionState.Idle;
     }
 
-    // --- Hooks ---------------------------------------------------------------
-
     /// <summary>Picks the handle this tool's shape puts under <paramref name="ray"/>.</summary>
     protected abstract GizmoPick HitTest(in GizmoGeometry geometry, in Ray3 ray, float tolerancePixels);
 
     /// <summary>
-    /// Sets up the constraint for a grab on <see cref="ActiveHandle"/> and
-    /// records everything the drag will recompute from. Returning false refuses
-    /// the gesture — a view edge-on to the constraint, or a selection this tool
-    /// cannot act on — and no transaction is opened.
+    /// Sets up the constraint for a grab on <see cref="ActiveHandle"/>.
+    /// Returning false refuses the gesture and no transaction is opened.
+    /// <see cref="Targets"/> is already populated and non-empty.
     /// </summary>
-    /// <remarks>
-    /// <see cref="Targets"/> is already populated and non-empty when this runs.
-    /// </remarks>
     protected abstract bool TryPrepareDrag(in EditorInputFrame frame, in Ray3 ray);
 
     /// <summary>
-    /// Allocates and records this tool's per-node commands into the transaction
-    /// the base has just opened. Called once per gesture, immediately after
-    /// <see cref="TryPrepareDrag"/> succeeded.
+    /// Records this tool's per-node commands into the transaction the base just
+    /// opened. Record, do not execute: nothing has moved yet, and the drag
+    /// applies later values through the same command objects.
     /// </summary>
-    /// <remarks>
-    /// Record, do not execute: the commands' after-state must already match the
-    /// scene (nothing has moved yet), and the drag applies every later value
-    /// through the same command objects.
-    /// </remarks>
     protected abstract void RecordCommands();
 
     /// <summary>
-    /// Applies one frame of the drag, recomputed from the grab capture. A frame
-    /// whose cursor ray cannot be projected onto the constraint must leave the
-    /// last applied value alone rather than substituting a failed result.
+    /// Applies one frame of the drag, recomputed from the grab capture. If the
+    /// cursor ray cannot be projected onto the constraint, keep the last value.
     /// </summary>
     protected abstract void ApplyDrag(in EditorInputFrame frame, in Ray3 ray);
 
-    /// <summary>Clears whatever per-gesture state the tool holds beyond <see cref="Targets"/>.</summary>
+    /// <summary>Clears the tool's per-gesture state beyond <see cref="Targets"/>.</summary>
     protected abstract void ClearDragState();
 
     /// <summary>Draws this tool's handles.</summary>
     protected abstract void DrawHandles(DebugDraw output, in GizmoGeometry geometry, GizmoHandle highlighted);
 
-    // --- Shared helpers for subclasses ---------------------------------------
-
     /// <summary>
-    /// The node whose orientation a local-frame gizmo aligns to: the most
-    /// recently selected one, which is the "active object" every editor with a
-    /// local mode uses. Null for an empty selection.
+    /// The node a local-frame gizmo aligns to: the most recently selected one.
+    /// Null for an empty selection.
     /// </summary>
     public SceneNode? ReferenceNode
     {
@@ -450,9 +318,8 @@ public abstract class GizmoTool
     }
 
     /// <summary>
-    /// The rotation the gizmo's handles are laid out in this frame: identity in
-    /// <see cref="GizmoOrientation.World"/>, the reference node's world rotation
-    /// in <see cref="GizmoOrientation.Local"/>.
+    /// The rotation the handles are laid out in this frame: identity in world
+    /// orientation, the reference node's world rotation in local.
     /// </summary>
     protected virtual Quaternion FrameRotation()
     {
@@ -463,9 +330,8 @@ public abstract class GizmoTool
     }
 
     /// <summary>
-    /// A node's world rotation, decomposed from its world matrix. Falls back to
-    /// identity for a matrix that cannot be decomposed (a zero scale somewhere in
-    /// the chain), which is the only finite answer available.
+    /// A node's world rotation, decomposed from its world matrix. Identity when
+    /// the matrix cannot be decomposed (a zero scale in the chain).
     /// </summary>
     protected static Quaternion WorldRotationOf(SceneNode node)
     {
@@ -474,8 +340,6 @@ public abstract class GizmoTool
             ? rotation
             : Quaternion.Identity;
     }
-
-    // --- Hover ---------------------------------------------------------------
 
     private GizmoUpdateResult UpdateHover(in EditorInputFrame frame, bool pointerAvailable)
     {
@@ -488,10 +352,8 @@ public abstract class GizmoTool
             return GizmoUpdateResult.None;
         }
 
-        // A cursor outside the viewport belongs to whatever panel it is over,
-        // not to this gizmo — and a LOCKED cursor has no position at all, so
-        // hit-testing through it would highlight a handle under a pointer the
-        // user cannot see or aim.
+        // A locked cursor has no position, and one outside the viewport is
+        // over another panel.
         if (frame.IsPointerUsable)
         {
             Ray3 ray = Scene.Camera.ScreenPointToRay(frame.CursorPosition, frame.ViewportSize);
@@ -507,8 +369,6 @@ public abstract class GizmoTool
 
     private bool TryBuildGeometry(in EditorInputFrame frame)
     {
-        // Nothing selected, or a panel that has not been laid out yet: there is
-        // no gizmo to draw and nothing to pick.
         if (Scene.Selection.Count == 0 || frame.ViewportSize.X <= 0f || frame.ViewportSize.Y <= 0f)
         {
             _hasGeometry = false;
@@ -535,27 +395,13 @@ public abstract class GizmoTool
             layout.PositiveExtent,
             layout.NegativeExtent);
 
-    /// <summary>
-    /// Where the gizmo sits this frame and how far its handles reach along each
-    /// frame axis, from one measurement of the selection.
-    /// </summary>
     private readonly record struct GizmoLayout(
         Vector3 Pivot, Vector3 PositiveExtent, Vector3 NegativeExtent);
 
-    /// <summary>
-    /// Resolves the pivot and the selection box in one pass, because in a style
-    /// that stands its handles on the box the pivot is derived from the same
-    /// measurement and measuring twice would be measuring the selection twice
-    /// per frame.
-    /// </summary>
-    /// <param name="frameRotation">The frame the handles are laid out in.</param>
-    /// <param name="forcedPivot">
-    /// Where the gizmo must sit regardless of the style's pivot mode: the drag
-    /// path's live pivot, frozen at the grab or carried by the tool. The box is
-    /// then measured relative to that point, which is what keeps a handle on the
-    /// face it is dragging while a face-anchored resize pushes the geometry out
-    /// from under a stationary pivot.
-    /// </param>
+    // Pivot and handle reach from one measurement of the selection.
+    // forcedPivot is the drag's live pivot. The box is measured relative to
+    // it, so a handle stays on its face while a face-anchored resize moves
+    // geometry away from a stationary pivot.
     private GizmoLayout ResolveLayout(Quaternion frameRotation, Vector3? forcedPivot = null)
     {
         bool needsBox = _style.HandlesStandOffBounds || _style.PivotMode == GizmoPivotMode.BoundsCentre;
@@ -597,18 +443,8 @@ public abstract class GizmoTool
         axisZ = Vector3.Transform(Vector3.UnitZ, frameRotation);
     }
 
-    /// <summary>
-    /// The selection's pivot in <see cref="GizmoPivotMode.OriginAverage"/>: the
-    /// average of every selected node's world position, which for a single
-    /// selection is simply that node's position.
-    /// </summary>
-    /// <remarks>
-    /// The average is over the whole selection, including nodes that will not be
-    /// manipulated directly because an ancestor of theirs is also selected — the
-    /// pivot is where the user sees their selection sitting, and those nodes are
-    /// part of what they see. It moves rigidly with everything else either way,
-    /// since a parent's edit carries its children.
-    /// </remarks>
+    // Averages the whole selection, including nodes whose selected ancestor
+    // carries them: the pivot is where the user sees the selection.
     private Vector3 SelectionOriginAverage()
     {
         IReadOnlyList<SceneNode> items = Scene.Selection.Items;
@@ -622,8 +458,6 @@ public abstract class GizmoTool
         return sum / items.Count;
     }
 
-    // --- Grab ----------------------------------------------------------------
-
     private GizmoUpdateResult BeginDrag(in EditorInputFrame frame)
     {
         _active = _hovered;
@@ -635,10 +469,8 @@ public abstract class GizmoTool
         Ray3 ray = Scene.Camera.ScreenPointToRay(frame.CursorPosition, frame.ViewportSize);
         if (_targets.Count == 0 || !TryPrepareDrag(in frame, in ray))
         {
-            // Either nothing in the selection is manipulable by this tool, or
-            // the view is edge-on to the constraint at the instant of the grab
-            // and there is no cursor position to anchor the drag to. Refuse the
-            // gesture rather than open a transaction that can never do anything.
+            // Nothing to manipulate, or no anchor for the drag. Refuse before
+            // a transaction opens.
             _targets.Clear();
             _active = GizmoHandle.None;
             _state = GizmoInteractionState.Hovering;
@@ -662,9 +494,8 @@ public abstract class GizmoTool
         {
             SceneNode node = items[i];
 
-            // Skip nodes an also-selected ancestor already carries: applying the
-            // edit to both would apply it twice to the descendant and tear the
-            // selection apart instead of manipulating it rigidly.
+            // A selected ancestor already carries this node. Editing both
+            // would apply the edit twice.
             if (HasSelectedAncestor(node))
                 continue;
 
@@ -682,8 +513,6 @@ public abstract class GizmoTool
         return false;
     }
 
-    // --- Drag ----------------------------------------------------------------
-
     private GizmoUpdateResult UpdateDrag(in EditorInputFrame frame, bool cancelRequested)
     {
         if (cancelRequested || frame.WasPressed(CancelButton))
@@ -696,27 +525,17 @@ public abstract class GizmoTool
         if (frame.WasReleased(DragButton))
             return CommitDrag();
 
-        // A zero-size viewport mid-drag (a minimized window, a pane that lost
-        // its layout) cannot yield a cursor ray: ScreenPointToRay divides by
-        // the viewport size and the result is NaN throughout. Hold the drag
-        // exactly as a failed projection frame does; the hover path already
-        // refuses this state in TryBuildGeometry, and this is the drag path
-        // owing the same refusal. The invariant must live HERE, not in the
-        // host: the demo host happens to reset the viewport when minimized,
-        // but a future editor host is under no such obligation.
+        // Zero-size viewport mid-drag (minimised window): ScreenPointToRay
+        // would return NaN. Hold the drag. Hosts are not required to guard this.
         if (frame.ViewportSize.X <= 0f || frame.ViewportSize.Y <= 0f)
             return GizmoUpdateResult.DragUpdated;
 
         Ray3 ray = Scene.Camera.ScreenPointToRay(frame.CursorPosition, frame.ViewportSize);
         ApplyDrag(in frame, in ray);
 
-        // Rebuild at the live pivot, in the frozen grab frame, so the gizmo
-        // keeps its constant screen size as the selection travels toward or away
-        // from the camera without the handles swinging around mid-gesture. The
-        // selection box is re-measured though, so a handle standing on a face
-        // stays on that face while the drag moves it; nothing in the drag math
-        // reads the result, which is what makes that safe rather than a feedback
-        // loop (the constraint and the grab anchor are both frozen).
+        // Rebuild at the live pivot in the frozen grab frame. The box is
+        // re-measured so handles follow their faces. The drag math never reads
+        // this geometry, so there is no feedback loop.
         _livePivot = LivePivot;
         _geometry = BuildGeometry(
             ResolveLayout(_grabFrame, _livePivot), _grabFrame, frame.ViewportSize);
@@ -727,9 +546,8 @@ public abstract class GizmoTool
 
     private GizmoUpdateResult CommitDrag()
     {
-        // A grab that never changed anything is a click, not an edit. Cancelling
-        // restores the (identical) captured state and leaves the history clean,
-        // instead of littering it with no-op entries the user has to undo past.
+        // A grab that changed nothing is a click. Cancel so the history
+        // gets no no-op entry.
         bool edited = HasEdit;
         if (edited)
             Undo.CommitTransaction();
@@ -745,8 +563,7 @@ public abstract class GizmoTool
         ClearDragState();
         _targets.Clear();
         _active = GizmoHandle.None;
-        // Back to Idle rather than Hovering: the next frame's hit test decides
-        // whether the cursor is still over a handle, at the gizmo's new home.
+        // Idle, not Hovering: the next frame's hit test decides.
         _state = GizmoInteractionState.Idle;
     }
 }

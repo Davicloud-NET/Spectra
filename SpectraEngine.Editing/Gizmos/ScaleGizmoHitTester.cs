@@ -6,38 +6,21 @@ namespace SpectraEngine.Editing.Gizmos;
 
 /// <summary>
 /// Picks the scale gizmo's cube handles from a viewport ray: the uniform centre
-/// cube first, then the three axis cubes.
+/// cube first, then the axis cubes. Render thread only.
 /// </summary>
-/// <remarks>
-/// <b>The cubes are solid, so the test is exact containment</b> rather than the
-/// pixel proximity the arrows and rings need — a box has an interior to be
-/// inside of, and a ray-box test is both cheaper and less surprising than a
-/// distance threshold around one. The pixel tolerance is used only to widen the
-/// shafts, which run <em>under</em> their cubes and are what a user grabs when
-/// they aim at the middle of an axis rather than at its tip.
-/// <para>
-/// <b>The centre wins ties</b> for the same reason it does on the translate
-/// gizmo: it is the smallest target and is surrounded by its competitors, so if
-/// it lost ties it could never be grabbed at all.
-/// </para>
-/// <para>
-/// <b>Threading:</b> render thread only. Pure function, no allocation.
-/// </para>
-/// </remarks>
 public static class ScaleGizmoHitTester
 {
     /// <summary>
     /// Picks the handle under <paramref name="ray"/>, or
     /// <see cref="GizmoPick.Miss"/> when the ray comes near none of them.
     /// </summary>
-    /// <param name="geometry">This frame's gizmo geometry — the same one that was drawn.</param>
-    /// <param name="ray">The viewport picking ray, from <see cref="Camera.ScreenPointToRay"/>.</param>
-    /// <param name="tolerancePixels">Screen-space slack for the axis shafts.</param>
+    /// <param name="tolerancePixels">Screen-space slack for the axis shafts. The cubes are tested exactly.</param>
     public static GizmoPick Pick(in GizmoGeometry geometry, in Ray3 ray, float tolerancePixels)
     {
         if (geometry.IsBehindCamera)
             return GizmoPick.Miss;
 
+        // Centre wins ties: it is the smallest target and sits among the others.
         if (geometry.TryGetHandleBox(GizmoHandle.Screen, out Vector3 centre, out float radius) &&
             GizmoHitTesting.TryRayHandleBox(in geometry, in ray, centre, radius, out float centreDistance))
         {
@@ -52,16 +35,12 @@ public static class ScaleGizmoHitTester
             if (!geometry.TryGetHandleBox(handle, out Vector3 boxCentre, out float boxRadius))
                 continue;
 
-            // Pick only what the drag will accept: the resize drag measures
-            // cursor travel along this axis through TryClosestPointOnLine, so
-            // an axis the projection refuses (viewed near end-on) must not be
-            // offered by cube or shaft; same pick/drag agreement as the
-            // rotate tester and, now, the translate arrows.
+            // The drag measures travel with the same projection, so an axis
+            // it refuses (viewed near end-on) must not be pickable.
             if (!GizmoMath.TryClosestPointOnLine(in ray, geometry.Pivot, geometry.Axis(handle), out _))
                 continue;
 
-            // The cube: exact, and reported at zero pixel distance so it always
-            // beats a shaft that merely came close.
+            // Cube hits report zero pixel distance so they beat a nearby shaft.
             if (GizmoHitTesting.TryRayHandleBox(in geometry, in ray, boxCentre, boxRadius, out float boxDistance) &&
                 (0f < best.PixelDistance || boxDistance < best.RayDistance))
             {
@@ -69,10 +48,8 @@ public static class ScaleGizmoHitTester
                 continue;
             }
 
-            // The shaft: pixel proximity, like a translate arrow. A style whose
-            // handles stand on the bounds can give a shaft no length at all, and
-            // measuring to a degenerate segment would quietly make the pivot
-            // itself pickable as an axis handle.
+            // A shaft can have no length when handles stand on the bounds.
+            // Skip it, or the pivot becomes pickable as an axis handle.
             if (!geometry.TryGetAxisSegment(handle, out Vector3 start, out Vector3 end))
                 continue;
 

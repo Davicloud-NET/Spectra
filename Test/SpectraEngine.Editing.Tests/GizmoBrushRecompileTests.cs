@@ -7,24 +7,10 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// A gizmo drag of a brush node must be indistinguishable, to the static-world
-/// compile, from a scripted assignment to the same node's
-/// <c>LocalPosition</c> — same final placement, same dirty cells, same
-/// incremental recompile.
+/// A gizmo drag of a brush node looks the same to the static-world compile as
+/// assigning <c>LocalPosition</c>: same placement, same dirty cells.
 /// </summary>
-/// <remarks>
-/// This is the load-bearing claim behind the whole design: the gizmo moves
-/// nodes through <c>SetTransformCommand</c> and therefore through the ordinary
-/// transform setters, so the scene's node-scoped dirtying
-/// (<c>MarkBrushSubtreeDirty</c>) and its chunked footprint diff see a gizmo
-/// edit as just another edit. If the gizmo ever grew a "fast path" that wrote
-/// placements or transforms directly, the per-edit recompile cost would stop
-/// being O(edit neighbourhood) and these tests would catch it.
-/// <para>
-/// Cell landmarks match <c>SceneDirtyCellTests</c>: a 2-unit cube at
-/// (16,16,16) sits mid-cell (0,0,0), and at (48,16,16) mid-cell (1,0,0).
-/// </para>
-/// </remarks>
+// A 2-unit cube at (16,16,16) sits mid-cell (0,0,0); at (48,16,16), mid-cell (1,0,0).
 public sealed class GizmoBrushRecompileTests
 {
     private const float AlongAxis = 0.8f;
@@ -42,10 +28,7 @@ public sealed class GizmoBrushRecompileTests
         dragged.Scene.RebuildStaticWorld(draggedRenderer);
         DragBrushToX(dragged, 48f);
 
-        // Bit-for-bit, not approximately: the snapped result of an axis drag is
-        // an exact grid multiple and the untouched axes keep the pivot's own
-        // floats, so the two paths produce identical placements — which is what
-        // makes the dirty-cell comparison below meaningful rather than lucky.
+        // Equal, not close: a snapped axis drag lands on an exact grid multiple.
         draggedNode.LocalPosition.ShouldBe(scriptedNode.LocalPosition);
     }
 
@@ -57,7 +40,6 @@ public sealed class GizmoBrushRecompileTests
         IReadOnlyList<ChunkCoord> scripted = ScriptedMoveDirtyCells(target);
         IReadOnlyList<ChunkCoord> dragged = DraggedMoveDirtyCells(48f);
 
-        // Departed cell and arrival cell, both ways round.
         scripted.ShouldBe(new[] { new ChunkCoord(0, 0, 0), new ChunkCoord(1, 0, 0) });
         dragged.ShouldBe(scripted);
     }
@@ -82,12 +64,10 @@ public sealed class GizmoBrushRecompileTests
         float length = harness.GeometryAt(Start).AxisLength;
         harness.Grab(Start + Vector3.UnitX * (length * AlongAxis));
         harness.DragBy(Vector3.UnitX * 32f);
-        harness.Scene.StaticWorldDirty.ShouldBeTrue(); // the live drag really did dirty it
+        harness.Scene.StaticWorldDirty.ShouldBeTrue();
 
         harness.PressEscape();
 
-        // The node is back where it started, so the next compile has nothing to
-        // do — the cancel restored the exact placement the last compile saw.
         node.LocalPosition.ShouldBe(Start);
         harness.Scene.RebuildStaticWorld(renderer);
         harness.Scene.LastCompileDirtyCells.ShouldBeEmpty();
@@ -97,10 +77,6 @@ public sealed class GizmoBrushRecompileTests
     [Fact]
     public void Every_frame_of_a_drag_dirties_the_scene_so_the_recompile_can_keep_up()
     {
-        // Progressive results while dragging are the point of the async chunked
-        // compile; they only happen if each frame's transform write actually
-        // marks the world dirty. (A frame that does not move the cursor writes
-        // the same value and is correctly free — the setters early-out.)
         (GizmoHarness harness, SceneNode node, CompilingRenderer renderer) = BrushScene();
         harness.Scene.RebuildStaticWorld(renderer);
 
@@ -119,8 +95,6 @@ public sealed class GizmoBrushRecompileTests
         harness.Release();
         node.LocalPosition.X.ShouldBe(20f, 1e-3f);
     }
-
-    // --- Helpers -------------------------------------------------------------
 
     private static IReadOnlyList<ChunkCoord> ScriptedMoveDirtyCells(Vector3 target)
     {
@@ -144,9 +118,7 @@ public sealed class GizmoBrushRecompileTests
         return harness.Scene.LastCompileDirtyCells;
     }
 
-    // Drags the selection along world x until the pivot lands on targetX. Snap
-    // is left at its default one-unit grid, which is what makes the landing an
-    // exact float and the two paths comparable.
+    // Snap stays on its default one-unit grid so the landing is an exact float.
     private static void DragBrushToX(GizmoHarness harness, float targetX)
     {
         float length = harness.GeometryAt(Start).AxisLength;
@@ -155,17 +127,15 @@ public sealed class GizmoBrushRecompileTests
         harness.Grab(grabAt).ShouldBe(GizmoUpdateResult.DragBegan);
         harness.Gizmo.ActiveHandle.ShouldBe(GizmoHandle.AxisX);
 
-        // Deliberately a hair off the target so the snap has something to do.
+        // A hair off the target so the snap has something to do.
         harness.DragBy(Vector3.UnitX * (targetX - Start.X + 0.21f));
         harness.Release().ShouldBe(GizmoUpdateResult.DragCommitted);
     }
 
-    // One 2-unit cube brush node at Start, selected, plus a distant second
-    // brush that proves the dirty-cell diff is per-node rather than global.
+    // The far brush is there to show the dirty-cell diff is per node.
     private static (GizmoHarness Harness, SceneNode Node, CompilingRenderer Renderer) BrushScene()
     {
-        // The camera sits back far enough to see a gizmo sized for a pivot
-        // sixteen units out, and off-axis so all three arrows are separated.
+        // Off-axis so the three arrows are separated on screen.
         var harness = new GizmoHarness(Start + new Vector3(12f, 9f, 15f), Start);
         var renderer = new CompilingRenderer();
 

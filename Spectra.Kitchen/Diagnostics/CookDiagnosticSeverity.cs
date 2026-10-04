@@ -1,14 +1,9 @@
 namespace Spectra.Kitchen.Diagnostics;
 
 /// <summary>
-/// How loud one cook diagnostic is, in the same three levels the shader
-/// compiler's <c>DiagnosticSeverity</c> carries.
+/// How loud a cook diagnostic is. Ascending, and the same three levels as the
+/// shader compiler's <c>DiagnosticSeverity</c>.
 /// </summary>
-/// <remarks>
-/// The order is ascending by loudness, so a caller may compare, and it matches
-/// the compiler's so a wrapped <c>SS####</c> diagnostic keeps the severity it
-/// was reported with rather than being reclassified on its way through.
-/// </remarks>
 public enum CookDiagnosticSeverity
 {
     /// <summary>Something worth saying that changes nothing about the outcome.</summary>

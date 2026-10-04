@@ -11,36 +11,12 @@ using System.Linq;
 
 namespace SpectraEngine.Editor.Render.Tests;
 
-/// <summary>
-/// The viewport header strip, measured at the narrowest viewport the shell can
-/// produce.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>This is the shell's most crowded row and every stage adds to it.</b> It
-/// carries the pipeline dropdown, three chips, up to five latched overlay chips
-/// and a fixed-width camera readout; the compact workspace at the window's own
-/// 1180px minimum gives the viewport 644px. Whether it still fits is arithmetic
-/// somebody would otherwise discover on a smaller monitor than the one it was
-/// designed on.
-/// </para>
-/// <para>
-/// <b>Real Skia, not the headless drawing stub.</b> The stub's typeface gives
-/// every glyph the same advance, so a width measured under it is an invented
-/// model wearing the framework's name.
-/// </para>
-/// </remarks>
+/// <summary>The viewport header strip, measured at the narrowest viewport the shell allows.</summary>
+// Needs real Skia: the headless stub typeface gives every glyph the same advance.
 [Collection(RibbonSessionCollection.Name)]
 public sealed class HeaderStripWidthTests(RibbonSession session)
 {
-    /// <summary>
-    /// The viewport cell in the compact workspace at the window's minimum.
-    /// </summary>
-    /// <remarks>
-    /// Computed rather than typed, so the two arithmetics cannot drift: this is
-    /// the same call the workspace tests make and the same one the shell lays
-    /// out from.
-    /// </remarks>
+    // Compact workspace at the window's minimum size.
     private static double NarrowestViewport()
     {
         WorkspaceMetrics metrics = WorkspaceLayout.For(WorkspacePreset.Compact);
@@ -54,9 +30,7 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
     {
         var strip = new ViewportHeaderStrip { DataContext = model };
 
-        // Inside a Window, because Controls.axaml's Window selector is where the
-        // font face, size and foreground come from: measured outside one, every
-        // label inherits the platform default and every number is wrong.
+        // Must sit in a Window: the font comes from Controls.axaml's Window selector.
         var window = new Window { Width = 2600, Height = 200, Content = strip };
         window.SetRenderScaling(1.0);
         window.Show();
@@ -66,7 +40,7 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
         return (strip, window);
     }
 
-    /// <summary>The viewport cell in the compact workspace at the default window.</summary>
+    // Compact workspace at the default window size.
     private static double DefaultViewport()
     {
         WorkspaceMetrics metrics = WorkspaceLayout.For(WorkspacePreset.Compact);
@@ -76,7 +50,6 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
         return width;
     }
 
-    /// <summary>A session with nothing latched: what the strip shows most of the time.</summary>
     private static ShellModel AtRest()
     {
         var model = new ShellModel { HasSession = true };
@@ -98,9 +71,7 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
     {
         var model = new ShellModel { HasSession = true };
 
-        // The widest state the strip can reach: every overlay latched, the
-        // longest pipeline name, and a camera position with three negative
-        // five-figure coordinates.
+        // Widest state: every overlay on, longest pipeline name, widest position.
         model.ApplySnapshot(new Core.Hosting.FrameSnapshot
         {
             ViewName = "Perspective",
@@ -131,9 +102,6 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
             {
                 double available = NarrowestViewport();
 
-                // The state the strip is in almost all the time, at the
-                // smallest viewport the shell can produce: 644px, which is the
-                // compact workspace at the window's own 1180px minimum.
                 strip.DesiredSize.Width.ShouldBeLessThanOrEqualTo(
                     available,
                     $"the strip wants {strip.DesiredSize.Width:0.#}px and the narrowest " +
@@ -155,12 +123,6 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
 
             try
             {
-                // Every overlay latched and the longest pipeline name. This is
-                // the honest second bound: between the two, the camera readout
-                // is what the Grid gives way on, and the OVERLAY half is what
-                // the collapse bounds - five chips wanted 340px and one wants
-                // about 90, which is the difference between a strip that grows
-                // without limit and one that grows once.
                 strip.DesiredSize.Width.ShouldBeLessThanOrEqualTo(
                     DefaultViewport(),
                     $"the strip wants {strip.DesiredSize.Width:0.#}px");
@@ -197,9 +159,7 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
             double withTwo = pair.DesiredSize.Width;
             pairWindow.Close();
 
-            // Five overlays must not be wider than two: past the threshold they
-            // are one chip, so the strip grows once and then stops. Without the
-            // collapse this difference was 195px.
+            // Past two overlays the chips collapse into one.
             withFive.ShouldBeLessThanOrEqualTo(
                 withTwo, $"five overlays want {withFive:0}px and two want {withTwo:0}px");
         });
@@ -214,9 +174,8 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
 
             try
             {
-                // Laid out at the real width rather than measured unbounded: a
-                // strip that FITS can still ellipsise a chip if one of its
-                // labels is given less than it asked for.
+                // Arranged at the real width: a strip that fits overall can
+                // still trim one label.
                 strip.Arrange(new Rect(0, 0, NarrowestViewport(), 28));
                 Dispatcher.UIThread.RunJobs();
 
@@ -247,9 +206,7 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
 
             try
             {
-                // 28px, and it matters: the strip sits above the viewport in a
-                // fixed row, so a taller one silently takes pixels off the
-                // picture rather than reporting anything.
+                // The row is fixed, so a taller strip would take height off the viewport.
                 strip.DesiredSize.Height.ShouldBe(28);
             }
             finally

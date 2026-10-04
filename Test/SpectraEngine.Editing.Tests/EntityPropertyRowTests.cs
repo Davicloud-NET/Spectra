@@ -6,22 +6,10 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// An entity payload becoming property rows: which rows exist, what type each
-/// one is, and what a multi-selection merges them into.
-/// </summary>
-/// <remarks>
-/// <b>The schema decides which rows exist and the payload decides what they
-/// hold</b>, which is the whole reason a map naming a class this build has never
-/// heard of is worth opening. Every failure in this area renders a panel rather
-/// than throwing, so the assertions are about identity and order rather than
-/// about anything blowing up.
-/// </remarks>
+/// <summary>Entity payloads as property rows: which rows exist, their kinds, and the multi-selection merge.</summary>
 public sealed class EntityPropertyRowTests
 {
-    // The catalogue can only be built from bytes, deliberately: going through
-    // the .sentdef round trip is what stops an in-process editor and an
-    // out-of-process one reading two different schemas.
+    // A catalogue can only be built from .sentdef bytes.
     private static EntitySchemaCatalog Catalog(params EntitySchema[] schemas) =>
         EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(schemas));
 
@@ -61,15 +49,11 @@ public sealed class EntityPropertyRowTests
         throw new Xunit.Sdk.XunitException($"No row carries the key '{key}'.");
     }
 
-    // --- the shape regression ------------------------------------------------
-
     [Fact]
     public void Two_classes_with_equally_long_schemas_are_not_the_same_shape()
     {
-        // Every keyvalue row wears one id, so comparing ids alone reports these
-        // two entities as the same shape: the panel then keeps the controls it
-        // already built and the next refresh pours speed's value into range's
-        // editor box, with nothing thrown and nothing logged.
+        // All keyvalue rows share one PropertyId, so ids alone call these the
+        // same shape and the panel would pour speed's value into range's box.
         EntitySchemaCatalog catalog = Catalog(
             new EntitySchema("a_thing", keyvalues:
             [
@@ -85,8 +69,7 @@ public sealed class EntityPropertyRowTests
         List<PropertyRow> first = Describe(Placed("a_thing"), catalog);
         List<PropertyRow> second = Describe(Placed("b_thing"), catalog);
 
-        // The premise: the id sequences really are identical, so only the keys
-        // can tell these apart.
+        // Premise: the id sequences are identical.
         first.Count.ShouldBe(second.Count);
         for (int i = 0; i < first.Count; i++)
             first[i].Id.ShouldBe(second[i].Id);
@@ -101,9 +84,7 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void One_class_keeps_its_shape_across_publishes_while_its_values_move()
     {
-        // The mirror of the test above, and just as load-bearing: a shape that
-        // moved when a NUMBER moved would rebuild the whole panel on every
-        // frame of a drag, resetting scroll and dropping focus as it went.
+        // Otherwise the panel rebuilds on every frame of a drag.
         EntitySchemaCatalog catalog = Catalog(
             new EntitySchema("mover", keyvalues: [Kv("speed", KeyvalueType.Float, "1")]));
 
@@ -113,13 +94,9 @@ public sealed class EntityPropertyRowTests
         shape.Matches(Describe(Placed("mover", ("speed", "97.5")), catalog)).ShouldBeTrue();
     }
 
-    // --- which rows exist ----------------------------------------------------
-
     [Fact]
     public void The_classname_is_shown_and_cannot_be_edited()
     {
-        // A classname is not a property, it is which set of properties there
-        // ARE. Retyping it would rewrite the section under the reader's cursor.
         PropertyRow row = Describe(Placed("light_omni"))
             .Find(r => r.Id == PropertyId.EntityClassname);
         row.Group.ShouldBe(NodeInspector.EntityGroup);
@@ -143,16 +120,13 @@ public sealed class EntityPropertyRowTests
     [InlineData(KeyvalueType.Color, "1 0.5 0", PropertyKind.Color)]
     [InlineData(KeyvalueType.String, "hello", PropertyKind.Text)]
     [InlineData(KeyvalueType.TargetName, "door", PropertyKind.Target)]
-    // A NodeRef is a hyphenated GUID on the wire rather than a name, so the
-    // name picker would write a value the reader refuses while looking exactly
-    // right: it stays text until it has a picker that writes ids.
+    // NodeRef is a GUID on the wire; the name picker would write a name there.
     [InlineData(KeyvalueType.NodeRef, "0f8fad5b-d9cb-469f-a165-70867728950e", PropertyKind.Text)]
     [InlineData(KeyvalueType.AssetModel, "Models/x.obj", PropertyKind.Asset)]
     [InlineData(KeyvalueType.AssetMaterial, "Materials/x.spectramat", PropertyKind.Asset)]
     [InlineData(KeyvalueType.AssetTexture, "Textures/x.png", PropertyKind.Asset)]
 
-    // A sound has no browser kind yet, so its picker would open on an empty
-    // list: it stays text until the content browser can classify one.
+    // The content browser has no sound kind, so a picker would list nothing.
     [InlineData(KeyvalueType.AssetSound, "Sounds/x.wav", PropertyKind.Text)]
     [InlineData(KeyvalueType.Flags, "3", PropertyKind.Text)]
     [InlineData(KeyvalueType.Vec2, "1 2", PropertyKind.Text)]
@@ -170,8 +144,6 @@ public sealed class EntityPropertyRowTests
     [InlineData(KeyvalueType.AssetTexture, AssetKind.Texture)]
     public void An_asset_row_says_which_kind_of_file_it_wants(KeyvalueType type, AssetKind kind)
     {
-        // The picker opens on one kind, so a row that carried the wrong one
-        // would offer a list of files this key cannot hold.
         EntitySchemaCatalog catalog = Catalog(
             new EntitySchema("thing", keyvalues: [Kv("p", type)]));
 
@@ -181,9 +153,7 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void A_choices_row_offers_the_wire_tokens_rather_than_the_display_names()
     {
-        // The row's value is the wire string and a dropdown is matched by text,
-        // so display names here would leave every choice unselected and the
-        // first edit would write a display name into the map.
+        // The dropdown matches by text and the row's value is the wire string.
         EntitySchemaCatalog catalog = Catalog(new EntitySchema("door", keyvalues:
         [
             Kv("movedir", KeyvalueType.Choices, "up", choices: [("up", "Up"), ("down", "Down")]),
@@ -207,8 +177,7 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void A_value_the_declared_type_cannot_carry_degrades_to_text()
     {
-        // A typed row would parse it to zero and then write that zero back on
-        // the next commit, destroying what the author actually wrote.
+        // A typed row would parse it as zero and commit the zero.
         EntitySchemaCatalog catalog = Catalog(
             new EntitySchema("thing", keyvalues: [Kv("size", KeyvalueType.Vec3, "1 1 1")]));
 
@@ -231,8 +200,7 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void A_hidden_descriptor_gets_no_row_even_when_the_node_stores_it()
     {
-        // "Bound and carried, never shown" is what the flag says, and treating
-        // the key as unnamed would bring it straight back as an unknown row.
+        // Must not come back as an unknown-key row either.
         EntitySchemaCatalog catalog = Catalog(new EntitySchema("thing", keyvalues:
         [
             Kv("secret", KeyvalueType.String, "", KeyvalueFlags.HideInEditor),
@@ -244,13 +212,9 @@ public sealed class EntityPropertyRowTests
         rows.ShouldContain(r => r.Key == "shown");
     }
 
-    // --- values and order ----------------------------------------------------
-
     [Fact]
     public void An_unauthored_key_shows_the_declared_default()
     {
-        // Showing an empty field would be a lie about what the level does: the
-        // default is the value the entity will actually run with.
         EntitySchemaCatalog catalog = Catalog(
             new EntitySchema("thing", keyvalues: [Kv("speed", KeyvalueType.Float, "100")]));
 
@@ -261,8 +225,6 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void Declared_rows_follow_the_schemas_order_not_the_authored_one()
     {
-        // Declaration order is the order the schema author meant, and it is not
-        // this panel's to reshuffle - alphabetical would scramble it.
         EntitySchemaCatalog catalog = Catalog(new EntitySchema("thing", keyvalues:
         [
             Kv("zulu", KeyvalueType.String),
@@ -279,9 +241,7 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void A_placeholder_entity_shows_every_key_it_carries()
     {
-        // The whole reason a map naming an unknown class is worth opening: the
-        // data is still in the file, so a panel that showed nothing would make
-        // it invisible while it was still there. Authored order, as written.
+        // No schema for this class: rows come out in authored order.
         List<PropertyRow> rows = Describe(
             Placed("game_from_another_engine", ("wait", "3"), ("target", "door"), ("aa", "1")));
 
@@ -305,9 +265,7 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void A_duplicated_key_produces_one_row()
     {
-        // A hand-written file may legally carry the same key twice, and two rows
-        // sharing an identity would collide in the merge and in the shape. The
-        // first wins, matching the value the entity actually binds.
+        // A hand-written file may repeat a key. First wins, as in the entity bind.
         var data = new EntityData("thing");
         data.Keyvalues.Add(new KeyValuePair<string, string>("wait", "1"));
         data.Keyvalues.Add(new KeyValuePair<string, string>("wait", "2"));
@@ -318,14 +276,9 @@ public sealed class EntityPropertyRowTests
         Row(rows, "wait").Text.ShouldBe("1");
     }
 
-    // --- merging a multi-selection -------------------------------------------
-
     [Fact]
     public void A_selection_shows_the_union_of_its_entities_keys()
     {
-        // Hiding a row because only part of the selection carries it would mean
-        // selecting one extra object silently removes the field somebody was
-        // about to type into.
         var rows = new List<PropertyRow>();
         NodeInspector.Describe(
             [
@@ -343,8 +296,6 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void A_merged_key_reports_mixing_per_axis()
     {
-        // "Put all of these on the floor" sets y and must leave x and z alone,
-        // which is only expressible if the merge tracks the axes separately.
         EntitySchemaCatalog catalog = Catalog(
             new EntitySchema("thing", keyvalues: [Kv("offset", KeyvalueType.Vec3, "0 0 0")]));
 
@@ -363,8 +314,7 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void Merged_keys_are_compared_as_exact_strings()
     {
-        // A tolerance would report two different spellings as settled and then
-        // write one over the other on the next bulk edit.
+        // "1" and "1.0" are different spellings; a bulk edit would overwrite one.
         var rows = new List<PropertyRow>();
         NodeInspector.Describe(
             [Placed("thing", ("wait", "1")), Placed("thing", ("wait", "1.0"))],
@@ -376,8 +326,6 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void A_merged_selection_keeps_one_row_per_key()
     {
-        // Merging on the id alone would fold every keyvalue into one row, since
-        // they all wear PropertyId.EntityKeyvalue.
         var rows = new List<PropertyRow>();
         NodeInspector.Describe(
             [Placed("thing", ("a", "1"), ("b", "2")), Placed("thing", ("a", "1"), ("b", "2"))],
@@ -404,8 +352,7 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void The_entity_section_stays_one_contiguous_run()
     {
-        // The panel groups by a run of equal group names, so a section split in
-        // two would render as two sections with the same heading.
+        // The panel groups by runs of equal group names.
         var light = new SceneNode("lamp")
         {
             Light = new Light { Kind = LightKind.Point },
@@ -431,8 +378,6 @@ public sealed class EntityPropertyRowTests
     [Fact]
     public void Every_row_that_is_not_an_entity_keyvalue_carries_an_empty_key()
     {
-        // The key is the second half of a row's identity, so a stray key on an
-        // ordinary row would make two of them fail to match themselves.
         var node = new SceneNode("lamp")
         {
             Light = new Light { Kind = LightKind.Point },

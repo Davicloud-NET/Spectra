@@ -3,17 +3,6 @@ using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// An orthographic camera: parallel rays, a slab about the eye, and a basis
-/// that survives looking straight down.
-/// </summary>
-/// <remarks>
-/// <b>A plan view is a different PROJECTION, not a distant perspective one.</b>
-/// Backing a perspective camera far off and narrowing its field of view gets
-/// close and is never right: parallel walls still converge, so a wall somebody
-/// is aligning by eye is a fraction of a degree off and the number they read off
-/// the screen is not the number in the file.
-/// </remarks>
 public sealed class CameraOrthographicTests
 {
     private static Camera Ortho(float height = 10f)
@@ -39,8 +28,6 @@ public sealed class CameraOrthographicTests
         Ray3 middle = camera.ScreenPointToRay(new Vector2(640f, 360f), viewport);
         Ray3 corner = camera.ScreenPointToRay(new Vector2(4f, 4f), viewport);
 
-        // The whole point of the projection: nothing converges, so a wall drawn
-        // parallel to another really is parallel on screen.
         Vector3.Dot(middle.Direction, corner.Direction).ShouldBe(1f, 1e-4f);
         Vector3.Dot(middle.Direction, camera.Forward).ShouldBe(1f, 1e-4f);
     }
@@ -54,8 +41,7 @@ public sealed class CameraOrthographicTests
         Ray3 top = camera.ScreenPointToRay(new Vector2(640f, 0f), viewport);
         Ray3 bottom = camera.ScreenPointToRay(new Vector2(640f, 720f), viewport);
 
-        // Looking down, so the screen's vertical is world Z: the span from the
-        // top edge to the bottom is exactly the height that was asked for.
+        // Looking down, so the screen's vertical is world Z.
         float span = Vector3.Distance(
             new Vector3(top.Origin.X, 0f, top.Origin.Z),
             new Vector3(bottom.Origin.X, 0f, bottom.Origin.Z));
@@ -81,8 +67,7 @@ public sealed class CameraOrthographicTests
     {
         Camera camera = Ortho(height: 12f);
 
-        // Written from the render thread every frame, so a throw here ends the
-        // session over a number a controller can simply decline to apply.
+        // Set from the render thread every frame; a throw would end the session.
         camera.OrthographicHeight = 0f;
         camera.OrthographicHeight = -5f;
         camera.OrthographicHeight = float.NaN;
@@ -98,9 +83,7 @@ public sealed class CameraOrthographicTests
         var camera = new Camera();
         camera.SetVerticalView(lookingDown, yaw: -float.Pi * 0.5f);
 
-        // The ordinary basis crosses forward with world up, which at the poles
-        // is zero and makes every derived axis NaN. This is the case the pitch
-        // clamp exists to keep away from, and the case a top view needs.
+        // Forward cross world up is zero at the poles, which a top view needs.
         Finite(camera.Forward);
         Finite(camera.Right);
         Finite(camera.Up);
@@ -121,9 +104,7 @@ public sealed class CameraOrthographicTests
         var camera = new Camera();
         camera.SetVerticalView(lookingDown: true, yaw: -float.Pi * 0.5f);
 
-        // The convention every editor in this category draws a plan with, and
-        // the one thing a person can actually check: a transposed axis renders a
-        // level mirrored, which is plausible until somebody builds against it.
+        // A transposed axis draws the level mirrored.
         Vector3.Dot(camera.Right, Vector3.UnitX).ShouldBe(1f, 1e-3f);
         Vector3.Dot(camera.Up, -Vector3.UnitZ).ShouldBe(1f, 1e-3f);
     }
@@ -136,10 +117,7 @@ public sealed class CameraOrthographicTests
 
         Frustum frustum = camera.GetFrustum();
 
-        // The eye sits at the focus under orthographic, so geometry BEHIND it
-        // has to render: a box from the eye forward would clip away everything
-        // between the camera and what it is looking at, which in a top view is
-        // every ceiling in the level.
+        // The eye sits at the focus, so geometry behind it has to render.
         frustum.Contains(new Vector3(0f, 60f, 0f)).ShouldBeTrue();
         frustum.Contains(new Vector3(0f, -20f, 0f)).ShouldBeTrue();
     }
@@ -149,8 +127,7 @@ public sealed class CameraOrthographicTests
     {
         Camera camera = Ortho(height: 10f);
 
-        // The slab is unbounded along the view axis and NOT sideways: a plan
-        // view that culled nothing would submit the whole level every frame.
+        // Still culled sideways.
         camera.GetFrustum().Contains(new Vector3(0f, 20f, 400f)).ShouldBeFalse();
     }
 

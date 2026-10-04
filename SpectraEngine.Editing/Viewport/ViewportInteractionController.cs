@@ -11,107 +11,22 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Viewport;
 
 /// <summary>
-/// The viewport's traffic control: one press, three possible meanings, and
-/// exactly one of them gets the gesture. It runs the gizmo, the marquee, the
-/// click-select and (when nothing has claimed the pointer) the camera, in that
-/// order of precedence.
+/// Decides what a press in the viewport means and routes the pointer to it:
+/// a gizmo handle manipulates, an object is selected and moved, empty space
+/// starts a box select. The camera runs only when none of them owns the pointer.
+/// Render thread only.
 /// </summary>
-/// <remarks>
-/// <b>The arbitration, and why this order.</b> On the frame the drag button
-/// goes down, <see cref="ClassifyPress"/> answers with a
-/// <see cref="ViewportDragMode"/>:
-/// <list type="number">
-///   <item><description>
-///     <b>A gizmo handle under the cursor ⇒ <see cref="ViewportDragMode.Manipulate"/>.</b>
-///     Handles are drawn on top of the thing they manipulate and are picked
-///     with a pixel tolerance, so they must also be <em>tested</em> first —
-///     otherwise the object underneath would swallow every grab and the gizmo
-///     would be unusable at exactly the moment it matters.
-///   </description></item>
-///   <item><description>
-///     <b>An object under the cursor ⇒ <see cref="ViewportDragMode.SelectAndMove"/>.</b>
-///     The selection changes on the press (so the user sees what they grabbed)
-///     and the gesture is handed straight to the move tool's free-move handle.
-///   </description></item>
-///   <item><description>
-///     <b>Nothing under the cursor ⇒ <see cref="ViewportDragMode.BoxSelect"/>.</b>
-///   </description></item>
-/// </list>
-/// <see cref="ClassifyPress"/> is a pure function of the frame and the current
-/// scene — it mutates nothing — so the rule can be tested directly rather than
-/// inferred from what the viewport did afterwards.
-/// <para>
-/// <b>Three rules sit above that list, and they are what keep the camera and the
-/// tools out of each other's way now that right-drag is a freelook rather than
-/// an orbit:</b>
-/// <list type="number">
-///   <item><description>
-///     <b>A gesture that owns the pointer keeps it — and the rule runs both
-///     ways.</b> While <see cref="DragMode"/> is anything but
-///     <see cref="ViewportDragMode.None"/> the camera does not run at all, so a
-///     gizmo drag can never be stolen mid-manipulation — not by a right press,
-///     not by anything. Symmetrically, while
-///     <see cref="EditorCameraController.OwnsPointer"/> says a navigation
-///     gesture is still being held, the <em>camera</em> owns the pointer and
-///     this class starts nothing — so a stray left click during a middle-drag
-///     pan or a right-drag freelook cannot select an object, open an undo
-///     transaction and kill the navigation gesture underneath it.
-///   </description></item>
-///   <item><description>
-///     <b>A press the camera claims is never re-interpreted.</b>
-///     <see cref="EditorCameraController.ClaimsPress"/> names the button and
-///     modifier combinations that belong to navigation; on such a frame this
-///     class starts no gesture, <see cref="ClassifyPress"/> answers
-///     <see cref="ViewportDragMode.None"/>, and the manipulator is run with its
-///     grab disabled so a handle under the cursor cannot swallow the press
-///     either. That is what makes right-drag reach the camera <em>wherever the
-///     cursor happens to be</em>, and it is also what stops Alt+left-drag —
-///     the orbit modifier — from being read as a box select. <b>Claiming is a
-///     press-edge test and therefore only ever describes <em>this</em> frame</b>,
-///     which is exactly why rule 1 has to carry the frames after it.
-///   </description></item>
-///   <item><description>
-///     <b>A locked cursor makes every absolute-position path inert.</b> During a
-///     freelook the OS reports no meaningful cursor position, so picking,
-///     hit-testing and the marquee all test
-///     <see cref="EditorInputFrame.IsPointerUsable"/> rather than merely
-///     "inside the viewport". Nothing can begin a pointer gesture while the
-///     pointer does not exist.
-///   </description></item>
-/// </list>
-/// </para>
-/// <para>
-/// <b>Clicking an already-selected node does not collapse a multi-selection on
-/// the press.</b> If it did, grabbing one of five selected crates to drag all
-/// five would drop four of them at the instant of the grab. The collapse is
-/// deferred to the release and applied only if the gesture turned out to be a
-/// click — which is what every editor does, and what makes dragging a group by
-/// one of its members work.
-/// </para>
-/// <para>
-/// <b>Camera navigation only runs when nothing has claimed the pointer.</b>
-/// Right-drag looks around, but right-click during a manipulation cancels it;
-/// the two cannot both be live, and the mode is what separates them. Every frame
-/// the camera is withheld it is told so
-/// (<see cref="EditorCameraController.SuspendNavigation"/>), because a
-/// controller that measures its drag against the last cursor it saw would
-/// otherwise deliver the entire withheld gesture as one snap the moment it
-/// runs again.
-/// </para>
-/// <para>
-/// <b>Threading:</b> render thread only, like everything it drives. Steady state
-/// allocates nothing.
-/// </para>
-/// </remarks>
+// Handles are tested before objects: they draw on top, so the object behind
+// would otherwise take every grab.
+// A gesture keeps the pointer until it ends, and that goes for the camera's
+// gestures too. A locked cursor has no position, so nothing starts while it is.
 public sealed class ViewportInteractionController
 {
+    // Clicking a selected node collapses a multi-selection on release, not on
+    // press, so a group can be dragged by one of its members.
     private SceneNode? _deferredSelect;
 
-    /// <summary>
-    /// Creates a viewport over a scene and its manipulator. The marquee is
-    /// created here; a camera controller is optional and can be attached
-    /// through <see cref="CameraController"/>.
-    /// </summary>
+    /// <summary>Creates a viewport over a scene and its manipulator.</summary>
     public ViewportInteractionController(Scene scene, GizmoController gizmos)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -146,30 +61,17 @@ public sealed class ViewportInteractionController
     public PointerButtons DragButton { get; set; } = PointerButtons.Left;
 
     /// <summary>
-    /// Whether a press on an object drags it (through the live tool's
-    /// <see cref="GizmoTool.FreeMoveHandle"/>) or merely selects it. Off gives
-    /// the stricter "you may only move things by their handles" workflow some
-    /// level editors prefer.
+    /// Whether a press on an object drags it or only selects it.
     /// </summary>
     public bool ObjectDragEnabled { get; set; } = true;
 
-    /// <summary>
-    /// How far a picking ray may travel before an object stops counting as
-    /// clickable. Infinite by default — an open world has no natural limit.
-    /// </summary>
+    /// <summary>How far a picking ray reaches. Infinite by default.</summary>
     public float PickDistance { get; set; } = float.PositiveInfinity;
 
     /// <summary>
-    /// The light manipulator, when the host has one. Null in a viewport that
-    /// does not edit lights.
+    /// The light manipulator, or null in a viewport that does not edit lights.
+    /// A light drag reports <see cref="ViewportDragMode.Manipulate"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>It reports <see cref="ViewportDragMode.Manipulate"/> like the
-    /// transform gizmo does, rather than getting a mode of its own.</b> Adding a
-    /// value to that enum would touch every consumer for a distinction none of
-    /// them make: a light drag IS a manipulation, and the cursor, the hover and
-    /// the camera stand-down all want exactly the same answer for both.
-    /// </remarks>
     public Gizmos.LightGizmo? LightTool { get; set; }
 
     /// <summary>What currently owns the pointer.</summary>
@@ -185,70 +87,29 @@ public sealed class ViewportInteractionController
     public event Action<ViewportDragMode>? DragModeChanged;
 
     /// <summary>
-    /// How far a HOVER ray may travel. Deliberately finite, unlike
-    /// <see cref="PickDistance"/>.
+    /// How far a hover ray reaches. Finite, unlike <see cref="PickDistance"/>:
+    /// a hover runs every frame the cursor moves.
     /// </summary>
-    /// <remarks>
-    /// A press is a deliberate act and may reach anything in an unbounded
-    /// world; a hover happens on every frame the cursor moves, and nobody
-    /// hovers something half a kilometre away on purpose. Bounding it bounds
-    /// the descent, which is what keeps a mesh-heavy scene from paying a
-    /// per-triangle test at the frame rate.
-    /// </remarks>
     public float HoverPickDistance { get; set; } = 500f;
 
     /// <summary>
-    /// The node under the cursor when nothing owns the pointer, or null.
+    /// The node under the cursor, or null. Also null during a gesture and
+    /// over a gizmo handle, where a press would not select.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Null while a gesture is live, and that is not laziness.</b> During a
-    /// drag the pointer means the drag; an outline following the cursor across
-    /// whatever it passes over would say the press does something it will not.
-    /// </para>
-    /// <para>
-    /// <b>Null while the cursor is over a HANDLE too.</b> The manipulator draws
-    /// its own highlight there, and the press will manipulate rather than
-    /// select, so an object outline would promise a selection that is not going
-    /// to happen. This is the same precedence <see cref="ClassifyPress"/>
-    /// already encodes, reused rather than restated.
-    /// </para>
-    /// </remarks>
     public SceneNode? HoveredNode { get; private set; }
 
     /// <summary>What a press would mean at the cursor's current position.</summary>
     public ViewportDragMode HoverMode { get; private set; }
 
-    /// <summary>
-    /// Which brush face is under the cursor, or -1.
-    /// </summary>
-    /// <remarks>
-    /// From the same pick the click uses, so an outline drawn from this cannot
-    /// promise a face the press will not take.
-    /// </remarks>
+    /// <summary>Which brush face is under the cursor, or -1.</summary>
     public int HoveredPlaneIndex { get; private set; } = -1;
 
-    // Which face the live press landed on, so the face can be picked once the
-    // selection it narrows has settled.
     private int _pressedPlane = -1;
 
-    // The cursor position the last hover was computed at. Exact equality
-    // deliberately: a still cursor is by far the common case, and a tolerance
-    // would only ever answer "no" one frame later.
+    // Compared exactly: a still cursor skips the pick.
     private Vector2 _hoverCursor = new(float.NaN, float.NaN);
 
-    /// <summary>
-    /// Recomputes <see cref="HoveredNode"/>, if the cursor has moved and
-    /// nothing owns the pointer.
-    /// </summary>
-    /// <remarks>
-    /// <b>This is <see cref="ClassifyPress"/> with the node kept.</b> That
-    /// function is a pure, tested "what would a press here mean" - exactly the
-    /// oracle a hover highlight is built on - and it existed, was tested, and
-    /// was called by nothing in the product. Answering the hover any other way
-    /// would be a second implementation free to disagree with what the click
-    /// then does.
-    /// </remarks>
+    // Same precedence as ClassifyPress, so the outline matches what a click does.
     private void UpdateHover(in EditorInputFrame frame, bool cameraOwnsPointer)
     {
         if (!frame.IsPointerUsable || cameraOwnsPointer || DragMode != ViewportDragMode.None)
@@ -294,18 +155,14 @@ public sealed class ViewportInteractionController
 
     /// <summary>
     /// Decides what a press at this frame's cursor would mean, without changing
-    /// anything. Returns <see cref="ViewportDragMode.None"/> for a cursor
-    /// outside the viewport, which belongs to whatever panel it is over.
+    /// anything. <see cref="ViewportDragMode.None"/> when the cursor is outside
+    /// the viewport or locked, or the camera has the pointer.
     /// </summary>
     public ViewportDragMode ClassifyPress(in EditorInputFrame frame)
     {
-        // Rule 3: no usable pointer — outside the viewport, or locked for a
-        // freelook — means the press belongs to nobody here.
         if (!frame.IsPointerUsable)
             return ViewportDragMode.None;
 
-        // Rules 1 and 2: navigation asked for this press, or is already in the
-        // middle of a gesture the press would otherwise cut short.
         if (CameraOwnsPointer(in frame))
             return ViewportDragMode.None;
 
@@ -323,8 +180,8 @@ public sealed class ViewportInteractionController
     /// </summary>
     /// <param name="frame">This frame's input snapshot.</param>
     /// <param name="cancelRequested">
-    /// True on the frame the user asked to abort — Escape, or a viewport that
-    /// lost focus. Cancels whichever gesture is live.
+    /// True on the frame the user aborts (Escape, lost focus). Cancels the
+    /// live gesture.
     /// </param>
     /// <returns>The mode that owns the pointer after this frame.</returns>
     public ViewportDragMode Update(in EditorInputFrame frame, bool cancelRequested = false)
@@ -336,10 +193,8 @@ public sealed class ViewportInteractionController
             return WithheldFromCamera();
         }
 
-        // A light drag in progress routes to the light tool and nowhere else.
-        // FIRST, before the transform gizmo is even asked: both report
-        // Manipulate, so without this the transform gizmo's own finish logic
-        // would run against a gesture it never started.
+        // Before the transform gizmo: both report Manipulate, and its finish
+        // logic would otherwise run against a light drag it never started.
         if (LightTool is { IsDragging: true } dragging)
         {
             ClearHover();
@@ -350,14 +205,10 @@ public sealed class ViewportInteractionController
             return WithheldFromCamera();
         }
 
-        // Rules 1 and 2, evaluated once for the whole frame: a press that
-        // belongs to navigation — because the combination is the camera's, or
-        // because the camera is already mid-gesture — is invisible to every tool
-        // below, starting with the manipulator's grab.
         bool cameraOwnsPointer = CameraOwnsPointer(in frame);
 
-        // Everything else routes through the manipulator, which owns the
-        // handle hover even on frames where no gesture is in progress.
+        // Runs every frame for the handle hover; the grab is off while the
+        // camera has the pointer.
         GizmoUpdateResult gizmoResult = Gizmos.Update(in frame, cancelRequested, !cameraOwnsPointer);
 
         if (DragMode != ViewportDragMode.None)
@@ -369,24 +220,17 @@ public sealed class ViewportInteractionController
 
         if (gizmoResult == GizmoUpdateResult.DragBegan)
         {
-            // The cursor was over a handle and the manipulator took the press
-            // itself — nothing to arbitrate.
             ClearHover();
             SetMode(ViewportDragMode.Manipulate);
             return WithheldFromCamera();
         }
 
-        // The light tool gets the press the TRANSFORM gizmo did not take, which
-        // is the whole arbitration between them: a lamp is still moved and
-        // rotated by the tool the user already knows, and these handles sit
-        // where those do not.
+        // The light tool only gets a press the transform gizmo did not take.
         if (LightTool is { } lights)
         {
             if (cameraOwnsPointer)
             {
-                // Navigation asked for this press, so the light tool must not
-                // see it - and must not keep a hover from before it either, or
-                // a handle stays lit under a cursor that is driving a camera.
+                // Reset, or a handle stays lit under a cursor driving the camera.
                 lights.Reset();
             }
             else if (lights.Update(in frame, cancelRequested))
@@ -404,20 +248,13 @@ public sealed class ViewportInteractionController
             return WithheldFromCamera();
         }
 
-        // Nothing owns the pointer: the camera may have it.
         CameraController?.Update(in frame);
 
-        // Last, and only here: every earlier return owns the pointer, and a
-        // hover computed while something else is dragging is an answer to a
-        // question nobody asked.
         UpdateHover(in frame, cameraOwnsPointer);
         return DragMode;
     }
 
-    /// <summary>
-    /// Draws whatever the viewport contributes this frame: the manipulator and,
-    /// while one is being dragged, the marquee.
-    /// </summary>
+    /// <summary>Draws the manipulator and, during a box select, the marquee.</summary>
     public void Draw(DebugDraw output, Vector2 viewportSize)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -426,9 +263,9 @@ public sealed class ViewportInteractionController
     }
 
     /// <summary>
-    /// Abandons whatever gesture is live and returns the viewport to
-    /// <see cref="ViewportDragMode.None"/>. For a host that lost focus or is
-    /// tearing the viewport down.
+    /// Abandons the live gesture and returns to
+    /// <see cref="ViewportDragMode.None"/>. For a host that lost focus, replaced
+    /// the scene or is tearing the viewport down.
     /// </summary>
     public void Reset()
     {
@@ -437,49 +274,24 @@ public sealed class ViewportInteractionController
         _deferredSelect = null;
         _pressedPlane = -1;
         PressedNode = null;
-        // A hover names a live SceneNode, and a reset is what happens when a
-        // scene is replaced. Keeping it would outline a node that no longer
-        // belongs to any graph.
         ClearHover();
         LightTool?.Reset();
-        // Same reason as the withheld frames below: a host that resets while
-        // the orbit button is down (a minimized window, an undo mid-gesture)
-        // must not have the travel since the last camera frame land as one
-        // orbit step when navigation resumes.
         CameraController?.SuspendNavigation();
         SetMode(ViewportDragMode.None);
     }
 
-    // The pointer belonged to a gesture this frame, so the camera did not run.
-    // Telling it so is not optional: EditorCameraController measures its drag
-    // against the cursor position it last SAW, and it only sees the frames it is
-    // given — so a whole gizmo drag's worth of withheld travel would otherwise
-    // be applied as a single orbit or pan step on the first idle frame
-    // afterwards. Returns the mode so the callers stay one-liners.
+    // The camera measures its drag from the last cursor it saw. Tell it about
+    // every frame it missed, or the whole withheld travel lands as one step.
     private ViewportDragMode WithheldFromCamera()
     {
         CameraController?.SuspendNavigation();
         return DragMode;
     }
 
-    // Rules 1 and 2 together: does navigation have this frame's pointer?
-    //
-    // Asking ClaimsPress alone is not enough, and the gap is a definition rather
-    // than a race: claiming is a pure function of THIS frame's press edges, so a
-    // camera gesture that began on an earlier frame is invisible to it. A left
-    // click landing while the middle button is already panning — or while the
-    // right button is already looking, before the cursor-lock latch has landed —
-    // would answer "not claimed", start a gizmo drag, open an undo transaction,
-    // and take the pointer away from a gesture that was already using it, with
-    // SuspendNavigation quietly killing the pan or the look mid-stroke.
-    // EditorCameraController.OwnsPointer answers both halves.
-    //
-    // Null-safe so a host running without a camera controller behaves exactly as
-    // it did before navigation existed.
+    // OwnsPointer, not ClaimsPress: claiming only sees this frame's press edge,
+    // so a pan or look already under way would lose the pointer to a left click.
     private bool CameraOwnsPointer(in EditorInputFrame frame) =>
         CameraController is { } camera && camera.OwnsPointer(in frame);
-
-    // --- Gesture start -------------------------------------------------------
 
     private void BeginGesture(in EditorInputFrame frame)
     {
@@ -505,8 +317,6 @@ public sealed class ViewportInteractionController
 
         if (update == SelectionUpdate.Replace && Scene.Selection.Contains(node))
         {
-            // Defer the collapse to the release (see the type remarks): the user
-            // may be about to drag the whole selection by this member.
             _deferredSelect = node;
         }
         else
@@ -522,17 +332,13 @@ public sealed class ViewportInteractionController
             return;
         }
 
-        // No free-move handle (the rotate and resize tools have none) or the
-        // tool refused the constraint: the press stays a plain click-select, and
-        // a deferred collapse has to happen right now because no release will
-        // come back through the gizmo to trigger it.
+        // No drag started (rotate and resize have no free-move handle), so no
+        // release will come through the gizmo: collapse now.
         ResolveDeferredSelect();
         PressedNode = null;
         SetMode(ViewportDragMode.None);
     }
 
-    // A single-node selection change, expressed through the batched API so that
-    // click-select and box select cannot drift apart on what a modifier means.
     private void ApplySingle(SceneNode node, SelectionUpdate update)
     {
         switch (update)
@@ -549,16 +355,10 @@ public sealed class ViewportInteractionController
         }
     }
 
-    // --- Gesture end ---------------------------------------------------------
-
     private void UpdateBoxSelect(in EditorInputFrame frame, bool cancelRequested)
     {
-        // A marquee tracks the cursor by its absolute position, so a cursor that
-        // became locked underneath it has nothing left to track: abandon the
-        // rectangle rather than committing whatever frozen corner it last saw.
-        // Unreachable while the arbitration holds — a marquee owns the pointer,
-        // so the camera never sees the press that would lock it — which is
-        // exactly why it is worth stating here rather than assuming.
+        // A locked cursor has no position to track, so cancel. Should not
+        // happen: the camera never sees a press while the marquee is live.
         BoxSelectResult result = BoxSelect.Update(in frame, cancelRequested || frame.IsCursorLocked);
         if (result == BoxSelectResult.Dragging)
             return;
@@ -571,11 +371,8 @@ public sealed class ViewportInteractionController
         if (result is GizmoUpdateResult.DragBegan or GizmoUpdateResult.DragUpdated)
             return;
 
-        // DragCommitted means the object actually moved, so the press was a
-        // drag and the deferred collapse must NOT happen; DragCancelled on a
-        // SelectAndMove gesture is the "it never moved" case — a click. An
-        // abort is neither: Escape means "forget this gesture happened", so it
-        // leaves the selection exactly as the press found it.
+        // DragCancelled without an abort means it never moved: a click, so
+        // collapse. A committed drag and an Escape both leave the selection alone.
         if (result == GizmoUpdateResult.DragCancelled && !cancelRequested)
             ResolveDeferredSelect();
 
@@ -586,25 +383,17 @@ public sealed class ViewportInteractionController
 
     private void ResolveDeferredSelect()
     {
-        // The node may have been deleted between the press and the release, and
-        // SelectionSet rejects a node that no longer belongs to the scene.
-        // Asking the id index is the public way to check.
+        // The node may have been deleted between press and release.
         if (_deferredSelect is { } node && Scene.TryFindById(node.Id, out SceneNode? live) && ReferenceEquals(live, node))
             Scene.Selection.Select(node);
 
         _deferredSelect = null;
 
-        // The face is picked AFTER the selection has settled, because
-        // SelectFace refuses anything but the sole selected node - which is the
-        // guard that stops a face outliving the brush it belongs to. A click on
-        // a second brush therefore selects it and picks nothing, and the next
-        // click on one of its faces picks that.
+        // After the selection settles: SelectFace only takes the sole selected node.
         PickPressedFace();
     }
 
-    // Only for a brush, and only on the press's own node: a click that landed on
-    // a mesh or on empty space clears whatever was picked, because the Face
-    // section it feeds would otherwise describe a face nobody is looking at.
+    // A click on anything but a brush clears the picked face.
     private void PickPressedFace()
     {
         int plane = _pressedPlane;
@@ -620,8 +409,6 @@ public sealed class ViewportInteractionController
             Scene.Selection.ClearFace();
     }
 
-    // --- Helpers -------------------------------------------------------------
-
     private bool TryPickNode(in EditorInputFrame frame, out SceneNode? node) =>
         TryPickNode(in frame, out node, out _);
 
@@ -634,17 +421,12 @@ public sealed class ViewportInteractionController
 
         Ray3 ray = Scene.Camera.ScreenPointToRay(frame.CursorPosition, frame.ViewportSize);
 
-        // Editor picking disregards CanQuery on purpose: a designer must be
-        // able to select the thing they can see, whatever its gameplay flags
-        // say. Honouring the flag here would make clearing CanQuery turn a
-        // brush unselectable in the viewport, with the Explorer as the only way
-        // back — a setting that hides its own undo.
+        // Editor picking ignores CanQuery: anything visible must be selectable.
         bool geometry = Scene.Raycast(
             in ray, out SceneRaycastHit hit, SceneQueryFilter.EditorPicking, PickDistance);
 
-        // Lights are picked SEPARATELY, because they are deliberately not in the
-        // spatial index: admitting them would make every lamp collidable, since
-        // PhysicsFlags.Default carries CanCollide | CanQuery.
+        // Lights are not in the spatial index (they would become collidable),
+        // so they are picked separately.
         bool lamp = LightPicking.TryPick(
             Scene, Scene.Camera, in ray, frame.ViewportSize, out SceneNode? light, out float lightDistance);
 
@@ -655,12 +437,9 @@ public sealed class ViewportInteractionController
             return geometry;
         }
 
-        // An icon WINS a tie plus its own radius, rather than strictly. It is
-        // drawn on top and at a constant screen size, so the visible thing at
-        // the cursor is the icon whenever the two are within an icon of each
-        // other - and a lamp mounted flush against the ceiling it lights would
-        // otherwise be unclickable at exactly the placement people use most.
-        // Same reasoning the gizmo handles already get, one layer out.
+        // The icon wins unless geometry is nearer by more than the icon's
+        // radius. It draws on top, and a lamp flush against a ceiling would
+        // otherwise be unclickable.
         if (geometry)
         {
             float slack = LightPicking.WorldRadius(Scene.Camera, frame.ViewportSize, light!.WorldPosition);

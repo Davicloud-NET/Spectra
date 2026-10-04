@@ -6,36 +6,15 @@ using System.IO.Hashing;
 namespace Spectra.Kitchen.Cache;
 
 /// <summary>
-/// Modification time plus size per input, and it short-circuits ONE thing:
-/// re-hashing a file whose bytes cannot have changed.
+/// Modification time plus size per input, used only to skip re-hashing a file
+/// that has not changed.
 /// </summary>
-/// <remarks>
-/// <para><b>Content hashes are the truth. This is an optimisation and may never
-/// become anything else.</b> Timestamp-keyed invalidation gets two ordinary
-/// workflows wrong in opposite directions: a <c>git checkout</c> rewrites every
-/// timestamp without changing a byte, so a timestamp cache rebuilds a project that
-/// did not change; and reverting a file to content it held before leaves a new
-/// timestamp on identical bytes, so the rebuild it forces produces exactly the
-/// artifact that was already cached. Hashing answers both correctly, and this
-/// class only decides whether the hash has to be recomputed.</para>
-/// <para><b>Which is why it is a separate file from the graph.</b> Discarding it
-/// costs a pass over the inputs and can never cost correctness, so it must be
-/// independently discardable: a stat cache that could only be thrown away
-/// alongside the dependency graph would make a cheap repair expensive.</para>
-/// <para><b>The residual hazard is stated rather than hidden.</b> A file rewritten
-/// with different content, the same length and a timestamp the filesystem reports
-/// as unchanged is served from this cache with its old hash. That is inherent to
-/// every stat cache ever written, it needs sub-granularity edits to reach, and
-/// <c>--no-cache</c> is the escape hatch.</para>
-/// <para><b>One lock over the whole of <see cref="TryGetHash"/>, read included,
-/// because the scheduler asks from N workers.</b> Hashing outside the lock would
-/// be the faster shape and it makes two workers able to hash one file twice: the
-/// ANSWER is the same either way, and <see cref="ShortCircuits"/> and
-/// <see cref="Rehashes"/> would then depend on scheduling, which is a diagnostic
-/// counter nobody can compare between two runs. What is serialised is a re-hash,
-/// which only happens for a file that actually changed, so it is proportional to
-/// the edit rather than to the project.</para>
-/// </remarks>
+// Content hashes decide invalidation. This only saves computing them, so it
+// can be thrown away at any time.
+// Known hole: same length, same reported mtime, different bytes is served
+// with the old hash. --no-cache gets around it.
+// The lock covers the hash too. Hashing outside it would let two workers hash
+// one file and make the counters depend on scheduling.
 public sealed class StatCache
 {
     private const uint Magic = 0x54415343; // "CSAT" little-endian
@@ -65,8 +44,6 @@ public sealed class StatCache
     /// there is nothing there.
     /// </summary>
     /// <param name="contentPath">Normalised content-relative path, which is the key.</param>
-    /// <param name="fullPath">Where it is on this machine.</param>
-    /// <param name="hash">The hash of its bytes.</param>
     public bool TryGetHash(string contentPath, string fullPath, out UInt128 hash)
     {
         lock (_gate)
@@ -74,10 +51,8 @@ public sealed class StatCache
             var info = new FileInfo(fullPath);
             if (!info.Exists)
             {
-                // Dropped rather than kept: an entry for a file that is gone would be
-                // served the moment a file of the same length reappeared with the same
-                // timestamp, and a deleted-then-restored input is exactly the case
-                // somebody hits while bisecting.
+                // Drop the entry, or a restored file with the same size and
+                // mtime would be served the old hash.
                 if (_entries.Remove(contentPath)) _dirty = true;
 
                 hash = UInt128.Zero;
@@ -103,9 +78,7 @@ public sealed class StatCache
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // Unreadable is not absent, but for the cache the answer is the same:
-                // no hash, so no key, so no hit, so the rule runs and reports the real
-                // failure itself.
+                // Unreadable: no hash, so no hit. The rule runs and reports it.
                 hash = UInt128.Zero;
                 return false;
             }
@@ -139,9 +112,6 @@ public sealed class StatCache
         }
         catch (Exception ex) when (ex is InvalidDataException or ArgumentOutOfRangeException)
         {
-            // An unreadable stat cache is discarded in silence and costs a pass
-            // over the inputs. It is the one part of the cache whose loss cannot
-            // be wrong, which is why it does not get a diagnostic.
             cache._entries.Clear();
         }
 
@@ -155,10 +125,7 @@ public sealed class StatCache
 
         lock (_gate)
         {
-            // Sorted, so the file is a function of what is in it rather than of the
-            // order a dictionary happened to enumerate. Nothing reads these bytes for
-            // identity, but a cache file that churns on every save is a cache file
-            // nobody can diff when it misbehaves.
+            // Sorted so two cache files can be diffed.
             var keys = new List<string>(_entries.Keys);
             keys.Sort(StringComparer.Ordinal);
 

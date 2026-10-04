@@ -11,10 +11,7 @@ using SpectraShade.Compiler.Syntax;
 
 namespace SpectraShade.LSP.Handlers;
 
-/// <summary>
-/// Handles document open/change/close events.
-/// Runs the SpectraShade parser on every change and publishes diagnostics.
-/// </summary>
+// Parses on every change and publishes diagnostics.
 internal sealed class TextDocumentSyncHandler : TextDocumentSyncHandlerBase
 {
     private readonly ILanguageServerFacade _server;
@@ -79,7 +76,6 @@ internal sealed class TextDocumentSyncHandler : TextDocumentSyncHandlerBase
             var lexer = new Lexer(source, uri.Path ?? "<source>");
             var tokens = lexer.Tokenize();
 
-            // Report invalid tokens
             foreach (var token in tokens)
             {
                 if (token.Kind == TokenKind.Invalid)

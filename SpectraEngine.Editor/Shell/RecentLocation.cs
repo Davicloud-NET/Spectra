@@ -5,26 +5,9 @@ using System.IO;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
-/// Where a recent project is, shortened so the part that identifies it survives.
+/// Shortens a recent project's path from the left, so the folders that
+/// identify it survive. Same-named projects get more segments until they differ.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>A path trimmed from the RIGHT loses exactly the folder that names the
-/// project.</b> The start page listed several projects called Demo, each with
-/// its path ellipsized at the end, so every row read
-/// <c>D:\Users\David\Projects\Sp...</c> and told the reader nothing about which
-/// Demo it was. The identifying end is the last segment; the machine-specific
-/// start is the part worth dropping.
-/// </para>
-/// <para>
-/// <b>Same-named rows are lengthened until they differ.</b> Two projects called
-/// Demo under different parents are the case this exists for, so the shortening
-/// grows for that group only, one segment at a time, until either they are
-/// distinct or there is nothing left to add. Everything else keeps the short
-/// form, because widening every row to disambiguate two of them is how a column
-/// stops fitting.
-/// </para>
-/// </remarks>
 public static class RecentLocation
 {
     /// <summary>How many trailing folders are kept by default.</summary>
@@ -42,9 +25,7 @@ public static class RecentLocation
         if (string.IsNullOrWhiteSpace(fullPath)) return string.Empty;
         if (keepSegments < 1) keepSegments = 1;
 
-        // Both separators, because a path may have been typed, pasted from a
-        // URL-ish source, or written by another OS; two spellings of one folder
-        // would otherwise look like two projects.
+        // Both separators: the path may come from another OS.
         string[] segments = fullPath.Trim().TrimEnd('\\', '/')
             .Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
 
@@ -68,9 +49,7 @@ public static class RecentLocation
         for (int i = 0; i < recents.Count; i++)
             result[i] = Shorten(recents[i].Path, keepSegments);
 
-        // Group by NAME, because that is what the reader is trying to tell
-        // apart: two rows both saying "Demo" is the failure, and two rows with
-        // different names need nothing however alike their paths look.
+        // Only rows sharing a name need lengthening.
         var byName = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < recents.Count; i++)
         {

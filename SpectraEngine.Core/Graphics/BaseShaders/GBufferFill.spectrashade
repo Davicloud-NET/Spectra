@@ -1,13 +1,6 @@
-﻿// GBufferFill.spectrashade — the deferred geometry pass.
-//
-// Writes surface properties, never light. Nothing here knows how many lights
-// exist or where they are; that is the light pass's problem, and separating the
-// two is the whole point of deferred: geometry is rasterised once no matter how
-// many lights reach it.
-//
-// The five outputs are the layout documented on GBuffer. Position is absent on
-// purpose, because it reconstructs exactly from the depth buffer and storing it
-// would cost a whole attachment for information already written.
+﻿// Deferred geometry pass. Writes surface properties, no lighting.
+// The five outputs follow the layout on GBuffer. Position is not stored; the
+// light pass rebuilds it from depth.
 
 struct VertexInput {
     [Location(0)] vec3 position;
@@ -26,9 +19,6 @@ struct FragmentInput {
     vec2 uv;
 }
 
-// One field per attachment. The analyzer enforces that no two [Target] indices
-// collide, which is the one thing it does check, and the one that would
-// otherwise silently write two channels into one surface.
 struct GBufferOutput {
     [Target(0)] vec4 albedoAo;
     [Target(1)] vec4 normalRoughness;
@@ -39,15 +29,8 @@ struct GBufferOutput {
 
 shader GBufferFill {
     [Binding(0)] cbuffer Transforms {
-        // [PerInstance] leaves THIS stage byte-for-byte unchanged and makes the
-        // compiler emit a second one beside it, taking the matrix per instance
-        // so a batch of identical props is one draw. A single draw still binds
-        // the uniform and pays nothing for the variant existing.
-        //
-        // Note uModel is read TWICE below, for the position and for the normal
-        // basis. The variant binds the name with a leading local rather than
-        // rewriting references, so both keep working and this file needs no
-        // instanced twin; see InstancedVariant.
+        // [PerInstance]: the compiler also emits a second vertex stage that
+        // takes this matrix per instance. This stage is unchanged.
         [PerInstance] mat4 uModel;
         mat4 uView;
         mat4 uProjection;
@@ -79,24 +62,18 @@ shader GBufferFill {
 
         vec3 albedo = uBaseColor * uDiffuse.Sample(input.uv).rgb;
 
-        // Renormalised here rather than trusted: the interpolator gives the
-        // linear blend of three unit vectors, which is not a unit vector, and a
-        // short normal reads as a darker surface in the light pass.
+        // Interpolated normals are not unit length.
         vec3 n = Math.Normalize(input.worldNormal);
 
         output.albedoAo = vec4(albedo, uAmbientOcclusion);
 
-        // The normal is stored raw rather than remapped into 0..1, because the
-        // attachment is a float format with room for the sign. An 8-bit
-        // attachment would need the remap and would band visibly on smooth
-        // surfaces.
+        // Signed, not remapped to 0..1: the attachment is a float format.
         output.normalRoughness = vec4(n, uRoughness);
 
         output.materialData = vec4(uMetallic, uShadingModel, 0.0, 0.0);
         output.emissive = vec4(uEmissive, 0.0);
 
-        // Unused by the standard shading model. Subsurface scattering and
-        // clearcoat will read it according to uShadingModel.
+        // Unused by the standard shading model.
         output.custom = vec4(0.0, 0.0, 0.0, 0.0);
 
         return output;

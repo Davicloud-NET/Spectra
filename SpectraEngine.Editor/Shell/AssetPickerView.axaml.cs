@@ -8,27 +8,12 @@ namespace SpectraEngine.Editor.Shell;
 
 /// <summary>One row in the asset picker.</summary>
 /// <param name="ContentPath">What picking it writes. Empty means the engine default.</param>
-/// <param name="Stem">The file name, for reading.</param>
-/// <param name="Folder">Its folder, for telling two alike names apart.</param>
 public sealed record AssetPickerRow(string ContentPath, string Stem, string Folder);
 
 /// <summary>
 /// The list an asset row opens: the project's files of one kind, searchable.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>"None" is a real row, not an empty search result.</b> Putting a face back
-/// to the engine default is a thing people mean to do, and the only other way to
-/// say it would be clearing a text box that no longer exists.
-/// </para>
-/// <para>
-/// <b>No live preview as the selection moves.</b> Each hover would have to swap
-/// the brush, invalidate its carve and its neighbours', recompile the world and
-/// then roll all of it back when the pointer moved on: a preview costs exactly
-/// what an assignment costs, so the assignment is the preview and Ctrl+Z is the
-/// way back.
-/// </para>
-/// </remarks>
+// No live preview on hover: it would recompile the world per row.
 public partial class AssetPickerView : UserControl
 {
     /// <summary>The row for wearing no material at all.</summary>
@@ -53,15 +38,13 @@ public partial class AssetPickerView : UserControl
     /// <summary>The file somebody chose, as a content-relative path.</summary>
     public event Action<string>? Picked;
 
-    /// <summary>Escape, so the caller can close and put the keyboard back.</summary>
+    /// <summary>Raised on Escape.</summary>
     public event Action? Cancelled;
 
     /// <summary>How many rows the last search produced, for tests.</summary>
     public int RowCount => _rows.Count;
 
     /// <summary>Fills the list and takes the keyboard.</summary>
-    /// <param name="catalog">The project's files, already walked.</param>
-    /// <param name="kind">Which of them to offer.</param>
     /// <param name="currentPath">What the row holds now, preselected.</param>
     public void Open(AssetCatalog catalog, ContentKind kind, string currentPath)
     {
@@ -74,12 +57,9 @@ public partial class AssetPickerView : UserControl
         Query.Text = string.Empty;
         Refresh();
 
-        // The caret goes in the box and the arrows still move the list, which is
-        // what makes this one gesture rather than a click and then a search.
         Query.Focus();
     }
 
-    /// <summary>Rebuilds the list for the current query.</summary>
     private void Refresh()
     {
         string query = Query.Text ?? string.Empty;
@@ -101,8 +81,7 @@ public partial class AssetPickerView : UserControl
         Rows.ItemsSource = null;
         Rows.ItemsSource = _rows;
 
-        // Preselect what the row already wears, so Enter on an unchanged picker
-        // is a no-op rather than a silent reassignment to whatever sorted first.
+        // Preselect the current value so Enter on an untouched picker changes nothing.
         int selected = 0;
         for (int i = 1; i < _rows.Count; i++)
         {
@@ -127,11 +106,6 @@ public partial class AssetPickerView : UserControl
     }
 
     /// <summary>How many files one search offers.</summary>
-    /// <remarks>
-    /// A cap rather than the whole folder, because a project's texture count is
-    /// unbounded and a list nobody can reach the end of is a search box with
-    /// extra scrolling. Typing narrows it, which is the affordance.
-    /// </remarks>
     public const int MaxRows = 40;
 
     private void OnQueryChanged(object? sender, TextChangedEventArgs e) => Refresh();
@@ -183,6 +157,6 @@ public partial class AssetPickerView : UserControl
         Picked?.Invoke(row.ContentPath);
     }
 
-    /// <summary>Picks the highlighted row, for the render suite and for tests.</summary>
+    // For tests.
     internal void TakeSelected() => Take();
 }

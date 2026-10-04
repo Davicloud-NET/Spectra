@@ -4,14 +4,8 @@ using SpectraEngine.Core.Graphics;
 namespace SpectraEngine.Graphics.Tests;
 
 /// <summary>
-/// The swap-chain resize decision and the HRESULT classification behind it —
-/// the two pieces of the D3D resize path that are pure logic, and the two that
-/// were wrong when a fullscreen transition killed the render thread.
+/// The swap-chain resize decision and the HRESULT classification behind it.
 /// </summary>
-/// <remarks>
-/// The GPU half (release views → <c>ResizeBuffers</c> → rebuild views) cannot
-/// be unit-tested; a real repro run is the gate for that.
-/// </remarks>
 public sealed class SwapChainResizeTests
 {
     private static Vector2D<int> Size(int x, int y) => new(x, y);
@@ -39,8 +33,7 @@ public sealed class SwapChainResizeTests
     [Fact]
     public void A_minimised_window_is_skipped_rather_than_clamped()
     {
-        // GLFW reports 0x0 while minimised and ResizeBuffers rejects a zero
-        // extent; skipping keeps the existing buffers valid.
+        // GLFW reports 0x0 while minimised and ResizeBuffers rejects a zero extent.
         ShouldResize(Size(0, 0), Size(1280, 720)).ShouldBeFalse();
         ShouldResize(Size(1280, 0), Size(1280, 720)).ShouldBeFalse();
         ShouldResize(Size(0, 720), Size(1280, 720)).ShouldBeFalse();
@@ -50,8 +43,6 @@ public sealed class SwapChainResizeTests
     [Fact]
     public void Restoring_to_the_pre_minimise_size_needs_no_resize_at_all()
     {
-        // The skip above leaves the recorded size untouched, which is exactly
-        // what makes the restore free: the buffers were never released.
         ShouldResize(Size(1280, 720), Size(1280, 720)).ShouldBeFalse();
     }
 
@@ -70,8 +61,6 @@ public sealed class SwapChainResizeTests
     [Fact]
     public void But_any_other_size_still_is()
     {
-        // Which is what lets a user drag past a bad size and carry on, and — as
-        // the caller clears the memo on the next success — come back to it.
         ShouldResize(Size(1601, 900), Size(1280, 720), lastFailed: Size(1600, 900)).ShouldBeTrue();
     }
 
@@ -95,8 +84,7 @@ public sealed class SwapChainResizeTests
     [Fact]
     public void Invalid_call_is_recoverable_and_must_not_be_mistaken_for_device_loss()
     {
-        // This is the HRESULT the reported crash carried. Treating it as a lost
-        // device would end the run; treating it as fatal at all was the bug.
+        // ResizeBuffers returns this while a back-buffer reference is outstanding.
         DxgiInterop.IsDeviceLost(DxgiInterop.ErrorInvalidCall).ShouldBeFalse();
         DxgiInterop.IsDeviceLost(0).ShouldBeFalse();
     }
@@ -113,9 +101,7 @@ public sealed class SwapChainResizeTests
     [Fact]
     public void Alt_enter_is_suppressed_with_the_documented_dxgi_flag()
     {
-        // DXGI_MWA_NO_ALT_ENTER == (1 << 1). Silk.NET names no MWA constant, so
-        // the value is ours to get right — and getting it wrong would silently
-        // leave DXGI driving fullscreen on the window thread.
+        // Silk.NET names no MWA constants; these are the values from dxgi.h.
         DxgiInterop.MwaNoAltEnter.ShouldBe(2u);
         DxgiInterop.MwaNoWindowChanges.ShouldBe(1u);
         DxgiInterop.MwaNoPrintScreen.ShouldBe(4u);

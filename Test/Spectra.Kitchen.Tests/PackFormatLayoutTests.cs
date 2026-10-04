@@ -6,11 +6,8 @@ using System.Runtime.InteropServices;
 namespace Spectra.Kitchen.Tests;
 
 /// <summary>
-/// Raw file bytes are cast into <see cref="PackHeader"/> and
-/// <see cref="PackEntry"/>, so their size and field order ARE the format. A field
-/// reordered or retyped by an edit compiles cleanly and produces a file that
-/// parses into the wrong numbers with nothing reporting it, which is what these
-/// pins exist to catch.
+/// Pins the size and field order of <see cref="PackHeader"/> and
+/// <see cref="PackEntry"/>, which file bytes are cast into directly.
 /// </summary>
 public class PackFormatLayoutTests
 {
@@ -31,9 +28,7 @@ public class PackFormatLayoutTests
     [Fact]
     public void The_entry_stride_keeps_every_asset_id_sixteen_byte_aligned()
     {
-        // The table starts at the header's end and every entry follows the last,
-        // so an id is 16-byte aligned only if both numbers are multiples of 16.
-        // That is what makes reinterpreting the table in place legal.
+        // Both must be multiples of 16 for the table to be cast in place.
         (PackFormat.HeaderSize % PackFormat.PayloadAlignment).ShouldBe(0);
         (PackFormat.EntrySize % PackFormat.PayloadAlignment).ShouldBe(0);
     }
@@ -58,9 +53,8 @@ public class PackFormatLayoutTests
         Span<byte> bytes = stackalloc byte[Unsafe.SizeOf<PackHeader>()];
         MemoryMarshal.Write(bytes, in header);
 
-        // Each field was given the little-endian value of its own byte offsets, so
-        // a correct layout produces the identity sequence 00 01 02 ... 3F. Any
-        // reorder, retype or inserted pad breaks the run at the field that moved.
+        // Each field holds its own byte offsets, so a correct layout reads
+        // 00 01 02 ... 3F.
         for (int i = 0; i < bytes.Length; i++)
             bytes[i].ShouldBe((byte)i, $"byte {i} of the header");
     }
@@ -120,8 +114,7 @@ public class PackFormatLayoutTests
     [Fact]
     public void The_tombstone_kind_is_the_top_of_the_byte()
     {
-        // Every other kind is append-only from zero, so a new one can never
-        // collide with the deletion marker.
+        // Other kinds append from zero and so never reach it.
         ((byte)PackEntryKind.Tombstone).ShouldBe((byte)0xFF);
     }
 

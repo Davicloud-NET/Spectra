@@ -3,27 +3,15 @@ using System;
 namespace SpectraEngine.Core.Audio;
 
 /// <summary>
-/// The shape of a block of PCM: how many samples a second, and how many
-/// channels are interleaved into each sample frame.
+/// Sample rate and channel count of a block of PCM16. Positions and lengths
+/// in this namespace are in sample frames (one sample per channel), and the
+/// conversions to samples and seconds live here.
 /// </summary>
-/// <remarks>
-/// <para>A <i>sample frame</i> is one sample per channel. Everything in this
-/// namespace that measures a position or a length measures it in frames, never
-/// in bytes and never in seconds: bytes depend on the channel count and the
-/// sample width, seconds depend on the rate, and both are exactly the
-/// conversions that drift when a codec or a rate changes. The one place the
-/// conversion is allowed is here, where the numbers that decide it are in
-/// hand.</para>
-/// <para>Only mono and stereo exist, because that is all OpenAL's PCM16 buffer
-/// formats can carry. A stereo buffer also plays <i>unpositioned</i> in
-/// OpenAL, which is the classic "why is my 3D sound not 3D" report; the
-/// positional path therefore wants mono, and the cook step that will produce
-/// these (see <c>docs/formats-and-pipeline.md</c> section 2.4) warns about it
-/// rather than silently flattening a picture that still plays.</para>
-/// </remarks>
+// Mono or stereo only: that is all OpenAL's PCM16 formats carry. OpenAL does
+// not spatialise a stereo buffer, so positional sounds want mono.
 public readonly struct AudioFormat : IEquatable<AudioFormat>
 {
-    /// <summary>Bytes one sample of one channel occupies. PCM16 only, today.</summary>
+    /// <summary>Bytes per sample of one channel.</summary>
     public const int BytesPerSample = sizeof(short);
 
     /// <param name="sampleRate">Frames per second. Must be positive.</param>
@@ -45,7 +33,7 @@ public readonly struct AudioFormat : IEquatable<AudioFormat>
     /// <summary>Interleaved channels per sample frame: 1 or 2.</summary>
     public int Channels { get; }
 
-    /// <summary>True for a format this struct could not have been built without.</summary>
+    /// <summary>False for a default-constructed value.</summary>
     public bool IsValid => SampleRate > 0 && Channels > 0;
 
     /// <summary>Interleaved samples in <paramref name="frames"/> sample frames.</summary>

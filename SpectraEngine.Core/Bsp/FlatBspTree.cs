@@ -4,26 +4,14 @@ using System.Numerics;
 namespace SpectraEngine.Core.Bsp;
 
 /// <summary>
-/// A solid-leaf BSP tree in its flat form: a block of <see cref="FlatBspNode"/>
-/// plus the root's child code. It answers <see cref="ContainsPoint"/> and
-/// <see cref="Raycast"/> identically to the live <see cref="BspTree"/> it was
-/// flattened from, and it answers them by walking the block DIRECTLY.
+/// A solid-leaf BSP tree as a block of <see cref="FlatBspNode"/> plus the
+/// root's child code. Answers queries the same as the <see cref="BspTree"/>
+/// it was flattened from.
 /// </summary>
-/// <remarks>
-/// It takes <see cref="ReadOnlyMemory{T}"/> rather than an array because the
-/// block is a plain array today and a memory-mapped view of a cooked map later;
-/// nothing here may assume it owns or can mutate the storage.
-///
-/// There is deliberately no way to rebuild a <see cref="BspTree"/> from this:
-/// rehydrating would put a per-node GC object back on the load path, which is
-/// the entire cost the flat form exists to remove.
-/// </remarks>
+// The block may be a memory-mapped view: do not assume ownership or mutate it.
 public sealed class FlatBspTree
 {
-    // Deferred far-side frames of one segment trace. Deep enough for the trees
-    // the CSG compiler produces for a 32-unit cell; a deeper tree grows onto
-    // the heap rather than being refused, because a mapped view may carry a
-    // world this process did not compile.
+    // Stack frames for one trace. A deeper tree spills to the heap.
     private const int InlineTraceDepth = 64;
 
     private readonly ReadOnlyMemory<FlatBspNode> _nodes;
@@ -32,9 +20,7 @@ public sealed class FlatBspTree
     /// <param name="rootIndex">An index into <paramref name="nodes"/>, or a leaf code.</param>
     public FlatBspTree(ReadOnlyMemory<FlatBspNode> nodes, int rootIndex)
     {
-        // Only the root is checked. Validating every child index would be an
-        // O(n) scan of storage that is meant to be paged in lazily; a cooked
-        // container answers for the rest of the block through its own digest.
+        // Only the root is checked: scanning every child would page in the whole block.
         if (rootIndex < FlatBspNode.SolidLeaf || rootIndex >= nodes.Length)
         {
             throw new ArgumentOutOfRangeException(
@@ -49,10 +35,10 @@ public sealed class FlatBspTree
     /// <summary>The root's child code: a node index, or a leaf code for a bare-leaf tree.</summary>
     public int RootIndex { get; }
 
-    /// <summary>The node block, for a writer that has to emit it. Queries read it internally.</summary>
+    /// <summary>The node block, for a writer that has to emit it.</summary>
     public ReadOnlyMemory<FlatBspNode> Nodes => _nodes;
 
-    /// <summary>Internal node count. Leaves are encoded in the child fields and occupy no slots.</summary>
+    /// <summary>Internal node count. Leaves take no slots.</summary>
     public int NodeCount => _nodes.Length;
 
     /// <summary>True when the point lies inside solid space.</summary>
@@ -70,9 +56,8 @@ public sealed class FlatBspTree
     }
 
     /// <summary>
-    /// Casts a ray against solid space. Returns true and reports the first
-    /// surface entered in <paramref name="hit"/>; false if the ray stays in
-    /// empty space for the whole distance.
+    /// Casts a ray against solid space and reports the first surface entered.
+    /// A ray that starts inside solid hits at distance 0.
     /// </summary>
     public bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, out BspRaycastHit hit)
     {
@@ -82,7 +67,6 @@ public sealed class FlatBspTree
 
         direction = Vector3.Normalize(direction);
 
-        // A ray that starts inside solid space hits immediately.
         if (ContainsPoint(origin))
         {
             hit = new BspRaycastHit(origin, -direction, 0f);
@@ -98,17 +82,9 @@ public sealed class FlatBspTree
         return false;
     }
 
-    // Walks the segment origin..end through the flat block, returning the point
-    // where it first crosses from empty into solid space. This is
-    // BspTree.TraceSegment with the recursion unrolled onto an explicit stack:
-    // the near-side call is the only real recursion there (the far-side call is
-    // in tail position), so one frame per crossed splitter carries the deferred
-    // far side. Entry into solid is detected EXACTLY, by the leaf containing
-    // each sub-segment, and the last plane crossed on the way there (oriented
-    // toward the side the ray came from) is the entry surface. The sidedness is
-    // transcribed index for index from the live tree: a flipped comparison or a
-    // flipped crossing normal throws nothing and reports nothing, it just names
-    // the wrong surface.
+    // BspTree.TraceSegment with the recursion unrolled: one frame per crossed
+    // splitter holds the deferred far side. Keep every comparison and normal
+    // sign in step with the live tree; a flipped one just names the wrong surface.
     private bool TraceSegment(Vector3 origin, Vector3 end, Vector3 direction, out BspRaycastHit hit)
     {
         ReadOnlySpan<FlatBspNode> nodes = _nodes.Span;
@@ -147,8 +123,7 @@ public sealed class FlatBspTree
                 int near = da >= 0f ? node.Front : node.Back;
                 int far = da >= 0f ? node.Back : node.Front;
 
-                // The crossed plane, oriented toward the incoming side, is the
-                // candidate entry surface for whatever the far side resolves to.
+                // Oriented toward the side the ray came from.
                 Vector3 crossingNormal = da >= 0f ? node.Plane.Normal : -node.Plane.Normal;
 
                 if (depth == frames.Length)
@@ -159,19 +134,14 @@ public sealed class FlatBspTree
                 }
                 frames[depth++] = new TraceFrame(far, mid, b, crossingNormal);
 
-                // Resolve the near side first; the ray reaches it before the
-                // plane. hasEntry and entryNormal are carried into it unchanged,
-                // exactly as the recursive form passes them down.
+                // Near side first; hasEntry and entryNormal carry over unchanged.
                 index = near;
                 b = mid;
             }
 
             if (index == FlatBspNode.SolidLeaf)
             {
-                // With an entry plane recorded, `a` is the crossing point on it.
-                // Without one the whole ray started in solid, which Raycast's
-                // own ContainsPoint check already reports; the fallback mirrors
-                // its starts-inside convention.
+                // a is the crossing point. No entry plane means the ray started in solid.
                 hit = new BspRaycastHit(a, hasEntry ? entryNormal : -direction, 0f);
                 return true;
             }
@@ -182,8 +152,7 @@ public sealed class FlatBspTree
                 return false;
             }
 
-            // The near side was clear to the plane; continue across it. Popping
-            // in LIFO order is the recursion's own unwind order.
+            // Near side was clear; continue across the plane.
             TraceFrame frame = frames[--depth];
             index = frame.Child;
             a = frame.Start;

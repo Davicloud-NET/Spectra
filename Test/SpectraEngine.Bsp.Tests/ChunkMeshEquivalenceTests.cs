@@ -4,26 +4,11 @@ using SpectraEngine.Core.Bsp;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The W4 oracle: the per-cell mesh stage (<c>ChunkMeshBuilder</c> +
-/// <see cref="CsgMeshCache"/>) must be semantically equivalent to the
-/// monolithic <see cref="CsgWorld.BuildMesh"/> of the same world — the union
-/// of the per-cell triangle sets IS the monolithic triangle multiset, bit for
-/// bit (both emit from the same welded <see cref="Polygon"/> instances through
-/// the same shared array builder, so each triangle's 24 floats must match
-/// exactly). The bounds tests pin that every chunk's render AABB encloses all
-/// of its vertices and genuinely extends past the cell box for
-/// border-spanning owners (why culling must use render bounds, not cell
-/// bounds); the determinism test pins bit-identical per-cell artifacts for
-/// identical inputs; and the incremental tests pin that cache-carrying
-/// recompiles reuse clean cells' artifact INSTANCES while staying identical
-/// to from-scratch compiles.
+/// Per-cell chunk meshes must union to the monolithic
+/// <see cref="CsgWorld.BuildMesh"/> triangle multiset, bit for bit.
 /// </summary>
 public sealed class ChunkMeshEquivalenceTests
 {
-    // ------------------------------------------------------------------
-    // (a) Triangle-multiset equivalence with the monolithic mesh.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void Chunk_triangles_union_to_the_monolithic_mesh_for_a_border_pair()
         => AssertTriangleOracle(TwoBoxOverlapOnBorder());
@@ -38,8 +23,7 @@ public sealed class ChunkMeshEquivalenceTests
         List<BrushPlacement> placements = ScatteredWorld(structures: 50, seed: 0xC0FFEE0DDBA5EBA1UL);
         placements.Count.ShouldBe(200);
 
-        // Guard against a vacuous pass: the scatter must genuinely span many
-        // cells so per-cell meshing is actually exercised across chunks.
+        // Guard against a vacuous pass: the scatter must span many cells.
         CsgWorld world = CsgWorld.Build(placements);
         world.ChunkMeshes.Count.ShouldBeGreaterThan(20);
 
@@ -49,10 +33,6 @@ public sealed class ChunkMeshEquivalenceTests
     [Fact]
     public void Chunk_triangles_union_to_the_monolithic_mesh_for_a_dense_grid_world()
         => AssertTriangleOracle(DenseGridWorld());
-
-    // ------------------------------------------------------------------
-    // (b) Render bounds: enclose every vertex, and are NOT the cell box.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void Render_bounds_enclose_every_chunk_vertex()
@@ -81,10 +61,7 @@ public sealed class ChunkMeshEquivalenceTests
     [Fact]
     public void Render_bounds_of_a_border_spanning_owner_extend_past_the_cell_box()
     {
-        // The first box (half-extent 4 at x=29) crosses the x=32 cell border:
-        // its owner cell holds ALL of its surfaces, so that cell's render AABB
-        // must reach past the cell's own box — the very reason culling tests
-        // render bounds instead of cell bounds.
+        // The first box crosses x=32 and its owner cell holds all its surfaces.
         CsgWorld world = CsgWorld.Build(TwoBoxOverlapOnBorder());
 
         bool foundOverhang = false;
@@ -101,10 +78,6 @@ public sealed class ChunkMeshEquivalenceTests
         }
         foundOverhang.ShouldBeTrue("no chunk's render bounds left its cell — the fixture should force an overhang");
     }
-
-    // ------------------------------------------------------------------
-    // (c) Determinism: identical inputs produce bit-identical artifacts.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void Two_builds_of_the_same_placements_produce_bit_identical_chunk_meshes()
@@ -125,17 +98,11 @@ public sealed class ChunkMeshEquivalenceTests
         }
     }
 
-    // ------------------------------------------------------------------
-    // (d) Incremental correctness: clean cells keep their artifact INSTANCES,
-    // and the carried recompile stays identical to a from-scratch compile.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void Clean_cells_keep_their_previous_artifact_instances()
     {
-        // The border pair owns two cells around x=32; the far box lives many
-        // cells away. Moving the far box must leave the pair's chunk meshes
-        // untouched — the same ChunkMesh instances, not merely equal ones.
+        // The far box lives many cells from the border pair. Moving it must
+        // leave the pair's ChunkMesh instances as they are, not just equal.
         List<BrushPlacement> placements =
             [.. TwoBoxOverlapOnBorder(), new(Box(1f), Translation(200f, 16f, 16f))];
         CsgWorld first = CsgWorld.Build(
@@ -151,13 +118,12 @@ public sealed class ChunkMeshEquivalenceTests
         CsgWorld incremental = CsgWorld.Build(
             edited, dirtyCells: null, first.CompileCache, first.WeldCache, first.BspCache, first.MeshCache);
 
-        // Exactly the far box's cell re-meshed; the pair's two cells reused.
         incremental.MeshStats.ShouldBe(new CsgMeshStats(Reused: 2, Built: 1));
 
         foreach (ChunkMesh before in first.ChunkMeshes)
         {
             if (before.Coord.X >= 6)
-                continue; // the far box's moving neighbourhood
+                continue; // the far box's cells
             incremental.ChunkMeshes.ShouldContain(before,
                 $"cell {before.Coord} rebuilt its mesh arrays needlessly");
         }
@@ -181,16 +147,12 @@ public sealed class ChunkMeshEquivalenceTests
             edited, dirtyCells: null, first.CompileCache, first.WeldCache, first.BspCache, first.MeshCache);
         CsgWorld scratch = CsgWorld.Build(edited);
 
-        // The edit must have stayed local: most cells reuse their artifact.
         CsgMeshStats stats = incremental.MeshStats.ShouldNotBeNull();
         stats.Total.ShouldBe(incremental.ChunkMeshes.Count);
         stats.Built.ShouldBeGreaterThan(0);
         stats.Reused.ShouldBeGreaterThan(incremental.ChunkMeshes.Count / 2,
             "a one-brush edit re-meshed most of the world's cells");
 
-        // Reused or rebuilt, every cell's arrays are exactly what a
-        // from-scratch compile produces (the inputs are bit-identical, the
-        // emission is deterministic).
         incremental.ChunkMeshes.Count.ShouldBe(scratch.ChunkMeshes.Count);
         for (int c = 0; c < scratch.ChunkMeshes.Count; c++)
         {
@@ -207,29 +169,21 @@ public sealed class ChunkMeshEquivalenceTests
         CsgWorld world = CsgWorld.Build(TwoBoxOverlapOnBorder());
         world.MeshStats.ShouldBeNull();
         world.MeshCache.ShouldBeNull();
-        world.ChunkMeshes.ShouldNotBeEmpty(); // the artifacts themselves always exist
+        world.ChunkMeshes.ShouldNotBeEmpty();
     }
 
-    // ------------------------------------------------------------------
-    // Fixtures (mirroring ChunkBspEquivalenceTests)
-    // ------------------------------------------------------------------
-
-    // A cube of half-extent `h` centered on its local origin.
     private static Brush Box(float h) => Brush.CreateBox(new Vector3(-h), new Vector3(h));
 
     private static Matrix4x4 Translation(float x, float y, float z) => Matrix4x4.CreateTranslation(x, y, z);
 
-    // Overlapping pair straddling the x=32 cell border — the minimal world
-    // where owned surfaces cross a cell boundary.
+    // Overlapping pair straddling the x=32 cell border.
     private static BrushPlacement[] TwoBoxOverlapOnBorder() =>
     [
         new(Box(4f), Translation(29f, 16f, 16f)),
         new(Box(4f), Translation(35f, 18f, 16f)),
     ];
 
-    // Faces and centers landing bitwise on x=32 / the (32,32,32) corner: the
-    // fixture where carved geometry sits exactly where cell classification
-    // flips.
+    // Faces and centres land bitwise on x=32 and the (32,32,32) corner.
     private static BrushPlacement[] BoundaryExactWorld() =>
     [
         new(Box(4f), Translation(28f, 16f, 16f)),
@@ -238,10 +192,8 @@ public sealed class ChunkMeshEquivalenceTests
         new(Box(4f), Translation(35f, 34f, 33f)),
     ];
 
-    // `structures` four-part structures (a floor slab with three overlapping
-    // pillars) scattered by a fixed-seed LCG over a ±160-unit region —
-    // spanning many cells, negative coordinates included, with structures
-    // frequently straddling borders.
+    // Four-part structures (a slab with three overlapping pillars) scattered
+    // by a fixed-seed LCG over ±160 units.
     private static List<BrushPlacement> ScatteredWorld(int structures, ulong seed)
     {
         ulong state = seed;
@@ -269,8 +221,7 @@ public sealed class ChunkMeshEquivalenceTests
         return placements;
     }
 
-    // 6x6x6 size-2 cubes at spacing 1.8, straddling the (32,32,32) cell
-    // corner — dense mutual carving right across cell borders.
+    // 6x6x6 size-2 cubes at spacing 1.8, straddling the (32,32,32) cell corner.
     private static List<BrushPlacement> DenseGridWorld()
     {
         var placements = new List<BrushPlacement>(216);
@@ -282,14 +233,6 @@ public sealed class ChunkMeshEquivalenceTests
         return placements;
     }
 
-    // ------------------------------------------------------------------
-    // Oracle assertion
-    // ------------------------------------------------------------------
-
-    // Compares the union of the per-cell triangle sets against the monolithic
-    // BuildMesh's triangle multiset, bit for bit: each triangle is flattened
-    // to its 24 floats (3 vertices × 8 floats, indices resolved), both sides
-    // are sorted canonically, and compared element-wise.
     private static void AssertTriangleOracle(IReadOnlyList<BrushPlacement> placements)
     {
         CsgWorld world = CsgWorld.Build(placements);
@@ -300,8 +243,6 @@ public sealed class ChunkMeshEquivalenceTests
         var actual = new List<float[]>();
         foreach (ChunkMesh mesh in world.ChunkMeshes)
         {
-            // Per-material submeshes partition the cell's triangles; their
-            // union is what the monolithic mesh must equal.
             foreach (ChunkSubmesh submesh in mesh.Submeshes)
                 actual.AddRange(FlattenTriangles(submesh.Vertices, submesh.Indices));
         }
@@ -318,8 +259,6 @@ public sealed class ChunkMeshEquivalenceTests
         }
     }
 
-    // Bit-identity of one cell's render geometry: same materials in the same
-    // (ascending-id) order, same arrays under each.
     private static void AssertSubmeshesIdentical(ChunkMesh expected, ChunkMesh actual, string context)
     {
         actual.Submeshes.Count.ShouldBe(expected.Submeshes.Count, $"submesh count diverged for {context}");
@@ -346,10 +285,7 @@ public sealed class ChunkMeshEquivalenceTests
         return triangles;
     }
 
-    // Total order over flattened triangles. Uses bitwise float comparison via
-    // CompareTo, which is fine here: the inputs are finite by construction and
-    // equal triangles are bit-equal (both sides emit from the same Polygon
-    // instances through the same code).
+    // CompareTo is fine: inputs are finite and equal triangles are bit-equal.
     private static int CompareTriangles(float[] a, float[] b)
     {
         for (int i = 0; i < a.Length; i++)

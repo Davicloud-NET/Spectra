@@ -3,38 +3,14 @@
 /// <summary>
 /// A keyboard chord that belongs to the shell rather than to the engine.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>This exists because the viewport is a native child window.</b> While it
-/// has focus the OS delivers the keyboard to it and nothing reaches Avalonia,
-/// so a menu accelerator is inert exactly while somebody is working. The
-/// viewport therefore intercepts a short, closed list of Ctrl chords and hands
-/// them up instead of submitting them to the engine.
-/// </para>
-/// <para>
-/// <b>Everything here is a verb the ENGINE KEYMAP does not own.</b> A chord the
-/// keymap already answers belongs to the keymap, where it works and where the
-/// editor can decide whether a camera is currently driving; taking one away
-/// from it would be a second path free to drift. The document verbs qualify
-/// because a viewport has no opinion about files. So do the four inserts: they
-/// are shell verbs (<c>SceneEditorHost.Insert</c> is called from the shell, and
-/// the keymap has no chord for it), so without an interception here they would
-/// work only while an Avalonia control had focus - which is to say, only while
-/// the user was NOT looking at the thing they wanted to insert into. A shortcut
-/// that works sometimes is worse than one that does not exist.
-/// </para>
-/// </remarks>
+// A focused native child viewport gets the keyboard from the OS and Avalonia's
+// accelerators never fire, so the viewport intercepts these and raises them.
+// Only verbs the engine keymap does not own go here.
 public enum ShellChord
 {
     /// <summary>
     /// F11: give the viewport the whole window, or put the panels back.
     /// </summary>
-    /// <remarks>
-    /// <b>The one chord here that needs no modifier</b>, because it is not a
-    /// letter and cannot be confused with a movement key. F11 is also free: the
-    /// engine's own F11 toggles a window-mode latch that only the standalone
-    /// window's pump reads, and a hosted engine never consumes it.
-    /// </remarks>
     MaximiseViewport,
 
     /// <summary>Ctrl+backtick: show or hide the bottom region.</summary>
@@ -64,14 +40,6 @@ public enum ShellChord
     /// <summary>Ctrl+4: a light.</summary>
     InsertLight,
 
-    /// <summary>
-    /// Ctrl+P: the command palette.
-    /// </summary>
-    /// <remarks>
-    /// Here as well as on the window, because the viewport is a child window the
-    /// OS gives the keyboard to: a palette bound only at the window level would
-    /// be dead exactly when the user is looking at the scene, which is the same
-    /// defect the tilde key had.
-    /// </remarks>
+    /// <summary>Ctrl+P: the command palette.</summary>
     OpenPalette,
 }

@@ -5,7 +5,7 @@ namespace SpectraEngine.Editing.Cameras;
 /// <summary>Which way the editor camera is looking, and how it projects.</summary>
 public enum EditorViewPreset
 {
-    /// <summary>The free camera: converging, and pointed wherever it was left.</summary>
+    /// <summary>The free perspective camera.</summary>
     Perspective,
 
     /// <summary>Looking down.</summary>
@@ -40,23 +40,9 @@ public enum GridPlane
     Side,
 }
 
-/// <summary>
-/// The axis facts behind each view, in one table.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>A table rather than six methods, because the mistakes here are
-/// transpositions.</b> "Front is a yaw of -pi/2" is not something anybody can
-/// check by reading, and getting it wrong renders a picture that is plausible
-/// and mirrored: a level drawn back to front is not obviously wrong until
-/// somebody builds half a room against it. The tests pin the SCREEN axes rather
-/// than the angles, which is the form a person can verify.
-/// </para>
-/// <para>
-/// Y is up and the default forward is -Z, so a camera at yaw -pi/2 looks along
-/// -Z, which is the front view.
-/// </para>
-/// </remarks>
+/// <summary>The angles, grid plane and name behind each view.</summary>
+// Y is up; a camera at yaw -pi/2 looks along -Z, the front view. A wrong angle
+// here gives a mirrored view that still looks plausible.
 public static class EditorViewPresets
 {
     /// <summary>Whether this preset projects orthographic.</summary>
@@ -66,10 +52,8 @@ public static class EditorViewPresets
     /// <summary>The yaw a preset looks along.</summary>
     public static float YawOf(EditorViewPreset preset) => preset switch
     {
-        // Top and bottom look straight down and up; the yaw decides which way
-        // the world's axes lie on the screen rather than which way the camera
-        // faces, and -pi/2 puts +X to the right and -Z up, which is how every
-        // editor in this category draws a plan.
+        // For top and bottom the yaw sets the screen axes: -pi/2 puts +X
+        // right and -Z up.
         EditorViewPreset.Top => -MathF.PI * 0.5f,
         EditorViewPreset.Bottom => -MathF.PI * 0.5f,
 
@@ -89,13 +73,10 @@ public static class EditorViewPresets
         _ => 0f,
     };
 
-    /// <summary>Which plane the grid belongs on in this view.</summary>
-    /// <remarks>
-    /// <b>An edge-on grid is a line, which is worse than none.</b> A front view
-    /// looking at the floor grid sees one row of pixels, so the grid moves to
-    /// the plane the view is actually looking at; the question it answers, "what
-    /// will this snap to", is the same in every view.
-    /// </remarks>
+    /// <summary>
+    /// Which plane the grid is drawn on in this view: the one the view faces,
+    /// since the floor grid seen edge-on is a line.
+    /// </summary>
     public static GridPlane GridPlaneOf(EditorViewPreset preset) => preset switch
     {
         EditorViewPreset.Front or EditorViewPreset.Back => GridPlane.Front,
@@ -103,10 +84,7 @@ public static class EditorViewPresets
         _ => GridPlane.Ground,
     };
 
-    /// <summary>
-    /// The word a status bar shows. Interned, because it crosses the frame
-    /// snapshot every publish.
-    /// </summary>
+    /// <summary>The display name. Literals, so no allocation per publish.</summary>
     public static string NameOf(EditorViewPreset preset) => preset switch
     {
         EditorViewPreset.Top => "Top",

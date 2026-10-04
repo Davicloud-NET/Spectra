@@ -5,12 +5,8 @@ using System;
 
 namespace SpectraEngine.Core.Graphics.D3D12;
 
-/// <summary>
-/// Draws interleaved (position + colour) debug line vertices as a line list.
-/// Vertices are written into fresh slices of the renderer's frame upload ring
-/// each call, so no per-batch buffer management or lifetime tracking is needed.
-/// Matches the D3D11/OpenGL line batch contract.
-/// </summary>
+// Draws interleaved position + colour vertices as a line list. Vertices go
+// into the renderer's frame upload ring, so the batch owns no buffer.
 internal sealed unsafe class D3D12LineBatch : IDisposable
 {
     private const int FloatsPerVertex = 6;
@@ -32,20 +28,8 @@ internal sealed unsafe class D3D12LineBatch : IDisposable
         _shader = shader;
     }
 
-    /// <summary>
-    /// Draws one interleaved line list.
-    /// </summary>
-    /// <param name="depth">
-    /// The depth state the draw wants. It goes into the PSO key rather than
-    /// being set beside it, because on this backend depth state IS part of the
-    /// pipeline: a PSO compiled for the always-on-top overlay handed to a
-    /// depth-tested draw renders the wrong picture and reports nothing.
-    /// </param>
-    /// <param name="program">
-    /// The program to draw with, or null for the batch's own. A separate
-    /// program is what the world-line lane needs: its shaders carry the
-    /// coplanar depth nudge and the per-pixel fade.
-    /// </param>
+    // depth and blend go into the PSO key: both are pipeline state on D3D12.
+    // program null means the batch's own shader.
     public void Draw(
         ReadOnlySpan<float> interleaved,
         uint vertexCount,
@@ -64,14 +48,8 @@ internal sealed unsafe class D3D12LineBatch : IDisposable
             System.Buffer.MemoryCopy(src, slice.Cpu, byteSize, byteSize);
         }
 
-        // Debug lines always rasterize solid, regardless of the active pipeline.
-        // DepthMode.None is what makes editor overlays draw on top of the
-        // geometry they describe, which is the only way what you can see stays
-        // what you can pick. It used to be a flag set once on the shader; it is
-        // now stated at the draw, where it is true.
-        // The pass decides the target configuration, not this draw: a PSO
-        // compiled for the back buffer is invalid for an offscreen target with
-        // a different format, and D3D12 validates the pair at draw time.
+        // Target formats come from the open pass: a PSO is only valid for the
+        // formats it was compiled against.
         var target = _renderer.CurrentTargetState;
         var pso = (program ?? _shader).GetPso(
             LineLayout, FillMode.Solid, PrimitiveTopologyType.Line,

@@ -8,21 +8,9 @@ using System.Numerics;
 
 namespace SpectraEngine.Editor.Shell;
 
-/// <summary>The colour picker's surface.</summary>
-/// <remarks>
-/// <para>
-/// <b>Hand-built rather than Avalonia's ColorPicker.</b> That package is not
-/// referenced by this project, adding it means a version row and an AOT posture
-/// nobody has verified, and its ColorView would then need its tabbed Fluent
-/// template restyled against the token rule. What is actually wanted is a square
-/// and a strip.
-/// </para>
-/// <para>
-/// <b>It reports and does not decide.</b> Every movement raises a linear colour;
-/// whether that becomes an edit, and whether the edit is one undo entry or
-/// sixty, is the panel's business.
-/// </para>
-/// </remarks>
+/// <summary>The colour picker's surface. Reports movements; the caller decides what is an edit.</summary>
+// Hand-built: Avalonia's ColorPicker package is not referenced and its AOT
+// posture is unverified.
 public partial class ColorPickerView : UserControl
 {
     public ColorPickerView()
@@ -38,13 +26,13 @@ public partial class ColorPickerView : UserControl
     /// <summary>The colour being picked.</summary>
     public ColorPickerModel Model { get; } = new();
 
-    /// <summary>Raised on every movement, in linear light.</summary>
+    /// <summary>Raised on every movement, with the linear colour.</summary>
     public event Action<Vector3>? ColorChanged;
 
-    /// <summary>Enter: keep it.</summary>
+    /// <summary>Raised on Enter.</summary>
     public event Action? CommitRequested;
 
-    /// <summary>Escape: put it back.</summary>
+    /// <summary>Raised on Escape.</summary>
     public event Action? CancelRequested;
 
     /// <summary>Opens the picker on a colour, NaN.X for a mixed selection.</summary>
@@ -66,13 +54,11 @@ public partial class ColorPickerView : UserControl
         }
     }
 
-    /// <summary>Puts the markers and the hex box where the model says.</summary>
     private void SyncFromModel()
     {
         if (SquareMarker is null || StripMarker is null || HexBox is null) return;
 
-        // Guarded, because writing the box's text is indistinguishable from
-        // somebody typing into it and would post an edit per movement.
+        // Guard: writing the box's text looks like typing and would post an edit.
         _syncing = true;
         try
         {
@@ -87,12 +73,8 @@ public partial class ColorPickerView : UserControl
         }
     }
 
-    // --- The square ---------------------------------------------------------
-    //
-    // Press captures, move tracks while captured, release ends. The pointer is
-    // read against the panel rather than the event source, so a drag that
-    // wanders over a marker or off the edge keeps working: the value simply
-    // clamps, which is what a picker should do at its own boundary.
+    // Positions are read against the panel, not the event source, so a drag
+    // that leaves the edge keeps working and clamps.
 
     private void OnSquarePressed(object? sender, PointerPressedEventArgs e)
     {
@@ -139,8 +121,6 @@ public partial class ColorPickerView : UserControl
         ColorChanged?.Invoke(Model.Linear);
     }
 
-    // --- The hex box --------------------------------------------------------
-
     private void OnHexKeyDown(object? sender, KeyEventArgs e)
     {
         switch (e.Key)
@@ -164,8 +144,7 @@ public partial class ColorPickerView : UserControl
     {
         if (_syncing || HexBox is null) return;
 
-        // A refused hex puts the model's own value back rather than sticking:
-        // "#80" is unreadable and the box must not keep claiming it is a colour.
+        // Unreadable hex: put the model's value back.
         if (Model.TrySetHex(HexBox.Text)) ColorChanged?.Invoke(Model.Linear);
         else HexBox.Text = Model.Hex;
     }

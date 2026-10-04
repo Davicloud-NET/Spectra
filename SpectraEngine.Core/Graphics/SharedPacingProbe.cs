@@ -8,91 +8,33 @@ using System.Threading;
 namespace SpectraEngine.Core.Graphics;
 
 /// <summary>
-/// Drives the producer's half of the shared-target handshake against a REAL
-/// consumer on a second device whose turn arrives at a cadence this probe sets,
-/// and reports what the engine's frame rate does at each one.
+/// Measures how the engine's frame rate follows the shared target's consumer.
+/// Runs the real producer against a consumer on a second device that takes its
+/// turn at a set cadence. Call <see cref="Update"/> on the render thread.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Why this exists.</b> A composited viewport paces the engine on the keyed
-/// mutex: the producer cannot start a frame until the consumer has released key
-/// 0, and the consumer releases it from work scheduled on somebody else's UI
-/// thread. So the engine's frame rate is a function of another process's
-/// scheduler, and every instrument the engine already has is blind to that -
-/// frame time INCLUDES the wait, so a stalled producer and a slow one report
-/// the same number, and no debug layer has anything to say about either.
-/// <see cref="Renderer.DrainSharedAcquireWait"/> separates the two; this drives
-/// the thing that makes the wait happen, so the coupling can be measured
-/// instead of argued about.
-/// </para>
-/// <para>
-/// <b>Everything here is real except the cadence.</b> The frame, the resolve,
-/// the keyed-mutex bracket, the acquire and its timeout are the shipping path
-/// on a real device; the consumer is a real second device that opens the
-/// producer's NT handle, acquires key 1, copies the whole texture and hands key
-/// 0 back, which is what a compositor does. What is synthetic is only WHEN it
-/// takes its turn - which is the one thing a compositor's own scheduler decides
-/// and the one thing a headless run cannot otherwise vary.
-/// </para>
-/// <para>
-/// <b>A second DEVICE, not a second thread, and that was measured.</b> A keyed
-/// mutex is owned per device: a turn taken on the renderer's own device while
-/// the producer holds the key is refused with <c>DXGI_ERROR_INVALID_CALL</c>
-/// rather than made to wait, so the overlap being measured is the one case that
-/// cannot happen there. The first version of this probe did exactly that and
-/// reported that error several times a second.
-/// </para>
-/// <para>
-/// <b>The consumer thread SPINS to its deadline.</b> Windows' default timer
-/// granularity is 15.6 ms, so a <c>Sleep</c>-based 16.7 ms cadence is not a
-/// cadence at all; a probe that owns the machine for a few seconds can afford a
-/// busy core and cannot afford a clock that quantises every phase to the same
-/// number.
-/// </para>
-/// <para>
-/// Render thread only for <see cref="Update"/>, in the slot
-/// <see cref="ViewportCompareProbe"/> occupies.
-/// </para>
-/// </remarks>
+// The consumer has to be a second device: a keyed mutex is owned per device,
+// and a turn taken on the producer's own device fails with
+// DXGI_ERROR_INVALID_CALL instead of waiting.
 public sealed class SharedPacingProbe
 {
-    /// <summary>How long each row is measured for.</summary>
     private const double PhaseSeconds = 2.0;
 
-    /// <summary>
-    /// Frames rendered before the first phase starts, so a cold shader compile
-    /// and the first static-world build are not counted as pacing.
-    /// </summary>
+    // Keeps the shader compile and first static-world build out of the first phase.
     private const int WarmupFrames = 30;
 
     private enum ConsumerMode
     {
-        /// <summary>Nobody takes a turn at all: a pane nobody can see.</summary>
         Stopped,
 
-        /// <summary>A turn every <see cref="Phase.PeriodMs"/>, which is a compositor.</summary>
+        // A turn every Phase.PeriodMs.
         Paced,
 
-        /// <summary>Turns taken as fast as the mutex allows: the producer's own ceiling.</summary>
+        // Turns as fast as the mutex allows.
         Free,
     }
 
-    /// <summary>
-    /// One configuration, measured for <see cref="PhaseSeconds"/> of wall time.
-    /// </summary>
-    /// <param name="Name">What the row is called in the report.</param>
-    /// <param name="Mode">How the consumer behaves.</param>
-    /// <param name="PeriodMs">Milliseconds between turns while <see cref="ConsumerMode.Paced"/>.</param>
-    /// <param name="Meaning">One line for the report, so a row explains itself.</param>
     private sealed record Phase(string Name, ConsumerMode Mode, double PeriodMs, string Meaning);
 
-    /// <summary>
-    /// The script. <c>free</c> is the producer's own ceiling and therefore the
-    /// most any amount of buffering on this side could ever buy; the three
-    /// paced rows walk the consumer from a display's rate down through the rate
-    /// a composited editor was actually reported at; <c>hidden</c> is the
-    /// timeout path, the one case where the producer is SUPPOSED to be slow.
-    /// </summary>
     private static readonly Phase[] Script =
     [
         new("free", ConsumerMode.Free, 0.0,
@@ -117,8 +59,6 @@ public sealed class SharedPacingProbe
     private int _phaseFrames;
     private long _phaseHandOversAtStart;
 
-    // The producer's wait, taken from the published snapshot rather than from
-    // the renderer's own drain. See ObserveSnapshot.
     private double _waitSum;
     private int _waitWindows;
     private float _waitPeak;
@@ -127,27 +67,18 @@ public sealed class SharedPacingProbe
     public bool Running { get; private set; } = true;
 
     /// <summary>
-    /// Whether the run produced a measurement. False means it never had a
-    /// shared target or a consumer to measure with, or it threw.
+    /// Whether the run produced a measurement. Not a threshold on the numbers:
+    /// a slow machine still passes.
     /// </summary>
-    /// <remarks>
-    /// Deliberately NOT a threshold on the numbers. What a machine manages at a
-    /// given cadence is the thing being measured, and a probe that failed a run
-    /// for being slow would be asserting the answer it was written to find out.
-    /// </remarks>
     public bool Passed { get; private set; }
 
     public SharedPacingProbe(ILogger logger) => _logger = logger;
 
-    /// <summary>
-    /// One phase's measurement.
-    /// </summary>
-    /// <param name="Name">The phase's name.</param>
+    /// <summary>One phase's measurement.</summary>
     /// <param name="Fps">Engine frames per second over the phase.</param>
-    /// <param name="HandOversPerSecond">Turns the consumer completed.</param>
+    /// <param name="HandOversPerSecond">Turns the consumer completed per second.</param>
     /// <param name="AcquireAverageMs">Mean producer wait for the key.</param>
     /// <param name="AcquirePeakMs">Worst producer wait for the key.</param>
-    /// <param name="Meaning">The phase's own description.</param>
     public readonly record struct Reading(
         string Name,
         double Fps,
@@ -160,29 +91,11 @@ public sealed class SharedPacingProbe
     public IReadOnlyList<Reading> Readings => _readings;
 
     /// <summary>
-    /// Takes the producer's acquire wait from a published frame, which is the
-    /// only place it can be read from.
+    /// Takes the producer's acquire wait from a published frame. Render thread.
     /// </summary>
-    /// <remarks>
-    /// <b>Reading the renderer's own drain here would report zero, and it did.</b>
-    /// <see cref="Renderer.DrainSharedAcquireWait"/> RESETS what it returns, and
-    /// the snapshot publisher already calls it once per published frame - so a
-    /// second reader on a slower clock gets whatever happened to arrive in the
-    /// gap, which for a two-second phase at thirty publishes a second is one
-    /// sample or none at all. The first version of this probe reported 0.00 ms
-    /// of wait beside an engine running at exactly the consumer's rate, which
-    /// is the arithmetic saying it was measuring nothing.
-    /// <para>
-    /// So the peak is the MAX of what was published (exact - a maximum of
-    /// maxima is a maximum) and the average is the mean of the published
-    /// per-window averages, which weights every publish window equally rather
-    /// than by its sample count. Stated rather than hidden: it is an average of
-    /// averages, and it is within a per-window rounding of the true mean
-    /// because every window here contains frames.
-    /// </para>
-    /// Render thread, like <see cref="Update"/>: <c>FrameCompleted</c> is raised
-    /// there, so the two never race.
-    /// </remarks>
+    // Renderer.DrainSharedAcquireWait resets on read and the snapshot publisher
+    // already drains it, so reading it here would see almost nothing.
+    // The average is a mean of per-window averages, not weighted by frame count.
     public void ObserveSnapshot(FrameSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -193,10 +106,7 @@ public sealed class SharedPacingProbe
         if (snapshot.SharedAcquirePeakMs > _waitPeak) _waitPeak = snapshot.SharedAcquirePeakMs;
     }
 
-    /// <summary>
-    /// Called once per frame on the render thread, before
-    /// <see cref="Renderer.Render"/>.
-    /// </summary>
+    /// <summary>Call once per frame on the render thread, before <see cref="Renderer.Render"/>.</summary>
     public void Update(Renderer renderer)
     {
         ArgumentNullException.ThrowIfNull(renderer);
@@ -235,9 +145,6 @@ public sealed class SharedPacingProbe
 
     private void Begin(Renderer renderer)
     {
-        // Warmed up first: the first frames of a session carry a shader compile
-        // and the static-world build, and a phase that averaged those in would
-        // report the load time as pacing.
         if (++_warmupFrames < WarmupFrames) return;
 
         if (!renderer.TryGetSharedHandle(out Renderer.SharedTargetHandle handle))
@@ -250,12 +157,8 @@ public sealed class SharedPacingProbe
             return;
         }
 
-        // A D3D11 consumer whatever the backend, and that is not a
-        // simplification: the shared texture is a D3D11 one on both, because
-        // D3D12 creates it through the D3D11On12 bridge precisely so the two
-        // cannot disagree about its colour space. It asks the renderer for
-        // nothing beyond the handle it already publishes, which is what keeps
-        // both backends' files out of this entirely.
+        // A D3D11 consumer on both backends: D3D12 creates the shared texture
+        // through the D3D11On12 bridge, so it is a D3D11 texture either way.
         if (D3D11.D3D11SharedTargetConsumer.TryOpen(
                 handle.NtHandle, handle.Width, handle.Height, _logger) is not { } consumer)
         {
@@ -283,8 +186,6 @@ public sealed class SharedPacingProbe
         Phase phase = Script[_phaseIndex];
         _consumer!.Configure(phase.Mode, phase.PeriodMs);
 
-        // Cleared rather than carried, so the row that follows reports its own
-        // waits and none of the previous row's.
         _waitSum = 0;
         _waitWindows = 0;
         _waitPeak = 0f;
@@ -324,13 +225,6 @@ public sealed class SharedPacingProbe
                 reading.AcquireAverageMs, reading.AcquirePeakMs, reading.Meaning);
         }
 
-        // Said out loud rather than left to be read off the table, because the
-        // shape of the answer is the finding: the engine's frame rate and the
-        // consumer's turn rate are ONE number in every paced row, and the free
-        // row says what the producer would do if nothing paced it. Buffering on
-        // the producer's side moves the first column toward the free row and
-        // leaves the second exactly where it is, so what a viewport shows is
-        // set by the consumer's schedule and by nothing this side can do.
         _logger.LogInformation(
             "Shared pacing: the engine's frame rate equals the consumer's turn rate in every paced row - " +
             "the producer cannot start a frame until key 0 comes back, so the wait is the difference " +
@@ -345,17 +239,10 @@ public sealed class SharedPacingProbe
         Passed = passed;
     }
 
-    /// <summary>
-    /// Takes the consumer's turn on a thread of its own, at a cadence the probe
-    /// sets.
-    /// </summary>
-    /// <remarks>
-    /// The deadline advances from the SCHEDULED time rather than from when the
-    /// turn finished, so a phase is a rate rather than a floor; it is reset when
-    /// it falls more than one period behind, since a consumer that can never
-    /// catch up should report the rate it managed rather than sprint to make up
-    /// turns it missed.
-    /// </remarks>
+    // Takes the consumer's turn on its own thread. The deadline advances from the
+    // scheduled time, and resets when more than a period behind so missed turns
+    // are not made up. Spins instead of sleeping: the default Windows timer
+    // granularity is 15.6 ms.
     private sealed class PacedConsumer : IDisposable
     {
         private readonly ISharedTargetConsumer _consumer;
@@ -365,8 +252,7 @@ public sealed class SharedPacingProbe
         private volatile bool _running = true;
         private volatile int _mode = (int)ConsumerMode.Stopped;
 
-        // Read on the consumer thread, written between phases from the render
-        // thread. A torn read costs one turn of one phase.
+        // Written between phases from the render thread.
         private volatile int _periodTicks;
 
         internal PacedConsumer(ISharedTargetConsumer consumer)
@@ -380,7 +266,6 @@ public sealed class SharedPacingProbe
             _thread.Start();
         }
 
-        /// <summary>Turns completed since the consumer started.</summary>
         internal long HandOvers => Interlocked.Read(ref _handOvers);
 
         internal void Configure(ConsumerMode mode, double periodMs)
@@ -393,10 +278,7 @@ public sealed class SharedPacingProbe
         {
             _running = false;
 
-            // Joined BEFORE the consumer is released: the device and its
-            // immediate context belong to that thread while it is running, and
-            // freeing a keyed-mutex resource under a live acquire is a driver
-            // crash with no managed stack.
+            // Join first: freeing a keyed-mutex resource under a live acquire crashes the driver.
             _thread.Join(TimeSpan.FromSeconds(2));
             _consumer.Dispose();
         }

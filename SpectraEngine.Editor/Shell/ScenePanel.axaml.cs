@@ -14,19 +14,10 @@ using System.Linq;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
-/// The scene tree panel: filter, flat virtualized list, and the choreography
-/// that keeps the list in step with the engine's selection.
+/// The scene tree panel: filter, flat virtualized list, and the sync that
+/// keeps the list in step with the engine's selection.
 /// </summary>
-/// <remarks>
-/// <b>Extracted from the window so a docking layout can move it.</b> The panel
-/// owns everything about ITS controls — the selection-sync guards, the reveal
-/// gates, the scroll arithmetic, the tree keyboard — and reaches outward only
-/// through <see cref="NodeSelected"/> and the <see cref="ShellModel"/> it is
-/// given as a DataContext. What stays with the window is the snapshot drain,
-/// which must happen exactly once regardless of how many panels exist; the
-/// window hands each drained batch to the tree model and each newest snapshot
-/// to <see cref="SyncSelection"/> here.
-/// </remarks>
+// The window drains snapshots once and hands the newest to SyncSelection.
 public partial class ScenePanel : UserControl
 {
     /// <summary>
@@ -53,84 +44,59 @@ public partial class ScenePanel : UserControl
     /// <summary>Where the panel's own diagnostics go. Set by the host window.</summary>
     public ILogger? Logger { get; set; }
 
-    // Guards tree -> engine -> tree. Without it a click sets the engine's
-    // selection, the next snapshot writes it back into the tree, and the tree
-    // reports that as a fresh user selection. The symptom is not a hang: it is
-    // a selection that collapses to a single node, which reads like a broken
-    // keyboard rather than a loop.
+    // Breaks the tree -> engine -> tree loop: the snapshot writing the
+    // selection back would otherwise be reported as a fresh user selection.
     private bool _syncingSelection;
 
-    // The node the reveal last scrolled to, and the one the TREE last asked
-    // for. Together they answer "did this selection come from the viewport, and
-    // is it new?", which is the whole gate on scrolling the panel.
+    // Only reveal a selection that is new and did not come from the tree.
     private Guid _revealedId;
     private Guid _treeRequestedId;
 
-    // The modifiers of the most recent gesture that could change the list's
-    // selection. SelectionChanged itself carries none, and the difference
-    // decides whether engine-selected nodes hidden under a collapsed parent
-    // survive the change: a plain click means "the selection is now exactly
-    // this", a Ctrl/Shift gesture means "extend", and dropping the hidden part
-    // of a selection because the list cannot see it would be silent data loss.
+    // SelectionChanged carries no modifiers. Ctrl/Shift means extend, so
+    // selected nodes hidden under a collapsed parent must survive.
     private KeyModifiers _gestureModifiers;
 
-    // The row being renamed in place, if any. At most one; view state only.
     private SceneTreeNode? _renaming;
 
-    // Drag state: the in-process payload format, the movement that separates a
-    // click from a drag, and the rows involved on either end. The press args
-    // are kept because Avalonia 12's DoDragDropAsync wants the PRESS that
-    // started the gesture, while the threshold is only crossed during a move.
     private static readonly DataFormat<Guid[]> DragFormat =
         DataFormat.CreateInProcessFormat<Guid[]>("spectra-scene-nodes");
 
     private const double DragThresholdPixels = 4.0;
     private SceneTreeNode? _pressedRow;
+    // DoDragDropAsync wants the press that started the gesture, not the move.
     private PointerPressedEventArgs? _pressEvent;
     private Point _pressPoint;
     private bool _dragInProgress;
     private SceneTreeNode? _deferredCollapse;
     private SceneTreeNode? _dropRow;
 
-    // Scratch collections reused per sync, because this runs at the snapshot
-    // rate against a selection that is usually unchanged.
+    // Reused per sync; this runs at the snapshot rate.
     private readonly HashSet<SceneTreeNode> _listSelectionScratch = [];
     private readonly List<SceneTreeNode> _desiredListSelection = [];
 
-    // The selection this panel last asked the engine for, held until the
-    // engine's own snapshots agree with it. Between the two, every published
-    // snapshot still describes the selection the gesture replaced.
+    // The selection last requested, held until the engine echoes it. Snapshots
+    // in between still describe the selection the gesture replaced.
     private readonly HashSet<Guid> _pendingSelection = [];
     private bool _hasPendingSelection;
     private int _pendingSelectionTicks;
 
-    // Pump ticks (~16 ms each) to wait for the echo before deferring to the
-    // engine regardless. Comfortably longer than a publish interval, far
-    // shorter than a person notices.
+    // Snapshots to wait for the echo before the engine wins anyway.
     private const int PendingSelectionTickLimit = 8;
 
     public ScenePanel()
     {
         InitializeComponent();
 
-        // TUNNEL, not the bubbling handler XAML would attach. ListBox handles
-        // every arrow key itself: on a vertical panel a Left or Right press
-        // still runs its selection move, which re-selects the row it is already
-        // on, returns true, and marks the event handled. A bubbling handler for
-        // the tree's own collapse/expand would therefore never run at all.
+        // Tunnel: ListBox marks Left and Right handled itself, so a bubbling
+        // handler for collapse/expand would never run.
         SceneTree.AddHandler(KeyDownEvent, OnTreeKeyDown, RoutingStrategies.Tunnel);
 
-        // Tunnel as well: this observes the gesture (its modifiers, which row
-        // a right-press landed on, whether a drag might start) before the list
-        // runs its own selection logic and before a context menu opens. It
-        // claims the press in exactly one case, the deferred multi-selection
-        // collapse.
+        // Tunnel: must see the press before the list's own selection logic
+        // and before a context menu opens.
         SceneTree.AddHandler(PointerPressedEvent, OnTreePointerPressed, RoutingStrategies.Tunnel);
         SceneTree.AddHandler(PointerMovedEvent, OnTreePointerMoved, RoutingStrategies.Tunnel);
         SceneTree.AddHandler(PointerReleasedEvent, OnTreePointerReleased, RoutingStrategies.Tunnel);
 
-        // The drop side: rows accept sibling and reparent drops, with the
-        // indicator drawn from model state like every other row visual.
         DragDrop.SetAllowDrop(SceneTree, true);
         SceneTree.AddHandler(DragDrop.DragOverEvent, OnTreeDragOver);
         SceneTree.AddHandler(DragDrop.DropEvent, OnTreeDrop);
@@ -139,13 +105,12 @@ public partial class ScenePanel : UserControl
 
     private ShellModel? Model => DataContext as ShellModel;
 
-    /// <summary>Whether the filter box has keyboard focus, for the reveal gate.</summary>
+    /// <summary>Whether the filter box has keyboard focus.</summary>
     public bool IsFilterFocused => FilterBox.IsFocused;
 
     /// <summary>
-    /// Forgets which selection was last revealed and which row the tree last
-    /// asked for. Called when a session ends, so the next session's first pick
-    /// is revealed rather than mistaken for an echo.
+    /// Clears the reveal and pending-selection state. Call when a session ends,
+    /// so the next session's first pick is not mistaken for an echo.
     /// </summary>
     public void ResetSelectionMemory()
     {
@@ -159,8 +124,7 @@ public partial class ScenePanel : UserControl
 
     /// <summary>
     /// Applies the engine's reported selection to the tree and reveals it.
-    /// Called by the window's pump with the NEWEST snapshot only — selection
-    /// is a state, not a history.
+    /// Pass the newest snapshot only.
     /// </summary>
     public void SyncSelection(FrameSnapshot snapshot)
     {
@@ -169,20 +133,12 @@ public partial class ScenePanel : UserControl
         if (Model?.Tree is not { } tree)
             return;
 
-        // A gesture is in flight: this snapshot was built before the engine
-        // saw it, so applying it would briefly revert the user's own click and
-        // make the next incremental Ctrl-click compute against a selection
-        // nobody asked for. Skipped whole - flags and list together - until an
-        // echo carrying the requested set arrives.
+        // This snapshot predates the user's click. Applying it would revert
+        // the click and break the next Ctrl-click.
         if (_hasPendingSelection)
         {
-            // Given up on after a few ticks rather than held forever: the
-            // engine legitimately answers with a DIFFERENT set (ids that left
-            // the scene are skipped, a verb rewrote the selection), and a
-            // panel that waited for an echo that will never come would stop
-            // showing the engine's selection at all. The engine is
-            // authoritative; this only defers to it a fraction of a second
-            // late.
+            // Bounded: the engine may answer with a different set (an id left
+            // the scene), and then the echo never comes.
             if (!MatchesPending(snapshot.SelectedIds) && ++_pendingSelectionTicks < PendingSelectionTickLimit)
                 return;
 
@@ -212,13 +168,8 @@ public partial class ScenePanel : UserControl
         return true;
     }
 
-    /// <summary>
-    /// Reconciles the ListBox's own selection with the engine's. The row
-    /// highlight comes from model flags, but the LIST's selection is the input
-    /// to the next Ctrl/Shift gesture, and left stale it makes that gesture
-    /// compute against a selection nobody has any more (a viewport pick
-    /// followed by a Ctrl-click would drop the picked node silently).
-    /// </summary>
+    // The highlight comes from model flags, but the ListBox's own selection
+    // feeds the next Ctrl/Shift gesture, so it has to match the engine's too.
     private void SyncListSelection(SceneTreeModel tree, IReadOnlyList<Guid> selected)
     {
         if (SceneTree.SelectedItems is not { } items)
@@ -227,14 +178,12 @@ public partial class ScenePanel : UserControl
         _desiredListSelection.Clear();
         for (int i = 0; i < selected.Count; i++)
         {
-            // Only rows the list can see: an item outside ItemsSource cannot
-            // be selected, and hidden nodes keep their model flag instead.
+            // An item outside ItemsSource cannot be selected.
             if (tree.TryGetNode(selected[i], out SceneTreeNode node) && tree.IsRowVisible(node))
                 _desiredListSelection.Add(node);
         }
 
-        // Usually identical to last time; compare before mutating, because
-        // clearing and re-adding fires selection-changed churn per row.
+        // Usually unchanged. Clear and re-add fires SelectionChanged per row.
         if (items.Count == _desiredListSelection.Count)
         {
             _listSelectionScratch.Clear();
@@ -257,27 +206,9 @@ public partial class ScenePanel : UserControl
             items.Add(_desiredListSelection[i]);
     }
 
-    /// <summary>
-    /// Scrolls the tree to whatever was just picked in the viewport, expanding
-    /// the collapsed parents in its way.
-    /// </summary>
-    /// <remarks>
-    /// <b>Three gates, and each of them is a way this feature becomes
-    /// annoying.</b> It reveals only when the selection actually CHANGED, or
-    /// every pump tick would re-scroll a panel the user is trying to browse.
-    /// It reveals only when the change did not come from the tree itself, since
-    /// a row somebody just clicked is already on screen and yanking the
-    /// viewport under them is pure noise. And it stands down while the filter
-    /// box has focus, because scrolling the list out from under someone
-    /// mid-search is the single most-complained-about behaviour in editors that
-    /// ship this.
-    /// <para>
-    /// <b>The LAST id, not the first.</b> They arrive in selection order, so
-    /// the last is the most recently added and the one the user just acted on;
-    /// revealing the first would mean a marquee over fifty objects scrolls to
-    /// whichever happened to be picked up earliest.
-    /// </para>
-    /// </remarks>
+    // Scrolls the tree to a viewport pick, expanding collapsed parents.
+    // Only when the selection changed, did not come from the tree, and the
+    // filter box is not focused.
     private void RevealSelection(SceneTreeModel tree, IReadOnlyList<Guid> selected)
     {
         if (selected.Count == 0)
@@ -286,14 +217,14 @@ public partial class ScenePanel : UserControl
             return;
         }
 
+        // Ids are in selection order; the last is the one just acted on.
         Guid target = selected[^1];
         if (target == _revealedId)
             return;
 
         _revealedId = target;
 
-        // The tree already knows about this one: it is the echo of a row the
-        // user clicked, coming back a frame later.
+        // Echo of a row the user clicked in the tree.
         if (target == _treeRequestedId)
             return;
 
@@ -302,19 +233,13 @@ public partial class ScenePanel : UserControl
 
         if (!tree.TryReveal(target, out SceneTreeNode node))
         {
-            // Not in the tree yet, so nothing to scroll to. Forgetting that we
-            // "revealed" it lets the next tick try again once its Added change
-            // has drained.
+            // Not in the tree yet. Clear so the next tick retries.
             _revealedId = Guid.Empty;
             return;
         }
 
-        // Posted rather than done here: expanding a parent is a change to the
-        // MODEL, and the rows it brings into existence have no extent until the
-        // layout pass that follows — an offset written now is computed against
-        // an estimate the panel has not finished. The list's own selection is
-        // deliberately NOT touched: under multi-select, assigning SelectedItem
-        // would collapse a marquee's fifty rows to one.
+        // Posted: rows an expand just added have no extent until layout runs.
+        // Don't assign SelectedItem here, it would collapse a multi-selection.
         Dispatcher.UIThread.Post(() =>
         {
             if (Model?.Tree is not { } current || !ReferenceEquals(current, tree))
@@ -324,44 +249,18 @@ public partial class ScenePanel : UserControl
         }, DispatcherPriority.Loaded);
     }
 
-    // Where a revealed row should sit in the panel, as a fraction of the way
-    // down it. A third leaves roughly twice as much hierarchy visible below the
-    // node as above, which is the direction a tree is usually read.
+    // How far down the panel a revealed row rests.
     private const double RevealRestingFraction = 1.0 / 3.0;
 
-    /// <summary>
-    /// Places a revealed row a third of the way down the panel instead of flush
-    /// against whichever edge it was scrolled past.
-    /// </summary>
-    /// <remarks>
-    /// <b>Minimal scrolling is technically "in view" and practically
-    /// useless.</b> What a user wants after picking an object is to see what is
-    /// AROUND it in the hierarchy, and a row on the last pixel of the panel has
-    /// neighbours on one side only.
-    /// <para>
-    /// <b>The position is computed from the row's INDEX, not from its
-    /// container.</b> Under virtualization a container exists only if the row
-    /// is already on screen, which is precisely not the case when something
-    /// needs revealing; a flat list of uniform rows makes the arithmetic exact
-    /// without one. The row height comes from the scroller's own extent divided
-    /// by the row count, so it stays right if the row height ever changes.
-    /// </para>
-    /// <para>
-    /// <b>Setting the offset directly is not fussiness either.</b> The tidy
-    /// alternative, asking for a deliberately oversized <c>BringIntoView</c>
-    /// rect, does nothing: the rect is clamped to the control. Measured, with
-    /// the row landing on the top edge one time and the bottom the next.
-    /// </para>
-    /// </remarks>
+    // Computed from the row's index: an off-screen row has no container under
+    // virtualization. Sets the offset directly because an oversized
+    // BringIntoView rect is clamped to the control and does nothing.
     private void ScrollWithContext(SceneTreeModel tree, SceneTreeNode node)
     {
         int index = tree.Rows.IndexOf(node);
         if (index < 0 || tree.Rows.Count == 0)
             return;
 
-        // The list exposes its own scroller: a public property bound to the
-        // template's PART_ScrollViewer. Walking the visual tree for one works
-        // and is a guess about somebody else's template.
         if (SceneTree.Scroll is not { } scroller)
             return;
 
@@ -380,20 +279,12 @@ public partial class ScenePanel : UserControl
 
     private void OnTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        // The pump is writing the model's selection flags right now; what the
-        // control is reporting is the engine's own answer coming back, not a
-        // user's click.
         if (_syncingSelection)
             return;
 
-        // Rows are leaving the list because the PROJECTION changed - a
-        // collapse, an engine-side delete draining in, a filter re-run, a
-        // whole-graph rebuild. The control drops each removed row from its
-        // selection and reports that exactly as it reports a click, so
-        // without this a collapsed group told the engine "the user deselected
-        // everything inside me" and the selection was gone for good. Hidden
-        // nodes keep their model flag instead, which is what the next
-        // SyncSelection re-reconciles against.
+        // The list drops removed rows from its selection and reports that
+        // like a click. Without this, collapsing a group would deselect
+        // everything inside it in the engine.
         if (Model?.Tree is { IsPatchingRows: true })
             return;
 
@@ -407,23 +298,13 @@ public partial class ScenePanel : UserControl
             }
         }
 
-        // The list can only report rows it can SEE. Under an additive gesture
-        // (Ctrl or Shift held), engine-selected nodes folded away under a
-        // collapsed parent are still part of what the user means, so they are
-        // unioned back in; a plain click really does mean "exactly this".
+        // The list only reports visible rows. An additive gesture keeps the
+        // selected nodes hidden under collapsed parents.
         if ((_gestureModifiers & (KeyModifiers.Control | KeyModifiers.Shift)) != 0)
             Model?.Tree?.CollectHiddenSelected(ids);
 
-        // Remembered so the echo of this selection, arriving from the engine a
-        // frame later, does not scroll the panel to a row that is already under
-        // the user's cursor.
         _treeRequestedId = ids.Count > 0 ? ids[^1] : Guid.Empty;
 
-        // ...and remembered as a whole set, because until the engine echoes it
-        // back every snapshot still describes the selection as it was BEFORE
-        // this gesture. Writing that stale set into the list would undo the
-        // click the user just made, and the next Ctrl-click would then compute
-        // against it and drop a node that was already applied.
         _pendingSelection.Clear();
         for (int i = 0; i < ids.Count; i++)
             _pendingSelection.Add(ids[i]);
@@ -432,13 +313,6 @@ public partial class ScenePanel : UserControl
         SelectionRequested?.Invoke(ids);
     }
 
-    /// <summary>
-    /// Observes each press before the list acts on it: records the gesture's
-    /// modifiers, arms a possible drag, and gives a right-press the
-    /// select-before-menu behaviour every editor shares (an unselected row
-    /// becomes the selection; a selected one keeps the whole set for the menu
-    /// to act on).
-    /// </summary>
     private void OnTreePointerPressed(object? sender, PointerPressedEventArgs e)
     {
         _gestureModifiers = e.KeyModifiers;
@@ -449,10 +323,10 @@ public partial class ScenePanel : UserControl
             if (RowNodeFrom(e.Source) is not { } node)
                 return;
 
+            // Right-press on an unselected row selects it before the menu
+            // opens; on a selected row the whole set stays.
             if (!node.IsSelected && SceneTree.SelectedItems is { } items)
             {
-                // Through the list's own selection, so the ordinary
-                // changed-event path posts it exactly like a left click would.
                 items.Clear();
                 items.Add(node);
             }
@@ -463,9 +337,7 @@ public partial class ScenePanel : UserControl
         if (!props.IsLeftButtonPressed || _renaming is not null)
             return;
 
-        // Only a press on the row body arms a drag: the chevron and the rename
-        // editor are controls in their own right, and a drag that starts from
-        // an expander click is how trees grow accidental reparents.
+        // A press on the chevron or the rename box must not arm a drag.
         if (RowNodeForDrag(e.Source) is not { } row)
             return;
 
@@ -473,11 +345,9 @@ public partial class ScenePanel : UserControl
         _pressEvent = e;
         _pressPoint = e.GetPosition(SceneTree);
 
-        // Deferred collapse, the same trick the viewport's press arbitration
-        // uses: a plain press on one row of a multi-selection must NOT collapse
-        // the selection yet, or dragging three rows would always drag one. The
-        // press is claimed, and the collapse happens on release if no drag
-        // began.
+        // A plain press on one row of a multi-selection must not collapse it
+        // yet, or dragging three rows would drag one. Collapse on release if
+        // no drag began.
         if (row.IsSelected && e.KeyModifiers == KeyModifiers.None &&
             SceneTree.SelectedItems is { Count: > 1 })
         {
@@ -519,8 +389,6 @@ public partial class ScenePanel : UserControl
 
         _deferredCollapse = null;
 
-        // No drag happened, so the press means what a press means: select
-        // exactly this row.
         if (!_dragInProgress && ReferenceEquals(RowNodeFrom(e.Source), node) &&
             SceneTree.SelectedItems is { } items)
         {
@@ -536,10 +404,8 @@ public partial class ScenePanel : UserControl
         _pressedRow = null;
         _pressEvent = null;
 
-        // Dragging a selected row drags the whole selection, hidden rows
-        // included; dragging an unselected one drags just it (the list will
-        // have selected it on press anyway, but the drag must not depend on
-        // that race).
+        // A selected row drags the whole selection, hidden rows included.
+        // An unselected one drags only itself.
         var ids = new List<Guid>();
         if (origin.IsSelected)
         {
@@ -603,12 +469,8 @@ public partial class ScenePanel : UserControl
             ReparentRequested?.Invoke(ids, parentId, index);
     }
 
-    /// <summary>
-    /// Turns a drag position into a drop decision: which row indicates, and
-    /// which (parent, index) the engine would be asked for. Returns false for
-    /// anything that must not drop — foreign data, a target inside the dragged
-    /// subtree, a sibling slot beside a top-level row.
-    /// </summary>
+    // False for anything that must not drop: foreign data, a target inside the
+    // dragged subtree, a sibling slot beside a top-level row.
     private bool TryResolveDrop(
         DragEventArgs e, out SceneTreeNode? row, out SceneTreeDropZone zone, out Guid parentId, out int index)
     {
@@ -625,8 +487,7 @@ public partial class ScenePanel : UserControl
 
         if (RowBorderFrom(e.Source) is not { } border || border.DataContext is not SceneTreeNode target)
         {
-            // Empty space below the rows: append into the scene root, which is
-            // where an insert puts new things too.
+            // Empty space below the rows: append to the scene root.
             if (tree.Roots.Count != 1 || ContainsId(ids, tree.Roots[0].Id))
                 return false;
 
@@ -643,13 +504,12 @@ public partial class ScenePanel : UserControl
         SceneTreeNode? parent = zone == SceneTreeDropZone.Into ? target : tree.ParentOf(target);
         if (parent is null)
         {
-            // Beside a top-level row there is no sibling slot to name: the
-            // scene root is not a row and its children ARE the top level.
+            // The scene root is not a row, so a top-level row has no sibling slot.
             return false;
         }
 
-        // A drop anywhere inside the dragged subtree is a cycle; the engine
-        // refuses it too, but the cursor must already say no.
+        // A drop inside the dragged subtree would be a cycle. The engine
+        // refuses it too, but the cursor should say no first.
         for (SceneTreeNode? ancestor = parent; ancestor is not null; ancestor = tree.ParentOf(ancestor))
         {
             if (ContainsId(ids, ancestor.Id))
@@ -697,7 +557,6 @@ public partial class ScenePanel : UserControl
         _dropRow = null;
     }
 
-    /// <summary>The row a visual-tree event source belongs to, or null.</summary>
     private static SceneTreeNode? RowNodeFrom(object? source)
     {
         for (Visual? current = source as Visual; current is not null; current = current.GetVisualParent())
@@ -709,10 +568,7 @@ public partial class ScenePanel : UserControl
         return null;
     }
 
-    /// <summary>
-    /// Like <see cref="RowNodeFrom"/> but refuses a press that started inside
-    /// an interactive child (the chevron, the rename editor).
-    /// </summary>
+    // Like RowNodeFrom, but null for a press inside the chevron or the rename box.
     private static SceneTreeNode? RowNodeForDrag(object? source)
     {
         for (Visual? current = source as Visual; current is not null; current = current.GetVisualParent())
@@ -730,7 +586,6 @@ public partial class ScenePanel : UserControl
         return null;
     }
 
-    /// <summary>The row's root Border, for position arithmetic within it.</summary>
     private static Border? RowBorderFrom(object? source)
     {
         for (Visual? current = source as Visual; current is not null; current = current.GetVisualParent())
@@ -747,15 +602,10 @@ public partial class ScenePanel : UserControl
 
     private void OnRowDoubleTapped(object? sender, TappedEventArgs e)
     {
-        // Unity's muscle memory: double-click means "take me there". Expansion
-        // has the chevron and the keyboard; rename has F2 and the menu.
         if (_renaming is not null)
             return;
 
-        // Not from the chevron: opening and closing a group quickly is an
-        // ordinary way to look inside one, and it must not also fly the camera
-        // somewhere. RowNodeForDrag returns null for exactly the interactive
-        // children a row carries.
+        // Two quick chevron clicks must not also frame the camera.
         if (RowNodeForDrag(e.Source) is null)
             return;
 
@@ -763,9 +613,7 @@ public partial class ScenePanel : UserControl
         e.Handled = true;
     }
 
-    // Claimed before the row can act on it: clicking an expander is not a way
-    // of selecting the thing it belongs to, which is what every file tree does
-    // and what a user pressing it repeatedly to browse expects.
+    // Clicking the chevron must not select its row.
     private void OnChevronPressed(object? sender, PointerPressedEventArgs e) => e.Handled = true;
 
     private void OnChevronClicked(object? sender, RoutedEventArgs e)
@@ -777,56 +625,32 @@ public partial class ScenePanel : UserControl
         Dispatcher.UIThread.Post(LogRealization, DispatcherPriority.Loaded);
     }
 
-    /// <summary>
-    /// Reports how many rows the panel actually built against how many it is
-    /// showing.
-    /// </summary>
-    /// <remarks>
-    /// <b>The whole point of the flat projection is that these two numbers
-    /// differ</b>, and nothing else in the app would say if they stopped. A
-    /// panel that quietly reverted to realising a container per row would look
-    /// completely correct and simply get slower with the scene, which is the
-    /// failure this replaced. Debug level: it costs one enumeration of the
-    /// realised set, on a user action.
-    /// </remarks>
+    // Nothing else would show it if virtualization stopped working.
     private void LogRealization()
     {
         if (Model?.Tree is not { } tree || SceneTree.ItemsPanelRoot is not { } panel)
             return;
 
-        // Children is the realised set for a virtualizing panel: the containers
-        // it has actually built. GetRealizedContainers is protected, and this
-        // is the same number from the outside.
+        // For a virtualizing panel, Children is the realised set.
         Logger?.LogDebug(
             "Scene tree: {Realized} row(s) realised of {Visible} visible, {Total} in the scene ({Panel})",
             panel.Children.Count, tree.Rows.Count, tree.Count, panel.GetType().Name);
     }
 
-    /// <summary>
-    /// Left and right collapse and walk out of the hierarchy, which is the tree
-    /// keyboard pattern every file browser uses.
-    /// </summary>
-    /// <remarks>
-    /// Up and down are the list's own and are left alone. The flat projection is
-    /// what makes "go to my parent" a backwards scan for the first shallower
-    /// row rather than a walk of the graph.
-    /// </remarks>
     private void OnTreeKeyDown(object? sender, KeyEventArgs e)
     {
         _gestureModifiers = e.KeyModifiers;
 
-        // A rename in progress owns the keyboard: this tunnel handler fires
-        // before the TextBox sees anything, and claiming Left/Right here would
-        // break the caret.
+        // This tunnels ahead of the rename TextBox. Taking Left/Right here
+        // would break its caret.
         if (_renaming is not null)
             return;
 
         if (Model?.Tree is not { } tree || SceneTree.SelectedItem is not SceneTreeNode node)
             return;
 
-        // The verbs every outliner owes its keyboard. They fire here, with the
-        // tree focused, because the engine keymap only hears keys the native
-        // viewport receives.
+        // Handled here because the engine keymap only hears keys the viewport
+        // receives.
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             EditorHostCommand? chord = e.Key switch
@@ -882,6 +706,7 @@ public partial class ScenePanel : UserControl
             return;
         }
 
+        // Parent is the first shallower row above.
         int index = tree.Rows.IndexOf(node);
         for (int i = index - 1; i >= 0; i--)
         {
@@ -906,28 +731,18 @@ public partial class ScenePanel : UserControl
 
     private void OnClearFilterClicked(object? sender, RoutedEventArgs e) => Model?.ClearFilter();
 
-    // --- In-place rename -----------------------------------------------------
-
-    /// <summary>
-    /// Puts a row into rename mode: F2, and the context menu's Rename.
-    /// </summary>
     private void BeginRename(SceneTreeNode node)
     {
         CancelRename();
 
-        // A row that is scrolled out of the virtualization window has no
-        // container to put an editor in, so it is brought back first. Without
-        // this, F2 on a selected row the user had scrolled away from armed a
-        // rename with no visible editor - and because the tree's key handler
-        // stands down while a rename is live, the whole tree keyboard went
-        // dead with nothing on screen explaining why.
+        // A row scrolled out of the virtualization window has no container to
+        // hold the editor.
         SceneTree.ScrollIntoView(node);
 
         _renaming = node;
         node.IsRenaming = true;
 
-        // The editor only exists after the visibility change lays out; focus
-        // aimed at an invisible control lands nowhere and the edit looks dead.
+        // Posted: the editor cannot take focus until it has been laid out.
         Dispatcher.UIThread.Post(() =>
         {
             if (!ReferenceEquals(_renaming, node))
@@ -936,16 +751,15 @@ public partial class ScenePanel : UserControl
             if (SceneTree.ContainerFromItem(node) is Control container &&
                 container.GetVisualDescendants().OfType<TextBox>().FirstOrDefault() is { } box)
             {
-                // Set imperatively, never bound: a binding would let the ~30 Hz
-                // snapshot republish rewrite the text mid-keystroke.
+                // Not bound: a snapshot republish would rewrite the text
+                // mid-keystroke.
                 box.Text = node.Name;
                 box.Focus();
                 box.SelectAll();
                 return;
             }
 
-            // No editor could be reached. Disarming is what keeps the failure
-            // to one dead keystroke instead of a wedged panel.
+            // No editor found. Cancel, or the tree keyboard stays dead.
             Logger?.LogDebug("Rename: no row editor for '{Name}'; the tree keyboard stays live", node.Name);
             CancelRename();
         }, DispatcherPriority.Loaded);
@@ -968,10 +782,6 @@ public partial class ScenePanel : UserControl
         _renaming = null;
         node.IsRenaming = false;
 
-        // The empty and unchanged refusals live in the engine verb; repeating
-        // them here would just be a second copy to keep honest. Whitespace is
-        // filtered because raising a request that is certain to be refused
-        // reads as a rename that silently failed.
         string text = (box.Text ?? string.Empty).Trim();
         if (text.Length > 0 && !string.Equals(text, node.Name, StringComparison.Ordinal))
             RenameRequested?.Invoke(node.Id, text);
@@ -990,8 +800,7 @@ public partial class ScenePanel : UserControl
         }
         else if (e.Key == Key.Escape)
         {
-            // Cancel FIRST: the focus change fires LostFocus, whose commit
-            // must find nothing to commit.
+            // Cancel before moving focus: LostFocus commits.
             CancelRename();
             SceneTree.Focus();
             e.Handled = true;
@@ -1000,19 +809,12 @@ public partial class ScenePanel : UserControl
 
     private void OnRenameBlurred(object? sender, RoutedEventArgs e)
     {
-        // Blur commits, exactly like the property panel's fields: Escape is
-        // what abandoning a half-typed name looks like, not clicking away.
+        // Blur commits, like the property panel's fields. Escape abandons.
         if (sender is TextBox box)
             CommitRename(box);
     }
 
-    // --- Context menu --------------------------------------------------------
-
-    // Each handler reads the row that opened the menu from its own
-    // DataContext, which Avalonia inherits from the row the menu was attached
-    // to. The verbs act on the engine's selection; the right-press handler has
-    // already ensured the row is part of it.
-
+    // A menu item inherits its DataContext from the row the menu opened on.
     private static SceneTreeNode? MenuNode(object? sender) =>
         (sender as Control)?.DataContext as SceneTreeNode;
 

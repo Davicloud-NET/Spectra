@@ -5,55 +5,12 @@ using System.Numerics;
 namespace SpectraEngine.Core.Entities;
 
 /// <summary>
-/// The one home for the string form of every <see cref="KeyvalueType"/>: how a
-/// value is written, and how a written value is read back.
+/// Converts keyvalues to and from their string form. Culture-invariant, and
+/// non-finite floats have no string form: formatting one throws, parsing one fails.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Keyvalues are string-typed on the wire</b>, the way an FGD and a VMF are:
-/// a map carries text, a schema declares what that text MEANS, and the
-/// conversion happens exactly once, when a value is bound to a live entity. That
-/// is what lets a map naming a class this build has never heard of round-trip
-/// byte for byte, and it is why a schema default is a string too.
-/// </para>
-/// <para>
-/// <b>One home, because two would drift.</b> A map reader, a console command, a
-/// property panel, an entity binder and a schema exporter all convert between
-/// these two forms; the moment two of them spell a vector differently, a value
-/// saved by one is refused by another, and the file looks corrupt.
-/// </para>
-/// <para>
-/// <b>Everything is invariant, always.</b> A comma-decimal machine writing
-/// <c>"1,5"</c> produces a file no other machine can read, and one reading
-/// <c>"1.5"</c> with its own culture parses it as fifteen. Neither reports
-/// anything. Every conversion here states
-/// <see cref="CultureInfo.InvariantCulture"/> and the number styles exclude
-/// group separators, so <c>"1,5"</c> is refused rather than silently accepted as
-/// some other number.
-/// </para>
-/// <para>
-/// <b>Format and TryParse agree on which values EXIST.</b> A non-finite float has
-/// no wire form (the parse side refuses <c>NaN</c> and infinities, because a
-/// keyvalue carrying one poisons every arithmetic it reaches), so formatting one
-/// throws instead of writing text that cannot be read back.
-/// </para>
-/// <para>
-/// <b>An overload per value type, not one entry point taking a
-/// <see cref="KeyvalueType"/>.</b> Each type carries a different payload, so a
-/// single method keyed on the enum would have to take <c>object</c> and box
-/// every number the engine writes. The enum appears where a value's declared
-/// type is all there is to go on: <see cref="IsWellFormed"/>, which is what a
-/// reader and a property panel ask. The text types have no <c>Format</c> at all,
-/// because their wire form IS the value.
-/// </para>
-/// </remarks>
 public static class KeyvalueWire
 {
-    /// <summary>The wire form of a <see cref="KeyvalueType.Bool"/>.</summary>
-    /// <remarks>
-    /// <c>"1"</c> and <c>"0"</c>, never <c>"true"</c>: one spelling, so a value
-    /// written by any producer round-trips to the same bytes.
-    /// </remarks>
+    /// <summary>The wire form of a <see cref="KeyvalueType.Bool"/>: <c>"1"</c> or <c>"0"</c>.</summary>
     public static string Format(bool value) => value ? "1" : "0";
 
     /// <summary>The wire form of a <see cref="KeyvalueType.Int"/>.</summary>
@@ -63,59 +20,39 @@ public static class KeyvalueWire
     public static string Format(uint value) => value.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>The wire form of a <see cref="KeyvalueType.Float"/>.</summary>
-    /// <exception cref="ArgumentOutOfRangeException">The value is not finite.</exception>
     public static string Format(float value) => Finite(value).ToString(CultureInfo.InvariantCulture);
 
     /// <summary>The wire form of a <see cref="KeyvalueType.Vec2"/>: <c>"x y"</c>.</summary>
-    /// <exception cref="ArgumentOutOfRangeException">A component is not finite.</exception>
     public static string Format(Vector2 value) =>
         string.Create(CultureInfo.InvariantCulture, $"{Finite(value.X)} {Finite(value.Y)}");
 
     /// <summary>The wire form of a <see cref="KeyvalueType.Vec3"/>: <c>"x y z"</c>.</summary>
-    /// <exception cref="ArgumentOutOfRangeException">A component is not finite.</exception>
     public static string Format(Vector3 value) =>
         string.Create(CultureInfo.InvariantCulture, $"{Finite(value.X)} {Finite(value.Y)} {Finite(value.Z)}");
 
     /// <summary>The wire form of a <see cref="KeyvalueType.Vec4"/>: <c>"x y z w"</c>.</summary>
-    /// <exception cref="ArgumentOutOfRangeException">A component is not finite.</exception>
     public static string Format(Vector4 value) =>
         string.Create(
             CultureInfo.InvariantCulture,
             $"{Finite(value.X)} {Finite(value.Y)} {Finite(value.Z)} {Finite(value.W)}");
 
     /// <summary>
-    /// The wire form of a <see cref="KeyvalueType.Color"/>: three LINEAR floats,
-    /// <c>"r g b"</c>.
+    /// The wire form of a <see cref="KeyvalueType.Color"/>: three linear floats,
+    /// <c>"r g b"</c>. Same convention as a light's colour in the map format.
     /// </summary>
-    /// <remarks>
-    /// <b>Linear, which is the same convention the map format already writes a
-    /// light's colour in</b> (<c>MapLight.Color</c> is a linear triple, not a
-    /// display colour). Everything the engine shades with is linear light, so a
-    /// colour that arrives from a picker is converted once, at the edge, by
-    /// <c>ColorSpace.SrgbToLinear</c>; storing the display value instead would
-    /// make two files disagree about what the same three numbers mean.
-    /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException">A component is not finite.</exception>
     public static string FormatColor(Vector3 linearColor) => Format(linearColor);
 
     /// <summary>
     /// The wire form of a <see cref="KeyvalueType.Angles"/>: three floats in
-    /// DEGREES, <c>"pitch yaw roll"</c>.
+    /// degrees, <c>"pitch yaw roll"</c>.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">A component is not finite.</exception>
     public static string FormatAngles(Vector3 degrees) => Format(degrees);
 
     /// <summary>
     /// The wire form of a <see cref="KeyvalueType.NodeRef"/>: a
-    /// <c>SceneNode.Id</c> in the hyphenated form.
+    /// <c>SceneNode.Id</c> in the hyphenated form. "No reference" is the empty
+    /// string, which this never produces.
     /// </summary>
-    /// <remarks>
-    /// Every value formats, <see cref="Guid.Empty"/> included, so the round trip
-    /// has no exception in it. "No reference" is the EMPTY STRING, which nothing
-    /// formats and which <see cref="IsWellFormed"/> accepts on its own terms: an
-    /// unset reference and a reference to a node that is not there are different
-    /// facts and must not share a spelling.
-    /// </remarks>
     public static string Format(Guid nodeId) => nodeId.ToString("D");
 
     /// <summary>Reads a <see cref="KeyvalueType.Bool"/>.</summary>
@@ -186,7 +123,7 @@ public static class KeyvalueWire
         return true;
     }
 
-    /// <summary>Reads a <see cref="KeyvalueType.Color"/> as LINEAR RGB.</summary>
+    /// <summary>Reads a <see cref="KeyvalueType.Color"/> as linear RGB.</summary>
     public static bool TryParseColor(string? text, out Vector3 linearColor) =>
         TryParseVec3(text, out linearColor);
 
@@ -195,24 +132,17 @@ public static class KeyvalueWire
         TryParseVec3(text, out degrees);
 
     /// <summary>
-    /// Reads a <see cref="KeyvalueType.NodeRef"/>. The empty string means "no
-    /// reference" and is refused here rather than yielding
-    /// <see cref="Guid.Empty"/>, so a caller cannot confuse an unset reference
-    /// with one pointing at a node that does not exist.
+    /// Reads a <see cref="KeyvalueType.NodeRef"/>. The empty string ("no
+    /// reference") fails rather than yielding <see cref="Guid.Empty"/>.
     /// </summary>
     public static bool TryParseNodeRef(string? text, out Guid nodeId) =>
         Guid.TryParseExact(Trim(text), "D", out nodeId);
 
     /// <summary>
     /// Whether <paramref name="text"/> is a value the declared
-    /// <paramref name="type"/> can carry.
+    /// <paramref name="type"/> can carry. Text types accept anything; an empty
+    /// node reference is valid and means "no reference".
     /// </summary>
-    /// <remarks>
-    /// <b>The text types accept anything, including the empty string</b>, because
-    /// their wire form IS the value: there is no spelling of a string that is
-    /// malformed. A node reference is the one type where empty is legal without
-    /// being parseable, since that is how "no reference" is written.
-    /// </remarks>
     public static bool IsWellFormed(KeyvalueType type, string? text)
     {
         if (text is null)
@@ -247,19 +177,12 @@ public static class KeyvalueWire
             case KeyvalueType.Choices:
                 return true;
             default:
-                // A type this build does not know is not a value it can validate.
-                // Refusing beats reporting a guess as a fact.
                 return false;
         }
     }
 
-    // Whitespace-separated components, read without allocating: a level's worth
-    // of keyvalues is parsed on load and again on every property commit, and a
-    // split array per vector is garbage the render thread would pay for.
-    //
-    // Strict in both directions. Too few components is a truncated value and too
-    // many is a value of some other type, and accepting either would let a Vec2
-    // written into a Vec3 field arrive with a zero somebody has to explain.
+    // No Split: this runs on load and on every property commit.
+    // The component count must match, so a Vec2 in a Vec3 field is refused.
     private static bool TryReadFloats(string? text, Span<float> values)
     {
         if (text is null)
@@ -290,9 +213,7 @@ public static class KeyvalueWire
         return written == values.Length;
     }
 
-    // NumberStyles.Float deliberately excludes AllowThousands, so "1,5" is
-    // refused rather than read as fifteen on a machine whose culture would have
-    // written it that way.
+    // NumberStyles.Float has no AllowThousands, so "1,5" fails instead of reading as 15.
     private static bool TryParseComponent(ReadOnlySpan<char> token, out float value)
     {
         if (!float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out value))

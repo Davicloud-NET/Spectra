@@ -9,31 +9,9 @@ namespace SpectraEngine.Core.Entities;
 /// The live entity graph over one <see cref="Scene"/>: builds an
 /// <see cref="Entity"/> per node carrying <see cref="EntityData"/>, resolves
 /// their wiring, and drains their think wakeups and output events in a
-/// deterministic total order.
+/// deterministic total order. Instances exist only while the world is active
+/// and never write back to the authored data. Render thread only.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Instances exist only while a world is active.</b> The authored data on the
-/// nodes is the document; this is a projection of it that is built by
-/// <see cref="Activate"/> and thrown away by <see cref="Deactivate"/>, and it
-/// never writes back. That is what makes stopping a session free of state
-/// capture: nothing gameplay did is in the document to be undone.
-/// </para>
-/// <para>
-/// <b>Activation is PHASED, and the phases are the feature.</b> Construct every
-/// instance and parse its keyvalues; then build the name index and take the
-/// runtime copies of every connection; then spawn everything; then activate
-/// everything. A single-pass activate means the first entity's spawn fires at
-/// targets that do not exist yet - which does not throw, it simply delivers
-/// nothing, and the level is subtly wrong in a way that depends on node order.
-/// </para>
-/// <para>
-/// <b>Render thread only</b>, like the scene it reads. <see cref="Tick"/> is
-/// meant to run after the scene's own update and before the static-world
-/// compile is pumped, so an entity that moves a world brush gets that brush's
-/// cells dirtied in the same frame.
-/// </para>
-/// </remarks>
 public sealed class EntityWorld
 {
     private readonly Scene.Scene _scene;
@@ -43,8 +21,8 @@ public sealed class EntityWorld
     private readonly List<Entity> _entities = [];
     private readonly EntityEventQueue _queue = new();
 
-    // Reused across dispatches. Safe because nothing an input handler can call
-    // resolves a target: FireOutput queues, it never delivers.
+    // Reused across dispatches. Safe: FireOutput queues, so no input handler
+    // can resolve a target mid-dispatch.
     private readonly List<Entity> _resolved = [];
 
     private readonly List<SceneNode> _pendingSpawn = [];
@@ -52,9 +30,7 @@ public sealed class EntityWorld
     private readonly List<Entity> _pendingDespawn = [];
     private readonly List<Entity> _despawnScratch = [];
 
-    // Once per CLASS NAME, not once per entity and not once per attempt: a class
-    // this build does not have is usually a whole game's worth of entities at
-    // once, and per-attempt reporting turns one fact into a log nobody reads.
+    // Warn once per class name, not per entity.
     private readonly HashSet<string> _warnedMissingClasses = new(StringComparer.Ordinal);
     private readonly HashSet<string> _warnedPlaceholderInputs = new(StringComparer.Ordinal);
 
@@ -97,23 +73,13 @@ public sealed class EntityWorld
     /// </summary>
     public IReadOnlyList<Entity> Entities => _entities;
 
-    /// <summary>
-    /// The name index, or null while the world is inactive - which is the honest
-    /// answer: names resolve to runtime instances, and there are none.
-    /// </summary>
+    /// <summary>The name index, or null while the world is inactive.</summary>
     public TargetNameIndex? Index => _index;
 
     /// <summary>
-    /// How many events one <see cref="Tick"/> may dispatch before it decides the
-    /// cascade is runaway.
+    /// How many events one <see cref="Tick"/> may dispatch before the cascade
+    /// is treated as a runaway loop, logged and dropped.
     /// </summary>
-    /// <remarks>
-    /// <b>Without this, the first mutual relay a user wires hangs the render
-    /// thread with no clue why.</b> Two zero-delay relays pointed at each other
-    /// are three clicks to build and are an infinite loop inside one tick; the
-    /// budget turns that into an error message naming the entity, which is the
-    /// difference between a bug report and a frozen editor.
-    /// </remarks>
     public int MaxDispatchesPerTick
     {
         get => _maxDispatchesPerTick;
@@ -158,10 +124,10 @@ public sealed class EntityWorld
         _pendingSpawn.Clear();
         _pendingDespawn.Clear();
 
-        // PHASE 1 - construct and parse. Nothing may look another entity up
-        // here: the index does not exist yet, which is deliberate rather than
-        // incidental. Keyvalue parsing must not depend on anybody else having
-        // parsed theirs.
+        // The four phases must stay separate: in one pass, the first entity's
+        // spawn fires at targets that don't exist yet and delivers nothing.
+
+        // 1: construct and parse. No index yet, so no lookups.
         foreach (SceneNode node in _scene.Root.Traverse())
         {
             if (node.Entity is not { } data)
@@ -172,25 +138,21 @@ public sealed class EntityWorld
             ParseKeyvalues(entity, data);
         }
 
-        // PHASE 2 - identity, then wiring. Registering every entity before any
-        // connection is taken is what makes a target name resolvable from the
-        // first spawn onwards.
+        // 2: index every entity, then copy the wires.
         _index = new TargetNameIndex(_scene);
         for (int i = 0; i < _entities.Count; i++)
             _index.Register(_entities[i]);
         for (int i = 0; i < _entities.Count; i++)
             _entities[i].BuildOutputs(_entities[i].Data.Connections);
 
-        // Live before OnSpawn, so a spawn may schedule a think or fire an
-        // output. Both queue; neither is delivered inside the walk.
+        // Active before OnSpawn, so a spawn can schedule a think or fire an output.
         IsActive = true;
 
-        // PHASE 3 - spawn, in traversal order.
+        // 3: spawn, in traversal order.
         for (int i = 0; i < _entities.Count; i++)
             _entities[i].OnSpawn();
 
-        // PHASE 4 - activate, once every spawn has finished. An entity may
-        // depend on another's spawn work here, which phase 3 cannot promise.
+        // 4: activate, once every spawn has finished.
         for (int i = 0; i < _entities.Count; i++)
             _entities[i].OnActivate();
     }
@@ -251,17 +213,9 @@ public sealed class EntityWorld
 
     /// <summary>
     /// Asks for an entity to be built for <paramref name="node"/> at the end of
-    /// the current tick.
+    /// the current tick. Use this from a scene event handler, which must not
+    /// change the graph itself.
     /// </summary>
-    /// <remarks>
-    /// <b>This exists because a scene event handler must not mutate the
-    /// graph.</b> The index's handlers run inside the scene's ownership walk,
-    /// where an add or a remove corrupts the traversal in progress, so anything
-    /// that wants to react by spawning says so here and is served after the
-    /// tick's dispatch loop has finished. Nothing in the engine calls this yet;
-    /// it is here so the trigger work that will need it does not have to
-    /// redesign the tick to get it.
-    /// </remarks>
     public void QueueSpawn(SceneNode node)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -275,15 +229,10 @@ public sealed class EntityWorld
         _pendingDespawn.Add(entity);
     }
 
-    // --- what entities call back into ---------------------------------------
-
     internal void ScheduleThink(Entity entity, float time, int serial) =>
         _queue.Push(new EntityEvent
         {
-            // A non-finite time orders against nothing (every comparison with a
-            // NaN is false), which would corrupt the heap's ordering rather than
-            // merely mis-time one think. "Now" is the only answer that keeps the
-            // queue a queue.
+            // A NaN time would corrupt the heap's ordering. Use now instead.
             Time = float.IsFinite(time) ? time : _time,
             Sequence = _sequence++,
             Kind = EntityEventKind.Think,
@@ -302,9 +251,7 @@ public sealed class EntityWorld
         in EntityConnection wire,
         string? parameterOverride)
     {
-        // A negative delay is a past time and a NaN one is a value no comparison
-        // orders; both become "now", because an event that can never be due is
-        // an event that vanishes with nothing reporting it.
+        // Negative and NaN delays become zero.
         float delay = wire.Delay > 0f ? wire.Delay : 0f;
 
         _queue.Push(new EntityEvent
@@ -336,8 +283,6 @@ public sealed class EntityWorld
             "'{Input}' or any other input. Its data is kept and re-saves unchanged.",
             entity.ClassName, entity.TargetName, input);
     }
-
-    // --- internals -----------------------------------------------------------
 
     private Entity Build(SceneNode node, EntityData data)
     {
@@ -371,10 +316,7 @@ public sealed class EntityWorld
             if (entity.ParseKeyValue(pair.Key, pair.Value))
                 continue;
 
-            // Debug, not a warning: a map legitimately carries keys this build
-            // has no property for - editor-only members, a newer game's fields,
-            // a placeholder's entire keyvalue list - and they are preserved
-            // rather than lost, so nothing is wrong.
+            // Debug, not a warning: unknown keys are normal and are kept.
             _logger.LogDebug(
                 "Entity '{TargetName}' ({ClassName}) has no property '{Key}'; the value is kept but unused.",
                 entity.TargetName, entity.ClassName, pair.Key);
@@ -386,8 +328,7 @@ public sealed class EntityWorld
         if (due.Kind == EntityEventKind.Think)
         {
             Entity thinker = due.Entity!;
-            // Superseded by a later SetNextThink or a CancelThink. A heap cannot
-            // remove an entry, so this is where a stale one dies.
+            // Superseded by a later SetNextThink or CancelThink.
             if (thinker.ThinkSerial != due.ThinkSerial)
                 return;
 
@@ -396,8 +337,7 @@ public sealed class EntityWorld
         }
 
         _resolved.Clear();
-        // Self IS the caller for a connection: the entity a wire leaves is the
-        // entity firing it.
+        // Self and caller are the same entity for a connection.
         _index!.Resolve(due.TargetName, due.Entity, due.Activator, due.Entity, _resolved);
 
         if (_resolved.Count == 0)
@@ -415,9 +355,6 @@ public sealed class EntityWorld
             if (target.AcceptInput(due.Input, ref context))
                 continue;
 
-            // The entity decides what to report about a refusal it can explain
-            // (a placeholder says its class is missing, once per class). This
-            // line is the fallback for a class that simply has no such input.
             _logger.LogDebug(
                 "Entity '{TargetName}' ({ClassName}) has no input '{Input}'.",
                 target.TargetName, target.ClassName, due.Input);
@@ -441,9 +378,8 @@ public sealed class EntityWorld
             "zero-delay loop between two entities looks like.",
             _maxDispatchesPerTick, what, offenderName);
 
-        // Drop the runaway rather than leaving it queued. Everything due at this
-        // instant IS the cascade; anything scheduled for later is ordinary work
-        // and is left alone, so a level with one bad relay keeps running.
+        // Drop only what is due now. Later events are ordinary work, so a level
+        // with one bad relay keeps running.
         int discarded = 0;
         while (_queue.TryPeek(out EntityEvent next) && next.Time <= _time)
         {
@@ -456,8 +392,7 @@ public sealed class EntityWorld
 
     private void DrainDeferred()
     {
-        // Swapped into scratch lists before draining, so work queued BY the
-        // drain waits for the next tick instead of extending this one forever.
+        // Drain from scratch copies, so work queued by the drain waits a tick.
         if (_pendingDespawn.Count > 0)
         {
             _despawnScratch.AddRange(_pendingDespawn);
@@ -469,9 +404,7 @@ public sealed class EntityWorld
             _despawnScratch.Clear();
         }
 
-        // Despawns first: a spawn that reuses a name must land after the entity
-        // that was holding it has gone, or the two overlap for one tick and a
-        // wire fires at both.
+        // Despawns first, so a spawn reusing a name doesn't overlap the old holder.
         if (_pendingSpawn.Count > 0)
         {
             _spawnScratch.AddRange(_pendingSpawn);
@@ -489,8 +422,7 @@ public sealed class EntityWorld
         if (node.Entity is not { } data)
             return;
 
-        // Re-checked rather than assumed: the node may have been queued twice,
-        // or may already have been built by Activate.
+        // May have been queued twice, or already built by Activate.
         if (_index!.TryGetByNodeId(node.Id, out _))
             return;
 

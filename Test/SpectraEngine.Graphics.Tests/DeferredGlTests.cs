@@ -8,34 +8,9 @@ using Texture = SpectraEngine.Core.Graphics.Texture;
 namespace SpectraEngine.Graphics.Tests;
 
 /// <summary>
-/// The deferred pipeline against a real driver: does the two-pass split
-/// actually shade, and does it shade the right place.
+/// Pixel tests of the deferred pipeline on a real driver, rendered through
+/// <see cref="Renderer.ProbeTarget"/>.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Every failure this guards against renders a picture.</b> A G-buffer pass
-/// that writes only attachment zero, a light pass that samples the wrong
-/// footprint, a world position reconstructed on the right ray at the wrong
-/// distance. None of them throws, none of them fails a framebuffer-completeness
-/// check, and none of them makes a debug layer say anything. The output is
-/// simply lit wrongly, so the assertion has to be a pixel.
-/// </para>
-/// <para>
-/// <b>The lit-versus-unlit test is really a reconstruction test.</b> The point
-/// light is placed one world unit from the surface with a range of two, so it
-/// reaches only if the position the light pass reconstructed from depth is
-/// within a unit of where the geometry pass actually put that pixel. Get the
-/// depth-to-NDC remap wrong (the one thing that genuinely differs between
-/// OpenGL and D3D here) and the reconstructed point lands several units deep,
-/// falls outside the range, and the surface drops to ambient.
-/// </para>
-/// <para>
-/// Driven through <see cref="Renderer.ProbeTarget"/>, which renders a real frame
-/// into a readable target before the window gets its own. That is the seam that
-/// already exists for exactly this, and using it means the test measures the
-/// engine's own frame rather than a rehearsal of one.
-/// </para>
-/// </remarks>
 [Collection(GlRendererCollection.Name)]
 public sealed class DeferredGlTests
 {
@@ -51,10 +26,8 @@ public sealed class DeferredGlTests
     [Fact]
     public void Pixels_no_geometry_covered_come_out_sky_coloured()
     {
-        // A full-screen triangle covers every pixel, so unlike a forward pass
-        // the light pass cannot leave the background alone: it has to recognise
-        // the cleared depth and put the sky back. If it does not, the shading
-        // reads a zeroed normal against a zeroed albedo and the frame is black.
+        // The light pass covers every pixel, so it has to spot cleared depth
+        // and write the sky itself.
         var scene = new Scene("empty");
         scene.Camera.Position = new Vector3(0f, 0f, 3f);
         scene.Camera.LookAt(Vector3.Zero);
@@ -68,10 +41,8 @@ public sealed class DeferredGlTests
     [Fact]
     public void A_surface_within_a_lights_range_is_lit_and_outside_it_is_not()
     {
-        // Same geometry and the same light both times; only the range changes.
-        // A range that reaches gives a bright surface, one that stops short
-        // gives ambient, and the difference is only correct if the light pass
-        // reconstructed this pixel's world position to within a unit.
+        // Really a reconstruction test: the light is one unit from the wall,
+        // so it only reaches if the position rebuilt from depth is right.
         (int litR, int litG, int litB) = RenderDeferred(BuildSurfaceScene(lightRange: 2f));
         (int dimR, int dimG, int dimB) = RenderDeferred(BuildSurfaceScene(lightRange: 0.4f));
 
@@ -87,13 +58,7 @@ public sealed class DeferredGlTests
     [Fact]
     public void A_metal_and_a_dielectric_of_the_same_colour_shade_differently()
     {
-        // Metallic is stored in the G-buffer and read in the light pass, which
-        // is two hops either of which can silently drop it. A metal has no
-        // diffuse response at all, so the same base colour under the same light
-        // must not produce the same pixel.
-        // Dimmer than the range test on purpose: that one wants a margin over
-        // ambient, this one wants both results BELOW the 8-bit ceiling, because
-        // two different numbers that both clamp to 255 compare equal.
+        // Dim light: both results must stay under 255 or they compare equal.
         (int dR, int dG, int dB) = RenderDeferred(
             BuildSurfaceScene(lightRange: 2f, metallic: 0f, intensity: 6f));
         (int mR, int mG, int mB) = RenderDeferred(
@@ -107,11 +72,6 @@ public sealed class DeferredGlTests
     [Fact]
     public void A_caster_darkens_the_ground_beneath_it_and_nothing_else()
     {
-        // Two renders of one scene, shadows on and off, compared at two pixels:
-        // one the caster covers and one it does not. That shape is what makes
-        // this a SHADOW test rather than a brightness test. A shadow map that is
-        // mis-oriented, mis-scaled or simply always-in-shadow would darken both
-        // pixels; one that never resolves would darken neither.
         OpenGLRenderer renderer = _fixture.Renderer;
         bool restoreShadows = renderer.ShadowsEnabled;
 
@@ -131,9 +91,7 @@ public sealed class DeferredGlTests
                 $"the ground under the caster read {shadowed} with shadows on and {unshadowed} with them " +
                 "off; a caster directly overhead has to darken it");
 
-            // The near ground is outside the caster's footprint, so turning
-            // shadows on must leave it alone. Without this the test would pass
-            // just as happily on a shadow map that shadows everything.
+            // Control: a map that shadows everything would pass the check above.
             int nearOn = farR + farG + farB;
             int nearOff = noneFarR + noneFarG + noneFarB;
             Math.Abs(nearOn - nearOff).ShouldBeLessThan(12,
@@ -146,25 +104,11 @@ public sealed class DeferredGlTests
         }
     }
 
-    // A ground plane with a plate hanging over the middle of it, lit from
     [Fact]
     public void A_lit_surface_with_nothing_over_it_is_not_shadowed_by_itself()
     {
-        // ACNE, which is the one shadow failure that darkens a surface with no
-        // caster anywhere near it. The ground compares its own depth against a
-        // stored depth sampled at a texel centre: constant across each texel
-        // while the ground's own depth ramps, so their difference is a sawtooth
-        // at texel frequency and every second texel decides it is in shadow.
-        //
-        // GRAZING, because that is where it bites. The steeper the light, the
-        // more depth a surface covers within one texel and the taller the
-        // sawtooth; at this angle a map drawn with no rasterizer depth bias
-        // covers the whole plane in moire. The fix is DepthBias, applied to the
-        // casters as they are drawn, and this test is what says so: delete
-        // ShadowMap.RasterBias and it fails.
-        //
-        // Nothing is above the probe, so the answer is not a matter of degree.
-        // Shadows on must be indistinguishable from shadows off.
+        // Shadow acne. Grazing light is the worst case; this fails without
+        // ShadowMap.RasterBias.
         bool restore = _fixture.Renderer.ShadowsEnabled;
         try
         {
@@ -186,8 +130,7 @@ public sealed class DeferredGlTests
         }
     }
 
-    // One large ground plane and a grazing sun. No caster at all: the only
-    // thing that can darken this is the ground against its own shadow map.
+    // Ground plane and a grazing sun, no caster.
     private Scene BuildGrazingGroundScene()
     {
         OpenGLRenderer renderer = _fixture.Renderer;
@@ -218,8 +161,6 @@ public sealed class DeferredGlTests
             .SetFloat("uShadingModel", 0f)
             .SetTexture("uDiffuse", 0, white));
 
-        // Barely off horizontal: the ground covers many shadow texels of depth
-        // within one texel of area, which is the acne case.
         var sun = scene.Root.CreateChild("Sun");
         sun.LocalRotation = Light.RotationForDirection(new Vector3(-0.97f, -0.24f, 0f));
         sun.Light = new Light
@@ -232,9 +173,8 @@ public sealed class DeferredGlTests
         return scene;
     }
 
-    // straight above. The camera looks along the ground rather than down at it,
-    // so the plate is above the line of sight and never occludes the pixel whose
-    // shadow it casts.
+    // Ground with a plate over the middle, sun straight above. The camera
+    // looks along the ground so the plate never hides the pixel it shadows.
     private Scene BuildShadowScene()
     {
         OpenGLRenderer renderer = _fixture.Renderer;
@@ -294,9 +234,7 @@ public sealed class DeferredGlTests
         return scene;
     }
 
-    // A flat surface square-on to the camera, one point light in front of it.
-    // Square-on so N, L and V all agree and the shading is a number that is easy
-    // to reason about rather than a gradient.
+    // Wall square-on to the camera with one point light, so N, L and V agree.
     private Scene BuildSurfaceScene(float lightRange, float metallic = 0f, float intensity = 40f)
     {
         OpenGLRenderer renderer = _fixture.Renderer;
@@ -308,8 +246,6 @@ public sealed class DeferredGlTests
         var (vertices, indices) = Primitives.Cube();
         Mesh mesh = renderer.CreateMesh(vertices, indices, VertexAttribute.StandardLayout);
 
-        // White, so the base colour reaches the G-buffer unmodulated and any
-        // difference between the two runs is the material parameters.
         Texture white = renderer.CreateTexture(
             [255, 255, 255, 255], 1, 1, TextureFormat.Rgba8, TextureColorSpace.Linear,
             TextureFilter.Nearest, TextureWrap.Clamp);
@@ -324,8 +260,6 @@ public sealed class DeferredGlTests
             .SetFloat("uShadingModel", 0f)
             .SetTexture("uDiffuse", 0, white);
 
-        // Wide enough to fill the view at this distance, thin enough that its
-        // front face is at a known z.
         var wall = scene.Root.CreateChild("Wall");
         wall.LocalTransform = new Transform
         {
@@ -335,7 +269,7 @@ public sealed class DeferredGlTests
         };
         wall.MeshRenderer = new MeshRenderer(mesh, material);
 
-        // Exactly one unit in front of the wall's +z face, which sits at z=0.25.
+        // One unit in front of the wall's +z face at z = 0.25.
         var lamp = scene.Root.CreateChild("Lamp");
         lamp.LocalPosition = new Vector3(0f, 0f, 1.25f);
         lamp.Light = new Light
@@ -349,8 +283,6 @@ public sealed class DeferredGlTests
         return scene;
     }
 
-    // Renders one real frame of the deferred pipeline into a readable target
-    // and returns the centre pixel.
     private (int R, int G, int B) RenderDeferred(Scene scene) =>
         RenderDeferred(scene, ProbeSize / 2, ProbeSize / 2);
 
@@ -377,9 +309,7 @@ public sealed class DeferredGlTests
             renderer.ProbeTarget = null;
             renderer.DestroyRenderTarget(probe);
 
-            // Put the rotation back where it was: the fixture is shared by every
-            // class in the collection, and a pipeline left selected here would
-            // silently change what another test renders.
+            // The fixture is shared, so put the pipeline back.
             while (renderer.CurrentPipelineName != restore)
                 renderer.NextPipeline();
         }

@@ -3,23 +3,8 @@ using System;
 
 namespace SpectraEngine.Core.Graphics.OpenGL;
 
-/// <summary>
-/// An FBO with an optional texture colour attachment and an optional sampleable
-/// depth texture.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Both attachments are <b>textures</b>, because both are sampled: colour by
-/// whatever reads the result, depth by the deferred light pass reconstructing
-/// world position and by the shadow pass comparing against it.
-/// </para>
-/// <para>
-/// <b>A depth-only FBO must say so twice.</b> Leaving colour attachment 0
-/// unattached is not enough: the draw and read buffers still name it, and GL
-/// reports the framebuffer incomplete. Both are set to <c>GL_NONE</c> below,
-/// which is the whole of what makes a shadow map work on this backend.
-/// </para>
-/// </remarks>
+// FBO with optional colour and depth attachments. Both are textures because
+// both get sampled.
 internal sealed class OpenGLRenderTarget : RenderTarget
 {
     private readonly GL _gl;
@@ -37,9 +22,6 @@ internal sealed class OpenGLRenderTarget : RenderTarget
         _gl = gl;
         Desc = desc;
 
-        // Created through the ordinary texture path with no pixels, so the
-        // attachment IS a texture in every sense that matters downstream: same
-        // sampler state, same colour-space handling, same type a material binds.
         if (desc.Color)
         {
             _color = OpenGLTexture.CreateEmpty(
@@ -48,8 +30,7 @@ internal sealed class OpenGLRenderTarget : RenderTarget
 
         if (desc.Depth)
         {
-            // Nearest and clamp: depth is read as data, and interpolating
-            // between two depths produces a value that is at neither surface.
+            // Nearest: an interpolated depth lies on neither surface.
             _depth = OpenGLTexture.CreateEmpty(
                 gl, desc.Width, desc.Height, TextureFormat.Depth32Float, TextureColorSpace.Linear,
                 TextureFilter.Nearest, TextureWrap.Clamp);
@@ -69,8 +50,7 @@ internal sealed class OpenGLRenderTarget : RenderTarget
         if (width <= 0 || height <= 0)
             throw new ArgumentOutOfRangeException(nameof(width), $"Render target size must be positive; got {width}x{height}.");
 
-        // Reallocates the texture's storage behind the same wrapper and the same
-        // GL name, so every material already sampling it stays valid.
+        // Same wrapper and GL name, so materials sampling it stay valid.
         _color?.ReallocateStorage(width, height);
         _depth?.ReallocateStorage(width, height);
         Allocate(width, height);
@@ -91,19 +71,15 @@ internal sealed class OpenGLRenderTarget : RenderTarget
         }
         else
         {
-            // Both, not just the draw buffer. A framebuffer with no colour
-            // attachment whose read buffer still names attachment 0 is
-            // INCOMPLETE_READ_BUFFER, which is a completeness failure at
-            // creation rather than an error at the first read.
+            // Depth-only: both must be None or the framebuffer is incomplete.
             _gl.DrawBuffer(DrawBufferMode.None);
             _gl.ReadBuffer(ReadBufferMode.None);
         }
 
         if (_depth is not null)
         {
-            // DepthAttachment, not DepthStencilAttachment: the format carries no
-            // stencil, and attaching a depth-only texture to the combined point
-            // leaves the framebuffer incomplete.
+            // Not DepthStencilAttachment: the format has no stencil and the
+            // framebuffer would be incomplete.
             _gl.FramebufferTexture2D(
                 FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment,
                 TextureTarget.Texture2D, _depth.Handle, 0);
@@ -123,16 +99,9 @@ internal sealed class OpenGLRenderTarget : RenderTarget
         Height = height;
     }
 
-    /// <summary>
-    /// Attaches the other targets of a multi-target pass as colour attachments
-    /// 1..N-1 of this framebuffer, and enables all N draw buffers.
-    /// </summary>
-    /// <remarks>
-    /// <b>The draw-buffer list is the part that is easy to miss.</b> A
-    /// framebuffer defaults to writing attachment 0 only, so attaching three
-    /// textures and emitting three fragment outputs produces one populated
-    /// surface and two untouched ones, with no error from anything.
-    /// </remarks>
+    // Attaches the other targets of a multi-target pass as colour attachments
+    // 1..N-1. DrawBuffers is required: a framebuffer writes only attachment 0
+    // by default.
     internal void BindExtraColorTargets(GL gl, ReadOnlySpan<RenderTarget> targets)
     {
         if (targets.Length <= 1) return;
@@ -160,10 +129,6 @@ internal sealed class OpenGLRenderTarget : RenderTarget
         }
     }
 
-    /// <summary>
-    /// Detaches the extra attachments and restores single-target drawing, so
-    /// this framebuffer is left exactly as an ordinary pass expects it.
-    /// </summary>
     internal void UnbindExtraColorTargets(GL gl, ReadOnlySpan<RenderTarget> targets)
     {
         gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo);
@@ -188,8 +153,6 @@ internal sealed class OpenGLRenderTarget : RenderTarget
         _fbo = 0;
         _depth?.Dispose();
 
-        // The attachment is this target's to free: it was never handed to the
-        // asset manager and nothing else can be holding it as an owner.
         _color?.Dispose();
     }
 }

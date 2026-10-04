@@ -7,19 +7,11 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Shared fixtures for the scene spatial-index tests: a CPU-only mesh built
-/// straight from positions and indices (where <see cref="FakeMesh"/> models an
-/// upload and de-interleaves them out of a vertex stream), a do-nothing shader
-/// so <see cref="Material"/> can exist without a GPU, and factories for spatial
-/// scene nodes.
-/// </summary>
+// Shared fixtures for the scene spatial-index tests.
 internal static class SpatialTestHelpers
 {
-    /// <summary>One shared material — the spatial index never looks at it.</summary>
     public static readonly Material NoopMaterial = new(new NoopShaderProgram());
 
-    /// <summary>Axis-aligned cube mesh centred on the origin with the given half-extent.</summary>
     public static TestMesh CreateCubeMesh(float half)
     {
         Vector3[] positions =
@@ -29,8 +21,7 @@ internal static class SpatialTestHelpers
             new(-half, -half, half), new(half, -half, half),
             new(-half, half, half), new(half, half, half),
         ];
-        // Two triangles per face; winding is irrelevant — the scene raycast is
-        // double-sided by contract.
+        // Winding doesn't matter: the scene raycast is double-sided.
         uint[] indices =
         [
             0, 1, 3, 0, 3, 2, // -Z
@@ -43,7 +34,6 @@ internal static class SpatialTestHelpers
         return new TestMesh(positions, indices);
     }
 
-    /// <summary>Attaches a cube-mesh node at <paramref name="position"/> under <paramref name="parent"/>.</summary>
     public static SceneNode CreateMeshNode(SceneNode parent, string name, Vector3 position, float half = 0.5f)
     {
         SceneNode node = parent.CreateChild(name);
@@ -52,7 +42,6 @@ internal static class SpatialTestHelpers
         return node;
     }
 
-    /// <summary>Attaches a box-brush node at <paramref name="position"/> under <paramref name="parent"/>.</summary>
     public static SceneNode CreateBrushNode(SceneNode parent, string name, Vector3 position, float half = 0.5f)
     {
         SceneNode node = parent.CreateChild(name);
@@ -61,10 +50,7 @@ internal static class SpatialTestHelpers
         return node;
     }
 
-    /// <summary>
-    /// The same world AABB the spatial index maintains for a node, computed
-    /// independently — the oracle for the brute-force query comparisons.
-    /// </summary>
+    // World AABB computed without the spatial index, to check the index against.
     public static Aabb WorldBoundsOf(SceneNode node)
     {
         bool has = false;
@@ -87,10 +73,7 @@ internal static class SpatialTestHelpers
     }
 }
 
-/// <summary>
-/// CPU-only mesh with real triangle data, for exercising the per-triangle
-/// raycast narrow phase headlessly.
-/// </summary>
+// CPU-only mesh with real triangle data, for the per-triangle raycast.
 internal sealed class TestMesh : Mesh
 {
     public TestMesh(Vector3[] positions, uint[] indices)
@@ -103,7 +86,6 @@ internal sealed class TestMesh : Mesh
 
     public override void Draw()
     {
-        // Nothing to draw without a GPU.
     }
 
     public override void DrawInstanced(InstanceBuffer instances, int instanceCount, int firstInstance = 0)
@@ -115,13 +97,8 @@ internal sealed class TestMesh : Mesh
     }
 }
 
-/// <summary>
-/// A shader that records what was written to it, standing in for the real
-/// backends' uniform state. Every backend keeps that state between draws — GL
-/// on the program object, D3D11/D3D12 in a persistent constant-buffer shadow —
-/// so a uniform a material never writes keeps the previous draw's value, and
-/// this double makes that observable headlessly.
-/// </summary>
+// Records uniform writes. Like the real backends it keeps state between draws,
+// so a uniform a material never writes keeps the previous draw's value.
 internal sealed class RecordingShaderProgram : ShaderProgram
 {
     public Dictionary<string, Vector3> Vectors3 { get; } = new(StringComparer.Ordinal);
@@ -145,7 +122,6 @@ internal sealed class RecordingShaderProgram : ShaderProgram
     public override void SetUniform(string name, float value) => Floats[name] = value;
     public override void SetUniform(string name, int value) => Ints[name] = value;
 
-    /// <summary>Array uniforms recorded whole, so a light upload is assertable headlessly.</summary>
     public Dictionary<string, Vector4[]> Vector4Arrays { get; } = new(StringComparer.Ordinal);
 
     public Dictionary<string, Matrix4x4[]> Matrix4Arrays { get; } = new(StringComparer.Ordinal);
@@ -162,7 +138,6 @@ internal sealed class RecordingShaderProgram : ShaderProgram
     }
 }
 
-/// <summary>Inert shader so a <see cref="Material"/> can exist in headless tests.</summary>
 internal sealed class NoopShaderProgram : ShaderProgram
 {
     public override void Use()

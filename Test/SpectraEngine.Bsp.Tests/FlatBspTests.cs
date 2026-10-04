@@ -5,40 +5,18 @@ using SpectraEngine.Core.Bsp;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The D10 oracle: the flat BSP form the compiled map format bakes must be
-/// ANSWER-IDENTICAL to the live <see cref="BspTree"/> it was flattened from,
-/// not merely close. Both forms hold a real <see cref="Plane"/> and call the
-/// same <see cref="Plane.DotCoordinate"/> on it in the same order, so equality
-/// here is asserted EXACTLY: a tolerance would pass a flat tree whose
-/// sidedness convention or entry-normal bookkeeping had drifted, which is the
-/// one mistake in this milestone that throws nothing, logs nothing, and
-/// surfaces months later as a character sliding along the wrong surface.
-///
-/// The worlds are the fixtures the chunked-versus-monolithic equivalence suite
-/// already builds (<see cref="ChunkBspEquivalenceTests.DenseGridWorld"/> and
-/// <see cref="ChunkBspEquivalenceTests.ScatteredWorld"/>), reused rather than
-/// re-derived so the two suites cannot drift apart, plus one integer-lattice
-/// world that exists to put probes exactly ON splitter planes.
+/// The flat BSP a compiled map bakes must answer the same as the live
+/// <see cref="BspTree"/> it was flattened from. Compared exactly, no tolerance.
 /// </summary>
 public sealed class FlatBspTests
 {
-    // ------------------------------------------------------------------
-    // (a) The layout is a file format, so its size is pinned rather than
-    // assumed.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void The_flat_node_is_exactly_the_twenty_four_bytes_the_format_casts_into()
     {
-        // Raw file bytes are cast into these types, and System.Numerics.Plane's
-        // field layout is not a documented contract.
+        // File bytes are cast into these types, and Plane's layout is not documented.
         Unsafe.SizeOf<Plane>().ShouldBe(16);
         Unsafe.SizeOf<FlatBspNode>().ShouldBe(24);
     }
-
-    // ------------------------------------------------------------------
-    // (b) Flattening is a pure function of the tree.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void Two_flattens_of_one_tree_are_element_identical()
@@ -62,9 +40,8 @@ public sealed class FlatBspTests
     [Fact]
     public void The_flat_array_mirrors_the_live_tree_in_pre_order_with_the_front_child_first()
     {
-        // The scattered world rather than the dense grid: the grid's boxes
-        // overlap on every axis, so their union is one block whose skin needs
-        // six splitters, and a six-node tree cannot show an emission order.
+        // Scattered, not the dense grid: that unions into one block with six
+        // splitters, too few to show an emission order.
         BspTree tree = BuildTree(ChunkBspEquivalenceTests.ScatteredWorld(structures: 30, seed: 0xC0FFEE0DDBA5EBA1UL));
         FlatBspNode[] nodes = BspFlattener.Flatten(tree, out int rootIndex);
 
@@ -92,8 +69,8 @@ public sealed class FlatBspTests
             FlatBspNode node = nodes[child];
             (node.Plane == live.Plane).ShouldBeTrue($"splitter plane diverged at node {child}");
 
-            // Pre-order, front first: an internal front child occupies the very
-            // next slot, and the back subtree begins after all of the front one.
+            // Pre-order, front first: the front child is the next slot and the
+            // back subtree starts after the whole front one.
             if (!live.Front!.IsLeaf)
                 node.Front.ShouldBe(child + 1, $"node {child} front is not the next slot");
             if (!live.Back!.IsLeaf)
@@ -105,10 +82,6 @@ public sealed class FlatBspTests
 
         internalNodes.ShouldBe(nodes.Length, "the array holds exactly the tree's internal nodes");
     }
-
-    // ------------------------------------------------------------------
-    // (c) Answer identity: point containment.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void Flat_containment_matches_the_live_tree_over_a_dense_grid_world() =>
@@ -123,15 +96,11 @@ public sealed class FlatBspTests
     [Fact]
     public void Probes_lying_exactly_on_splitter_planes_take_the_same_side_as_the_live_tree()
     {
-        // An axis-aligned world on an integer lattice, probed on integer
-        // coordinates: the only way DotCoordinate returns exactly 0f, and
-        // therefore the only place the `>= 0f` sidedness convention differs
-        // from `> 0f`. Every other probe in this file agrees under either sign.
+        // Integer probes on an integer lattice: the only place DotCoordinate
+        // returns exactly 0f, so the only place `>= 0f` differs from `> 0f`.
         List<BrushPlacement> placements = IntegerLatticeWorld();
         (BspTree live, FlatBspTree flat) = BuildPair(placements);
         FlatBspNode[] nodes = flat.Nodes.ToArray();
-        // A union that collapsed into one block would need six splitters; this
-        // fixture must keep its gaps and its carved seams to be worth probing.
         nodes.Length.ShouldBeGreaterThan(20, "the lattice collapsed, too few planes to probe");
 
         int probes = 0, solid = 0, onPlane = 0, mismatches = 0;
@@ -162,10 +131,6 @@ public sealed class FlatBspTests
         mismatches.ShouldBe(0, $"containment diverged {mismatches} times, first at {firstMismatch}");
     }
 
-    // ------------------------------------------------------------------
-    // (d) Answer identity: raycasts, hit point AND entry normal.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void Flat_raycasts_match_the_live_tree_over_a_dense_grid_world() =>
         AssertRaycastsIdentical(
@@ -180,9 +145,7 @@ public sealed class FlatBspTests
     [Fact]
     public void Axis_aligned_rays_report_the_same_entry_normal_as_the_live_tree()
     {
-        // Axis-aligned rays across an integer lattice are where a flipped
-        // crossing normal is unambiguous: the entry surface has exactly one
-        // correct facing, and the ray meets it head on.
+        // Axis-aligned rays meet each surface head on, so a flipped entry normal shows.
         List<BrushPlacement> placements = IntegerLatticeWorld();
         (BspTree live, FlatBspTree flat) = BuildPair(placements);
 
@@ -248,14 +211,8 @@ public sealed class FlatBspTests
             .ShouldBe(live.Raycast(origin, Vector3.UnitX, 0f, out _));
         zeroDistance.ShouldBe(default(BspRaycastHit));
 
-        // A direction that is not unit length must be normalised the same way,
-        // so the reported distance is a world distance rather than a multiple.
         CompareRay(live, flat, origin, new Vector3(17f, 0f, 0f), 100f, "unnormalised direction");
     }
-
-    // ------------------------------------------------------------------
-    // (e) The bare-leaf tree: no nodes at all, the answer in the root code.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void A_tree_that_is_one_empty_leaf_flattens_to_no_nodes_and_contains_nothing()
@@ -290,11 +247,9 @@ public sealed class FlatBspTests
     [Fact]
     public void A_trace_deeper_than_the_inline_frame_stack_still_finds_the_first_solid()
     {
-        // A hand-built block, because no fixture reliably makes ONE ray cross
-        // more splitters than the trace's stackalloc'd frame count, and the
-        // heap-growth path must not be reachable only by accident. Each node
-        // sends the ray's near side into the next one, so a single ray defers
-        // one far side per node and the stack reaches the node count.
+        // Hand-built: no fixture makes one ray cross more splitters than the
+        // trace's stackalloc'd frames. Each node sends the near side into the
+        // next, so the ray defers one far side per node.
         const int depth = 100;
         var nodes = new FlatBspNode[depth];
         for (int i = 0; i < depth; i++)
@@ -326,20 +281,13 @@ public sealed class FlatBspTests
         Should.NotThrow(() => new FlatBspTree(nodes, FlatBspNode.SolidLeaf));
     }
 
-    // ------------------------------------------------------------------
-    // Fixtures and helpers
-    // ------------------------------------------------------------------
-
     private static Brush Box(float h) => Brush.CreateBox(new Vector3(-h), new Vector3(h));
 
     private static Matrix4x4 Translation(float x, float y, float z) => Matrix4x4.CreateTranslation(x, y, z);
 
     // 3x3x3 half-extent-2 cubes at spacing 6, each with a partner offset three
-    // units along x so every cube is genuinely carved. The cubes are separated
-    // by two-unit gaps, so the union does NOT collapse into one block the way
-    // the dense grid's does, and every face and every carved seam lands on an
-    // integer coordinate: probing on integers is then the only way
-    // DotCoordinate returns exactly 0f.
+    // units along x so it gets carved. The gaps keep the union from collapsing
+    // into one block, and every face and seam lands on an integer coordinate.
     private static List<BrushPlacement> IntegerLatticeWorld()
     {
         var placements = new List<BrushPlacement>(54);
@@ -360,8 +308,6 @@ public sealed class FlatBspTests
     private static BspTree BuildTree(IReadOnlyList<BrushPlacement> placements) =>
         BspTree.BuildFromSurfaces(CsgWorld.Build(placements).Surfaces);
 
-    // The pair under test: one live tree and the flat form of that exact tree,
-    // so any divergence is the flattener's or the flat query's and nothing else.
     private static (BspTree Live, FlatBspTree Flat) BuildPair(IReadOnlyList<BrushPlacement> placements)
     {
         BspTree live = BuildTree(placements);
@@ -369,9 +315,8 @@ public sealed class FlatBspTests
         return (live, new FlatBspTree(nodes, rootIndex));
     }
 
-    // Descends the flat block the way ContainsPoint does, counting the nodes
-    // whose plane distance is exactly zero. This is the vacuousness guard for
-    // the sidedness test: without a single exact zero, `>=` and `>` agree.
+    // Counts nodes on the descent whose plane distance is exactly zero.
+    // Without one, `>=` and `>` agree and the sidedness test proves nothing.
     private static int CountExactPlaneHits(FlatBspNode[] nodes, int rootIndex, Vector3 point)
     {
         int count = 0;
@@ -387,9 +332,8 @@ public sealed class FlatBspTests
         return count;
     }
 
-    // A uniform lattice over the world's expanded bounds, plus a small cluster
-    // per placement so a sparsely populated world still produces solid probes
-    // rather than a lattice of open air.
+    // A lattice over the expanded bounds, plus a cluster per placement so a
+    // sparse world still gets solid probes.
     private static void AssertContainmentIdentical(IReadOnlyList<BrushPlacement> placements, int samplesPerAxis)
     {
         (BspTree live, FlatBspTree flat) = BuildPair(placements);
@@ -440,8 +384,6 @@ public sealed class FlatBspTests
     private static float Lerp(float min, float max, int step, int count) =>
         count <= 1 ? min : min + (max - min) * step / (count - 1);
 
-    // Fixed-seed rays over the world and the open air around it, long enough to
-    // cross the whole fixture.
     private static void AssertRaycastsIdentical(IReadOnlyList<BrushPlacement> placements, int rayCount, ulong seed)
     {
         (BspTree live, FlatBspTree flat) = BuildPair(placements);
@@ -480,8 +422,7 @@ public sealed class FlatBspTests
         hits.ShouldBeLessThan(rayCount, "every ray hit solid, vacuous oracle");
     }
 
-    // One live-versus-flat ray comparison, EXACT in every field. Returns whether
-    // the ray hit, for vacuousness accounting.
+    // Returns whether the ray hit, so callers can check some rays did.
     private static bool CompareRay(
         BspTree live, FlatBspTree flat, Vector3 origin, Vector3 direction, float maxDistance, string context)
     {

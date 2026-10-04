@@ -2,14 +2,8 @@ using System.Runtime.InteropServices;
 
 namespace Spectra.Kitchen.CLI;
 
-/// <summary>
-/// Turns on virtual-terminal processing so an ANSI sequence renders as a colour
-/// rather than as the literal text of the sequence.
-/// </summary>
-/// <remarks>
-/// A copy of <c>ssc</c>'s. Both tools are AOT-published, so the imports are
-/// <c>LibraryImport</c> rather than <c>DllImport</c>.
-/// </remarks>
+// Turns on virtual-terminal processing so ANSI colours render on Windows.
+// LibraryImport, not DllImport: the tool is AOT-published.
 internal static partial class ConsoleVT
 {
     private const int STD_OUTPUT_HANDLE = -11;

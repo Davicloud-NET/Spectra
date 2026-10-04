@@ -9,39 +9,13 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// The two manipulator styles, and the defect that made them necessary:
-/// <b>a resize could only ever move three of an object's six faces.</b>
+/// The two gizmo styles. Studio: six per-face handles on the selection's box,
+/// face-anchored resize. Classic: three handles at a fixed distance from the
+/// pivot, symmetric resize.
 /// </summary>
-/// <remarks>
-/// The engine shipped Studio's semantics (a resize plants the opposite face) on
-/// Blender's roster (handles on the positive ends only). Those two do not
-/// compose: with nothing to grab on the −x side, "grow this leftwards" had no
-/// gesture at all, and the only way to move a negative face was to move the
-/// whole object afterwards. The fix is that the roster and the anchoring are one
-/// decision, made by <see cref="GizmoStyle"/>:
-/// <list type="bullet">
-///   <item><description>
-///     <see cref="GizmoStyle.Studio"/>: six per-face handles, standing on the
-///     selection's own box, each planting the face opposite itself.
-///   </description></item>
-///   <item><description>
-///     <see cref="GizmoStyle.Classic"/>: three handles at a fixed distance from
-///     the pivot, scaling about it so both faces move. Three is the right number
-///     here precisely because the negative end is the same drag pushed the other
-///     way.
-///   </description></item>
-/// </list>
-/// <para>
-/// Suites that pin one style's shape say so; the invariants at the bottom run
-/// under both, because a gesture that cannot be cancelled exactly is broken in
-/// any style.
-/// </para>
-/// </remarks>
 public sealed class GizmoStyleTests
 {
     private const float Tolerance = 1e-3f;
-
-    // --- The roster ----------------------------------------------------------
 
     [Fact]
     public void Studio_offers_a_handle_on_every_face_and_classic_offers_three()
@@ -59,8 +33,6 @@ public sealed class GizmoStyleTests
     [Fact]
     public void A_rotation_has_three_rings_in_both_styles_because_a_negative_ring_is_the_same_ring()
     {
-        // Turning about −x sweeps the circle turning about +x sweeps. Offering
-        // both would be two handles competing for one gesture.
         GizmoStyle.Studio.Offers(GizmoHandle.AxisNegX, GizmoMode.Rotate).ShouldBeFalse();
         GizmoStyle.Classic.Offers(GizmoHandle.AxisNegX, GizmoMode.Rotate).ShouldBeFalse();
     }
@@ -76,8 +48,7 @@ public sealed class GizmoStyleTests
         GizmoStyle.Classic.Offers(GizmoHandle.Screen, GizmoMode.Translate).ShouldBeTrue();
         GizmoStyle.Classic.Offers(GizmoHandle.Screen, GizmoMode.Rotate).ShouldBeTrue();
 
-        // The uniform resize cube survives in both: dropping it for fidelity
-        // would remove the editor's only uniform resize.
+        // The centre cube is the only uniform resize, so both styles keep it.
         GizmoStyle.Studio.Offers(GizmoHandle.Screen, GizmoMode.Scale).ShouldBeTrue();
         GizmoStyle.Classic.Offers(GizmoHandle.Screen, GizmoMode.Scale).ShouldBeTrue();
     }
@@ -85,10 +56,7 @@ public sealed class GizmoStyleTests
     [Fact]
     public void What_a_style_offers_is_what_it_draws()
     {
-        // Six arrows of nine lines each in Studio; three of those plus three
-        // four-line quads and the centre circle in Classic. Drawing reads the
-        // roster through the same geometry the hit tester picks against, so a
-        // count is a real check that the two agree on the roster.
+        // An arrow is nine lines, a plane quad four, plus Classic's centre circle.
         DrawnLines(GizmoStyle.Studio, GizmoMode.Translate).ShouldBe(6 * 9);
         DrawnLines(GizmoStyle.Classic, GizmoMode.Translate)
             .ShouldBe((3 * 9) + (3 * 4) + GizmoHitTesting.RingSegments);
@@ -101,20 +69,15 @@ public sealed class GizmoStyleTests
         DrawnLines(GizmoStyle.Classic, GizmoMode.Rotate).ShouldBe(4 * GizmoHitTesting.RingSegments);
     }
 
-    // --- The defect this all exists for --------------------------------------
-
     [Fact]
     public void A_negative_face_handle_grows_the_negative_face_and_plants_the_positive_one()
     {
-        // THE regression test. Before the negative handles existed there was no
-        // gesture that could do this at all.
         var harness = GizmoHarness.ThreeQuarterView(GizmoStyle.Studio);
         SceneNode node = harness.AddSelectedBrushNode(Vector3.Zero, halfExtent: 1f);
         ScaleGizmoDragTests.Scale(harness).Snap.Enabled = false;
 
         ScaleGizmoDragTests.DragAxisBy(harness, GizmoHandle.AxisNegX, 2f);
 
-        // Two units wider, all of it on the −x side.
         node.Brush!.LocalBounds.Size.X.ShouldBe(4f, Tolerance);
         (node.LocalPosition.X + node.Brush.LocalBounds.Max.X).ShouldBe(1f, Tolerance);   // planted
         (node.LocalPosition.X + node.Brush.LocalBounds.Min.X).ShouldBe(-3f, Tolerance);  // out by two
@@ -124,10 +87,8 @@ public sealed class GizmoStyleTests
     [Fact]
     public void A_negative_handle_resizes_its_own_axis_and_nothing_else()
     {
-        // The axis mask is taken from the handle's AXIS, not its direction. Read
-        // straight, the negative values fall into the mask table's uniform
-        // default and a −x drag silently resizes all three axes: no throw, no
-        // log, and geometry that is simply wrong.
+        // The mask comes from the handle's axis. Looked up by raw handle, the
+        // negative values hit the mask table's uniform default.
         var harness = GizmoHarness.ThreeQuarterView(GizmoStyle.Studio);
         SceneNode node = harness.AddSelectedBrushNode(Vector3.Zero, halfExtent: 1f);
         ScaleGizmoDragTests.Scale(harness).Snap.Enabled = false;
@@ -143,8 +104,6 @@ public sealed class GizmoStyleTests
     [Fact]
     public void Both_ends_of_an_axis_are_pickable_and_they_are_different_handles()
     {
-        // Pick/drag agreement for the new values: aiming at the −x handle must
-        // highlight the −x handle, not its +x twin on the same line.
         var harness = GizmoHarness.ThreeQuarterView(GizmoStyle.Studio);
         harness.AddSelectedBrushNode(Vector3.Zero, halfExtent: 1f);
         ScaleGizmoDragTests.Scale(harness);
@@ -159,9 +118,7 @@ public sealed class GizmoStyleTests
     [Fact]
     public void A_negative_arrow_moves_the_selection_the_same_way_its_positive_twin_does()
     {
-        // A move has no anchored face, so the two ends of an axis are one
-        // constraint seen twice. The negative arrow exists so there is something
-        // to grab on that side, not to mean something different.
+        // Dragged toward +x from the -x arrow: a move has no anchored face.
         var harness = GizmoHarness.ThreeQuarterView(GizmoStyle.Studio);
         SceneNode node = harness.AddSelectedBrushNode(Vector3.Zero, halfExtent: 1f);
         harness.Use(GizmoMode.Translate);
@@ -178,11 +135,8 @@ public sealed class GizmoStyleTests
     [Fact]
     public void Every_member_of_a_selection_grows_the_way_the_handle_points()
     {
-        // The handle's sign is a fact about the GIZMO's frame; the anchor is a
-        // coordinate in the NODE's. A member turned half a turn away has its
-        // local +x pointing where the handle does not, so reading the sign
-        // straight plants the face on the side the user is dragging toward and
-        // that one object grows backwards out of the same drag.
+        // The handle's sign is in the gizmo's frame, the anchor in the node's.
+        // One node is turned half a turn so its local +x points the other way.
         var harness = GizmoHarness.ThreeQuarterView(GizmoStyle.Studio);
         SceneNode flipped = harness.AddSelectedBrushNode(new Vector3(-4f, 0f, 0f), 1f, "Flipped");
         flipped.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI);
@@ -191,9 +145,7 @@ public sealed class GizmoStyleTests
 
         ScaleGizmoDragTests.DragAxisBy(harness, GizmoHandle.AxisX, 2f);
 
-        // Both started two units across and both are now four, and both grew
-        // toward +x: each planted the face on its own −x side, whichever of its
-        // local faces that happens to be.
+        // Both went from two units to four, growing toward world +x.
         (float Min, float Max) flippedSpan = WorldSpanX(flipped);
         flippedSpan.Min.ShouldBe(-5f, Tolerance);
         flippedSpan.Max.ShouldBe(-1f, Tolerance);
@@ -206,10 +158,7 @@ public sealed class GizmoStyleTests
     [Fact]
     public void A_symmetric_resize_holds_the_object_s_centre_not_its_origin()
     {
-        // Off-centre geometry: the mesh spans 0..2 in x, so its centre is a whole
-        // unit from the node's origin. Scaling about the origin would move the
-        // near face by nothing and the far face by the whole size change, which
-        // leaves the handle under the cursor only for centred objects.
+        // The mesh spans 0..2 in x, so its centre is a unit from the node origin.
         var harness = GizmoHarness.ThreeQuarterView(GizmoStyle.Classic);
         SceneNode node = harness.AddNode(Vector3.Zero, "Offset");
         node.MeshRenderer = new MeshRenderer(
@@ -218,17 +167,14 @@ public sealed class GizmoStyleTests
         harness.Scene.Selection.Add(node);
         ScaleGizmoDragTests.Scale(harness).Snap.Enabled = false;
 
-        // Classic is symmetric by default: one unit of travel makes it two units
-        // bigger, one on each side of its own centre.
+        // Symmetric: one unit of travel adds a unit on each side.
         ScaleGizmoDragTests.DragAxisBy(harness, GizmoHandle.AxisX, 1f);
 
         node.LocalScale.X.ShouldBe(2f, Tolerance);
-        // The centre stayed at x = 1 and the object grew to span −1..3.
+        // Centre still at x = 1; the object now spans -1..3.
         (node.LocalPosition.X + 0f * node.LocalScale.X).ShouldBe(-1f, Tolerance);
         (node.LocalPosition.X + 2f * node.LocalScale.X).ShouldBe(3f, Tolerance);
     }
-
-    // --- Classic's half of the pairing ---------------------------------------
 
     [Fact]
     public void A_classic_resize_moves_both_faces_and_leaves_the_node_where_it_is()
@@ -237,12 +183,10 @@ public sealed class GizmoStyleTests
         SceneNode node = harness.AddSelectedBrushNode(new Vector3(3f, 0f, 0f), halfExtent: 1f);
         ScaleGizmoDragTests.Scale(harness).Snap.Enabled = false;
 
-        // The handle tracks the cursor, so one unit of travel moves the face it
-        // stands over by one unit and the opposite face by one the other way.
         ScaleGizmoDragTests.DragAxisBy(harness, GizmoHandle.AxisX, 1f);
 
         node.Brush!.LocalBounds.Size.X.ShouldBe(4f, Tolerance);
-        node.LocalPosition.ShouldBe(new Vector3(3f, 0f, 0f)); // bit-identical: nothing wrote it
+        node.LocalPosition.ShouldBe(new Vector3(3f, 0f, 0f));
     }
 
     [Theory]
@@ -261,21 +205,18 @@ public sealed class GizmoStyleTests
 
         if (style.FaceAnchoredResize)
         {
-            // Studio, inverted: symmetric. Travel is half the size change, so one
-            // unit of travel makes it two units bigger and moves nothing.
+            // Studio with Shift is symmetric: travel is half the size change.
             node.Brush!.LocalBounds.Size.X.ShouldBe(4f, Tolerance);
             node.LocalPosition.ShouldBe(new Vector3(3f, 0f, 0f));
         }
         else
         {
-            // Classic, inverted: face-anchored. Travel IS the size change, and
-            // the node carries half of it so the far face stays put.
+            // Classic with Shift is face-anchored: travel is the size change
+            // and the node moves by half of it.
             node.Brush!.LocalBounds.Size.X.ShouldBe(3f, Tolerance);
             node.LocalPosition.X.ShouldBe(3.5f, Tolerance);
         }
     }
-
-    // --- Where the handles stand ---------------------------------------------
 
     [Fact]
     public void Studio_handles_stand_clear_of_the_selection_box_and_classic_handles_do_not_move()
@@ -285,17 +226,14 @@ public sealed class GizmoStyleTests
         studio.Use(GizmoMode.Scale);
         GizmoGeometry studioGeometry = studio.LiveGeometry();
 
-        // Outside the face it sits on, and by a gap rather than by a whole
-        // gizmo's worth: the handle is ON the object, not floating beside it.
+        // Just outside the face, by less than a whole gizmo length.
         studioGeometry.AxisReach(GizmoHandle.AxisX).ShouldBeGreaterThan(2f);
         studioGeometry.AxisReach(GizmoHandle.AxisX).ShouldBeLessThan(2f + studioGeometry.AxisLength);
         studioGeometry.AxisReach(GizmoHandle.AxisNegX)
             .ShouldBe(studioGeometry.AxisReach(GizmoHandle.AxisX), Tolerance);
 
-        // And the handle's whole BODY clears the face, not just the point the
-        // reach is measured to. Measuring to a cube's centre buries half of it in
-        // the surface it is meant to be standing on, and measuring to an arrow's
-        // tip buries the entire head.
+        // The whole cube clears the face, not only its centre. Same for the
+        // arrow's tail below.
         studioGeometry.TryGetHandleBox(GizmoHandle.AxisX, out Vector3 cube, out float radius).ShouldBeTrue();
         (Vector3.Dot(cube - studioGeometry.Pivot, Vector3.UnitX) - radius).ShouldBeGreaterThan(2f);
 
@@ -309,17 +247,13 @@ public sealed class GizmoStyleTests
         classic.Use(GizmoMode.Scale);
         GizmoGeometry classicGeometry = classic.LiveGeometry();
 
-        // The classic layout is a property of the screen alone, so a bigger
-        // object does not push its handles anywhere.
         classicGeometry.AxisReach(GizmoHandle.AxisX).ShouldBe(classicGeometry.AxisLength);
     }
 
     [Fact]
     public void A_tiny_object_still_gets_handles_far_enough_apart_to_aim_at()
     {
-        // Without a floor, the smallest thing in the scene becomes the hardest to
-        // manipulate: every handle collapses into one pile at the pivot. A flat
-        // object (zero extent on an axis) is the same case.
+        // Without a minimum reach every handle collapses onto the pivot.
         var harness = GizmoHarness.ThreeQuarterView(GizmoStyle.Studio);
         harness.AddSelectedBrushNode(Vector3.Zero, halfExtent: 0.001f);
         harness.Use(GizmoMode.Scale);
@@ -335,9 +269,7 @@ public sealed class GizmoStyleTests
     [Fact]
     public void The_studio_pivot_is_the_centre_of_the_selection_box_and_the_classic_one_is_the_average_origin()
     {
-        // Two brushes of different sizes: the box centre and the average of the
-        // origins are genuinely different points, which is the whole reason the
-        // pivot is a style decision.
+        // Different sizes, so box centre (6) and average origin (5) differ.
         foreach (GizmoStyle style in new[] { GizmoStyle.Studio, GizmoStyle.Classic })
         {
             var harness = new GizmoHarness(new Vector3(20f, 15f, 25f), Vector3.Zero, style: style);
@@ -349,8 +281,6 @@ public sealed class GizmoStyleTests
             harness.LiveGeometry().Pivot.X.ShouldBe(expected, Tolerance);
         }
     }
-
-    // --- Switching -----------------------------------------------------------
 
     [Fact]
     public void The_toggle_verb_flips_the_style_and_reaches_all_three_tools()
@@ -381,9 +311,6 @@ public sealed class GizmoStyleTests
     [Fact]
     public void Switching_style_mid_drag_rolls_the_gesture_back()
     {
-        // The style decides where the handles stand, so changing it during a
-        // gesture would move the constraint out from under a live grab, and would
-        // leave the outgoing tool holding an open undo transaction.
         var harness = GizmoHarness.ThreeQuarterView(GizmoStyle.Studio);
         SceneNode node = harness.AddSelectedBrushNode(Vector3.Zero, halfExtent: 1f);
         harness.Use(GizmoMode.Translate);
@@ -419,11 +346,8 @@ public sealed class GizmoStyleTests
     [Fact]
     public void A_press_on_an_object_still_picks_it_up_in_a_style_with_no_centre_disc()
     {
-        // Studio draws no centre disc, so the hit tester offers none. The
-        // free-move CONSTRAINT behind it still has to exist, because that is what
-        // a press on the object itself is routed into: without it, "grab the
-        // thing and move it" would stop working the moment the style changed, and
-        // the press would fall through to a plain click-select.
+        // Studio has no centre disc to pick, but select-and-move still routes
+        // through the free-move constraint behind it.
         var harness = new ViewportHarness(gizmoStyle: GizmoStyle.Studio);
         harness.Orbit(Vector3.Zero, 24f, 0.9f, -0.4f);
         SceneNode node = harness.AddBrush(new Vector3(3f, 0f, 0f), 1f);
@@ -442,8 +366,6 @@ public sealed class GizmoStyleTests
         node.LocalPosition.ShouldBe(new Vector3(3f, 0f, 0f));
     }
 
-    // --- Invariants, under both styles ---------------------------------------
-
     [Theory]
     [InlineData(GizmoStyleKind.Studio)]
     [InlineData(GizmoStyleKind.Classic)]
@@ -458,7 +380,7 @@ public sealed class GizmoStyleTests
         ScaleGizmoDragTests.GrabAxis(
             harness, GizmoHandle.AxisX, out Vector3 pivot, out Vector3 axis, out float reach);
         harness.DragTo(pivot + axis * (reach + 2.6f));
-        node.Brush.ShouldNotBeSameAs(original); // the live drag really did swap it
+        node.Brush.ShouldNotBeSameAs(original);
 
         harness.PressEscape().ShouldBe(GizmoUpdateResult.DragCancelled);
 
@@ -490,9 +412,6 @@ public sealed class GizmoStyleTests
     [InlineData(GizmoStyleKind.Classic)]
     public void One_notch_is_one_increment_in_either_style(GizmoStyleKind kind)
     {
-        // The fixed-increment property is about the SIZE, so it survives the
-        // styles disagreeing about which face moves and about how the cursor's
-        // travel maps onto the change.
         GizmoStyle style = StyleFor(kind);
         var harness = GizmoHarness.ThreeQuarterView(style);
         SceneNode node = harness.AddSelectedBrushNode(Vector3.Zero, halfExtent: 1f);
@@ -500,18 +419,14 @@ public sealed class GizmoStyleTests
         scale.Snap.Enabled = true;
         scale.Snap.Increment = 1f;
 
-        // Comfortably past half a notch on whichever mapping this style uses.
+        // Past half a notch under either style's travel mapping.
         float travel = style.FaceAnchoredResize ? 0.6f : 0.3f;
         ScaleGizmoDragTests.DragAxisBy(harness, GizmoHandle.AxisX, travel);
 
         node.Brush!.LocalBounds.Size.X.ShouldBe(3f, Tolerance);
     }
 
-    // --- Helpers -------------------------------------------------------------
-
-    // A brush node's extent along world x, taken through its world matrix so a
-    // rotated node reports where its geometry actually is rather than what its
-    // local bounds say.
+    // Extent along world x, through the world matrix so rotation counts.
     private static (float Min, float Max) WorldSpanX(SceneNode node)
     {
         Aabb bounds = node.Brush!.LocalBounds;
@@ -547,7 +462,7 @@ public sealed class GizmoStyleTests
         var output = new DebugDraw();
         harness.Gizmo.Draw(output);
 
-        // Two vertices per line, six interleaved floats per vertex.
+        // Two vertices per line.
         return output.VertexCount / 2;
     }
 }

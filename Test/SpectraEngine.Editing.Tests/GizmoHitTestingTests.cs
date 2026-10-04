@@ -5,18 +5,14 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Tests;
 
 /// <summary>
-/// Handle picking: aiming a viewport ray at a handle's world geometry picks
-/// that handle, aiming at nothing picks nothing, and — the part that actually
-/// decides whether a gizmo feels right — the handles that overlap on screen
-/// resolve in the documented priority: centre, then planes, then axes, nearest
-/// first.
+/// Handle picking. Overlapping handles resolve centre first, then planes,
+/// then axes, nearest first.
 /// </summary>
 public sealed class GizmoHitTestingTests
 {
     private const float Tolerance = TranslateGizmoHitTester.DefaultTolerancePixels;
 
-    // Comfortably past the plane quads (which end at 0.58 of the axis length)
-    // so an axis aim is unambiguously on the bare shaft.
+    // Past the plane quads, which end at 0.58 of the axis length.
     private const float AlongAxis = 0.8f;
 
     [Theory]
@@ -32,9 +28,7 @@ public sealed class GizmoHitTestingTests
         GizmoPick pick = Pick(harness, geometry, onShaft);
 
         pick.Handle.ShouldBe(expected);
-        // The ray passes exactly through the shaft, so the miss distance is
-        // zero to float precision — proof the aim really is on the handle and
-        // the pick is not merely inside the tolerance by luck.
+        // On the shaft, not merely inside the tolerance.
         pick.PixelDistance.ShouldBeLessThan(0.01f);
     }
 
@@ -67,8 +61,7 @@ public sealed class GizmoHitTestingTests
         var harness = GizmoHarness.ThreeQuarterView();
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
 
-        // Far outside the gizmo in every direction, in the negative octant
-        // where no handle lives at all.
+        // The negative octant holds no handles.
         Vector3 elsewhere = new(-1f, -1f, -1f);
         Pick(harness, geometry, elsewhere * (geometry.AxisLength * 3f)).ShouldBe(GizmoPick.Miss);
     }
@@ -77,7 +70,7 @@ public sealed class GizmoHitTestingTests
     public void A_gizmo_behind_the_camera_picks_nothing()
     {
         var harness = GizmoHarness.FrontView();
-        // 30 units behind a camera that sits at z = 10 looking down −z.
+        // Camera is at z = 10 looking down -z.
         GizmoGeometry geometry = harness.GeometryAt(new Vector3(0f, 0f, 40f));
         geometry.IsBehindCamera.ShouldBeTrue();
 
@@ -85,18 +78,13 @@ public sealed class GizmoHitTestingTests
         TranslateGizmoHitTester.Pick(in geometry, in straightAhead, Tolerance).ShouldBe(GizmoPick.Miss);
     }
 
-    // --- Ambiguous overlap: the priority order ------------------------------
-
     [Fact]
     public void The_centre_wins_over_the_axes_that_all_meet_at_the_pivot()
     {
         var harness = GizmoHarness.ThreeQuarterView();
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
 
-        // Every axis segment starts at the pivot, so a ray through the pivot is
-        // at zero distance from all three at once. Without the centre-first
-        // rule the disc — the smallest target, entirely enclosed by its
-        // competitors — could never be grabbed.
+        // A ray through the pivot is at zero distance from all three axes.
         GizmoPick pick = Pick(harness, geometry, Vector3.Zero, tolerancePixels: 40f);
 
         pick.Handle.ShouldBe(GizmoHandle.Screen);
@@ -109,14 +97,11 @@ public sealed class GizmoHitTestingTests
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
         Vector3 quadCentre = QuadCentre(geometry, GizmoHandle.PlaneXY);
 
-        // A tolerance this wide puts both bounding arrows within reach of the
-        // quad's centre, which is exactly the situation the priority resolves:
-        // the user aimed at a filled square, so they get the square.
+        // Wide enough that both bounding arrows are within reach too.
         GizmoPick generous = Pick(harness, geometry, quadCentre, tolerancePixels: 90f);
         generous.Handle.ShouldBe(GizmoHandle.PlaneXY);
 
-        // Sanity check that the ambiguity was real: with the planes removed
-        // from consideration the same ray would land on an axis.
+        // The overlap is real: without the planes the same ray picks an axis.
         GizmoPick axisOnly = PickAxesOnly(harness, geometry, quadCentre, tolerancePixels: 90f);
         axisOnly.Handle.ShouldBeOneOf(GizmoHandle.AxisX, GizmoHandle.AxisY);
     }
@@ -128,14 +113,13 @@ public sealed class GizmoHitTestingTests
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
         float length = geometry.AxisLength;
 
-        // Hand-built rather than aimed through the camera: this ray travels
-        // −y and +z so it pierces the z = 0 quad (PlaneXY) at 0.45 of the axis
-        // length and then the y = 0 quad (PlaneZX) half an axis further on.
+        // Hand-built ray: pierces the z = 0 quad (PlaneXY) first, then the
+        // y = 0 quad (PlaneZX) half an axis length further on.
         var ray = new Ray3(
             new Vector3(0.45f * length, 0.9f * length, -0.45f * length),
             Vector3.Normalize(new Vector3(0f, -1f, 1f)));
 
-        // Prove both are genuinely hit before asserting which one wins.
+        // Both quads are hit.
         geometry.TryGetPlaneQuad(GizmoHandle.PlaneXY, out Vector3 xyCorner, out Vector3 xyU, out Vector3 xyV, out float size)
             .ShouldBeTrue();
         GizmoMath.TryRayQuad(in ray, xyCorner, xyU, size, xyV, size, out float nearDistance).ShouldBeTrue();
@@ -150,29 +134,23 @@ public sealed class GizmoHitTestingTests
     [Fact]
     public void The_axis_nearest_the_cursor_wins_when_another_is_viewed_end_on()
     {
-        // Looking straight down −z collapses the whole z arrow onto the pivot,
-        // so it is within a few pixels of everything near the centre — the
-        // classic ambiguous view.
+        // Looking down -z collapses the z arrow onto the pivot.
         var harness = GizmoHarness.FrontView();
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
         Vector3 onXShaft = new(geometry.AxisLength * AlongAxis, 0f, 0f);
 
-        // A tolerance wide enough that the end-on z arrow is also "within
-        // tolerance"; proximity to the cursor is what must decide.
+        // Wide enough that the end-on z arrow is within tolerance too.
         GizmoPick pick = Pick(harness, geometry, onXShaft, tolerancePixels: 90f);
 
         pick.Handle.ShouldBe(GizmoHandle.AxisX);
         pick.PixelDistance.ShouldBeLessThan(0.01f);
     }
 
-    // --- The tolerance is a real screen-space quantity -----------------------
-
     [Fact]
     public void An_axis_is_picked_inside_the_pixel_tolerance_and_missed_outside_it()
     {
-        // Front view, x arrow: the arrow lies in the view plane, so a screen
-        // offset converts to a world offset by exactly one scale factor and the
-        // pixel distance the tester computes is the pixel distance we aimed.
+        // Front view: the x arrow lies in the view plane, so the pixel offset
+        // we aim is the pixel distance the tester computes.
         var harness = GizmoHarness.FrontView();
         GizmoGeometry geometry = harness.GeometryAt(Vector3.Zero);
         Vector2 onShaft = harness.WorldToScreen(new Vector3(geometry.AxisLength * AlongAxis, 0f, 0f));
@@ -184,8 +162,6 @@ public sealed class GizmoHitTestingTests
         GizmoPick outside = PickScreen(harness, geometry, onShaft + new Vector2(0f, Tolerance + 4f), Tolerance);
         outside.Handle.ShouldBe(GizmoHandle.None);
     }
-
-    // --- Helpers ------------------------------------------------------------
 
     private static Vector3 QuadCentre(in GizmoGeometry geometry, GizmoHandle handle)
     {
@@ -208,8 +184,7 @@ public sealed class GizmoHitTestingTests
         return TranslateGizmoHitTester.Pick(in geometry, in ray, tolerancePixels);
     }
 
-    // Reproduces just the axis stage of the tester, to show what the priority
-    // order suppressed rather than asserting an unexplained handle.
+    // The axis stage of the tester alone.
     private static GizmoPick PickAxesOnly(
         GizmoHarness harness, in GizmoGeometry geometry, Vector3 aimAt, float tolerancePixels)
     {

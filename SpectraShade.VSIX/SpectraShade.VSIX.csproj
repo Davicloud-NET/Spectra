@@ -7,7 +7,6 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
 
-    <!-- VSIX extension properties -->
     <CreateVsixContainer>true</CreateVsixContainer>
     <DeployExtension>false</DeployExtension>
     <GeneratePkgDefFile>false</GeneratePkgDefFile>

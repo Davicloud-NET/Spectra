@@ -3,22 +3,8 @@ using SpectraEngine.Editor.Viewport;
 
 namespace SpectraEngine.Editor.Tests;
 
-/// <summary>
-/// The viewport's input arbitration: the cursor lock, the right-click-versus-
-/// right-drag decision, the shell's chord table and the focus-loss path.
-/// </summary>
-/// <remarks>
-/// <b>None of this had ever been reachable from a test.</b> It lived inside a
-/// window procedure, so proving any of it needed a real HWND and a message pump,
-/// and every one of these behaviours fails SILENTLY when it breaks: a cursor
-/// that lands outside the window, a button the engine still believes is held, a
-/// context menu that opens only when you click quickly. The router exists so
-/// that the next host inherits the answers rather than rediscovering them.
-/// </remarks>
 public sealed class ViewportInputRouterTests
 {
-    // A viewport 800x600 whose top-left client pixel sits at screen (100, 50),
-    // so the lock's centre anchor is client (400, 300) and screen (500, 350).
     private const int ViewportWidth = 800;
     private const int ViewportHeight = 600;
     private const int OriginX = 100;
@@ -26,15 +12,9 @@ public sealed class ViewportInputRouterTests
     private const int AnchorScreenX = OriginX + (ViewportWidth / 2);
     private const int AnchorScreenY = OriginY + (ViewportHeight / 2);
 
-    // What SM_CXDRAG halves to at 100%: a press may travel four pixels and still
-    // be a click.
+    // Half of SM_CXDRAG at 100% scaling.
     private const int Slack = 4;
 
-    /// <summary>
-    /// The platform half, recorded rather than performed. Screen space is client
-    /// space translated by the origin, which is all a child window's mapping
-    /// ever is.
-    /// </summary>
     private sealed class FakeCursor : IViewportCursor
     {
         internal List<string> Calls { get; } = [];
@@ -45,7 +25,6 @@ public sealed class ViewportInputRouterTests
 
         internal int Slack { get; set; } = ViewportInputRouterTests.Slack;
 
-        /// <summary>Where the OS cursor was last put.</summary>
         internal ViewportPoint Position { get; private set; }
 
         internal bool Clipped { get; private set; }
@@ -86,25 +65,15 @@ public sealed class ViewportInputRouterTests
         }
     }
 
-    /// <summary>The engine, reduced to what it receives.</summary>
     private sealed class RecordingSink : IInputSink
     {
         internal List<InputEvent> Events { get; } = [];
 
         public void Submit(in InputEvent input) => Events.Add(input);
 
-        /// <summary>
-        /// The buttons the engine would still believe are held, reduced from the
-        /// stream exactly as <c>InputManager</c> reduces it.
-        /// </summary>
-        /// <remarks>
-        /// <b>A focus loss is a release, not an absence of one.</b> The engine
-        /// releases everything held when it is told the viewport lost focus, so
-        /// the router must not also synthesise a button-up per held button: that
-        /// would arm the same release edges twice. What has to hold is that the
-        /// stream never leaves a button down with no release of any kind, which
-        /// is what this replay measures.
-        /// </remarks>
+        // Reduces the stream the way InputManager does. FocusLost counts as a
+        // release of everything, so the router must not also send a button-up
+        // per held button.
         internal PointerButtons ReplayHeldButtons()
         {
             PointerButtons held = PointerButtons.None;
@@ -136,14 +105,9 @@ public sealed class ViewportInputRouterTests
         _router.ContextMenuRequested += (x, y) => _menus.Add(new ViewportPoint(x, y));
     }
 
-    // --- The cursor lock -----------------------------------------------------
-
     [Fact]
     public void The_lock_pins_the_cursor_at_the_centre_of_the_viewport()
     {
-        // The middle rather than wherever the pointer happens to be: pinning at
-        // an edge means half the mouse's travel leaves the window before the
-        // teleport catches it.
         _router.OnPointerMove(10, 20);
         _router.ApplyCursorMode(CursorMode.Locked);
 
@@ -160,8 +124,6 @@ public sealed class ViewportInputRouterTests
         _router.ApplyCursorMode(CursorMode.Locked);
         _sink.Events.Clear();
 
-        // Twelve pixels right of the centre, reported as an absolute client
-        // position because that is the only shape Windows has for a mouse move.
         _router.OnPointerMove((ViewportWidth / 2) + 12, (ViewportHeight / 2) - 5);
 
         InputEvent submitted = _sink.Events.ShouldHaveSingleItem();
@@ -169,17 +131,13 @@ public sealed class ViewportInputRouterTests
         submitted.Value.X.ShouldBe(12f);
         submitted.Value.Y.ShouldBe(-5f);
 
-        // Back on the anchor, so the next move is measured from the same place
-        // and the pointer never reaches the edge of the screen.
         _cursor.Position.ShouldBe(new ViewportPoint(AnchorScreenX, AnchorScreenY));
     }
 
     [Fact]
     public void The_re_pin_echo_is_not_reported_as_motion()
     {
-        // Moving the cursor generates a move message of its own, which arrives
-        // as a zero delta. Passing it on would be a stream of no-op events; the
-        // exact-equality test is why the point type is integer.
+        // Moving the cursor generates its own move message, a zero delta.
         _router.ApplyCursorMode(CursorMode.Locked);
         _sink.Events.Clear();
 
@@ -191,10 +149,8 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void Unlocking_releases_the_clip_strictly_before_the_restore_teleport()
     {
-        // ORDER, not merely presence. The fence is the whole client rect, so a
-        // restore point outside it (the look began near the pane's edge) is
-        // clamped onto the fence line if the teleport runs first, and the cursor
-        // lands somewhere the user never put it.
+        // If the teleport ran first, a restore point outside the clip rect
+        // would be clamped onto its edge.
         _router.OnPointerMove(20, 30);
         _router.ApplyCursorMode(CursorMode.Locked);
         _router.ApplyCursorMode(CursorMode.Normal);
@@ -210,9 +166,6 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void Unlocking_restores_the_press_point_rather_than_the_anchor()
     {
-        // The anchor is the viewport's centre and the press was not, so
-        // restoring to the anchor would teleport the pointer at the end of every
-        // freelook.
         _router.OnPointerMove(20, 30);
         _router.ApplyCursorMode(CursorMode.Locked);
         _router.ApplyCursorMode(CursorMode.Normal);
@@ -226,10 +179,8 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void A_viewport_that_moves_under_a_live_lock_re_anchors()
     {
-        // The anchor is a SCREEN point derived from the client centre, so a pane
-        // that moves without resizing leaves it pointing where the pane used to
-        // be, and the next move hands the engine the whole displacement as one
-        // frame of look.
+        // The anchor is a screen point. Left stale, the next move would report
+        // the pane's whole displacement as one frame of look.
         _router.ApplyCursorMode(CursorMode.Locked);
         _cursor.Origin = new ViewportPoint(OriginX + 300, OriginY + 40);
         _router.OnViewportMoved();
@@ -244,13 +195,9 @@ public sealed class ViewportInputRouterTests
         submitted.Value.Y.ShouldBe(0f);
     }
 
-    // --- Focus loss ----------------------------------------------------------
-
     [Fact]
     public void Focus_loss_ends_the_lock_and_leaves_no_button_held()
     {
-        // The releases that would have ended these presses were delivered to
-        // whoever took the focus and are never coming.
         _router.OnPointerMove(40, 40);
         _router.OnPointerDown(PointerButtons.Left);
         _router.OnPointerDown(PointerButtons.Right);
@@ -270,11 +217,6 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void A_lost_capture_ends_the_gesture_without_dropping_the_keyboard()
     {
-        // A capture can be taken away with focus staying exactly where it is: a
-        // system-cancelled touch, another control grabbing the pointer, a drag
-        // that left for a different window. The releases are never coming, so
-        // each held button gets one, and the gesture ends the way letting go
-        // would have ended it.
         _router.OnPointerMove(40, 40);
         _router.OnPointerDown(PointerButtons.Left);
         _router.OnPointerDown(PointerButtons.Middle);
@@ -284,18 +226,13 @@ public sealed class ViewportInputRouterTests
         _router.ButtonsDown.ShouldBe(PointerButtons.None);
         _sink.ReplayHeldButtons().ShouldBe(PointerButtons.None);
 
-        // Balanced ups, NOT the release-everything event: the keyboard is still
-        // here, and FocusLost would drop the movement keys out from under a
-        // freelook that is otherwise perfectly valid.
+        // FocusLost would also drop the movement keys of a live freelook.
         _sink.Events.ShouldNotContain(input => input.Kind == InputEventKind.FocusLost);
     }
 
     [Fact]
     public void A_lost_capture_opens_no_context_menu()
     {
-        // A right press whose release was taken away is not a click. Opening
-        // the menu here would put one on screen from a button nobody let go of,
-        // in the middle of whatever took the pointer away.
         _router.OnPointerMove(30, 30);
         _router.OnPointerDown(PointerButtons.Right);
 
@@ -308,10 +245,8 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void A_lost_capture_with_nothing_held_is_nothing()
     {
-        // The ordinary case, because releasing a capture RAISES the loss: every
-        // gesture that ends normally arrives here one line later, and a router
-        // that synthesised anything would double every button release in the
-        // shell.
+        // Releasing a capture raises the loss, so every normal gesture end
+        // arrives here too.
         _router.OnPointerMove(30, 30);
         _router.OnPointerDown(PointerButtons.Left);
         _router.OnPointerUp(PointerButtons.Left);
@@ -325,10 +260,6 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void No_button_is_left_down_across_a_lock_transition()
     {
-        // A whole freelook gesture: press, lock, look, unlock, release. The
-        // stream either side of the lock has to reduce to nothing held, because
-        // the lock changes the shape of the MOVES and must not touch the
-        // buttons.
         _router.OnPointerMove(50, 50);
         _router.OnPointerDown(PointerButtons.Right);
         _router.ApplyCursorMode(CursorMode.Locked);
@@ -341,14 +272,9 @@ public sealed class ViewportInputRouterTests
         _cursor.Captured.ShouldBeFalse();
     }
 
-    // --- Right click versus right drag ---------------------------------------
-
     [Fact]
     public void A_hesitant_click_inside_the_drag_slack_opens_the_context_menu()
     {
-        // A press held while the hand shakes is still a click: the arbitration
-        // has no time component at all, exactly like the rectangle Windows draws
-        // around a press point.
         _router.OnPointerMove(200, 150);
         _router.OnPointerDown(PointerButtons.Right);
         _router.OnPointerMove(202, 150);
@@ -362,8 +288,7 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void A_press_that_leaves_the_drag_slack_never_opens_the_menu()
     {
-        // And it is one-way: coming back inside afterwards does not turn a
-        // freelook into a click.
+        // Coming back inside the slack does not make it a click again.
         _router.OnPointerMove(200, 150);
         _router.OnPointerDown(PointerButtons.Right);
         _router.OnPointerMove(205 + Slack, 150);
@@ -376,10 +301,8 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void Travel_accumulates_across_both_move_shapes()
     {
-        // The lock engages a frame or two after the press, so a gesture is
-        // measured half in absolute positions and half in raw deltas. Three
-        // pixels in each shape is inside the slack twice over and outside it
-        // once, which is the case a per-shape budget would get wrong.
+        // Three pixels as a position plus three as a locked delta: inside the
+        // slack separately, outside it together.
         _router.OnPointerMove(200, 150);
         _router.OnPointerDown(PointerButtons.Right);
         _router.OnPointerMove(203, 150);
@@ -393,10 +316,7 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void The_arbitration_is_net_displacement_rather_than_path_length()
     {
-        // Four pixels out and four back is eight pixels of path and no
-        // displacement at all. Summing the path made an ordinary hesitant click
-        // on a high-dpi mouse silently open no menu while clicking faster
-        // "fixed" it, which is a bug nobody can report.
+        // Four pixels out and four back: eight of path, zero displacement.
         _router.OnPointerMove(200, 150);
         _router.OnPointerDown(PointerButtons.Right);
         _router.OnPointerMove(200 + Slack, 150);
@@ -410,8 +330,7 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void The_slack_is_read_from_the_host_at_every_press()
     {
-        // Per-window DPI, and a window can be dragged between monitors of
-        // different scaling between one press and the next.
+        // DPI is per window and can change between presses.
         _cursor.Slack = 20;
 
         _router.OnPointerMove(200, 150);
@@ -435,8 +354,6 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void The_menu_opens_after_the_engine_has_seen_the_release()
     {
-        // So that the freelook has ended and given its cursor request back
-        // before the shell opens anything over the viewport.
         InputEventKind lastBeforeMenu = InputEventKind.FocusLost;
         _router.ContextMenuRequested += (_, _) => lastBeforeMenu = _sink.Events[^1].Kind;
 
@@ -446,8 +363,6 @@ public sealed class ViewportInputRouterTests
 
         lastBeforeMenu.ShouldBe(InputEventKind.PointerUp);
     }
-
-    // --- The shell's chords --------------------------------------------------
 
     [Theory]
     [InlineData(InputKey.N, ShellChord.NewMap)]
@@ -479,8 +394,6 @@ public sealed class ViewportInputRouterTests
     [InlineData(InputKey.Z)]
     public void A_key_outside_the_table_reaches_the_engine_even_with_control(InputKey key)
     {
-        // The table is short and closed on purpose: every chord on it is one the
-        // engine can no longer see, and Ctrl+Z is the editor's own.
         _router.OnKeyDown(key, KeyModifiers.Control).ShouldBeFalse();
 
         _chords.ShouldBeEmpty();
@@ -490,9 +403,6 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void F11_is_claimed_without_a_modifier()
     {
-        // The one chord on this table that needs none: it is not a letter, so
-        // it cannot be confused with a movement key, and the engine's own F11
-        // toggles a window-mode latch only the standalone window reads.
         _router.OnKeyDown(InputKey.F11, KeyModifiers.None).ShouldBeTrue();
 
         _chords.ShouldHaveSingleItem().ShouldBe(ShellChord.MaximiseViewport);
@@ -502,8 +412,7 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void The_drawer_chord_needs_control_and_the_bare_key_does_not()
     {
-        // A bare backtick already shows the console, and taking it would break
-        // that for nothing.
+        // A bare backtick already shows the console.
         _router.OnKeyDown(InputKey.GraveAccent, KeyModifiers.None).ShouldBeFalse();
         _chords.ShouldBeEmpty();
 
@@ -514,8 +423,6 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void F11_during_a_freelook_goes_to_the_engine_like_every_other_chord()
     {
-        // The cursor-lock stand-down covers the whole table, not just the
-        // letters: while a camera is driving, the viewport keeps its keys.
         _router.ApplyCursorMode(CursorMode.Locked);
 
         _router.OnKeyDown(InputKey.F11, KeyModifiers.None).ShouldBeFalse();
@@ -534,9 +441,7 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void A_document_chord_during_a_freelook_goes_to_the_engine()
     {
-        // During a look Ctrl is the descend key and S flies backwards, so the
-        // chord would fire from the ordinary descend-while-reversing gesture,
-        // pop a save dialog mid-flight and eat the movement key.
+        // During a look Ctrl is descend and S is backwards, not a save.
         _router.ApplyCursorMode(CursorMode.Locked);
 
         _router.OnKeyDown(InputKey.S, KeyModifiers.Control).ShouldBeFalse();
@@ -560,10 +465,7 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void Alt_is_claimed_so_the_window_menu_does_not_eat_the_next_key()
     {
-        // Alt alone opens the window menu and swallows whatever follows, which
-        // is the difference between Alt-orbit working and the viewport silently
-        // going deaf mid-gesture. Claimed from the PLATFORM, not from the
-        // engine: the key is submitted either way.
+        // Claimed from the platform only; the engine still gets the key.
         _router.OnKeyDown(InputKey.AltLeft, KeyModifiers.Alt).ShouldBeTrue();
         _router.OnKeyDown(InputKey.A, KeyModifiers.Alt).ShouldBeTrue();
 
@@ -581,9 +483,6 @@ public sealed class ViewportInputRouterTests
     [Fact]
     public void A_key_release_always_reaches_the_engine()
     {
-        // No chord and no claim on the way up: the shell's chords fire on the
-        // press, and a release the engine never hears leaves the key held for
-        // the rest of the session.
         _router.OnKeyUp(InputKey.S);
 
         InputEvent submitted = _sink.Events.ShouldHaveSingleItem();
@@ -591,15 +490,9 @@ public sealed class ViewportInputRouterTests
         submitted.Key.ShouldBe(InputKey.S);
     }
 
-    // --- Before there is an engine -------------------------------------------
-
     [Fact]
     public void The_arbitration_runs_before_a_sink_exists()
     {
-        // Input arriving before the engine is dropped rather than queued, but
-        // the lock, the buttons and the press arbitration are the SHELL's
-        // bookkeeping and would come back inconsistent the moment a session
-        // started.
         _router.Sink = null;
 
         _router.OnPointerMove(200, 150);

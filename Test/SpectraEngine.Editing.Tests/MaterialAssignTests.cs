@@ -11,29 +11,10 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// Painting a material onto a brush, from the render thread's side of the
-/// boundary.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>The gesture cannot be driven headlessly and the assignment can.</b> A
-/// drag is Avalonia, a compositor, a pointer and an OLE session; what decides
-/// whether the result is right is a verb taking a path, a viewport point and a
-/// scope. So the verb is what has tests: which faces changed, that it is one
-/// history entry, that the selection is left alone, and that each of the three
-/// outcomes says the thing a person has to act on.
-/// </para>
-/// <para>
-/// <b>The refusals are most of the file, for the reason the model-insert tests
-/// give.</b> A drop has no keyboard equivalent, so one that silently does
-/// nothing is indistinguishable from a drag the shell never received.
-/// </para>
-/// </remarks>
+/// <summary>Assigning a material to brush faces through the editor host.</summary>
 public sealed class MaterialAssignTests
 {
-    // A material the repo's own content root really has, so the resolved path
-    // is measured against a real file rather than against a fixture.
+    // A real file in the repo's content root.
     private const string Brick = "Materials/wall.spectramat";
 
     private static SceneEditorHost NewHost(Scene scene, Renderer? renderer = null)
@@ -59,8 +40,7 @@ public sealed class MaterialAssignTests
         return (NewHost(scene, renderer), assets, renderer);
     }
 
-    // A plate whose top face is at y = 1, with the camera above it looking
-    // down: the centre ray hits the +Y face, which is plane 2 of CreateBox.
+    // The centre ray hits the +Y face, which is plane 2 of CreateBox.
     private static SceneNode AimAtAPlate(Scene scene)
     {
         SceneNode plate = scene.Root.CreateChild("Plate");
@@ -87,8 +67,6 @@ public sealed class MaterialAssignTests
         return count;
     }
 
-    // --- What lands ----------------------------------------------------------
-
     [Fact]
     public void A_drop_on_a_face_paints_that_face_only()
     {
@@ -102,8 +80,6 @@ public sealed class MaterialAssignTests
         report.FacesChanged.ShouldBe(1);
         report.NodeName.ShouldBe("Plate");
 
-        // One of six, and the whole point of the scope: painting a wall of a
-        // room must not paint its floor and ceiling too.
         FacesWearing(plate.Brush!, Brick).ShouldBe(1);
     }
 
@@ -120,8 +96,6 @@ public sealed class MaterialAssignTests
         report.FacesChanged.ShouldBe(6);
         FacesWearing(plate.Brush!, Brick).ShouldBe(6);
 
-        // The whole block, in words, rather than a count somebody has to know
-        // the shape of a box to read.
         report.Describe().ShouldContain("the whole block");
     }
 
@@ -140,8 +114,6 @@ public sealed class MaterialAssignTests
 
         host.UndoDepth.ShouldBe(1);
 
-        // A paint sweep across five blocks must not end with the last one
-        // selected and the user's own selection gone.
         scene.Selection.Items.Count.ShouldBe(1);
         scene.Selection.Items[0].ShouldBeSameAs(other);
 
@@ -161,9 +133,7 @@ public sealed class MaterialAssignTests
 
         MaterialAssignReport again = host.AssignMaterial(Brick, null, MaterialDropScope.Brush);
 
-        // Reference identity is what invalidates the carve downstream, so a
-        // second identical assignment must not produce a new brush: it would
-        // recompile the world to draw the picture it already had.
+        // A new Brush instance would invalidate the carve and recompile the world.
         again.Applied.ShouldBeTrue();
         again.FacesChanged.ShouldBe(0);
         plate.Brush.ShouldBeSameAs(painted);
@@ -186,12 +156,8 @@ public sealed class MaterialAssignTests
         report.FacesChanged.ShouldBe(6);
         plate.Brush!.FaceSurfaces[0].Material.IsDefault.ShouldBeTrue();
 
-        // "None" is a real answer in the picker, so it needs a sentence of its
-        // own rather than one reading "  applied to the whole block".
         report.Describe().ShouldContain("default material");
     }
-
-    // --- The refusals --------------------------------------------------------
 
     [Fact]
     public void A_drop_on_nothing_is_refused_in_words()
@@ -233,9 +199,7 @@ public sealed class MaterialAssignTests
         SceneEditorHost host = NewHost(scene);
         Brush before = plate.Brush!;
 
-        // The registry interns whatever it is handed, so a path outside the
-        // content root would become a material reference nothing can resolve,
-        // written into a map and carried to whoever opens it next.
+        // The registry interns anything, so the host has to refuse this.
         MaterialAssignReport report = host.AssignMaterial(
             @"C:\elsewhere\brick.spectramat", null, MaterialDropScope.Face);
 
@@ -274,8 +238,7 @@ public sealed class MaterialAssignTests
             MaterialAssignReport report = host.AssignMaterial(
                 "Materials/nobody_wrote_this.spectramat", null, MaterialDropScope.Face);
 
-            // Applied AND wrong, which is the third voice: the faces really did
-            // change and the answer is to write the file rather than to undo.
+            // Applied and unresolved: the faces did change.
             report.Applied.ShouldBeTrue();
             report.FacesChanged.ShouldBe(1);
             report.Unresolved.ShouldNotBeNullOrWhiteSpace();
@@ -288,8 +251,6 @@ public sealed class MaterialAssignTests
             assets.ReleaseGraphicsResources();
         }
     }
-
-    // --- The selection route -------------------------------------------------
 
     [Fact]
     public void Assign_to_selection_paints_every_selected_brush_in_one_entry()
@@ -330,8 +291,6 @@ public sealed class MaterialAssignTests
         report.Describe().ShouldContain("Select one");
         host.UndoDepth.ShouldBe(0);
     }
-
-    // --- The drag flag -------------------------------------------------------
 
     [Fact]
     public void The_material_drag_flag_is_state_the_outline_reads_and_a_reset_clears_it()

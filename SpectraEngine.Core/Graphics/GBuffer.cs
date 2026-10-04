@@ -5,51 +5,21 @@ namespace SpectraEngine.Core.Graphics;
 public enum GBufferLayout { Standard, Extended }
 
 /// <summary>
-/// The surfaces a deferred geometry pass writes, and a light pass reads.
+/// The surfaces a deferred geometry pass writes and the light pass reads.
+/// The extended layout adds a fifth, custom attachment.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Four colour attachments plus depth in the standard layout; the extended
-/// layout adds a fifth custom attachment. The layout is a shader contract.
-/// Every material shader writes it and the light pass reads it, so changing a
-/// channel means touching both ends at once. It is written down here rather than
-/// only in the shaders because those are two files that can drift.
-/// </para>
-/// <code>
-/// RT0  RGBA8 sRGB   albedo.rgb        ambient occlusion.a
-/// RT1  RGBA16F      normal.rgb        roughness.a
-/// RT2  RGBA8        metallic.r        shadingModel.g       (spare .ba)
-/// RT3  RGBA16F      emissive.rgb      (spare .a)
-/// RT4  RGBA16F      custom.rgba       per shading model
-/// depth R32 typeless, sampled         world position, by reconstruction
-/// </code>
-/// <para>
-/// <b>Position is not stored.</b> It reconstructs exactly from depth and the
-/// pixel's screen coordinate, and storing it instead would cost an entire
-/// RGBA16F for information the depth buffer already holds.
-/// </para>
-/// <para>
-/// <b>The custom channel is what keeps this from growing.</b> Subsurface
-/// scattering, clearcoat and anisotropy are different shading models, not
-/// different BRDF parameters; giving each its own attachment is how a G-buffer
-/// reaches eight surfaces and stays there. Instead <c>shadingModel</c> says how
-/// to read <c>custom</c>, so a new model costs an enum value and a branch in the
-/// light pass rather than a migration of every material shader.
-/// </para>
-/// <para>
-/// <b>Albedo is the only sRGB attachment.</b> It is a colour a person picked and
-/// benefits from the transfer curve's precision near black; everything else is
-/// either a direction, a linear coefficient or a value with range above one, and
-/// encoding those would be actively wrong.
-/// </para>
-/// <para>
-/// Standard storage is 28 bytes per pixel including depth; extended storage
-/// is 36. The standard layout saves 16.6 MB at 1080p while retaining emissive.
-/// </para>
-/// </remarks>
+// The layout is a contract with the geometry and light shaders. Change a
+// channel and both must change.
+//
+// RT0  RGBA8 sRGB   albedo.rgb        ambient occlusion.a
+// RT1  RGBA16F      normal.rgb        roughness.a
+// RT2  RGBA8        metallic.r        shadingModel.g       (spare .ba)
+// RT3  RGBA16F      emissive.rgb      (spare .a)
+// RT4  RGBA16F      custom.rgba       per shading model
+// depth R32 typeless, sampled         world position, by reconstruction
 public sealed class GBuffer : IDisposable
 {
-    /// <summary>How many colour attachments the layout uses.</summary>
+    /// <summary>Colour attachments in the extended layout.</summary>
     public const int AttachmentCount = 5;
 
     private readonly Renderer _renderer;
@@ -68,9 +38,7 @@ public sealed class GBuffer : IDisposable
         _targets = new RenderTarget[layout == GBufferLayout.Standard ? 4 : AttachmentCount];
         _renderer = renderer;
 
-        // Only the first carries depth: it is shared by the whole pass, and one
-        // depth buffer per attachment would be four full-screen surfaces
-        // allocated and never read.
+        // Only the first carries depth; the pass shares it.
         _targets[0] = renderer.CreateRenderTarget(new RenderTargetDesc(
             width, height, TextureFormat.Rgba8, TextureColorSpace.Srgb, Depth: true));
         _targets[1] = renderer.CreateRenderTarget(new RenderTargetDesc(
@@ -87,17 +55,10 @@ public sealed class GBuffer : IDisposable
         Height = height;
     }
 
-    /// <summary>Current width, shared by every attachment.</summary>
     public int Width { get; private set; }
 
-    /// <summary>Current height, shared by every attachment.</summary>
     public int Height { get; private set; }
     public GBufferLayout Layout { get; }
-
-    // Every attachment is created with colour above, so the null-forgiving
-    // operator on each accessor below is a statement about this constructor
-    // rather than a hope: a depth-only G-buffer attachment would be a surface
-    // the geometry shader writes and nothing can read.
 
     /// <summary>The attachments, in binding order. Pass this to <c>BeginPass</c>.</summary>
     public ReadOnlySpan<RenderTarget> Targets => _targets;
@@ -114,21 +75,14 @@ public sealed class GBuffer : IDisposable
     /// <summary>Emissive radiance in rgb.</summary>
     public Texture Emissive => _targets[3].ColorTexture!;
 
-    /// <summary>Whatever the shading model in <see cref="MaterialData"/> says this means.</summary>
+    /// <summary>Per shading model data. Extended layout only.</summary>
     public Texture Custom => Layout == GBufferLayout.Extended ? _targets[4].ColorTexture!
         : throw new InvalidOperationException("The standard G-buffer has no custom attachment. Create an extended layout to use it.");
 
-    /// <summary>Depth, for reconstructing world position. Never null: attachment 0 always has it.</summary>
+    /// <summary>Depth, for reconstructing world position.</summary>
     public Texture Depth => _targets[0].DepthTexture!;
 
-    /// <summary>
-    /// Resizes every attachment together. Free when the size is unchanged, which
-    /// is what lets a caller say "match the window" every frame.
-    /// </summary>
-    /// <remarks>
-    /// They must stay the same size: one rasterisation writes all of them, and
-    /// <c>BeginPass</c> refuses a mismatched set.
-    /// </remarks>
+    /// <summary>Resizes every attachment together. Free when the size is unchanged.</summary>
     public void Resize(int width, int height)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

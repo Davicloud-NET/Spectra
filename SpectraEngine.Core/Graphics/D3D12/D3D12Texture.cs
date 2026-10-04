@@ -2,18 +2,13 @@ using Silk.NET.Core.Native;
 using Silk.NET.Direct3D12;
 using Silk.NET.DXGI;
 using System;
-// Aliased: inside a Texture subclass the bare name resolves to the inherited
-// Texture.ColorSpace property instead of the helper class.
+// Aliased: inside a Texture subclass the bare name is the inherited property.
 using ColorMath = SpectraEngine.Core.Graphics.ColorSpace;
 
 namespace SpectraEngine.Core.Graphics.D3D12;
 
-/// <summary>
-/// A default-heap 2D texture with its SRV and sampler in small CPU-only
-/// descriptor heaps, ready to be copied into the renderer's shader-visible
-/// rings at draw time. D3D12 has no GenerateMips, so mip chains are built with
-/// a CPU box filter and every level is uploaded through a staging buffer.
-/// </summary>
+// SRV and sampler live in small CPU-only heaps and are copied into the
+// renderer's shader-visible rings at draw time.
 internal sealed unsafe class D3D12Texture : Texture
 {
     private ComPtr<ID3D12Resource> _texture;
@@ -25,10 +20,8 @@ internal sealed unsafe class D3D12Texture : Texture
     internal CpuDescriptorHandle SrvCpu { get; private set; }
     internal CpuDescriptorHandle SamplerCpu { get; private set; }
 
-    /// <summary>The underlying resource, for an RTV over it or a barrier on it.</summary>
     internal ID3D12Resource* Resource => (ID3D12Resource*)_texture.Handle;
 
-    /// <summary>The DXGI format actually in use: what an RTV and a PSO must match.</summary>
     internal Silk.NET.DXGI.Format DxgiFormat { get; private set; }
 
     // Only set for render-target textures, whose storage can be replaced.
@@ -56,16 +49,7 @@ internal sealed unsafe class D3D12Texture : Texture
         CreateSampler(renderer, filter, wrap);
     }
 
-    /// <summary>
-    /// Creates an empty texture usable as both a render target and a shader
-    /// resource: the colour attachment of a <see cref="D3D12RenderTarget"/>.
-    /// </summary>
-    /// <remarks>
-    /// It starts in <see cref="ResourceStates.PixelShaderResource"/>, which is
-    /// what the target's state tracking assumes and what makes a texture that is
-    /// created and then sampled without ever being drawn into legal rather than
-    /// undefined.
-    /// </remarks>
+    // Starts in PixelShaderResource, which D3D12RenderTarget's state tracking assumes.
     internal static D3D12Texture CreateRenderTargetTexture(
         D3D12Renderer renderer, int width, int height, TextureFormat format,
         TextureColorSpace colorSpace, TextureFilter filter, TextureWrap wrap)
@@ -78,10 +62,6 @@ internal sealed unsafe class D3D12Texture : Texture
         return texture;
     }
 
-    // The format argument used to be accepted and then ignored here, which was
-    // invisible only because RenderTargetDesc.Validate allowed nothing but
-    // Rgba8. The moment a float format became legal it would have produced a
-    // silently 8-bit target on this backend while OpenGL was correct.
     private static Silk.NET.DXGI.Format RenderTargetDxgiFormat(
         TextureFormat format, TextureColorSpace resolved) => format switch
     {
@@ -93,16 +73,8 @@ internal sealed unsafe class D3D12Texture : Texture
             nameof(format), $"{format} is not a render-target format."),
     };
 
-    /// <summary>
-    /// Creates a depth texture written through a depth-stencil view and read
-    /// through a sampler.
-    /// </summary>
-    /// <remarks>
-    /// <b>The resource is TYPELESS and the depth-ness lives on the views.</b>
-    /// D3D refuses a shader-resource view over a resource declared
-    /// <c>D32_FLOAT</c>, so the resource is <c>R32_TYPELESS</c>, the DSV says
-    /// <c>D32_FLOAT</c> and the SRV says <c>R32_FLOAT</c>.
-    /// </remarks>
+    // D3D refuses an SRV over a D32_FLOAT resource, so the resource is
+    // R32_TYPELESS with a D32_FLOAT DSV and an R32_FLOAT SRV.
     internal static D3D12Texture CreateDepthTexture(D3D12Renderer renderer, int width, int height)
     {
         var texture = new D3D12Texture(
@@ -112,7 +84,6 @@ internal sealed unsafe class D3D12Texture : Texture
         return texture;
     }
 
-    /// <summary>Reallocates a depth texture in place, keeping the wrapper and its SRV slot.</summary>
     internal void ReplaceDepthStorage(D3D12Renderer renderer, int width, int height)
     {
         _renderer.Retire(ref _texture);
@@ -127,8 +98,7 @@ internal sealed unsafe class D3D12Texture : Texture
 
         var srvDesc = new ShaderResourceViewDesc
         {
-            // R32_FLOAT, not the typeless resource format: a typeless SRV is
-            // rejected, and this is the read half of the two views.
+            // A typeless SRV is rejected.
             Format = Silk.NET.DXGI.Format.FormatR32Float,
             ViewDimension = SrvDimension.Texture2D,
             Shader4ComponentMapping = D3D12Renderer.DefaultComponentMapping,
@@ -143,11 +113,7 @@ internal sealed unsafe class D3D12Texture : Texture
         renderer.DevicePtr->CreateShaderResourceView(Resource, &srvDesc, SrvCpu);
     }
 
-    /// <summary>
-    /// Replaces the resource at a new size, <b>keeping the same wrapper and the
-    /// same SRV heap slot</b>, so materials and copied descriptor tables survive
-    /// a render-target resize.
-    /// </summary>
+    // Same wrapper and SRV slot, so materials survive a render-target resize.
     internal void ReplaceStorage(D3D12Renderer renderer, int width, int height)
     {
         _renderer.Retire(ref _texture);
@@ -210,11 +176,8 @@ internal sealed unsafe class D3D12Texture : Texture
 
         Silk.NET.DXGI.Format dxgiFormat = UploadDxgiFormat(format, resolved);
 
-        // No 24-bit DXGI format exists, so an Rgb8 payload is rewritten as RGBA8
-        // before anything else looks at it. Everything downstream then measures
-        // itself against uploadFormat rather than the requested one: a pitch
-        // computed from Rgb8 over an expanded payload is three quarters of the
-        // real stride, which shears the picture and raises nothing.
+        // No 24-bit DXGI format, so Rgb8 is expanded to RGBA8. Everything below
+        // must use uploadFormat, or the row pitch is wrong and the picture shears.
         TextureFormat uploadFormat = format == TextureFormat.Rgb8 ? TextureFormat.Rgba8 : format;
         ReadOnlySpan<byte> payload = desc.Payload;
         ReadOnlySpan<TextureMipDesc> mips = desc.Mips;
@@ -226,10 +189,8 @@ internal sealed unsafe class D3D12Texture : Texture
             mips = expandedMips;
         }
 
-        // D3D12 has no GenerateMips, so a requested chain is built on the CPU -
-        // but only for an uncompressed format with no chain of its own. A cooked
-        // chain is what the cooker produced, and a BC chain cannot be built here
-        // at all: there is no block encoder in the engine.
+        // D3D12 has no GenerateMips, so the chain is built on the CPU. Not for a
+        // supplied chain, and not for BC: the engine has no block encoder.
         bool wantsMips = filter == TextureFilter.LinearMipmap;
         if (!deferred && wantsMips && !desc.HasSuppliedMipChain && !TextureFormatInfo.IsBlockCompressed(uploadFormat))
         {
@@ -247,7 +208,6 @@ internal sealed unsafe class D3D12Texture : Texture
 
         GC.KeepAlive(owned);
 
-        // SRV + sampler descriptors in tiny staging heaps owned by the texture.
         _srvHeap = renderer.CreateDescriptorHeap(DescriptorHeapType.CbvSrvUav, 1, shaderVisible: false);
         _samplerHeap = renderer.CreateDescriptorHeap(DescriptorHeapType.Sampler, 1, shaderVisible: false);
         SrvCpu = ((ID3D12DescriptorHeap*)_srvHeap.Handle)->GetCPUDescriptorHandleForHeapStart();
@@ -284,8 +244,7 @@ internal sealed unsafe class D3D12Texture : Texture
             AddressW = addr,
             MipLODBias = 0f,
             MaxAnisotropy = 1,
-            // None, not Always: non-comparison filters ignore the func, and the
-            // debug layer warns when one is set anyway.
+            // None, not Always: the debug layer warns about a func on a non-comparison filter.
             ComparisonFunc = ComparisonFunc.None,
             MinLOD = 0f,
             MaxLOD = float.MaxValue,
@@ -293,12 +252,7 @@ internal sealed unsafe class D3D12Texture : Texture
         renderer.DevicePtr->CreateSampler(&samplerDesc, SamplerCpu);
     }
 
-    /// <summary>
-    /// The DXGI format one CPU upload of <paramref name="format"/> creates its
-    /// resource with. The twin of D3D11's table, and the two must agree: a
-    /// texture that is sRGB on one backend and linear on the other is a picture
-    /// that is merely wrong, with no error anywhere.
-    /// </summary>
+    // Must agree with D3D11's table.
     private static Silk.NET.DXGI.Format UploadDxgiFormat(
         TextureFormat format, TextureColorSpace resolved)
     {
@@ -326,32 +280,13 @@ internal sealed unsafe class D3D12Texture : Texture
         };
     }
 
-    /// <summary>Level-0 plus successively box-filtered halvings down to 1×1 (when enabled).</summary>
-    /// <remarks>
-    /// <para>
-    /// <b><paramref name="srgb"/> is not cosmetic.</b> D3D12 has no
-    /// GenerateMips, so unlike the other two backends this chain is built in
-    /// software, and averaging four sRGB bytes averages display codes rather
-    /// than light. The result is a mip chain that darkens as it goes down, most
-    /// visibly on the tiled brush surfaces that dominate this engine's screen,
-    /// and only on this backend. So an sRGB chain decodes each tap to linear,
-    /// averages there, and re-encodes, which is what the hardware does on D3D11
-    /// and GL.
-    /// </para>
-    /// <para>
-    /// <b>Alpha is excluded from the conversion.</b> It is coverage, stored
-    /// linearly even inside an sRGB format. It is always the fourth channel, so
-    /// the loop simply leaves index 3 alone.
-    /// </para>
-    /// </remarks>
+    // Box-filtered chain down to 1x1. An sRGB chain averages in linear light,
+    // as the hardware does on D3D11 and GL; averaging the bytes darkens each level.
     internal static List<(byte[] Pixels, int Width, int Height)> BuildMipChain(
         byte[] level0, int width, int height, int bpp, bool srgb)
     {
         var mips = new List<(byte[], int, int)> { (level0, width, height) };
 
-        // 256-entry decode table: the alternative is four MathF.Pow calls per
-        // channel per texel, which is seconds rather than milliseconds on a
-        // large texture.
         float[]? toLinear = srgb ? SrgbDecodeTable : null;
 
         byte[] prev = level0;
@@ -378,7 +313,7 @@ internal sealed unsafe class D3D12Texture : Texture
                         byte t2 = prev[(sy1 * w + sx0) * bpp + c];
                         byte t3 = prev[(sy1 * w + sx1) * bpp + c];
 
-                        // c == 3 is alpha: already linear, so average it directly.
+                        // Alpha (c == 3) is linear even in an sRGB format.
                         next[(y * nw + x) * bpp + c] = toLinear is null || c == 3
                             ? (byte)((t0 + t1 + t2 + t3) / 4)
                             : EncodeSrgb(
@@ -408,8 +343,7 @@ internal sealed unsafe class D3D12Texture : Texture
     private static byte EncodeSrgb(float linear)
     {
         float encoded = ColorMath.LinearToSrgb(linear);
-        // The +0.5 rounds to nearest instead of truncating; over a full chain,
-        // truncation is a systematic darkening of about half a code per level.
+        // Round to nearest: truncating darkens every level by about half a code.
         return (byte)Math.Clamp((int)(encoded * 255f + 0.5f), 0, 255);
     }
 

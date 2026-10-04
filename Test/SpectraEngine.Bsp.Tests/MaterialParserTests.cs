@@ -5,11 +5,8 @@ using System.Numerics;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The <c>.spectramat</c> text format, parsed in isolation — no renderer, no
-/// asset manager, no disk. The contract these tests pin down is that the parser
-/// is <em>total</em>: every input produces a usable definition, and anything it
-/// could not understand shows up in
-/// <see cref="MaterialDefinition.Warnings"/> instead of as an exception.
+/// The <c>.spectramat</c> parser on its own. It never throws: anything it does
+/// not understand lands in <see cref="MaterialDefinition.Warnings"/>.
 /// </summary>
 public sealed class MaterialParserTests
 {
@@ -36,7 +33,7 @@ public sealed class MaterialParserTests
         definition.Warnings.ShouldBeEmpty(Describe(definition));
         definition.ShaderName.ShouldBe("lit");
 
-        // Units come from declaration order, so the first texture line is unit 0.
+        // Units follow declaration order.
         definition.Textures.Count.ShouldBe(2);
         definition.TryGetTextureSlot("uDiffuse", out MaterialTextureSlot diffuse).ShouldBeTrue();
         diffuse.TexturePath.ShouldBe("Textures/wall_brick.png");
@@ -48,27 +45,23 @@ public sealed class MaterialParserTests
         definition.TryGetTextureSlot("uMask", out MaterialTextureSlot mask).ShouldBeTrue();
         mask.TexturePath.ShouldBe("Textures/gradient_mask.png");
         mask.Unit.ShouldBe(1);
-        // Omitted options match what AssetManager.LoadTexture defaults to.
+        // Same defaults as AssetManager.LoadTexture.
         mask.Filter.ShouldBe(TextureFilter.LinearMipmap);
         mask.Wrap.ShouldBe(TextureWrap.Repeat);
         mask.ColorSpace.ShouldBe(TextureColorSpace.Srgb);
 
         definition.Parameters.Count.ShouldBe(6);
         ShouldBe(definition, "uRoughness", MaterialParameterKind.Float, new Vector4(0.25f, 0f, 0f, 0f));
-        // A 'color' is authored in sRGB and stored linear: the hex bytes map onto
-        // 0..1 and then through the transfer curve. ColorSpaceTests pins the curve
-        // itself against known values, so this only pins that it was applied.
+        // 'color' is authored in sRGB and stored linear.
         ShouldBe(definition, "uBaseColor", MaterialParameterKind.Vector3,
             ColorSpace.SrgbToLinear(new Vector4(128 / 255f, 64 / 255f, 1f, 0f)));
-        // A four-component 'color' converts its RGB and leaves alpha alone,
-        // because alpha is coverage rather than light.
+        // Alpha is not converted.
         ShouldBe(definition, "uTint", MaterialParameterKind.Vector4,
             ColorSpace.SrgbToLinear(new Vector4(0.1f, 0.2f, 0.3f, 0.4f)));
         definition.TryGetParameter("uTint", out MaterialParameter tint).ShouldBeTrue();
         tint.Value.W.ShouldBe(0.4f);
 
-        // ...and 'vec2'/'vec3'/'vec4' are numbers, not colours, so they pass
-        // through untouched. That split is the whole rule of the format.
+        // vecN are plain numbers and pass through unconverted.
         ShouldBe(definition, "uTiling", MaterialParameterKind.Vector2, new Vector4(4f, 8f, 0f, 0f));
         ShouldBe(definition, "uEmissive", MaterialParameterKind.Vector3, new Vector4(0.5f, 0.25f, 0.125f, 0f));
         ShouldBe(definition, "uParams", MaterialParameterKind.Vector4, new Vector4(1f, 0f, 0f, 1f));
@@ -83,7 +76,7 @@ public sealed class MaterialParserTests
             """, "empty.spectramat");
 
         definition.Warnings.ShouldBeEmpty(Describe(definition));
-        // No shader named means "use the built-in lit shader", not "broken".
+        // Null means the built-in lit shader.
         definition.ShaderName.ShouldBeNull();
         definition.Textures.ShouldBeEmpty();
         definition.Parameters.ShouldBeEmpty();
@@ -98,8 +91,6 @@ public sealed class MaterialParserTests
             color uBaseColor = 1 1 1
             """, "future.spectramat");
 
-        // Forward compatibility: a file written for a newer engine still yields
-        // everything this one understands.
         definition.Warnings.Count.ShouldBe(2, Describe(definition));
         definition.Warnings.ShouldContain(w => w.Contains("doubleSided") && w.Contains("unknown key"));
         definition.Warnings.ShouldAllBe(w => w.StartsWith("future.spectramat("));
@@ -117,7 +108,6 @@ public sealed class MaterialParserTests
         definition.Warnings.ShouldContain(w => w.Contains("unknown parameter kind 'mat4'"));
         definition.Warnings.ShouldContain(w => w.Contains("unknown option 'trilinear'"));
 
-        // The bad option is dropped, the texture itself is not.
         definition.TryGetTextureSlot("uDiffuse", out MaterialTextureSlot slot).ShouldBeTrue();
         slot.Filter.ShouldBe(TextureFilter.LinearMipmap);
         slot.ColorSpace.ShouldBe(TextureColorSpace.Srgb);
@@ -149,8 +139,6 @@ public sealed class MaterialParserTests
         definition.Warnings.ShouldContain(w => w.Contains("no name before '='"));
         definition.Warnings.ShouldContain(w => w.Contains("more than a kind and a name"));
 
-        // One good line survives eight bad ones: the parser never gives up on a
-        // file, because a half-correct material still beats a crash.
         definition.Parameters.ShouldHaveSingleItem().Name.ShouldBe("uOk");
         definition.Textures.ShouldBeEmpty();
     }
@@ -175,8 +163,7 @@ public sealed class MaterialParserTests
         definition.TryGetTextureSlot("uDiffuse", out MaterialTextureSlot diffuse).ShouldBeTrue();
         diffuse.TexturePath.ShouldBe("Textures/c.png");
         diffuse.Filter.ShouldBe(TextureFilter.Nearest);
-        // Keeping the original unit matters: renumbering would silently move
-        // every sampler declared after it onto a different texture unit.
+        // Keeps its unit; renumbering would shift every later sampler.
         diffuse.Unit.ShouldBe(0);
         definition.TryGetTextureSlot("uOther", out MaterialTextureSlot other).ShouldBeTrue();
         other.Unit.ShouldBe(1);
@@ -188,9 +175,7 @@ public sealed class MaterialParserTests
     [Fact]
     public void Numbers_parse_with_the_invariant_culture()
     {
-        // The demo host runs with InvariantGlobalization, but the editor and the
-        // tools will not; "0.5" must be a half on a machine whose locale uses a
-        // comma as the decimal separator, and the comma must stay a separator.
+        // de-DE uses a decimal comma.
         var previous = Thread.CurrentThread.CurrentCulture;
         Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
         try
@@ -213,8 +198,6 @@ public sealed class MaterialParserTests
         string folder = Path.Combine(ContentRoot.Path, "Materials");
         string[] files = Directory.GetFiles(folder, "*" + MaterialParser.FileExtension);
 
-        // The repo's own content is the format's regression suite: a typo in a
-        // shipped .spectramat has to fail the build, not just look wrong in-game.
         files.ShouldNotBeEmpty($"no material files found in {folder}");
         foreach (string file in files)
         {
@@ -230,17 +213,13 @@ public sealed class MaterialParserTests
         }
     }
 
-    // ---- helpers ---------------------------------------------------------
-
     private static void ShouldBe(
         MaterialDefinition definition, string name, MaterialParameterKind kind, Vector4 value)
     {
         definition.TryGetParameter(name, out MaterialParameter parameter)
             .ShouldBeTrue($"'{name}' was not parsed");
         parameter.Kind.ShouldBe(kind, name);
-        // Exact comparison is right here: every literal in these files
-        // round-trips bit-for-bit through float.Parse, and a tolerance would
-        // hide a parser that dropped or reordered a component.
+        // Exact: these literals round-trip through float.Parse.
         parameter.Value.ShouldBe(value, name);
     }
 

@@ -4,26 +4,8 @@ using System.Collections.Generic;
 
 namespace SpectraEngine.Entities.Generator;
 
-/// <summary>
-/// An immutable array that compares by VALUE, for use inside an incremental
-/// generator's model.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>This exists because <c>ImmutableArray&lt;T&gt;</c> does not compare by
-/// value.</b> Its <c>Equals</c> is reference equality over the underlying array,
-/// so a model holding one is unequal to a freshly built copy of itself: every
-/// run reports the model as changed, every downstream step re-runs, and the
-/// generator's caching is dead. Nothing fails, nothing warns, and the only
-/// symptom is an IDE that gets slower as a solution grows.
-/// </para>
-/// <para>
-/// <b>Ordered comparison, deliberately.</b> Keyvalue and input order is
-/// declaration order, which is what a property panel lays out and what an
-/// exported schema writes, so two models differing only in member order really
-/// are different models.
-/// </para>
-/// </remarks>
+// Array that compares by value, in order. ImmutableArray<T> compares by
+// reference, which would make every model look changed on every run.
 internal readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IReadOnlyList<T>
     where T : IEquatable<T>
 {
@@ -31,7 +13,6 @@ internal readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IRea
 
     public EquatableArray(T[]? items) => _items = items;
 
-    /// <summary>An array with no entries.</summary>
     public static EquatableArray<T> Empty => new(Array.Empty<T>());
 
     public int Count => _items is null ? 0 : _items.Length;
@@ -61,9 +42,7 @@ internal readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IRea
 
     public override int GetHashCode()
     {
-        // Hand-rolled: System.HashCode is not in netstandard2.0, and a hash that
-        // ignored the contents would be legal and would turn every dictionary
-        // Roslyn keys on this into a linear scan.
+        // Hand-rolled: System.HashCode is not in netstandard2.0.
         unchecked
         {
             int hash = 17;
@@ -87,7 +66,6 @@ internal readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IRea
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
-/// <summary>Builds an <see cref="EquatableArray{T}"/> from the shape the transform collects into.</summary>
 internal static class EquatableArray
 {
     public static EquatableArray<T> From<T>(List<T> items)

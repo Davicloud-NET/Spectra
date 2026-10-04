@@ -21,47 +21,25 @@ namespace SpectraEngine.Core.Graphics.D3D12;
 
 /// <summary>
 /// Direct3D 12 implementation of <see cref="Renderer"/>. Owns the device, the
-/// direct queue, a flip-model swap chain, descriptor heaps, and the per-frame
-/// command list; pipelines record into that list between the renderer's
-/// begin/end barriers. Each frame context owns writable command and upload
-/// storage; fences guard context reuse and deferred resource destruction.
+/// queue, the swap chain and the per-frame command list that pipelines record into.
 /// </summary>
 public sealed unsafe partial class D3D12Renderer : Renderer
 {
     internal const Format BackBufferFormat = Format.FormatR8G8B8A8Unorm;
 
-    /// <summary>
-    /// The format the back buffer is <i>viewed</i> through, and therefore what a
-    /// shader write and a clear are encoded into. R2's display-encode step.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// The resource stays <see cref="BackBufferFormat"/> and only the view is
-    /// sRGB, which is not a stylistic choice: a flip-model swap chain (mandatory
-    /// on D3D12) may not be created with an _SRGB format at all, and gets its
-    /// display encoding from an _SRGB render-target view over the _UNORM buffer.
-    /// D3D11 next door does the opposite for the same reason in reverse, because
-    /// its bitblt chain allows the format directly.
-    /// </para>
-    /// <para>
-    /// <b>A pipeline state is compiled against the VIEW format, not the resource
-    /// format</b>, so this is what <see cref="D3D12TargetState.BackBuffer"/>
-    /// carries. Naming the _UNORM format there instead would mismatch every PSO
-    /// against the RTV bound to it, which the debug layer reports and a
-    /// release build renders wrong.
-    /// </para>
-    /// </remarks>
+    // A flip-model chain can't be created _SRGB, so the sRGB encode comes from
+    // an _SRGB view over the _UNORM buffer. PSOs compile against this format.
     internal const Format BackBufferRtvFormat = Format.FormatR8G8B8A8UnormSrgb;
     internal const Format DepthFormat = Format.FormatD24UnormS8Uint;
     private const uint BufferCount = 2;
 
-    // Hard API ceiling: shader-visible sampler heaps cannot exceed 2048 slots.
+    // API limit for a shader-visible sampler heap.
     private const uint MaxSamplerRingCapacity = 2048;
 
-    // Resource-binding tier 1's ceiling for a shader-visible CBV/SRV/UAV heap.
+    // Resource-binding tier 1 limit for a shader-visible CBV/SRV/UAV heap.
     private const uint MaxSrvRingCapacity = 1_000_000;
 
-    // D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING — identity RGBA swizzle.
+    // D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING
     internal const uint DefaultComponentMapping = 5768;
 
     internal readonly D3D12Api D3D12Api = D3D12Api.GetApi();
@@ -85,27 +63,23 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     private uint _frameIndex;
     private uint _swapChainFlags;
 
-    // Monotonic queue fence; each context records its last submission.
     private ComPtr<ID3D12Fence> _fence;
     private ulong _fenceValue;
     private nint _fenceEvent;
 
-    // Per-frame linear upload allocator (cbuffer slices, debug line vertices).
+    // Per-frame linear upload allocator.
     private ref ComPtr<ID3D12Resource> _uploadRing => ref _frame.UploadRing;
     private ref byte* _uploadRingCpu => ref _frame.UploadCpu;
     private ref ulong _uploadRingGpuVa => ref _frame.UploadGpuVa;
     private ref uint _uploadRingCapacity => ref _frame.UploadCapacity;
     private uint _uploadRingOffset;
 
-    // Upload rings outgrown mid-frame: the command list being recorded still
-    // holds GPU VAs into them (root CBVs, dynamic line VBs), so they must stay
-    // alive until the frame's fence completes. Disposed in Present.
+    // Rings outgrown mid-frame. The open list still holds GPU VAs into them,
+    // so they live until the frame's fence completes.
     private List<ComPtr<ID3D12Resource>> _retiredUploadRings => _frame.RetiredUploadRings;
 
-    // Shader-visible descriptor rings, reset each frame; draws copy their
-    // texture SRVs/samplers in and bind tables at the copied position.
-    // Capacities grow between frames when a frame's demand nears the cap
-    // (see GrowDescriptorRingsIfNeeded); peaks record each frame's demand.
+    // Shader-visible descriptor rings, reset each frame. They grow between
+    // frames only.
     private ref ComPtr<ID3D12DescriptorHeap> _srvRing => ref _frame.SrvRing;
     private ref ComPtr<ID3D12DescriptorHeap> _samplerRing => ref _frame.SamplerRing;
     private uint _srvStride;
@@ -117,22 +91,16 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     private ref uint _srvRingPeak => ref _frame.SrvPeak;
     private ref uint _samplerRingPeak => ref _frame.SamplerPeak;
 
-    // Last table staged this frame, reused by a draw that finds the rings full
-    // (see StageDescriptors) — 0 slots means nothing has been staged yet.
+    // Last table staged this frame, reused by a draw that finds the rings full.
     private GpuDescriptorHandle _lastSrvTable;
     private GpuDescriptorHandle _lastSamplerTable;
     private uint _stagedSlotCount;
     private bool _ringOverflowReported;
 
-    // Draws a frame may issue beyond its RenderView (the debug-draw overlay,
-    // and headroom so a one-item growth does not force a reallocation).
+    // Headroom for draws outside the RenderView, such as the debug overlay.
     private const int DescriptorReserveSlackDraws = 64;
 
-    // Every resource built by the Create* factories is tracked here so
-    // Shutdown can free stragglers. Meshes/textures leave early through
-    // Renderer.DestroyMesh/DestroyTexture via the Unregister callback handed
-    // out at creation. Unsynchronized: creation and destruction both happen
-    // on the render thread.
+    // Tracked so Shutdown can free stragglers. Render thread only.
     private readonly HashSet<Mesh> _meshes = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<Texture> _textures = new(ReferenceEqualityComparer.Instance);
     private readonly List<ShaderProgram> _shaders = [];
@@ -140,57 +108,36 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     private readonly List<RenderTarget> _renderTargets = [];
     private int _pipelineIndex;
 
-    // Size the swap chain currently has. Render() compares it against the
-    // engine-fed base-class framebuffer latch each frame and reruns the resize
-    // path when the window has changed; the resize must run on this (render)
-    // thread between frames, never in a window event.
+    // The swap chain's current size. Compared against the framebuffer latch
+    // each frame; the resize runs on the render thread between frames.
     private Vector2D<int> _swapChainSize;
 
-    // The last size ResizeBuffers refused, if any. A recoverable resize failure
-    // leaves the swap chain on its old buffers, so the latch keeps disagreeing
-    // and the path would be re-entered — and re-fail — every single frame,
-    // burning a WaitForGpu and a view rebuild each time and drowning the log.
-    // Cleared by the next resize that succeeds, so going away and coming back
-    // to the same size does get retried.
+    // The last size ResizeBuffers refused, so a failed resize is not retried
+    // every frame. Cleared by the next resize that succeeds.
     private Vector2D<int>? _failedResizeSize;
 
-    // Set once the device is gone. Everything that would otherwise call into a
-    // dead device — the fence wait, Present, the shutdown teardown — checks it,
-    // so the run ends on the one clear diagnosis instead of a cascade of
-    // secondary COM failures.
+    // Set once the device is gone, so nothing else calls into it.
     private bool _deviceLost;
 
-    // True for a surface somebody else presents: no swap chain, no back buffer,
-    // and the frame resolves into _presentTarget instead of into the window.
+    // A surface somebody else presents: no swap chain, the frame resolves
+    // into _presentTarget.
     private bool _composited;
 
-    // Where the frame is presented on a composited surface: an ORDINARY private
-    // D3D12 target, deliberately not a shared one. Nothing outside the engine
-    // can import a D3D12-created handle (measured: E_NOINTERFACE inside the
-    // compositor's own import), so the hand-over is a copy through
-    // D3D12On11Bridge and this target is only ever the source of it. Null on a
-    // window surface, which is what keeps every "target null means the back
-    // buffer" call site below meaning what it always meant.
+    // A private D3D12 target, not a shared one: the compositor refuses a
+    // D3D12-created handle (E_NOINTERFACE), so the frame is copied out through
+    // the bridge. Null on a window surface.
     private D3D12RenderTarget? _presentTarget;
 
-    // The D3D11 front end over this renderer's own device and queue that owns
-    // the shared texture and does that copy. Null on a window surface.
+    // D3D11 front end over this device and queue. Owns the shared texture.
     private D3D12On11Bridge? _bridge;
 
-    // The generation _presentTarget was built under, and the retired ones still
-    // held for a consumer that has not let go. See SharedTargetRetirement.
     private SharedTargetRetirement? _retirement;
     private int _presentGeneration;
 
-    // Whether the shared key is currently held, so EndSharedWrite is a no-op
-    // after a Begin that timed out rather than a release of a key this side
-    // never took - which the runtime reports and which hands the texture to a
-    // consumer mid-write.
+    // So EndSharedWrite does not release a key that a timed-out Begin never took.
     private bool _sharedWriteHeld;
 
-    // A consumer that is not being drawn never takes its turn, so the timeout
-    // is a steady state rather than an event: logged the first time and then
-    // once more when it clears, or the log is the frame rate.
+    // A consumer that is not drawn times out every frame. Log it once.
     private bool _sharedTimeoutLogged;
 
     private D3D12LineBatch? _lineBatch;
@@ -198,8 +145,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     private D3D12Texture? _fallbackTexture;
     private bool _isRecording;
 
-    // Same GL→D3D clip-space Z remap as the D3D11 backend; the two APIs share
-    // clip-space conventions. Row-vector: z_d3d = 0.5*z_gl + 0.5*w_gl.
+    /// <summary>Remaps GL clip z (-1..1) to D3D's 0..1. Row-vector: z_d3d = 0.5*z_gl + 0.5*w_gl.</summary>
     public static readonly Matrix4x4 GlToD3dClipZ = new(
         1f, 0f, 0f, 0f,
         0f, 1f, 0f, 0f,
@@ -208,19 +154,15 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
 
     /// <inheritdoc/>
-    /// <remarks>The 0..1 clip-Z remap above, exposed to backend-neutral code.</remarks>
     public override Matrix4x4 ClipZCorrection => GlToD3dClipZ;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Identity, because <see cref="GlToD3dClipZ"/> already put clip z in the
-    /// 0..1 range a depth buffer stores. OpenGL needs the other answer.
-    /// </remarks>
+    // Identity: clip z is already 0..1 here.
     public override Vector2 DepthToNdcZ => new(1f, 0f);
 
     public override GraphicsBackend Backend => GraphicsBackend.D3D12;
 
-    /// <summary>D3D12 creates its own device, so the window must not bring up an OpenGL context.</summary>
+    /// <inheritdoc/>
     public override GraphicsAPI WindowApi => GraphicsAPI.None;
 
     public override void AcquireContext(IRenderSurface surface) { /* not thread-affine */ }
@@ -229,9 +171,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     public override string CurrentPipelineName =>
         _pipelines.Count == 0 ? "None" : _pipelines[_pipelineIndex].Name;
 
-    // Cached because it rides every host snapshot; rebuilt only when the
-    // pipeline count moves, which is registration at Initialize and the clear
-    // at Shutdown.
+    // Cached: read on every host snapshot.
     private string[] _pipelineNames = [];
 
     public override IReadOnlyList<string> PipelineNames
@@ -251,41 +191,25 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
     internal ID3D12Device* DevicePtr => (ID3D12Device*)_device.Handle;
 
-    /// <summary>The command list pipelines and resources record into; null outside a frame.</summary>
+    // Null outside a frame.
     internal ID3D12GraphicsCommandList* CurrentList => _isRecording ? (ID3D12GraphicsCommandList*)_commandList.Handle : null;
 
-    /// <summary>The program most recently activated with <see cref="ShaderProgram.Use"/>; meshes resolve PSOs against it.</summary>
+    // Meshes resolve their PSO against this.
     internal D3D12ShaderProgram? CurrentProgram { get; set; }
 
-    /// <summary>Fill mode baked into PSOs for subsequent draws; set by the active pipeline.</summary>
     internal FillMode CurrentFillMode { get; set; } = FillMode.Solid;
 
-    /// <summary>
-    /// Monotonic frame counter (first frame renders as 1). Shader programs use
-    /// it to detect their first Use() per frame: the upload ring restarts every
-    /// frame, so slices cached from an earlier frame must not be rebound.
-    /// </summary>
+    // Starts at 1. Programs use it to spot their first Use() in a frame.
     internal ulong FrameNumber { get; private set; }
 
-    // ─── last-bound state, per command list recording ────────────────────────
-    //
-    // The deferred geometry pass draws every item with one program and one PSO,
-    // yet each draw used to re-issue the full block: root signature, PSO,
-    // topology, and a root CBV per cbuffer. All of it is command-list state
-    // that persists across draws, so a draw that repeats the previous one can
-    // skip the calls entirely. Tracked here rather than per program because the
-    // state belongs to the LIST: it survives program switches and dies at the
-    // frame's list reset, where ResetLastBoundState is owed. Every set of these
-    // states must go through the Bind* methods below, or the cache answers for
-    // a bind that never happened, which is the D3D11 bind-cache bug all over.
+    // Last-bound state of the open command list, so a draw repeating the
+    // previous one skips the calls. Every set of these states must go through
+    // the Bind* methods, and the list reset must call ResetLastBoundState.
     private nint _lastRootSignature;
     private nint _lastPso;
     private int _lastTopology = -1;
 
-    // Root CBV GPU addresses by root parameter index, meaningful only under
-    // _lastRootSignature (a root signature CHANGE invalidates root bindings,
-    // so BindRootSignature clears this; a redundant re-set of the same one
-    // leaves bindings intact per the D3D12 spec, and is skipped anyway).
+    // By root parameter index. A root signature change invalidates them.
     private readonly ulong[] _lastRootCbv = new ulong[16];
 
     internal void BindRootSignature(ID3D12GraphicsCommandList* list, nint rootSignature)
@@ -320,9 +244,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         list->IASetPrimitiveTopology(topology);
     }
 
-    // The list reset drops every binding, and a shader hot-reload earlier in
-    // the frame may have recreated objects at recycled addresses; both are why
-    // this runs at the top of every frame, before anything records.
+    // Top of every frame: the list reset drops bindings, and a hot reload may
+    // have recreated objects at recycled addresses.
     private void ResetLastBoundState()
     {
         _lastRootSignature = 0;
@@ -336,16 +259,12 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     {
     }
 
-    // ─── Initialization ──────────────────────────────────────
-
     public override void Initialize(IRenderSurface surface)
     {
         _surface = surface;
 
-        // Read the engine-fed latch, not window.FramebufferSize: this runs on
-        // the render thread while the main thread is already pumping
-        // glfwPollEvents, and GLFW guarantees no thread safety for that pair.
-        // The engine seeded the latch before this thread started.
+        // The latch, not window.FramebufferSize: GLFW window queries are not
+        // safe from the render thread.
         Vector2D<int> size = FramebufferSize;
         _swapChainSize = size;
         _composited = surface.Kind == RenderSurfaceKind.Composited;
@@ -353,10 +272,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         CreateDevice();
         CreateQueue();
 
-        // A composited surface is presented by somebody else, so there is no
-        // chain and no back buffer: everything the frame would have written into
-        // the window goes into the present target instead, built on demand from
-        // the same size latch a swap chain would have followed.
         if (!_composited)
             CreateSwapChain(surface, (uint)size.X, (uint)size.Y);
         if (UncappedPresentation)
@@ -367,32 +282,20 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
         DefaultShader = CreateBaseShader(BaseShaders.LitFileName);
         _debugShader = CreateBaseShader(BaseShaders.DebugLineFileName);
-        // Debug overlays draw always-on-top (depth off), matching the OpenGL
-        // backend's depth-disabled flush; must be set before the first draw
-        // builds a PSO.
         _lineBatch = new D3D12LineBatch(this, (D3D12ShaderProgram)_debugShader);
 
-        // 1×1 white fallback so unset texture slots in a descriptor table are
-        // always valid (sampling it is a no-op multiply).
+        // 1x1 white, so an unset texture slot in a descriptor table is still valid.
         ReadOnlySpan<byte> white = [255, 255, 255, 255];
-        // sRGB, like every other colour texture: white is 255 in both spaces, so
-        // the choice does not change this one texel, but a slot whose colour
-        // space differed from the texture it stands in for would be a trap the
-        // first time the fallback is anything but white.
         _fallbackTexture = new D3D12Texture(this, TextureUploadDesc.SingleLevel(
             white, 1, 1, TextureFormat.Rgba8, TextureColorSpace.Srgb,
             TextureFilter.Nearest, TextureWrap.Repeat));
 
-        // Deferred first: see OpenGLRenderer for why it is the default.
+        // The first one registered is the default.
         RegisterPipeline(new D3D12DeferredPipeline());
         RegisterPipeline(new D3D12ForwardPipeline());
         RegisterPipeline(new D3D12WireframePipeline());
 
-        // Built here rather than on the first frame, because the handle is what
-        // a host wires its consumer up with and it must exist by the time
-        // Initialize returns: a host that has to render a frame before it can be
-        // told where to look has to special-case its own startup, and would
-        // publish a zero handle if it did not.
+        // The host needs the shared handle as soon as Initialize returns.
         EnsurePresentTarget();
 
         DrainDebugMessages();
@@ -403,9 +306,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
     private void CreateDevice()
     {
-        // Only when asked for. This layer validates EVERY command-list call, so
-        // leaving it on unconditionally taxed every frame anyone ever measured
-        // and would have shipped with the engine. See Renderer.EnableDebugLayer.
+        // Opt-in: the layer validates every command-list call.
         if (!EnableDebugLayer)
         {
             _logger.LogInformation("D3D12 debug layer off (not requested).");
@@ -427,8 +328,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             }
         }
 
-        // Null means the system default, which is what every previous build
-        // did unconditionally.
+        // A null adapter is the system default.
         ComPtr<IDXGIAdapter> adapter = DxgiAdapters.Find(_dxgi, PreferredAdapter, _logger, out string adapterName);
         AdapterName = adapterName;
 
@@ -451,14 +351,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             _infoQueue = ComOwnership.Own(infoQueue);
     }
 
-    /// <summary>
-    /// Creates the direct queue. Knows nothing about presentation.
-    /// </summary>
-    /// <remarks>
-    /// <b>Split from the swap chain because a composited surface has no swap
-    /// chain and still needs a queue</b> - and needs it more than a windowed one
-    /// does, since it is the queue the D3D11On12 bridge records its copy into.
-    /// </remarks>
+    // Separate from the swap chain: a composited surface has no chain but
+    // still needs the queue.
     private void CreateQueue()
     {
         var queueDesc = new CommandQueueDesc
@@ -487,13 +381,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         nint hwnd = surface.NativeHandle;
         ID3D12CommandQueue* queue = (ID3D12CommandQueue*)_queue.Handle;
 
-        // The DXGI debug layer is what turns a bare DXGI_ERROR_INVALID_CALL out
-        // of ResizeBuffers into a sentence saying which reference is still
-        // outstanding, but it is validation, and it obeys the same gate as the
-        // device layer above. This request used to be unconditional, which kept
-        // DXGI validating the Present path in every build on any machine with
-        // Graphics Tools, --debug-layer=false included; D3D11 had the gate
-        // right, so "validation off" measured different things per backend.
+        // The DXGI debug layer explains swap-chain rejections. Same gate as the
+        // device layer.
         IDXGIFactory2* factory = null;
         Guid factoryGuid = IDXGIFactory2.Guid;
         bool debugFactory = false;
@@ -526,16 +415,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         }
         _swapChainFlags = UncappedPresentation && UncappedPresentationAvailable ? 2048u : 0u; // DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING
 
-        // Flip model is mandatory on D3D12. The per-frame full fence sync means
-        // the rotating back buffer is never in flight when we touch it.
-        //
-        // Flags stays 0 on purpose — in particular WITHOUT
-        // DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH. This engine never switches
-        // display modes: fullscreen is borderless windowed driven by
-        // WindowModeLatch, and MakeWindowAssociation below stops DXGI from
-        // driving a mode switch behind our back. A swap chain created without
-        // that flag being put into a fullscreen transition anyway is precisely
-        // the state ResizeBuffers rejects with DXGI_ERROR_INVALID_CALL.
+        // Flip model is mandatory on D3D12. No ALLOW_MODE_SWITCH: fullscreen is
+        // borderless windowed and DXGI never drives a mode switch.
         var desc = new SwapChainDesc1
         {
             Width = width,
@@ -561,10 +442,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         swapChain1->Release();
         _swapChain = ComOwnership.Own(swapChain3);
 
-        // Before the factory goes: the window association is per-factory, so it
-        // has to be made on THIS one — the one that created the chain — and
-        // therefore before the Release below. See DxgiInterop.SuppressAltEnter
-        // for what DXGI does to the render thread if we skip it.
+        // The window association is per-factory: it must be made on the factory
+        // that created the chain, before that factory is released.
         DxgiInterop.SuppressAltEnter(factory, hwnd, _logger, "D3D12");
         factory->Release();
 
@@ -579,10 +458,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         _srvStride = DevicePtr->GetDescriptorHandleIncrementSize(DescriptorHeapType.CbvSrvUav);
         _samplerStride = DevicePtr->GetDescriptorHandleIncrementSize(DescriptorHeapType.Sampler);
 
-        // The heaps above are cheap and unconditional; their CONTENTS are not.
-        // On a composited surface there is no chain to GetBuffer from, and the
-        // window depth buffer this also creates would be a full-screen surface
-        // nothing draws into, because the present target carries its own.
+        // A composited surface has no chain, and its present target has its own depth.
         if (!_composited)
             CreateBackBufferViews(width, height);
 
@@ -616,16 +492,12 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             ID3D12Resource* backBuffer = null;
             Guid resGuid = ID3D12Resource.Guid;
             SilkMarshal.ThrowHResult(((IDXGISwapChain3*)_swapChain.Handle)->GetBuffer(i, &resGuid, (void**)&backBuffer));
-            // Own, not `new ComPtr<>(...)`: the ComPtr constructor AddRefs, so
-            // wrapping GetBuffer's already-owned pointer would leave TWO
-            // references on the back buffer and ReleaseBackBufferViews would
-            // only ever drop it to one. DXGI then refuses every ResizeBuffers
-            // with DXGI_ERROR_INVALID_CALL — which is exactly why resizing this
-            // backend's window used to kill the render thread. See ComOwnership.
+            // Own, not new ComPtr<>(): the constructor AddRefs, and a leftover
+            // back-buffer reference makes DXGI refuse every ResizeBuffers.
             _backBuffers[i] = ComOwnership.Own(backBuffer);
 
-            // An explicit desc, not null: null means "the resource's own format",
-            // which is _UNORM and would skip the sRGB encode entirely.
+            // Explicit desc: null would take the resource's _UNORM format and
+            // skip the sRGB encode.
             var rtvDesc = new RenderTargetViewDesc
             {
                 Format = BackBufferRtvFormat,
@@ -658,26 +530,19 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         Guid depthGuid = ID3D12Resource.Guid;
         SilkMarshal.ThrowHResult(DevicePtr->CreateCommittedResource(
             &heapProps, HeapFlags.None, &depthDesc, ResourceStates.DepthWrite, &clearValue, &depthGuid, (void**)&depth));
-        // Same ownership handover: without it the depth texture survives every
-        // ReleaseBackBufferViews and each resize leaks a full-screen surface.
         _depthBuffer = ComOwnership.Own(depth);
 
         var dsvHandle = ((ID3D12DescriptorHeap*)_dsvHeap.Handle)->GetCPUDescriptorHandleForHeapStart();
         DevicePtr->CreateDepthStencilView(depth, null, dsvHandle);
     }
 
-    // Idempotent on purpose: the resize path releases the buffers and a device
-    // loss can throw before they are rebuilt, after which Shutdown releases
-    // them again. Clearing each field is what keeps that second pass a no-op
-    // rather than an over-release. See ComOwnership.Release.
+    // Must be idempotent: a failed resize and then Shutdown both get here.
     private void ReleaseBackBufferViews()
     {
         for (int i = 0; i < _backBuffers.Length; i++)
             ComOwnership.Release(ref _backBuffers[i]);
         ComOwnership.Release(ref _depthBuffer);
     }
-
-    // ─── Frame loop ──────────────────────────────────────────
 
     public void RegisterPipeline(ID3D12RenderPipeline pipeline)
     {
@@ -714,19 +579,16 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         DrainPendingResize();
         HotReloader.PumpPendingReloads();
 
-        // Once per FRAME, and deliberately not once per pipeline execution:
-        // a frame with ProbeTarget set runs the pipeline twice into one
-        // command list. See Renderer.BeginFrameInstanceBuffers.
+        // Once per frame, not per pipeline run: with ProbeTarget set the
+        // pipeline runs twice into one command list.
         BeginFrameInstanceBuffers();
 
         if (_pipelines.Count == 0 || _surface is null) return;
 
-        // Null on a window surface, which is what keeps every "output null means
-        // the back buffer" decision below byte-for-byte the path it always took.
+        // Null on a window surface, where null means the back buffer.
         RenderTarget? present = EnsurePresentTarget();
 
-        // A composited surface with no target has nowhere to draw: the pane is
-        // collapsed or mid-layout, which is not an error and not a frame.
+        // Composited with no target: the pane is collapsed. Not an error.
         if (_composited && present is null) return;
 
         BeginRecording();
@@ -741,15 +603,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         }
         if (Profiler.Enabled) Profiler.GpuTimer?.BeginFrame();
 
-        // Size the rings for the draw list about to be recorded, BEFORE the
-        // heaps are bound. Growing between frames from the previous frame's
-        // peak (GrowDescriptorRingsIfNeeded) only absorbs demand that rises
-        // gradually: a camera cut or a fast yaw that pulls a dense region into
-        // the frustum multiplies the visible draw count in a single frame, and
-        // per-material world batching multiplies it again. The view is already
-        // built and culled at this point, so the exact demand is known here —
-        // and here is the one place a heap can be swapped safely (GPU idle on
-        // the Present fence, command list reset, nothing bound yet).
+        // Size the rings for this view before the heaps are bound. This is the
+        // only place a heap can be swapped: nothing is bound yet.
         ReserveDescriptorRings(view);
         BindDescriptorHeaps();
 
@@ -772,18 +627,13 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             _pipelines[_pipelineIndex].Execute(context);
         }
 
-        // With HDR off there is no intermediate to resolve from, so the pipeline
-        // draws straight into whatever is being presented - which on a
-        // composited surface is the present target and on a window is still the
-        // back buffer, which is what `null` has always meant here.
+        // HDR off: draw straight into the presented target.
         RenderTarget? sceneTarget = HdrEnabled ? EnsureSceneTarget() : present;
         FrameTarget = sceneTarget;
         _pipelines[_pipelineIndex].Execute(context);
 
-        // The overlay follows the resolve's OUTPUT, always. Left pointed at the
-        // window it would draw through a back-buffer RTV a composited surface
-        // never created: no error, no debug-layer message, and a viewport with
-        // no gizmo handles in it.
+        // The overlay goes wherever the resolve goes. A composited surface has
+        // no back-buffer RTV to draw it through.
         if (sceneTarget is null || ReferenceEquals(sceneTarget, present))
         {
             DrawOverlay(scene, present);
@@ -792,11 +642,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         {
             ResolveTo(sceneTarget.ColorTexture!, present, scene);
 
-            // The same source, the same pass, the same command list, into an
-            // ordinary sRGB target - so whatever the shared route does
-            // differently is the only thing a byte comparison can find. On this
-            // backend that route is the bridge's copy, which happens after the
-            // execute below and therefore after this. See Renderer.CompareTarget.
+            // Reference picture for --viewport-compare: same source, plain sRGB target.
             if (CompareTarget is { } reference)
                 ResolveTo(sceneTarget.ColorTexture!, reference, scene);
         }
@@ -815,38 +661,22 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         ((ID3D12CommandQueue*)_queue.Handle)->ExecuteCommandLists(1, &executeList);
         if (Profiler.Enabled) (Profiler.GpuTimer as D3D12GpuTimer)?.Submitted();
 
-        // AFTER the execute, deliberately. The bridge records its copy into this
-        // same queue, so submitting the frame first is what orders the copy
-        // behind the draws that produced the picture - there is no fence here
-        // and none is needed, because a queue is already a total order.
+        // After the execute: the bridge copies on this same queue, so the copy
+        // lands behind the draws.
         PublishSharedFrame();
         SignalSubmission();
     }
 
-    /// <summary>
-    /// Hands the finished frame to the consumer through the D3D11On12 bridge.
-    /// A no-op on a window surface.
-    /// </summary>
-    /// <remarks>
-    /// <b>The key bracket is narrow here and wide on D3D11, and that difference
-    /// is the whole shape of this backend's route.</b> Over there the pipeline
-    /// draws straight into the shared texture, so the mutex has to cover the
-    /// pipeline and the resolve; here the frame lands in a private D3D12 target
-    /// and only this copy ever touches the shared one.
-    /// </remarks>
+    // Copies the finished frame to the consumer through the bridge. The mutex
+    // covers only this copy; nothing else here touches the shared texture.
     private void PublishSharedFrame()
     {
-        // Before the live surface's own bracket, so a turn queued against a
-        // generation a resize just retired is answered rather than left waiting
-        // for a release that is never coming. See
-        // SharedTargetRetirement.OfferTurns.
+        // First, so a turn queued against a just-retired generation is answered.
         _retirement?.OfferTurns();
 
         if (_bridge is not { HasSurface: true } bridge) return;
 
-        // A consumer that never took its turn is a hidden pane rather than a
-        // fault: skip this frame's copy and leave it holding the last one it was
-        // given, which is the right picture for something nobody is looking at.
+        // Consumer never took its turn (hidden pane): skip this frame's copy.
         if (!BeginSharedWrite()) return;
 
         try
@@ -859,29 +689,9 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         }
     }
 
-    /// <summary>
-    /// Resets the allocator and the command list and clears every piece of
-    /// per-recording state that a fresh list invalidates.
-    /// </summary>
-    /// <remarks>
-    /// Factored out of <see cref="Render"/> so the out-of-frame path shares it
-    /// rather than copying it. A copy is exactly how one of these resets goes
-    /// missing on one path: nothing throws, the list simply skips a rebind it
-    /// believes is redundant and draws with whatever the previous list left.
-    /// The ring reservation the view's size decides stays at the call site,
-    /// because it has no meaning outside a frame.
-    /// <para>
-    /// <b><see cref="FrameNumber"/> belongs in here and not at the call site.</b>
-    /// A program caches the GPU address of the upload slice it wrote its
-    /// cbuffer into and rebinds it while <c>LastUploadFrame</c> still matches;
-    /// what makes that safe is that the ring rewinds exactly when the number
-    /// changes. Rewinding without bumping - which is what an out-of-frame
-    /// recording would do if the increment stayed in <see cref="Render"/> -
-    /// leaves a clean cbuffer bound to a slice this recording is about to
-    /// overwrite, which draws with somebody else's constants and reports
-    /// nothing.
-    /// </para>
-    /// </remarks>
+    // Shared by the frame and the out-of-frame path so neither misses a reset.
+    // FrameNumber must bump here, together with the upload ring rewind:
+    // programs rebind a cached slice while the number is unchanged.
     private void BeginRecording()
     {
         if (_isRecording) return; // Asset copies can prefix this frame's direct command list.
@@ -895,8 +705,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         CurrentProgram = null;
         CurrentFillMode = FillMode.Solid;
 
-        // This context's completion fence passed before AcquireFrameContext
-        // returned; other contexts may still be executing.
         FrameNumber++;
         ResetLastBoundState();
         _uploadRingOffset = 0;
@@ -906,7 +714,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         _ringOverflowReported = false;
     }
 
-    /// <summary>Binds the two shader-visible rings. After any reservation, before anything draws.</summary>
+    // After any ring reservation, before anything draws.
     private void BindDescriptorHeaps()
     {
         ID3D12DescriptorHeap** heaps = stackalloc ID3D12DescriptorHeap*[2]
@@ -917,7 +725,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         ((ID3D12GraphicsCommandList*)_commandList.Handle)->SetDescriptorHeaps(2, heaps);
     }
 
-    /// <summary>Closes, submits and waits. The other half of <see cref="BeginRecording"/>.</summary>
     private void EndRecordingAndWait()
     {
         var list = (ID3D12GraphicsCommandList*)_commandList.Handle;
@@ -931,11 +738,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// This backend has no immediate context, so work issued between frames
-    /// needs a command list of its own. The back buffer is deliberately not
-    /// transitioned here: nothing outside a frame draws to it.
-    /// </remarks>
+    // No immediate context here, so out-of-frame work gets its own list.
     protected internal override void BeginOutOfFrameCommands()
     {
         FlushUploads();
@@ -949,20 +752,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     /// <inheritdoc/>
     protected internal override void EndOutOfFrameCommands() => EndRecordingAndWait();
 
-    /// <inheritdoc/>
-    /// <remarks>
-    /// <b>The row flip is the D3D half of the contract</b>: a render target's
-    /// origin is top-left here, so the row a clip y = -1 vertex rasterises to is
-    /// the last one, and the caller's y counts from the bottom of the picture.
-    /// <para>
-    /// A readback heap plus its own command list, closed and fenced before the
-    /// map: there is no immediate context to make the copy for us, and mapping
-    /// a resource the GPU has not finished writing returns whatever is there.
-    /// The destination footprint's row pitch is 256-aligned whatever the region
-    /// asked for, which is why the buffer is sized from
-    /// <c>GetCopyableFootprints</c> rather than from four bytes.
-    /// </para>
-    /// </remarks>
     internal override (byte R, byte G, byte B, byte A) ReadTargetPixel(
         RenderTarget target, int x, int y)
     {
@@ -971,15 +760,9 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return (one[0], one[1], one[2], one[3]);
     }
 
-    /// <inheritdoc/>
-    /// <remarks>
-    /// <b>The row flip is the D3D half of the contract</b>, and the 256-aligned
-    /// row pitch is this backend's half of the pitch rule: the destination
-    /// footprint is padded whatever the region asked for, which is why the
-    /// buffer is sized from <c>GetCopyableFootprints</c> rather than from
-    /// <c>width * height * 4</c> and why the copy out walks rows rather than
-    /// memcpy-ing the block.
-    /// </remarks>
+    // Rows are flipped: a D3D target's origin is top-left and the caller's y
+    // counts from the bottom. The footprint's row pitch is 256-aligned, so the
+    // buffer is sized by GetCopyableFootprints and copied out row by row.
     internal override void ReadTargetPixels(
         RenderTarget target, int x, int y, int width, int height, Span<byte> destination)
     {
@@ -1096,10 +879,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
         if (_swapChain.Handle is not null)
         {
-            // Present is the other call that reports a lost device, and it
-            // reports it far more often than ResizeBuffers does (a TDR lands
-            // here). Same treatment: a named diagnosis with the removed reason,
-            // not an opaque COMException from deep inside SilkMarshal.
             bool uncapped = UncappedPresentation && _swapChainFlags != 0;
             int hr = ((IDXGISwapChain3*)_swapChain.Handle)->Present(uncapped ? 0u : VSync ? 1u : 0u,
                 uncapped ? 512u : 0u); // DXGI_PRESENT_ALLOW_TEARING
@@ -1117,24 +896,16 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         if (_swapChain.Handle is not null)
             _frameIndex = _swapChain.GetCurrentBackBufferIndex();
 
-        // Outside the guard too, and that placement is the composited path's
-        // whole error gate. A composited surface has no chain, so the Present
-        // above is skipped every frame; it also has no offscreen probe and no
-        // back buffer to read a pixel out of, which leaves the debug layer as
-        // the only continuous detector of a missing barrier or a wrapped
-        // resource acquired from a state it is not in. Draining only when there
-        // is something to present would turn that off exactly where it is the
-        // only thing left.
+        // Outside the swap-chain guard: on a composited surface the debug layer
+        // is the only error detector there is.
         DrainDebugMessages();
     }
 
-    /// <summary>Frees upload rings retired by mid-frame growth. Call only after the frame fence completed.</summary>
+    // Only after the frame fence completed.
     private void DisposeRetiredUploadRings()
     {
         if (_retiredUploadRings.Count == 0) return;
-        // Dispose is enough here (rather than ComOwnership.Release) only
-        // because the Clear below drops the entries: each retired ring holds
-        // exactly one reference and is released exactly once.
+        // Dispose is fine here: the Clear below drops the entries.
         foreach (var ring in _retiredUploadRings)
         {
             ((ID3D12Resource*)ring.Handle)->Unmap(0, null);
@@ -1143,19 +914,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         _retiredUploadRings.Clear();
     }
 
-    /// <summary>
-    /// Grows the shader-visible descriptor rings, if needed, to hold every draw
-    /// in <paramref name="view"/> plus a fixed slack for the debug overlay and
-    /// anything else drawn outside the view. Call at the top of a frame, before
-    /// the heaps are bound and before anything is recorded.
-    /// </summary>
-    /// <remarks>
-    /// The per-draw cost is the widest SRV table any loaded program declares —
-    /// the renderer cannot know which program each item will pick, so it sizes
-    /// for the worst case. That over-reserves a few descriptor slots, which cost
-    /// 32 bytes each; the alternative (guessing low) is the mid-frame
-    /// exhaustion this exists to prevent.
-    /// </remarks>
+    // Sizes the rings for every draw in the view plus slack, at the widest SRV
+    // table any loaded program declares. Top of the frame, before heaps are bound.
     private void ReserveDescriptorRings(RenderView view)
     {
         uint perDraw = 0;
@@ -1167,7 +927,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
         if (perDraw == 0) return;
 
-        // Both lists are drawn one item at a time (see the pipelines' DrawView).
         long draws = (long)view.Items.Count + view.WorldItems.Count + DescriptorReserveSlackDraws;
         ulong required = (ulong)draws * perDraw;
 
@@ -1178,9 +937,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             MaxSamplerRingCapacity, "sampler");
     }
 
-    // Returns the capacity to record for a ring, recreating the heap when the
-    // frame needs more than it holds. Capped rings (samplers) stop at their
-    // ceiling; StageDescriptors degrades rather than crashing past it.
+    // Stops at the ring's maximum. StageDescriptors degrades past it.
     private uint EnsureRingCapacity(
         ref ComPtr<ID3D12DescriptorHeap> ring,
         DescriptorHeapType type,
@@ -1194,14 +951,10 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         uint target = capacity;
         while (target < required && target < maximum)
         {
-            // Doubling keeps the number of reallocations logarithmic in scene
-            // size; the clamp stops the shift from overflowing at the ceiling.
             target = target > maximum / 2 ? maximum : target * 2;
         }
 
-        // Release before the new heap is created: if creation throws, the
-        // field must be empty rather than holding a freed handle Shutdown
-        // would release a second time.
+        // Release first: if creation throws, the field must not hold a freed handle.
         ComOwnership.Release(ref ring);
         ring = CreateDescriptorHeap(type, target, shaderVisible: true);
         _logger.LogInformation(
@@ -1210,14 +963,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return target;
     }
 
-    /// <summary>
-    /// Recreates a shader-visible descriptor ring one size up when the last
-    /// frame's demand crossed ~75% of its capacity. A backstop under
-    /// <see cref="ReserveDescriptorRings"/> for demand the draw list does not
-    /// account for. Must run between frames (after the Present-side fence wait):
-    /// with a single frame in flight, nothing on the GPU or CPU references the
-    /// old heap there.
-    /// </summary>
+    // Backstop under ReserveDescriptorRings: grows a ring when last frame's
+    // peak passed 75% of it. Between frames only.
     private void GrowDescriptorRingsIfNeeded()
     {
         if (_srvRingPeak * 4 > _srvRingCapacity * 3)
@@ -1246,14 +993,12 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         _samplerRingPeak = 0;
     }
 
-    /// <summary>Blocks until the queue has finished all submitted work.</summary>
+    // Blocks until the queue has finished all submitted work.
     internal void WaitForGpu()
     {
         FlushUploads();
         using var timing = Profiler.Measure(SpectraEngine.Core.Diagnostics.FramePhase.GpuWait);
-        // A dead device never signals, so the wait below would either fail or
-        // block forever. Returning is the only thing that lets the teardown
-        // path finish and the run end on its real diagnosis.
+        // A dead device never signals.
         if (_fence.Handle is null || _deviceLost) return;
         ulong value = ++_fenceValue;
         SilkMarshal.ThrowHResult(((ID3D12CommandQueue*)_queue.Handle)->Signal((ID3D12Fence*)_fence.Handle, value));
@@ -1282,8 +1027,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         list->ResourceBarrier(1, &barrier);
     }
 
-    // The back buffer's views, resolved per frame because the flip-model chain
-    // rotates which buffer is current.
     private CpuDescriptorHandle CurrentBackBufferRtv
     {
         get
@@ -1302,12 +1045,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         var list = CurrentList;
         if (list is null) return;
 
-        // A composited surface built no back-buffer views, so a null target here
-        // names an RTV descriptor slot that was never written: binding it draws
-        // through whatever the heap happened to contain. D3D11's equivalent is
-        // free, because a null RTV pointer is checkable and the pass simply does
-        // nothing; a descriptor handle carries no such tell, so the same "no-op
-        // rather than draw into garbage" answer has to be stated.
+        // A composited surface has no back-buffer views, so the null target's
+        // RTV slot was never written.
         if (_composited && target is null) return;
 
         Vector2D<int> size = PassSize;
@@ -1320,21 +1059,11 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
         if (target is D3D12RenderTarget offscreen)
         {
-            // The barrier that makes this legal. Without it the attachment is
-            // still PixelShaderResource from whoever sampled it, and writing to
-            // it is undefined: the debug layer reports it, a shipping build does
-            // not, and the picture is wrong on some hardware and fine on others.
+            // Writable here, readable again in EndPassCore.
             offscreen.TransitionColor(list, ResourceStates.RenderTarget);
-            // And the same for depth, which the deferred light pass samples
-            // between geometry passes. Symmetric with EndPassCore, so a target
-            // is always left readable and always made writable again; the
-            // alternative is a barrier emitted from inside whatever binds the
-            // texture, which is one path out of several and easy to miss.
             offscreen.TransitionDepth(list, ResourceStates.DepthWrite);
 
-            // A depth-only target contributes NO render-target formats, and the
-            // pipeline state has to agree: a PSO built for one RTV and bound
-            // with none is a validation failure, not a wrong pixel.
+            // A depth-only target has no RTV formats, and the PSO must agree.
             _currentTargetState = offscreen.HasColor
                 ? new D3D12TargetState(offscreen.ColorFormat, 1, offscreen.DepthViewFormat, 1)
                 : new D3D12TargetState(Format.FormatUnknown, 0, offscreen.DepthViewFormat, 1);
@@ -1362,14 +1091,11 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
         if (targets.Length > 1)
         {
-            // Every attachment needs its own barrier into RenderTarget and its
-            // own clear, and the pipeline state must be compiled against ALL of
-            // their formats: a PSO built for one RTV bound to three is a
-            // validation failure, not a wrong pixel.
+            // Each attachment needs its own barrier and clear, and the PSO is
+            // compiled against all their formats.
             CpuDescriptorHandle* views = stackalloc CpuDescriptorHandle[targets.Length];
             var formats = new Format[targets.Length];
-            // Hoisted out of the loop: a stackalloc inside one cannot reuse its
-            // space, so an eight-attachment pass would allocate eight times.
+            // Outside the loop: a stackalloc in a loop does not reuse its space.
             float* clearValue = stackalloc float[4];
             if (clear.Color is { } extraColor)
             {
@@ -1392,8 +1118,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
                 formats[i] = extra.ColorFormat;
             }
 
-            // The FIRST target owns depth, so its view format is the one the
-            // pipeline must be built against.
+            // The first target owns depth.
             Format depthFormat = targets[0] is D3D12RenderTarget first
                 ? first.DepthViewFormat
                 : Format.FormatUnknown;
@@ -1404,8 +1129,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
         if (!hasColor)
         {
-            // Zero render targets: the depth-only bind that makes a shadow pass
-            // cheap, and that the pipeline state above was built to match.
             list->OMSetRenderTargets(0, null, 0, &dsv);
         }
         else if (hasDepth)
@@ -1431,18 +1154,12 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         var list = CurrentList;
         if (list is null || target is not D3D12RenderTarget offscreen) return;
 
-        // Back to readable, here rather than lazily at the first sample: the
-        // command list is open now, and the alternative is a barrier emitted
-        // from inside a draw call, which is both harder to reason about and
-        // easy to forget on one of the paths that binds a texture.
+        // Back to readable now, not lazily at the first sample.
         offscreen.TransitionColor(list, ResourceStates.PixelShaderResource);
         offscreen.TransitionDepth(list, ResourceStates.PixelShaderResource);
     }
 
-    /// <summary>
-    /// The target configuration the open pass is drawing into, which every PSO
-    /// built during it must be compiled against. See <see cref="D3D12PsoKey"/>.
-    /// </summary>
+    // What every PSO built during the open pass must be compiled against.
     internal D3D12TargetState CurrentTargetState => _currentTargetState;
 
     private D3D12TargetState _currentTargetState = D3D12TargetState.BackBuffer;
@@ -1455,48 +1172,18 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return target;
     }
 
-    // ─── Composited output ───────────────────────────────────
-
-    /// <summary>
-    /// Creates or replaces the target the frame is presented into on a
-    /// composited surface, and the bridge surface that hands it over. Null on a
-    /// window surface, and null while the pane has no size.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Two resources per generation, not one, and that is the price of the
-    /// bridge.</b> The target is an ORDINARY private D3D12 target - nothing
-    /// outside this process can import a D3D12-created handle - and the shared
-    /// texture beside it belongs to the D3D11On12 device. They are minted and
-    /// retired together, because the second is a copy of the first and the
-    /// wrapped alias holds a reference on it.
-    /// </para>
-    /// <para>
-    /// <b>Rebuilt, never resized</b>, exactly as on D3D11: the consumer imported
-    /// the NT handle and a handle is not swappable, so a size change mints a
-    /// fresh generation and retires the old pair rather than freeing it, since
-    /// the consumer may be reading it this instant and freeing it underneath
-    /// raises nothing on either side.
-    /// </para>
-    /// <para>
-    /// <b>The size comes from the same latch a swap chain would follow</b>, so a
-    /// composited host resizes the engine exactly as a windowed one does and
-    /// there is no second size to keep in step.
-    /// </para>
-    /// </remarks>
+    // Composited only; null on a window surface or while the pane has no size.
+    // The private target and the bridge's shared texture are created and
+    // retired as a pair. A size change builds a new generation: the consumer
+    // imported the handle and may still be reading the old one.
     private RenderTarget? EnsurePresentTarget()
     {
         if (!_composited) return null;
 
         Vector2D<int> size = FramebufferSize;
 
-        // Collapsed or mid-layout: null, so the frame is skipped whole. Same
-        // answer EnsureSceneTarget gives at zero, and they have to agree - a
-        // frame that kept the previous target while the HDR one came back null
-        // would resolve nothing and draw the overlay onto last frame's picture.
-        // The existing pair is kept rather than torn down, so the consumer holds
-        // the last good frame and the handle it already imported stays valid for
-        // when the size comes back.
+        // No size: skip the frame, as EnsureSceneTarget does. The existing pair
+        // stays, so the consumer's imported handle remains valid.
         if (size.X <= 0 || size.Y <= 0) return null;
 
         if (_presentTarget is { } existing && existing.Width == size.X && existing.Height == size.Y)
@@ -1510,26 +1197,13 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             int retiring = _presentGeneration;
             _presentTarget = null;
 
-            // The flag names the LIVE surface's key, and the live surface is
-            // changing. Unreachable while this runs at the top of Render, above
-            // every BeginSharedWrite, and stated anyway because it is the
-            // invariant rather than the call order that makes it true.
+            // The flag is about the live surface's key, and that surface is changing.
             _sharedWriteHeld = false;
 
-            // The GPU may still be reading the outgoing target through the
-            // bridge's alias, and the release below frees both. Every path into
-            // here is between frames (Render, before any recording starts), but
-            // the copy was submitted by the 11On12 device rather than by the
-            // frame's own list, so the frame fence is the only thing that
-            // covers it and this makes that a requirement rather than a
-            // coincidence.
+            // The bridge's copy may still be reading the outgoing target.
             WaitForGpu();
 
-            // Read BEFORE the detach, because the bridge only reports the
-            // live surface's mutex. It belongs to the surface the closure
-            // below disposes, so it is valid for exactly as long as the offer
-            // can be called: the retirement holds both and drops them
-            // together.
+            // Read before Detach: the bridge only reports the live surface's mutex.
             IDXGIKeyedMutex* retiredMutex = _bridge.KeyedMutex;
 
             IDisposable? retiredSurface = _bridge.Detach();
@@ -1543,21 +1217,10 @@ public sealed unsafe partial class D3D12Renderer : Renderer
                 () => SharedTargetTurn.Offer(retiredMutex, _logger, retiring));
         }
 
-        // Srgb, because this is where linear light stops: the resolve writes
-        // linear values and this target's own view encodes them, exactly as the
-        // window's back buffer does. The bridge's shared texture is UNORM so the
-        // consumer does not decode a second time, and the copy between the two
-        // is a bit copy within one format family rather than a conversion.
-        //
-        // Sharing stays None deliberately: on this backend the sharing is the
-        // BRIDGE's, and asking a D3D12 target for a handle nothing can import
-        // would be a claim the format cannot honour.
-        //
-        // Depth, because this stands in for the back buffer and the back buffer
-        // has one. The HDR path never uses it - the scene has already been drawn
-        // and depth-tested into its own target by the time the resolve runs - so
-        // it is a full-screen surface spent on the HdrEnabled = false path,
-        // which renders the scene straight in here and cannot work without it.
+        // sRGB so the target's view encodes, like the back buffer. The bridge's
+        // shared texture is UNORM, so nothing encodes twice.
+        // No sharing on the target itself: the bridge does that.
+        // Depth is only used with HDR off, when the scene draws straight in here.
         var fresh = (D3D12RenderTarget)CreateRenderTarget(new RenderTargetDesc(
             size.X, size.Y, TextureFormat.Rgba8, TextureColorSpace.Srgb,
             Depth: true, TextureFilter.Linear, TextureWrap.Clamp, Color: true));
@@ -1576,35 +1239,14 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return fresh;
     }
 
-    /// <summary>The present target, for tests that drive a pass into it directly.</summary>
-    /// <remarks>
-    /// Internal because nothing in a game reaches for this: the frame resolves
-    /// into it and the host reads the handle. A test needs it because the thing
-    /// being proved - that a write on this side reaches the handle on another
-    /// device - is not observable from anywhere else.
-    /// </remarks>
     internal RenderTarget? PresentTargetForTest => _presentTarget;
 
-    /// <summary>Runs the present target's size maintenance, for tests that resize without a scene.</summary>
     internal RenderTarget? EnsurePresentTargetForTest() => EnsurePresentTarget();
 
-    /// <summary>
-    /// Clears the present target and hands it over exactly as the end of a frame
-    /// does, for tests that have no scene to render.
-    /// </summary>
-    /// <remarks>
-    /// <b>The command scope is why this exists at all.</b> D3D11's equivalent
-    /// test drives <c>BeginPass</c>/<c>EndPass</c> straight from the fixture,
-    /// because an immediate context is always recording; here a pass outside a
-    /// frame writes into a closed command list and does nothing, silently. The
-    /// publish is the renderer's own, key bracket included, so a test cannot
-    /// accidentally prove its own arrangement instead of the engine's.
-    /// </remarks>
+    // Clears the present target and publishes it as the end of a frame does.
+    // A pass outside a frame needs its own command scope on D3D12.
     internal void WriteAndPublishForTest(Vector4 clear)
     {
-        // Never the back buffer: a null target means "the window" everywhere
-        // else in this file, and a hook that quietly cleared a live window
-        // between frames would be a very confusing thing to have written.
         if (_presentTarget is null) return;
 
         BeginOutOfFrameCommands();
@@ -1640,28 +1282,19 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     {
         if (_bridge is not { HasSurface: true } bridge) return false;
 
-        // Re-entering would take the key twice and release it once, which reads
-        // as a working frame and then deadlocks the consumer forever.
+        // Taking the key twice and releasing it once deadlocks the consumer.
         if (_sharedWriteHeld)
             throw new InvalidOperationException("BeginSharedWrite was called while the shared key was already held.");
-
-        // Timed, because a frame that WAITED here and a frame that WORKED
-
-        // report the same frame time and there is no other way to tell them
-
-        // apart. See Renderer.RecordSharedAcquireWait.
-
+
+        // Timed: frame time alone can't tell waiting here from working.
+
         long acquireStartedAt = Stopwatch.GetTimestamp();
-
+
         int hr = bridge.KeyedMutex->AcquireSync(SharedProducerKey, (uint)Math.Max(0, timeoutMs));
-
+
         RecordSharedAcquireWait(Stopwatch.GetTimestamp() - acquireStartedAt);
 
-        // WAIT_TIMEOUT is 0x00000102: a SUCCESS-coded HRESULT, so `hr < 0` reads
-        // it as an acquisition, and SilkMarshal.ThrowHResult would let it
-        // through. The copy then writes a texture the consumer owns, and the
-        // ReleaseSync that follows fails because this side never held the key.
-        // Measured, because the value alone does not look like a failure.
+        // WAIT_TIMEOUT (0x102) is a positive HRESULT: hr < 0 would read it as acquired.
         if (hr == WaitTimeout)
         {
             if (!_sharedTimeoutLogged)
@@ -1682,9 +1315,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             return false;
         }
 
-        // WAIT_ABANDONED (0x00000080): the key IS acquired, but whoever held it
-        // last went away without releasing. Worth saying so once - the consumer
-        // has died - and worth carrying on, because the texture is ours.
+        // WAIT_ABANDONED (0x80): acquired, but the last holder died holding it.
         if (hr == WaitAbandoned)
             _logger.LogWarning("The shared target key was abandoned by its previous holder; taking it anyway.");
 
@@ -1699,11 +1330,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// No flush here, unlike D3D11: the bridge flushes its own immediate context
-    /// at the end of <see cref="D3D12On11Bridge.Publish"/>, which is where the
-    /// work that has to be submitted before the key moves actually is.
-    /// </remarks>
+    // No flush here, unlike D3D11: the bridge flushes in Publish.
     public override void EndSharedWrite()
     {
         if (!_sharedWriteHeld) return;
@@ -1732,23 +1359,13 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     internal override bool TakeSharedConsumerTurn(int timeoutMs = 100) =>
         WithConsumerKey(timeoutMs, static _ => { });
 
-    /// <inheritdoc/>
-    /// <remarks>
-    /// <b>The bridge's texture, never the present target</b>, and that is the
-    /// whole reason this member exists rather than a readback of some target.
-    /// The frame lands in a private D3D12 resource here and one
-    /// <c>CopyResource</c> carries it into the shared one; reading the private
-    /// side would measure everything except that copy, which is precisely where
-    /// a second encode would live.
-    /// </remarks>
+    // Reads the bridge's shared texture, not the present target: the copy
+    // between them is the thing being checked.
     internal override bool TryReadSharedPixels(Span<byte> destination, int timeoutMs = 100)
     {
         if (_bridge is not { HasSurface: true } bridge) return false;
 
-        // The frame's own list was submitted and the bridge flushed its context
-        // before the key changed hands, so the copy is queued; this is what
-        // waits for it. Nothing else in a composited session does - Present is
-        // where WaitForGpu lives and a probe reads between frames.
+        // The bridge's copy is queued, not finished. Wait for it.
         WaitForGpu();
 
         byte[] scratch = new byte[PixelReadback.ByteCount(bridge.SharedWidth, bridge.SharedHeight)];
@@ -1757,12 +1374,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return read;
     }
 
-    /// <summary>
-    /// Runs <paramref name="work"/> holding <see cref="Renderer.SharedConsumerKey"/>
-    /// and hands <see cref="Renderer.SharedProducerKey"/> back afterwards. See
-    /// the D3D11 twin for why the release is in a finally and why a timeout is
-    /// not a failure.
-    /// </summary>
+    // Runs work holding the consumer key, then hands the producer key back.
+    // A timeout is not a failure.
     private bool WithConsumerKey(int timeoutMs, Action<D3D12Renderer> work)
     {
         if (_bridge is not { HasSurface: true } bridge) return false;
@@ -1795,13 +1408,13 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return true;
     }
 
-    /// <summary>WAIT_TIMEOUT, which AcquireSync returns as a success-coded HRESULT.</summary>
+    // WAIT_TIMEOUT
     private const int WaitTimeout = 0x00000102;
 
-    /// <summary>WAIT_ABANDONED: acquired, but the previous holder never released.</summary>
+    // WAIT_ABANDONED
     private const int WaitAbandoned = 0x00000080;
 
-    /// <summary>A typeless depth resource that can be both written and sampled.</summary>
+    // Typeless, so it can be both written and sampled.
     internal ComPtr<ID3D12Resource> CreateDepthResource(uint width, uint height)
     {
         var heapProps = new HeapProperties { Type = HeapType.Default };
@@ -1816,8 +1429,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             Format = Format.FormatR32Typeless,
             SampleDesc = new SampleDesc(1, 0),
             Layout = TextureLayout.LayoutUnknown,
-            // AllowDepthStencil WITHOUT DenyShaderResource, which is the flag
-            // that would make this unreadable and is easy to add by reflex.
+            // No DenyShaderResource: the light pass samples this.
             Flags = ResourceFlags.AllowDepthStencil,
         };
 
@@ -1833,7 +1445,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return ComOwnership.Own(res);
     }
 
-    /// <summary>A default-heap texture that can be both drawn into and sampled.</summary>
     internal ComPtr<ID3D12Resource> CreateRenderTargetResource(uint width, uint height, Format format)
     {
         var heapProps = new HeapProperties { Type = HeapType.Default };
@@ -1851,9 +1462,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             Flags = ResourceFlags.AllowRenderTarget,
         };
 
-        // An optimised clear value matching what the pass will actually clear to
-        // is what keeps the driver's fast clear path available; a mismatch is a
-        // debug-layer warning and a slower clear.
+        // Matches the usual clear colour. A mismatch is a slower clear and a
+        // debug-layer warning.
         var clearValue = new ClearValue { Format = format };
         clearValue.Anonymous.Color[0] = ClearColors.Sky.X;
         clearValue.Anonymous.Color[1] = ClearColors.Sky.Y;
@@ -1870,18 +1480,12 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
     protected override void DrawFullscreen(PostPass pass, Mesh geometry)
     {
-        // Fill and depth are ambient here too, but on this backend they are
-        // baked into the pipeline state rather than set on the context, so a
-        // stale value cannot return a wrongly-cached PSO -- only a correctly
-        // compiled one for the wrong state. Both are keys of D3D12PsoKey.
         FillMode previousFill = CurrentFillMode;
         DepthMode previousDepth = CurrentDepthMode;
         CurrentFillMode = FillMode.Solid;
         CurrentDepthMode = DepthMode.None;
 
-        // Use LAST, as on D3D11: uniforms go into constant shadows that Use
-        // uploads. Calling Use first would also clear the pending texture table,
-        // and the pass would then sample the white fallback.
+        // Use last: it uploads the uniforms and consumes the pending textures.
         pass.ApplyTo(pass.Shader);
         pass.Shader.Use();
         geometry.Draw();
@@ -1890,11 +1494,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         CurrentDepthMode = previousDepth;
     }
 
-    /// <summary>
-    /// Depth state for the next mesh draw. Ambient, like <see cref="CurrentFillMode"/>,
-    /// and safe for the same reason: it is part of the pipeline-state key, so a
-    /// stale value cannot hand back a pipeline compiled for different state.
-    /// </summary>
+    // Depth state for the next mesh draw. Part of the PSO key.
     internal DepthMode CurrentDepthMode { get; set; } = DepthMode.TestWrite;
 
     internal void SetViewportAndScissor(int width, int height) =>
@@ -1915,17 +1515,12 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         };
         list->RSSetViewports(1, &viewport);
 
-        // The scissor moves with the viewport, or a cascade would rasterise
-        // into its own quadrant and still be allowed to clear or blend outside
-        // it. They are separate state on this backend and easy to desync.
+        // The scissor is separate state here and must follow the viewport.
         var scissor = new Box2D<int>(x, y, x + width, y + height);
         list->RSSetScissorRects(1, &scissor);
     }
 
-    /// <summary>
-    /// Uploads and draws the accumulated <see cref="Renderer.DebugDraw"/> lines.
-    /// Called by pipelines after their main scene pass.
-    /// </summary>
+    /// <inheritdoc/>
     protected override void FlushDebugDrawCore(Scene.Camera camera)
     {
         if (DebugDraw.VertexCount == 0 || _debugShader is null || _lineBatch is null) return;
@@ -1938,11 +1533,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The depth mode rides the DRAW rather than the batch, because it goes
-    /// into the PSO key: a pipeline compiled for the always-on-top overlay
-    /// handed to a depth-tested draw is a wrong picture, not an error.
-    /// </remarks>
     protected override void FlushWorldLinesCore(
         Scene.Camera camera, ShaderProgram program, float nudge, GBuffer? gbuffer)
     {
@@ -1964,23 +1554,19 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             typed.SetUniform("uNdcToUv", NdcToUv);
             typed.SetUniform("uDepthToNdc", DepthToNdcZ);
             typed.SetUniform("uGBufferSize", new Vector2(gbuffer.Width, gbuffer.Height));
-            // Already in a shader-readable state: EndPassCore transitioned the
-            // G-buffer's depth for the light pass, which sampled it through
-            // this same path earlier in the frame.
+            // Already readable: EndPassCore transitioned it.
             typed.SetTexture("uDepth", 0, gbuffer.Depth);
         }
 
         typed.Use();
 
-        // Forward: hardware LessEqual/no-write against the pass's live depth.
-        // Deferred: depth off in the PSO — the shader compares and discards.
+        // Forward tests hardware depth. Deferred turns it off: the shader
+        // compares against the G-buffer and discards.
         _lineBatch.Draw(
             WorldLines.Vertices, (uint)WorldLines.VertexCount,
             gbuffer is null ? DepthMode.TestNoWriteEqual : DepthMode.None,
             typed, BlendMode.AlphaBlend);
     }
-
-    // ─── Per-frame arenas ────────────────────────────────────
 
     internal readonly struct UploadSlice
     {
@@ -1988,31 +1574,22 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         public required ulong GpuVa { get; init; }
     }
 
-    /// <summary>Bump-allocates a slice of the frame upload ring (grows the ring when exhausted).</summary>
+    // Bump-allocates from the frame upload ring, growing it when exhausted.
     internal UploadSlice AllocUpload(uint size, uint alignment)
     {
         uint aligned = (_uploadRingOffset + alignment - 1) / alignment * alignment;
         if (aligned + size > _uploadRingCapacity)
         {
-            // The command list being recorded already holds GPU VAs into this
-            // ring (root CBVs, dynamic line VBs), and WaitForGpu can only fence
-            // SUBMITTED work — so the old ring must be retired, not destroyed,
-            // and freed only after this frame's fence (see Present). The
-            // replacement is a distinct resource, so restarting its offset at
-            // 0 cannot alias slices handed out earlier this frame.
-            // Earlier instance slices can still receive appends in this recording.
-            // Keep the old mapping alive until this context's fence completes.
+            // The open list holds GPU VAs into the old ring, so it is retired,
+            // not destroyed, and stays mapped until this frame's fence.
             _uploadRingCpu = null;
             _retiredUploadRings.Add(_uploadRing);
 
-            // The field must stop aliasing the retired-list entry BEFORE the
-            // replacement is created: if CreateUploadBuffer or the Map below
-            // throws, Shutdown would otherwise dispose the same resource twice
-            // (field + list) and underflow its COM refcount.
+            // Clear the field before creating the replacement: if that throws,
+            // Shutdown must not release the same ring twice.
             _uploadRing = default;
 
-            // Size for the whole frame's demand so far (old offset + this
-            // request), so the next frame fits in a single ring.
+            // Big enough for the whole frame so far, so the next frame fits.
             while (aligned + size > _uploadRingCapacity)
                 _uploadRingCapacity *= 2;
             _uploadRing = CreateUploadBuffer(_uploadRingCapacity, "FrameUploadRing");
@@ -2029,15 +1606,12 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         };
     }
 
-    /// <summary>
-    /// Copies the pending texture SRVs/samplers (fallback white for unset
-    /// slots) into the shader-visible rings and returns the tables' GPU handles.
-    /// </summary>
+    // Copies the pending SRVs and samplers into the shader-visible rings.
+    // Unset slots get the white fallback.
     internal (GpuDescriptorHandle SrvTable, GpuDescriptorHandle SamplerTable) StageDescriptors(
         Dictionary<uint, D3D12Texture> pending, uint slotCount)
     {
-        // Record demand even when it does not fit, so the between-frames
-        // growth (GrowDescriptorRingsIfNeeded) sizes the next heap correctly.
+        // Record demand even when it does not fit, so the next growth is right.
         uint srvDemand = _srvRingOffset + slotCount;
         uint samplerDemand = _samplerRingOffset + slotCount;
         _srvRingPeak = Math.Max(_srvRingPeak, srvDemand);
@@ -2045,25 +1619,17 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
         if (srvDemand > _srvRingCapacity || samplerDemand > _samplerRingCapacity)
         {
-            // A single draw wider than a whole ring is a program/root-signature
-            // problem, not a scene-size one, and there is no descriptor range to
-            // hand back — that one still has to be fatal.
+            // One draw wider than a whole ring: nothing to hand back, so fatal.
             if (slotCount > _srvRingCapacity || slotCount > _samplerRingCapacity)
                 throw new InvalidOperationException(
                     $"A single draw needs {slotCount} descriptors, more than the whole shader-visible ring " +
                     $"(SRV {_srvRingCapacity}, sampler {_samplerRingCapacity}). Raise the initial ring " +
                     "capacities in D3D12Renderer (sampler heaps are capped at 2048 slots by the API).");
 
-            // Exhaustion for the ordinary reason — too many draws — must NOT
-            // throw: this runs deep inside the pipeline's draw loop, so the
-            // exception would escape Render, leave the command list open, and
-            // take the render thread (and the process) down. The frame is
-            // already sized from the draw list at its start
-            // (ReserveDescriptorRings), so getting here means demand the view
-            // did not account for, or the API's hard sampler ceiling. Reuse the
-            // last staged table: this draw samples the previous draw's textures
-            // — visibly wrong for the draws past the cap, but every draw before
-            // them keeps its own descriptors and the frame still completes.
+            // Too many draws must not throw: this is inside the draw loop, and
+            // an exception would leave the command list open. Reuse the last
+            // staged table. Those draws sample the wrong textures, but the
+            // frame completes.
             if (!_ringOverflowReported)
             {
                 _ringOverflowReported = true;
@@ -2077,11 +1643,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
             if (_stagedSlotCount == slotCount)
                 return (_lastSrvTable, _lastSamplerTable);
 
-            // Nothing compatible to borrow (first draw of the frame, or a
-            // different table width): restart the ring. Descriptors staged
-            // earlier are overwritten, so those draws sample this one's
-            // textures — still only a visual defect, and unreachable in
-            // practice because the rings hold hundreds of entries.
+            // Nothing compatible to reuse: restart the ring. Earlier draws then
+            // sample this one's textures.
             _srvRingOffset = 0;
             _samplerRingOffset = 0;
         }
@@ -2113,8 +1676,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         _stagedSlotCount = slotCount;
         return (_lastSrvTable, _lastSamplerTable);
     }
-
-    // ─── Resource creation helpers ───────────────────────────
 
     internal ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(DescriptorHeapType type, uint count, bool shaderVisible)
     {
@@ -2177,29 +1738,10 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return ComOwnership.Own(res);
     }
 
-    /// <summary>
-    /// Stages every mip level through an upload buffer, records the copies plus
-    /// the final transition to pixel-shader-resource on the frame command list,
-    /// and executes immediately (blocking). Only used at load time.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>The copy is PER ROW and "one memcpy per mip" is not available.</b>
-    /// <c>GetCopyableFootprints</c> reports a destination row pitch aligned to
-    /// <c>D3D12_TEXTURE_DATA_PITCH_ALIGNMENT</c> (256 bytes), while the source's
-    /// pitch is whatever the file declared, so the two agree only by accident -
-    /// a 64x64 BC7 mip is 256 bytes a row and lines up, and the 32x32 level
-    /// below it is 128 and does not. Copying a level in one block would place
-    /// every row after the first at the wrong offset and produce a texture that
-    /// is sheared rather than one that errors.
-    /// </para>
-    /// <para>
-    /// Each row copies <c>rowSizes[mip]</c> bytes, which is the TIGHT row size
-    /// D3D reports rather than either pitch: the source may be padded and the
-    /// destination certainly is, and copying either pitch's worth would read or
-    /// write somebody else's padding.
-    /// </para>
-    /// </remarks>
+    // Blocking upload of every mip, for load time only.
+    // Copied row by row: the destination pitch is 256-aligned and the source's
+    // is not, so one memcpy per mip shears the texture. Each row copies the
+    // tight row size, not either pitch.
     internal void UploadTexture(
         ComPtr<ID3D12Resource> texture,
         ReadOnlySpan<byte> payload,
@@ -2271,8 +1813,6 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         staging.Dispose();
     }
 
-    // ─── Renderer factory overrides ──────────────────────────
-
     public override Mesh CreateMesh(ReadOnlySpan<float> vertices, ReadOnlySpan<uint> indices,
         ReadOnlySpan<VertexAttribute> attributes, MeshCpuAccess cpuAccess = MeshCpuAccess.Retained)
     {
@@ -2297,8 +1837,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
     public override InstanceBuffer CreateInstanceBuffer(
         int capacityInstances, ReadOnlySpan<VertexAttribute> attributes, ShaderProgram program)
     {
-        // program is unused: on D3D12 the input layout is part of the PSO, and
-        // the PSO is selected per draw from the program actually bound.
+        // program is unused: the input layout is part of the PSO here.
         int floats = ValidateInstanceLayout(capacityInstances, attributes);
         return new D3D12InstanceBuffer(
             this, capacityInstances, VertexAttribute.StandardLayout, attributes, floats);
@@ -2351,38 +1890,14 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return CreateShader(vs, ps);
     }
 
-    // ─── Resize / shutdown ───────────────────────────────────
-
-    /// <summary>
-    /// Reconciles the swap chain with the engine's framebuffer-size latch.
-    /// Render thread only, between frames — never from a window event.
-    /// </summary>
-    /// <remarks>
-    /// <b>A resize failure must not take the render thread down.</b> The three
-    /// outcomes are kept apart deliberately: a degenerate size is not a resize
-    /// at all and is skipped; a device loss ends the run with a diagnosis; and
-    /// anything else is logged with its HRESULT and the attempted size, the
-    /// previous swap-chain state is rebuilt so the next frame has valid views,
-    /// and the engine keeps running at the old size.
-    /// </remarks>
+    // Render thread, between frames. A device loss ends the run; any other
+    // failure is logged and the engine keeps rendering at the old size.
     private void DrainPendingResize()
     {
-        // The engine feeds the base-class latch from the main thread; when it
-        // disagrees with what the swap chain was built for, resize here on the
-        // render thread before the frame starts recording.
-        //
-        // Read the latch exactly ONCE. The main thread may publish another size
-        // while ResizeBuffers is running (a live window drag, or the borderless
-        // fullscreen toggle landing), and _swapChainSize below records the size
-        // the buffers were actually built at — so the next frame sees the fresh
-        // mismatch and resizes again, instead of this one claiming a size that
-        // never happened.
+        // Read the latch once: the main thread may publish another size while
+        // ResizeBuffers runs.
         Vector2D<int> newSize = FramebufferSize;
 
-        // Every "should we touch the swap chain at all" rule — unchanged size,
-        // no chain, dead device, degenerate (minimised) size, a size that
-        // already failed — lives in the shared policy, so this backend and
-        // D3D11 cannot drift apart on it. See SwapChainResizePolicy.
         if (!SwapChainResizePolicy.ShouldResize(
                 newSize, _swapChainSize, _failedResizeSize, _swapChain.Handle is not null, _deviceLost))
             return;
@@ -2403,10 +1918,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
                 newSize.X, newSize.Y, DxgiInterop.Describe(hr), hr, _swapChainSize.X, _swapChainSize.Y);
             _failedResizeSize = newSize;
 
-            // A failed ResizeBuffers leaves the chain on its PREVIOUS buffers,
-            // so the views released above have to come back at the old size.
-            // Skipping this would turn one bad resize into a guaranteed crash
-            // on the very next frame, which renders through a null RTV.
+            // The chain is still on its old buffers. Rebuild the views at the
+            // old size or the next frame has none.
             CreateBackBufferViews((uint)_swapChainSize.X, (uint)_swapChainSize.Y);
             _frameIndex = _swapChain.GetCurrentBackBufferIndex();
             DrainDebugMessages();
@@ -2419,20 +1932,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         _failedResizeSize = null;
     }
 
-    /// <summary>
-    /// Belt-and-braces before the swap chain is released: DXGI documents that
-    /// releasing a swap chain still in exclusive fullscreen is undefined
-    /// behaviour, and the classic symptom is a hang or a crash on exit.
-    /// </summary>
-    /// <remarks>
-    /// The engine never asks for exclusive fullscreen and, since
-    /// <see cref="DxgiInterop.SuppressAltEnter"/>, DXGI cannot enter it behind
-    /// our back either — so this should always find the chain windowed. It
-    /// stays because the cost is one virtual call at shutdown and the failure
-    /// it guards against is unrecoverable and machine-dependent (the
-    /// association call itself can fail on an odd driver, and that failure is
-    /// only a warning).
-    /// </remarks>
+    // Releasing a chain in exclusive fullscreen is undefined. The engine never
+    // enters it, but SuppressAltEnter can fail on an odd driver.
     private void EnsureSwapChainWindowed()
     {
         if (_swapChain.Handle is null || _deviceLost) return;
@@ -2451,21 +1952,13 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         }
     }
 
-    /// <summary>
-    /// Builds the one exception a lost device gets, having first asked the
-    /// device why it went — the HRESULT alone only says "gone", the removed
-    /// reason names the actual fault.
-    /// </summary>
     private GraphicsDeviceLostException DeviceLost(int hr, string action)
     {
         int reason = _device.Handle is not null ? DevicePtr->GetDeviceRemovedReason() : 0;
 
-        // Flip the flag before anything else: the throw unwinds through
-        // Engine's crash handler straight into Shutdown, which must not try to
-        // fence-wait on a dead queue and mask this diagnosis with its own.
+        // Set before the throw: Shutdown must not fence-wait on a dead queue.
         _deviceLost = true;
 
-        // Last chance to get the debug layer's account of it into the log.
         DrainDebugMessages();
 
         return new GraphicsDeviceLostException(
@@ -2493,20 +1986,16 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         foreach (var mesh in _meshes) mesh.Dispose();
         _meshes.Clear();
 
-        // Before the target loop below, because releasing a retired generation
-        // calls DestroyRenderTarget, which mutates the very list that loop
-        // walks. Regardless of acknowledgement: the device is going with them,
-        // so there is nothing left for a consumer to hold on to. Nulled so the
-        // second Shutdown Engine's crash handler makes is a no-op.
+        // Before the target loop: releasing a retired generation destroys a
+        // target, which mutates the list that loop walks.
         _retirement?.ReleaseAll();
         _retirement = null;
         _presentTarget = null;
         _presentGeneration = 0;
         _sharedWriteHeld = false;
 
-        // After the retirement, because a retired generation's alias holds a
-        // reference on a resource this releases, and before the target loop for
-        // the same reason: the live surface aliases the live present target.
+        // After the retirement and before the targets: the bridge's surfaces
+        // alias both.
         _bridge?.Dispose();
         _bridge = null;
 
@@ -2522,10 +2011,8 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         _shaders.Clear();
         DefaultShader = null;
 
-        // Release, not Dispose: Engine.RenderLoop calls Shutdown a second time
-        // from its crash handler when the first one threw, and a ComPtr keeps
-        // its handle after Dispose — so plain disposal here would over-release
-        // everything the first pass already freed. See ComOwnership.
+        // Release, not Dispose: Shutdown can run twice, and a ComPtr keeps its
+        // handle after Dispose.
         ReleaseBackBufferViews();
         _isRecording = false;
         ReleaseFrameContexts();
@@ -2550,13 +2037,9 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         _logger.LogInformation("Renderer shut down (D3D12)");
     }
 
-    // ─── Debug layer ─────────────────────────────────────────
-
     private void DrainDebugMessages()
     {
-        // DXGI validates on its own queue, separate from the device's: every
-        // swap-chain rejection (ResizeBuffers, Present) is explained there and
-        // nowhere else, so it is drained in the same slot.
+        // DXGI has its own queue: swap-chain rejections are explained only there.
         int errors = _dxgiMessages?.Drain(_logger, "D3D12") ?? 0;
 
         if (_infoQueue.Handle is null)
@@ -2583,21 +2066,11 @@ public sealed unsafe partial class D3D12Renderer : Renderer
                 string text = Encoding.ASCII.GetString(msg->PDescription, (int)msg->DescriptionByteLength).TrimEnd('\0');
                 switch (msg->Severity)
                 {
-                    // The ONE message this counter forgives, and only while the
-                    // D3D11On12 bridge exists. CreateWrappedResource asks the
-                    // compatibility device to reflect the resource's D3D11
-                    // description, which a resource D3D12 created does not have -
-                    // that is exactly why the call takes a D3D11_RESOURCE_FLAGS
-                    // to fall back to. The probe is reported at ERROR severity
-                    // regardless, once per wrap, and the wrap then succeeds.
-                    // Measured: it survives a shared heap flag, so it is
-                    // structural rather than a missing creation option.
-                    //
-                    // Counted, this would leave every composited D3D12 session
-                    // permanently reporting one debug-layer error in a standing
-                    // status slot, which teaches people to ignore the one
-                    // continuous detector a composited surface has. It is still
-                    // LOGGED, so nothing is hidden - only the arithmetic changes.
+                    // The one error not counted, and only while the bridge exists.
+                    // CreateWrappedResource reports it once per wrap because a
+                    // D3D12 resource has no D3D11 description, and the wrap then
+                    // succeeds. Counting it would leave every composited session
+                    // showing one error. It is still logged.
                     case MessageSeverity.Error
                         when _bridge is not null && msg->ID == MessageID.ReflectsharedpropertiesInvalidobject:
                         _logger.LogDebug(

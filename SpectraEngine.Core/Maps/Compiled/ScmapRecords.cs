@@ -7,46 +7,26 @@ using SpectraEngine.Core.Assets.Packs;
 namespace SpectraEngine.Core.Maps.Compiled;
 
 /// <summary>
-/// One 16-byte <c>ASTB</c> record: an asset this map references, by PATH.
+/// One 16-byte <c>ASTB</c> record: an asset this map references, by path.
 /// </summary>
-/// <remarks>
-/// <para><b>A <c>MaterialRef.Id</c> is never written here, and that is a reviewed
-/// rule rather than a note.</b> The registry hands out ids in per-process
-/// interning order and they are meaningful only for the life of the process, so a
-/// cook that serialised one produces a file that loads perfectly in the test that
-/// wrote it and mis-textures the entire world the moment a second map interns
-/// first. The wrong version is also SHORTER CODE, which is why it is written down
-/// where the field is. <see cref="PathString"/> indexes <c>STRT</c>, a load walks
-/// the table in order calling <c>MaterialRegistry.Intern</c>, and the resulting
-/// file-index-to-<c>MaterialRef</c> remap is applied to every geometry
-/// reference.</para>
-/// <para><b><see cref="ContentHash"/> is advisory.</b> It says which cooked bytes
-/// the map was baked against, so a mismatch against the resident pack WARNS and
-/// never fails: a texture recooked on its own is the normal case a patch pack
-/// exists for, and refusing the map would make every content fix a full map
-/// rebake.</para>
-/// </remarks>
+// Never write a MaterialRef.Id here. Ids are per-process interning order, so a
+// file holding one mis-textures the world as soon as another map interns first.
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public readonly struct ScmapAssetEntry
 {
-    /// <summary>
-    /// What kind of asset this is, as a <see cref="PackEntryKind"/> value widened
-    /// to a word.
-    /// </summary>
-    /// <remarks>
-    /// The pack's vocabulary rather than a second one of this format's own: an
-    /// <c>ASTB</c> row names exactly the thing a pack entry names, and two enums
-    /// for one concept is how a material becomes a model in a log line.
-    /// </remarks>
+    /// <summary>The asset kind: a <see cref="PackEntryKind"/> value widened to a word.</summary>
     public readonly uint Kind;
 
-    /// <summary>Index into <c>STRT</c> of this asset's logical content-relative path.</summary>
+    /// <summary>Index into <c>STRT</c> of this asset's content-relative path.</summary>
     public readonly uint PathString;
 
-    /// <summary>Low 64 bits of the cooked payload's content hash, or zero when unknown.</summary>
+    /// <summary>
+    /// Low 64 bits of the cooked payload's content hash, or zero when unknown.
+    /// Advisory: a mismatch against the mounted pack warns and never fails.
+    /// </summary>
     public readonly ulong ContentHash;
 
-    /// <summary>Builds one asset-table record. Every field is assigned.</summary>
+    /// <summary>Builds one asset-table record.</summary>
     public ScmapAssetEntry(PackEntryKind kind, uint pathString, ulong contentHash)
     {
         Kind = (uint)kind;
@@ -54,32 +34,17 @@ public readonly struct ScmapAssetEntry
         ContentHash = contentHash;
     }
 
-    /// <summary>The asset kind, as the enum rather than as the raw word.</summary>
+    /// <summary><see cref="Kind"/> as the enum.</summary>
     public PackEntryKind AssetKind => (PackEntryKind)Kind;
 }
 
 /// <summary>
-/// One 80-byte <c>NODE</c> record: an authored node, in pre-order.
+/// One 80-byte <c>NODE</c> record: an authored node, in pre-order. Every authored
+/// node gets one, baked brushes included, so ids and target names still resolve.
 /// </summary>
-/// <remarks>
-/// <para><b><see cref="ParentIndex"/> is always less than the record's own
-/// index</b>, which is what makes a single forward pass rebuild the whole graph
-/// with no fixup table: a parent exists by the time its child is read. It is
-/// pre-order because that is <c>SceneNode.Traverse</c>'s order, and sibling order
-/// is authored data: traversal order is placement order is carve order is the
-/// bit-identity oracles.</para>
-/// <para><b>The transform is the authored ten floats, never a world matrix.</b>
-/// A world matrix is derived by composition, and replaying the same composition
-/// reproduces bit-identical matrices, which is what the compile cache's exact
-/// matrix equality and the bake oracle both depend on. Storing a baked matrix
-/// would break that oracle in a way that looks like a floating-point mystery.</para>
-/// <para><b>Every authored node gets a record, brushes dissolved into chunks
-/// included.</b> Only the brush GEOMETRY payload is dropped. A node is eighty
-/// bytes and dropping one saves nothing worth having while breaking identity: the
-/// id is what entity wiring, the id index, undo and every script reference resolve
-/// through, and a target name IS a node name, so dropping wall nodes would
-/// silently break connections that target them.</para>
-/// </remarks>
+// The transform is the authored ten floats, not a world matrix. Replaying the
+// composition gives bit-identical matrices, which the compile cache and the
+// bake oracle compare exactly.
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public readonly struct ScmapNodeRecord
 {
@@ -89,23 +54,15 @@ public readonly struct ScmapNodeRecord
     /// <summary>Bit 5 of <c>PayloadFlags</c>: the low bit of the declared state.</summary>
     public const int StateShift = 5;
 
-    /// <summary>The two-bit width both the realm and the state fields have.</summary>
+    /// <summary>Mask for the two-bit realm and state fields.</summary>
     public const int TwoBitMask = 0x3;
 
     /// <summary>
-    /// The node's <c>Guid</c> as sixteen RFC 4122 bytes, held as the integer those
-    /// bytes read as.
+    /// The node's id as sixteen RFC 4122 bytes. Convert with <see cref="EncodeId"/>
+    /// and <see cref="DecodeId"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>Big-endian on purpose, and therefore not a <see cref="Guid"/> field.</b>
-    /// <c>System.Guid</c>'s in-memory layout byte-swaps its first three components
-    /// on a little-endian machine, so a raw <c>Guid</c> field would put the bytes
-    /// on disk in an order that does not match the hex the authored map spells the
-    /// same id with. Storing the RFC order means an id can be grepped for in
-    /// <c>map.json</c> and found in a hex dump of the compiled map, character for
-    /// character. Convert with <see cref="EncodeId"/> and <see cref="DecodeId"/>,
-    /// which are the only two places the byte order is spelled.
-    /// </remarks>
+    // Not a Guid field: Guid's layout byte-swaps its first three components on
+    // little-endian, and the bytes on disk should match the hex in map.json.
     public readonly UInt128 Id;
 
     /// <summary>Index into <c>STRT</c> of the node's name, which is also its target name.</summary>
@@ -131,15 +88,14 @@ public readonly struct ScmapNodeRecord
 
     /// <summary>
     /// Index into whatever table <see cref="PayloadKindRaw"/> names, or zero when
-    /// the kind has no table. Unused for a baked brush, which carries no geometry
-    /// of its own.
+    /// the kind has no table. Unused for a baked brush.
     /// </summary>
     public readonly uint PayloadIndex;
 
     /// <summary>Reserved; written zero.</summary>
     public readonly ulong Reserved;
 
-    /// <summary>Builds one node record. Every field is assigned.</summary>
+    /// <summary>Builds one node record.</summary>
     public ScmapNodeRecord(
         Guid id,
         uint nameString,
@@ -165,7 +121,7 @@ public readonly struct ScmapNodeRecord
         Reserved = 0;
     }
 
-    /// <summary>The node's id, decoded from its RFC 4122 bytes.</summary>
+    /// <summary>The node's id as a <see cref="Guid"/>.</summary>
     public Guid NodeId => DecodeId(Id);
 
     /// <summary>What the payload is.</summary>
@@ -182,49 +138,20 @@ public readonly struct ScmapNodeRecord
     public ScmapNodeState DeclaredState => (ScmapNodeState)((PayloadFlagsRaw >> StateShift) & TwoBitMask);
 
     /// <summary>
-    /// Whether this node's geometry is ALREADY IN the compiled chunks, so a load
-    /// must never carve it again.
+    /// Whether this node's geometry is already in the compiled chunks. A load must
+    /// not carve it again, even when <c>BRSH</c> holds its planes.
     /// </summary>
-    /// <remarks>
-    /// <para><b>This is the cooked-record name, and <c>SceneNode.IsStaticWorldBrush</c>
-    /// is the engine name, and neither may take the other's spelling.</b> The
-    /// engine's predicate is an ADMISSION test - "is this brush admitted to the
-    /// carve" - and this one is almost its opposite: "this brush's geometry has
-    /// already been baked; do not re-carve it". Two identifiers with one spelling,
-    /// on two types, in two layers, whose meanings differ by exactly the mistake
-    /// below.</para>
-    /// <para><b>The mistake is the format's one silent-corruption hazard.</b> When
-    /// baked chunks and a <c>BRSH</c> section are both present, a loader that reads
-    /// "static world brush" as "belongs in the carve" rebuilds the static world on
-    /// top of the chunks it already uploaded, and every wall is drawn twice. There
-    /// is no exception, no log line and nothing on a debug layer; there is
-    /// z-fighting, which every graphics programmer's instinct attributes to depth
-    /// precision or a pipeline state bug rather than to a map loader.</para>
-    /// <para><b>It is not a new bit.</b> It is exactly
-    /// <see cref="ScmapPayloadKind.StaticWorldBrush"/>, which is the same statement
-    /// the cook made when it put the brush in the placement list. The rename is to
-    /// the CONTRACT, and <c>ScmapBrushSource.IsReCarvable</c> is the only place a
-    /// loader is meant to ask.</para>
-    /// </remarks>
+    // Not the same question as SceneNode.IsStaticWorldBrush, which admits a brush
+    // to the carve. Re-carving a baked brush draws every wall twice (z-fighting,
+    // no error). Loaders ask ScmapBrushSource.IsReCarvable.
     public bool BakedIntoChunks => PayloadKind == ScmapPayloadKind.StaticWorldBrush;
 
-    /// <summary>
-    /// Whether the brush subtracts. False for any payload kind that is not a
-    /// brush, because the bit is meaningless there and a future kind is free to
-    /// leave it zero.
-    /// </summary>
+    /// <summary>Whether the brush subtracts. False for any payload kind that is not a brush.</summary>
     public bool IsSubtractiveBrush =>
         PayloadKind is ScmapPayloadKind.StaticWorldBrush or ScmapPayloadKind.PartBrush
         && (PayloadFlagsRaw & (ushort)ScmapPayloadFlags.SubtractiveBrush) != 0;
 
-    /// <summary>
-    /// Packs the flag bits and the two enum fields into one half-word.
-    /// </summary>
-    /// <remarks>
-    /// One expression of the bit allocation, called by the writer and mirrored by
-    /// the accessors above. Two expressions of a bitfield is how a realm of
-    /// <c>Server</c> gets written into bit 1 and read back as a flag.
-    /// </remarks>
+    /// <summary>Packs the flag bits and the realm and state fields into one half-word.</summary>
     public static ushort ComposeFlags(ScmapPayloadFlags flags, ScmapNodeRealm realm, ScmapNodeState state)
     {
         int reserved = (TwoBitMask << RealmShift) | (TwoBitMask << StateShift);
@@ -240,10 +167,7 @@ public readonly struct ScmapNodeRecord
             | (((int)state & TwoBitMask) << StateShift));
     }
 
-    /// <summary>
-    /// Turns a <see cref="Guid"/> into the integer its RFC 4122 bytes read as on
-    /// this machine.
-    /// </summary>
+    /// <summary>Turns a <see cref="Guid"/> into the integer its RFC 4122 bytes read as.</summary>
     public static UInt128 EncodeId(Guid id)
     {
         Span<byte> bytes = stackalloc byte[16];
@@ -262,20 +186,8 @@ public readonly struct ScmapNodeRecord
 
 /// <summary>
 /// One 64-byte <c>CHDR</c> record: where one chunk cell's baked geometry lives.
+/// Records are sorted by <c>ChunkCoord.CompareTo</c>, so a cell lookup is a binary search.
 /// </summary>
-/// <remarks>
-/// <para><b><see cref="BoundsMin"/> and <see cref="BoundsMax"/> are the cell's
-/// TRUE render bounds, never the cell cube.</b> A border-spanning brush is owned
-/// by exactly one cell and its surfaces routinely overhang, so culling against the
-/// cell cube makes the overhang vanish while it is plainly visible.</para>
-/// <para><b>A cell with no owned render geometry has <see cref="MeshSize"/>
-/// zero</b>, which is legal and common rather than an error: the compile produces
-/// no mesh artifact for a resident-only cell, and the directory mirrors the
-/// compile.</para>
-/// <para>Records are sorted by <c>ChunkCoord.CompareTo</c>, which is the pinned
-/// canonical order the determinism oracles use and which also makes a point lookup
-/// a binary search.</para>
-/// </remarks>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public readonly struct ScmapChunkRecord
 {
@@ -288,10 +200,13 @@ public readonly struct ScmapChunkRecord
     /// <summary>Cell coordinate on the Z axis.</summary>
     public readonly int Z;
 
-    /// <summary>Minimum corner of the cell's true render bounds.</summary>
+    /// <summary>
+    /// Minimum corner of the cell's render bounds. Not the cell cube: owned
+    /// surfaces can overhang the cell.
+    /// </summary>
     public readonly Vector3 BoundsMin;
 
-    /// <summary>Maximum corner of the cell's true render bounds.</summary>
+    /// <summary>Maximum corner of the cell's render bounds.</summary>
     public readonly Vector3 BoundsMax;
 
     /// <summary>Offset of this cell's mesh blob from the start of <c>CMSH</c>.</summary>
@@ -315,7 +230,7 @@ public readonly struct ScmapChunkRecord
     /// <summary>Reserved; written zero.</summary>
     public readonly uint Reserved;
 
-    /// <summary>Builds one chunk-directory record. Every field is assigned.</summary>
+    /// <summary>Builds one chunk-directory record.</summary>
     public ScmapChunkRecord(
         int x,
         int y,
@@ -345,13 +260,8 @@ public readonly struct ScmapChunkRecord
 /// <summary>
 /// One 32-byte <c>META</c> spawn record.
 /// </summary>
-/// <remarks>
-/// Twenty-eight bytes of content padded to thirty-two, so the array can be cast in
-/// place out of a section that is itself 16-byte aligned. The padding is declared
-/// as a field rather than left implicit, because an undeclared gap is exactly the
-/// byte that picks up stack garbage and turns a byte-identity oracle red in a way
-/// that is very hard to bisect.
-/// </remarks>
+// 28 bytes of content padded to 32 so the array casts in place. The padding is
+// a declared field so it is always written zero.
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public readonly struct ScmapSpawn
 {
@@ -364,7 +274,7 @@ public readonly struct ScmapSpawn
     /// <summary>Reserved; written zero.</summary>
     public readonly uint Reserved;
 
-    /// <summary>Builds one spawn record. Every field is assigned.</summary>
+    /// <summary>Builds one spawn record.</summary>
     public ScmapSpawn(Vector3 position, Quaternion rotation)
     {
         Position = position;

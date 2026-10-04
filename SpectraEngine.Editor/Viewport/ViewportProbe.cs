@@ -11,56 +11,18 @@ using System.Threading.Tasks;
 
 namespace SpectraEngine.Editor.Viewport;
 
-/// <summary>
-/// Asks this machine what it can actually do with a composited viewport, and
-/// rehearses the one thing that matters before an engine is running against it.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>The dry run is the point.</b> The capability query says what a compositor
-/// advertises, and a machine can advertise a handle kind it will then refuse to
-/// import - which, discovered after <see cref="EditorSession"/> has started a
-/// render thread, a swap-chain-free device and a scene, is an editor with a
-/// blank pane and a session that has to be torn down out of order. So a real
-/// keyed-mutex shared texture is created and handed over first, at one texel,
-/// which costs a device open and nothing else.
-/// </para>
-/// <para>
-/// <b>Everything here is best-effort and reports rather than throws.</b> The
-/// driver underneath is exactly the unknown being measured; a probe that took
-/// the shell down with it would be worse than no probe, and every failure it
-/// can suffer has the same answer - the native child, with the reason named.
-/// </para>
-/// <para>
-/// <b>Threading:</b> UI thread. The compositor's interop negotiation and its
-/// import verify that themselves.
-/// </para>
-/// </remarks>
+// Measures what this machine can do with a composited viewport. A compositor
+// can advertise a handle kind and then refuse to import it, so a real 1-texel
+// shared texture is imported before any engine session exists.
+// Never throws: every failure means "use the native child". UI thread.
 internal static class ViewportProbe
 {
-    /// <summary>
-    /// One texel. The question is whether the compositor accepts the import at
-    /// all, and the answer does not depend on how big the picture is.
-    /// </summary>
     private const int DryRunSize = 1;
 
-    /// <summary>
-    /// How long the rehearsal may take before it is called a refusal.
-    /// </summary>
-    /// <remarks>
-    /// A ceiling rather than a tuning: a hand-over against a resource that
-    /// cannot be synchronised has nothing to time it out, and a launch that
-    /// hangs before a window has changed is indistinguishable from a hung
-    /// editor.
-    /// </remarks>
+    // Nothing else times out an import that cannot be synchronised.
     private static readonly TimeSpan DryRunDeadline = TimeSpan.FromSeconds(10);
 
-    /// <summary>
-    /// Measures the machine behind <paramref name="anchor"/>'s compositor.
-    /// </summary>
-    /// <param name="anchor">Any visual already attached to the window's tree.</param>
-    /// <param name="backend">The backend this session will run on, for the colour verdict.</param>
-    /// <param name="logger">Owned by the caller.</param>
+    // anchor: any visual already attached to the window's tree.
     internal static async Task<ViewportCapabilities> MeasureAsync(
         Visual anchor, GraphicsBackend backend, ILogger logger)
     {
@@ -91,9 +53,8 @@ internal static class ViewportProbe
             if (!capabilities.SupportsD3D11NtHandle)
                 return capabilities;
 
-            // Per handle kind, never per device: a machine can accept a handle
-            // it cannot synchronise with a keyed mutex, and a keyed mutex is the
-            // only hand-over the engine implements.
+            // Per handle kind: a machine can accept a handle it cannot
+            // synchronise with a keyed mutex.
             capabilities = capabilities with
             {
                 SupportsKeyedMutex = HasKeyedMutex(interop, kind, logger),
@@ -126,10 +87,6 @@ internal static class ViewportProbe
         }
     }
 
-    /// <summary>
-    /// Creates a real shared texture on the compositor's own adapter and offers
-    /// it, so a refusal happens here rather than under a running engine.
-    /// </summary>
     private static async Task<ViewportCapabilities> DryRunAsync(
         ICompositionGpuInterop interop,
         ViewportCapabilities capabilities,
@@ -148,12 +105,8 @@ internal static class ViewportProbe
                 AdapterName = textures.AdapterName,
                 DriverVersion = textures.DriverVersion,
 
-                // Not about the compositor at all: whether the last
-                // --viewport-compare on this backend agreed that the shared
-                // route's colours are identical to an ordinary target's. Nothing
-                // else in the shell can see a double sRGB encode. The stamp
-                // cannot be adapter-scoped because the producer never names the
-                // adapter it opened - see ViewportCompareStamp.
+                // Verdict of the last --viewport-compare on this backend. Keyed
+                // by backend only: the producer cannot name its adapter.
                 CompareGreen = ViewportCompareStamp.IsGreenFor(ViewportCompareStamp.Load(), backend),
             };
 
@@ -170,11 +123,7 @@ internal static class ViewportProbe
 
             await Bounded(image.ImportCompleted);
 
-            // The import is the whole question. A hand-over as well would need
-            // the compositor's turn on a mutex this side has already released
-            // into, which is a second protocol to get right for no extra
-            // information: an import that completes is the thing that was
-            // refused when it was refused.
+            // Import only. A hand-over would add no information.
             logger.LogInformation(
                 "Composited viewport rehearsal: a {Size}x{Size} shared texture imported on {Adapter} " +
                 "(driver {Driver}).",
@@ -190,9 +139,8 @@ internal static class ViewportProbe
         }
         finally
         {
-            // The image goes first: it is the compositor's view of the texture,
-            // and destroying the texture underneath it is exactly the crash the
-            // retirement handshake exists to avoid in a live session.
+            // Image before texture: freeing the texture under the compositor's
+            // view of it crashes the driver.
             if (image is not null)
             {
                 try
@@ -219,15 +167,8 @@ internal static class ViewportProbe
         await task;
     }
 
-    /// <summary>
-    /// The adapter LUID as the settings file spells it, and the empty string
-    /// when the compositor reported none.
-    /// </summary>
-    /// <remarks>
-    /// An empty LUID must stay empty rather than becoming a placeholder: it is
-    /// compared against a recorded one, and a placeholder that matched itself
-    /// would let a history earned on one machine be trusted on another.
-    /// </remarks>
+    // Same spelling as the settings file. A missing LUID stays empty: a
+    // placeholder would match itself across machines.
     private static string FormatLuid(byte[]? luid) =>
         luid is null or { Length: 0 }
             ? string.Empty

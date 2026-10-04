@@ -3,8 +3,8 @@ using System.Collections.Generic;
 
 namespace SpectraEngine.Core.Scene;
 
-/// <summary>Identity membership with stable attachment order and constant-time removal.
-/// Dense indexing compacts tombstones once after a batch of changes. Render-thread owned.</summary>
+// Identity membership with stable attachment order and constant-time removal.
+// Indexing compacts tombstones once after a batch of changes. Render thread only.
 internal sealed class OrderedIdentityList<T> : IReadOnlyList<T>, IComparer<T> where T : class
 {
     private readonly Dictionary<T, (int Index, long Order)> _members = new(ReferenceEqualityComparer.Instance);

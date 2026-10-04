@@ -9,21 +9,9 @@ namespace SpectraEngine.Editor.Shell;
 /// <summary>
 /// Asks for one name: a new map, a new project, a "save as".
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Hand-built rather than a save-file picker, because a map is a
-/// FOLDER.</b> The platform save dialogs name files, and pointing one at a
-/// directory bundle means either lying about what is being created or relying
-/// on whether a given backend happens to touch the path it returns. Choosing
-/// the parent folder and typing a name is two plain steps that mean exactly
-/// what they say.
-/// </para>
-/// <para>
-/// <b>The name is validated here rather than at the filesystem</b>, because the
-/// failure it prevents is not an exception: a name carrying a separator would
-/// quietly create the bundle somewhere else entirely.
-/// </para>
-/// </remarks>
+// Not a save-file picker: a map is a folder, and platform save dialogs name files.
+// Do not add a parameterless InitializeComponent here. It shadows the generated
+// one and leaves every x:Name field null.
 public partial class NameDialog : Window
 {
     public NameDialog()
@@ -48,8 +36,6 @@ public partial class NameDialog : Window
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
     {
-        // Enter accepts and Escape cancels, because a one-field dialog that
-        // makes you reach for the mouse is a dialog people resent.
         if (e.Key == Key.Enter) { Accept(); e.Handled = true; }
         else if (e.Key == Key.Escape) { Close(null); e.Handled = true; }
     }
@@ -68,9 +54,7 @@ public partial class NameDialog : Window
             return;
         }
 
-        // Separators first and by name: a name containing one would create the
-        // bundle in a directory the user never chose, which is the one failure
-        // here that is silent rather than loud.
+        // A separator would create the bundle in a folder the user never chose.
         if (name.Contains(Path.DirectorySeparatorChar) || name.Contains(Path.AltDirectorySeparatorChar))
         {
             Reject("A name cannot contain a path separator.");

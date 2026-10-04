@@ -2,46 +2,30 @@ using System;
 
 namespace SpectraEngine.Core.Entities;
 
-/// <summary>What a queued event does when its time comes.</summary>
 internal enum EntityEventKind : byte
 {
-    /// <summary>Wake one entity's <c>Think</c>.</summary>
     Think = 0,
 
-    /// <summary>Deliver one input to every entity a target name resolves to.</summary>
+    // Delivered to every entity the target name resolves to.
     Input = 1,
 }
 
-/// <summary>
-/// One thing the world will do at a stated time.
-/// </summary>
-/// <remarks>
-/// <b>Think wakeups and input deliveries are ONE record in ONE queue.</b> Two
-/// queues drained one after the other would order every think against every
-/// input by which queue was drained first rather than by time, so a think
-/// scheduled before an input and due at the same moment could run after it - a
-/// total order that is only total within each half.
-/// </remarks>
+// Thinks and inputs share one record and one queue. Two queues would order
+// equal-time events by which queue drained first.
 internal struct EntityEvent
 {
     public float Time;
 
-    // The tiebreak, and the whole of the determinism promise: equal times
-    // dispatch in the order they were scheduled. A long rather than an int
-    // because it is never reset within a session and a busy level schedules
-    // millions of events an hour.
+    // Tiebreak: equal times dispatch in the order they were scheduled.
     public long Sequence;
 
     public EntityEventKind Kind;
 
-    /// <summary>The thinking entity, or the entity whose output fired.</summary>
+    // The thinking entity, or the entity whose output fired.
     public Entity? Entity;
 
-    /// <summary>
-    /// The <see cref="Entities.Entity.ThinkSerial"/> this think was scheduled
-    /// with. A heap cannot remove an entry, so a superseded think is recognised
-    /// here and dropped rather than run twice.
-    /// </summary>
+    // A think whose serial no longer matches the entity's was superseded and
+    // is dropped.
     public int ThinkSerial;
 
     public Entity? Activator;
@@ -49,21 +33,12 @@ internal struct EntityEvent
     public string Input;
     public string Parameter;
 
-    /// <summary>The output this came from. Carried for the budget message only.</summary>
+    // Only for the budget message.
     public string Output;
 }
 
-/// <summary>
-/// A binary min-heap over <see cref="EntityEvent"/>, ordered by
-/// <c>(Time, Sequence)</c>.
-/// </summary>
-/// <remarks>
-/// Hand-written rather than <c>PriorityQueue</c> because the ordering is a pair
-/// and the tiebreak is load-bearing: a comparer that only saw the time would let
-/// the heap's own array layout decide the order of equal-time events, which
-/// changes with the insertion pattern and is exactly the non-determinism this
-/// queue exists to remove.
-/// </remarks>
+// Min-heap ordered by (Time, Sequence). Not PriorityQueue: without the
+// sequence tiebreak, equal-time order depends on the insertion pattern.
 internal sealed class EntityEventQueue
 {
     private EntityEvent[] _heap = new EntityEvent[16];
@@ -73,8 +48,7 @@ internal sealed class EntityEventQueue
 
     public void Clear()
     {
-        // Cleared rather than truncated: the entries hold entity references and
-        // a deactivated world must not keep its instances alive through them.
+        // Entries hold entity references; don't keep them alive.
         Array.Clear(_heap, 0, _count);
         _count = 0;
     }

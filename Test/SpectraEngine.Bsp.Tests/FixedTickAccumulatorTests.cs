@@ -2,13 +2,7 @@ using SpectraEngine.Core.Physics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The accumulator that lets <see cref="IScenePhysics.Step"/> promise a fixed
-/// step and mean it. Handing a backend the frame delta would make the
-/// simulation a function of frame rate — the same input producing a different
-/// world on a faster machine — which is exactly what determinism, replay and
-/// server reconciliation all rest on not being true.
-/// </summary>
+/// <summary>The accumulator that turns frame time into fixed physics ticks.</summary>
 public sealed class FixedTickAccumulatorTests
 {
     private const float Dt = 1f / 60f;
@@ -37,9 +31,6 @@ public sealed class FixedTickAccumulatorTests
     [Fact]
     public void Simulated_time_tracks_wall_clock_over_many_uneven_frames()
     {
-        // The property that actually matters: however the frames are chopped
-        // up, the number of ticks run matches the elapsed time. A step that
-        // varied with frame time would fail this by construction.
         var acc = new FixedTickAccumulator(Dt, 1000);
         double[] frames = [0.004, 0.021, 0.016, 0.0009, 0.033, 0.0161, 0.0159, 0.008, 0.05];
 
@@ -57,10 +48,8 @@ public sealed class FixedTickAccumulatorTests
     [Fact]
     public void The_cap_stops_the_spiral_and_says_it_dropped_time()
     {
-        // A frame that owes more ticks than the cap must not bank the debt:
-        // carrying it makes the next frame longer still, which is the
-        // unrecoverable slide the cap exists to prevent. Losing simulated time
-        // is the lesser evil — but it must be countable, not silent.
+        // Debt past the cap is dropped, not banked: carrying it makes the next
+        // frame longer still. The loss has to be counted.
         var acc = new FixedTickAccumulator(Dt, 5);
 
         acc.Advance(Dt * 20.0).ShouldBe(5);
@@ -95,9 +84,7 @@ public sealed class FixedTickAccumulatorTests
     [Fact]
     public void A_bad_timer_reading_contributes_nothing_instead_of_throwing()
     {
-        // This runs every frame on the render thread. A debugger pause, a clock
-        // step or a first-frame zero must not be able to take the process down
-        // or bank an enormous debt.
+        // Debugger pause, clock step, first-frame zero.
         var acc = new FixedTickAccumulator(Dt, 5);
 
         acc.Advance(0d).ShouldBe(0);
@@ -123,8 +110,7 @@ public sealed class FixedTickAccumulatorTests
     [Fact]
     public void The_phase_does_not_drift_over_a_long_session()
     {
-        // The residual is carried for the process's life, which is why it is
-        // accumulated in double: a float would let rounding walk the phase.
+        // The residual is kept in double; float rounding would drift the phase.
         var acc = new FixedTickAccumulator(Dt, 1000);
         const int frames = 200_000;
 

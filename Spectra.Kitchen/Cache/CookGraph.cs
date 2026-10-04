@@ -10,42 +10,22 @@ namespace Spectra.Kitchen.Cache;
 /// <param name="Path">Normalised content-relative path the engine resolves it by.</param>
 /// <param name="Kind">The pack entry kind the rule asked for.</param>
 /// <param name="ContentHash">Its name in the <see cref="ContentStore"/>.</param>
-/// <param name="Length">Uncompressed byte count, so a manifest can be rebuilt without the payload.</param>
+/// <param name="Length">Uncompressed byte count.</param>
 public readonly record struct CachedOutput(string Path, PackEntryKind Kind, UInt128 ContentHash, long Length);
 
-/// <summary>One remembered run of one rule: what it was keyed as, and what it emitted.</summary>
-/// <param name="Key">The <see cref="CookCacheKey"/> that run was made under.</param>
-/// <param name="Outputs">What it emitted, by name and by content hash.</param>
+/// <summary>One remembered run of a rule: its key and what it emitted.</summary>
 public sealed record CookGeneration(UInt128 Key, IReadOnlyList<CachedOutput> Outputs);
 
 /// <summary>
 /// What a rule has done to one asset: the paths it last touched, and the last few
 /// keys those paths produced.
 /// </summary>
-/// <param name="SourcePath">The asset the rule was asked to cook. Its identity here.</param>
-/// <param name="Dependencies">
-/// The rule's most recent access SHAPE - which paths it touched and how, MISSES
-/// INCLUDED. The misses are not a separate list because
-/// <see cref="RuleDependency"/> already carries the distinction as a kind, and two
-/// lists that must agree about one path is a way for them to disagree. This is the
-/// set of questions a later cook asks again; the answers are what the key is built
-/// from.
-/// </param>
+/// <param name="SourcePath">The asset the rule was asked to cook.</param>
+/// <param name="Dependencies">The paths the latest run touched and how, misses included.</param>
 /// <param name="Generations">
-/// Recent runs, MOST RECENT FIRST, capped at <see cref="CookGraph.GenerationsKept"/>.
+/// Recent runs, newest first, capped at <see cref="CookGraph.GenerationsKept"/>.
 /// </param>
-/// <remarks>
-/// <para><b>More than one generation, and that is what makes a revert a hit rather
-/// than a rebuild.</b> With one key per rule, editing a file and changing it back
-/// leaves the graph holding only the intermediate key, so the return to the
-/// original content is a miss and the cook re-does work whose exact output is
-/// already sitting in the store. Remembering a few keys per rule makes the revert
-/// resolve, which is the second half of what content hashing buys over timestamps.
-/// </para>
-/// <para><b>The cap is small on purpose.</b> Every remembered generation is a full
-/// set of payloads held in the content store, and nothing sweeps that store yet,
-/// so the number is a disk budget rather than a tuning knob.</para>
-/// </remarks>
+// Several generations so that editing a file and reverting it is a hit.
 public sealed record CookGraphRecord(
     string SourcePath,
     IReadOnlyList<RuleDependency> Dependencies,
@@ -54,38 +34,17 @@ public sealed record CookGraphRecord(
 /// <summary>
 /// One record per rule, persisted as <c>graph.bin</c>.
 /// </summary>
-/// <remarks>
-/// <para><b>Hand-rolled and AOT-safe, like every other codec in this arc.</b> A
-/// reflection-based serializer is what trimming removes, and the failure would be
-/// a published cook tool that silently treats every cache as empty while a debug
-/// run is incremental.</para>
-/// <para><b>A file that does not parse is discarded, never thrown.</b> A cache is
-/// derived data: the only correct response to one that cannot be read is to
-/// rebuild it. Failing the cook instead would turn a corrupt cache into a build
-/// nobody can run without knowing to delete a hidden folder.</para>
-/// <para><b>Records are written sorted by source path</b>, so the file is a
-/// function of what the cache holds rather than of the order a cook happened to
-/// walk a directory in. Nothing depends on those bytes for identity; it is so that
-/// a cache file misbehaving can be diffed between two runs.</para>
-/// <para><b>Generations are addressed per record, never in a global key table.</b>
-/// A cache key carries the rule, the settings, the toolchain and the inputs, and
-/// for every rule that reads its own subject that already separates two assets -
-/// but a rule that emits without reading its own path would key two different
-/// assets identically, and a table keyed on the key alone would then serve one
-/// asset's bytes for the other. Keeping generations inside the record makes that
-/// unreachable rather than merely unlikely.</para>
-/// <para><b>Locked, because the scheduler reads and writes it from N workers.</b>
-/// Every critical section here is dictionary work over records that are already
-/// immutable once built, so the lock is never held across a file read; the one
-/// exception is <see cref="Save"/>, which runs once at the end of a cook on the
-/// calling thread.</para>
-/// </remarks>
+// A file that does not parse is discarded and the cache rebuilt.
+// Generations live inside the record, not in a table keyed on the cache key:
+// a rule that emits without reading its own path would key two assets alike.
+// Locked for the scheduler's workers. Records are immutable once built.
 public sealed class CookGraph
 {
     private const uint Magic = 0x52474353; // "SCGR" little-endian
     private const uint FormatVersion = 2;
 
     /// <summary>How many past runs of one rule are remembered.</summary>
+    // Each one holds a full set of payloads in the store, which nothing sweeps yet.
     public const int GenerationsKept = 4;
 
     private readonly object _gate = new();
@@ -99,15 +58,7 @@ public sealed class CookGraph
     /// <summary>Whether anything changed since this was loaded.</summary>
     public bool IsDirty { get { lock (_gate) return _dirty; } }
 
-    /// <summary>
-    /// Why a graph file on disk was discarded, or null when there was nothing
-    /// wrong with it (or nothing there).
-    /// </summary>
-    /// <remarks>
-    /// Reported by the session as an info rather than swallowed: a cook that
-    /// rebuilds everything because its cache would not parse looks exactly like a
-    /// slow cook, and "why is this not incremental" is unanswerable without it.
-    /// </remarks>
+    /// <summary>Why the graph file on disk was discarded, or null.</summary>
     public string? DiscardedReason { get; private set; }
 
     /// <summary>The record for <paramref name="sourcePath"/>, if there is one.</summary>
@@ -116,10 +67,7 @@ public sealed class CookGraph
         lock (_gate) return _records.TryGetValue(sourcePath, out record!);
     }
 
-    /// <summary>
-    /// Records one rule run: it becomes the newest generation and the current
-    /// access shape.
-    /// </summary>
+    /// <summary>Records one rule run as the newest generation.</summary>
     public void Set(
         string sourcePath,
         IReadOnlyList<RuleDependency> dependencies,
@@ -136,9 +84,6 @@ public sealed class CookGraph
         {
             if (_records.TryGetValue(sourcePath, out CookGraphRecord? existing))
             {
-                // The re-recorded key is dropped from its old position rather than
-                // left there: a duplicate would spend one of the remembered slots on
-                // an answer the newest generation already gives.
                 for (int i = 0; i < existing.Generations.Count && generations.Count < GenerationsKept; i++)
                 {
                     if (existing.Generations[i].Key == key) continue;
@@ -153,14 +98,8 @@ public sealed class CookGraph
 
     /// <summary>
     /// Drops every record whose source is not in <paramref name="live"/>.
+    /// Does not sweep the content store.
     /// </summary>
-    /// <remarks>
-    /// Without this the graph grows for the life of the project and keeps naming
-    /// assets that were deleted years ago. It does NOT sweep the content store:
-    /// reclaiming payloads needs a reachability pass that no verb runs yet, so the
-    /// store is append-only today and that is a named limitation rather than an
-    /// oversight.
-    /// </remarks>
     public void RetainOnly(IReadOnlyCollection<string> live)
     {
         ArgumentNullException.ThrowIfNull(live);
@@ -228,6 +167,7 @@ public sealed class CookGraph
 
     private void Write(string path)
     {
+        // Sorted so two cache files can be diffed.
         var keys = new List<string>(_records.Keys);
         keys.Sort(StringComparer.Ordinal);
 
@@ -317,10 +257,7 @@ public sealed class CookGraph
         }
     }
 
-    // Refused rather than cast, because the whole file turns on this byte: a value
-    // this build has no name for would land on Read (which is zero) and make a
-    // negative dependency read as a positive one, which is the exact bug the
-    // recording exists to prevent.
+    // No cast: an unknown value must not be taken for a known kind.
     private static RuleDependencyKind ToDependencyKind(byte value) => value switch
     {
         (byte)RuleDependencyKind.Read => RuleDependencyKind.Read,

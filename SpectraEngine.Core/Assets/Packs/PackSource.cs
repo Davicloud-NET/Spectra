@@ -6,26 +6,10 @@ using System.Diagnostics.CodeAnalysis;
 namespace SpectraEngine.Core.Assets.Packs;
 
 /// <summary>
-/// A mounted <c>.spack</c> read straight out of a memory-mapped view: an
-/// uncompressed entry is handed to the caller as a span into the file, with no
-/// copy and no decode between the two.
+/// A mounted <c>.spack</c> read out of a memory-mapped view. An uncompressed
+/// entry is a span into the file, with no copy. Every blob it hands out holds a
+/// <see cref="PackHandle"/> reference.
 /// </summary>
-/// <remarks>
-/// <para><b>The whole file is mapped once, at mount.</b> Per-entry views are the
-/// obvious alternative and they do not work: on Windows a view's offset must be a
-/// multiple of the 64 KB allocation granularity rather than the 4 KB page size,
-/// so per-entry mapping needs either absurd 64 KB payload alignment or an
-/// offset-modulo dance at every read, and that is discovered the hard way. One
-/// view costs address space rather than RAM, and both targets are 64-bit.</para>
-/// <para><b>Lookup is allocation-free.</b> The entry table is reinterpreted in
-/// place as <c>ReadOnlySpan&lt;PackEntry&gt;</c> and binary-searched on the
-/// unsigned 128-bit id; nothing is parsed, no dictionary is built and no string is
-/// materialised on the path a frame takes.</para>
-/// <para><b>Every blob it hands out holds a <see cref="PackHandle"/>
-/// reference</b>, including a decompressed one. Unmapping under a live span is an
-/// access violation with no managed stack, so the reference travels with the blob
-/// rather than with the call that opened it.</para>
-/// </remarks>
 public sealed class PackSource : PackSourceBase
 {
     private ulong _entryTableOffset;
@@ -48,9 +32,7 @@ public sealed class PackSource : PackSourceBase
         }
         catch
         {
-            // A constructor that threw produced no object for anybody to dispose,
-            // so the view it already created has to be unmapped here or it is
-            // leaked for the process's life.
+            // Nobody can dispose a half-constructed source, so unmap here.
             Handle.RequestUnmount();
             throw;
         }
@@ -89,8 +71,7 @@ public sealed class PackSource : PackSourceBase
     /// <inheritdoc/>
     protected override UInt128 ComputeDigest(long offset, long length)
     {
-        // Chunked rather than one span, because a pack may legitimately be larger
-        // than a span can address and the mount must not be the thing that caps it.
+        // Chunked: a pack can be larger than one span can address.
         const int ChunkSize = 1 << 20;
 
         var accumulator = new PackDigest.Accumulator();
@@ -113,13 +94,11 @@ public sealed class PackSource : PackSourceBase
     {
         blob = null;
 
-        // Taken before anything is read and owned by the blob afterwards: between
-        // those two moments nothing else keeps the view alive.
+        // Taken before any read; the blob owns it afterwards.
         if (!Handle.TryAddRef()) return false;
 
-        // Tracked rather than inferred from blob being null, because the failed
-        // inflate below disposes a blob that has ALREADY taken the reference, and
-        // a finally that released it again would be an over-release.
+        // Not inferred from blob == null: a failed inflate disposes a blob that
+        // already owns the reference, and releasing again would over-release.
         bool referenceHandedOver = false;
         try
         {

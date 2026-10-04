@@ -7,49 +7,17 @@ namespace SpectraEngine.Core.Assets.Audio;
 /// <summary>
 /// Reads a <c>.saudio</c>: the 48-byte header described by
 /// <see cref="SaudioFormat"/>, its optional seek table, and where the payload
-/// sits.
+/// sits. Refuses anything malformed with a message naming the rule it broke.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>It validates and REFUSES, naming what was wrong and what was expected.</b>
-/// Nearly everything this reader checks has a failure that plays a sound rather
-/// than raising anything: a rate that disagrees with the payload plays the whole
-/// asset at the wrong pitch, a channel count that disagrees swaps the ears every
-/// frame, a loop end past the end of the sound asks the fill loop for frames
-/// that are not there. And the two length fields have a worse failure than any
-/// of those - the bytes normally arrive as a span into a memory-mapped view,
-/// where a length nobody bounded is a read past the end of the mapping, which on
-/// Windows is an access violation with no managed stack, no catch block and
-/// nothing in the log naming the file. So the answer to every uncertainty here
-/// is a message, not a guess.
-/// </para>
-/// <para>
-/// <b>A span in, no streams.</b> A mounted pack hands out a span into a mapped
-/// view, and wrapping one in a <c>MemoryStream</c> copies the whole file to read
-/// forty-eight bytes of header - the copy the container exists to avoid. Every
-/// field is read through <see cref="BinaryPrimitives"/> rather than by
-/// reinterpreting a struct, because this format fixes little-endian and a struct
-/// cast on a big-endian host produces an enormous plausible frame count instead
-/// of a failure.
-/// </para>
-/// <para>
-/// <b>A cooked artifact versions the STRICT way</b>: exact match or refuse, with
-/// both numbers in the message and the word recook in it, because a cooked file
-/// is a build output that can always be regenerated and the bytes past the
-/// header only mean anything under the version that wrote them.
-/// </para>
-/// </remarks>
+// Every offset and length is bounds-checked before use: the bytes are usually
+// a mapped view, where a bad index is an access violation, not an exception.
+// Takes a span, not a stream, so reading the header copies nothing.
 public static class SaudioReader
 {
-    // Anything a driver could plausibly be asked for, and a bound rather than a
-    // policy: an unbounded rate turns a garbage header into a duration and a
-    // seek stride computed from a number nobody wrote. 768 kHz is four times the
-    // highest rate any consumer format uses.
+    // Sanity bound so a garbage header is refused.
     private const uint MaxSampleRate = 768_000;
 
-    // The bits SaudioFlags defines today. A file setting anything else was
-    // written by a cooker this build does not understand, which under strict
-    // cooked-artifact versioning is a refusal rather than a mask.
+    // Unknown bits are refused, not masked.
     private const byte KnownFlags = (byte)(SaudioFlags.Streaming | SaudioFlags.PositionalIntent);
 
     /// <summary>
@@ -70,9 +38,7 @@ public static class SaudioReader
     /// </exception>
     public static SaudioInfo Read(ReadOnlySpan<byte> file, string originForErrors = "<memory>")
     {
-        // Magic before length, so a file that is not a cooked sound at all is
-        // told that rather than being told it is short: the two have completely
-        // different answers, and "recook it" is only one of them.
+        // Magic before length, so a non-sound file is not reported as a short one.
         if (!LooksLikeSaudio(file))
         {
             throw Refuse(
@@ -101,10 +67,6 @@ public static class SaudioReader
         {
             throw Refuse(originForErrors, codec switch
             {
-                // Named one by one rather than lumped into "unsupported": these
-                // three are numbers the format has already spent, so the answer
-                // is "this build has no decoder" and not "recook it as something
-                // else", which is the answer for a number nothing defines.
                 SaudioCodec.Vorbis or SaudioCodec.Opus or SaudioCodec.ImaAdpcm =>
                     $"its codec is {codec} ({(byte)codec}), which the .saudio format reserves and this engine " +
                     "has no decoder for; cook it as PcmS16.",
@@ -144,10 +106,6 @@ public static class SaudioReader
         var layout = (SaudioChannelLayout)file[SaudioFormat.ChannelLayoutOffset];
         if (SaudioFormat.ChannelsFor(layout) != channels)
         {
-            // Two fields describing one thing, and the whole reason the layout is
-            // separate from the count is that they stop agreeing the moment a
-            // multi-channel arrangement arrives. A disagreement now is a writer
-            // bug, and honouring either one of them silently picks a side.
             throw Refuse(
                 originForErrors,
                 $"it declares channel layout {layout} ({(byte)layout}) and {channels} channels, which do not " +
@@ -181,11 +139,7 @@ public static class SaudioReader
 
         if (dataOffset % SaudioFormat.PcmBytesPerSample != 0)
         {
-            // The payload is read as shorts straight out of the mapped view, so
-            // an odd offset would put every sample across a sample boundary. That
-            // is a slow read on the platforms that tolerate it and undefined on
-            // the ones that do not; either way it is not a thing a cooker should
-            // ever emit.
+            // The payload is read in place as shorts, so it must be aligned.
             throw Refuse(
                 originForErrors,
                 $"its payload starts at byte {dataOffset}, which is not a multiple of the " +
@@ -209,12 +163,8 @@ public static class SaudioReader
             seekTable);
     }
 
-    // The loop is the field this format exists to carry, and every one of its
-    // failures is silent: a region that ends before it starts reads zero frames
-    // and asks for zero again, which is a hang inside the fill loop rather than
-    // a silent sound, and a region past the end of the sound reads frames that
-    // are not there. LoopRegion's own constructor refuses both, so the answer
-    // here is to say which number was wrong before handing it one.
+    // An empty loop region would hang the fill loop; one past the end reads
+    // frames that are not there.
     private static LoopRegion ReadLoop(long start, long end, long frameCount, string origin)
     {
         if (end == 0)
@@ -247,10 +197,7 @@ public static class SaudioReader
         return new LoopRegion(start, end);
     }
 
-    // The table is streaming's half of the format, and the flag and the table are
-    // two statements about one thing: a table nothing reads is dead weight, and a
-    // streaming flag with no table is a seek that has to linear-decode after
-    // promising not to. Refusing a disagreement is what keeps the pair honest.
+    // The streaming flag and the seek table must come together.
     private static (int FramesPerEntry, long[] Table) ReadSeekTable(
         ReadOnlySpan<byte> file,
         SaudioFlags flags,
@@ -306,9 +253,6 @@ public static class SaudioReader
         long expected = (frameCount + framesPerEntry - 1) / framesPerEntry;
         if (entryCount != expected)
         {
-            // A table whose length does not cover the sound is a table that
-            // belongs to a different sound, which presents as a seek landing at
-            // the wrong moment rather than as anything that fails.
             throw Refuse(
                 origin,
                 $"its seek table has {entryCount} entries and a {frameCount}-frame sound at {framesPerEntry} " +
@@ -351,9 +295,7 @@ public static class SaudioReader
 
             if ((offset - dataOffset) % (channels * SaudioFormat.PcmBytesPerSample) != 0)
             {
-                // Landing mid-frame swaps the channels for the whole rest of the
-                // stream: the left ear plays the right channel and no length is
-                // wrong anywhere.
+                // A seek landing mid-frame swaps the channels from there on.
                 throw Refuse(
                     origin,
                     $"its seek entry {i} is at byte {offset}, which is not a whole number of " +
@@ -367,10 +309,7 @@ public static class SaudioReader
         return ((int)framesPerEntry, table);
     }
 
-    // Read as unsigned and refused when it does not fit a long. Every consumer
-    // of these fields does signed arithmetic with them, and a u64 cast blindly
-    // to a long is negative for half its range, which turns a bounds check into
-    // a check that passes.
+    // A u64 cast straight to long can go negative and slip past the bounds checks.
     private static long ReadI64(ReadOnlySpan<byte> file, int at, string origin, string field)
     {
         ulong value = BinaryPrimitives.ReadUInt64LittleEndian(file[at..]);

@@ -7,44 +7,23 @@ using SpectraEngine.Core.Bsp;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The D17 oracle for the cooked model container: what <see cref="SmodelReader"/>
-/// accepts, what it refuses, and that a refusal names the thing that was wrong.
+/// What <see cref="SmodelReader"/> accepts and refuses, and that a refusal names what was wrong.
 /// </summary>
-/// <remarks>
-/// <para>Every file here is built by <see cref="HandBuiltSmodel"/>, which writes
-/// the bytes from the format specification and touches none of the engine's own
-/// types. A reader checked against its own writer proves the two agree rather
-/// than that either is right, and every failure in this format is a
-/// misinterpreted buffer rather than an exception, so a second opinion is the
-/// only thing that can catch a layout drift.</para>
-/// <para>The refusals matter more than the happy path. These bytes normally
-/// arrive as a span into a memory-mapped view, where an unchecked index is an
-/// access violation with no managed stack: nothing in a log names the file, and
-/// nothing can catch it. So each malformed case gets its own test, and each
-/// asserts on the MESSAGE, because a refusal that does not say which section or
-/// which joint is only marginally better than the crash it replaced.</para>
-/// </remarks>
+// Files come from HandBuiltSmodel, which writes bytes from the spec and uses no
+// engine types. A reader tested against its own writer only proves they agree.
 public sealed class SmodelFormatTests
 {
-    // The header flag bits, spelled out from the spec rather than imported, for
-    // the same reason HandBuiltSmodel spells everything else out.
+    // From the spec, not imported from the engine.
     private const ushort HasSkeletonFlag = 1 << 0;
     private const ushort HasCollisionFlag = 1 << 1;
     private const ushort Index32Flag = 1 << 2;
 
     private const string Source = "Models/probe.smodel";
 
-    // ------------------------------------------------------------------
-    // (a) The record layouts are a file format, so their sizes are pinned
-    // rather than assumed.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void The_records_cast_out_of_a_mapped_view_are_exactly_the_bytes_the_format_declares()
     {
-        // Raw file bytes are cast into every one of these, and neither
-        // System.Numerics.Plane's nor Vector3's field layout is a documented
-        // contract of the framework.
+        // Plane and Vector3 layouts are not a documented framework contract.
         Unsafe.SizeOf<Plane>().ShouldBe(16);
         Unsafe.SizeOf<Vector3>().ShouldBe(12);
 
@@ -54,7 +33,6 @@ public sealed class SmodelFormatTests
         Unsafe.SizeOf<SmodelJoint>().ShouldBe(56);
         Unsafe.SizeOf<SmodelCollisionHull>().ShouldBe(8);
 
-        // And the constants the reader does its arithmetic with say the same.
         SmodelFormat.VertexAttributeSize.ShouldBe(Unsafe.SizeOf<SmodelVertexAttribute>());
         SmodelFormat.SubmeshSize.ShouldBe(Unsafe.SizeOf<SmodelSubmesh>());
         SmodelFormat.LodSize.ShouldBe(Unsafe.SizeOf<SmodelLod>());
@@ -68,10 +46,6 @@ public sealed class SmodelFormatTests
         SmodelFormat.PayloadAlignment.ShouldBe(HandBuiltSmodel.PayloadAlignment);
         SmodelFormat.NameOffsetAbsent.ShouldBe(HandBuiltSmodel.NameOffsetAbsent);
     }
-
-    // ------------------------------------------------------------------
-    // (b) The happy path, value for value.
-    // ------------------------------------------------------------------
 
     [Fact]
     public void A_hand_built_model_round_trips_through_the_reader()
@@ -111,9 +85,7 @@ public sealed class SmodelFormatTests
         model.GetName(model.Submeshes[0].MaterialNameOffset).ShouldBe("Materials/crate.spectramat");
         model.GetName(model.Submeshes[1].MaterialNameOffset).ShouldBe("Materials/glass.spectramat");
 
-        // The bounds are the tail of the forty-byte record, so asserting them is
-        // what proves the two embedded Vector3s sit where the layout says and the
-        // whole record, not merely its leading four words, was read correctly.
+        // Bounds are the tail of the record, so this checks the whole 40 bytes.
         model.Submeshes[1].BoundsMin.ShouldBeCloseTo(new Vector3(-1f), 1e-6f);
         model.Submeshes[1].BoundsMax.ShouldBeCloseTo(new Vector3(1f), 1e-6f);
 
@@ -132,8 +104,7 @@ public sealed class SmodelFormatTests
         model.Joints[2].ParentIndex.ShouldBe(1);
         model.GetName(model.Joints[2].NameOffset).ShouldBe("hand");
 
-        // Four rows of three, so the fourth row is the translation. Dropping the
-        // last ROW instead of the last COLUMN is what would silently lose it.
+        // Four rows of three: the fourth row is the translation.
         model.Joints[1].InverseBind.Translation.ShouldBeCloseTo(new Vector3(7f, 8f, 9f), 1e-6f);
 
         model.HasCollision.ShouldBeTrue();
@@ -141,36 +112,23 @@ public sealed class SmodelFormatTests
         model.CollisionPlanes.Length.ShouldBe(6);
         model.PlanesOf(model.CollisionHulls[0]).Length.ShouldBe(6);
 
-        // The plane array is realigned to sixteen bytes inside COLL, past a hull
-        // table of twelve, so reading the right values here is also what proves
-        // the reader honoured that padding rather than casting from the table's
-        // own end.
+        // Planes are realigned to 16 inside COLL, past a 12-byte hull table.
         model.CollisionPlanes[0].Normal.ShouldBeCloseTo(new Vector3(1f, 0f, 0f), 1e-6f);
         model.CollisionPlanes[0].D.ShouldBe(-1f);
         model.CollisionPlanes[5].Normal.ShouldBeCloseTo(new Vector3(0f, 0f, -1f), 1e-6f);
         model.CollisionPlanes[5].D.ShouldBe(-1f);
 
-        // The layout id is a value the file stamps and the reader recomputes; if
-        // the two disagreed the read would already have thrown, so this only
-        // asserts that what comes back is the number a consumer compares with.
         model.VertexLayoutId.ShouldBe(SmodelFormat.ComputeVertexLayoutId(model.VertexAttributes));
 
-        // The two names the file never used stay reachable, which is what makes
-        // the blob a blob rather than a per-record string.
         model.GetName(SmodelFormat.NameOffsetAbsent).ShouldBe(string.Empty);
         names.Length.ShouldBe(5);
     }
 
-    // ------------------------------------------------------------------
-    // (c) Forward compatibility: the whole reason the section table exists.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void A_section_the_reader_has_never_heard_of_is_stepped_over_and_its_neighbours_still_parse()
     {
-        // The unknown section sits BETWEEN two known ones, because a reader that
-        // stopped at the first thing it did not recognise would still pass a test
-        // that put the stranger last.
+        // Unknown section goes between two known ones: a reader that stopped at
+        // it would still pass if it came last.
         var builder = new HandBuiltSmodel { Flags = 0 };
         builder.VertexLayout(8, (0, 0, 3, 0), (1, 0, 3, 12), (3, 0, 2, 24));
         builder.VertexBuffer(QuadVertices());
@@ -190,10 +148,7 @@ public sealed class SmodelFormatTests
     [Fact]
     public void The_reserved_animation_fourcc_is_skipped_like_any_other_unknown()
     {
-        // ANIM is named in the format so nothing else can spend it, and never
-        // written, because clips live in their own file. A reader meeting one is
-        // therefore reading a file from a future it does not implement, which is
-        // exactly the case the skip rule is for.
+        // ANIM is reserved by the format and never written.
         var builder = new HandBuiltSmodel { Flags = 0 };
         builder.VertexLayout(8, (0, 0, 3, 0), (1, 0, 3, 12), (3, 0, 2, 24));
         builder.VertexBuffer(QuadVertices());
@@ -207,10 +162,6 @@ public sealed class SmodelFormatTests
         model.IndexCount.ShouldBe(3);
     }
 
-    // ------------------------------------------------------------------
-    // (d) Collision is the reason the format is custom, so prove the shape.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void Collision_hulls_come_back_as_planes_the_brush_constructor_accepts()
     {
@@ -219,9 +170,6 @@ public sealed class SmodelFormatTests
         SmodelModel model = SmodelReader.Read(file, Source);
         Plane[] planes = model.PlanesOf(model.CollisionHulls[0]).ToArray();
 
-        // The whole claim of the COLL section: a cooked hull is Brush's own
-        // constructor input, so it rides the character mover's plane-set path
-        // with no new collision code at all.
         var hull = new Brush(planes);
 
         hull.LocalBounds.Min.ShouldBeCloseTo(new Vector3(-1f), 1e-4f);
@@ -253,10 +201,6 @@ public sealed class SmodelFormatTests
             narrowModel.IndexAt(i).ShouldBe(wideModel.IndexAt(i), $"index {i}");
     }
 
-    // ------------------------------------------------------------------
-    // (e) Refusals. One test each, and each asserts what the message names.
-    // ------------------------------------------------------------------
-
     [Fact]
     public void A_file_too_short_to_hold_a_header_is_refused()
     {
@@ -286,8 +230,6 @@ public sealed class SmodelFormatTests
 
         SmodelFormatException refusal = Refused(builder.Build());
 
-        // A cooked artifact is a build output, so the message has to say what to
-        // do about it rather than only that something is wrong.
         refusal.Message.ShouldContain("99");
         refusal.Message.ShouldContain(EngineInfo.ModelFormatVersion.ToString());
         refusal.Message.ShouldContain("Recook");
@@ -332,10 +274,7 @@ public sealed class SmodelFormatTests
     [Fact]
     public void A_section_that_does_not_start_on_the_payload_alignment_is_refused()
     {
-        // Checked for an UNKNOWN section too: a section this reader will step over
-        // is still a claim about where the file's bytes are, and letting the skip
-        // rule wave one through would make forward compatibility a way to smuggle
-        // a malformed file past the gate.
+        // Alignment is checked for unknown sections too, not only parsed ones.
         HandBuiltSmodel builder = ValidModel(out _);
         builder.SectionAt("XTRA", offset: 1, length: 0);
 
@@ -391,8 +330,7 @@ public sealed class SmodelFormatTests
     [Fact]
     public void An_index_buffer_that_is_not_a_whole_number_of_indices_is_refused()
     {
-        // MemoryMarshal.Cast drops a partial trailing element in silence, so
-        // without this check the last index of a corrupt file simply disappears.
+        // MemoryMarshal.Cast drops a partial trailing element without complaint.
         var builder = new HandBuiltSmodel { Flags = 0 };
         builder.VertexLayout(8, (0, 0, 3, 0), (1, 0, 3, 12), (3, 0, 2, 24));
         builder.VertexBuffer(QuadVertices());
@@ -439,9 +377,6 @@ public sealed class SmodelFormatTests
     [Fact]
     public void A_joint_whose_parent_does_not_precede_it_is_refused_naming_the_joint()
     {
-        // A forward reference reads a parent matrix that has not been computed
-        // yet, which for a fresh array is identity, so the pose is wrong in a way
-        // that still looks like a pose. Nothing downstream could report it.
         HandBuiltSmodel builder = ValidModelWithSkeleton(
             (HandBuiltSmodel.NameOffsetAbsent, -1, Identity3x4()),
             (HandBuiltSmodel.NameOffsetAbsent, 2, Identity3x4()),
@@ -494,9 +429,6 @@ public sealed class SmodelFormatTests
     [Fact]
     public void A_header_flag_disagreeing_with_the_section_table_is_refused()
     {
-        // The table is the truth and the flag is a summary of it. Refusing costs
-        // one comparison and catches a writer edited in one place and not the
-        // other, which otherwise surfaces as a model with no collision at all.
         HandBuiltSmodel builder = ValidModel(out _);
         builder.Flags = HasCollisionFlag;   // SKEL is present and unannounced
 
@@ -523,17 +455,11 @@ public sealed class SmodelFormatTests
         refusal.Message.ShouldContain("NAME section");
     }
 
-    // ------------------------------------------------------------------
-    // Fixtures.
-    // ------------------------------------------------------------------
-
     private static SmodelFormatException Refused(byte[] file) =>
         Should.Throw<SmodelFormatException>(() => SmodelReader.Read(file, Source));
 
-    /// <summary>
-    /// A complete model: three attributes, four vertices, two submeshes, two
-    /// LODs, a three-joint chain and one box hull.
-    /// </summary>
+    // Three attributes, four vertices, two submeshes, two LODs, a three-joint
+    // chain and one box hull.
     private static HandBuiltSmodel ValidModel(
         out uint[] names,
         (uint PlaneStart, uint PlaneCount)[]? hulls = null)
@@ -567,7 +493,6 @@ public sealed class SmodelFormatTests
         return builder;
     }
 
-    /// <summary>The smallest model that carries a skeleton, so a joint rule can be aimed at.</summary>
     private static HandBuiltSmodel ValidModelWithSkeleton(
         params (uint NameOffset, int Parent, float[] InverseBind)[] joints)
     {
@@ -580,7 +505,7 @@ public sealed class SmodelFormatTests
         return builder;
     }
 
-    /// <summary>Four vertices of eight floats: position, normal, uv.</summary>
+    // Four vertices of eight floats: position, normal, uv.
     private static float[] QuadVertices() =>
     [
         -1f, 0f, -1f, 0f, 1f, 0f, 0f, 0f,
@@ -589,7 +514,7 @@ public sealed class SmodelFormatTests
         -1f, 0f, 1f, 0f, 1f, 0f, 0f, 1f,
     ];
 
-    /// <summary>Four rows of three, the omitted fourth column being (0, 0, 0, 1).</summary>
+    // Four rows of three. The omitted fourth column is (0, 0, 0, 1).
     private static float[] Identity3x4() =>
     [
         1f, 0f, 0f,
@@ -606,11 +531,7 @@ public sealed class SmodelFormatTests
         x, y, z,
     ];
 
-    /// <summary>
-    /// The six outward half-spaces of a box of half extent one, in the sign
-    /// convention <c>Brush.CreateBox</c> uses: normals point out of the solid and
-    /// the offset is the negative half extent.
-    /// </summary>
+    // Brush.CreateBox's sign convention: normals point out, D is minus the half extent.
     private static (float Nx, float Ny, float Nz, float D)[] UnitBoxPlanes() =>
     [
         (1f, 0f, 0f, -1f),

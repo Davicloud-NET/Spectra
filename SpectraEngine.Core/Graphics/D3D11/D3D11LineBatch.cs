@@ -6,12 +6,8 @@ using System.Runtime.CompilerServices;
 
 namespace SpectraEngine.Core.Graphics.D3D11;
 
-/// <summary>
-/// A dynamic vertex buffer that uploads interleaved (position + colour) debug
-/// line vertices and draws them as <c>D3D_PRIMITIVE_TOPOLOGY_LINELIST</c>.
-/// Grows on demand; reuses the existing allocation otherwise. Matches the
-/// OpenGL line batch's external contract.
-/// </summary>
+// Dynamic vertex buffer for interleaved position + colour line vertices, drawn
+// as a line list. Grows on demand.
 internal sealed unsafe class D3D11LineBatch : IDisposable
 {
     private const int FloatsPerVertex = 6;
@@ -35,8 +31,7 @@ internal sealed unsafe class D3D11LineBatch : IDisposable
 
     private static ComPtr<ID3D11InputLayout> CreateInputLayout(ComPtr<ID3D11Device> device, ReadOnlyMemory<byte> vsBytecode)
     {
-        // Layout matches the DebugLine shader: location 0 = position (vec3),
-        // location 1 = colour (vec3). SpectraShade emits these as TEXCOORD0/1.
+        // DebugLine's inputs. SpectraShade emits locations as TEXCOORDn.
         ReadOnlySpan<byte> sem = "TEXCOORD\0"u8;
         fixed (byte* semName = sem)
         {

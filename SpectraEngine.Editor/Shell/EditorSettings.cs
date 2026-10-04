@@ -9,41 +9,18 @@ using System.Text.Json;
 
 namespace SpectraEngine.Editor.Shell;
 
-/// <summary>
-/// One project the shell has opened before: where it lives, what to call it on
-/// a card, and when it was last touched.
-/// </summary>
+/// <summary>One project the shell has opened before.</summary>
 public sealed record RecentProject(string Path, string Name, DateTime OpenedUtc);
 
 /// <summary>
-/// The shell's per-user state: the recent-projects list the start page is built
-/// from, and which viewport this machine has earned. Stored under the user
-/// profile, never inside a project.
+/// The shell's per-user state: recent projects, viewport choice, layout.
+/// Stored under the user profile. UI thread only.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Hand-rolled UTF-8 JSON, like every other document this engine reads.</b>
-/// The obvious serializer discovers members by reflection, which is exactly
-/// what trimming removes; the codec below names each member once and is
-/// AOT-safe by construction. Unknown members are skipped rather than
-/// preserved, deliberately — this is a per-user cache whose only reader is the
-/// shell, not an authored document with the round-trip promise the map and
-/// project codecs carry.
-/// </para>
-/// <para>
-/// <b>A missing or corrupt file is an empty list, never an error.</b> The
-/// settings are a convenience; a shell that refused to start over a damaged
-/// recents cache would have turned a nicety into a dependency. The next save
-/// rewrites the file whole.
-/// </para>
-/// <para>
-/// UI thread only, like the dialogs and the file pickers beside it.
-/// </para>
-/// </remarks>
+// Hand-written JSON codec: a reflection serializer does not survive trimming.
+// Unknown members are skipped, not preserved. A missing or corrupt file loads
+// as defaults and is rewritten whole on the next save.
 public sealed class EditorSettings
 {
-    // Enough that nothing anyone works on falls off, few enough that the start
-    // page stays a list of things rather than a history.
     private const int MaxRecentProjects = 10;
 
     private readonly List<RecentProject> _recentProjects = [];
@@ -59,12 +36,6 @@ public sealed class EditorSettings
     /// <summary>
     /// Records that a project was opened or created, moving it to the front.
     /// </summary>
-    /// <remarks>
-    /// Deduplicated by full path, case-insensitively, because this file only
-    /// exists on Windows-cased filesystems today and two spellings of one
-    /// folder as two cards is exactly the confusion a recents list exists to
-    /// prevent.
-    /// </remarks>
     public void TouchProject(string path, string name, DateTime openedUtc)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -88,43 +59,22 @@ public sealed class EditorSettings
         _recentProjects.RemoveAll(p =>
             string.Equals(p.Path, full, StringComparison.OrdinalIgnoreCase));
 
-        // Remembered so the save-time merge cannot resurrect it from another
-        // shell's stale copy of the file: forgetting is this session's
-        // deliberate decision. Touching the same project again clears it,
-        // because opening IS the new information.
+        // So the save-time merge cannot bring it back from another shell's copy.
         _forgotten.Add(full);
     }
 
-    // Paths this session explicitly forgot, exempt from the save-time merge.
     private readonly HashSet<string> _forgotten = new(StringComparer.OrdinalIgnoreCase);
-
-    // --- The viewport's persisted half ---------------------------------------
 
     private ViewportPreference _viewport = ViewportPreference.Default;
     private DateTime _viewportRecordedUtc = DateTime.MinValue;
 
     /// <summary>
-    /// What was asked for and what this machine has earned. See
-    /// <see cref="ViewportModePolicy"/>, which owns every rule about it.
+    /// The requested viewport mode and this machine's composited history.
+    /// See <see cref="ViewportModePolicy"/>.
     /// </summary>
-    /// <remarks>
-    /// <b>Stored per user rather than per project</b>, because it is a fact
-    /// about the machine and its driver: opening a different project does not
-    /// change whether this GPU can composite an engine frame.
-    /// </remarks>
     public ViewportPreference ViewportPreference => _viewport;
 
-    /// <summary>
-    /// Records which viewport to ask for from now on.
-    /// </summary>
-    /// <remarks>
-    /// <b><c>--viewport=</c> is a preference rather than a one-run override, and
-    /// that is deliberate.</b> There is no UI for this yet, so the switch is the
-    /// only way to express it, and a switch whose effect vanished on the next
-    /// launch would mean typing it forever. <c>--viewport=auto</c> is how it is
-    /// put back, which is why auto is a value somebody can name rather than
-    /// merely the default.
-    /// </remarks>
+    /// <summary>Records which viewport to ask for from now on. Persists across launches.</summary>
     public void SetViewportMode(ViewportMode mode)
     {
         if (_viewport.Mode == mode)
@@ -135,14 +85,9 @@ public sealed class EditorSettings
     }
 
     /// <summary>
-    /// Re-anchors the composited history on the machine that is actually here,
-    /// through <see cref="ViewportModePolicy.Rebase"/>.
+    /// Re-anchors the composited history on this machine's adapter and driver.
+    /// Call only when they were measured; empty strings would wipe the history.
     /// </summary>
-    /// <remarks>
-    /// Called only when the machine was measured. An unmeasured launch knows
-    /// nothing about the adapter and would overwrite a real history with empty
-    /// strings, which reads afterwards as an adapter that changed.
-    /// </remarks>
     public void RebaseViewport(string adapterLuid, string driverVersion)
     {
         ViewportPreference rebased = ViewportModePolicy.Rebase(_viewport, adapterLuid, driverVersion);
@@ -154,56 +99,27 @@ public sealed class EditorSettings
     }
 
     /// <summary>
-    /// Folds one finished COMPOSITED session into the history: one longer if it
-    /// was green, back to zero if it was not.
+    /// Folds one finished composited session into the history: one longer if it
+    /// was green, back to zero if not. Never call for a native session.
     /// </summary>
-    /// <remarks>
-    /// A native session is never recorded here. It says nothing either way about
-    /// the composited path, and counting one would let a machine earn the flip
-    /// without ever having composited a frame.
-    /// </remarks>
     public void RecordCompositedSession(bool sessionGreen)
     {
         _viewport = ViewportModePolicy.Record(_viewport, sessionGreen);
         _viewportRecordedUtc = DateTime.UtcNow;
     }
 
-    // --- The ribbon's persisted half -----------------------------------------
-
     private bool _ribbonExpanded = true;
     private DateTime _ribbonRecordedUtc = DateTime.MinValue;
 
-    /// <summary>
-    /// Whether the command ribbon is pinned open.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A surface whose size resets every launch is a preference nobody
-    /// keeps.</b> Collapsing the ribbon gives about seventy pixels back to the
-    /// viewport, which is a choice somebody makes once about how they work, not
-    /// per session.
-    /// </para>
-    /// <para>
-    /// <b>Open by default, and the ACTIVE TAB is deliberately not stored beside
-    /// it.</b> A shell that reopened on the View page would start every session
-    /// with Insert hidden behind a click, which is precisely the failure that
-    /// retired the previous tab strip; every launch therefore opens on
-    /// <c>RibbonLayout.DefaultTabId</c>.
-    /// </para>
-    /// </remarks>
+    /// <summary>Whether the command ribbon is pinned open.</summary>
+    // The active tab is not stored: every launch opens on the default tab, so
+    // Insert is never hidden behind a click.
     public bool RibbonExpanded => _ribbonExpanded;
 
     private ContentViewMode _contentView = ContentViewMode.Grid;
     private DateTime _contentRecordedUtc = DateTime.MinValue;
 
-    /// <summary>
-    /// Whether the content browser draws tiles or rows.
-    /// </summary>
-    /// <remarks>
-    /// Grid by default, because the first thing anybody opens the browser for is
-    /// a texture and the picture is the information. Somebody working in a
-    /// folder of shaders switches once and expects it to stay switched.
-    /// </remarks>
+    /// <summary>Whether the content browser draws tiles or rows.</summary>
     public ContentViewMode ContentView => _contentView;
 
     private WorkspacePreset _workspacePreset = WorkspacePreset.Compact;
@@ -228,8 +144,6 @@ public sealed class EditorSettings
     /// <summary>Records the drawer height after a drag.</summary>
     public void SetDrawerHeight(double height)
     {
-        // A height that is not a usable number would come back as a drawer
-        // nobody can open; keeping the old one is the honest degrade.
         if (!double.IsFinite(height) || height < 0 || _drawerHeight == height) return;
 
         _drawerHeight = height;
@@ -289,19 +203,14 @@ public sealed class EditorSettings
         }
         catch (Exception ex) when (IsSettingsReadFailure(ex))
         {
-            // Said out loud, then started fresh: silently losing the list looks
-            // identical to a bug in the list.
             logger.LogWarning(ex, "Could not read editor settings at {Path}; starting fresh", path);
             settings._recentProjects.Clear();
 
-            // The viewport history goes with it. A half-read block would be a
-            // count with no adapter behind it, which reads as "proven on this
-            // machine" the next time the adapter happens to match nothing.
+            // Reset everything: a half-read viewport block is a green count
+            // with no adapter behind it.
             settings._viewport = ViewportPreference.Default;
             settings._viewportRecordedUtc = DateTime.MinValue;
 
-            // And the ribbon, back to open: the state that shows what the
-            // surface can do is the right one to fall back to.
             settings._ribbonExpanded = true;
             settings._ribbonRecordedUtc = DateTime.MinValue;
             settings._workspacePreset = WorkspacePreset.Compact;
@@ -314,19 +223,13 @@ public sealed class EditorSettings
         return settings;
     }
 
-    // Everything a damaged file can throw, in one place so the load and the
-    // merge agree. InvalidOperationException and FormatException are the
-    // reader's answers to a member holding the WRONG TYPE ("path": 5), which
-    // is exactly as recoverable as invalid JSON and must not crash a startup.
+    // InvalidOperationException and FormatException are what the reader throws
+    // for a member of the wrong type ("path": 5).
     private static bool IsSettingsReadFailure(Exception ex) =>
         ex is JsonException or IOException or UnauthorizedAccessException
             or InvalidOperationException or FormatException;
 
-    /// <summary>Writes the settings, creating the folder on first use.</summary>
-    /// <remarks>
-    /// Failures are logged rather than thrown: a full disk must not turn
-    /// "open a project" into an error dialog about a recents cache.
-    /// </remarks>
+    /// <summary>Writes the settings. Failures are logged, not thrown.</summary>
     public void Save(ILogger logger) => Save(DefaultPath, logger);
 
     /// <summary>Saves to an explicit path, for tests.</summary>
@@ -348,16 +251,8 @@ public sealed class EditorSettings
         }
     }
 
-    /// <summary>
-    /// Folds in whatever another shell wrote since this one loaded, newest
-    /// touch per project winning, so two editors do not take turns erasing
-    /// each other's history.
-    /// </summary>
-    /// <remarks>
-    /// Best-effort, like everything else here: an unreadable file merges
-    /// nothing and the write proceeds, because the alternative is a recents
-    /// cache that can block saving itself.
-    /// </remarks>
+    // Folds in what another shell wrote since this one loaded, so two editors
+    // do not erase each other's history. An unreadable file merges nothing.
     private void MergeFromDisk(string path)
     {
         if (!File.Exists(path))
@@ -391,19 +286,14 @@ public sealed class EditorSettings
         if (_recentProjects.Count > MaxRecentProjects)
             _recentProjects.RemoveRange(MaxRecentProjects, _recentProjects.Count - MaxRecentProjects);
 
-        // The viewport block is one state, not a set of entries, so it merges by
-        // RECENCY rather than element by element. Two shells that both ran a
-        // composited session would otherwise interleave their counts into a
-        // number neither of them measured.
+        // Each block below is one state, so the most recent writer wins whole.
+        // Merging fields would mix two shells' green counts.
         if (onDisk._viewportRecordedUtc > _viewportRecordedUtc)
         {
             _viewport = onDisk._viewport;
             _viewportRecordedUtc = onDisk._viewportRecordedUtc;
         }
 
-        // The ribbon's pin merges by recency for the same reason: it is one
-        // state rather than a set of entries, and the shell that touched it
-        // last is the one the user was looking at.
         if (onDisk._ribbonRecordedUtc > _ribbonRecordedUtc)
         {
             _ribbonExpanded = onDisk._ribbonExpanded;
@@ -511,26 +401,14 @@ public sealed class EditorSettings
             }
             else
             {
-                // A member a newer shell wrote. Skipped, not preserved: the
-                // next save is that newer shell's problem, and this file makes
-                // no round-trip promise.
+                // Unknown member from a newer shell.
                 reader.Read();
                 reader.Skip();
             }
         }
     }
 
-    /// <summary>
-    /// Reads the viewport block, leaving anything it cannot make sense of at its
-    /// default.
-    /// </summary>
-    /// <remarks>
-    /// <b>A mode word this build does not know falls back to auto rather than
-    /// failing the file.</b> The one thing that must not happen is a settings
-    /// file written by a newer shell stopping this one from starting, and auto
-    /// is the conservative answer by construction: it resolves to the native
-    /// child until a history says otherwise, and the history is read separately.
-    /// </remarks>
+    // An unknown mode word falls back to auto rather than failing the file.
     private void ReadViewport(ref Utf8JsonReader reader)
     {
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
@@ -582,16 +460,6 @@ public sealed class EditorSettings
         _viewportRecordedUtc = recorded;
     }
 
-    /// <summary>
-    /// Reads the ribbon block, leaving anything it cannot make sense of at its
-    /// default.
-    /// </summary>
-    /// <remarks>
-    /// Open is the conservative fallback: a collapsed ribbon read out of a
-    /// damaged file would hide the command surface with no explanation on
-    /// screen, while an open one merely takes space somebody can take back with
-    /// one click.
-    /// </remarks>
     private void ReadRibbon(ref Utf8JsonReader reader)
     {
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
@@ -640,9 +508,7 @@ public sealed class EditorSettings
             {
                 reader.Read();
 
-                // An unknown word from a newer shell reads as compact rather
-                // than failing the whole file, which is how every other setting
-                // here degrades.
+                // An unknown word reads as compact.
                 WorkspaceLayout.TryParse(reader.GetString(), out preset);
             }
             else if (reader.ValueTextEquals("drawerHeight"))
@@ -704,15 +570,6 @@ public sealed class EditorSettings
         _diagnosticsRecordedUtc = recorded;
     }
 
-    /// <summary>
-    /// Reads the content block, falling back rather than failing the file.
-    /// </summary>
-    /// <remarks>
-    /// A view word this build does not know reads as the grid, for the reason
-    /// the viewport block falls back to auto: a settings file written by a newer
-    /// shell must lose the setting it cannot read rather than every setting
-    /// beside it.
-    /// </remarks>
     private void ReadContent(ref Utf8JsonReader reader)
     {
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
@@ -784,8 +641,7 @@ public sealed class EditorSettings
                 }
             }
 
-            // An entry missing its essentials is dropped, not fatal: the rest
-            // of the list is still worth having.
+            // An incomplete entry is dropped; the rest of the list still loads.
             if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name)
                 && _recentProjects.Count < MaxRecentProjects)
             {

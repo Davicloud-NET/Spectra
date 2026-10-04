@@ -11,27 +11,11 @@ namespace SpectraEngine.Core.Assets.Packs;
 
 /// <summary>
 /// The same <c>.spack</c>, read through <see cref="RandomAccess"/> instead of a
-/// mapping: the fallback for any platform where mapping misbehaves.
+/// mapping: the fallback for any platform where mapping misbehaves. Must answer
+/// the same as <see cref="PackSource"/>.
 /// </summary>
-/// <remarks>
-/// <para><b>It answers identically to <see cref="PackSource"/> and that is the
-/// whole specification.</b> Both mount through one validation sequence, both
-/// binary-search one entry table, both apply one tombstone rule; the only
-/// difference is where the bytes come from. A test that opens the same file
-/// through both and compares is what keeps that true, because everything about a
-/// second reader fails quietly: it does not throw, it hands back different
-/// content.</para>
-/// <para><b>Its blobs are copies, and they hold a reference anyway.</b> There is
-/// no access-violation hazard here, so the reference buys nothing on this path
-/// except the property that "a blob from a pack holds a reference" is a rule
-/// rather than a rule with an exception, which is what stops a caller being
-/// correct only against whichever source it was tested with.</para>
-/// <para><b>Reads go through <see cref="RandomAccess"/> on the handle rather than
-/// through the stream's own position</b>, because an <see cref="IContentSource"/>
-/// is asked for bytes from the render thread, a background decode and a tool
-/// thread at once, and a shared file position is exactly the per-call state the
-/// contract forbids.</para>
-/// </remarks>
+// Reads use RandomAccess on the handle, not the stream position: sources are
+// read from several threads at once.
 public sealed class StreamPackSource : PackSourceBase
 {
     private readonly SafeFileHandle _file;
@@ -62,8 +46,7 @@ public sealed class StreamPackSource : PackSourceBase
         }
         catch
         {
-            // A constructor that threw produced no object for anybody to dispose,
-            // so the file it already opened has to be closed here.
+            // Nobody can dispose a half-constructed source, so close the file here.
             Handle.RequestUnmount();
             throw;
         }
@@ -99,9 +82,6 @@ public sealed class StreamPackSource : PackSourceBase
     /// <inheritdoc/>
     protected override void LoadTables(in PackHeader header)
     {
-        // Materialised rather than sliced: there is no view to slice. The table is
-        // the one thing this source copies whole, and it is the reason a mapped
-        // mount is preferred wherever mapping works.
         _entries = new PackEntry[header.EntryCount];
         if (_entries.Length > 0)
         {
@@ -151,9 +131,8 @@ public sealed class StreamPackSource : PackSourceBase
         blob = null;
         if (!Handle.TryAddRef()) return false;
 
-        // Tracked rather than inferred from blob being null, because a failure
-        // below disposes a blob that has ALREADY taken the reference, and a
-        // finally that released it again would be an over-release.
+        // Not inferred from blob == null: a failed read disposes a blob that
+        // already owns the reference, and releasing again would over-release.
         bool referenceHandedOver = false;
         try
         {

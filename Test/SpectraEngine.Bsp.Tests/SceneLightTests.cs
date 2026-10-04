@@ -5,17 +5,7 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Which lights a frame gets, and in what order.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>The selection is where multiple lights actually goes wrong.</b> Shading
-/// eight lights is arithmetic; choosing which eight, every frame, from a scene
-/// that has more, is a decision that has to be stable or the picture flickers as
-/// the camera moves and nothing in a log says why.
-/// </para>
-/// </remarks>
+/// <summary>Which lights a frame gets, and in what order.</summary>
 public sealed class SceneLightTests
 {
     [Theory]
@@ -25,11 +15,8 @@ public sealed class SceneLightTests
     [InlineData(0.3f, 0.9f, -0.2f)]
     public void A_directional_light_travels_the_way_it_was_pointed(float x, float y, float z)
     {
-        // The whole point of the helper: the light goes where the caller said,
-        // with no euler-angle arithmetic in between. This is pinned because the
-        // failure is silent: a sun aimed at the sky lights the underside of
-        // everything and merely looks dim, which is how the demo shipped with
-        // one for as long as it had lights at all.
+        // A mirrored direction throws nothing: the sun lights the underside
+        // of everything and the scene just looks dim.
         var wanted = Vector3.Normalize(new Vector3(x, y, z));
 
         var scene = new Scene("directional");
@@ -52,11 +39,8 @@ public sealed class SceneLightTests
     [Fact]
     public void A_light_pointed_straight_down_is_not_a_degenerate_rotation()
     {
-        // Straight down is both the most likely direction anybody asks a sun
-        // for and the one where the obvious up-reference is parallel to it, so
-        // a cross product against world up collapses to zero and the basis
-        // becomes NaN. It has its own case in the helper; this is the test that
-        // says so.
+        // Straight down is parallel to world up, so the cross product is zero
+        // and a naive basis is NaN.
         var rotation = Light.RotationForDirection(-Vector3.UnitY);
 
         float.IsNaN(rotation.X + rotation.Y + rotation.Z + rotation.W).ShouldBeFalse();
@@ -66,8 +50,6 @@ public sealed class SceneLightTests
     [Fact]
     public void A_direction_with_no_length_is_refused()
     {
-        // Rather than silently producing an arbitrary rotation, which would put
-        // a light somewhere nobody chose.
         Should.Throw<ArgumentException>(() => Light.RotationForDirection(Vector3.Zero));
     }
 
@@ -103,8 +85,6 @@ public sealed class SceneLightTests
     [Fact]
     public void Removing_the_node_removes_its_light()
     {
-        // Otherwise the scene keeps lighting from a lamp that was deleted, and
-        // the list grows for the process's life.
         var scene = new Scene("Lights");
         SceneNode node = AddLight(scene, "Lamp", new Vector3(1f, 0f, 0f));
 
@@ -122,7 +102,7 @@ public sealed class SceneLightTests
 
         RenderView view = Build(scene, Vector3.Zero);
         view.LightCount.ShouldBe(0);
-        // And it is not counted as dropped either: it was never a candidate.
+        // Not dropped either: it was never a candidate.
         view.LightsDropped.ShouldBe(0);
     }
 
@@ -145,9 +125,8 @@ public sealed class SceneLightTests
     [Fact]
     public void A_directional_light_outranks_every_point_light()
     {
-        // A sun has no position, so it cannot be "far away". Sorting it by
-        // distance would mean the nearest desk lamp could switch off the sun,
-        // which is the single most absurd thing a nearest-N could do.
+        // A sun has no position. Sorted by distance, a nearby lamp could push
+        // it out of the list.
         var scene = new Scene("Lights");
         AddLight(scene, "VeryNear", new Vector3(0.1f, 0f, 0f));
         AddLight(scene, "Sun", Vector3.Zero, LightKind.Directional);
@@ -171,7 +150,6 @@ public sealed class SceneLightTests
         view.LightCount.ShouldBe(RenderView.MaxLights);
         view.LightsDropped.ShouldBe(3, "the overflow must be reported, not absorbed");
 
-        // The ones kept are the nearest ones, in order.
         for (int i = 1; i < view.LightCount; i++)
         {
             view.Lights[i].PositionRange.X
@@ -183,15 +161,11 @@ public sealed class SceneLightTests
     [Fact]
     public void Two_builds_of_an_unchanged_scene_choose_the_same_lights()
     {
-        // Determinism is the whole reason the scene keeps lights in a list
-        // rather than a set. With a hash set the tie-break would be iteration
-        // order, and two runs could light the same scene differently with
-        // nothing to point at.
         var scene = new Scene("Lights");
         for (int i = 0; i < RenderView.MaxLights + 4; i++)
         {
-            // Deliberately equidistant: every comparison is a tie, so only the
-            // registration order can decide.
+            // Equidistant: every comparison is a tie, so only registration
+            // order can decide.
             AddLight(scene, $"Lamp{i}", new Vector3(0f, 5f, 0f));
         }
 
@@ -206,8 +180,6 @@ public sealed class SceneLightTests
     [Fact]
     public void Intensity_is_folded_into_the_uploaded_colour()
     {
-        // The shader multiplies albedo by this directly, so anything that keeps
-        // them separate would need a third array for no benefit.
         var scene = new Scene("Lights");
         SceneNode node = AddLight(scene, "Lamp", new Vector3(1f, 0f, 0f));
         node.Light!.Color = new Vector3(0.5f, 0.25f, 0f);
@@ -222,8 +194,6 @@ public sealed class SceneLightTests
     [Fact]
     public void A_point_light_carries_its_range_and_a_directional_one_does_not()
     {
-        // The w component is the discriminator the shader branches on, so a
-        // directional light must never carry a non-zero one.
         var scene = new Scene("Lights");
         AddLight(scene, "Point", new Vector3(1f, 0f, 0f), LightKind.Point, range: 7f);
         AddLight(scene, "Sun", Vector3.Zero, LightKind.Directional);
@@ -250,10 +220,8 @@ public sealed class SceneLightTests
     [Fact]
     public void A_light_does_not_make_a_node_pickable()
     {
-        // Lights stay out of the BVH deliberately: PhysicsFlags.Default carries
-        // CanCollide and CanQuery, so a light in the spatial index would make
-        // every lamp in a level something a picking ray hits and a character
-        // walks into.
+        // Lights stay out of the BVH. PhysicsFlags.Default has CanCollide and
+        // CanQuery, so an indexed lamp would be hit by rays and characters.
         var scene = new Scene("Lights");
         AddLight(scene, "Lamp", new Vector3(0f, 0f, -5f));
 

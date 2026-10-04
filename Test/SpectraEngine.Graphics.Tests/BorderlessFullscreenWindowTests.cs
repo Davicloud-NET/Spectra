@@ -4,25 +4,9 @@ using SpectraEngine.Core.Windowing;
 
 namespace SpectraEngine.Graphics.Tests;
 
-/// <summary>
-/// The borderless-fullscreen transition against a <em>real</em> window, in the
-/// suite whose whole purpose is meeting the real thing.
-/// </summary>
-/// <remarks>
-/// <see cref="WindowModeLatchTests"/> proves the state machine over a fake; this
-/// proves the half a fake cannot: that the windowing backend actually honours an
-/// undecorate and a move-and-fill at runtime, and gives the geometry back
-/// unchanged. That is worth a real window because the failure mode is not a
-/// wrong pixel — a backend that does not implement the border setter throws, on
-/// the main thread, the first time anyone presses F11.
-/// <para>
-/// It borrows the GL fixture's window rather than creating one: GLFW registers
-/// a process-global window class, so there can only ever be one (see
-/// <see cref="GlRendererCollection"/>), and re-running Silk's platform
-/// registration after a window exists throws outright. Nothing here touches
-/// GL, and the geometry is restored in a <c>finally</c>.
-/// </para>
-/// </remarks>
+// Borrows the GL fixture's window: GLFW's window class is process-global and
+// Silk's platform registration throws if re-run once a window exists.
+/// <summary>The borderless-fullscreen transition against a real window.</summary>
 [Collection(GlRendererCollection.Name)]
 public sealed class BorderlessFullscreenWindowTests
 {
@@ -55,9 +39,7 @@ public sealed class BorderlessFullscreenWindowTests
             target.Decorated.ShouldBeFalse();
             target.Bounds.ShouldBe(display);
 
-            // The framebuffer latch is what every backend reconciles its swap
-            // chain against, so the transition is only real if the framebuffer
-            // followed the window.
+            // Backends size their swap chain from the framebuffer.
             window.FramebufferSize.X.ShouldBe(display.Width);
             window.FramebufferSize.Y.ShouldBe(display.Height);
 
@@ -70,17 +52,14 @@ public sealed class BorderlessFullscreenWindowTests
         }
         finally
         {
-            // The window is shared with every other class in this collection;
-            // an assertion failure above must not hand them a fullscreen one.
+            // The window is shared with the rest of the collection.
             target.Decorated = decorated;
             target.Bounds = windowed;
             PumpEvents(window);
         }
     }
 
-    // GLFW applies attribute and geometry changes through its message queue, so
-    // the assertions above have to be made after the queue has been drained —
-    // which in the engine is simply the next pass of the main loop.
+    // GLFW applies attribute and geometry changes through its message queue.
     private static void PumpEvents(IWindow window)
     {
         for (int i = 0; i < 10; i++)

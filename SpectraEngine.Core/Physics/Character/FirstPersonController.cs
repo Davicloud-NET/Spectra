@@ -9,49 +9,19 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Core.Physics.Character;
 
 /// <summary>
-/// Drives <see cref="CharacterMover"/> from a keyboard, a mouse and a
-/// <see cref="Camera"/>: the layer that turns a proven mover into something a
-/// person can walk around in.
+/// Drives the character from a keyboard, a mouse and a <see cref="Camera"/>.
+/// Render thread only.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>It lives in Core, beside <see cref="FlyCameraController"/>, and names the
-/// windowing backend's key enum for the same reason that one does.</b> A
-/// character controller is engine furniture that a shipped game needs — unlike
-/// gizmos and undo, which is why <em>those</em> are behind an interface in
-/// another assembly. Re-hosting it against a different input stack means
-/// replacing this class, not the mover below it.
-/// </para>
-/// <para>
-/// <b>The frame/tick split is the whole of the design.</b> The engine samples
-/// input once per frame and then runs zero to five fixed ticks, so
-/// <see cref="BeginFrame"/> builds ONE command and every tick of that frame
-/// replays it. That is only safe because the command carries no edges: the yaw
-/// and pitch it carries are absolute angles rather than mouse deltas, so
-/// replaying them is idempotent, and the jump edge is derived by the mover from
-/// its own previous button state rather than from the command. Accumulating
-/// mouse motion per tick instead would multiply your look speed by the frame's
-/// tick count, which reads as a mouse that gets faster when the machine gets
-/// slower.
-/// </para>
-/// <para>
-/// <b>Threading:</b> render thread only, like the scene it reads and the camera
-/// it writes.
-/// </para>
-/// </remarks>
+// Input is sampled once per frame into one command that every tick of the
+// frame replays. That works because the command carries absolute yaw and pitch,
+// not mouse deltas. Per-tick deltas would scale look speed with the tick count.
 public sealed class FirstPersonController
 {
-    // The camera clamps pitch to this itself; mirroring the value here rather
-    // than letting the stored angle run past it is what stops a dead zone.
-    // Push into the ceiling for a second with an unclamped mirror and the next
-    // several degrees of downward motion only unwind an angle nothing ever
-    // applied, so the view stops responding for no reason a player can see.
+    // Same clamp as the camera's. Without it the stored pitch runs past the
+    // limit and the view stops responding until it unwinds.
     private const float PitchLimit = MathF.PI / 2f - 0.01f;
 
-    // How fast the eye catches up after a step. One tick is ~16 ms, so 60 ms is
-    // roughly four ticks: long enough to turn a 0.25 riser into a rise rather
-    // than a jolt, short enough that the eye is not still climbing the previous
-    // step when it reaches the next one on a staircase.
+    // About four ticks: smooths a riser without lagging into the next step.
     private const float EyeSmoothingSeconds = 0.06f;
 
     private readonly Camera _camera;
@@ -64,21 +34,16 @@ public sealed class FirstPersonController
     private float _yaw;
     private float _pitch;
 
-    // How far BEHIND its true height the eye currently is, worked off over
-    // EyeSmoothingSeconds. Render-only: it never reaches the mover, so a
-    // replayed tick produces the same physics whatever the eye is doing.
+    // How far below its true height the eye is after a step. Render-only,
+    // never fed to the mover.
     private float _eyeLag;
 
-    // The two poses render interpolation blends between: the feet before the
-    // last tick and the feet after it. Simulation runs at 60 Hz and frames do
-    // not, so without this the view advances in 60 Hz jerks however fast the
-    // renderer is going — every tick's motion arriving as one jump across a
-    // dozen identical frames.
+    // Feet before and after the last tick, blended by alpha so the view moves
+    // at the frame rate.
     private Vector3 _renderPrevious;
     private Vector3 _renderPosition;
 
-    // Camera pose borrowed on entry and handed back on exit, so toggling play
-    // mode does not cost the viewpoint the user had navigated to.
+    // Restored on Exit.
     private Vector3 _restoreCameraPosition;
     private float _restoreCameraYaw;
     private float _restoreCameraPitch;
@@ -104,22 +69,21 @@ public sealed class FirstPersonController
     }
 
     /// <summary>
-    /// The simulated half: state, tuning, collision and the tick. Owns no camera
-    /// and no input, so a headless host can drive one directly and skip this
-    /// class entirely.
+    /// The simulated half: state, tuning, collision and the tick. A headless
+    /// host can drive it directly.
     /// </summary>
     public CharacterSimulation Simulation => _simulation;
 
-    /// <summary>Every movement constant, live. Editing one takes effect next tick.</summary>
+    /// <summary>Movement constants. An edit takes effect next tick.</summary>
     public CharacterTuning Tuning => _simulation.Tuning;
 
-    /// <summary>The brush-plane source, for the counters it discloses.</summary>
+    /// <summary>The brush-plane source, for its counters.</summary>
     public BrushPlaneCollisionSource Collision => _simulation.Collision;
 
     /// <summary>Whether the character is being simulated and owns the camera.</summary>
     public bool Active { get; private set; }
 
-    /// <summary>Feet position, velocity and ground state, the whole of what is simulated.</summary>
+    /// <summary>Feet position, velocity and ground state.</summary>
     public CharacterState State => _simulation.State;
 
     /// <summary>Where <see cref="Enter"/> and the fall-out guard put the character.</summary>
@@ -142,10 +106,10 @@ public sealed class FirstPersonController
     /// <summary>Radians of look per pixel of mouse motion.</summary>
     public float LookSensitivity { get; set; } = 0.0022f;
 
-    /// <summary>Times the fall-out guard has fired since the process started.</summary>
+    /// <summary>Times the fall-out guard has fired.</summary>
     public int Respawns => _simulation.Respawns;
 
-    /// <summary>Horizontal speed in spectraunits per second, what a speedometer would read.</summary>
+    /// <summary>Horizontal speed in spectraunits per second.</summary>
     public float HorizontalSpeed => _simulation.HorizontalSpeed;
 
     /// <summary>Takes the camera, locks the cursor, and puts the character at its spawn.</summary>
@@ -178,7 +142,7 @@ public sealed class FirstPersonController
             Tuning.WalkSpeed, Tuning.JumpHeight, Tuning.StepHeight, Tuning.MaxSlopeAngleDegrees);
     }
 
-    /// <summary>Releases the cursor and hands the camera back exactly as it was found.</summary>
+    /// <summary>Releases the cursor and restores the camera.</summary>
     public void Exit()
     {
         if (!Active)
@@ -210,19 +174,15 @@ public sealed class FirstPersonController
         if (!Active)
             return;
 
-        // Look only while the cursor is genuinely captured. The lock is a
-        // request applied by the window thread a frame or two later, so acting
-        // on motion before it lands would fold the cursor's walk to the window
-        // centre into the view as one violent flick.
+        // The lock lands a frame or two after the request. Looking before
+        // then would turn the cursor's jump to centre into a flick.
         if (_input.IsCursorLocked)
         {
             Vector2 delta = _input.MouseDelta;
             _yaw += delta.X * LookSensitivity;
             _pitch = Math.Clamp(_pitch - delta.Y * LookSensitivity, -PitchLimit, PitchLimit);
 
-            // Keep yaw in a sane range rather than letting it grow without
-            // bound: at float precision a few hours of spinning would start to
-            // quantise the angle visibly.
+            // Wrap so float precision holds.
             if (_yaw > MathF.PI) _yaw -= MathF.Tau;
             else if (_yaw < -MathF.PI) _yaw += MathF.Tau;
         }
@@ -233,9 +193,7 @@ public sealed class FirstPersonController
         if (_input.IsKeyDown(InputKey.ShiftLeft) || _input.IsKeyDown(InputKey.ShiftRight))
             buttons |= CharacterButtons.Sprint;
 
-        // Crouch is deliberately unbound: CharacterButtons carries the flag but
-        // the mover does nothing with it yet, and a key that visibly does
-        // nothing is worse than a key that is documented as absent.
+        // Crouch is unbound: the mover does nothing with it yet.
 
         float forward = (_input.IsKeyDown(InputKey.W) ? 1f : 0f) - (_input.IsKeyDown(InputKey.S) ? 1f : 0f);
         float strafe = (_input.IsKeyDown(InputKey.D) ? 1f : 0f) - (_input.IsKeyDown(InputKey.A) ? 1f : 0f);
@@ -256,16 +214,11 @@ public sealed class FirstPersonController
         if (!Active)
             return;
 
-        // Captured before the tick, so the pair always brackets exactly one
-        // step. Several ticks in one frame simply leave this at the last one.
         _renderPrevious = _simulation.State.Position;
 
         bool respawned = _simulation.Tick(in _command, deltaTime);
 
-        // Carried, not assigned: a staircase can step twice inside one frame's
-        // tick budget, and taking only the last one would let the eye jump the
-        // riser it skipped. Render-only, which is why it lives here and not in
-        // the simulation: a replayed tick must not depend on it.
+        // Accumulate: a frame can step up twice.
         _eyeLag += _simulation.State.SteppedUpBy;
 
         if (respawned)
@@ -274,8 +227,7 @@ public sealed class FirstPersonController
                 "Character fell below y={Limit:0.0} and was respawned (respawn {Count})",
                 FallOutHeight, Respawns);
 
-            // Both ends of the blend, or the frame after a respawn renders the
-            // character sliding across the level from wherever it fell.
+            // Reset both ends of the blend or the view slides back to spawn.
             _eyeLag = 0f;
             _renderPrevious = SpawnPosition;
             _renderPosition = SpawnPosition;
@@ -283,25 +235,17 @@ public sealed class FirstPersonController
     }
 
     /// <summary>
-    /// Puts the eye where the head is. Render-only, once per frame, after the
-    /// last tick.
+    /// Places the camera at the eye. Call once per frame, after the last tick.
     /// </summary>
-    /// <param name="deltaTime">The frame's duration, for the step smoothing.</param>
+    /// <param name="deltaTime">The frame's duration.</param>
     /// <param name="alpha">
-    /// How far this frame sits between the last two ticks, in <c>[0, 1)</c> —
-    /// the engine's own <c>FixedTickAccumulator.Alpha</c>. It costs up to one
-    /// tick of view latency and buys a view that moves at the frame rate instead
-    /// of at the tick rate, which is the same trade the render poses already
-    /// make for every other body.
+    /// How far this frame sits between the last two ticks, in <c>[0, 1)</c>.
     /// </param>
     public void UpdateView(double deltaTime, float alpha)
     {
         if (!Active)
             return;
 
-        // Exponential catch-up rather than a fixed rate, so one tall step and
-        // one short step both feel like the same motion rather than the same
-        // duration.
         if (_eyeLag > 0f)
         {
             _eyeLag *= MathF.Exp(-(float)deltaTime / EyeSmoothingSeconds);
@@ -317,9 +261,7 @@ public sealed class FirstPersonController
     }
 
     /// <summary>
-    /// Draws the capsule and its ground normal. Useful only from outside the
-    /// head — switch to a free camera first, which is exactly what the play-mode
-    /// toggle is for.
+    /// Draws the capsule, its ground normal and its velocity.
     /// </summary>
     public void Draw(DebugDraw output)
     {
@@ -327,9 +269,7 @@ public sealed class FirstPersonController
         if (!Active)
             return;
 
-        // Drawn at the INTERPOLATED pose, like the eye: an overlay that stutters
-        // against a world the camera is smooth against reads as the overlay being
-        // wrong rather than as the sample rate it actually is.
+        // Interpolated pose, same as the eye.
         var capsule = CharacterCapsule.FromFeet(_renderPosition, Tuning.StandHeight, Tuning.Radius);
         Vector3 color = _simulation.State.Grounded ? new Vector3(0.2f, 1f, 0.4f) : new Vector3(1f, 0.7f, 0.2f);
 
@@ -341,16 +281,11 @@ public sealed class FirstPersonController
                 new Vector3(0.3f, 0.6f, 1f));
         }
 
-        // The velocity is what tells you whether a wall is being slid along or
-        // merely stood against, which the capsule alone cannot.
         Vector3 velocity = _simulation.State.Velocity;
         if (velocity.LengthSquared() > 1e-4f)
             output.Arrow(_renderPosition, _renderPosition + velocity * 0.2f, new Vector3(1f, 0.3f, 0.8f));
     }
 
-    // Two rings and four uprights, plus a pair of arcs per cap. Enough to read
-    // the pose and the radius at a glance without turning the line buffer into
-    // the frame's biggest draw.
     private static void DrawCapsule(DebugDraw output, in CharacterCapsule capsule, Vector3 color)
     {
         const int Segments = 16;
@@ -384,7 +319,7 @@ public sealed class FirstPersonController
         }
     }
 
-    // A half-turn from `from` around to `to`, both unit and perpendicular.
+    // Half-turn. from and to must be unit and perpendicular.
     private static void Arc(
         DebugDraw output, Vector3 center, float radius, Vector3 from, Vector3 to, Vector3 color, int segments)
     {

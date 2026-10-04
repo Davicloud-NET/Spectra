@@ -4,18 +4,8 @@
              x:Class="SpectraEngine.Editor.Shell.ViewportHeaderStrip"
              x:DataType="shell:ShellModel">
 
-  <!--
-    A control of its own rather than markup inside the window, for the reason
-    the ribbon pages are: the render suite can construct and MEASURE the real
-    thing. This strip is the narrowest crowded row in the shell - at the
-    compact workspace's own minimum the viewport cell is 644px wide - and every
-    stage adds a chip to it, so "does it still fit" has to be an assertion
-    rather than a screenshot somebody took once.
-
-    A strip declared inline would have to be declared a second time to be
-    rendered, and a second declaration is what every convention test in this
-    shell exists to prevent.
-  -->
+  <!-- Its own control so the render suite can construct and measure it.
+       Has to fit a 644px viewport, the compact workspace's minimum. -->
     <Border Height="28"
             Background="{StaticResource SpectraBgApp}"
             BorderBrush="{StaticResource SpectraBorderStrong}"
@@ -23,11 +13,6 @@
             Padding="6,0">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-          <!-- Which pipeline is drawing, ON the view it draws. The only
-               passive display used to live in the inspector's EMPTY
-               state, so it vanished the moment anything was selected.
-               The two-way binding and its snapshot guard already
-               existed; the View menu radio stays as the second route. -->
           <ComboBox Width="106" Height="22" MinHeight="22" Padding="8,0"
                     FontSize="{StaticResource SpectraFontSmall}"
                     ItemsSource="{Binding PipelineNames}"
@@ -51,9 +36,6 @@
               <Path Classes="chipcaret" Data="{StaticResource CaretDown}" />
             </StackPanel>
           </Button>
-          <!-- Which of the seven views is live. A flyout rather than a
-               cycle, because seven values are too many to step through
-               and the lit radio says the answer without being opened. -->
           <Button Classes="chip" Height="22"
                   ToolTip.Tip="Which way the camera is looking.  Numpad 7, 1, 3">
             <Button.Flyout>
@@ -92,12 +74,8 @@
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-          <!-- ONE chip past two overlays, and the threshold is MEASURED: five
-               chips want about 340px on a strip that has 141 to spare at the
-               narrowest viewport the compact workspace can produce. Collapsed
-               rather than clipped, because a chip that scrolled off the end
-               would take the only thing on screen saying WHY the picture looks
-               wrong with it, which is the entire reason these exist. -->
+          <!-- Past two overlays the chips collapse into this one: five chips
+               need about 340px and the narrowest strip has 141 to spare. -->
           <Button Classes="overlaychip" IsVisible="{Binding OverlaysCollapsed}"
                   ToolTip.Tip="Debug overlays are on. Click to see which.">
             <Button.Flyout>
@@ -170,9 +148,7 @@
             </Button.IsVisible>
             <TextBlock Text="axes" />
           </Button>
-          <!-- Where am I: the one instrument every engine editor's
-               status surface carries. Mono, fixed width, one decimal,
-               so it reads as an instrument and never jitters. -->
+          <!-- Fixed width so the readout does not jitter. -->
           <TextBlock Classes="value" Foreground="{StaticResource SpectraTextMuted}"
                      Text="{Binding CameraPositionLabel}" MinWidth="132"
                      TextAlignment="Right" Margin="6,0,0,0"

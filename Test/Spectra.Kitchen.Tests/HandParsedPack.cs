@@ -5,21 +5,10 @@ using System.Text;
 
 namespace Spectra.Kitchen.Tests;
 
-/// <summary>
-/// A reader of <c>.spack</c> bytes written from the format spec rather than from
-/// the engine's own types.
-/// </summary>
-/// <remarks>
-/// <para><b>Deliberately hand-written, and it does not touch <c>PackHeader</c>,
-/// <c>PackEntry</c> or <c>PackFormat</c>.</b> There is no reader yet, and a writer
-/// verified only by its own reader proves the two agree rather than that either is
-/// right: a field swapped in the struct would move in both at once and every test
-/// would stay green. Every offset and width below is a literal taken from
-/// <c>docs/formats-and-pipeline.md</c> section 2.1, so this file disagreeing with
-/// the writer is what a layout regression looks like.</para>
-/// <para>It is also why the constants are spelled out rather than imported: an
-/// import is how the second opinion stops being one.</para>
-/// </remarks>
+// Reads .spack bytes from the format spec, not from the engine's types.
+// Offsets are literals from docs/formats-and-pipeline.md. Don't import
+// PackHeader, PackEntry or PackFormat: a swapped field would then move in the
+// writer and here at once and no test would see it.
 internal static class HandParsedPack
 {
     public const int HeaderSize = 64;
@@ -64,11 +53,8 @@ internal static class HandParsedPack
         return entries;
     }
 
-    /// <summary>
-    /// The name of <paramref name="entry"/>, read through the name table's own
-    /// <c>u16</c> length prefix rather than through the entry's copy of it, so a
-    /// disagreement between the two is visible.
-    /// </summary>
+    // Uses the name table's own u16 length prefix, not the entry's copy, so a
+    // mismatch between the two shows.
     public static string ReadName(ReadOnlySpan<byte> pack, Header header, Entry entry)
     {
         int record = (int)header.NameTableOffset + (int)entry.NameOffset;
@@ -76,15 +62,13 @@ internal static class HandParsedPack
         return Encoding.UTF8.GetString(pack.Slice(record + sizeof(ushort), prefix));
     }
 
-    /// <summary>The stored (still compressed, if it was) payload bytes.</summary>
+    // Stored bytes, still compressed if the entry is.
     public static ReadOnlySpan<byte> Payload(ReadOnlySpan<byte> pack, Entry entry) =>
         pack.Slice((int)entry.PayloadOffset, (int)entry.StoredSize);
 
-    /// <summary>The trailing digest, exactly as it sits on disk.</summary>
     public static UInt128 StoredDigest(ReadOnlySpan<byte> pack) =>
         BinaryPrimitives.ReadUInt128LittleEndian(pack[^DigestSize..]);
 
-    /// <summary>The region the digest is supposed to cover.</summary>
     public static ReadOnlySpan<byte> DigestedRegion(ReadOnlySpan<byte> pack, Header header) =>
         pack[(int)header.EntryTableOffset..^DigestSize];
 

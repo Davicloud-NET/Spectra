@@ -4,21 +4,12 @@ using System;
 namespace SpectraEngine.Editing.Commands;
 
 /// <summary>
-/// Sets a node's whole local <see cref="Transform"/> — position, rotation
-/// <em>and</em> scale — to an absolute value, remembering the absolute
-/// transform it had before. The full-transform sibling of
-/// <see cref="SetTransformCommand"/>, for edits that really do own all three
-/// components: a property-panel commit, a paste, or a scale gizmo.
+/// Sets a node's whole local <see cref="Transform"/>, scale included, to an
+/// absolute value. Do not write scale on a brush node: the static-world
+/// compile needs brush placements rigid.
 /// </summary>
-/// <remarks>
-/// Writing scale through this command on a <em>brush</em> node will break the
-/// rigidity the static-world compile requires; that check lives in the compile,
-/// not here, but tools should not offer scale on brush nodes.
-/// </remarks>
 public sealed class SetLocalTransformCommand : ICoalescingCommand
 {
-    // The node this command last wrote to, weakly — see the identical field on
-    // <see cref="SetTransformCommand"/> for why it exists and why it is weak.
     private WeakReference<SceneNode>? _lastApplied;
 
     /// <summary>Creates a command from explicit before/after transforms.</summary>
@@ -30,9 +21,8 @@ public sealed class SetLocalTransformCommand : ICoalescingCommand
     }
 
     /// <summary>
-    /// Captures <paramref name="node"/>'s current local transform as the
-    /// before-state and records <paramref name="after"/> as the after-state.
-    /// Call this <em>before</em> applying the edit to the node.
+    /// Captures the node's current local transform as the before state. Call
+    /// before applying the edit.
     /// </summary>
     public static SetLocalTransformCommand Capture(SceneNode node, Transform after)
     {
@@ -46,19 +36,15 @@ public sealed class SetLocalTransformCommand : ICoalescingCommand
     /// <summary>The node's local transform before the edit.</summary>
     public Transform Before { get; }
 
-    /// <summary>
-    /// The node's local transform after the edit. Mutable through
-    /// <see cref="SetAfter"/> and <see cref="TryAbsorb"/> while the command is
-    /// still inside an open transaction.
-    /// </summary>
+    /// <summary>The node's local transform after the edit.</summary>
     public Transform After { get; private set; }
 
     /// <inheritdoc/>
     public string Name { get; init; } = "Transform";
 
     /// <summary>
-    /// Retargets the after-state, keeping the captured before-state — the
-    /// zero-allocation drag path, as on <see cref="SetTransformCommand"/>.
+    /// Retargets the after state, keeping the captured before state. Lets a
+    /// drag reuse one command per frame.
     /// </summary>
     public void SetAfter(Transform after) => After = after;
 
@@ -79,9 +65,8 @@ public sealed class SetLocalTransformCommand : ICoalescingCommand
             return;
         }
 
-        // A cancel discards its commands, so a node that left the scene
-        // mid-gesture has to be restored through the reference this command
-        // actually wrote to — see IEditorCommand.RollBack.
+        // Node left the scene mid-gesture: restore it anyway. A cancel
+        // discards its commands, so nothing else will.
         if (_lastApplied is not null && _lastApplied.TryGetTarget(out SceneNode? detached))
             detached.LocalTransform = Before;
     }
@@ -99,7 +84,6 @@ public sealed class SetLocalTransformCommand : ICoalescingCommand
     private void Apply(Scene scene, Transform transform)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        // Missing target = no-op, per the IEditorCommand contract.
         if (!scene.TryFindById(NodeId, out SceneNode? node))
             return;
 
@@ -108,8 +92,6 @@ public sealed class SetLocalTransformCommand : ICoalescingCommand
         else
             _lastApplied.SetTarget(node);
 
-        // One absolute write; LocalTransform's field-wise equality check makes
-        // a replay of the current value free.
         node.LocalTransform = transform;
     }
 }

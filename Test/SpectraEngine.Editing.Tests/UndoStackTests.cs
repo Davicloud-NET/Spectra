@@ -5,13 +5,7 @@ using System.Numerics;
 
 namespace SpectraEngine.Editing.Tests;
 
-/// <summary>
-/// <see cref="UndoStack"/> history semantics: the cursor walks a linear
-/// timeline, a new command invalidates everything redoable behind it, the ring
-/// evicts the oldest entry once <see cref="UndoStack.Capacity"/> is reached,
-/// and <see cref="UndoStack.Changed"/> fires exactly once per operation that
-/// altered what the history offers.
-/// </summary>
+/// <summary><see cref="UndoStack"/> history: linear timeline, bounded ring, change events.</summary>
 public sealed class UndoStackTests
 {
     [Fact]
@@ -71,7 +65,6 @@ public sealed class UndoStackTests
 
         MoveTo(stack, node, 9f);
 
-        // The timeline is linear, not a tree: the two undone entries are gone.
         stack.CanRedo.ShouldBeFalse();
         stack.RedoCount.ShouldBe(0);
         stack.Count.ShouldBe(1);
@@ -94,16 +87,13 @@ public sealed class UndoStackTests
         stack.Count.ShouldBe(3);
         stack.UndoCount.ShouldBe(3);
 
-        // Only the last three edits survive: undoing all of them lands on the
-        // before-state of edit #3, i.e. x = 2. Edits #1 and #2 fell off the
-        // back and are permanently un-undoable.
+        // Edits 3 to 5 survive, so undoing all lands on x = 2.
         stack.Undo();
         stack.Undo();
         stack.Undo();
         node.LocalPosition.X.ShouldBe(2f);
         stack.CanUndo.ShouldBeFalse();
 
-        // The ring is still coherent after wrapping: redo walks back up.
         stack.Redo();
         stack.Redo();
         stack.Redo();
@@ -123,8 +113,7 @@ public sealed class UndoStackTests
         for (int i = 0; i < 4; i++)
             stack.Undo().ShouldBeTrue();
 
-        // Four retained entries ending at #100 means the oldest retained is
-        // #97, whose before-state is x = 96.
+        // Oldest retained is edit 97, whose before state is x = 96.
         node.LocalPosition.X.ShouldBe(96f);
         stack.CanUndo.ShouldBeFalse();
     }
@@ -161,14 +150,12 @@ public sealed class UndoStackTests
         stack.Redo();
         fired.ShouldBe(3);
 
-        // Refused operations change nothing and announce nothing.
         stack.Redo().ShouldBeFalse();
         fired.ShouldBe(3);
 
         stack.Clear();
         fired.ShouldBe(4);
 
-        // Clearing an already empty history is silent.
         stack.Clear();
         fired.ShouldBe(4);
     }
@@ -206,11 +193,8 @@ public sealed class UndoStackTests
     [Fact]
     public void Cancelling_restores_a_node_that_left_the_scene_during_the_gesture()
     {
-        // A cancel throws its commands away afterwards, so it is the ONLY thing
-        // that can ever put such a node back. Undo's "not in the scene, never
-        // mind" rule is right for replaying history behind an undone delete and
-        // catastrophic here: the node would stay at its mid-drag value forever,
-        // with no history entry naming the pre-gesture one.
+        // A cancelled transaction is discarded, so nothing else could put the
+        // value back later. Undo skips a detached node; a cancel must not.
         var (scene, node) = CreateScene();
         node.LocalPosition = new Vector3(3f, 3f, 3f);
         var stack = new UndoStack(scene);
@@ -230,8 +214,6 @@ public sealed class UndoStackTests
         stack.Count.ShouldBe(0);
         stack.IsTransactionOpen.ShouldBeFalse();
 
-        // And it is still restored once the node comes back — the roll-back
-        // wrote the node itself, not a scene-side copy of it.
         scene.Root.AddChild(node);
         node.LocalPosition.ShouldBe(new Vector3(3f, 3f, 3f));
     }
@@ -239,8 +221,6 @@ public sealed class UndoStackTests
     [Fact]
     public void An_ordinary_undo_still_ignores_a_node_that_is_not_in_the_scene()
     {
-        // The inverse guarantee: RollBack's reach must not leak into Undo, or
-        // history behind a still-undone delete would start writing to corpses.
         var (scene, node) = CreateScene();
         var stack = new UndoStack(scene);
         stack.Execute(SetTransformCommand.Move(node, new Vector3(5f, 0f, 0f)));
@@ -264,8 +244,6 @@ public sealed class UndoStackTests
         return (scene, scene.Root.CreateChild("Box"));
     }
 
-    // Applies an absolute move through the stack, recording the node's current
-    // position as the before-state.
     internal static void MoveTo(UndoStack stack, SceneNode node, float x) =>
         stack.Execute(SetTransformCommand.Move(node, new Vector3(x, 0f, 0f)));
 }

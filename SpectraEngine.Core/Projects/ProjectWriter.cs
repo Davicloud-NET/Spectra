@@ -7,12 +7,6 @@ using System.Text.Json;
 namespace SpectraEngine.Core.Projects;
 
 /// <summary>Writes a <see cref="SpectraProject"/> as canonical UTF-8 JSON.</summary>
-/// <remarks>
-/// Every rule is <see cref="CanonicalJson"/>'s, so the project file and the map
-/// document are byte-compatible in style: same indent, same line ending, same
-/// escaping, same trailing newline. A person editing both in one session should
-/// never notice they are different formats.
-/// </remarks>
 public static class ProjectWriter
 {
     public static byte[] Write(SpectraProject project)
@@ -42,29 +36,20 @@ public static class ProjectWriter
         writer.WriteString(ProjectFormat.IdMember, project.Id.ToString("D"));
         CanonicalJson.Flush(writer, project.Unknown, 4);
 
-        // Omitted rather than written as null when a project has no maps yet:
-        // an absent member reads as "not chosen", and null reads as a value
-        // somebody set on purpose.
+        // Omitted, not null: absent reads as "not chosen".
         if (!string.IsNullOrEmpty(project.StartupMap))
             writer.WriteString(ProjectFormat.StartupMapMember, project.StartupMap);
         CanonicalJson.Flush(writer, project.Unknown, 5);
 
-        // One path per line. A map list is edited by hand and reviewed in a
-        // diff, so adding a level should be one added line.
+        // One path per line, so adding a level is a one-line diff.
         var maps = new List<byte[]>(project.Maps.Count);
         foreach (string map in project.Maps)
             maps.Add(CanonicalJson.Compact(w => w.WriteStringValue(map)));
         CanonicalJson.WriteRecordArray(writer, ProjectFormat.MapsMember, maps);
         CanonicalJson.Flush(writer, project.Unknown, 6);
 
-        // Omitted when empty, and that is the byte-identity rule rather than
-        // tidiness: a manifest that never mentioned packs must come back out
-        // exactly as it went in, so an engine that now BINDS the member must
-        // not start writing an empty array into every file that lacks one.
-        // Compact like 'allowedBackends' rather than one-per-line like 'maps',
-        // because this list is a game's own base and patch packs - short names,
-        // few of them - while a user's forty-mod list is the mount stack's
-        // input and never lives in the project file.
+        // Omitted when empty: a manifest without 'packs' must round-trip
+        // byte-identical.
         if (project.Packs.Count > 0)
         {
             writer.WritePropertyName(ProjectFormat.PacksMember);
@@ -86,8 +71,7 @@ public static class ProjectWriter
             writer.WriteString(ProjectFormat.DefaultBackendMember, ProjectFormat.ToWire(backend));
         CanonicalJson.Flush(writer, project.Unknown, 9);
 
-        // An empty list is omitted, because "no restriction" is the absence of
-        // a restriction rather than an empty one.
+        // Empty means no restriction, so it is omitted.
         if (project.AllowedBackends.Count > 0)
         {
             writer.WritePropertyName(ProjectFormat.AllowedBackendsMember);

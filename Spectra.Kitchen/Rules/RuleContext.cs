@@ -14,30 +14,11 @@ using System.Threading;
 namespace Spectra.Kitchen.Rules;
 
 /// <summary>
-/// The recording implementation of <see cref="IRuleContext"/>: one per rule
-/// invocation, holding that rule's dependency set, its outputs and its
-/// diagnostics.
+/// The recording <see cref="IRuleContext"/>. One per rule run, never shared: it holds
+/// that run's dependencies, outputs and diagnostics.
 /// </summary>
-/// <remarks>
-/// <para><b>One context per rule run, never shared.</b> The three lists it holds
-/// are that rule's answer, and rules will run in parallel; a shared context would
-/// make each list's ORDER depend on scheduling, which is precisely what the
-/// byte-identity oracles exist to catch and precisely what they are worst at
-/// localising.</para>
-/// <para><b>Dependencies keep first-access order and each path appears once.</b>
-/// The cook key hashes inputs in declared order, so an order that depended on a
-/// dictionary's iteration would make the key depend on nothing anybody
-/// controls.</para>
-/// <para><b>A probe followed by a read UPGRADES the record rather than adding a
-/// second one</b>, and a read followed by a probe leaves the read alone. What the
-/// key needs is the strongest observation made about each path: contents seen
-/// beats existence seen, and either beats a miss the same run later contradicted.
-/// </para>
-/// <para><b>Reads are from the filesystem</b> because a cook's input is a project
-/// folder on disk. That is deliberately not an <c>IContentSource</c>: a source
-/// stack can be layered with a pack, and cooking a pack's own output back into
-/// itself is a mistake worth making structurally impossible.</para>
-/// </remarks>
+// Reads the filesystem directly, not an IContentSource: a source stack could have
+// a pack layered in, and a cook must not read its own output.
 public sealed class RuleContext : IRuleContext
 {
     private readonly string _contentRoot;
@@ -50,25 +31,10 @@ public sealed class RuleContext : IRuleContext
 
     /// <summary>
     /// Creates the context for one rule run over <paramref name="sourcePath"/>.
+    /// Optional settings default to what <see cref="CookSettings"/> defaults to.
     /// </summary>
     /// <param name="contentRoot">Absolute path of the project's content root.</param>
     /// <param name="sourcePath">Content-relative path of the asset being cooked.</param>
-    /// <param name="profile">The profile the cook is running under.</param>
-    /// <param name="targets">
-    /// The backends this cook was asked for. Defaults to the same list
-    /// <see cref="CookSettings"/> defaults to, so a caller that cooks nothing
-    /// backend-shaped does not have to name one.
-    /// </param>
-    /// <param name="audioSampleRate">
-    /// The project audio rate. Defaults to the same number
-    /// <see cref="CookSettings"/> defaults to, for the reason the target list
-    /// does: one answer to one question, named once.
-    /// </param>
-    /// <param name="keepBrushSource">
-    /// Whether the cook keeps every brush's authored planes. Defaults to what
-    /// <see cref="CookSettings"/> defaults to, for the reason the target list does:
-    /// one answer to one question, named once.
-    /// </param>
     public RuleContext(
         string contentRoot,
         string sourcePath,
@@ -132,9 +98,7 @@ public sealed class RuleContext : IRuleContext
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            // Recorded before the throw, or the next cook after somebody adds the
-            // file does not re-run this rule and serves the stale artifact while
-            // reporting success.
+            // Record the miss before throwing, so adding the file later re-runs this rule.
             Record(normalized, RuleDependencyKind.ProbeMissing, UInt128.Zero);
             throw new RuleInputMissingException(normalized, SourcePath);
         }
@@ -171,14 +135,11 @@ public sealed class RuleContext : IRuleContext
             }
             catch (ArgumentException)
             {
-                // Skipped rather than thrown, exactly as ContentWalker skips one:
-                // an odd name under a bundle is a file this rule will not see, and
-                // stopping the whole cook over it helps nobody.
+                // Skip a name that will not normalise, as ContentWalker does.
             }
         }
 
-        // Sorted here and nowhere else, so what a rule reads is a function of the
-        // bundle rather than of the filesystem that listed it.
+        // EnumerateFiles has no documented order.
         found.Sort(StringComparer.Ordinal);
         return found;
     }
@@ -233,9 +194,8 @@ public sealed class RuleContext : IRuleContext
             return;
         }
 
-        // Strongest observation wins, and the slot keeps its first-access
-        // position: a read after a probe must not move the path to the end of the
-        // list, or the key changes for a rule whose behaviour did not.
+        // Strongest observation wins. The slot keeps its first-access position,
+        // because the cook key hashes dependencies in order.
         if (Strength(kind) > Strength(_dependencies[at].Kind))
             _dependencies[at] = new RuleDependency(normalized, kind, hash);
     }

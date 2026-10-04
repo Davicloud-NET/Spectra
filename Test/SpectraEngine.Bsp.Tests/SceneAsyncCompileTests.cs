@@ -7,31 +7,23 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// The asynchronous static-world pipeline driven by
-/// <see cref="Scene.ProcessStaticWorldCompilation"/>, exercised headlessly:
-/// the test thread plays the render thread (calling the pump exactly as the
-/// engine does, once per "frame") and a <see cref="FakeRenderer"/> stands in
-/// for the GPU, so only the background CSG compile runs off-thread — the same
-/// division of labour as in the engine. Waits poll the pump with a generous
-/// ceiling that is only ever reached on genuine failure, so the tests are
-/// slow-machine-proof without being timing-sensitive: every assertion below
-/// holds regardless of how fast the thread pool finishes a compile, because
-/// worlds are only ever swapped in by pump calls on this thread.
+/// The async static-world pipeline behind <see cref="Scene.ProcessStaticWorldCompilation"/>.
 /// </summary>
+// The test thread plays the render thread and pumps once per "frame"; only the
+// CSG compile runs off-thread. Worlds are swapped in by pump calls on this
+// thread, so no assertion depends on how fast the pool is.
 public sealed class SceneAsyncCompileTests
 {
     [Fact]
     public void Dirty_scene_launches_a_background_compile_and_swaps_the_world_in()
     {
         var (scene, _, renderer, logger) = CreateSceneWithBrushNode();
-        scene.StaticWorldDirty.ShouldBeTrue(); // attaching the brush auto-dirtied
+        scene.StaticWorldDirty.ShouldBeTrue();
         scene.StaticWorldCompileCount.ShouldBe(0);
 
         scene.ProcessStaticWorldCompilation(renderer, logger);
 
-        // The pump LAUNCHED the compile rather than running it: the edit is
-        // handled (no longer dirty), but no world can have been swapped in yet
-        // because harvesting only happens on a later pump call.
+        // Launched, not run: the result is only harvested on a later pump call.
         scene.StaticWorldDirty.ShouldBeFalse();
         scene.StaticWorld.ShouldBeNull();
         scene.StaticWorldCompileCount.ShouldBe(0);
@@ -41,8 +33,6 @@ public sealed class SceneAsyncCompileTests
 
         scene.StaticWorld.ShouldNotBeNull();
         scene.StaticWorld.Surfaces.ShouldNotBeEmpty();
-        // One brush, one owner cell: the per-chunk map holds exactly one entry
-        // and its GPU mesh is the one the fake renderer created.
         StaticWorldChunkMesh chunk = scene.StaticWorldChunkMeshes.ShouldHaveSingleItem();
         renderer.CreatedMeshes.Count.ShouldBe(1);
         chunk.SingleMesh().ShouldBeSameAs(renderer.CreatedMeshes[0]);
@@ -54,30 +44,24 @@ public sealed class SceneAsyncCompileTests
     public void Edits_during_an_in_flight_compile_coalesce_into_one_follow_up_compile()
     {
         var (scene, node, renderer, logger) = CreateSceneWithBrushNode();
-        scene.ProcessStaticWorldCompilation(renderer, logger); // snapshots at the origin, launches v1
+        scene.ProcessStaticWorldCompilation(renderer, logger); // snapshots at the origin
 
-        // Edit while v1 is in flight: the scene is dirty again, but no second
-        // compile may start until the first one lands.
         var moved = new Vector3(5f, 0f, 0f);
         node.LocalPosition = moved;
         scene.StaticWorldDirty.ShouldBeTrue();
 
-        // v1 lands with the placement it was snapshotted at — the origin —
-        // proving the background compile read the snapshot, not the live node.
+        // The first compile read its snapshot, not the live node.
         PumpUntil(scene, renderer, logger,
             () => scene.StaticWorldCompileCount == 1, "the origin-snapshot compile to land");
         scene.StaticWorld.ShouldNotBeNull();
         scene.StaticWorld.Placements[0].Transform.Translation.ShouldBe(Vector3.Zero);
 
-        // The harvesting pump call relaunches for the coalesced edit; v2 lands
-        // with the moved placement.
         PumpUntil(scene, renderer, logger,
             () => scene.StaticWorldCompileCount == 2, "the follow-up compile to land");
         scene.StaticWorld.ShouldNotBeNull();
         scene.StaticWorld.Placements[0].Transform.Translation.ShouldBe(moved);
         scene.StaticWorldDirty.ShouldBeFalse();
 
-        // Exactly two compiles: the mid-flight edit coalesced instead of queueing.
         scene.ProcessStaticWorldCompilation(renderer, logger);
         scene.StaticWorldCompileCount.ShouldBe(2);
     }
@@ -91,30 +75,24 @@ public sealed class SceneAsyncCompileTests
         CsgWorld previousWorld = scene.StaticWorld.ShouldNotBeNull();
         FakeMesh previousMesh = scene.StaticWorldChunkMeshes.ShouldHaveSingleItem().SingleFakeMesh();
 
-        node.LocalScale = new Vector3(2f, 1f, 1f); // non-rigid: the snapshot must reject it
+        node.LocalScale = new Vector3(2f, 1f, 1f); // non-rigid
         scene.StaticWorldDirty.ShouldBeTrue();
 
-        // The pump must swallow the defect (log, don't throw) and keep rendering
-        // the last good world.
         Should.NotThrow(() => scene.ProcessStaticWorldCompilation(renderer, logger));
         logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem().ShouldContain("non-rigid");
         scene.StaticWorld.ShouldBeSameAs(previousWorld);
         scene.StaticWorldChunkMeshes.ShouldHaveSingleItem().SingleMesh().ShouldBeSameAs(previousMesh);
         previousMesh.Disposed.ShouldBeFalse();
         scene.StaticWorldCompileCount.ShouldBe(1);
-        scene.StaticWorldDirty.ShouldBeFalse(); // defect marked handled — no retry
+        scene.StaticWorldDirty.ShouldBeFalse(); // handled, so no retry
 
-        // Later frames stay quiet: no retry-spam, no extra error per pump call.
         for (int i = 0; i < 5; i++)
             scene.ProcessStaticWorldCompilation(renderer, logger);
         logger.MessagesAt(LogLevel.Error).Count.ShouldBe(1);
         scene.StaticWorldCompileCount.ShouldBe(1);
 
-        // Fixing the transform re-arms the pump and the world recovers. The
-        // recovered geometry is identical to the pre-defect snapshot, so the
-        // carried caches validate all the way through and the chunk's GPU
-        // mesh is CARRIED, not rebuilt — dirty-cell-only churn even across a
-        // defect episode.
+        // The recovered geometry matches the pre-defect snapshot, so the caches
+        // validate and the chunk's GPU mesh is carried, not rebuilt.
         node.LocalScale = Vector3.One;
         scene.StaticWorldDirty.ShouldBeTrue();
         PumpUntil(scene, renderer, logger,
@@ -123,7 +101,7 @@ public sealed class SceneAsyncCompileTests
         scene.StaticWorld.ShouldNotBeSameAs(previousWorld);
         scene.StaticWorldChunkMeshes.ShouldHaveSingleItem().SingleMesh().ShouldBeSameAs(previousMesh);
         previousMesh.Disposed.ShouldBeFalse();
-        renderer.CreatedMeshes.Count.ShouldBe(1); // nothing new was uploaded
+        renderer.CreatedMeshes.Count.ShouldBe(1);
     }
 
     [Fact]
@@ -144,8 +122,7 @@ public sealed class SceneAsyncCompileTests
     [Fact]
     public void Dirty_scene_without_brush_nodes_clears_the_world_without_compiling()
     {
-        // The documented cheap path: no brushes means no carve, so the pump
-        // resolves the edit synchronously instead of bothering the thread pool.
+        // No brushes, no carve: the pump resolves this synchronously.
         var scene = new Scene("Test");
         var renderer = new FakeRenderer();
         var logger = new CapturingLogger();
@@ -170,7 +147,7 @@ public sealed class SceneAsyncCompileTests
         node.Brush = null;
         scene.StaticWorldDirty.ShouldBeTrue();
 
-        // The no-brushes path is synchronous, so one pump call fully resolves it.
+        // The no-brushes path is synchronous, so one pump call is enough.
         scene.ProcessStaticWorldCompilation(renderer, logger);
 
         scene.StaticWorldCompileCount.ShouldBe(2);
@@ -182,8 +159,7 @@ public sealed class SceneAsyncCompileTests
     [Fact]
     public void Recompiling_an_unchanged_scene_reuses_every_chunk_gpu_mesh()
     {
-        // Two overlapping brushes so the compile does a real carve, not a
-        // pass-through: the cache chain must hold through split/snap/weld too.
+        // Overlapping, so the compile does a real carve.
         var scene = new Scene("Test");
         SceneNode a = scene.Root.CreateChild("a");
         a.Brush = Brush.CreateBox(new Vector3(-1f, -1f, -1f), new Vector3(1f, 1f, 1f));
@@ -199,14 +175,10 @@ public sealed class SceneAsyncCompileTests
         FakeMesh[] firstMeshes = [.. scene.StaticWorldChunkMeshes.Select(c => c.SingleFakeMesh())];
         firstMeshes.ShouldNotBeEmpty();
 
-        scene.MarkStaticWorldDirty(); // nothing changed — identical snapshot
+        scene.MarkStaticWorldDirty(); // identical snapshot
         PumpUntil(scene, renderer, logger,
             () => scene.StaticWorldCompileCount == 2, "the second compile to land");
 
-        // The whole cache chain validated, so every chunk artifact — and with
-        // it every GPU mesh — was carried forward: zero creates, zero
-        // destroys. (Bit-identical rebuild determinism is pinned separately by
-        // ChunkMeshEquivalenceTests over cache-free builds.)
         renderer.CreatedMeshes.Count.ShouldBe(createdAfterFirst);
         scene.StaticWorldChunkMeshes.Count.ShouldBe(firstMeshes.Length);
         for (int i = 0; i < firstMeshes.Length; i++)
@@ -219,9 +191,7 @@ public sealed class SceneAsyncCompileTests
     [Fact]
     public void Weld_cache_travels_through_the_pump_so_an_edit_reuses_far_welds()
     {
-        // Two brush nodes many cells apart: editing one must leave the other's
-        // carve AND weld untouched on the next background compile — proving
-        // both caches ride the harvest → relaunch handoff.
+        // Many cells apart, so editing one leaves the other's carve and weld cached.
         var scene = new Scene("Test");
         SceneNode near = scene.Root.CreateChild("near");
         near.LocalPosition = new Vector3(16f, 16f, 16f);
@@ -234,7 +204,6 @@ public sealed class SceneAsyncCompileTests
 
         PumpUntil(scene, renderer, logger,
             () => scene.StaticWorldCompileCount == 1, "the first compile to land");
-        // A cold start caches nothing yet: everything carved and welded fresh.
         CsgWorld first = scene.StaticWorld.ShouldNotBeNull();
         first.CacheStats.ShouldBe(new CsgCacheStats(Hits: 0, Misses: 2));
         first.WeldStats.ShouldBe(new CsgWeldStats(Reused: 0, Welded: 2));
@@ -251,23 +220,14 @@ public sealed class SceneAsyncCompileTests
     [Fact]
     public void A_continuously_dragged_brush_never_renders_an_older_placement_than_one_already_shown()
     {
-        // THE JITTER PIN. A brush's compiled geometry is allowed to trail its
-        // node — the compile is asynchronous, so one frame of lag is inherent —
-        // but it must never go BACKWARDS. A swap that published a snapshot
-        // older than one already on screen would show up to a user as exactly
-        // what was reported once: a brush that pops out, back, out and back
-        // again over a handful of frames while nothing else in the scene does.
-        // Mesh nodes cannot have this failure mode (they render straight from
-        // the node transform), which is what would make it brush-only.
-        //
-        // Randomised interleaving on a fixed seed, because the failure this
-        // guards against is a race between "when the edit happens" and "when
-        // the pump runs", and a fixed 1:1 rhythm would only ever probe one
-        // phase of it.
+        // Compiled geometry may trail the node but must never go backwards, or a
+        // dragged brush visibly jitters.
+        // Random interleaving, fixed seed: a 1:1 edit/pump rhythm would only
+        // probe one phase of the race.
         var (scene, node, renderer, logger) = CreateSceneWithBrushNode();
         var random = new Random(20260821);
 
-        const float Step = 0.05f;   // a plausible per-frame drag distance
+        const float Step = 0.05f;
         const int Frames = 400;
         const int WantedSwaps = 8;
         float authored = 0f;
@@ -283,9 +243,7 @@ public sealed class SceneAsyncCompileTests
             if (stopwatch.Elapsed > CompileTimeout)
                 break;
 
-            // Zero, one or several edits per frame: a drag that dirties the
-            // world faster than compiles can land is the interesting case, and
-            // is also what "pump starvation" would look like if it existed.
+            // 0 to 2 edits per frame, so the drag can outrun the compiles.
             int edits = random.Next(0, 3);
             for (int i = 0; i < edits; i++)
             {
@@ -295,8 +253,7 @@ public sealed class SceneAsyncCompileTests
 
             scene.ProcessStaticWorldCompilation(renderer, logger);
 
-            // Occasionally let the pool actually finish, so the run covers both
-            // "compile still in flight" and "result waiting to be harvested".
+            // Sometimes let the pool finish, to cover a result waiting to be harvested.
             if (random.Next(0, 5) == 0)
                 Thread.Sleep(1);
 
@@ -310,9 +267,7 @@ public sealed class SceneAsyncCompileTests
                 backwards++;
             lastRendered = rendered;
 
-            // The compiled world may trail the node, but it may never lead it:
-            // a published placement always comes from a snapshot of a state the
-            // scene really was in.
+            // It may never lead the node either.
             rendered.ShouldBeLessThanOrEqualTo(authored);
         }
 
@@ -321,22 +276,16 @@ public sealed class SceneAsyncCompileTests
             $"the drag never actually recompiled ({scene.StaticWorldCompileCount} compiles landed), " +
             $"so nothing was proved. Captured log:{Environment.NewLine}{logger.Describe()}");
 
-        // And the trailing is a lag, not a loss: once the edits stop, the
-        // rendered world catches up to the authored pose without further edits.
+        // Once the edits stop, the world catches up on its own.
         PumpUntil(scene, renderer, logger,
             () => scene.StaticWorld is { } settled &&
                   settled.Placements[0].Transform.Translation.X == authored,
             "the compiled world to catch up with the final drag position");
     }
 
-    // Ceiling for a background compile of a handful of boxes; normally met
-    // within a few pump iterations. Only a hung or lost compile ever runs the
-    // clock out, so the size of this value never slows a passing run.
+    // Only a hung or lost compile reaches this, so it never slows a passing run.
     private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(30);
 
-    // Drives the pump like the engine's render loop until `condition` holds,
-    // sleeping minimally between frames. Fails loudly (with the captured log)
-    // instead of hanging when the condition never becomes true.
     private static void PumpUntil(
         Scene scene, FakeRenderer renderer, CapturingLogger logger,
         Func<bool> condition, string description)

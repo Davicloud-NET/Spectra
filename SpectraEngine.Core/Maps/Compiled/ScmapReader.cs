@@ -5,34 +5,13 @@ using System.Runtime.InteropServices;
 namespace SpectraEngine.Core.Maps.Compiled;
 
 /// <summary>
-/// Reads a compiled <c>.scmap</c> out of the bytes it sits in, with no stream, no
-/// allocation per record and no copy of anything large.
+/// Reads a compiled <c>.scmap</c> in place: tables come back as spans into the
+/// input. Unknown sections are skipped; every version and compile constant must
+/// match exactly.
 /// </summary>
-/// <remarks>
-/// <para><b>A span in, and every table cast back out of it.</b> The bytes are
-/// normally a memory-mapped view of a pack payload, so the reader must never take
-/// ownership of them and must never index them without checking first: an
-/// out-of-range read into a mapping is an access violation with no managed stack,
-/// which is a crash nobody can attribute to a file. Every offset and every length
-/// below is bounds-checked before it is used, and every failure is a
-/// <see cref="ScmapFormatException"/> naming what was wrong and what was
-/// expected.</para>
-/// <para><b>An unknown section code is skipped, not refused</b>, which is what
-/// lets a section designed today be written by a later cooker with no version
-/// bump. Everything else is strict, because a compiled map is a build output that
-/// can always be regenerated: the format version is an exact match, the geometry
-/// version is an exact match, the compile constants are an exact match, and each
-/// refusal says recook.</para>
-/// <para><b>Three things are validated that a naive reader would trust.</b> The
-/// chunk directory is checked for ascending cell order, because the whole point of
-/// the sort is that a point lookup is a binary search and a binary search over an
-/// unsorted directory silently answers "no such cell" rather than failing. Every
-/// parent index is checked to precede its child, because that is what makes a
-/// single forward pass legal and a backward edge is an infinite loop in a loader
-/// rather than an exception here. And every chunk blob range is checked against
-/// the section it addresses, which is the bound that turns a malformed file into a
-/// refusal rather than into a read past the end of a mapping.</para>
-/// </remarks>
+// The bytes are usually a memory-mapped pack view, where a read out of range is
+// an access violation with no managed stack. Bounds-check every offset and
+// length before use.
 public static class ScmapReader
 {
     private const int StringSlot = 0;
@@ -49,20 +28,13 @@ public static class ScmapReader
     /// Validates <paramref name="file"/> and returns its tables as spans into it.
     /// </summary>
     /// <param name="file">The whole file, header included.</param>
-    /// <param name="source">
-    /// What to call the file in a message: a logical asset path, not a machine
-    /// path, so the same failure reads the same way from a pack and from a loose
-    /// cook directory.
-    /// </param>
+    /// <param name="source">The file's name in error messages: a logical asset path, not a machine path.</param>
     /// <exception cref="ScmapFormatException">The file is not a readable <c>.scmap</c>.</exception>
-    /// <exception cref="PlatformNotSupportedException">The machine is big-endian.</exception>
     public static ScmapDocument Read(ReadOnlySpan<byte> file, string source)
     {
         ScmapFormat.RequireLittleEndian();
 
-        // Before a byte is read, because every chunk BSP blob in the file is about
-        // to be cast at this stride and a runtime that laid either struct out
-        // differently would misread all of them rather than fail.
+        // BSP blobs are cast at this struct's stride, so check the layout first.
         ScmapChunkBsp.RequireNodeLayout();
 
         if (file.Length < ScmapFormat.MinimumFileSize)
@@ -83,9 +55,7 @@ public static class ScmapReader
 
         if (header.FormatVersion != EngineInfo.CompiledMapFormatVersion)
         {
-            // Exact, never a floor. A compiled map is a build output, so there is
-            // nothing to carry forward and nothing to degrade to: the bytes past
-            // the header only mean anything under the version that wrote them.
+            // Exact match, not a floor: a compiled map is a build output, recook it.
             throw new ScmapFormatException(
                 $"'{source}' is .scmap format version {header.FormatVersion}, and this engine reads version " +
                 $"{EngineInfo.CompiledMapFormatVersion}. Recook the map.");
@@ -101,11 +71,7 @@ public static class ScmapReader
 
         if (header.GeometryFormatVersion != EngineInfo.GeometryFormatVersion)
         {
-            // The separate gate, and the one that actually bites: the container
-            // can be unchanged while what a vertex buffer MEANS has moved under
-            // it, and the symptom of missing that is a misinterpreted buffer,
-            // which draws garbage on one backend and refuses an input layout on
-            // another.
+            // The container can be unchanged while the vertex buffer's meaning moved.
             throw new ScmapFormatException(
                 $"'{source}' was cooked at geometry format version {header.GeometryFormatVersion}, and this " +
                 $"engine reads version {EngineInfo.GeometryFormatVersion}. Recook the map.");
@@ -113,8 +79,6 @@ public static class ScmapReader
 
         if (header.VertexLayoutId != ScmapFormat.StandardVertexLayoutId)
         {
-            // Strictly narrower than the version above, and that is its value: it
-            // says WHICH attribute moved rather than that something did.
             throw new ScmapFormatException(
                 $"'{source}' was cooked for vertex layout {header.VertexLayoutId:X8}, and this engine's " +
                 $"standard layout is {ScmapFormat.StandardVertexLayoutId:X8}. Recook the map.");
@@ -139,11 +103,8 @@ public static class ScmapReader
             ScmapSection record = MemoryMarshal.Read<ScmapSection>(
                 file[(ScmapFormat.SectionTableOffset + ((int)i * ScmapFormat.SectionSize))..]);
 
-            // Bounds and alignment are checked for EVERY section, known or not. A
-            // section this reader steps over is still a claim about where the
-            // file's bytes are, and letting an unknown one describe an impossible
-            // region would make the forward-compatibility mechanism a way to
-            // smuggle a malformed file past the gate.
+            // Checked for unknown sections too, so the skip rule cannot let a
+            // malformed file through.
             RequireSectionInFile(source, record, file.Length);
 
             if ((record.Offset % ScmapFormat.PayloadAlignment) != 0)
@@ -189,11 +150,7 @@ public static class ScmapReader
         RequireSection(source, sectionPresent, NodeSlot, ScmapFormat.NodeSection);
         RequireSection(source, sectionPresent, ChunkSlot, ScmapFormat.ChunkDirectorySection);
 
-        // Two statements about one fact, checked against each other. The header
-        // flag says the section is there and the table says where it is, and a file
-        // where they disagree is one whose brush planes are either missing from a
-        // loader that was told to expect them or present for one that was not - and
-        // the second is the double-geometry hazard arriving through the back door.
+        // The header flag and the section table must agree about BRSH.
         if (((header.FileFlags & ScmapFlags.HasBrushSource) != 0) != sectionPresent[BrushSourceSlot])
         {
             throw new ScmapFormatException(
@@ -271,10 +228,8 @@ public static class ScmapReader
         ScmapFormat.ChunkBspSection => ChunkBspSlot,
         ScmapFormat.BrushSourceSection => BrushSourceSlot,
 
-        // ENTT, ECON, SCPT, LUAB, LUAS and NBND land here on purpose: they are
-        // claimed and empty until the milestones that fill them, and stepping over
-        // a section this build has no consumer for is exactly what the skip rule is
-        // for. RGNI and BMDL land here forever.
+        // Reserved codes with no consumer yet (ENTT, ECON, SCPT, LUAB, LUAS,
+        // NBND, RGNI, BMDL) are skipped like any unknown one.
         _ => -1,
     };
 
@@ -412,10 +367,6 @@ public static class ScmapReader
 
             if (node.PayloadKind == ScmapPayloadKind.RetiredBrushModel)
             {
-                // Named rather than guessed at. The value held the fused
-                // entity-local brush model, whose mechanism was overturned, and
-                // guessing that it meant a part brush is how a door silently
-                // becomes a wall.
                 throw new ScmapFormatException(
                     $"'{source}' node {i} ('{strings.GetStringOrEmpty((int)node.NameString)}') declares " +
                     "payload kind 3, which is retired and carries no meaning. An entity-owned brush is a " +
@@ -467,10 +418,8 @@ public static class ScmapReader
 
             if (i > 0 && Compare(in chunks[i - 1], in cell) >= 0)
             {
-                // Not tidiness. The directory is sorted so a point lookup is a
-                // binary search, and a binary search over an unsorted directory
-                // answers "no such cell" for a cell that is right there, which
-                // reads as a player falling through a floor they can see.
+                // Cell lookup is a binary search, which misses cells in an
+                // unsorted directory.
                 throw new ScmapFormatException(
                     $"'{source}' chunk directory is not in ascending cell order at record {i}: " +
                     $"({chunks[i - 1].X}, {chunks[i - 1].Y}, {chunks[i - 1].Z}) is followed by " +
@@ -501,9 +450,7 @@ public static class ScmapReader
         int blobLength,
         string sectionName)
     {
-        // A zero size is legal and common: a resident-only cell owns no render
-        // geometry, so the compile produces no artifact for it and the directory
-        // mirrors the compile.
+        // Zero is legal: a cell can own no render geometry.
         if (size == 0) return;
 
         if ((long)offset + size > blobLength)
@@ -523,9 +470,7 @@ public static class ScmapReader
 
     private static void RequireSectionInFile(string source, in ScmapSection record, int fileLength)
     {
-        // Subtraction rather than addition, because offset + size is exactly the
-        // arithmetic a corrupt file makes wrap: two values near ulong.MaxValue sum
-        // to something small and pass a naive bound.
+        // Subtract, don't add: offset + size can wrap in a corrupt file.
         if (record.Offset > (ulong)fileLength || record.Size > (ulong)fileLength - record.Offset)
         {
             throw new ScmapFormatException(
@@ -557,9 +502,7 @@ public static class ScmapReader
         float engine,
         string consequence)
     {
-        // Exact, and deliberately not a tolerance: both sides are compile-time
-        // constants, so a difference of any size is a different build rather than
-        // rounding. The comparison also refuses a NaN, which no tolerance would.
+        // No tolerance: both sides are compile-time constants. Also refuses NaN.
         if (stored == engine) return;
 
         throw new ScmapFormatException(
