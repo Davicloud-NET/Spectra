@@ -129,6 +129,27 @@ public sealed class LightSelectionTests
             out _, out _).ShouldBeFalse();
     }
 
+    [Fact]
+    public void A_click_on_a_brush_face_with_a_lamp_behind_it_picks_the_face()
+    {
+        ViewportHarness harness = BuildLitScene(new Vector3(0f, 0f, -6f));
+        SceneNode brush = harness.AddBrush(Vector3.Zero, 1f);
+
+        // The pixel must cover both, or the pick has nothing to choose between.
+        Ray3 ray = harness.Scene.Camera.ScreenPointToRay(harness.CenterPixel, harness.ViewportSize);
+        harness.Scene.Raycast(in ray, out _).ShouldBeTrue();
+        LightPicking.TryPick(
+            harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize,
+            out _, out _).ShouldBeTrue();
+
+        harness.Press(harness.CenterPixel);
+        harness.Release(harness.CenterPixel);
+
+        // The camera is on +Z, so it sees the box's +Z face: plane 4.
+        harness.Scene.Selection.FaceNode.ShouldBeSameAs(brush);
+        harness.Scene.Selection.FacePlane.ShouldBe(4);
+    }
+
     [Theory]
     [InlineData(BoxSelectMode.Intersect)]
     [InlineData(BoxSelectMode.Contain)]
