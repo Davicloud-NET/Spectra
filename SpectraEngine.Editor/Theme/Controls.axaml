@@ -1083,6 +1083,21 @@
     <Setter Property="FontWeight" Value="SemiBold" />
   </Style>
 
+  <!-- A tile's header where Dock does not draw one: the same band and title. -->
+  <Style Selector="Border.band">
+    <Setter Property="Background" Value="{StaticResource SpectraBgRaised}" />
+    <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="Height" Value="27" />
+    <Setter Property="Padding" Value="9,0" />
+  </Style>
+  <Style Selector="TextBlock.bandtitle">
+    <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
   <!-- A panel: rounded, outlined, with the window ground showing round it. -->
   <Style Selector="Border.tile">
     <Setter Property="Background" Value="{StaticResource SpectraBgPanel}" />

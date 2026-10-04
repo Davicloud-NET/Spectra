@@ -1,10 +1,15 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
              x:Class="SpectraEngine.Editor.Shell.StartPage"
              Background="{StaticResource SpectraBgApp}">
 
-  <!-- Shown until a project is open. No engine session exists yet. -->
+  <!--
+    Shown until a project is open. No engine session exists yet.
+
+    Laid out like the editor it leads to: two tiles with the same margins and
+    gap, so the window does not jump when a project opens.
+  -->
 
   <UserControl.Resources>
     <!-- Shared by every recent row; DataContext comes from the row that
@@ -18,7 +23,7 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
-    <!-- Flat list rows: a fill on hover and selection, no border, no card. -->
+    <!-- The row fill is on the item's presenter; Border.recent draws the rule. -->
     <Style Selector="ListBoxItem">
       <Setter Property="Padding" Value="0" />
       <Setter Property="Margin" Value="0" />
@@ -28,7 +33,7 @@
       <Setter Property="FocusAdorner" Value="{x:Null}" />
     </Style>
     <Style Selector="ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Background" Value="#00FFFFFF" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="Transitions">
@@ -57,19 +62,77 @@
       <Setter Property="Background" Value="{StaticResource SpectraRowSelected}" />
     </Style>
 
-    <Style Selector="Button.action">
-      <Setter Property="Height" Value="30" />
-      <Setter Property="Padding" Value="8,0" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <!-- A recent project: a ruled strip, like a scene tree row but taller. -->
+    <Style Selector="Border.recent">
+      <Setter Property="Height" Value="34" />
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Cursor" Value="Hand" />
     </Style>
-    <Style Selector="Button.action /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="ListBoxItem:nth-child(2n) Border.recent">
+      <Setter Property="Background" Value="{StaticResource SpectraRowAlternate}" />
+    </Style>
+    <Style Selector="TextBlock.recentname">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontBase}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.recentmeta">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.recent Path.rowglyph">
+      <Setter Property="Stroke" Value="{StaticResource SpectraTextMuted}" />
+    </Style>
+
+    <!-- A project whose folder is gone stays listed, greyed out. -->
+    <Style Selector="Border.missing TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
+    </Style>
+    <Style Selector="Border.missing Path.rowglyph">
+      <Setter Property="Stroke" Value="{StaticResource SpectraTextDisabled}" />
+    </Style>
+
+    <!-- The selected row is a solid accent fill, so everything on it is white.
+         After the missing rules, so a selected missing row stays readable. -->
+    <Style Selector="ListBoxItem:selected TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextOnAccent}" />
+    </Style>
+    <Style Selector="ListBoxItem:selected Path.icon">
+      <Setter Property="Stroke" Value="{StaticResource SpectraTextOnAccent}" />
+    </Style>
+
+    <!-- Row actions show under the pointer and on the selected row. Opacity,
+         not IsVisible, so the row's columns never reflow. -->
+    <Style Selector="Button.rowaction">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="ListBoxItem:pointerover Button.rowaction, ListBoxItem:selected Button.rowaction">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+
+    <!-- The three ways in: cells of one tray, each a glyph, a name and a line
+         saying what it does. -->
+    <Style Selector="Button.startaction">
+      <Setter Property="Height" Value="54" />
+      <Setter Property="Padding" Value="12,0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="Button.startaction /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControl}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
       <Setter Property="Transitions">
         <Transitions>
           <BrushTransition Property="Background"
@@ -78,161 +141,173 @@
         </Transitions>
       </Setter>
     </Style>
-    <Style Selector="Button.action:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource SpectraControlHover}" />
+    <Style Selector="Button.startaction:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControlHover}" />
     </Style>
-    <Style Selector="Button.action:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{StaticResource SpectraControlPressed}" />
+    <Style Selector="Button.startaction:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SpectraBgControlActive}" />
     </Style>
-    <Style Selector="Button.action TextBlock">
+    <Style Selector="Button.startaction TextBlock.actionname">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontBase}" />
-      <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.action:pointerover TextBlock">
+      <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
     </Style>
-    <Style Selector="Button.action Path">
-      <Setter Property="Stroke" Value="{StaticResource SpectraTextMuted}" />
-      <Setter Property="StrokeThickness" Value="1.3" />
-      <Setter Property="StrokeLineCap" Value="Round" />
-      <Setter Property="StrokeJoin" Value="Round" />
-      <Setter Property="Fill" Value="Transparent" />
-      <Setter Property="Width" Value="15" />
-      <Setter Property="Height" Value="15" />
-      <Setter Property="Stretch" Value="Uniform" />
-      <Setter Property="VerticalAlignment" Value="Center" />
+    <Style Selector="Button.startaction TextBlock.actionhint">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
-    <Style Selector="Button.action:pointerover Path">
-      <Setter Property="Stroke" Value="{StaticResource SpectraAccent}" />
+    <Style Selector="Button.startaction:pointerover Path.icon-lg">
+      <Setter Property="Stroke" Value="{StaticResource SpectraTextEmphasis}" />
     </Style>
 
     <Style Selector="TextBlock.colhead">
-      <Setter Property="FontSize" Value="{StaticResource SpectraFontMicro}" />
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-
-    <!-- A project whose folder is gone stays listed, greyed out. -->
-    <Style Selector="Border.missing TextBlock">
-      <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
+    <Style Selector="TextBlock.help">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
   </UserControl.Styles>
 
-  <!-- No header here: the window's own bar sits directly above this page. -->
-  <DockPanel>
+  <!-- Same margins, column and gap as the editor grid in MainWindow. -->
+  <Grid ColumnDefinitions="288,7,*" Margin="6,7,6,0">
 
-    <Border DockPanel.Dock="Left" Width="236"
-            Background="{StaticResource SpectraBgPanel}"
-            BorderBrush="{StaticResource SpectraBorderStrong}"
-            BorderThickness="0,0,1,0">
-      <StackPanel Margin="8,10" Spacing="1">
-          <Button Classes="action" Click="OnNewProjectClicked">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <Path Data="{StaticResource IconNewProject}" />
-              <TextBlock Text="New project" />
+    <Border Grid.Column="0" Classes="tile">
+      <DockPanel>
+        <Border DockPanel.Dock="Top" Classes="band">
+          <TextBlock Classes="bandtitle" Text="Start" />
+        </Border>
+
+        <StackPanel Margin="10" Spacing="14">
+          <!-- The tray the ribbon uses: one outline, a line between cells. -->
+          <Border Classes="rtray">
+            <StackPanel Classes="rcol">
+              <Button Classes="startaction" Click="OnNewProjectClicked">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                  <Path Grid.Column="0" Classes="icon-lg" Data="{StaticResource IconLgNewProject}" />
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Classes="actionname" Text="New project" />
+                    <TextBlock Classes="actionhint" Text="A new folder that starts on a baseplate" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+              <Button Classes="startaction" Click="OnOpenProjectClicked">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                  <Path Grid.Column="0" Classes="icon-lg" Data="{StaticResource IconLgOpenFolder}" />
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Classes="actionname" Text="Open project" />
+                    <TextBlock Classes="actionhint" Text="Pick a project's folder" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+              <Button Classes="startaction" Click="OnOpenMapClicked">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                  <Path Grid.Column="0" Classes="icon-lg" Data="{StaticResource IconLgMap}" />
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Classes="actionname" Text="Open a level on its own" />
+                    <TextBlock Classes="actionhint" Text="A level folder outside any project" />
+                  </StackPanel>
+                </Grid>
+              </Button>
             </StackPanel>
-          </Button>
-          <Button Classes="action" Click="OnOpenProjectClicked">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <Path Data="{StaticResource IconOpenFolder}" />
-              <TextBlock Text="Open project" />
-            </StackPanel>
-          </Button>
-          <Button Classes="action" Click="OnOpenMapClicked">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <Path Data="{StaticResource IconMap}" />
-              <TextBlock Text="Open a level on its own" />
-            </StackPanel>
-          </Button>
+          </Border>
+
+          <TextBlock Classes="help" Margin="2,0"
+                     Text="You can also drop a project or a level folder anywhere on this window." />
 
           <!-- Shown only while there are no recent projects. -->
-          <StackPanel x:Name="FirstRunHelp" Spacing="9">
-            <Border Height="1" Background="{StaticResource SpectraBorderSoft}" Margin="8,12,4,3" />
-            <TextBlock TextWrapping="Wrap" Margin="8,0,4,0"
-                       FontSize="{StaticResource SpectraFontSecondary}"
-                       Foreground="{StaticResource SpectraTextMuted}"
-                       Text="A project is an ordinary folder holding your Assets, Levels and Scripts. Nothing in it is a database, and everything you author is text you can read." />
-            <TextBlock TextWrapping="Wrap" Margin="8,0,4,0"
-                       FontSize="{StaticResource SpectraFontSecondary}"
-                       Foreground="{StaticResource SpectraTextMuted}"
-                       Text="You can also drop a project or a level folder anywhere on this window." />
-          </StackPanel>
-      </StackPanel>
+          <TextBlock x:Name="FirstRunHelp" Classes="help" Margin="2,0"
+                     Text="A project is an ordinary folder holding your Assets, Levels and Scripts. Nothing in it is a database, and everything you author is text you can read." />
+        </StackPanel>
+      </DockPanel>
     </Border>
 
-    <DockPanel Margin="14,10,14,12">
+    <Border Grid.Column="2" Classes="tile">
+      <DockPanel>
+        <Border DockPanel.Dock="Top" Classes="band">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="bandtitle" Text="Recent projects" />
+            <TextBlock x:Name="CountLabel" Classes="value"
+                       Foreground="{StaticResource SpectraTextMuted}" />
+          </StackPanel>
+        </Border>
 
-      <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
-        <TextBlock Grid.Column="0" Text="Recent projects"
-                   FontSize="{StaticResource SpectraFontBase}"
-                   Foreground="{StaticResource SpectraTextBody}"
-                   VerticalAlignment="Center" />
         <!-- Hidden while the list is short enough to read at a glance. -->
-        <TextBox Grid.Column="2" x:Name="FilterBox" Classes="field" Width="180"
-                 PlaceholderText="Filter"
-                 TextChanged="OnFilterChanged" KeyDown="OnFilterKeyDown" />
-      </Grid>
+        <Border x:Name="FilterRow" DockPanel.Dock="Top" Padding="8,7"
+                BorderBrush="{StaticResource SpectraBorderSoft}" BorderThickness="0,0,0,1">
+          <TextBox x:Name="FilterBox" Classes="field"
+                   PlaceholderText="Filter by name or folder. Enter opens the first match."
+                   TextChanged="OnFilterChanged" KeyDown="OnFilterKeyDown" />
+        </Border>
 
-      <!-- Outside the scroll so they stay put. Hidden for a single row. -->
-      <StackPanel x:Name="ColumnHeadings" DockPanel.Dock="Top">
-        <Grid ColumnDefinitions="*,1.6*,Auto" Margin="8,0,10,4">
-          <TextBlock Grid.Column="0" Classes="colhead" Text="Name" />
-          <TextBlock Grid.Column="1" Classes="colhead" Text="Location" />
-          <TextBlock Grid.Column="2" Classes="colhead" Text="Opened" />
-        </Grid>
-        <Border Height="1" Background="{StaticResource SpectraBorderSoft}" Margin="0,0,0,2" />
-      </StackPanel>
+        <!-- Outside the scroll so they stay put. Hidden for a single row.
+             Columns match the row template's. -->
+        <Border x:Name="ColumnHeadings" DockPanel.Dock="Top" Height="24"
+                BorderBrush="{StaticResource SpectraBorderSoft}" BorderThickness="0,0,0,1">
+          <Grid ColumnDefinitions="28,*,1.7*,104,60" Margin="10,0,6,0">
+            <TextBlock Grid.Column="1" Classes="colhead" Text="Name" />
+            <TextBlock Grid.Column="2" Classes="colhead" Text="Folder" Margin="10,0" />
+            <TextBlock Grid.Column="3" Classes="colhead" Text="Last opened" />
+          </Grid>
+        </Border>
 
-      <!-- Empty state. Repeats the three actions in the main column. -->
-      <StackPanel x:Name="EmptyState" DockPanel.Dock="Top" Margin="8,26,8,0"
-                  MaxWidth="480" HorizontalAlignment="Left" Spacing="14">
-        <TextBlock x:Name="EmptyTitle" Text="Nothing open yet."
-                   FontSize="{StaticResource SpectraFontTitle}"
-                   Foreground="{StaticResource SpectraTextEmphasis}" />
-        <TextBlock x:Name="EmptyLabel" TextWrapping="Wrap"
-                   FontSize="{StaticResource SpectraFontSecondary}"
-                   Foreground="{StaticResource SpectraTextMuted}"
-                   Text="Make a project to start building, or open one you already have. Projects you open appear in this list." />
-        <StackPanel x:Name="EmptyActions" Orientation="Horizontal" Spacing="8">
-          <Button Classes="primary" MinWidth="130" Content="New project" Click="OnNewProjectClicked" />
-          <Button Classes="secondary" MinWidth="130" Content="Open project" Click="OnOpenProjectClicked" />
+        <!-- Empty state: a first launch, or a filter that matched nothing. -->
+        <StackPanel x:Name="EmptyState" DockPanel.Dock="Top" Margin="16,22,16,0"
+                    MaxWidth="480" HorizontalAlignment="Left" Spacing="12">
+          <TextBlock x:Name="EmptyTitle" Text="Nothing open yet."
+                     FontSize="{StaticResource SpectraFontTitle}"
+                     FontWeight="SemiBold"
+                     Foreground="{StaticResource SpectraTextEmphasis}" />
+          <TextBlock x:Name="EmptyLabel" Classes="help"
+                     Text="Make a project to start building, or open one you already have. Projects you open appear in this list." />
+          <StackPanel x:Name="EmptyActions" Orientation="Horizontal" Spacing="8">
+            <Button Classes="primary" MinWidth="130" Content="New project" Click="OnNewProjectClicked" />
+            <Button Classes="secondary" MinWidth="130" Content="Open project" Click="OnOpenProjectClicked" />
+          </StackPanel>
         </StackPanel>
-      </StackPanel>
 
-      <ListBox x:Name="RecentList"
-               Background="Transparent"
-               BorderThickness="0"
-               Padding="0"
-               DoubleTapped="OnRecentActivated"
-               KeyDown="OnRecentKeyDown"
-               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-        <ListBox.ItemTemplate>
-          <DataTemplate x:DataType="shell:RecentProjectRow">
-            <Border Height="26" Background="Transparent"
-                    Classes.missing="{Binding IsMissing}"
-                    ContextMenu="{StaticResource RecentMenu}"
-                    ToolTip.Tip="{Binding Path}">
-              <Grid ColumnDefinitions="*,1.6*,Auto" Margin="8,0,10,0">
-                <TextBlock Grid.Column="0" Text="{Binding Name}"
-                           FontSize="{StaticResource SpectraFontBase}"
-                           Foreground="{StaticResource SpectraTextEmphasis}"
-                           TextTrimming="CharacterEllipsis"
-                           VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="{Binding Location}"
-                           FontSize="{StaticResource SpectraFontSmall}"
-                           Foreground="{StaticResource SpectraTextMuted}"
-                           TextTrimming="CharacterEllipsis"
-                           VerticalAlignment="Center" Margin="10,0,10,0" />
-                <TextBlock Grid.Column="2" Text="{Binding OpenedLabel}"
-                           FontSize="{StaticResource SpectraFontSmall}"
-                           Foreground="{StaticResource SpectraTextMuted}"
-                           VerticalAlignment="Center" />
-              </Grid>
-            </Border>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
-    </DockPanel>
-  </DockPanel>
+        <ListBox x:Name="RecentList"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 Padding="0"
+                 KeyDown="OnRecentKeyDown"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="shell:RecentProjectRow">
+              <!-- One click opens. The two buttons are the other things a row
+                   can do, so nothing needs a right-click to be found. -->
+              <Border Classes="recent"
+                      Classes.missing="{Binding IsMissing}"
+                      ContextMenu="{StaticResource RecentMenu}"
+                      Tapped="OnRecentTapped"
+                      ToolTip.Tip="{Binding Path}">
+                <Grid ColumnDefinitions="28,*,1.7*,104,60" Margin="10,0,6,0">
+                  <Path Grid.Column="0" Classes="icon rowglyph" HorizontalAlignment="Left"
+                        Data="{StaticResource IconGroup}" />
+                  <TextBlock Grid.Column="1" Classes="recentname" Text="{Binding Name}" />
+                  <TextBlock Grid.Column="2" Classes="recentmeta" Text="{Binding Location}" Margin="10,0" />
+                  <TextBlock Grid.Column="3" Classes="recentmeta" Text="{Binding OpenedLabel}" />
+                  <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2"
+                              HorizontalAlignment="Right">
+                    <Button Classes="ghost rowaction" Click="OnRowRevealClicked"
+                            ToolTip.Tip="Show in Explorer">
+                      <Path Classes="icon" Data="{StaticResource IconOpenFolder}" />
+                    </Button>
+                    <Button Classes="ghost rowaction" Click="OnRowForgetClicked"
+                            ToolTip.Tip="Remove from this list. Nothing on disk changes.">
+                      <Path Classes="icon" Data="{StaticResource IconClear}" />
+                    </Button>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+  </Grid>
 </UserControl>

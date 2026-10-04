@@ -1,6 +1,9 @@
-﻿using Avalonia.Controls;
+﻿using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -51,6 +54,29 @@ public partial class StartPage : UserControl
     {
         InitializeComponent();
     }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        FocusRecents();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == IsVisibleProperty && IsVisible)
+            FocusRecents();
+    }
+
+    // So Enter opens the most recent project straight after launch.
+    private void FocusRecents() =>
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (IsEffectivelyVisible && RecentList.IsVisible)
+                    RecentList.Focus();
+            },
+            DispatcherPriority.Loaded);
 
     /// <summary>Rebuilds the recent list.</summary>
     public void ShowRecents(IReadOnlyList<RecentProject> recents)
@@ -110,8 +136,13 @@ public partial class StartPage : UserControl
 
         RecentList.IsVisible = _shown.Count > 0;
 
+        // The first row is what Enter opens, so it is the one shown selected.
+        if (_shown.Count > 0)
+            RecentList.SelectedIndex = 0;
+
+        CountLabel.Text = _all.Count > 0 ? _all.Count.ToString() : string.Empty;
         ColumnHeadings.IsVisible = _shown.Count > 1;
-        FilterBox.IsVisible = _all.Count > 4;
+        FilterRow.IsVisible = _all.Count > 4;
         EmptyState.IsVisible = _shown.Count == 0;
         EmptyActions.IsVisible = _all.Count == 0;
         FirstRunHelp.IsVisible = _all.Count == 0;
@@ -148,10 +179,26 @@ public partial class StartPage : UserControl
         }
     }
 
-    private void OnRecentActivated(object? sender, TappedEventArgs e)
+    private void OnRecentTapped(object? sender, TappedEventArgs e)
     {
-        if (RecentList.SelectedItem is RecentProjectRow row)
+        // A tap on one of the row's own buttons bubbles here too.
+        if (e.Source is Visual source && source.FindAncestorOfType<Button>(includeSelf: true) is not null)
+            return;
+
+        if (MenuRow(sender) is { } row)
             RecentProjectPicked?.Invoke(row.Source);
+    }
+
+    private void OnRowRevealClicked(object? sender, RoutedEventArgs e)
+    {
+        if (MenuRow(sender) is { } row)
+            RecentProjectRevealRequested?.Invoke(row.Source);
+    }
+
+    private void OnRowForgetClicked(object? sender, RoutedEventArgs e)
+    {
+        if (MenuRow(sender) is { } row)
+            RecentProjectForgotten?.Invoke(row.Source);
     }
 
     private void OnRecentKeyDown(object? sender, KeyEventArgs e)
@@ -178,7 +225,7 @@ public partial class StartPage : UserControl
     private void OnOpenProjectClicked(object? sender, RoutedEventArgs e) => OpenProjectRequested?.Invoke();
     private void OnOpenMapClicked(object? sender, RoutedEventArgs e) => OpenMapRequested?.Invoke();
 
-    // The shared menu inherits DataContext from the row it was opened over.
+    // The row the sender belongs to: a menu item, a row button or the row itself.
     private static RecentProjectRow? MenuRow(object? sender) =>
         (sender as Control)?.DataContext as RecentProjectRow;
 

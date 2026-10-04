@@ -35,7 +35,10 @@
   <PathGeometry x:Key="IconLgFrame" Figures="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0 M4 8v-2a2 2 0 0 1 2 -2h2 M4 16v2a2 2 0 0 0 2 2h2 M16 4h2a2 2 0 0 1 2 2v2 M16 20h2a2 2 0 0 0 2 -2v-2" />
   <PathGeometry x:Key="IconLgFrameAll" Figures="M4 8v-2a2 2 0 0 1 2 -2h2 M4 16v2a2 2 0 0 0 2 2h2 M16 4h2a2 2 0 0 1 2 2v2 M16 20h2a2 2 0 0 0 2 -2v-2" />
   <PathGeometry x:Key="IconLgLight" Figures="M3 12h1m8 -9v1m8 8h1m-15.4 -6.4l.7 .7m12.1 -.7l-.7 .7 M9 16a5 5 0 1 1 6 0a3.5 3.5 0 0 0 -1 3a2 2 0 0 1 -4 0a3.5 3.5 0 0 0 -1 -3 M9.7 17l4.6 0" />
+  <PathGeometry x:Key="IconLgMap" Figures="M3 7l6 -3l6 3l6 -3v13l-6 3l-6 -3l-6 3v-13 M9 4v13 M15 7v13" />
   <PathGeometry x:Key="IconLgMove" Figures="M18 9l3 3l-3 3 M15 12h6 M6 9l-3 3l3 3 M3 12h6 M9 18l3 3l3 -3 M12 15v6 M15 6l-3 -3l-3 3 M12 3v6" />
+  <PathGeometry x:Key="IconLgNewProject" Figures="M12 19h-7a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v3.5 M16 19h6 M19 16v6" />
+  <PathGeometry x:Key="IconLgOpenFolder" Figures="M5 19l2.757 -7.351a1 1 0 0 1 .936 -.649h12.307a1 1 0 0 1 .986 1.164l-.996 5.211a2 2 0 0 1 -1.964 1.625h-14.026a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2" />
   <PathGeometry x:Key="IconLgResize" Figures="M4 11v8a1 1 0 0 0 1 1h8m-9 -14v-1a1 1 0 0 1 1 -1h1m5 0h2m5 0h1a1 1 0 0 1 1 1v1m0 5v2m0 5v1a1 1 0 0 1 -1 1h-1 M4 12h7a1 1 0 0 1 1 1v7" />
   <PathGeometry x:Key="IconLgRotate" Figures="M4.05 11a8 8 0 1 1 .5 4m-.5 5v-5h5" />
   <PathGeometry x:Key="IconLight" Figures="M 2 8 h 0.667 m 5.333 -6 v 0.667 m 5.333 5.333 h 0.667 m -10.267 -4.267 l 0.467 0.467 m 8.067 -0.467 l -0.467 0.467 M 6 10.667 a 3.333 3.333 0 1 1 4 0 a 2.333 2.333 0 0 0 -0.667 2 a 1.333 1.333 0 0 1 -2.667 0 a 2.333 2.333 0 0 0 -0.667 -2 M 6.467 11.333 l 3.067 0" />

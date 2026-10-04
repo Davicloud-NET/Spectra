@@ -37,7 +37,6 @@ SMALL = {
     "IconMap": "map",
     "IconMesh": "vector-triangle",
     "IconMove": "arrows-move",
-    "IconNewProject": "folder-plus",
     "IconOpenFolder": "folder-open",
     "IconRedo": "arrow-forward-up",
     "IconRefresh": "refresh",
@@ -57,7 +56,10 @@ LARGE = {
     "IconLgFrame": "focus-centered",
     "IconLgFrameAll": "maximize",
     "IconLgLight": "bulb",
+    "IconLgMap": "map",
     "IconLgMove": "arrows-move",
+    "IconLgNewProject": "folder-plus",
+    "IconLgOpenFolder": "folder-open",
     "IconLgResize": "resize",
     "IconLgRotate": "rotate-clockwise",
 }
