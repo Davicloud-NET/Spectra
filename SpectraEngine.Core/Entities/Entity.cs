@@ -134,7 +134,7 @@ public abstract class Entity
     public void FireOutput(string output, Entity? activator = null, string? parameterOverride = null)
     {
         ArgumentNullException.ThrowIfNull(output);
-        FindOutput(output)?.Fire(this, activator, parameterOverride);
+        FindOutput(output)?.Fire(this, activator ?? this, parameterOverride);
     }
 
     /// <summary>This entity's <paramref name="output"/>, or null if nothing wires it.</summary>
