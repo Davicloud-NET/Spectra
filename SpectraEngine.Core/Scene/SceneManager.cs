@@ -117,6 +117,12 @@ public sealed class SceneManager
     private DemoBobAnimation? _pillarBob;
     /// <summary>Opt-in CSG stress fixture. Off leaves the built-in scene at rest.</summary>
     public bool DemoCsgAnimation { get; set; }
+
+    /// <summary>
+    /// Whether the built-in scene's spinning cube turns. Off for a check that
+    /// compares pictures taken frames apart.
+    /// </summary>
+    public bool DemoSpin { get; set; } = true;
     private double _elapsed;
 
     // Both periodic lines wait one interval: the render view is built after
@@ -1127,7 +1133,7 @@ public sealed class SceneManager
     {
         _elapsed += deltaTime;
 
-        if (_spinner is not null)
+        if (_spinner is not null && DemoSpin)
         {
             _spinner.LocalRotation = Quaternion.CreateFromYawPitchRoll(
                 (float)_elapsed * 0.6f,

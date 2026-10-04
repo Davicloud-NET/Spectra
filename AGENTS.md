@@ -53,7 +53,7 @@ Demo switches worth knowing (`docs/performance.md` has the profiling ones):
 | `--map=<bundle>`, `--save-map=<bundle>` | run or write a `.smap` |
 | `--project=<dir>` with `--pack`, `--dev` | run a project, from cooked packs, with loose files on top |
 | `--save-project=<dir>` with `--exit-after-save` | export the scene as a project |
-| `--offscreen-probe`, `--viewport-compare`, `--pacing-probe` | render checks that need no person |
+| `--offscreen-probe`, `--viewport-compare`, `--pacing-probe`, `--pipeline-compare` | render checks that need no person |
 
 Publishing:
 
@@ -116,6 +116,7 @@ Rendering
 - Shading is in linear light. sRGB is decoded and encoded by texture and target formats, never by `pow` in a shader.
 - Everything draws inside `BeginPass` and `EndPass`. Size things from `Renderer.PassSize`, not from the window.
 - Deferred is the default pipeline. Forward stays for MSAA and blended transparency.
+- Forward and deferred draw the same picture. SpectraShade has no include, so the lighting is written twice, in `Lit.spectrashade` and `DeferredLight.spectrashade`. Change both, then run `PipelineParityGlTests` and the demo with `--pipeline-compare` on d3d11 and d3d12.
 - Light data goes to shaders as parallel `vec4` arrays. A struct array compiles and then does nothing on OpenGL. Light type numbers are append-only.
 
 Content

@@ -1,13 +1,10 @@
-﻿using Silk.NET.OpenGL;
 using SpectraEngine.Core.Scene;
-using System.Collections.Generic;
-using System.Numerics;
 
 namespace SpectraEngine.Core.Graphics.OpenGL;
 
 /// <summary>
 /// Forward shading: draws the frame's pre-culled <see cref="RenderView"/> items
-/// with their materials' own shaders.
+/// with their materials' own shaders. The picture matches the deferred one.
 /// </summary>
 public sealed class ForwardPipeline : IOpenGLRenderPipeline
 {
@@ -25,10 +22,15 @@ public sealed class ForwardPipeline : IOpenGLRenderPipeline
 
     public void Execute(in OpenGLRenderContext context)
     {
-        // May compile a program, which must not happen inside an open pass.
-        context.Renderer.PrepareWorldLines(gbuffer: false);
+        OpenGLRenderer renderer = context.Renderer;
 
-        context.Renderer.BeginPass(context.Renderer.FrameTarget, PassClear.To(ClearColors.Sky));
+        // May compile a program, which must not happen inside an open pass.
+        renderer.PrepareWorldLines(gbuffer: false);
+
+        // Its own pass, so before the scene's.
+        int shadowLight = context.Scene is { } lit ? renderer.RenderShadowMap(lit, context.View) : -1;
+
+        renderer.BeginPass(renderer.FrameTarget, PassClear.To(ClearColors.Sky));
         try
         {
             if (context.Scene is null)
@@ -36,52 +38,18 @@ public sealed class ForwardPipeline : IOpenGLRenderPipeline
 
             var camera = context.Scene.Camera;
             // Aspect from the pass, not the window.
-            if (context.Renderer.PassAspectRatio is { } aspect)
+            if (renderer.PassAspectRatio is { } aspect)
                 camera.AspectRatio = aspect;
 
-            DrawView(context.View, camera);
+            renderer.DrawLit(context.View, camera, Ambient, shadowLight);
 
             // Inside the pass: world lines are depth-tested against the scene.
-            context.Renderer.FlushWorldLines(camera);
+            renderer.FlushWorldLines(camera);
         }
         finally
         {
-            context.Renderer.EndPass();
+            renderer.EndPass();
         }
-    }
-
-    private void DrawView(RenderView view, Camera camera)
-    {
-        IReadOnlyList<RenderItem> items = view.Items;
-        for (int i = 0; i < items.Count; i++)
-        {
-            RenderItem item = items[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-
-        // Static-world chunks, one item per (chunk, material), already in world space.
-        IReadOnlyList<RenderItem> worldItems = view.WorldItems;
-        for (int i = 0; i < worldItems.Count; i++)
-        {
-            RenderItem item = worldItems[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-    }
-
-    private void DrawRenderable(Mesh mesh, Material material, Matrix4x4 model, Camera camera, RenderView view)
-    {
-        if (material.Shader is not { } shader) return;
-
-        shader.Use();
-        shader.SetUniform("uModel", model);
-        shader.SetUniform("uView", camera.View);
-        shader.SetUniform("uProjection", camera.Projection);
-        LightUpload.Apply(shader, view, Ambient);
-        material.Apply();
-
-        mesh.Draw();
     }
 
     public void Dispose()

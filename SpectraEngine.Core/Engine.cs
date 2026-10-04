@@ -29,6 +29,7 @@ public sealed class Engine
     private readonly ILogger<Engine> _logger;
     private OffscreenProbe? _offscreenProbe;
     private ViewportCompareProbe? _viewportCompare;
+    private PipelineCompareProbe? _pipelineCompare;
     private SharedPacingProbe? _sharedPacing;
     private readonly FpsCounter _fpsCounter = new();
 
@@ -292,6 +293,18 @@ public sealed class Engine
     /// whether the two pictures agreed. A host's exit code.
     /// </summary>
     public bool? ViewportComparePassed { get; private set; }
+
+    /// <summary>
+    /// Whether to compare the deferred and forward pipelines' pictures once at
+    /// startup and then end the session. The scene has to hold still.
+    /// </summary>
+    public bool RunPipelineCompare { get; set; }
+
+    /// <summary>
+    /// Null until <see cref="RunPipelineCompare"/>'s probe has reported, then
+    /// whether the two pictures agreed. A host's exit code.
+    /// </summary>
+    public bool? PipelineComparePassed { get; private set; }
 
     /// <summary>
     /// Whether to measure how the engine's frame rate follows the shared
@@ -619,6 +632,9 @@ public sealed class Engine
             if (RunViewportCompare)
                 _viewportCompare = new ViewportCompareProbe(_logger);
 
+            if (RunPipelineCompare)
+                _pipelineCompare = new PipelineCompareProbe(_logger);
+
             if (RunSharedPacingProbe)
             {
                 _sharedPacing = new SharedPacingProbe(_logger);
@@ -854,6 +870,18 @@ public sealed class Engine
                     {
                         ViewportComparePassed = compare.Passed;
                         _viewportCompare = null;
+                        Host.RequestShutdown();
+                        break;
+                    }
+                }
+
+                if (_pipelineCompare is { } parity)
+                {
+                    parity.Update(_renderer);
+                    if (!parity.Running)
+                    {
+                        PipelineComparePassed = parity.Passed;
+                        _pipelineCompare = null;
                         Host.RequestShutdown();
                         break;
                     }

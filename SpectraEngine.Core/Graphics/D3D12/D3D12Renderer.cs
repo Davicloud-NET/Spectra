@@ -280,7 +280,7 @@ public sealed unsafe partial class D3D12Renderer : Renderer
 
         CreateFrameResources((uint)size.X, (uint)size.Y);
 
-        DefaultShader = CreateBaseShader(BaseShaders.LitFileName);
+        CreateDefaultShader();
         _debugShader = CreateBaseShader(BaseShaders.DebugLineFileName);
         _lineBatch = new D3D12LineBatch(this, (D3D12ShaderProgram)_debugShader);
 

@@ -1,8 +1,4 @@
 ﻿using Silk.NET.Direct3D12;
-using Silk.NET.Maths;
-using SpectraEngine.Core.Scene;
-using System.Collections.Generic;
-using System.Numerics;
 
 namespace SpectraEngine.Core.Graphics.D3D12;
 
@@ -10,7 +6,7 @@ namespace SpectraEngine.Core.Graphics.D3D12;
 /// Wireframe variant of <see cref="D3D12ForwardPipeline"/>: same draw list,
 /// drawn with <see cref="FillMode.Wireframe"/>.
 /// </summary>
-public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
+public sealed class D3D12WireframePipeline : ID3D12RenderPipeline
 {
     private D3D12Renderer? _renderer;
 
@@ -38,7 +34,7 @@ public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
                 camera.AspectRatio = aspect;
 
             renderer.CurrentFillMode = FillMode.Wireframe;
-            DrawView(context.View, camera);
+            renderer.DrawLit(context.View, camera, Ambient, shadowLightIndex: -1);
             renderer.CurrentFillMode = FillMode.Solid;
 
             // Inside this pass: world lines need the scene's depth.
@@ -48,40 +44,6 @@ public sealed unsafe class D3D12WireframePipeline : ID3D12RenderPipeline
         {
             renderer.EndPass();
         }
-    }
-
-    private void DrawView(RenderView view, Camera camera)
-    {
-        IReadOnlyList<RenderItem> items = view.Items;
-        for (int i = 0; i < items.Count; i++)
-        {
-            RenderItem item = items[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-
-        IReadOnlyList<RenderItem> worldItems = view.WorldItems;
-        for (int i = 0; i < worldItems.Count; i++)
-        {
-            RenderItem item = worldItems[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-    }
-
-    private void DrawRenderable(Mesh mesh, Material material, Matrix4x4 model, Camera camera, RenderView view)
-    {
-        // A material with no program is skipped, not a crash.
-        if (material.Shader is not { } shader) return;
-
-        shader.SetUniform("uModel", model);
-        shader.SetUniform("uView", camera.View);
-        shader.SetUniform("uProjection", camera.Projection * D3D12Renderer.GlToD3dClipZ);
-        LightUpload.Apply(shader, view, Ambient);
-        material.Apply();
-        shader.Use();
-
-        mesh.Draw();
     }
 
     public void Dispose() { }

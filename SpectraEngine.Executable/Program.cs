@@ -143,6 +143,9 @@ try
 
     var sceneManager = new SceneManager(loggerFactory.CreateLogger<SceneManager>());
     sceneManager.DemoCsgAnimation = options.DemoCsgAnimation;
+
+    // The compare takes its pictures frames apart.
+    sceneManager.DemoSpin = !options.PipelineCompare;
     Log.Information("Demo animation: {Mode}", options.DemoCsgAnimation ? "csg" : "off");
 
     // Must outlive Run: a pack hands out spans into a memory-mapped view, and
@@ -191,6 +194,7 @@ try
     {
         StartInPlayMode = options.StartInPlayMode,
         RunOffscreenProbe = options.OffscreenProbe,
+        RunPipelineCompare = options.PipelineCompare,
         StartupPipeline = options.Pipeline,
         ShadowsEnabled = options.Shadows,
         ProfileFrames = options.Profile,
@@ -233,6 +237,9 @@ try
     // No renderer disposal here: GPU teardown happens on the render thread.
     // Engine catches a render-thread crash, so Run's return value is the only signal.
     if (!engine.Run())
+        Environment.ExitCode = 1;
+
+    if (options.PipelineCompare && engine.PipelineComparePassed != true)
         Environment.ExitCode = 1;
 }
 catch (ArgumentException ex)

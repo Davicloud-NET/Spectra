@@ -236,7 +236,7 @@ public sealed unsafe class D3D11Renderer : Renderer
 
         CreateDefaultStates();
 
-        DefaultShader = CreateBaseShader(BaseShaders.LitFileName);
+        CreateDefaultShader();
         _debugShader = CreateBaseShader(BaseShaders.DebugLineFileName);
         _lineBatch = new D3D11LineBatch(_device, _context, (D3D11ShaderProgram)_debugShader!);
 

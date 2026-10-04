@@ -1,7 +1,4 @@
 ﻿using Silk.NET.OpenGL;
-using SpectraEngine.Core.Scene;
-using System.Collections.Generic;
-using System.Numerics;
 
 namespace SpectraEngine.Core.Graphics.OpenGL;
 
@@ -40,7 +37,7 @@ public sealed class WireframePipeline : IOpenGLRenderPipeline
             gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line);
             gl.Disable(EnableCap.CullFace);
 
-            DrawView(context.View, camera);
+            context.Renderer.DrawLit(context.View, camera, Ambient, shadowLightIndex: -1);
 
             gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill);
             gl.Enable(EnableCap.CullFace);
@@ -52,41 +49,6 @@ public sealed class WireframePipeline : IOpenGLRenderPipeline
         {
             context.Renderer.EndPass();
         }
-    }
-
-    private void DrawView(RenderView view, Camera camera)
-    {
-        IReadOnlyList<RenderItem> items = view.Items;
-        for (int i = 0; i < items.Count; i++)
-        {
-            RenderItem item = items[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-
-        // Static-world chunks: already culled, already in world space.
-        IReadOnlyList<RenderItem> worldItems = view.WorldItems;
-        for (int i = 0; i < worldItems.Count; i++)
-        {
-            RenderItem item = worldItems[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-    }
-
-    private void DrawRenderable(Mesh mesh, Material material, Matrix4x4 model, Camera camera, RenderView view)
-    {
-        // Skip a material whose shader failed to resolve.
-        if (material.Shader is not { } shader) return;
-
-        shader.Use();
-        shader.SetUniform("uModel", model);
-        shader.SetUniform("uView", camera.View);
-        shader.SetUniform("uProjection", camera.Projection);
-        LightUpload.Apply(shader, view, Ambient);
-        material.Apply();
-
-        mesh.Draw();
     }
 
     public void Dispose()

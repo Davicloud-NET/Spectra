@@ -2,6 +2,9 @@
 // height-correlated visibility, Schlick Fresnel.
 // World position is rebuilt from depth. Lights come from a fixed-size uniform
 // array, so there is a cap of 8.
+//
+// Lit.spectrashade carries copies of the lighting functions below for the
+// forward path. Change the two files together.
 
 struct VertexInput {
     [Location(0)] vec3 position;
@@ -328,8 +331,10 @@ shader DeferredLight {
         // SpectraShade has no sampler2DShadow.
         // The circle is rotated per pixel: shadow edges are stored as a
         // texel staircase, and the rotation turns that regular comb into grain.
+        // Snapped to the pixel's centre, so both paths spin a pixel the same way.
+        vec2 cell = Math.Floor(pixel) + vec2(0.5, 0.5);
         float angle = 6.2831853 * Math.Fract(
-            52.9829189 * Math.Fract(0.06711056 * pixel.x + 0.00583715 * pixel.y));
+            52.9829189 * Math.Fract(0.06711056 * cell.x + 0.00583715 * cell.y));
         vec2 spin = vec2(Math.Cos(angle), Math.Sin(angle)) * (uShadowFilterRadius * uShadowTexel);
 
         float sum = CompareBilinear(s.xy + vec2(spin.x, spin.y), rect, reference)

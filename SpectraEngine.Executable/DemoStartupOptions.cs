@@ -47,7 +47,8 @@ internal sealed record DemoStartupOptions(
     bool DemoCsgAnimation = false,
     int FrameContexts = 2,
     bool Uncapped = false,
-    GBufferLayout GBufferLayout = GBufferLayout.Standard)
+    GBufferLayout GBufferLayout = GBufferLayout.Standard,
+    bool PipelineCompare = false)
 {
     // Read only when no command-line switch names the self-test.
     public const string SelfTestEnvironmentVariable = "SPECTRA_SELFTEST";
@@ -62,7 +63,7 @@ internal sealed record DemoStartupOptions(
         "[--project=<folder>] [--save-project=<folder>] [--pack[=true|false]] [--dev[=true|false]] " +
         "[--exit-after-save[=true|false]] " +
         "[--export-entity-schema=<file.sentdef>] [--viewport-compare[=true|false]] " +
-        "[--pacing-probe[=true|false]].";
+        "[--pacing-probe[=true|false]] [--pipeline-compare[=true|false]].";
 
     // Throws ArgumentException on a bad argument; Program logs it as a usage error.
     // An explicit --selftest=false beats the environment value.
@@ -97,6 +98,7 @@ internal sealed record DemoStartupOptions(
         bool exitAfterSave = false;
         bool viewportCompare = false;
         bool pacingProbe = false;
+        bool pipelineCompare = false;
         TimeSpan? fullscreenCycle = null;
 
         for (int i = 0; i < args.Count; i++)
@@ -251,6 +253,12 @@ internal sealed record DemoStartupOptions(
                 case "pacing-probe" or "pacingprobe":
                     pacingProbe = ParseBoolean(value, token);
                     continue;
+
+                // Draws the scene with the deferred pipeline and the forward
+                // one, compares the two pictures and exits.
+                case "pipeline-compare" or "pipelinecompare":
+                    pipelineCompare = ParseBoolean(value, token);
+                    continue;
             }
 
             // Anything else is the positional backend. A second one is a typo.
@@ -302,7 +310,7 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromCommandLine, SelfTestSource.CommandLine,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout);
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare);
 
         if (!string.IsNullOrWhiteSpace(selfTestEnvironmentValue))
         {
@@ -312,14 +320,14 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromEnvironment, SelfTestSource.Environment,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout);
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare);
         }
 
         return new DemoStartupOptions(
             backend ?? GraphicsBackend.OpenGL, false, SelfTestSource.Default,
             fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout);
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare);
     }
 
     private static string ParseName(string? value, string origin)

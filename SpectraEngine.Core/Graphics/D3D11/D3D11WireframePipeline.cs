@@ -1,9 +1,5 @@
 ﻿using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
-using Silk.NET.Maths;
-using SpectraEngine.Core.Scene;
-using System.Collections.Generic;
-using System.Numerics;
 
 namespace SpectraEngine.Core.Graphics.D3D11;
 
@@ -68,7 +64,7 @@ public sealed unsafe class D3D11WireframePipeline : ID3D11RenderPipeline
                 camera.AspectRatio = aspect;
 
             ctx->RSSetState((ID3D11RasterizerState*)_wireframeState.Handle);
-            DrawView(context.View, camera);
+            context.Renderer.DrawLit(context.View, camera, Ambient, shadowLightIndex: -1);
             ctx->RSSetState((ID3D11RasterizerState*)_solidState.Handle);
 
             // Inside the pass: world lines are tested against the scene's depth.
@@ -78,41 +74,6 @@ public sealed unsafe class D3D11WireframePipeline : ID3D11RenderPipeline
         {
             context.Renderer.EndPass();
         }
-    }
-
-    private void DrawView(RenderView view, Camera camera)
-    {
-        IReadOnlyList<RenderItem> items = view.Items;
-        for (int i = 0; i < items.Count; i++)
-        {
-            RenderItem item = items[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-
-        // Static-world chunks, already culled and in world space.
-        IReadOnlyList<RenderItem> worldItems = view.WorldItems;
-        for (int i = 0; i < worldItems.Count; i++)
-        {
-            RenderItem item = worldItems[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-    }
-
-    private void DrawRenderable(Mesh mesh, Material material, Matrix4x4 model, Camera camera, RenderView view)
-    {
-        // A material whose shader failed to resolve is skipped.
-        if (material.Shader is not { } shader) return;
-
-        shader.SetUniform("uModel", model);
-        shader.SetUniform("uView", camera.View);
-        shader.SetUniform("uProjection", camera.Projection * D3D11Renderer.GlToD3dClipZ);
-        LightUpload.Apply(shader, view, Ambient);
-        material.Apply();
-        shader.Use();
-
-        mesh.Draw();
     }
 
     public void Dispose()

@@ -74,7 +74,7 @@ public class OpenGLRenderer : Renderer
 
         EnableFramebufferSrgb(_gl);
 
-        DefaultShader = CreateBaseShader(BaseShaders.LitFileName);
+        CreateDefaultShader();
         _debugShader = CreateBaseShader(BaseShaders.DebugLineFileName);
         _lineBatch = new OpenGLLineBatch(_gl);
 

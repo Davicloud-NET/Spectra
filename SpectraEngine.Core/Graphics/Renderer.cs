@@ -840,6 +840,7 @@ public abstract class Renderer
         _shadowMap = null;
         _shadowShader = null;
         _shadowInstancedShader = null;
+        _unshadowed = null;
 
         // Shaders are freed by the backend's program list. Instance buffers
         // are only held here.
@@ -1428,6 +1429,128 @@ public abstract class Renderer
         {
             EndPass();
         }
+    }
+
+    // The lit shader's shadow sampler. Unit 0 is the material's.
+    private const int LitShadowMapUnit = 1;
+
+    // Fills that sampler on a frame that casts no shadow. An unbound slot
+    // behaves differently per backend.
+    private Texture? _unshadowed;
+
+    /// <summary>
+    /// Creates <see cref="DefaultShader"/> and what <see cref="DrawLit"/> binds
+    /// beside it. Every backend calls this while it initialises.
+    /// </summary>
+    // Not on first use: D3D12 cannot upload a texture once a frame is open.
+    protected void CreateDefaultShader()
+    {
+        DefaultShader = CreateBaseShader(BaseShaders.LitFileName);
+        _unshadowed = CreateTexture(
+            [255, 255, 255, 255], 1, 1, TextureFormat.Rgba8, TextureColorSpace.Linear,
+            TextureFilter.Nearest, TextureWrap.Clamp);
+    }
+
+    // What every draw of one DrawLit call shares.
+    private readonly struct LitFrame(
+        RenderView view, Matrix4x4 viewMatrix, Matrix4x4 projection, Vector3 cameraPosition,
+        float ambient, Vector2 targetSize, ShadowMap? map, int shadowLightIndex)
+    {
+        public readonly RenderView View = view;
+        public readonly Matrix4x4 ViewMatrix = viewMatrix;
+        public readonly Matrix4x4 Projection = projection;
+        public readonly Vector3 CameraPosition = cameraPosition;
+        public readonly float Ambient = ambient;
+        public readonly Vector2 TargetSize = targetSize;
+
+        // Null when nothing casts.
+        public readonly ShadowMap? Map = map;
+        public readonly int ShadowLightIndex = shadowLightIndex;
+    }
+
+    /// <summary>
+    /// Draws the view inside an open pass, each surface with its material's own
+    /// program, lit the way the deferred light pass lights it.
+    /// </summary>
+    /// <param name="shadowLightIndex">
+    /// What <see cref="RenderShadowMap"/> returned for this frame, or -1 for no shadow.
+    /// </param>
+    // The forward and wireframe pipelines of all three backends draw through
+    // this. Forward and deferred have to come out the same picture, and six
+    // copies of this loop did not.
+    //
+    // The order is DrawGeometry's. A parameter a material leaves out keeps the
+    // previous draw's value, so the order is part of the picture.
+    internal void DrawLit(RenderView view, Scene.Camera camera, float ambient, int shadowLightIndex)
+    {
+        using var measured = Profiler.Measure(Diagnostics.FramePhase.Geometry);
+
+        bool casting = shadowLightIndex >= 0 && _shadowMap is not null;
+        var frame = new LitFrame(
+            view, camera.View, camera.Projection * ClipZCorrection, camera.Position, ambient,
+            new Vector2(PassSize.X, PassSize.Y), casting ? _shadowMap : null, casting ? shadowLightIndex : -1);
+
+        ReadOnlySpan<Matrix4x4> transforms = view.InstanceTransforms;
+        for (int i = 0; i < view.Batches.Count; i++)
+        {
+            RenderBatch batch = view.Batches[i];
+            if (batch.Material is not { } material)
+                continue;
+
+            for (int n = 0; n < batch.Count; n++)
+                DrawLitOne(batch.Mesh, material, transforms[batch.Offset + n], frame);
+        }
+
+        // Batches plus SingleItems is all of Items. Don't draw Items too.
+        DrawLitItems(view.SingleItems, frame);
+        DrawLitItems(view.WorldItems, frame);
+    }
+
+    private void DrawLitItems(System.Collections.Generic.IReadOnlyList<RenderItem> items, in LitFrame frame)
+    {
+        for (int i = 0; i < items.Count; i++)
+        {
+            RenderItem item = items[i];
+            if (item.Material is { } material)
+                DrawLitOne(item.Mesh, material, item.World, frame);
+        }
+    }
+
+    private void DrawLitOne(Mesh mesh, Material material, in Matrix4x4 model, in LitFrame frame)
+    {
+        // A material with no program of its own draws with the lit one, as it
+        // does in the geometry pass.
+        if ((material.Shader ?? DefaultShader) is not { } shader) return;
+
+        ShadowMap? map = frame.Map;
+
+        // Every uniform on every draw: two materials can have two programs,
+        // and each program keeps its own copy.
+        if (BindsProgramBeforeUniforms) shader.Use();
+        shader.SetUniform("uModel", model);
+        shader.SetUniform("uView", frame.ViewMatrix);
+        shader.SetUniform("uProjection", frame.Projection);
+        shader.SetUniform("uCameraPosition", frame.CameraPosition);
+        shader.SetUniform("uTargetSize", frame.TargetSize);
+        shader.SetUniform("uNdcToUv", NdcToUv);
+
+        // The same values DrawDeferredLightPass uploads.
+        shader.SetUniform("uShadowLightIndex", frame.ShadowLightIndex);
+        shader.SetUniform("uCascadeCount", map?.FittedCascadeCount ?? 0);
+        shader.SetUniform("uShadowStrength", map is not null ? ShadowStrength : 0f);
+        shader.SetUniform("uShadowTexel", map?.TexelSize ?? 0f);
+        shader.SetUniform("uShadowDepthBias", map?.CompareBias ?? 0f);
+        shader.SetUniform("uShadowFilterRadius", map?.FilterRadius ?? 1f);
+        shader.SetUniform("uWorldToShadow", map is not null ? map.WorldToShadow : IdentityCascades);
+        shader.SetUniform("uCascadeRects", map is not null ? map.CascadeRects : EmptyCascadeRects);
+        if ((map?.Depth ?? _unshadowed) is { } shadowTexture)
+            shader.SetTexture("uShadowMap", LitShadowMapUnit, shadowTexture);
+
+        LightUpload.Apply(shader, frame.View, frame.Ambient);
+        material.ApplyTo(shader);
+        if (!BindsProgramBeforeUniforms) shader.Use();
+
+        mesh.Draw();
     }
 
     /// <summary>

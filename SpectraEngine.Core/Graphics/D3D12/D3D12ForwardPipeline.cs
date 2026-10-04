@@ -1,8 +1,4 @@
 ﻿using Silk.NET.Direct3D12;
-using Silk.NET.Maths;
-using SpectraEngine.Core.Scene;
-using System.Collections.Generic;
-using System.Numerics;
 
 namespace SpectraEngine.Core.Graphics.D3D12;
 
@@ -10,7 +6,7 @@ namespace SpectraEngine.Core.Graphics.D3D12;
 /// Forward rendering on D3D12: draws the frame's <see cref="RenderView"/>
 /// items with their materials' shaders.
 /// </summary>
-public sealed unsafe class D3D12ForwardPipeline : ID3D12RenderPipeline
+public sealed class D3D12ForwardPipeline : ID3D12RenderPipeline
 {
     private D3D12Renderer? _renderer;
 
@@ -29,6 +25,9 @@ public sealed unsafe class D3D12ForwardPipeline : ID3D12RenderPipeline
         // Before the pass: this may create a shader program.
         renderer.PrepareWorldLines(gbuffer: false);
 
+        // Its own pass, so before the scene's.
+        int shadowLight = context.Scene is { } lit ? renderer.RenderShadowMap(lit, context.View) : -1;
+
         renderer.BeginPass(renderer.FrameTarget, PassClear.To(ClearColors.Sky));
         try
         {
@@ -39,7 +38,7 @@ public sealed unsafe class D3D12ForwardPipeline : ID3D12RenderPipeline
             if (renderer.PassAspectRatio is { } aspect)
                 camera.AspectRatio = aspect;
 
-            DrawView(context.View, camera);
+            renderer.DrawLit(context.View, camera, Ambient, shadowLight);
 
             // Inside the pass: world lines are tested against the scene's depth.
             renderer.FlushWorldLines(camera);
@@ -48,41 +47,6 @@ public sealed unsafe class D3D12ForwardPipeline : ID3D12RenderPipeline
         {
             renderer.EndPass();
         }
-    }
-
-    private void DrawView(RenderView view, Camera camera)
-    {
-        IReadOnlyList<RenderItem> items = view.Items;
-        for (int i = 0; i < items.Count; i++)
-        {
-            RenderItem item = items[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-
-        // Static-world chunks, already culled and in world space.
-        IReadOnlyList<RenderItem> worldItems = view.WorldItems;
-        for (int i = 0; i < worldItems.Count; i++)
-        {
-            RenderItem item = worldItems[i];
-            if (item.Material is { } material)
-                DrawRenderable(item.Mesh, material, item.World, camera, view);
-        }
-    }
-
-    private void DrawRenderable(Mesh mesh, Material material, Matrix4x4 model, Camera camera, RenderView view)
-    {
-        // A material whose shader failed to resolve is skipped.
-        if (material.Shader is not { } shader) return;
-
-        shader.SetUniform("uModel", model);
-        shader.SetUniform("uView", camera.View);
-        shader.SetUniform("uProjection", camera.Projection * D3D12Renderer.GlToD3dClipZ);
-        LightUpload.Apply(shader, view, Ambient);
-        material.Apply();
-        shader.Use();
-
-        mesh.Draw();
     }
 
     public void Dispose() { }
