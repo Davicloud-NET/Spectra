@@ -56,7 +56,7 @@ public sealed class Skeleton
             {
                 throw new ArgumentException(
                     $"Bone {i} ('{bone.Name}') names parent {bone.ParentIndex}, which is not before it. " +
-                    "Bones must be in topological order — see the type remarks.",
+                    "Bones must be in topological order: every parent before its children.",
                     nameof(bones));
             }
 
