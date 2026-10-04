@@ -12,8 +12,8 @@ namespace SpectraEngine.Core.Graphics;
 // sampler to a function, so N textures would mean the filter kernel N times.
 public sealed class ShadowMap : IDisposable
 {
-    /// <summary>Default square resolution of the whole atlas: four 1024 cascades, 16 MB.</summary>
-    public const int DefaultResolution = 2048;
+    /// <summary>Default square resolution of the whole atlas: four 2048 cascades, 64 MB.</summary>
+    public const int DefaultResolution = 4096;
 
     /// <summary>Cascades in the 2x2 atlas.</summary>
     public const int MaxCascades = 4;
@@ -79,6 +79,15 @@ public sealed class ShadowMap : IDisposable
     /// logarithmically.
     /// </summary>
     public float SplitBlend { get; set; } = 0.88f;
+
+    /// <summary>
+    /// The distance the splits are counted from. Everything nearer is in the
+    /// first cascade.
+    /// </summary>
+    // Not the camera's near plane. A logarithmic split counted from ten
+    // centimetres ends the first cascade two units out and the second at six,
+    // so most of what is on screen falls in the two coarse ones.
+    public float SplitStart { get; set; } = 2.5f;
 
     /// <summary>
     /// The rasterizer's depth offset while the map is drawn. This is the acne fix.
@@ -160,8 +169,11 @@ public sealed class ShadowMap : IDisposable
             ? 1
             : _cascadeCount;
 
+        // A start past the far end would leave nothing to split.
+        float splitNear = SplitStart < far ? MathF.Max(near, SplitStart) : near;
+
         Span<float> splits = stackalloc float[MaxCascades];
-        ComputeSplits(near, far, cascades, SplitBlend, splits);
+        ComputeSplits(splitNear, far, cascades, SplitBlend, splits);
 
         Matrix4x4 ndcToTexture = NdcToShadowTexture(
             _renderer.DepthToNdcZ, _renderer.TargetOriginIsTopLeft);

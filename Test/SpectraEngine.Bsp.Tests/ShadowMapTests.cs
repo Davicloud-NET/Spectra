@@ -94,6 +94,21 @@ public sealed class ShadowMapTests
         splits[count - 1].ShouldBe(Distance, 1e-4f);
     }
 
+    [Fact]
+    public void Counted_from_further_out_the_first_cascade_reaches_further()
+    {
+        // Counted from the near plane, the first cascade is spent on the two
+        // units in front of the lens.
+        Span<float> fromNearPlane = stackalloc float[ShadowMap.MaxCascades];
+        Span<float> fromStart = stackalloc float[ShadowMap.MaxCascades];
+        ShadowMap.ComputeSplits(Near, 60f, 4, 0.88f, fromNearPlane);
+        ShadowMap.ComputeSplits(2.5f, 60f, 4, 0.88f, fromStart);
+
+        fromNearPlane[0].ShouldBeLessThan(3f);
+        fromStart[0].ShouldBeGreaterThan(6f);
+        fromStart[3].ShouldBe(60f, 1e-4f);
+    }
+
     private static float TexelX(Vector3 world, in Matrix4x4 lightViewProjection)
     {
         Vector4 clip = Vector4.Transform(world, lightViewProjection);

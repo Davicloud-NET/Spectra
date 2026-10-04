@@ -301,10 +301,12 @@ shader Lit {
         return diffuse + specular;
     }
 
-    // Clamp inside the cascade before the atlas offset, or a tap at the edge
-    // reads the neighbouring cascade.
+    // Clamp to the cascade's outermost texel centres before the atlas offset.
+    // A coordinate on the tile's edge is half in the next tile, and the sampler
+    // blends that cascade's depth in.
     float CompareTexel(vec2 texel, vec4 rect, float reference) {
-        vec2 local = Math.Clamp(texel * uShadowTexel, vec2(0.0, 0.0), vec2(1.0, 1.0));
+        float edge = 0.5 * uShadowTexel;
+        vec2 local = Math.Clamp(texel * uShadowTexel, vec2(edge, edge), vec2(1.0 - edge, 1.0 - edge));
         return Math.Step(reference, uShadowMap.Sample(rect.xy + local * rect.z).r);
     }
 
@@ -328,6 +330,11 @@ shader Lit {
             return 1.0;
         }
 
+        // The filter reaches this far from the point: the tap circle, then a
+        // texel and a half for the bilinear taps. A point nearer than that to a
+        // cascade's edge is left to the next cascade, which holds it whole.
+        float reach = (uShadowFilterRadius + 1.5) * uShadowTexel;
+
         // First (sharpest) cascade containing the point. Past the last
         // cascade the point is lit.
         int chosen = -1;
@@ -335,8 +342,8 @@ shader Lit {
             if (chosen < 0) {
                 vec4 probe = uWorldToShadow[k] * vec4(world, 1.0);
                 vec3 p = probe.xyz / probe.w;
-                float inside = Math.Step(0.0, p.x) * Math.Step(p.x, 1.0)
-                             * Math.Step(0.0, p.y) * Math.Step(p.y, 1.0)
+                float inside = Math.Step(reach, p.x) * Math.Step(p.x, 1.0 - reach)
+                             * Math.Step(reach, p.y) * Math.Step(p.y, 1.0 - reach)
                              * Math.Step(p.z, 1.0);
                 if (inside > 0.0) {
                     chosen = k;
