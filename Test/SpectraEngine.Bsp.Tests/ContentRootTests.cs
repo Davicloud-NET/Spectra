@@ -56,7 +56,7 @@ public sealed class ContentRootTests
     [Fact]
     public void Rejects_rooted_paths()
         => Should.Throw<ArgumentException>(
-            () => ContentRoot.NormalizeRelativePath(Path.Combine(ContentRoot.Path, "Textures", "dev_grid.png")));
+            () => ContentRoot.NormalizeRelativePath(@"C:\Assets\Textures\dev_grid.png"));
 
     [Fact]
     public void Resolves_absolute_paths_under_the_given_root()

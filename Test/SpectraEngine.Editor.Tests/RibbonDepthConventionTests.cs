@@ -237,7 +237,8 @@ public sealed class RibbonDepthConventionTests
 
         foreach (string handler in new[]
                  {
-                     "OnShellVerb", "OnRibbonTabClicked", "OnRibbonPinClicked", "WireEntitySplit",
+                     // The pin click only forwards to SetRibbonExpanded.
+                     "OnShellVerb", "OnRibbonTabClicked", "SetRibbonExpanded", "WireEntitySplit",
                  })
         {
             Body(window, handler).ShouldContain(
@@ -258,7 +259,8 @@ public sealed class RibbonDepthConventionTests
         int start = source.IndexOf($"void {method}(", StringComparison.Ordinal);
         start.ShouldBeGreaterThan(-1, $"{method} should exist");
 
-        int end = source.IndexOf(Environment.NewLine + "    private ", start, StringComparison.Ordinal);
+        // "\n", not Environment.NewLine: a checkout can be LF on Windows.
+        int end = source.IndexOf("\n    private ", start, StringComparison.Ordinal);
         if (end < 0)
         {
             end = source.Length;

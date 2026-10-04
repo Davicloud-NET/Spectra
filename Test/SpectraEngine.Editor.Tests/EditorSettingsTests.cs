@@ -55,16 +55,18 @@ public sealed class EditorSettingsTests
     public void Settings_round_trip_through_disk_in_order()
     {
         string path = TempPath();
+        string alpha = Path.Combine(Path.GetTempPath(), "Games", "Alpha");
+        string beta = Path.Combine(Path.GetTempPath(), "Games", "Beta");
         var settings = new EditorSettings();
-        settings.TouchProject(@"C:\Games\Alpha", "Alpha", new DateTime(2026, 8, 1, 10, 30, 0, DateTimeKind.Utc));
-        settings.TouchProject(@"C:\Games\Beta", "Beta", new DateTime(2026, 8, 2, 11, 0, 0, DateTimeKind.Utc));
+        settings.TouchProject(alpha, "Alpha", new DateTime(2026, 8, 1, 10, 30, 0, DateTimeKind.Utc));
+        settings.TouchProject(beta, "Beta", new DateTime(2026, 8, 2, 11, 0, 0, DateTimeKind.Utc));
 
         settings.Save(path, NullLogger.Instance);
         EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
 
         loaded.RecentProjects.Count.ShouldBe(2);
         loaded.RecentProjects[0].Name.ShouldBe("Beta");
-        loaded.RecentProjects[0].Path.ShouldBe(@"C:\Games\Beta");
+        loaded.RecentProjects[0].Path.ShouldBe(beta);
         loaded.RecentProjects[0].OpenedUtc.ShouldBe(new DateTime(2026, 8, 2, 11, 0, 0, DateTimeKind.Utc));
         loaded.RecentProjects[1].Name.ShouldBe("Alpha");
     }

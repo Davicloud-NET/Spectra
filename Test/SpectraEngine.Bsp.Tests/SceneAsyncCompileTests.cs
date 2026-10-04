@@ -269,13 +269,20 @@ public sealed class SceneAsyncCompileTests
 
         const float Step = 0.05f;   // a plausible per-frame drag distance
         const int Frames = 400;
+        const int WantedSwaps = 8;
         float authored = 0f;
         float lastRendered = float.NegativeInfinity;
         int backwards = 0;
         int swaps = 0;
 
-        for (int frame = 0; frame < Frames; frame++)
+        // A slow machine can run 400 frames before a second compile lands, so
+        // keep dragging until enough swaps were seen.
+        var stopwatch = Stopwatch.StartNew();
+        for (int frame = 0; frame < Frames || swaps < WantedSwaps; frame++)
         {
+            if (stopwatch.Elapsed > CompileTimeout)
+                break;
+
             // Zero, one or several edits per frame: a drag that dirties the
             // world faster than compiles can land is the interesting case, and
             // is also what "pump starvation" would look like if it existed.

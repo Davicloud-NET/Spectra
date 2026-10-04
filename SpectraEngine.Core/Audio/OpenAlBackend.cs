@@ -80,6 +80,7 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
             // GetApi resolves the native OpenAL library. On a machine with no
             // OpenAL runtime at all this is where it fails, and it fails by
             // throwing rather than returning null.
+            SilkPlatform.UsePortableRuntimeId();
             alc = ALContext.GetApi();
             al = AL.GetApi();
         }

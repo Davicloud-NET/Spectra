@@ -59,8 +59,13 @@ public static class ModelImporter
 
     // Loaded once for the process. Assimp is IDisposable only to release the
     // native handle, which we want held for as long as models can be loaded.
-    private static readonly Lazy<Assimp> Api =
-        new(Assimp.GetApi, LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<Assimp> Api = new(
+        () =>
+        {
+            SilkPlatform.UsePortableRuntimeId();
+            return Assimp.GetApi();
+        },
+        LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
     /// Imports the model at <paramref name="absolutePath"/>. Any thread.

@@ -80,7 +80,10 @@ public static class ContentRoot
         // content-relative), so strip it before the rooted check — which still
         // has to reject a genuine drive- or device-rooted path.
         ReadOnlySpan<char> remaining = relativePath.AsSpan().TrimStart("/\\");
-        if (System.IO.Path.IsPathRooted(remaining))
+
+        // Linux doesn't call "C:\x" rooted, but it is never a content path.
+        bool hasDrive = remaining.Length >= 2 && remaining[1] == ':' && char.IsAsciiLetter(remaining[0]);
+        if (hasDrive || System.IO.Path.IsPathRooted(remaining))
             throw new ArgumentException(
                 $"Asset path '{relativePath}' must be relative to the content root.", nameof(relativePath));
 

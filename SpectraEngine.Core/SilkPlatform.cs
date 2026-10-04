@@ -2,6 +2,7 @@ using Silk.NET.Input;
 using Silk.NET.Input.Glfw;
 using Silk.NET.Windowing;
 using Silk.NET.Windowing.Glfw;
+using System.Runtime.InteropServices;
 
 namespace SpectraEngine.Core;
 
@@ -58,10 +59,26 @@ public static class SilkPlatform
     /// </summary>
     public static void EnsureRegistered()
     {
+        UsePortableRuntimeId();
+
         GlfwWindowing.RegisterPlatform();
         GlfwInput.RegisterPlatform();
 
         Window.ShouldLoadFirstPartyPlatforms(false);
         InputWindowExtensions.ShouldLoadFirstPartyPlatforms(false);
+    }
+
+    /// <summary>
+    /// Lets Silk.NET find its native libraries on Linux. Call before the first
+    /// <c>GetApi()</c>. Safe to call more than once.
+    /// </summary>
+    // Silk.NET looks under runtimes/<rid>/native with the distro rid
+    // ("ubuntu.24.04-x64"), which Microsoft's runtime builds don't map to
+    // linux-x64. DOTNET_RUNTIME_ID is the override its lookup reads.
+    public static void UsePortableRuntimeId()
+    {
+        const string Variable = "DOTNET_RUNTIME_ID";
+        if (OperatingSystem.IsLinux() && Environment.GetEnvironmentVariable(Variable) is null)
+            Environment.SetEnvironmentVariable(Variable, RuntimeInformation.RuntimeIdentifier);
     }
 }
