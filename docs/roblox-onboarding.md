@@ -21,7 +21,7 @@ This reads as a continuation rather than a pivot because the alignment is alread
 
 What does **not** exist today, verified in the tree, and therefore shapes everything below: no scripting runtime of any kind (no `lua`/`luau` reference anywhere in the solution); no `Script` or `Entity` payload on `SceneNode`; no settable `Parent`, no `Destroy`, no `FindFirstChild`, no `IsA`/`ClassName`, no attributes, no tags, no `Clone`; no `CFrame` and no per-node signals; no scene serializer (the only `Serialize` hits in Core are D3D12 root signatures and the compiled-shader blob writer); and no per-part appearance — `Scene.StaticWorldMaterial` is one `Material` for the entire carved world and `VertexAttribute.StandardLayout` is 8 floats (position, normal, uv) with no colour channel, so two adjacent brushes cannot currently be different colours by any route. That last gap is owned by `ROADMAP.md` `F1`/`E7`, not by this plan, but it is the single most visible thing a migrating developer hits, so it is named here too.
 
-This document also answers an open sign-off in `ROADMAP.md` §11 item 12 — *"Is C#-plus-rebuild acceptable for gameplay logic, or is a scripting VM eventually needed?"* The answer below is **a VM, and it is Luau**, which means `P4`'s `Entity` base class must be designed knowing a VM is coming.
+This document also answers an open sign-off in `docs/archive/roadmap-2026-10.md` §11 item 12 — *"Is C#-plus-rebuild acceptable for gameplay logic, or is a scripting VM eventually needed?"* The answer below is **a VM, and it is Luau**, which means `P4`'s `Entity` base class must be designed knowing a VM is coming.
 
 ---
 
@@ -222,7 +222,7 @@ Also here: `O1`'s value types bound for real — `Vector3` on Luau's native vect
 
 **Depends on** — `O5` (so the binding surface exists to expose it), **`P7a`** (not `P7`, which no longer owns the mechanism). Independent of `O8`/`O9`.
 
-**Risk** — HIGH. It is the first scripting feature that changes *what enters the static placement list*, and that list is guarded by the chunked-vs-monolithic equivalence oracles and the bit-identical determinism tests. Mitigating: a filtered list is just a smaller list, so no oracle should need changing — but per §12 of `ROADMAP.md`, show it, do not assume it, and add a `CsgBench` scenario that spawns and destroys N dynamic parts per frame and re-asserts the *world-size independent* verdict line.
+**Risk** — HIGH. It is the first scripting feature that changes *what enters the static placement list*, and that list is guarded by the chunked-vs-monolithic equivalence oracles and the bit-identical determinism tests. Mitigating: a filtered list is just a smaller list, so no oracle should need changing — but per §12 of `docs/archive/roadmap-2026-10.md`, show it, do not assume it, and add a `CsgBench` scenario that spawns and destroys N dynamic parts per frame and re-asserts the *world-size independent* verdict line.
 
 ---
 
@@ -258,7 +258,7 @@ Also here: `O1`'s value types bound for real — `Vector3` on Luau's native vect
 
 **Depends on** — `O8`, and `ROADMAP.md` `P11a`. **`O9` is the scripting half of `P11a`, not a second play/stop.** `P11a` owns mode switching, the history barrier and diff-restore of the graph; `O9` adds VM teardown/recreation and the structural-vs-transform-only restore discrimination. They should land together or `O9` after, never in parallel.
 
-**Risk** — MEDIUM, plus a scheduling dependency outside this arc. Also inherits `ROADMAP.md` §11 sign-off 5 (diff-restore vs fresh scene) unchanged — that decision is upstream of this milestone, not made by it.
+**Risk** — MEDIUM, plus a scheduling dependency outside this arc. Also inherits `docs/archive/roadmap-2026-10.md` §11 sign-off 5 (diff-restore vs fresh scene) unchanged — that decision is upstream of this milestone, not made by it.
 
 **One honest correction to a premise.** *"Studio does not hot-apply script edits during a playtest"* is Studio's **default**, not an invariant — Studio Settings has an "Always Save Script Changes" option that persists edits made while play-testing. The conclusion still holds (a fresh state per Play is a faithful reproduction of the default loop); the premise just needs stating as a default rather than a guarantee.
 
@@ -276,7 +276,7 @@ Also here: `O1`'s value types bound for real — `Vector3` on Luau's native vect
 
 ## 4. How this interleaves with `ROADMAP.md`'s critical path
 
-`ROADMAP.md`'s shortest path to a usable editor is `F2 → E1 → E2 → E3`, `F1 → E7`, `E4`, `E6`, `P2`, `P11a`. This arc's relationship to it:
+The shortest path to a usable editor in `docs/archive/roadmap-2026-10.md` §4 is `F2 → E1 → E2 → E3`, `F1 → E7`, `E4`, `E6`, `P2`, `P11a`. This arc's relationship to it:
 
 **Runs fully in parallel with the editor arc — start now:**
 - **`O0`** touches only project files and (predicted) two registration calls in `Engine.cs`. Zero collision. It should go first regardless of anything else here, because two shipped projects already claim AOT and nobody has proven it.
@@ -319,4 +319,4 @@ Each of these blocks something concrete. They were all open when this document w
 
 9. **Is the sandbox adversarial or mistake-containing?** Everything above is designed for mistake-containment and says so. An adversarial boundary (running scripts from strangers) needs a separate process and syscall filtering, not `luaL_sandbox` — a completely different architecture, decided now or not at all.
 
-10. **Is 1 Spectra unit = 1 Roblox stud?** Every number in every Roblox tutorial and forum post the developer copies depends on it, and it must be settled before `Size` ships or content exists. This overlaps `ROADMAP.md` §11 item 13 (the default editing grid) — answer them together, not separately.
+10. **Is 1 Spectra unit = 1 Roblox stud?** Every number in every Roblox tutorial and forum post the developer copies depends on it, and it must be settled before `Size` ships or content exists. This overlaps `docs/archive/roadmap-2026-10.md` §11 item 13 (the default editing grid) — answer them together, not separately.

@@ -180,3 +180,4 @@ Tests and tools
 | `docs/console.md`, `docs/networking.md`, `docs/realms.md` | designs that are not built yet |
 | `docs/positioning.md`, `docs/roblox-*.md` | who the engine is for |
 | `docs/archive/architecture-notes-2026-10.md` | the old long guide: past decisions with their reasoning. Search it when you touch a subsystem. |
+| `docs/archive/roadmap-2026-10.md` | the old long roadmap: the reasoning behind each milestone, and the sections and rulings other docs cite |

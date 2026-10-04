@@ -1,831 +1,328 @@
-﻿# Spectra Engine — Roadmap
+# Roadmap
 
-> One dependency-ordered plan for the whole vision: *a Roblox-style edit experience with Source-grade robustness, on a scene-graph spine, with more rendering and custom shaders.*
-> Sizes are relative (**S / M / L**), not calendar estimates. Every milestone is independently shippable and independently verifiable.
-> Read `AGENTS.md` first. It holds the rules this roadmap must never break. The reasoning behind them is in `docs/archive/architecture-notes-2026-10.md`, which is what later mentions of `CLAUDE.md` in this file refer to.
->
-> **Companion documents — eleven, and this is the whole set.** Six own an arc of milestone ids that interleaves with the arcs below and is referenced here by id rather than restated; the other five are a survey, a product thesis, a mapping, a guardrail catalogue and a rule set, and own no milestones. **Start with the first one.**
->
-> | Document | What it owns | Arc |
-> | --- | --- | --- |
-> | [`docs/data-model.md`](docs/data-model.md) | **The orientation page — read it first.** What `SceneNode`, `Scene` and the payloads actually are today, with a `file:line` on every row, and one table separating what exists from what is only designed. It is the counting authority for the payload set. | — (survey) |
-> | [`docs/positioning.md`](docs/positioning.md) | The product thesis: who the engine is for (world-builders: graduating Roblox developers and Hammer mappers), what "easy" means operationally, the genre ladder that earns general appeal, the subsystem arcs the ladder forces, and the open license decision. Sequencing here inherits it. | none (thesis) |
-> | [`docs/roblox-onboarding.md`](docs/roblox-onboarding.md) | The scripting decision (Luau), the script payload, attributes, tags, signals, Play/Stop. | `O0`–`O9` |
-> | [`docs/roblox-to-spectra.md`](docs/roblox-to-spectra.md) | The concept mapping written for a Roblox developer, marked row by row with what exists. | — (mapping) |
-> | [`docs/roblox-pitfalls.md`](docs/roblox-pitfalls.md) | The guardrail catalogue: what professionals reject about Roblox (researched, sourced, recency-checked) and the Spectra stance that avoids each, distilled into three laws and an avoid-list. | none (guardrails) |
-> | [`docs/formats-and-pipeline.md`](docs/formats-and-pipeline.md) | Every file format and the cook: `.spack`, `.smap`/`.scmap`, `.smodel`, `.simage`, `.saudio`, `.sentdef`, `game.spectraproj`, and the `scook` rules. | `D0`–`D22` |
-> | [`docs/console.md`](docs/console.md) | The console as the engine's control surface: typed cvars, commands, binds, cfg files. | `C*` |
-> | [`docs/networking.md`](docs/networking.md) | Server-authoritative replication, the fixed tick, interest management, prediction — plus collaborative editing. | `N*`, `T*` |
-> | [`docs/realms.md`](docs/realms.md) | Audience and liveness as node properties (`Realm`/`State`), replacing Roblox's container folders. Rules `R1`–`R17` — **its own rules, not the `R*` rendering arc below**. | — (rules `R1`–`R17`) |
-> | [`docs/physics.md`](docs/physics.md) | The physics engine choice (Box3D), hulls from brushes, the character mover, networked bodies — **and the world/part brush split (§2.3a), which this document schedules as `P7a`.** | `Y0`–`Y16`; designs `P7a` |
-> | [`docs/negative-brushes.md`](docs/negative-brushes.md) | Subtractive world geometry: `Brush.Operation`, the unordered `⋃{additive} \ ⋃{subtractive}` composition rule, the cavity-wall algorithm, and the verdict on letting a hole move under physics. **Amends `physics.md` §2.1, which becomes a prerequisite of `Y3`.** | designs `P7b` |
->
-> Milestone-id prefixes are a shared namespace: `F`/`E`/`P`/`S`/`R`/`H` are this document's arcs, and `O`, `D`, `C`, `N`/`T` and `Y` belong to the companions above. **`R` is the one overloaded letter** — here it is the rendering arc (`R1`, `R9`, `R10`, …), this document's cross-arc rulings are written with a dash (`R‑1`, `R‑3`, …), and `realms.md`'s rules are always cited document-qualified (`realms.md R15`).
+Spectra is a C#/.NET 10 game engine with a level editor in the spirit of Hammer and Roblox Studio. It is for people who build worlds: Roblox developers who want to own and ship their game, and Hammer mappers who want a current engine they can ship on. You block out a world with brushes, dress it with models and materials, wire behaviour from entities, and press play in the level you are editing. Luau scripting comes on top of that.
 
----
+The first target is a small first-person game made in the editor and in Luau, with no engine code. `docs/positioning.md` has the audience and the steps after that.
 
-## 1. What the engine already delivers
+This file says where the engine is and what comes next. Status was checked against the code on 2026-10-05. The roadmap it replaced is `docs/archive/roadmap-2026-10.md`. That one keeps the reasoning behind each milestone, and the section numbers and rulings (R-1 to R-10) that other docs cite.
 
-This is a continuation, not a wish list. The hard parts of the pillar are done and guarded by tests.
+Milestone ids are listed with their status at the end. Sizes are S, M and L, and only compare milestones with each other.
 
-- **Instant world edits, independent of world size.** Brush edits mark the world dirty, the render thread snapshots `BrushPlacement`s (validating rigidity), a background task carves → snaps → welds → builds per-cell BSP + mesh arrays, and the render thread swaps in only the chunks whose artifacts changed. Steady-state edits go through `CsgWorld.Build(placements, dirtyCells, previousWorld)` → `CsgIncrementalCompiler` with paged copy-on-write carry, so a one-part edit costs **~0.05–0.1 ms at 1k, 10k and 50k parts**, half of them 8,000 units from the origin. The `CsgBench openworld` verdict line says *world-size independent* and must keep saying it.
-- **Open world is real, not aspirational.** Sparse dictionary-keyed 32-unit cell grid (`ChunkCoord`/`ChunkGrid`): negative and distant cells cost the same as the origin. No sealed world, no PVS, no map extents, no leaks-as-blockers. Brush-local frames keep CSG precision position-independent.
-- **A scene graph that is genuinely the spine.** `SceneNode` with stable `Guid Id`, O(1) subtree-brush counting, equality-early-outing transform setters, attach/detach vs. brush-swap fast paths; `Scene` with `NodeAdded`/`NodeRemoved`/`NodeTransformChanged`, a graph-structure version, a dynamic `SceneBvh`, `Raycast`, `QueryFrustum`, a `SelectionSet` with auto-deselect on removal, and screen-ray picking via `Camera.ScreenPointToRay`.
-- **Three render backends, live.** OpenGL, D3D11 and D3D12, each with forward and wireframe pipelines fed by one shared `RenderView` draw list (frustum-culled scene items + chunk-culled world items), plus a depth-off `DebugDraw` line path that works identically on all three and debug-layer message drains on both D3D backends.
-- **Its own shader language.** SpectraShade compiles `.spectrashade` source files to GLSL and HLSL at runtime, per backend, with hot reload on save; the `.specshadecomp` container is a versioned, hand-rolled binary format; an LSP and a VS extension already exist.
-- **Asset loading, in part.** `AssetManager`, `ContentRoot`, `ImageDecoder`/`DecodedImage`, `TextureAsset` and an asset-aware `Material.SetTexture` overload have landed; textures load from a content root that mirrors into the build output.
-- **A test and oracle discipline that is the real asset here.** Chunked-vs-monolithic equivalence oracles (mesh, BSP, weld), bit-identical determinism tests, origin-invariance tests, incremental-compile tests, a GPU-free `FakeRenderer` that records exact vertex/index arrays, and a real-driver GL fixture. Every milestone below inherits the obligation to keep these green.
+## Where it stands
 
-## 2. Ground truth: the asset/material arc is landing in stages
+### World building
 
-The plan was drafted assuming a large asset arc — asset manager, texture loading, `.spectramat` material assets, per-face brush materials with Hammer-style texture axes, per-material chunk submeshes, model import — was already done. It was not; it is landing stage by stage while this roadmap is being written. Status as verified against the working tree (**re-verify before depending on any row — this arc is still in flight**):
+- Brushes are convex solids on scene nodes. World brushes that overlap fuse into one static world.
+- The world compiles in 32-unit chunks on a background thread, and only the chunks an edit touched are rebuilt. The cost of an edit does not grow with the world or with distance from the origin. `CsgBench openworld` checks that.
+- A brush is a world brush or a part. A part keeps its own mesh and moves without a recompile.
+- A brush adds solid or removes it. Subtractive brushes cut doorways and windows.
+- Each face has its own material and texture axes.
+- There is no terrain.
 
-| Stage | Status |
-| --- | --- |
-| Asset manager, texture loading | ✅ landed (`Assets/AssetManager.cs`, `ContentRoot.cs`, `ImageDecoder.cs`, `TextureAsset.cs`) |
-| `.spectramat` material assets | ✅ landed (`Assets/MaterialDefinition.cs`, `MaterialParser.cs`, `Assets/Materials/*.spectramat`, never-null default material) |
-| Per-face brush materials + texture axes | ✅ landed (`Bsp/FaceSurface.cs`; `Brush.FaceSurfaces` at `Brush.cs:148`, `WithFaceMaterial`/`WithFaceSurface`) |
-| Per-material chunk submeshes | ✅ landed (`ChunkSubmesh` at `Bsp/ChunkMesh.cs:39`, `ChunkMesh.Submeshes` at `:95`; `Scene.StaticWorldMaterial` demoted to the fallback for faces naming none) |
-| Model import | ✅ landed (`Assets/ModelImporter.cs` over `Silk.NET.Assimp`, `ModelData`, `AssetManager.Models.cs`, `Scene/ModelInstantiator.cs`) |
-
-**Updated 2026-08-21: this table is no longer a list of gaps — every row above has landed**, re-verified against the working tree at the files cited. `docs/formats-and-pipeline.md` §1 flagged the staleness first and its consequence stands: **`F1` (materials) was the highest-fanout item in the roadmap, and it is now real**, so texturing in the editor, the shader parameter manifest binding, exact tangents for PBR, transparent-face submesh splitting and the map format's `faces` records all bind to a schema that exists rather than one they have to guess. Any milestone below that still reads as though `F1` were pending is describing the past; check the tree, not the prose.
-
-*(The mangled comment markers previously seen in `Engine.cs` were a transient mid-edit artifact and are gone — the tree reads clean.)*
-
----
-
-## 3. Cross-arc rulings
-
-These are the places where two arcs claimed the same work. Each is decided here so it gets built once.
-
-**R‑1. Offscreen render targets belong to the rendering arc (as `R3`), not to the editor and not to the shader arc.**
-Three arcs claimed them: rendering (shadows, post), shader authoring (material preview thumbnails), editor (Uno viewport). They are one subsystem — `RenderTargetDesc` / `RenderTarget` with `Texture ColorTexture`/`DepthTexture` whose *object identity survives a resize*, plus `BeginPass(target, clear)`/`EndPass()` — and everyone else consumes it. **But note the schedule consequence: on Windows the Uno viewport does not need them at all** (composition swapchain + `ISwapChainPanelNative` renders straight to the panel). Offscreen targets are on the critical path only for **Linux hosting**, shadows, post-processing and preview thumbnails. That takes the single largest rendering milestone *off* the path to a usable Windows editor.
-
-**R‑2. The shader parameter manifest belongs to the shader arc (as `S3`), and it lives in `SpectraEngine.Core`, not in the compiler assembly.**
-The editor property grid is a *consumer* of the manifest, never its author. Putting it in Core means the editor reads a shipped shader's properties without hosting the lexer/parser, and means it is testable from the engine's own test projects before any editor exists. The editor arc must not invent a parallel "shader property descriptor".
-
-**R‑3. Per-face brush materials are their own foundation milestone (`F1`), owned by nobody's arc.**
-Rendering wants its texture axes (exact tangents, free), persistence wants its face records, the editor wants a face-texturing tool, shaders want a material asset to bind a manifest to. It is built once, first, and **faces are keyed by PLANE index, never by `LocalFaces` index** — the editor's resize API guarantees plane count/order stability but cannot guarantee face-array stability (a face can clip away entirely). Two arcs independently derived this requirement; it is now binding.
-
-**R‑4. `ViewDrawer` (`F3`) comes before the manifest-driven uniform binder (`S3`).**
-Both rewrite the same hardcoded `SetUniform` blocks in all six pipeline files. Collapse the six copies into one first, then teach that one place to walk Frame/Object manifest entries. Doing it the other way means writing the binder six times and then merging six divergent files.
-
-**R‑5. Undo lives in the editor as inverse commands over the live graph — not as operations over a map document.**
-The persistence arc proposed that the map format's mutation vocabulary *is* the undo vocabulary. Rejected as an implementation, kept as a constraint: undo captures **absolute before/after values addressed by `Guid`**, because the transform setters early-out on equality and `CsgCompileCache` keys on exact matrix equality, so undo restores the exact prior matrix and re-hits the carve cache — a document-replay model would not. The constraint that survives: **every editor mutation must be expressible in the map schema**, enforced by a test (author → mutate → save → load → compare), so the two data models cannot drift.
-
-**R‑6. `SceneNode.Entity` is a third payload alongside `Brush` and `MeshRenderer` — not a subclass, not an ECS, not a parallel list.**
-This keeps the graph-is-the-spine decision intact and keeps serialization free of polymorphic node types.
-
-**R‑7. `Scene.NodeRenamed` must NOT bump `_graphStructureVersion`.**
-`NodeAdded`/`NodeRemoved` do, which forces the static-world snapshot onto its O(world) full-walk path. A rename changes no traversal order. Pin it with a test asserting zero dirty cells after a rename-only edit.
-
-**R‑8. Serialize everything that touches the D3D12 PSO creation path.**
-`R1` (PSO key), `R2` (sRGB RTV), `R3` (offscreen formats), `R10` (blend), `R11` (MSAA) all mutate it, and two landing concurrently conflict badly. One branch, in order.
-
-**R‑9. `P7` (entity brush ownership) and `P7a` (`BrushKind`) must not land concurrently with `E4`/`E6`, nor with each other.**
-All of them do surgery on `SceneNode`'s counters and the brush snapshot path. `P7a` extended this ruling by inheritance rather than by a new argument: it touches the same counter, the same `Brush` setter and the same fifteen snapshot-path sites, and it is the milestone `P7` now depends on. `P7`/`P7a` are the riskiest edits in the roadmap; give each a quiet tree.
-
-> **`P7b` (negative brushes) is NOT covered by this ruling, and inventing a fourth member would be cargo-culting it.** `P7b` touches `Brush`, `Polygon`, `Csg`, one word of `Scene.UpdatePartBrushMembership` and an editor overlay. It adds **no** counter, **no** subtree invariant and **no** snapshot-path gate — its bit is on the immutable `Brush` value, not on `SceneNode`, precisely so the three existing change detectors see it for free (`negative-brushes.md` §2.2). It therefore has an ordinary **dependency** on `P7a` rather than a conflict with it, and it may land beside `E4`/`E6` as far as this ruling is concerned. **What `P7b` does need instead is §12's oracle discipline, in its strongest form:** it edits `Csg.CarveFragment`, which every chunked-vs-monolithic equivalence oracle and every bit-identity determinism test rides on. `E4` and `F1` re-baseline vertex arrays; `P7b` must **not**, and its own non-regression pin is that a world with no subtractive brush compiles **bit-identically to today** (`negative-brushes.md` §3.8, §10 pin 2). If a `P7b` branch and an oracle-re-baselining branch are open at once, the re-baseline lands first and `P7b` rebases onto it — never the reverse, or a subtraction bug gets laundered into the oracle.
-
-**R‑10. The Uno host comes *after* the editing layer works in the existing Silk window.**
-Do not block "a person can build a level" on `ISwapChainPanelNative` interop. `EditorInputFrame` (`E1`) is the seam that makes re-hosting a swap rather than a rewrite.
-
----
-
-## 4. The critical path
-
-**The shortest sequence to an editor a person can build a level in — place, texture, manipulate, save, play:**
-
-```
-F2 (node identity)      →  E1 (editing spine + translate gizmo + undo)
-                        →  E2 (editor camera)          [tiny, enormous felt payoff]
-                        →  E3 (multi-select)
-F1 (materials + faces)  →  E7 (face texturing tool)
-                        →  E4 (brush resize)
-                        →  E6 (duplicate / delete / group)
-F2 + F1                 →  P2 (.spectramap save + load)
-                        →  P11a (play / stop)
-```
-
-Everything else is off the path. In particular: **the Uno shell, offscreen render targets, shadows, PBR, the type checker, the entity system and prefabs are all off the critical path.** A person can build, texture, save and walk a level with `F1, F2, E1–E4, E6, E7, P2, P11a` and nothing else.
-
-**Parallel tracks (make it look and feel better, never block the path):**
-- **Rendering** — `F3 → R1 → R2 → R3 → R4/R5 → R6/R7 → R8 → R9 → R10 → R11 → R12`. Independent after `F3`; only `R9` (tangents) reaches back into `F1`.
-- **Shader authoring** — `F4 → S2 → S3 → S4 → S5 → S6 → S8 → S9`. `S3` needs `F1` and `F3` landed first.
-- **Entities & no-code logic** — `P4 → P5 → P6 → P7 → P8 → P9 → P10`, with **`P7a` (`BrushKind`) landing before `P7`** on its own — it needs only `F1`, not `P4`, so it may run any time the tree is quiet of `E4`/`E6` (ruling R‑9). Needs `F2`; `P9` needs `P2`; `P8` also needs `physics.md` `Y0` for the BVH overlap queries.
-- **Negative brushes** — **`P7a → P7b`**, and nothing else in the `P` arc is on that path. `P7b` needs `P7a` (it edits `Scene.UpdatePartBrushMembership` and depends on `BrushKind.Part` for its inert-projectile case) and `F1` (cavity walls carry `FaceSurface` payloads), but it needs **no** entity system, no physics and no `P7`. It is off the critical path.
-- **Hosting**: `H1 -> H2 -> H3 -> H10 -> H11 -> H12`, and the arc is COMPLETE at `H12`. Needs `E1`; `H3` needs `R3`; `H11` needs `H3` for a pane that can be a drop target at all, and `H12` needs `H11` for a gesture to draw an affordance FOR. What the arc still owes is not a hosting stage: the Linux viewport is an embedded OpenGL context (`H2`'s flagged risk, still open), and `Auto` still has to earn the composited flip per machine.
-
----
-
-## 5. Phase 0 — Foundations
-
-Everything downstream is cheaper if these land first. Total: one medium (`F1`) and three small.
-
-### F1 — Material assets, per-face brush materials, per-material chunk submeshes
-`.spectramat` material asset (shader reference + parameter values + texture references by content-relative path), per-face material assignment on `Brush` **keyed by plane index**, Hammer-style per-face texture axes (u/v axis, shift, scale, rotation), and per-material submesh splitting in `ChunkMeshBuilder`/`ChunkMesh` so a chunk can draw more than one material.
-- **Unlocks** — editor texturing (`E7`), manifest↔material binding (`S3`), exact tangents for PBR (`R9`), transparent-face splitting (`R10`), face records in the map format (`P3`).
-- **Depends on** — nothing. The already-landed `AssetManager`/`TextureAsset` work is its base.
-- **Touches** — `Bsp/Brush.cs`, `Bsp/ChunkMeshBuilder.cs`, `Bsp/ChunkMesh.cs`, `Scene/StaticWorldChunkMesh.cs`, `Graphics/Material.cs`, `Assets/AssetManager.cs`, `Graphics/RenderView.cs` (world items stop sharing one `StaticWorldMaterial`).
-- **Risk** — **HIGH.** This changes the shape of chunk mesh output, which is exactly what the chunked-vs-monolithic equivalence oracles and the bit-identical determinism tests compare. They are structural rather than golden-file so they should survive, but any snapshot of vertex arrays needs deliberate regeneration — verify correctness *before* re-baselining or a bug gets laundered into the oracle. Second risk: per-material submeshes multiply draw calls per chunk; measure against `CsgBench openworld` before merge.
-- **Size** — **L.**
-
-### F2 — Node identity seam
-`SceneNode(name, Guid id)` (the code comment already reserves this "for the serialization arc"), a `Name` setter raising a new `Scene.NodeRenamed`, `Scene.TryFindById(Guid)` backed by a dictionary maintained from the existing add/remove raise helpers, and `EngineInfo.MinimumReadableMapVersion`.
-- **Unlocks** — literally all of persistence, and Guid-addressed undo commands in `E1`.
-- **Depends on** — nothing. **Ship first.**
-- **Touches** — `Scene/SceneNode.cs`, `Scene/Scene.cs`, `EngineInfo.cs`.
-- **Risk** — **LOW**, with two sharp edges: `NodeRenamed` must not bump `_graphStructureVersion` (ruling R‑7), and duplicate GUIDs on load must be a named, loud error rather than a dictionary overwrite.
-- **Size** — **S.**
-
-### F3 — Collapse the six draw bodies into one `ViewDrawer`
-~325 of the 635 lines across the six pipeline files are copies. Extract the byte-identical `DrawView` and near-identical `DrawRenderable` into `Graphics/ViewDrawer.cs`; add `readonly record struct PassConstants(View, Projection, LightDirection, CameraPosition)` built once per pass; add `virtual Renderer.ClipSpaceCorrection` (identity on GL, `GlToD3dClipZ` on both D3D backends) so the remap stops being named in four pipeline files; express the **documented `Use()`/`SetUniform` seam exactly once** as `ShaderProgram.BindForDraw()` (GL override binds-then-pushes; D3D pushes-then-binds); move the six duplicated `LightDirection` properties onto `Scene`, where they belong.
-- **Unlocks** — every rendering milestone, and `S3`'s manifest-driven binder. Also the only place a second pass (shadow, post, preview) can be expressed at all.
-- **Depends on** — nothing.
-- **Touches** — new `Graphics/ViewDrawer.cs` + `PassConstants.cs`; `Graphics/Renderer.cs`, `ShaderProgram.cs`, all three `*ShaderProgram.cs`, all six pipeline files, `Scene/Scene.cs`.
-- **Risk** — **MEDIUM.** Touches all three backends with no new feature to verify against, so a regression's only symptom is "looks slightly wrong". The D3D12 path is the subtle one: `D3D12ShaderProgram.Use()` has frame-sensitive cbuffer-slice logic, so moving the call site must not change how many times per frame it runs per program. Keep the diff strictly mechanical; verify with per-backend before/after screenshots in both pipelines.
-- **Size** — **M** (≈350 lines deleted, ≈150 added).
-- **Explicitly deferred** — switching GL to `glProgramUniform*` (which would erase the seam entirely) raises the minimum GL version and touches every overload. Separate change, separate verification.
-
-### F4 — Diagnostics contract
-`DiagnosticCode` (`SS####`, reserved ranges: 0xxx lexer, 1xxx parser, 2xxx analyzer/types, 3xxx linker, 4xxx codegen), a non-throwing `TryCompile(source, targets, out CompileResult)` on `IShaderCompiler` with the throwing `Compile` kept as a wrapper, `ShaderHotReloader` consuming it and exposing structured diagnostics via an event, and **corrections to `FEATURES.md`/`LANGUAGE.md`, which currently claim imports, bitwise operators and `const`/`in`/`out` work when none of them do.**
-- **Unlocks** — an errors panel, inline squiggles and per-error doc links in any editor; the hot reloader currently has only `ex.Message`.
-- **Depends on** — nothing.
-- **Touches** — `SpectraShade.Compiler/Diagnostic.cs` (+ new `DiagnosticCode.cs`), `SpectraShadeCompiler.cs`, `Syntax/Parser.cs`, `Analysis/SemanticAnalyzer.cs`, `Core/Graphics/Shaders/IShaderCompiler.cs`, `Core/Graphics/ShaderHotReloader.cs`, CLI, LSP sync handler, both docs.
-- **Risk** — **LOW.** Mostly additive; the only lasting hazard is careless code assignment, hence the reserved ranges and never reusing a retired number.
-- **Size** — **S.**
-
----
-
-## 6. Arc E — Editor interaction (the critical path)
-
-Lives in a **new `SpectraEngine.Editing` assembly** referencing Core, so a shipped game binary carries no gizmo/undo/PIE code. Core gains only small, legitimate additions (public node-bounds accessor, `TryGetNode(Guid)`, `InsertChild(index, child)`, `ContainsBrushes`, `ValidateBrushRigidity`, `Brush` offset/clone APIs, batched `SelectionSet.SetRange`).
-
-**Pinned design decisions:**
-- Gizmo hit-testing is **analytic and screen-space** (project handles to pixels, measure point-to-segment distance against a pixel tolerance). No GPU ID buffer — the engine has no render targets, a readback would stall the render thread, and the analytic path is fully unit-testable headlessly with a synthetic camera.
-- The editing layer consumes a host-agnostic **`EditorInputFrame`** value struct and never references Silk.NET. This is the single decision that makes Uno hosting non-invasive later.
-- Snapping applies to the **absolute target**, not the accumulated delta (`applied = snap(start + raw) - start`), so parts *land* on the grid instead of preserving an off-grid offset forever.
-- Brush resize produces a **new immutable `Brush`** via plane-offset derivation and assigns it to `node.Brush`; node scale is never touched. This rides the existing brush-swap fast path, so a resize drag costs exactly what a move drag costs.
-
-### E1 — Editing spine, translate gizmo, transform undo
-`EditorSession` + thread-safe `EditorCommandQueue` (drained once per frame, before the static-world pump). `TranslateGizmo`: 3 axis arrows, 3 plane handles, 1 screen-space centre handle, constant screen size, drawn into the already-depth-off `DebugDraw`. Drag machine Idle→Hover→Dragging→Commit|Cancel with grab-anchor capture, ray-vs-axis closest approach, a near-parallel guard, Esc/right-click/capture-loss cancel. `IEditCommand` + `EditHistory` (bounded, `Changed` event) with one command type: `TransformNodesCommand` (Guid + before/after `Transform`). Effective-selection rule (drop nodes with a selected ancestor) computed at grab; world-delta → parent-space per node.
-- **Unlocks** — every other editor milestone; the four seams (input contract, command queue, gizmo framework, history) exist exactly once.
-- **Depends on** — `F2`.
-- **Risk** — **MEDIUM.** The near-parallel axis-drag singularity must be guarded or parts teleport. Applying a world delta under a non-uniformly-scaled parent composes to shear, which `Scene.DescribeNonRigidDefect` rejects — **freezing all world compilation with only a log line** — so rigidity must be validated at gesture time, not discovered at compile time. 1-pixel `GL_LINES` gizmos look cheap on high-DPI; usability is preserved by generous pixel tolerances, appearance is deferred.
-- **Size** — **L** (the largest editor milestone; four seams at once).
-
-### E2 — Editor camera: orbit, pan, zoom-to-cursor, frame selection
-RMB look (existing fly behaviour retained), MMB/Space pan proportional to pivot distance, wheel dollies **toward the point under the cursor**, Alt+LMB orbits the selection pivot, F frames the selection.
-- **Unlocks** — the difference between a tech demo and something that feels like an editor.
-- **Depends on** — `E1`.
-- **Risk** — **LOW.** Pitch clamp interacts with orbit past vertical (standard, acceptable).
-- **Size** — **S.** *Highest felt-quality-per-line ratio in the entire roadmap — do it early.*
-
-### E3 — Multi-select: box select, modifiers, batched selection
-`Camera.ScreenRectToFrustum`, marquee drawn as **unprojected world-space debug lines** (zero backend work), click-vs-drag threshold, Shift add / Ctrl toggle, opt-in fully-contained mode, and `SelectionSet.SetRange` raising **exactly one** `SelectionChanged` — today selecting 500 nodes raises 500 events, which would thrash any UI binding.
-- **Depends on** — `E1`. Independent of `E2`.
-- **Risk** — **LOW–MEDIUM.** `Frustum.Intersects` is conservative, so intersect-mode can pick up corner-region false positives; documented, with fully-contained as the exact mode.
-- **Size** — **M.**
-
-### E7 — Face texturing tool *(critical path; sequence right after `F1`)*
-Face picking (ray → brush → plane index), per-face material assignment, and a Hammer-style texture-axis manipulator: shift, scale, rotate, justify (fit/centre/align to world axes), and align-to-face. Undo entries capture before/after face records.
-- **Unlocks** — the "texture" verb in *place, texture, manipulate, save, play*.
-- **Depends on** — `F1`, `E1`.
-- **Risk** — **MEDIUM.** Texture-axis manipulation is the classic place where "looks right on axis-aligned faces, wrong on angled ones" hides; test against a rotated brush explicitly.
-- **Size** — **M.**
-
-### E4 — Brush resize as a first-class part operation
-`Brush.WithPlaneOffsets` / `WithFaceOffset` / `TryWithPlaneOffsets` (non-throwing, for the drag path) plus internal `CloneShape()`. One camera-facing handle per plane at the face-polygon centroid, back-facing handles culled; drag constrained to the face normal; absolute snapping; Alt = symmetric; minimum-extent clamp. On commit, re-centre the planes and compensate `LocalPosition` as one compound undo entry.
-- **Key optimisation, and it is provable rather than heuristic:** offset-only derivation **skips the boundedness probe** (which costs a second full `BuildFaces` pass). Boundedness of `{x : nᵢ·x + dᵢ ≤ 0}` depends only on the recession cone `{x : nᵢ·x ≤ 0}`, a function of the **normals alone** — so if the source was bounded, every offset-only derivative is bounded. Duplicate-plane rejection likewise cannot newly trigger. The only remaining failure (offsets pushed past each other) is already caught by the existing "planes clip every face away" check, and the tool clamps rather than throws.
-- **Depends on** — `E1`; **requires `F1`'s plane-index face keying** (ruling R‑3).
-- **Risk** — **MEDIUM.** A per-frame new `Brush` is a guaranteed carve-cache miss for that brush — correct, and identical in cost to a move drag, but confirm against the `openworld` benchmark verdict line before merge.
-- **Size** — **M–L.** *This is the milestone that makes brushes feel like Roblox parts.*
-
-### E5 — Rotate gizmo, angle snapping, local/world space
-Front-face-culled rings, ray-vs-ring-plane angle with ±π unwrapping, absolute angle snapping (15° default, Ctrl inverts), rotation about the selection pivot with per-node parent-space conversion, `GizmoSpace {World, Local}`. Scale-mode routing: brush nodes → `E4` resize; mesh nodes → `LocalScale`; **a group containing brush descendants refuses non-uniform scale with a user-facing message** rather than producing shear that freezes world compilation.
-- **Depends on** — `E1`, `E4`.
-- **Risk** — **MEDIUM.** Quaternion composition against `Scale·Rotation·Translation` with row-vector `world = local · parent.World` is where sign/order bugs live — test, do not eyeball. Absolute value capture is what prevents rotate-undo-rotate drift.
-- **Size** — **M.**
-
-### E6 — Structural edits: duplicate, delete, group/ungroup ✅ **landed 2026-08-28** *(Alt+drag duplicate outstanding)*
-`SceneNode.Clone(deep)`, `SceneNode.InsertChild(index, child)`, `Brush.CloneShape()`, `Light.Clone()`, and `AddNodesCommand`/`RemoveNodesCommand`/`ReparentNodesCommand` recording parent Guid + sibling index. `StructuralEditor` composes the four verbs out of those three commands plus the transform command that already existed, so the index restoration is written once. Ctrl+D, Delete, Ctrl+G, Ctrl+Shift+G. Pinned by `StructuralEditTests` (graph half) and `StructuralOrderTests` (geometry half).
-- **`InsertChild` is not optional:** `AddChild` only appends, and a re-added node landing at a different sibling index changes traversal order → carve order → **different-but-valid geometry**, breaking the bit-identical determinism oracles.
-- **The readiness sweep found that NO existing oracle covers that chain**, and it is worth knowing why: every determinism and chunked-vs-monolithic oracle builds a literal `BrushPlacement[]` and calls `CsgWorld.Build` directly, which is the right shape for "identical placements give identical floats" and blind to the step that decides what the placements *are*. An `InsertChild` that silently appended would have left the whole suite green. `StructuralOrderTests` is that missing test.
-- **A node carries THREE payloads, not the two this milestone originally named, and each is copied differently.** `MeshRenderer` is shared by reference (immutable, renderer-owned). `Brush` is cloned, not because it is mutable (it is not) but because `CsgCompileCache` keys on reference identity and holds one entry per instance, so every duplicate past the first would re-carve on every compile forever. **`Light` is the one MUTABLE payload** and must be copied, or dimming a duplicate dims its original.
-- **Two live bugs it walked into, both fixed here.** `Scene.OnNodeAdded` never rechecked light membership while `OnNodeRemoved` dropped it unconditionally, so a deleted-and-undone light node was extinguished permanently, silently. And `AddChild` had no cycle guard, which a reparent reaches by ordinary slip (dragging a parent onto its own child); a cycle surfaces not as an exception but as a hang, on the next frame that walks the graph.
-- **Known and accepted:** `Scene._drawableNodes` is maintained in append order, so an undo restores carve order but not draw order. Harmless today because nothing depends on draw order, and it will matter the moment sorting or transparency lands (`R10`).
-- **Still owed:** Alt+drag duplicate, which is a fourth meaning of a viewport press and belongs beside `ViewportInteractionController`'s existing arbitration rather than in the keymap; and a `duplicate` CsgBench scenario, because §12's chaining clause applies and the `openworld` verdict is scoped to the MOVE gesture (its own comment excludes add/remove, which pay the validated-fallback floor by design).
-- **Depends on** — `E1`, `E3`, `E4`. **Size** — **M.**
-
-### E9 — Switchable gizmo styles: Studio and Classic *(core landed 2026-08-28; three follow-ups remain)*
-**Landed.** `GizmoStyle` is the seam, and `GizmoStyle.Studio` is now the default. `GizmoHandle` carries six axis values (`AxisNegX`/`Y`/`Z`, contiguous after the positive three so `IsAxis` stays a range test), which is what makes a face-anchored resize able to reach all six faces instead of three. Studio: six per-face handles standing on the selection's own box, bounds-centre pivot, face-anchored resize, no plane quads, no view ring. Classic: the previous layout bit-for-bit, plus its correct pairing of three handles with a resize symmetric about the pivot. `GizmoController.Style` mirrors `Orientation` (reference early-out, `Active.Reset()` before the switch, `StyleChanged`), with `GizmoCommand.ToggleStyle` bound to **Y**; the demo reports the live style in the periodic stats line (`move/Studio`). Pinned by `GizmoStyleTests`, with the shape suites naming their style and the invariants (cancel exactness, no-op commits, one-notch-is-one-increment) running under both.
-- **The seam turned out to be DATA, not an `IGizmoStyle` strategy**, and that is better than specified: everything that varies is a flag, a number or an enum, so there is still exactly one `Pick` and one `Draw` per tool, both reading the roster off the same `GizmoGeometry`. Two implementations per tool would have been two chances for drawing and picking to disagree per style, which is the one property this subsystem has always refused to risk.
-- **Two more the adversarial review found, both confirmed by measurement and both fixed here.** (1) The handle's sign is a fact about the GIZMO's frame while the anchor is a coordinate in the NODE's, so they have to be reconciled per node: a selection member turned more than a right angle from the gizmo's frame was planting the face on the side the user was dragging toward, and grew backwards out of the same drag that grew everything else forwards. `ScaleGizmo.ResolveAnchor` now picks the corner by `dot(nodeAxis, constraintAxis)`, once at the grab. (2) A symmetric resize scaled about the node's ORIGIN rather than the object's centre, so for off-centre geometry the two faces moved by different amounts and the handle drifted off the cursor; it holds the local bounds' centre now, which is bit-identical for the centred bounds a box brush has and correct for everything else.
-- **Known and accepted, both cosmetic and both measured:** a Studio rotate ring is re-measured per drag frame, so its radius wanders about 10% over a 90-degree sweep (the extent perpendicular to the ring changes as the object turns, though its size does not); and the pick tolerance is still converted at the PIVOT's depth, which was exact when every handle sat within a hundred pixels of the pivot and is approximate now that a large selection's handles do not. Neither produces a wrong edit. The ring wants an in-plane circumradius rather than a frame-aligned extent, which is rotation-invariant by construction; the tolerance wants converting at the handle's own depth.
-- **Two traps the sweep found, both silent:** `ScaleGizmo`'s axis mask must be taken from the handle's AXIS (`GizmoHandles.PositiveAxis`), because the raw handle drops the negative values into the table's uniform default and a −x drag then resizes all three axes with no throw and no log; and `GizmoColors` must map both ends of an axis to the axis colour or negative handles draw white. The claim in this milestone's earlier text that "every existing switch degrades safely on unknown values" was false for exactly those two.
-- **Still owed (1): surface dragging** for press-on-object under Studio (per-frame scene raycast excluding the drag targets via an `IGizmoSurfaceQuery` backed by the scene the tool already holds, with the last surface extended as a virtual plane when the ray leaves geometry). Today both styles free-move in the camera plane; the constraint is a new kind and must refuse on the same sin² scale as the existing guards.
-- **Still owed (2): a filled-triangle batch in `DebugDraw`** so plane quads, the centre disc and the resize cubes can fill the interiors they already pick. Surveyed: no new shader and no new pipeline are needed (`DebugLine.spectrashade` is already unlit per-vertex-colour and all three overlay passes are open and depth-off). What it takes is a parallel triangle vertex stream on `DebugDraw`, a triangle-topology variant of each of the three line batches, and consistent CCW winding on the generated handles, since the debug flush inherits back-face culling on GL and D3D11 and derives cull mode from `FillMode` inside D3D12's `GetPso`.
-- **Also open:** group-box multi-select resize (sizes and offsets scaling together about the box centre); today each node in a selection still resizes about its own bounds, which is correct per node but is not what Studio does to a group.
-- **Depends on** — `E1`, `E4`, `E5` (all landed). **Size** — **S** for what remains.
-
-### E8 — Advanced snapping: vertex / edge / face / surface placement
-`SnapSolver` gathering candidates from a **bounded BVH box query** around the moving selection (never a world walk), priority vertex > edge > face-plane > grid with pixel-space acceptance radii, plus Roblox-style surface placement (drop flush against geometry under the cursor, optionally aligning up to the surface normal). Snap indicator via `DebugDraw`; settings on `EditorSettings` so a UI can bind them.
-- **Unlocks** — brushes that butt together exactly, so no T-junctions and no CSG seams.
-- **Depends on** — `E1`, `E4`.
-- **Risk** — **MEDIUM.** The feature most likely to feel wrong on the first attempt: radii, priority and **hysteresis** need play-testing, not unit tests. A snap that engages and disengages every frame is worse than no snap.
-- **Size** — **M**, plus an unusually large share of tuning time.
-
----
-
-## 7. Arc P — Persistence & entities
-
-**Pinned (amended 2026-08-27, see `formats-and-pipeline.md` §2.6):** `.spectramap`/`.smap` is a **folder bundle**: `map.json` (text, JSON, the grammar below) plus `scripts/*.luau` as real files, byte-identity per file, unknown files preserved. A game is multiple maps, each bundle cooking to one binary `.scmap` (which supersedes `.spectramapb`). Codecs are hand-rolled `Utf8JsonReader`/`Utf8JsonWriter` — not `JsonSerializer` source-gen — because `Brush` has a validating constructor and no parameterless ctor (so DTOs would be needed anyway), because unknown-member *preservation* is explicit reader code rather than an attribute, and because `Utf8JsonReader` is a ref struct with zero trim/AOT surface. **The map contains zero derived data**: no carved surfaces, no BSP, no chunk meshes. Loading authors nodes and calls `Scene.RebuildStaticWorld`.
-
-### P2 — `.spectramap` v1: geometry-only round trip *(critical path)*
-Header (magic, `MapFormatVersion` + `MinimumReadableMapVersion`), scene name, camera, node graph (Guid, name, local transform, children), brushes as authored plane lists with an **optional, open, preserved-when-unrecognised** `faces` array, and asset references as content-root-relative POSIX paths. **The artifact is a folder bundle** (`formats-and-pipeline.md` §2.6 amendment): v1 writes `map.json` inside the bundle directory; script payloads land as `scripts/*.luau` files once `O8` exists, and the round-trip pins below apply per file.
-- **Two pinned invariants.** (1) Every float is written with **shortest-round-trip** formatting and `save → load → save` **byte identity is a test** — a one-ULP perturbation of a plane offset shifts the carve, the snap grid, the weld band and the per-cell BSP, and the determinism guarantees silently stop meaning anything across a save. (2) Unknown members are skipped on read and re-emitted verbatim on save, so an older engine opens a newer map and re-saves it without destroying data.
-- **Depends on** — `F2`. `faces` fills in with `P3` once `F1` lands.
-- **Risk** — **MEDIUM.** `Brush`'s constructor rejects duplicate/unbounded plane sets, so a hand-edited or merged map surfaces as an `ArgumentException` from deep inside `Brush` — the reader must catch and re-report with node name and file offset, or the first bad map is undebuggable.
-- **Size** — **M.**
-
-### P3 — Face materials and texture axes in the format
-Fills in `P2`'s open `faces` records with the `F1` schema; a map referencing a missing asset **loads**, logging one error per missing asset and substituting a loud magenta placeholder.
-- **Depends on** — `P2`, `F1`.
-- **Risk** — **LOW** once `F1` exists. Asset *decode* may be off-thread; `CreateTexture`/`CreateMesh` must be marshalled to the render thread, exactly as the chunk-mesh pump already does.
-- **Size** — **S–M.**
-
-### P11a — Play / stop *(critical path)*
-`EditorMode {Edit, Play, Paused}`; capture authored state on Play, **diff-restore** on Stop (assign only what differs — the transform setters early-out on equality, so untouched nodes dirty nothing and the incremental compiler repairs only the cells gameplay disturbed); history barrier at Play entry. Mode switches are ordinary render-thread edits and must never call the synchronous `RebuildStaticWorld`.
-- **Depends on** — `E6` (`InsertChild`, structural commands).
-- **Risk** — **MEDIUM.** Snapshot is cheap only because `Brush` is immutable (it holds brush *references*, not deep copies). The alternative model — spawn a fresh scene deserialized from the document and discard it on Stop — is better once entities have runtime state, but costs a full world recompile and doubles GPU residency on every Play. **This is a sign-off decision (§9.5).**
-- **Size** — **M.**
-
-### P4 — Entity runtime core ✅ **landed 2026-09-03**
-`Entity` base (node back-reference, `OnSpawn`/`OnActivate`/`OnRemove`, `SetNextThink`, `AcceptInput`, `FireOutput`), Source's connection tuple `(TargetName, InputName, ParameterOverride, Delay, TimesToFire)` with `-1` = infinite, a binary min-heap keyed on `(fireTime, monotonicSequence)` for fully deterministic ordering, `TargetNameIndex` (name → list, `!self`/`!activator`/`!caller`, trailing-`*`), `EntityWorld`, `EntityCatalog`. **`targetname` IS `SceneNode.Name`** — one identity, one field, duplicates allowed (firing at a name fires every match). `EntityWorld.Tick(dt)` runs on the **render thread**, after `SceneManager.Update` and **before** `ProcessStaticWorldCompilation`, so an entity that moves a world brush gets its dirty cells captured the same frame.
-- **Depends on** — `F2` (needs `NodeRenamed` for the index).
-- **Risk** — **MEDIUM.** Two named hazards: scene event handlers must not mutate the graph, so entity spawn/despawn driven by those events must be **deferred to the tick**; and zero-delay I/O cascades need a per-tick dispatch budget that trips **loudly, naming the offending targetname**, or the first mutual relay a user builds hangs the render thread with no clue why.
-- **Size** — **L.**
-- **AS BUILT.** `SpectraEngine.Core/Entities/`: `Entity`, `EntityData` (the authored strings on the node), `EntityConnection`, `EntityOutput` (the RUNTIME copy of the wires), `EntityEventQueue` (one min-heap on `(fireTime, monotonicSequence)`), `TargetNameIndex`, `EntityCatalog`, `PlaceholderEntity`, `EntityWorld`. Both named hazards are built and pinned: `QueueSpawn`/`QueueDespawn` defer to the end of the tick, and `MaxDispatchesPerTick` trips at Error naming the targetname and the output. `SceneManager.StartEntityWorld`/`StopEntityWorld` are the play-mode boundary and `Engine` ticks the world inside the fixed loop with the FIXED delta. Oracles: `EntityWorldTests`, `EntityHostingTests`, `TargetNameIndexTests`, `EntityDataTests`, `KeyvalueWireTests`.
-- **The activation phases are FOUR, not the two this entry implied**, and the split matters: construct-and-parse, then index-and-wire, then spawn all, then activate all. Collapsing spawn into activate means a timer with a short interval delivers its first output at a target that has not been built - intermittently, depending on where in the tree the two of them sit.
-- **`EntityCatalog` enumerates in classname order and freezes on first read**, because the order module initializers run in is loader-dependent and the `.sentdef` this feeds must be byte-stable across runs. The freeze is what makes a class registered after the first lookup a throw instead of a difference somebody notices in a shipped file.
-- **The runtime NEVER writes back**, which is the architectural claim the whole arc rests on and is what makes play/stop need no state capture at all. Times-to-fire counts down on `EntityOutput`'s copy of each wire; the authored `EntityConnection` in `EntityData` is untouched. Pinned end to end by `EntityMapEndToEndTests` - a fixture map plays twice, fires, and projects back to bytes identical to what it loaded - and falsified deliberately against a probe that wrote the decrement back, which turns three of that file's seven tests red.
-
-### P5 — Entity source generator + schema export ✅ **landed 2026-09-03**
-A `netstandard2.0` Roslyn **incremental** generator emitting, per `[SpectraEntity("func_door")]` class: the string→typed keyvalue parse switch, the input dispatch switch, output declarations, a static `EntitySchema` (the FGD equivalent), and a `[ModuleInitializer]` registering into `EntityCatalog`. Plus `--export-entity-schema` so an editor can build property panels and I/O wiring UI from a `.sentdef` **without referencing the game assembly** (binary, not JSON: `formats-and-pipeline.md` §3.2 is normative, and one export format is what keeps the editor at exactly one schema consumer). Analyzer diagnostics for non-partial classes, duplicate classnames, unsupported property types, wrong input signatures.
-- **Keyvalues are string-typed on the wire**, exactly like an FGD/VMF. This kills three problems at once: no polymorphic JSON, no coupling of the on-disk format to C# type shape, and an unknown classname loads as a placeholder that keeps its data and re-saves losslessly.
-- **Depends on** — `P4`.
-- **Risk** — **MEDIUM–HIGH**, mostly plumbing: `netstandard2.0` inside a `net10.0` solution whose `Directory.Build.props` sets `TargetFramework` globally; a `Microsoft.CodeAnalysis.CSharp` pin the installed SDK's Roslyn actually hosts; and incremental-generator caching (capturing `ISymbol` in the pipeline destroys it). Mitigate with Verify snapshot tests, already used by the compiler tests, and by re-running every `P4` test against generated entities.
-- **Size** — **L.**
-- **AS BUILT.** `SpectraEngine.Entities.Generator` (netstandard2.0, an incremental generator) emits all five parts per `[SpectraEntity]` class; `--export-entity-schema=<file.sentdef>` writes them and EXITS before a renderer, a window or a thread exists, because a schema is a fact about the BUILD rather than about a session. `.sentdef` itself is `D14`, landed with it - see `docs/formats-and-pipeline.md` §3.2's AS BUILT note. Oracles: `EntityGeneratorSnapshotTests` (Verify), `EntityGeneratorDiagnosticTests`, `EntityGeneratorCachingTests`, `SentDefTests`, `BuiltinEntityRegistrationTests`.
-- **THE PUBLISH IS THE GATE, and nothing that runs under a JIT can be one.** Every registration is a `[ModuleInitializer]` in an assembly nothing statically calls into - a level names `logic_relay` as text - so a trimmed or AOT publish has every reason to drop the whole thing, and the symptom is not a missing-assembly error: every map still loads and every entity becomes a placeholder that behaves as nothing. `BuiltinEntities.EnsureRegistered()` is the anchor (the shape of `SilkPlatform.EnsureRegistered`) and the host now prints `Entity catalogue: N classes registered (...)` on every run, at Error when N is zero. Measured 2026-09-03 on a `win-x64` NativeAOT publish: 3 classes, and that binary's `--export-entity-schema` output is **byte-identical** to a JIT run's (1103 bytes, SHA256 equal).
-- **Never `-p:PublishAot=true` on the publish command line**, which this milestone is the reason for: it is a GLOBAL property and reaches the netstandard2.0 generator project, so the SDK refuses the whole publish with `NETSDK1207` naming the generator - during RESTORE, which is why `UndefineProperties` on the reference does not save it. The three projects that want AOT set it themselves.
-
-### P6 — Built-in logic entities (the no-code core) *(three of seven landed 2026-09-03)*
-`logic_auto`, `logic_relay`, `logic_timer`, `math_counter`, `logic_branch`, `logic_case`, `logic_compare`. Geometry-free; triggers wait for `P7`.
-- **Risk** — **LOW technically**, and that is the point: this milestone *proves* `P4`/`P5` were designed right. If any of these is awkward to write, fix the attribute surface here rather than after fifty entities exist. The real risk is semantic — decide deliberately whether `logic_relay` refires while pending, whether `math_counter` fires `OnHitMax` on every hit or only on transition, and write it into XML docs.
-- **Size** — **M.**
-- **AS BUILT.** `SpectraEngine.Entities` carries `logic_relay`, `logic_timer` and `math_counter`, all three written against the generator with no hand-rolled dispatch, which is the proof this milestone was for. Both semantic questions are decided in XML docs on the classes, as this entry asked: `logic_relay` **refires while pending** (the delay lives on the WIRE here, not on the relay, so one output can carry five wires with five delays and "pending" is not a state the relay has - which is also why there is no `CancelPending` input, since the events are in the world's queue and it has no cancel), and `math_counter` fires `OnHitMax` **on the TRANSITION only**, judged against the value that was there rather than a stored flag.
-- **Still owed: `logic_auto`, `logic_branch`, `logic_case`, `logic_compare`.** `logic_timer` is what self-starts a level today (it schedules its first think in `OnActivate`), which is what `EntityMapEndToEndTests`' fixture map uses; `logic_auto` is the one that makes "fire once when the map begins" say so.
-
-### P7a — `BrushKind`: brushes that never fuse into the world *(prerequisite for `P7`, and useful without it)*
-**The declared bit that makes "participates in the fused world" something a simulation can never change and a human changes only by asking.** Designed in full — fifteen gate sites, three pinning tests, the mesh cache, the conversion command — in [`docs/physics.md`](docs/physics.md) §2.3a, which is the owner; this entry is the schedule and the acceptance criteria.
-
-**The correction that motivates it, because it reverses the intuition:** the carve is **union-skin extraction** (`Bsp/Csg.cs:8-12`), **not** subtraction. Two overlapping world brushes *merge*; a crate dropped on the floor does **not** punch a hole in it. Nothing about a part *sitting* in the world is a problem. The damage begins only when a brush **moves under simulation**, and it is worse than a slow recompile: every tick changes the **overlap set** rather than a placement, which defeats the incremental compiler's trusted carry (`CsgIncrementalCompiler.cs:99`, `Scene.cs:996`) and bails to the fully-validated **O(world)** path *every tick, forever, while everything still renders correctly*.
-
-**Scope.** `SceneNode.BrushKind { World, Part }` as a **plain byte field** (not a packed word — `NodeRealm`, `NodeState` and `PhysicsFlags` are all unbuilt and must not gate this), **default `World`**, **NOT inherited and with no `Inherit` value** — so `AddChild` is not a refusal site and **no reparent can rewrite world topology**. Plus `IsStaticWorldBrush`; the **two-lane** subtree counter (one `long`, total in the high half and static-world in the low half, **one** private writer, two read-only projections — `SubtreeBrushCount` keeps its meaning and its callers, because `ScaleGizmo.cs:330`/`:654` and `GizmoBrushRigidityTests` depend on the total); all fifteen gate sites; `Scene.MarkAdmissionChanged()` (`realms.md` R17); the **snapped**, refcounted, `Brush`-reference-keyed part-mesh cache; **one new arm** in `BuildRenderView`; `ConvertBrushKindCommand`; the always-drawn part outline; and the stats line.
-- **Needs no entity system, no physics, no prefabs.** It is in the `P` arc because it is a scene-graph and admission change, not because it depends on `P4`.
-- **What it delivers ALONE is exactly one thing:** a brush that renders its own faces, never carves, and moves at zero recompile cost. **The clip volume needs `Y0`+`Y3`, the trigger needs `Y0`/`Y8`, a falling part needs `Y6`, and a server-side volume needs the `realms.md` R15 relaxation that ships with `CanCollide` — this milestone must not advertise any of them.**
-- **Named hazards, all silent:** (1) gating the counter but **not** the `Brush` setter's `MarkStaticWorldDirty` (`SceneNode.cs:140`) leaves every zero-cost claim false — this is the line, and `networking.md` §4.5 and `roblox-onboarding.md` `O7` already name it; (2) gating `OnNodeSpatialComponentChanged` (`SceneNode.cs:144`), which must stay kind-**blind** or part brushes fall out of frustum culling and editor picking; (3) missing `TryCollectChangedSlots` (`Scene.cs:1310`), which forces the O(world) walk on **every drag frame** whenever a dirty world-brush subtree holds a part-brush descendant; (4) skipping `VertexSnapper.Snap` on the part path, which cracks a part brush along **its own** edges.
-- **Required verification:** the three invariant pins (a moving part → constant compile count; **200 attach/detach/swap operations on part nodes → constant compile count and `StaticWorldDirty` false throughout**, which fails against unmodified code today; assign-order safety in both orders); a randomized graph test recounting **both** counter lanes after N attach/detach/reparent/kind-flip operations; the identity-placement mesh pin (part submeshes byte-identical to `CsgWorld.Build([placement at identity]).ChunkMeshes[0].Submeshes`) and the rotated-placement tolerance oracle at 2 × `VertexSnapper.GridSize`; part-brush outlines drawn **always** (never only on selection — commit `d4701d6`'s lesson) and `WorldBrushes: N  PartBrushes: M` in the stats line; `CsgBench openworld` verdict still *world-size independent*.
-- **Depends on** — `F1` (per-face materials, since the part path emits per-material submeshes). **Must not run concurrently with `E4`/`E6`** (ruling R‑9, which extends to this milestone for the same reason it covers `P7`: the same `SceneNode` counter and the same brush-snapshot surface).
-- **Size** — **M–L** (modest line count, extreme care density; the gate list is the work).
-
-### P7b — Negative brushes: a brush that removes solid *(needs `P7a`; independent of `P7`)*
-**The engine has never had subtraction — the carve is union-skin extraction and two overlapping brushes *merge*. This is the milestone that adds Hammer/Unreal/Roblox-style negation, without an ordered CSG tree and without a wrapper object.** Designed in full — the composition rule, the cavity-wall algorithm with its repaired coplanar table, the degenerate-case verdicts, the materials rule, the chunking cost and the physics-participation tiers — in [`docs/negative-brushes.md`](docs/negative-brushes.md), which is the owner; this entry is the schedule and the acceptance criteria.
-
-**Scope.** `BrushOperation { Additive, Subtractive }` as a byte on the **immutable `Brush` value** (never on `SceneNode`, never on `BrushPlacement` — all three change detectors compare `Brush` reference identity plus the matrix and nothing else, so any other home is a silent cache hit that dirties zero cells); `Brush.WithOperation` plus an O(1) private copy constructor; `Operation` threaded through `WithFaceSurface` and `WithScaledExtents`; `Polygon.Flipped()` as the single primitive that reverses winding **and** negates the plane in one expression; two fields on `Csg.CarverInFrame`; skin suppression plus cavity-wall seeding in `CarveSingle`, attributed to the **cut** brush's slot and emitted **after** its face seeds; the five-row verdict table in `CarveFragment`, whose subtractive rows use `Polygon.Split`'s own Coplanar classification rather than `Csg.CoplanarOrientation` (ten times looser in offset, and per-plane rather than per-vertex); one word in `Scene.UpdatePartBrushMembership`; a **kind-blind** always-on subtractive outline set with an inward chevron per face; the over-carve annotation; and four new stats figures.
-- **Zero changes** to `CsgCompileCache`, `CsgWeldCache`, `CsgBspCache`, `CsgMeshCache`, `BrushBroadphase`, `ChunkGrid`, `ChunkWelder`, `VertexSnapper`, `TJunctionWelder`, `ChunkBspBuilder`, `ChunkMeshBuilder`, `BspTree`, `BspNode`, `CsgWorld`'s queries, `SceneBvh`, or any renderer. **That is the design's central claim and it is checkable by grep, not by argument** — a cavity is already representable because `BspTree`'s solid-leaf rule derives solidity from plane orientation alone.
-- **Named hazards, all silent:** (1) `WithScaledExtents` or `WithFaceSurface` dropping `Operation` — **resizing or retexturing a hole turns it into a solid block**; (2) reversing winding without negating the plane, or vice versa — two different wrong worlds, which is why `Polygon.Flipped` is one expression with no other caller; (3) using `CoplanarOrientation`'s `1e-3` offset band for the subtractive rows, which opens a δ-tall ring round every cavity mouth in the `(1e-4, 1e-3)` window; (4) skipping the mesh-pump gate in `UpdatePartBrushMembership`, which uploads **the outward skin of a hole** — a solid block where the author asked for a void; (5) shipping the outline off `_partBrushNodes` instead of its own kind-blind set, which silences the outline on exactly the brushes that render nothing.
-- **Required verification:** the Monte-Carlo semantic oracle **with a coincidence-manufacturing generator** (coarse snap lattice, deliberately shared plane offsets, an additive brush embedded in another additive brush, probes within `Polygon.Epsilon` of coincident planes — a uniform-random generator exercises **none** of the new rules); the **bit-identity non-regression** (no subtractive brush ⇒ byte-identical to today over the existing `CsgCarveTests` fixtures); `Operation` survives `WithScaledExtents`/`WithFaceSurface`; the flush-coplanar fixture set including the embedded-detail-block case; **the closure test, separate from the orientation test** — per-cell edge-manifold or ray-parity, because orientation alone passes on both of the defects the design's own review found; the epsilon-band sweep in both signs across the whole `(1e-4, 1e-3)` window asserting closure rather than surface count; **every flush fixture repeated at the bench's +8,000-unit offset**; and `CsgBench openworld` verdict still *world-size independent*.
-- **Two instruments ship in the same commit, not as follow-ups**, because the standing gate is structurally blind to this feature: **`Scene.StaticWorldFallbackCount`**, counted at `ReplaceStaticWorld`'s **two-conjunct** gate rather than from a null delta; and a **`negative`** CsgBench scenario at 1k/10k/50k that **chains** (`world_n = Build(…, world_{n−1})`) — the existing `openworld` burst deliberately does not, so every chain-only cost is invisible to the pillar gate today, before subtraction. Gate the patched-tick median at the existing 1.5× band; **report** the fallback median and rate without a threshold, in the bench's own voice.
-- **Depends on** — `P7a` (the `BrushKind.Part` case and the one word in `UpdatePartBrushMembership`) and `F1` (cavity walls carry `FaceSurface` payloads). **Ruling R‑9 does not extend to it** — see §3 for why, and for the oracle-ordering rule that applies instead.
-- **Blocks** — `physics.md` `Y3` **until `physics.md` §2.1 states a representation for cut geometry**. §2.1 builds one convex hull per placement from `Brush.LocalFaces` and never learns about `Operation`, so a physics build against the current text gives every negative brush a **solid collision hull**: a hole you can see through and cannot walk through. `negative-brushes.md` §8.0 supplies an exact plane-set convex decomposition and the constraint that its pieces are never `Brush` instances; the choice is physics.md's and it is not yet made.
-- **What it delivers ALONE:** authored holes — doorways, windows, arches, mined-out rooms — plus **bake-on-contact destruction** (a `(Part, Subtractive)` projectile flips to `World` on impact, costing one compile per destruction *event*, with N impacts in one frame coalescing into one compile). **A hole that MOVES every tick is a separate question with an honest answer and a named refusal** (`negative-brushes.md` §8.2–§8.5); this milestone must not advertise it.
-- **Size** — **M–L.** Modest line count, extreme care density; the coplanar table and the test set are the work.
-
-### P7 — Brush entities: owned by their nearest `Entity` ancestor, excluded from the carve
-**The keystone, and the highest-risk milestone in the roadmap.** A brush is owned by its **nearest `Entity` ancestor, inclusive** (`_entityDepth` counter mirroring the existing `_subtreeBrushCount` idiom); the snapshot filters on `IsStaticWorldBrush`, which **`P7a` now supplies** along with the counter work this entry used to own. Entity-owned brushes leave the carve exactly as part brushes do, and a door opening becomes a matrix write with no recompile.
-
-> **OVERTURNED — the render mechanism, and the counter instruction.** Two claims that stood in this entry are dead, and the replacements are in [`docs/physics.md`](docs/physics.md) §2.3a.
->
-> 1. **"Compiled into a `BrushModel`, attached as a plain `MeshRenderer` on the entity node — zero renderer changes, zero backend changes, zero new `RenderView` path."** This cannot be built, and the reason is eleven lines of code rather than a preference: **`MeshRenderer` holds exactly one `Mesh` and one `Material`** (`Scene/MeshRenderer.cs:12-20`) and a node holds exactly one `MeshRenderer`, so **after `F1`'s per-face materials it cannot express a multi-material brush at all**. The only existing idiom for multi-material geometry is `ModelInstantiator`'s node-per-submesh (`ModelInstantiator.cs:126`), which would inject **derived nodes into the authored graph** — selectable, reparentable, serialized — breaking the same *"derived data is never authored"* rule the static world obeys. **The replacement is `P7a`'s:** one new arm in `BuildRenderView`'s existing loop plus one engine-owned refcounted mesh cache. The surviving claim is narrower and must be stated narrowly: **no third `RenderView` list, no backend change, no new geometry code — but a new path, not zero new paths.**
-> 2. **"`_subtreeBrushCount` splits into a static-world-only counter."** It does not *split*; it becomes **two lanes in one field with one writer**, and the total lane is **not** deleted — `ScaleGizmo.cs:330`/`:654` route on it to refuse scaling a group node with brush descendants, and `GizmoBrushRigidityTests` pins that. A world-only counter would silently delete that refusal.
->
-> The acceptance line *"brush-model triangles identical to `CsgWorld.Build(sameplacements).BuildMesh()` at identity"* is **superseded** by `P7a`'s two-oracle pin — same intent, stated against `ChunkMeshes`/`Submeshes`, which is what the code actually emits per cell. `networking.md` §4.5 carries the same overturned mechanism and is corrected in the same commit.
-
-- **Named hazards, all three of which are silent:** (1) forgetting the admission gating makes an animating door mark the world dirty and launch a background compile **every frame, forever** — the single most likely way to destroy the pillar while everything still renders correctly (this is `P7a`'s hazard, inherited); (2) an ownership flip that does not force a full walk corrupts the slot map, because the placement *count* changes and every later slot shifts; (3) an ownership flip that does not dirty the departing brush's footprint leaves stale geometry welded into the world.
-- **Required verification — this must not merge on code review alone:** all chunked-vs-monolithic and determinism oracles green; an entity-owned brush contributes zero world surfaces; `StaticWorldCompileCount` **constant** across 100 frames of door animation; `P7a`'s two mesh oracles; `CsgBench openworld` verdict still *world-size independent*.
-- **Depends on** — `P4`, and now **`P7a`** for the admission bit, the counter and the render path. Independent of `P5`/`P6`. **Must not run concurrently with `E4`/`E6`** (ruling R‑9).
-- **Size** — **M** now that `P7a` carries the counter and render work it used to own (still extreme care density).
-
-### P8 — Trigger volumes and their queries
-`trigger_multiple`/`trigger_once`/`trigger_teleport`. Touch tracking diffed per tick drives `OnStartTouch`/`OnEndTouch`/`OnTrigger`.
-
-> **OVERTURNED — the query structure.** This entry said *"queries transform into model space via the inverse of the entity node's world matrix and hit the brush model's BSP."* **There is no brush-model BSP to hit.** `P7a` gives a non-carving brush a *mesh*, not a compiled world, and `CsgWorld`'s per-cell BSP is a pure function of the static placement list — a part or entity-owned brush is by construction not in it (`CsgWorld.cs:603`, `:617`). Trigger queries therefore re-point at **`SceneBvh`'s box and sphere overlap queries**, which [`docs/physics.md`](docs/physics.md) `Y0` builds because the BVH has only `Raycast` and `QueryFrustum` today — and which the physics arc's touch pass (`Y8`) uses as well, so there is one overlap path, not two. The open question *"should a brush model build its BSP eagerly or lazily?"* (§13) is thereby **answered by deletion**: it builds none.
-
-- **Unlocks** — the no-code loop closes: walk into a room, a door opens, no script.
-- **Depends on** — `P6`, `P7`, and `Y0` for the overlap queries.
-- **Risk** — **MEDIUM.** Test explicitly: an entity resting on a boundary must not chatter (mirror `ChunkCoord`'s documented boundary rule); a trigger deleted mid-touch must still deliver `OnEndTouch`; a moving trigger recomputes from its new transform the same tick. Route the touch pass through `SceneBvh`, never a triggers × movers double loop.
-- **Size** — **M.**
-
-### P9 — Entities, keyvalues and connections in the map
-Two-phase load: construct all entities and parse keyvalues, *then* resolve connections and run spawn/activate. Unknown classnames become a `PlaceholderEntity` retaining classname, keyvalues and connections.
-- **Depends on** — `P2`, `P5`.
-- **Risk** — **MEDIUM.** The forward-compatibility test must be a *real test*: author a map with an unknown classname, load, re-save, assert byte identity — otherwise the preservation behaviour rots within two months. Connections pointing at missing names must **warn and be kept**, never dropped; a mapper who renames a door must not silently lose their wiring.
-- **Size** — **M.**
-
-### P10 — Prefabs and instancing
-`.spectraprefab` shares the map grammar, rooted at one subtree. A `PrefabInstance` payload stores `{prefab, seed, overrides}`; children are **not written into the map** but expanded at load with **deterministically derived GUIDs** `hash(instanceSeed, prefabLocalId)`. Overrides restricted in v1 to transform, material reference, entity keyvalues.
-- **Risk** — **MEDIUM–HIGH.** GUID derivation must use a fixed hash (FNV/xxHash into a v8-shaped Guid), never `string.GetHashCode`, which is process-randomised and would break every stored reference on the next launch. **Prefab-internal targetname scoping is a sign-off decision (§9.8)** — it bakes into every saved map and cannot be changed later without a migration.
-- **Size** — **L.**
-
-### P11b — `.spectramapb` shipping format — **SUPERSEDED, do not build**
-**Replaced by `.scmap` in [`docs/formats-and-pipeline.md`](docs/formats-and-pipeline.md) §2.7 (`D*` arc).** The id is kept so existing cross-references still resolve, and the entry is kept so nobody re-derives it from scratch.
-
-Two things were wrong with it, and the second is the reason it cannot simply be renamed. It specified a binary *mirror* of the text map containing zero derived data — but the artifact actually wanted is the **baked** one: per-cell welded meshes, per-cell BSP trees and per-cell material runs, so a shipped game runs zero CSG at load. And its pinned test — *binary-load → text-save → byte-identical to the original text map* — **is unsatisfiable for that artifact**: welding, T-junction repair and per-cell carving are not invertible, so `.scmap → .smap` is not a valid operation and must not be attempted. The replacement guard is a **bake oracle**: cook → load → assert the loaded per-cell arrays are element-identical to a fresh `CsgWorld.Build(placements)` of the same source. **`.smap` is the only editable artifact; a lost `.smap` is a lost map.**
-
-**BUILT: the replacement guard is `Test/Spectra.Kitchen.Tests/BakeOracleTests.cs`, over the four-fixture corpus in `BakeCorpus.cs`.** It cooks through the real `MapRule`, loads through `CompiledMapLoader`, and asserts that the per-cell vertex arrays, index arrays, submesh directories **and flattened BSP nodes the runtime received** are bit-identical to a fresh cache-free `CsgWorld.Build` plus `BspFlattener.Flatten` of the same bundle. Bit-identical rather than equal, because the compile cache keys on exact equality and `0f` and `-0f` compare equal and are different numbers. It runs in the named `Suite=Determinism` CI job beside the pack and map determinism oracles, which is the standing statement that a cook is a pure function.
-
----
-
-## 8. Arc S — Shader & material authoring
-
-Target story: right-click → New Shader → write a `.spectrashade` declaring `[Scope(Material)]` parameters with `[Display]`/`[Range]`/`[Color]` and defaults → save → the compiler emits a parameter manifest into the `.specshadecomp` → the property grid builds itself with zero per-shader editor code → a `.spectramat` stores values by authored parameter name → errors appear as coded, spanned diagnostics inline and as a magenta error material, while the last-good program keeps rendering.
-
-### S2 — Parameter scopes, UI metadata, defaults in the language
-`[Scope(Frame|Object|Material)]` on cbuffers/samplers/fields, plus `[Display]`, `[Tooltip]`, `[Group]`, `[Range]`, `[Color]`, `[Srgb]`, `[HideInEditor]`, plus field initializers with a restricted constant folder (literals + builtin-type constructors).
-- **Why this exists:** today there is **no way to tell `uBaseColor` (a material parameter) from `uLightDir` (engine-supplied)** — they sit in adjacent cbuffers in `Lit.spectrashade` and are distinguished only by which pipeline file hardcodes a `SetUniform`. An explicit scope is the smallest thing that makes a manifest meaningful.
-- **Depends on** — `F4`.
-- **Risk** — **MEDIUM.** The engine-builtin-uniform whitelist hardcodes today's forward-pipeline uniform set into the compiler; keep it in one file with a comment pointing at `ViewDrawer`. Snapshot tests will churn.
-- **Size** — **S–M.**
-
-### S3 — Parameter manifest, `.specshadecomp` v2, scope-driven runtime binder
-`ShaderManifest` in **`SpectraEngine.Core`** (ruling R‑2): parameter entries with authored name, per-backend emitted name, type, scope, cbuffer/binding/offset/size, default bytes and UI metadata; sampler entries; vertex inputs; source + import-closure hashes. `ShaderFormatVersion` → 2 with `manifestSize` after the header, reader branching so v1 still loads. Engine side: replace the hardcoded `SetUniform` blocks with a manifest-walking binder, and make `Material` validate against the manifest and seed unset parameters from defaults.
-- **Record both authored and emitted names:** `GlslGenerator.EscapeId` already renames GLSL reserved words, so the same authored parameter can already have different names in GLSL and HLSL. **The authored name is the material's key.**
-- **Depends on** — `S2`, **`F3`** (ruling R‑4), **`F1`** (`.spectramat` is what stores the values).
-- **Risk** — **MEDIUM–HIGH.** Widest blast radius in the shader arc: file format + three shader-program implementations + the shared drawer. Two specific hazards: std140 and HLSL packing rules differ for arrays and `vec3` (write the offset computation once, table-driven test per type); and `D3D11ShaderProgram` currently derives its uniform layout from **pixel-shader reflection only**, so manifest-authoritative offsets may change behaviour for VS-only cbuffers — treat as a fix, verify all three backends render identically before and after.
-- **Size** — **M–L.**
-
-### S4 — Imports, module linker, dependency-aware hot reload, multi-file LSP
-`import` currently **parses and is then completely ignored** — no resolver, no roots, no merge — and `FEATURES.md` claims it works. Add `module Name { }` (same member grammar as `shader`, no stage functions), an injectable `IIncludeResolver` (file-system roots for `ssc`, embedded engine stdlib under a reserved `engine/` prefix for the runtime, an unsaved-buffer overlay for the LSP), and a linker that flattens post-order with canonical-identity dedupe, cycle detection reporting the full chain, and cross-module duplicate-symbol errors. **Diamond imports are legal; cycles are an error.** Hot reload keys on the **import closure**, with watchers per directory and re-registration after each successful compile. LSP publishes each diagnostic against **its own file URI**.
-- **Rejected: textual include-before-lexing** — it destroys per-file spans, so an error in a shared lighting library would be reported at a line number in the importing file.
-- **Depends on** — `F4`. Land after `S3` so the manifest can record closure hashes.
-- **Risk** — **MEDIUM.** Making the `shader` block optional is the riskiest single edit (`Parse()` calls `ParseShader()` unconditionally and error recovery leans on it). Cross-platform path canonicalisation is a bug farm — normalise once, at the resolver boundary.
-- **Size** — **M–L.**
-
-### S5 — Type checker phase 1: binder replacing `TypeInference`
-**There is a live, severe bug today:** `HlslGenerator` lowers `a * b` to `mul(a, b)` only when the stopgap `TypeInference` recognises a matrix; when it returns `null` it emits componentwise `*`, which **compiles clean and renders wrong on HLSL while the GLSL build of the same shader is correct** — and each generator instantiates its own copy, so they can silently disagree. Fix: a `Binder` producing a typed **side table** (`Dictionary<Expression, TypeSymbol>`) over the existing syntax AST, replacing `TypeInference` in both generators in one change. Every existing snapshot output must be byte-identical **except** the intentional `mul()` corrections — those deltas are the milestone's proof of value.
-- **Depends on** — `S2`, `S4` (bind the linked unit, not a single file).
-- **Risk** — **HIGH**, and the easiest to under-scope: the builtin signature table is the hidden bulk (genType overloads across `Math.*` ≈ 200 entries). Keep a transition flag that falls back to today's permissive behaviour on an unbound expression plus a diagnostic counter, so a binder gap degrades rather than hard-fails.
-- **Size** — **L.**
-
-### S6 — Type checker phase 2: real diagnostics + close the documented-but-missing gaps
-Constructor arity, swizzle legality, matrix/vector dimension agreement, assignment compatibility, a **pinned implicit-conversion policy** (GLSL and HLSL differ — the language must decide and both generators must emit the same casts), overload-resolution messages, `discard` only in `[Fragment]`, `Position` only in vertex/geometry. Plus the three gaps the docs already claim work: **bitwise operators** (lexed, never consumed by the precedence chain), **`const`/`in`/`out`** (lexed, never accepted), **local array declarations** (a lookahead fix — `ParseType` already handles `[N]`).
-- **Risk** — **MEDIUM.** False positives are worse than missing checks: land each rule as a warning behind a switch, run the engine's own shaders clean, then promote to error.
-- **Size** — **M–L.**
-
-### S7 — Material preview thumbnails
-Draws a sphere/cube with a given material into an offscreen target, driven entirely by the `S3` manifest so any custom shader previews with no per-shader editor code; plus the magenta error-material fallback when a shader failed its last compile.
-- **Depends on** — `S3` and **`R3`** (the render-target subsystem, ruling R‑1). This milestone *consumes* render targets; it does not build them.
-- **Size** — **S** once `R3` exists.
-
-### S8 — Shader features and variants
-`feature VertexColor;` / `feature Lighting { Unlit, Lit, LitShadowed }` lowered to **static `const` branches**, compiled on demand per requested key, never a preprocessor and never the cross product. Rationale: `#ifdef` branches are never type-checked when inactive, so a variant nobody compiles today breaks silently tomorrow; static-const branching runs every branch through the parser and the type checker on every compile and lets the backend DCE the dead side — and maps 1:1 onto Vulkan specialization constants later. **Constraint pinned with it:** features may appear only in conditions, never in declarations, types or array sizes, so the parameter manifest stays variant-invariant and the property UI does not change shape when a checkbox is toggled.
-- **Depends on** — `S3` (design the variant table into the v2 header so this is not a second format migration), `S5`/`S6`.
-- **Risk** — **MEDIUM–HIGH.** `Material` holds a direct `ShaderProgram` reference and hot reload deliberately preserves that object identity so every material picks up new code; the variant cache must preserve that guarantee **per (shader, key)**. And per-material variant keys multiply the static world's per-material submesh batching from `F1` — confirm before committing.
-- **Size** — **L.**
-
-### S9 — Vulkan: Vulkan-GLSL + shaderc, offline only
-Vulkan-flavoured GLSL (`#version 450`, real `std140` UBO blocks replacing loose uniforms, `layout(set, binding)`) reusing the manifest's offsets, then shaderc via P/Invoke producing SPIR-V into the existing blob slot. Shipped in `ssc` and the editor **only** — the deployed runtime loads precompiled SPIR-V.
-- **Sequenced last on purpose:** there is **no Vulkan renderer in the tree at all**, so SPIR-V today has no consumer and delivers zero user value. Direct SPIR-V emission remains the wrong call for a solo dev — weeks of work for output shaderc produces in an afternoon, and impossible before `S5` anyway.
-- **Risk** — **MEDIUM** technically; the real risk is packaging two RIDs of a native dependency against a mandatory-AOT, Linux-capable toolchain, and that Vulkan's descriptor-set model may force a `[Binding(set, slot)]` language extension. Available value before any renderer exists: shaderc accepting every shader in the repo and `spirv-val` passing.
-- **Size** — **M** plus an unpredictable packaging tail.
-
----
-
-## 9. Arc R — Rendering (parallel track)
-
-Order is forced: `F3 → R1 → R2 → R3` before any feature, because `R3` is the keystone and `R1`/`R2` are its prerequisites. **All three have landed**, so the arc is open at `R4` (post/tone mapping) and `R5` (array uniforms, which is what blocks GPU skinning).
-
-### The visual target: *Stray*-class fidelity *(set 2026-08-28)*
-
-**The bar is the LOOK of a good late-UE4 game, named concretely as *Stray*, and not a feature list.** That distinction is the whole reason this target is reachable: every technique behind that look is documented, bounded, 2014-to-2020 deferred rendering. None of it needs GPU-driven submission, bindless resources, or a visibility buffer, so none of it fights the architecture. It fills the architecture in.
-
-**What already stands, and it is the expensive half.** Cook-Torrance GGX with height-correlated Smith and Schlick Fresnel; linear light end to end with every conversion done by hardware; an HDR half-float scene target; a real ACES resolve with exposure; four shadow cascades in one atlas with a rotated PCF kernel. Those are the parts that are miserable to retrofit and they are done. Getting them wrong early poisons everything downstream, and they are not wrong.
-
-**The single most damaging gap is one line** in `DeferredLight.spectrashade`: `total = diffuseColor * uAmbient * ao`. Ambient is a flat scalar, so everything out of direct light gets the same grey from every direction. That is the difference between "lit by a place" and "lit by a lamp plus a constant", and it is most of why a scene reads as a tech demo rather than a location. The shader's own comment concedes the term is crude.
-
-**Recommended order, by what moves the picture rather than by dependency.** The arc's numbering is dependency order; this is the sequence to actually work in:
-
-1. **`R9` normal mapping.** Without it every surface is flat plastic. The largest single fidelity gap, and the BRDF half is already shipped.
-2. **`R14` the post stack** (bloom first). Bloom on emissive IS the neon aesthetic, emissive is already in the G-buffer, and the post spine already exists. Highest payoff per day of work in the whole arc.
-   - **Then `R19a` analytic height fog**, which has no prerequisite at all and is `S`. Aerial perspective is most of how a viewer reads distance and the engine has none; the split at `R19` below is what makes this available this early. `R19b` (the zone model) follows whenever the editor arc has room, since its cost is breadth across the payload checklist rather than rendering work.
-3. **`R15` an ambient with direction.** Fixes the line above. Even a sky-ground hemisphere is a step change; an irradiance cubemap is the real answer.
-4. **`R16` temporal AA.** *Stray* is visually CLEAN, and that cleanliness is TAA. Without it every specular highlight and shadow edge shimmers.
-5. **`R13` compute dispatch**, because `R17` and `R19d` both want it and it is infrastructure rather than a look. **Budget more for it than this arc used to:** it is a compiler project as well as renderer plumbing (see below).
-6. **`R17` screen-space AO.** Contact darkening; objects stop floating.
-7. **`R10` transparency**, which gates glass, particles and fog cards.
-8. **`R21` particles**, then **`R18` reflections** (the wet-street look), then **`R19c`/`R19d` volumetrics** (the light shafts and the froxel grid, the most *Stray*-specific items here, and all that is left of `R19` once `R19a`/`R19b` have moved up), then **`R20` decals**.
-9. **`R11`** and **`R12`** last: TAA supersedes FXAA for the game view, MSAA is still wanted for the editor viewport, and instancing is throughput rather than fidelity.
-
-**The honest caveat, and it is not a small one: the renderer is the easier half.** *Stray* is roughly seven years of work by a team with excellent artists, and its look is as much set dressing, material authoring and palette discipline as it is shading. An engine with all of the above and programmer-art content will look worse than one with half of it and good content. Content-pipeline quality is part of visual fidelity, not something separate from it. See [`asset-first`](docs/positioning.md): the mesh/asset lane is where this is won.
-
-### Beyond the target: the horizon past *Stray* *(not planned work, deliberately)*
-
-Recorded so the ceiling is known rather than assumed, and kept explicitly out of the numbered arc because **none of it should start before the engine has shipped something.**
-
-- **GPU-driven rendering is the gate on all of it**: indirect draws, bindless resources, compute-side culling. Everything below is cheap-to-moderate once it exists and impossible before. The renderer today submits per draw from the CPU, and `D3D12Renderer.Present` still calls `WaitForGpu()` every frame, so the CPU and GPU do not even overlap yet. **That serialisation is the true first step toward every item here**, and it is worth doing on its own merits long before any of them.
-- **Real-time global illumination**, on a ladder rather than as one jump: irradiance probes (DDGI) first, then signed-distance-field or voxel cone tracing, then hardware ray tracing. A credible dynamic GI reaches most of the perceived quality of a Lumen; full Lumen is a department, not a feature.
-- **Virtual shadow maps.** The cascade-plus-atlas structure already here is the right starting shape, so this generalises rather than replaces.
-- **Virtual texturing**, which is what lets texel density stop being a memory decision.
-- **Hardware ray tracing** for reflections and shadows, once a DXR/Vulkan-RT path exists at all.
-- **Virtualized geometry (Nanite-class).** The honest long shot: cluster building offline, a visibility buffer, and a software rasteriser in compute. A rewrite of the renderer's core rather than an addition to it. Not foreclosed by anything in the architecture, which is the part that matters.
-- **A learned or FSR-class upscaler**, once TAA and motion vectors exist to feed it.
-
-**One genuinely encouraging finding from the audit that set this target:** SpectraShade already has a compute stage, with `[Compute]`, `[NumThreads]` and the invocation-ID built-ins. The gap is `R13`, a dispatch path in the renderer, not a language project. Half the hard part of modern rendering is already built.
-
-### R1 — Complete the D3D12 PSO key
-Extend `PsoKey` from (layout, fill, topology) to (+ RTV format, NumRenderTargets, DSV format, sample count, depth mode, blend mode), threaded from a per-draw target state. Convert the per-program `DepthTestEnabled` flag (currently, deliberately, outside the key) into a per-draw depth mode `{TestWrite, TestNoWrite, None}`, preserving the debug-line always-on-top behaviour exactly.
-- **Why now:** five downstream items each need one of those fields to vary per draw (sRGB RTVs, offscreen formats, depth-only shadow targets, MSAA, blending). **Zero visual change**, which makes it the one milestone verifiable purely by "nothing changed" plus a PSO-cache-count assertion.
-- **Risk** — **LOW–MEDIUM**, nasty failure mode: a stale PSO returned for a mismatched target format is exactly what the debug layer sometimes catches and sometimes does not. Keep `PsoKey.Equals` **structural**, not hash-based. **Size** — **S.**
-
-### R2. Colour correctness: sRGB end to end ✅ **landed**
-Was: sRGB-authored albedo fed to lighting as if linear, and linear output written raw to a display-sRGB buffer. **Wrong space, twice**, with the two errors partly cancelling, which is why it had always looked roughly acceptable. Fixed with **hardware** sRGB throughout, never `pow(2.2)` in a shader, because hardware decodes *before* filtering and so bilinear taps and mip levels average light rather than display codes.
-
-What landed (`ColorSpace.cs`, `TextureColorSpace`, `OpenGLSrgbTarget.cs`):
-- **Textures carry a colour space.** A `.spectramat` texture line takes `srgb` (the default, because an image is a picture unless its author says otherwise) or `data`. The keyword is `data` and not `linear` because `linear` was already the bilinear filter on that same line. Colour space joins filter and wrap in the texture cache key, since one image is legitimately albedo in one material and a mask in another.
-- **`color` is sRGB, `vec3` is not.** A `color` directive is decoded to linear at parse time; alpha never is. That is the same split Unity and Unreal draw between a Color and a Vector, and it is the whole rule of the format.
-- **D3D11 names the sRGB format on the swap chain; D3D12 names it on the RTV.** Not a stylistic difference: a bitblt chain may be created `_SRGB` and a flip-model chain may not, so each backend uses the form its own swap effect allows. `D3D12TargetState.BackBuffer` therefore carries the **view** format, which is what a PSO is validated against.
-- **`R8` is always linear.** No one-channel sRGB format exists on any backend. `TextureFormatInfo.Resolve` is the single place that rule lives so the three cannot drift, and `AssetManager` reports the downgrade with a path.
-- **D3D12 builds its CPU mip chain in linear.** It has no `GenerateMips`, so unlike the other two it was averaging display codes: a chain that darkens with depth, on one backend only.
-
-**The one thing the plan got wrong, and it is worth recording.** The note above said to *verify* that GL gets an sRGB-capable default framebuffer, expecting the answer to be yes. It is **no**, and not because of a driver quirk. `GLFW_SRGB_CAPABLE` defaults to false, Silk.NET 2.23 has no `WindowOptions` field for it, and setting the hint directly does not survive, because Silk calls `glfwDefaultWindowHints` immediately before creating the window. Measured on an RTX 4070 Ti: the default framebuffer reports `GL_LINEAR`, and `glEnable(GL_FRAMEBUFFER_SRGB)` succeeds while doing nothing at all. Shipping only the texture half on GL would have broken the old cancellation and left one backend visibly darker than the other two, so GL renders into an `SRGB8_ALPHA8` renderbuffer and blits out with encoding disabled. That keeps the conversion in hardware and *after* blending, where the D3D backends have it, and it is the engine's first offscreen target: a down payment on `R3` rather than a detour. The blit's sRGB behaviour is spec-ambiguous across GL versions, so `GlColorSpaceTests` reads a pixel back instead of trusting it.
-- **Still true:** everything looks different, and the flat 0.2 ambient and the base colours will want a retune. That retune is not a bug.
-
-### R3. Offscreen render targets ✅ **landed** *(keystone)*
-`RenderTargetDesc` + `RenderTarget` exposing a plain `Texture` colour attachment, created by the renderer, drawn into with `BeginPass(target, clear)` / `EndPass()`. GL: FBO with a texture colour attachment and a depth renderbuffer. D3D11: a `RenderTarget|ShaderResource` texture with RTV/DSV/SRV, plus explicit SRV unbinding before the texture becomes a target. D3D12: its own RTV/DSV heaps plus RenderTarget↔PixelShaderResource barriers.
-
-The mitigation in the original plan was followed: `BeginPass(null)` shipped first, as its own commit, as a pure zero-visual-change refactor that moved viewport, clear and target binding out of all six pipelines. **That is also where the stretched-render trap was closed**: `PassSize` and `PassAspectRatio` come from the pass, never from the window, so the failure was impossible before there was anything to trip over it.
-
-Things worth keeping:
-- **The attachment's object identity survives a resize.** The GPU handle is swapped inside the wrapper on all three backends (`ReallocateStorage` / `ReplaceStorage`). Without it every editor-viewport resize strands every material that sampled the viewport.
-- **Depth is a bool, not a format, and is not sampleable.** Sampleable depth needs typeless formats on both D3D backends and `sampler2DShadow` in SpectraShade, which is `R6`'s work. Depth-only targets wait on the same milestone, because without sampleable depth there is nothing to do with one. A flag that silently did nothing would have been worse than the gap.
-- **D3D12 tracks its own resource state per target** and emits a barrier only on a real change, which makes a redundant transition (the debug layer's other complaint) impossible as well as a missing one.
-- **The PSO target state comes from the open pass.** `D3D12Mesh` and `D3D12LineBatch` used to name `D3D12TargetState.BackBuffer` directly; a pipeline state compiled for the back buffer and bound to a target with a different format is a validation failure rather than a wrong pixel.
-
-**Verification, because this was the highest-risk milestone.** OpenGL reads pixels back through a real driver (`GlRenderTargetTests`: the pass lands in the target, the size comes from the target, sRGB encodes and linear does not, a resize keeps identity and still renders). D3D11 and D3D12 have no headless device fixture (a device needs a window and this process gets one), and their failure modes are debug-layer messages rather than wrong pixels, so `--offscreen-probe` renders real frames into a real target on a real device, resizes it, and **fails if either debug layer reports anything**. `Renderer.DebugLayerErrorCount` is what makes that a verdict rather than a log line. Checked by deleting the D3D12 `RenderTarget` barrier: the probe reported FAIL with two debug-layer errors naming the exact missing state, and passed again once restored.
-
-### R4. Post-processing spine and tone mapping ✅ **landed**
-The scene renders into a half-float target and one full-screen pass turns linear light into a display image: exposure, an ACES curve, then the hardware sRGB encode the back buffer was already doing. Linear-to-display now happens in exactly one place, which is what completes `R2`.
-
-- **The trap was real and is now measured, not argued.** OpenGL framebuffers have a bottom-left origin and D3D render targets a top-left one, so the same clip-position-to-UV mapping renders one of them upside down. Uploaded textures never showed it because `ImageDecoder` flips image rows on the way in; a target written by rasterisation does not pass through that code. V is flipped on D3D only, baked into the triangle's vertex data so no shader variant or branch is needed. `PostResolveGlTests` resolves a two-row source and asserts its bottom row lands at the bottom; inverting the flip fails it.
-- **No `pow` anywhere.** The encode belongs to the target's format, as the decode belongs to the sampler. Doing it in the shader as well is the double-encode the milestone warned about.
-- **The full-screen triangle carries a real vertex buffer and the full standard layout.** SpectraShade has no vertex-ID input (re-verified), and D3D11 builds every mesh's input layout from the lit shader's bytecode, so a lean layout is rejected at mesh creation with an error pointing nowhere near the shader that wanted it.
-- **`DrawFullscreen` is per-backend on purpose.** OpenGL needs `Use()` before the uniform writes (they act on the active program); both D3D backends need it after (the writes fill constant shadows that `Use()` uploads). There is no order that works everywhere, and `Use(); set; Use();` is worse still: on D3D12 the first call clears the pending texture table and the pass samples the white fallback.
-- **Debug overlays moved out of the scene pass first**, as their own zero-change commit. Gizmo handles and the selection highlight are authored as display colours; tone-mapping them would make a handle change brightness depending on what the camera was looking at.
-- **Two bugs fell out of building it.** The GLSL generator printed whole-number float literals without a decimal point, so `1.0 / 3.0` became `1 / 3`, integer division evaluating to zero, silently and on OpenGL only. And both D3D `CreateRenderTargetTexture` functions took a format and ignored it, which would have made the first HDR target 8-bit on D3D while OpenGL was correct.
-
-**Still open:** the D3D backends have no pixel readback, so the orientation assertion runs on OpenGL only. The offscreen probe catches debug-layer errors, and an upside-down image produces none. `Renderer.TryReadPixel` on both D3D backends would close it and is the single highest-value addition to the rendering gate.
-
-**Expect the picture to change.** The flat 0.2 ambient and the material base colours were tuned against a clamped pipeline and will want a retune. That is not a bug.
-
-### R5. Multi-pass plumbing: array uniforms ✅ **landed**
-`ShaderProgram` has **no array-uniform overload on any backend today**, so cascade matrices and light arrays are simply not settable — even though SpectraShade already supports array uniforms in the language. Add `ReadOnlySpan<Matrix4x4>` / `ReadOnlySpan<Vector4>` setters, and generalise `Scene.BuildRenderView(Camera, view)` to `BuildView(in Frustum, view)` with the camera overload delegating, plus an engine-owned pool of `RenderView`s (one per pass) — which is also exactly what multi-viewport later needs.
-- **Restrict the first version to `Matrix4x4[]` and `Vector4[]`** and document the `float[]` hazard: HLSL pads every array element to 16 bytes, so a naive span copy of a float array scrambles it. **Depends on** — `F3`. **Size** — **S–M.** **Risk** — LOW–MEDIUM.
-
-### R6. Shadow map v1: one directional light, one cascade, PCF ✅ **landed**
-A depth-only target rendered from a light-space ortho box fitted to a near slice
-of the camera frustum, sampled with a 3x3 PCF kernel in the deferred light pass.
-
-**It needed no `sampler2DShadow` and no new language type**, which is the risk
-the plan above rated HIGH. Comparison sampling buys a free bilinear filter of
-the comparison result; doing the compare in the shader and averaging nine point
-taps costs nine instructions and needs nothing from the language. What it DID
-need was a fragment stage that returns void, so a depth-only pass binds no
-render target without D3D11 logging a warning per draw.
-
-Depth bias is a **normal offset in world units**, so the non-portability the
-plan warned about never arose: there is no clip-Z constant to get wrong.
-
-Honest state: one cascade over 28 units puts a texel at about 3.6 cm, which is
-soft at close range and is what `R7` fixes. Point and spot lights do not cast at
-all. **Size**: **M**, and the risk was in the fit, not the plumbing.
-
-### R7. Cascaded shadow maps ✅ **landed**
-Four slices, per-slice ortho fitting, texel-snap stabilisation, and one depth
-atlas rather than one texture per cascade (SpectraShade cannot pass a sampler to
-a function, so N textures would mean the filter kernel written N times).
-
-Measured rather than asserted: the near texel went from 3.6 cm to 5.7 mm and the
-penumbra from 22 screen pixels to 3, on the same frame at the same camera.
-
-**Split-boundary blending is NOT done.** Cascades overlap slightly at their
-seams so nothing falls between two of them, but the transition is a hard switch,
-so a seam is visible as a change in shadow softness if you look for it. Dithering
-or blending across the boundary is the remaining polish.
-
-**Size**: **M.** **What is left in this arc:** `R10` blend state (which also
-unblocks uncapped lights), IBL for the ambient term, and split blending.
-
-### R9 — Normal mapping and tangents *(the shading half is done)*
-**The BRDF itself shipped with the deferred pipeline**, so what is left here is the vertex format and normal mapping, which is where the risk always was. `StandardLayout` goes 8 → 12 floats (tangent4 with bitangent sign), and **the CSG mesh builder emits exact, seam-free tangents for the entire static world for free, because `F1`'s Hammer-style per-face u/v axes *are* the tangent frame.** That is strictly better than any derived approximation and matters precisely because tiled brush surfaces dominate the screen. Shading becomes Cook-Torrance GGX + normal mapping — **no language change needed**, every builtin required is already in the table. Screen-space derivative tangents are not an option: `Math.Ddx/Ddy` do not exist in SpectraShade.
-- **Depends on** — `F1`, `R2`, `R8`.
-- **Risk** — **MEDIUM–HIGH, and the risk is the vertex format, not the shading.** Changing `StandardLayout` changes every vertex array the CSG pipeline produces, so every equivalence and determinism oracle compares different data; they are structural so they should survive, but any snapshotted vertex data needs deliberate regeneration. **D3D11 bakes input layouts from the default lit shader's VS bytecode at mesh creation**, so the layout change and the shader change must land in the same commit or every D3D11 mesh fails validation. Tangent handedness is the classic silent-wrongness bug — pin the convention in a comment and test it on an asymmetric normal map. **Size** — **L.**
-
-### R10 — Transparency and blend state
-There is **no blend state anywhere today** (D3D11 never calls `OMSetBlendState`, GL never enables `GL_BLEND`, D3D12 hardcodes `BlendEnable = 0`). `BlendMode` becomes a property of **`Material`**, not of `ShaderProgram` — one shader will legitimately be used by both opaque walls and glass. `RenderView` partitions opaque from transparent **at build time** with a back-to-front sort, ties broken by the existing emission order so determinism holds; the drawer runs two dumb loops. Transparent brush faces split into their own chunk submesh (free, given `F1`).
-- **Document the limitation up front:** sorted alpha is correct-ish, never correct, and per-chunk sorting for the static world is coarser still. Use a reusable scratch list and an index sort — `BuildRenderView` is allocation-free in steady state and must stay that way. **Depends on** — `R1`, `F3`, `F1`. **Size** — **M.**
-
-### R11 — FXAA, then optionally MSAA
-FXAA is one shader and zero backend state work once `R4` exists. MSAA costs work in all three backends at once (PSO sample count, three separately hardcoded rasterizer descs, three different resolve calls) and belongs on `RenderTargetDesc`, never on the swap chain — impossible on D3D12's mandatory flip model.
-- **Honest tension:** FXAA smears exactly the thin high-contrast edges an editor viewport is full of — brush outlines, grid lines, selection highlights. **For the editor viewport MSAA is the right answer and FXAA is a stopgap.** If the editor lands first, expect that complaint. **Size** — FXAA **S**, MSAA **M.**
-
-### R12 — Instancing — **shadow pass landed 2026-08-28; geometry pass still open**
-`VertexAttribute` gains `InputSlot` + `InputRate` (optional ctor params, source-compatible with the two existing call sites; both D3D backends already have the hardcoded per-vertex fields to flip, and D3D12's structural `PsoKey` picks instanced layouts up for free), plus a `(Mesh, Material)` batching pass in `BuildRenderView`.
-- **Two claims in the original entry were wrong, and measuring 2026-08-28 corrected both.**
-- **Wrong claim 1: "thousands of Roblox-style parts are already served by CSG merging."** That is true of `BrushKind.World` and false of `BrushKind.Part`, and a part is precisely what the engine's own guidance tells you to use for anything repeated or moving. A part is never in the placement list, never merged, and draws per node from `PartBrushMeshCache`. So the obvious beneficiary is not waiting on model import: it is already expressible today, and `PartBrushMeshCache` keys on brush **reference identity**, so N nodes sharing one `Brush` already resolve to one GPU mesh and already emit N draws differing only in world matrix. The batches exist; nothing collapses them.
-- **Wrong claim 2: the size.** The entry above describes renderer plumbing and omits the shader language entirely. `uModel` is a `cbuffer` uniform rewritten per draw; SpectraShade has no per-instance vertex input and no `InstanceId` (zero occurrences repo-wide), and all three backends hardcode `InputSlot = 0, PerVertexData`. R12 is therefore a **compiler feature first** (per-instance `[Location]` inputs through the analyzer and both `GlslGenerator` and `HlslGenerator`), then the renderer work.
-- **Measured, so it is no longer arithmetic.** `--props=<count>` scatters N part brushes sharing one brush instance. At 8,000 props (2,134 visible, 3,362 casters): **3.7 ms of a 5.24 ms frame** is duplicate draws of one mesh, split Shadows 2.26 / Geometry 1.53 against a 0.10 ms baseline. See `docs/performance.md` §6.1 for the full table. Note what it does **not** buy: `ViewBuild` (0.52 ms) is draw *selection* and survives.
-- **What landed.** `[PerInstance]` in SpectraShade with a reported vertex-input signature; `InstanceBuffer` plus `Mesh.DrawInstanced` on all three backends; a `(Mesh, Material)` batching pass on `RenderView` grouping by first appearance; and the shadow depth pass drawing those batches. 3,209 shadow draws a frame collapse at 8,000 shared-brush props.
-- **What it bought, and the correction.** Shadow phase 2.26 to 1.95 ms, frame 5.24 to 5.12. That is about **0.3 ms for 3,209 draws removed**, roughly a tenth of what this entry projected, because a phase total is not a submission cost: the per-cascade cull and the GPU's own work sit inside the same phase, and a depth-only draw was never worth 0.85 us. Full accounting in `docs/performance.md` 6.1.
-- **A shader's instanced twin is generated, not authored.** `[PerInstance]` on a `mat4` cbuffer field makes the compiler emit a second vertex stage from the same source, with that uniform arriving per instance; the ordinary stage is byte-identical, so a single draw pays nothing. `ShadowDepth` now marks its `uModel` and the hand-written `ShadowDepthInstanced.spectrashade` is deleted. **This is what unblocks the geometry pass**: `GBufferFill` needs one attribute, not a duplicate of its five-attachment write. The rewrite is three AST edits and no expression rewriting (a leading local keeps bare references resolving), so neither code generator changed, and running the same generator over the rewritten AST is what stops the two stages drifting.
-- **`import` remains parsed and unresolved**, and no longer needs to be built for this: there is nothing left to share between two shaders, because there is only one shader. `FEATURES.md` no longer claims imports work.
-- **Two bugs this shook out, both silent in one backend and fatal in another.** Growing the instance buffer between cascades frees a resource the open command list still references: D3D11 executes immediately and survives, D3D12 removed the device with `DXGI_ERROR_DEVICE_HUNG`. And a D3D11 input layout is bound to the shader signature it was validated against, so building one against the default shader creates fine and then fails every draw with a linkage error - which is why `CreateInstanceBuffer` takes the program it will be drawn under.
-- **Still last in the arc**, because it is throughput rather than fidelity, but the reason has changed: not "no beneficiary" but "large enough to sequence deliberately". The awkward part is still that batching must preserve the deterministic emission order the `RenderView` tests assert. **Size** — **L**, revised from M.
-
-### R13 — Compute dispatch
-`Renderer.Dispatch(program, groupsX, groupsY, groupsZ)` plus the resource kinds a compute pass needs and the engine has none of today: unordered-access views on textures, structured buffers, and the barriers between write and read. A repo-wide search finds no `Dispatch`, no UAV and no structured buffer anywhere in `Graphics/`.
-- **CORRECTED 2026-08-29: "the language half already exists" was wrong, and this milestone is larger than it reads.** `[Compute]`, `[NumThreads]` and `GlobalInvocationID` do exist, but SpectraShade's entire resource vocabulary is four **read-only** sampler types: there is no `image2D`/`image3D`, no `RWTexture`, no `imageStore`, no writeonly qualifier and no UAV concept, so a compute shader has nothing it can write to. There is also no explicit-LOD sampling, and `Sample` is illegal in `cs_5_0` (fxc X4532), so a compute shader cannot read a texture either. `ShaderProgram` is a VS+PS pair on all three backends and every `CreateShader(PipelineBlob)` throws on a missing vertex or fragment stage, so a compute-only blob cannot become a program at all; `ComputeData` is written to and read from `.specshadecomp` and then dropped on the floor. **`R13` is a compiler milestone, a renderer milestone and a new resource kind, not one of the three.**
-- **A 3D texture is part of the same gap.** `Renderer.CreateTexture` takes width and height only and `RenderTargetDesc` has no third dimension or array layers, on all three backends. There is no layered-rendering fallback either (GL attaches only `TextureTarget.Texture2D`, D3D12's RTV is `Texture2D`), so a volume cannot be filled slice-by-slice by the raster path in place of compute.
-- **Infrastructure, not a look**, sequenced only because `R17` and `R19` are far cheaper on top of it. GL 4.3 compute, D3D11 `CSSetShader`/`Dispatch`, D3D12 a compute PSO and root signature.
-- **Depends on** — `R1` (the PSO key already varies structurally). **Risk** — **MEDIUM**: three backends, and D3D12's resource-state tracking gains a fourth state to get wrong. **Size** — **M.**
-
-### R14 — The post stack: bloom, grading, and the lens
-Bloom as a mip-chain downsample/upsample fed by the HDR target (emissive is already a G-buffer attachment the light pass reads), a colour-grading LUT, and the cheap lens effects that read as "cinematic": vignette, film grain, chromatic aberration, and depth of field last. All of it lands in the resolve chain `R4` already established, in front of the ACES curve for bloom and behind it for grain.
-- **The highest payoff per day of work in this arc.** Bloom on emissive is the entire neon aesthetic, and a LUT is the main authorial lever over mood for near-zero engine cost.
-- **Depends on** — `R4`. **Risk** — **LOW.** **Size** — **M**, and shippable in pieces.
-
-### R15 — An ambient that has direction
-Replace the flat `uAmbient` scalar. Ladder: a sky-ground hemisphere term first (one extra colour, immediate step change), then a prefiltered irradiance cubemap plus a split-sum specular probe for real image-based lighting, then per-region probes once a level is big enough to need more than one.
-- **This is the correctness gap, not a polish item.** Every surface out of direct light currently receives the same grey from every direction, which is most of what makes a scene read as a demo. `R8`'s own leftovers already name IBL.
-- **Depends on** — `R2`, `R8`. **Risk** — **MEDIUM**: prefiltering wants either compute (`R13`) or an offline bake, and the split-sum approximation has a well-known set of ways to be subtly wrong. **Size** — **M–L.**
-
-### R16 — Temporal AA and motion vectors
-A velocity attachment, a history buffer, reprojection with neighbourhood clamping, and a jittered projection matrix. **The G-buffer has a `custom` attachment written every frame and read by nothing** (`docs/performance.md` §7.1 already flags it as the first thing to cut for low-power hardware), so the velocity slot exists without widening the layout.
-- **Why it matters more than it sounds:** *Stray* looks clean, and that cleanliness is TAA. Without it every specular highlight, shadow edge and thin geometry shimmers in motion, which reads as "cheap" no matter how correct the shading is. It is also the prerequisite for any future upscaler.
-- **Depends on** — `R4`, `R8`. **Risk** — **MEDIUM–HIGH.** Ghosting and disocclusion are where every TAA implementation spends its time, and the editor viewport's thin high-contrast lines are exactly the pathological case (see `R11`'s honest tension, which applies here too). **Size** — **M–L.**
-
-### R17 — Screen-space ambient occlusion
-GTAO or its horizon-based predecessor, from the depth and normal attachments the G-buffer already carries, multiplied into the ambient term rather than into direct light.
-- **Contact darkening is what stops objects floating**, and it is the cheapest large gain once `R15` gives the ambient something worth occluding. Note the G-buffer's existing AO channel is *material* AO from a texture, which is a different thing and does not substitute.
-- **Depends on** — `R8`, `R15`; far cheaper with `R13`. **Risk** — **LOW–MEDIUM.** **Size** — **M.**
-
-### R18 — Screen-space reflections
-Depth-buffer ray marching with roughness-aware blur, falling back to the `R15` probe where a ray leaves the screen.
-- **The wet-surface look specifically.** *Stray*'s alleys are reflective almost everywhere, and SSR plus a decent roughness map is most of that.
-- **Depends on** — `R8`, `R15`. **Risk** — **MEDIUM.** The failure modes (screen-edge fade, disocclusion smear) are cosmetic and well-understood. **Size** — **M–L.**
-
-### R19 - Volumetric fog and atmospherics *(split into four rungs 2026-08-29, after a code survey)*
-**The original entry specified a froxel grid gated on `R13`, sized `L`, and placed ninth in the recommended order. That was wrong in both directions at once.** Wrong-harder, because the *zone-based control* that makes fog an authoring feature is almost entirely independent of the froxel grid, and the first useful rung needs no new renderer infrastructure at all. Wrong-cheaper, because `R13` is much larger than this arc had been assuming (see the correction on `R13` above). The four rungs below are ordered by what they need rather than by what they look like, and only the last is compute-shaped.
-
-**Two things this arc did not previously name. CORRECTED after the adversarial pass: one is a gate and the other is not.** There is **no GPU timing on any backend**: every `FrameProfiler` number is `Stopwatch.GetTimestamp()`, so on the UHD 770 the entire deferred light pass reads 0.01 to 0.03 ms of CPU while its real cost sits inside `Present`. That is **not** a gate, because A/B frame-time comparison with a toggle flag is the established method in this repo and is exactly how the 0.95 ms cascade figure was obtained (`--shadows=false`, `DemoStartupOptions.cs:184`). What GPU timing actually buys is **attribution inside the pass** (scatter against integrate against composite), which A/B cannot reach. **And there is a tension here worth stating, because the plan created it without noticing:** folding the composite into the light pass, which `R19d` recommends on cost grounds, is precisely what makes the composite unmeasurable by A/B, since you cannot switch off half a shader. If GPU timing is ever a gate, the fold-in is the configuration that most needs it. **The genuine gate is the other one:** there is **no pixel readback outside OpenGL**, so a wrong depth-to-slice mapping or an inverted V raises no debug-layer message and `--offscreen-probe` passes. `Renderer.TryReadPixel` is already named as the highest-value addition to the rendering gate (`ROADMAP.md:487`), and this is the milestone that makes it non-optional.
-
-**One sizing consequence worth stating up front, and it is a design choice rather than a discovery.** If froxel XY is pinned in absolute terms (160x90 is 1/12 of 1080p and the standard 1/8 of 720p), the volume's cost does not scale with screen resolution and only its composite does, so render scale, which `docs/performance.md` 7.3 calls the single largest lever on weak hardware, does not touch it. The same absolute cost is then a **larger** fraction of a smaller frame. Tying XY to render scale instead removes the inversion and costs blockiness at low scale; pinning it accepts the blockiest configuration in the sizing table. Decide it deliberately at `R19d` rather than inheriting it from a table.
-
-**The budget caveat is larger than a caveat, and it is why no number below is settled.** `docs/performance.md` says the integrated per-pixel numbers were measured while commit `0666406`'s D3D11 null-SRV bind-cache bug was live. The adversarial pass established the mechanism and the timing: that commit added a per-PROGRAM SRV cache that returned early against slots `BeginPassCore` had just nulled, the commit landed 2026-08-24 02:23:44, and the UHD 770 sweep runs are 02:54 to 03:04 in `logs/spectra-20260824_015.log`. If the light pass's G-buffer read did not happen during those runs, the bandwidth roof derived from them is not 14% optimistic but roughly **twice** what the hardware achieves. **Re-run the UHD 770 sweep on the post-`a174131` build, with the window size recorded in the stats line, before quoting any roof.** Until then the roof is somewhere between roughly 20 and 40 MiB/ms, unresolved, and `R19d` sizing is a bandwidth floor rather than a measurement.
-
-### R19a - Analytic height and distance fog, folded into the light pass
-Beer-Lambert exponential height fog evaluated per pixel inside `DeferredLight.spectrashade`, from the world position it already reconstructs. No new pass, no new render target, no new resource, no blend state, no compute: about fifteen lines and five uniforms, in a shader that already carries `uInverseViewProjection`, `uCameraPosition` and the per-backend `uDepthToNdc`/`uUvToNdc` corrections.
-- **Why now:** it is the cheapest visual gain left in the arc after bloom, and it has no prerequisite of any kind. Aerial perspective is most of how a viewer reads distance, and the engine has none, in the same way the flat `uAmbient` is most of why a scene reads as a demo.
-- **The one trap, and it fails as a bug rather than as an absence:** the fog must also be applied at the `depth >= 1.0` sky early-return (`DeferredLight.spectrashade:169`), or it stops dead at the horizon and the scene gets a hard fog line against the sky.
-- **Forward keeps its own copy or goes without.** `Lit.spectrashade` is a separate shader and there is still no `import` resolver, so this is a deliberate two-place decision rather than an oversight. Going without is defensible: forward exists for MSAA and transparency, not for the game view.
-- **Depends on** - nothing. **Risk** - **LOW.** **Size** - **S.**
-
-### R19b - The zone model: `Scene.Environment` plus a `FogVolume` payload
-The authoring half, and the reason volumetrics is worth doing at all rather than shipping a global density slider. Global defaults live on a typed `Scene.Environment` settings struct; spatially bounded overrides live as a **`FogVolume` payload on a `SceneNode`**, carrying colour, density, height falloff and priority, plus a soft-edge blend distance.
-- **Blending must specify the REDUCTION, not just the fields, or three overlapping zones are undefined.** It is an ordered weighted accumulation over the zones containing or skirting the point, sorted by priority descending and then by a stable tiebreak that is **`SceneNode.Id`, never traversal order** (traversal order is exactly what a reparent changes, and the carve already learned that lesson). Weight per zone is its soft-edge falloff; the global `Scene.Environment` value is the bottom of the stack with weight 1 so the accumulation is always total. A zone fully inside another is then just the higher priority winning at weight 1, with no special case.
-- **This amends `docs/realms.md`'s `Lighting` row (`realms.md:849`) rather than contradicting it.** That ruling put fog density on a typed `Scene.Environment` struct and explicitly *not* on a node, because "a node implies a transform, a parent, a realm and a subtree brush count, none of which mean anything for fog density". That is right for **global** fog and does not cover a **bounded zone**, for which a transform and a parent mean exactly what they always mean. The split is the amendment: global on the struct, spatial as a payload. It is written down in both places, because a silent exception to a stated ruling is how the next reader derives the opposite rule.
-- **Parallel `vec4[N]` arrays, never a struct array.** Struct arrays generate valid shader text on both generators and then **silently do nothing on OpenGL** (`ShaderProgram.cs:50-66` has no per-member setter path). The existing `vec4[8] uLightPositions` / `vec4[8] uLightColors` pairing is the shape to copy, and `PostPass` already carries `Vector4[]` and `Matrix4x4[]`.
-- **The real cost is the payload checklist, not the renderer.** A fourth payload must satisfy every site `Light` does: the field and its equality-early-outing setter, `Clone` (and `Light` is the precedent for a **mutable** payload, which must be copied rather than shared), a membership set on `Scene` with an idempotent updater, the `OnNodeAdded` re-check and the unconditional `OnNodeRemoved` drop, a `SceneNodeKind` value and its slot in the classifier's priority order, the change log's stamp, two Avalonia converters and a glyph, a `MapDocument` record plus both directions of `MapSceneBinder`, the writer's anchor `Flush` and the reader's switch case, `PropertyId` values in **declaration order** (which is the display and merge order), a `PropertyEditor` arm, an `InsertKind`, and an `IEditorCommand` capturing **values rather than the object**, for exactly the reason `SetLightCommand` does.
-- **Two items on that list are new work rather than pattern-following.** (1) Spatial indexing is **three sites in `SceneBvh`, not one**: `IsSpatial` (`:154`), an arm in `ComputeWorldBounds` (`:279-299`) or the leaf gets a degenerate point box, and an arm in the `Raycast` leaf narrow phase (`:552-568`) or the node is indexed and still unpickable. And admission is a **decision with a cost**: the stated reason lights stay out is that admitting them "would quietly make every lamp in a level something a picking ray hits and a character walks into", so a `FogVolume` node must either clear `CanQuery`/`CanCollide` or be excluded by a query filter that callers opt into. Decide it in the same breath as the map tier, since both are about what a fog volume IS to the rest of the engine. (2) A **density graph has no representation anywhere in the engine**: no curve, ramp, gradient or `NumberSequence` type exists, `PropertyKind` has exactly seven values with no curve, list, asset-picker or slider, and there is **no colour picker either** (`PropertyKind.Color` renders as three float text boxes, byte-identical to `Vector3`). A `PropertyKind` the panel does not know renders **nothing at all** rather than failing.
-- **Scope the graph deliberately, but do not defer the colour picker.** A height falloff plus a few scalars fits the existing panel today and is most of the authored control in practice; a real curve editor is a new `PropertyKind`, a new `PropertyRow` field, a new `PropertyEdit` field, a new widget and a new map record shape, and it belongs in its own milestone where particles and animation can spend it too. **The colour picker is the opposite case and is a prerequisite of this rung**: fog is authored by choosing a colour, typing three linear floats is not choosing a colour, and it is far smaller than the curve editor (an eighth `PropertyKind`, or a swatch plus an sRGB entry field on the existing `Color` arm), which every existing `Color` row including `LightColor` gains immediately.
-- **A `FogVolumeOverlay` is part of this rung, not a nicety.** A fog zone with no overlay is invisible at rest and therefore unfindable, which is the same defect `PartBrushOverlay` and `SubtractiveBrushOverlay` exist to prevent. Wireframe box plus a density tick, its own colour token, and its per-frame cap **disclosed rather than silently truncated**, exactly as both precedents do.
-- **CORRECTED: preservation does NOT protect a fog volume, and this rung must bump the format version.** Unknown-member preservation is a **document-path** guarantee (`MapReader` to `MapDocument` to `MapWriter`) and does not survive the path an editor takes. `MapSceneBinder.NodeToMap` (`MapSceneBinder.cs:63-118`) constructs a fresh `MapNode` from the scene and populates transform, brush, light, mesh and children only; the word `Unknown` does not appear in that file. So an older editor that opens a fog-bearing map, nudges one brush and presses Ctrl+S **silently deletes every fog volume in the level**. `R19b` must therefore bump `MinimumReadableMapVersion` to 2 so an older engine **refuses** the map rather than eating it. **This also exposes a pre-existing data-loss bug that is not fog's to fix but is worth fixing first:** the same binder drops `editor`, `realm` and `state` today, so every reserved member the format documents is already destroyed by a round trip through the editor.
-- **Depends on** - `R19a`. **Risk** - **MEDIUM**, and the risk is breadth rather than depth: twenty-odd sites, each individually shallow, where missing one fails silently (a zone that saves but does not load, or a tree row with no icon). Raised from LOW-MEDIUM by the adversarial pass, which added a map-format version bump, a colour picker, a viewport overlay and two further `SceneBvh` sites to the rung. **Size** - **M-L.**
-
-### R19c - Light shafts: half-resolution raymarch against the existing cascade atlas
-A half-resolution full-screen pass marching the view ray against the shadow atlas, with a dithered per-pixel start offset, a bilateral depth-aware upsample, and a composite performed by a pass that already writes the scene target.
-- **It needs no new CPU data structures whatsoever**, which is the finding that makes this an `M` rather than an `L`. Everything is already staged into a `PostPass` by `DrawDeferredLightPass`: the four `uWorldToShadow` matrices, `uCascadeRects`, the atlas as a sampler, and every backend convention already folded in on the CPU by `ShadowMap.WorldToShadow`. It reuses the identical cascade **containment** test, which matters because `Fit()` `stackalloc`s its split distances and never stores them (`ShadowMap.cs:244`), so no pass can ask the shadow map where a cascade ends in view depth.
-- **CORRECTED: the fixed-step march compiles today, and explicit-LOD sampling is NOT a dependency of this rung.** The original wording claimed HLSL refuses gradient instructions in varying flow control. That is not a real fxc rule. The actual rule is that fxc will not compile a gradient-sampling loop whose trip count it cannot bound: a march with a data dependent `break` fails with X3511 after warning X3570, while the **fixed-step, no-break** march this rung specifies compiles with no warning and no compiler work. The engine's own `ShadowFactor` already samples under a uniform-bounded loop and ships on D3D. What explicit-LOD sampling actually buys is a **dynamic early-out**, by removing the unroll pressure so the loop stays rolled (measured with fxc: 21 instruction slots against 506 for the unrolled implicit-gradient form). It moves to `R19d`, where it is genuinely mandatory because `Sample` is illegal in `cs_5_0`.
-- **The composite cannot be an additive draw.** Blend state does not exist on OpenGL or D3D11 at all: the enum exists, only D3D12's PSO key reads it, and every call site passes `Opaque`. The shaft buffer is therefore read as a texture rather than blended over the scene. This also corrects `R10` above, which is out of date on the D3D12 half.
-- **Use one bilinear shadow tap, not the light pass's four rotated ones.** That kernel is sixteen texture fetches per shaded pixel; at march densities the shadow lookup otherwise becomes two thirds of the whole budget.
-- **One prerequisite commit, four lines, and it is not fog's bug.** `Renderer.cs:1415` stages the light pass's target size from the pass that ran previously rather than from the target about to be bound, which is latent today only because nothing is inserted between the geometry pass and the light pass. A half-resolution shaft pass is exactly such an insertion. Fix it on its own first, reading `FrameTarget` directly or moving the staging block inside the `BeginPass`/`EndPass` pair.
-- **The march inherits the light pass's texel-centre snap verbatim**, because it runs at half the G-buffer's size and so hits the same mismatch: `uGBufferSize` sent separately from the pass's own size, the depth read snapped to `floor(uv * uGBufferSize) + 0.5`, and `uUvToNdc` **sent rather than derived**. This is the 369-of-765 bug `DeferredLight.spectrashade` documents at length, and a half-res pass is the exact configuration that triggers it.
-- **Depends on** - `R19b`, `R6`/`R7` (landed). **Risk** - **MEDIUM.** **Size** - **M.**
-
-### R19d - The froxel volume
-Scatter into a view-aligned 3D volume, integrate front to back, composite against depth. The only rung that buys height-varying in-scattering a screen-space march structurally cannot, and the only one needing the whole compute stack.
-- **CORRECTED: the sizing is a bandwidth FLOOR, not a measurement, and no configuration is proven to fit.** The original bullet quoted a 46.1 MiB/ms roof and a 0.69 to 1.83 ms bracket for 160x90x64, calling it the only configuration inside 1 to 2 ms. The roof was 72 bytes per pixel of assumed traffic over the forward-to-deferred delta, and 72 is wrong twice: it counts `custom` as read back when the light pass declares no sampler for it (five G-buffer samplers, `Renderer.cs:1394-1399`), and it never subtracts the forward path's own 12 B/px. The real delta is 36 written + 28 read + 8 HDR - 12 forward = **60 B/px**, giving **38 to 40 MiB/ms**, 14 to 17% lower. On the plan's own traffic figures the bracket becomes **0.80 to 2.13 ms**, whose pessimistic end is **outside** the 1 to 2 ms window, so the "only configuration that fits" claim fails on its own test. **Three further faults, all in the same direction.** The model has **no ALU term at all**, and the scatter (four `mat4` transforms and five `Step`s per froxel for cascade selection, 921,600 times) is the most ALU-dense thing in the proposal. The shadow tap is priced as one 4-byte DRAM read where the design calls for a bilinear tap, so the honest check is a fetch-count ratio against the light pass's own 33.2M fetches inside 0.95 ms, not a byte count. And there is **no temporal history volume** in the budget, which is what makes a low per-froxel sample count acceptable at all: +7.03 MiB and a dependency on `R16` if it is wanted, or an explicit statement that this ships without reprojection and what step count that forces. **The honest sentence is that the bandwidth floor is about 0.8 ms and the total is unknown until measured.**
-- **A separate composite is not merely expensive, it is not currently possible.** No blend state exists outside D3D12's PSO key, and reading `FrameTarget` while writing it needs a ping-pong target costing 15.8 MiB at 1080p. Were it possible, separating would add roughly 0.86 ms of framebuffer and depth traffic, not the 1.01 ms originally claimed, which double-counted reads the folded-in version also pays.
-- **The fold-in point already exists and is one texture slot away.** `DrawDeferredLightPass` binds slots 0 to 5, already reconstructs world position from depth, already writes `FrameTarget` with `PassClear.Keep`, and slot 6 is free.
-- **Depends on** - `R19c` and a **corrected** `R13`. **Risk** - **HIGH.** **Size** - **L.**
-
-### R20 — Decals
-Deferred decals projected into the G-buffer before the light pass, with per-decal albedo/normal/roughness contribution and angle fade.
-- **Set-dressing density is a huge part of why a *Stray* environment reads as a real place**, and none of it is modelled geometry. Deferred is the right shape here precisely because the G-buffer already exists.
-- **Depends on** — `R8`, `R10` (blend state). **Risk** — **MEDIUM.** **Size** — **M.**
-
-### R21 — Particles
-A CPU-simulated emitter with a GPU-instanced quad path, soft-depth fade against the depth buffer, and additive plus alpha blending.
-- **Dust motes, steam, sparks and rain.** Atmosphere that costs almost nothing and that no amount of shading quality substitutes for.
-- **Depends on** — `R10`, `R12`. **Risk** — **LOW–MEDIUM.** **Size** — **M–L.**
-
----
-
-## 10. Arc H — Hosting the editor in Avalonia
-
-**Ruling R‑10 applies: none of this blocks building a level.** The editing layer works in the existing Silk window first.
-
-**SETTLED 2026-08-28: the shell is Avalonia, and it hosts the engine IN-PROCESS.** Both halves were signed off together because they answer each other.
-
-*Avalonia over Uno,* on the researched gap: Uno has no real docking story (one partial community library), and a level editor without dockable panes is not a level editor. Avalonia has two (Dock, MIT; Actipro, commercial), ships documented NativeAOT support, has two independent precedents for embedding a GPU renderer (Ryujinx through `NativeControlHost`, PixiEditor through composition GPU interop), and Stride made the same choice for the same reasons. It also runs everywhere the engine runs, which is the deciding property: the engine targets Windows and Linux, and a shell that only runs on one of them makes the other a second-class target for authoring rather than only for playing.
-
-*In-process over separate-process,* because it is both the easier and the faster answer and there is no third consideration close enough to outweigh them. Easier: shell and engine are both .NET, so the shell references Core and Editing directly, and the entire document model, the JSON entity-schema export and the IPC layer that a separate process would force simply do not get written. Faster: a separate process cannot share GPU resources, so every frame crosses a process boundary as a copy, and every selection change becomes a message. The engine is also already shaped for it: `ISceneEditor` is an in-process seam, `EditorInputFrame` is a by-reference value struct, and the undo stack addresses live `SceneNode`s by `Guid` inside a live `Scene`. The cost is crash isolation, which is paid back by Luau running sandboxed in-process anyway and by play mode being a diff-restore (§11.5) rather than a second world.
-
-### H1a — `IRenderSurface` ✅ **landed 2026-08-28**
-`IWindow` is gone from `Renderer.Initialize/AcquireContext/ReleaseContext/Present` and from all three backends, replaced by an `IRenderSurface` carrying exactly a kind, a native handle, a GL context, a pixel size and a resized event. `WindowRenderSurface` adapts the standalone Silk window and forwards everything without caching, so the standalone path is unchanged: 1,363 tests green and all three backends smoke clean with no error lines, which is the whole verification this refactor gets and the whole verification it needs.
-- **`Kind` carries the PLATFORM, not just "has a handle".** A bare `nint` would have thrown away the check that `window.Native.Win32?.Hwnd` was doing for free, turning "wrong platform" from a clear refusal into whatever a driver does with a nonsense pointer. Both D3D backends now say which kind they got.
-- **What was NOT removed, deliberately: Silk.NET.** Core legitimately uses it, `IGLContext` and `Vector2D` are the vocabulary the GL backend already speaks, and the standalone window stays a Silk window. The dependency being broken is on window OWNERSHIP (title, cursor, event pump, lifetime), which is what an editor shell owns and the engine must not assume.
-- **Pinned by a source-convention test**, like the COM ownership rule and for the same reason: what would regress is a compile-time dependency, so no runtime test can see it. `RenderSurfaceConventionTests` fails the build's test run if anything under `Graphics/` names `IWindow` again, with `WindowRenderSurface` as the one exception.
-- **The stored `_window` field in each backend turned out to be a pure null guard** ("am I initialized?"), never dereferenced, which is why this was a contained change rather than a backend rewrite.
-
-### H1b — `EngineHost` ✅ **landed 2026-08-28** *(three of four members; `SubmitInput` deferred to `H2`, see below)*
-`EngineHost` is the whole surface a UI thread gets: `EnqueueCommand`, `RequestShutdown`, and a `FrameCompleted` event delivering **immutable** `FrameSnapshot`s (frame number and timing, selection ids, editor mode names, undo/redo depth, compile count, and a batched `SceneChange` list). `Engine.Host` exists whether or not anything is listening. Pinned by `EngineHostTests`.
-- **`SubmitInput` is deliberately absent, and this is the one judgement call in the milestone.** Routing input needs a backend-neutral event vocabulary, and Core has no key enum ON PURPOSE (`GizmoShortcuts` matches key NAMES precisely so that one is never needed). Designing that vocabulary with no real host to shape it against is how a seam ends up fitting nothing, so it lands in `H2` alongside the Avalonia input source that will define it. Until then the standalone window feeds `InputManager` exactly as before.
-- **Where the two calls sit is load-bearing.** Commands drain **immediately before the static-world compile pump**, so an edit posted from a UI thread and the recompile it causes land in the same frame; any later and a shell's delete is visible in the tree one frame before it is visible in the viewport. Snapshots publish **after Present**, so they describe a finished frame and a handler's cost can only delay the next one.
-- **Snapshots publish on an interval (about 30 Hz), not per frame**, because the engine runs at several hundred frames a second and no panel refreshes that fast; per-frame publishing would put real garbage on the render thread for a UI that discards it. **Structural changes are never dropped by that**: they accumulate continuously in `SceneChangeLog` and every one rides the next snapshot out, and a frame carrying changes publishes regardless of the clock, because a tree view a third of a second behind a delete reads as a broken editor.
-- **`Scene.NodeReparented` is new, and it closes a real hole.** A reparent within one scene raises neither `NodeAdded` nor `NodeRemoved`, because nothing entered or left the graph, so a tree view fed only the membership events desynchronises the first time somebody drags a node in it. `E6` made that reachable from the UI, which is what turned a latent gap into a live one.
-- **The log reports overflow rather than truncating.** A view fed a partial change list looks correct and is wrong, which is worse than one told to rebuild; a scene swap is reported the same way, because enumerating a whole graph to say "this is all different" is the rebuild it was trying to avoid, done twice.
-- **A bug the tests caught before the engine ran:** the publish interval used `TimeSpan.MinValue` as its "never published" sentinel, and the first subtraction against it overflows. That is a throw on frame one, not the immediate publish it looks like. It is a nullable now.
-- **Still owed, and NOT part of this milestone:** `EngineHost` does not yet OWN the render thread; `Engine.Run` still creates the window and starts it, and the host publishes into that loop. Embedded startup (an engine that takes a host-supplied surface and creates no window) is `H2`'s first task, because it and the viewport are the same change.
-- **Embedded mode is engine-driven.** The render thread already owns the GL context, scene mutation and all GPU resource creation — including chunk mesh swaps inside the compile pump. Keeping that thread means the async CSG pipeline, the BVH, the selection set and the command queue all keep their existing single-threaded proofs verbatim, and decouples the viewport from XAML layout stalls.
-- **Consequence to design for, not discover:** the UI is eventually consistent — an inspector text box shows local state and reconciles a frame later.
-- **Three things the `H1a` sweep found that `H1b` and `H2` should not re-derive:**
-  1. **`Renderer.WindowApi` is a fifth window-facing member** the original spec did not list. It tells the window FACTORY whether to bring up a GL context (`Engine.cs`, `API = _renderer.WindowApi`), which is exactly backwards once a shell hands over an already-created child window. It is correct for the standalone path and simply unconsulted by an embedded one, so it stayed; `H2` decides whether an embedded GL surface needs an equivalent negotiation.
-  2. **The real work in embedding OpenGL is context creation, and it is invisible from the D3D side.** A `NativeControlHost` handle has no `IGLContext`, so the embedded GL path has to create its own WGL/GLX context against the child window and supply a proc-address loader for `GL.GetApi`. Both D3D backends need only one HWND, once, at Initialize, and never re-read it. That asymmetry is the largest single risk in the arc and it lives entirely in the GL backend.
-  3. **`SwapInterval(0)` must stay part of the make-current step**, on the thread that makes current. `glfwSwapInterval` acts on the calling thread's context, and this repo has already paid once for getting it wrong: 16.68 ms per frame with 0.8 ms of work in it. An embedded GL surface that omits it reverts to the refresh rate and reads as "the renderer got slower under Avalonia".
-- **Depends on** — `E1`, `H1a`. **Risk** — **MEDIUM.** **Size** — **M–L.**
-
-### H2 — Viewport v1: `NativeControlHost` ✅ **landed 2026-08-28** *(Windows; Linux still owed, see below)*
-`SpectraEngine.Editor` is an Avalonia shell with the engine running live inside a docked pane: a native Win32 child window, the engine's own D3D swap chain behind it, its own render thread, its own present. Nothing about the frame goes through the UI framework. Verified by running it, because that is the only verification a viewport can have: 1,485 tests green, the demo scene rendering at ~1,700 fps in a 1148x829 pane, a click selecting a brush and drawing its gizmo, a right-drag freelooking with a captured cursor, `3` and `Y` and `2` reaching the tool bindings, a 257-node scene tree built from snapshots, and a clean shutdown with no debug-layer errors.
-- **The engine's own lifetime split came first.** `Engine.Start(IRenderSurface)` / `Stop()` run the same render thread against a surface somebody else owns; `Run()` still creates a window and blocks, deliberately not collapsed into one call, because blocking is what owning the process's main loop means and a shell calling from its UI thread has to get control back. Fullscreen needed no change at all: `IWindowModeLatch` was already a request read by whoever owns the window.
-- **`SubmitInput` landed here, as `H1b` said it would, and having a real host is what settled its shape.** Core owns `InputKey`/`InputEvent`; `InputManager` stores those and **the standalone window's own device callbacks are submissions too**, so edge detection, the auto-repeat filter, the delta accumulator and the focus-loss release are one implementation and the two hosts cannot drift. An absolute pointer position and a raw delta are separate event kinds, because a captured cursor has no meaningful position at all.
-- **The shell creates the child window rather than taking Avalonia's default one, and that is not gold-plating.** A native child is where the OS delivers the mouse: its messages go to its own window procedure and do not bubble to the parent, so a viewport hosted on somebody else's default child renders perfectly and never responds to a click. Owning the class also owns `CS_OWNDC`, which the embedded GL context will need.
-- **A bug the shell found in itself, and the one worth remembering:** keeping only the newest `FrameSnapshot` silently drops structural changes. Each snapshot's change list is a batch that exists once, and the *first* one carries the "you have nothing, rebuild" flag; losing exactly that one left a tree view showing 4 nodes of a 257-node scene with nothing anywhere reporting a problem. The engine's guarantee is that every change rides the next snapshot, and a shell that samples instead of draining breaks it from the outside. Snapshots are queued now, bounded, and an overflow says so.
-- **Still owed: Linux, and it is the embedded OpenGL context.** The shell refuses `opengl` explicitly rather than letting the renderer discover it, and `EngineViewport.IsSupported` is false off Windows, where the layout still appears but no engine starts. This is `H1b`'s flagged risk arriving on schedule, and it is the arc's largest remaining piece of work; open question 3 in §11 is answered "yes, D3D-only for v1" by this milestone rather than by assumption.
-- **D3D12 in the viewport is pinned to 60 fps and D3D11 is not**, measured: 703 fps standalone against exactly 16.69 ms embedded, while D3D11 embedded runs at 1,715. The D3D12 chain is `FlipDiscard` presented with `Present(0, 0)` and no `ALLOW_TEARING` flag, and a flip-model chain composited by DWM inside a parent window honours the refresh interval regardless; D3D11's bitblt chain does not. Left unfixed on purpose (60 fps in an editor viewport is arguably right, and uncapping touches the one swap-chain path with a history of resize failures) but written into `docs/performance.md` §3a, because 16.7 ms with sub-millisecond work in it is the exact shape of the vsync bug this repo has already paid for once.
-- **Airspace was the accepted cost of `H2`, and it is now a property of the NATIVE path alone.** The child sits above the XAML, so beside one Avalonia cannot draw over the viewport and it cannot be rotated or given opacity; docking, panels and the inspector all work around it. `H3` removed it for a composited session and `H10` spent what that bought.
-- **Depends on** — `H1`. **Risk** — **LOW–MEDIUM**, and the concrete dividend of choosing Avalonia. **Size** — **M.**
-
-### H2b — Shell styling and a working toolbar ✅ **landed 2026-08-28**
-The shell stopped looking like an unstyled Fluent app: a token layer (`Theme/Tokens.axaml`, and nothing outside it writes a literal colour), a toolbar that actually drives the engine, a scene tree with per-kind icons, a dim-not-hide filter and two-way selection, and a status bar of labelled monospace fields. 1,520 tests green; verified by driving the running window (click a row and the engine selects it, click rotate and the viewport's gizmo becomes a ring, `t:light` narrows 257 nodes to 4).
-- **The verbs came first, and they are the SAME ones a key chord uses.** `EditorHostCommand` plus `SceneEditorHost.Apply` overloads; the shell posts them through `EngineHost.EnqueueCommand` and the cast to the concrete host happens inside the queued command, on the render thread, which is the only thread allowed to read `SceneManager.Editor` at all. Synthesising key presses was rejected: a second input path free to drift, and the letter-row bindings deliberately stand down while a camera is driving, so a toolbar built on them would go inert exactly while somebody was navigating.
-- **`GizmoModeName` split into a tool and a style.** One combined label reads fine in a log line and is useless to a toolbar: three buttons need to know which is lit, and splitting a string to find out is a contract nobody wrote down. The stats line composes the two, so its text is byte-identical and no gate moved.
-- **Two bugs the survey found before they were noticed.** `SceneTreeNode` had no change notification, so a reparent or an undone delete left a stale name on screen with nothing reporting it; and the selection pass cleared and re-set a flag on every node on every published snapshot, which is fine until the nodes start raising notifications and then is a storm proportional to the whole scene.
-- **No fake window chrome, and no custom title bar.** A dead close glyph teaches within one session that the app's controls are decorative; making the three verbs true is a docking feature. The caption is coloured with three DWM attributes instead, which costs nothing in hit-testing and keeps Aero Snap. The site's motif survives where it is honest: a category chip and a monospace panel name.
-- **Airspace decided the layout.** Every strip is its own grid cell and none overlap the viewport, because a native child window composites above everything Avalonia draws.
-- **Reveal-and-expand landed with it**: picking in the viewport expands the chain above the node and scrolls it to a third of the way down the panel. Expansion is model state because a row under a collapsed parent has no container to scroll to; the resting position is written to the scroll offset directly, because an oversized `BringIntoView` rect is clamped to the control and does nothing.
-- **The tree virtualizes** (landed 2026-08-28, after the rest of `H2b`). `TreeView` never overrides its items panel, so it inherited a plain `StackPanel` and built a container per node; the model now projects a FLAT list of visible rows carrying their own depth, and a `ListBox` over it realises **34 rows of 245 visible in a 257-node scene**, measured. `TreeDataGrid` was surveyed and rejected: 12.x is a commercial Avalonia Pro component that fails the build without a licence key, and the last permissive release predates Avalonia 12.
-- **Deliberately out of scope:** drag-reparent, rename, tree keyboard multi-select, layout persistence, and the radial background glow (it cannot appear behind the viewport, and it bands on 8-bit panels).
-- **Depends on** — `H2`. **Risk** — **LOW.** **Size** — **M.**
-
-### H4 — Ribbon, themes, docking: the shell's three declared directions
-Recorded 2026-08-28 from the owner, in the order they were raised. Two of the three are struck DONE below; the theming item is half-built (see `CLAUDE.md` on the `DynamicResource` colour split). Each is written down so the work that happens before it does not paint itself into a corner.
-- ~~**The toolbar becomes a full ribbon.**~~ **DONE** (see `H13`). The property it asked to protect held: every ribbon control is a verb the roster names, resolved from the control's own `Tag`, so nothing grew logic that lives only in a click handler.
-- **Custom theming is a stated goal, so the token layer must stay the only source of colour.** `Theme/Tokens.axaml` already holds every value and nothing outside it writes a literal, which is exactly the precondition. What is still missing for user themes: the tokens are `StaticResource` (resolved once) rather than `DynamicResource`, there is no theme file format or loader, and the node-kind tints are consumed through a converter that looks keys up by name. **The conversion to `DynamicResource` is the one thing worth doing early**, because retrofitting it after more views exist is a mechanical edit across all of them. **Risk** — **LOW.** **Size** — **S** now, **M** later.
-- ~~**No dockable panes yet, and that is a decision rather than a gap.**~~ **DONE.** Dock.Avalonia (MIT) landed with `H2b`'s successor and the viewport joined it in `H10` for composited sessions. The airspace risk this bullet recorded, a floating pane over the viewport being invisible, was answered twice: floats are pinned to native OS windows, which may legally cross a native child, and a composited session has no child window for anything to cross. The fake-window-chrome question it bundled in stays settled the same way, because panel headers are Dock's own now.
-
-### H3 - Viewport v2: composition GPU interop ✅ **landed**
-The native child window is replaced by a shared keyed-mutex texture handed to Avalonia's compositor (`ICompositionImportedGpuImage`, the same path PixiEditor uses), so the pane composites like any other control and UI may overlay it. The GL backend still has no import path and is refused by name rather than attempted. `ViewportModePolicy` keeps the native child as the effective default and earns the flip per machine from consecutive green sessions, because the composited path measures pixel-identical on the machine it was written on, which is evidence about one driver.
-- **Depends on**: `R3`, `H2`. **Size**: **L.**
-
-### H10 - The viewport docks, for a composited session only ✅ **landed**
-Unpins the shell's dock layout and admits the viewport as a real dock `Tool`, dockable, tabbable, floatable, `CanPin` restored - **for composited sessions only**. A native session is unchanged: it stays pinned in its plain grid cell, because a `NativeControlHost`'s HWND is destroyed by any re-parent and the engine session goes with it. `ViewportLayout.For` is the mapping and it takes the `ViewportDecision` itself rather than a bool, so the layout cannot be computed from a second guess.
-- **The two hazards were both invisible from inside a control.** A detach is a re-parent until the shell says otherwise: answered as a teardown it stops the engine and the re-attach builds a SECOND session, with a new scene and an empty undo history, and nothing reports an error - so `IEngineViewport.Shutdown()` is the one thing that ends a session and the native child answers it with nothing at all. And the frame pump now OWNS the drawing surface, released only after the last import has settled: disposing it at the moment of detach put it under a live keyed-mutex bracket, and the fault that produced would have been reported as the composited viewport failing on every re-dock.
-- **`Window.PositionChanged` is the geometry signal layout cannot see**: a window that moves re-lays out nothing while the pane's screen origin changes, which is exactly what a live cursor lock differences against. A dock drag cannot start while the pointer is locked, structurally: the lock hides the pointer, fences it to the client rect and holds the capture.
-- **Depends on**: `H3`, `H4`'s docking. **Size**: **M.**
-
-### H11 - Drag an asset out of the browser and into the scene ✅ **landed**
-The content browser becomes a drag source and a composited viewport becomes a drop target, so a model in `Assets/` reaches the level by being dragged onto the surface it should stand on. **Composited sessions only**, stated rather than degraded: a native child is a window the OS routes input to, its messages never bubble into Avalonia, and OLE would reach it only through an `IDropTarget` registered on that HWND - which is not built, so `IEngineViewport.AcceptsAssetDrops` is asked and the refusal is a sentence naming `--viewport=composition`.
-- **The payload is the engine's own identity, not a filesystem path.** `ContentDragPayload` carries the normalized content-relative path - the string the asset caches key on, a `.spectramat` writes down, a map's `mesh` member records and the pack's asset-id hash is taken over. A fifth spelling produces the quiet failure: the drop resolves nothing, the node arrives empty, and every log line reads healthy because the path it named really does exist.
-- **The placement is the EXISTING insert with a payload**, never a second path: the same cursor ray, the same scene-wide pick that sees parts and meshes, the same snap along the hit surface, one history entry, selected afterwards, `RefuseEdit` in front. What it adds is a clearance measured from the subtree's own bounds through `GizmoSelectionBounds`, and the discarding of the model file's own root translation - a drop says where the thing goes.
-- **A model that cannot be resolved places a node with no renderer and a line in the report**, which is the map loader's rule and matters more here because a drag has no keyboard equivalent to fall back on. `ModelInsertReport` keeps a refusal and an unresolved model apart, because flattened they read as one message and mean opposite things.
-- **Deliberately out of scope:** dropping a material onto a face (a different gesture - it needs the face under the cursor, not the point), and native-child drop support.
-- **Depends on**: `H3`, `H10`. **Size**: **S.**
-
-### H12 - The first thing drawn over the render ✅ **landed**
-A drop affordance over the viewport while an asset drag is over it: a frame around the pane and a chip naming what would land, or the refusal `H11` already had words for. The feature is small and the point of the stage is what shipping it PROVES - the airspace rule's composited half stops being an argument from how compositing works and becomes a thing on screen.
-- **The overlay refuses to appear in a NATIVE session, and that is the rule rather than a gap.** Over a child HWND every pixel of it would be painted and composited away, so `ViewportDropPrompt` is not visible there at all and a native session keeps the status-bar refusal `H11` built. An overlay nobody can see is worse than none, because the code then claims to have reported something - which is why the visibility rule is a pure type with a test on it rather than an `if` inside a handler.
-- **Amber, never the accent.** The accent means selection and a drop target selects nothing; this says the viewport is in a state where letting go does something, which is `SpectraMode`. Both arms share the hue deliberately - the refusing arm is a warning, and warning IS Mode, told apart by its icon and its place.
-- **Nothing in it follows the cursor**, which is what makes the 90ms opacity ramp legal at all: a transition on a value a pointer writes every frame trails the hand by exactly its duration. `IsHitTestVisible` false is the silent one - hit-testable, an always-present overlay takes the `DragOver` the pane needed and the drop stops landing, with no error anywhere.
-- **The verdict is `AssetDropPolicy`'s, asked rather than restated**, or the frame is free to promise a placement the drop then refuses at the instant somebody lets go. The drag state crosses as one last-write-wins value raised on a CHANGE, because `DragOver` fires per pointer move with a constant answer; and the stuck-overlay guard is the next ordinary pointer move rather than `DragLeave`, which is the ordinary path and not a guaranteed one.
-- **The visual result is UNVERIFIED, and that is recorded rather than glossed.** A drag cannot be driven headlessly and the shell is not an installed application, so no screenshot of the overlay exists. What was run: a live composited session end to end with the markup in it (58 fps, zero errors, zero warnings) and a window capture showing the layout intact. What a person still owes it: drag a `.obj` onto the pane, then a `.png`, and look.
-- **Deliberately out of scope:** a cursor-following badge (it would be on the drag path), an overlay for anything but the asset drag, and native-child drop support - all three unchanged from `H11`.
-- **Depends on**: `H11`. **Size**: **S.**
-
-### H13 - The command bar becomes a collapsible ribbon ✅ **landed**
-`H4`'s ribbon item, built - and built against the three findings that retired this shell's previous tab strip, because **the owner reopened that decision after being shown them**. Home / Model / View died because two of its pages carried the same six verbs, Frame was written out three times, and Insert sat on the tab nobody opened; the answer here is not to argue with any of that but to make each finding something the build enforces. Two pages, `Build` and `View`, over 30 controls that were previously one 40px row of nine plus four levels of menu.
-- **No verb is on two tabs, as a TEST.** The roster is data (`RibbonLayout`), a `RibbonVerb` is a value, and `RibbonLayoutTests` compares the sets. Falsified: one verb placed on both pages turns exactly that test red and nothing else. A verb buried in a click handler would have made the identical defect invisible, which is why the union type exists.
-- **Insert is the first group of the default page and the active page is not persisted** (only the pin is), so no launch can start with it hidden. **Two pages, not three**, dividing on a real axis - Build changes the level, View changes only how you look at it - with tested floors (eight controls, three groups) so a thin future page is a build failure rather than a taste argument.
-- **The roster is welded to the markup at both ends.** Every control's `Tag` is its roster id, one handler per page resolves it, and a page validates its own tree at construction: dropping one `Tag` refuses the window naming the control. The tests re-check the same fact from the sources, since the tests project has no Avalonia.
-- **A collapse may not hide a verb whose absence is dangerous.** Play is unchanged in the menu row's corner; undo and redo sit on the tab strip, which both states show. The flyout is a POPUP, which is the one surface that may cross a native viewport. The body does not animate its height, because that row sizes the viewport and a ramp would be eight swap-chain resizes per collapse.
-- **~~Unverified: what it LOOKS like.~~ VERIFIED, and the verdict was that it read as grey blobs.** Three structural causes, all now fixed and recorded in `CLAUDE.md`: no size hierarchy (thirty controls, all `Button.seg` at 26px), no depth anywhere in the shell (`LinearGradientBrush`, `GradientStop`, `BoxShadow` and `DropShadow` all returned zero matches across the project), and a View page that had withdrawn its icons on the correct reasoning that five ambiguous 16px outlines are a grey texture - the right diagnosis with the wrong remedy, since the cure is a size step rather than fewer icons. The surface now has a 32px large button over 22px rows, Office 2010 bevels on a static depth layer no `BrushTransition` can reach, groups delimited by a fading rule and a caption instead of a capsule, and one split button. **Two defects were found by looking at the running window and by nothing else**: a 58px large button broke "Everything" mid-word, and the split's caret rendered 28px left of its glyph because a `Shape` defaults to `HorizontalAlignment=Stretch` and `Stretch="None"` then draws from the left edge.
-- **Depends on**: `H2b`. **Size**: **M.**
-
-### H15 - The ribbon becomes measurable, and the icons become files ✅ **landed**
-`H13` closed its own "Unverified: what it LOOKS like" by a person opening the
-window, and recorded that BOTH defects it ever had were found that way and by
-nothing else. This is the attempt to stop that being the only instrument.
-- **A headless render suite** (`Test/SpectraEngine.Editor.Render.Tests`): real
-  Skia over the shell's own `App`, measuring a constructed page. It found three
-  things on arrival that no source scrape could reach - a split button whose
-  label sat seven pixels above its neighbours, four of five columns hanging from
-  the top of a row whose large buttons centre their content, and four dead
-  styles leaving the snap field off the row rhythm. Its own header says what it
-  cannot claim: nothing here judges colour or whether a hierarchy reads.
-- **Icons are files.** `Assets/Icons/*.svg`, one per key, compiled in as
-  `AvaloniaResource`, with `Icons.targets` generating the dictionary at build
-  time and never rewriting a `d` string. Byte-identical on screen, measured.
-- **The ribbon stopped eating the tool keys**, which was the severe one: every
-  engine-keymap chord died on the first ribbon click, while the tooltips went on
-  advertising them.
-- **Four welds the roster claimed and did not have**, and the verbs that existed
-  and could not be reached (`SelectAll`, `ClearSelection`, `FrameAll`).
-- **The command palette**, `Ctrl+P`, which `CLAUDE.md` has recorded as owed
-  since `H13` and which the design doctrine names as the third route onto every
-  verb. `RibbonVerb` became `ShellVerb` so it is a second reader of one
-  dispatcher rather than a fourth command path.
-- **Unverified, and honestly**: nothing here has been seen by a person in the
-  running window. The suite renders sheets to `artifacts/ribbon/` for that.
-- **Depends on**: `H13`. **Size**: **M.**
-
----
-
-## 11. Decisions that need sign-off before anything is built on them
-
-1. **SETTLED 2026-08-28 — the editor is Avalonia, hosting the engine IN-PROCESS.** See §10 for the reasoning on both halves. The consequences to build on: `H1`'s `EngineHost` is a direct reference rather than an IPC boundary, ~~`P5`'s schema export is no longer needed for the editor (only for external tooling, if ever)~~, and undo keeps addressing live `SceneNode`s by `Guid` in a live `Scene`. **The struck consequence turned out to be wrong, and was reversed when `D16` was built.** In-process access does make reading `EntityCatalog` directly *possible*, and taking it would create a second population path: an in-process editor reading the catalogue while an out-of-process one read the file, with the two schema producers `formats-and-pipeline.md` §3.2 exists to make indistinguishable free to drift and nothing failing. `EditorSession` therefore serializes `EntityCatalog.Shared` to `.sentdef` bytes at construction and parses them straight back, so the editor is a `.sentdef` consumer and the round trip runs on every launch rather than only in a test. *(Was: does the Uno editor host the engine in-process, or run as a separate process reading `.spectramap`? Preserved because it was called the highest-leverage unanswered question in the plan, and the answer is what unblocked the whole H arc.)*
-2. **SETTLED AND BUILT — the editing layer is its own assembly.** *(Was: a new `SpectraEngine.Editing` assembly, or in Core?)* `SpectraEngine.Editing` exists in the tree, references Core and nothing else, and a test asserts the boundary (no Silk.NET type, no `IWindow`); the executable is the only project that references it, which is what keeps gizmo/undo/tool code out of a shipped AOT game binary. `CLAUDE.md` carries the rule. Nothing may re-open this by adding editor code to Core.
-3. **Is D3D-only embedding on Windows acceptable (no embedded OpenGL viewport)?** Accepting it makes `H2` a contained change; rejecting it means `WGL_NV_DX_interop` or a per-frame copy for a configuration D3D already covers.
-4. **Is CPU readback an acceptable *shipping* path for the Linux viewport until GL sharing is proven?** Accepting unblocks Linux immediately at ~8 MB and a pipeline stall per 1080p frame; rejecting makes `H3` a research task that could stall indefinitely.
-5. **Play-in-editor: diff-restore a snapshot onto the live graph, or spawn a fresh scene from the document and discard it?** Diff-restore preserves the incremental-compile pillar and is cheap now; fresh-scene means simulation state never needs rollback (a permanent tax saved once entities exist) but costs a full world recompile and doubles GPU residency on every Play.
-6. **Is `.spectramap` text-JSON-authoritative, with binary as a later derived artifact?** Text gives git diffs, merges and greps for a scene-graph editor; binary-first loads faster but cannot be reviewed and will quietly become the only real format.
-7. **Confirm Source-style entities as a third `SceneNode` payload with a source-generated schema — explicitly not an ECS.** This keeps the graph-is-the-spine decision and gives a far better no-code/property-panel story; it costs the data-oriented iteration performance an ECS would give at very high entity counts.
-8. **How are prefab-internal targetnames scoped when a prefab is instanced twice — name prefixing or instance-scoped resolution?** Prefixing is explicit and greppable but breaks hand-typed targets inside the prefab; scoped resolution is ergonomic but surprising when someone deliberately wants to reach outside. **This bakes into every saved map and cannot be changed later without a migration.**
-9. **Does the wireframe pipeline survive as a peer of forward, or become a shaded+wireframe *overlay* mode?** Overlay is what a Roblox-style editor actually wants and would delete two of the six pipeline classes; keeping it as a peer means it inherits shadows, post and blending it does not want.
-10. **Accept that `R2` (sRGB) makes everything look different — brighter midtones, softer falloff — and budget a retune of the ambient and base colours?** Accepting fixes shading that is currently wrong in two places; deferring keeps the current look and blocks PBR, HDR and tone mapping.
-11. **Is Vulkan still a real goal?** If yes, `R3`'s pass abstraction should stay genuinely pass-shaped (costs nothing now, a great deal later) and `S5`/`S9` gain priority; if no, `S9` is deleted and the "vulkan opt-in" carve-out becomes permanent.
-12. **ANSWERED by [`docs/roblox-onboarding.md`](docs/roblox-onboarding.md) §2 — a scripting VM is needed, and it is Luau** (hybrid, Luau-first for gameplay with compiled C# staying the engine-facing language; `O0`–`O9`, with `O8` owning the `Script` payload). Binding consequence that milestone `P4` must respect: the `Entity` base class has to be designed knowing a VM is coming. The original tension is preserved below because it is why the answer went that way. *(Was:)* **Is C#-plus-rebuild acceptable for gameplay logic, or is a scripting VM eventually needed?** Mandatory AOT means an entity change is a rebuild-and-restart, which is the sharpest tension with Roblox's edit-and-see-it-instantly appeal; the no-code logic entities (`P6`) cover most gameplay without a rebuild, but a VM would change the entity base class's shape and must be decided before `P4` hardens.
-13. **What is the default editing grid?** `VertexSnapper.GridSize` is 1e-4 (a welding concern, not a user grid) and `ChunkCoord.CellSize` is 32; a Roblox-like default of 1 world unit with 0.25/0.5/2/4 presets is proposed but the demo's part sizes suggest a different working scale. **Half-answered 2026-08-21:** the *physical* scale is now locked — one world unit is one **spectraunit** (`sunit`) = **one metre** ([`docs/physics.md`](docs/physics.md) §7 item 1), so a 32-unit chunk is 32 m and the 1-unit grid default is a 1 m grid, which is a sane human working scale rather than an arbitrary one. What remains open is only the *preset ladder*, which is an ergonomics question and no longer a units question.
-14. **Multi-viewport (Hammer four-pane) — wanted at all, given the Roblox-first pillar?** Nearly free after `R3`, but it changes how the Uno shell is laid out, so answer before designing the shell.
-
----
-
-## 12. Standing invariants every milestone inherits
-
-- The `CsgBench openworld` verdict line must keep saying **world-size independent**. Any milestone touching the snapshot, slot map, footprint diff or trusted-diff contract (`F1`, `E4`, `E6`, `P7a`, `P7b`, `P7`) must show it, not assume it. **But know what the verdict does and does not measure, because two blind spots were read out of the harness on 2026-08-21 and neither is a reason to weaken the gate.** (1) The measured gesture moves one **isolated** part, which has no overlap neighbours — so `newNeighborSet` is empty, `surviving == 0 == count`, and **neither rank gate ever executes**: it is the one gesture that cannot fall back. (2) The burst loop rebuilds from the **same base world** every iteration (`Benchmarks/CsgBench/Program.cs:690`, and the comment above it says so), so it never **chains** — `ChunkGrid`'s overlay never grows toward its `~base/8` compaction, `PagedArray` page-table churn never accumulates, and a fallback never lands on a lazily-cached patched world. Any milestone whose workload is a *chain* of edits (a moving brush of any kind) must add a **chaining** scenario rather than pointing at this one. A green verdict from a scenario that cannot exercise the failure is a fake gate, and this project has already paid for one.
-- The chunked-vs-monolithic equivalence oracles and the bit-identical determinism tests must stay green. **Re-baselining a snapshot is a deliberate act** — verify correctness first, or a bug is laundered into the oracle.
-- Render thread owns the GL context, scene mutation and **all** GPU resource creation. Asset decode may be off-thread; `CreateTexture`/`CreateMesh` may not.
-- AOT: no reflection, no `dynamic`, no runtime codegen. P/Invoke and source generators are the sanctioned escape hatches.
-- `Brush` is immutable after construction, and the background compile depends on that being real, not aspirational.
-- Scene event handlers must not mutate the graph. Anything reactive (entity spawn, editor response) defers to the next tick.
-- Faces are identified by **plane index**. Everywhere.
-
----
-
-## 13. Open questions
-
-These are genuinely unresolved and are called out rather than guessed:
-
-- **~~How does the Uno viewport consume the rendered image?~~ ANSWERED, and measured rather than reasoned:** `SpectraEngine.Editor --interop-probe` asks this machine's compositor what it will accept and prints the answer. On the development machine (Avalonia 12.1.1, Windows 11, adapter LUID `9a91010000000000`) it imports **both** `D3D11TextureGlobalSharedHandle` and `D3D11TextureNtHandle`, and **both support `KeyedMutex`** synchronisation - which is exactly what `CompositionDrawingSurface.UpdateWithKeyedMutexAsync` wants, so the D3D11 backend can hand its resolve target straight over. So yes: `RenderTargetDesc` needs a sharing flag, and it is now known to be a keyed-mutex NT handle rather than a guess between three shapes. **Two things this does NOT answer and the probe deliberately does not pretend to.** Whether a texture created by a *D3D12* device is accepted through the same NT-handle path is a separate question: Avalonia's Windows interop is ANGLE (GL ES over D3D11), D3D12 has no keyed mutex, and settling it needs the probe extended to actually import a D3D12-created handle - the fallback being a D3D11On12 bridge that costs one copy per frame and buys exactly one synchronisation implementation in the codebase. And this is ONE machine: the run wants repeating on NVIDIA, AMD, a hybrid laptop and over RDP, which is why the switch exists rather than the answer being written down once.
-- **What OpenGL version does the engine actually get from Silk.NET, and what is the intended floor?** This gates `glProgramUniform` (4.1 — would erase the `Use()`/`SetUniform` seam entirely), texture arrays for cascades (3.0), and immutable textures (4.2).
-- **How many shadow-casting lights should the design eventually target?** `R6`/`R7` shadow only the directional light. Point-light shadows need cube maps, and `Renderer.CreateTexture` has **no cubemap path at all** today. If "many shadowed dynamic lights" is real, the shadow atlas should be designed for it in `R6` rather than retrofitted.
-- **Is there a target frame budget or hardware floor?** HDR format choice, cascade count, PCF taps and whether D3D12's current single-frame-in-flight full-fence sync becomes the bottleneck all turn on it — and every rendering milestone adds at least one pass, which with a full fence serialises against the GPU with no overlap.
-- **ANSWERED by [`docs/formats-and-pipeline.md`](docs/formats-and-pipeline.md) §2.5, by splitting the question: the TEXT form keys by authored name** (survives reordering, is what a human edits and merges) **and the cooked `.smaterial` keys by offset**, resolved at cook time when the manifest is in hand. Both answers are right for their format. The durable risk it names: a `.smaterial` cooked against one shader version and loaded against another misaligns cbuffer offsets silently, which is why its `SHDR` section carries the shader hash and the loader refuses a mismatch loudly.
-- **Do per-face materials support per-face *parameter overrides*, or only a whole-material reference?** Overrides mean the manifest must mark which parameters are per-face-instanceable and the submesh batching must account for them.
-- **Are shader features per-material or per-render-pass?** Per-material (assumed) lets a user ship an unlit variant of their own shader; per-pass is simpler but cannot.
-- **Should the engine shader stdlib (`engine/Lighting.spectrashade`) be user-overridable?** The reserved `engine/` prefix says no; if users must replace the lighting model, that is a shading-model plugin point and belongs in `S8`'s variant system, not in import shadowing.
-- **`EngineInfo.ModelFormatVersion` / `TextureFormatVersion` are referenced nowhere.** Are they meant for engine-baked asset containers (the way `CompiledShaderFile` is), or aspirational placeholders? If the asset arc loads PNG and glTF directly, both should be **deleted** — a version constant that versions nothing is worse than none.
-- **~~Should a brush model build its BSP eagerly or lazily?~~ ANSWERED by deletion** — a non-carving brush builds no BSP at all. `P7a` gives it a cached *mesh*; `CsgWorld`'s per-cell BSP is a pure function of the static placement list, so a part or entity-owned brush is by construction absent from it (`CsgWorld.cs:603`, `:617`). Collision comes from the brush's own convex hull (`docs/physics.md` §2.3a, `Y3`) and overlap queries from `SceneBvh` (`Y0`), neither of which is a BSP. See `P8`.
-- **Should duplicated parts keep the same name (Roblox) or get a suffix (Hammer)?** Duplicate targetnames are allowed by design and the fire-all idiom depends on it, but accidental copy/paste duplicates are a common wiring bug — probably never block, but surface as "fires 3 entities" in the wiring UI.
-- **Is a bounded undo depth acceptable, or should history be memory-budgeted?** Brush references in history are cheap and shared, but deleted subtrees held by remove-commands keep GPU meshes alive until eviction.
-- **Unverified by construction:** nothing in this roadmap was built or run — another workflow held the tree. In particular, the claim that a depth-only VS consuming only `TEXCOORD0` validates against D3D11's lit-shader-derived input layout (`R6`) is a specification-level claim, not an observation. »
+### Editor
+
+- An Avalonia shell with the engine running inside it, on D3D11 or D3D12. Windows only.
+- It opens on a start page and works on a project folder. A ribbon with Build and View tabs, a command palette, and docked panels: Levels, Scene, Properties, Content, Output, Problems, Console.
+- Move, rotate and resize gizmos in two styles, with grid and angle snapping. Box select, duplicate, delete, group, rename, reparent. One gesture is one undo entry.
+- Camera: free look, orbit, pan, frame selection, and top, front and side views.
+- Insert blocks, parts, cuts, lights, entities and models.
+- A material dropped on a face paints it. Scale, offset, rotation and alignment are set in the Properties panel.
+- Entity keyvalues and output wiring are edited in panels built from the `.sentdef` schema.
+- Lights have icons and handles in the viewport. Selection shows as an outline.
+- The Console panel is a command line over the editor's own verbs. It has no variables or binds.
+- F8 plays the level in first person, and F8 again stops. Stop does not yet put back what the run moved.
+- Levels save and load as `.smap` folders of JSON.
+- The viewport is a native child window by default. The composited viewport can dock and takes dropped assets. It is asked for with `--viewport=composition`, and becomes the default on a machine after five clean sessions there.
+
+### Entities
+
+- An entity is a class name, keyvalues and output connections, stored as strings on a node and saved in the map. A class the build does not know keeps its data through a save.
+- Entity classes are C# with attributes. A source generator writes the parsing, the input dispatch and the registration, so nothing uses reflection.
+- The build exports the schemas as a `.sentdef` file. The editor reads only that.
+- The runtime ticks on the fixed step while playing and never writes to the authored data.
+- Built in, all logic: `logic_auto`, `logic_relay`, `logic_timer`, `math_counter`, `logic_branch`, `logic_case`, `logic_compare`. Nothing yet touches the world.
+
+### Rendering
+
+- Three backends: OpenGL, D3D11 and D3D12.
+- Deferred is the default pipeline. Forward and wireframe sit beside it. Forward draws the same picture as deferred, and tests and the `--pipeline-compare` switch check that.
+- Shading is physically based, in linear light, into an HDR target that is tone mapped on the way out.
+- Lights: directional, point, spot, rect and disc, plus a sky and ground ambient. Eight lights at most.
+- One directional light casts shadows: four cascades in a 4096 atlas, out to 200 units with a fade.
+- Repeated parts draw instanced.
+- The selection outline is drawn in the tone-map resolve. The grid and other world lines are alpha blended.
+- Missing: anti-aliasing, normal maps, transparent materials, bloom, fog, image-based lighting, particles, decals.
+
+### Content and cook
+
+- All content is read through one stack of sources: loose files, `.spack` packs, or packs with loose files on top.
+- `scook` cooks a project into a pack: compressed textures, models from glTF, audio, compiled shaders and baked maps.
+- A cook gives the same bytes in a second process, from the cache and at any worker count. CI checks that on Windows and Linux.
+- A baked map loads without running CSG.
+- A project is a folder with a `.spectraproj` file. The demo boots one from its pack.
+- Missing: cooked materials, skinned models, collision hulls on models, patch and mod packs.
+
+### Physics
+
+- Box3D is vendored, bound through P/Invoke and published under NativeAOT.
+- The static world collides: one convex hull per brush, kept in step with each compile.
+- A first-person character walks, climbs steps and jumps on a fixed tick.
+- Ray and overlap queries on the scene, collide and query flags per node, collision groups.
+- Missing: dynamic bodies, moving parts that push, touch events.
+
+### Shader language
+
+- SpectraShade compiles `.spectrashade` files to GLSL and HLSL: vertex, fragment, geometry and compute stages.
+- Loose shader files reload on save. A cooked pack carries them compiled.
+- `ssc` is the command line compiler. There is a language server and a Visual Studio extension.
+- Missing: `import` parses and does nothing, there is no type checker, and a shader cannot describe its material parameters.
+
+### Audio and animation
+
+- Audio plays through OpenAL, with a source pool and streaming voices. Nothing in a level can play a sound yet.
+- Skeletons, clips and pose blending exist on the CPU. Nothing imports or draws them.
+
+### Docs and CI
+
+- The user docs are a Starlight site in `site/`: first pages on the concepts, level and material files, logic entities, the cook and the keyboard. The C# reference is generated from `///` comments.
+- CI runs on Windows and Linux: the test suites, a NativeAOT publish on each, the cook determinism tests and a boot from a cooked pack.
+
+## In progress
+
+- Brush entities (P7). A brush owned by an entity leaves the static world and moves with the entity.
+- Trigger volumes (P8).
+- The first world entities: door, button, platform, teleport, player start.
+- Console commands to inspect entities and fire their inputs (C9).
+- A spike on embedding Luau under NativeAOT. Its result decides how O4 starts.
+
+## Next
+
+In order. The order follows `docs/positioning.md`: finish build, wire and play, then add what a small first-person game needs.
+
+1. Stop puts the level back (P11a, M). Play mode restores every transform a run changed. Needed as soon as a door moves. Depends on brush entities. Still to decide: restore in place, or play a copy of the scene and throw it away.
+2. Sound in a level (S). An entity that plays a cooked sound. Audio playback and the entity runtime are both there.
+3. Luau scripting (O1 to O5, O7 to O9; L). Scripts on nodes, generated bindings to the scene, attributes, tags and signals. Depends on the spike. The character mover should end up replaceable from Luau.
+4. Prefabs (P10, L). A subtree saved once and placed many times. Depends on entities in maps, which are done. Risky because the rule for names inside a prefab is saved into every map, and it is not decided.
+5. Bodies that move (Y6 to Y8, L). Dynamic bodies, parts that push and carry the player, touch events. Depends on brush entities, and on scripting for the events. Risky because a brush that leaves the static world also leaves its collision, so both have to change together.
+6. The console (C0 to C6, L together). Typed variables, commands, key binds and config files, usable from a terminal before any overlay exists.
+7. The look (R9, R14, R19a, R15, R16, R10). Normal maps, bloom, height fog, image-based ambient, temporal anti-aliasing and transparent materials, in that order. The bar is the look of a good late-UE4 game. Normal maps are the risky one: they change the vertex layout that every mesh and every CSG test baseline uses.
+8. Material parameters (F4, S2, S3; L together). A shader declares its parameters and the Properties panel edits them. Cooked materials (D19) and preview thumbnails (S7) wait on this.
+9. Game UI and skinned characters. The first template game needs a label on screen and a model that animates. Neither has a design doc.
+10. The editor on Linux (H2). Needs an OpenGL context embedded in the shell. It is the largest piece left in the shell.
+
+## Later
+
+- Networking: a headless server, replication and prediction, then collaborative editing. `docs/networking.md`.
+- Realms: which side of a session a node exists on. `docs/realms.md`. Lands with networking.
+- Entity classes written in Luau (D15) and Luau in the console (C7), after scripting.
+- More rendering: screen-space ambient occlusion and reflections, light shafts, decals, particles, compute dispatch, MSAA for the editor viewport.
+- More shader language: imports, a type checker, shader variants.
+- More editor: vertex and edge snapping (E8), dragging along surfaces, user themes, more than one viewport.
+- Terrain, navmesh and save games. `docs/positioning.md` names them. None is designed.
+- Patch and mod packs (D20) and editor plugins (D21).
+- Vulkan (S9). There is no Vulkan renderer, and whether there will be one is undecided.
+- Licence files. The decision is MPL-2.0 for the engine and MIT for templates. The files are not written.
+
+## Not planned
+
+- UE5-class rendering: GPU-driven submission, real-time global illumination, virtual shadow maps, virtual texturing, virtualized geometry, ray tracing.
+- 2D as its own mode, mobile, consoles.
+- Sealed maps, PVS and map extents.
+- An ECS. Entities stay payloads on scene nodes.
+- Video playback. `.svideo` (D22) is a reserved name and nothing more.
+
+## Milestones
+
+Design docs are in `docs/`. In the Design column, "archive" means `docs/archive/roadmap-2026-10.md`. Status is done, partly, in progress, not started, not planned, dropped or unclear.
+
+### Foundations
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| F1 | Material files, per-face materials, per-material chunk meshes | done | archive |
+| F2 | Stable node ids, rename event, find by id | done | archive |
+| F3 | One shared draw body for every pipeline | done, inside `Renderer`; there is no `ViewDrawer` class | archive |
+| F4 | Shader diagnostics with codes, compile without throwing | not started | archive |
+
+### Editor interaction
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| E1 | Editing layer, move gizmo, undo | done | archive |
+| E2 | Editor camera | done | archive |
+| E3 | Multi-select and box select | done | archive |
+| E4 | Brush resize | done | archive |
+| E5 | Rotate gizmo, angle snap, local and world space | done | archive |
+| E6 | Duplicate, delete, group | done; Alt+drag duplicate is not built | archive |
+| E7 | Face texturing | done through material drops and the Properties panel; no fit or justify | archive |
+| E8 | Vertex, edge and surface snapping | not started | archive |
+| E9 | Studio and Classic gizmo styles | done; dragging along surfaces, filled handles and resizing a selection as one box are not built | archive |
+
+### Maps and entities
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| P2 | `.smap` save and load | done | formats-and-pipeline.md |
+| P3 | Face materials and texture axes in the map | done | formats-and-pipeline.md |
+| P4 | Entity runtime | done | archive |
+| P5 | Entity source generator and schema export | done | archive |
+| P6 | Logic entities | done; `logic_case` has no random pick, the runtime has no deterministic random source | archive |
+| P7 | Brush entities | in progress | archive, physics.md |
+| P7a | World and part brushes (`BrushKind`) | done | physics.md |
+| P7b | Subtractive brushes | done | negative-brushes.md |
+| P8 | Trigger volumes | in progress | archive |
+| P9 | Entities and connections in the map | done | archive |
+| P10 | Prefabs | not started | archive |
+| P11a | Play and stop | partly; stop does not restore what a run moved | archive |
+| P11b | `.spectramapb` | dropped; `.scmap` (D12) replaced it | formats-and-pipeline.md |
+
+### Shader authoring
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| S2 | Parameter scopes, UI metadata, defaults | not started | archive |
+| S3 | Parameter manifest and binder | not started | archive |
+| S4 | Imports | not started | archive |
+| S5 | Type checker, first phase | not started | archive |
+| S6 | Type checker, second phase | not started | archive |
+| S7 | Material preview thumbnails | not started | archive |
+| S8 | Shader features and variants | not started | archive |
+| S9 | SPIR-V output for Vulkan | not started | archive |
+
+### Rendering
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| R1 | D3D12 pipeline state key | done | archive |
+| R2 | sRGB end to end | done | archive |
+| R3 | Offscreen render targets | done | archive |
+| R4 | HDR target and tone mapping | done | archive |
+| R5 | Array uniforms | done | archive |
+| R6 | Shadow map | done | archive |
+| R7 | Cascaded shadows | done | archive |
+| R8 | Deferred pipeline, PBR, many lights | done; capped at eight lights | archive |
+| R9 | Normal mapping and tangents | not started; the shading model it needs is in | archive |
+| R10 | Blend state and transparency | partly; world lines blend, materials have no blend mode | archive |
+| R11 | FXAA and MSAA | not started | archive |
+| R12 | Instancing | done, in the shadow and geometry passes | archive, performance.md |
+| R13 | Compute dispatch | not started | archive |
+| R14 | Bloom, colour grading, lens effects | not started | archive |
+| R15 | Ambient with direction | partly; sky and ground ambient is in, image-based lighting is not | archive |
+| R16 | Temporal anti-aliasing | not started | archive |
+| R17 | Screen-space ambient occlusion | not started | archive |
+| R18 | Screen-space reflections | not started | archive |
+| R19a | Height and distance fog | not started | archive |
+| R19b | Fog volumes | not started | archive |
+| R19c | Light shafts | not started | archive |
+| R19d | Froxel fog | not started | archive |
+| R20 | Decals | not started | archive |
+| R21 | Particles | not started | archive |
+
+### Editor shell
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| H1 | H1a and H1b together | done | archive |
+| H1a | Render surface seam | done | archive |
+| H1b | `EngineHost` | done | archive |
+| H2 | Viewport as a native child window | done on Windows; nothing on Linux | archive |
+| H2b | Shell styling and toolbar | done, and since rebuilt | archive |
+| H3 | Composited viewport | done for D3D11 and D3D12 | archive |
+| H4 | Ribbon, docking, user themes | partly; ribbon and docking are done, user themes are not | archive |
+| H10 | The viewport docks | done, composited sessions only | archive |
+| H11 | Drag assets into the scene | done, composited sessions only | archive |
+| H12 | Drop overlay on the viewport | done | archive |
+| H13 | Ribbon | done | archive |
+| H15 | Render tests, icons as files, command palette | done | archive |
+
+### Formats and cook
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| D0 | AOT publish gate, CI on two hosts | done | formats-and-pipeline.md |
+| D1 | Uno AOT spike | dropped; the shell is Avalonia | formats-and-pipeline.md |
+| D2 | Content source seam | done | formats-and-pipeline.md |
+| D3 | `.spack` packs | done | formats-and-pipeline.md |
+| D4 | The cook: `scook`, cache, dependencies | done | formats-and-pipeline.md |
+| D5 | Cooked-only validation in CI | done | formats-and-pipeline.md |
+| D6 | `.simage` textures | done | formats-and-pipeline.md |
+| D7 | Shader cook | done; the demo still links the compiler, for loose files | formats-and-pipeline.md |
+| D8 | Material cook and validation | done | formats-and-pipeline.md |
+| D9 | Project file and boot from a pack | done | formats-and-pipeline.md |
+| D10 | Flat BSP | done | formats-and-pipeline.md |
+| D11 | Canonical `.smap` writer | done | formats-and-pipeline.md |
+| D12 | `.scmap` baked maps | done | formats-and-pipeline.md |
+| D13 | Cook determinism tests and the bake oracle | done | formats-and-pipeline.md |
+| D14 | `.sentdef` entity schemas | done | formats-and-pipeline.md |
+| D15 | Entity classes written in Luau | not started | formats-and-pipeline.md |
+| D16 | Entity properties and wiring from `.sentdef` | done | formats-and-pipeline.md |
+| D17 | `.smodel` and the glTF reader | done; no skins or collision hulls | formats-and-pipeline.md |
+| D18 | `.saudio` and the audio manager | done; no buses or effects | formats-and-pipeline.md |
+| D19 | `.smaterial` cooked materials | not started; waits on S3 | formats-and-pipeline.md |
+| D20 | Patch and mod packs | partly; packs mount in order and tombstones hide entries, nothing builds a patch | formats-and-pipeline.md |
+| D21 | Engine SDK mode, Luau editor plugins | not started | formats-and-pipeline.md |
+| D22 | `.svideo` | not planned | formats-and-pipeline.md |
+
+### Physics
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| Y0 | Query flags and overlap queries | done | physics.md |
+| Y1 | Box3D vendored, bound, published under AOT | done | physics.md |
+| Y2 | The physics seam | done | physics.md |
+| Y3 | The static world as convex hulls | done | physics.md |
+| Y4 | One gameplay query surface | partly; the gameplay raycast is in, the rest is unclear | physics.md |
+| Y5 | Character mover | done | physics.md |
+| Y6 | Dynamic bodies | not started | physics.md |
+| Y7 | Kinematic parts, moving platforms | not started | physics.md |
+| Y8 | Touch events | not started | physics.md |
+| Y9 | Collision hulls on models | not started | physics.md |
+| Y10 | Play and stop for physics | not started | physics.md |
+| Y11 | Luau bindings | not started | physics.md |
+| Y12 | Networked bodies | not started | physics.md |
+| Y13 | Rollback decision | not started | physics.md |
+| Y14 | Physics self-test | not started | physics.md |
+| Y15 | Convex decomposition at cook time | not started | physics.md |
+| Y16 | Lag compensation | not started | physics.md |
+
+### Scripting
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| O0 | One AOT publish of the engine | done; CI publishes on both hosts | roblox-onboarding.md |
+| O1 | Vector and `CFrame` value types | not started | roblox-onboarding.md |
+| O2 | Familiar node API | not started | roblox-onboarding.md |
+| O3 | Attributes, tags, signals | not started | roblox-onboarding.md |
+| O4 | Luau vendored and bound | not started; a spike is in progress | roblox-onboarding.md |
+| O5 | Node handles and generated bindings | not started | roblox-onboarding.md |
+| O6 | Command bar | dropped; C7 replaced it | roblox-onboarding.md |
+| O7 | `Instance.new` and parts at runtime | not started | roblox-onboarding.md |
+| O8 | Script payload and lifecycle | not started | roblox-onboarding.md |
+| O9 | Play and stop for scripts | not started | roblox-onboarding.md |
+
+### Console
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| C0 | Variables and commands | not started | console.md |
+| C1 | Terminal front ends | not started | console.md |
+| C2 | Key binds | not started | console.md |
+| C3 | Retire the F1 to F6 debug keys | not started | console.md |
+| C4 | Config files | not started | console.md |
+| C5 | Completion and history | not started | console.md |
+| C6 | Shipping flags | not started | console.md |
+| C7 | Luau in the console | not started | console.md |
+| C8 | Variables as project settings | not started | console.md |
+| C9 | Entity commands | in progress | console.md |
+| C10 | In-game overlay | not started | console.md |
+| C11 | 2D overlay and font atlas | not started | console.md |
+| C12 | Editor console and settings from variable metadata | not started; the editor's Console panel runs editor verbs only | console.md |
+
+### Networking
+
+| Id | Name | Status | Design |
+|---|---|---|---|
+| N0 to N22 | Game networking | not started; the fixed tick (N2) exists because physics needed it | networking.md |
+| T0 to T11 | Team Edit | not started | networking.md |
+
+`docs/realms.md` also uses R1 to R17, for its own rules. Other docs cite those as `realms.md R9`.
