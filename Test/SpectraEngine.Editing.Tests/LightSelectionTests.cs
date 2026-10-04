@@ -1,5 +1,6 @@
 using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Editing.Gizmos;
 using SpectraEngine.Editing.Selection;
 using SpectraEngine.Editing.Viewport;
 using System;
@@ -86,16 +87,34 @@ public sealed class LightSelectionTests
     }
 
     [Fact]
-    public void The_icon_holds_a_constant_screen_size_however_far_away_it_is()
+    public void The_icon_is_one_size_in_the_world_between_its_two_screen_limits()
     {
+        // Held to a constant screen size, an icon grows against the level as
+        // the camera pulls back. It is a fixed world size instead, capped up
+        // close and floored far away so it never fills the view or vanishes.
         ViewportHarness harness = BuildLitScene(Vector3.Zero);
         Camera camera = harness.Scene.Camera;
+        Vector2 viewport = harness.ViewportSize;
 
-        // Twice as far, twice the world radius.
-        float near = LightPicking.WorldRadius(camera, harness.ViewportSize, Vector3.Zero);
-        float far = LightPicking.WorldRadius(camera, harness.ViewportSize, new Vector3(0f, 0f, -12f));
+        Vector3 At(float distance) => camera.Position + (camera.Forward * distance);
 
-        far.ShouldBe(near * 2f, tolerance: near * 0.02f);
+        // The distance at which the world size comes out as ten pixels.
+        float perPixelAtOne = GizmoMath.WorldPerPixel(camera, viewport.Y, 1f);
+        float middle = LightOverlay.IconWorldRadius / (10f * perPixelAtOne);
+
+        LightPicking.WorldRadius(camera, viewport, At(middle))
+            .ShouldBe(LightOverlay.IconWorldRadius, tolerance: 1e-4f);
+        LightPicking.PixelRadius(camera, viewport, At(middle)).ShouldBe(10f, tolerance: 0.05f);
+
+        LightPicking.PixelRadius(camera, viewport, At(middle * 0.05f))
+            .ShouldBe(LightOverlay.IconPixels, tolerance: 0.05f);
+        LightPicking.PixelRadius(camera, viewport, At(middle * 50f))
+            .ShouldBe(LightOverlay.MinIconPixels, tolerance: 0.05f);
+
+        // Twice as far is half as big on screen, which is what a constant
+        // screen size got wrong.
+        LightPicking.PixelRadius(camera, viewport, At(middle * 1.2f))
+            .ShouldBe(10f / 1.2f, tolerance: 0.05f);
     }
 
     [Fact]
@@ -192,7 +211,7 @@ public sealed class LightSelectionTests
                 ((clip.X / clip.W) + 1f) * 0.5f * viewport.X,
                 (1f - (clip.Y / clip.W)) * 0.5f * viewport.Y);
 
-            const float R = LightOverlay.IconPixels;
+            float R = LightPicking.PixelRadius(harness.Scene.Camera, viewport, node.WorldPosition);
             var icon = new ScreenRect(
                 new Vector2(pixel.X - R, pixel.Y - R),
                 new Vector2(pixel.X + R, pixel.Y + R));

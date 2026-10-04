@@ -103,7 +103,7 @@ public static class BoxSelectQuery
             return false;
 
         Vector2 screen = Project(camera, at, viewportSize);
-        float radius = LightOverlay.IconPixels;
+        float radius = LightPicking.PixelRadius(camera, viewportSize, at);
 
         var icon = new ScreenRect(
             new Vector2(screen.X - radius, screen.Y - radius),

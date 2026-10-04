@@ -17,10 +17,27 @@ namespace SpectraEngine.Editing.Viewport;
 public sealed class LightOverlay
 {
     /// <summary>
-    /// The icon's radius in screen pixels. <see cref="LightPicking"/> picks at
-    /// the same radius.
+    /// The icon's radius in the world, about a lamp's. It gets smaller with
+    /// distance like everything else in the scene. Held to a constant screen
+    /// size it grew against the level as the camera pulled back, until a far
+    /// room was mostly icons.
     /// </summary>
-    public const float IconPixels = 12f;
+    public const float IconWorldRadius = 0.4f;
+
+    /// <summary>
+    /// The largest the icon's radius gets on screen, in pixels, however close
+    /// the camera is.
+    /// </summary>
+    public const float IconPixels = 14f;
+
+    /// <summary>
+    /// The smallest it gets, so a far light can still be seen and clicked.
+    /// </summary>
+    public const float MinIconPixels = 4f;
+
+    // Under this radius the kind and the arrows are a smudge, so a far light
+    // is drawn as a dot in its colour.
+    private const float DetailPixels = 6.5f;
 
     /// <summary>Whether the overlay draws at all.</summary>
     public bool Enabled { get; set; } = true;
@@ -73,18 +90,18 @@ public sealed class LightOverlay
             }
 
             Vector3 at = node.WorldPosition;
-            float radius = LightPicking.WorldRadius(camera, viewportSize, at);
-            if (radius <= 0f)
+            if (!LightPicking.TryMeasure(camera, viewportSize, at, out float radius, out float pixel))
                 continue;
 
-            var pen = new IconPen(camera, at, radius, IconColour(light));
+            var pen = new IconPen(camera, at, radius, pixel, IconColour(light));
+            bool detailed = radius >= DetailPixels * pixel;
 
             // Every backing line first, or one stroke's backing crosses out
             // the colour of the stroke before it.
             pen.Backing = true;
-            DrawIcon(output, node, light, in pen);
+            DrawIcon(output, node, light, in pen, detailed);
             pen.Backing = false;
-            DrawIcon(output, node, light, in pen);
+            DrawIcon(output, node, light, in pen, detailed);
 
             DrawnLastDraw++;
         }
@@ -112,20 +129,37 @@ public sealed class LightOverlay
 
     // What an icon is drawn with: the screen plane at the light, one pixel's
     // world size there, and which of the two passes is running.
-    private struct IconPen(Camera camera, Vector3 at, float radius, Vector3 colour)
+    private struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Vector3 colour)
     {
         public readonly Vector3 At = at;
         public readonly Vector3 Right = camera.Right;
         public readonly Vector3 Up = camera.Up;
         public readonly Vector3 Toward = Vector3.Normalize(Vector3.Cross(camera.Right, camera.Up));
         public readonly float Radius = radius;
-        public readonly float Pixel = radius / IconPixels;
+        public readonly float Pixel = pixel;
         public readonly Vector3 Colour = colour;
         public bool Backing;
     }
 
-    private static void DrawIcon(DebugDraw output, SceneNode node, Light light, in IconPen pen)
+    private static void DrawIcon(DebugDraw output, SceneNode node, Light light, in IconPen pen, bool detailed)
     {
+        if (!detailed)
+        {
+            // Hairlines here: the doubled stroke would fill a ring this small.
+            float ring = pen.Radius * 0.8f;
+            if (pen.Backing)
+            {
+                ThinRing(output, in pen, ring + pen.Pixel, Backing);
+            }
+            else
+            {
+                ThinRing(output, in pen, ring, pen.Colour);
+                ThinRing(output, in pen, ring - pen.Pixel, pen.Colour);
+            }
+
+            return;
+        }
+
         Basis(node, out Vector3 forward, out Vector3 right, out Vector3 up);
 
         switch (light.Kind)
@@ -225,6 +259,19 @@ public sealed class LightOverlay
             float angle = i * (MathF.Tau / IconRingSegments);
             Vector3 current = centre + (u * radius * MathF.Cos(angle)) + (v * radius * MathF.Sin(angle));
             Stroke(output, in pen, previous, current);
+            previous = current;
+        }
+    }
+
+    private static void ThinRing(DebugDraw output, in IconPen pen, float radius, Vector3 colour)
+    {
+        Vector3 previous = pen.At + (pen.Right * radius);
+
+        for (int i = 1; i <= IconRingSegments; i++)
+        {
+            float angle = i * (MathF.Tau / IconRingSegments);
+            Vector3 current = pen.At + (pen.Right * radius * MathF.Cos(angle)) + (pen.Up * radius * MathF.Sin(angle));
+            output.Line(previous, current, colour);
             previous = current;
         }
     }
@@ -399,13 +446,41 @@ public static class LightPicking
     /// The icon's world radius at <paramref name="at"/>. Zero when the point is
     /// outside the view.
     /// </summary>
-    public static float WorldRadius(Camera camera, Vector2 viewportSize, Vector3 at)
-    {
-        float depth = GizmoMath.ViewDepth(camera, at);
-        if (depth <= 0f)
-            return 0f;
+    public static float WorldRadius(Camera camera, Vector2 viewportSize, Vector3 at) =>
+        TryMeasure(camera, viewportSize, at, out float radius, out _) ? radius : 0f;
 
-        return LightOverlay.IconPixels * GizmoMath.WorldPerPixel(camera, viewportSize.Y, depth);
+    /// <summary>
+    /// The icon's radius on screen at <paramref name="at"/>, in pixels. Zero
+    /// when the point is outside the view.
+    /// </summary>
+    public static float PixelRadius(Camera camera, Vector2 viewportSize, Vector3 at) =>
+        TryMeasure(camera, viewportSize, at, out float radius, out float pixel) ? radius / pixel : 0f;
+
+    /// <summary>
+    /// The icon's world radius at <paramref name="at"/> and what one screen
+    /// pixel measures there. False when the point is outside the view.
+    /// </summary>
+    // The one place the icon's size is decided. Drawing, picking and the
+    // marquee all ask it, so what is clicked is what is seen.
+    public static bool TryMeasure(
+        Camera camera, Vector2 viewportSize, Vector3 at, out float worldRadius, out float worldPerPixel)
+    {
+        worldRadius = 0f;
+        worldPerPixel = 0f;
+
+        float depth = GizmoMath.ViewDepth(camera, at);
+        if (depth <= 0f || viewportSize.Y <= 0f)
+            return false;
+
+        worldPerPixel = GizmoMath.WorldPerPixel(camera, viewportSize.Y, depth);
+        if (worldPerPixel <= 0f)
+            return false;
+
+        worldRadius = Math.Clamp(
+            LightOverlay.IconWorldRadius,
+            LightOverlay.MinIconPixels * worldPerPixel,
+            LightOverlay.IconPixels * worldPerPixel);
+        return true;
     }
 
     /// <summary>The nearest light icon <paramref name="ray"/> passes through, if any.</summary>
