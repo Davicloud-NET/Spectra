@@ -23,6 +23,7 @@ dotnet run -c Release --project Benchmarks/CsgBench           # CSG benchmarks
 dotnet publish SpectraEngine.Executable -c Release -r win-x64 # NativeAOT build
 git submodule update --init --recursive                       # Box3D source
 native/build-box3d.ps1                                        # builds box3d.dll
+npm --prefix site run api && npm --prefix site run dev         # the docs site, on localhost:4321
 ```
 
 Tests are xUnit v3 on Microsoft.Testing.Platform. Run a suite with `dotnet run`, never `dotnet test`. Filter with `-- -class "<full type name>"` or `-- -trait "Suite=Determinism"`.
@@ -71,7 +72,8 @@ Publishing:
 - `SpectraEngine.Physics.Box3D/`: the Box3D binding. Source is the `external/box3d` submodule.
 - `Spectra.Kitchen/` and `.CLI/`: the cook (`scook`).
 - `SpectraShade.Compiler/`, `.CLI/` (`ssc`), `.LSP/`, `.VSIX/`.
-- `Test/`, `Benchmarks/CsgBench/`, `docs/`, `native/`.
+- `site/`: the user docs, built with Starlight. `npm run api` generates the C# reference from the `///` comments.
+- `Test/`, `Benchmarks/CsgBench/`, `docs/` (design notes), `native/`.
 
 ## Rules
 
@@ -169,6 +171,7 @@ Tests and tools
 |---|---|
 | `docs/code-style.md` | how code, comments and commits are written |
 | `ROADMAP.md` | milestones and their order |
+| `site/src/content/docs/contributing/writing-docs.mdx` | how to write user docs: pages, images, video |
 | `docs/data-model.md` | `SceneNode`, `Scene` and the payloads |
 | `docs/formats-and-pipeline.md` | every file format and the cook |
 | `docs/performance.md` | how to measure, and current numbers |

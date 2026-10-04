@@ -1,0 +1,83 @@
+/* Spectra's colours on top of Starlight. The dark values match the editor's
+   Theme/Tokens.axaml so the docs and the tool look like one product. */
+
+:root {
+	--sl-color-accent-low: #4a1a1c;
+	--sl-color-accent: #e8474a;
+	--sl-color-accent-high: #ffb3b2;
+
+	--sl-color-white: #efeced;
+	--sl-color-gray-1: #dcd6d8;
+	--sl-color-gray-2: #c2bbbd;
+	--sl-color-gray-3: #958d8f;
+	--sl-color-gray-4: #4c4547;
+	--sl-color-gray-5: #322d2f;
+	--sl-color-gray-6: #242021;
+	--sl-color-black: #1a1718;
+
+	--sl-color-bg: #131011;
+	--sl-color-bg-nav: #1a1718;
+	--sl-color-bg-sidebar: #1a1718;
+	--sl-color-hairline: #322d2f;
+	--sl-color-hairline-light: #3f393b;
+
+	--sl-color-orange: #e5a93f;
+	--sl-color-green: #5dbe7a;
+	--sl-color-blue: #6e9fde;
+	--sl-color-red: #ff6e6b;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #fbdcdc;
+	--sl-color-accent: #c82f30;
+	--sl-color-accent-high: #6f1517;
+
+	--sl-color-white: #1a1718;
+	--sl-color-gray-1: #242021;
+	--sl-color-gray-2: #383335;
+	--sl-color-gray-3: #6a6365;
+	--sl-color-gray-4: #958d8f;
+	--sl-color-gray-5: #d9d4d5;
+	--sl-color-gray-6: #f1eeef;
+	--sl-color-gray-7: #f8f6f6;
+	--sl-color-black: #ffffff;
+
+	--sl-color-bg: #ffffff;
+	--sl-color-bg-nav: #f8f6f6;
+	--sl-color-bg-sidebar: #f8f6f6;
+	--sl-color-hairline: #e4dfe0;
+	--sl-color-hairline-light: #d9d4d5;
+}
+
+/* Filled accents use the darker red: white text on the brand red is too low
+   in contrast. Same choice the editor makes for its filled buttons. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+	background-color: #c82f30;
+	color: #ffffff;
+}
+
+.sl-link-button.primary {
+	background-color: #c82f30;
+	border-color: #c82f30;
+	color: #ffffff;
+}
+
+/* The kind of an API type, shown under its name. */
+.api-kind {
+	display: inline-block;
+	padding: 0.1rem 0.5rem;
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 0.25rem;
+	color: var(--sl-color-gray-3);
+	font-size: var(--sl-text-xs);
+	text-transform: lowercase;
+}
+
+/* Short clips sit in the text like images do. */
+.sl-markdown-content video {
+	width: 100%;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 0.5rem;
+}
