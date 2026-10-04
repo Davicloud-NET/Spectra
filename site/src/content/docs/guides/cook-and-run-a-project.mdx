@@ -1,0 +1,68 @@
+---
+title: Cook and run a project
+description: Turn a project's files into a pack and run the game from it.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+While you work, the engine reads your textures, models and levels straight from the project folder. A game you ship reads one file instead: a pack. Making that pack is called cooking, and the tool is `scook`.
+
+Run these from the repository folder.
+
+<Steps>
+
+1. **Get a project.** If you don't have one, export the demo scene as a project:
+
+   ```bash
+   dotnet run --project SpectraEngine.Executable -- d3d11 --save-project=MyGame --exit-after-save
+   ```
+
+   This writes a `MyGame` folder where you ran the command. The demo's spheres and spinning cube are built in code rather than loaded from files, so the log warns that they were saved without geometry. That is expected.
+
+2. **Cook it.**
+
+   ```bash
+   dotnet run --project Spectra.Kitchen.CLI -- cook MyGame
+   ```
+
+   The pack lands in `MyGame/cooked` and is named after the project, here `Demo.spack`.
+
+3. **Check the pack.**
+
+   ```bash
+   dotnet run --project Spectra.Kitchen.CLI -- verify MyGame/cooked/Demo.spack
+   ```
+
+   `verify` opens the pack on its own, with no project folder behind it, and makes sure everything a material or level refers to is really inside.
+
+4. **Run from the pack.**
+
+   ```bash
+   dotnet run --project SpectraEngine.Executable -- d3d11 --project=MyGame --pack
+   ```
+
+</Steps>
+
+## What cooking does
+
+| You author | The pack holds | Why |
+|---|---|---|
+| `.png` textures | `.simage` | Already compressed for the graphics card, with mipmaps. |
+| `.gltf` models | `.smodel` | Ready to upload, no import step. |
+| `.wav` sounds | `.saudio` | Resampled to one rate. |
+| `.smap` levels | `.scmap` | Geometry already built, so loading does no carving. |
+| `.spectramat` materials | the same text | Checked, so a missing texture fails the cook. |
+
+A cooked texture is larger on disk than its PNG. It loads faster and takes less video memory.
+
+## Changing a file while running from a pack
+
+Add `--dev` and the engine lays your project folder over the pack, so a file you edit wins over the cooked one:
+
+```bash
+dotnet run --project SpectraEngine.Executable -- d3d11 --project=MyGame --pack --dev
+```
+
+## Limits today
+
+A cooked level holds its geometry and nothing else yet. Lights, entities and collision are not baked, so you can look around a cooked level but not walk on it.
