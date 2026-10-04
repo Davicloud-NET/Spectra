@@ -73,3 +73,82 @@ The floor and ceiling only apply when `max` is above `min`. With both left at 0 
 | `OutValue` | The number changes, or `GetValue` asks for it. It carries the number. |
 | `OnHitMax` | The number arrives at the ceiling. |
 | `OnHitMin` | The number arrives at the floor. |
+
+## logic_auto
+
+Fires once when the level starts. It has no settings and takes no inputs.
+
+| Output | Fires when |
+|---|---|
+| `OnMapSpawn` | The level starts, once every entity is ready. |
+
+## logic_branch
+
+Holds a true or false value.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `initialvalue` | 0 | The value it starts with: 0 for false, 1 for true. |
+
+Setting the value fires nothing. The outputs fire only when the branch is tested.
+
+| Input | Does |
+|---|---|
+| `SetValue` | Sets the value to the parameter, 0 or 1. |
+| `SetValueTest` | Sets the value, then tests it. |
+| `Toggle` | Flips the value. |
+| `ToggleTest` | Flips the value, then tests it. |
+| `Test` | Fires `OnTrue` or `OnFalse` for the current value. |
+
+| Output | Fires when |
+|---|---|
+| `OnTrue` | A test finds the value true. |
+| `OnFalse` | A test finds the value false. |
+
+## logic_case
+
+Compares a value against up to 16 cases and fires the output of the one it matches.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `case01` to `case16` | empty | The value that fires the output with the same number. An empty case is not used. |
+
+Numbers match as numbers, so `3` and `3.0` are the same case. Anything else matches as text, and capitals count. If two cases hold the same value, the lower number wins.
+
+| Input | Does |
+|---|---|
+| `InValue` | Compares the parameter against the cases. |
+
+| Output | Fires when |
+|---|---|
+| `OnCase01` to `OnCase16` | The value matches that case. |
+| `OnDefault` | The value matches no case. It carries the value. |
+
+For more than 16 cases, wire `OnDefault` to the `InValue` of a second `logic_case`.
+
+## logic_compare
+
+Holds a number and compares it against another.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `initialvalue` | 0 | The number it starts with. |
+| `comparevalue` | 0 | The number to compare against. |
+
+Setting either number fires nothing. The outputs fire only on a comparison.
+
+| Input | Does |
+|---|---|
+| `SetValue` | Sets the number. |
+| `SetValueCompare` | Sets the number, then compares. |
+| `SetCompareValue` | Sets the number to compare against. |
+| `Compare` | Compares the two numbers now. |
+
+| Output | Fires when |
+|---|---|
+| `OnLessThan` | The number is below the compare value. |
+| `OnEqualTo` | The two numbers are the same. |
+| `OnNotEqualTo` | The two numbers differ. It fires before `OnLessThan` or `OnGreaterThan`. |
+| `OnGreaterThan` | The number is above the compare value. |
+
+Equal means the same number, with no rounding. Whole numbers are safe. A number built by adding fractions, like 0.1 ten times, can miss its target, so test those with `OnLessThan` or `OnGreaterThan`.

@@ -270,6 +270,17 @@ public sealed class SentDefTests
         EntitySchemaCatalog catalog = EntitySchemaCatalog.LoadFromSentDef(image);
 
         catalog.Count.ShouldBe(BuiltinEntities.ClassCount);
+        catalog.Schemas.Select(schema => schema.ClassName).ShouldBe(
+        [
+            "logic_auto", "logic_branch", "logic_case", "logic_compare",
+            "logic_relay", "logic_timer", "math_counter",
+        ]);
+
+        // The widest record: sixteen keyvalues and seventeen outputs.
+        catalog.TryGetSchema("logic_case", out EntitySchema? cases).ShouldBeTrue();
+        cases!.Keyvalues.Count.ShouldBe(LogicCase.CaseCount);
+        cases.Outputs.ShouldBe(LogicCase.SpectraSchema.Outputs);
+
         catalog.TryGetSchema("logic_relay", out EntitySchema? relay).ShouldBeTrue();
         relay!.Placement.ShouldBe(EntityPlacement.Abstract);
         relay.Inputs.ShouldBe(["Trigger", "Enable", "Disable", "Toggle"]);

@@ -318,7 +318,13 @@ public sealed class RibbonLayoutTests
             .Count(i => i.Verb.Kind == ShellVerbKind.InsertEntity)
             .ShouldBe(1, "the class is session state, so only the control is in the roster");
 
-        foreach (string className in new[] { "logic_relay", "logic_timer", "math_counter" })
+        string[] builtIns =
+        [
+            "logic_auto", "logic_branch", "logic_case", "logic_compare",
+            "logic_relay", "logic_timer", "math_counter",
+        ];
+
+        foreach (string className in builtIns)
         {
             AllItems()
                 .Any(i => i.Id.Contains(className, StringComparison.Ordinal)

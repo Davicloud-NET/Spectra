@@ -12,6 +12,10 @@ internal static class EntityRuntime
     public static EntityCatalog Catalog(List<string> log)
     {
         var catalog = new EntityCatalog();
+        catalog.Add(LogicAuto.SpectraSchema, static () => new LogicAuto());
+        catalog.Add(LogicBranch.SpectraSchema, static () => new LogicBranch());
+        catalog.Add(LogicCase.SpectraSchema, static () => new LogicCase());
+        catalog.Add(LogicCompare.SpectraSchema, static () => new LogicCompare());
         catalog.Add(LogicRelay.SpectraSchema, static () => new LogicRelay());
         catalog.Add(LogicTimer.SpectraSchema, static () => new LogicTimer());
         catalog.Add(MathCounter.SpectraSchema, static () => new MathCounter());
@@ -45,9 +49,9 @@ internal static class EntityRuntime
     }
 
     // Same call EntityWorld makes to deliver an input.
-    public static bool Send(Entity entity, string input, string parameter = "")
+    public static bool Send(Entity entity, string input, string parameter = "", Entity? activator = null)
     {
-        var context = new EntityInputContext(null, null, parameter);
+        var context = new EntityInputContext(activator, null, parameter);
         return entity.AcceptInput(input, ref context);
     }
 }

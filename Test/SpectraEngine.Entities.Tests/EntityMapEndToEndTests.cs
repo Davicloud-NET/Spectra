@@ -100,6 +100,86 @@ public sealed class EntityMapEndToEndTests
         }
         """;
 
+    // A logic_auto adds 2 to a counter. The count picks a case, the case feeds a
+    // compare, and the compare sets a branch that adds 10 more. The second
+    // count matches no case, which is what stops it.
+    private const string BranchingFixture = """
+        {
+          "spectramap": 3,
+          "minimumReadableVersion": 3,
+          "engine": "1.0.0",
+          "scene": {
+            "name": "BranchingFixture"
+          },
+          "nodes": [
+            {
+              "id": "3f2b7c10-8a4d-4e6f-9b21-5c0d7e8f1a32",
+              "name": "Start",
+              "transform": {"p":[0,0,0]},
+              "entity": {
+                "class": "logic_auto",
+                "outputs": [
+                  {"output":"OnMapSpawn","target":"Tally","input":"Add","param":"2"}
+                ]
+              },
+              "children": []
+            },
+            {
+              "id": "a81d4e56-0c3b-47f9-8e12-6b9f2d0c7a45",
+              "name": "Tally",
+              "transform": {"p":[0,0,0]},
+              "entity": {
+                "class": "math_counter",
+                "keys": {"startvalue":"0"},
+                "outputs": [
+                  {"output":"OutValue","target":"Sorter","input":"InValue"}
+                ]
+              },
+              "children": []
+            },
+            {
+              "id": "5c9e0b73-1d2a-4f84-b6c5-e3a7104f9d68",
+              "name": "Sorter",
+              "transform": {"p":[0,0,0]},
+              "entity": {
+                "class": "logic_case",
+                "keys": {"case01":"1","case02":"2.0"},
+                "outputs": [
+                  {"output":"OnCase02","target":"Gauge","input":"SetValueCompare","param":"5"}
+                ]
+              },
+              "children": []
+            },
+            {
+              "id": "e2674f09-b5a1-4c3d-9f70-28d1c6b3e5a7",
+              "name": "Gauge",
+              "transform": {"p":[0,0,0]},
+              "entity": {
+                "class": "logic_compare",
+                "keys": {"initialvalue":"0","comparevalue":"4"},
+                "outputs": [
+                  {"output":"OnGreaterThan","target":"Flag","input":"SetValueTest","param":"1"}
+                ]
+              },
+              "children": []
+            },
+            {
+              "id": "9b30d1c8-7e45-4a62-8f0b-c4e2a9d7f316",
+              "name": "Flag",
+              "transform": {"p":[0,0,0]},
+              "entity": {
+                "class": "logic_branch",
+                "keys": {"initialvalue":"0"},
+                "outputs": [
+                  {"output":"OnTrue","target":"Tally","input":"Add","param":"10"}
+                ]
+              },
+              "children": []
+            }
+          ]
+        }
+        """;
+
     [Fact]
     public void The_fixture_map_survives_a_read_and_a_write_byte_for_byte()
     {
@@ -210,6 +290,36 @@ public sealed class EntityMapEndToEndTests
         startValue.ShouldBe("0");
         Find(scene, "Gate").Entity!.TryGetValue("startdisabled", out string startDisabled).ShouldBeTrue();
         startDisabled.ShouldBe("0");
+    }
+
+    [Fact]
+    public void The_branching_map_binds_to_a_scene_and_projects_back_to_the_same_bytes()
+    {
+        byte[] source = Utf8(BranchingFixture);
+
+        Same(source, MapWriter.Write(MapSceneBinder.FromScene(Load(source))));
+    }
+
+    [Fact]
+    public void The_branching_map_starts_itself_and_runs_to_its_end_on_the_first_tick()
+    {
+        Scene scene = Load(Utf8(BranchingFixture));
+        var logger = new CapturingLogger();
+        var world = new EntityWorld(scene, logger, EntityRuntime.Catalog([]));
+        world.Activate();
+
+        world.Tick(Tick);
+
+        EntityRuntime.Live<MathCounter>(world, Find(scene, "Tally")).Value.ShouldBe(12f,
+            "logic_auto added 2, and the branch added 10 once the compare saw 5 above 4");
+        EntityRuntime.Live<LogicCompare>(world, Find(scene, "Gauge")).Value.ShouldBe(5f,
+            "the count of 2 matched case02's 2.0 as a number, and its wire sent 5");
+        EntityRuntime.Live<LogicBranch>(world, Find(scene, "Flag")).Value.ShouldBeTrue();
+        world.PendingEventCount.ShouldBe(0, "the count of 12 matches no case, and OnDefault is unwired");
+        logger.MessagesAt(LogLevel.Warning).ShouldBeEmpty(logger.Describe());
+
+        world.Deactivate();
+        Same(Utf8(BranchingFixture), MapWriter.Write(MapSceneBinder.FromScene(scene)));
     }
 
     private readonly record struct Outcome(int TimerFires, int RelayTriggers, float Count, bool RelayEnabled);
