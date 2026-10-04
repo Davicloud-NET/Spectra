@@ -201,17 +201,13 @@ public sealed class ProjectLayout
     }
 
     private const string GitIgnore = """
-        # Cook output. Derived from the authored files beside it; never authored.
+        # Cook output.
         cooked/
 
-        # The cook's incremental cache: a content-addressed store of cooked
-        # payloads plus the dependency graph over them. Derived, per machine, and
-        # keyed partly on the toolchain that wrote it, so it is worth nothing in
-        # somebody else's checkout.
+        # The cook's cache. Only valid on the machine that wrote it.
         .spectra-cook/
 
-        # Per-user editor state: viewport camera, selection, window layout.
-        # Losing one loses nothing but a camera position.
+        # Per-user editor state: camera, selection, window layout.
         *.user
         *.user.json
         """;
@@ -219,14 +215,9 @@ public sealed class ProjectLayout
     private const string GitAttributes = """
         * text=auto
 
-        # A .smap map is a FOLDER bundle of text, and the codec's promise is that
-        # save/load/save is byte-identical so a hand edit stays a small diff. Under
-        # `* text=auto` a Windows checkout rewrites those files to CRLF underneath
-        # you and the next no-op save becomes a whole-file diff.
-        #
-        # Both stars are needed: attribute patterns use gitignore syntax, where a
-        # separator in the middle anchors the pattern to this file's directory, so
-        # `*.smap/**` would match only a bundle sitting in the project root.
+        # Maps and the manifest are saved with LF. A CRLF checkout turns the
+        # next save into a whole-file diff.
+        # Keep the leading **/. Without it only a bundle in the project root matches.
         **/*.smap/** text eol=lf
         *.spectraproj text eol=lf
         """;
