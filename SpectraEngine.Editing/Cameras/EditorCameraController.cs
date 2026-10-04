@@ -26,7 +26,7 @@ namespace SpectraEngine.Editing.Cameras;
 public sealed class EditorCameraController
 {
     /// <summary>Default <see cref="SmoothingTimeConstant"/>, in seconds.</summary>
-    public const float DefaultSmoothingTimeConstant = 0.08f;
+    public const float DefaultSmoothingTimeConstant = 0.045f;
 
     /// <summary>The orbit distance a freshly adopted camera starts at, in world units.</summary>
     public const float DefaultDistance = 10f;
@@ -119,9 +119,9 @@ public sealed class EditorCameraController
     /// The damping time constant for look and move while a pointer gesture
     /// drives them, in seconds. Capped at <see cref="SmoothingTimeConstant"/>.
     /// </summary>
-    // Separate from the wheel's constant: 80 ms smooths wheel notches but makes
-    // a pointer-driven look trail the hand.
-    public float PointerSmoothingTimeConstant { get; set; } = 0.02f;
+    // Zero by default: a look that trails the hand feels heavy. The wheel keeps
+    // its own constant because notches arrive in steps.
+    public float PointerSmoothingTimeConstant { get; set; }
 
     /// <summary>Radians of freelook per pixel of mouse motion.</summary>
     public float LookSensitivity { get; set; } = 0.0035f;
