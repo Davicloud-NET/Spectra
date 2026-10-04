@@ -8,6 +8,14 @@
     <IsTestProject>true</IsTestProject>
     <OutputType>Exe</OutputType>
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+
+    <!--
+      The allocation tests assert on GC.GetAllocatedBytesForCurrentThread. A
+      background GC drops every thread's allocation buffer and the counter
+      then reports the unused part, up to 8 KB, as allocated. Blocking
+      collections keep it exact.
+    -->
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>
