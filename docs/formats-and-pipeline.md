@@ -286,6 +286,51 @@ The editor cooks a WAV the first time it is asked for. `CookedSoundSource` is mo
 
 The demo has no cook in it, so its sounds are cooked when it is built. `scook sounds <contentDir> -o <dir>` brings a folder of cooked sounds in step with a folder of WAVs. It writes each sound's stamp beside it as `<name>.saudio.stamp`, leaves a sound alone while its stamp holds and says its warnings again, and deletes a cooked file whose WAV is gone. It hashes every WAV on every run, which is cheap for a demo's handful and would want a stat cache for a large folder. `SpectraEngine.Executable.csproj` runs it on every build, into `CookedSounds` in the output folder, and a publish takes the `.saudio` files along. scook is a project reference of the demo that is built and not referenced (`ReferenceOutputAssembly="false"`), so restoring the demo restores scook and nothing of the cook lands beside the demo. `DemoContent` mounts `CookedSounds` below the content root. The folder is not inside `Assets`: a project exported from a published demo copies `Assets`, and a cook refuses a sound that is there both as a WAV and cooked (SC9002).
 
+#### Captions and subtitles: text, packed as written
+
+Two text formats say in words what a sound is. Neither is cooked into another form. The engine reads the same bytes loose and from a pack, so the cook copies each file to its own path as a raw entry and only checks it. The code is in `SpectraEngine.Core/Audio/Captions/`, and the user guide is `site/src/content/docs/guides/captions.md`.
+
+**A caption file** is `Captions/<language>.txt`, one a language, in UTF-8. A line is a sound's content path, an equals sign and the words. `\n` in the words is a line break, a line that starts with `//` is a comment, blank lines are skipped, and of two lines for one sound the later is used. `CaptionFileReader` never throws: a line it cannot read is listed in `CaptionFile.Problems` with its number, and the rest of the file is read. A path is normalized with `ContentRoot.NormalizeRelativePath`.
+
+**A subtitle file** is WebVTT beside its voice file, named after the sound and the language: `guard_hey.wav` has `guard_hey.en.vtt` (`SubtitlePath`). `SubtitleReader` reads a small part of the format by hand:
+
+- the `WEBVTT` line, and cues apart by blank lines
+- a cue's optional name, its times as `mm:ss.ttt` or `hh:mm:ss.ttt`, and its lines of words
+- a `<v Name>` span at the start of the words, for the speaker
+- `NOTE` blocks, which are skipped
+- the entities `&amp;`, `&lt;`, `&gt;` and `&nbsp;`
+
+What else a file uses is listed in `SubtitleFile.Unread`, at most 64 parts a file, and the words are still read. A `<` that opens no tag is kept as a letter and listed. A file is refused with a `SubtitleFormatException` that carries the file and the line when its cues cannot be told apart or timed: no `WEBVTT` line, a block with no line of times, an arrow with no space on each side, a time that cannot be read, or a cue that does not end after it starts.
+
+**Which kind a sound has** comes from where the text lives. A sound with a subtitle file in a language is speech. A sound with a line in that language's caption file has a sound caption. With both, the subtitle file is used. `CaptionLibrary.Find` looks in the language asked for and then in the project's.
+
+**A language** is a `LanguageTag`: two or three lowercase letters, then any number of parts of lowercase letters and digits, each after a hyphen, 16 characters at most. It is part of file names, so it is kept to what every file system spells the same way. The project names its own language in the manifest's `language` member (§3.3), and is in `en` when it names none.
+
+**The cook.** `CaptionFileRule` (`RuleKind.CaptionFile`) takes the text files directly in `Captions/`, and `SubtitleRule` (`RuleKind.Subtitle`) takes every `.vtt`. Their codes are SC4101 to SC4114. All are warnings that fail a `--strict` cook, except the two marked.
+
+| Code | Says |
+| --- | --- |
+| SC4101 | A line of a caption file is not a path, an equals sign and words. |
+| SC4102 | A caption file names one sound twice. |
+| SC4103 | A caption line or a subtitle file is for a sound that is not in the project. |
+| SC4104 | A sound has a caption line and a subtitle file in one language. |
+| SC4105 | A text file in `Captions/` is not named after a language. |
+| SC4106 | Sounds have a caption in the project's caption file and none in this one. |
+| SC4107 | A note: how many sounds a caption file covers. |
+| SC4108 | An error: a subtitle file the engine refuses. |
+| SC4109 | A subtitle file uses a part of WebVTT the engine does not read. One for each part. |
+| SC4110 | A cue starts after its sound has ended. The rule reads the WAV for its length. |
+| SC4111 | A subtitle file has no language in its name. |
+| SC4112 | A subtitle file has no cue with words. |
+| SC4113 | A cue runs more than a second past the end of its sound (`SubtitleRule.EndSlackSeconds`). |
+| SC4114 | Sounds have subtitles in the project's language and none in another language. |
+
+Three things about the cache:
+
+- `CaptionFileRule` says something on every run, the SC4107 note when nothing is wrong. A run that reports is never recorded, and this rule needs that: what it says depends on the project's language, which is in no cache key. The files it reads and probes are in the key.
+- `SubtitleRule` is served from the cache when it is clean. It probes for its sound and reads the WAV, so both are dependencies.
+- SC4114 does not come from a rule. A subtitle file that is missing has no rule to run for it, so `SubtitleCoverage` reads the names in the content list after the rules have run, on every cook, and reports one line a language. Subtitle files are only set against subtitle files: a line in a caption file does not count for a voice, because it would show as a sound caption.
+
 ### 2.5 `.smaterial` — cooked materials *(deferred behind `S3`)*
 
 **Why custom, in one line:** its value is not parse speed — `MaterialParser` is a hand-rolled line parser and 500 files is microseconds — it is **reference resolution, cook-time validation, and parameter bytes pre-packed at the shader manifest's cbuffer offsets**, so the runtime binder does one memcpy per cbuffer instead of a name→location walk per parameter per material.
@@ -881,7 +926,7 @@ Three rules this layout binds:
 
 **AS BUILT (2026-08-29).** `SpectraEngine.Core/Projects/` implements the manifest and the layout: `ProjectFormat` (constants and the folder names), `SpectraProject` (the document), `ProjectReader`, `ProjectWriter`, and `ProjectLayout` (open, save, scaffold, discover). `EngineInfo.ProjectFormatVersion` and `MinimumReadableProjectVersion` land with the reader that enforces them. Oracle: `ProjectTests`. Verified end to end on the demo, which exports itself as a standalone project (`--save-project`) and then runs entirely out of that folder (`--project`): content root, materials, textures, models and the startup map all resolved from it, offscreen probe PASS, editing self-test PASS, zero errors.
 
-*What v1 binds, and what it carries.* Bound: `spectraproject`, `minimumReadableVersion`, `engine`, `name`, `id`, `startupMap`, `maps`, `packs`, `display` (`width`, `height`, `vsync`, `mode`), `defaultBackend`, `allowedBackends`. Carried as preserved members, because nothing in the tree binds to them yet: `input`, `settings`, `bootScript`, `entityDefinitions`. Same three-tier rule the map uses, and for the same reason: a member decoded into a value that means nothing is worse than one carried untouched.
+*What v1 binds, and what it carries.* Bound: `spectraproject`, `minimumReadableVersion`, `engine`, `name`, `id`, `language`, `startupMap`, `maps`, `packs`, `display` (`width`, `height`, `vsync`, `mode`), `defaultBackend`, `allowedBackends`. Carried as preserved members, because nothing in the tree binds to them yet: `input`, `settings`, `bootScript`, `entityDefinitions`. Same three-tier rule the map uses, and for the same reason: a member decoded into a value that means nothing is worse than one carried untouched. `language` is optional: it is written after `id`, left out when the project names none, and a value that is not a `LanguageTag` refuses the project. Captions are looked up in it (§2.4).
 
 *Decisions this section left open.*
 

@@ -80,7 +80,17 @@ Line breaks in a cue's words are kept.
 
 Anything else WebVTT allows is passed over, and the words are still shown: settings after the times, `STYLE` and `REGION` blocks, and tags such as `<i>`, which are taken out. The cook warns about each, so you know the engine did not use it.
 
-Three things are refused, with the file and the line: a file that does not start with `WEBVTT`, a time that cannot be read, and a cue that does not end after it starts. A refused file shows no subtitles, and the cook fails on it.
+A `<` that opens no tag is shown as it is, and the cook warns about it: a `<` with no `>` after it on the line, or one that no name follows. Write `&lt;` for the sign. A `<v Guard` with its `>` left out shows as written and names no speaker.
+
+A file is refused, with the file and the line, when its cues cannot be told apart or timed:
+
+- it does not start with `WEBVTT`
+- a block has no line of times
+- the arrow has no space on each side
+- a time cannot be read
+- a cue does not end after it starts
+
+A refused file shows no subtitles, and the cook fails on it. The log warns about it too, with the line, the first time its sound is heard in each run of a level.
 
 If a sound has both a subtitle file and a line in the caption file, the subtitle file is used.
 
@@ -107,7 +117,7 @@ These rules are the engine's, so every game's captions follow them however they 
 - A caption shows only while its sound can be heard where the listener stands. How far a sound carries is its own [maximum distance](/reference/sound-entities/), not a fixed radius. A sound that is silent because it is far away, turned down or over has no caption.
 - A voice line shows when the sound reaches the line's start time, never before. It goes at its end time.
 - A caption stays long enough to be read: at least a second, and longer for more words. The count is half a second and then fifteen letters a second. A line that is over sooner stays until it has been read.
-- A sound that plays again while its caption still shows keeps that one caption on screen longer. It does not add a second one, so footsteps do not fill the screen.
+- A sound that plays again while its caption still shows keeps that one caption up for longer. It does not add a second one, so a run of footsteps is one caption.
 - A sound that plays once keeps its sound caption for as long as it plays. A looped sound shows its caption for its reading time each time it comes into hearing, not for as long as it plays.
 - Captions are listed in the order they started.
 
@@ -131,9 +141,9 @@ A sound with no caption in the language that is set gets its caption in the proj
 
 1. Copy `Captions/en.txt` to `Captions/de.txt` and translate the words. Leave the paths as they are.
 2. For each voice file, copy its `.en.vtt` to `.de.vtt` beside it and translate the words. Change the times if the line is spoken differently.
-3. Cook the project. The cook says how many sounds have a caption in the project's language and none in the new one, and names them.
+3. Cook the project. The cook says how many sounds have a caption in the project's language and none in the new one, and names them. It says the same for subtitle files, and names the files that are not there.
 
-The cook only compares the caption files. It does not count subtitle files, so check those with `captions_missing`.
+The cook sets caption files against caption files and subtitle files against subtitle files. A voice with subtitles in the project's language needs a subtitle file in the new one. A line in the new caption file does not count for it: that would be a sound caption, and `captions voice` does not show those.
 
 ## Find what is missing
 
@@ -161,6 +171,10 @@ The cook checks the files too. These are its warnings, and `--strict` makes them
 | `SC4110` | A subtitle line starts after its sound has ended, so it never shows. |
 | `SC4111` | A subtitle file has no language in its name, so it is never read. |
 | `SC4112` | A subtitle file has no line with words in it. |
+| `SC4113` | A subtitle line runs more than a second past the end of its sound. It still shows. Check that the file is for this recording. |
+| `SC4114` | Sounds have subtitles in the project's language and none in another language. It names the files that are not there. |
+
+A subtitle line may run up to a second past the end of its sound with no warning. Subtitle tools pad a last line so it can be read, and the engine keeps a line up for its reading time anyway.
 
 `SC4108` is an error: a subtitle file the engine refuses. `SC4107` is a note that says how many sounds a caption file covers.
 
@@ -170,7 +184,7 @@ Caption and subtitle files go into the pack as the text you wrote.
 
 ### The log
 
-Each caption is written to the log once, when it appears. In the editor that is the Output panel.
+Each caption is written to the log once, when it appears. A project that runs from its cooked pack prints the log in its terminal. The editor [cannot play a sound yet](/reference/sound-entities/), so no caption appears in its Output panel.
 
 ```
 Caption: Guard: Hey! You there!

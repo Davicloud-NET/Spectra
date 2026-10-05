@@ -49,7 +49,7 @@ Add `language` after `id` to say which language the project's own text is writte
 
 The value is a short lowercase tag such as `en`, `de` or `pt-br`. A project that names none is in `en`. A value that is not such a tag stops the project from opening.
 
-[Captions](/guides/captions/#languages) are looked up in this language. A sound with no caption in another language gets its caption in this one, and the cook compares every other language's caption file with this one's.
+[Captions](/guides/captions/#languages) are looked up in this language. A sound with no caption in another language gets its caption in this one, and the cook compares every other language's caption file and subtitle files with this one's.
 
 ## Levels
 
