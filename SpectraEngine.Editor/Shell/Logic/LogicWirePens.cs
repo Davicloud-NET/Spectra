@@ -20,6 +20,8 @@ internal sealed class LogicWirePens
     private readonly double _brokenGap = LogicTheme.Size("SpectraLogicWireBrokenGap");
     private readonly double _waitingDash = LogicTheme.Size("SpectraLogicWireWaitingDash");
     private readonly double _waitingGap = LogicTheme.Size("SpectraLogicWireWaitingGap");
+    private readonly double _selectedWidth = LogicTheme.Size("SpectraLogicWireSelectedWidth");
+    private ImmutablePen? _selected;
     private double _least = double.NaN;
 
     public LogicWirePens()
@@ -46,6 +48,9 @@ internal sealed class LogicWirePens
     // The wide, faint stroke under a wire the pointer is on.
     public IPen Glow(LogicWireLook look) => _glows[(int)look];
 
+    // The selected wire: the accent, thicker than a wire in focus.
+    public IPen Selected => _selected ?? _pens[(int)LogicWireLook.Focus];
+
     // Makes the pens again only when the zoom changes how thick a wire is.
     public void SetZoom(double zoom)
     {
@@ -65,6 +70,14 @@ internal sealed class LogicWirePens
                 _brushes[look], width, Dashes((LogicWireLook)look, width), PenLineCap.Round, PenLineJoin.Round);
             _glows[look] = new ImmutablePen(_glow, width + _glowWidth, null, PenLineCap.Round, PenLineJoin.Round);
         }
+
+        // Twice the least width, so it still stands out where every wire is at the least.
+        _selected = new ImmutablePen(
+            _brushes[(int)LogicWireLook.Focus],
+            Math.Max(_selectedWidth, 2 * least),
+            null,
+            PenLineCap.Round,
+            PenLineJoin.Round);
     }
 
     private void Set(LogicWireLook look, IImmutableBrush brush, double width)

@@ -7,8 +7,9 @@ using System;
 namespace SpectraEngine.Editor.Shell.Logic;
 
 /// <summary>
-/// Draws the Logic view's graph and answers the pointer on it. It keeps
-/// nothing: what is shown and where it sits is the model's.
+/// Draws the Logic view's graph and answers the pointer and the keyboard on
+/// it. It keeps nothing: what is shown, where it sits and what is being
+/// wired is the model's.
 /// </summary>
 public sealed class LogicCanvas : Control
 {
@@ -16,6 +17,7 @@ public sealed class LogicCanvas : Control
     public static readonly StyledProperty<LogicViewModel?> ModelProperty =
         AvaloniaProperty.Register<LogicCanvas, LogicViewModel?>(nameof(Model));
 
+    private readonly LogicWireMenus _menus;
     private LogicGraphPainter? _painter;
     private LogicViewModel? _heard;
     private bool _isShown;
@@ -40,6 +42,7 @@ public sealed class LogicCanvas : Control
     /// <summary>Creates the canvas.</summary>
     public LogicCanvas()
     {
+        _menus = new LogicWireMenus(this, entity => SelectRequested?.Invoke(entity, false));
         ClipToBounds = true;
 
         // A press here takes the keyboard, so the window's keys act on what
@@ -63,6 +66,10 @@ public sealed class LogicCanvas : Control
         get => GetValue(ModelProperty);
         set => SetValue(ModelProperty, value);
     }
+
+    // The menu on show, or null. A menu is a window of its own, so this is
+    // where a test finds it.
+    internal ContextMenu? ShownMenu => _menus.Shown;
 
     /// <inheritdoc/>
     public override void Render(DrawingContext context)
@@ -115,11 +122,23 @@ public sealed class LogicCanvas : Control
         base.OnPointerPressed(e);
 
         PointerPointProperties buttons = e.GetCurrentPoint(this).Properties;
-        if (Model is not { } model || _pressed is not null
-            || (!buttons.IsLeftButtonPressed && !buttons.IsMiddleButtonPressed))
+        if (Model is not { } model)
+            return;
+
+        if (_pressed is not null)
         {
+            // Another button during a drag gives the wire up.
+            if (model.Wiring.Gesture.IsActive)
+            {
+                GiveUpWire(model);
+                e.Handled = true;
+            }
+
             return;
         }
+
+        if (!buttons.IsLeftButtonPressed && !buttons.IsMiddleButtonPressed)
+            return;
 
         _pressed = e.Pointer;
         _pressPoint = _lastPoint = e.GetPosition(this);
@@ -132,6 +151,8 @@ public sealed class LogicCanvas : Control
         if (e.ClickCount == 1)
         {
             _firstPressed = _clicks ? EntityOf(_pressHit.Card) : null;
+            if (_clicks)
+                model.Wiring.Press(_pressPoint, _pressHit);
         }
         else if (_clicks && e.ClickCount == 2 && _firstPressed is Guid entity)
         {
@@ -165,7 +186,11 @@ public sealed class LogicCanvas : Control
         _moved |= Math.Abs(travelled.X) > LogicDrawMetrics.ClickSlop
             || Math.Abs(travelled.Y) > LogicDrawMetrics.ClickSlop;
 
-        if (_moved && _pans && Model is { } model)
+        if (Model is { Wiring.Gesture.IsActive: true } wired)
+        {
+            DragWire(wired, at);
+        }
+        else if (_moved && _pans && Model is { } model)
         {
             // Something else moved the graph since the last move: the wheel,
             // a fit. The drag goes on from where that left it.
@@ -187,26 +212,38 @@ public sealed class LogicCanvas : Control
     {
         base.OnPointerReleased(e);
 
+        Point at = e.GetPosition(this);
         if (_pressed is null)
+        {
+            if (e.InitialPressMouseButton == MouseButton.Right && Model is { } shown)
+                _menus.OfferRemoval(shown, at);
+
             return;
+        }
 
         bool clicked = _clicks && !_moved;
         LogicHit hit = _pressHit;
+
+        // Before the pointer is let go of: losing it gives a drag up.
+        bool dropped = Model?.Wiring.Release() ?? false;
 
         _pressed = null;
         e.Pointer.Capture(null);
         e.Handled = true;
 
-        if (clicked)
+        if (dropped && Model is { } model)
+            _menus.OfferWire(model, at);
+        else if (clicked)
             Click(hit, e.KeyModifiers.HasFlag(KeyModifiers.Control));
 
-        Hover(e.GetPosition(this));
+        Hover(at);
     }
 
     /// <inheritdoc/>
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     {
         _pressed = null;
+        Model?.Wiring.LoseCapture();
         base.OnPointerCaptureLost(e);
     }
 
@@ -222,7 +259,13 @@ public sealed class LogicCanvas : Control
         LogicPanZoom view = model.View;
 
         model.View = view.ZoomedAbout(at, view.Zoom * Math.Pow(LogicDrawMetrics.WheelZoom, e.Delta.Y));
-        Hover(at);
+
+        // The pointer stood still and is over something else now.
+        if (model.Wiring.Gesture.ShowsWire)
+            DragWire(model, at);
+        else
+            Hover(at);
+
         e.Handled = true;
     }
 
@@ -233,6 +276,33 @@ public sealed class LogicCanvas : Control
         SetHover(null, null);
     }
 
+    /// <inheritdoc/>
+    // The window deletes the selected entities on Delete, and a selected
+    // wire's sender is one of them. With a wire selected the key ends here.
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+
+        if (e.Handled || Model is not { } model)
+            return;
+
+        switch (e.Key)
+        {
+            case Key.Escape when model.Wiring.Gesture.IsActive:
+                GiveUpWire(model);
+                break;
+
+            case Key.Delete or Key.Back when model.Wiring.Selected is not null:
+                model.Wiring.RemoveSelected();
+                break;
+
+            default:
+                return;
+        }
+
+        e.Handled = true;
+    }
+
     private static Guid? EntityOf(LogicSceneCard? card) => card is { Card.IsStub: false } ? card.Card.NodeId : null;
 
     private void Listen(LogicViewModel? model)
@@ -241,7 +311,10 @@ public sealed class LogicCanvas : Control
             return;
 
         if (_heard is not null)
+        {
             _heard.Redraw -= OnRedraw;
+            _heard.Wiring.Cancel();
+        }
 
         _heard = model;
         SetHover(null, null);
@@ -261,20 +334,35 @@ public sealed class LogicCanvas : Control
         if (!ReferenceEquals(Model?.Scene, _hoverScene))
             SetHover(null, null);
 
+        _menus.CloseStale(Model);
         InvalidateVisual();
     }
 
     private void Click(LogicHit hit, bool adds)
     {
-        Guid? entity = hit.Kind switch
-        {
-            LogicHitKind.Card or LogicHitKind.Port => EntityOf(hit.Card),
-            LogicHitKind.Label or LogicHitKind.Edge => hit.Edge?.Edge.From.NodeId,
-            _ => null,
-        };
+        bool isWire = hit.Kind is LogicHitKind.Label or LogicHitKind.Edge;
+        Model?.Wiring.Select(isWire ? hit.Edge : null);
 
+        Guid? entity = isWire ? hit.Edge?.Edge.From.NodeId : EntityOf(hit.Card);
         if (entity is Guid id)
             SelectRequested?.Invoke(id, adds);
+    }
+
+    private void DragWire(LogicViewModel model, Point at)
+    {
+        bool showedWire = model.Wiring.Gesture.ShowsWire;
+        model.Wiring.Move(at, model.HitTest(at).Card);
+
+        // The sender is not under the pointer for the tooltip any more.
+        if (!showedWire && model.Wiring.Gesture.ShowsWire)
+            SetHover(null, null);
+    }
+
+    // Whatever button comes up next ends the press, and must not click.
+    private void GiveUpWire(LogicViewModel model)
+    {
+        _clicks = false;
+        model.Wiring.Cancel();
     }
 
     private void Hover(Point at)

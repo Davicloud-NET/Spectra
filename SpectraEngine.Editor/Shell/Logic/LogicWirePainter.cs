@@ -34,7 +34,7 @@ internal sealed class LogicWirePainter
         _paths = new Geometry?[scene.Edges.Count];
     }
 
-    public void DrawPath(DrawingContext context, int index, LogicWireFace face, bool isHovered)
+    public void DrawPath(DrawingContext context, int index, LogicWireFace face, bool isHovered, bool isSelected)
     {
         Geometry path = _paths[index] ??= PathOf(face.Edge);
         LogicWireLook look = face.State.Look;
@@ -42,19 +42,19 @@ internal sealed class LogicWirePainter
         if (isHovered)
             context.DrawGeometry(null, _palette.Wires.Glow(look), path);
 
-        context.DrawGeometry(null, _palette.Wires.Pen(look), path);
+        context.DrawGeometry(null, isSelected ? _palette.Wires.Selected : _palette.Wires.Pen(look), path);
     }
 
-    public void DrawEnds(DrawingContext context, LogicWireFace face)
+    public void DrawEnds(DrawingContext context, LogicWireFace face, bool isSelected)
     {
-        IBrush brush = _palette.Wires.Brush(face.State.Look);
+        IBrush brush = _palette.Wires.Brush(isSelected ? LogicWireLook.Focus : face.State.Look);
         double radius = _palette.DotRadius;
 
         context.DrawEllipse(brush, null, face.Edge.Start, radius, radius);
         context.DrawEllipse(brush, null, face.Edge.End, radius, radius);
     }
 
-    public void DrawLabel(DrawingContext context, LogicWireFace face, bool isHovered)
+    public void DrawLabel(DrawingContext context, LogicWireFace face, bool isHovered, bool isSelected)
     {
         string text = face.Text;
         if (text.Length == 0 || face.Edge.LabelBounds is not Rect room)
@@ -80,6 +80,7 @@ internal sealed class LogicWirePainter
 
         IPen edge = ink switch
         {
+            _ when isSelected => _palette.LitLabelEdge,
             LogicInk.BrokenLabel => _palette.BrokenLabelEdge,
             LogicInk.LitLabel => _palette.LitLabelEdge,
             _ => isHovered ? _palette.HoveredEdge : _palette.LabelEdge,

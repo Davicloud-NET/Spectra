@@ -48,6 +48,12 @@ public sealed class LogicSheetTests(RibbonSession session)
         ["long-names-playing"] = (model, _) => Whole(model, Snapshot(LongNames(), LongPlaying())),
         ["quiet-playing"] = (model, _) => Whole(model, Snapshot(VaultLevel(), Playing())),
         ["stubs"] = (model, _) => Whole(model, Snapshot(Stubs())),
+        ["wiring"] = (model, pane) => DragWire(model, pane, "StartZone", "Lift"),
+        ["wire-selected"] = (model, _) =>
+        {
+            Whole(model, Snapshot(VaultLevel(), null, OpenVault));
+            model.Wiring.Select(model.Scene.ShouldNotBeNull().Edge("OpenVault", "Lift"));
+        },
     };
 
     /// <summary>Where the sheets land. Gitignored.</summary>
@@ -92,8 +98,11 @@ public sealed class LogicSheetTests(RibbonSession session)
     // its card and a label wider than a lane, the same level running, a
     // level that runs before any wire has fired, the cards that are not
     // entities, what a filter dims, the cards between near and far, a level
-    // with no wires, and the smallest pane.
+    // with no wires, the smallest pane, a wire on its way to a card and a
+    // selected wire among the wires of its selected sender.
     [Theory]
+    [InlineData("wiring", 1123, 880)]
+    [InlineData("wire-selected", 1123, 880)]
     [InlineData("long-names", 1123, 500)]
     [InlineData("long-names-playing", 1123, 500)]
     [InlineData("quiet-playing", 480, 500)]
@@ -227,6 +236,22 @@ public sealed class LogicSheetTests(RibbonSession session)
         model.ViewSize = pane;
         model.View = new LogicPanZoom(default, zoom)
             .CenteredOn(new Rect(model.Scene.ShouldNotBeNull().Size), pane);
+    }
+
+    // Presses on one card of the whole level and drags to the middle of
+    // another. The model is told the pane's size first, so the points are
+    // those of the view the sheet shows.
+    private static void DragWire(LogicViewModel model, Size pane, string from, string onto)
+    {
+        Whole(model, Snapshot(VaultLevel()));
+        model.ViewSize = pane;
+
+        LogicScene scene = model.Scene.ShouldNotBeNull();
+        Point start = model.View.ToView(scene.Card(from).Header.Center);
+        Point end = model.View.ToView(scene.Card(onto).Bounds.Center);
+
+        model.Wiring.Press(start, model.HitTest(start));
+        model.Wiring.Move(end, model.HitTest(end).Card);
     }
 
     private static WriteableBitmap Rasterise(Window window)

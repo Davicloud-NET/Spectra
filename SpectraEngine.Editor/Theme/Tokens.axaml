@@ -220,6 +220,9 @@
   <Color x:Key="SpectraLogicDimWashColor">#551B1D20</Color>
   <SolidColorBrush x:Key="SpectraLogicDimWash" Color="{DynamicResource SpectraLogicDimWashColor}" />
 
+  <!-- Laid over the card a dragged wire would land on. -->
+  <SolidColorBrush x:Key="SpectraLogicTargetWash" Color="{DynamicResource SpectraAccentWashColor}" />
+
   <!-- How the graph is drawn, in pixels at 100 percent. Where things stand
        is LogicMetrics, in code. A wire's dash and gap are lengths along it. -->
   <x:Double x:Key="SpectraLogicCardRadius">6</x:Double>
@@ -234,6 +237,7 @@
   <x:Double x:Key="SpectraLogicWireFocusWidth">2</x:Double>
   <x:Double x:Key="SpectraLogicWireFiringWidth">2.6</x:Double>
   <x:Double x:Key="SpectraLogicWireFiredWidth">1.8</x:Double>
+  <x:Double x:Key="SpectraLogicWireSelectedWidth">3.2</x:Double>
   <x:Double x:Key="SpectraLogicWireBrokenDash">6</x:Double>
   <x:Double x:Key="SpectraLogicWireBrokenGap">5</x:Double>
   <x:Double x:Key="SpectraLogicWireWaitingDash">2</x:Double>

@@ -57,6 +57,9 @@ internal sealed class LogicPalette
 
     public IImmutableBrush HoverWash { get; } = LogicTheme.Brush("SpectraRowHover");
 
+    // Laid over the card a dragged wire would land on.
+    public IImmutableBrush TargetWash { get; } = LogicTheme.Brush("SpectraLogicTargetWash");
+
     public IImmutableBrush LabelFill { get; } = LogicTheme.Brush("SpectraBgPanel");
 
     public IImmutableBrush TravelFill => _emphasis;

@@ -1,9 +1,11 @@
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Cameras;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Shell.Logic;
 using System;
+using System.Collections.Generic;
 
 namespace SpectraEngine.Editor;
 
@@ -19,6 +21,7 @@ public partial class MainWindow
         var view = new LogicView { Model = _logic };
         view.SelectRequested += OnLogicSelectRequested;
         view.FrameRequested += OnLogicFrameRequested;
+        view.WiringRequested += OnLogicWiringRequested;
         LogicPaneBody.Child = view;
 
         _logic.ShownEntitiesChanged += SendLogicRequest;
@@ -34,6 +37,10 @@ public partial class MainWindow
         _session?.Select(nodeId);
         _session?.Post(EditorCameraCommand.FrameSelection);
     }
+
+    // The entity's whole list, as the Properties panel sends it: one undo entry.
+    private void OnLogicWiringRequested(Guid nodeId, IReadOnlyList<EntityConnection> wires) =>
+        _session?.ApplyEntityConnections(nodeId, wires);
 
     // The engine publishes a level's wiring only while a view asks for it.
     // Sent when the pane shows or hides, when what it shows changes, and to

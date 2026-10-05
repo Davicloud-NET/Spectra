@@ -11,6 +11,7 @@ internal sealed class LogicGraphPainter
     private readonly LogicPalette _palette = new();
     private readonly LogicCardPainter _cards;
     private readonly LogicWirePainter _wires;
+    private readonly LogicWireDragPainter _drag;
 
     // What the frame being drawn is of. Set by Draw, read by its passes.
     private LogicViewModel? _model;
@@ -25,6 +26,7 @@ internal sealed class LogicGraphPainter
         var texts = new LogicTextCache(_palette);
         _cards = new LogicCardPainter(_palette, texts);
         _wires = new LogicWirePainter(_palette, texts);
+        _drag = new LogicWireDragPainter(_palette);
     }
 
     public void Draw(
@@ -68,7 +70,10 @@ internal sealed class LogicGraphPainter
         }
 
         using (context.PushTransform(at.Matrix))
+        {
             DrawPass(context, model, scene, dimmed: false);
+            _drag.Draw(context, model.Wiring.Gesture, at);
+        }
 
         _model = null;
     }
@@ -102,11 +107,11 @@ internal sealed class LogicGraphPainter
     {
         IReadOnlyList<LogicWireFace> faces = model.Wires;
 
-        for (int i = 0; i < faces.Count; i++)
-        {
-            if (Draws(faces[i], dimmed))
-                _wires.DrawPath(context, i, faces[i], ReferenceEquals(faces[i].Edge, _hoveredEdge));
-        }
+        DrawPaths(context, faces, dimmed, selected: false);
+
+        // Over the others, so a wire that crosses the selected one does not cut it.
+        if (model.Wiring.Selected is not null)
+            DrawPaths(context, faces, dimmed, selected: true);
 
         for (int i = 0; i < scene.Cards.Count; i++)
         {
@@ -121,7 +126,7 @@ internal sealed class LogicGraphPainter
         for (int i = 0; i < faces.Count; i++)
         {
             if (Draws(faces[i], dimmed))
-                _wires.DrawEnds(context, faces[i]);
+                _wires.DrawEnds(context, faces[i], IsSelected(faces[i]));
         }
 
         // Under the labels: a dot on its way passes behind the words, not over them.
@@ -137,9 +142,20 @@ internal sealed class LogicGraphPainter
         for (int i = 0; i < faces.Count; i++)
         {
             if (Draws(faces[i], dimmed))
-                _wires.DrawLabel(context, faces[i], ReferenceEquals(faces[i].Edge, _hoveredEdge));
+                _wires.DrawLabel(context, faces[i], ReferenceEquals(faces[i].Edge, _hoveredEdge), IsSelected(faces[i]));
         }
     }
+
+    private void DrawPaths(DrawingContext context, IReadOnlyList<LogicWireFace> faces, bool dimmed, bool selected)
+    {
+        for (int i = 0; i < faces.Count; i++)
+        {
+            if (IsSelected(faces[i]) == selected && Draws(faces[i], dimmed))
+                _wires.DrawPath(context, i, faces[i], ReferenceEquals(faces[i].Edge, _hoveredEdge), selected);
+        }
+    }
+
+    private bool IsSelected(LogicWireFace face) => _model?.Wiring.IsSelected(face.Edge) ?? false;
 
     private bool Draws(LogicWireFace face, bool dimmed)
     {
