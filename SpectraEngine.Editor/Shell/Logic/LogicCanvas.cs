@@ -26,14 +26,27 @@ public sealed class LogicCanvas : Control
     // A press that has not been let go of yet.
     private IPointer? _pressed;
     private Point _pressPoint;
+    private Point _lastPoint;
     private LogicPanZoom _pressView;
+    private LogicPanZoom _panned;
     private LogicHit _pressHit;
     private bool _pans;
     private bool _moved;
     private bool _clicks;
 
+    // The entity whose card the first press of a double click was on.
+    private Guid? _firstPressed;
+
     /// <summary>Creates the canvas.</summary>
-    public LogicCanvas() => ClipToBounds = true;
+    public LogicCanvas()
+    {
+        ClipToBounds = true;
+
+        // A press here takes the keyboard, so the window's keys act on what
+        // was just selected and not on the filter box. Tab passes it by.
+        Focusable = true;
+        IsTabStop = false;
+    }
 
     /// <summary>
     /// Raised when a click asks for an entity to be selected: a card's own,
@@ -109,20 +122,29 @@ public sealed class LogicCanvas : Control
         }
 
         _pressed = e.Pointer;
-        _pressPoint = e.GetPosition(this);
-        _pressView = model.View;
+        _pressPoint = _lastPoint = e.GetPosition(this);
+        _pressView = _panned = model.View;
         _pressHit = model.HitTest(_pressPoint);
         _pans = buttons.IsMiddleButtonPressed || _pressHit.Kind == LogicHitKind.None;
         _clicks = buttons.IsLeftButtonPressed;
         _moved = false;
 
-        // The second press of a double click frames. Its release selects nothing more.
-        if (_clicks && e.ClickCount == 2 && EntityOf(_pressHit.Card) is Guid entity)
+        if (e.ClickCount == 1)
         {
+            _firstPressed = _clicks ? EntityOf(_pressHit.Card) : null;
+        }
+        else if (_clicks && e.ClickCount == 2 && _firstPressed is Guid entity)
+        {
+            // The second press frames the card the first was on, wherever
+            // that card is by now: the first click may have selected it, and
+            // near the selection that lays the graph out again. This press
+            // selects nothing more and moves nothing.
             _clicks = false;
+            _pans = false;
             FrameRequested?.Invoke(entity);
         }
 
+        Focus();
         e.Pointer.Capture(this);
         e.Handled = true;
     }
@@ -143,9 +165,21 @@ public sealed class LogicCanvas : Control
         _moved |= Math.Abs(travelled.X) > LogicDrawMetrics.ClickSlop
             || Math.Abs(travelled.Y) > LogicDrawMetrics.ClickSlop;
 
-        // From where the press found the graph, so rounding does not add up.
         if (_moved && _pans && Model is { } model)
-            model.View = _pressView.MovedBy(travelled);
+        {
+            // Something else moved the graph since the last move: the wheel,
+            // a fit. The drag goes on from where that left it.
+            if (model.View != _panned)
+            {
+                _pressView = model.View;
+                _pressPoint = _lastPoint;
+            }
+
+            // From where the press found the graph, so rounding does not add up.
+            model.View = _panned = _pressView.MovedBy(at - _pressPoint);
+        }
+
+        _lastPoint = at;
     }
 
     /// <inheritdoc/>
