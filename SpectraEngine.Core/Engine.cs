@@ -3,6 +3,7 @@ using Silk.NET.Input;
 using Silk.NET.Windowing;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Audio;
+using SpectraEngine.Core.Audio.Propagation;
 using SpectraEngine.Core.ConsoleSystem;
 using SpectraEngine.Core.Diagnostics;
 using SpectraEngine.Core.Entities;
@@ -42,6 +43,7 @@ public sealed class Engine
     private readonly SceneManager _sceneManager;
     private readonly AssetManager _assetManager;
     private readonly AudioManager _audioManager;
+    private readonly SoundPresenter _soundPresenter;
     private readonly InputManager _inputManager;
     private readonly WindowModeLatch _windowModeLatch;
 
@@ -92,6 +94,7 @@ public sealed class Engine
         _sceneManager = sceneManager;
         _assetManager = assetManager;
         _audioManager = audioManager;
+        _soundPresenter = new SoundPresenter(audioManager, assetManager, new DirectPropagation());
         _inputManager = inputManager;
         _windowModeLatch = new WindowModeLatch(logger);
         Host = new EngineHost(logger);
@@ -102,6 +105,7 @@ public sealed class Engine
         _entityWatch = new EntityWatch(_console.Output);
         EntityConsoleCommands.Register(_console.Commands, _entityWatch);
         GraphicsConsoleCommands.Register(_console.Commands, renderer);
+        SoundConsoleCommands.Register(_console.Commands, _soundPresenter, audioManager);
         _entityWatch.Changed += RefreshEntityTrace;
     }
 
@@ -207,6 +211,21 @@ public sealed class Engine
 
         _console.Drain(
             Host, new ConsoleFrame(scene, _sceneManager.EntityWorld, _play is { IsActive: true }));
+    }
+
+    // The render thread owns the AL context. Runs every frame, or streaming
+    // queues drain. Listener first, or positional sounds play at the origin.
+    private void UpdateAudio(float deltaTime)
+    {
+        if (_sceneManager.ActiveScene is { } scene)
+        {
+            Camera listener = scene.Camera;
+            _audioManager.SetListener(listener.Position, listener.Forward, listener.Up);
+        }
+
+        // First, so the presenter hands out the sources finished voices gave back.
+        _audioManager.Update();
+        _soundPresenter.Update(_sceneManager.EntityWorld, deltaTime);
     }
 
     // Last snapshot, so a shell sees the engine stop.
@@ -917,18 +936,6 @@ public sealed class Engine
                 using (Profiler.Measure(FramePhase.Assets))
                     _assetManager.PumpPendingUploads();
 
-                // The render thread owns the AL context. Runs every frame, or
-                // streaming queues drain. Listener first, or positional sounds
-                // play at the origin.
-                if (_sceneManager.ActiveScene is { } listenerScene)
-                {
-                    Camera listener = listenerScene.Camera;
-                    _audioManager.SetListener(listener.Position, listener.Forward, listener.Up);
-                }
-
-                using (Profiler.Measure(FramePhase.Audio))
-                    _audioManager.Update();
-
                 // Render-only blend of the last two ticks. Must never write back
                 // through a node's transform setters.
                 physics.PublishRenderPoses(_physicsTicks.Alpha);
@@ -936,6 +943,10 @@ public sealed class Engine
                 // Render-only too: never writes back into the mover.
                 if (playing)
                     _character!.UpdateView(deltaTime, _physicsTicks.Alpha);
+
+                // After the view is written, or the listener is last frame's camera.
+                using (Profiler.Measure(FramePhase.Audio))
+                    UpdateAudio((float)deltaTime);
 
                 if (_inputManager.WasKeyPressed(InputKey.F1)) _debugFlags ^= DebugVisualization.Wireframe;
                 if (_inputManager.WasKeyPressed(InputKey.F2)) _debugFlags ^= DebugVisualization.Vertices;
