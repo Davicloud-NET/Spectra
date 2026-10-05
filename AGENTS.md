@@ -57,6 +57,8 @@ Demo switches worth knowing (`docs/performance.md` has the profiling ones):
 | `--command="<line>"`, repeatable | run a console line once the scene is loaded; replies are logged with `[console]` |
 | `--console` | read console lines from the terminal while the demo runs |
 
+The console command `fake_device_loss` makes the next present fail as a lost graphics device. The demo then ends with exit code 1, and the editor restarts its viewport. It is the only way to test either without pulling a laptop's plug.
+
 A `--command` line runs before `--play` starts the level. Put `wait` in front of anything that needs it running: `--play --command="ent_watch on; wait; ent_list"`. This is how an agent checks entity wiring with no person present.
 
 Publishing:
@@ -167,6 +169,8 @@ Avalonia
 - Dock tool content goes through `SetToolContent`, which also sets the `DataContext`. All dock controls share one `Factory`.
 - A native viewport is a child window. Nothing drawn in the same window can cross it, only popups can, and re-parenting it destroys the session. A composited viewport has neither limit.
 - An `InputGesture` string is parsed. Use real `Key` names (`OemOpenBrackets`, `Delete`), or the window throws at startup.
+- The compositor waits on the shared target's key with no deadline. An engine that dies must keep answering (`Renderer.OfferSharedTurn`) until the shell has cleared `viewport.Host` and `IsAwaitingEngine` is false, or the whole window freezes.
+- When the engine's render thread dies the editor restarts the viewport and keeps the level (`MainWindow.Recovery.cs`, `SessionRecovery`). Anything a session owns must be rebuilt by that path too, or it works until the first restart.
 
 Host
 

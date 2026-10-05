@@ -62,6 +62,7 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - One directional light casts shadows: four cascades in a 4096 atlas, out to 200 units with a fade.
 - Repeated parts draw instanced.
 - The selection outline is drawn in the tone-map resolve. The grid and other world lines are alpha blended.
+- A lost graphics device ends the engine's session. The editor then restarts its viewport and keeps the level. A game just ends: the renderer cannot rebuild a device in place.
 - Missing: anti-aliasing, normal maps, transparent materials, bloom, fog, image-based lighting, particles, decals.
 
 ### Content and cook
