@@ -5,7 +5,7 @@ description: The entity classes that ship with the engine.
 
 These classes have no shape. They exist to be wired together. See [Entities and wiring](/concepts/entities-and-wiring/) for how wires work.
 
-The classes with a shape are on [Mover entities](/reference/mover-entities/) and [Trigger entities](/reference/trigger-entities/). The player's start is on [Player entities](/reference/player-entities/).
+The classes with a shape are on [Mover entities](/reference/mover-entities/) and [Trigger entities](/reference/trigger-entities/). The sound is on [Sound entities](/reference/sound-entities/) and the player's start on [Player entities](/reference/player-entities/).
 
 In each settings table, the first column is the name a level file uses and the second is the label in the Properties panel.
 

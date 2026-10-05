@@ -47,6 +47,7 @@ export default defineConfig({
 						{ label: 'Logic entities', slug: 'reference/logic-entities' },
 						{ label: 'Mover entities', slug: 'reference/mover-entities' },
 						{ label: 'Trigger entities', slug: 'reference/trigger-entities' },
+						{ label: 'Sound entities', slug: 'reference/sound-entities' },
 						{ label: 'Player entities', slug: 'reference/player-entities' },
 						{ label: 'Console', slug: 'reference/console' },
 						{ label: 'Material files', slug: 'reference/material-files' },

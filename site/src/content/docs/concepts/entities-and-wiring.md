@@ -80,4 +80,4 @@ The console also lists a level's entities, shows one entity's wires and state, a
 
 If a level uses a class this build doesn't have, the entity is kept exactly as written, settings and wires included. It does nothing when you play, and the editor marks it.
 
-The classes that exist today are listed in [Logic entities](/reference/logic-entities/), [Mover entities](/reference/mover-entities/), [Trigger entities](/reference/trigger-entities/) and [Player entities](/reference/player-entities/).
+The classes that exist today are listed in [Logic entities](/reference/logic-entities/), [Mover entities](/reference/mover-entities/), [Trigger entities](/reference/trigger-entities/), [Sound entities](/reference/sound-entities/) and [Player entities](/reference/player-entities/).
