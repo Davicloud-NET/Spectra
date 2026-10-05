@@ -2717,6 +2717,9 @@ public partial class MainWindow : Window
 
     private void OnSaveClicked(object? sender, RoutedEventArgs e)
     {
+        if (RefuseSaveWhilePlaying())
+            return;
+
         if (_document.MapPath is { } path)
             SaveMapTo(path);
         else
@@ -2725,8 +2728,21 @@ public partial class MainWindow : Window
 
     private async void OnSaveAsClicked(object? sender, RoutedEventArgs e)
     {
+        if (RefuseSaveWhilePlaying())
+            return;
+
         if (await PickSaveTargetAsync() is { } target)
             SaveMapTo(target);
+    }
+
+    // The session refuses as well. Asking here spares the folder picker.
+    private bool RefuseSaveWhilePlaying()
+    {
+        if (!_latest.IsPlaying && !_shell.IsPlaying)
+            return false;
+
+        _shell.SetMessage("Stop the run before saving.");
+        return true;
     }
 
     // A folder picker plus a name dialog: a level is a folder, and a save-file

@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging;
+using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Scene;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace SpectraEngine.Core.Entities;
 
@@ -10,7 +12,8 @@ namespace SpectraEngine.Core.Entities;
 /// <see cref="Entity"/> per node carrying <see cref="EntityData"/>, resolves
 /// their wiring, and drains their think wakeups and output events in a
 /// deterministic total order. Instances exist only while the world is active
-/// and never write back to the authored data. Render thread only.
+/// and never write back to the authored data. A node they move goes back to
+/// its authored transform when the world deactivates. Render thread only.
 /// </summary>
 public sealed class EntityWorld
 {
@@ -34,10 +37,19 @@ public sealed class EntityWorld
     private readonly HashSet<string> _warnedMissingClasses = new(StringComparer.Ordinal);
     private readonly HashSet<string> _warnedPlaceholderInputs = new(StringComparer.Ordinal);
 
+    private readonly MovedNodeJournal _movedNodes = new();
+
+    // Log a refused move once per node, not once per tick.
+    private readonly HashSet<Guid> _refusedMoveNodes = [];
+
     private TargetNameIndex? _index;
     private long _sequence;
     private float _time;
+    private int _tickingCount;
     private int _maxDispatchesPerTick = 4096;
+
+    // True while Deactivate runs OnRemove. IsActive is already false by then.
+    private bool _removing;
 
     /// <param name="scene">The scene whose nodes carry the authored entities.</param>
     /// <param name="logger">Where refusals, missing classes and budget trips go.</param>
@@ -64,8 +76,30 @@ public sealed class EntityWorld
     /// <summary>Whether <see cref="Activate"/> has run and <see cref="Deactivate"/> has not.</summary>
     public bool IsActive { get; private set; }
 
-    /// <summary>Seconds of ticked time since <see cref="Activate"/>.</summary>
+    /// <summary>
+    /// Seconds of ticked time since <see cref="Activate"/>. A sum of floats:
+    /// count <see cref="TickNumber"/> for anything that must land on a tick.
+    /// </summary>
     public float Time => _time;
+
+    /// <summary>
+    /// The tick being run, or the last one run. Zero while entities spawn, one
+    /// during the first <see cref="Tick"/>.
+    /// </summary>
+    public long TickNumber { get; private set; }
+
+    /// <summary>
+    /// The fixed step in seconds: what <see cref="Tick"/> was last given, and
+    /// the engine's own step before the first tick.
+    /// </summary>
+    public float FixedDeltaTime { get; private set; } = PhysicsDefaults.FixedDeltaTime;
+
+    /// <summary>
+    /// The player, for entities that sense or move it, or null when the host
+    /// has given none. A host that assigns it after <see cref="Activate"/>
+    /// leaves it null while entities spawn. <see cref="Deactivate"/> clears it.
+    /// </summary>
+    public IPlayerPresence? Player { get; set; }
 
     /// <summary>
     /// Every live entity, in the traversal order they were built in. Empty while
@@ -108,6 +142,15 @@ public sealed class EntityWorld
     /// <summary>Entities queued for a deferred despawn.</summary>
     public int PendingDespawnCount => _pendingDespawn.Count;
 
+    /// <summary>Entities that have asked for <see cref="Entity.OnTick"/>.</summary>
+    public int TickingEntityCount => _tickingCount;
+
+    /// <summary>Nodes that will go back to their authored transform on <see cref="Deactivate"/>.</summary>
+    public int MovedNodeCount => _movedNodes.Count;
+
+    /// <summary>How many moves <see cref="SetLocalTransform"/> has refused since <see cref="Activate"/>.</summary>
+    public int RefusedMoveCount { get; private set; }
+
     /// <summary>
     /// Builds every entity in the scene and brings it to life, in four phases.
     /// </summary>
@@ -118,7 +161,12 @@ public sealed class EntityWorld
             throw new InvalidOperationException("This entity world is already active.");
 
         _time = 0f;
+        TickNumber = 0;
+        FixedDeltaTime = PhysicsDefaults.FixedDeltaTime;
         _sequence = 0;
+        _tickingCount = 0;
+        RefusedMoveCount = 0;
+        _refusedMoveNodes.Clear();
         _queue.Clear();
         _entities.Clear();
         _pendingSpawn.Clear();
@@ -158,8 +206,9 @@ public sealed class EntityWorld
     }
 
     /// <summary>
-    /// Runs <see cref="Entity.OnRemove"/> on everything, unsubscribes from the
-    /// scene and drops every instance. Harmless on an inactive world.
+    /// Runs <see cref="Entity.OnRemove"/> on everything, puts every moved node
+    /// back where it was authored, unsubscribes from the scene and drops every
+    /// instance. Harmless on an inactive world.
     /// </summary>
     public void Deactivate()
     {
@@ -168,13 +217,21 @@ public sealed class EntityWorld
 
         IsActive = false;
 
+        _removing = true;
         for (int i = 0; i < _entities.Count; i++)
             _entities[i].OnRemove();
+        _removing = false;
+
+        // After every OnRemove: an entity being removed must still read the
+        // pose it moved to, not the authored one.
+        _movedNodes.Restore();
 
         _index?.Dispose();
         _index = null;
+        Player = null;
 
         _entities.Clear();
+        _tickingCount = 0;
         _queue.Clear();
         _pendingSpawn.Clear();
         _pendingDespawn.Clear();
@@ -182,8 +239,10 @@ public sealed class EntityWorld
     }
 
     /// <summary>
-    /// Advances the world by <paramref name="fixedDt"/> seconds and drains
-    /// everything now due, then drains the deferred spawn and despawn queues.
+    /// Runs one tick of <paramref name="fixedDt"/> seconds: delivers everything
+    /// now due, calls <see cref="Entity.OnTick"/> on the entities that asked
+    /// for it, in <see cref="Entities"/> order, then drains the deferred spawn
+    /// and despawn queues.
     /// </summary>
     /// <exception cref="InvalidOperationException">The world is not active.</exception>
     public void Tick(float fixedDt)
@@ -191,6 +250,8 @@ public sealed class EntityWorld
         if (!IsActive)
             throw new InvalidOperationException("Tick on an entity world that is not active.");
 
+        TickNumber++;
+        FixedDeltaTime = fixedDt;
         _time += fixedDt;
 
         int dispatched = 0;
@@ -208,7 +269,120 @@ public sealed class EntityWorld
         }
 
         LastTickDispatchCount = dispatched;
+
+        // After the drain: an input delivered this tick moves its entity this
+        // tick. Spawns and despawns are deferred, so the list holds still.
+        if (_tickingCount > 0)
+        {
+            for (int i = 0; i < _entities.Count; i++)
+            {
+                if (_entities[i].IsTicking)
+                    _entities[i].OnTick();
+            }
+        }
+
         DrainDeferred();
+    }
+
+    /// <summary>
+    /// Moves a node while the level plays. The only way a running entity may
+    /// move one: the first move of a node records its authored transform, and
+    /// <see cref="Deactivate"/> puts it back.
+    /// </summary>
+    /// <returns>
+    /// False when the move was refused: a world brush sits at or below the
+    /// node, or the scale changes above a brush. Nothing is written then.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">The world is not active.</exception>
+    public bool SetLocalTransform(SceneNode node, in Transform value)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        ThrowIfStopped(nameof(SetLocalTransform));
+
+        // A moving world brush recompiles the level every tick, and the
+        // picture stays right while it does.
+        if (node.SubtreeStaticWorldBrushCount > 0)
+        {
+            return RefuseMove(node,
+                "a world brush sits at or below it, and only parts can move while a level plays. " +
+                "Convert the brush to a part");
+        }
+
+        if (node.SubtreeBrushCount > 0 && value.Scale != node.LocalScale)
+        {
+            return RefuseMove(node,
+                "the move changes its scale, and a node cannot scale a brush at or below it. " +
+                "Resize the brush instead");
+        }
+
+        _movedNodes.Record(node);
+        node.LocalTransform = value;
+        return true;
+    }
+
+    /// <summary>
+    /// Queues an input for one entity, with no caller. It is delivered by the
+    /// next drain, in the order it was queued among everything else due then.
+    /// </summary>
+    /// <param name="target">Who receives it. An entity that is gone by then gets nothing.</param>
+    /// <param name="input">The input's name.</param>
+    /// <param name="parameter">The argument, or null for none.</param>
+    /// <param name="activator">Whoever started the chain, or null when no entity did.</param>
+    /// <exception cref="InvalidOperationException">The world is not active.</exception>
+    public void QueueInput(Entity target, string input, string? parameter = null, Entity? activator = null)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(input);
+        ThrowIfStopped(nameof(QueueInput));
+
+        if (!ReferenceEquals(target.World, this))
+        {
+            throw new ArgumentException(
+                "The entity belongs to another entity world, or to none.", nameof(target));
+        }
+
+        _queue.Push(new EntityEvent
+        {
+            Time = _time,
+            Sequence = _sequence++,
+            Kind = EntityEventKind.Input,
+            Target = target,
+            Activator = activator,
+            TargetName = "",
+            Input = input,
+            Parameter = parameter ?? "",
+            Output = "",
+        });
+    }
+
+    /// <summary>
+    /// Finds the entity that owns <paramref name="node"/>: the one on the node
+    /// itself, or on the nearest node above it that carries an entity. False
+    /// when there is none, or the world is not active.
+    /// </summary>
+    public bool TryFindOwner(SceneNode node, [MaybeNullWhen(false)] out Entity owner)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        owner = null;
+        if (_index is not { } index)
+            return false;
+
+        for (SceneNode? walk = node; walk is not null; walk = walk.Parent)
+        {
+            if (index.TryGetByNodeId(walk.Id, out Entity? found) && ReferenceEquals(found.Node, walk))
+            {
+                owner = found;
+                return true;
+            }
+
+            // Authored as an entity but not running: it still owns what is
+            // below it, so the search does not pass it.
+            if (walk.Entity is not null)
+                return false;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -266,6 +440,33 @@ public sealed class EntityWorld
             Parameter = parameterOverride ?? wire.Parameter,
             Output = output,
         });
+    }
+
+    internal void SetTicking(Entity entity, bool on)
+    {
+        if (entity.IsTicking == on)
+            return;
+
+        entity.IsTicking = on;
+        _tickingCount += on ? 1 : -1;
+    }
+
+    // OnRemove still runs inside the world: what it moves is put back and
+    // what it queues is dropped.
+    private void ThrowIfStopped(string call)
+    {
+        if (!IsActive && !_removing)
+            throw new InvalidOperationException($"{call} on an entity world that is not active.");
+    }
+
+    private bool RefuseMove(SceneNode node, string why)
+    {
+        RefusedMoveCount++;
+
+        if (_refusedMoveNodes.Add(node.Id))
+            _logger.LogError("An entity tried to move '{NodeName}' and was refused: {Why}.", node.Name, why);
+
+        return false;
     }
 
     internal void ReportRefusedKeyvalue(Entity entity, string key, string value) =>
@@ -336,6 +537,23 @@ public sealed class EntityWorld
             return;
         }
 
+        var context = new EntityInputContext(due.Activator, due.Entity, due.Parameter);
+
+        if (due.Target is { } instance)
+        {
+            // Unlisted: despawned, or its node left the scene. A name would
+            // not find it either.
+            if (instance.IndexedName is null)
+            {
+                _logger.LogDebug(
+                    "'{Input}' was queued for an entity that is gone by now; it was not sent.", due.Input);
+                return;
+            }
+
+            Deliver(instance, due.Input, ref context);
+            return;
+        }
+
         _resolved.Clear();
         // Self and caller are the same entity for a connection.
         _index!.Resolve(due.TargetName, due.Entity, due.Activator, due.Entity, _resolved);
@@ -348,17 +566,18 @@ public sealed class EntityWorld
             return;
         }
 
-        var context = new EntityInputContext(due.Activator, due.Entity, due.Parameter);
         for (int i = 0; i < _resolved.Count; i++)
-        {
-            Entity target = _resolved[i];
-            if (target.AcceptInput(due.Input, ref context))
-                continue;
+            Deliver(_resolved[i], due.Input, ref context);
+    }
 
-            _logger.LogDebug(
-                "Entity '{TargetName}' ({ClassName}) has no input '{Input}'.",
-                target.TargetName, target.ClassName, due.Input);
-        }
+    private void Deliver(Entity target, string input, ref EntityInputContext context)
+    {
+        if (target.AcceptInput(input, ref context))
+            return;
+
+        _logger.LogDebug(
+            "Entity '{TargetName}' ({ClassName}) has no input '{Input}'.",
+            target.TargetName, target.ClassName, input);
     }
 
     private void TripDispatchBudget(in EntityEvent offender)
@@ -367,10 +586,12 @@ public sealed class EntityWorld
 
         string offenderName = offender.Kind == EntityEventKind.Think
             ? offender.Entity?.TargetName ?? ""
-            : offender.TargetName;
+            : offender.Target?.TargetName ?? offender.TargetName;
         string what = offender.Kind == EntityEventKind.Think
             ? "a think"
-            : $"output '{offender.Output}' sending '{offender.Input}'";
+            : offender.Output.Length > 0
+                ? $"output '{offender.Output}' sending '{offender.Input}'"
+                : $"input '{offender.Input}'";
 
         _logger.LogError(
             "Entity dispatch budget of {Budget} was exhausted in one tick; the cascade was still firing " +
@@ -442,6 +663,7 @@ public sealed class EntityWorld
             return;
 
         entity.OnRemove();
+        SetTicking(entity, false);
         _index!.Unregister(entity);
         _entities.RemoveAt(at);
     }

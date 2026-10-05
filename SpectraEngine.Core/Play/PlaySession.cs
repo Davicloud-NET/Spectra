@@ -37,8 +37,9 @@ public sealed class PlaySession
     public bool IsActive { get; private set; }
 
     /// <summary>
-    /// Puts the character at its spawn and starts the entities. Does nothing
-    /// without a character or while already playing.
+    /// Puts the character at its spawn, starts the entities and gives them the
+    /// character as their player. Does nothing without a character or while
+    /// already playing.
     /// </summary>
     // A host with an editor suspends it first: a spawn may fire outputs, which
     // must not run with a drag open.
@@ -49,10 +50,18 @@ public sealed class PlaySession
 
         character.Spawn();
         _sceneManager.StartEntityWorld();
+
+        // The world holds the presence, so a map loaded during play drops both.
+        if (_sceneManager.EntityWorld is { } entities)
+            entities.Player = character;
+
         IsActive = true;
     }
 
-    /// <summary>Stops the entities. Does nothing unless a level is being played.</summary>
+    /// <summary>
+    /// Stops the entities, which puts back every node they moved. Does nothing
+    /// unless a level is being played.
+    /// </summary>
     // A host with an editor resumes it after: OnRemove must run before the
     // editor takes the scene back.
     public void Exit()

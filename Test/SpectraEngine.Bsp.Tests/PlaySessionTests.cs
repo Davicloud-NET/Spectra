@@ -41,6 +41,24 @@ public sealed class PlaySessionTests
     }
 
     [Fact]
+    public void Entering_gives_the_entities_the_character_as_their_player()
+    {
+        SceneManager manager = Hosted([]);
+        CharacterSimulation character = Walker(manager);
+        var session = new PlaySession(manager, character);
+
+        session.Enter();
+        EntityWorld world = manager.EntityWorld.ShouldNotBeNull();
+
+        world.Player.ShouldBeSameAs(character);
+        character.IsPresent.ShouldBeTrue();
+
+        session.Exit();
+
+        world.Player.ShouldBeNull();
+    }
+
+    [Fact]
     public void Entering_while_playing_changes_nothing()
     {
         var log = new List<string>();

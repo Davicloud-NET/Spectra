@@ -59,6 +59,9 @@ public abstract class Entity
     // kept here to find the stale entry.
     internal string? IndexedName { get; set; }
 
+    // Written only by EntityWorld.SetTicking, which keeps the count.
+    internal bool IsTicking { get; set; }
+
     /// <summary>
     /// Called once, after every entity in the world exists and has parsed its
     /// keyvalues. Every target name resolves by now. An output fired here is
@@ -83,6 +86,15 @@ public abstract class Entity
     /// not reschedule itself.
     /// </summary>
     protected internal virtual void Think()
+    {
+    }
+
+    /// <summary>
+    /// Called every tick while <see cref="SetTicking"/> is on, after the
+    /// inputs and thinks due that tick. Entities tick in the order the world
+    /// lists them. Anything that moves does it here, counting ticks.
+    /// </summary>
+    protected internal virtual void OnTick()
     {
     }
 
@@ -155,6 +167,51 @@ public abstract class Entity
     /// </summary>
     protected void RefuseKeyvalue(string key, string value) =>
         World.ReportRefusedKeyvalue(this, key, value);
+
+    /// <summary>
+    /// Asks for <see cref="OnTick"/> every tick, or stops asking. Turned on
+    /// while handling an input, the first call comes in the same tick.
+    /// </summary>
+    protected void SetTicking(bool on) => World.SetTicking(this, on);
+
+    /// <summary>
+    /// Moves this entity's node through
+    /// <see cref="EntityWorld.SetLocalTransform"/>, so stopping the level puts
+    /// it back. Never write a node's transform directly.
+    /// </summary>
+    /// <returns>False when the world refused the move.</returns>
+    protected bool MoveNode(in Transform local) => World.SetLocalTransform(Node, in local);
+
+    /// <summary>
+    /// The brush nodes this entity owns: its own node and those below it,
+    /// stopping at any node that carries an entity of its own. Builds a new
+    /// list, so collect once at spawn.
+    /// </summary>
+    protected IReadOnlyList<SceneNode> CollectOwnedBrushes()
+    {
+        var owned = new List<SceneNode>();
+        if (Node.Brush is not null)
+            owned.Add(Node);
+
+        CollectBrushesBelow(Node, owned);
+        return owned;
+    }
+
+    private static void CollectBrushesBelow(SceneNode parent, List<SceneNode> owned)
+    {
+        IReadOnlyList<SceneNode> children = parent.Children;
+        for (int i = 0; i < children.Count; i++)
+        {
+            SceneNode child = children[i];
+            if (child.Entity is not null || child.SubtreeBrushCount == 0)
+                continue;
+
+            if (child.Brush is not null)
+                owned.Add(child);
+
+            CollectBrushesBelow(child, owned);
+        }
+    }
 
     internal void Bind(SceneNode node, EntityWorld world, EntityData data)
     {

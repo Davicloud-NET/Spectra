@@ -141,8 +141,9 @@ public static class CommandTable
         new("Close project", ShellVerb.Of(DocumentVerb.CloseProject), CommandNeeds.Session),
         new("New level", ShellVerb.Of(DocumentVerb.NewLevel), CommandNeeds.Session, "Ctrl+N"),
         new("Open level...", ShellVerb.Of(DocumentVerb.OpenLevel), CommandNeeds.Session, "Ctrl+O"),
-        new("Save level", ShellVerb.Of(DocumentVerb.Save), CommandNeeds.Session, "Ctrl+S"),
-        new("Save level as...", ShellVerb.Of(DocumentVerb.SaveAs), CommandNeeds.Session, "Ctrl+Shift+S"),
+        // Not while playing: the save would hold what the run has moved.
+        new("Save level", ShellVerb.Of(DocumentVerb.Save), CommandNeeds.Session | CommandNeeds.NotPlaying, "Ctrl+S"),
+        new("Save level as...", ShellVerb.Of(DocumentVerb.SaveAs), CommandNeeds.Session | CommandNeeds.NotPlaying, "Ctrl+Shift+S"),
         new("Validate cooked content", ShellVerb.Of(DocumentVerb.ValidateCooked), CommandNeeds.Project),
         new("Exit", ShellVerb.Of(DocumentVerb.Exit), CommandNeeds.None, "", ["quit", "close editor"]),
 

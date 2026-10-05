@@ -152,6 +152,18 @@ public sealed class CommandPaletteTests
     }
 
     [Fact]
+    public void Save_is_not_offered_while_playing()
+    {
+        IReadOnlyList<string> editing = Titles(hasSelection: true, isPlaying: false);
+        editing.ShouldContain("Save level");
+        editing.ShouldContain("Save level as...");
+
+        IReadOnlyList<string> playing = Titles(hasSelection: true, isPlaying: true);
+        playing.ShouldNotContain("Save level");
+        playing.ShouldNotContain("Save level as...");
+    }
+
+    [Fact]
     public void Play_is_withheld_on_a_scene_that_cannot_run()
     {
         CommandTable.Search(string.Empty, Ready(canPlay: false), limit: 500).Rows

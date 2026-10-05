@@ -264,7 +264,8 @@ public sealed class EditorSession : IDisposable
     // The document verbs run on the render thread, and so do their callbacks.
 
     /// <summary>
-    /// Writes the live scene into a map bundle.
+    /// Writes the live scene into a map bundle. Refused while the level is
+    /// playing.
     /// </summary>
     /// <param name="bundlePath">The <c>.smap</c> directory to write.</param>
     /// <param name="done">
@@ -278,6 +279,13 @@ public sealed class EditorSession : IDisposable
 
         Host.EnqueueCommand(scene =>
         {
+            // Asked here, not in the shell: its snapshot can be a frame old.
+            if (SaveRefusal(SceneManager.EntityWorld) is { } refusal)
+            {
+                done(null, refusal);
+                return;
+            }
+
             try
             {
                 var report = new MapSaveReport();
@@ -290,6 +298,14 @@ public sealed class EditorSession : IDisposable
             }
         });
     }
+
+    // Why a save must not run now, or null when it may. Running entities have
+    // moved nodes, and the save would keep those poses as the authored ones.
+    internal static InvalidOperationException? SaveRefusal(EntityWorld? entities) =>
+        entities is { IsActive: true }
+            ? new InvalidOperationException(
+                "it is playing, and a save now would keep what the run has moved. Stop it first.")
+            : null;
 
     /// <summary>
     /// Replaces the live scene's graph with a map bundle's. <c>done</c> runs on

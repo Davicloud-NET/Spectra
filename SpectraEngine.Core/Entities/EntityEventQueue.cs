@@ -21,8 +21,12 @@ internal struct EntityEvent
 
     public EntityEventKind Kind;
 
-    // The thinking entity, or the entity whose output fired.
+    // The thinking entity, or the entity whose output fired. Null for an
+    // input nothing in the world sent.
     public Entity? Entity;
+
+    // The one instance an input is for. Null delivers by TargetName.
+    public Entity? Target;
 
     // A think whose serial no longer matches the entity's was superseded and
     // is dropped.
