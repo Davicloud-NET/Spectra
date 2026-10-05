@@ -58,26 +58,34 @@ internal sealed class LogicWireRouter
         }
 
         if (wire.LabelBounds is Rect label)
-        {
-            Sweep(from, label.Center);
-            Sweep(label.Center, end);
-        }
+            Through(from, label.Center, end);
         else
-        {
             Sweep(from, end);
-        }
     }
 
-    // Out of the right, under the card, back in on the left.
+    // Out of the right, down beside the card, along under it, up the other
+    // side and in on the left. One curve a side would cut the card's corner
+    // where a port sits high on a tall card.
     private void Loop(LogicLayoutWire wire, Point start, Point end)
     {
         double reach = Math.Min(
             LogicMetrics.LoopReach + LogicMetrics.LoopReachStep * wire.Level,
             LogicMetrics.LoopReachLimit);
+        double bottom = wire.From.Top + (wire.From.Face?.Height ?? 0);
+        double right = start.X + reach;
+        double left = end.X - reach;
         var under = new Point((start.X + end.X) / 2, wire.RunY);
 
-        Add(start, new Point(start.X + reach, start.Y), new Point(start.X + reach, under.Y), under);
-        Add(under, new Point(end.X - reach, under.Y), new Point(end.X - reach, end.Y), end);
+        var down = new Point(right, start.Y + Math.Min(reach, bottom - start.Y));
+        var up = new Point(left, end.Y + Math.Min(reach, bottom - end.Y));
+
+        Bend(start, new Point(right, start.Y), down);
+        Line(down, new Point(right, bottom));
+        Bend(new Point(right, bottom), new Point(right, under.Y), under);
+
+        Bend(under, new Point(left, under.Y), new Point(left, bottom));
+        Line(new Point(left, bottom), up);
+        Bend(up, new Point(left, end.Y), end);
     }
 
     // Out of the right, down beside the column, along under the group, up
@@ -111,9 +119,13 @@ internal sealed class LogicWireRouter
         Point after = Short(corner, toward);
 
         Line(from, before);
-        Add(before, Between(before, corner), Between(after, corner), after);
+        Bend(before, corner, after);
         return after;
     }
+
+    // A quarter turn from one leg of a corner to the other.
+    private void Bend(Point from, Point corner, Point to) =>
+        Add(from, Between(from, corner), Between(to, corner), to);
 
     // The point one corner radius from a corner along the leg to another point.
     private static Point Short(Point corner, Point other)
@@ -136,6 +148,17 @@ internal sealed class LogicWireRouter
     {
         double half = (to.X - from.X) / 2;
         Add(from, new Point(from.X + half, from.Y), new Point(to.X - half, to.Y), to);
+    }
+
+    // An S that passes through a point on its way, as steep there as one S
+    // from end to end is in its middle. A wire whose label is not drawn then
+    // shows no step where the label would be.
+    private void Through(Point from, Point via, Point to)
+    {
+        var slope = new Vector((to.X - from.X) / 8, (to.Y - from.Y) / 4);
+
+        Add(from, new Point((from.X + via.X) / 2, from.Y), via - slope, via);
+        Add(via, via + slope, new Point((via.X + to.X) / 2, to.Y), to);
     }
 
     private void Line(Point from, Point to)

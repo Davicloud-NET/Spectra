@@ -120,6 +120,41 @@ public sealed class LogicLayoutRoutingTests
     }
 
     [Fact]
+    public void Wires_to_their_own_card_go_round_it_however_high_their_ports_sit()
+    {
+        LogicScene scene = Arrange(Graph(Entity(
+            1, "Zone", "trigger_multiple",
+            Wire("OnStartTouch", "!self", "Enable"),
+            Wire("OnEndTouch", "!self", "Disable"),
+            Wire("OnTrigger", "!self", "Toggle", delay: 1f))));
+
+        Rect card = scene.Cards.ShouldHaveSingleItem().Bounds;
+
+        scene.Edges.Count.ShouldBe(3);
+        foreach (LogicSceneEdge loop in scene.Edges)
+        {
+            LogicSceneCheck.Crosses(loop, card).ShouldBeFalse($"the wire to {loop.Edge.Input}");
+            loop.Bounds.X.ShouldBeGreaterThanOrEqualTo(0);
+            loop.Bounds.Right.ShouldBeLessThanOrEqualTo(scene.Size.Width);
+        }
+
+        LogicSceneCheck.FirstTextProblem(scene).ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_wire_passes_through_its_label_as_steep_as_it_runs_and_without_a_step()
+    {
+        LogicSceneEdge wire = Arrange(Vault()).Edge("ButtonA", "Presses");
+        LogicCubic arriving = wire.Segments[^2];
+        LogicCubic leaving = wire.Segments[^1];
+
+        wire.Start.Y.ShouldNotBe(wire.End.Y);
+        arriving.End.ShouldBe(wire.LabelBounds.ShouldNotBeNull().Center);
+        (arriving.End - arriving.Control2).ShouldBe(leaving.Control1 - leaving.Start);
+        (arriving.End - arriving.Control2).Y.ShouldNotBe(0);
+    }
+
+    [Fact]
     public void A_prefix_wire_is_drawn_to_every_card_it_matches()
     {
         LogicScene scene = Arrange(Graph(

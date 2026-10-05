@@ -205,11 +205,11 @@ public sealed class LogicLayoutTests
 
         loop.Start.X.ShouldBe(lift.Bounds.Right);
         loop.End.X.ShouldBe(lift.Bounds.X);
-        loop.Segments.Count.ShouldBe(2);
+        LogicSceneCheck.Crosses(loop, lift.Bounds).ShouldBeFalse();
 
         label.Y.ShouldBeGreaterThanOrEqualTo(lift.Bounds.Bottom + LogicMetrics.TextGap);
         label.Center.X.ShouldBe(lift.Bounds.Center.X);
-        loop.Segments[0].End.ShouldBe(label.Center);
+        loop.Segments.ShouldContain(piece => piece.End == label.Center);
 
         IEnumerable<LogicSceneCard> below = Scene.Cards.Where(card =>
             card.Bounds.X == lift.Bounds.X && card.Bounds.Y > lift.Bounds.Y);

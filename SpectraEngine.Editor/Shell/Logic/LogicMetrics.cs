@@ -54,14 +54,14 @@ public static class LogicMetrics
     /// <summary>The room each further wire under a card or under a group takes.</summary>
     public const double RunStep = LabelHeight + TextGap;
 
-    /// <summary>How far a wire to the card itself swings out past the card's sides.</summary>
-    public const double LoopReach = 24;
+    /// <summary>How far from its card's sides a wire to the card itself runs down and up.</summary>
+    public const double LoopReach = 15;
 
-    /// <summary>How much further each next wire to the same card swings out.</summary>
-    public const double LoopReachStep = 8;
+    /// <summary>How much further out each next wire to the same card runs.</summary>
+    public const double LoopReachStep = 4;
 
-    /// <summary>The furthest such a wire swings out. Past this it would leave the scene's padding.</summary>
-    public const double LoopReachLimit = 40;
+    /// <summary>The furthest out such a wire runs. Past this it would leave the scene's padding.</summary>
+    public const double LoopReachLimit = 23;
 
     /// <summary>How far under a group of cards its first wire back to an earlier column runs.</summary>
     public const double BackRunDrop = 20;
