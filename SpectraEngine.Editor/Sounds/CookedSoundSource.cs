@@ -112,7 +112,7 @@ internal sealed class CookedSoundSource : IContentSource
         }
     }
 
-    public override string ToString() => $"sounds cooked on first use @ {_cache.Directory}";
+    public override string ToString() => $"sounds cooked on first use @ {_cache.Root}";
 
     // Null when the cache has nothing usable for the files as they are now.
     private ContentBlob? OpenCached(string cookedPath, string sound)
@@ -178,7 +178,7 @@ internal sealed class CookedSoundSource : IContentSource
             _logger.LogWarning(
                 "Sound {Path} was cooked and could not be kept in '{Cache}', so it is cooked again at the " +
                 "next start: {Message}",
-                sound, _cache.Directory, ex.Message);
+                sound, _cache.Root, ex.Message);
         }
     }
 

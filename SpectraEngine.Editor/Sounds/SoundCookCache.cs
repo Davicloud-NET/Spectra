@@ -17,10 +17,10 @@ internal sealed class SoundCookCache
     public SoundCookCache(string directory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
-        Directory = Path.GetFullPath(directory);
+        Root = Path.GetFullPath(directory);
     }
 
-    public string Directory { get; }
+    public string Root { get; }
 
     // A folder per content root under the user's local application data.
     // Outside the project, so a cooked sound never reaches a pack or source
@@ -40,8 +40,17 @@ internal sealed class SoundCookCache
         string project = Path.GetFileName(Path.GetDirectoryName(root)) ?? string.Empty;
         string folder = project.Length > 0 ? $"{project}-{id:X16}" : $"{id:X16}";
 
-        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(local.Length > 0 ? local : Path.GetTempPath(), "Spectra", "SoundCache", folder);
+        return Path.Combine(LocalData(), "Spectra", "SoundCache", folder);
+    }
+
+    // Not verified: on Linux the folder comes back empty until something has
+    // made it, and the first write here makes it.
+    public static string LocalData()
+    {
+        string local = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify);
+
+        return local.Length > 0 ? local : Path.GetTempPath();
     }
 
     // Null when the sound has no entry, or has one that cannot be read.
@@ -74,7 +83,7 @@ internal sealed class SoundCookCache
     {
         string path = EntryPath(cookedPath);
         if (Path.GetDirectoryName(path) is { Length: > 0 } folder)
-            System.IO.Directory.CreateDirectory(folder);
+            Directory.CreateDirectory(folder);
 
         // Never a half-written entry under the real name.
         string temporary = $"{path}.{Guid.NewGuid():N}.tmp";
@@ -92,5 +101,5 @@ internal sealed class SoundCookCache
     }
 
     private string EntryPath(string cookedPath) =>
-        ContentRoot.ResolveAbsolute(Directory, cookedPath) + EntryExtension;
+        ContentRoot.ResolveAbsolute(Root, cookedPath) + EntryExtension;
 }

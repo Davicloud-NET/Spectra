@@ -42,9 +42,7 @@ public sealed class SoundCookCacheTests : IDisposable
 
         IsInside(cache, Root).ShouldBeFalse();
         IsInside(cache, _project.Root).ShouldBeFalse();
-
-        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        IsInside(cache, local.Length > 0 ? local : Path.GetTempPath()).ShouldBeTrue();
+        IsInside(cache, SoundCookCache.LocalData()).ShouldBeTrue();
     }
 
     [Fact]
@@ -53,7 +51,7 @@ public sealed class SoundCookCacheTests : IDisposable
         string plain = SoundCookCache.DirectoryFor(Root);
 
         SoundCookCache.DirectoryFor(Root + Path.DirectorySeparatorChar).ShouldBe(plain);
-        SoundCookCache.DirectoryFor(Path.Combine(Root, "..", "Assets")).ShouldBe(plain);
+        SoundCookCache.DirectoryFor(Path.Combine(Root, "..", Path.GetFileName(Root))).ShouldBe(plain);
 
         using var other = new TempProject();
         SoundCookCache.DirectoryFor(other.Layout.AssetsPath).ShouldNotBe(plain);
