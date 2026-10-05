@@ -105,6 +105,23 @@ public sealed class SoundPresenterSourceTests
     }
 
     [Fact]
+    public void A_sound_turned_up_past_full_volume_does_not_take_a_source_from_one_at_full_volume()
+    {
+        using var rig = new SoundPresenterRig(sources: 1);
+        var plain = new Vector3(1, 0, 0);
+        var loud = new Vector3(-1, 0, 0);
+        PlayLoopAt(rig, plain);
+        rig.Frame();
+
+        // Both inside the minimum distance, where the device plays them alike.
+        rig.Play(rig.Place("loud", loud), SoundPresenterRig.Beep, SoundPresenterRig.Looped with { Gain = 4f });
+        rig.Frame(5);
+
+        rig.HasVoiceAt(plain).ShouldBeTrue();
+        rig.HasVoiceAt(loud).ShouldBeFalse();
+    }
+
+    [Fact]
     public void A_loop_that_loses_its_source_and_gets_one_back_resumes_in_step()
     {
         using var rig = new SoundPresenterRig(sources: 1);

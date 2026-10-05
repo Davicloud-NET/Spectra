@@ -220,11 +220,22 @@ public sealed class SoundPresenter
             // Only the first path is played. A second one is dropped here.
             SoundPath path = _paths[k].Count > 0 ? _paths[k][0] : new SoundPath(_queries[k].Position, 0f, 1f);
 
+            // The device refuses a place that is not a number. Such a path is
+            // silent, and a voice fades out where it last was.
+            if (IsFinite(path.Position))
+                presented.Position = path.Position;
+            else
+                path = path with { Gain = 0f };
+
             presented.Smoother.Step(in path, deltaSeconds, jumped);
-            presented.Position = path.Position;
-            presented.Loudness = presented.Emitter.Gain * presented.Smoother.Gain;
+
+            // The device plays no source above full volume, so none ranks above it.
+            presented.Loudness = MathF.Min(presented.Emitter.Gain * presented.Smoother.Gain, 1f);
         }
     }
+
+    private static bool IsFinite(Vector3 place) =>
+        float.IsFinite(place.X) && float.IsFinite(place.Y) && float.IsFinite(place.Z);
 
     // Moves every voice to where its sound is now, and counts.
     private SoundStats Configure()

@@ -45,6 +45,29 @@ public sealed class SoundPresenterTests
     }
 
     [Fact]
+    public void A_sound_turned_up_past_full_volume_plays_at_full_volume()
+    {
+        using var rig = new SoundPresenterRig();
+        rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Once with { Gain = 4f });
+
+        rig.Frame();
+
+        rig.OnlyVoice().Gain.ShouldBe(1f);
+    }
+
+    [Fact]
+    public void A_sound_turned_up_past_full_volume_stays_at_full_volume_further_out()
+    {
+        using var rig = new SoundPresenterRig();
+        SceneNode speaker = rig.Place("speaker", new Vector3(0, 0, -8));
+        rig.Play(speaker, SoundPresenterRig.Beep, SoundPresenterRig.Once with { Gain = 2f });
+
+        rig.Frame();
+
+        rig.OnlyVoice().Gain.ShouldBe(2f * SoundFalloff.Gain(8f, 2f, 30f));
+    }
+
+    [Fact]
     public void A_change_of_the_emitters_gain_or_pitch_reaches_the_voice_on_the_next_frame()
     {
         using var rig = new SoundPresenterRig();
@@ -168,6 +191,27 @@ public sealed class SoundPresenterTests
 
         rig.Backend.PlayingSources().ShouldBeEmpty();
         rig.Stats.Silent.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_path_with_a_place_that_is_not_a_number_fades_out_where_the_voice_last_was()
+    {
+        var propagation = new ScriptedPropagation();
+        using var rig = new SoundPresenterRig(propagation: propagation);
+        rig.Play(rig.Place("speaker", new Vector3(2, 0, 0)), SoundPresenterRig.Beep, SoundPresenterRig.Looped);
+        rig.Frame();
+
+        // Still full gain, from nowhere.
+        propagation.Offset = new Vector3(float.NaN, 0, 0);
+        rig.Frame();
+
+        AudioSourceSettings voice = rig.OnlyVoice();
+        voice.Position.ShouldBe(new Vector3(2, 0, 0));
+        voice.Gain.ShouldBeInRange(SoundPresenter.SilenceGain, 0.9f);
+
+        rig.Frame(120);
+
+        rig.Backend.PlayingSources().ShouldBeEmpty();
     }
 
     [Fact]
