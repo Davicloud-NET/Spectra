@@ -101,9 +101,9 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - The simulation holds what is playing and counts it in ticks. A level with no audio device fires on the same ticks.
 - Each frame the loudest sounds at the listener get a source, and the rest keep counting. The engine works out loudness over distance itself.
 - Captions are files: a text file per language says what a sound is, and a WebVTT file beside a voice file holds its subtitles. The cook checks them. The engine works out which ones show right now and publishes that list. Nothing draws it yet, so it goes to the log.
-- A material file can say what it is made of (`acoustic = wood`), and a table turns that into how much sound a wall of it lets through. Nothing sums it along a line yet.
+- A material file can say what it is made of (`acoustic = wood`), and a table turns that into how much sound a wall of it lets through. A sound behind walls is quieter and duller by each wall's material and thickness.
 - The demo's start room has placeholder sounds on its door, lift and button, made by a script.
-- Missing: walls and corners do not change a sound, and there is no reverb, no music and no compressed format.
+- Missing: sound does not go round corners, and there is no reverb, no music and no compressed format.
 - Skeletons, clips and pose blending exist on the CPU. Nothing imports or draws them.
 
 ### Docs and CI
@@ -116,7 +116,7 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - Trying by hand what just landed. Tests cover what the door, the lift, the triggers and the console do. They do not cover how riding a lift or standing in a closing door feels, where focus goes when the console opens during play, or how the Make entity menus read.
 - Listening to what just landed. No test can say whether a sound falls off well with distance, clicks when it starts or stops, or whether the placeholder sounds are bearable.
 - Sound in the editor: a picker and a preview for sound files, and a sound dropped into the viewport.
-- Sound through walls: a sound behind a wall is quieter and duller by the wall's material and thickness. The low-pass filter was proven in a spike (`docs/spikes/2026-10-openal-filters.md`). The query for what lies between two points is being built.
+- Sound through walls is built and nobody has heard it yet. Still to do by ear: the material presets, the demo's door, and whether a sound steps when the listener passes a door frame.
 
 ## Next
 

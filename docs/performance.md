@@ -61,19 +61,32 @@ Full measurements, repetitions, allocation traces, suite logs and caveats are in
 
 `WallPropagation` traces five lines for a sound, one to the listener and four to a ring of a quarter unit round the listener's head, and 60 lines a frame at most over all sounds. That is twelve sounds a frame. The numbers are in `WallPropagationSettings`.
 
-An answer is traced again when the world is another one, when the listener or the sound has moved a tenth of a unit, or after a quarter of a second, because a door that moves raises no signal. A sound with no answer yet goes first, then one heard along a single line so far, then the answers that have grown old, oldest first, then the rest, loudest first. With more due than fits, every sound still gets its turn within the quarter second plus one round: sounds times five over 60, in frames.
+How a sound's lines become one answer (`SoundLines`, `WallLoss`):
 
-Measured in Release on the review machine, on a level the size of the demo's, with sounds up to 60 units from the listener. Other builds ran at the time, so each time is the span of two runs:
+- Along one line the losses add up in decibels. Each solid costs what its material takes at its thickness. A list of solids that ran out of room, 16 a line, counts for what it holds.
+- The lines' gains are averaged, not their decibels. An opening that half the lines pass then lets half the sound through. Averaged in decibels, a view half open beside a thick wall would sound nearly shut, and a real gap leaks far more than that. The high end is what the lines leave at 5 kHz over what they leave in all, so the open lines carry it.
+- A solid that the listener or the sound is inside counts by how deep that end is in it, and its surface loss comes in over a quarter unit (`WallLoss.EndDepth`). A camera that dips into a wall for a frame is a few centimetres deep, and the room behind it must not drop by 10 dB for that frame.
+- A point of the ring that lies in a solid the listener is not in is no place to listen from, and its line counts as the listener's own. The ring fits inside the player's capsule to the sides. Its top is 5 cm above the capsule's, which is where this rule matters: under a ceiling the head touches.
+- A sound on a part is heard from the part. Its node and the parts above it in the tree are not in its way, and each line starts where it leaves that part's box grown by a quarter unit (`SceneSoundObstacles.BodyReach`). That keeps a door's sound clear inside the wall the door slides into, and past the jamb. At the demo's start room door that holds for a listener up to about 60 degrees off the doorway's axis. Further round, the wall counts.
+
+An answer is traced again when a compile landed near its lines, when the listener or the sound has moved a tenth of a unit, or after a quarter of a second, because a door that moves raises no signal. Near is by the cells the compile touched (`Scene.WorldChangedSince`), so a world brush that animates in another cell does not make every answer due on every frame. A full rebuild, another scene and a baked map that comes or goes do. When the level ends the answers are dropped: the next play session knows its sounds by the same node ids.
+
+A sound with no answer yet goes first, then one heard along a single line so far, then the answers that have grown old, oldest first, then the rest, loudest first. With more due than fits, every sound still gets its turn within the quarter second plus one round: sounds times five over 60, in frames.
+
+Measured in Release on the review machine, on a level the size of the demo's, with sounds up to 60 units from the listener. Other builds ran at the time, so each time is the span of three runs:
 
 | Case | Lines a frame | Time a frame |
 |---|---|---|
 | 8 sounds, listener standing | 2.7 | 0.005 to 0.008 ms mean, 0.001 median |
 | 8 sounds, listener walking at 4.5 units a second | 20 | 0.04 to 0.055 ms |
-| 32 sounds, listener standing | 10.7 | 0.018 to 0.026 ms mean, 0.001 median |
-| 32 sounds, listener walking | 60 | 0.11 to 0.16 ms, and 0.08 to 0.09 on the cooked level |
+| 32 sounds, listener standing | 10.7 | 0.017 to 0.026 ms mean, 0.001 median |
+| 32 sounds, listener walking | 60 | 0.105 to 0.16 ms, and 0.08 to 0.09 on the cooked level |
+| 200 sounds, listener standing | 60 | 0.09 ms, one run |
 | 200 sounds, listener walking | 60 | 0.12 to 0.17 ms |
 
-So a frame at the full budget costs 0.1 to 0.17 ms, which is 2 to 3 microseconds a line with the sum. The 99th frame in a hundred took about twice the mean. Nothing allocates. The first look at a material's file costs about 60 microseconds for a loose file, once for each material, in the frame a line first meets it. A level's materials are not read ahead for that reason.
+So a frame at the full budget costs 0.1 to 0.17 ms, which is 2 to 3 microseconds a line with the sum. The 99th frame in a hundred took about twice the mean. Nothing allocates.
+
+The first look at a material's file is paid once for each material, on the render thread, in the frame a line first meets it. For a loose file it took 59 microseconds at the median of 199 files and 0.18 ms at the slowest. The very first look of the run took 8.7 ms, with none of that code having run before, under the JIT. A file in a pack was not measured, and neither was the first look inside the engine. A level's materials are not read ahead.
 
 The times are taken round the whole of `WallPropagation.Resolve` in `WallPropagationCostTests`, which is opt-in. They are not from `--profile` on a level being played:
 

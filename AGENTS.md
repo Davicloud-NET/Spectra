@@ -201,7 +201,10 @@ Sound through walls
 
 - A `SoundQuery` without its `Body` is muffled by the part its sound sits in. `SoundPresenter` sets it to the emitter's node.
 - A sound on a part is heard from that part: its lines start where they leave the part's box grown by `SceneSoundObstacles.BodyReach`. So a door's sound stays clear inside the wall the door slid into, and solid that close to any part does not muffle that part's sounds.
+- A `SoundQuery` names its node, and a node holds its whole level. Nothing keeps one past the frame: the presenter clears its own after `Resolve`.
+- A wall answer is kept by the node's id, which the next play session has too. `SoundPresenter` calls `ISoundPropagation.Forget` when the level ends, and a propagation that keeps anything between calls drops it there.
 - A part that moves raises no signal. `WallPropagation` hears it once the answer is `RefreshSeconds` old, by its own clock: a test passes a `ManualClock` and steps it, or the door never moves.
+- A compile makes an answer due only when it touched cells near the answer's lines. `Scene.RebuildStaticWorld` reports the whole world as changed, so a test of a compile somewhere else needs `SpanLevel.CompileChanges`.
 - With no audio device the engine traces nothing (`Engine.HeardScene`), and captions then go by distance alone.
 - A voice that starts allocates. An allocation test with walls has to keep the same sounds loudest, or sources change hands and it fails for that.
 
