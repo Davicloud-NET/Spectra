@@ -75,6 +75,25 @@ public sealed class LogicCanvasWireKeysTests(RibbonSession session)
         });
     }
 
+    [Fact]
+    public void A_wire_pressed_on_one_list_and_let_go_on_another_is_not_selected()
+    {
+        On("whole", graph =>
+        {
+            Point wire = graph.ToWindow(graph.Scene.Edge("OpenVault", "Lift").Segments[0].At(0.5));
+            graph.Window.MouseDown(wire, MouseButton.Left);
+
+            // The relay lost its first wire while the button was down. The
+            // place the press found now holds the wire to VaultDor.
+            LogicEntityInfo[] entities = VaultEntities();
+            entities[4] = entities[4] with { Wires = [.. entities[4].Wires.Skip(1)] };
+            graph.Model.Apply(Snapshot(Level(entities)));
+            graph.Window.MouseUp(wire, MouseButton.Left);
+
+            graph.Model.Wiring.Selected.ShouldBeNull();
+        });
+    }
+
     [Theory]
     [InlineData(PhysicalKey.Delete)]
     [InlineData(PhysicalKey.Backspace)]

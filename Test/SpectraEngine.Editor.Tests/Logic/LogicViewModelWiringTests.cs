@@ -281,6 +281,22 @@ public sealed class LogicViewModelWiringTests
     }
 
     [Fact]
+    public void An_edge_of_a_scene_that_is_gone_is_not_selected_once_its_place_holds_another_wire()
+    {
+        LogicSceneEdge toLift = Scene.Edge("OpenVault", "Lift");
+
+        // The relay lost its first wire. Where the wire to the lift was, the
+        // one to VaultDor is now.
+        LogicEntityInfo[] entities = VaultEntities();
+        entities[4] = entities[4] with { Wires = [.. entities[4].Wires.Skip(1)] };
+        _model.Apply(Snapshot(Level(entities)));
+
+        Wiring.Select(toLift);
+
+        Wiring.Selected.ShouldBeNull();
+    }
+
+    [Fact]
     public void A_drag_that_begins_lets_the_selected_wire_go()
     {
         Wiring.Select(Scene.Edge("OpenVault", "Lift"));

@@ -145,6 +145,12 @@ public sealed class LogicWiring
     public void Select(LogicSceneEdge? edge)
     {
         LogicSelectedWire? wire = edge is null || !CanEdit ? null : LogicSelectedWire.Of(edge.Edge);
+
+        // An edge of a scene that is gone names a place in its sender's list
+        // that another wire may have by now.
+        if (wire is { } named && Alike(named) == 0)
+            wire = null;
+
         if (wire == Selected)
             return;
 
