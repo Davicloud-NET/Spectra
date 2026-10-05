@@ -25,12 +25,13 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - It opens on a start page and works on a project folder. A ribbon with Build and View tabs, a command palette, and docked panels: Levels, Scene, Properties, Content, Output, Problems, Console.
 - Move, rotate and resize gizmos in two styles, with grid and angle snapping. Box select, duplicate, delete, group, rename, reparent. One gesture is one undo entry.
 - Camera: free look, orbit, pan, frame selection, and top, front and side views.
-- Insert blocks, parts, cuts, lights, entities and models.
+- Insert blocks, parts, cuts, lights, entities and models. Make entity turns the selected blocks into a door, a trigger or another brush entity, and Remove entity turns them back.
 - A material dropped on a face paints it. Scale, offset, rotation and alignment are set in the Properties panel.
 - Entity keyvalues and output wiring are edited in panels built from the `.sentdef` schema.
+- The Behavior rows of a node say whether it collides, is seen by queries, sends touch events and is drawn.
 - Lights have icons and handles in the viewport. Selection shows as an outline.
-- The Console panel is a command line over the editor's own verbs. It has no variables or binds.
-- F8 plays the level in first person, and F8 again stops. Stop does not yet put back what the run moved.
+- The Console panel runs the editor's own verbs and sends every other line to the engine's console. The console key opens it, while a level plays too.
+- F8 plays the level in first person from its player start, and F8 again stops. Stop puts back every node the run moved. A level cannot be saved while it plays.
 - Levels save and load as `.smap` folders of JSON.
 - The viewport is a native child window by default. The composited viewport can dock and takes dropped assets. It is asked for with `--viewport=composition`, and becomes the default on a machine after five clean sessions there.
 
@@ -40,7 +41,17 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - Entity classes are C# with attributes. A source generator writes the parsing, the input dispatch and the registration, so nothing uses reflection.
 - The build exports the schemas as a `.sentdef` file. The editor reads only that.
 - The runtime ticks on the fixed step while playing and never writes to the authored data.
-- Built in, all logic: `logic_auto`, `logic_relay`, `logic_timer`, `math_counter`, `logic_branch`, `logic_case`, `logic_compare`. Nothing yet touches the world.
+- Built-in logic: `logic_auto`, `logic_relay`, `logic_timer`, `math_counter`, `logic_branch`, `logic_case`, `logic_compare`.
+- Built-in world entities: `func_door`, `func_movelinear`, `func_button`, `trigger_once`, `trigger_multiple`, `trigger_teleport`, `info_teleport_destination`, `info_player_start`.
+- A brush entity is a part that carries an entity. A trigger is such a part that is not drawn and not solid.
+- A door, a trigger and one wire between them make a level that works with no code. The demo starts in a room built that way, and tests play the same loop from a `.smap` and from a cooked map.
+- The player is not an entity. A trigger or a button the player sets off is its own activator.
+
+### Console
+
+- One command line per engine. Lines come from the editor's Console panel, from `--command` on the demo's command line, or from its terminal with `--console`.
+- `ent_fire`, `ent_list`, `ent_show` and `ent_watch` send inputs by hand and print the wiring as it runs. `help`, `echo` and `wait` are the rest.
+- Missing: variables, key binds, config files, completion and an overlay in the game.
 
 ### Rendering
 
@@ -58,9 +69,9 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - All content is read through one stack of sources: loose files, `.spack` packs, or packs with loose files on top.
 - `scook` cooks a project into a pack: compressed textures, models from glTF, audio, compiled shaders and baked maps.
 - A cook gives the same bytes in a second process, from the cache and at any worker count. CI checks that on Windows and Linux.
-- A baked map loads without running CSG.
+- A baked map loads without running CSG. It carries its entities, node flags, lights and world collision, and the character walks it as it walks the authored level.
 - A project is a folder with a `.spectraproj` file. The demo boots one from its pack.
-- Missing: cooked materials, skinned models, collision hulls on models, patch and mod packs.
+- Missing: cooked materials, skinned models, collision hulls on models, models placed in a baked map, patch and mod packs.
 
 ### Physics
 
@@ -68,7 +79,10 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - The static world collides: one convex hull per brush, kept in step with each compile.
 - A first-person character walks, climbs steps and jumps on a fixed tick.
 - Ray and overlap queries on the scene, collide and query flags per node, collision groups.
-- Missing: dynamic bodies, moving parts that push, touch events.
+- A part with touch events on reports the player walking into it and out of it.
+- A moving part carries the player standing on it. A mover that would squeeze the player stops: a door turns back and a lift waits.
+- E uses whatever is within two units in front of the eye.
+- Missing: dynamic bodies, touch between anything but the player and a part, and the velocity of a moving part when you jump off it.
 
 ### Shader language
 
@@ -89,26 +103,21 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 
 ## In progress
 
-- Brush entities (P7). A brush owned by an entity leaves the static world and moves with the entity.
-- Trigger volumes (P8).
-- The first world entities: door, button, platform, teleport, player start.
-- Console commands to inspect entities and fire their inputs (C9).
-- A spike on embedding Luau under NativeAOT. Its result decides how O4 starts.
+- Trying by hand what just landed. Tests cover what the door, the lift, the triggers and the console do. They do not cover how riding a lift or standing in a closing door feels, where focus goes when the console opens during play, or how the Make entity menus read.
 
 ## Next
 
 In order. The order follows `docs/positioning.md`: finish build, wire and play, then add what a small first-person game needs.
 
-1. Stop puts the level back (P11a, M). Play mode restores every transform a run changed. Needed as soon as a door moves. Depends on brush entities. Still to decide: restore in place, or play a copy of the scene and throw it away.
-2. Sound in a level (S). An entity that plays a cooked sound. Audio playback and the entity runtime are both there.
-3. Luau scripting (O1 to O5, O7 to O9; L). Scripts on nodes, generated bindings to the scene, attributes, tags and signals. Depends on the spike. The character mover should end up replaceable from Luau.
-4. Prefabs (P10, L). A subtree saved once and placed many times. Depends on entities in maps, which are done. Risky because the rule for names inside a prefab is saved into every map, and it is not decided.
-5. Bodies that move (Y6 to Y8, L). Dynamic bodies, parts that push and carry the player, touch events. Depends on brush entities, and on scripting for the events. Risky because a brush that leaves the static world also leaves its collision, so both have to change together.
-6. The console (C0 to C6, L together). Typed variables, commands, key binds and config files, usable from a terminal before any overlay exists.
-7. The look (R9, R14, R19a, R15, R16, R10). Normal maps, bloom, height fog, image-based ambient, temporal anti-aliasing and transparent materials, in that order. The bar is the look of a good late-UE4 game. Normal maps are the risky one: they change the vertex layout that every mesh and every CSG test baseline uses.
-8. Material parameters (F4, S2, S3; L together). A shader declares its parameters and the Properties panel edits them. Cooked materials (D19) and preview thumbnails (S7) wait on this.
-9. Game UI and skinned characters. The first template game needs a label on screen and a model that animates. Neither has a design doc.
-10. The editor on Linux (H2). Needs an OpenGL context embedded in the shell. It is the largest piece left in the shell.
+1. Sound in a level (S). An entity that plays a cooked sound. Audio playback and the entity runtime are both there.
+2. Luau scripting (O1 to O5, O7 to O9; L). Scripts on nodes, generated bindings to the scene, attributes, tags and signals. The spike passed: Luau runs in a NativeAOT build on Windows and Linux, as long as a Luau error is raised from native code (`docs/spikes/2026-10-luau-aot.md`). The character mover should end up replaceable from Luau.
+3. Prefabs (P10, L). A subtree saved once and placed many times. Depends on entities in maps, which are done. Risky because the rule for names inside a prefab is saved into every map, and it is not decided.
+4. Bodies that move (Y6 and the rest of Y7 and Y8, L). Dynamic bodies, parts that push one another, and touch between bodies. The player is already carried by a moving part and already sets off triggers.
+5. The rest of the console (C0 to C6, L together). Typed variables, key binds and config files. The command line, the way in from the editor and the terminal, and the entity commands are there.
+6. The look (R9, R14, R19a, R15, R16, R10). Normal maps, bloom, height fog, image-based ambient, temporal anti-aliasing and transparent materials, in that order. The bar is the look of a good late-UE4 game. Normal maps are the risky one: they change the vertex layout that every mesh and every CSG test baseline uses.
+7. Material parameters (F4, S2, S3; L together). A shader declares its parameters and the Properties panel edits them. Cooked materials (D19) and preview thumbnails (S7) wait on this.
+8. Game UI and skinned characters. The first template game needs a label on screen and a model that animates. Neither has a design doc.
+9. The editor on Linux (H2). Needs an OpenGL context embedded in the shell. It is the largest piece left in the shell.
 
 ## Later
 
@@ -167,13 +176,13 @@ Design docs are in `docs/`. In the Design column, "archive" means `docs/archive/
 | P4 | Entity runtime | done | archive |
 | P5 | Entity source generator and schema export | done | archive |
 | P6 | Logic entities | done; `logic_case` has no random pick, the runtime has no deterministic random source | archive |
-| P7 | Brush entities | in progress | archive, physics.md |
+| P7 | Brush entities | done; a brush entity is a part that carries an entity | archive, physics.md |
 | P7a | World and part brushes (`BrushKind`) | done | physics.md |
 | P7b | Subtractive brushes | done | negative-brushes.md |
-| P8 | Trigger volumes | in progress | archive |
+| P8 | Trigger volumes | done for the player; nothing else sets a trigger off | archive |
 | P9 | Entities and connections in the map | done | archive |
 | P10 | Prefabs | not started | archive |
-| P11a | Play and stop | partly; stop does not restore what a run moved | archive |
+| P11a | Play and stop | done; stop puts back every node the run moved, in place | archive |
 | P11b | `.spectramapb` | dropped; `.scmap` (D12) replaced it | formats-and-pipeline.md |
 
 ### Shader authoring
@@ -251,7 +260,7 @@ Design docs are in `docs/`. In the Design column, "archive" means `docs/archive/
 | D9 | Project file and boot from a pack | done | formats-and-pipeline.md |
 | D10 | Flat BSP | done | formats-and-pipeline.md |
 | D11 | Canonical `.smap` writer | done | formats-and-pipeline.md |
-| D12 | `.scmap` baked maps | done | formats-and-pipeline.md |
+| D12 | `.scmap` baked maps | done; entities, node flags, lights and world collision are in, placed models and spawns are not | formats-and-pipeline.md |
 | D13 | Cook determinism tests and the bake oracle | done | formats-and-pipeline.md |
 | D14 | `.sentdef` entity schemas | done | formats-and-pipeline.md |
 | D15 | Entity classes written in Luau | not started | formats-and-pipeline.md |
@@ -274,8 +283,8 @@ Design docs are in `docs/`. In the Design column, "archive" means `docs/archive/
 | Y4 | One gameplay query surface | partly; the gameplay raycast is in, the rest is unclear | physics.md |
 | Y5 | Character mover | done | physics.md |
 | Y6 | Dynamic bodies | not started | physics.md |
-| Y7 | Kinematic parts, moving platforms | not started | physics.md |
-| Y8 | Touch events | not started | physics.md |
+| Y7 | Kinematic parts, moving platforms | partly; a moving part carries the player and stops when it would squeeze them, and nothing else rides or is pushed | physics.md |
+| Y8 | Touch events | partly; the player against parts, nothing between bodies | physics.md |
 | Y9 | Collision hulls on models | not started | physics.md |
 | Y10 | Play and stop for physics | not started | physics.md |
 | Y11 | Luau bindings | not started | physics.md |
@@ -293,7 +302,7 @@ Design docs are in `docs/`. In the Design column, "archive" means `docs/archive/
 | O1 | Vector and `CFrame` value types | not started | roblox-onboarding.md |
 | O2 | Familiar node API | not started | roblox-onboarding.md |
 | O3 | Attributes, tags, signals | not started | roblox-onboarding.md |
-| O4 | Luau vendored and bound | not started; a spike is in progress | roblox-onboarding.md |
+| O4 | Luau vendored and bound | not started; the spike passed | roblox-onboarding.md, spikes/2026-10-luau-aot.md |
 | O5 | Node handles and generated bindings | not started | roblox-onboarding.md |
 | O6 | Command bar | dropped; C7 replaced it | roblox-onboarding.md |
 | O7 | `Instance.new` and parts at runtime | not started | roblox-onboarding.md |
@@ -304,8 +313,8 @@ Design docs are in `docs/`. In the Design column, "archive" means `docs/archive/
 
 | Id | Name | Status | Design |
 |---|---|---|---|
-| C0 | Variables and commands | not started | console.md |
-| C1 | Terminal front ends | not started | console.md |
+| C0 | Variables and commands | partly; a command table with `help`, `echo` and `wait`, no variables and no generator | console.md |
+| C1 | Terminal front ends | partly; the demo takes `--command` and reads its terminal with `--console` | console.md |
 | C2 | Key binds | not started | console.md |
 | C3 | Retire the F1 to F6 debug keys | not started | console.md |
 | C4 | Config files | not started | console.md |
@@ -313,10 +322,10 @@ Design docs are in `docs/`. In the Design column, "archive" means `docs/archive/
 | C6 | Shipping flags | not started | console.md |
 | C7 | Luau in the console | not started | console.md |
 | C8 | Variables as project settings | not started | console.md |
-| C9 | Entity commands | in progress | console.md |
+| C9 | Entity commands | done; `ent_fire`, `ent_list`, `ent_show`, `ent_watch` | console.md |
 | C10 | In-game overlay | not started | console.md |
 | C11 | 2D overlay and font atlas | not started | console.md |
-| C12 | Editor console and settings from variable metadata | not started; the editor's Console panel runs editor verbs only | console.md |
+| C12 | Editor console and settings from variable metadata | not started; the editor's Console panel runs editor verbs and forwards the rest | console.md |
 
 ### Networking
 
