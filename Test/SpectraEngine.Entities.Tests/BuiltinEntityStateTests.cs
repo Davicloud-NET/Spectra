@@ -160,6 +160,124 @@ public sealed class BuiltinEntityStateTests
     }
 
     [Fact]
+    public void A_door_describes_where_it_is_and_when_it_closes()
+    {
+        // 1.95 of travel at 3 a second is 39 ticks, and half a second is 30.
+        SceneNode node = Movers.Part(_scene.Root, "door", new Vector3(1f, 2f, 0.2f), new Vector3(0f, 1f, 0f));
+        node.Entity = new EntityData("func_door");
+        node.Entity.SetValue("speed", "3");
+        node.Entity.SetValue("wait", "0.5");
+        EntityWorld world = Play();
+        FuncDoor door = EntityRuntime.Live<FuncDoor>(world, node);
+
+        Describe(door).ShouldBe(
+        [
+            Row("open", "0"), Row("closed", "1"), Row("ticks travelled", "0"),
+            Row("travel ticks", "39"), Row("ticks until it closes", "0"),
+        ]);
+
+        EntityRuntime.Send(door, "Open");
+        Movers.Run(world, 10);
+
+        Describe(door).ShouldBe(
+        [
+            Row("open", "0"), Row("closed", "0"), Row("ticks travelled", "10"),
+            Row("travel ticks", "39"), Row("ticks until it closes", "0"),
+        ]);
+
+        Movers.Run(world, 29);
+
+        Describe(door).ShouldBe(
+        [
+            Row("open", "1"), Row("closed", "0"), Row("ticks travelled", "39"),
+            Row("travel ticks", "39"), Row("ticks until it closes", "30"),
+        ]);
+    }
+
+    [Fact]
+    public void A_linear_mover_describes_where_it_is_and_where_it_is_going()
+    {
+        // 2 units at 2 a second is 60 ticks.
+        SceneNode node = Movers.Part(_scene.Root, "lift", new Vector3(2f, 0.4f, 2f), Vector3.Zero);
+        node.Entity = new EntityData("func_movelinear");
+        node.Entity.SetValue("distance", "2");
+        node.Entity.SetValue("speed", "2");
+        EntityWorld world = Play();
+        FuncMoveLinear lift = EntityRuntime.Live<FuncMoveLinear>(world, node);
+
+        Describe(lift).ShouldBe(
+        [
+            Row("ticks travelled", "0"), Row("travel ticks", "60"),
+            Row("heading for tick", "0"), Row("refused inputs", "0"),
+        ]);
+
+        EntityRuntime.Send(lift, "SetPosition", "0.5");
+        EntityRuntime.Send(lift, "SetPosition", "halfway");
+        Movers.Run(world, 12);
+
+        Describe(lift).ShouldBe(
+        [
+            Row("ticks travelled", "12"), Row("travel ticks", "60"),
+            Row("heading for tick", "30"), Row("refused inputs", "1"),
+        ]);
+    }
+
+    [Fact]
+    public void A_button_describes_that_it_is_pressed_and_when_it_comes_out()
+    {
+        SceneNode node = Movers.Part(_scene.Root, "button", new Vector3(0.5f, 0.5f, 0.2f), Vector3.Zero);
+        node.Entity = new EntityData("func_button");
+        EntityWorld world = Play();
+        FuncButton button = EntityRuntime.Live<FuncButton>(world, node);
+
+        Describe(button)[0].ShouldBe(Row("pressed", "0"));
+        Describe(button)[^1].ShouldBe(Row("ticks until it comes out", "0"));
+
+        EntityRuntime.Send(button, "Use");
+        Movers.Run(world, button.TravelTicks);
+
+        // A second is 60 ticks: the default wait.
+        Describe(button).ShouldBe(
+        [
+            Row("pressed", "1"),
+            Row("ticks travelled", KeyvalueWire.Format(button.TravelTicks)),
+            Row("travel ticks", KeyvalueWire.Format(button.TravelTicks)),
+            Row("ticks until it comes out", "60"),
+        ]);
+    }
+
+    [Fact]
+    public void Every_built_in_class_with_state_describes_some()
+    {
+        // The classes that keep nothing while a level runs. A new class goes
+        // here or gets a DescribeState, or ent_show prints nothing for it.
+        string[] stateless = ["info_player_start", "info_teleport_destination", "logic_auto", "logic_case"];
+
+        foreach (EntitySchema schema in BuiltinEntities.Schemas)
+        {
+            SceneNode node = schema.Placement is EntityPlacement.Brush or EntityPlacement.Volume
+                ? Movers.Part(_scene.Root, schema.ClassName, Vector3.One, Vector3.Zero)
+                : _scene.Root.CreateChild(schema.ClassName);
+            node.Entity = new EntityData(schema.ClassName);
+        }
+
+        EntityWorld world = Play();
+
+        foreach (Entity entity in world.Entities)
+        {
+            entity.ShouldNotBeOfType<PlaceholderEntity>(
+                $"{entity.ClassName} is missing from the test catalogue in EntityRuntimeFixtures.cs");
+
+            bool describes = Describe(entity).Count > 0;
+            describes.ShouldBe(
+                !stateless.Contains(entity.ClassName),
+                $"{entity.ClassName} should {(describes ? "be dropped from the stateless list" : "override DescribeState")}");
+        }
+
+        world.Entities.Count.ShouldBe(BuiltinEntities.ClassCount);
+    }
+
+    [Fact]
     public void Describing_an_entity_changes_nothing()
     {
         SceneNode node = EntityRuntime.Place(_scene.Root, "counter", "math_counter");

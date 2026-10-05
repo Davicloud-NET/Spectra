@@ -93,6 +93,15 @@ public sealed partial class FuncMoveLinear : Entity
     }
 
     /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("ticks travelled", TicksTravelled);
+        state.Add("travel ticks", TravelTicks);
+        state.Add("heading for tick", _mover.TargetTicks);
+        state.Add("refused inputs", RefusedInputCount);
+    }
+
+    /// <inheritdoc/>
     protected override void OnTick()
     {
         switch (_mover.Advance())

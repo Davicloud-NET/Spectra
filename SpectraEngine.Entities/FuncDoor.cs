@@ -133,6 +133,16 @@ public sealed partial class FuncDoor : Entity
     }
 
     /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("open", IsFullyOpen);
+        state.Add("closed", IsFullyClosed);
+        state.Add("ticks travelled", TicksTravelled);
+        state.Add("travel ticks", TravelTicks);
+        state.Add("ticks until it closes", _waitTicksLeft);
+    }
+
+    /// <inheritdoc/>
     protected override void OnTick()
     {
         if (_waitTicksLeft > 0)
