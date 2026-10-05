@@ -167,9 +167,9 @@ public sealed class AudioManagerTests
     {
         var backend = new FakeAudioBackend();
         var audio = NewManager(backend);
-        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600))!;
+        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600)).ShouldNotBeNull();
 
-        AudioVoice voice = audio.Play(clip, Muffled)!;
+        AudioVoice voice = audio.Play(clip, Muffled).ShouldNotBeNull();
 
         AudioSourceSettings given = backend.SettingsOf(voice.Source);
         given.Gain.ShouldBe(0.4f);
@@ -189,7 +189,7 @@ public sealed class AudioManagerTests
         var audio = NewManager(backend);
         var provider = new RampSampleProvider(new AudioFormat(Rate, 1), 4000, LoopRegion.None);
 
-        StreamingVoice voice = audio.PlayStream(provider, Muffled)!;
+        StreamingVoice voice = audio.PlayStream(provider, Muffled).ShouldNotBeNull();
 
         backend.SettingsOf(voice.Source).ShouldBe(Muffled);
 
@@ -201,8 +201,8 @@ public sealed class AudioManagerTests
     {
         var backend = new FakeAudioBackend();
         var audio = NewManager(backend);
-        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600))!;
-        AudioVoice voice = audio.Play(clip, AudioSourceSettings.At(Vector3.Zero))!;
+        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600)).ShouldNotBeNull();
+        AudioVoice voice = audio.Play(clip, AudioSourceSettings.At(Vector3.Zero)).ShouldNotBeNull();
 
         voice.Configure(Muffled);
 
@@ -217,14 +217,14 @@ public sealed class AudioManagerTests
     {
         var backend = new FakeAudioBackend(maxSources: 1);
         var audio = NewManager(backend, sources: 1);
-        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600))!;
+        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600)).ShouldNotBeNull();
 
-        AudioVoice first = audio.Play(clip, Muffled)!;
+        AudioVoice first = audio.Play(clip, Muffled).ShouldNotBeNull();
         uint source = first.Source;
         backend.Finish(source);
         audio.Update().ShouldBe(0);
 
-        AudioVoice second = audio.Play(clip)!;
+        AudioVoice second = audio.Play(clip).ShouldNotBeNull();
 
         second.Source.ShouldBe(source);
         backend.SettingsOf(source).ShouldBe(AudioSourceSettings.Default);

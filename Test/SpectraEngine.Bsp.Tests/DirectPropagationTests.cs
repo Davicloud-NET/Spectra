@@ -57,9 +57,15 @@ public sealed class DirectPropagationTests
     }
 
     [Fact]
-    public void No_emitters_is_nothing_to_do()
+    public void No_emitters_leaves_the_results_alone()
     {
-        new DirectPropagation().Resolve(Listener, [], []);
+        var kept = new SoundPaths(new SoundPath(Vector3.One, 0.25f, 0.5f));
+        SoundPaths[] results = [kept];
+
+        new DirectPropagation().Resolve(Listener, [], results);
+
+        results[0].Count.ShouldBe(1);
+        results[0][0].ShouldBe(new SoundPath(Vector3.One, 0.25f, 0.5f));
     }
 
     [Fact]

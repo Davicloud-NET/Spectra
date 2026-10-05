@@ -335,10 +335,12 @@ public class AudioMarkerCookTests
     {
         result.Succeeded.ShouldBeTrue(Describe(result));
 
-        using var pack = new PackSource(NullLogger.Instance, result.OutputPath!);
+        using var pack = new PackSource(NullLogger.Instance, result.OutputPath.ShouldNotBeNull());
 
         pack.TryOpen(CookedPath, out ContentBlob? blob).ShouldBeTrue();
-        using (blob) return blob!.Span.ToArray();
+        using ContentBlob opened = blob.ShouldNotBeNull();
+
+        return opened.Span.ToArray();
     }
 
     private static string Describe(CookResult result) => string.Join('\n', result.Diagnostics);
