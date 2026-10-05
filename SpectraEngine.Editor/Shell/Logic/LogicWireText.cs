@@ -94,9 +94,10 @@ public static class LogicWireText
     // A target that is not a name is said in words, as a wire's tip says it.
     private static string Receiver(EntityConnection wire)
     {
-        string who = wire.TargetName switch
+        string target = wire.TargetName ?? "";
+        string who = target switch
         {
-            null or "" => "nothing",
+            "" => "nothing",
             TargetNameIndex.SelfToken => "itself",
             TargetNameIndex.ActivatorToken => "the activator",
             TargetNameIndex.CallerToken => "the caller",
@@ -104,7 +105,7 @@ public static class LogicWireText
         };
 
         if (who.Length == 0)
-            return string.IsNullOrEmpty(wire.Input) ? wire.TargetName : $"{wire.TargetName}.{wire.Input}";
+            return string.IsNullOrEmpty(wire.Input) ? target : $"{target}.{wire.Input}";
 
         return string.IsNullOrEmpty(wire.Input) ? who : $"{wire.Input} on {who}";
     }
