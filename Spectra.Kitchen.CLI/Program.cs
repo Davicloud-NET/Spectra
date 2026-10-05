@@ -59,6 +59,7 @@ internal static class Program
                 CliVerb.Clean => RunClean(opts, stdout, writer, outStyle),
                 CliVerb.Verify => RunVerify(opts, stdout, writer, outStyle),
                 CliVerb.Inspect => RunInspect(opts, stdout, writer, outStyle),
+                CliVerb.Sounds => RunSounds(opts, stdout, writer, outStyle),
                 _ => RunUnbuilt(opts, writer),
             };
         }
@@ -222,6 +223,39 @@ internal static class Program
         }
 
         PackReport.WriteText(contents, stdout, style);
+        return ExitSuccess;
+    }
+
+    // Cooks a folder's sounds into a folder, with no project and no pack. A
+    // build calls this for a game that runs from loose files.
+    private static int RunSounds(CliOptions opts, TextWriter stdout, DiagnosticWriter writer, AnsiStyle style)
+    {
+        string source = Path.GetFullPath(opts.Target);
+        if (!Directory.Exists(source))
+        {
+            writer.Write(CookDiagnostic.Error(
+                CookDiagnosticCodes.ContentRootMissing,
+                $"There is no folder at '{source}', so there are no sounds to cook.",
+                source));
+            return ExitCookError;
+        }
+
+        // The parser refuses the verb without -o.
+        string output = Path.GetFullPath(opts.Output ?? source);
+
+        LooseSoundFolderResult result = LooseSoundFolder.Cook(source, output, opts.ToCookSettings());
+        writer.WriteAll(result.Diagnostics);
+
+        if (!result.Succeeded) return ExitCookError;
+
+        if (!opts.Quiet)
+        {
+            stdout.WriteLine(
+                $"{style.Success}{ToolName}{style.Reset}: cooked {result.Cooked} sound(s) into " +
+                $"{style.Path}{output}{style.Reset} " +
+                $"{style.Dim}({result.UpToDate} up to date, {result.WarningCount} warning(s)){style.Reset}");
+        }
+
         return ExitSuccess;
     }
 

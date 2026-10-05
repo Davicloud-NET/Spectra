@@ -17,13 +17,15 @@ internal enum CliVerb
     Verify,
     Inspect,
     Clean,
+    Sounds,
 }
 
 internal sealed class CliOptions
 {
     public required CliVerb Verb { get; init; }
 
-    // Project folder or manifest for cook and clean; the pack for verify and inspect.
+    // Project folder or manifest for cook and clean; the pack for verify and
+    // inspect; the content folder for sounds.
     public required string Target { get; init; }
 
     public string? Output { get; init; }
@@ -213,6 +215,11 @@ internal sealed class CliOptions
             target = Directory.GetCurrentDirectory();
         }
 
+        // No default: beside the sources, a later project cook would find
+        // every sound twice.
+        if (effective == CliVerb.Sounds && output is null)
+            return ParseResult.Usage("'sounds' requires -o, the folder the cooked sounds go to");
+
         return ParseResult.ForOptions(new CliOptions
         {
             Verb = effective,
@@ -245,6 +252,7 @@ internal sealed class CliOptions
         CliVerb.Verify => "verify",
         CliVerb.Inspect => "inspect",
         CliVerb.Clean => "clean",
+        CliVerb.Sounds => "sounds",
         _ => "cook",
     };
 
@@ -257,6 +265,7 @@ internal sealed class CliOptions
             case "verify": verb = CliVerb.Verify; return true;
             case "inspect": verb = CliVerb.Inspect; return true;
             case "clean": verb = CliVerb.Clean; return true;
+            case "sounds": verb = CliVerb.Sounds; return true;
             default: verb = CliVerb.Cook; return false;
         }
     }
@@ -357,6 +366,7 @@ internal sealed class CliOptions
         w.WriteLine($"  {s.Command}scook verify{s.Reset} {s.Placeholder}<pack>{s.Reset}");
         w.WriteLine($"  {s.Command}scook inspect{s.Reset} {s.Dim}[--json]{s.Reset} {s.Placeholder}<pack>{s.Reset}");
         w.WriteLine($"  {s.Command}scook clean{s.Reset} {s.Dim}[options]{s.Reset} {s.Placeholder}<projectDir>{s.Reset}");
+        w.WriteLine($"  {s.Command}scook sounds{s.Reset} {s.Flag}-o{s.Reset} {s.Placeholder}<dir>{s.Reset} {s.Placeholder}<contentDir>{s.Reset}");
         w.WriteLine();
         w.WriteLine($"{s.Header}Verbs:{s.Reset}");
         WriteOption(w, s, "cook", null,
@@ -370,6 +380,11 @@ internal sealed class CliOptions
             "kinds and codecs.");
         WriteOption(w, s, "clean", null,
             "Delete a project's cook output and its cook cache.");
+        WriteOption(w, s, "sounds", null,
+            "Cook every WAV under a content folder to a .saudio",
+            "under -o, with no project and no pack. For a build",
+            "that runs from loose files. A sound whose cooked",
+            "file is newer is skipped.");
         w.WriteLine();
         w.WriteLine($"{s.Header}Options:{s.Reset}");
         WriteOption(w, s, "-o, --output", "<path>",
