@@ -31,8 +31,34 @@ public sealed class SoundPathSmootherTests
 
         for (int i = 0; i < 120; i++) smoother.Step(Target(0f, 0.2f), Frame);
 
-        smoother.Gain.ShouldBe(0f, 1e-4f);
-        smoother.GainHf.ShouldBe(0.2f, 1e-4f);
+        smoother.Gain.ShouldBe(0f);
+        smoother.GainHf.ShouldBe(0.2f);
+    }
+
+    [Theory]
+    [InlineData(30)]
+    [InlineData(60)]
+    [InlineData(144)]
+    public void A_fade_lands_on_its_target_and_does_not_stop_a_hair_short(int framesPerSecond)
+    {
+        // What decides "can it be heard" compares the gain with zero.
+        SoundPathSmoother smoother = StartedAt(1f, 1f);
+
+        for (int i = 0; i < framesPerSecond * 2; i++) smoother.Step(Target(0f, 0.3f), 1f / framesPerSecond);
+
+        smoother.Gain.ShouldBe(0f);
+        smoother.GainHf.ShouldBe(0.3f);
+    }
+
+    [Fact]
+    public void A_change_too_small_to_hear_is_made_at_once()
+    {
+        SoundPathSmoother smoother = StartedAt(0.5f, 0.5f);
+
+        smoother.Step(Target(0.50005f, 0.49995f), Frame);
+
+        smoother.Gain.ShouldBe(0.50005f);
+        smoother.GainHf.ShouldBe(0.49995f);
     }
 
     [Fact]
@@ -146,6 +172,42 @@ public sealed class SoundPathSmootherTests
         // The state is still usable afterwards.
         smoother.Step(Target(1f, 1f), Frame, jumped: true);
         smoother.Gain.ShouldBe(1f);
+    }
+
+    [Fact]
+    public void An_infinite_target_is_treated_as_silence()
+    {
+        SoundPathSmoother smoother = StartedAt(1f, 1f);
+        SoundPath endless = Target(float.PositiveInfinity, float.NegativeInfinity);
+
+        // With no time passing the difference times zero must not become NaN.
+        smoother.Step(endless, 0f);
+        smoother.Step(endless, float.NaN);
+        smoother.Gain.ShouldBe(1f);
+        smoother.GainHf.ShouldBe(1f);
+
+        smoother.Step(endless, Frame);
+        smoother.Gain.ShouldBeInRange(0.8f, 0.99f);
+        smoother.GainHf.ShouldBeInRange(0.8f, 0.99f);
+
+        smoother.Step(endless, Frame, jumped: true);
+        smoother.Gain.ShouldBe(0f);
+        smoother.GainHf.ShouldBe(0f);
+    }
+
+    [Fact]
+    public void An_endless_time_step_over_an_endless_time_constant_moves_nothing()
+    {
+        SoundPathSmoother smoother = StartedAt(1f, 1f);
+
+        smoother.Step(Target(0f, 0f), float.PositiveInfinity, timeConstant: float.PositiveInfinity);
+
+        smoother.Gain.ShouldBe(1f);
+        smoother.GainHf.ShouldBe(1f);
+
+        // The state is still usable afterwards.
+        smoother.Step(Target(0f, 0f), Frame);
+        smoother.Gain.ShouldBeInRange(0.8f, 0.99f);
     }
 
     private static SoundPath Target(float gain, float gainHf) => new(Vector3.Zero, gain, gainHf);

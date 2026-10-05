@@ -4,8 +4,9 @@ namespace SpectraEngine.Core.Audio.Propagation;
 
 /// <summary>
 /// Moves the gain and high-end gain a voice plays at toward what propagation
-/// asks for, over time, so a sudden change is not a click. One per path. The
-/// path's position is not smoothed.
+/// asks for, over time, so a sudden change is not a click. It lands on the
+/// target once the rest is too small to hear. One per path. The path's
+/// position is not smoothed.
 /// </summary>
 public struct SoundPathSmoother
 {
@@ -13,6 +14,9 @@ public struct SoundPathSmoother
     /// Seconds to cover about two thirds of a change. Three of them cover 95%.
     /// </summary>
     public const float DefaultTimeConstant = 0.1f;
+
+    // 80 dB down. A jump this small cannot be heard.
+    private const float LandingDistance = 1e-4f;
 
     private bool _hasShown;
 
@@ -57,11 +61,18 @@ public struct SoundPathSmoother
 
     private static float Approach(float shown, float target, float blend)
     {
-        // A NaN would stay in the state for good.
-        if (float.IsNaN(target)) target = 0f;
+        // A NaN or an infinity would stay in the state for good.
+        if (!float.IsFinite(target)) target = 0f;
         if (blend >= 1f) return target;
 
+        // Written so a NaN blend moves nothing too.
+        if (!(blend > 0f)) return shown;
+
         float next = shown + ((target - shown) * blend);
+
+        // An exponential never arrives, and close to the target the step gets
+        // too small for a float to hold. A fade to silence has to end at zero.
+        if (MathF.Abs(target - next) <= LandingDistance) return target;
 
         // Rounding can land a hair past the target.
         return target >= shown ? MathF.Min(next, target) : MathF.Max(next, target);
