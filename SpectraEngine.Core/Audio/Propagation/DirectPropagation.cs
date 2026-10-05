@@ -6,6 +6,7 @@ namespace SpectraEngine.Core.Audio.Propagation;
 /// <summary>
 /// Propagation by distance alone: every emitter is heard where it is, as loud
 /// as <see cref="SoundFalloff"/> says and unmuffled. Nothing is in the way.
+/// A sound that does not fade is at full volume at any distance.
 /// </summary>
 public sealed class DirectPropagation : ISoundPropagation
 {
@@ -24,7 +25,9 @@ public sealed class DirectPropagation : ISoundPropagation
             ref readonly SoundQuery emitter = ref emitters[i];
 
             float distance = Vector3.Distance(listener.Position, emitter.Position);
-            float gain = SoundFalloff.Gain(distance, emitter.MinDistance, emitter.MaxDistance);
+            float gain = (emitter.Simulated & SoundSimulation.Fades) != 0
+                ? SoundFalloff.Gain(distance, emitter.MinDistance, emitter.MaxDistance)
+                : 1f;
 
             results[i] = new SoundPaths(new SoundPath(emitter.Position, gain, GainHf: 1f));
         }

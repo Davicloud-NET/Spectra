@@ -51,6 +51,7 @@ public sealed class SoundPresenter
     private readonly ISoundPropagation _propagation;
     private readonly LevelVoices _voices;
     private readonly CaptionTracker _captions;
+    private readonly LevelDoppler _doppler;
 
     // The registry read last frame. Another one is another level.
     private SoundEmitters? _registry;
@@ -85,8 +86,15 @@ public sealed class SoundPresenter
         _propagation = propagation;
         _voices = new LevelVoices(audio, assets, logger);
         _captions = new CaptionTracker(captions);
+        _doppler = new LevelDoppler(Simulation);
         Captions = captions;
     }
+
+    /// <summary>
+    /// What is worked out for every sound, read each frame. Switching a part
+    /// off here switches it off for all of them.
+    /// </summary>
+    public SoundSimulationSwitches Simulation { get; } = new();
 
     /// <summary>What the last <see cref="Update"/> made of the level's sounds.</summary>
     public SoundStats Stats { get; private set; }
@@ -123,6 +131,7 @@ public sealed class SoundPresenter
 
         var listener = new SoundListener(_audio.ListenerPosition, _audio.ListenerForward, _audio.ListenerUp);
         bool jumped = HasJumped(listener.Position);
+        _doppler.BeginFrame(world, listener.Position, deltaSeconds);
 
         int asked = QueryAudible(world);
         _propagation.Resolve(in listener, _queries.AsSpan(0, asked), _paths.AsSpan(0, asked));
@@ -159,6 +168,7 @@ public sealed class SoundPresenter
         Array.Clear(_presented, 0, _count);
         _count = 0;
         _hasListener = false;
+        _doppler.Forget();
         _voices.Clear();
         _captions.EndLevel();
         Stats = default;
@@ -218,7 +228,9 @@ public sealed class SoundPresenter
             }
 
             ref readonly SoundEmitter emitter = ref presented.Emitter;
-            _queries[asked] = new SoundQuery(emitter.Node.WorldPosition, emitter.MinDistance, emitter.MaxDistance);
+            presented.Simulated = Simulation.For(emitter.Simulated);
+            _queries[asked] = new SoundQuery(
+                emitter.Node.WorldPosition, emitter.MinDistance, emitter.MaxDistance, presented.Simulated);
             _asked[asked++] = i;
         }
 
@@ -268,6 +280,7 @@ public sealed class SoundPresenter
                 path = path with { Gain = 0f };
 
             presented.Smoother.Step(in path, deltaSeconds, jumped);
+            _doppler.Step(ref presented, jumped);
 
             // The device plays no source above full volume, so none ranks above it.
             presented.Loudness = MathF.Min(presented.Emitter.Gain * presented.Smoother.Gain, 1f);

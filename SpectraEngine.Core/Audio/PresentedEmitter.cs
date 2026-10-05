@@ -24,6 +24,12 @@ internal struct PresentedEmitter
 
     public SoundPathSmoother Smoother;
 
+    // What is worked out for the sound: its own switches, less the ones the
+    // engine has off. As of the last frame it could be heard.
+    public SoundSimulation Simulated;
+
+    public DopplerShift Doppler;
+
     // Where the sound seems to come from this frame.
     public Vector3 Position;
 
@@ -41,4 +47,10 @@ internal struct PresentedEmitter
     public bool WasRefused;
 
     public CaptionProgress Captions;
+
+    // Whether the sound is heard from where it stands. OpenAL places only
+    // mono sounds, so a stereo one plays at the listener whatever its switch
+    // says. Until the sound is loaded, the switch alone decides.
+    public readonly bool IsPlaced =>
+        (Simulated & SoundSimulation.Placed) != 0 && Sound is not { IsStereo: true };
 }

@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Audio;
+using SpectraEngine.Core.Audio.Propagation;
 using SpectraEngine.Core.Scene;
 using System;
 
@@ -48,6 +49,12 @@ public readonly struct SoundEmitter
 
     /// <summary>Whether the sound was asked to repeat until it is stopped.</summary>
     public bool IsLooped { get; internal init; }
+
+    /// <summary>
+    /// What is worked out for the sound on its way to the listener. It changes
+    /// what is heard and nothing the level counts.
+    /// </summary>
+    public SoundSimulation Simulated { get; internal init; }
 
     /// <summary>The tick the sound started on. Zero for one that started while the level spawned.</summary>
     public long StartTick { get; internal init; }

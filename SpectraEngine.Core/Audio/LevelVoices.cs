@@ -142,12 +142,17 @@ internal sealed class LevelVoices
 
     public static AudioSourceSettings SettingsFor(in PresentedEmitter presented)
     {
-        // OpenAL places only mono sounds, so a stereo one is played at the listener.
-        bool atListener = presented.Sound is { IsStereo: true };
+        bool atListener = !presented.IsPlaced;
+
+        // Doppler bends only what the device plays. The level counts a
+        // sound's end and its markers from the emitter's own pitch, so a
+        // sound heard while closing in fast is over on the device a little
+        // before the level says it ended.
+        float pitch = presented.Emitter.Pitch * presented.Doppler.Factor;
 
         return new AudioSourceSettings(
             presented.Loudness,
-            presented.Emitter.Pitch,
+            pitch,
             atListener ? Vector3.Zero : presented.Position,
             Vector3.Zero,
             Relative: atListener,

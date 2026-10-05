@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Audio;
+using SpectraEngine.Core.Audio.Propagation;
 using SpectraEngine.Core.Entities;
 using System;
 using System.Collections.Generic;
@@ -108,6 +109,38 @@ public sealed partial class PointSound : Entity
         Tooltip = "The sound plays when the level starts.",
         Default = "0")]
     public bool StartPlaying { get; set; }
+
+    /// <summary>Whether the sound is heard from where it stands.</summary>
+    [Keyvalue(
+        "placed",
+        Display = "Placed",
+        Tooltip = "The sound is heard from where it stands. Off, it plays in both ears. A stereo file is never placed.",
+        Default = "1")]
+    public bool IsPlaced { get; set; } = true;
+
+    /// <summary>Whether the sound gets quieter with distance.</summary>
+    [Keyvalue(
+        "fades",
+        Display = "Fades with distance",
+        Tooltip = "The sound gets quieter with distance. Off, it is as loud everywhere as it is up close.",
+        Default = "1")]
+    public bool FadesWithDistance { get; set; } = true;
+
+    /// <summary>Whether what lies between the sound and the listener muffles it.</summary>
+    [Keyvalue(
+        "walls",
+        Display = "Muffled by walls",
+        Tooltip = "Walls between the sound and the listener make it quieter and duller. Off, it passes through them.",
+        Default = "1")]
+    public bool IsMuffledByWalls { get; set; } = true;
+
+    /// <summary>Whether the pitch shifts while the sound and the listener close in or part.</summary>
+    [Keyvalue(
+        "doppler",
+        Display = "Doppler",
+        Tooltip = "The pitch rises while the sound and the listener close in and falls while they part.",
+        Default = "1")]
+    public bool HasDoppler { get; set; } = true;
 
     /// <summary>Whether the sound is playing.</summary>
     public bool IsPlaying => _emitter != SoundEmitters.None;
@@ -254,13 +287,23 @@ public sealed partial class PointSound : Entity
             return;
 
         World.Sounds.Stop(_emitter);
-        _emitter = World.Sounds.Play(
-            Node, Sound, in _description, new SoundEmitterSettings(Volume, Pitch, MinDistance, MaxDistance, IsLooped));
+        var settings = new SoundEmitterSettings(Volume, Pitch, MinDistance, MaxDistance, IsLooped)
+        {
+            Simulated = Simulated(),
+        };
+
+        _emitter = World.Sounds.Play(Node, Sound, in _description, in settings);
 
         _pass = 0;
         _nextFrame = 0;
         SetTicking(true);
     }
+
+    private SoundSimulation Simulated() =>
+        (IsPlaced ? SoundSimulation.Placed : SoundSimulation.None)
+        | (FadesWithDistance ? SoundSimulation.Fades : SoundSimulation.None)
+        | (IsMuffledByWalls ? SoundSimulation.Walls : SoundSimulation.None)
+        | (HasDoppler ? SoundSimulation.Doppler : SoundSimulation.None);
 
     private void Halt()
     {

@@ -418,8 +418,12 @@ public sealed class PointSoundTests
         schema.Outputs.ShouldBe([PointSound.OnEnded, PointSound.OnMarker]);
 
         schema.Keyvalues.Select(keyvalue => keyvalue.Name).ShouldBe(
-            ["sound", "volume", "pitch", "mindistance", "maxdistance", "looped", "startplaying"]);
-        schema.Keyvalues.Select(keyvalue => keyvalue.Default).ShouldBe(["", "1", "1", "2", "30", "0", "0"]);
+        [
+            "sound", "volume", "pitch", "mindistance", "maxdistance", "looped", "startplaying",
+            "placed", "fades", "walls", "doppler",
+        ]);
+        schema.Keyvalues.Select(keyvalue => keyvalue.Default).ShouldBe(
+            ["", "1", "1", "2", "30", "0", "0", "1", "1", "1", "1"]);
         schema.Keyvalues.ShouldAllBe(keyvalue => keyvalue.Display.Length > 0 && keyvalue.Tooltip.Length > 0);
         schema.Keyvalues[0].Type.ShouldBe(KeyvalueType.AssetSound);
 

@@ -48,8 +48,8 @@ internal sealed class CaptionTracker
         if (presented.Captions.Captions is not { } captions)
             return;
 
-        // A stereo sound plays at the listener.
-        Vector3? place = presented.Sound is { IsStereo: true } ? null : presented.Position;
+        // A sound that is not placed plays at the listener.
+        Vector3? place = presented.IsPlaced ? presented.Position : null;
 
         if (captions.Kind == CaptionKind.Voice)
             FollowSpeech(captions, ref presented, place, tick);
@@ -66,7 +66,7 @@ internal sealed class CaptionTracker
 
         presented.Captions = new CaptionProgress { Captions = isShown ? found : null, Lookup = _feed.Lookup };
 
-        // Whether the sound has a place is in its file.
+        // Whether the sound can have a place is in its file.
         if (isShown)
             voices.Load(ref presented);
     }
@@ -136,7 +136,7 @@ internal sealed class CaptionTracker
         // another sound takes its source, and what it had left was not said.
         double length = emitter.FrameCount / (double)emitter.SampleRate;
         double reached = Math.Min(length, SecondsPlayed(in presented, emitter.PositionAt(tick)));
-        Vector3? place = presented.Sound is { IsStereo: true } ? null : presented.Position;
+        Vector3? place = presented.IsPlaced ? presented.Position : null;
 
         for (int i = 0; i < captions.Lines.Count; i++)
         {

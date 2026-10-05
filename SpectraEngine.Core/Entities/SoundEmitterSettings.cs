@@ -1,3 +1,5 @@
+using SpectraEngine.Core.Audio.Propagation;
+
 namespace SpectraEngine.Core.Entities;
 
 /// <summary>How a sound is to be played: how loud, how fast, how far it reaches and whether it repeats.</summary>
@@ -11,4 +13,11 @@ namespace SpectraEngine.Core.Entities;
 /// through and ignores the region.
 /// </param>
 public readonly record struct SoundEmitterSettings(
-    float Gain, float Pitch, float MinDistance, float MaxDistance, bool IsLooped);
+    float Gain, float Pitch, float MinDistance, float MaxDistance, bool IsLooped)
+{
+    /// <summary>
+    /// What is worked out for the sound on its way to the listener. Everything,
+    /// unless it is set.
+    /// </summary>
+    public SoundSimulation Simulated { get; init; } = SoundSimulation.All;
+}

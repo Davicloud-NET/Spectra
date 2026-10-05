@@ -113,6 +113,7 @@ public sealed class Engine
         EntityConsoleCommands.Register(_console.Commands, _entityWatch);
         GraphicsConsoleCommands.Register(_console.Commands, renderer);
         SoundConsoleCommands.Register(_console.Commands, _soundPresenter, audioManager);
+        SoundSimulationConsoleCommands.Register(_console.Commands, _soundPresenter.Simulation);
         CaptionConsoleCommands.Register(_console.Commands, _captions);
         _entityWatch.Changed += RefreshEntityTrace;
     }

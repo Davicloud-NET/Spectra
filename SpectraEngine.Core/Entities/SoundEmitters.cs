@@ -75,6 +75,7 @@ public sealed class SoundEmitters
             MinDistance = settings.MinDistance,
             MaxDistance = settings.MaxDistance,
             IsLooped = settings.IsLooped,
+            Simulated = settings.Simulated,
             StartTick = tick,
             FrameCount = sound.FrameCount,
             SampleRate = sound.SampleRate,
