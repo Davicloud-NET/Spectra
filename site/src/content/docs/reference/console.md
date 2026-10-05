@@ -188,7 +188,7 @@ sound_stats: preview Sounds/door_open.wav, volume 0.5.
 | `not loaded` | Sounds whose file could not be loaded. The log names each file once. |
 | `sources` | How many of the level's sounds the audio device can play at once. |
 | `starts refused` | Sounds the device had no source for when it was asked to start them. |
-| `preview` | The file [`sound_play`](#sound_play) is playing, or `none`. It is not one of the level's sounds and is counted in none of the numbers above. |
+| `preview` | The file [`sound_play`](#sound_play) or a play button in the editor is playing, or `none`. It is not one of the level's sounds and is counted in none of the numbers above. |
 | `volume` | The volume [`sound_volume`](#sound_volume) has set. |
 
 Before you press Play one line takes the place of the first two: `sound_stats: the level is not running, so it plays nothing.` and the number of sources. The line with the preview and the volume prints either way. With no audio device it says so first, as a warning.
