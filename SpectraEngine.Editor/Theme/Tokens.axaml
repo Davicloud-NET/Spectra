@@ -204,8 +204,8 @@
   <SolidColorBrush x:Key="SpectraLogicStubEdge" Color="{DynamicResource SpectraLogicStubEdgeColor}" />
 
   <!-- A wire at rest, one that fired a moment ago, and one that fired
-       earlier. A selected wire is the accent and a broken one the danger
-       colour. -->
+       earlier. A wire that touches the selection or waits is the accent, and
+       a broken one the danger colour. -->
   <Color x:Key="SpectraLogicWireColor">#666B74</Color>
   <Color x:Key="SpectraLogicWireFiringColor">#7FB4FF</Color>
   <Color x:Key="SpectraLogicWireFiredColor">#56719A</Color>
