@@ -88,6 +88,10 @@ public sealed class ContentSourceStack : IContentSource
     /// <exception cref="FileNotFoundException">
     /// No source has the content and this stack is <see cref="Strict"/>.
     /// </exception>
+    /// <exception cref="InvalidDataException">
+    /// A source that makes this content when asked refused the file it is made
+    /// from. Sources below it are not tried: the content is there and broken.
+    /// </exception>
     public bool TryOpen(string path, [NotNullWhen(true)] out ContentBlob? blob)
     {
         IContentSource[] sources = _sources;

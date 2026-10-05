@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 
 namespace SpectraEngine.Core.Assets.Sources;
 
@@ -23,6 +24,11 @@ public interface IContentSource
     /// caller disposes. False when this source has no such content, or has it
     /// and could not read it.
     /// </summary>
+    /// <exception cref="InvalidDataException">
+    /// The source makes this content from another file when it is asked, and
+    /// that file was refused. The message says why. A source that only reads
+    /// what is stored never throws this.
+    /// </exception>
     bool TryOpen(string path, [NotNullWhen(true)] out ContentBlob? blob);
 
     /// <summary>
