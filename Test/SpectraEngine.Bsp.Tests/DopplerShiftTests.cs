@@ -13,13 +13,14 @@ public sealed class DopplerShiftTests
     private const double Tolerance = 0.0005;
 
     // The most a steady path's factor wanders, in cents, at 60, 144 and 240
-    // frames a second. Measured: 0.004, which is the rounding of the lengths.
+    // frames a second. Measured: 0.005, which is the rounding of the lengths.
     private const double Flutter = 0.05;
 
-    // The same where the frame rate is near the tick rate and not on it, so
-    // a frame now and then holds no tick or two. Measured: up to 1.3, as a
-    // slow drift and not a buzz.
-    private const double FlutterNearTheTickRate = 2.0;
+    // The same for a sound that moves in ticks, where the frames do not line
+    // up with them: a frame now and then holds a tick more or less than the
+    // others. Measured: 1.8 at 59 and 61 frames a second, 3.3 at an uneven
+    // 30, each as a slow drift and not a buzz. A moving listener has none.
+    private const double FlutterOffTheTickRate = 4.0;
 
     // Seconds for a path that stopped at 20 units a second to be heard
     // within a cent of its own pitch, and to be at it. Measured: 0.20 and 0.29.
@@ -325,8 +326,39 @@ public sealed class DopplerShiftTests
         (double soundLowest, double soundHighest) = sound.CentsOver(6);
         (double listenerLowest, double listenerHighest) = listener.CentsOver(6);
 
-        (soundHighest - soundLowest).ShouldBeLessThan(FlutterNearTheTickRate);
-        (listenerHighest - listenerLowest).ShouldBeLessThan(FlutterNearTheTickRate);
+        (soundHighest - soundLowest).ShouldBeLessThan(FlutterOffTheTickRate);
+        (listenerHighest - listenerLowest).ShouldBeLessThan(Flutter);
+    }
+
+    [Fact]
+    public void With_no_ticks_running_a_moving_listener_is_still_heard_right()
+    {
+        // A level that stands still while the camera flies through it.
+        var clock = new DopplerClock();
+        var shift = new DopplerShift();
+
+        for (int frame = 0; frame < 2 * 144; frame++)
+        {
+            clock.Advance(1f / 144f, 0f);
+            shift.Step(500f - (34.3f * frame / 144f), in clock);
+        }
+
+        ((double)shift.Factor).ShouldBe(Closing, Tolerance);
+    }
+
+    [Fact]
+    public void Ticks_that_run_at_half_pace_do_not_change_what_a_moving_listener_hears()
+    {
+        var clock = new DopplerClock();
+        var shift = new DopplerShift();
+
+        for (int frame = 0; frame < 2 * 60; frame++)
+        {
+            clock.Advance(1f / 60f, 0.5f / 60f);
+            shift.Step(500f - (34.3f * frame / 60f), in clock);
+        }
+
+        ((double)shift.Factor).ShouldBe(Closing, Tolerance);
     }
 
     [Theory]

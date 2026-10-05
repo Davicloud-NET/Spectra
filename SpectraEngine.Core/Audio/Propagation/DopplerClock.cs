@@ -8,12 +8,10 @@ namespace SpectraEngine.Core.Audio.Propagation;
 /// all it hears. Every <see cref="DopplerShift"/> is stepped against it once
 /// a frame.
 /// </summary>
-// A camera moves every frame and an entity moves every tick. Against frame
-// time alone, a mover's path stands still on most frames at 144 a second and
-// jumps on the rest, and its pitch flutters by tens of cents. So a path's
-// rate is fitted to both clocks at once, by least squares over about
-// TimeConstant. Steady motion of either end then reads as steady at any
-// frame rate.
+// A camera moves every frame and an entity every tick. Against frame time
+// alone a mover stands still on most frames at 144 a second and jumps on the
+// rest, and its pitch flutters by tens of cents. So a path's rate is fitted
+// to both clocks at once, and steady motion of either end reads as steady.
 public struct DopplerClock
 {
     /// <summary>
@@ -71,6 +69,8 @@ public struct DopplerClock
             return;
         }
 
+        // Starts as if the two clocks had kept pace for a long while, so the
+        // first rates come in from nothing and do not jump.
         if (!(_mean > 0d))
             _mean = TimeConstant;
 
@@ -82,13 +82,7 @@ public struct DopplerClock
         _cross = (_cross * Keep) + skew;
         _spread = (_spread * Keep) + (skew * Skew);
 
-        // The two by two system of the fit, solved for the sum of the two
-        // rates. The ridge is on their difference, so it biases nothing
-        // while the clocks agree.
-        double spread = _spread + Ridge;
-        double determinant = (_mean * spread) - (_cross * _cross);
-        GrownWeight = spread / determinant;
-        SkewedWeight = -_cross / determinant;
+        Solve();
     }
 
     /// <summary>Forgets the frames so far, for another level. Every shift starts over.</summary>
@@ -97,6 +91,21 @@ public struct DopplerClock
         long frame = Frame + 1;
         this = default;
         Frame = frame;
+    }
+
+    // The two by two system of the fit, solved for the sum of the two rates.
+    // The ridge is on the rate that goes with the ticks: where nothing tells
+    // the clocks apart, a path counts as changing with the frames. That is
+    // right at any pace of the ticks, and with none running.
+    private void Solve()
+    {
+        double mean = _mean + Ridge;
+        double cross = _cross - Ridge;
+        double spread = _spread + Ridge;
+        double determinant = (mean * spread) - (cross * cross);
+
+        GrownWeight = spread / determinant;
+        SkewedWeight = -cross / determinant;
     }
 
     // Written so NaN is no time at all.
