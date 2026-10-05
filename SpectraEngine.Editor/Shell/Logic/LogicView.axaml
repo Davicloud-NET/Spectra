@@ -228,10 +228,12 @@
         </Button>
         <TextBlock x:Name="HintText" DockPanel.Dock="Right" Classes="status" Margin="14,0,0,0"
                    Text="{Binding Hint}" />
-        <TextBlock DockPanel.Dock="Left" Classes="status" Margin="0,0,14,0"
-                   Text="{Binding Status.Truncated}"
-                   IsVisible="{Binding Status.Truncated, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <TextBlock Classes="status" Text="{Binding Status.Unwired}" />
+        <DockPanel x:Name="Notes">
+          <TextBlock DockPanel.Dock="Left" Classes="status" Margin="0,0,14,0"
+                     Text="{Binding Status.Truncated}"
+                     IsVisible="{Binding Status.Truncated, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <TextBlock Classes="status" Text="{Binding Status.Unwired}" />
+        </DockPanel>
       </DockPanel>
     </Border>
   </Grid>

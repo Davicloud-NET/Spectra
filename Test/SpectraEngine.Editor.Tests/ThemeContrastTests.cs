@@ -145,6 +145,65 @@ public sealed class ThemeContrastTests
         Ratio("SpectraModeColor", "SpectraBgAppColor").ShouldBeGreaterThanOrEqualTo(BodyMinimum);
     }
 
+    [Theory]
+    // A card: its name, its class line, the activator's name, a port, the
+    // note and a state label, a state value, a port its class lacks.
+    [InlineData("SpectraTextEmphasisColor", "SpectraLogicCardHeadColor")]
+    [InlineData("SpectraTextMutedColor", "SpectraLogicCardHeadColor")]
+    [InlineData("SpectraTextBodyColor", "SpectraLogicCardHeadColor")]
+    [InlineData("SpectraTextBodyColor", "SpectraLogicCardColor")]
+    [InlineData("SpectraTextMutedColor", "SpectraLogicCardColor")]
+    [InlineData("SpectraTextEmphasisColor", "SpectraLogicCardColor")]
+    [InlineData("SpectraTextDangerColor", "SpectraLogicCardColor")]
+    // The card of a name nothing has: the name, what is wrong, its port.
+    [InlineData("SpectraTextDangerColor", "SpectraLogicStubHeadColor")]
+    [InlineData("SpectraLogicStubTextColor", "SpectraLogicStubHeadColor")]
+    [InlineData("SpectraTextBodyColor", "SpectraLogicStubColor")]
+    // The empty state on the ground. A label's own surface is the panel.
+    [InlineData("SpectraTextBodyColor", "SpectraLogicGroundColor")]
+    // The event strip: a line, its tick, a failure.
+    [InlineData("SpectraTextBodyColor", "SpectraBgInputColor")]
+    [InlineData("SpectraTextMutedColor", "SpectraBgInputColor")]
+    [InlineData("SpectraTextDangerColor", "SpectraBgInputColor")]
+    // The Playing pill on the toolbar.
+    [InlineData("SpectraSuccessColor", "SpectraBgPanelColor")]
+    public void The_Logic_view_s_text_clears_the_standard_on_the_surface_it_is_drawn_on(
+        string text, string background)
+    {
+        Ratio(text, background).ShouldBeGreaterThanOrEqualTo(
+            BodyMinimum, $"{text} on {background}");
+    }
+
+    [Fact]
+    public void The_wash_over_what_a_filter_leaves_out_is_the_ground_itself()
+    {
+        // It stands in for an opacity, so it has to be the colour under it.
+        Dictionary<string, (double R, double G, double B)> colors = Colors();
+
+        colors["SpectraLogicDimWashColor"].ShouldBe(colors["SpectraLogicGroundColor"]);
+    }
+
+    [Fact]
+    public void No_token_is_defined_twice()
+    {
+        // A second definition of a key throws when the application starts,
+        // and nothing before that says so.
+        string tokens = File.ReadAllText(
+            Path.Combine(RepoRoot(), "SpectraEngine.Editor", "Theme", "Tokens.axaml"));
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var twice = new List<string>();
+
+        foreach (Match match in Regex.Matches(tokens, @"x:Key=""(?<key>[A-Za-z0-9]+)"""))
+        {
+            if (!seen.Add(match.Groups["key"].Value))
+                twice.Add(match.Groups["key"].Value);
+        }
+
+        seen.Count.ShouldBeGreaterThan(100, "the token file should have been read, not skipped");
+        twice.ShouldBeEmpty();
+    }
+
     [Fact]
     public void The_elevation_scale_climbs_rather_than_wandering()
     {

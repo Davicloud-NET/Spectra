@@ -124,6 +124,13 @@ internal sealed class LogicGraphPainter
                 _wires.DrawEnds(context, faces[i]);
         }
 
+        // Under the labels: a dot on its way passes behind the words, not over them.
+        for (int i = 0; i < faces.Count; i++)
+        {
+            if (faces[i].State.Travel is not null && Draws(faces[i], dimmed))
+                _wires.DrawTravel(context, faces[i]);
+        }
+
         if (_detail != LogicDetail.Full)
             return;
 
@@ -131,12 +138,6 @@ internal sealed class LogicGraphPainter
         {
             if (Draws(faces[i], dimmed))
                 _wires.DrawLabel(context, faces[i], ReferenceEquals(faces[i].Edge, _hoveredEdge));
-        }
-
-        for (int i = 0; i < faces.Count; i++)
-        {
-            if (faces[i].State.Travel is not null && Draws(faces[i], dimmed))
-                _wires.DrawTravel(context, faces[i]);
         }
     }
 

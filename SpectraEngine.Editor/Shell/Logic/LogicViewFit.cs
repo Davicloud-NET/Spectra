@@ -8,27 +8,7 @@ namespace SpectraEngine.Editor.Shell.Logic;
 /// narrows the filter box gives up room first, then the words that label the
 /// controls, then the controls a narrow pane can do without.
 /// </summary>
-/// <param name="ShowsLabels">The words Show and Steps away.</param>
-/// <param name="ShowsTick">The tick beside the Playing pill.</param>
-/// <param name="UsesShortNames">Whether the two mode keys read Selection and Level.</param>
-/// <param name="ShowsFilter">The filter box.</param>
-/// <param name="ShowsZoomKeys">The Fit and 100% keys.</param>
-/// <param name="ShowsSteps">The steps field.</param>
-/// <param name="ShowsPlaying">The Playing pill.</param>
-/// <param name="ShowsCounts">The counts at the left of the status row.</param>
-/// <param name="ShowsHint">The hint at the right of the status row.</param>
-/// <param name="ShowsEvents">The strip of what the wires just did.</param>
-public readonly record struct LogicViewFit(
-    bool ShowsLabels,
-    bool ShowsTick,
-    bool UsesShortNames,
-    bool ShowsFilter,
-    bool ShowsZoomKeys,
-    bool ShowsSteps,
-    bool ShowsPlaying,
-    bool ShowsCounts,
-    bool ShowsHint,
-    bool ShowsEvents)
+public readonly record struct LogicViewFit
 {
     /// <summary>The narrowest the filter box is still worth showing at.</summary>
     public const double LeastFilterWidth = 72;
@@ -38,6 +18,9 @@ public readonly record struct LogicViewFit(
 
     /// <summary>The narrowest the filter box still has room for its whole placeholder.</summary>
     public const double LongPlaceholderWidth = 150;
+
+    /// <summary>The least of a status sentence that is worth reading.</summary>
+    public const double LeastNoteWidth = 160;
 
     /// <summary>The least height the graph keeps before the event strip gives way.</summary>
     public const double LeastGraphHeight = 96;
@@ -60,55 +43,59 @@ public readonly record struct LogicViewFit(
     private const double Rows = 62;
     private const double EventStrip = 64;
 
-    // The status row: its padding, the two counts, the link, the hint, and
-    // the least of a sentence that is worth reading.
+    // The status row: its padding, the two counts, the link and the hint.
     private const double StatusPadding = 20;
     private const double Counts = 122;
     private const double Link = 128;
     private const double Hint = 280;
-    private const double LeastNote = 240;
 
-    /// <summary>Everything, as in a wide view.</summary>
-    public static LogicViewFit Everything { get; } = new(true, true, false, true, true, true, true, true, true, true);
-
-    /// <summary>Decides what a view of a size shows.</summary>
-    /// <param name="size">The size of the whole view.</param>
-    /// <param name="isPlaying">Whether a level runs, which adds the pill, the tick and the strip.</param>
-    /// <param name="status">What the status row has to say.</param>
-    public static LogicViewFit For(Size size, bool isPlaying, LogicStatus status)
+    /// <summary>Everything, as in a wide view of a running level.</summary>
+    public static LogicViewFit Everything { get; } = new()
     {
-        ArgumentNullException.ThrowIfNull(status);
+        ShowsLabels = true,
+        ShowsTick = true,
+        ShowsFilter = true,
+        ShowsZoomKeys = true,
+        ShowsSteps = true,
+        ShowsPlaying = true,
+        ShowsCounts = true,
+        ShowsNotes = true,
+        ShowsHint = true,
+        ShowsEvents = true,
+    };
 
-        bool hasLink = status.GoingNowhere.Length > 0;
-        bool hasNote = status.Unwired.Length > 0 || status.Truncated.Length > 0;
-        double said = StatusPadding + Counts + (hasLink ? Link : 0);
+    /// <summary>The words Show and Steps away.</summary>
+    public bool ShowsLabels { get; init; }
 
-        LogicViewFit fit = Everything with
-        {
-            ShowsTick = isPlaying,
-            ShowsPlaying = isPlaying,
-            ShowsCounts = !hasLink || size.Width >= said,
-            ShowsHint = size.Width >= said + Hint + (hasNote ? LeastNote : 0),
-            ShowsEvents = isPlaying && size.Height >= Rows + EventStrip + LeastGraphHeight,
-        };
+    /// <summary>The tick beside the Playing pill.</summary>
+    public bool ShowsTick { get; init; }
 
-        // Each step gives up the next thing, until what is left fits.
-        if (fit.Fits(size.Width)) return fit;
-        fit = fit with { ShowsLabels = false };
-        if (fit.Fits(size.Width)) return fit;
-        fit = fit with { ShowsTick = false };
-        if (fit.Fits(size.Width)) return fit;
-        fit = fit with { UsesShortNames = true };
-        if (fit.Fits(size.Width)) return fit;
-        fit = fit with { ShowsFilter = false };
-        if (fit.Fits(size.Width)) return fit;
-        fit = fit with { ShowsZoomKeys = false };
-        if (fit.Fits(size.Width)) return fit;
-        fit = fit with { ShowsSteps = false };
-        if (fit.Fits(size.Width)) return fit;
+    /// <summary>Whether the two mode keys read Selection and Level.</summary>
+    public bool UsesShortNames { get; init; }
 
-        return fit with { ShowsPlaying = false };
-    }
+    /// <summary>The filter box.</summary>
+    public bool ShowsFilter { get; init; }
+
+    /// <summary>The Fit and 100% keys.</summary>
+    public bool ShowsZoomKeys { get; init; }
+
+    /// <summary>The steps field.</summary>
+    public bool ShowsSteps { get; init; }
+
+    /// <summary>The Playing pill.</summary>
+    public bool ShowsPlaying { get; init; }
+
+    /// <summary>The counts at the left of the status row.</summary>
+    public bool ShowsCounts { get; init; }
+
+    /// <summary>The status row's sentences: what the level has more of than the view shows.</summary>
+    public bool ShowsNotes { get; init; }
+
+    /// <summary>The hint at the right of the status row.</summary>
+    public bool ShowsHint { get; init; }
+
+    /// <summary>The strip of what the wires just did.</summary>
+    public bool ShowsEvents { get; init; }
 
     /// <summary>How wide the toolbar is without its filter box.</summary>
     public double ToolbarWidth =>
@@ -120,9 +107,65 @@ public readonly record struct LogicViewFit(
         + (ShowsTick ? Tick : 0)
         + (ShowsZoomKeys ? ZoomKeys : 0);
 
+    /// <summary>Decides what a view of a size shows.</summary>
+    /// <param name="size">The size of the whole view.</param>
+    /// <param name="isPlaying">Whether a level runs, which adds the pill, the tick and the strip.</param>
+    /// <param name="status">What the status row has to say.</param>
+    public static LogicViewFit For(Size size, bool isPlaying, LogicStatus status)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+
+        LogicViewFit fit = Everything with
+        {
+            ShowsTick = isPlaying,
+            ShowsPlaying = isPlaying,
+            ShowsEvents = isPlaying && size.Height >= Rows + EventStrip + LeastGraphHeight,
+        };
+
+        return fit.WithStatus(size.Width, status).WithToolbar(size.Width);
+    }
+
     /// <summary>How wide the filter box is in a view of a width. Zero when it is not shown.</summary>
     public double FilterWidth(double width) =>
         ShowsFilter ? Math.Clamp(width - ToolbarWidth - FilterGap, 0, MostFilterWidth) : 0;
+
+    // The link is the row's news and stays. The counts give way to it, a
+    // sentence shows only with room to be read, and the hint comes last.
+    private LogicViewFit WithStatus(double width, LogicStatus status)
+    {
+        bool hasNotes = status.Unwired.Length > 0 || status.Truncated.Length > 0;
+        double link = status.GoingNowhere.Length > 0 ? Link : 0;
+        double left = width - StatusPadding - link;
+
+        bool counts = link == 0 || left >= Counts;
+        left -= counts ? Counts : 0;
+
+        bool notes = hasNotes && left >= LeastNoteWidth;
+        left -= notes ? LeastNoteWidth : 0;
+
+        return this with { ShowsCounts = counts, ShowsNotes = notes, ShowsHint = left >= Hint };
+    }
+
+    // Each step gives up the next thing, until what is left fits.
+    private LogicViewFit WithToolbar(double width)
+    {
+        LogicViewFit fit = this;
+        if (fit.Fits(width)) return fit;
+        fit = fit with { ShowsLabels = false };
+        if (fit.Fits(width)) return fit;
+        fit = fit with { ShowsTick = false };
+        if (fit.Fits(width)) return fit;
+        fit = fit with { UsesShortNames = true };
+        if (fit.Fits(width)) return fit;
+        fit = fit with { ShowsFilter = false };
+        if (fit.Fits(width)) return fit;
+        fit = fit with { ShowsZoomKeys = false };
+        if (fit.Fits(width)) return fit;
+        fit = fit with { ShowsSteps = false };
+        if (fit.Fits(width)) return fit;
+
+        return fit with { ShowsPlaying = false };
+    }
 
     private bool Fits(double width) =>
         ToolbarWidth + (ShowsFilter ? FilterGap + LeastFilterWidth : 0) <= width;

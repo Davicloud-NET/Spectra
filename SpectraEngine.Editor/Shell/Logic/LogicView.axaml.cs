@@ -140,6 +140,7 @@ public partial class LogicView : UserControl
             : LogicViewText.FilterPlaceholderShort;
 
         Counts.IsVisible = fit.ShowsCounts;
+        Notes.IsVisible = fit.ShowsNotes;
         HintText.IsVisible = fit.ShowsHint;
         EventStrip.IsVisible = fit.ShowsEvents;
     }
