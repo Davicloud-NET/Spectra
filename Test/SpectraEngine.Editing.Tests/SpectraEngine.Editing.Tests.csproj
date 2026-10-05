@@ -15,6 +15,8 @@
     -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\FakeRenderer.cs" Link="FakeRenderer.cs" />
     <Compile Include="..\SpectraEngine.Bsp.Tests\SpatialTestHelpers.cs" Link="SpatialTestHelpers.cs" />
+    <!-- A cooked sound without the cook, for the demo's content mount. -->
+    <Compile Include="..\SpectraEngine.Bsp.Tests\HandBuiltSaudio.cs" Link="HandBuiltSaudio.cs" />
   </ItemGroup>
 
 </Project>

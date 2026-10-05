@@ -25,53 +25,49 @@
   </ItemGroup>
 
   <!--
-    The demo runs from loose files and has no cook in it, and the engine reads
-    cooked sounds only. So the build cooks them: every WAV under Assets gets
-    its .saudio in the output folder, where the copied content is. scook is
-    built and run as a tool here. It is not a reference.
+    scook, built before the demo and run by it as a tool. Not referenced:
+    nothing of the cook reaches the demo. A reference all the same, so a
+    restore of the demo restores scook too.
+    UndefineProperties: scook runs on this machine as a plain build, in its
+    own folder. Left in, a publish would build it self-contained for the
+    demo's runtime, and -o would put it beside the demo.
   -->
   <ItemGroup>
-    <DemoSound Include="..\Assets\**\*.wav;..\Assets\**\*.wave" />
-    <DemoSoundLabels Include="..\Assets\**\*.markers.txt" />
+    <ProjectReference Include="..\Spectra.Kitchen.CLI\Spectra.Kitchen.CLI.csproj"
+                      ReferenceOutputAssembly="false"
+                      Private="false"
+                      OutputItemType="DemoSoundCook"
+                      UndefineProperties="RuntimeIdentifier;SelfContained;_IsPublishing;_CommandLineDefinedRuntimeIdentifier;OutputPath;OutDir" />
   </ItemGroup>
 
-  <Target Name="CookDemoSounds"
-          AfterTargets="CopyFilesToOutputDirectory"
-          Condition="'@(DemoSound)' != ''"
-          Inputs="@(DemoSound);@(DemoSoundLabels)"
-          Outputs="@(DemoSound->'$(OutDir)Assets\%(RecursiveDir)%(Filename).saudio')">
+  <!--
+    The demo runs from loose files and has no cook in it, and the engine reads
+    cooked sounds only. So every build cooks the WAVs under Assets into
+    CookedSounds in the output folder, which DemoContent mounts. scook decides
+    what is out of date, so nothing here says what a sound is.
+  -->
+  <Target Name="CookDemoSounds" AfterTargets="CopyFilesToOutputDirectory">
     <PropertyGroup>
       <_DemoSoundHost>dotnet</_DemoSoundHost>
       <_DemoSoundHost Condition="'$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</_DemoSoundHost>
       <_DemoSoundSource>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '..', 'Assets'))</_DemoSoundSource>
-      <_DemoSoundOutput>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(OutDir)', 'Assets'))</_DemoSoundOutput>
+      <_DemoSoundOutput>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(OutDir)', 'CookedSounds'))</_DemoSoundOutput>
     </PropertyGroup>
 
-    <!--
-      Without what a publish passes down: scook runs on this machine, as a
-      plain build. Left in, it would be built self-contained for the demo's
-      runtime.
-    -->
-    <MSBuild Projects="..\Spectra.Kitchen.CLI\Spectra.Kitchen.CLI.csproj"
-             Targets="Build"
-             RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained;_IsPublishing;_CommandLineDefinedRuntimeIdentifier">
-      <Output TaskParameter="TargetOutputs" ItemName="_DemoSoundCook" />
-    </MSBuild>
+    <Exec Command="&quot;$(_DemoSoundHost)&quot; &quot;@(DemoSoundCook)&quot; sounds &quot;$(_DemoSoundSource)&quot; -o &quot;$(_DemoSoundOutput)&quot; -q --no-color" />
 
-    <Exec Command="&quot;$(_DemoSoundHost)&quot; &quot;@(_DemoSoundCook)&quot; sounds &quot;$(_DemoSoundSource)&quot; -o &quot;$(_DemoSoundOutput)&quot; -q --no-color" />
-
-    <!-- So a clean removes them, and a build removes the one whose WAV is gone. -->
+    <!-- So a clean removes them. -->
     <ItemGroup>
-      <FileWrites Include="@(DemoSound->'$(OutDir)Assets\%(RecursiveDir)%(Filename).saudio')" />
+      <FileWrites Include="$(_DemoSoundOutput)\**\*" />
     </ItemGroup>
   </Target>
 
-  <!-- A publish takes the cooked sounds along with the content they sit in. -->
+  <!-- A publish takes the cooked sounds along, and not their stamps. -->
   <Target Name="PublishCookedDemoSounds" AfterTargets="ComputeResolvedFilesToPublishList">
     <ItemGroup>
-      <_CookedDemoSound Include="$(OutDir)Assets\**\*.saudio" />
+      <_CookedDemoSound Include="$(OutDir)CookedSounds\**\*.saudio" />
       <ResolvedFileToPublish Include="@(_CookedDemoSound)"
-                             RelativePath="Assets\%(_CookedDemoSound.RecursiveDir)%(_CookedDemoSound.Filename)%(_CookedDemoSound.Extension)"
+                             RelativePath="CookedSounds\%(_CookedDemoSound.RecursiveDir)%(_CookedDemoSound.Filename)%(_CookedDemoSound.Extension)"
                              CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
   </Target>
