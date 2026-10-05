@@ -237,6 +237,7 @@ Tests and tools
 | `docs/formats-and-pipeline.md` | every file format and the cook |
 | `docs/performance.md` | how to measure, and current numbers |
 | `docs/physics.md`, `docs/negative-brushes.md` | physics, brush kinds, subtractive brushes |
+| `docs/audio.md` | how sound is built, what in it is tuning data, and the design for sound round corners |
 | `docs/console.md`, `docs/networking.md`, `docs/realms.md` | designs that are not built yet |
 | `docs/positioning.md`, `docs/roblox-*.md` | who the engine is for |
 | `docs/archive/architecture-notes-2026-10.md` | the old long guide: past decisions with their reasoning. Search it when you touch a subsystem. |
