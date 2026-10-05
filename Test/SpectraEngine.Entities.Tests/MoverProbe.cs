@@ -28,5 +28,5 @@ internal sealed class MoverProbe : Entity
         }
     }
 
-    protected override void OnSpawn() => Mover.SetTravel(_direction, _distance, _speed);
+    protected internal override void OnSpawn() => Mover.SetTravel(_direction, _distance, _speed);
 }

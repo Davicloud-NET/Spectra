@@ -7,6 +7,7 @@ using SpectraEngine.Core.Graphics;
 
 [assembly: InternalsVisibleTo("SpectraEngine.Bsp.Tests")]
 [assembly: InternalsVisibleTo("SpectraEngine.Editing.Tests")]
+[assembly: InternalsVisibleTo("SpectraEngine.Entities.Tests")]
 [assembly: InternalsVisibleTo("SpectraEngine.Graphics.Tests")]
 [assembly: InternalsVisibleTo("SpectraEngine.Physics.Tests")]
 [assembly: InternalsVisibleTo("Spectra.Kitchen.Tests")]

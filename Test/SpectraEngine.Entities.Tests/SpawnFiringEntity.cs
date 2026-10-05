@@ -7,5 +7,5 @@ internal sealed class SpawnFiringEntity : Entity
 {
     public const string OnSpawned = nameof(OnSpawned);
 
-    protected override void OnSpawn() => FireOutput(OnSpawned);
+    protected internal override void OnSpawn() => FireOutput(OnSpawned);
 }
