@@ -70,7 +70,14 @@ public static class WorkspaceLayout
     /// The drawer height that leaves the viewport its minimum.
     /// </summary>
     public static double ClampDrawerHeight(double wanted, double rowsAvailable) =>
-        Math.Max(0, Math.Min(wanted, rowsAvailable - ViewportMinHeight - Gutter));
+        ClampDrawerHeight(wanted, rowsAvailable, ViewportMinHeight);
+
+    /// <summary>
+    /// The drawer height that leaves the centre row a minimum of its own, for
+    /// when the row holds more than the viewport.
+    /// </summary>
+    public static double ClampDrawerHeight(double wanted, double rowsAvailable, double centerMinHeight) =>
+        Math.Max(0, Math.Min(wanted, rowsAvailable - centerMinHeight - Gutter));
 
     /// <summary>The preset's name, for settings and for the menu.</summary>
     public static string NameOf(WorkspacePreset preset) =>
