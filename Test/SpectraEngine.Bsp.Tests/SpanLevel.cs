@@ -70,9 +70,9 @@ internal sealed class SpanLevel(Vector3 origin = default)
     }
 
     // A doorway through that wall, flush with both faces and with its base:
-    // x from -1 to 1, up to y = 2.4.
-    public SceneNode Doorway(string name = "Doorway") =>
-        Cut(name, new Vector3(0f, 1.2f, -4.25f), new Vector3(1f, 1.2f, 0.25f));
+    // x from -1 to 1, up to y = 2.4. reveal is what its jambs and head wear.
+    public SceneNode Doorway(MaterialRef reveal = default) =>
+        Cut("Doorway", new Vector3(0f, 1.2f, -4.25f), new Vector3(1f, 1.2f, 0.25f), reveal);
 
     private SceneNode Place(string name, Vector3 center, BrushKind kind, Brush brush)
     {

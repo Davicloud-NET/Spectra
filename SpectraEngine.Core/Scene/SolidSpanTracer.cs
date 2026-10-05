@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Bsp;
 
 namespace SpectraEngine.Core.Scene;
@@ -9,9 +10,14 @@ namespace SpectraEngine.Core.Scene;
 // Finds the brushes a segment passes through and hands the stretch it spends
 // in each to a SolidSpanComposer. Keeps its scratch storage, so a trace
 // allocates nothing once it has run. Render thread only, like its scene.
-internal sealed class SolidSpanTracer
+internal sealed class SolidSpanTracer(Scene scene)
 {
+    // A segment that stays this close to a face plane lies in it. The carve
+    // reads a point this close to a plane as on it.
+    private const float FaceSlack = Polygon.Epsilon;
+
     private readonly SolidSpanComposer _composer = new();
+    private readonly SolidSpanSides _sides = new();
     private readonly List<SceneNode> _partScratch = [];
 
     // Per world placement, the trace that last clipped it. A brush resident in
@@ -23,32 +29,35 @@ internal sealed class SolidSpanTracer
     public int BrushesClipped { get; private set; }
 
     public int Trace(
-        Scene scene, Vector3 from, Vector3 to, in SceneQueryFilter filter,
-        Span<SolidSpan> spans, out bool truncated)
+        Vector3 from, Vector3 to, in SceneQueryFilter filter, Span<SolidSpan> spans, out bool truncated)
     {
         truncated = false;
 
+        // Nothing shorter can hold a span thick enough to report.
         Vector3 offset = to - from;
         float length = offset.Length();
-        if (!(length > 0f) || !float.IsFinite(length))
+        if (!(length >= SolidSpan.Tolerance) || !float.IsFinite(length))
             return 0;
 
         var segment = new Segment(from, offset / length, length);
 
         _composer.Clear();
+        _sides.Clear();
         BrushesClipped = 0;
 
         if (!filter.ExcludeStaticWorldBrushes)
-            AddWorld(scene, in segment);
+            AddWorld(in segment);
 
-        AddParts(scene, in segment, in filter);
+        AddParts(in segment, in filter);
 
-        return _composer.Compose(spans, out truncated);
+        return _sides.Any
+            ? _sides.Compose(_composer, segment.Direction, spans, out truncated)
+            : _composer.Compose(default, spans, out truncated);
     }
 
     // The live world's placements, or a baked map's hulls. Both are bucketed
     // by cell the same way.
-    private void AddWorld(Scene scene, in Segment segment)
+    private void AddWorld(in Segment segment)
     {
         IReadOnlyList<BrushPlacement> placements;
         ChunkGrid cells;
@@ -117,17 +126,14 @@ internal sealed class SolidSpanTracer
         if (!TryClip(brush, placement.Transform, in segment, out Stretch stretch))
             return;
 
+        _sides.Add(stretch.Faces);
         if (brush.Operation == BrushOperation.Subtractive)
-        {
-            _composer.AddCut(stretch.Start, stretch.End);
-            return;
-        }
-
-        _composer.AddWorldSolid(
-            stretch.Start, stretch.End, brush.FaceSurfaces[stretch.FacePlane].Material, rank);
+            _composer.AddCut(stretch.Start, stretch.End, stretch.LeftBy, rank, stretch.Faces);
+        else
+            _composer.AddWorldSolid(stretch.Start, stretch.End, stretch.EnteredBy, rank, stretch.Faces);
     }
 
-    private void AddParts(Scene scene, in Segment segment, in SceneQueryFilter filter)
+    private void AddParts(in Segment segment, in SceneQueryFilter filter)
     {
         // World brush nodes are in the index too. The compiled world answers
         // for them.
@@ -135,7 +141,7 @@ internal sealed class SolidSpanTracer
 
         _partScratch.Clear();
         scene.Bvh.QueryRay(
-            new Ray3(segment.From, segment.Direction), segment.Length, _partScratch, in partFilter);
+            new Ray3(segment.From, segment.Direction), segment.Length, FaceSlack, _partScratch, in partFilter);
 
         for (int i = 0; i < _partScratch.Count; i++)
         {
@@ -150,20 +156,19 @@ internal sealed class SolidSpanTracer
             }
 
             BrushesClipped++;
-            if (TryClip(brush, node.WorldMatrix, in segment, out Stretch stretch))
-            {
-                _composer.AddPart(
-                    stretch.Start, stretch.End, brush.FaceSurfaces[stretch.FacePlane].Material, RankOf(node.Id));
-            }
+            if (!TryClip(brush, node.WorldMatrix, in segment, out Stretch stretch))
+                continue;
+
+            _sides.Add(stretch.Faces);
+            _composer.AddPart(stretch.Start, stretch.End, stretch.EnteredBy, RankOf(node.Id), stretch.Faces);
         }
 
         // Do not keep the nodes alive between traces.
         _partScratch.Clear();
     }
 
-    // The stretch of the segment inside the brush, and the plane whose face
-    // names its material: the one entered, or the one left by when the segment
-    // starts inside.
+    // The stretch of the segment inside the brush or, for a segment that lies
+    // in its faces, along them.
     private static bool TryClip(Brush brush, in Matrix4x4 world, in Segment segment, out Stretch stretch)
     {
         stretch = default;
@@ -180,8 +185,9 @@ internal sealed class SolidSpanTracer
         Vector3 origin = Vector3.TransformNormal(segment.From - world.Translation, toLocal);
         Vector3 direction = Vector3.TransformNormal(segment.Direction, toLocal);
 
+        ReadOnlySpan<Plane> planes = brush.LocalPlaneSpan;
         var clip = new BrushLineClip(float.NegativeInfinity, float.PositiveInfinity);
-        if (!clip.Clip(brush.LocalPlaneSpan, origin, direction, surfaceIsInside: false))
+        if (!clip.ClipSegment(planes, origin, direction, segment.Length, FaceSlack) || clip.FaceCount > 2)
             return false;
 
         float start = MathF.Max(clip.Enter, 0f);
@@ -189,10 +195,30 @@ internal sealed class SolidSpanTracer
         if (!(end > start))
             return false;
 
-        int facePlane = clip.Enter >= 0f || clip.ExitPlane < 0 ? clip.EnterPlane : clip.ExitPlane;
-        stretch = new Stretch(start, end, facePlane);
-        return facePlane >= 0;
+        // A segment that starts on a face computes its entry a hair to either
+        // side of zero. Within the tolerance it still entered by that face.
+        bool entered = clip.Enter >= -SolidSpan.Tolerance || clip.ExitPlane < 0;
+        int enteredBy = entered ? clip.EnterPlane : clip.ExitPlane;
+        if (enteredBy < 0)
+            enteredBy = clip.FirstFace;
+        if (enteredBy < 0)
+            return false;
+
+        var faces = new LineFaces(
+            WorldNormal(planes, clip.FirstFace, in toLocal), WorldNormal(planes, clip.SecondFace, in toLocal));
+
+        IReadOnlyList<FaceSurface> surfaces = brush.FaceSurfaces;
+        MaterialRef leftBy = clip.ExitPlane >= 0 ? surfaces[clip.ExitPlane].Material : default;
+        stretch = new Stretch(start, end, surfaces[enteredBy].Material, leftBy, faces);
+        return true;
     }
+
+    // Zero for no plane. A normal goes to world space through the inverse's
+    // transpose, which is what keeps it square to its face under scale.
+    private static Vector3 WorldNormal(ReadOnlySpan<Plane> planes, int plane, in Matrix4x4 toLocal) =>
+        plane < 0
+            ? Vector3.Zero
+            : Vector3.Normalize(Vector3.TransformNormal(planes[plane].Normal, Matrix4x4.Transpose(toLocal)));
 
     private static UInt128 RankOf(Guid id)
     {
@@ -204,7 +230,11 @@ internal sealed class SolidSpanTracer
     // Direction is unit length, so a distance along it is in world units.
     private readonly record struct Segment(Vector3 From, Vector3 Direction, float Length);
 
-    private readonly record struct Stretch(float Start, float End, int FacePlane);
+    // EnteredBy is the material of the face the segment enters the brush by,
+    // or leaves it by when it starts inside. LeftBy is that of the face it
+    // leaves by.
+    private readonly record struct Stretch(
+        float Start, float End, MaterialRef EnteredBy, MaterialRef LeftBy, LineFaces Faces);
 
     // Lets ChunkRayWalk step through the cells: every cell reports no hit, so
     // the walk goes on to the segment's end, and each cell's residents are

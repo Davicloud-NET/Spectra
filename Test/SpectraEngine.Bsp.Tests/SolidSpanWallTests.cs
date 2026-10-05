@@ -175,6 +175,34 @@ public sealed class SolidSpanWallTests
     }
 
     [Fact]
+    public void A_segment_that_starts_on_a_face_of_a_turned_wall_names_that_face_wherever_on_it_it_starts()
+    {
+        var level = new SpanLevel();
+        SceneNode wall = level.Wall();
+        wall.LocalRotation = Quaternion.CreateFromYawPitchRoll(0.5f, 0.25f, 0.375f);
+        level.Compile();
+
+        // Turned off every axis, a point on the plaster face is rounded to
+        // one side of it or the other.
+        Matrix4x4 world = wall.WorldMatrix;
+        Vector3 inward = -Vector3.TransformNormal(Vector3.UnitZ, world);
+
+        for (float x = -5.5f; x <= 5.5f; x += 0.5f)
+        {
+            for (float y = -1.25f; y <= 1.25f; y += 0.25f)
+            {
+                Vector3 onFace = Vector3.Transform(new Vector3(x, y, 0.25f), world);
+
+                SolidSpan span = level.Trace(onFace, onFace + inward * 2f).ShouldHaveSingleItem();
+
+                span.Start.ShouldBe(0f, Exact);
+                span.End.ShouldBe(0.5f, Exact);
+                span.Material.ShouldBe(SpanLevel.Plaster, $"from {onFace}");
+            }
+        }
+    }
+
+    [Fact]
     public void A_segment_with_no_length_gives_nothing_even_inside_a_wall()
     {
         SpanLevel level = WalledLevel();

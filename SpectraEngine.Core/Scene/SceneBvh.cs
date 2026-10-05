@@ -602,8 +602,10 @@ internal sealed class SceneBvh
     }
 
     // Every accepted leaf whose box the ray reaches within maxDistance. Bounds
-    // only, like QueryBox.
-    public void QueryRay(in Ray3 ray, float maxDistance, List<SceneNode> results, in SceneQueryFilter filter)
+    // only, like QueryBox. Boxes count as margin larger, so a ray along the
+    // face of one reaches it whichever way its corners were rounded.
+    public void QueryRay(
+        in Ray3 ray, float maxDistance, float margin, List<SceneNode> results, in SceneQueryFilter filter)
     {
         FlushDirtyLeaves();
 
@@ -619,12 +621,13 @@ internal sealed class SceneBvh
 
             if (_nodes[index].Leaf is { } sceneNode)
             {
-                if (RayIntersectsBox(ray, _nodes[index].TightBox, maxDistance, out _) && filter.Accepts(sceneNode))
+                Aabb box = _nodes[index].TightBox.Expanded(margin);
+                if (RayIntersectsBox(ray, box, maxDistance, out _) && filter.Accepts(sceneNode))
                     results.Add(sceneNode);
                 continue;
             }
 
-            if (!RayIntersectsBox(ray, _nodes[index].FatBox, maxDistance, out _))
+            if (!RayIntersectsBox(ray, _nodes[index].FatBox.Expanded(margin), maxDistance, out _))
                 continue;
 
             if (stackTop + 2 > _traversalStack.Length)
@@ -654,7 +657,7 @@ internal sealed class SceneBvh
 
         ReadOnlySpan<Plane> planes = brush.LocalPlaneSpan;
         var clip = new BrushLineClip(0f, best);
-        if (!clip.Clip(planes, origin, direction, surfaceIsInside: true))
+        if (!clip.Clip(planes, origin, direction))
             return false;
 
         if (clip.EnterPlane < 0 || clip.Enter >= best)

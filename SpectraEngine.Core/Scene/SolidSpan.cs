@@ -7,10 +7,11 @@ namespace SpectraEngine.Core.Scene;
 /// world units from the segment's first point, and what it is made of.
 /// </summary>
 /// <param name="Material">
-/// What the stretch is made of: the material of the face through which the
-/// segment entered the brush it belongs to, even where a cut or another brush
-/// took the first part of that brush. For a segment that starts inside the
-/// brush, the face it leaves by.
+/// The material of the face the segment enters the solid by. Behind a cut that
+/// is the cut's own face, the one drawn there. Where two brushes overlap, the
+/// later one's share names the face of its own the segment entered by. A
+/// segment that starts inside a brush names the face it leaves that brush by.
+/// A baked map that kept no face materials names the default one throughout.
 /// </param>
 public readonly record struct SolidSpan(float Start, float End, MaterialRef Material)
 {

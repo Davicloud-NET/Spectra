@@ -1,4 +1,5 @@
 using System.Numerics;
+using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
@@ -64,9 +65,10 @@ public sealed class SolidSpanCarveTests
         spans[1].Start.ShouldBe(4f * perUnitOfX, Exact);
         spans[1].End.ShouldBe((3f + 15f / 7f) * perUnitOfX, Exact);
 
-        // Both are the wall, entered through its near face.
+        // The first is entered through the wall's near face, the second
+        // through the far jamb of the doorway.
         spans[0].Material.ShouldBe(SpanLevel.Plaster);
-        spans[1].Material.ShouldBe(SpanLevel.Plaster);
+        spans[1].Material.ShouldBe(SpanLevel.Wood);
     }
 
     [Fact]
@@ -109,18 +111,46 @@ public sealed class SolidSpanCarveTests
     }
 
     [Fact]
-    public void A_cut_that_reaches_only_part_way_into_a_wall_leaves_the_rest()
+    public void A_cut_that_reaches_only_part_way_into_a_wall_leaves_the_rest_behind_the_face_of_the_cut()
     {
         var level = new SpanLevel();
         level.Wall();
-        level.Cut("Niche", new Vector3(0f, 1f, -4.1f), new Vector3(0.5f, 0.5f, 0.1f));
+        level.Cut("Niche", new Vector3(0f, 1f, -4.1f), new Vector3(0.5f, 0.5f, 0.1f), SpanLevel.Wood);
         level.Compile();
 
         SolidSpan span = level.Trace(Near, Far).ShouldHaveSingleItem();
 
         span.Start.ShouldBe(4.2f, Exact);
         span.End.ShouldBe(4.5f, Exact);
+
+        // The back of the niche is the cut's face, as it is drawn.
+        span.Material.ShouldBe(SpanLevel.Wood);
+    }
+
+    [Fact]
+    public void A_segment_that_starts_in_a_room_cut_from_a_block_names_the_wall_of_the_room()
+    {
+        var level = new SpanLevel();
+        level.Box("Block", new Vector3(0f, 1f, 0f), new Vector3(8f, 4f, 8f), SpanLevel.Brick);
+        level.Cut("Room", new Vector3(0f, 1f, 0f), new Vector3(3f, 1f, 3f), SpanLevel.Plaster);
+        level.Compile();
+
+        SolidSpan span = level.Trace(new Vector3(0f, 1f, 0f), new Vector3(0f, 1f, -20f)).ShouldHaveSingleItem();
+
+        span.Start.ShouldBe(3f, Exact);
+        span.End.ShouldBe(8f, Exact);
         span.Material.ShouldBe(SpanLevel.Plaster);
+    }
+
+    [Fact]
+    public void A_cut_that_names_no_material_leaves_the_default_one_behind_it()
+    {
+        var level = new SpanLevel();
+        level.Wall();
+        level.Cut("Niche", new Vector3(0f, 1f, -4.1f), new Vector3(0.5f, 0.5f, 0.1f));
+        level.Compile();
+
+        level.Trace(Near, Far).ShouldHaveSingleItem().Material.ShouldBe(MaterialRef.Default);
     }
 
     [Fact]
@@ -234,7 +264,7 @@ public sealed class SolidSpanCarveTests
         var level = new SpanLevel();
         level.Box("Floor", new Vector3(0f, -0.5f, 0f), new Vector3(6f, 0.5f, 6f), SpanLevel.Tile);
         level.Wall();
-        level.Doorway();
+        level.Doorway(reveal: SpanLevel.Wood);
         return level.Compile();
     }
 }
