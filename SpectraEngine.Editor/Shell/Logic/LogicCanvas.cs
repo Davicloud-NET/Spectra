@@ -277,8 +277,9 @@ public sealed class LogicCanvas : Control
     }
 
     /// <inheritdoc/>
-    // The window deletes the selected entities on Delete, and a selected
-    // wire's sender is one of them. With a wire selected the key ends here.
+    // The viewport and the scene tree delete the selected entities on Delete,
+    // and a selected wire's sender is one of them. With a wire selected the
+    // key ends here, whoever listens further up.
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
@@ -312,8 +313,9 @@ public sealed class LogicCanvas : Control
 
         if (_heard is not null)
         {
-            _heard.Redraw -= OnRedraw;
+            // While still listening, so the menu of a dropped wire closes.
             _heard.Wiring.Cancel();
+            _heard.Redraw -= OnRedraw;
         }
 
         _heard = model;
