@@ -120,9 +120,11 @@ public partial class ContentPanel : UserControl
             Model?.Select(entry);
     }
 
+    // From what was tapped, not from the sender: the list raises this for
+    // all its rows, and its own DataContext is the shell's model.
     private void OnEntryActivated(object? sender, TappedEventArgs e)
     {
-        if (sender is not Control { DataContext: ContentEntry entry })
+        if (EntryFrom(e.Source) is not { } entry)
             return;
 
         if (entry.IsFolder)

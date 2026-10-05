@@ -19,7 +19,10 @@ internal static class ContentPanelHarness
     public static async Task<(Window Window, ContentPanel Panel, ShellModel Model)> OpenAsync(
         string root, string folder, ContentViewMode view)
     {
-        var browser = new ContentBrowserModel(NullLogger.Instance) { ViewMode = view };
+        // Not watched: Windows reports a folder as changed a moment after the
+        // fixture wrote into it, and the relist that follows rebuilds the
+        // rows under the pointer.
+        var browser = new ContentBrowserModel(NullLogger.Instance, watchFiles: false) { ViewMode = view };
         var model = new ShellModel { Content = browser };
 
         browser.SetRoot(root);

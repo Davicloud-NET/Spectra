@@ -5,6 +5,7 @@ using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Shell;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -151,6 +152,47 @@ public sealed class SoundContentTests : IDisposable
 
         browser.IsFilterSounds.ShouldBeFalse();
         browser.Entries.Select(entry => entry.Name).ShouldBe(["door.obj"]);
+    }
+
+    [Fact]
+    public async Task A_listing_says_whether_a_sound_is_in_it()
+    {
+        ContentBrowserModel browser = await BrowserAsync();
+        browser.HasSounds.ShouldBeFalse("the root lists folders only");
+
+        browser.NavigateTo(Path.Combine(_root, "Sounds"));
+        browser.HasSounds.ShouldBeTrue();
+
+        browser.Filter = ContentFilter.Models;
+        browser.HasSounds.ShouldBeFalse();
+
+        browser.Filter = ContentFilter.All;
+        browser.Query = "door";
+        browser.HasSounds.ShouldBeTrue();
+
+        browser.SetRoot(null);
+        browser.HasSounds.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_files_size_reads_the_same_under_a_comma_culture()
+    {
+        // 1644 bytes. The details strip sets it beside a length such as 0.017 s.
+        Write("Sounds/long.wav", TempProject.Wav(frames: 800));
+        CultureInfo before = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+        try
+        {
+            ContentBrowserModel browser = await BrowserAsync();
+            browser.Query = "long.wav";
+
+            browser.Entries.ShouldHaveSingleItem().SizeLabel.ShouldBe("1.6 KB");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = before;
+        }
     }
 
     [Fact]

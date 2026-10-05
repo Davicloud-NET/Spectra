@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -87,6 +88,109 @@ public sealed class SoundSheetTests(RibbonSession session) : IDisposable
     }
 
     [Fact]
+    public void In_a_search_the_play_buttons_line_up_and_so_do_the_names()
+    {
+        session.On(async () =>
+        {
+            (Window window, ContentPanel panel, ShellModel model) = await OpenContentAsync(ContentViewMode.List);
+            ContentBrowserModel browser = model.Content.ShouldNotBeNull();
+
+            // Files from two folders, so the folder labels differ in width.
+            browser.Query = "w";
+            Dispatcher.UIThread.RunJobs();
+
+            browser.Entries.Select(entry => entry.FolderLabel).Distinct().Count().ShouldBeGreaterThan(1);
+            browser.Entries.ShouldContain(entry => !entry.IsSound, "the search should mix sounds with other files");
+            SoundPreviewButton[] buttons = [.. PlayButtons(panel)];
+            buttons.Length.ShouldBeGreaterThan(2);
+            buttons.Select(button => RibbonProbe.BoundsIn(button, panel).X).Distinct().Count().ShouldBe(1);
+            NameLefts(panel).Length.ShouldBe(1, "a row with no play button starts its name where the others do");
+
+            Save(window, "content-search-list@2x.png");
+            window.Close();
+            browser.SetRoot(null);
+        });
+    }
+
+    [Fact]
+    public void A_listing_with_no_sound_keeps_no_room_for_a_play_button()
+    {
+        session.On(async () =>
+        {
+            (Window window, ContentPanel panel, ShellModel model) = await OpenContentAsync(ContentViewMode.List);
+            ContentBrowserModel browser = model.Content.ShouldNotBeNull();
+            double withSounds = NameLefts(panel).ShouldHaveSingleItem();
+
+            browser.Filter = ContentFilter.Textures;
+            Dispatcher.UIThread.RunJobs();
+
+            browser.HasSounds.ShouldBeFalse();
+            NameLefts(panel).ShouldHaveSingleItem().ShouldBeLessThan(withSounds);
+            Save(window, "content-textures-list@2x.png");
+
+            window.Close();
+            browser.SetRoot(null);
+        });
+    }
+
+    [Fact]
+    public void A_clicked_sound_row_keeps_its_play_glyph_the_colour_of_its_name()
+    {
+        session.On(async () =>
+        {
+            (Window window, ContentPanel panel, ShellModel model) = await OpenContentAsync(ContentViewMode.List);
+            ContentPanelHarness.Click(window, ContentPanelHarness.NameOf(panel, "door_open.wav"));
+            model.SoundPreview.Apply(SoundProjectFixture.DoorClose);
+            Dispatcher.UIThread.RunJobs();
+
+            SoundPreviewButton button = ContentPanelHarness.PlayButtonOf(panel, SoundProjectFixture.DoorOpen);
+            ListBoxItem row = button.FindAncestorOfType<ListBoxItem>().ShouldNotBeNull();
+            row.IsSelected.ShouldBeTrue();
+            Fill(button).ShouldBe(Brush("SpectraTextBody"));
+
+            Save(window, "content-list-selected@2x.png");
+            window.Close();
+            model.Content.ShouldNotBeNull().SetRoot(null);
+        });
+    }
+
+    [Fact]
+    public void The_status_bar_names_the_sound_that_plays_and_a_press_there_stops_it()
+    {
+        session.On(() =>
+        {
+            var model = new SoundPreviewModel();
+            var asked = new List<string>();
+            model.Send = SoundProjectFixture.Taking(asked);
+            var slot = new SoundPreviewStatus { DataContext = model };
+            var window = new Window
+            {
+                Content = new Border { Padding = new Thickness(12, 4), Child = slot },
+                SizeToContent = SizeToContent.WidthAndHeight,
+            };
+            window.SetRenderScaling(2.0);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            slot.IsEffectivelyVisible.ShouldBeFalse("nothing plays");
+
+            model.Apply("Sounds/ambience/wind.wav");
+            Dispatcher.UIThread.RunJobs();
+
+            slot.IsEffectivelyVisible.ShouldBeTrue();
+            slot.GetVisualDescendants().OfType<TextBlock>().Single().Text.ShouldBe("wind.wav");
+            Save(window, "status-sound-preview@2x.png");
+
+            ContentPanelHarness.Click(window, slot);
+            asked.ShouldBe([string.Empty]);
+
+            model.Apply(string.Empty);
+            Dispatcher.UIThread.RunJobs();
+            slot.IsEffectivelyVisible.ShouldBeFalse();
+            window.Close();
+        });
+    }
+
+    [Fact]
     public void A_sound_entitys_row_has_its_picker_and_a_play_button()
     {
         session.On(() =>
@@ -161,7 +265,21 @@ public sealed class SoundSheetTests(RibbonSession session) : IDisposable
             buttons.ShouldAllBe(button => ReferenceEquals(SoundPreviewButton.GetPreview(button), model.SoundPreview));
             buttons.Single(button => button.ShowsStop).ContentPath.ShouldBe(SoundProjectFixture.DoorClose);
 
+            // The row of the file the entity has is filled with the accent,
+            // and its glyph changes colour with its text.
+            SoundPreviewButton chosen = buttons.Single(button => button.ContentPath == SoundProjectFixture.DoorOpen);
+            chosen.FindAncestorOfType<ListBoxItem>().ShouldNotBeNull().IsSelected.ShouldBeTrue();
+            Fill(chosen).ShouldBe(Brush("SpectraTextOnAccent"));
+            Fill(buttons.Single(button => button.ShowsStop)).ShouldBe(Brush("SpectraMode"));
+
             Save(TopLevel.GetTopLevel(picker).ShouldNotBeNull(), "picker-sounds@2x.png");
+
+            model.SoundPreview.Apply(SoundProjectFixture.DoorOpen);
+            Dispatcher.UIThread.RunJobs();
+
+            chosen.ShowsStop.ShouldBeTrue();
+            Fill(chosen).ShouldBe(Brush("SpectraTextOnAccent"));
+            Save(TopLevel.GetTopLevel(picker).ShouldNotBeNull(), "picker-sounds-chosen-playing@2x.png");
 
             window.Close();
         });
@@ -189,23 +307,8 @@ public sealed class SoundSheetTests(RibbonSession session) : IDisposable
         });
     }
 
-    private async Task<(Window Window, ContentPanel Panel, ShellModel Model)> OpenContentAsync(ContentViewMode view)
-    {
-        var browser = new ContentBrowserModel(NullLogger.Instance) { ViewMode = view };
-        var model = new ShellModel { Content = browser };
-
-        browser.SetRoot(_project.Root);
-        await browser.Index.Walking;
-        browser.NavigateTo(_project.SoundsFolder);
-
-        var panel = new ContentPanel { DataContext = model };
-        var window = new Window { Content = panel, Width = 760, Height = 300 };
-        window.SetRenderScaling(2.0);
-        window.Show();
-        Dispatcher.UIThread.RunJobs();
-
-        return (window, panel, model);
-    }
+    private Task<(Window Window, ContentPanel Panel, ShellModel Model)> OpenContentAsync(ContentViewMode view) =>
+        ContentPanelHarness.OpenAsync(_project.Root, _project.SoundsFolder, view);
 
     // The details strip is filled off the UI thread, so wait for it to land.
     private static async Task SelectAsync(ContentBrowserModel browser, string name)
@@ -253,7 +356,22 @@ public sealed class SoundSheetTests(RibbonSession session) : IDisposable
     }
 
     private static IEnumerable<SoundPreviewButton> PlayButtons(Visual within) =>
-        within.GetVisualDescendants().OfType<SoundPreviewButton>().Where(button => button.IsEffectivelyVisible);
+        ContentPanelHarness.PlayButtons(within);
+
+    // The brush a button's glyph is filled with.
+    private static IBrush? Fill(SoundPreviewButton button) =>
+        button.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Single().Fill;
+
+    private static IBrush? Brush(string key) =>
+        Application.Current.ShouldNotBeNull().TryFindResource(key, out object? value) ? value as IBrush : null;
+
+    // Where each visible row's name starts, from the panel's left edge.
+    private static double[] NameLefts(ContentPanel panel) =>
+        [.. panel.GetVisualDescendants().OfType<ListBoxItem>()
+            .Where(row => row.IsEffectivelyVisible)
+            .Select(row => row.GetVisualDescendants().OfType<TextBlock>().First())
+            .Select(name => RibbonProbe.BoundsIn(name, panel).X)
+            .Distinct()];
 
     private static IEnumerable<double> RowHeights(ContentPanel panel) =>
         panel.GetVisualDescendants().OfType<ListBoxItem>()

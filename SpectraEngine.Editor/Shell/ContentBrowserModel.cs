@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -155,6 +156,7 @@ public sealed class ContentBrowserModel : ObservableObject
     private string _currentPath = string.Empty;
     private string _breadcrumb = string.Empty;
     private bool _hasContent;
+    private bool _hasSounds;
     private string _emptyMessage = "No project is open.";
     private string _query = string.Empty;
     private ContentFilter _filter = ContentFilter.All;
@@ -164,10 +166,12 @@ public sealed class ContentBrowserModel : ObservableObject
     // Bumped on every relist so a thumbnail decode that lands late is dropped.
     private int _generation;
 
-    public ContentBrowserModel(ILogger logger)
+    /// <summary>Builds a browser with no project open.</summary>
+    /// <param name="watchFiles">Whether the listing follows the files as they change on disk.</param>
+    public ContentBrowserModel(ILogger logger, bool watchFiles = true)
     {
         _logger = logger;
-        _index = new ContentIndex(logger);
+        _index = new ContentIndex(logger) { WatchesFiles = watchFiles };
 
         _index.Changed += Relist;
         _index.PropertyChanged += (_, args) =>
@@ -292,6 +296,13 @@ public sealed class ContentBrowserModel : ObservableObject
     {
         get => _hasContent;
         private set => Set(ref _hasContent, value);
+    }
+
+    /// <summary>Whether a sound is among what is listed, so the rows keep room for a play button.</summary>
+    public bool HasSounds
+    {
+        get => _hasSounds;
+        private set => Set(ref _hasSounds, value);
     }
 
     /// <summary>What to say when it does not.</summary>
@@ -514,6 +525,7 @@ public sealed class ContentBrowserModel : ObservableObject
         {
             Breadcrumb = string.Empty;
             HasContent = false;
+            HasSounds = false;
             EmptyMessage = "No project is open.";
             _resultNote = string.Empty;
             Raise(nameof(ResultNote));
@@ -553,6 +565,7 @@ public sealed class ContentBrowserModel : ObservableObject
         }
 
         HasContent = Entries.Count > 0;
+        HasSounds = ListsSound();
 
         EmptyMessage = IsSearching
             ? "Nothing in this project matches."
@@ -566,6 +579,16 @@ public sealed class ContentBrowserModel : ObservableObject
                 : $"Showing {shown} of {shown + hidden}. Keep typing to narrow it.";
 
         Raise(nameof(ResultNote));
+    }
+
+    private bool ListsSound()
+    {
+        foreach (ContentEntry entry in Entries)
+        {
+            if (entry.IsSound) return true;
+        }
+
+        return false;
     }
 
     private int CountAdmitted(List<ContentIndexEntry> rows)
@@ -662,12 +685,14 @@ public sealed class ContentBrowserModel : ObservableObject
         }
     }
 
+    // A point for the decimal whatever the system's language, like the
+    // numbers the details strip sets beside it.
     private static string FormatBytes(long bytes) => bytes switch
     {
         < 0 => string.Empty,
         < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
-        _ => $"{bytes / (1024.0 * 1024.0):0.#} MB",
+        < 1024 * 1024 => string.Create(CultureInfo.InvariantCulture, $"{bytes / 1024.0:0.#} KB"),
+        _ => string.Create(CultureInfo.InvariantCulture, $"{bytes / (1024.0 * 1024.0):0.#} MB"),
     };
 
     private async Task LoadThumbnailAsync(ContentEntry entry, int generation)

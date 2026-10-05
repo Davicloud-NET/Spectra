@@ -64,6 +64,15 @@ public sealed class ContentIndex : ObservableObject
     /// <summary>The folder being indexed, or null.</summary>
     public string? Root => _root;
 
+    /// <summary>
+    /// Whether changes to the files are picked up as they happen. Off, the
+    /// index changes only on <see cref="Refresh"/>.
+    /// </summary>
+    // A test turns it off. Windows reports a folder as changed a moment after
+    // files were written into it, and the walk that follows rebuilds the rows
+    // a test is pressing.
+    public bool WatchesFiles { get; init; } = true;
+
     /// <summary>Whether a walk is running.</summary>
     public bool IsWalking
     {
@@ -281,7 +290,7 @@ public sealed class ContentIndex : ObservableObject
 
     private void StartWatching()
     {
-        if (string.IsNullOrEmpty(_root) || !Directory.Exists(_root)) return;
+        if (!WatchesFiles || string.IsNullOrEmpty(_root) || !Directory.Exists(_root)) return;
 
         try
         {

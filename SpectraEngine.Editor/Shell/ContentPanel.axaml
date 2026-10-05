@@ -93,6 +93,7 @@
     <!-- The list virtualises, so it has no cap. Avalonia has no virtualising
          wrap panel, so the grid below is capped. -->
     <ListBox Grid.Row="1" Name="ListRows" Classes="contentlist"
+             Classes.hassounds="{Binding Content.HasSounds}"
              ItemsSource="{Binding Content.Entries}"
              SelectionChanged="OnListSelectionChanged"
              DoubleTapped="OnEntryActivated">
@@ -104,7 +105,7 @@
       </ListBox.IsVisible>
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="shell:ContentEntry">
-          <Grid ColumnDefinitions="20,*,Auto,Auto,Auto" ColumnSpacing="8"
+          <Grid ColumnDefinitions="20,*,Auto,Auto" ColumnSpacing="8"
                 ContextMenu="{StaticResource ContentMenu}">
             <Panel Grid.Column="0" Width="20" Height="16">
               <Path Classes="icon" IsVisible="{Binding !HasThumbnail}"
@@ -112,15 +113,22 @@
               <Image Source="{Binding Thumbnail}" IsVisible="{Binding HasThumbnail}"
                      Stretch="Uniform" />
             </Panel>
-            <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
-                       TextTrimming="CharacterEllipsis"
-                       FontSize="{StaticResource SpectraFontSmall}" />
-            <shell:SoundPreviewButton Grid.Column="2" IsVisible="{Binding IsSound}"
-                                      ContentPath="{Binding ContentPath}" />
-            <TextBlock Grid.Column="3" Text="{Binding FolderLabel}" Classes="micro"
+            <!-- A sound's play button leads its name, as in the picker. A
+                 listing with a sound keeps the slot on every row, so the names
+                 line up. One with none has no slot. -->
+            <DockPanel Grid.Column="1">
+              <Panel DockPanel.Dock="Left" Classes="playslot">
+                <shell:SoundPreviewButton IsVisible="{Binding IsSound}"
+                                          ContentPath="{Binding ContentPath}" />
+              </Panel>
+              <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis"
+                         FontSize="{StaticResource SpectraFontSmall}" />
+            </DockPanel>
+            <TextBlock Grid.Column="2" Text="{Binding FolderLabel}" Classes="micro"
                        VerticalAlignment="Center" MaxWidth="140"
                        TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="4" Text="{Binding SizeLabel}" Classes="micro"
+            <TextBlock Grid.Column="3" Text="{Binding SizeLabel}" Classes="micro"
                        VerticalAlignment="Center" MinWidth="52" TextAlignment="Right" />
           </Grid>
         </DataTemplate>
@@ -260,6 +268,15 @@
       <Setter Property="Padding" Value="6,2" />
       <Setter Property="MinHeight" Value="22" />
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+    </Style>
+
+    <Style Selector="ListBox.contentlist Panel.playslot">
+      <Setter Property="IsVisible" Value="False" />
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+    </Style>
+    <Style Selector="ListBox.contentlist.hassounds Panel.playslot">
+      <Setter Property="IsVisible" Value="True" />
     </Style>
 
     <Style Selector="Border.detailstrip">
