@@ -356,6 +356,25 @@ public sealed class SoundPresenterDopplerTests
     }
 
     [Fact]
+    public void A_presenter_given_no_frame_length_bends_the_pitch_by_the_ticks()
+    {
+        using var rig = new SoundPresenterRig();
+        SceneNode siren = rig.Place("siren", new Vector3(0, 0, -400));
+        rig.Play(siren, SoundPresenterRig.Beep, Siren);
+
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            siren.LocalPosition = new Vector3(0, 0, -400 + (Speed * tick * SoundPresenterRig.TickSeconds));
+            rig.World.Tick(SoundPresenterRig.TickSeconds);
+            rig.Audio.Update();
+            rig.Presenter.Update(rig.World, 0f);
+
+            if (tick >= 60)
+                ((double)rig.OnlyVoice().Pitch).ShouldBe(Closing, Tolerance);
+        }
+    }
+
+    [Fact]
     public void A_new_level_starts_with_no_shift()
     {
         using var rig = new SoundPresenterRig();

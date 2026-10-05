@@ -234,6 +234,30 @@ public sealed class DopplerShiftTests
         shift.Factor.ShouldBe(before);
     }
 
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(1e-30f)]
+    [InlineData(float.NaN)]
+    [InlineData(-1f)]
+    public void Frames_with_no_length_of_their_own_count_as_long_as_their_ticks(float frameSeconds)
+    {
+        // What a caller with no frame time to give passes, for ten seconds.
+        var clock = new DopplerClock();
+        var shift = new DopplerShift();
+
+        for (int frame = 0; frame < 600; frame++)
+        {
+            clock.Advance(frameSeconds, 1f / 60f);
+            shift.Step(500f - (34.3f * frame / 60f), in clock);
+
+            if (frame < 30)
+                continue;
+
+            ((double)shift.Factor).ShouldBe(Closing, Tolerance);
+            ((double)shift.Rate).ShouldBe(-34.3, 0.05);
+        }
+    }
+
     [Fact]
     public void Strength_0_shifts_nothing_and_2_doubles_the_shift_in_cents()
     {

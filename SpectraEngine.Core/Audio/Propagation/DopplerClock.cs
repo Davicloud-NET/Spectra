@@ -25,6 +25,12 @@ public struct DopplerClock
     // before the difference counts.
     private const double Ridge = 1e-6;
 
+    // A frame shorter than this share of its ticks counts as long as they
+    // were. Zero is the usual one: a caller with no frame time to give. A
+    // run of such frames would leave the rate that goes with the frames
+    // unknown, and the fit with no answer.
+    private const double ShortestFrame = 1e-4;
+
     // The fit's sums over the frames so far, each fading by Keep a frame:
     // the mean of the two clocks, half their difference, and that half
     // squared over the mean.
@@ -51,7 +57,7 @@ public struct DopplerClock
     internal float Span { get; private set; }
 
     /// <summary>Takes a frame's two lengths. Call once a frame, before any shift is stepped.</summary>
-    /// <param name="frameSeconds">How long the frame took.</param>
+    /// <param name="frameSeconds">How long the frame took. With zero the frame counts as long as its ticks.</param>
     /// <param name="tickSeconds">How much simulated time the frame's ticks covered. Zero when none ran.</param>
     public void Advance(float frameSeconds, float tickSeconds)
     {
@@ -59,6 +65,9 @@ public struct DopplerClock
 
         double frame = Seconds(frameSeconds);
         double ticks = Seconds(tickSeconds);
+        if (frame < ticks * ShortestFrame)
+            frame = ticks;
+
         double mean = (frame + ticks) / 2d;
         Span = (float)Math.Max(frame, ticks);
 
