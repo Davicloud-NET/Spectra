@@ -11,6 +11,14 @@ namespace SpectraEngine.Core.Audio.Captions;
 // Render thread only.
 internal sealed class CaptionTracker
 {
+    // A caption comes up for a sound at least this loud at the listener, and
+    // is let go once the sound falls under the lower number. The gap keeps a
+    // sound at the edge of hearing from showing over and over. Both are far
+    // above the presenter's own silence, which only says a sound needs no
+    // source: at a five hundredth of full volume nobody hears it.
+    internal const float HeardFrom = 0.02f;
+    internal const float HeardDownTo = 0.01f;
+
     private readonly CaptionFeed _feed;
 
     public CaptionTracker(CaptionFeed feed) => _feed = feed;
@@ -33,7 +41,7 @@ internal sealed class CaptionTracker
 
     private void Follow(ref PresentedEmitter presented, LevelVoices voices, long tick)
     {
-        if (presented.Loudness <= SoundPresenter.SilenceGain)
+        if (presented.Loudness < (presented.Captions.WasHeard ? HeardDownTo : HeardFrom))
         {
             if (presented.HasPlayedOut && presented.VoiceLead > 0f)
                 ShowWhatWasSaidUnseen(ref presented, tick);

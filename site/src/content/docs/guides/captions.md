@@ -115,6 +115,7 @@ captions all
 These rules are the engine's, so every game's captions follow them however they are drawn.
 
 - A caption shows only while its sound can be heard where the listener stands. How far a sound carries is its own [maximum distance](/reference/sound-entities/), not a fixed radius. A sound that is silent because it is far away, turned down or over has no caption.
+- Heard means loud enough to notice: a caption comes up once the sound arrives at 2% of its full volume or more, and is let go when it falls under 1%. The gap keeps a sound at the edge of hearing from showing its caption over and over. The engine goes by the volume it plays the file at, not by how loud the recording is.
 - A voice line shows when the sound reaches the line's start time, never before. It goes at its end time.
 - A caption stays long enough to be read: at least a second, and longer for more words. The count is half a second and then fifteen letters a second. A line that is over sooner stays until it has been read.
 - A sound that plays again while its caption still shows keeps that one caption up for longer. It does not add a second one, so a run of footsteps is one caption.

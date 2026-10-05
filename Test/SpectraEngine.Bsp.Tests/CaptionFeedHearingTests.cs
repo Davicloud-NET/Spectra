@@ -60,11 +60,64 @@ public sealed class CaptionFeedHearingTests
         // A whisper ten metres away that reaches five, and a siren a hundred
         // metres away that reaches two hundred.
         rig.Play(Beep, rig.Place(new Vector3(0, 0, -10)), new SoundEmitterSettings(1f, 1f, 1f, 5f, IsLooped: true));
-        rig.Play(Speech, rig.Place(new Vector3(0, 0, -100)), new SoundEmitterSettings(1f, 1f, 2f, 200f, IsLooped: true));
+        rig.Play(Speech, rig.Place(new Vector3(0, 0, -100)), new SoundEmitterSettings(1f, 1f, 20f, 200f, IsLooped: true));
 
         rig.Step();
 
         rig.Shown.ShouldHaveSingleItem().Text.ShouldBe("Siren");
+    }
+
+    // The rig's sounds are at full volume up to 2 units and silent from 30.
+    // At 23 units one is just loud enough for a caption, at 25 it is between
+    // the two numbers, and at 28 it has a voice and is too faint to count.
+    [Fact]
+    public void A_sound_too_faint_to_hear_has_a_voice_and_no_caption()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Captions("en", $"{Beep} = Beep sounds");
+        rig.Play(Beep, new Vector3(0, 0, -28), looped: true);
+
+        rig.Step(5);
+
+        rig.Sound.OnlyVoice().Gain.ShouldBeInRange(SoundPresenter.SilenceGain, CaptionTracker.HeardDownTo);
+        rig.Shown.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_sound_that_wavers_at_the_edge_of_hearing_shows_its_caption_once()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Captions("en", $"{Beep} = Beep sounds");
+        rig.Play(Beep, new Vector3(0, 0, -23), looped: true);
+        rig.Step();
+        long first = rig.Shown.ShouldHaveSingleItem().Id;
+
+        for (int i = 0; i < 20; i++)
+        {
+            rig.Sound.Listen(new Vector3(0, 0, i % 2 == 0 ? 2f : 0f));
+            rig.Step(30);
+        }
+
+        rig.Feed.LastId.ShouldBe(first);
+    }
+
+    [Fact]
+    public void A_sound_that_left_hearing_shows_its_caption_again_when_it_comes_back()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Captions("en", $"{Beep} = Beep sounds");
+        rig.Play(Beep, new Vector3(0, 0, -23), looped: true);
+        rig.Step();
+        long first = rig.Shown.ShouldHaveSingleItem().Id;
+
+        rig.Sound.Listen(new Vector3(0, 0, 5));
+        rig.Step(120);
+        rig.Shown.ShouldBeEmpty();
+
+        rig.Sound.Listen(Vector3.Zero);
+        rig.Step(60);
+
+        rig.Feed.LastId.ShouldBeGreaterThan(first);
     }
 
     [Fact]

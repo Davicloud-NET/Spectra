@@ -23,7 +23,9 @@ public sealed class CaptionDopplerTests
     // faster, so a second of sound is over on the device after 0.9 seconds.
     private const float Speed = 34.3f;
 
-    private static readonly SoundEmitterSettings FromAfar = SoundPresenterRig.Once with { MaxDistance = 100_000f };
+    // Loud enough to be heard from two hundred units, as a caption needs.
+    private static readonly SoundEmitterSettings FromAfar =
+        SoundPresenterRig.Once with { MinDistance = 50f, MaxDistance = 100_000f };
 
     [Fact]
     public void While_the_listener_closes_in_a_line_shows_when_it_is_heard_and_not_when_the_level_counts_it()
