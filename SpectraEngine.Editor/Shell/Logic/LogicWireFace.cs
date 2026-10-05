@@ -1,3 +1,6 @@
+using Avalonia;
+using System;
+
 namespace SpectraEngine.Editor.Shell.Logic;
 
 /// <summary>One wire as the view draws it now: where it runs, how it looks and what its label says.</summary>
@@ -37,6 +40,17 @@ public sealed class LogicWireFace
 
     // Whether a refusal of the wire is this edge's to show.
     internal bool ShowsRefusals { get; }
+
+    // Where the label is drawn: as wide as its words, in the middle of the
+    // room the layout kept for it. Null when it says nothing.
+    internal Rect? Pill(double wordsWidth)
+    {
+        if (Text.Length == 0 || Edge.LabelBounds is not Rect room)
+            return null;
+
+        double width = Math.Min(room.Width, Math.Ceiling(wordsWidth) + 2 * LogicMetrics.LabelPadding);
+        return new Rect(Math.Round(room.Center.X - width / 2), room.Y, width, room.Height);
+    }
 
     // Returns whether a drawing of the wire would differ.
     internal bool Take(LogicWireState state)

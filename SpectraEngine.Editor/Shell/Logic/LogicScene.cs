@@ -46,33 +46,60 @@ public sealed class LogicScene
         if (port.Kind != LogicHitKind.None)
             return port;
 
-        foreach (LogicSceneCard card in Cards)
+        for (int i = 0; i < Cards.Count; i++)
         {
-            if (card.Bounds.Contains(point))
-                return new LogicHit(LogicHitKind.Card, card, null, null);
+            if (Cards[i].Bounds.Contains(point))
+                return new LogicHit(LogicHitKind.Card, Cards[i], null, null);
         }
 
-        foreach (LogicSceneEdge edge in Edges)
+        for (int i = 0; i < Edges.Count; i++)
         {
-            if (edge.LabelBounds is Rect label && label.Contains(point))
-                return new LogicHit(LogicHitKind.Label, null, null, edge);
+            if (Edges[i].LabelBounds is Rect label && label.Contains(point))
+                return new LogicHit(LogicHitKind.Label, null, null, Edges[i]);
         }
 
         return HitEdge(point, tolerance);
     }
 
+    // The nearest wire within reach of a point, whatever else is there.
+    internal LogicHit HitEdge(Point point, double tolerance)
+    {
+        LogicSceneEdge? nearest = null;
+        double nearestDistance = double.MaxValue;
+
+        for (int i = 0; i < Edges.Count; i++)
+        {
+            LogicSceneEdge edge = Edges[i];
+            if (!edge.Bounds.Inflate(tolerance).Contains(point))
+                continue;
+
+            double distance = edge.DistanceWithin(point, tolerance);
+            if (distance <= tolerance && distance < nearestDistance)
+            {
+                nearest = edge;
+                nearestDistance = distance;
+            }
+        }
+
+        return nearest is null ? LogicHit.None : new LogicHit(LogicHitKind.Edge, null, null, nearest);
+    }
+
+    // Indexed loops throughout: picking runs on every move of the pointer,
+    // and an enumerator over a list seen as an interface is an allocation.
     private LogicHit HitPort(Point point, double tolerance)
     {
         LogicHit nearest = LogicHit.None;
         double nearestDistance = double.MaxValue;
 
-        foreach (LogicSceneCard card in Cards)
+        for (int i = 0; i < Cards.Count; i++)
         {
+            LogicSceneCard card = Cards[i];
             if (!card.Bounds.Inflate(tolerance).Contains(point))
                 continue;
 
-            foreach (LogicScenePort port in card.Ports)
+            for (int j = 0; j < card.Ports.Count; j++)
             {
+                LogicScenePort port = card.Ports[j];
                 double distance = Distance(port.Anchor, point);
                 if (distance <= tolerance && distance < nearestDistance)
                 {
@@ -87,40 +114,20 @@ public sealed class LogicScene
 
     private LogicHit HitPortRow(Point point)
     {
-        foreach (LogicSceneCard card in Cards)
+        for (int i = 0; i < Cards.Count; i++)
         {
+            LogicSceneCard card = Cards[i];
             if (!card.Bounds.Contains(point))
                 continue;
 
-            foreach (LogicScenePort port in card.Ports)
+            for (int j = 0; j < card.Ports.Count; j++)
             {
-                if (port.Row.Contains(point))
-                    return new LogicHit(LogicHitKind.Port, card, port, null);
+                if (card.Ports[j].Row.Contains(point))
+                    return new LogicHit(LogicHitKind.Port, card, card.Ports[j], null);
             }
         }
 
         return LogicHit.None;
-    }
-
-    private LogicHit HitEdge(Point point, double tolerance)
-    {
-        LogicSceneEdge? nearest = null;
-        double nearestDistance = double.MaxValue;
-
-        foreach (LogicSceneEdge edge in Edges)
-        {
-            if (!edge.Bounds.Inflate(tolerance).Contains(point))
-                continue;
-
-            double distance = edge.DistanceWithin(point, tolerance);
-            if (distance <= tolerance && distance < nearestDistance)
-            {
-                nearest = edge;
-                nearestDistance = distance;
-            }
-        }
-
-        return nearest is null ? LogicHit.None : new LogicHit(LogicHitKind.Edge, null, null, nearest);
     }
 
     private static double Distance(Point a, Point b)

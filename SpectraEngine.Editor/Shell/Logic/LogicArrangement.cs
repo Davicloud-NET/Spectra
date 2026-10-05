@@ -46,8 +46,9 @@ internal sealed class LogicArrangement
 
     public LogicWireFace? FaceOf(LogicSceneEdge edge) => _faces.Of(edge);
 
-    // What is under a point of the scene. A label with no words in it counts
-    // as its wire, and as nothing where the wire is out of reach.
+    // What is under a point of the scene. A label is where its words are
+    // drawn. The rest of the room the layout kept for it belongs to whatever
+    // wire runs there, its own or another.
     public LogicHit HitTest(Point at, double reach, bool showsLabels)
     {
         if (Scene is not { } scene)
@@ -57,10 +58,14 @@ internal sealed class LogicArrangement
         if (hit is not { Kind: LogicHitKind.Label, Edge: { } edge })
             return hit;
 
-        if (showsLabels && !string.IsNullOrEmpty(_faces.Of(edge)?.Text))
-            return hit;
+        if (showsLabels && _faces.Of(edge) is { } face)
+        {
+            LogicTextStyle style = face.IsMono ? LogicTextStyle.MonoLabel : LogicTextStyle.Label;
+            if (face.Pill(_ruler.Width(face.Text, style)) is Rect pill && pill.Contains(at))
+                return hit;
+        }
 
-        return edge.DistanceTo(at) <= reach ? hit with { Kind = LogicHitKind.Edge } : LogicHit.None;
+        return scene.HitEdge(at, reach);
     }
 
     // The engine hands on the same instance until the wiring changes.

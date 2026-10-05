@@ -63,8 +63,8 @@ public sealed class LogicSceneEdge
     public double DistanceTo(Point point)
     {
         double nearest = double.MaxValue;
-        foreach (LogicCubic segment in Segments)
-            nearest = Math.Min(nearest, segment.DistanceTo(point));
+        for (int i = 0; i < Segments.Count; i++)
+            nearest = Math.Min(nearest, Segments[i].DistanceTo(point));
 
         return nearest;
     }
@@ -74,10 +74,10 @@ public sealed class LogicSceneEdge
     internal double DistanceWithin(Point point, double reach)
     {
         double nearest = double.MaxValue;
-        foreach (LogicCubic segment in Segments)
+        for (int i = 0; i < Segments.Count; i++)
         {
-            if (segment.Bounds.Inflate(reach).Contains(point))
-                nearest = Math.Min(nearest, segment.DistanceTo(point));
+            if (Segments[i].Bounds.Inflate(reach).Contains(point))
+                nearest = Math.Min(nearest, Segments[i].DistanceTo(point));
         }
 
         return nearest;

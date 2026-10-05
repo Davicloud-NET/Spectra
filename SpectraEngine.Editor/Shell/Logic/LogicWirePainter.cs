@@ -54,8 +54,6 @@ internal sealed class LogicWirePainter
         context.DrawEllipse(brush, null, face.Edge.End, radius, radius);
     }
 
-    // The label is as wide as its words and sits in the middle of the room
-    // the layout kept for it, which the path runs through.
     public void DrawLabel(DrawingContext context, LogicWireFace face, bool isHovered)
     {
         string text = face.Text;
@@ -75,8 +73,9 @@ internal sealed class LogicWirePainter
             ? _texts.GetRunning(text, ink, textRoom)
             : _texts.Get(text, ink, textRoom);
 
-        double width = Math.Min(room.Width, Math.Ceiling(words.Width) + 2 * LogicMetrics.LabelPadding);
-        var pill = new Rect(Math.Round(room.Center.X - width / 2), room.Y, width, room.Height);
+        if (face.Pill(words.Width) is not Rect pill)
+            return;
+
         double radius = pill.Height / 2;
 
         IPen edge = ink switch

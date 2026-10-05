@@ -274,6 +274,47 @@ public sealed class LogicViewModelPlayTests
         model.HitTest(worded.LabelBounds.ShouldNotBeNull().Center).Kind.ShouldBe(LogicHitKind.Label);
     }
 
+    [Fact]
+    public void A_wire_that_runs_through_the_room_kept_for_another_wires_label_is_picked_there()
+    {
+        LogicViewModel model = Model();
+        model.Apply(Snapshot(_level, VaultPlaying()));
+        model.View = LogicPanZoom.Identity;
+
+        // Both wires leave the relay's one output. The room kept for the
+        // door wire's label starts beside it, and is wider than "now".
+        LogicScene scene = model.Scene.ShouldNotBeNull();
+        LogicSceneEdge toLift = scene.Edge("OpenVault", "Lift");
+        LogicSceneEdge toDoor = scene.Edge("OpenVault", "VaultDoor");
+        Rect room = toDoor.LabelBounds.ShouldNotBeNull();
+
+        Point crossing = Enumerable.Range(1, 60)
+            .Select(step => toLift.Segments[0].At(step / 120.0))
+            .First(room.Contains);
+
+        LogicHit hit = model.HitTest(crossing);
+
+        hit.Kind.ShouldBe(LogicHitKind.Edge);
+        hit.Edge.ShouldBeSameAs(toLift);
+        model.HitTest(room.Center).Edge.ShouldBeSameAs(toDoor);
+    }
+
+    [Fact]
+    public void A_label_is_picked_where_its_words_are_drawn_and_beside_them_its_wire_is()
+    {
+        LogicViewModel model = Model();
+        model.Apply(Snapshot(_level, VaultPlaying()));
+        model.View = LogicPanZoom.Identity;
+
+        // The lift's wire to itself says "after 3 s" in room kept for more.
+        Rect room = model.Scene.ShouldNotBeNull().Edge("Lift", "Lift").LabelBounds.ShouldNotBeNull();
+        double words = _ruler.Width("after 3 s", LogicTextStyle.Label) + 2 * LogicMetrics.LabelPadding;
+
+        room.Width.ShouldBeGreaterThan(words + 8);
+        model.HitTest(new Point(room.Center.X - words / 2 + 2, room.Y + 2)).Kind.ShouldBe(LogicHitKind.Label);
+        model.HitTest(new Point(room.X + 2, room.Center.Y)).Kind.ShouldBe(LogicHitKind.Edge);
+    }
+
     private static LogicPlayInfo Again(LogicPlayInfo play, IReadOnlyList<LogicEntityState> states) => new()
     {
         Tick = play.Tick,
