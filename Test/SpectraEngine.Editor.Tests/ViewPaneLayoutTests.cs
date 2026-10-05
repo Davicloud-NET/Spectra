@@ -301,7 +301,9 @@ public sealed class ViewPaneLayoutTests
     {
         ViewPaneLayout.DefaultSplit.ShouldBe(ViewArrangement.LogicBelow);
         ViewPaneLayout.DefaultRowSplit.ShouldBeInRange(0.4, 0.5);
-        ViewPaneLayout.DefaultColumnSplit.ShouldBe(0.6);
+
+        // Beside, the 3D view needs room for its header strip.
+        ViewPaneLayout.DefaultColumnSplit.ShouldBeInRange(0.6, 0.75);
     }
 
     [Fact]

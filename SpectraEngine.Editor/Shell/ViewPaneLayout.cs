@@ -64,7 +64,9 @@ public static class ViewPaneLayout
     public const double LogicMinHeight = 90;
 
     /// <summary>The 3D view's share of the width beside the Logic view.</summary>
-    public const double DefaultColumnSplit = 0.6;
+    // Enough for the viewport header to fit at the default window size in
+    // either workspace. ViewPaneTests measures it.
+    public const double DefaultColumnSplit = 0.7;
 
     /// <summary>The 3D view's share of the height above the Logic view.</summary>
     public const double DefaultRowSplit = 0.45;

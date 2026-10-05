@@ -392,7 +392,7 @@ public sealed class EditorSettingsTests
 
         var first = new EditorSettings();
         first.SetViewArrangement(ViewArrangement.LogicBeside);
-        first.SetViewColumnSplit(0.7);
+        first.SetViewColumnSplit(0.55);
         first.Save(path, NullLogger.Instance);
 
         var stale = new EditorSettings();
@@ -400,7 +400,7 @@ public sealed class EditorSettingsTests
 
         EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
         loaded.ViewArrangement.ShouldBe(ViewArrangement.LogicBeside);
-        loaded.ViewColumnSplit.ShouldBe(0.7);
+        loaded.ViewColumnSplit.ShouldBe(0.55);
     }
 
     [Fact]
@@ -411,13 +411,13 @@ public sealed class EditorSettingsTests
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(
             path,
-            "{ \"views\": { \"arrangement\": \"quad\", \"lastSplit\": \"quad\", \"columnSplit\": 0.7 } }");
+            "{ \"views\": { \"arrangement\": \"quad\", \"lastSplit\": \"quad\", \"columnSplit\": 0.55 } }");
 
         EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
 
         loaded.ViewArrangement.ShouldBe(ViewArrangement.Single);
         loaded.LastViewSplit.ShouldBe(ViewArrangement.LogicBelow);
-        loaded.ViewColumnSplit.ShouldBe(0.7);
+        loaded.ViewColumnSplit.ShouldBe(0.55);
     }
 
     [Theory]
@@ -458,7 +458,7 @@ public sealed class EditorSettingsTests
     {
         string path = TempPath();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, "{ \"views\": { \"arrangement\": \"logicBeside\", \"columnSplit\": 0.7, \"rowSplit\": ");
+        File.WriteAllText(path, "{ \"views\": { \"arrangement\": \"logicBeside\", \"columnSplit\": 0.55, \"rowSplit\": ");
 
         EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
 
