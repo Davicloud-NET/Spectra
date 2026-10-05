@@ -30,12 +30,10 @@
   </ItemGroup>
 
   <!--
-    scook, built before the demo and run by it as a tool. Not referenced:
-    nothing of the cook reaches the demo. A reference all the same, so a
-    restore of the demo restores scook too.
-    UndefineProperties: scook runs on this machine as a plain build, in its
-    own folder. Left in, a publish would build it self-contained for the
-    demo's runtime, and -o would put it beside the demo.
+    scook is built before the demo and run by it as a tool. Nothing of the
+    cook is referenced, and restoring the demo still restores scook.
+    UndefineProperties: without it a publish builds scook self-contained for
+    the demo's runtime, and -o puts it beside the demo.
   -->
   <ItemGroup>
     <ProjectReference Include="..\Spectra.Kitchen.CLI\Spectra.Kitchen.CLI.csproj"
