@@ -276,6 +276,17 @@ public sealed class LogicCanvas : Control
     }
 
     /// <inheritdoc/>
+    // Delete removes the selected wire only while the keys come here. From
+    // the viewport or the scene tree it deletes the wire's sender.
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+
+        if (!_menus.OffersRemoval)
+            Model?.Wiring.Select(null);
+    }
+
+    /// <inheritdoc/>
     // The viewport and the scene tree delete the selected entities on Delete,
     // and a selected wire's sender is one of them. With a wire selected the
     // key ends here, whoever listens further up.

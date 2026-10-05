@@ -65,8 +65,12 @@ public sealed class LogicWiring
         if (!Gesture.Move(at, over))
             return;
 
+        // As a click on the card would.
         if (begins)
+        {
+            Selected = null;
             Say("");
+        }
 
         _redraw();
     }

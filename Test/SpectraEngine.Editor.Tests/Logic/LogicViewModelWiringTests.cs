@@ -281,6 +281,18 @@ public sealed class LogicViewModelWiringTests
     }
 
     [Fact]
+    public void A_drag_that_begins_lets_the_selected_wire_go()
+    {
+        Wiring.Select(Scene.Edge("OpenVault", "Lift"));
+        Point zone = InView(Scene.Card("StartZone").Header.Center);
+
+        Wiring.Press(zone, _model.HitTest(zone));
+        Wiring.Move(zone + new Vector(30, 0), null);
+
+        Wiring.Selected.ShouldBeNull();
+    }
+
+    [Fact]
     public void Removing_the_selected_wire_asks_for_the_senders_list_without_it()
     {
         Wiring.Select(Scene.Edge("OpenVault", "Lift"));
@@ -327,31 +339,45 @@ public sealed class LogicViewModelWiringTests
     }
 
     [Fact]
-    public void A_level_that_starts_gives_a_drag_up_and_drops_the_selected_wire()
+    public void A_level_that_starts_gives_a_drag_up()
     {
-        Wiring.Select(Scene.Edge("StartZone", "StartDoor"));
         Drag(Scene.Card("StartZone").Header.Center, "Lift");
 
         _model.Apply(Snapshot(Level(VaultEntities()), VaultPlaying()));
 
         Wiring.Gesture.IsActive.ShouldBeFalse();
-        Wiring.Selected.ShouldBeNull();
-        Wiring.CanEdit.ShouldBeFalse();
+        Wiring.Menu().ShouldBeNull();
     }
 
     [Fact]
-    public void While_a_level_plays_nothing_is_dragged_selected_or_removed()
+    public void A_level_that_starts_drops_the_selected_wire()
     {
-        LogicGraphInfo level = Level(VaultEntities());
-        _model.Apply(Snapshot(level, VaultPlaying()));
-
-        Drag(Scene.Card("StartZone").Header.Center, "Lift").ShouldBeFalse();
         Wiring.Select(Scene.Edge("StartZone", "StartDoor"));
 
-        Wiring.Gesture.Phase.ShouldBe(LogicWirePhase.Idle);
+        _model.Apply(Snapshot(Level(VaultEntities()), VaultPlaying()));
+
         Wiring.Selected.ShouldBeNull();
-        Wiring.RemoveSelected().ShouldBeFalse();
-        _asked.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void While_a_level_plays_a_drag_starts_nothing()
+    {
+        _model.Apply(Snapshot(Level(VaultEntities()), VaultPlaying()));
+
+        Drag(Scene.Card("StartZone").Header.Center, "Lift").ShouldBeFalse();
+
+        Wiring.Gesture.Phase.ShouldBe(LogicWirePhase.Idle);
+    }
+
+    [Fact]
+    public void While_a_level_plays_no_wire_is_selected()
+    {
+        _model.Apply(Snapshot(Level(VaultEntities()), VaultPlaying()));
+
+        Wiring.Select(Scene.Edge("StartZone", "StartDoor"));
+
+        Wiring.Selected.ShouldBeNull();
+        Wiring.CanEdit.ShouldBeFalse();
     }
 
     [Fact]

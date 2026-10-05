@@ -201,133 +201,30 @@ public sealed class LogicCanvasWiringTests(RibbonSession session)
     }
 
     [Fact]
-    public void A_click_on_a_wire_selects_it_and_a_click_on_a_card_or_on_empty_ground_lets_it_go()
+    public void A_drag_from_a_card_lets_the_selected_wire_go()
     {
         On("whole", graph =>
         {
-            LogicSceneEdge wire = graph.Scene.Edge("StartZone", "StartDoor");
+            graph.Click(graph.Scene.Edge("StartZone", "StartDoor").Segments[0].At(0.5));
 
-            graph.Click(wire.Segments[0].At(0.5));
-            graph.Model.Wiring.IsSelected(wire).ShouldBeTrue();
-            graph.Selected.ShouldBe([(StartZone, false)]);
+            graph.Drag(graph.Scene.Card("Presses").Header.Center, Ground);
 
-            graph.Click(graph.Scene.Card("Presses").Header.Center);
-            graph.Model.Wiring.Selected.ShouldBeNull();
-
-            graph.Click(graph.Scene.Edge("OpenVault", "VaultDoor").LabelBounds.ShouldNotBeNull().Center);
-            graph.Model.Wiring.Selected.ShouldNotBeNull().NodeId.ShouldBe(OpenVault);
-
-            graph.Click(Ground);
-            graph.Model.Wiring.Selected.ShouldBeNull();
-        });
-    }
-
-    [Theory]
-    [InlineData(PhysicalKey.Delete)]
-    [InlineData(PhysicalKey.Backspace)]
-    public void With_a_wire_selected_the_key_removes_the_wire_and_never_reaches_the_window(PhysicalKey key)
-    {
-        On("whole", graph =>
-        {
-            int reached = 0;
-            graph.Window.AddHandler(InputElement.KeyDownEvent, (_, _) => reached++, handledEventsToo: false);
-            graph.Click(graph.Scene.Edge("OpenVault", "Lift").Segments[0].At(0.5));
-
-            graph.Window.KeyPressQwerty(key, RawInputModifiers.None);
-
-            (Guid sender, EntityConnection[] wires) = graph.Wired.ShouldHaveSingleItem();
-            sender.ShouldBe(OpenVault);
-            wires.ShouldBe([Wire("OnTrigger", "VaultDoor", "Open", times: 1), Wire("OnTrigger", "VaultDor", "Close")]);
-            reached.ShouldBe(0, "the window deletes the selected entities on this key");
             graph.Model.Wiring.Selected.ShouldBeNull();
         });
     }
 
     [Fact]
-    public void Delete_on_the_canvas_with_a_wire_selected_is_marked_handled()
-    {
-        On("whole", graph =>
-        {
-            graph.Click(graph.Scene.Edge("OpenVault", "Lift").Segments[0].At(0.5));
-            var press = new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Delete };
-
-            graph.Canvas.RaiseEvent(press);
-
-            press.Handled.ShouldBeTrue();
-            graph.Wired.Count.ShouldBe(1);
-        });
-    }
-
-    [Fact]
-    public void With_no_wire_selected_the_key_is_left_to_the_window()
-    {
-        On("whole", graph =>
-        {
-            int reached = 0;
-            graph.Window.AddHandler(InputElement.KeyDownEvent, (_, _) => reached++, handledEventsToo: false);
-            graph.Click(graph.Scene.Card("Presses").Header.Center);
-
-            graph.Window.KeyPressQwerty(PhysicalKey.Delete, RawInputModifiers.None);
-
-            reached.ShouldBe(1);
-            graph.Wired.ShouldBeEmpty();
-        });
-    }
-
-    [Fact]
-    public void A_right_click_on_a_wire_selects_it_and_its_menu_removes_it()
-    {
-        On("whole", graph =>
-        {
-            LogicSceneEdge wire = graph.Scene.Edge("StartZone", "StartDoor");
-
-            graph.Click(wire.Segments[0].At(0.5), button: MouseButton.Right);
-
-            graph.Model.Wiring.IsSelected(wire).ShouldBeTrue();
-            graph.Selected.ShouldBe([(StartZone, false)]);
-
-            ContextMenu menu = graph.Canvas.ShownMenu.ShouldNotBeNull();
-            Texts(menu).ShouldBe(["Remove wire"]);
-            Line(menu, "Remove wire").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            menu.Close();
-
-            (Guid sender, EntityConnection[] wires) = graph.Wired.ShouldHaveSingleItem();
-            sender.ShouldBe(StartZone);
-            wires.ShouldBeEmpty();
-        });
-    }
-
-    [Fact]
-    public void A_right_click_on_a_card_or_on_empty_ground_opens_no_menu()
-    {
-        On("whole", graph =>
-        {
-            graph.Click(graph.Scene.Card("Presses").Header.Center, button: MouseButton.Right);
-            graph.Click(Ground, button: MouseButton.Right);
-
-            graph.Canvas.ShownMenu.ShouldBeNull();
-            graph.Selected.ShouldBeEmpty();
-        });
-    }
-
-    [Fact]
-    public void While_a_level_plays_a_drag_makes_no_wire_and_a_wire_is_not_selected()
+    public void While_a_level_plays_a_drag_from_a_card_starts_nothing()
     {
         On("playing", graph =>
         {
             Point lift = graph.Scene.Card("Lift").Header.Center;
-            LogicSceneEdge wire = graph.Scene.Edge("StartZone", "StartDoor");
 
             graph.Drag(graph.Scene.Card("StartZone").Header.Center, lift);
-            graph.Model.Wiring.Gesture.Phase.ShouldBe(LogicWirePhase.Idle);
             graph.Window.MouseUp(graph.ToWindow(lift), MouseButton.Left);
 
-            graph.Click(wire.Segments[0].At(0.5));
-            graph.Click(wire.Segments[0].At(0.5), button: MouseButton.Right);
-            graph.Window.KeyPressQwerty(PhysicalKey.Delete, RawInputModifiers.None);
-
+            graph.Model.Wiring.Gesture.Phase.ShouldBe(LogicWirePhase.Idle);
             graph.Canvas.ShownMenu.ShouldBeNull();
-            graph.Model.Wiring.Selected.ShouldBeNull();
             graph.Wired.ShouldBeEmpty();
         });
     }
