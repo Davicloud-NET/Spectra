@@ -15,6 +15,7 @@ using SpectraEngine.Editing.Cameras;
 using SpectraEngine.Editing.Commands;
 using SpectraEngine.Editing.Gizmos;
 using SpectraEngine.Editing.Hosting;
+using SpectraEngine.Editor.Sounds;
 using SpectraEngine.Physics.Box3D;
 using SpectraShade.Compiler;
 using System;
@@ -77,9 +78,12 @@ public sealed class EditorSession : IDisposable
             Startup = StartupSceneKind.Baseplate,
             EntitySchemas = EntitySchemas,
         };
-        var assetManager = contentRoot is null
-            ? new AssetManager(loggerFactory.CreateLogger<AssetManager>())
-            : new AssetManager(loggerFactory.CreateLogger<AssetManager>(), contentRoot);
+        string root = contentRoot ?? ContentRoot.Path;
+        var assetManager = new AssetManager(
+            loggerFactory.CreateLogger<AssetManager>(),
+            root,
+            EditorContent.Mount(loggerFactory, root, SoundCookCache.DirectoryFor(root)),
+            hotReloadEnabled: contentRoot is not null || ContentRoot.IsDeveloperBuild);
         var audioManager = new AudioManager(loggerFactory.CreateLogger<AudioManager>());
         var inputManager = new InputManager(loggerFactory.CreateLogger<InputManager>());
 

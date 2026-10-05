@@ -13,4 +13,11 @@
     <ProjectReference Include="..\..\SpectraEngine.Editor\SpectraEngine.Editor.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Linked, not copied: one project folder and one WAV writer for the cook's tests and these. -->
+    <Compile Include="..\Spectra.Kitchen.Tests\TempProject.cs" Link="TempProject.cs" />
+    <Compile Include="..\Spectra.Kitchen.Tests\CuedWav.cs" Link="CuedWav.cs" />
+    <Compile Include="..\SpectraEngine.Bsp.Tests\CapturingLogger.cs" Link="CapturingLogger.cs" />
+  </ItemGroup>
+
 </Project>

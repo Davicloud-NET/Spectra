@@ -30,7 +30,10 @@ public sealed partial class AssetManager
     /// </param>
     /// <exception cref="FileNotFoundException">No mounted source has that sound.</exception>
     /// <exception cref="Audio.SaudioFormatException">The cooked file is not one this engine can play.</exception>
-    /// <exception cref="InvalidDataException">The path names an authored sound with no cooked file beside it.</exception>
+    /// <exception cref="InvalidDataException">
+    /// The path names an authored sound with no cooked file beside it, or a
+    /// source that cooks sounds on demand refused this one.
+    /// </exception>
     public AudioAsset LoadAudio(string relativePath)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
