@@ -601,6 +601,39 @@ internal sealed class SceneBvh
         }
     }
 
+    // Every accepted leaf whose box the ray reaches within maxDistance. Bounds
+    // only, like QueryBox.
+    public void QueryRay(in Ray3 ray, float maxDistance, List<SceneNode> results, in SceneQueryFilter filter)
+    {
+        FlushDirtyLeaves();
+
+        if (_root == Null)
+            return;
+
+        int stackTop = 0;
+        _traversalStack[stackTop++] = _root;
+
+        while (stackTop > 0)
+        {
+            int index = _traversalStack[--stackTop];
+
+            if (_nodes[index].Leaf is { } sceneNode)
+            {
+                if (RayIntersectsBox(ray, _nodes[index].TightBox, maxDistance, out _) && filter.Accepts(sceneNode))
+                    results.Add(sceneNode);
+                continue;
+            }
+
+            if (!RayIntersectsBox(ray, _nodes[index].FatBox, maxDistance, out _))
+                continue;
+
+            if (stackTop + 2 > _traversalStack.Length)
+                Array.Resize(ref _traversalStack, _traversalStack.Length * 2);
+            _traversalStack[stackTop++] = _nodes[index].Child1;
+            _traversalStack[stackTop++] = _nodes[index].Child2;
+        }
+    }
+
     // Clips the ray against the brush planes in brush-local space. A ray
     // starting inside reports no hit.
     // General inverse, not a rigid shortcut: the graph allows scale on a brush
@@ -621,38 +654,13 @@ internal sealed class SceneBvh
 
         float tEnter = 0f;
         float tExit = best;
-        int enterPlane = -1;
 
-        IReadOnlyList<Plane> planes = brush.LocalPlanes;
-        for (int i = 0; i < planes.Count; i++)
+        ReadOnlySpan<Plane> planes = brush.LocalPlaneSpan;
+        if (!BrushLineClip.Clip(
+                planes, origin, direction, surfaceIsInside: true,
+                ref tEnter, ref tExit, out int enterPlane, out _))
         {
-            Plane plane = planes[i]; // outward normal: inside is distance <= 0
-            float distance = Plane.DotCoordinate(plane, origin);
-            float denom = Vector3.Dot(plane.Normal, direction);
-
-            if (MathF.Abs(denom) < 1e-9f)
-            {
-                if (distance > 0f)
-                    return false; // parallel and outside
-                continue;
-            }
-
-            float tPlane = -distance / denom;
-            if (denom < 0f)
-            {
-                if (tPlane > tEnter)
-                {
-                    tEnter = tPlane;
-                    enterPlane = i;
-                }
-            }
-            else if (tPlane < tExit)
-            {
-                tExit = tPlane;
-            }
-
-            if (tEnter > tExit)
-                return false;
+            return false;
         }
 
         if (enterPlane < 0 || tEnter >= best)
