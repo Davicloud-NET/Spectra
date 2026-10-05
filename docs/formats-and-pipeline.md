@@ -669,7 +669,8 @@ Per type (variable length)
 +0x04  u32   ClassNameRef
 +0x08  u32   DisplayNameRef
 +0x0C  u32   GroupRef
-+0x10  u8    Placement    0 point, 1 brush, 2 abstract/logic-only
++0x10  u8    Placement    0 point, 1 brush, 2 abstract/logic-only, 3 volume (a brush that
+                          senses, not drawn, not solid)
 +0x11  u8    Origin       0 engine-C#, 1 luau, 2 sdk-C# — an editor BADGE only
 +0x12  u16   KeyvalueCount
 +0x14  u16   InputCount

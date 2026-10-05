@@ -254,6 +254,20 @@ public sealed class EntityShellTests
     }
 
     [Fact]
+    public void A_volume_class_is_offered_by_a_point_insert_that_gives_it_no_brush()
+    {
+        // The menu leaves out Brush only. A volume placed this way has no brush
+        // to sense with.
+        EntitySchemaCatalog parsed = Catalog(
+            Schema("trigger_once", placement: EntityPlacement.Volume),
+            Schema("logic_relay", placement: EntityPlacement.Abstract));
+
+        EntityInsertMenu.Build(parsed)
+            .Select(i => i.ClassName)
+            .ShouldBe(["logic_relay", "trigger_once"]);
+    }
+
+    [Fact]
     public void An_entry_carries_the_wire_name_the_menu_will_insert()
     {
         List<EntityInsertItem> items = EntityInsertMenu.Build(Catalog(Schema("test_widget", "Test widget")));

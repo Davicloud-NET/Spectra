@@ -96,6 +96,28 @@ public sealed class EntityGeneratorDiagnosticTests
     }
 
     [Fact]
+    public void A_placement_the_generator_has_no_name_for_is_refused()
+    {
+        GeneratorRun run = GeneratorHarness.Run(Fixtures.UnknownPlacement);
+
+        run.DiagnosticIds.ShouldBe(["SPE008"]);
+
+        string message = run.Diagnostics.Single().GetMessage();
+        message.ShouldContain("TriggerThing");
+        message.ShouldContain("placement 9");
+    }
+
+    [Fact]
+    public void A_refused_placement_is_the_only_error_the_class_gets()
+    {
+        // The rest is still emitted, so nothing else fails to compile.
+        GeneratorRun run = GeneratorHarness.Run(Fixtures.UnknownPlacement);
+
+        run.SourceCount.ShouldBe(1);
+        run.CompileErrors().ShouldBeEmpty();
+    }
+
+    [Fact]
     public void A_refused_member_does_not_stop_the_rest_of_the_class_being_emitted()
     {
         const string source = """

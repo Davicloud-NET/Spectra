@@ -11,12 +11,18 @@ public enum EntityPlacement : byte
     Point = 0,
 
     /// <summary>
-    /// A volume: the node carries brush geometry the class gives behaviour to.
+    /// A solid: the node carries brush geometry the class gives behaviour to,
+    /// drawn and collided with.
     /// </summary>
     Brush = 1,
 
     /// <summary>Logic only. Still a node, but its transform means nothing.</summary>
     Abstract = 2,
+
+    /// <summary>
+    /// A sensor: the node carries brush geometry that is neither drawn nor solid.
+    /// </summary>
+    Volume = 3,
 }
 
 /// <summary>

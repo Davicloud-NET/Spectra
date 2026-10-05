@@ -77,4 +77,14 @@ internal static class EntityDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor UnknownPlacement = new(
+        id: "SPE008",
+        title: "Unknown entity placement",
+        messageFormat:
+            "Entity class '{0}' declares placement {1}, which the generator has no name for. It knows Point, " +
+            "Brush, Abstract and Volume. A value added to EntityPlacement has to be added to the generator too.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

@@ -14,3 +14,4 @@ SPE004  | SpectraEntities | Error    | Entity input has the wrong signature
 SPE005  | SpectraEntities | Error    | Reserved keyvalue name (targetname IS SceneNode.Name)
 SPE006  | SpectraEntities | Error    | Keyvalue type does not match the member
 SPE007  | SpectraEntities | Error    | Keyvalue member cannot be assigned
+SPE008  | SpectraEntities | Error    | Unknown entity placement

@@ -79,6 +79,16 @@ public sealed class EntitySchemaTests
     }
 
     [Fact]
+    public void The_placement_numbers_are_the_bytes_a_schema_file_stores()
+    {
+        // Append only: a renumber changes what every exported schema says.
+        ((byte)EntityPlacement.Point).ShouldBe((byte)0);
+        ((byte)EntityPlacement.Brush).ShouldBe((byte)1);
+        ((byte)EntityPlacement.Abstract).ShouldBe((byte)2);
+        ((byte)EntityPlacement.Volume).ShouldBe((byte)3);
+    }
+
+    [Fact]
     public void A_schema_with_no_class_name_is_refused()
     {
         Should.Throw<ArgumentException>(() => new EntitySchema(""));

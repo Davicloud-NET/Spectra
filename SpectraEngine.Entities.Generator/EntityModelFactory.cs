@@ -55,7 +55,19 @@ internal static class EntityModelFactory
         string className = FirstStringArgument(attribute);
         string display = NamedString(attribute, "Display");
         string group = NamedString(attribute, "Group");
-        string placement = PlacementName(NamedByte(attribute, "Placement", 0));
+        byte placementValue = NamedByte(attribute, "Placement", 0);
+        string? placement = PlacementName(placementValue);
+        if (placement is null)
+        {
+            diagnostics.Add(DiagnosticInfo.Create(
+                EntityDiagnostics.UnknownPlacement,
+                classLocation,
+                type.Name,
+                placementValue.ToString(CultureInfo.InvariantCulture)));
+
+            // As if none was stated, so the rest of the class still compiles.
+            placement = "Point";
+        }
 
         var keyvalues = new List<KeyvalueModel>();
         var inputs = new List<InputModel>();
@@ -252,11 +264,14 @@ internal static class EntityModelFactory
         _ => 0,
     };
 
-    private static string PlacementName(byte value) => value switch
+    // Mirrors Core's EntityPlacement, which this assembly cannot reference.
+    private static string? PlacementName(byte value) => value switch
     {
+        0 => "Point",
         1 => "Brush",
         2 => "Abstract",
-        _ => "Point",
+        3 => "Volume",
+        _ => null,
     };
 
     // logic_relay becomes "Logic Relay". Splits on underscores only.

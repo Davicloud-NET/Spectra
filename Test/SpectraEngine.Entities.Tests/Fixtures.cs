@@ -139,6 +139,18 @@ internal static class Fixtures
         }
         """;
 
+    // A cast is the only way to spell a placement the enum does not have.
+    public const string UnknownPlacement = """
+        using SpectraEngine.Core.Entities;
+
+        namespace TestGame.Entities;
+
+        [SpectraEntity("trigger_thing", Placement = (EntityPlacement)9)]
+        public sealed partial class TriggerThing : Entity
+        {
+        }
+        """;
+
     public const string CachedEntity = """
         using SpectraEngine.Core.Entities;
 
