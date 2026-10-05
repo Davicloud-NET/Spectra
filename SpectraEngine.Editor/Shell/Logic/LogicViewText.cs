@@ -30,8 +30,8 @@ public static class LogicViewText
     /// <summary>The same where the box is too narrow for it.</summary>
     public const string FilterPlaceholderShort = "Filter";
 
-    /// <summary>What the event strip says before any wire has done anything.</summary>
-    public const string NoEvents = "Nothing has fired yet.";
+    /// <summary>What the event strip says while it has no line to show.</summary>
+    public const string NoEvents = "Wires that fire are listed here.";
 
     /// <summary>How many entities have a card.</summary>
     public static string Entities(int count) => count == 1 ? "1 entity" : $"{Number(count)} entities";
