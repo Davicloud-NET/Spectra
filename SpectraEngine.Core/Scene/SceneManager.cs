@@ -218,6 +218,24 @@ public sealed class SceneManager
     /// </summary>
     public EntityWorld? EntityWorld { get; private set; }
 
+    private IEntityTrace? _entityTrace;
+
+    /// <summary>
+    /// What watches the entity runtime, or null for nothing. Kept between
+    /// play sessions: each new world has it before it activates, and a
+    /// running one gets a change at once. Render thread only.
+    /// </summary>
+    public IEntityTrace? EntityTrace
+    {
+        get => _entityTrace;
+        set
+        {
+            _entityTrace = value;
+            if (EntityWorld is { } world)
+                world.Trace = value;
+        }
+    }
+
     // Not cached: a host may assign EntityCatalog between loads. Reading
     // Schemas freezes the catalogue.
     private EntitySchemaCatalog ResolveEntitySchemas() =>
@@ -233,7 +251,9 @@ public sealed class SceneManager
         if (EntityWorld is not null || ActiveScene is not { } scene)
             return;
 
-        var world = new EntityWorld(scene, _logger, EntityCatalog);
+        // Before Activate, or the outputs fired while spawning go unseen and
+        // their deliveries on the first tick seem to come from nowhere.
+        var world = new EntityWorld(scene, _logger, EntityCatalog) { Trace = _entityTrace };
         world.Activate();
         EntityWorld = world;
 

@@ -131,14 +131,73 @@ public sealed class EntityHostingTests
         log.ShouldBe(new[] { "spawn:door", "activate:door" });
     }
 
+    [Fact]
+    public void A_trace_set_on_the_scene_manager_is_on_the_next_world_before_it_activates()
+    {
+        // The spawner fires while the world activates, which only a trace
+        // already in place hears.
+        SceneManager manager = Hosted(WithSpawner());
+        Scene scene = manager.ActiveScene.ShouldNotBeNull();
+        EntityRuntime.Place(scene.Root, "source", "spawner");
+        var trace = new RecordingEntityTrace();
+
+        manager.EntityTrace = trace;
+        manager.StartEntityWorld();
+
+        manager.EntityWorld.ShouldNotBeNull().Trace.ShouldBeSameAs(trace);
+        trace.Lines.ShouldBe(new[] { "fire source.OnSpawned by=source" });
+    }
+
+    [Fact]
+    public void A_trace_stays_on_the_scene_manager_from_one_play_session_to_the_next()
+    {
+        SceneManager manager = Hosted(WithSpawner());
+        Scene scene = manager.ActiveScene.ShouldNotBeNull();
+        EntityRuntime.Place(scene.Root, "source", "spawner");
+        var trace = new RecordingEntityTrace();
+        manager.EntityTrace = trace;
+
+        manager.StartEntityWorld();
+        manager.StopEntityWorld();
+        manager.StartEntityWorld();
+
+        manager.EntityTrace.ShouldBeSameAs(trace);
+        trace.Lines.Count().ShouldBe(2);
+    }
+
+    [Fact]
+    public void A_trace_set_during_play_reaches_the_running_world()
+    {
+        SceneManager manager = Hosted(new List<string>());
+        manager.StartEntityWorld();
+        EntityWorld world = manager.EntityWorld.ShouldNotBeNull();
+        world.Trace.ShouldBeNull();
+        var trace = new RecordingEntityTrace();
+
+        manager.EntityTrace = trace;
+        world.Trace.ShouldBeSameAs(trace);
+
+        manager.EntityTrace = null;
+        world.Trace.ShouldBeNull();
+    }
+
+    private static EntityCatalog WithSpawner()
+    {
+        EntityCatalog catalog = EntityRuntime.Catalog([]);
+        catalog.Add(new EntitySchema("spawner"), () => new SpawnFiringEntity());
+        return catalog;
+    }
+
+    private static SceneManager Hosted(List<string> log) => Hosted(EntityRuntime.Catalog(log));
+
     // Own catalogue: EntityCatalog.Shared freezes on first read, which would
     // make the tests order-dependent.
-    private static SceneManager Hosted(List<string> log)
+    private static SceneManager Hosted(EntityCatalog catalog)
     {
         var manager = new SceneManager(NullLogger<SceneManager>.Instance)
         {
             Startup = StartupSceneKind.Baseplate,
-            EntityCatalog = EntityRuntime.Catalog(log),
+            EntityCatalog = catalog,
         };
 
         manager.LoadStartupScene(new FakeRenderer(), new AssetManager(NullLogger<AssetManager>.Instance));

@@ -122,12 +122,11 @@ public sealed class TargetNameIndex : IDisposable
 
         int start = results.Count;
 
-        if (target[^1] == '*')
+        if (TargetNamePattern.IsPrefix(target))
         {
-            ReadOnlySpan<char> prefix = target.AsSpan(0, target.Length - 1);
             foreach (KeyValuePair<string, List<Entity>> bucket in _byName)
             {
-                if (bucket.Key.AsSpan().StartsWith(prefix, StringComparison.Ordinal))
+                if (TargetNamePattern.Matches(target, bucket.Key))
                     results.AddRange(bucket.Value);
             }
         }

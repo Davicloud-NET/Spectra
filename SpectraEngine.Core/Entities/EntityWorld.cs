@@ -111,6 +111,13 @@ public sealed class EntityWorld
     public TargetNameIndex? Index => _index;
 
     /// <summary>
+    /// Is told of every output fired and every input queued, sent or lost, or
+    /// null when nothing watches. Set it before <see cref="Activate"/> to hear
+    /// what fires while entities spawn.
+    /// </summary>
+    public IEntityTrace? Trace { get; set; }
+
+    /// <summary>
     /// How many events one <see cref="Tick"/> may dispatch before the cascade
     /// is treated as a runaway loop, logged and dropped.
     /// </summary>
@@ -203,6 +210,8 @@ public sealed class EntityWorld
         // 4: activate, once every spawn has finished.
         for (int i = 0; i < _entities.Count; i++)
             _entities[i].OnActivate();
+
+        Trace?.EndTick(TickNumber, _time);
     }
 
     /// <summary>
@@ -282,6 +291,8 @@ public sealed class EntityWorld
         }
 
         DrainDeferred();
+
+        Trace?.EndTick(TickNumber, _time);
     }
 
     /// <summary>
@@ -341,7 +352,7 @@ public sealed class EntityWorld
                 "The entity belongs to another entity world, or to none.", nameof(target));
         }
 
-        _queue.Push(new EntityEvent
+        var queued = new EntityEvent
         {
             Time = _time,
             Sequence = _sequence++,
@@ -352,7 +363,42 @@ public sealed class EntityWorld
             Input = input,
             Parameter = parameter ?? "",
             Output = "",
-        });
+        };
+
+        _queue.Push(queued);
+        Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, this, queued, target));
+    }
+
+    /// <summary>
+    /// Queues an input for every entity a name resolves to, with no caller and
+    /// no activator. The name resolves when the input comes due, the way a
+    /// wire's target does.
+    /// </summary>
+    /// <param name="targetName">A name, or a prefix ending in <c>*</c>.</param>
+    /// <param name="input">The input's name.</param>
+    /// <param name="parameter">The argument, or null for none.</param>
+    /// <param name="delay">Seconds to wait. Zero delivers on the next drain.</param>
+    /// <exception cref="InvalidOperationException">The world is not active.</exception>
+    public void QueueInput(string targetName, string input, string? parameter = null, float delay = 0f)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(targetName);
+        ArgumentNullException.ThrowIfNull(input);
+        ThrowIfStopped(nameof(QueueInput));
+
+        var queued = new EntityEvent
+        {
+            // Negative and NaN delays become zero.
+            Time = _time + (delay > 0f ? delay : 0f),
+            Sequence = _sequence++,
+            Kind = EntityEventKind.Input,
+            TargetName = targetName,
+            Input = input,
+            Parameter = parameter ?? "",
+            Output = "",
+        };
+
+        _queue.Push(queued);
+        Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, this, queued, null));
     }
 
     /// <summary>
@@ -428,7 +474,7 @@ public sealed class EntityWorld
         // Negative and NaN delays become zero.
         float delay = wire.Delay > 0f ? wire.Delay : 0f;
 
-        _queue.Push(new EntityEvent
+        var queued = new EntityEvent
         {
             Time = _time + delay,
             Sequence = _sequence++,
@@ -439,7 +485,10 @@ public sealed class EntityWorld
             Input = wire.Input,
             Parameter = parameterOverride ?? wire.Parameter,
             Output = output,
-        });
+        };
+
+        _queue.Push(queued);
+        Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, this, queued, null));
     }
 
     internal void SetTicking(Entity entity, bool on)
@@ -547,10 +596,11 @@ public sealed class EntityWorld
             {
                 _logger.LogDebug(
                     "'{Input}' was queued for an entity that is gone by now; it was not sent.", due.Input);
+                Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.TargetMissing, this, due, instance));
                 return;
             }
 
-            Deliver(instance, due.Input, ref context);
+            Deliver(instance, due, ref context);
             return;
         }
 
@@ -563,21 +613,27 @@ public sealed class EntityWorld
             _logger.LogDebug(
                 "Output '{Output}' names '{TargetName}', which matches nothing right now; '{Input}' was not sent.",
                 due.Output, due.TargetName, due.Input);
+            Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.TargetMissing, this, due, null));
             return;
         }
 
         for (int i = 0; i < _resolved.Count; i++)
-            Deliver(_resolved[i], due.Input, ref context);
+            Deliver(_resolved[i], due, ref context);
     }
 
-    private void Deliver(Entity target, string input, ref EntityInputContext context)
+    private void Deliver(Entity target, in EntityEvent due, ref EntityInputContext context)
     {
-        if (target.AcceptInput(input, ref context))
+        // Before the entity handles it, so what it fires in answer comes after.
+        Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputDelivered, this, due, target));
+
+        if (target.AcceptInput(due.Input, ref context))
             return;
+
+        Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputRefused, this, due, target));
 
         _logger.LogDebug(
             "Entity '{TargetName}' ({ClassName}) has no input '{Input}'.",
-            target.TargetName, target.ClassName, input);
+            target.TargetName, target.ClassName, due.Input);
     }
 
     private void TripDispatchBudget(in EntityEvent offender)

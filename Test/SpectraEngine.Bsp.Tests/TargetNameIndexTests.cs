@@ -201,6 +201,46 @@ public sealed class TargetNameIndexTests
         Resolve(world, "*").Count.ShouldBe(1);
     }
 
+    [Fact]
+    public void The_shared_pattern_agrees_with_the_index_on_every_form()
+    {
+        // Names on every edge: one a prefix of another, one in another case,
+        // two the same, one empty, and some that look like patterns.
+        string[] names = ["door", "door_north", "Door", "do", "hall", "door*", "*", "!self", "!gate", "", "hall"];
+        string[] patterns =
+        [
+            "door", "door*", "Door", "DOOR*", "do", "do*", "d*", "*", "**", "door**", "door_north", "hall",
+            "hall*", "nobody", "nobody*", "", "!", "!*", "!gate", "!self", "!activator", "!caller",
+        ];
+
+        var scene = new Scene("Entities");
+        foreach (string name in names)
+            EntityRuntime.Place(scene.Root, name, "recorder");
+
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog([]));
+        world.Activate();
+
+        foreach (string pattern in patterns)
+        {
+            string[] matched = [.. names.Where(name => TargetNamePattern.Matches(pattern, name))];
+
+            Resolve(world, pattern).Select(entity => entity.TargetName)
+                .ShouldBe(matched, $"pattern '{pattern}'");
+        }
+
+        // A token is whatever the index hands an entity to, and nothing else.
+        Entity self = world.Entities[0];
+        Entity activator = world.Entities[1];
+        Entity caller = world.Entities[2];
+        foreach (string token in new[] { "!self", "!activator", "!caller", "!Self", "!gate", "!", "self", "" })
+        {
+            var picked = new List<Entity>();
+            world.Index!.Resolve(token, self, activator, caller, picked);
+
+            (picked.Count == 1).ShouldBe(TargetNamePattern.IsRuntimeToken(token), $"token '{token}'");
+        }
+    }
+
     private static List<Entity> Resolve(EntityWorld world, string target)
     {
         var results = new List<Entity>();

@@ -4,7 +4,10 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>Tick ordering, the dispatch budget, and authored data staying untouched.</summary>
+/// <summary>
+/// Tick ordering, inputs queued by name, the dispatch budget, and authored
+/// data staying untouched.
+/// </summary>
 public sealed class EntityWorldTests
 {
     private const float Tick = 1f / 60f;
@@ -254,6 +257,113 @@ public sealed class EntityWorldTests
     }
 
     [Fact]
+    public void An_input_queued_by_hand_reaches_every_entity_the_name_resolves_to()
+    {
+        var log = new List<string>();
+        var scene = new Scene("Entities");
+        EntityRuntime.Place(scene.Root, "door_north", "recorder");
+        EntityRuntime.Place(scene.Root, "hall", "recorder");
+        EntityRuntime.Place(scene.Root, "door_south", "recorder");
+        EntityRuntime.Place(scene.Root, "lamp", "recorder").Entity!.SetValue("tag", "lamp_a");
+        EntityRuntime.Place(scene.Root, "lamp", "recorder").Entity!.SetValue("tag", "lamp_b");
+
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        world.Activate();
+
+        world.QueueInput("door*", "Open");
+        world.QueueInput("lamp", "TurnOn");
+        world.QueueInput("nobody", "Open");
+
+        log.ShouldBeEmpty();
+        world.PendingEventCount.ShouldBe(3);
+
+        world.Tick(Tick);
+
+        log.ShouldBe(new[]
+        {
+            "door_north:Open::-:-", "door_south:Open::-:-", "lamp_a:TurnOn::-:-", "lamp_b:TurnOn::-:-",
+        });
+    }
+
+    [Fact]
+    public void An_input_queued_by_hand_has_no_caller_and_no_activator()
+    {
+        var log = new List<string>();
+        var scene = new Scene("Entities");
+        EntityRuntime.Place(scene.Root, "button", "recorder");
+        SceneNode relay = EntityRuntime.Place(scene.Root, "relay", "relay");
+        EntityRuntime.Wire(relay, "OnTrigger", "button", "Ping");
+
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        world.Activate();
+
+        world.QueueInput("button", "Use", "hard");
+        world.QueueInput("relay", "Trigger");
+        world.Tick(Tick);
+
+        // Nobody sent the first. The relay had no activator to pass on, so
+        // what it fired names the relay as both.
+        log.ShouldBe(new[] { "button:Use:hard:-:-", "button:Ping::relay:relay" });
+    }
+
+    [Fact]
+    public void A_delayed_input_queued_by_hand_arrives_after_its_delay()
+    {
+        var log = new List<string>();
+        var scene = new Scene("Entities");
+        EntityRuntime.Place(scene.Root, "button", "recorder");
+
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        world.Activate();
+
+        world.QueueInput("button", "Late", delay: 0.5f);
+        world.QueueInput("button", "Now");
+
+        for (int i = 0; i < 28; i++)
+            world.Tick(Tick);
+
+        log.ShouldHaveSingleItem().ShouldStartWith("button:Now");
+
+        for (int i = 0; i < 4; i++)
+            world.Tick(Tick);
+
+        log.Count.ShouldBe(2);
+        log[1].ShouldStartWith("button:Late");
+    }
+
+    [Fact]
+    public void A_name_queued_by_hand_is_resolved_when_the_input_comes_due()
+    {
+        var log = new List<string>();
+        var scene = new Scene("Entities");
+        SceneNode node = EntityRuntime.Place(scene.Root, "gate", "recorder");
+
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        world.Activate();
+
+        world.QueueInput("door", "Open");
+        node.Name = "door";
+        world.Tick(Tick);
+
+        log.ShouldHaveSingleItem().ShouldStartWith("door:Open");
+    }
+
+    [Fact]
+    public void An_input_cannot_be_queued_by_name_on_a_world_that_is_not_running()
+    {
+        var scene = new Scene("Entities");
+        EntityRuntime.Place(scene.Root, "button", "recorder");
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog([]));
+
+        Should.Throw<InvalidOperationException>(() => world.QueueInput("button", "Use"));
+
+        world.Activate();
+        world.Deactivate();
+
+        Should.Throw<InvalidOperationException>(() => world.QueueInput("button", "Use"));
+    }
+
+    [Fact]
     public void Deactivating_removes_every_entity_and_lets_go_of_the_scene()
     {
         var log = new List<string>();
@@ -272,11 +382,6 @@ public sealed class EntityWorldTests
 
         // A rename after deactivation must reach nothing.
         Should.NotThrow(() => node.Name = "renamed after");
-    }
-
-    private sealed class SpawnFiringEntity : Entity
-    {
-        protected internal override void OnSpawn() => FireOutput("OnSpawned");
     }
 
     private sealed class CountingThinkEntity : Entity

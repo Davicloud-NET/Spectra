@@ -112,6 +112,14 @@ public abstract class Entity
     public virtual bool AcceptInput(string input, ref EntityInputContext context) => false;
 
     /// <summary>
+    /// Writes this entity's live state for a person to read, one named value
+    /// at a time. Must change nothing. The base class has no state.
+    /// </summary>
+    public virtual void DescribeState(EntityStateWriter state)
+    {
+    }
+
+    /// <summary>
     /// Asks to be woken at world time <paramref name="time"/>, replacing any
     /// think already pending. A time already past fires on the next tick.
     /// </summary>
@@ -146,7 +154,14 @@ public abstract class Entity
     public void FireOutput(string output, Entity? activator = null, string? parameterOverride = null)
     {
         ArgumentNullException.ThrowIfNull(output);
-        FindOutput(output)?.Fire(this, activator ?? this, parameterOverride);
+
+        EntityOutput? wired = FindOutput(output);
+
+        // Before the wires fire, so the output is on record ahead of the
+        // inputs it queues.
+        World.Trace?.Record(EntityTraceEvent.OfOutput(this, activator ?? this, output, wired));
+
+        wired?.Fire(this, activator ?? this, parameterOverride);
     }
 
     /// <summary>This entity's <paramref name="output"/>, or null if nothing wires it.</summary>

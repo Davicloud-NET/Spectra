@@ -145,35 +145,15 @@ public sealed class EntityPanelInfo
         }
     }
 
-    // Must accept the same forms as TargetNameIndex.Resolve and no more.
     // A "!" token names an entity chosen at runtime, so it counts as resolving.
     private static bool Resolves(string? target, List<EntityTargetInfo> names)
     {
-        if (string.IsNullOrEmpty(target))
-            return false;
-
-        if (target[0] == '!')
-        {
-            return target is TargetNameIndex.SelfToken
-                or TargetNameIndex.ActivatorToken
-                or TargetNameIndex.CallerToken;
-        }
-
-        if (target[^1] == '*')
-        {
-            ReadOnlySpan<char> prefix = target.AsSpan(0, target.Length - 1);
-            for (int i = 0; i < names.Count; i++)
-            {
-                if (names[i].Name.AsSpan().StartsWith(prefix, StringComparison.Ordinal))
-                    return true;
-            }
-
-            return false;
-        }
+        if (TargetNamePattern.IsRuntimeToken(target))
+            return true;
 
         for (int i = 0; i < names.Count; i++)
         {
-            if (string.Equals(names[i].Name, target, StringComparison.Ordinal))
+            if (TargetNamePattern.Matches(target, names[i].Name))
                 return true;
         }
 
