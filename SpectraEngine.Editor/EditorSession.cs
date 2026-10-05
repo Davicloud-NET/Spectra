@@ -112,6 +112,13 @@ public sealed class EditorSession : IDisposable
     /// <summary>The surface a UI thread drives this engine through.</summary>
     public EngineHost Host => _engine.Host;
 
+    /// <summary>
+    /// Sends a typed line to the engine's console, as typed. What it prints
+    /// comes back in <see cref="FrameSnapshot.ConsoleLines"/>. False when
+    /// too many lines are already waiting.
+    /// </summary>
+    public bool SubmitConsoleLine(string line) => Host.SubmitConsoleLine(line);
+
     /// <summary>Whether the render thread is running.</summary>
     public bool IsRunning => _engine.IsRunning;
 

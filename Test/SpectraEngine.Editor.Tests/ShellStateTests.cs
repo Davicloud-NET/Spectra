@@ -194,7 +194,8 @@ public sealed class ConsoleCommandsTests
 {
     private static ConsoleCommands Build(
         List<string> log,
-        bool sessionOpen = true)
+        bool sessionOpen = true,
+        List<string>? forwarded = null)
     {
         return new ConsoleCommands(
             postHost: c => Record(log, $"host:{c}", sessionOpen),
@@ -205,7 +206,14 @@ public sealed class ConsoleCommandsTests
             setSnap: (tool, value) => Record(
                 log, $"snap:{tool}={value.ToString(CultureInfo.InvariantCulture)}", sessionOpen),
             setPipeline: n => Record(log, $"pipeline:{n}", sessionOpen),
-            setPlaying: p => log.Add($"play:{p}"));
+            setPlaying: p => log.Add($"play:{p}"),
+            forward: line =>
+            {
+                if (sessionOpen)
+                    forwarded?.Add(line);
+
+                return sessionOpen;
+            });
 
         static bool Record(List<string> log, string entry, bool ok)
         {
@@ -227,14 +235,74 @@ public sealed class ConsoleCommandsTests
     }
 
     [Fact]
-    public void An_unknown_verb_is_an_error_that_names_itself()
+    public void A_verb_the_editor_does_not_own_is_forwarded_as_typed()
     {
         List<string> log = [];
-        ConsoleResult result = Build(log).Execute("frobnicate");
+        List<string> forwarded = [];
+        ConsoleResult result = Build(log, forwarded: forwarded).Execute("ent_list door*");
+
+        // The engine's reply comes later, so there is nothing to print now.
+        Assert.Equal(OutputSeverity.Info, result.Severity);
+        Assert.Equal(string.Empty, result.Reply);
+        Assert.Equal(["ent_list door*"], forwarded);
+        Assert.Empty(log);
+    }
+
+    [Fact]
+    public void A_forwarded_line_keeps_its_case_and_its_quotes()
+    {
+        List<string> forwarded = [];
+        const string Typed = "  ent_fire \"Main Door\"  Open  \"\" 2; ENT_show Relay1";
+
+        Build([], forwarded: forwarded).Execute(Typed);
+
+        Assert.Equal([Typed], forwarded);
+    }
+
+    [Fact]
+    public void A_forwarded_line_with_nothing_open_says_so()
+    {
+        List<string> forwarded = [];
+        ConsoleResult result = Build([], sessionOpen: false, forwarded: forwarded).Execute("ent_list");
 
         Assert.Equal(OutputSeverity.Error, result.Severity);
-        Assert.Contains("frobnicate", result.Reply);
-        Assert.Empty(log);
+        Assert.Equal("nothing is open", result.Reply);
+        Assert.Empty(forwarded);
+    }
+
+    [Fact]
+    public void Help_lists_the_editor_verbs_and_asks_the_engine_for_its_own()
+    {
+        List<string> forwarded = [];
+        ConsoleResult result = Build([], forwarded: forwarded).Execute("Help");
+
+        Assert.Equal(OutputSeverity.Info, result.Severity);
+        foreach (string name in ConsoleCommands.Names)
+            Assert.Contains(name, result.Reply);
+        Assert.Equal(["help"], forwarded);
+    }
+
+    [Fact]
+    public void Help_still_lists_the_editor_verbs_with_nothing_open()
+    {
+        ConsoleResult result = Build([], sessionOpen: false).Execute("help");
+
+        Assert.Equal(OutputSeverity.Info, result.Severity);
+        Assert.Contains("duplicate", result.Reply);
+    }
+
+    [Fact]
+    public void Help_for_an_editor_verb_is_answered_here_and_any_other_is_forwarded()
+    {
+        List<string> forwarded = [];
+        ConsoleCommands console = Build([], forwarded: forwarded);
+
+        ConsoleResult local = console.Execute("help grid");
+        Assert.StartsWith("grid <n>", local.Reply);
+        Assert.Empty(forwarded);
+
+        console.Execute("help ent_fire");
+        Assert.Equal(["help ent_fire"], forwarded);
     }
 
     [Fact]

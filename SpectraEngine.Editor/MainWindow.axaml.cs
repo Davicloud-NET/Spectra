@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Serilog.Extensions.Logging;
 using Silk.NET.Maths;
 using Spectra.Kitchen.Diagnostics;
+using SpectraEngine.Core.ConsoleSystem;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Maps;
@@ -66,6 +67,7 @@ public partial class MainWindow : Window
     private ProblemsPanel? _problemsView;
     private ConsolePanel? _consoleView;
     private ConsoleCommands? _console;
+    private readonly ConsoleLineFeed _consoleFeed = new();
 
     private EditorSession? _session;
     private SceneTreeModel? _tree;
@@ -242,7 +244,8 @@ public partial class MainWindow : Window
             {
                 _shell.RequestPlaying(playing);
                 _session?.Host.RequestPlayMode(playing);
-            });
+            },
+            forward: line => _session is { } s && s.SubmitConsoleLine(line));
 
         static bool Post(Action action)
         {
@@ -971,6 +974,7 @@ public partial class MainWindow : Window
         _entityAuditPending = false;
         _entityAuditStale = false;
         _sceneView.ResetSelectionMemory();
+        _consoleFeed.Reset();
 
         _stopping = false;
     }
@@ -1018,6 +1022,7 @@ public partial class MainWindow : Window
         {
             Interlocked.Decrement(ref _queuedSnapshots);
             _tree?.ApplyChanges(queued);
+            ShowConsoleLines(queued);
         }
 
         if (_droppedSnapshots)
@@ -1368,6 +1373,20 @@ public partial class MainWindow : Window
         // Time for the log to flush.
         await Task.Delay(TimeSpan.FromMilliseconds(500));
         Close();
+    }
+
+    // Every snapshot's lines, in the pump's drain loop: they are sent once.
+    // The panel keeps 500 rows and cannot be searched, so the run log gets
+    // them too. The log relay shows nothing below Warning, so no row doubles.
+    private void ShowConsoleLines(FrameSnapshot snapshot)
+    {
+        if (snapshot.ConsoleLines.Count == 0)
+            return;
+
+        _consoleFeed.Feed(snapshot.ConsoleLines, _shell.Output);
+
+        foreach (ConsoleLine line in snapshot.ConsoleLines)
+            _logger.LogInformation("[console] {Line}", line.Text);
     }
 
     private void OnConsoleCommand(string line)
