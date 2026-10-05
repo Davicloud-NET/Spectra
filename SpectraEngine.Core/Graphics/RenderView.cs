@@ -35,7 +35,7 @@ public sealed class RenderView
     /// </summary>
     public int VisibleCount { get; internal set; }
 
-    /// <summary>Total mesh-bearing spatial nodes in the scene, culled or not.</summary>
+    /// <summary>Total mesh nodes in the scene that can draw, culled or not.</summary>
     public int TotalCount { get; internal set; }
 
     /// <summary>
@@ -58,7 +58,7 @@ public sealed class RenderView
     /// </summary>
     public int PartBrushesVisible { get; internal set; }
 
-    /// <summary>Total nodes carrying a part brush, culled or not.</summary>
+    /// <summary>Total part brushes in the scene that can draw, culled or not.</summary>
     public int PartBrushesTotal { get; internal set; }
 
     /// <summary>

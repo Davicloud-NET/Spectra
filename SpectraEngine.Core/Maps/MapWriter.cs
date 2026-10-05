@@ -101,51 +101,65 @@ public static class MapWriter
             writer.WriteString(MapFormat.KindMember, MapFormat.ToWire(kind));
         CanonicalJson.Flush(writer, node.Unknown, 4);
 
+        // Each written only when off, so a node with default flags writes
+        // nothing here.
+        if (!node.Collide) writer.WriteBoolean(MapFormat.CollideMember, false);
+        CanonicalJson.Flush(writer, node.Unknown, 5);
+
+        if (!node.Query) writer.WriteBoolean(MapFormat.QueryMember, false);
+        CanonicalJson.Flush(writer, node.Unknown, 6);
+
+        if (!node.Touch) writer.WriteBoolean(MapFormat.TouchMember, false);
+        CanonicalJson.Flush(writer, node.Unknown, 7);
+
+        if (!node.Render) writer.WriteBoolean(MapFormat.RenderMember, false);
+        CanonicalJson.Flush(writer, node.Unknown, 8);
+
         writer.WritePropertyName(MapFormat.TransformMember);
         writer.WriteRawValue(CompactTransform(node.Transform));
-        CanonicalJson.Flush(writer, node.Unknown, 5);
+        CanonicalJson.Flush(writer, node.Unknown, 9);
 
         if (node.Brush is { } brush)
         {
             writer.WritePropertyName(MapFormat.BrushMember);
             WriteBrush(writer, brush);
         }
-        CanonicalJson.Flush(writer, node.Unknown, 6);
+        CanonicalJson.Flush(writer, node.Unknown, 10);
 
         if (node.Mesh is { } mesh)
         {
             writer.WritePropertyName(MapFormat.MeshMember);
             writer.WriteRawValue(CompactMesh(mesh));
         }
-        CanonicalJson.Flush(writer, node.Unknown, 7);
+        CanonicalJson.Flush(writer, node.Unknown, 11);
 
         if (node.Light is { } light)
         {
             writer.WritePropertyName(MapFormat.LightMember);
             writer.WriteRawValue(CompactLight(light));
         }
-        CanonicalJson.Flush(writer, node.Unknown, 8);
+        CanonicalJson.Flush(writer, node.Unknown, 12);
 
         if (node.Entity is { } entity)
         {
             writer.WritePropertyName(MapFormat.EntityMember);
             WriteEntity(writer, entity);
         }
-        CanonicalJson.Flush(writer, node.Unknown, 9);
+        CanonicalJson.Flush(writer, node.Unknown, 13);
 
         if (node.Editor is { } editor)
         {
             writer.WritePropertyName(MapFormat.EditorMember);
             writer.WriteRawValue(editor.Raw);
         }
-        CanonicalJson.Flush(writer, node.Unknown, 10);
+        CanonicalJson.Flush(writer, node.Unknown, 14);
 
         writer.WritePropertyName(MapFormat.ChildrenMember);
         writer.WriteStartArray();
         foreach (MapNode child in node.Children)
             WriteNode(writer, child);
         writer.WriteEndArray();
-        CanonicalJson.Flush(writer, node.Unknown, 11);
+        CanonicalJson.Flush(writer, node.Unknown, 15);
 
         writer.WriteEndObject();
     }

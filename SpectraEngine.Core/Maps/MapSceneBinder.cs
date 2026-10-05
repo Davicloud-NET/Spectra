@@ -40,9 +40,10 @@ public static class MapSceneBinder
     }
 
     // The oldest reader that can open and re-save this scene without losing data.
-    // Per document: only a shaped light (spot, rect, disc) or an entity raises
-    // the floor, since an older editor would drop those on save. Light kind is
-    // tested, not its numbers. Takes the max of what applies.
+    // Per document: only a shaped light (spot, rect, disc), an entity or a node
+    // flag that is off raises the floor, since an older editor would drop those
+    // on save. Light kind is tested, not its numbers. Takes the max of what
+    // applies.
     private static int RequiredReaderVersion(Scene.Scene scene)
     {
         int floor = EngineInfo.MinimumReadableMapVersion;
@@ -60,6 +61,9 @@ public static class MapSceneBinder
         if (CarriesEntity(scene.Root))
             floor = Math.Max(floor, EngineInfo.EntityMapVersion);
 
+        if (CarriesNodeFlags(scene.Root))
+            floor = Math.Max(floor, EngineInfo.NodeFlagsMapVersion);
+
         return floor;
     }
 
@@ -74,6 +78,21 @@ public static class MapSceneBinder
         return false;
     }
 
+    // True when a descendant would write collide, query, touch or render.
+    private static bool CarriesNodeFlags(SceneNode node)
+    {
+        foreach (SceneNode child in node.Children)
+        {
+            if (!child.CanCollide || !child.CanQuery || !child.CanTouch || !child.IsRendered ||
+                CarriesNodeFlags(child))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static MapNode NodeToMap(SceneNode node, MapSaveReport? report)
     {
         var mapped = new MapNode
@@ -82,6 +101,10 @@ public static class MapSceneBinder
             Name = node.Name,
             // World is the default and is omitted.
             Kind = node.BrushKind == BrushKind.Part ? BrushKind.Part : null,
+            Collide = node.CanCollide,
+            Query = node.CanQuery,
+            Touch = node.CanTouch,
+            Render = node.IsRendered,
             Transform = ToMap(node.LocalTransform),
         };
 
@@ -302,6 +325,11 @@ public static class MapSceneBinder
         // order briefly admits a part brush to the static world.
         if (mapped.Kind is { } kind)
             node.BrushKind = kind;
+
+        node.CanCollide = mapped.Collide;
+        node.CanQuery = mapped.Query;
+        node.CanTouch = mapped.Touch;
+        node.IsRendered = mapped.Render;
 
         if (mapped.Brush is { } brush)
             node.Brush = ToBrush(brush, mapped);

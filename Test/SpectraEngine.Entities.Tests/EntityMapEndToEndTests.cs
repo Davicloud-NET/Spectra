@@ -24,9 +24,10 @@ public sealed class EntityMapEndToEndTests
     // would be tempted to write back.
     // No editor member, scene.spawn or unknown members: FromScene cannot
     // rebuild those, and that limit is not what this file tests.
+    // 'spectramap' is the engine's current version: a save stamps it.
     private const string RelayFixture = """
         {
-          "spectramap": 3,
+          "spectramap": 4,
           "minimumReadableVersion": 3,
           "engine": "1.0.0",
           "scene": {
@@ -105,7 +106,7 @@ public sealed class EntityMapEndToEndTests
     // count matches no case, which is what stops it.
     private const string BranchingFixture = """
         {
-          "spectramap": 3,
+          "spectramap": 4,
           "minimumReadableVersion": 3,
           "engine": "1.0.0",
           "scene": {

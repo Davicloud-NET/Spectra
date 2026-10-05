@@ -41,6 +41,10 @@ public static class MapFormat
     public const string RealmMember = "realm";
     public const string StateMember = "state";
     public const string KindMember = "kind";
+    public const string CollideMember = "collide";
+    public const string QueryMember = "query";
+    public const string TouchMember = "touch";
+    public const string RenderMember = "render";
     public const string TransformMember = "transform";
     public const string BrushMember = "brush";
     public const string MeshMember = "mesh";

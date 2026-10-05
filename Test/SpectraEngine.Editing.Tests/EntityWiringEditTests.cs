@@ -276,9 +276,10 @@ public sealed class EntityWiringEditTests
 
     // Hand-written, so byte identity is against a file a person could type.
     // No brushes: Brush re-normalises its planes, which changes the bytes.
+    // 'spectramap' is the engine's current version: a save stamps it.
     private static readonly byte[] WiredMap = Encoding.UTF8.GetBytes("""
         {
-          "spectramap": 3,
+          "spectramap": 4,
           "minimumReadableVersion": 3,
           "engine": "1.0.0",
           "scene": {

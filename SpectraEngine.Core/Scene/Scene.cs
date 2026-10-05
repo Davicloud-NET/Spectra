@@ -107,6 +107,7 @@ public sealed partial class Scene
         _partBrushMeshes.SetReference(node, null);
         _subtractiveBrushNodes.Remove(node);
         _inertPartBrushNodes.Remove(node);
+        _hiddenBrushNodes.Remove(node);
         _drawableNodes.Remove(node);
         _lightNodes.Remove(node);
         NodeRemoved?.Invoke(node);
@@ -132,12 +133,13 @@ public sealed partial class Scene
     /// <summary>Nodes currently carrying a <see cref="Scene.Light"/>, in attachment order.</summary>
     public IReadOnlyList<SceneNode> LightNodes => _lightNodes;
 
+    // The render bit changes what draws and nothing else, so world placements
+    // are left alone.
+    internal void OnNodeRenderFlagChanged(SceneNode node) => UpdateRenderMembership(node);
+
     internal void UpdatePartBrushMembership(SceneNode node)
     {
         TrackWorldPlacement(node);
-        _partBrushMeshes.SetReference(node,
-            node.BrushKind == BrushKind.Part && node.Brush is { Operation: BrushOperation.Additive }
-                ? node.Brush : null);
         // Additive parts only. A mesh built from a subtractive brush's own
         // faces would draw a solid block where the author asked for a hole.
         if (node.Brush is { Operation: BrushOperation.Additive } &&
@@ -167,6 +169,24 @@ public sealed partial class Scene
             _inertPartBrushNodes.Remove(node);
         }
 
+        UpdateRenderMembership(node);
+    }
+
+    // The mesh reference and the drawable list move together. A reference
+    // without a list entry holds a GPU mesh nothing draws, and the reverse
+    // hides a part that should draw.
+    private void UpdateRenderMembership(SceneNode node)
+    {
+        bool additivePart = node.BrushKind == BrushKind.Part &&
+                            node.Brush is { Operation: BrushOperation.Additive };
+
+        _partBrushMeshes.SetReference(node, additivePart && node.IsRendered ? node.Brush : null);
+
+        if (additivePart && !node.IsRendered)
+            _hiddenBrushNodes.Add(node);
+        else
+            _hiddenBrushNodes.Remove(node);
+
         UpdateDrawableMembership(node);
     }
 
@@ -180,14 +200,18 @@ public sealed partial class Scene
     {
         DrawableBvh.OnSpatialComponentChanged(node);
         // World brushes draw through the static world, not here.
-        bool drawable = node.MeshRenderer is not null ||
-                        (node.BrushKind == BrushKind.Part && node.Brush is not null);
+        bool drawable = node.IsRendered &&
+                        (node.MeshRenderer is not null ||
+                         (node.BrushKind == BrushKind.Part && node.Brush is not null));
 
         if (drawable) _drawableNodes.Add(node);
         else _drawableNodes.Remove(node);
     }
 
-    /// <summary>Nodes that can produce a draw of their own: mesh renderers and part brushes.</summary>
+    /// <summary>
+    /// Nodes that can produce a draw of their own: mesh renderers and part
+    /// brushes with <see cref="SceneNode.IsRendered"/> on.
+    /// </summary>
     public IReadOnlyList<SceneNode> DrawableNodes => _drawableNodes;
 
     private readonly HashSet<SceneNode> _inertPartBrushNodes = [];
@@ -500,10 +524,12 @@ public sealed partial class Scene
             }
         }
 
+        // The totals leave out nodes with the render bit off, or one would
+        // read as culled on every frame.
         view.VisibleCount = meshItems;
-        view.TotalCount = Bvh.MeshLeafCount;
+        view.TotalCount = DrawableBvh.MeshLeafCount;
         view.PartBrushesVisible = partBrushes;
-        view.PartBrushesTotal = _partBrushNodes.Count;
+        view.PartBrushesTotal = _partBrushNodes.Count - _hiddenBrushNodes.Count;
         view.WorldChunksVisible = visibleChunks;
         view.WorldChunksTotal = _staticWorldChunkList.Count;
         view.WorldMaterialBatchesVisible = view.WorldItems.Count;
@@ -579,6 +605,9 @@ public sealed partial class Scene
     // Both kinds. A subtractive brush draws nothing either way, so the editor
     // overlay has to see all of them.
     private readonly HashSet<SceneNode> _subtractiveBrushNodes = [];
+
+    // Additive parts with the render bit off.
+    private readonly HashSet<SceneNode> _hiddenBrushNodes = [];
 
     // Cached so the upload path does not allocate a delegate per call.
     private Func<MaterialRef, Material?>? _resolveWorldMaterial;
@@ -677,6 +706,14 @@ public sealed partial class Scene
 
     /// <summary>How many nodes in this scene carry a subtractive brush.</summary>
     public int SubtractiveBrushNodeCount => _subtractiveBrushNodes.Count;
+
+    /// <summary>
+    /// Every node in this scene carrying an additive
+    /// <see cref="BrushKind.Part"/> brush with
+    /// <see cref="SceneNode.IsRendered"/> off, such as a trigger volume or a
+    /// clip brush. These draw nothing, so the editor has to. Order is unspecified.
+    /// </summary>
+    public IReadOnlyCollection<SceneNode> HiddenBrushNodes => _hiddenBrushNodes;
 
     /// <summary>Destroys every GPU mesh the part-brush cache owns. Call before renderer shutdown.</summary>
     public void ReleasePartBrushMeshes(Renderer renderer) => _partBrushMeshes.ReleaseGraphicsResources(renderer);

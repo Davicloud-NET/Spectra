@@ -123,6 +123,38 @@ public sealed class CharacterMoverTests
     }
 
     [Fact]
+    public void A_part_with_collision_off_is_walked_through()
+    {
+        var world = new TestWorld();
+        world.AddBox("floor", new Vector3(-8f, -1f, -8f), new Vector3(8f, 0f, 8f));
+        world.Compile();
+        world.AddPart("volume", new Vector3(2f, 0f, -8f), new Vector3(2.5f, 3f, 8f)).CanCollide = false;
+
+        // 60 ticks is about 4.5 units: past the volume, short of the floor's edge.
+        CharacterState state = world.Settle(CharacterState.AtFeet(new Vector3(0f, 0.1f, 0f)), 30);
+        state = world.Walk(state, forward: 1f, yaw: 0f, ticks: 60);
+
+        state.Position.X.ShouldBeGreaterThan(3f, "a part that does not collide must not stop the character");
+    }
+
+    [Fact]
+    public void A_part_hidden_from_queries_still_blocks()
+    {
+        // CanCollide alone decides. A lane that asked the spatial index with
+        // the default filter would lose every part with CanQuery off.
+        var world = new TestWorld();
+        world.AddBox("floor", new Vector3(-8f, -1f, -8f), new Vector3(8f, 0f, 8f));
+        world.Compile();
+        world.AddPart("clip", new Vector3(2f, 0f, -8f), new Vector3(2.5f, 3f, 8f)).CanQuery = false;
+
+        CharacterState state = world.Settle(CharacterState.AtFeet(new Vector3(0f, 0.1f, 0f)), 30);
+        state = world.Walk(state, forward: 1f, yaw: 0f, ticks: 60);
+
+        state.Position.X.ShouldBeLessThan(2f - world.Tuning.Radius + 0.05f);
+        state.Position.X.ShouldBeGreaterThan(0.5f, "the character should have actually moved");
+    }
+
+    [Fact]
     public void A_step_below_the_limit_is_climbed()
     {
         var world = new TestWorld();
@@ -321,6 +353,18 @@ public sealed class CharacterMoverTests
             Vector3 half = (max - min) * 0.5f;
             node.LocalPosition = center;
             node.Brush = Brush.CreateBox(-half, half);
+        }
+
+        // Live from the spatial index, so it can be added after Compile.
+        public SceneNode AddPart(string name, Vector3 min, Vector3 max)
+        {
+            SceneNode node = Scene.Root.CreateChild(name);
+            Vector3 center = (min + max) * 0.5f;
+            Vector3 half = (max - min) * 0.5f;
+            node.BrushKind = BrushKind.Part;
+            node.LocalPosition = center;
+            node.Brush = Brush.CreateBox(-half, half);
+            return node;
         }
 
         public void AddNegative(string name, Vector3 min, Vector3 max)

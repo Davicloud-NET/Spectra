@@ -70,7 +70,8 @@ public sealed class MapNode
     // inserting a name here renumbers nothing in a file.
     internal static readonly string[] MemberOrder =
         [MapFormat.IdMember, MapFormat.NameMember, MapFormat.RealmMember, MapFormat.StateMember,
-         MapFormat.KindMember, MapFormat.TransformMember, MapFormat.BrushMember, MapFormat.MeshMember,
+         MapFormat.KindMember, MapFormat.CollideMember, MapFormat.QueryMember, MapFormat.TouchMember,
+         MapFormat.RenderMember, MapFormat.TransformMember, MapFormat.BrushMember, MapFormat.MeshMember,
          MapFormat.LightMember, MapFormat.EntityMember, MapFormat.EditorMember, MapFormat.ChildrenMember];
 
     public Guid Id { get; set; }
@@ -95,6 +96,18 @@ public sealed class MapNode
 
     /// <summary>Declared brush kind, or null when omitted (meaning <c>World</c>).</summary>
     public BrushKind? Kind { get; set; }
+
+    /// <summary>Whether the node's geometry is solid. Written only when false.</summary>
+    public bool Collide { get; set; } = true;
+
+    /// <summary>Whether spatial queries see the node. Written only when false.</summary>
+    public bool Query { get; set; } = true;
+
+    /// <summary>Whether the node raises touch events. Written only when false.</summary>
+    public bool Touch { get; set; } = true;
+
+    /// <summary>Whether the node's own mesh or part brush is drawn. Written only when false.</summary>
+    public bool Render { get; set; } = true;
 
     public MapTransform Transform { get; set; } = MapTransform.Identity;
 

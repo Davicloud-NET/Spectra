@@ -31,19 +31,22 @@ namespace SpectraEngine.Core
         public const int AudioFormatVersion = 1;
         // 2: light kinds beyond directional and point.
         // 3: the entity payload.
+        // 4: the node flags collide, query, touch and render.
         // A document only declares the version it needs, so a map without
-        // either still says 1.
-        public const int MapFormatVersion = 3;
+        // any of them still says 1.
+        public const int MapFormatVersion = 4;
 
         // The floor a new document gets. Maps are user data and must survive
         // older and newer engines, so this stays 1; a document that needs a
         // newer reader raises its own minimum.
         public const int MinimumReadableMapVersion = 1;
 
-        // Declared by a document carrying a light shape or an entity payload.
-        // An older editor would drop those on its next save.
+        // Declared by a document carrying a light shape, an entity payload or
+        // a node flag that is off. An older editor would drop those on its
+        // next save.
         public const int LightShapeMapVersion = 2;
         public const int EntityMapVersion = 3;
+        public const int NodeFlagsMapVersion = 4;
 
         // Versioned like the map: authored by a person.
         public const int ProjectFormatVersion = 1;

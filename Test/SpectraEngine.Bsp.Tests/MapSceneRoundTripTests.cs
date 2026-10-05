@@ -292,10 +292,11 @@ public sealed class MapSceneRoundTripTests
     public void A_map_for_a_game_this_build_does_not_have_comes_back_byte_for_byte()
     {
         // No geometry in the fixture: Brush re-normalises planes, which would
-        // break byte identity through a scene.
+        // break byte identity through a scene. A save stamps the engine's
+        // format version, so 'spectramap' is the current one.
         byte[] source = Encoding.UTF8.GetBytes("""
             {
-              "spectramap": 3,
+              "spectramap": 4,
               "minimumReadableVersion": 3,
               "engine": "1.0.0",
               "scene": {

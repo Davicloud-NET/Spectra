@@ -191,39 +191,61 @@ public static class MapReader
                     anchor = 4;
                     break;
 
+                // Booleans only. A 0 or a "false" read as a default would
+                // load a trigger volume as a solid, drawn block.
+                case MapFormat.CollideMember:
+                    node.Collide = ReadBool(ref reader, member, state);
+                    anchor = 5;
+                    break;
+
+                case MapFormat.QueryMember:
+                    node.Query = ReadBool(ref reader, member, state);
+                    anchor = 6;
+                    break;
+
+                case MapFormat.TouchMember:
+                    node.Touch = ReadBool(ref reader, member, state);
+                    anchor = 7;
+                    break;
+
+                case MapFormat.RenderMember:
+                    node.Render = ReadBool(ref reader, member, state);
+                    anchor = 8;
+                    break;
+
                 case MapFormat.TransformMember:
                     node.Transform = ReadTransform(ref reader, state);
-                    anchor = 5;
+                    anchor = 9;
                     break;
 
                 case MapFormat.BrushMember:
                     node.Brush = ReadBrush(ref reader, utf8, state);
-                    anchor = 6;
+                    anchor = 10;
                     break;
 
                 case MapFormat.MeshMember:
                     node.Mesh = ReadMeshSource(ref reader, utf8, state);
-                    anchor = 7;
+                    anchor = 11;
                     break;
 
                 case MapFormat.LightMember:
                     node.Light = ReadLight(ref reader, utf8, state);
-                    anchor = 8;
+                    anchor = 12;
                     break;
 
                 case MapFormat.EntityMember:
                     node.Entity = ReadEntity(ref reader, utf8, state);
-                    anchor = 9;
+                    anchor = 13;
                     break;
 
                 case MapFormat.EditorMember:
                     node.Editor = new PreservedValue(CanonicalJson.CaptureValue(ref reader, utf8));
-                    anchor = 10;
+                    anchor = 14;
                     break;
 
                 case MapFormat.ChildrenMember:
                     ReadNodeArray(ref reader, utf8, node.Children, state);
-                    anchor = 11;
+                    anchor = 15;
                     break;
 
                 default:

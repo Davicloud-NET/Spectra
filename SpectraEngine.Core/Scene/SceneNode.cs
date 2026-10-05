@@ -20,6 +20,7 @@ public class SceneNode
     private Light? _light;
     private PhysicsFlags _physicsFlags = PhysicsFlags.Default;
     private byte _collisionGroup;
+    private bool _isRendered = true;
 
     // Brushes in this subtree, this node included. The first counts every
     // kind (rigidity: no scale above any brush), the second only World brushes
@@ -198,6 +199,25 @@ public class SceneNode
 
     /// <summary>True when this node's brush is part of the static-world compile.</summary>
     public bool IsStaticWorldBrush => _brush is not null && _brushKind == BrushKind.World;
+
+    /// <summary>
+    /// Whether this node's own mesh or part brush is drawn and casts a shadow.
+    /// Default <c>true</c>. Not inherited by children. Picking, queries and
+    /// collision are unaffected.
+    /// </summary>
+    // Does nothing on a world brush: the static world draws that.
+    public bool IsRendered
+    {
+        get => _isRendered;
+        set
+        {
+            if (_isRendered == value)
+                return;
+
+            _isRendered = value;
+            Owner?.OnNodeRenderFlagChanged(this);
+        }
+    }
 
     /// <summary>
     /// The node's physics and query bits; see <see cref="Scene.PhysicsFlags"/>.
@@ -463,6 +483,7 @@ public class SceneNode
         // HasBody names the original's entry in the physics side table.
         copy._physicsFlags = _physicsFlags & ~PhysicsFlags.HasBody;
         copy._collisionGroup = _collisionGroup;
+        copy._isRendered = _isRendered;
 
         // Kind before brush, so the brush setter counts it once.
         copy._brushKind = _brushKind;

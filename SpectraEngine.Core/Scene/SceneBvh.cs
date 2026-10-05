@@ -94,8 +94,17 @@ internal sealed class SceneBvh
 
     internal int MeshLeafCount => _meshLeafCount;
 
-    private bool IsSpatial(SceneNode node) => node.MeshRenderer is not null ||
-        (node.Brush is not null && (!_drawableOnly || node.BrushKind == BrushKind.Part));
+    // The drawable index holds what draws on its own: rendered meshes and
+    // parts. The main index keeps a hidden node, so it can still be picked.
+    private bool IsSpatial(SceneNode node)
+    {
+        if (!_drawableOnly)
+            return node.MeshRenderer is not null || node.Brush is not null;
+
+        return node.IsRendered &&
+               (node.MeshRenderer is not null ||
+                (node.Brush is not null && node.BrushKind == BrushKind.Part));
+    }
 
     private void OnNodeAdded(SceneNode node)
     {

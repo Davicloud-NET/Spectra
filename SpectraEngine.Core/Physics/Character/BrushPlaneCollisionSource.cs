@@ -59,6 +59,9 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
     private readonly List<SceneNode> _partScratch = [];
     private readonly List<ConvexPiece> _candidates = [];
 
+    // CanCollide decides what blocks. A part hidden from queries is still solid.
+    private static readonly SceneQueryFilter PartLaneFilter = new() { IgnoreQueryFlags = true };
+
     public BrushPlaneCollisionSource(Scene.Scene scene, CharacterTuning tuning)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -538,7 +541,7 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
         }
 
         _partScratch.Clear();
-        _scene.GetPartBoundsInBox(in volume, _partScratch);
+        _scene.GetPartBoundsInBox(in volume, _partScratch, in PartLaneFilter);
 
         for (int i = 0; i < _partScratch.Count; i++)
         {

@@ -11,7 +11,7 @@ The file is plain JSON, written the same way every time, so a saved level only d
 
 ```json
 {
-  "spectramap": 3,
+  "spectramap": 4,
   "minimumReadableVersion": 1,
   "engine": "1.0.0",
   "scene": {
@@ -40,6 +40,10 @@ The file is plain JSON, written the same way every time, so a saved level only d
 | `name` | The node's name. |
 | `transform` | `p` is the position. `r` is the rotation as a quaternion `[x, y, z, w]`. `s` is the scale. |
 | `kind` | `"part"` for a part. Left out for a block or a cut. |
+| `collide` | `false` when the node is not solid. |
+| `query` | `false` when rays and overlap checks skip the node. |
+| `touch` | `false` when the node raises no touch events. |
+| `render` | `false` when the node is not drawn. |
 | `brush`, `mesh`, `light`, `entity` | What the node carries, if anything. |
 | `children` | The nodes inside this one. |
 
