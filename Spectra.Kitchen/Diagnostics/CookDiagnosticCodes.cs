@@ -116,6 +116,18 @@ public static class CookDiagnosticCodes
     /// <summary>A line in a sound's marker label file that could not be read, so it was skipped.</summary>
     public static readonly CookDiagnosticId AudioMarkerLabelUnreadable = CookDiagnosticId.Cook(4008);
 
+    /// <summary>
+    /// A marker label file beside a sound whose WAV has cue points of its own.
+    /// The cue points are used and the label file is not read.
+    /// </summary>
+    public static readonly CookDiagnosticId AudioMarkerLabelFileUnused = CookDiagnosticId.Cook(4009);
+
+    /// <summary>
+    /// The name the cook gave a marker with no name is also the name the
+    /// source gives another marker of the same sound.
+    /// </summary>
+    public static readonly CookDiagnosticId AudioMarkerNameTaken = CookDiagnosticId.Cook(4010);
+
     /// <summary>A material names a texture that is not there.</summary>
     public static readonly CookDiagnosticId MaterialTextureMissing = CookDiagnosticId.Cook(5001);
 

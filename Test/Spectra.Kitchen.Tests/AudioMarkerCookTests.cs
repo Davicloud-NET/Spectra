@@ -192,6 +192,80 @@ public class AudioMarkerCookTests
     }
 
     [Fact]
+    public void A_label_file_beside_a_sound_with_cue_points_warns_that_it_is_not_read()
+    {
+        using var project = new TempProject();
+        project.WriteAsset(SourcePath, CuedWav.Add(TempProject.Wav(frames: 48_000), new CuedWav.Cue(1, 100, "cue")));
+        project.WriteAsset(LabelPath, "0.5\t0.5\tlabel\n");
+
+        CookResult result = Cook(project);
+
+        result.Succeeded.ShouldBeTrue(Describe(result));
+
+        CookDiagnostic warning = result.Diagnostics.Single(d => d.Id.ToString() == "SC4009");
+        warning.Severity.ShouldBe(CookDiagnosticSeverity.Warning);
+        warning.File.ShouldBe(LabelPath);
+        warning.Message.ShouldContain($"'{SourcePath}' has cue points");
+    }
+
+    [Fact]
+    public void Adding_a_label_file_to_a_cached_sound_with_cue_points_still_warns()
+    {
+        using var project = new TempProject();
+        project.WriteAsset(SourcePath, CuedWav.Add(TempProject.Wav(frames: 48_000), new CuedWav.Cue(1, 100, "cue")));
+
+        CookCached(project).Diagnostics.ShouldNotContain(d => d.Id.ToString() == "SC4009");
+        CookCached(project).Assets.Single(a => a.SourcePath == SourcePath).FromCache.ShouldBeTrue();
+
+        project.WriteAsset(LabelPath, "0.5\t0.5\tlabel\n");
+        CookResult added = CookCached(project);
+
+        added.Assets.Single(a => a.SourcePath == SourcePath).FromCache.ShouldBeFalse();
+        added.Diagnostics.ShouldContain(d => d.Id.ToString() == "SC4009");
+    }
+
+    [Fact]
+    public void An_unnamed_marker_numbered_into_another_markers_name_warns()
+    {
+        using var project = new TempProject();
+        project.WriteAsset(SourcePath, CuedWav.Add(
+            TempProject.Wav(frames: 48_000),
+            new CuedWav.Cue(1, 100, "marker2"),
+            new CuedWav.Cue(2, 24_000)));
+
+        CookResult result = Cook(project);
+
+        CookedSound(result).Markers.ShouldBe(
+            [new AudioMarker(100, "marker2"), new AudioMarker(24_000, "marker2")]);
+
+        CookDiagnostic warning = result.Diagnostics.Single(d => d.Id.ToString() == "SC4010");
+        warning.Severity.ShouldBe(CookDiagnosticSeverity.Warning);
+        warning.File.ShouldBe(SourcePath);
+        warning.Message.ShouldContain("no name at 0.5 s");
+        warning.Message.ShouldContain("'marker2'");
+    }
+
+    [Fact]
+    public void Markers_sharing_a_frame_are_numbered_the_same_whichever_the_wav_lists_first()
+    {
+        var named = new CuedWav.Cue(1, 2_000, "open");
+        var unnamed = new CuedWav.Cue(2, 2_000);
+
+        using var listed = new TempProject();
+        listed.WriteAsset(SourcePath, CuedWav.Add(TempProject.Wav(frames: 4_800), named, unnamed));
+
+        using var other = new TempProject();
+        other.WriteAsset(SourcePath, CuedWav.Add(TempProject.Wav(frames: 4_800), unnamed, named));
+
+        byte[] first = CookedBytes(Cook(listed));
+        byte[] second = CookedBytes(Cook(other));
+
+        second.ShouldBe(first);
+        SaudioReader.Read(first, CookedPath).Markers.ShouldBe(
+            [new AudioMarker(2_000, "marker1"), new AudioMarker(2_000, "open")]);
+    }
+
+    [Fact]
     public void A_label_line_the_cook_cannot_read_warns_with_its_file_and_line()
     {
         using var project = new TempProject();

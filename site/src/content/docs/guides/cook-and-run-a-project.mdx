@@ -77,16 +77,18 @@ Each line of that file is a start time in seconds, a tab, an end time, a tab and
 
 A name that is a number needs the end time in front of it, or the cook takes it for one.
 
-The label file is only read when the `.wav` has no markers of its own.
+The label file is only read when the `.wav` has no markers of its own. If both have markers, the cook uses the ones in the `.wav` and warns.
 
 A marker with no name is called `marker` and its place among the sound's markers, counted from the start. If the third marker has no name, it is `marker3`.
 
-Two warnings are about markers:
+Four warnings are about markers:
 
 | Code | Means |
 |---|---|
 | `SC4007` | A marker lies past the end of the sound. It is left out. |
 | `SC4008` | A line in a `.markers.txt` file is not a marker. It is skipped. |
+| `SC4009` | A `.markers.txt` file sits beside a `.wav` that has markers of its own. The file is not read. |
+| `SC4010` | A marker with no name got a number that another marker already has as its name, such as `marker2`. Name it. |
 
 ## Changing a file while running from a pack
 
