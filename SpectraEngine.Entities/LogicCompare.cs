@@ -54,6 +54,14 @@ public sealed partial class LogicCompare : Entity
     /// <inheritdoc/>
     protected override void OnSpawn() => Value = InitialValue;
 
+    /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("value", Value);
+        state.Add("compare value", CompareValue);
+        state.Add("refused inputs", RefusedInputCount);
+    }
+
     [EntityInput("SetValue")]
     private void SetValue(ref EntityInputContext context)
     {

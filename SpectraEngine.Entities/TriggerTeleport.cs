@@ -64,6 +64,14 @@ public sealed partial class TriggerTeleport : Entity, ITouchListener
     /// <inheritdoc/>
     protected override void OnSpawn() => _state.Spawn(this, CollectOwnedBrushes(), StartDisabled);
 
+    /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("enabled", IsEnabled);
+        state.Add("touched", IsTouched);
+        state.Add("teleports", TeleportCount);
+    }
+
     void ITouchListener.OnTouchStarted(in TouchVisitor visitor)
     {
         _state.Started();

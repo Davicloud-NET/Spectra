@@ -41,6 +41,13 @@ public sealed partial class TriggerOnce : Entity, ITouchListener
     /// <inheritdoc/>
     protected override void OnSpawn() => _state.Spawn(this, CollectOwnedBrushes(), StartDisabled);
 
+    /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("enabled", IsEnabled);
+        state.Add("triggers", TriggerCount);
+    }
+
     void ITouchListener.OnTouchStarted(in TouchVisitor visitor)
     {
         _state.Started();

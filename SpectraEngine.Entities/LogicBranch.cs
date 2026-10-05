@@ -37,6 +37,13 @@ public sealed partial class LogicBranch : Entity
     /// <inheritdoc/>
     protected override void OnSpawn() => Value = InitialValue;
 
+    /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("value", Value);
+        state.Add("refused inputs", RefusedInputCount);
+    }
+
     [EntityInput("SetValue")]
     private void SetValue(ref EntityInputContext context) => TryStore(ref context);
 

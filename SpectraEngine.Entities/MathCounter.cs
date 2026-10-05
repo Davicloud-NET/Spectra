@@ -62,6 +62,15 @@ public sealed partial class MathCounter : Entity
     /// <inheritdoc/>
     protected override void OnSpawn() => Value = Clamp(StartValue);
 
+    /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("value", Value);
+        state.Add("min", Minimum);
+        state.Add("max", Maximum);
+        state.Add("refused inputs", RefusedInputCount);
+    }
+
     [EntityInput("Add")]
     private void Add(ref EntityInputContext context) => Move(Amount(ref context), ref context);
 

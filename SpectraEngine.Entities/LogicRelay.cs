@@ -34,6 +34,13 @@ public sealed partial class LogicRelay : Entity
     // Not in the keyvalue setter: keyvalues arrive in authored order.
     protected override void OnSpawn() => IsEnabled = !StartDisabled;
 
+    /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("enabled", IsEnabled);
+        state.Add("triggers", TriggerCount);
+    }
+
     [EntityInput("Trigger")]
     private void Trigger(ref EntityInputContext context)
     {

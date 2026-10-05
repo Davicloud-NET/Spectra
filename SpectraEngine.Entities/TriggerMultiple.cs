@@ -74,6 +74,14 @@ public sealed partial class TriggerMultiple : Entity, ITouchListener
             Trigger();
     }
 
+    /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("enabled", IsEnabled);
+        state.Add("touched", IsTouched);
+        state.Add("triggers", TriggerCount);
+    }
+
     void ITouchListener.OnTouchStarted(in TouchVisitor visitor)
     {
         _state.Started();

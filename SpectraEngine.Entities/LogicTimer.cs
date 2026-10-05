@@ -66,6 +66,14 @@ public sealed partial class LogicTimer : Entity
             SetNextThinkIn(RefireInterval);
     }
 
+    /// <inheritdoc/>
+    public override void DescribeState(EntityStateWriter state)
+    {
+        state.Add("enabled", IsEnabled);
+        state.Add("fires", FireCount);
+        state.Add("refire time", RefireInterval);
+    }
+
     [EntityInput("Enable")]
     private void Enable(ref EntityInputContext context) => Start();
 
