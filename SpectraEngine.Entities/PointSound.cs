@@ -138,7 +138,7 @@ public sealed partial class PointSound : Entity
     [Keyvalue(
         "doppler",
         Display = "Doppler",
-        Tooltip = "The pitch rises while the sound and the listener close in and falls while they part.",
+        Tooltip = "The pitch rises while the sound and the listener close in and falls while they part. A sound that is not placed has none.",
         Default = "1")]
     public bool HasDoppler { get; set; } = true;
 
