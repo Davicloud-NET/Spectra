@@ -5,6 +5,7 @@ using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Audio;
 using SpectraEngine.Core.ConsoleSystem;
 using SpectraEngine.Core.Diagnostics;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Inspection;
@@ -52,6 +53,7 @@ public sealed class Engine
     private FlyCameraController? _cameraController;
     private PlaySession? _play;
     private readonly SpectraConsole _console = new();
+    private readonly EntityWatch _entityWatch;
     private FirstPersonController? _character;
     private DebugVisualization _debugFlags = DebugVisualization.None;
 
@@ -92,6 +94,12 @@ public sealed class Engine
         _windowModeLatch = new WindowModeLatch(logger);
         Host = new EngineHost(logger);
         Host.AttachInput(inputManager);
+
+        // The scene manager keeps the trace between play sessions and
+        // gives it to each new world before that world activates.
+        _entityWatch = new EntityWatch(_console.Output);
+        EntityConsoleCommands.Register(_console.Commands, _entityWatch);
+        _entityWatch.Changed += () => _sceneManager.EntityTrace = _entityWatch.ActiveTrace;
     }
 
     // Reused across publishes; rebuilt only when the selection changed.
@@ -186,7 +194,8 @@ public sealed class Engine
         if (_sceneManager.ActiveScene is not { } scene)
             return;
 
-        _console.Drain(Host, new ConsoleFrame(scene, _sceneManager.EntityWorld));
+        _console.Drain(
+            Host, new ConsoleFrame(scene, _sceneManager.EntityWorld, _play is { IsActive: true }));
     }
 
     // Last snapshot, so a shell sees the engine stop.
