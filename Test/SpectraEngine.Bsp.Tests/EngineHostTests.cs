@@ -159,6 +159,46 @@ public sealed class EngineHostTests
     }
 
     [Fact]
+    public void A_logic_view_request_is_latched_until_the_engine_takes_it()
+    {
+        EngineHost host = NewHost();
+        Guid door = Guid.NewGuid();
+
+        host.TryTakeLogicViewRequest(out _).ShouldBeFalse("nothing was requested");
+
+        host.RequestLogicView(new LogicViewRequest([door]));
+
+        host.TryTakeLogicViewRequest(out LogicViewRequest? taken).ShouldBeTrue();
+        taken.ShouldNotBeNull().IsShown.ShouldBeTrue();
+        taken.StateNodes.ShouldBe([door]);
+
+        host.TryTakeLogicViewRequest(out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_newest_logic_view_request_wins()
+    {
+        EngineHost host = NewHost();
+
+        host.RequestLogicView(new LogicViewRequest([]));
+        host.RequestLogicView(LogicViewRequest.Hidden);
+
+        host.TryTakeLogicViewRequest(out LogicViewRequest? taken).ShouldBeTrue();
+        taken.ShouldNotBeNull().IsShown.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_logic_view_request_keeps_its_own_copy_of_the_ids()
+    {
+        var ids = new List<Guid> { Guid.NewGuid() };
+        var request = new LogicViewRequest(ids);
+
+        ids.Clear();
+
+        request.StateNodes.Count.ShouldBe(1);
+    }
+
+    [Fact]
     public void Debug_visualisation_requests_accumulate_until_taken()
     {
         EngineHost host = NewHost();

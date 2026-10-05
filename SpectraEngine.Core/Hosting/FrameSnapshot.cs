@@ -168,6 +168,13 @@ public sealed class FrameSnapshot
     public EntityPanelInfo? SelectionEntity { get; init; }
 
     /// <summary>
+    /// Every entity's wires, while a host asked for them with
+    /// <see cref="EngineHost.RequestLogicView"/>, otherwise null. The same
+    /// instance rides every snapshot until the wiring changes.
+    /// </summary>
+    public LogicGraphInfo? LogicGraph { get; init; }
+
+    /// <summary>
     /// The shared colour target a composited host should import and present, or
     /// null when the engine presents for itself. Re-import when the generation
     /// changes; handle values are recycled and do not identify a target.

@@ -186,6 +186,7 @@ public sealed class Engine
                 PipelineNames = _renderer.PipelineNames,
                 SelectionProperties = CaptureProperties(),
                 SelectionEntity = CaptureSelectionEntity(),
+                LogicGraph = CaptureLogicGraph(),
                 ConsoleLines = _console.Output.Drain(),
             };
         }, interacting);
@@ -251,6 +252,18 @@ public sealed class Engine
 
         return EntityPanelInfo.Capture(
             items[0], scene.EntitySchemas, scene, _snapshotTargetNames);
+    }
+
+    private LogicViewRequest _logicView = LogicViewRequest.Hidden;
+    private LogicGraphInfo? _publishedLogicGraph;
+
+    // Null unless a wiring view is showing. The same instance while nothing changed.
+    private LogicGraphInfo? CaptureLogicGraph()
+    {
+        if (!_logicView.IsShown || _sceneManager.ActiveScene is not { } scene)
+            return _publishedLogicGraph = null;
+
+        return _publishedLogicGraph = LogicGraphInfo.Capture(scene, _publishedLogicGraph);
     }
 
     // Returns the previous array when the selection has not changed.
@@ -785,6 +798,9 @@ public sealed class Engine
 
                 if (_inputManager.WasKeyPressed(CharacterOverlayKey))
                     _drawCharacter = !_drawCharacter;
+
+                if (Host.TryTakeLogicViewRequest(out LogicViewRequest? logicView))
+                    _logicView = logicView;
 
                 // After the play-mode block, so a line typed with Play sees
                 // the world it started. Before the ticks, so an input fired

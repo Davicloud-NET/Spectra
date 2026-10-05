@@ -195,6 +195,20 @@ public sealed class EngineHost
         MarkDirty();
     }
 
+    private LogicViewRequest? _logicViewRequest;
+
+    /// <summary>
+    /// Tells the engine whether a wiring view is showing. While one is,
+    /// snapshots carry <see cref="FrameSnapshot.LogicGraph"/>. The newest
+    /// request wins. Safe from any thread.
+    /// </summary>
+    public void RequestLogicView(LogicViewRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        Interlocked.Exchange(ref _logicViewRequest, request);
+        MarkDirty();
+    }
+
     /// <summary>
     /// Reports that a composited host has finished with every shared-target
     /// generation up to and including <paramref name="generation"/>, so the
@@ -238,6 +252,12 @@ public sealed class EngineHost
 
     internal string? TakeRequestedPipeline() =>
         Interlocked.Exchange(ref _pipelineRequest, null);
+
+    internal bool TryTakeLogicViewRequest([NotNullWhen(true)] out LogicViewRequest? request)
+    {
+        request = Interlocked.Exchange(ref _logicViewRequest, null);
+        return request is not null;
+    }
 
     internal bool TryTakeConsoleLine([NotNullWhen(true)] out string? line)
     {
