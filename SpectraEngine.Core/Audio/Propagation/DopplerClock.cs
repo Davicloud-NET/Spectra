@@ -104,8 +104,10 @@ public struct DopplerClock
 
     // The two by two system of the fit, solved for the sum of the two rates.
     // The ridge is on the rate that goes with the ticks: where nothing tells
-    // the clocks apart, a path counts as changing with the frames. That is
-    // right at any pace of the ticks, and with none running.
+    // the clocks apart, a path counts as changing with the frames.
+    // The sum takes the ticks to keep pace with the frames over time. If
+    // they stop, what moved on them reads as moving for most of a second
+    // more. A pause or a time scale has to weigh the tick rate by the pace.
     private void Solve()
     {
         double mean = _mean + Ridge;
