@@ -158,7 +158,7 @@ internal static class SolidSpanOracle
 
         float length = Vector3.Distance(from, to);
         Vector3 direction = (to - from) / length;
-        Sideways(direction, out Vector3 right, out Vector3 up);
+        Frame frame = Frame.Of(direction);
 
         int compared = 0, skipped = 0, solid = 0;
         for (int i = 0; i < SamplesPerSegment; i++)
@@ -166,7 +166,7 @@ internal static class SolidSpanOracle
             float t = (i + (float)random.NextDouble()) / SamplesPerSegment * length;
             Vector3 point = from + direction * t;
 
-            if (!TryReadSurroundings(point, isSolid, direction, right, up, out bool expected))
+            if (!TryReadSurroundings(point, isSolid, frame, out bool expected))
             {
                 skipped++;
                 continue;
@@ -188,17 +188,16 @@ internal static class SolidSpanOracle
     // False near a change of solid. The corners are asked and not the point:
     // a point of a segment that lies in a brush face is on a plane of the
     // tree, and the tree may answer for either side of it.
-    private static bool TryReadSurroundings(
-        Vector3 point, Func<Vector3, bool> isSolid, Vector3 direction, Vector3 right, Vector3 up, out bool solid)
+    private static bool TryReadSurroundings(Vector3 point, Func<Vector3, bool> isSolid, Frame frame, out bool solid)
     {
-        solid = isSolid(point + (direction + right + up) * Margin);
+        solid = isSolid(point + (frame.Along + frame.Right + frame.Up) * Margin);
 
         for (int corner = 1; corner < 8; corner++)
         {
             Vector3 offset =
-                ((corner & 1) == 0 ? direction : -direction) +
-                ((corner & 2) == 0 ? right : -right) +
-                ((corner & 4) == 0 ? up : -up);
+                ((corner & 1) == 0 ? frame.Along : -frame.Along) +
+                ((corner & 2) == 0 ? frame.Right : -frame.Right) +
+                ((corner & 4) == 0 ? frame.Up : -frame.Up);
 
             if (isSolid(point + offset * Margin) != solid)
                 return false;
@@ -240,11 +239,15 @@ internal static class SolidSpanOracle
         return string.Join(" ", parts);
     }
 
-    private static void Sideways(Vector3 direction, out Vector3 right, out Vector3 up)
+    // A segment's direction and two more square to it.
+    private readonly record struct Frame(Vector3 Along, Vector3 Right, Vector3 Up)
     {
-        Vector3 reference = MathF.Abs(direction.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX;
-        right = Vector3.Normalize(Vector3.Cross(reference, direction));
-        up = Vector3.Cross(direction, right);
+        public static Frame Of(Vector3 direction)
+        {
+            Vector3 reference = MathF.Abs(direction.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX;
+            Vector3 right = Vector3.Normalize(Vector3.Cross(reference, direction));
+            return new Frame(direction, right, Vector3.Cross(direction, right));
+        }
     }
 
     // A little wider than the brushes reach, so segments start and end in air

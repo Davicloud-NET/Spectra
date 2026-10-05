@@ -3,11 +3,10 @@ using System.Numerics;
 
 namespace SpectraEngine.Core.Scene;
 
-// For a segment that lies in brush faces. Such a segment is in solid only
-// where there is solid on every side of it: in the seam of two flush brushes,
-// and not along the face of a wall. The face planes cut the space round the
-// segment into sectors. The composer runs once for each, and what every run
-// found is kept.
+// For a segment that lies in brush faces. It is in solid only where there is
+// solid on every side of it: in the seam of two flush brushes, not along a
+// wall. The face planes cut the space round the segment into sectors, the
+// composer runs once for each, and what every run found is kept.
 internal sealed class SolidSpanSides
 {
     // Normals closer to parallel than this are one plane.
