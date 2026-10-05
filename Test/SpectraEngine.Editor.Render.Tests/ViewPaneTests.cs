@@ -147,7 +147,9 @@ public sealed class ViewPaneTests(RibbonSession session)
             frame.ShouldNotBeNull();
 
             Directory.CreateDirectory(RibbonSheetTests.OutputDirectory);
-            frame.Save(Path.Combine(RibbonSheetTests.OutputDirectory, "logic-header@2x.png"), quality: null);
+            frame.Save(
+                Path.Combine(RibbonSheetTests.OutputDirectory, "logic-header@2x.png"),
+                PngBitmapEncoderOptions.Default);
 
             frame.PixelSize.Height.ShouldBe(56);
             window.Close();

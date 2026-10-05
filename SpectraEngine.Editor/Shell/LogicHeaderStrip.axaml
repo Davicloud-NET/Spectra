@@ -4,18 +4,18 @@
 
   <!-- Its own control so the render suite can construct and measure it.
        Has to fit ViewPaneLayout.LogicMinWidth. -->
-    <Border Height="28"
-            Background="{StaticResource SpectraBgApp}"
-            BorderBrush="{StaticResource SpectraBorderStrong}"
-            BorderThickness="0,0,0,1"
-            Padding="6,0">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Grid.Column="0" Classes="sectionhead" Text="Logic" Margin="2,0,0,0" />
-        <Button Grid.Column="1" Classes="chip" Width="22" Height="22" Padding="0"
-                Click="OnHideClicked"
-                ToolTip.Tip="Hide the Logic view.  Ctrl+L">
-          <Path Classes="icon" Data="{StaticResource IconClear}" />
-        </Button>
-      </Grid>
-    </Border>
+  <Border Height="28"
+          Background="{StaticResource SpectraBgApp}"
+          BorderBrush="{StaticResource SpectraBorderStrong}"
+          BorderThickness="0,0,0,1"
+          Padding="6,0">
+    <Grid ColumnDefinitions="*,Auto">
+      <TextBlock Grid.Column="0" Classes="sectionhead" Text="Logic" Margin="2,0,0,0" />
+      <Button Grid.Column="1" Classes="chip" Width="22" Height="22" Padding="0"
+              Click="OnHideClicked"
+              ToolTip.Tip="Hide the Logic view.  Ctrl+L">
+        <Path Classes="icon" Data="{StaticResource IconClear}" />
+      </Button>
+    </Grid>
+  </Border>
 </UserControl>
