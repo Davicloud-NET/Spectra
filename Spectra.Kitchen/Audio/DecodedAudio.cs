@@ -1,10 +1,12 @@
 using SpectraEngine.Core.Audio;
+using System.Collections.Generic;
 
 namespace Spectra.Kitchen.Audio;
 
 /// <summary>
 /// A decoded source file: interleaved PCM16 at the file's own rate, plus the
-/// loop it declared. The loop is in sample frames and is not validated here.
+/// loop and the markers it declared. Both are in sample frames and neither is
+/// validated here.
 /// </summary>
 /// <param name="SampleRate">Frames a second, as the file states it.</param>
 /// <param name="Channels">1 or 2.</param>
@@ -13,12 +15,14 @@ namespace Spectra.Kitchen.Audio;
 /// <param name="LoopWasRefused">
 /// True when the file declared a loop the engine cannot carry and the decoder dropped it.
 /// </param>
+/// <param name="Markers">The file's cue points, in the order it lists them. One can lie past the end.</param>
 public readonly record struct DecodedAudio(
     int SampleRate,
     int Channels,
     short[] Samples,
     LoopRegion Loop,
-    bool LoopWasRefused)
+    bool LoopWasRefused,
+    IReadOnlyList<SourceMarker> Markers)
 {
     /// <summary>Decoded length in sample frames.</summary>
     public long FrameCount => Samples.Length / Channels;

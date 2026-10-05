@@ -28,7 +28,8 @@ namespace SpectraEngine.Core
         public const int ModelFormatVersion = 1;
         public const int TextureFormatVersion = 1;
         // Raise when the .saudio layout moves. The sample rate is per file.
-        public const int AudioFormatVersion = 1;
+        // 2: the section table, with markers as its first section.
+        public const int AudioFormatVersion = 2;
         // 2: light kinds beyond directional and point.
         // 3: the entity payload.
         // 4: the node flags collide, query, touch and render.

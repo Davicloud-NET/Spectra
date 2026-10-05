@@ -49,11 +49,35 @@ Run these from the repository folder.
 |---|---|---|
 | `.png` textures | `.simage` | Already compressed for the graphics card, with mipmaps. |
 | `.gltf` models | `.smodel` | Ready to upload, no import step. |
-| `.wav` sounds | `.saudio` | Resampled to one rate. |
+| `.wav` sounds | `.saudio` | Resampled to one rate. Loop points and markers are kept. |
 | `.smap` levels | `.scmap` | Geometry already built, so loading does no carving. |
 | `.spectramat` materials | the same text | Checked, so a missing texture fails the cook. |
 
 A cooked texture is larger on disk than its PNG. It loads faster and takes less video memory.
+
+## Markers in a sound
+
+A marker is a named moment in a sound. The cook takes markers from the sound file and keeps them in the cooked sound.
+
+Place markers in your audio editor and give each one a name. Reaper, Adobe Audition, Sound Forge and Ocenaudio can save them inside the `.wav`. In Reaper, turn on markers in the render settings. In Audition, tick "Include markers and other metadata" when you save.
+
+Audacity does not save its labels into a `.wav`. Export the label track with its Export Labels command and save the file beside the sound, with the sound's name and `.markers.txt`:
+
+```
+Sounds/guard_hey.wav
+Sounds/guard_hey.markers.txt
+```
+
+Each line of that file is a start time in seconds, a tab, an end time, a tab and the name. The label file is only read when the `.wav` has no markers of its own.
+
+A marker with no name is called `marker` and its place among the sound's markers, counted from the start. If the third marker has no name, it is `marker3`.
+
+Two warnings are about markers:
+
+| Code | Means |
+|---|---|
+| `SC4007` | A marker lies past the end of the sound. It is left out. |
+| `SC4008` | A line in a `.markers.txt` file is not a marker. It is skipped. |
 
 ## Changing a file while running from a pack
 
@@ -68,3 +92,5 @@ dotnet run --project SpectraEngine.Executable -- d3d11 --project=MyGame --pack -
 A cooked level holds its geometry, its collision, its lights and its entities, so you can walk it: add `--play` to start on foot.
 
 A model placed in a level is not drawn from a cooked level yet.
+
+Nothing in a level plays a sound yet, so nothing reacts to a sound's markers.

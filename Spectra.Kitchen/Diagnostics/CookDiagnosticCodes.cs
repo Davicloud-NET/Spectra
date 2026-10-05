@@ -110,6 +110,12 @@ public static class CookDiagnosticCodes
     /// <summary>A cooked sound in a pack is not a readable <c>.saudio</c>. From the verifier.</summary>
     public static readonly CookDiagnosticId AudioFileUnreadable = CookDiagnosticId.Cook(4006);
 
+    /// <summary>A marker the source places past the end of the sound, so it was dropped.</summary>
+    public static readonly CookDiagnosticId AudioMarkerPastEnd = CookDiagnosticId.Cook(4007);
+
+    /// <summary>A line in a sound's marker label file that could not be read, so it was skipped.</summary>
+    public static readonly CookDiagnosticId AudioMarkerLabelUnreadable = CookDiagnosticId.Cook(4008);
+
     /// <summary>A material names a texture that is not there.</summary>
     public static readonly CookDiagnosticId MaterialTextureMissing = CookDiagnosticId.Cook(5001);
 

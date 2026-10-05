@@ -121,6 +121,8 @@ public static class CookGate
         4004 => CookGateVerdict.Note,              // SC4004 AudioResampled
         4005 => CookGateVerdict.WarningUnlessStrict, // SC4005 AudioLoopUnusable
         4006 => CookGateVerdict.Fatal,             // SC4006 AudioFileUnreadable
+        4007 => CookGateVerdict.WarningUnlessStrict, // SC4007 AudioMarkerPastEnd
+        4008 => CookGateVerdict.WarningUnlessStrict, // SC4008 AudioMarkerLabelUnreadable
 
         5001 => CookGateVerdict.Fatal,             // SC5001 MaterialTextureMissing
         5002 => CookGateVerdict.WarningUnlessStrict, // SC5002 MaterialFileMalformed

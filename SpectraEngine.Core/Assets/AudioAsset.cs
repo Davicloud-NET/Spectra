@@ -2,6 +2,7 @@ using SpectraEngine.Core.Assets.Audio;
 using SpectraEngine.Core.Assets.Sources;
 using SpectraEngine.Core.Audio;
 using System;
+using System.Collections.Generic;
 
 namespace SpectraEngine.Core.Assets;
 
@@ -41,6 +42,9 @@ public sealed class AudioAsset : IDisposable
 
     /// <summary>Length in sample frames.</summary>
     public long FrameCount => Info.FrameCount;
+
+    /// <summary>The sound's markers in frame order; empty when it has none.</summary>
+    public IReadOnlyList<AudioMarker> Markers => Info.Markers;
 
     /// <summary>True once the manager has released it; the samples are empty afterwards.</summary>
     public bool IsReleased => _blob is null;

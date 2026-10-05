@@ -24,6 +24,9 @@ public class CookDeterminismTests
     private const int MaterialCount = 1;
     private const int ModelCount = 1;
 
+    // Two sounds and the label file beside one of them, which is copied raw.
+    private const int SoundFileCount = 3;
+
     private static readonly string[] Folders = ["Textures", "Models", "Materials", "Audio"];
 
     // Six sizes against four folders, so completion order is neither walk
@@ -58,7 +61,8 @@ public class CookDeterminismTests
         CookRun cached = Cook(project, "warm");
 
         // Without this, a cache that never hits still passes.
-        cached.Stdout.ShouldContain($"{AssetCount + ImageCount + MaterialCount + ModelCount} from cache");
+        cached.Stdout.ShouldContain(
+            $"{AssetCount + ImageCount + MaterialCount + ModelCount + SoundFileCount} from cache");
 
         cached.Pack.ShouldBe(clean.Pack);
     }
@@ -121,8 +125,9 @@ public class CookDeterminismTests
         }
     }
 
-    // Adds images, a material and a model for the byte-identity oracles. Not
-    // used by the pairing test: only a raw copy has one path for all three.
+    // Adds images, a material, a model and sounds with markers for the
+    // byte-identity oracles. Not used by the pairing test: only a raw copy has
+    // one path for all three.
     private static void WriteFixtureWithImages(TempProject project)
     {
         WriteFixture(project);
@@ -138,6 +143,17 @@ public class CookDeterminismTests
         // Uses the material above so it reports nothing: a model with a
         // diagnostic is never cached, which would break the cached count.
         project.WriteAsset("Models/prop.gltf", GltfFixture.Json(materialName: "tile"));
+
+        // Markers from cue points, and from a label file the rule reads as a
+        // second input. Mono at the project rate, so neither reports anything.
+        project.WriteAsset("Sounds/cued.wav", CuedWav.Add(
+            TempProject.Wav(frames: 4_800),
+            new CuedWav.Cue(1, 2_400, "b"),
+            new CuedWav.Cue(2, 1_200),
+            new CuedWav.Cue(3, 2_400, "a")));
+
+        project.WriteAsset("Sounds/labelled.wav", TempProject.Wav(frames: 4_800, seed: 3));
+        project.WriteAsset("Sounds/labelled.markers.txt", "0.05\t0.05\tsecond\n0.025\t0.025\tfirst\n");
     }
 
     private static CookRun Cook(TempProject project, string label, params string[] extra)

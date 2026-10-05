@@ -22,6 +22,9 @@ public sealed class SaudioFormatTests
         SaudioFormat.Magic.ShouldBe(HandBuiltSaudio.Magic);
         SaudioFormat.SeekTableHeaderSize.ShouldBe(HandBuiltSaudio.SeekTableHeaderSize);
         SaudioFormat.SeekTableEntrySize.ShouldBe(HandBuiltSaudio.SeekTableEntrySize);
+        SaudioFormat.SectionTableHeaderSize.ShouldBe(HandBuiltSaudio.SectionTableHeaderSize);
+        SaudioFormat.SectionEntrySize.ShouldBe(HandBuiltSaudio.SectionEntrySize);
+        SaudioFormat.MarkerSection.ShouldBe(HandBuiltSaudio.MarkerTag);
 
         SaudioFormat.MagicOffset.ShouldBe(HandBuiltSaudio.MagicOffset);
         SaudioFormat.VersionOffset.ShouldBe(HandBuiltSaudio.VersionOffset);
@@ -35,6 +38,7 @@ public sealed class SaudioFormatTests
         SaudioFormat.LoopEndOffset.ShouldBe(HandBuiltSaudio.LoopEndOffset);
         SaudioFormat.SeekTableOffsetOffset.ShouldBe(HandBuiltSaudio.SeekTableOffsetOffset);
         SaudioFormat.DataOffsetOffset.ShouldBe(HandBuiltSaudio.DataOffsetOffset);
+        SaudioFormat.SectionTableOffsetOffset.ShouldBe(HandBuiltSaudio.SectionTableOffsetOffset);
 
         // Reads "SAUD" in a hex dump.
         Span<byte> dump = stackalloc byte[4];
@@ -127,7 +131,7 @@ public sealed class SaudioFormatTests
         byte[] file = HandBuiltSaudio.Resident();
         Array.Resize(ref file, 20);
 
-        Refusal(file).ShouldContain("shorter than the 48-byte header");
+        Refusal(file).ShouldContain("shorter than the 56-byte header");
     }
 
     [Fact]
@@ -138,6 +142,19 @@ public sealed class SaudioFormatTests
 
         string message = Refusal(file);
         message.ShouldContain("version 99");
+        message.ShouldContain("recook");
+    }
+
+    [Fact]
+    public void A_sound_from_the_first_format_version_is_told_to_recook_and_not_that_it_is_short()
+    {
+        // A version 1 header is 48 bytes, so a very short version 1 sound is under 56.
+        byte[] file = HandBuiltSaudio.Resident(frames: 1);
+        Array.Resize(ref file, 50);
+        BinaryPrimitives.WriteUInt16LittleEndian(file.AsSpan(HandBuiltSaudio.VersionOffset), 1);
+
+        string message = Refusal(file);
+        message.ShouldContain("version 1 ");
         message.ShouldContain("recook");
     }
 

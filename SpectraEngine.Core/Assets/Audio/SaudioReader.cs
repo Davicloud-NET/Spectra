@@ -5,9 +5,9 @@ using System.Buffers.Binary;
 namespace SpectraEngine.Core.Assets.Audio;
 
 /// <summary>
-/// Reads a <c>.saudio</c>: the 48-byte header described by
-/// <see cref="SaudioFormat"/>, its optional seek table, and where the payload
-/// sits. Refuses anything malformed with a message naming the rule it broke.
+/// Reads a <c>.saudio</c>: the header described by <see cref="SaudioFormat"/>,
+/// its optional seek table, its sections, and where the payload sits. Refuses
+/// anything malformed with a message naming the file and the rule it broke.
 /// </summary>
 // Every offset and length is bounds-checked before use: the bytes are usually
 // a mapped view, where a bad index is an access violation, not an exception.
@@ -46,20 +46,25 @@ public static class SaudioReader
                 "it does not start with the 'SAUD' magic, so it is not a cooked sound at all.");
         }
 
-        if (file.Length < SaudioFormat.HeaderSize)
-        {
-            throw Refuse(
-                originForErrors,
-                $"it is {file.Length} bytes, which is shorter than the {SaudioFormat.HeaderSize}-byte header.");
-        }
+        // Version before length: a file from a version with a shorter header
+        // should be told to recook, not that it is short.
+        int version = file.Length >= SaudioFormat.VersionOffset + sizeof(ushort)
+            ? BinaryPrimitives.ReadUInt16LittleEndian(file[SaudioFormat.VersionOffset..])
+            : EngineInfo.AudioFormatVersion;
 
-        int version = BinaryPrimitives.ReadUInt16LittleEndian(file[SaudioFormat.VersionOffset..]);
         if (version != EngineInfo.AudioFormatVersion)
         {
             throw Refuse(
                 originForErrors,
                 $"it was cooked for audio format version {version} and this engine reads version " +
                 $"{EngineInfo.AudioFormatVersion}; recook it.");
+        }
+
+        if (file.Length < SaudioFormat.HeaderSize)
+        {
+            throw Refuse(
+                originForErrors,
+                $"it is {file.Length} bytes, which is shorter than the {SaudioFormat.HeaderSize}-byte header.");
         }
 
         var codec = (SaudioCodec)file[SaudioFormat.CodecOffset];
@@ -149,6 +154,12 @@ public static class SaudioReader
         (int framesPerEntry, long[] seekTable) = ReadSeekTable(
             file, flags, seekTableOffset, (int)dataOffset, payloadBytes, frameCount, channels, originForErrors);
 
+        uint sectionTableOffset = BinaryPrimitives.ReadUInt32LittleEndian(
+            file[SaudioFormat.SectionTableOffsetOffset..]);
+
+        AudioMarker[] markers = SaudioSectionReader.Read(
+            file, sectionTableOffset, frameCount, originForErrors, out int skippedSections);
+
         return new SaudioInfo(
             version,
             codec,
@@ -160,7 +171,9 @@ public static class SaudioReader
             (int)dataOffset,
             (int)payloadBytes,
             framesPerEntry,
-            seekTable);
+            seekTable,
+            markers,
+            skippedSections);
     }
 
     // An empty loop region would hang the fill loop; one past the end reads
@@ -319,6 +332,6 @@ public static class SaudioReader
         return (long)value;
     }
 
-    private static SaudioFormatException Refuse(string origin, string because) =>
+    internal static SaudioFormatException Refuse(string origin, string because) =>
         new($"'{origin}' is not a .saudio this engine can read: {because}");
 }

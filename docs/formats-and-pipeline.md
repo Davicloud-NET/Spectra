@@ -227,7 +227,7 @@ Sections: `VTXL` vertex layout · `VBUF` interleaved vertices · `IBUF` indices 
 
 ### 2.4 `.saudio` — cooked audio
 
-**Why it is barely custom, in one line:** the container is a 48-byte header over payloads whose codecs are existing standards, and its only genuinely new content is loop points, residency classification and a seek table — which have to live *somewhere* and would otherwise become a sidecar file.
+**Why it is barely custom, in one line:** the container is a 56-byte header over payloads whose codecs are existing standards, and its only genuinely new content is loop points, markers, residency classification and a seek table, which have to live *somewhere* and would otherwise become a sidecar file.
 
 Updated state (D-Stage 27): **the format is built and the header below is what `SaudioWriter` writes and `SaudioReader` reads**, field for field. `Audio/` is real too, from D-Stage 26: a device, a context, a listener, a 32-source pool with an oldest-finished reclaim, `StreamingVoice` over a refilled buffer queue, and a disabled mode for a machine with no sound card. There is still **no mixer**: no buses, no submix, no DSP. OpenAL's distance model is off, so it only pans, and loudness from distance is the engine's to compute. What the runtime settled first is the field this header cares most about: **loop points are sample frames, and the runtime plays them by buffer-queue arithmetic rather than by `AL_LOOPING`** (`AudioLoopCursor`), so `LoopStart`/`LoopEnd` below are consumed exactly as written with no sub-buffer restriction, and the last paragraph of this section is no longer a constraint to design around.
 
@@ -247,16 +247,36 @@ Updated state (D-Stage 27): **the format is built and the header below is what `
 0x20  u64    LoopEnd        sample frames; 0 = no loop
 0x28  u32    SeekTableOffset   0 = none; streaming only
 0x2C  u32    DataOffset
-0x30         END
+0x30  u32    SectionTableOffset   0 = no sections
+0x34  u32    Reserved = 0
+0x38         END
 ```
 
+This is version 2. Version 1 had no section table and a 48-byte header. The reader takes its own version and nothing else, so a version 1 file is told to recook.
+
 Seek table (streaming only): `u32 entryCount`, `u32 framesPerEntry`, then `entryCount × u64` byte offsets — what makes "start the track at 1:30" not a linear decode.
+
+Section table: `u32 sectionCount`, then `sectionCount × { u8[4] tag, u32 offset, u32 length }`. Offsets count from the start of the file. It works the way the `.scmap` section table does (§2.7): a reader skips a tag it does not know and still checks that the section lies inside the file, and a known tag may appear once. So a new kind of data, lip-sync for example, is a new tag and not a new version. The cook writes the table and the sections between the seek table and the samples, and writes no table when a sound has no sections. The reader takes them anywhere after the header.
+
+One section exists, `MARK`, the sound's markers. A marker is a named moment: a sample frame and a name. It is there for gameplay to react to when a playing sound reaches it. `AudioAsset.Markers` exposes them and nothing reads them yet.
+
+```
+u32    markerCount
+then markerCount records:
+  u64    Frame       sample frames from the start; FrameCount is the very end
+  u16    NameLength  bytes
+  u8[]   Name        UTF-8, not empty, no terminator
+```
+
+Records are sorted by frame, then by name with an ordinal comparison, so the bytes do not depend on the order the source listed them in. The reader refuses a marker past the end, a marker out of frame order and a name that is empty or not UTF-8. A name can leave the sections an odd length, so the cook pads one zero byte before the samples when it has to: the samples are read in place as 16-bit values.
 
 Loop points are in **sample frames**: bytes break the moment the codec changes, seconds lose sample accuracy, and a one-sample gap in a sustained ambience loop is audible. One project sample rate, because mixed rates mean per-source resampling that OpenAL will happily do at a quality and cost you did not choose. Mono required for positional sources (the cooker warns otherwise) because a stereo buffer in OpenAL plays unpositioned — the classic "why is my 3D sound not 3D" bug, free to catch at cook time.
 
 **v1 ships `PcmS16` only.** Vorbis (NVorbis) and Opus (Concentus) are both plausible but their NativeAOT posture is *inferred*, not verified, and this arc has a standing rule against inferred dependencies. Music can pass through as Opus-in-Ogg the moment a decoder is verified — the codec is a header field, so this is reversible with no format change. The constraint that shaped the runtime, recorded here because it is what the loop fields exist for: OpenAL's `AL_LOOPING` cannot express a sub-buffer loop region. The engine's answer is that a resident sound carrying loop points goes through the streaming path, which is one code path rather than two and is why a region shorter than one buffer needs no special case.
 
-**What shipped, and the two rules that are the whole of it.** `AudioRule` reads a WAV (PCM 8/16/24/32 and 32-bit float, mono or stereo, `WAVE_FORMAT_EXTENSIBLE` unwrapped), resamples through a windowed sinc to the one project rate, and emits `.saudio` under `PackEntryKind.Audio` at the source path with the extension swapped; `AudioContentPath` is the single expression of that redirection, shared by `AssetManager` and by `scook verify`, exactly as `ImageContentPath` is for textures. **Frame counts and loop points convert through one integer function** (`AudioResampler.ConvertFrames`), never through seconds and never through byte offsets: the obvious floating-point spelling truncates, so a loop point drifts a frame at every rate that does not divide evenly, and a frame off at a loop boundary is a click once a bar forever in an asset that measures correct everywhere else. **A loop comes out of the WAV's `smpl` chunk, whose `end` is INCLUSIVE** while `LoopRegion` is half-open, so the conversion is a `+1` and getting it wrong drops or repeats one frame per pass. **Intent is declared by the FILE NAME**: a stereo sound warns (SC4003) unless its stem ends `_2d`, because there is no per-asset settings mechanism yet and a name travels with the asset through every content source. The project rate lives on `CookSettings.AudioSampleRate` (48 kHz) rather than in the project manifest, and belongs in the manifest the moment that file grows a place for it; it is deliberately not a command-line switch, since a per-invocation override is how half a library ends up at one rate and half at another. Codes SC4001 to SC4006 are classified in `CookGate` like every other band.
+**What shipped, and the two rules that are the whole of it.** `AudioRule` reads a WAV (PCM 8/16/24/32 and 32-bit float, mono or stereo, `WAVE_FORMAT_EXTENSIBLE` unwrapped), resamples through a windowed sinc to the one project rate, and emits `.saudio` under `PackEntryKind.Audio` at the source path with the extension swapped; `AudioContentPath` is the single expression of that redirection, shared by `AssetManager` and by `scook verify`, exactly as `ImageContentPath` is for textures. **Frame counts and loop points convert through one integer function** (`AudioResampler.ConvertFrames`), never through seconds and never through byte offsets: the obvious floating-point spelling truncates, so a loop point drifts a frame at every rate that does not divide evenly, and a frame off at a loop boundary is a click once a bar forever in an asset that measures correct everywhere else. **A loop comes out of the WAV's `smpl` chunk, whose `end` is INCLUSIVE** while `LoopRegion` is half-open, so the conversion is a `+1` and getting it wrong drops or repeats one frame per pass. **Intent is declared by the FILE NAME**: a stereo sound warns (SC4003) unless its stem ends `_2d`, because there is no per-asset settings mechanism yet and a name travels with the asset through every content source. The project rate lives on `CookSettings.AudioSampleRate` (48 kHz) rather than in the project manifest, and belongs in the manifest the moment that file grows a place for it; it is deliberately not a command-line switch, since a per-invocation override is how half a library ends up at one rate and half at another. Codes SC4001 to SC4008 are classified in `CookGate` like every other band.
+
+Markers come from the WAV. The cook reads the `cue ` chunk for the positions and the `LIST` chunk of type `adtl` for the names: a `labl` sub-chunk names the cue point with the same id. Reaper, Adobe Audition, Sound Forge and Ocenaudio write both. Audacity writes neither, so for a WAV with no cue points the cook reads a label file beside it instead, named like the sound with `.markers.txt` (`door.wav` and `door.markers.txt`), in the layout Audacity exports a label track in: start seconds, a tab, end seconds, a tab, the name. The rule probes for that file and reads it through its context, so adding or editing it recooks the sound. The label file is also copied into the pack as a raw file, like any file with no rule of its own. A marker with no name is called `marker` and its place among the sound's markers, counted from 1 in time order, so an unnamed third marker is `marker3`. Marker frames convert to the project rate through `AudioResampler.ConvertFrames`, the function the length and the loop points use. A marker past the end of the sound is dropped with a warning (SC4007), and a line of a label file the cook cannot read is skipped with one (SC4008). Both fail a `--strict` cook.
 
 ### 2.5 `.smaterial` — cooked materials *(deferred behind `S3`)*
 
@@ -719,7 +739,7 @@ Nine more things the spec left open, settled here:
 
 **Purpose:** video playback — cutscenes, UI and menu video, and video textures sampled by a material like any other texture.
 
-**Status: deferred, and specified nowhere in this document on purpose.** There is no video path in the engine today, no decoder, no dependency chosen, and no content that needs one. Writing a header for it now would repeat exactly the mistake §2.5 refuses to make with `.smaterial` — freezing a layout before the thing it serves exists — and unlike `.saudio`, whose 48-byte header is cheap insurance against a stub that at least has a referenced library behind it, a video container's shape is dominated by decisions this arc cannot make yet. The name is reserved so the format family is complete and so nothing else claims the extension; the design waits for a real need.
+**Status: deferred, and specified nowhere in this document on purpose.** There is no video path in the engine today, no decoder, no dependency chosen, and no content that needs one. Writing a header for it now would repeat exactly the mistake §2.5 refuses to make with `.smaterial`, freezing a layout before the thing it serves exists, and unlike `.saudio`, whose 56-byte header is cheap insurance against a stub that at least has a referenced library behind it, a video container's shape is dominated by decisions this arc cannot make yet. The name is reserved so the format family is complete and so nothing else claims the extension; the design waits for a real need.
 
 **The questions its eventual design must answer**, recorded now so the work starts from them rather than rediscovering them:
 

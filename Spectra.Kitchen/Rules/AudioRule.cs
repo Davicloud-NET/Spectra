@@ -5,14 +5,17 @@ using SpectraEngine.Core.Assets.Audio;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Audio;
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 
 namespace Spectra.Kitchen.Rules;
 
 /// <summary>
 /// Turns an authored WAV into a <c>.saudio</c>: PCM16 at the project sample rate,
-/// with loop points in sample frames. The source file is not also copied into
-/// the pack.
+/// with loop points and markers in sample frames. The source file is not also
+/// copied into the pack.
 /// </summary>
 public sealed class AudioRule : IRule
 {
@@ -31,11 +34,17 @@ public sealed class AudioRule : IRule
     /// <summary>Seconds of audio between two seek points in a streamed sound.</summary>
     public const double SecondsPerSeekEntry = 1.0;
 
+    /// <summary>
+    /// What a marker with no name is called, followed by its number: the
+    /// markers of a sound are counted from 1 in time order.
+    /// </summary>
+    public const string UnnamedMarkerPrefix = "marker";
+
     /// <inheritdoc/>
     public RuleKind Kind => RuleKind.Audio;
 
     /// <inheritdoc/>
-    public int Version => 1;
+    public int Version => 2;
 
     /// <inheritdoc/>
     // Not the profile: every profile produces the same bytes for a sound.
@@ -131,6 +140,8 @@ public sealed class AudioRule : IRule
             ? Math.Max(1, (int)(SecondsPerSeekEntry * targetRate))
             : 0;
 
+        AudioMarker[] markers = CookMarkers(context, decoded, targetRate, frames);
+
         byte[] cooked;
         try
         {
@@ -139,7 +150,8 @@ public sealed class AudioRule : IRule
                 samples,
                 loop,
                 positional: !flat,
-                framesPerSeekEntry);
+                framesPerSeekEntry,
+                markers);
         }
         catch (ArgumentException ex)
         {
@@ -167,4 +179,78 @@ public sealed class AudioRule : IRule
         // A loop under one frame at the new rate is dropped.
         return end > start ? new LoopRegion(start, end) : LoopRegion.None;
     }
+
+    // Names the unnamed, drops what lies past the end and moves the rest to
+    // the project rate.
+    private static AudioMarker[] CookMarkers(
+        IRuleContext context, DecodedAudio decoded, int targetRate, long cookedFrames)
+    {
+        IReadOnlyList<SourceMarker> declared = DeclaredMarkers(context, decoded);
+        if (declared.Count == 0) return [];
+
+        // Time order gives an unnamed marker its number. OrderBy is stable, so
+        // two at one frame keep the order the source listed them in.
+        SourceMarker[] ordered = declared.OrderBy(static marker => marker.Frame).ToArray();
+
+        var cooked = new List<AudioMarker>(ordered.Length);
+        for (int i = 0; i < ordered.Length; i++)
+        {
+            long sourceFrame = ordered[i].Frame;
+            string name = ordered[i].Label.Length > 0
+                ? ordered[i].Label
+                : UnnamedMarkerPrefix + (i + 1).ToString(CultureInfo.InvariantCulture);
+
+            if (sourceFrame > decoded.FrameCount)
+            {
+                string at = Seconds(sourceFrame, decoded.SampleRate);
+                string end = Seconds(decoded.FrameCount, decoded.SampleRate);
+
+                context.Report(CookDiagnostic.Warning(
+                    CookDiagnosticCodes.AudioMarkerPastEnd,
+                    $"'{context.SourcePath}' has the marker '{name}' at {at} s and the sound ends at {end} s, " +
+                    "so the marker is dropped. Move it inside the sound.",
+                    context.SourcePath));
+
+                continue;
+            }
+
+            // The integer conversion the length and the loop use, clamped for
+            // the reason the loop end is.
+            long frame = Math.Min(
+                AudioResampler.ConvertFrames(sourceFrame, decoded.SampleRate, targetRate), cookedFrames);
+
+            cooked.Add(new AudioMarker(frame, name));
+        }
+
+        return cooked.ToArray();
+    }
+
+    // The WAV's own cue points win. The label file beside it is for editors
+    // that write none. Frames are at the WAV's rate either way.
+    private static IReadOnlyList<SourceMarker> DeclaredMarkers(IRuleContext context, DecodedAudio decoded)
+    {
+        if (decoded.Markers.Count > 0) return decoded.Markers;
+
+        // Probe first: most sounds have no label file, and Read throws on a miss.
+        string labels = MarkerLabelFile.PathFor(context.SourcePath);
+        if (!context.Probe(labels)) return [];
+
+        var unreadable = new List<int>();
+        SourceMarker[] markers = MarkerLabelFile.Read(context.Read(labels), decoded.SampleRate, unreadable);
+
+        foreach (int line in unreadable)
+        {
+            context.Report(CookDiagnostic.Warning(
+                CookDiagnosticCodes.AudioMarkerLabelUnreadable,
+                $"Line {line} of '{labels}' is not a marker, so it is skipped. A marker is a time in seconds, a " +
+                "tab, an end time, a tab and a name, the way Audacity exports a label track.",
+                labels,
+                line));
+        }
+
+        return markers;
+    }
+
+    private static string Seconds(long frames, int sampleRate) =>
+        ((double)frames / sampleRate).ToString("0.###", CultureInfo.InvariantCulture);
 }

@@ -1,13 +1,15 @@
 using SpectraEngine.Core.Audio;
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace SpectraEngine.Core.Assets.Audio;
 
 /// <summary>
 /// What <see cref="SaudioReader"/> found in a <c>.saudio</c>: the codec, the
-/// shape of the sound, its loop points and where its payload sits in the file's
-/// own bytes. Holds offsets, not bytes, so it can outlive the span it was read from.
+/// shape of the sound, its loop points, its markers and where its payload sits
+/// in the file's own bytes. Holds offsets, not sample bytes, so it can outlive
+/// the span it was read from.
 /// </summary>
 public sealed class SaudioInfo
 {
@@ -22,7 +24,9 @@ public sealed class SaudioInfo
         int dataOffset,
         int dataLength,
         int framesPerSeekEntry,
-        long[] seekTable)
+        long[] seekTable,
+        AudioMarker[] markers,
+        int skippedSectionCount)
     {
         FormatVersion = formatVersion;
         Codec = codec;
@@ -35,6 +39,8 @@ public sealed class SaudioInfo
         DataLength = dataLength;
         FramesPerSeekEntry = framesPerSeekEntry;
         SeekTable = seekTable;
+        Markers = markers;
+        SkippedSectionCount = skippedSectionCount;
     }
 
     /// <summary>The <c>.saudio</c> version this file was cooked under.</summary>
@@ -77,6 +83,12 @@ public sealed class SaudioInfo
     /// for a resident sound.
     /// </summary>
     public long[] SeekTable { get; }
+
+    /// <summary>The sound's markers in frame order; empty when it has none.</summary>
+    public IReadOnlyList<AudioMarker> Markers { get; }
+
+    /// <summary>Sections the file carries that this build does not know and left unread.</summary>
+    public int SkippedSectionCount { get; }
 
     /// <summary>True when the file asks to be played through a buffer queue.</summary>
     public bool IsStreaming => (Flags & SaudioFlags.Streaming) != 0;

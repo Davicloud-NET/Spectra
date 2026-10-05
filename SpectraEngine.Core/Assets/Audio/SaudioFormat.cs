@@ -59,8 +59,11 @@ public enum SaudioChannelLayout : byte
 
 /// <summary>
 /// The byte layout of a <c>.saudio</c> file, shared by the cook rule that writes
-/// one and the reader. Loop points and the seek stride are in sample frames.
+/// one and the reader. Loop points, markers and the seek stride are in sample
+/// frames.
 /// </summary>
+// What is not samples or a header field lives in a tagged section. A reader
+// skips a tag it does not know, so a new section needs no new version.
 public static class SaudioFormat
 {
     /// <summary>The cooked extension, dot included.</summary>
@@ -73,7 +76,7 @@ public static class SaudioFormat
     public const uint Magic = 'S' | ('A' << 8) | ('U' << 16) | ((uint)'D' << 24);
 
     /// <summary>Bytes in the header, which lives at offset 0.</summary>
-    public const int HeaderSize = 48;
+    public const int HeaderSize = 56;
 
     /// <summary><see cref="Magic"/>, four bytes.</summary>
     public const int MagicOffset = 0x00;
@@ -114,6 +117,12 @@ public static class SaudioFormat
     /// <summary>Byte offset of the payload, <c>u32</c>.</summary>
     public const int DataOffsetOffset = 0x2C;
 
+    /// <summary>Byte offset of the section table, <c>u32</c>; 0 means the file has no sections.</summary>
+    public const int SectionTableOffsetOffset = 0x30;
+
+    /// <summary>Four reserved bytes that end the header, written zero.</summary>
+    public const int HeaderPaddingOffset = 0x34;
+
     /// <summary>
     /// Bytes in the seek table's own header: <c>u32 entryCount</c> then
     /// <c>u32 framesPerEntry</c>.
@@ -122,6 +131,32 @@ public static class SaudioFormat
 
     /// <summary>Bytes in one seek-table entry: a <c>u64</c> byte offset.</summary>
     public const int SeekTableEntrySize = 8;
+
+    /// <summary>Bytes in the section table's own header: <c>u32 sectionCount</c>.</summary>
+    public const int SectionTableHeaderSize = 4;
+
+    /// <summary>
+    /// Bytes in one section-table entry: a four-character tag, then the
+    /// section's byte offset from the start of the file and its length, each
+    /// a <c>u32</c>.
+    /// </summary>
+    public const int SectionEntrySize = 12;
+
+    /// <summary>
+    /// Section <c>MARK</c>: a <c>u32</c> count, then one record per marker in
+    /// frame order. A record is a <c>u64</c> frame, a <c>u16</c> name length
+    /// in bytes and the name in UTF-8.
+    /// </summary>
+    public const uint MarkerSection = 'M' | ('A' << 8) | ('R' << 16) | ((uint)'K' << 24);
+
+    /// <summary>Bytes of fixed preamble in <c>MARK</c>: the marker count.</summary>
+    public const int MarkerCountSize = 4;
+
+    /// <summary>Bytes in a marker record before its name: the frame and the name length.</summary>
+    public const int MarkerRecordHeaderSize = 10;
+
+    /// <summary>The longest marker name a record can hold, in UTF-8 bytes.</summary>
+    public const int MaxMarkerNameBytes = ushort.MaxValue;
 
     /// <summary>Bytes one sample of one channel occupies under <see cref="SaudioCodec.PcmS16"/>.</summary>
     public const int PcmBytesPerSample = sizeof(short);

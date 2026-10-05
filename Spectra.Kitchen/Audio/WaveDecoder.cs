@@ -7,7 +7,8 @@ namespace Spectra.Kitchen.Audio;
 
 /// <summary>
 /// Reads a RIFF/WAVE file into interleaved PCM16 at the file's own rate.
-/// Loop points come from the <c>smpl</c> chunk.
+/// Loop points come from the <c>smpl</c> chunk, markers from the cue points
+/// and their labels.
 /// </summary>
 public static class WaveDecoder
 {
@@ -46,6 +47,7 @@ public static class WaveDecoder
         long loopEnd = 0;
         bool haveLoop = false;
         bool loopRefused = false;
+        var cues = new WaveCues();
 
         int at = 12;
         while (at + 8 <= file.Length)
@@ -76,6 +78,14 @@ public static class WaveDecoder
             else if (Matches(file, at, "smpl"))
             {
                 haveLoop = TryReadLoop(body, out loopStart, out loopEnd, out loopRefused);
+            }
+            else if (Matches(file, at, "cue "))
+            {
+                cues.ReadCueChunk(body);
+            }
+            else if (Matches(file, at, "LIST"))
+            {
+                cues.ReadListChunk(body);
             }
 
             // Chunks are word-aligned: an odd body has a pad byte not counted in size.
@@ -109,7 +119,7 @@ public static class WaveDecoder
                 loopRefused = true;
         }
 
-        return new DecodedAudio(sampleRate, channels, samples, loop, loopRefused);
+        return new DecodedAudio(sampleRate, channels, samples, loop, loopRefused, cues.ToMarkers());
     }
 
     private static void ReadFormat(
