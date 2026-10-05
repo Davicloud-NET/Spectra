@@ -148,6 +148,24 @@ public sealed class SoundEmitters
         Version++;
     }
 
+    // An undo of a delete rebuilds the node as a new object under its old id.
+    internal void OnNodeAdded(SceneNode node)
+    {
+        bool moved = false;
+        for (int i = 0; i < _playing.Count; i++)
+        {
+            SoundEmitter emitter = _playing[i];
+            if (emitter.Node.Id != node.Id || ReferenceEquals(emitter.Node, node))
+                continue;
+
+            _playing[i] = emitter with { Node = node };
+            moved = true;
+        }
+
+        if (moved)
+            Version++;
+    }
+
     // Ids only go up and a stop keeps the order, so the list is sorted by id.
     private int IndexOf(int id)
     {

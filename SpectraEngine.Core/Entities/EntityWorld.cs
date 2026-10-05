@@ -220,6 +220,7 @@ public sealed class EntityWorld
 
         // 2: index every entity, then copy the wires.
         _index = new TargetNameIndex(_scene);
+        _scene.NodeAdded += Sounds.OnNodeAdded;
         for (int i = 0; i < _entities.Count; i++)
             _index.Register(_entities[i]);
         for (int i = 0; i < _entities.Count; i++)
@@ -265,6 +266,7 @@ public sealed class EntityWorld
         // pose it moved to, not the authored one.
         _movedNodes.Restore();
 
+        _scene.NodeAdded -= Sounds.OnNodeAdded;
         _index?.Dispose();
         _index = null;
         Player = null;

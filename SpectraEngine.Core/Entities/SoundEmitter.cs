@@ -24,7 +24,11 @@ public readonly struct SoundEmitter
     /// </summary>
     public int Id { get; internal init; }
 
-    /// <summary>The node the sound sits on. The node's world position is where the sound is.</summary>
+    /// <summary>
+    /// The node the sound sits on. The node's world position is where the
+    /// sound is. A node that is deleted is out of the scene until an undo
+    /// restores it, and the sound is then on the restored node.
+    /// </summary>
     public SceneNode Node { get; internal init; }
 
     /// <summary>The authored sound's content path, such as <c>Sounds/door_open.wav</c>.</summary>

@@ -180,6 +180,42 @@ public sealed class SoundEmittersTests
     }
 
     [Fact]
+    public void A_sound_whose_node_is_deleted_and_restored_under_its_id_is_on_the_restored_node()
+    {
+        EntityWorld world = Started();
+        SceneNode speaker = _scene.Root.CreateChild("speaker");
+        int id = world.Sounds.Play(speaker, Hum, in OneSecond, in Plain);
+        int other = world.Sounds.Play(_scene.Root, Hum, in OneSecond, in Plain);
+        long version = world.Sounds.Version;
+
+        // What an undo of a delete does: a new node under the old id.
+        _scene.Root.RemoveChild(speaker);
+        var restored = new SceneNode("speaker", speaker.Id);
+        _scene.Root.AddChild(restored);
+
+        world.Sounds.TryGet(id, out SoundEmitter emitter).ShouldBeTrue();
+        emitter.Node.ShouldBeSameAs(restored);
+        world.Sounds.TryGet(other, out SoundEmitter untouched).ShouldBeTrue();
+        untouched.Node.ShouldBeSameAs(_scene.Root);
+        world.Sounds.Version.ShouldNotBe(version);
+    }
+
+    [Fact]
+    public void A_node_added_under_another_id_moves_no_sound_and_not_the_version()
+    {
+        EntityWorld world = Started();
+        SceneNode speaker = _scene.Root.CreateChild("speaker");
+        int id = world.Sounds.Play(speaker, Hum, in OneSecond, in Plain);
+        long version = world.Sounds.Version;
+
+        _scene.Root.CreateChild("bystander");
+
+        world.Sounds.TryGet(id, out SoundEmitter emitter).ShouldBeTrue();
+        emitter.Node.ShouldBeSameAs(speaker);
+        world.Sounds.Version.ShouldBe(version);
+    }
+
+    [Fact]
     public void A_sound_cannot_start_on_a_world_that_is_not_running()
     {
         var world = new EntityWorld(_scene, new CapturingLogger(), new EntityCatalog());

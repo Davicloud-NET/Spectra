@@ -114,6 +114,30 @@ public sealed class PointSoundLevelTests
     }
 
     [Fact]
+    public void A_sound_deleted_and_restored_while_it_plays_still_moves_with_its_door()
+    {
+        SceneNode doorNode = Door();
+        SceneNode hum = _rig.SoundUnder(doorNode, "hum", SoundRig.OneSecond, ("startplaying", "1"), ("looped", "1"));
+        EntityWorld world = _rig.Start();
+        FuncDoor door = EntityRuntime.Live<FuncDoor>(world, doorNode);
+        Vector3 closed = hum.WorldPosition;
+
+        // What an undo of a delete does: a new node under the old id.
+        doorNode.RemoveChild(hum);
+        var restored = new SceneNode("hum", hum.Id) { Entity = hum.Entity };
+        doorNode.AddChild(restored);
+
+        EntityRuntime.Send(door, "Open");
+        Movers.Run(world, door.TravelTicks);
+
+        world.Sounds.Count.ShouldBe(1);
+        SoundEmitter emitter = world.Sounds.Playing[0];
+        emitter.Node.ShouldBeSameAs(restored);
+        emitter.Node.ShouldBeSameAs(EntityRuntime.Live<PointSound>(world, restored).Node);
+        Vector3.Distance(emitter.Node.WorldPosition, closed + new Vector3(0f, 1.95f, 0f)).ShouldBeLessThan(1e-5f);
+    }
+
+    [Fact]
     public void A_level_the_scene_manager_starts_has_its_sound_playing_from_the_spawn()
     {
         var manager = new SceneManager(NullLogger<SceneManager>.Instance)
