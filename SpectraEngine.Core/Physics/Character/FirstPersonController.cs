@@ -186,6 +186,14 @@ public sealed class FirstPersonController
         if (!Active)
             return;
 
+        // Losing focus gives the cursor back: a console, or another window.
+        // Only Enter asked for it before, so a click takes it again.
+        if (_input.RequestedCursorMode != Input.CursorMode.Locked
+            && (_input.PointerButtonsPressed & PointerButtons.Left) != 0)
+        {
+            _input.RequestCursorMode(Input.CursorMode.Locked);
+        }
+
         // The lock lands a frame or two after the request. Looking before
         // then would turn the cursor's jump to centre into a flick.
         if (_input.IsCursorLocked)

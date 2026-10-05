@@ -182,10 +182,18 @@ internal sealed class ViewportInputRouter
     // Returns whether the router claimed the key, so the host can keep it from
     // the platform.
     // No shell chords while locked: Ctrl is descend and S flies backwards, so
-    // Ctrl+S would fire mid-flight.
+    // Ctrl+S would fire mid-flight. The console key is the exception. Neither
+    // the fly camera nor the character binds it, and without it nothing can
+    // be typed while a level plays.
     // Alt is claimed or the platform opens its window menu and eats the next key.
     internal bool OnKeyDown(InputKey key, KeyModifiers modifiers)
     {
+        if (key == InputKey.GraveAccent && (modifiers & KeyModifiers.Control) == 0)
+        {
+            ShellChord?.Invoke(Viewport.ShellChord.ShowConsole);
+            return true;
+        }
+
         if (!_cursorLocked && ShellChordFor(key, modifiers) is { } chord)
         {
             ShellChord?.Invoke(chord);

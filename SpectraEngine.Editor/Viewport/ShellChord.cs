@@ -16,6 +16,12 @@ public enum ShellChord
     /// <summary>Ctrl+backtick: show or hide the bottom region.</summary>
     ToggleBottomDrawer,
 
+    /// <summary>
+    /// Backtick: show the console and put the caret in it. The one chord
+    /// raised while the cursor is held, so it works while playing.
+    /// </summary>
+    ShowConsole,
+
     /// <summary>Ctrl+N.</summary>
     NewMap,
 

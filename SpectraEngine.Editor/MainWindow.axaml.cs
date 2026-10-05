@@ -2250,6 +2250,10 @@ public partial class MainWindow : Window
             case ShellChord.InsertLight: _session?.Insert(InsertKind.PointLight); break;
             case ShellChord.OpenPalette: TogglePalette(); break;
 
+            // Focusing the input takes the keyboard from the viewport, which
+            // lets go of the cursor. A level that is playing keeps playing.
+            case ShellChord.ShowConsole: OnShowConsolePanel(this, new RoutedEventArgs()); break;
+
             // Toggling is safe here: this state is the window's own and never stale.
             case ShellChord.MaximiseViewport:
                 RunWorkspaceVerb(_shell.IsViewportMaximised

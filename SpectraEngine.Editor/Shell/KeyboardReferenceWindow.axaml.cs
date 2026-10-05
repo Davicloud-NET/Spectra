@@ -86,6 +86,8 @@ public partial class KeyboardReferenceWindow : Window
 
         new("Looking at the world", [
             new("F8", "Walk the level in first person. F8 or Esc leaves."),
+            new("E", "Use what you are looking at, while playing."),
+            new("`", "Open the console. While playing it frees the mouse, and a click in the view takes it back. On a German keyboard this key is ö."),
             new("F9", "Draw the character capsule, while playing."),
             new("F1 - F5", "Wireframe, CSG vertices, bounds, face normals, node axes."),
             new("F6", "Cycle the rendering pipeline."),

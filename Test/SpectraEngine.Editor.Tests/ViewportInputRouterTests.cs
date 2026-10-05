@@ -410,14 +410,42 @@ public sealed class ViewportInputRouterTests
     }
 
     [Fact]
-    public void The_drawer_chord_needs_control_and_the_bare_key_does_not()
+    public void The_bare_console_key_shows_the_console()
     {
-        // A bare backtick already shows the console.
-        _router.OnKeyDown(InputKey.GraveAccent, KeyModifiers.None).ShouldBeFalse();
-        _chords.ShouldBeEmpty();
+        _router.OnKeyDown(InputKey.GraveAccent, KeyModifiers.None).ShouldBeTrue();
 
+        _chords.ShouldHaveSingleItem().ShouldBe(ShellChord.ShowConsole);
+
+        // Claimed, so the engine never sees the key.
+        _sink.Events.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void The_console_key_with_control_toggles_the_drawer()
+    {
         _router.OnKeyDown(InputKey.GraveAccent, KeyModifiers.Control).ShouldBeTrue();
+
         _chords.ShouldHaveSingleItem().ShouldBe(ShellChord.ToggleBottomDrawer);
+    }
+
+    [Fact]
+    public void The_console_key_is_raised_during_a_look_and_the_other_chords_are_not()
+    {
+        // Playing holds the cursor the same way a freelook does.
+        _router.ApplyCursorMode(CursorMode.Locked);
+
+        _router.OnKeyDown(InputKey.GraveAccent, KeyModifiers.None).ShouldBeTrue();
+        _chords.ShouldHaveSingleItem().ShouldBe(ShellChord.ShowConsole);
+
+        // A sprinting player has Shift down.
+        _router.OnKeyDown(InputKey.GraveAccent, KeyModifiers.Shift).ShouldBeTrue();
+        _chords.ShouldBe([ShellChord.ShowConsole, ShellChord.ShowConsole]);
+
+        // Ctrl is descend while flying, so the drawer chord stays with the engine.
+        _router.OnKeyDown(InputKey.GraveAccent, KeyModifiers.Control).ShouldBeFalse();
+        _router.OnKeyDown(InputKey.F11, KeyModifiers.None).ShouldBeFalse();
+        _router.OnKeyDown(InputKey.S, KeyModifiers.Control).ShouldBeFalse();
+        _chords.Count.ShouldBe(2);
     }
 
     [Fact]
