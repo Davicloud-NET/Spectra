@@ -22,10 +22,9 @@ public interface ISoundObstacles
     bool TryReadWorld(out long revision);
 
     /// <summary>
-    /// Whether the solid world is another than it was at
-    /// <paramref name="revision"/> anywhere within <paramref name="reach"/>
-    /// of the line from <paramref name="from"/> to <paramref name="to"/>.
-    /// May say yes for a change that is only near.
+    /// Whether the solid world changed after <paramref name="revision"/>
+    /// within <paramref name="reach"/> of the line between the two points.
+    /// It may say yes for a change that is only near.
     /// </summary>
     bool HasChangedSince(long revision, Vector3 from, Vector3 to, float reach);
 
