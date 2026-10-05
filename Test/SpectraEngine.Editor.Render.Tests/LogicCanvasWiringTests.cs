@@ -107,6 +107,44 @@ public sealed class LogicCanvasWiringTests(RibbonSession session)
     }
 
     [Fact]
+    public void A_level_laid_out_again_closes_the_menu_of_a_dropped_wire()
+    {
+        On("whole", graph =>
+        {
+            Point lift = graph.Scene.Card("Lift").Header.Center;
+            graph.Drag(graph.Scene.Card("StartZone").Header.Center, lift);
+            graph.Window.MouseUp(graph.ToWindow(lift), MouseButton.Left);
+            ContextMenu menu = graph.Canvas.ShownMenu.ShouldNotBeNull();
+
+            // Something else changed the wiring while the menu was open.
+            graph.Model.Apply(Snapshot(Level(VaultEntities())));
+            Dispatcher.UIThread.RunJobs();
+
+            menu.IsOpen.ShouldBeFalse();
+            graph.Canvas.ShownMenu.ShouldBeNull();
+            graph.Model.Wiring.Gesture.Phase.ShouldBe(LogicWirePhase.Cancelled);
+        });
+    }
+
+    [Fact]
+    public void A_view_taken_out_of_its_window_gives_a_dropped_wire_up_and_closes_its_menu()
+    {
+        On("whole", graph =>
+        {
+            Point lift = graph.Scene.Card("Lift").Header.Center;
+            graph.Drag(graph.Scene.Card("StartZone").Header.Center, lift);
+            graph.Window.MouseUp(graph.ToWindow(lift), MouseButton.Left);
+            ContextMenu menu = graph.Canvas.ShownMenu.ShouldNotBeNull();
+
+            graph.Window.Content = null;
+            Dispatcher.UIThread.RunJobs();
+
+            menu.IsOpen.ShouldBeFalse();
+            graph.Model.Wiring.Gesture.Phase.ShouldBe(LogicWirePhase.Cancelled);
+        });
+    }
+
+    [Fact]
     public void A_wire_let_go_on_empty_ground_opens_no_menu_and_asks_for_nothing()
     {
         On("whole", graph =>
