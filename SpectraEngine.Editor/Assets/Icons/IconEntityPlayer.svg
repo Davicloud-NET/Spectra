@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn by hand: a head over round shoulders. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 5.5 5 a 2.5 2.5 0 1 0 5 0 a 2.5 2.5 0 1 0 -5 0" />
+  <path d="M 3.333 13.333 a 4.667 4.667 0 0 1 9.333 0" />
+</svg>

@@ -1,0 +1,100 @@
+using System.Globalization;
+
+namespace SpectraEngine.Editor.Shell.Logic;
+
+/// <summary>The sentences the Logic view shows round its graph, in one place.</summary>
+public static class LogicViewText
+{
+    /// <summary>The hint at the right of the status row while editing.</summary>
+    public const string EditingHint = "Double-click a card to frame it in the viewport.";
+
+    /// <summary>The hint at the right of the status row while a level runs.</summary>
+    public const string PlayingHint = "Wires light up as they fire. Stop to edit.";
+
+    /// <summary>How many entities have a card.</summary>
+    public static string Entities(int count) => count == 1 ? "1 entity" : $"{Number(count)} entities";
+
+    /// <summary>How many wires are drawn.</summary>
+    public static string Wires(int count) => count == 1 ? "1 wire" : $"{Number(count)} wires";
+
+    /// <summary>How many wires can never deliver, or empty when none.</summary>
+    public static string GoingNowhere(int count) => count switch
+    {
+        <= 0 => "",
+        1 => "1 wire goes nowhere",
+        _ => $"{Number(count)} wires go nowhere",
+    };
+
+    /// <summary>The entities that have no wires and so no card, or empty when every entity has one.</summary>
+    /// <param name="first">The name of the first of them. May be empty.</param>
+    /// <param name="count">How many there are.</param>
+    public static string Unwired(string first, int count)
+    {
+        if (count <= 0)
+            return "";
+
+        if (string.IsNullOrEmpty(first))
+        {
+            return count == 1
+                ? "1 entity has no wires and is not shown."
+                : $"{Number(count)} entities have no wires and are not shown.";
+        }
+
+        return count switch
+        {
+            1 => $"{first} has no wires and is not shown.",
+            2 => $"{first} and 1 more entity have no wires and are not shown.",
+            _ => $"{first} and {Number(count - 1)} more entities have no wires and are not shown.",
+        };
+    }
+
+    /// <summary>What to say when the level has more entities than the view was given.</summary>
+    public static string Truncated(int listed, int total) =>
+        $"Showing the first {Number(listed)} of {Number(total)} entities.";
+
+    /// <summary>What the view says in place of a graph, or empty when it has one.</summary>
+    public static string Empty(LogicEmptyReason reason) => reason switch
+    {
+        LogicEmptyReason.NothingSelected =>
+            "Select an entity to see what it is wired to, or show the whole level.",
+        LogicEmptyReason.SelectionHasNoWires =>
+            "Nothing is wired to or from the selection.",
+        LogicEmptyReason.LevelHasNoWires =>
+            "No entity in this level is wired yet. Select one and press Add under Sends in the Properties panel.",
+        _ => "",
+    };
+
+    /// <summary>One wire in words, for a tooltip.</summary>
+    /// <param name="edge">The wire, with the label the level was authored with.</param>
+    public static string Sentence(LogicEdge edge)
+    {
+        string target = edge.To.Stub switch
+        {
+            LogicStubKind.Activator => "the activator",
+            LogicStubKind.NoTarget => "nothing",
+            _ => edge.To.Name,
+        };
+
+        string sentence = $"{edge.From.Name}.{edge.Output} sends {edge.Input} to {target}";
+        if (!edge.Label.IsEmpty)
+            sentence += ", " + edge.Label.Text;
+
+        string problem = Problem(edge);
+        return problem.Length == 0 ? sentence + "." : $"{sentence}. {problem}";
+    }
+
+    private static string Problem(LogicEdge edge) => edge.Verdict switch
+    {
+        LogicVerdict.TargetMissing => edge.To.Stub switch
+        {
+            LogicStubKind.NoTarget => "It has no target.",
+            LogicStubKind.MissingPrefix => $"Nothing matches {edge.To.Name}.",
+            _ => $"Nothing is named {edge.To.Name}.",
+        },
+        LogicVerdict.NoSuchInput => $"{edge.To.Name} has no input {edge.Input}.",
+        LogicVerdict.NoSuchOutput => $"{edge.From.Name} has no output {edge.Output}.",
+        _ => "",
+    };
+
+    private static string Number(int value) => value.ToString("N0", CultureInfo.InvariantCulture);
+}

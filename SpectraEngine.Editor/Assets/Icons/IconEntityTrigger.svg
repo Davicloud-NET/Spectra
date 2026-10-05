@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn by hand: a dashed box, the outline of a volume. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 2.667 2.667 h 2.667" />
+  <path d="M 8 2.667 h 2.667" />
+  <path d="M 13.333 2.667 v 2.667" />
+  <path d="M 13.333 8 v 2.667" />
+  <path d="M 13.333 13.333 h -2.667" />
+  <path d="M 8 13.333 h -2.667" />
+  <path d="M 2.667 13.333 v -2.667" />
+  <path d="M 2.667 8 v -2.667" />
+</svg>

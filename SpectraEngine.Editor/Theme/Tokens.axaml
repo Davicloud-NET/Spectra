@@ -181,6 +181,42 @@
   <SolidColorBrush x:Key="SpectraKindLight" Color="#F2C75C" />
   <SolidColorBrush x:Key="SpectraKindEntity" Color="#B9A5FF" />
 
+  <!-- The Logic view's graph. Ground is the page the cards stand on, between
+       the window and the panel. CardHead carries the muted class line, so it
+       is as light as that text allows. Stub is the card of a name nothing
+       has; StubEdge outlines a label that reports a miss. -->
+  <Color x:Key="SpectraLogicGroundColor">#1B1D20</Color>
+  <Color x:Key="SpectraLogicGridDotColor">#2A2D32</Color>
+  <Color x:Key="SpectraLogicCardColor">#282B30</Color>
+  <Color x:Key="SpectraLogicCardHeadColor">#2E3238</Color>
+  <Color x:Key="SpectraLogicStubColor">#2A2224</Color>
+  <Color x:Key="SpectraLogicStubHeadColor">#33272A</Color>
+  <Color x:Key="SpectraLogicStubTextColor">#D98C87</Color>
+  <Color x:Key="SpectraLogicStubEdgeColor">#5A3434</Color>
+
+  <SolidColorBrush x:Key="SpectraLogicGround" Color="{DynamicResource SpectraLogicGroundColor}" />
+  <SolidColorBrush x:Key="SpectraLogicGridDot" Color="{DynamicResource SpectraLogicGridDotColor}" />
+  <SolidColorBrush x:Key="SpectraLogicCard" Color="{DynamicResource SpectraLogicCardColor}" />
+  <SolidColorBrush x:Key="SpectraLogicCardHead" Color="{DynamicResource SpectraLogicCardHeadColor}" />
+  <SolidColorBrush x:Key="SpectraLogicStub" Color="{DynamicResource SpectraLogicStubColor}" />
+  <SolidColorBrush x:Key="SpectraLogicStubHead" Color="{DynamicResource SpectraLogicStubHeadColor}" />
+  <SolidColorBrush x:Key="SpectraLogicStubText" Color="{DynamicResource SpectraLogicStubTextColor}" />
+  <SolidColorBrush x:Key="SpectraLogicStubEdge" Color="{DynamicResource SpectraLogicStubEdgeColor}" />
+
+  <!-- A wire at rest, one that fired a moment ago, and one that fired
+       earlier. A selected wire is the accent and a broken one the danger
+       colour. -->
+  <Color x:Key="SpectraLogicWireColor">#666B74</Color>
+  <Color x:Key="SpectraLogicWireFiringColor">#7FB4FF</Color>
+  <Color x:Key="SpectraLogicWireFiredColor">#56719A</Color>
+
+  <SolidColorBrush x:Key="SpectraLogicWire" Color="{DynamicResource SpectraLogicWireColor}" />
+  <SolidColorBrush x:Key="SpectraLogicWireFiring" Color="{DynamicResource SpectraLogicWireFiringColor}" />
+  <SolidColorBrush x:Key="SpectraLogicWireFired" Color="{DynamicResource SpectraLogicWireFiredColor}" />
+
+  <!-- How much of a card or wire the filter leaves. -->
+  <x:Double x:Key="SpectraLogicDimOpacity">0.3</x:Double>
+
   <!-- Fonts. $Default is Avalonia's fallback; CSS generics like "monospace"
        resolve to nothing.
        Mono is for values (numbers, paths, key names), set 1px smaller than the

@@ -19,8 +19,14 @@ Tabler draws on 24. The small set is the same paths scaled to 16 by
 `tabler.py`.
 
 A few are drawn by hand and are not in the script: `CaretDown`, `IconCheckBox`,
-`IconCheckTick`, `IconRadio`, `IconRadioDot`, `IconPlay`, `IconStop` and
-`IconEmpty`.
+`IconCheckTick`, `IconRadio`, `IconRadioDot`, `IconPlay`, `IconStop`,
+`IconEmpty`, `IconEntityMover`, `IconEntityLogic`, `IconEntityTrigger` and
+`IconEntityPlayer`.
+
+Those last four stand for an entity group on a Logic view card: movers, logic,
+triggers and the player. One per group, never one per class: the shell knows no
+class by name. They are drawn in the stroke style of the Tabler set, on the
+same 16 box, and none is copied from it.
 
 ## Rules
 

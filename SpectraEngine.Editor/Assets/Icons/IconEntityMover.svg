@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn by hand: one arrow up beside one arrow down. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 3.333 5.333 l 2 -2 l 2 2" />
+  <path d="M 5.333 3.333 v 9.333" />
+  <path d="M 12.667 10.667 l -2 2 l -2 -2" />
+  <path d="M 10.667 12.667 v -9.333" />
+</svg>
