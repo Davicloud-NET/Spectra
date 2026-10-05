@@ -16,7 +16,7 @@ public static class BuiltinEntities
 {
     /// <summary>How many entity classes this assembly declares.</summary>
     // A constant, so a class dropped from Schemas throws instead of going unanchored.
-    public const int ClassCount = 15;
+    public const int ClassCount = 16;
 
     /// <summary>Every built-in class's schema, in declaration order.</summary>
     // Touching each class here is what keeps the trimmer from removing it.
@@ -34,6 +34,7 @@ public static class BuiltinEntities
         LogicRelay.SpectraSchema,
         LogicTimer.SpectraSchema,
         MathCounter.SpectraSchema,
+        PointSound.SpectraSchema,
         TriggerMultiple.SpectraSchema,
         TriggerOnce.SpectraSchema,
         TriggerTeleport.SpectraSchema,

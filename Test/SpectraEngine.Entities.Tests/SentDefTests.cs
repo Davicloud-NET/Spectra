@@ -278,6 +278,7 @@ public sealed class SentDefTests
             "info_teleport_destination",
             "logic_auto", "logic_branch", "logic_case", "logic_compare",
             "logic_relay", "logic_timer", "math_counter",
+            "point_sound",
             "trigger_multiple", "trigger_once", "trigger_teleport",
         ]);
 
@@ -298,6 +299,13 @@ public sealed class SentDefTests
         KeyvalueDescriptor refire = timer!.Keyvalues.Single(keyvalue => keyvalue.Name == "refiretime");
         refire.HasMin.ShouldBeTrue();
         refire.HasMax.ShouldBeFalse();
+
+        catalog.TryGetSchema("point_sound", out EntitySchema? found).ShouldBeTrue();
+        EntitySchema sound = found.ShouldNotBeNull();
+        sound.DisplayName.ShouldBe("Sound");
+        sound.Placement.ShouldBe(EntityPlacement.Point);
+        sound.Keyvalues.Single(keyvalue => keyvalue.Name == "sound").Type.ShouldBe(KeyvalueType.AssetSound);
+        sound.Outputs.ShouldBe([PointSound.OnEnded, PointSound.OnMarker]);
     }
 
     [Fact]

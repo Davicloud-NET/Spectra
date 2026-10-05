@@ -17,4 +17,7 @@ internal static class HeadlineText
 
     public static string NumberOf(float value, float most) =>
         string.Create(CultureInfo.InvariantCulture, $"{value} of {most}");
+
+    public static string SecondsOf(double done, double total) =>
+        string.Create(CultureInfo.InvariantCulture, $"{done:0.0} of {total:0.0} s");
 }

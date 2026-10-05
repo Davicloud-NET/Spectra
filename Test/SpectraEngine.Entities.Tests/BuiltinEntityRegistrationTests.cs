@@ -22,6 +22,7 @@ public sealed class BuiltinEntityRegistrationTests
         EntityCatalog.Shared.TryCreate("logic_relay", out Entity? relay).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("logic_timer", out Entity? timer).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("math_counter", out Entity? counter).ShouldBeTrue();
+        EntityCatalog.Shared.TryCreate("point_sound", out Entity? sound).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("info_teleport_destination", out Entity? destination).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("trigger_multiple", out Entity? multiple).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("trigger_once", out Entity? once).ShouldBeTrue();
@@ -38,6 +39,7 @@ public sealed class BuiltinEntityRegistrationTests
         relay.ShouldBeOfType<LogicRelay>();
         timer.ShouldBeOfType<LogicTimer>();
         counter.ShouldBeOfType<MathCounter>();
+        sound.ShouldBeOfType<PointSound>();
         destination.ShouldBeOfType<InfoTeleportDestination>();
         multiple.ShouldBeOfType<TriggerMultiple>();
         once.ShouldBeOfType<TriggerOnce>();
@@ -64,6 +66,7 @@ public sealed class BuiltinEntityRegistrationTests
                 "info_teleport_destination",
                 "logic_auto", "logic_branch", "logic_case", "logic_compare",
                 "logic_relay", "logic_timer", "math_counter",
+                "point_sound",
                 "trigger_multiple", "trigger_once", "trigger_teleport",
             ]);
     }
@@ -222,5 +225,7 @@ public sealed class BuiltinEntityRegistrationTests
         MathCounter.OutValue.ShouldBe(nameof(MathCounter.OutValue));
         MathCounter.OnHitMax.ShouldBe(nameof(MathCounter.OnHitMax));
         MathCounter.OnHitMin.ShouldBe(nameof(MathCounter.OnHitMin));
+        PointSound.OnEnded.ShouldBe(nameof(PointSound.OnEnded));
+        PointSound.OnMarker.ShouldBe(nameof(PointSound.OnMarker));
     }
 }
