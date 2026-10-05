@@ -1024,7 +1024,7 @@ public sealed class SceneEditorHost : ISceneEditor
 
         _logger.LogInformation(
             "{Name}: {Converted} brush(es), {Skipped} selected node(s) had no brush. " +
-            "Part brushes leave the CSG carve — they no longer merge with the geometry around them, " +
+            "Part brushes leave the CSG carve: they no longer merge with the geometry around them, " +
             "and they cost no static-world recompile when they move.",
             name, converted, skipped);
     }
