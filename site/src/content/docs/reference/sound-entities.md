@@ -6,7 +6,7 @@ description: The entity class that plays a sound from a place in the level.
 A sound is a point in the level that plays a sound file. Wires start and stop it, and it fires when the sound ends or reaches a marker. See [Entities and wiring](/concepts/entities-and-wiring/) for how wires work.
 
 :::note
-A sound is heard when a project runs from its cooked pack. See [Cook and run a project](/guides/cook-and-run-a-project/). The editor cannot play one yet: the engine plays cooked sounds only, and the editor reads the project's files as they are. There a sound is [a sound that cannot play](#a-sound-that-cannot-play).
+A sound is heard in the editor when you press Play, and in a game that runs from its cooked pack. The engine plays cooked sounds only, so the editor cooks a sound file the first time a level uses it. See [Cook and run a project](/guides/cook-and-run-a-project/).
 :::
 
 In the settings table, the first column is the name a level file uses and the second is the label in the Properties panel.
