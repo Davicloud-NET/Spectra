@@ -56,7 +56,7 @@ The first digit of the code says what kind of asset it is about:
 | `SC1xxx` | finding files |
 | `SC2xxx` | images |
 | `SC3xxx` | models |
-| `SC4xxx` | audio |
+| `SC4xxx` | audio, and from `SC4101` captions and subtitles |
 | `SC5xxx` | materials |
 | `SC6xxx` | shaders |
 | `SC7xxx` | levels |

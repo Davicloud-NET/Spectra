@@ -38,6 +38,19 @@ MyGame/
 }
 ```
 
+### Language
+
+Add `language` after `id` to say which language the project's own text is written in:
+
+```json
+  "id": "dfda7d2c-68f6-4164-b984-3dabe4e01001",
+  "language": "de",
+```
+
+The value is a short lowercase tag such as `en`, `de` or `pt-br`. A project that names none is in `en`. A value that is not such a tag stops the project from opening.
+
+[Captions](/guides/captions/#languages) are looked up in this language. A sound with no caption in another language gets its caption in this one, and the cook compares every other language's caption file with this one's.
+
 ## Levels
 
 A level is a folder whose name ends in `.smap`. The level itself is `map.json` inside it. You can read it, edit it by hand and diff it. The format is described in [Level files](/reference/level-files/).

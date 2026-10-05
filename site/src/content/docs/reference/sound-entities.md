@@ -53,6 +53,8 @@ The audio device plays up to 32 sounds at once. When a level plays more, the lou
 
 A mono file is heard from where the sound stands. A stereo file is not placed. It plays in both ears, and only its volume follows the distance.
 
+A sound can have a caption that says in words what is heard, for players who cannot hear it. See [Captions and subtitles](/guides/captions/).
+
 ## Looped
 
 A looped sound never ends by itself, so it never fires `OnEnded`.

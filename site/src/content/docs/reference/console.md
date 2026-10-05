@@ -57,6 +57,9 @@ A command that fails prints an error, and the rest of the line still runs.
 | `ent_watch [on \| off \| <pattern> ...]` | Prints what entities fire and receive as it happens. |
 | `sound_stats` | Prints how many sounds the level is playing and how many of them are heard. |
 | `fake_device_loss` | Ends the next frame the way a lost graphics device does, to test what happens then. The demo ends with an error. The editor restarts its viewport and keeps the level. |
+| `captions [off \| voice \| all]` | Sets which captions show: none, speech only, or speech and other sounds. |
+| `caption_language [language]` | Sets the language captions are looked up in. |
+| `captions_missing` | Lists the sounds the level's entities play that have no caption. |
 
 Entities only run while the level plays, so the four `ent_` commands answer differently before and after you press Play:
 
@@ -182,6 +185,54 @@ sound_stats: 2 sources, 0 starts refused.
 
 Before you press Play it prints `sound_stats: the level is not running, so it plays nothing.` and the number of sources. With no audio device it says so first, as a warning.
 
+### captions
+
+```
+> captions
+captions: voice. Speech shows. Other sounds do not.
+
+> captions all
+captions: all. Speech and other sounds show.
+
+> captions off
+captions: off. No captions show.
+```
+
+Alone it prints the setting. The engine starts at `voice`. A kind that is switched off goes at once, and one that is switched on shows for the sounds that are heard already.
+
+Nothing draws captions on screen yet. Each one is written to the log when it appears, as `Caption: Guard: Hey! You there!` for speech and `Caption: [Door opens]` for another sound. [Captions and subtitles](/guides/captions/) says where the words come from.
+
+### caption_language
+
+```
+> caption_language
+caption_language: en, the project's language.
+
+> caption_language de
+caption_language: de. A sound with no caption in de gets the one in en, the project's language.
+```
+
+A language is a short tag such as `en`, `de` or `pt-br`. Capitals are turned into small letters. Anything else is refused.
+
+If the project has no caption file for the language, a second line says so as a warning: `caption_language: the project has no Captions/de.txt.` The language is set all the same, because a voice file can have subtitles in it.
+
+Captions that show are looked up again in the new language on the next frame.
+
+### captions_missing
+
+```
+> captions_missing
+captions_missing: no caption in de for 2 of 4 sounds the level plays.
+Sounds/alarm.wav  no caption
+Sounds/door_open.wav  none in de, shows the one in en
+```
+
+It looks at every sound an entity in the level is set to play, in the language `caption_language` has set, and works before and after you press Play. A sound counts as having a caption when it has a line in the language's caption file or a subtitle file in the language.
+
+When nothing is missing it prints `captions_missing: none. Every sound the level plays has a caption in en (4 sounds).` It lists up to 200 sounds.
+
+While the level is not running it reads the caption files again each time, so you can fix a file and ask again.
+
 ## Watch lines
 
 Every line is `ent`, the tick, a verb, and what happened. Ticks count from 0, where the level starts, at 60 a second.
@@ -238,5 +289,6 @@ A name with a space needs quotes: `ent_show "Main Door"`.
 | Watch lines in one tick | 64, then one `drop` line |
 | Rows from `ent_list` | 200, then a line that says how many more there are |
 | Entities from `ent_show` | 5, then a line that says how many more match |
+| Sounds from `captions_missing` | 200, then a line that says how many more there are |
 | Commands run in one frame | 512. The rest run on the next frame. |
 | Frames a `wait` can hold | 300 |
