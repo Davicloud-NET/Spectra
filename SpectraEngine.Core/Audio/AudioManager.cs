@@ -278,7 +278,7 @@ public sealed class AudioManager : IDisposable
         if (!_pool.TryAcquire(streaming: true, out uint source)) return null;
         RetireVoiceOn(source);
 
-        var voice = new StreamingVoice(_backend, source, provider, settings, startFrame: startFrame);
+        var voice = new StreamingVoice(_backend, source, provider, settings, startFrame);
         return (StreamingVoice?)Track(voice, source);
     }
 

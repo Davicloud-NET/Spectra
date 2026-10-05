@@ -230,6 +230,11 @@ public sealed class StreamingVoiceTests
     {
         backend.TryCreateSource(out uint source).ShouldBeTrue();
         return new StreamingVoice(
-            backend, source, provider, AudioSourceSettings.Default, BufferCount, BufferFrames, startFrame);
+            backend,
+            source,
+            provider,
+            AudioSourceSettings.Default,
+            startFrame,
+            new StreamQueueSize(BufferCount, BufferFrames));
     }
 }

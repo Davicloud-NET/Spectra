@@ -39,15 +39,25 @@ public sealed class StreamingVoice : AudioVoice
         uint source,
         IAudioSampleProvider provider,
         AudioSourceSettings settings,
-        int bufferCount = DefaultBufferCount,
-        int bufferFrames = DefaultBufferFrames,
         long startFrame = 0)
+        : this(backend, source, provider, settings, startFrame, StreamQueueSize.Default)
+    {
+    }
+
+    internal StreamingVoice(
+        IAudioBackend backend,
+        uint source,
+        IAudioSampleProvider provider,
+        AudioSourceSettings settings,
+        long startFrame,
+        StreamQueueSize queue)
         : base(backend, source, settings)
     {
+        (int bufferCount, int bufferFrames) = queue;
         if (bufferCount < 2)
-            throw new ArgumentOutOfRangeException(nameof(bufferCount), bufferCount, "A queue needs at least one buffer ahead of the one playing.");
+            throw new ArgumentOutOfRangeException(nameof(queue), bufferCount, "A queue needs at least one buffer ahead of the one playing.");
         if (bufferFrames <= 0)
-            throw new ArgumentOutOfRangeException(nameof(bufferFrames), bufferFrames, "A buffer must hold at least one frame.");
+            throw new ArgumentOutOfRangeException(nameof(queue), bufferFrames, "A buffer must hold at least one frame.");
 
         _provider = provider;
         _format = provider.Format;
