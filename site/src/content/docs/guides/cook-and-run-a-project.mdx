@@ -68,7 +68,16 @@ Sounds/guard_hey.wav
 Sounds/guard_hey.markers.txt
 ```
 
-Each line of that file is a start time in seconds, a tab, an end time, a tab and the name. The label file is only read when the `.wav` has no markers of its own.
+Each line of that file is a start time in seconds, a tab, an end time, a tab and the name. If you write the file by hand you can leave the end time out. The gap in each line is one tab:
+
+```
+0.5	now
+1.25	door opens
+```
+
+A name that is a number needs the end time in front of it, or the cook takes it for one.
+
+The label file is only read when the `.wav` has no markers of its own.
 
 A marker with no name is called `marker` and its place among the sound's markers, counted from the start. If the third marker has no name, it is `marker3`.
 

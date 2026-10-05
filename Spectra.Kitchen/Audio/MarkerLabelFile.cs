@@ -8,9 +8,9 @@ namespace Spectra.Kitchen.Audio;
 
 /// <summary>
 /// Reads markers from a text file beside a sound, for audio editors that
-/// cannot write cue points into the WAV. The layout is the one Audacity
-/// exports a label track in: one line per label, as start seconds, a tab, end
-/// seconds, a tab and the text.
+/// cannot write cue points into the WAV. A line is a time in seconds, a tab and
+/// the name. The layout Audacity exports a label track in has an end time
+/// between the two, and is read as well.
 /// </summary>
 public static class MarkerLabelFile
 {
@@ -20,6 +20,8 @@ public static class MarkerLabelFile
     // No WAV is this long. The cap keeps a wild time from overflowing the
     // frame conversion later.
     private const double MaxFrames = uint.MaxValue;
+
+    private const char ByteOrderMark = (char)0xFEFF;
 
     /// <summary>
     /// The label file for the sound at <paramref name="soundPath"/>:
@@ -51,7 +53,7 @@ public static class MarkerLabelFile
             number++;
 
             // A byte order mark would otherwise sit in front of the first time.
-            ReadOnlySpan<char> line = number == 1 ? raw.TrimStart('﻿') : raw;
+            ReadOnlySpan<char> line = number == 1 ? raw.TrimStart(ByteOrderMark) : raw;
 
             // A line starting with a backslash holds a label's frequency range.
             if (line.IsWhiteSpace() || line[0] == '\\') continue;
@@ -70,16 +72,26 @@ public static class MarkerLabelFile
         int firstTab = line.IndexOf('\t');
         if (firstTab < 0) return false;
 
-        ReadOnlySpan<char> start = line[..firstTab];
+        if (!TryReadSeconds(line[..firstTab], out double seconds) || seconds < 0) return false;
+
         ReadOnlySpan<char> rest = line[(firstTab + 1)..];
-
-        // The end time is not used. The text is whatever follows it.
         int secondTab = rest.IndexOf('\t');
-        ReadOnlySpan<char> label = secondTab < 0 ? default : rest[(secondTab + 1)..];
+        ReadOnlySpan<char> second = secondTab < 0 ? rest : rest[..secondTab];
 
-        if (!double.TryParse(start, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) ||
-            !double.IsFinite(seconds) || seconds < 0)
+        ReadOnlySpan<char> label;
+        if (second.IsWhiteSpace() || TryReadSeconds(second, out _))
         {
+            // An end time, which is not used. The name is whatever follows it.
+            label = secondTab < 0 ? default : rest[(secondTab + 1)..];
+        }
+        else if (secondTab < 0)
+        {
+            // Written by hand: a time and a name.
+            label = second;
+        }
+        else
+        {
+            // Three columns with words in the middle. Either could be the name.
             return false;
         }
 
@@ -87,4 +99,8 @@ public static class MarkerLabelFile
         marker = new SourceMarker((long)Math.Min(frames, MaxFrames), label.Trim().ToString());
         return true;
     }
+
+    private static bool TryReadSeconds(ReadOnlySpan<char> text, out double seconds) =>
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out seconds) &&
+        double.IsFinite(seconds);
 }

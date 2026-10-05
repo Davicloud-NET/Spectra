@@ -50,6 +50,31 @@ public class MarkerLabelFileTests
     }
 
     [Fact]
+    public void A_line_written_by_hand_as_a_time_and_a_name_is_a_named_marker()
+    {
+        Read("0.5\tnow\n1.0\t door opens \n", out List<int> unreadable)
+            .ShouldBe([new SourceMarker(24_000, "now"), new SourceMarker(48_000, "door opens")]);
+
+        unreadable.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void An_empty_end_time_still_leaves_the_name_in_the_third_column()
+    {
+        Read("0.5\t\tnow\n", out List<int> unreadable).ShouldBe([new SourceMarker(24_000, "now")]);
+        unreadable.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Words_where_the_end_time_goes_in_a_three_column_line_are_reported()
+    {
+        // Either of the two could be the name, so the cook does not pick one.
+        Read("0.5\tnow\tthe guard shouts\n1.0\tnow\t\n", out List<int> unreadable).ShouldBeEmpty();
+
+        unreadable.ShouldBe([1, 2]);
+    }
+
+    [Fact]
     public void Frequency_lines_and_blank_lines_are_passed_over()
     {
         // Audacity writes a second line starting with a backslash for a label

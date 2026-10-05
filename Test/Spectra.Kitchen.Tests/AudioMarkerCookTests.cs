@@ -169,6 +169,19 @@ public class AudioMarkerCookTests
     }
 
     [Fact]
+    public void A_label_line_of_a_time_and_a_name_cooks_to_a_marker_with_that_name()
+    {
+        using var project = new TempProject();
+        project.WriteAsset(SourcePath, TempProject.Wav(frames: 48_000));
+        project.WriteAsset(LabelPath, "0.5\tnow\n");
+
+        CookResult result = Cook(project);
+
+        CookedSound(result).Markers.ShouldBe([new AudioMarker(24_000, "now")]);
+        result.Diagnostics.ShouldNotContain(d => d.Id.ToString() == "SC4008");
+    }
+
+    [Fact]
     public void The_wavs_own_cue_points_win_over_a_label_file()
     {
         using var project = new TempProject();

@@ -243,7 +243,8 @@ public sealed class AudioRule : IRule
             context.Report(CookDiagnostic.Warning(
                 CookDiagnosticCodes.AudioMarkerLabelUnreadable,
                 $"Line {line} of '{labels}' is not a marker, so it is skipped. A marker is a time in seconds, a " +
-                "tab, an end time, a tab and a name, the way Audacity exports a label track.",
+                "tab and a name. An end time and a tab may sit between the two, the way Audacity exports a " +
+                "label track.",
                 labels,
                 line));
         }
