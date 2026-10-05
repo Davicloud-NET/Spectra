@@ -12,7 +12,7 @@ namespace SpectraEngine.Core.Audio.Acoustics;
 /// <c>.spectramat</c> file. It reads the file through the content sources and
 /// needs no renderer, so a server and a test can ask too. Any thread.
 /// </summary>
-public sealed class MaterialAcoustics
+public sealed class MaterialAcoustics : IAcousticMaterials
 {
     private readonly ILogger _logger;
     private readonly IContentSource _content;

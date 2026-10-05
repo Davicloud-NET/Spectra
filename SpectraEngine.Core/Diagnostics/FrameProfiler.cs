@@ -39,6 +39,9 @@ public enum FramePhase
     CollisionSync,
     PartMeshes,
     Audio,
+
+    /// <summary>Tracing what stands between each sound and the listener. Not counted in <see cref="Audio"/>.</summary>
+    SoundWalls,
     Snapshot,
     GpuWait,
     Unaccounted,
