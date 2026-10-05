@@ -61,7 +61,7 @@ public sealed class SoundEmitters
         ThrowIfNotGain(settings.Gain);
         ThrowIfNotPitch(settings.Pitch);
 
-        if (!_world.IsActive)
+        if (!_world.IsRunningEntities)
             throw new InvalidOperationException("Play on an entity world that is not active.");
 
         long tick = _world.TickNumber;

@@ -544,10 +544,12 @@ public sealed class EntityWorld
     }
 
     // OnRemove still runs inside the world: what it moves is put back and
-    // what it queues is dropped.
+    // what it queues or plays is dropped.
+    internal bool IsRunningEntities => IsActive || _removing;
+
     private void ThrowIfStopped(string call)
     {
-        if (!IsActive && !_removing)
+        if (!IsRunningEntities)
             throw new InvalidOperationException($"{call} on an entity world that is not active.");
     }
 

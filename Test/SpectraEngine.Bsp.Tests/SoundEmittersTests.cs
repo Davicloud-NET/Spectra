@@ -224,6 +224,25 @@ public sealed class SoundEmittersTests
             () => world.Sounds.Play(_scene.Root, Hum, in OneSecond, in Plain));
     }
 
+    [Fact]
+    public void A_sound_an_entity_plays_as_the_level_stops_is_dropped_and_the_stop_runs_to_its_end()
+    {
+        EntityWorld world = WithARemoveSound(out SceneNode node);
+        var entity = EntityRuntime.Live(world, node).ShouldBeOfType<RemoveSoundEntity>();
+
+        world.Deactivate();
+
+        entity.Emitter.ShouldNotBe(SoundEmitters.None);
+        world.Sounds.Count.ShouldBe(0);
+        world.Index.ShouldBeNull();
+        world.Entities.ShouldBeEmpty();
+
+        // The window OnRemove runs in has closed again.
+        Should.Throw<InvalidOperationException>(() => world.QueueInput("speaker", "Play"));
+        Should.Throw<InvalidOperationException>(
+            () => world.Sounds.Play(node, Hum, in OneSecond, in Plain));
+    }
+
     [Theory]
     [InlineData(-0.1f)]
     [InlineData(float.NaN)]
@@ -304,6 +323,17 @@ public sealed class SoundEmittersTests
     private EntityWorld Started()
     {
         var world = new EntityWorld(_scene, new CapturingLogger(), new EntityCatalog());
+        world.Activate();
+        return world;
+    }
+
+    private EntityWorld WithARemoveSound(out SceneNode node)
+    {
+        var catalog = new EntityCatalog();
+        catalog.Add(new EntitySchema("remove_sound"), () => new RemoveSoundEntity());
+        node = EntityRuntime.Place(_scene.Root, "speaker", "remove_sound");
+
+        var world = new EntityWorld(_scene, new CapturingLogger(), catalog);
         world.Activate();
         return world;
     }
