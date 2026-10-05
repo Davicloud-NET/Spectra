@@ -59,6 +59,28 @@ public sealed class SolidSpanFaceLineTests
     }
 
     [Fact]
+    public void A_line_along_the_jamb_passes_through_a_shut_door_that_was_turned_into_place()
+    {
+        SpanLevel level = Room();
+
+        // The same door, built along the wall and turned a quarter turn into
+        // the doorway. Its ends are now where rounding put them.
+        SceneNode door = level.Part(
+            "Door", new Vector3(0f, 1.2f, -4.25f), new Vector3(0.2f, 1.2f, 1f), SpanLevel.Wood);
+        door.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f);
+
+        foreach (float x in (float[])[1f, -1f])
+        {
+            var aside = new Vector3(x, 0f, 0f);
+
+            SolidSpan span = level.Trace(Near + aside, Far + aside).ShouldHaveSingleItem();
+
+            span.Start.ShouldBe(4.05f, Exact);
+            span.End.ShouldBe(4.45f, Exact);
+        }
+    }
+
+    [Fact]
     public void A_line_in_the_seam_of_two_flush_walls_passes_through_the_wall()
     {
         var level = new SpanLevel();
