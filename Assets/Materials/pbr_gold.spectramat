@@ -14,6 +14,7 @@
 // map and changes nothing else here.
 
 shader = lit
+acoustic = metal
 
 texture uDiffuse   = Textures/white.png, linear, clamp
 color   uBaseColor = #FFE39C

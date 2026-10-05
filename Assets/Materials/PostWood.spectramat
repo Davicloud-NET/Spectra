@@ -8,6 +8,7 @@
 // Models/signpost.gltf, which is the lookup key ModelMaterialOverride builds.
 
 shader = lit
+acoustic = wood
 
 texture uDiffuse = Textures/wall_brick.png, linearmipmap, repeat
 color   uBaseColor = #FFFFFF

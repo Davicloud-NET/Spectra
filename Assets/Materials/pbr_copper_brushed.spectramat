@@ -6,6 +6,7 @@
 // only dims it, the normalisation term is wrong.
 
 shader = lit
+acoustic = metal
 
 texture uDiffuse   = Textures/white.png, linear, clamp
 color   uBaseColor = #FAD1C2
