@@ -91,6 +91,29 @@ public sealed class SoundPresenterWallTests
     }
 
     [Fact]
+    public void A_level_played_again_does_not_start_on_the_walls_of_the_time_before()
+    {
+        using WalledSoundRig rig = Listening();
+        SceneNode door = rig.Level.Part("Door", HalfWay + new Vector3(4f, 0f, 0f), new Vector3(1f, 1.5f, 0.2f), SpanLevel.Wood);
+        SceneNode speaker = rig.Sound.Place("speaker", Behind);
+        rig.Sound.Play(speaker, SoundPresenterRig.Beep, SoundPresenterRig.Looped);
+        rig.Step();
+        rig.Sound.OnlyVoice().Gain.ShouldBe(AtEight);
+
+        // Stopped, the door shut and played again, all inside the refresh
+        // time and with nobody having moved.
+        rig.Sound.World.Deactivate();
+        door.LocalPosition = HalfWay;
+        rig.Sound.StartLevel();
+        rig.Sound.Play(speaker, SoundPresenterRig.Beep, SoundPresenterRig.Looped);
+        rig.Step();
+
+        AcousticGains wood = AcousticPresets.Wood.GainsThrough(0.4f);
+        rig.Sound.OnlyVoice().Gain.ShouldBe(AtEight * wood.Gain, NearEnough);
+        rig.Sound.OnlyVoice().GainHf.ShouldBe(wood.GainHf, NearEnough);
+    }
+
+    [Fact]
     public void A_sound_under_a_door_is_not_muffled_by_its_own_door()
     {
         using WalledSoundRig rig = Listening();

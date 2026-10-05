@@ -184,6 +184,7 @@ public sealed class SoundPresenter
         _doppler.Forget();
         _voices.Clear();
         _captions.EndLevel();
+        _propagation.Forget();
         Stats = default;
     }
 

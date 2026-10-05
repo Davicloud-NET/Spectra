@@ -16,4 +16,12 @@ public interface ISoundPropagation
     /// </summary>
     /// <param name="results">At least as long as <paramref name="emitters"/>.</param>
     void Resolve(in SoundListener listener, ReadOnlySpan<SoundQuery> emitters, Span<SoundPaths> results);
+
+    /// <summary>
+    /// Drops what was kept from one call to the next. Called when the level
+    /// ends, so the next one does not start on this one's answers.
+    /// </summary>
+    void Forget()
+    {
+    }
 }

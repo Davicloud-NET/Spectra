@@ -109,9 +109,7 @@ public sealed class WallPropagation : ISoundPropagation
 
         if (!_world.TryReadWorld(out long revision))
         {
-            _answers.Clear();
-            _hasListener = false;
-            Stats = default;
+            Forget();
             return;
         }
 
@@ -124,6 +122,15 @@ public sealed class WallPropagation : ISoundPropagation
         int due = FindDue(in frame, emitters, results);
         Stats = Spend(in frame, emitters, due);
         Apply(results[..emitters.Length]);
+    }
+
+    /// <inheritdoc/>
+    // A sound is known by its node's id, which the next play session has too.
+    public void Forget()
+    {
+        _answers.Clear();
+        _hasListener = false;
+        Stats = default;
     }
 
     // The one place a sound says whether walls count for it.

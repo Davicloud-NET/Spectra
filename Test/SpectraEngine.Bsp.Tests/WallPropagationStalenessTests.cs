@@ -199,6 +199,22 @@ public sealed class WallPropagationStalenessTests
     }
 
     [Fact]
+    public void Once_told_to_forget_every_sound_is_answered_anew_though_nothing_changed()
+    {
+        WallRig rig = OneSound(out FakeSoundObstacles world);
+        rig.Frame();
+        world.Traces = 0;
+
+        // A wall the old answer does not know, and no sign of it.
+        world.Slab(1f, 1.05f, SpanLevel.Wood);
+        rig.Walls.Forget();
+        rig.Frame();
+
+        world.Traces.ShouldBe(Engine.Lines);
+        rig.Through(0).Gain.ShouldBe(AcousticPresets.Wood.GainsThrough(0.05f).Gain, 2e-3f);
+    }
+
+    [Fact]
     public void A_sound_that_went_out_of_hearing_and_came_back_is_answered_anew()
     {
         WallRig rig = OneSound(out FakeSoundObstacles world);
