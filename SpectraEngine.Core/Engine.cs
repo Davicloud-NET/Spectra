@@ -236,6 +236,10 @@ public sealed class Engine
 
         // First, so the presenter hands out the sources finished voices gave back.
         _audioManager.Update();
+
+        if (_character is { } character && character.TryTakeViewJump())
+            _soundPresenter.ListenerJumped();
+
         _soundPresenter.Update(_sceneManager.EntityWorld, deltaTime, stalledTime);
 
         if (LogCaptions)

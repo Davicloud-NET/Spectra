@@ -67,6 +67,7 @@ public sealed class SoundPresenter
 
     private Vector3 _listenerPosition;
     private bool _hasListener;
+    private bool _wasToldOfJump;
 
     /// <summary>Builds a presenter that plays on <paramref name="audio"/>.</summary>
     /// <param name="assets">Where the level's sounds are loaded from.</param>
@@ -101,6 +102,14 @@ public sealed class SoundPresenter
 
     /// <summary>The captions of the sounds that are heard, as of the last <see cref="Update"/>.</summary>
     public CaptionFeed Captions { get; }
+
+    /// <summary>
+    /// Says the listener was put somewhere else, however near: a teleport, a
+    /// respawn, a camera cut. The next <see cref="Update"/> smooths nothing
+    /// across it and bends no pitch.
+    /// </summary>
+    // A hop shorter than ListenerJumpDistance looks like fast motion otherwise.
+    public void ListenerJumped() => _wasToldOfJump = true;
 
     /// <summary>
     /// Brings the device's voices in line with what the level is playing.
@@ -320,9 +329,10 @@ public sealed class SoundPresenter
 
     private bool HasJumped(Vector3 position)
     {
-        bool jumped = _hasListener
-            && Vector3.DistanceSquared(position, _listenerPosition) > ListenerJumpDistance * ListenerJumpDistance;
+        bool jumped = _wasToldOfJump || (_hasListener
+            && Vector3.DistanceSquared(position, _listenerPosition) > ListenerJumpDistance * ListenerJumpDistance);
 
+        _wasToldOfJump = false;
         _listenerPosition = position;
         _hasListener = true;
         return jumped;

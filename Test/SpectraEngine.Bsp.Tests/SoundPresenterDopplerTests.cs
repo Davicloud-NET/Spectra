@@ -188,6 +188,72 @@ public sealed class SoundPresenterDopplerTests
         pacer.Run(1);
     }
 
+    // Too short to tell from fast motion by the positions alone.
+    [Theory]
+    [InlineData(60, 1f, 0f)]
+    [InlineData(60, 2.8f, 0f)]
+    [InlineData(144, 1f, 0f)]
+    [InlineData(144, 2f, 0f)]
+    [InlineData(240, 1f, 0f)]
+    [InlineData(240, 2.8f, 0f)]
+    [InlineData(144, 0f, 6f)]
+    public void A_short_hop_the_presenter_is_told_of_is_no_shift_on_that_frame_and_no_chirp_after(
+        int framesPerSecond, float closer, float sideways)
+    {
+        using var rig = new SoundPresenterRig();
+        rig.Play(rig.Place("siren", new Vector3(0, 0, -10)), SoundPresenterRig.Beep, Siren);
+        bool hopped = false;
+        var pacer = new SoundFramePacer(rig, framesPerSecond)
+        {
+            // In a tick, as a trigger moves the player.
+            OnTick = ticked =>
+            {
+                if (hopped || ticked < 0.5)
+                    return;
+
+                rig.Listen(new Vector3(sideways, 0, -closer));
+                rig.Presenter.ListenerJumped();
+                hopped = true;
+            },
+            AfterFrame = () => rig.OnlyVoice().Pitch.ShouldBe(1f),
+        };
+
+        pacer.Run(1.5);
+
+        hopped.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_hop_the_presenter_is_told_of_lands_on_the_new_loudness_at_once()
+    {
+        using var rig = new SoundPresenterRig();
+        rig.Play(rig.Place("siren", new Vector3(0, 0, -10)), SoundPresenterRig.Beep, SoundPresenterRig.Looped);
+        rig.Frame(30);
+        rig.OnlyVoice().Gain.ShouldBe(SoundFalloff.Gain(10f, 2f, 30f));
+
+        rig.Listen(new Vector3(0, 0, -4));
+        rig.Presenter.ListenerJumped();
+        rig.Frame();
+
+        rig.OnlyVoice().Gain.ShouldBe(SoundFalloff.Gain(6f, 2f, 30f));
+    }
+
+    [Fact]
+    public void Being_told_of_a_jump_holds_for_one_frame_only()
+    {
+        using var rig = new SoundPresenterRig();
+        rig.Play(rig.Place("siren", new Vector3(0, 0, -400)), SoundPresenterRig.Beep, Siren);
+        var pacer = new SoundFramePacer(rig, 144)
+        {
+            OnFrame = now => rig.Listen(new Vector3(0, 0, -Speed * (float)now)),
+        };
+        rig.Presenter.ListenerJumped();
+
+        pacer.Run(1);
+
+        ((double)rig.OnlyVoice().Pitch).ShouldBe(Closing, Tolerance);
+    }
+
     [Fact]
     public void A_listener_that_teleports_while_closing_in_starts_over_from_the_sounds_own_pitch()
     {

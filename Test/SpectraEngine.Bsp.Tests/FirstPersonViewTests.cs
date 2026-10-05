@@ -91,6 +91,66 @@ public sealed class FirstPersonViewTests
         rig.Scene.Camera.Yaw.ShouldBe(0.5f);
     }
 
+    [Fact]
+    public void A_teleport_however_short_is_told_once_to_whoever_follows_the_camera()
+    {
+        var rig = new PlayRig();
+        rig.Play();
+        rig.View.TryTakeViewJump().ShouldBeFalse();
+
+        rig.Character.Teleport(rig.Character.State.Position + new Vector3(1f, 0f, 0f));
+        rig.Frame(ticks: 1);
+
+        rig.View.TryTakeViewJump().ShouldBeTrue();
+        rig.View.TryTakeViewJump().ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_respawn_is_told_too()
+    {
+        var rig = new PlayRig();
+        rig.Play();
+
+        rig.Character.Teleport(new Vector3(40f, 1f, 0f));
+        rig.Frame(ticks: 1);
+        rig.View.TryTakeViewJump().ShouldBeTrue();
+
+        for (int i = 0; i < 600 && rig.View.Respawns == 0; i++)
+            rig.Frame(ticks: 1, alpha: 0.5f);
+
+        rig.View.Respawns.ShouldBe(1);
+        rig.View.TryTakeViewJump().ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Walking_and_falling_tell_of_no_jump()
+    {
+        var rig = new PlayRig();
+        rig.Play();
+
+        rig.Input.Submit(InputEvent.KeyDown(InputKey.W));
+        for (int i = 0; i < 30; i++)
+            rig.Frame(ticks: 1, alpha: 0.5f);
+
+        rig.Character.State.Position.ShouldNotBe(rig.Manager.PlayerSpawn);
+        rig.View.TryTakeViewJump().ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_jump_nobody_took_does_not_carry_into_the_next_run()
+    {
+        var rig = new PlayRig();
+        rig.Play();
+        rig.Character.Teleport(FarAway);
+        rig.Frame(ticks: 1);
+
+        rig.View.Exit();
+        rig.Session.Exit();
+        rig.Play();
+
+        rig.View.TryTakeViewJump().ShouldBeFalse();
+    }
+
     // Looks to the side with the mouse. Returns the yaw the view ends at.
     private static float Turn(PlayRig rig)
     {

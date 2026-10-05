@@ -50,6 +50,9 @@ public sealed class FirstPersonController
     private Vector3 _renderPrevious;
     private Vector3 _renderPosition;
 
+    // The view was put somewhere else and nobody has taken the news yet.
+    private bool _viewJumped;
+
     // Restored on Exit.
     private Vector3 _restoreCameraPosition;
     private float _restoreCameraYaw;
@@ -148,6 +151,7 @@ public sealed class FirstPersonController
         _eyeLag = 0f;
         _renderPrevious = SpawnPosition;
         _renderPosition = SpawnPosition;
+        _viewJumped = false;
         Active = true;
 
         _input.RequestCursorMode(Input.CursorMode.Locked);
@@ -288,10 +292,25 @@ public sealed class FirstPersonController
         _camera.Pitch = _pitch;
     }
 
+    /// <summary>
+    /// Takes the news that the view was put somewhere else with nothing to
+    /// blend from: a teleport or a respawn, however short. True once for
+    /// each. Call after <see cref="UpdateView"/>.
+    /// </summary>
+    // For what follows the camera, such as the sound listener. A short hop
+    // looks like fast motion from the positions alone.
+    public bool TryTakeViewJump()
+    {
+        bool jumped = _viewJumped;
+        _viewJumped = false;
+        return jumped;
+    }
+
     // Puts the view where the character now is, with nothing to blend from.
     // Both ends, or the view slides there across the map.
     private void SnapView(float? yaw)
     {
+        _viewJumped = true;
         _eyeLag = 0f;
         _renderPrevious = _simulation.State.Position;
         _renderPosition = _renderPrevious;
