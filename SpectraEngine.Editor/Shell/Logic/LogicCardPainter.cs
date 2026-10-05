@@ -81,11 +81,19 @@ internal sealed class LogicCardPainter
         double radius = _palette.CardRadius;
         bool isUnanswered = IsUnanswered(card);
 
+        // A card with no row under its header is the header alone, round at
+        // every corner and with no rule under it.
+        bool hasRows = box.Height > card.Header.Height;
+        double under = hasRows ? 0 : radius;
+
         context.DrawRectangle(isUnanswered ? _palette.Stub : _palette.Card, null, box, radius, radius);
         context.DrawRectangle(
             isUnanswered ? _palette.StubHead : _palette.CardHead,
             null,
-            new RoundedRect(card.Header, radius, radius, 0, 0));
+            new RoundedRect(card.Header, radius, radius, under, under));
+
+        if (!hasRows)
+            return;
 
         // Half a pixel up, so a one pixel line fills one row of pixels.
         double rule = card.Header.Bottom - 0.5;

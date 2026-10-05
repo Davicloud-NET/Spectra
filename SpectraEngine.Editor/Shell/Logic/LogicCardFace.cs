@@ -34,10 +34,13 @@ internal sealed class LogicCardFace
         }
 
         Note = IsExpanded ? "" : LogicText.OutputsNote(declaredOutputs, wiredOutputs);
-        Height = RowsTop
+
+        double rows = (HasStateRow ? LogicMetrics.StateRowHeight : 0)
             + LogicMetrics.PortRowHeight * _rows.Count
-            + (Note.Length > 0 ? LogicMetrics.NoteRowHeight : 0)
-            + LogicMetrics.CardBottomPadding;
+            + (Note.Length > 0 ? LogicMetrics.NoteRowHeight : 0);
+
+        // A card with no row under its header ends with the header.
+        Height = LogicMetrics.HeaderHeight + (rows > 0 ? rows + LogicMetrics.CardBottomPadding : 0);
     }
 
     public LogicCard Card { get; }

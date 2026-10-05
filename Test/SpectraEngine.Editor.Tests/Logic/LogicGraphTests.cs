@@ -9,7 +9,7 @@ namespace SpectraEngine.Editor.Tests.Logic;
 public sealed class LogicGraphTests
 {
     [Fact]
-    public void Every_wired_entity_is_a_card_and_the_rest_are_only_counted()
+    public void Every_entity_is_a_card_the_wired_ones_first_then_the_stubs_then_the_ones_with_no_wires()
     {
         LogicGraph graph = Vault();
 
@@ -17,11 +17,43 @@ public sealed class LogicGraphTests
         [
             "ButtonA", "ButtonB", "Presses", "OpenVault", "VaultDoor",
             "Lift", "LiftButton", "StartZone", "StartDoor", "VaultDor",
+            "PlayerStart", "Exit", "SideDoor", "Clock",
         ]);
 
+        graph.Cards.Select(card => card.Index).ShouldBe(Enumerable.Range(0, 14));
+        graph.Cards.Where(card => !card.IsWired).Select(card => card.Name)
+            .ShouldBe(["PlayerStart", "Exit", "SideDoor", "Clock"]);
         graph.UnwiredCount.ShouldBe(4);
-        graph.FirstUnwiredName.ShouldBe("PlayerStart");
         graph.WireCount.ShouldBe(9);
+    }
+
+    [Fact]
+    public void An_entity_with_no_wires_has_a_card_with_what_its_class_declares_and_no_edge()
+    {
+        LogicGraph graph = Vault();
+        LogicCard door = graph.Card("SideDoor");
+
+        door.NodeId.ShouldBe(SideDoor);
+        door.IsWired.ShouldBeFalse();
+        door.IsStub.ShouldBeFalse();
+        door.DisplayName.ShouldBe("Door");
+        door.Group.ShouldBe("Movers");
+
+        door.Inputs.Select(port => port.Name).ShouldBe(["Open", "Close", "Toggle"]);
+        door.Outputs.Select(port => port.Name).ShouldBe(["OnOpen", "OnClose", "OnFullyOpen", "OnFullyClosed"]);
+        door.Inputs.Concat(door.Outputs).ShouldAllBe(port => port.IsDeclared && !port.IsWired);
+
+        graph.Arriving(door).ShouldBeEmpty();
+        graph.Leaving(door).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void An_entity_a_wire_only_arrives_at_and_a_stub_both_count_as_wired()
+    {
+        LogicGraph graph = Vault();
+
+        graph.Card("VaultDoor").IsWired.ShouldBeTrue();
+        graph.Card("VaultDor").IsWired.ShouldBeTrue();
     }
 
     [Fact]
@@ -261,7 +293,8 @@ public sealed class LogicGraphTests
             .ShouldBe(["VaultDoor", "Lift", "VaultDor"]);
 
         graph.CardOf(Presses).ShouldBeSameAs(graph.Card("Presses"));
-        graph.CardOf(PlayerStart).ShouldBeNull();
+        graph.CardOf(PlayerStart).ShouldBeSameAs(graph.Card("PlayerStart"));
+        graph.CardOf(Id(999)).ShouldBeNull();
     }
 
     [Fact]
@@ -283,12 +316,14 @@ public sealed class LogicGraphTests
     }
 
     [Fact]
-    public void A_level_with_no_wires_has_no_cards()
+    public void A_level_with_no_wires_has_no_wired_card_and_no_edge()
     {
         LogicGraph graph = Graph(Entity(1, "Door", "func_door"), Entity(2, "Start", "info_player_start"));
 
-        graph.Cards.ShouldBeEmpty();
+        graph.Cards.Select(card => card.Name).ShouldBe(["Door", "Start"]);
+        graph.Cards.ShouldAllBe(card => !card.IsWired);
         graph.Edges.ShouldBeEmpty();
+        graph.WireCount.ShouldBe(0);
         graph.UnwiredCount.ShouldBe(2);
         graph.FirstGoingNowhere.ShouldBeNull();
     }

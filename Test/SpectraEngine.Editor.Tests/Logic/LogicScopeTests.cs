@@ -13,29 +13,68 @@ public sealed class LogicScopeTests
         new LogicScope { Mode = LogicScopeMode.AroundSelection, Steps = steps }
             .Apply(Vault(), new HashSet<Guid>(selected));
 
+    private static LogicScopedGraph Whole(params Guid[] selected) =>
+        new LogicScope().Apply(Vault(), new HashSet<Guid>(selected));
+
     private static string[] Names(LogicScopedGraph scoped) =>
         [.. scoped.Cards.Select(card => card.Name).Order(StringComparer.Ordinal)];
 
     [Fact]
-    public void The_whole_level_shows_every_card_whatever_is_selected()
+    public void The_whole_level_shows_every_wired_card_whatever_is_selected()
     {
-        LogicScopedGraph scoped = new LogicScope().Apply(Vault(), new HashSet<Guid>());
+        LogicScopedGraph scoped = Whole();
 
         scoped.Cards.Count.ShouldBe(10);
         scoped.Edges.Count.ShouldBe(9);
         scoped.EmptyReason.ShouldBe(LogicEmptyReason.None);
+        Names(Whole(OpenVault, Id(999))).ShouldBe(Names(scoped));
+    }
+
+    [Fact]
+    public void In_the_whole_level_an_entity_with_no_wires_shows_while_it_is_selected()
+    {
+        LogicScopedGraph scoped = Whole(Exit);
+
+        scoped.Cards.Count.ShouldBe(11);
+        scoped.Cards[^1].Name.ShouldBe("Exit");
+        scoped.Cards.Select(card => card.Name).ShouldNotContain("PlayerStart");
+        scoped.Edges.Count.ShouldBe(9);
     }
 
     [Fact]
     public void The_counts_are_what_a_status_line_needs()
     {
-        new LogicScope().Apply(Vault(), new HashSet<Guid>()).Counts.ShouldBe(new LogicCounts(
+        Whole().Counts.ShouldBe(new LogicCounts(
             Cards: 10,
             Entities: 9,
+            UnwiredCards: 0,
             Wires: 9,
             WiresGoingNowhere: 1,
-            UnwiredEntities: 4,
+            HiddenUnwiredEntities: 4,
             IsTruncated: false));
+    }
+
+    [Fact]
+    public void An_entity_with_no_wires_that_shows_is_not_counted_among_the_ones_that_do_not()
+    {
+        LogicScopedGraph scoped = Whole(PlayerStart, SideDoor);
+
+        scoped.Counts.ShouldBe(new LogicCounts(
+            Cards: 12,
+            Entities: 11,
+            UnwiredCards: 2,
+            Wires: 9,
+            WiresGoingNowhere: 1,
+            HiddenUnwiredEntities: 2,
+            IsTruncated: false));
+    }
+
+    [Fact]
+    public void The_first_entity_with_no_wires_that_is_not_shown_is_named()
+    {
+        Whole().FirstHiddenUnwiredName.ShouldBe("PlayerStart");
+        Whole(PlayerStart, SideDoor).FirstHiddenUnwiredName.ShouldBe("Exit");
+        Whole(PlayerStart, Exit, SideDoor, Clock).FirstHiddenUnwiredName.ShouldBe("");
     }
 
     [Fact]
@@ -82,36 +121,75 @@ public sealed class LogicScopeTests
         LogicScopedGraph scoped = Around(2);
 
         scoped.Cards.ShouldBeEmpty();
-        scoped.EmptyReason.ShouldBe(LogicEmptyReason.NothingSelected);
+        scoped.EmptyReason.ShouldBe(LogicEmptyReason.NoEntitySelected);
     }
 
     [Fact]
-    public void A_selection_with_no_wired_entity_says_so()
+    public void Near_the_selection_an_entity_with_no_wires_shows_alone()
     {
-        // PlayerStart is an entity with no wires. The other id is no entity at all.
-        LogicScopedGraph scoped = Around(2, PlayerStart, Id(999));
+        LogicScopedGraph scoped = Around(2, PlayerStart);
+
+        Names(scoped).ShouldBe(["PlayerStart"]);
+        scoped.Edges.ShouldBeEmpty();
+        scoped.EmptyReason.ShouldBe(LogicEmptyReason.None);
+    }
+
+    [Fact]
+    public void Near_the_selection_entities_with_and_without_wires_show_together()
+    {
+        Names(Around(1, StartZone, PlayerStart, SideDoor))
+            .ShouldBe(["PlayerStart", "SideDoor", "StartDoor", "StartZone"]);
+    }
+
+    [Fact]
+    public void A_selection_with_no_entity_in_it_shows_nothing_and_says_so()
+    {
+        LogicScopedGraph scoped = Around(2, Id(999));
 
         scoped.Cards.ShouldBeEmpty();
-        scoped.EmptyReason.ShouldBe(LogicEmptyReason.SelectionHasNoWires);
+        scoped.EmptyReason.ShouldBe(LogicEmptyReason.NoEntitySelected);
     }
 
     [Fact]
     public void Selected_nodes_that_are_not_cards_are_ignored_beside_ones_that_are()
     {
-        Names(Around(0, PlayerStart, Id(999), Lift)).ShouldBe(["Lift"]);
+        Names(Around(0, Id(999), Lift)).ShouldBe(["Lift"]);
+    }
+
+    [Fact]
+    public void A_stub_shows_or_not_as_before_when_an_entity_with_no_wires_is_selected()
+    {
+        Whole(PlayerStart).Cards.Count(card => card.IsStub).ShouldBe(1);
+        Around(2, PlayerStart).Cards.ShouldAllBe(card => !card.IsStub);
+        Around(1, PlayerStart, OpenVault).Cards.Count(card => card.IsStub).ShouldBe(1);
     }
 
     [Theory]
     [InlineData(LogicScopeMode.WholeLevel)]
     [InlineData(LogicScopeMode.AroundSelection)]
-    public void A_level_with_no_wires_says_so_before_anything_else(LogicScopeMode mode)
+    public void A_level_with_no_wires_and_no_entity_selected_says_so(LogicScopeMode mode)
     {
         LogicGraph graph = Graph(Entity(1, "Door", "func_door"));
 
-        LogicScopedGraph scoped = new LogicScope { Mode = mode }.Apply(graph, new HashSet<Guid>());
+        LogicScopedGraph scoped = new LogicScope { Mode = mode }.Apply(graph, new HashSet<Guid> { Id(999) });
 
+        scoped.Cards.ShouldBeEmpty();
         scoped.EmptyReason.ShouldBe(LogicEmptyReason.LevelHasNoWires);
-        scoped.Counts.UnwiredEntities.ShouldBe(1);
+        scoped.Counts.HiddenUnwiredEntities.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData(LogicScopeMode.WholeLevel)]
+    [InlineData(LogicScopeMode.AroundSelection)]
+    public void In_a_level_with_no_wires_the_selected_entities_show(LogicScopeMode mode)
+    {
+        LogicGraph graph = Graph(Entity(1, "Door", "func_door"), Entity(2, "Gate", "func_door"));
+
+        LogicScopedGraph scoped = new LogicScope { Mode = mode }.Apply(graph, new HashSet<Guid> { Id(2) });
+
+        Names(scoped).ShouldBe(["Gate"]);
+        scoped.EmptyReason.ShouldBe(LogicEmptyReason.None);
+        scoped.Counts.HiddenUnwiredEntities.ShouldBe(1);
     }
 
     [Theory]

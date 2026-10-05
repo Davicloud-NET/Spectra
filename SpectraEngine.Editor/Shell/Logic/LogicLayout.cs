@@ -14,7 +14,10 @@ public static class LogicLayout
 {
     /// <summary>Lays out what a scope shows.</summary>
     /// <param name="graph">The cards and edges to place. Each edge is drawn with the label it carries.</param>
-    /// <param name="selection">The selected nodes. A group that holds one of their cards comes first.</param>
+    /// <param name="selection">
+    /// The selected nodes. A group that holds one of their cards comes first.
+    /// Cards with no wires come last all the same.
+    /// </param>
     /// <param name="options">What the cards show and how far apart the columns stand.</param>
     /// <param name="measure">How wide a label's text is drawn.</param>
     public static LogicScene Arrange(

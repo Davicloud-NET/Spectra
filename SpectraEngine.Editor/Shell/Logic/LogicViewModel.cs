@@ -209,13 +209,13 @@ public sealed class LogicViewModel : ObservableObject
     public LogicStatus Status => Wiring.News.Length == 0 ? _status : _status with { News = Wiring.News };
 
     /// <summary>The hint at the right of the status row.</summary>
-    public string Hint => IsPlaying ? LogicViewText.PlayingHint : LogicViewText.EditingHint;
+    public string Hint => IsPlaying ? LogicViewText.PlayingHint : _status.Hint;
 
     /// <summary>What the view says in place of a graph, or empty when it has one.</summary>
     public string EmptyText => LogicViewText.Empty(_emptyReason);
 
     /// <summary>Whether the empty state offers to show the whole level.</summary>
-    public bool OffersWholeLevel => _emptyReason == LogicEmptyReason.NothingSelected;
+    public bool OffersWholeLevel => _emptyReason == LogicEmptyReason.NoEntitySelected;
 
     /// <summary>The entities that have a card on show, in the graph's order.</summary>
     public IReadOnlyList<Guid> ShownEntityIds => _shown.Ids;
@@ -374,17 +374,17 @@ public sealed class LogicViewModel : ObservableObject
     {
         LogicScopedGraph? shown = Shown;
         LogicGraphInfo? info = _arrangement.Info;
-
         LogicStatus status = shown is null || info is null ? LogicStatus.None : LogicStatus.Of(shown, info, _mode);
 
-        Set(ref _status, status, nameof(Status));
+        if (Set(ref _status, status, nameof(Status)))
+            Raise(nameof(Hint));
+
         if (Set(ref _emptyReason, shown?.EmptyReason ?? LogicEmptyReason.None, nameof(EmptyText)))
             Raise(nameof(OffersWholeLevel));
 
         // Wiring that went away asks for nothing: a request sent then would
         // undo the one that hid the view.
-        bool changed = _shown.Take(shown?.Cards ?? []);
-        _shownChanged |= changed && shown is not null;
+        _shownChanged |= _shown.Take(shown?.Cards ?? []) && shown is not null;
     }
 
     private void FitIfAsked()

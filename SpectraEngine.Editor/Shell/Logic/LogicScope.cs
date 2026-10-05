@@ -21,7 +21,10 @@ public sealed class LogicScope
     /// </summary>
     public string Filter { get; init; } = "";
 
-    /// <summary>Picks the cards and edges to show.</summary>
+    /// <summary>
+    /// Picks the cards and edges to show. An entity with no wires shows only
+    /// while it is selected, in either mode.
+    /// </summary>
     /// <param name="graph">The level's wiring.</param>
     /// <param name="selection">The selected nodes. The ones that are not cards are ignored.</param>
     public LogicScopedGraph Apply(LogicGraph graph, IReadOnlySet<Guid> selection)
@@ -30,7 +33,7 @@ public sealed class LogicScope
         ArgumentNullException.ThrowIfNull(selection);
 
         bool[] shown = Mode == LogicScopeMode.WholeLevel
-            ? Everything(graph)
+            ? Everything(graph, selection)
             : Near(graph, selection);
 
         var cards = new List<LogicCard>();
@@ -47,13 +50,15 @@ public sealed class LogicScope
                 edges.Add(edge);
         }
 
-        return new LogicScopedGraph(graph, cards, edges, Dimmed(graph), Reason(graph, selection, cards.Count));
+        return new LogicScopedGraph(graph, cards, edges, Dimmed(graph));
     }
 
-    private static bool[] Everything(LogicGraph graph)
+    private static bool[] Everything(LogicGraph graph, IReadOnlySet<Guid> selection)
     {
         var shown = new bool[graph.Cards.Count];
-        Array.Fill(shown, true);
+        foreach (LogicCard card in graph.Cards)
+            shown[card.Index] = card.IsWired || selection.Contains(card.NodeId);
+
         return shown;
     }
 
@@ -114,18 +119,5 @@ public sealed class LogicScope
         }
 
         return dimmed;
-    }
-
-    private static LogicEmptyReason Reason(LogicGraph graph, IReadOnlySet<Guid> selection, int shown)
-    {
-        if (graph.Cards.Count == 0)
-            return LogicEmptyReason.LevelHasNoWires;
-
-        if (shown > 0)
-            return LogicEmptyReason.None;
-
-        return selection.Count == 0
-            ? LogicEmptyReason.NothingSelected
-            : LogicEmptyReason.SelectionHasNoWires;
     }
 }

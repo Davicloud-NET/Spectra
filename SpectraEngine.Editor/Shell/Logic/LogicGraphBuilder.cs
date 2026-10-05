@@ -26,7 +26,6 @@ internal sealed class LogicGraphBuilder
     private readonly LogicCard?[] _cardOfEntity;
     private LogicCard[] _cardOfStub = [];
     private int _unwired;
-    private string _firstUnwired = "";
 
     // One wire reaching one receiver. Receiver is an entity index, or -1 when
     // Stub names the stub instead.
@@ -70,7 +69,6 @@ internal sealed class LogicGraphBuilder
         {
             WireCount = wireCount,
             UnwiredCount = _unwired,
-            FirstUnwiredName = _firstUnwired,
             FirstGoingNowhere = first,
             IsTruncated = _info.IsTruncated,
         };
@@ -151,29 +149,7 @@ internal sealed class LogicGraphBuilder
 
     private void CreateCards()
     {
-        for (int i = 0; i < _entities.Count; i++)
-        {
-            if (_sent[i] is null && _received[i] is null)
-            {
-                if (_unwired++ == 0)
-                    _firstUnwired = _entities[i].Name;
-
-                continue;
-            }
-
-            EntitySchema? schema = null;
-            _catalog?.TryGetSchema(_entities[i].ClassName, out schema);
-
-            var card = new LogicCard(
-                _cards.Count,
-                _entities[i],
-                schema,
-                Ports(schema?.Inputs, _received[i], isOutput: false),
-                Ports(schema?.Outputs, _sent[i], isOutput: true));
-
-            _cardOfEntity[i] = card;
-            _cards.Add(card);
-        }
+        CreateEntityCards(isWired: true);
 
         // By kind and name, so the cards do not depend on which wire met a stub first.
         IEnumerable<int> ordered = Enumerable.Range(0, _stubs.Count)
@@ -187,6 +163,33 @@ internal sealed class LogicGraphBuilder
             _cardOfStub[i] = new LogicCard(
                 _cards.Count, stub.Kind, stub.Name, Ports(null, stub.Inputs, isOutput: false));
             _cards.Add(_cardOfStub[i]);
+        }
+
+        int wired = _cards.Count;
+        CreateEntityCards(isWired: false);
+        _unwired = _cards.Count - wired;
+    }
+
+    // The entities a wire touches, or the ones none does, in scene order.
+    private void CreateEntityCards(bool isWired)
+    {
+        for (int i = 0; i < _entities.Count; i++)
+        {
+            if ((_sent[i] is null && _received[i] is null) == isWired)
+                continue;
+
+            EntitySchema? schema = null;
+            _catalog?.TryGetSchema(_entities[i].ClassName, out schema);
+
+            var card = new LogicCard(
+                _cards.Count,
+                _entities[i],
+                schema,
+                Ports(schema?.Inputs, _received[i], isOutput: false),
+                Ports(schema?.Outputs, _sent[i], isOutput: true));
+
+            _cardOfEntity[i] = card;
+            _cards.Add(card);
         }
     }
 
@@ -243,7 +246,7 @@ internal sealed class LogicGraphBuilder
     }
 
     private LogicCard CardOf(int entity) =>
-        _cardOfEntity[entity] ?? throw new InvalidOperationException("A wired entity has no card.");
+        _cardOfEntity[entity] ?? throw new InvalidOperationException("An entity has no card.");
 
     private static LogicVerdict Judge(LogicCard from, LogicCard to, EntityConnection wire)
     {

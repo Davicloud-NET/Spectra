@@ -7,7 +7,7 @@ namespace SpectraEngine.Editor.Shell.Logic;
 /// <param name="Entities">How many entities have a card.</param>
 /// <param name="Wires">How many wires are drawn.</param>
 /// <param name="GoingNowhere">How many of them can never deliver.</param>
-/// <param name="Unwired">Which entities have no wires and so no card.</param>
+/// <param name="Unwired">Which entities have no wires and are not shown.</param>
 /// <param name="Truncated">That the level has more entities than the view was given.</param>
 public sealed record LogicStatus(
     string Entities,
@@ -34,6 +34,12 @@ public sealed record LogicStatus(
     /// </summary>
     public string News { get; init; } = "";
 
+    /// <summary>The hint at the right of the row while the level is edited.</summary>
+    public string Hint { get; init; } = LogicViewText.EditingHint;
+
+    /// <summary>The same cut to its first sentence, for a narrow row.</summary>
+    public string HintShort { get; init; } = LogicViewText.EditingHintShort;
+
     /// <summary>Reads the status off what a scope shows.</summary>
     /// <param name="scoped">The cards and edges shown.</param>
     /// <param name="info">The snapshot they were built from, for how much of the level it lists.</param>
@@ -49,8 +55,9 @@ public sealed record LogicStatus(
             return None with { Truncated = TruncatedText(info) };
 
         // Near a selection most of the level is left out, wired or not.
-        int unwiredCount = mode == LogicScopeMode.WholeLevel ? counts.UnwiredEntities : 0;
-        string unwired = LogicViewText.Unwired(scoped.Graph.FirstUnwiredName, unwiredCount);
+        int unwiredCount = mode == LogicScopeMode.WholeLevel ? counts.HiddenUnwiredEntities : 0;
+        string unwired = LogicViewText.Unwired(scoped.FirstHiddenUnwiredName, unwiredCount);
+        bool showsUnwired = counts.UnwiredCards > 0;
 
         return new LogicStatus(
             LogicViewText.Entities(counts.Entities),
@@ -60,7 +67,9 @@ public sealed record LogicStatus(
             TruncatedText(info))
         {
             GoingNowhereSender = FirstGoingNowhere(scoped),
-            UnwiredShort = LogicViewText.UnwiredShort(unwiredCount),
+            UnwiredShort = LogicViewText.UnwiredShort(unwiredCount, counts.UnwiredCards),
+            Hint = showsUnwired ? LogicViewText.UnwiredHint : LogicViewText.EditingHint,
+            HintShort = showsUnwired ? LogicViewText.UnwiredHintShort : LogicViewText.EditingHintShort,
         };
     }
 

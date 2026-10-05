@@ -157,9 +157,9 @@ public readonly record struct LogicViewFit
         bool showsShort = hasNotes && !showsLong && status.UnwiredShort.Length > 0 && left >= shortNotes;
         left -= showsLong ? longNotes : showsShort ? shortNotes : 0;
 
-        string hint = isPlaying ? LogicViewText.PlayingHint : LogicViewText.EditingHint;
+        string hint = isPlaying ? LogicViewText.PlayingHint : status.Hint;
         bool showsWhole = left >= Part(hint, ruler);
-        bool showsShortHint = !showsWhole && !isPlaying && left >= Part(LogicViewText.EditingHintShort, ruler);
+        bool showsShortHint = !showsWhole && !isPlaying && left >= Part(status.HintShort, ruler);
 
         return this with
         {

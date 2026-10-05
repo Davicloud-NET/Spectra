@@ -132,7 +132,7 @@ public sealed class LogicViewModelTests
         LogicViewModel model = Model();
         model.Apply(Snapshot(_level));
 
-        Redraws(model, () => model.Apply(Snapshot(_level, null, PlayerStart))).ShouldBe(0);
+        Redraws(model, () => model.Apply(Snapshot(_level, null, Id(900)))).ShouldBe(0);
     }
 
     [Fact]
@@ -336,18 +336,18 @@ public sealed class LogicViewModelTests
         model.OffersWholeLevel.ShouldBeFalse();
     }
 
-    [Fact]
-    public void A_selection_without_wires_and_a_level_without_wires_each_get_their_own_sentence()
+    [Theory]
+    [InlineData(LogicScopeMode.WholeLevel)]
+    [InlineData(LogicScopeMode.AroundSelection)]
+    public void A_level_without_wires_and_with_no_entity_selected_says_how_to_wire_one(LogicScopeMode mode)
     {
-        LogicViewModel model = Model(LogicScopeMode.AroundSelection);
+        LogicViewModel model = Model(mode);
 
-        model.Apply(Snapshot(_level, null, PlayerStart));
-        model.EmptyText.ShouldBe("Nothing is wired to or from the selection.");
-        model.OffersWholeLevel.ShouldBeFalse();
+        model.Apply(Snapshot(Level(Entity(1, "PlayerStart", "info_player_start")), null, Id(900)));
 
-        model.Apply(Snapshot(Level(Entity(1, "PlayerStart", "info_player_start")), null, PlayerStart));
         model.EmptyText.ShouldBe(
             "No entity in this level is wired yet. Select one and press Add under Sends in the Properties panel.");
+        model.OffersWholeLevel.ShouldBeFalse();
     }
 
     [Fact]

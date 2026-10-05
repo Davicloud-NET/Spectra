@@ -28,6 +28,7 @@ public sealed class LogicToolbarTests(RibbonSession session)
     [InlineData("around-relay")]
     [InlineData("playing")]
     [InlineData("empty")]
+    [InlineData("unwired")]
     public void Nothing_in_the_rows_is_cut_or_pushed_onto_its_neighbour_at_any_width(string state)
     {
         Sweep(state, (view, width) =>
@@ -49,6 +50,7 @@ public sealed class LogicToolbarTests(RibbonSession session)
     [Theory]
     [InlineData("whole")]
     [InlineData("playing")]
+    [InlineData("unwired")]
     public void Every_sentence_under_the_graph_shows_whole_or_not_at_all_at_any_width(string state)
     {
         var ruler = new LogicTextRuler();
@@ -84,6 +86,32 @@ public sealed class LogicToolbarTests(RibbonSession session)
                 note.IsEffectivelyVisible.ShouldBeTrue();
                 note.Text.ShouldBe("4 entities have no wires.");
                 ToolTip.GetTip(note).ShouldBe("PlayerStart and 3 more entities have no wires and are not shown.");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData(Widest, "Drag from this card onto another to wire it. Select both to see both.")]
+    [InlineData(900, "Drag from this card onto another to wire it.")]
+    public void With_a_card_that_has_no_wires_on_show_the_status_row_says_how_to_wire_it(double width, string hint)
+    {
+        session.On(() =>
+        {
+            (LogicView view, Window window) = LogicSheetTests.Open(
+                LogicSheetTests.Drive("unwired", width, Height), width, Height);
+
+            try
+            {
+                TextBlock text = view.FindControl<TextBlock>("HintText").ShouldNotBeNull();
+
+                text.IsEffectivelyVisible.ShouldBeTrue();
+                text.Text.ShouldBe(hint);
+                view.FindControl<TextBlock>("UnwiredNote").ShouldNotBeNull().Text.ShouldBe(
+                    "PlayerStart and 2 more entities have no wires and are not shown.");
             }
             finally
             {

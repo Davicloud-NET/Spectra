@@ -48,6 +48,9 @@ public sealed class LogicSheetTests(RibbonSession session)
         ["long-names-playing"] = (model, _) => Whole(model, Snapshot(LongNames(), LongPlaying())),
         ["quiet-playing"] = (model, _) => Whole(model, Snapshot(VaultLevel(), Playing())),
         ["stubs"] = (model, _) => Whole(model, Snapshot(Stubs())),
+        ["unwired"] = (model, _) => Whole(model, Snapshot(VaultLevel(), null, SideDoor)),
+        ["unwired-near"] = (model, _) => model.Apply(Snapshot(VaultLevel(), null, SideDoor, PlayerStart, StartZone)),
+        ["sound"] = (model, _) => model.Apply(Snapshot(Sounds(), null, Id(1), Id(4))),
         ["wiring"] = (model, pane) => DragWire(model, pane, "StartZone", "Lift"),
         ["wire-selected"] = (model, _) =>
         {
@@ -98,9 +101,13 @@ public sealed class LogicSheetTests(RibbonSession session)
     // its card and a label wider than a lane, the same level running, a
     // level that runs before any wire has fired, the cards that are not
     // entities, what a filter dims, the cards between near and far, a level
-    // with no wires, the smallest pane, a wire on its way to a card and a
-    // selected wire among the wires of its selected sender.
+    // with no wires, the smallest pane, a wire on its way to a card, a
+    // selected wire among the wires of its selected sender, a selected
+    // entity with no wires beside a wired group, and the cards of sounds.
     [Theory]
+    [InlineData("unwired", 1123, 880)]
+    [InlineData("unwired-near", 900, 500)]
+    [InlineData("sound", 900, 500)]
     [InlineData("wiring", 1123, 880)]
     [InlineData("wire-selected", 1123, 880)]
     [InlineData("long-names", 1123, 500)]
@@ -202,6 +209,14 @@ public sealed class LogicSheetTests(RibbonSession session)
             2, "Relay", "logic_relay",
             Wire("OnTrigger", "Zone", "Enable"),
             Wire("OnSpawn", "Zone", "Toggle")));
+
+    // A sound a trigger plays and that closes a door when it ends, and one
+    // nothing is wired to yet.
+    private static LogicGraphInfo Sounds() => Level(
+        Entity(1, "Alarm", "point_sound", Wire("OnEnded", "Shutter", "Close")),
+        Entity(2, "Tripwire", "trigger_multiple", Wire("OnStartTouch", "Alarm", "Play")),
+        Entity(3, "Shutter", "func_door"),
+        Entity(4, "Hum", "point_sound"));
 
     // Names, classes, ports, state and a parameter, each longer than a card
     // or a lane has room for.

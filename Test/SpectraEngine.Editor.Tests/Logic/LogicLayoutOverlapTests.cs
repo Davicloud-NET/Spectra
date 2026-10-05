@@ -72,7 +72,7 @@ public sealed class LogicLayoutOverlapTests
         for (int seed = 1; seed <= Levels; seed++)
         {
             LogicGraph graph = Graph(LogicRandomLevel.Entities(seed));
-            var selection = new HashSet<Guid> { graph.Cards[seed % graph.Cards.Count].NodeId };
+            var selection = new HashSet<Guid> { Wired(graph, seed).NodeId };
 
             LogicScopedGraph scoped = new LogicScope { Mode = LogicScopeMode.AroundSelection, Steps = seed % 4 }
                 .Apply(graph, selection)
@@ -82,6 +82,34 @@ public sealed class LogicLayoutOverlapTests
 
             LogicSceneCheck.FirstTextProblem(scene).ShouldBeNull($"seed {seed}");
         }
+    }
+
+    [Theory]
+    [InlineData(LogicScopeMode.WholeLevel)]
+    [InlineData(LogicScopeMode.AroundSelection)]
+    public void The_rule_holds_with_selected_entities_that_have_no_wires_among_the_cards(LogicScopeMode mode)
+    {
+        int shown = 0;
+
+        for (int seed = 1; seed <= Levels; seed++)
+        {
+            LogicGraph graph = Graph(LogicRandomLevel.Entities(seed));
+
+            // Every entity with no wires, and one that has some.
+            HashSet<Guid> selection = graph.Cards.Where(card => !card.IsWired).Select(card => card.NodeId).ToHashSet();
+            selection.Add(Wired(graph, seed).NodeId);
+
+            LogicScopedGraph scoped = new LogicScope { Mode = mode, Steps = seed % 4 }.Apply(graph, selection);
+            var options = new LogicLayoutOptions { ShowsState = seed % 2 == 0 };
+
+            LogicScene scene = LogicLayout.Arrange(scoped, selection, options, new FixedWidthRuler());
+
+            shown += scene.Cards.Count(card => !card.Card.IsWired);
+            LogicSceneCheck.FirstTextProblem(scene).ShouldBeNull($"seed {seed}");
+            LogicSceneCheck.FirstCardCrossing(scene).ShouldBeNull($"seed {seed}");
+        }
+
+        shown.ShouldBeGreaterThan(Levels, "the levels should have entities with no wires to show");
     }
 
     [Fact]
@@ -108,6 +136,9 @@ public sealed class LogicLayoutOverlapTests
             if (graph.Edges.Any(edge => edge.Label.Text.Length > 30))
                 seen.Add("long label");
 
+            if (graph.UnwiredCount > 0)
+                seen.Add("entity with no wires");
+
             LogicScene scene = Arrange(graph);
 
             if (scene.Edges.Any(edge => !edge.Edge.IsLoop && edge.End.X < edge.Start.X))
@@ -120,9 +151,13 @@ public sealed class LogicLayoutOverlapTests
         seen.ShouldBe(
             [
                 "Activator", "MissingName", "MissingPrefix", "NoTarget", "loop", "shared edge",
-                "long label", "wire running back", "wire skipping a column",
+                "long label", "entity with no wires", "wire running back", "wire skipping a column",
             ],
             ignoreOrder: true);
         largest.ShouldBeGreaterThan(50);
     }
+
+    // One of the cards a wire touches, another for each seed.
+    private static LogicCard Wired(LogicGraph graph, int seed) =>
+        graph.Cards[seed % (graph.Cards.Count - graph.UnwiredCount)];
 }

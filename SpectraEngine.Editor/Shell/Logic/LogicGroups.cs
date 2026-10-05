@@ -5,7 +5,9 @@ namespace SpectraEngine.Editor.Shell.Logic;
 
 // Splits what a scope shows into groups of cards that wires join, and puts
 // the groups in the order they stack: the ones holding a selected card, then
-// the larger, then by name.
+// the larger, then by name. A card with no wires is a group of its own. Those
+// come after every other, selected or not, so one that comes or goes moves
+// no wired card.
 internal sealed class LogicGroups
 {
     private readonly LogicCard[] _cards;
@@ -23,6 +25,8 @@ internal sealed class LogicGroups
         public List<LogicLayoutWire> Wires { get; } = [];
 
         public bool HasSelection { get; set; }
+
+        public bool IsWired { get; set; }
 
         public int Place { get; init; }
     }
@@ -81,6 +85,10 @@ internal sealed class LogicGroups
 
         groups.Sort((a, b) =>
         {
+            int byWires = b.IsWired.CompareTo(a.IsWired);
+            if (byWires != 0)
+                return byWires;
+
             int bySelection = b.HasSelection.CompareTo(a.HasSelection);
             if (bySelection != 0)
                 return bySelection;
@@ -111,6 +119,7 @@ internal sealed class LogicGroups
             _nodes[i].Rank = group.Cards.Count;
             group.Cards.Add(_nodes[i]);
             group.HasSelection |= scene.IsSelected(_cards[i]);
+            group.IsWired |= _cards[i].IsWired;
         }
 
         var loopsSeen = new int[_cards.Length];

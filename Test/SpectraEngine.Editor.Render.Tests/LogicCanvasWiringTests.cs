@@ -107,6 +107,46 @@ public sealed class LogicCanvasWiringTests(RibbonSession session)
     }
 
     [Fact]
+    public void A_drag_from_a_card_with_no_wires_asks_for_its_first_wire()
+    {
+        On("unwired", graph =>
+        {
+            Point lift = graph.Scene.Card("Lift").Header.Center;
+            graph.Drag(graph.Scene.Card("SideDoor").Header.Center, lift);
+            graph.Window.MouseUp(graph.ToWindow(lift), MouseButton.Left);
+
+            ContextMenu menu = graph.Canvas.ShownMenu.ShouldNotBeNull();
+            Texts(menu).ShouldBe(["Wire SideDoor to Lift", "OnOpen", "OnClose", "OnFullyOpen", "OnFullyClosed"]);
+            Line(Line(menu, "OnOpen"), "Close").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            menu.Close();
+
+            (Guid sender, EntityConnection[] wires) = graph.Wired.ShouldHaveSingleItem();
+            sender.ShouldBe(SideDoor);
+            wires.ShouldBe([Wire("OnOpen", "Lift", "Close")]);
+            graph.Selected.ShouldBe([(SideDoor, false)]);
+        });
+    }
+
+    [Fact]
+    public void A_wire_dropped_on_a_card_with_no_wires_asks_for_a_wire_to_its_name()
+    {
+        On("unwired", graph =>
+        {
+            Point door = graph.Scene.Card("SideDoor").Header.Center;
+            graph.Drag(graph.Scene.Card("StartZone").Header.Center, door);
+            graph.Window.MouseUp(graph.ToWindow(door), MouseButton.Left);
+
+            ContextMenu menu = graph.Canvas.ShownMenu.ShouldNotBeNull();
+            Line(Line(menu, "OnEndTouch"), "Close").RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            menu.Close();
+
+            (Guid sender, EntityConnection[] wires) = graph.Wired.ShouldHaveSingleItem();
+            sender.ShouldBe(StartZone);
+            wires.ShouldBe([Wire("OnTrigger", "StartDoor", "Open"), Wire("OnEndTouch", "SideDoor", "Close")]);
+        });
+    }
+
+    [Fact]
     public void A_menu_closed_with_nothing_picked_gives_the_wire_up()
     {
         On("whole", graph =>

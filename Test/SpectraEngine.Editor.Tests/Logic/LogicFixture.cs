@@ -22,6 +22,9 @@ internal static class LogicFixture
     public static readonly Guid LiftButton = Id(8);
     public static readonly Guid StartZone = Id(9);
     public static readonly Guid StartDoor = Id(10);
+    public static readonly Guid Exit = Id(11);
+    public static readonly Guid SideDoor = Id(12);
+    public static readonly Guid Clock = Id(13);
 
     // Written out, not read from the built-in classes: loading their assembly
     // registers them in the shared catalogue, which another test here freezes.
@@ -55,6 +58,10 @@ internal static class LogicFixture
             "trigger_multiple", group: "Triggers",
             inputs: ["Enable", "Disable", "Toggle"],
             outputs: ["OnStartTouch", "OnEndTouch", "OnTrigger"]),
+        new EntitySchema(
+            "point_sound", "Sound", "Sound",
+            inputs: ["Play", "Stop", "SetVolume", "SetPitch"],
+            outputs: ["OnEnded", "OnMarker"]),
         new EntitySchema("info_player_start", "Player start", "Player"),
         new EntitySchema("info_teleport_destination", group: "Triggers"),
     ]));

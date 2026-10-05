@@ -12,6 +12,12 @@ public static class LogicViewText
     /// <summary>The same where the row has no room for all of it.</summary>
     public const string EditingHintShort = "Drag from a card or an output onto a card to wire it.";
 
+    /// <summary>The hint while a card on show has no wires.</summary>
+    public const string UnwiredHint = UnwiredHintShort + " Select both to see both.";
+
+    /// <summary>The same where the row has no room for all of it.</summary>
+    public const string UnwiredHintShort = "Drag from this card onto another to wire it.";
+
     /// <summary>The hint at the right of the status row while a level runs.</summary>
     public const string PlayingHint = "Wires light up as they fire. Stop to edit.";
 
@@ -50,7 +56,7 @@ public static class LogicViewText
         _ => $"{Number(count)} wires go nowhere",
     };
 
-    /// <summary>The entities that have no wires and so no card, or empty when every entity has one.</summary>
+    /// <summary>The entities that have no wires and are not shown, or empty when there is none.</summary>
     /// <param name="first">The name of the first of them. May be empty.</param>
     /// <param name="count">How many there are.</param>
     public static string Unwired(string first, int count)
@@ -74,12 +80,18 @@ public static class LogicViewText
     }
 
     /// <summary>The same in fewer words, for a row too narrow for the name.</summary>
-    public static string UnwiredShort(int count) => count switch
+    /// <param name="count">How many entities have no wires and are not shown.</param>
+    /// <param name="shown">How many more have no wires and are shown.</param>
+    public static string UnwiredShort(int count, int shown)
     {
-        <= 0 => "",
-        1 => "1 entity has no wires.",
-        _ => $"{Number(count)} entities have no wires.",
-    };
+        string more = shown > 0 ? "more " : "";
+        return count switch
+        {
+            <= 0 => "",
+            1 => $"1 {more}entity has no wires.",
+            _ => $"{Number(count)} {more}entities have no wires.",
+        };
+    }
 
     /// <summary>What to say when the level has more entities than the view was given.</summary>
     public static string Truncated(int listed, int total) =>
@@ -88,10 +100,8 @@ public static class LogicViewText
     /// <summary>What the view says in place of a graph, or empty when it has one.</summary>
     public static string Empty(LogicEmptyReason reason) => reason switch
     {
-        LogicEmptyReason.NothingSelected =>
+        LogicEmptyReason.NoEntitySelected =>
             "Select an entity to see what it is wired to, or show the whole level.",
-        LogicEmptyReason.SelectionHasNoWires =>
-            "Nothing is wired to or from the selection.",
         LogicEmptyReason.LevelHasNoWires =>
             "No entity in this level is wired yet. Select one and press Add under Sends in the Properties panel.",
         _ => "",

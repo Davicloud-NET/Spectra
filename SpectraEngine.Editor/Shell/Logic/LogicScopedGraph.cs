@@ -12,15 +12,14 @@ public sealed class LogicScopedGraph
         LogicGraph graph,
         IReadOnlyList<LogicCard> cards,
         IReadOnlyList<LogicEdge> edges,
-        bool[] dimmed,
-        LogicEmptyReason emptyReason)
+        bool[] dimmed)
     {
         Graph = graph;
         Cards = cards;
         Edges = edges;
-        EmptyReason = emptyReason;
         _dimmed = dimmed;
         Counts = Count();
+        FirstHiddenUnwiredName = FirstHiddenUnwired();
     }
 
     /// <summary>The whole level's wiring.</summary>
@@ -33,10 +32,26 @@ public sealed class LogicScopedGraph
     public IReadOnlyList<LogicEdge> Edges { get; }
 
     /// <summary>Why nothing is shown, or <see cref="LogicEmptyReason.None"/>.</summary>
-    public LogicEmptyReason EmptyReason { get; }
+    public LogicEmptyReason EmptyReason
+    {
+        get
+        {
+            if (Cards.Count > 0)
+                return LogicEmptyReason.None;
+
+            // With wires in the level, only a scope that follows the selection shows nothing.
+            return Graph.WireCount == 0 ? LogicEmptyReason.LevelHasNoWires : LogicEmptyReason.NoEntitySelected;
+        }
+    }
 
     /// <summary>The numbers for a status line.</summary>
     public LogicCounts Counts { get; }
+
+    /// <summary>
+    /// The first entity in scene order that has no wires and is not shown,
+    /// or empty when there is none.
+    /// </summary>
+    public string FirstHiddenUnwiredName { get; }
 
     /// <summary>Whether the filter leaves a card out.</summary>
     public bool IsDimmed(LogicCard card)
@@ -64,14 +79,19 @@ public sealed class LogicScopedGraph
         for (int i = 0; i < edges.Length; i++)
             edges[i] = Edges[i].WithLabel(label(Edges[i]));
 
-        return new LogicScopedGraph(Graph, Cards, edges, _dimmed, EmptyReason);
+        return new LogicScopedGraph(Graph, Cards, edges, _dimmed);
     }
 
     private LogicCounts Count()
     {
         int entities = 0;
+        int unwired = 0;
+
         foreach (LogicCard card in Cards)
+        {
             entities += card.IsStub ? 0 : 1;
+            unwired += card.IsWired ? 0 : 1;
+        }
 
         // A wire drawn as several edges still counts once.
         var wires = new HashSet<LogicWireKey>();
@@ -88,6 +108,31 @@ public sealed class LogicScopedGraph
         }
 
         return new LogicCounts(
-            Cards.Count, entities, wires.Count, goingNowhere, Graph.UnwiredCount, Graph.IsTruncated);
+            Cards.Count,
+            entities,
+            unwired,
+            wires.Count,
+            goingNowhere,
+            Graph.UnwiredCount - unwired,
+            Graph.IsTruncated);
+    }
+
+    // The cards shown are some of the graph's, in its order, so one walk
+    // through both finds the first that is left out.
+    private string FirstHiddenUnwired()
+    {
+        if (Counts.HiddenUnwiredEntities == 0)
+            return "";
+
+        int next = 0;
+        foreach (LogicCard card in Graph.Cards)
+        {
+            if (next < Cards.Count && ReferenceEquals(Cards[next], card))
+                next++;
+            else if (!card.IsWired)
+                return card.Name;
+        }
+
+        return "";
     }
 }

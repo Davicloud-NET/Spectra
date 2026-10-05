@@ -252,6 +252,81 @@ public sealed class LogicLayoutTests
     }
 
     [Fact]
+    public void A_card_with_no_wires_is_its_header_and_the_note_about_its_outputs()
+    {
+        LogicScene scene = Arrange(Vault(), null, SideDoor, PlayerStart);
+
+        LogicSceneCard door = scene.Card("SideDoor");
+        door.Ports.ShouldBeEmpty();
+        door.Note.ShouldBe("4 outputs, none wired");
+        door.NoteRow.ShouldBe(new Rect(door.Bounds.X, door.Bounds.Y + 42, 184, 20));
+        door.Bounds.Height.ShouldBe(42 + 20 + 6);
+
+        // Its class declares no output, so there is nothing to note and the
+        // card ends with its header.
+        LogicSceneCard start = scene.Card("PlayerStart");
+        start.Ports.ShouldBeEmpty();
+        start.NoteRow.ShouldBeNull();
+        start.Bounds.ShouldBe(start.Header);
+    }
+
+    [Fact]
+    public void Cards_with_no_wires_stand_after_every_wired_group_and_move_no_wired_card()
+    {
+        LogicScene scene = Arrange(Vault(), null, SideDoor, PlayerStart);
+
+        foreach (LogicSceneCard card in Scene.Cards)
+            scene.Card(card.Card.Name).Bounds.ShouldBe(card.Bounds, card.Card.Name);
+
+        // In the row of the last wired group, by name, a group apart.
+        LogicSceneCard start = scene.Card("PlayerStart");
+        LogicSceneCard door = scene.Card("SideDoor");
+
+        start.Bounds.Y.ShouldBe(Scene.Card("StartZone").Bounds.Y);
+        start.Bounds.X.ShouldBe(Scene.Card("StartDoor").Bounds.Right + LogicMetrics.GroupGap);
+        door.Bounds.Y.ShouldBe(start.Bounds.Y);
+        door.Bounds.X.ShouldBe(start.Bounds.Right + LogicMetrics.GroupGap);
+    }
+
+    [Fact]
+    public void A_card_with_no_wires_stands_after_a_wired_card_that_stands_alone_whatever_their_names()
+    {
+        LogicGraph graph = Graph(
+            Entity(1, "Zed", "logic_relay", Wire("OnTrigger", "!self", "Disable")),
+            Entity(2, "Abe", "func_door"));
+
+        LogicScene scene = Arrange(graph, null, Id(2));
+
+        scene.Card("Zed").Bounds.X.ShouldBe(LogicMetrics.ScenePadding);
+        scene.Card("Abe").Bounds.X.ShouldBeGreaterThan(scene.Card("Zed").Bounds.Right);
+    }
+
+    [Fact]
+    public void Near_the_selection_two_entities_with_no_wires_are_two_cards_side_by_side()
+    {
+        var selection = new HashSet<Guid> { SideDoor, PlayerStart };
+        LogicScopedGraph scoped = new LogicScope { Mode = LogicScopeMode.AroundSelection }.Apply(Vault(), selection);
+
+        LogicScene scene = LogicLayout.Arrange(scoped, selection, new LogicLayoutOptions(), new FixedWidthRuler());
+
+        scene.Cards.Select(card => card.Card.Name).ShouldBe(["PlayerStart", "SideDoor"]);
+        scene.Edges.ShouldBeEmpty();
+        scene.Cards[0].Bounds.TopLeft.ShouldBe(new Point(LogicMetrics.ScenePadding, LogicMetrics.ScenePadding));
+        scene.Cards[1].Bounds.X.ShouldBe(scene.Cards[0].Bounds.Right + LogicMetrics.GroupGap);
+        LogicSceneCheck.FirstTextProblem(scene).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Asked_for_state_rows_a_card_with_no_wires_gets_one_too()
+    {
+        LogicScene playing = Arrange(Vault(), new LogicLayoutOptions { ShowsState = true }, SideDoor);
+        LogicSceneCard door = playing.Card("SideDoor");
+
+        door.StateRow.ShouldBe(new Rect(door.Bounds.X, door.Bounds.Y + 42, 184, 20));
+        door.Bounds.Height.ShouldBe(42 + 20 + 20 + 6);
+    }
+
+    [Fact]
     public void A_scope_that_shows_nothing_lays_out_to_an_empty_scene()
     {
         var selection = new HashSet<Guid>();

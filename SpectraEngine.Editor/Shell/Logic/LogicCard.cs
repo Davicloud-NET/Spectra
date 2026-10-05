@@ -6,8 +6,8 @@ using System.Collections.Generic;
 namespace SpectraEngine.Editor.Shell.Logic;
 
 /// <summary>
-/// One box in the wiring graph: an entity that sends or receives a wire, or a
-/// stub standing in for a target that is not an entity.
+/// One box in the wiring graph: an entity, or a stub standing in for a target
+/// that is not an entity.
 /// </summary>
 public sealed class LogicCard
 {
@@ -27,6 +27,7 @@ public sealed class LogicCard
         IsKnownClass = schema is not null;
         Inputs = inputs;
         Outputs = outputs;
+        IsWired = HasWire(inputs) || HasWire(outputs);
     }
 
     internal LogicCard(int index, LogicStubKind stub, string name, IReadOnlyList<LogicPort> inputs)
@@ -39,6 +40,7 @@ public sealed class LogicCard
         Group = "";
         Inputs = inputs;
         Outputs = [];
+        IsWired = true;
     }
 
     /// <summary>Where this card is in <see cref="LogicGraph.Cards"/>.</summary>
@@ -72,6 +74,12 @@ public sealed class LogicCard
     public bool IsStub => Stub != LogicStubKind.None;
 
     /// <summary>
+    /// Whether a wire leaves the card or arrives at it. An entity with none
+    /// is shown only while it is selected.
+    /// </summary>
+    public bool IsWired { get; }
+
+    /// <summary>
     /// Every input the class declares, in its order, then the ones only a
     /// wire names, by name.
     /// </summary>
@@ -89,6 +97,17 @@ public sealed class LogicCard
         foreach (LogicPort port in isOutput ? Outputs : Inputs)
         {
             if (port.IsDeclared && string.Equals(port.Name, name, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool HasWire(IReadOnlyList<LogicPort> ports)
+    {
+        foreach (LogicPort port in ports)
+        {
+            if (port.IsWired)
                 return true;
         }
 

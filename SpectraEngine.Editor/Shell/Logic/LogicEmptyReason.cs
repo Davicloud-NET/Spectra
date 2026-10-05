@@ -6,12 +6,9 @@ public enum LogicEmptyReason
     /// <summary>It shows cards.</summary>
     None,
 
-    /// <summary>The scope follows the selection and nothing is selected.</summary>
-    NothingSelected,
+    /// <summary>The scope follows the selection and no entity is selected.</summary>
+    NoEntitySelected,
 
-    /// <summary>The scope follows the selection and nothing selected has a wire.</summary>
-    SelectionHasNoWires,
-
-    /// <summary>The level has no wires at all.</summary>
+    /// <summary>The level has no wires at all, and no entity is selected.</summary>
     LevelHasNoWires,
 }

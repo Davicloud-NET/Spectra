@@ -111,7 +111,7 @@ internal sealed class LogicArrangement
             _scopeStale = true;
         }
 
-        bool rescoped = _scopeStale || (_selectionStale && IsAroundSelection);
+        bool rescoped = _scopeStale || (_selectionStale && (IsAroundSelection || ShowsOtherUnwired(selection)));
         if (rescoped)
         {
             LogicScopedGraph? before = Shown;
@@ -143,6 +143,29 @@ internal sealed class LogicArrangement
 
         _graphStale = _scopeStale = _selectionStale = _wiresStale = false;
         return change;
+    }
+
+    // In the whole level a selection decides one thing: which entities with
+    // no wires have a card. Returns whether those differ from the ones shown.
+    private bool ShowsOtherUnwired(LogicSelection selection)
+    {
+        if (Graph is not { UnwiredCount: > 0 } graph || Shown is not { } shown)
+            return false;
+
+        int selected = 0;
+        foreach (Guid id in selection.Ids)
+            selected += graph.CardOf(id) is { IsWired: false } ? 1 : 0;
+
+        if (selected != shown.Counts.UnwiredCards)
+            return true;
+
+        for (int i = 0; i < shown.Cards.Count; i++)
+        {
+            if (!shown.Cards[i].IsWired && !selection.Contains(shown.Cards[i]))
+                return true;
+        }
+
+        return false;
     }
 
     private static bool ShowsTheSame(LogicScopedGraph? before, LogicScopedGraph? now)
