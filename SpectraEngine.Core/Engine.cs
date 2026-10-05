@@ -407,13 +407,20 @@ public sealed class Engine
     /// Captions are looked up in it until <c>caption_language</c> names another,
     /// and a sound with no caption in that other one gets its caption in this.
     /// Set it before <see cref="Run"/> or <see cref="Start"/>, from
-    /// <see cref="SpectraProject.LanguageOrDefault"/>.
+    /// <see cref="SpectraProject.LanguageOrDefault"/>. Left unset, it is read
+    /// from the project the asset manager's content root belongs to.
     /// </summary>
     public string ProjectLanguage
     {
         get => _captions.Library.ProjectLanguage;
-        set => _captions.Library.ProjectLanguage = value;
+        set
+        {
+            _captions.Library.ProjectLanguage = value;
+            _hasProjectLanguage = true;
+        }
     }
+
+    private bool _hasProjectLanguage;
 
     /// <summary>
     /// Whether each caption is written to the log when it appears. That is
@@ -668,6 +675,25 @@ public sealed class Engine
         _assetManager.Initialize();
         _sceneManager.Initialize();
         _audioManager.Initialize();
+        AdoptProjectLanguage();
+    }
+
+    // A host that runs a project and names no language still gets the
+    // project's: the content root is that project's Assets folder.
+    private void AdoptProjectLanguage()
+    {
+        if (!_hasProjectLanguage && ProjectLayout.TryOpenByAssets(_assetManager.ContentRootPath) is { } project)
+            _captions.Library.ProjectLanguage = project.Project.LanguageOrDefault;
+
+        _logger.LogInformation(
+            "Captions: {Mode}, looked up in {Language}",
+            _captions.Mode switch
+            {
+                CaptionMode.Off => "off",
+                CaptionMode.Voice => "speech only",
+                _ => "speech and other sounds",
+            },
+            _captions.Language);
     }
 
     private void AttachSurface(IRenderSurface surface)

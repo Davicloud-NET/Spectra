@@ -128,6 +128,69 @@ public sealed class ProjectLanguageTests
         refusal.Message.ShouldContain(says);
     }
 
+    [Fact]
+    public void A_project_is_found_by_its_assets_folder_and_says_its_language()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "SpectraProjectLanguageTests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            ProjectLayout made = ProjectLayout.Create(root, "MyGame");
+            made.Project.Language = "de";
+            made.Save();
+
+            ProjectLayout found = ProjectLayout.TryOpenByAssets(made.AssetsPath + Path.DirectorySeparatorChar)
+                .ShouldNotBeNull();
+
+            found.ManifestPath.ShouldBe(made.ManifestPath);
+            found.Project.LanguageOrDefault.ShouldBe("de");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_folder_that_is_no_projects_assets_folder_finds_no_project()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "SpectraProjectLanguageTests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            ProjectLayout made = ProjectLayout.Create(root, "MyGame");
+            string loose = Path.Combine(root, "Loose", "Assets");
+            Directory.CreateDirectory(loose);
+
+            // Not the Assets folder, no manifest beside it, and two manifests.
+            ProjectLayout.TryOpenByAssets(made.MapsPath).ShouldBeNull();
+            ProjectLayout.TryOpenByAssets(loose).ShouldBeNull();
+            ProjectLayout.TryOpenByAssets(Path.Combine(root, "Missing", "Assets")).ShouldBeNull();
+
+            File.Copy(made.ManifestPath, Path.Combine(root, "Other.spectraproj"));
+            ProjectLayout.TryOpenByAssets(made.AssetsPath).ShouldBeNull();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_project_whose_file_cannot_be_read_is_not_found_by_its_assets_folder()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "SpectraProjectLanguageTests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            ProjectLayout made = ProjectLayout.Create(root, "MyGame");
+            File.WriteAllText(made.ManifestPath, "{ \"language\": \"Klingon\" }");
+
+            ProjectLayout.TryOpenByAssets(made.AssetsPath).ShouldBeNull();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("en")]
     [InlineData("de")]
