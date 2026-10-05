@@ -77,23 +77,24 @@ public sealed class ProjectLayout
     /// <summary>
     /// Opens the project whose <c>Assets</c> folder is at
     /// <paramref name="assetsPath"/>. Null when the folder is no project's
-    /// <c>Assets</c> folder, or the manifest beside it cannot be read.
+    /// <c>Assets</c> folder, or the folder above it or the manifest in it
+    /// cannot be read.
     /// </summary>
     public static ProjectLayout? TryOpenByAssets(string assetsPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assetsPath);
 
-        string assets = Path.TrimEndingDirectorySeparator(Path.GetFullPath(assetsPath));
-        if (Path.GetDirectoryName(assets) is not { } root || !Directory.Exists(root))
-            return null;
-
-        // One manifest or none: which of two a folder is, is not guessed here either.
-        string[] manifests = Directory.GetFiles(root, "*" + ProjectFormat.Extension);
-        if (manifests.Length != 1)
-            return null;
-
         try
         {
+            string assets = Path.TrimEndingDirectorySeparator(Path.GetFullPath(assetsPath));
+            if (Path.GetDirectoryName(assets) is not { } root || !Directory.Exists(root))
+                return null;
+
+            // One manifest or none: which of two a folder is, is not guessed here either.
+            string[] manifests = Directory.GetFiles(root, "*" + ProjectFormat.Extension);
+            if (manifests.Length != 1)
+                return null;
+
             ProjectLayout layout = Open(manifests[0]);
             bool isItsAssets = string.Equals(
                 Path.TrimEndingDirectorySeparator(Path.GetFullPath(layout.AssetsPath)),

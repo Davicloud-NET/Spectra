@@ -396,20 +396,16 @@ public sealed class Engine
     public SpectraConsole SpectraConsole => _console;
 
     /// <summary>
-    /// The captions that show right now. A game that draws its own captions
-    /// reads them here, on the render thread. A UI thread reads
-    /// <see cref="FrameSnapshot.Captions"/>.
+    /// The captions that show right now, for a game that draws its own.
+    /// Render thread only. A UI thread reads <see cref="FrameSnapshot.Captions"/>.
     /// </summary>
     public CaptionFeed Captions => _captions;
 
     /// <summary>
     /// The language the project names as its own, as a <see cref="LanguageTag"/>.
-    /// Captions are looked up in it until <c>caption_language</c> names another,
-    /// and a sound with no caption in that other one gets its caption in this.
-    /// Set it before <see cref="Run"/> or <see cref="Start"/>, from
-    /// <see cref="SpectraProject.LanguageOrDefault"/>. Left unset, it is read
-    /// from the project the asset manager's content root belongs to.
+    /// Set it before <see cref="Run"/> or <see cref="Start"/>.
     /// </summary>
+    // Left unset, it is read from the project the content root belongs to.
     public string ProjectLanguage
     {
         get => _captions.Library.ProjectLanguage;
@@ -423,9 +419,8 @@ public sealed class Engine
     private bool _hasProjectLanguage;
 
     /// <summary>
-    /// Whether each caption is written to the log when it appears. That is
-    /// the engine's caption view until it has one that draws. A game that
-    /// shows captions itself turns it off and reads <see cref="Captions"/>.
+    /// Whether each caption is written to the log when it appears. A game
+    /// that shows captions itself turns it off and reads <see cref="Captions"/>.
     /// </summary>
     public bool LogCaptions { get; set; } = true;
 
@@ -679,21 +674,32 @@ public sealed class Engine
     }
 
     // A host that runs a project and names no language still gets the
-    // project's: the content root is that project's Assets folder.
+    // project's: the content root is that project's Assets folder. The log
+    // says where the language came from, so a wrong one can be traced.
     private void AdoptProjectLanguage()
     {
-        if (!_hasProjectLanguage && ProjectLayout.TryOpenByAssets(_assetManager.ContentRootPath) is { } project)
-            _captions.Library.ProjectLanguage = project.Project.LanguageOrDefault;
+        string source = "set by the host";
+        if (!_hasProjectLanguage)
+        {
+            ProjectLayout? project = ProjectLayout.TryOpenByAssets(_assetManager.ContentRootPath);
+            if (project is not null)
+                _captions.Library.ProjectLanguage = project.Project.LanguageOrDefault;
+
+            source = project is null
+                ? "the default: the folder above the content has no project file, or several"
+                : "from " + System.IO.Path.GetFileName(project.ManifestPath);
+        }
 
         _logger.LogInformation(
-            "Captions: {Mode}, looked up in {Language}",
+            "Captions: {Mode}, looked up in {Language} ({Source})",
             _captions.Mode switch
             {
                 CaptionMode.Off => "off",
                 CaptionMode.Voice => "speech only",
                 _ => "speech and other sounds",
             },
-            _captions.Language);
+            _captions.Language,
+            source);
     }
 
     private void AttachSurface(IRenderSurface surface)
