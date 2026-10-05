@@ -82,7 +82,7 @@ public sealed class PointSoundMarkerTests
     }
 
     [Fact]
-    public void A_marker_on_the_last_frame_fires_just_before_the_end_does()
+    public void A_marker_at_the_very_end_fires_just_before_the_end_does()
     {
         Describe(Rate, default, (Rate, "end"));
         _rig.Sound(Line, ("startplaying", "1"));
@@ -164,7 +164,7 @@ public sealed class PointSoundMarkerTests
     }
 
     [Fact]
-    public void Markers_on_the_first_and_last_frame_of_a_loop_both_fire_on_every_pass()
+    public void Markers_at_the_start_and_the_end_of_a_loop_both_fire_on_every_pass()
     {
         Describe(Rate, default, (0, "start"), (Rate, "end"));
         _rig.Sound(Line, ("startplaying", "1"), ("looped", "1"));

@@ -42,7 +42,12 @@ public sealed class SoundEmitters
     /// </summary>
     public ReadOnlySpan<SoundEmitter> Playing => CollectionsMarshal.AsSpan(_playing);
 
-    /// <summary>Starts a sound on a node, from its first frame, on the tick being run.</summary>
+    /// <summary>
+    /// Starts a sound on a node, from its first frame, on the tick being run.
+    /// A sound that plays once stays listed past its end, until whoever
+    /// started it stops it. <see cref="SoundEmitter.HasEndedAt"/> says when
+    /// that is.
+    /// </summary>
     /// <param name="node">Where the sound sits. It follows the node.</param>
     /// <param name="path">The authored sound's content path.</param>
     /// <param name="sound">What the world's <see cref="ISoundCatalog"/> said about that path.</param>

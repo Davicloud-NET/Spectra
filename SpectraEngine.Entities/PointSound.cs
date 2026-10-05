@@ -12,7 +12,7 @@ namespace SpectraEngine.Entities;
 // length, never asked of an audio device, so a server ends it on the same tick.
 // Play on a playing sound starts it over. Stop fires nothing.
 // A marker fires OnMarker with its name. A looped sound fires its markers on
-// every pass, and one on the loop's last frame fires as the pass ends.
+// every pass, and one at the loop's end fires as the pass ends.
 // Looped repeats the file's loop region, or the whole sound when it has none.
 // Not looped plays once through and ignores the region.
 // The sound is its own activator for OnEnded and OnMarker.
@@ -76,7 +76,7 @@ public sealed partial class PointSound : Entity
     /// <summary>The sound is at full volume inside this distance.</summary>
     [Keyvalue(
         "mindistance",
-        Display = "Min distance",
+        Display = "Minimum distance",
         Tooltip = "The sound is at full volume inside this distance.",
         Default = "2",
         Min = 0f)]
@@ -85,7 +85,7 @@ public sealed partial class PointSound : Entity
     /// <summary>The sound is silent beyond this distance.</summary>
     [Keyvalue(
         "maxdistance",
-        Display = "Max distance",
+        Display = "Maximum distance",
         Tooltip = "The sound is silent beyond this distance.",
         Default = "30",
         Min = 0f)]
@@ -268,7 +268,7 @@ public sealed partial class PointSound : Entity
     }
 
     // Both ends count: a marker on frame 0 fires as the sound starts, and
-    // one on the last frame fires as it ends.
+    // one at the very end fires as it ends.
     private void FireMarkers(long first, long last)
     {
         IReadOnlyList<AudioMarker> markers = _description.Markers;

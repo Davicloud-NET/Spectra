@@ -16,8 +16,8 @@ Plays a sound from where it stands: a hum, an alarm, a spoken line.
 | `sound` | Sound | empty | The sound file to play, as a path inside the project's content, such as `Sounds/door_open.wav`. |
 | `volume` | Volume | 1 | How loud the sound is. 1 is the file as it is, 0 is silent. |
 | `pitch` | Pitch | 1 | How fast the sound plays, from 0.1 to 10. 2 is twice as fast and an octave higher. |
-| `mindistance` | Min distance | 2 | The sound is at full volume inside this distance. |
-| `maxdistance` | Max distance | 30 | The sound is silent beyond this distance. |
+| `mindistance` | Minimum distance | 2 | The sound is at full volume inside this distance. |
+| `maxdistance` | Maximum distance | 30 | The sound is silent beyond this distance. |
 | `looped` | Looped | 0 | Set to 1 and the sound repeats until something stops it. |
 | `startplaying` | Start playing | 0 | Set to 1 and the sound plays when the level starts. |
 
@@ -55,9 +55,9 @@ A marker is a named moment in a sound file. [Cook and run a project](/guides/coo
 
 When the sound reaches a marker, `OnMarker` fires with the marker's name as its parameter. The name takes the place of whatever parameter the wire has. To tell markers apart, wire `OnMarker` to the `InValue` of a [`logic_case`](/reference/logic-entities/#logic_case) and give each case one marker's name. That is how a spoken line opens a door on one word and closes it on another.
 
-Markers that are reached on the same tick fire in the order the file lists them. A marker on the last frame of a sound fires just before `OnEnded`.
+Markers that are reached on the same tick fire in the order the file lists them. A marker at the very end of a sound fires just before `OnEnded`.
 
-A looped sound fires its markers again on every pass. A marker before the loop region fires once, and one after it never fires. A marker on the region's last frame fires as each pass ends.
+A looped sound fires its markers again on every pass. A marker before the loop region fires once, and one after it never fires. A marker at the very end of the region fires as each pass ends.
 
 `Play` on a playing sound starts the markers over as well.
 
@@ -65,7 +65,7 @@ A looped sound fires its markers again on every pass. A marker before the loop r
 
 The end of a sound and its markers are counted in ticks, from the length of the file. There are 60 ticks a second. A sound one second long fires `OnEnded` on the 60th tick after it starts, and on the 30th at pitch 2. A marker fires on the first tick that has played as far as the marker.
 
-The count comes from the level's ticks, not from a clock or a sound device. A level that runs with no sound device, on a server for one, fires on the same ticks.
+The count comes from the level's ticks, not from a clock or a sound device. A level that runs with no sound device, such as one on a server, fires on the same ticks.
 
 Both outputs fire at the end of a tick, so what they are wired to gets its input on the next one.
 
