@@ -31,9 +31,10 @@ public sealed class SceneSoundObstacles : ISoundObstacles
     // until the next one plays.
     private readonly WeakReference<Scene.Scene?> _scene = new(null);
     private readonly WeakReference<CompiledStaticWorld?> _baked = new(null);
-    private int _compileCount;
     private bool _hadBaked;
-    private long _revision;
+
+    // Counts the worlds seen: another scene, or a baked map that came or went.
+    private int _worldsSeen;
 
     /// <summary>Builds the obstacles of whatever scene <paramref name="current"/> names.</summary>
     /// <param name="current">The scene to trace now, or null when there is none.</param>
@@ -55,19 +56,33 @@ public sealed class SceneSoundObstacles : ISoundObstacles
         // A baked world never compiles, so the counter cannot say that one
         // arrived or left.
         CompiledStaticWorld? baked = scene.CompiledStaticWorld;
-        int compileCount = scene.StaticWorldCompileCount;
 
-        if (!IsSeen(scene, baked) || compileCount != _compileCount)
+        if (!IsSeen(scene, baked))
         {
             _scene.SetTarget(scene);
             _baked.SetTarget(baked);
             _hadBaked = baked is not null;
-            _compileCount = compileCount;
-            _revision++;
+            _worldsSeen++;
         }
 
-        revision = _revision;
+        // The compile count in the low half, so a later question can name
+        // the compile an answer was traced after.
+        revision = ((long)_worldsSeen << 32) | (uint)scene.StaticWorldCompileCount;
         return true;
+    }
+
+    /// <inheritdoc/>
+    public bool HasChangedSince(long revision, Vector3 from, Vector3 to, float reach)
+    {
+        if (_current() is not { } scene || !IsSeen(scene, scene.CompiledStaticWorld))
+            return true;
+        if ((int)(revision >> 32) != _worldsSeen)
+            return true;
+
+        // By the cells a compile touched, so this is the scene's answer and
+        // as coarse as a cell.
+        var line = new Aabb(Vector3.Min(from, to), Vector3.Max(from, to)).Expanded(reach);
+        return scene.WorldChangedSince((int)revision, in line);
     }
 
     /// <inheritdoc/>

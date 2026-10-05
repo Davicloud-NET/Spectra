@@ -56,6 +56,38 @@ public sealed class SceneSoundObstaclesTests
     }
 
     [Fact]
+    public void A_compile_has_changed_the_lines_near_it_and_no_others()
+    {
+        SpanLevel level = Walled();
+        var obstacles = new SceneSoundObstacles(() => level.Scene);
+        obstacles.TryReadWorld(out long before);
+
+        // Six compile cells from the wall.
+        var far = new Vector3(200f, 1f, 200f);
+        level.Box("More", far, new Vector3(1f));
+        level.CompileChanges();
+        obstacles.TryReadWorld(out long after).ShouldBeTrue();
+
+        after.ShouldNotBe(before);
+        obstacles.HasChangedSince(before, Near, Far, 0.25f).ShouldBeFalse();
+        obstacles.HasChangedSince(before, far + (Vector3.UnitX * 3f), far - (Vector3.UnitX * 3f), 0.25f).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Another_scene_has_changed_every_line()
+    {
+        SpanLevel walled = Walled();
+        Scene current = walled.Scene;
+        var obstacles = new SceneSoundObstacles(() => current);
+        obstacles.TryReadWorld(out long before);
+
+        current = new Scene("Open");
+        obstacles.TryReadWorld(out _);
+
+        obstacles.HasChangedSince(before, Near, Far, 0.25f).ShouldBeTrue();
+    }
+
+    [Fact]
     public void A_part_that_moved_is_not_another_revision()
     {
         SpanLevel level = Walled();

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Scene;
@@ -38,6 +39,25 @@ internal sealed class SpanLevel(Vector3 origin = default, Scene? scene = null)
     public SpanLevel Compile()
     {
         Scene.RebuildStaticWorld(new FakeRenderer());
+        return this;
+    }
+
+    // Lets a change land the way it does while a level runs: compiled in the
+    // background and published for the cells it touched alone. Compile
+    // publishes the whole world as changed.
+    public SpanLevel CompileChanges()
+    {
+        var renderer = new FakeRenderer();
+        int before = Scene.StaticWorldCompileCount;
+
+        SpinWait.SpinUntil(
+            () =>
+            {
+                Scene.ProcessStaticWorldCompilation(renderer, NullLogger.Instance);
+                return Scene.StaticWorldCompileCount > before;
+            },
+            TimeSpan.FromSeconds(30)).ShouldBeTrue("the change must publish");
+
         return this;
     }
 

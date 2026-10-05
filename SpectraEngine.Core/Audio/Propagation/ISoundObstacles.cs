@@ -22,6 +22,14 @@ public interface ISoundObstacles
     bool TryReadWorld(out long revision);
 
     /// <summary>
+    /// Whether the solid world is another than it was at
+    /// <paramref name="revision"/> anywhere within <paramref name="reach"/>
+    /// of the line from <paramref name="from"/> to <paramref name="to"/>.
+    /// May say yes for a change that is only near.
+    /// </summary>
+    bool HasChangedSince(long revision, Vector3 from, Vector3 to, float reach);
+
+    /// <summary>
     /// Where a sound at <paramref name="from"/> starts its way to
     /// <paramref name="to"/>. A sound on a part is heard from that part, so
     /// this is where the line leaves the part and what it is set in.

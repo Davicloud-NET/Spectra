@@ -19,6 +19,9 @@ internal sealed class FakeSoundObstacles : ISoundObstacles
     // Raise it, as a compile that landed does.
     public long Revision { get; set; } = 1;
 
+    // The stretch of x the last raise of Revision changed. Null for all of it.
+    public (float MinX, float MaxX)? Changed { get; set; }
+
     // Traces since the test last set it to zero.
     public int Traces { get; set; }
 
@@ -39,6 +42,16 @@ internal sealed class FakeSoundObstacles : ISoundObstacles
     {
         revision = Revision;
         return HasWorld;
+    }
+
+    public bool HasChangedSince(long revision, Vector3 from, Vector3 to, float reach)
+    {
+        if (revision == Revision)
+            return false;
+        if (Changed is not { } changed)
+            return true;
+
+        return MathF.Min(from.X, to.X) - reach <= changed.MaxX && MathF.Max(from.X, to.X) + reach >= changed.MinX;
     }
 
     // Every sound is heard from where it is.

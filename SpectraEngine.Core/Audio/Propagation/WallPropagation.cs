@@ -186,11 +186,25 @@ public sealed class WallPropagation : ISoundPropagation
         if (age >= _settings.RefreshSeconds)
             return GrownOld + Math.Min(age, OldestCounted);
 
-        bool changed = answer.Revision != frame.Revision
-            || IsFurther(answer.Listener, frame.Listener, _settings.MoveDistance)
-            || IsFurther(answer.Sound, sound, _settings.MoveDistance);
+        bool changed = IsFurther(answer.Listener, frame.Listener, _settings.MoveDistance)
+            || IsFurther(answer.Sound, sound, _settings.MoveDistance)
+            || HasWorldChanged(ref answer, frame.Revision);
 
         return changed ? gain : 0;
+    }
+
+    // A compile that landed away from an answer's lines leaves it standing.
+    // A world that animates compiles every frame.
+    private bool HasWorldChanged(ref WallAnswer answer, long revision)
+    {
+        if (answer.Revision == revision)
+            return false;
+
+        if (_world.HasChangedSince(answer.Revision, answer.Sound, answer.Listener, _settings.HeadRadius))
+            return true;
+
+        answer.Revision = revision;
+        return false;
     }
 
     // Traces the due sounds in turn until the frame's lines are spent. A new

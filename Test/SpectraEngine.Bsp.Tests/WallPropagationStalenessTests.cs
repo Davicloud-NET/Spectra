@@ -60,6 +60,40 @@ public sealed class WallPropagationStalenessTests
     }
 
     [Fact]
+    public void A_world_that_changed_away_from_a_sounds_lines_leaves_its_answer_alone()
+    {
+        WallRig rig = OneSound(out FakeSoundObstacles world);
+        rig.Frame();
+        world.Traces = 0;
+
+        // The sound is at x = 8 and the listener at 0.
+        world.Changed = (100f, 110f);
+        world.Revision++;
+        rig.Frame(3);
+
+        world.Traces.ShouldBe(0);
+    }
+
+    [Fact]
+    public void A_recompile_far_from_a_sounds_lines_does_not_have_it_traced_again()
+    {
+        var level = new SpanLevel();
+        level.Box("Floor", new Vector3(0f, -0.5f, 0f), new Vector3(6f, 0.5f, 10f));
+        level.Compile();
+        var rig = new WallRig(level) { Listener = Ear };
+        rig.Add(Behind);
+        rig.Frame();
+        rig.Walls.Stats.Traces.ShouldBe(Engine.Lines);
+
+        // Six compile cells away.
+        level.Box("Far", new Vector3(200f, 1f, 200f), new Vector3(1f));
+        level.CompileChanges();
+        rig.Frame();
+
+        rig.Walls.Stats.Traces.ShouldBe(0);
+    }
+
+    [Fact]
     public void A_listener_that_moved_less_than_the_move_distance_keeps_the_answer()
     {
         WallRig rig = OneSound(out FakeSoundObstacles world);
