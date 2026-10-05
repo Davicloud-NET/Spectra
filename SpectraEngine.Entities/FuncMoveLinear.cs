@@ -13,6 +13,8 @@ namespace SpectraEngine.Entities;
 // Open heads for position 1 and Close for position 0, from wherever the brush
 // is. Open while opening does nothing. SetPosition heads for a fraction of the
 // way, rounded to a whole tick of travel.
+// A brush that would squeeze the player waits where it is and goes on once
+// they are out of the way.
 // OnFullyOpen and OnFullyClosed fire on arriving at position 1 and 0, with the
 // mover as their activator. Arriving anywhere between fires nothing.
 [SpectraEntity("func_movelinear", Display = "Linear Mover", Group = "Movers", Placement = EntityPlacement.Brush)]
@@ -86,6 +88,7 @@ public sealed partial class FuncMoveLinear : Entity
         }
 
         _mover.SetTravel(direction, Distance, Speed);
+        _mover.SetBrushes(CollectOwnedBrushes());
         _mover.PlaceAt(_mover.TicksAt(StartPosition));
     }
 
@@ -95,6 +98,7 @@ public sealed partial class FuncMoveLinear : Entity
         switch (_mover.Advance())
         {
             case LinearMoverStep.Moving:
+            case LinearMoverStep.Blocked:
                 return;
 
             case LinearMoverStep.ArrivedOpen:

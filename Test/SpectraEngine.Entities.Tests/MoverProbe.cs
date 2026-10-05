@@ -12,6 +12,7 @@ internal sealed class MoverProbe : Entity
     private Vector3 _direction = Vector3.UnitY;
     private float _distance = 2f;
     private float _speed = 2f;
+    private bool _solid;
 
     public MoverProbe() => Mover = new LinearMover(this);
 
@@ -24,9 +25,17 @@ internal sealed class MoverProbe : Entity
             case "direction": return KeyvalueWire.TryParseVec3(value, out _direction);
             case "distance": return KeyvalueWire.TryParseFloat(value, out _distance);
             case "speed": return KeyvalueWire.TryParseFloat(value, out _speed);
+            case "solid": return KeyvalueWire.TryParseBool(value, out _solid);
             default: return false;
         }
     }
 
-    protected internal override void OnSpawn() => Mover.SetTravel(_direction, _distance, _speed);
+    protected internal override void OnSpawn()
+    {
+        Mover.SetTravel(_direction, _distance, _speed);
+
+        // Off unless asked for: a mover told of no brushes is never blocked.
+        if (_solid)
+            Mover.SetBrushes(CollectOwnedBrushes());
+    }
 }

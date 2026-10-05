@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using SpectraEngine.Core.Entities;
 
@@ -12,6 +13,7 @@ namespace SpectraEngine.Core.Physics.Character;
 // scripted mover all tick this without them. The view lives elsewhere.
 public sealed class CharacterSimulation : IPlayerPresence
 {
+    private readonly Scene.Scene _scene;
     private readonly ICharacterCollisionSource _source;
     private CharacterState _state;
 
@@ -25,6 +27,7 @@ public sealed class CharacterSimulation : IPlayerPresence
     {
         ArgumentNullException.ThrowIfNull(scene);
 
+        _scene = scene;
         Tuning = tuning ?? new CharacterTuning();
 
         // Plane sets, not hulls: a doorway cut by a subtractive brush has to
@@ -131,7 +134,10 @@ public sealed class CharacterSimulation : IPlayerPresence
     /// </summary>
     public bool Tick(in CharacterCommand command, float deltaTime)
     {
+        // Around the mover, not in it: a replaced mover is still carried.
+        CarryWithGround();
         Mover.Tick(ref _state, in command, _source, Tuning, deltaTime);
+        _state.GroundOrigin = TryFindGround(out Scene.SceneNode? ground) ? ground.WorldPosition : default;
 
         if (_state.Position.Y >= FallOutHeight)
             return false;
@@ -139,5 +145,44 @@ public sealed class CharacterSimulation : IPlayerPresence
         Respawns++;
         Spawn();
         return true;
+    }
+
+    // Translation only. A ground that turns in place carries nobody.
+    private void CarryWithGround()
+    {
+        if (!TryFindGround(out Scene.SceneNode? ground))
+            return;
+
+        // Skipped at rest, so a still ground adds no rounding.
+        Vector3 moved = ground.WorldPosition - _state.GroundOrigin;
+        if (moved == Vector3.Zero)
+            return;
+
+        // Swept, not added: a rider stops under a ceiling and is left inside
+        // the lift, which then finds it squeezed.
+        CharacterCapsule capsule = Capsule;
+        var filter = CharacterQueryFilter.Default;
+        _source.BeginTick(SweptBounds(in capsule, moved), in filter);
+        _state.Position += moved * _source.SweepCapsule(in capsule, moved, in filter, out _, out _);
+    }
+
+    private static Bsp.Aabb SweptBounds(in CharacterCapsule capsule, Vector3 travel)
+    {
+        Vector3 min = Vector3.Min(capsule.Center1, capsule.Center2);
+        Vector3 max = Vector3.Max(capsule.Center1, capsule.Center2);
+        min = Vector3.Min(min, min + travel);
+        max = Vector3.Max(max, max + travel);
+
+        var pad = new Vector3(capsule.Radius + CharacterMover.BroadphaseMargin);
+        return new Bsp.Aabb(min - pad, max + pad);
+    }
+
+    // The mover leaves the id behind when it leaves the ground.
+    private bool TryFindGround([MaybeNullWhen(false)] out Scene.SceneNode ground)
+    {
+        ground = null;
+        return _state.Grounded
+            && _state.GroundNodeId != default
+            && _scene.TryFindById(_state.GroundNodeId, out ground);
     }
 }

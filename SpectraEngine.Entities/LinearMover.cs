@@ -19,11 +19,20 @@ public sealed class LinearMover
     /// <summary>The slowest a mover travels, in units a second.</summary>
     public const float MinimumSpeed = 0.01f;
 
+    /// <summary>
+    /// How far inside one of the mover's brushes the player's own tick may
+    /// leave it before the mover stops pressing.
+    /// </summary>
+    public const float BlockDepth = 0.1f;
+
     private const float MinimumDirectionLength = 1e-6f;
 
     private const double WholeTickSlack = 1e-3;
 
     private readonly Entity _owner;
+
+    // Null until the owner says which brushes travel with the node.
+    private BrushPenetration? _solid;
 
     /// <summary>
     /// A mover for <paramref name="owner"/>'s node. It goes nowhere until
@@ -144,6 +153,18 @@ public sealed class LinearMover
         TargetTicks = 0;
     }
 
+    /// <summary>
+    /// Names the brushes that travel with the node, so the mover can tell
+    /// when one of them squeezes the player. A mover given none is never
+    /// blocked.
+    /// </summary>
+    /// <param name="brushes">Brush nodes at or below the owner's node.</param>
+    public void SetBrushes(IReadOnlyList<SceneNode> brushes)
+    {
+        ArgumentNullException.ThrowIfNull(brushes);
+        _solid = new BrushPenetration(brushes);
+    }
+
     /// <summary>The tick of the trip nearest to a fraction of it, from 0, closed, to 1, open.</summary>
     public int TicksAt(float fraction)
     {
@@ -178,18 +199,33 @@ public sealed class LinearMover
         return true;
     }
 
-    /// <summary>Moves the node one tick towards <see cref="TargetTicks"/>. Call once a tick.</summary>
+    /// <summary>
+    /// Moves the node one tick towards <see cref="TargetTicks"/>. Call once a
+    /// tick. A move that squeezes the player is taken back.
+    /// </summary>
     public LinearMoverStep Advance()
     {
         if (TargetTicks == TicksTravelled)
             return LinearMoverStep.Stopped;
 
         int next = TicksTravelled + (TargetTicks > TicksTravelled ? 1 : -1);
+
+        // Before the move: how deep the player's own tick left it.
+        float depth = PlayerDepth();
         if (!Write(next))
         {
             // The count stays with the node, which has not moved.
             TargetTicks = TicksTravelled;
             return LinearMoverStep.Stopped;
+        }
+
+        // A player the brushes only reach is pushed or carried, however fast
+        // the node goes. One left this deep had nowhere to go, and a move
+        // further in is taken back.
+        if (depth > BlockDepth && PlayerDepth() > depth)
+        {
+            Write(TicksTravelled);
+            return LinearMoverStep.Blocked;
         }
 
         TicksTravelled = next;
@@ -206,6 +242,11 @@ public sealed class LinearMover
     // Written so NaN means one tick.
     internal static int WholeTicks(double ticks) =>
         ticks > 1d ? (int)Math.Min(Math.Ceiling(ticks - WholeTickSlack), int.MaxValue) : 1;
+
+    private float PlayerDepth() =>
+        _solid is { } solid && _owner.World.Player is { IsPresent: true } player
+            ? solid.Deepest(player.Capsule)
+            : float.NegativeInfinity;
 
     private bool Write(int ticks)
     {

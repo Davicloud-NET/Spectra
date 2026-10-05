@@ -17,4 +17,10 @@ public enum LinearMoverStep
 
     /// <summary>Reached the closed pose on this tick.</summary>
     ArrivedClosed,
+
+    /// <summary>
+    /// The move pressed further into a player who could not get out of the
+    /// way, and was taken back. The node still has somewhere to go.
+    /// </summary>
+    Blocked,
 }

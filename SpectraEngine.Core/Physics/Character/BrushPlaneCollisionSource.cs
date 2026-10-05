@@ -202,6 +202,13 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
                 continue;
 
             var candidatePlane = CharacterContactPlane.Rigid(normal, distance);
+
+            // A part gives way to the world: squeezed between the two, the
+            // capsule is left inside the part, where its mover can find it,
+            // not pushed through the wall. One tick's push over its solves.
+            if (piece.Node is not null)
+                candidatePlane.PushLimit = _tuning.MaxPushPerTick / _tuning.MaxDepenetrationIterations;
+
             var candidateSource = new CharacterContactSource
             {
                 Node = piece.Node,

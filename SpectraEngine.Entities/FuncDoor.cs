@@ -1,4 +1,6 @@
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Scene;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace SpectraEngine.Entities;
@@ -13,9 +15,12 @@ namespace SpectraEngine.Entities;
 // Open while open or opening does nothing and does not restart the wait. Close
 // while opening turns the door round where it is, so the way back takes as
 // long as the way out did. Open while closing does the same.
+// A door that would squeeze the player turns round too, and fires what
+// turning round fires. One that has not left its rest yet waits there.
 // Travel and wait are counted in ticks.
 // OnOpen and OnClose carry the activator of the input that caused them. The
-// door is its own activator for both arrivals and for closing after its wait.
+// door is its own activator for both arrivals, for closing after its wait and
+// for turning round on the player.
 [SpectraEntity("func_door", Display = "Door", Group = "Movers", Placement = EntityPlacement.Brush)]
 public sealed partial class FuncDoor : Entity
 {
@@ -115,11 +120,13 @@ public sealed partial class FuncDoor : Entity
             RefuseKeyvalue("movedir", authored);
         }
 
+        IReadOnlyList<SceneNode> brushes = CollectOwnedBrushes();
         float distance = Distance > 0f
             ? Distance
-            : LinearMover.ExtentAlong(Node, CollectOwnedBrushes(), direction) - Lip;
+            : LinearMover.ExtentAlong(Node, brushes, direction) - Lip;
 
         _mover.SetTravel(direction, distance, Speed);
+        _mover.SetBrushes(brushes);
 
         if (StartOpen)
             _mover.PlaceAt(_mover.TravelTicks);
@@ -152,6 +159,18 @@ public sealed partial class FuncDoor : Entity
 
             case LinearMoverStep.Stopped:
                 SetTicking(false);
+                break;
+
+            case LinearMoverStep.Blocked:
+                // Blocked before it left its rest, it has no way back to
+                // take. It tries again next tick.
+                if (_mover.IsFullyOpen || _mover.IsFullyClosed)
+                    break;
+
+                if (IsHeadedOpen)
+                    StartClosing(null);
+                else
+                    StartOpening(null);
                 break;
         }
     }

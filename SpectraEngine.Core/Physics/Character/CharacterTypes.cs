@@ -174,6 +174,14 @@ public struct CharacterState
     /// <summary>The node being stood on, when it is a part brush that can move.</summary>
     public Guid GroundNodeId;
 
+    /// <summary>
+    /// World position of the node being stood on when this state was written.
+    /// Zero with no such node.
+    /// </summary>
+    // Written by CharacterSimulation, not by the mover: the carry is how far
+    // the node has moved since.
+    public Vector3 GroundOrigin;
+
     public static CharacterState AtFeet(Vector3 feet) => new()
     {
         Position = feet,
