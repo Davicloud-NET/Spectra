@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shell="using:SpectraEngine.Editor.Shell"
+             x:Class="SpectraEngine.Editor.Shell.SoundPreviewStatus"
+             x:DataType="shell:SoundPreviewModel"
+             IsVisible="{Binding HasPlaying}">
+
+  <!-- The status bar's slot for a sound being listened to. The row that
+       started it can scroll away or leave the list, so the sound is stopped
+       from here. -->
+
+  <!-- Width NaN: a ghost button is square by default and would clip this. -->
+  <Button Classes="ghost" Focusable="False" Padding="0" Margin="0" Width="NaN"
+          Click="OnStopPressed" ToolTip.Tip="Stop this sound">
+    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+      <Path Classes="icon" Width="13" Height="13" Stretch="Uniform" StrokeThickness="0"
+            Data="{StaticResource IconStop}" Fill="{StaticResource SpectraMode}" />
+      <TextBlock Classes="value" Text="{Binding PlayingName}"
+                 MaxWidth="180" TextTrimming="CharacterEllipsis"
+                 Foreground="{StaticResource SpectraMode}" />
+      <Border Classes="groupsep" Margin="4,0" />
+    </StackPanel>
+  </Button>
+</UserControl>

@@ -837,6 +837,9 @@
             <Border Classes="groupsep" Margin="4,0" />
           </StackPanel>
 
+          <!-- A sound being listened to; a press stops it. -->
+          <shell:SoundPreviewStatus DataContext="{Binding SoundPreview}" VerticalAlignment="Center" />
+
           <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                       IsVisible="{Binding IsPlaying}">
             <Border Width="6" Height="6" CornerRadius="3"
