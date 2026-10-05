@@ -118,7 +118,7 @@ internal sealed class CookedSoundSource : IContentSource
     private ContentBlob? OpenCached(string cookedPath, string sound)
     {
         using SoundCacheEntry? entry = _cache.TryOpen(cookedPath);
-        if (entry is null) return null;
+        if (entry is null || !IsCookOf(entry, sound)) return null;
 
         if (LooseSoundCook.CurrentKey(_contentRoot, entry.Dependencies, _settings) != entry.Key) return null;
 
@@ -194,6 +194,19 @@ internal sealed class CookedSoundSource : IContentSource
             if (note.Severity == CookDiagnosticSeverity.Info) _logger.LogDebug("Sound {Path}: {Note}", sound, note.Text);
             else _logger.LogWarning("Sound {Path}: {Note}", sound, note.Text);
         }
+    }
+
+    // A .wav and a .wave of one name share a cooked path, and so an entry.
+    // One cooked from the other file is unchanged by its own key and still
+    // not this sound.
+    private static bool IsCookOf(SoundCacheEntry entry, string sound)
+    {
+        foreach (RuleDependency dependency in entry.Dependencies)
+        {
+            if (string.Equals(dependency.Path, sound, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
     }
 
     private static InvalidDataException Refusal(string sound, IReadOnlyList<SoundCookNote> notes)

@@ -266,6 +266,22 @@ public sealed class CookedSoundSourceTests : IDisposable
     }
 
     [Fact]
+    public void A_wav_added_beside_a_wave_of_the_same_name_is_the_one_that_plays()
+    {
+        _project.WriteAsset("Sounds/guard_hey.wave", TempProject.Wav(frames: 96));
+        CookedSoundSource source = Source();
+        AssetManager assets = Assets(source);
+        assets.LoadAudio(Sound).FrameCount.ShouldBe(96);
+
+        // The cached entry was cooked from the .wave, which has not changed.
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 480));
+        assets.UnloadAudio(Sound).ShouldBeTrue();
+
+        assets.LoadAudio(Sound).FrameCount.ShouldBe(480);
+        source.CookCount.ShouldBe(2);
+    }
+
+    [Fact]
     public void Only_a_cooked_name_with_a_wav_behind_it_is_answered()
     {
         _project.WriteAsset(Sound, TempProject.Wav());
