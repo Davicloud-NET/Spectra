@@ -61,6 +61,8 @@ The console command `fake_device_loss` makes the next present fail as a lost gra
 
 A `--command` line runs before `--play` starts the level. Put `wait` in front of anything that needs it running: `--play --command="ent_watch on; wait; ent_list"`. This is how an agent checks entity wiring with no person present.
 
+A run nobody should hear takes `--command="sound_volume 0"` as its first command: `--play` starts the level's sounds.
+
 Publishing:
 
 - Don't pass `-p:PublishAot=true`. The projects that want it already set it. On the command line it reaches the netstandard2.0 generator and the publish fails with NETSDK1207.

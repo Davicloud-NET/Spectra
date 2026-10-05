@@ -6,7 +6,9 @@ description: The entity class that plays a sound from a place in the level.
 A sound is a point in the level that plays a sound file. Wires start and stop it, and it fires when the sound ends or reaches a marker. See [Entities and wiring](/concepts/entities-and-wiring/) for how wires work.
 
 :::note
-A sound is heard in the editor when you press Play, and in a game that runs from its cooked pack. The engine plays cooked sounds only, so the editor cooks a sound file the first time a level uses it. See [Cook and run a project](/guides/cook-and-run-a-project/).
+A sound is heard in the editor when you press Play, and in a game that runs from its cooked pack. The engine plays cooked sounds only, so the editor cooks a sound file the first time a level uses it or you listen to it. See [Cook and run a project](/guides/cook-and-run-a-project/).
+
+To hear a file without pressing Play, press the play button on its row in the Content panel, or beside Sound in the Properties panel. [`sound_play`](/reference/console/#sound_play) does the same from the console.
 :::
 
 In the settings table, the first column is the name a level file uses and the second is the label in the Properties panel.
@@ -17,7 +19,7 @@ Plays a sound from where it stands: a hum, an alarm, a spoken line.
 
 | Setting | In the editor | Default | Meaning |
 |---|---|---|---|
-| `sound` | Sound | empty | The sound file to play, as a path inside the project's content, such as `Sounds/door_open.wav`. |
+| `sound` | Sound | empty | The sound file to play, as a path inside the project's content, such as `Sounds/door_open.wav`. In the editor it is picked from a list of the project's sounds. |
 | `volume` | Volume | 1 | How loud the sound is. 1 is the file as it is, 0 is silent. Above 1 it is no louder up close, and it stays at full volume further out. |
 | `pitch` | Pitch | 1 | How fast the sound plays, from 0.1 to 10. 2 is twice as fast and an octave higher. |
 | `mindistance` | Minimum distance | 2 | The sound is at full volume inside this distance. |

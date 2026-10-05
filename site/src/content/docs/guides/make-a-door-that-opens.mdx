@@ -93,23 +93,25 @@ A sound is an entity too. It plays a sound file from where it stands, and a wire
 
    If you have no sound, the engine's repository has a few placeholders under `Assets/Sounds`.
 
-2. Add the sound. Click the arrow beside Entity and pick Sound. It appears where you are looking, as a green diamond. Move it to the door.
+2. Listen to it. Open the Content panel and go into the `Sounds` folder. The file's row has a play button. Press it to hear the file, and again to stop it.
 
-3. Name it. Type `DoorSound` in the name box at the top of the Properties panel and press <kbd>Enter</kbd>.
+3. Drag the file from the Content panel into the view and let go on the door. A Sound appears there as a green diamond. It plays that file and is named after it: `door_open`.
 
-4. Say which file it plays. Type `Sounds/door_open.wav` beside Sound in the Properties panel and press <kbd>Enter</kbd>. That is the file's path from the `Assets` folder, with forward slashes. There is no file picker for sounds yet, so the path is typed.
+   If the view does not take the drop, double-click the file. The Sound then appears where you are looking. Move it to the door.
 
-5. Put the sound under the door. In the scene tree, drag `DoorSound` onto `Door`. It stays where it is, and from now on it moves when the door moves.
+4. Put the sound under the door. In the scene tree, drag `door_open` onto `Door`. It stays where it is, and from now on it moves when the door moves.
 
-6. Wire the door to the sound. With the door selected, press Add under Sends, pick `OnOpen`, type `DoorSound` beside Target and `Play` beside Input.
+5. Wire the door to the sound. With the door selected, press Add under Sends, pick `OnOpen`, type `door_open` beside Target and `Play` beside Input.
 
-7. Press Play and open the door. The sound plays as the door starts to move.
+6. Press Play and open the door. The sound plays as the door starts to move.
 
 </Steps>
 
-The editor cooks the sound file the first time the level plays, and keeps the result. [Cook and run a project](/guides/cook-and-run-a-project/#sounds-in-the-editor) says where it is kept and when it is cooked again.
+To give the Sound another file, select it and click the box beside Sound in the Properties panel. It lists the project's sounds, each with a play button. None takes the file away.
 
-If you hear nothing, open the Output panel: View, Panels, Output. A sound that cannot be loaded is named there when the level starts.
+The editor cooks the sound file the first time you listen to it or a level plays it, and keeps the result. [Cook and run a project](/guides/cook-and-run-a-project/#sounds-in-the-editor) says where it is kept and when it is cooked again.
+
+If you hear nothing, open the Output panel: View, Panels, Output. A sound that cannot be loaded is named there when the level starts, or when you press its play button.
 
 A door has four outputs. `OnOpen` and `OnClose` fire when it starts to move, `OnFullyOpen` and `OnFullyClosed` when it arrives. For a sound as it closes, add a second Sound and wire `OnClose` to its `Play`. Every setting of a sound is listed in [Sound entities](/reference/sound-entities/).
 

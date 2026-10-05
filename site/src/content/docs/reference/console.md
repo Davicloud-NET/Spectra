@@ -56,6 +56,9 @@ A command that fails prints an error, and the rest of the line still runs.
 | `ent_show <pattern>` | Prints an entity's settings, state, wires and inputs. |
 | `ent_watch [on \| off \| <pattern> ...]` | Prints what entities fire and receive as it happens. |
 | `sound_stats` | Prints how many sounds the level is playing and how many of them are heard. |
+| `sound_play <path>` | Plays one sound file by itself, once from its start. |
+| `sound_stop` | Stops the sound `sound_play` started. |
+| `sound_volume [0..1]` | Prints the volume of everything heard, or sets it. |
 | `sound_simulate [placed \| fades \| walls \| doppler \| all] [on \| off]` | Switches a part of the sound simulation on or off for every sound. |
 | `sound_doppler [strength]` | Sets how strong Doppler is, from 0 to 4. |
 | `fake_device_loss` | Ends the next frame the way a lost graphics device does, to test what happens then. The demo ends with an error. The editor restarts its viewport and keeps the level. |
@@ -173,6 +176,7 @@ With patterns, a line prints when a pattern matches the sender or the receiver, 
 > sound_stats
 sound_stats: 5 playing, 2 with a source, 1 without, 1 silent, 1 not loaded.
 sound_stats: 2 sources, 0 starts refused.
+sound_stats: preview Sounds/door_open.wav, volume 0.5.
 ```
 
 | Count | Means |
@@ -182,10 +186,67 @@ sound_stats: 2 sources, 0 starts refused.
 | `without` | Sounds loud enough to hear that are not heard, because louder ones hold every source. |
 | `silent` | Sounds with nothing to hear: too far away, over, or on a node that was deleted. |
 | `not loaded` | Sounds whose file could not be loaded. The log names each file once. |
-| `sources` | How many sounds the audio device can play at once. |
+| `sources` | How many of the level's sounds the audio device can play at once. |
 | `starts refused` | Sounds the device had no source for when it was asked to start them. |
+| `preview` | The file [`sound_play`](#sound_play) is playing, or `none`. It is not one of the level's sounds and is counted in none of the numbers above. |
+| `volume` | The volume [`sound_volume`](#sound_volume) has set. |
 
-Before you press Play it prints `sound_stats: the level is not running, so it plays nothing.` and the number of sources. With no audio device it says so first, as a warning.
+Before you press Play one line takes the place of the first two: `sound_stats: the level is not running, so it plays nothing.` and the number of sources. The line with the preview and the volume prints either way. With no audio device it says so first, as a warning.
+
+### sound_play
+
+```
+> sound_play Sounds/door_open.wav
+sound_play: playing Sounds/door_open.wav.
+```
+
+Plays one sound file by itself, so you can listen to it. It plays once from its start, at full volume and in both ears, and it needs no level running. The play button beside a sound in the editor does the same.
+
+The path is the one a sound entity stores: from the `Assets` folder, with forward slashes. A path with a space needs quotes.
+
+One file plays at a time. Asking again starts over, with the same file or another. The sound ends by itself, and a file with a loop region plays through once. Stopping the level does not stop it.
+
+It plays on a source of its own. It takes none from the level's sounds, and they take none from it.
+
+A file that cannot be loaded is an error that says why:
+
+```
+> sound_play Sounds/dor_open.wav
+sound_play: Sounds/dor_open.wav was not played: Sound 'Sounds/dor_open.wav' has no cooked 'Sounds/dor_open.saudio' beside it, and the engine reads cooked audio only; run scook over the project.
+```
+
+That is what a file that does not exist prints as well. With no audio device the reason is `audio is off`.
+
+### sound_stop
+
+```
+> sound_stop
+sound_stop: stopped Sounds/door_open.wav.
+```
+
+Stops the sound `sound_play` or a play button started. With none playing it prints `sound_stop: no preview is playing.` It never touches the level's sounds.
+
+### sound_volume
+
+```
+> sound_volume
+sound_volume: 1.
+
+> sound_volume 0.5
+sound_volume: 0.5.
+```
+
+Alone it prints the volume. With a number it sets it: 1 is full and 0 is silent. It scales everything that is heard, the level's sounds and `sound_play` alike.
+
+A number outside 0 to 1 is brought to the nearer end, and the reply says so: `sound_volume: 1. It goes from 0 to 1.` Anything that is not a number is refused.
+
+The volume holds for as long as the engine runs. The next start begins at 1.
+
+For a run of the demo that makes no sound, set it before the level plays:
+
+```bash
+dotnet run --project SpectraEngine.Executable -- d3d11 --command="sound_volume 0" --play
+```
 
 ### sound_simulate
 
