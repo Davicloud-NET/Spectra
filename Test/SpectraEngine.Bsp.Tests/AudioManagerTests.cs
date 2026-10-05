@@ -276,6 +276,103 @@ public sealed class AudioManagerTests
         audio.Shutdown();
     }
 
+    [Fact]
+    public void A_stream_can_start_part_way_into_its_sound()
+    {
+        var backend = new FakeAudioBackend();
+        var audio = NewManager(backend);
+        var provider = new RampSampleProvider(new AudioFormat(Rate, 1), 100_000, LoopRegion.None);
+
+        audio.PlayStream(provider, AudioSourceSettings.Default, startFrame: 30_000).ShouldNotBeNull();
+
+        backend.Uploads[0][0].ShouldBe((short)30_000);
+        Should.Throw<ArgumentOutOfRangeException>(
+            () => audio.PlayStream(provider, AudioSourceSettings.Default, startFrame: -1));
+        audio.ActiveVoiceCount.ShouldBe(1);
+
+        audio.Shutdown();
+    }
+
+    [Fact]
+    public void A_released_voice_gives_its_source_back_at_once()
+    {
+        var backend = new FakeAudioBackend(maxSources: 1);
+        var audio = NewManager(backend, sources: 1);
+        var provider = new RampSampleProvider(new AudioFormat(Rate, 1), 100_000, new LoopRegion(0, 100_000));
+        StreamingVoice first = audio.PlayStream(provider, AudioSourceSettings.Default).ShouldNotBeNull();
+
+        audio.Release(first);
+
+        first.IsFinished.ShouldBeTrue();
+        audio.ActiveVoiceCount.ShouldBe(0);
+        backend.LiveBufferCount.ShouldBe(0);
+
+        // No Update in between: the one source is free again already.
+        audio.PlayStream(provider, AudioSourceSettings.Default).ShouldNotBeNull();
+        audio.DroppedVoiceCount.ShouldBe(0);
+
+        audio.Shutdown();
+    }
+
+    [Fact]
+    public void Releasing_a_voice_twice_or_one_the_manager_does_not_hold_does_nothing()
+    {
+        var backend = new FakeAudioBackend(maxSources: 1);
+        var audio = NewManager(backend, sources: 1);
+        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600)).ShouldNotBeNull();
+        AudioVoice first = audio.Play(clip).ShouldNotBeNull();
+        audio.Release(first);
+        AudioVoice second = audio.Play(clip).ShouldNotBeNull();
+
+        audio.Release(first);
+        audio.Release(null);
+
+        second.IsFinished.ShouldBeFalse();
+        backend.StateOf(second.Source).ShouldBe(AudioSourceState.Playing);
+        audio.ActiveVoiceCount.ShouldBe(1);
+
+        audio.Shutdown();
+    }
+
+    [Fact]
+    public void A_voice_whose_source_went_to_a_new_sound_is_over_and_cannot_touch_it()
+    {
+        var backend = new FakeAudioBackend(maxSources: 1);
+        var audio = NewManager(backend, sources: 1);
+        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600)).ShouldNotBeNull();
+        AudioVoice first = audio.Play(clip).ShouldNotBeNull();
+
+        // The pool is full, so the new sound takes the one playing.
+        AudioVoice second = audio.Play(clip, Muffled).ShouldNotBeNull();
+        audio.StolenVoiceCount.ShouldBe(1);
+
+        first.IsFinished.ShouldBeTrue();
+        first.Configure(AudioSourceSettings.Default);
+        backend.SettingsOf(second.Source).ShouldBe(Muffled);
+        audio.Update().ShouldBe(1);
+
+        audio.Shutdown();
+    }
+
+    [Fact]
+    public void A_stopped_voice_does_not_end_the_sound_that_took_its_source()
+    {
+        var backend = new FakeAudioBackend(maxSources: 1);
+        var audio = NewManager(backend, sources: 1);
+        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600)).ShouldNotBeNull();
+        AudioVoice first = audio.Play(clip).ShouldNotBeNull();
+
+        first.Stop();
+        AudioVoice second = audio.Play(clip).ShouldNotBeNull();
+
+        audio.Update().ShouldBe(1);
+        second.IsFinished.ShouldBeFalse();
+        backend.StateOf(second.Source).ShouldBe(AudioSourceState.Playing);
+        audio.StolenVoiceCount.ShouldBe(0);
+
+        audio.Shutdown();
+    }
+
     private static AudioManager NewManager(FakeAudioBackend backend, int sources = AudioManager.DefaultSourceCount)
     {
         var audio = new AudioManager(new CapturingLogger(), Supply(backend), sources);

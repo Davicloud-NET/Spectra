@@ -40,7 +40,8 @@ public sealed class StreamingVoice : AudioVoice
         IAudioSampleProvider provider,
         AudioSourceSettings settings,
         int bufferCount = DefaultBufferCount,
-        int bufferFrames = DefaultBufferFrames)
+        int bufferFrames = DefaultBufferFrames,
+        long startFrame = 0)
         : base(backend, source, settings)
     {
         if (bufferCount < 2)
@@ -53,6 +54,7 @@ public sealed class StreamingVoice : AudioVoice
         _bufferFormat = _format.Channels == 1 ? AudioBufferFormat.Mono16 : AudioBufferFormat.Stereo16;
         _bufferFrames = bufferFrames;
         _cursor = new AudioLoopCursor(provider.FrameCount, provider.Loop);
+        _cursor.Seek(startFrame);
         _scratch = new short[(long)bufferFrames * _format.Channels];
 
         _buffers = new uint[bufferCount];

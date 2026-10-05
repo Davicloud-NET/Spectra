@@ -254,6 +254,7 @@ public sealed class AudioManager : IDisposable
 
         bool streaming = clip.Loop.IsLooping;
         if (!_pool.TryAcquire(streaming, out uint source)) return null;
+        RetireVoiceOn(source);
 
         AudioVoice voice = streaming
             ? new StreamingVoice(_backend, source, new ClipSampleProvider(clip), settings)
@@ -267,14 +268,36 @@ public sealed class AudioManager : IDisposable
     /// <paramref name="provider"/>. Returns null when audio is disabled or no
     /// source could be had. Render thread.
     /// </summary>
-    public StreamingVoice? PlayStream(IAudioSampleProvider provider, in AudioSourceSettings settings)
+    /// <param name="startFrame">The sample frame to start at, for a sound that is already under way.</param>
+    public StreamingVoice? PlayStream(
+        IAudioSampleProvider provider, in AudioSourceSettings settings, long startFrame = 0)
     {
         ArgumentNullException.ThrowIfNull(provider);
+        ArgumentOutOfRangeException.ThrowIfNegative(startFrame);
         if (_backend is null || _pool is null) return null;
         if (!_pool.TryAcquire(streaming: true, out uint source)) return null;
+        RetireVoiceOn(source);
 
-        var voice = new StreamingVoice(_backend, source, provider, settings);
+        var voice = new StreamingVoice(_backend, source, provider, settings, startFrame: startFrame);
         return (StreamingVoice?)Track(voice, source);
+    }
+
+    /// <summary>
+    /// Ends a voice and frees its source now, where <see cref="AudioVoice.Stop"/>
+    /// leaves the source held until the next <see cref="Update"/>. Render thread.
+    /// </summary>
+    public void Release(AudioVoice? voice)
+    {
+        if (_pool is null || voice is null) return;
+
+        int index = _voices.IndexOf(voice);
+        if (index < 0) return;
+
+        uint source = voice.Source;
+        voice.Stop();
+        voice.Detach();
+        _pool.Release(source);
+        _voices.RemoveAt(index);
     }
 
     /// <summary>Stops every voice without touching the clips they were playing. Render thread.</summary>
@@ -327,6 +350,20 @@ public sealed class AudioManager : IDisposable
 
         _voices.Add(voice);
         return voice;
+    }
+
+    // A full pool hands a one-shot's source to the new sound. The voice that
+    // had it must let go, or it would go on configuring a sound that is not its own.
+    private void RetireVoiceOn(uint source)
+    {
+        for (int i = 0; i < _voices.Count; i++)
+        {
+            if (_voices[i].Source != source) continue;
+
+            _voices[i].Detach();
+            _voices.RemoveAt(i);
+            return;
+        }
     }
 
     // Only static voices bind the clip's buffer. Streaming voices own theirs.

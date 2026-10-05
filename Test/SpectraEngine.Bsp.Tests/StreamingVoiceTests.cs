@@ -165,6 +165,40 @@ public sealed class StreamingVoiceTests
     }
 
     [Fact]
+    public void A_voice_started_part_way_fills_its_first_buffer_from_that_frame()
+    {
+        var backend = new FakeAudioBackend();
+        StreamingVoice voice = Start(backend, Ramp(10_000, LoopRegion.None), startFrame: 5000);
+
+        backend.StateOf(voice.Source).ShouldBe(AudioSourceState.Playing);
+        backend.Uploads.Count.ShouldBe(BufferCount);
+        for (int k = 0; k < BufferCount; k++)
+            backend.Uploads[k][0].ShouldBe((short)(5000 + (k * BufferFrames)));
+    }
+
+    [Fact]
+    public void A_loop_started_part_way_wraps_at_its_end_like_any_other()
+    {
+        var backend = new FakeAudioBackend();
+        Start(backend, Ramp(1000, new LoopRegion(200, 450)), startFrame: 400);
+
+        // 50 frames to the loop end, then the wrap.
+        short[] first = backend.Uploads[0];
+        for (int i = 0; i < 50; i++) first[i].ShouldBe((short)(400 + i));
+        for (int i = 50; i < 100; i++) first[i].ShouldBe((short)(200 + (i - 50)));
+    }
+
+    [Fact]
+    public void A_voice_started_at_the_end_of_its_sound_is_over_at_once()
+    {
+        var backend = new FakeAudioBackend();
+        StreamingVoice voice = Start(backend, Ramp(250, LoopRegion.None), startFrame: 250);
+
+        voice.IsFinished.ShouldBeTrue();
+        backend.Uploads.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void A_stereo_stream_interleaves_both_channels_into_the_buffer()
     {
         // A frame is one sample per channel: 100 stereo frames are 200 samples.
@@ -192,9 +226,10 @@ public sealed class StreamingVoiceTests
     private static RampSampleProvider Ramp(long frames, LoopRegion loop) =>
         new(new AudioFormat(Rate, 1), frames, loop);
 
-    private static StreamingVoice Start(FakeAudioBackend backend, IAudioSampleProvider provider)
+    private static StreamingVoice Start(FakeAudioBackend backend, IAudioSampleProvider provider, long startFrame = 0)
     {
         backend.TryCreateSource(out uint source).ShouldBeTrue();
-        return new StreamingVoice(backend, source, provider, AudioSourceSettings.Default, BufferCount, BufferFrames);
+        return new StreamingVoice(
+            backend, source, provider, AudioSourceSettings.Default, BufferCount, BufferFrames, startFrame);
     }
 }
