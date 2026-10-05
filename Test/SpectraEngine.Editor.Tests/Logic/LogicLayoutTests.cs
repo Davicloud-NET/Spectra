@@ -219,6 +219,18 @@ public sealed class LogicLayoutTests
     }
 
     [Fact]
+    public void A_selection_in_every_group_leaves_the_groups_where_they_stand()
+    {
+        // Near the selection every group on show holds a selected card. So a
+        // change of mode that shows the same cards has nothing to lay out again.
+        LogicScene selected = Arrange(Vault(), null, OpenVault, StartZone);
+
+        selected.Size.ShouldBe(Scene.Size);
+        foreach (LogicSceneCard card in Scene.Cards)
+            selected.Card(card.Card.Name).Bounds.ShouldBe(card.Bounds, card.Card.Name);
+    }
+
+    [Fact]
     public void The_group_holding_a_selected_card_comes_first()
     {
         LogicScene scene = Arrange(Vault(), null, StartDoor);
