@@ -7,10 +7,11 @@ public sealed class LogicWireFace
     private string _stateText = "";
     private string? _sentence;
 
-    internal LogicWireFace(LogicSceneEdge edge, LogicEdge authored)
+    internal LogicWireFace(LogicSceneEdge edge, LogicEdge authored, bool showsRefusals)
     {
         Edge = edge;
         _authored = authored;
+        ShowsRefusals = showsRefusals;
     }
 
     /// <summary>
@@ -33,6 +34,9 @@ public sealed class LogicWireFace
 
     /// <summary>The wire in words, for a tooltip.</summary>
     public string Sentence => _sentence ??= LogicViewText.Sentence(_authored);
+
+    // Whether a refusal of the wire is this edge's to show.
+    internal bool ShowsRefusals { get; }
 
     // Returns whether a drawing of the wire would differ.
     internal bool Take(LogicWireState state)

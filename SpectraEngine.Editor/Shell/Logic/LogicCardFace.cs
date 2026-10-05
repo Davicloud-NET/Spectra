@@ -66,7 +66,7 @@ internal sealed class LogicCardFace
         return LogicMetrics.HeaderHeight / 2;
     }
 
-    public LogicSceneCard Place(Point topLeft, bool isSelected, bool isDimmed)
+    public LogicSceneCard Place(Point topLeft)
     {
         double x = topLeft.X;
         double y = topLeft.Y;
@@ -90,8 +90,6 @@ internal sealed class LogicCardFace
             Note = Note,
             NoteRow = Note.Length > 0 ? new Rect(x, noteTop, width, LogicMetrics.NoteRowHeight) : null,
             IsExpanded = IsExpanded,
-            IsSelected = isSelected,
-            IsDimmed = isDimmed,
         };
     }
 }

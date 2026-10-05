@@ -73,5 +73,9 @@ internal sealed class LogicIcons
         string.Equals(card.Group, group, StringComparison.Ordinal);
 
     private static ImmutablePen Pen(string brush) => new(
-        LogicTheme.Brush(brush), LogicDrawMetrics.IconStroke, null, PenLineCap.Round, PenLineJoin.Round);
+        LogicTheme.Brush(brush),
+        LogicTheme.Size("SpectraLogicIconStroke"),
+        null,
+        PenLineCap.Round,
+        PenLineJoin.Round);
 }

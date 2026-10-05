@@ -3,8 +3,9 @@ using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Inspection;
 using System;
-using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Globalization;
 using System.Windows.Input;
 
 namespace SpectraEngine.Editor.Shell.Logic;
@@ -23,16 +24,14 @@ public sealed class LogicViewModel : ObservableObject
     /// <summary>The most steps away from the selection the view shows.</summary>
     public const int MaximumSteps = 6;
 
-    private static readonly IReadOnlySet<Guid> NoSelection = FrozenSet<Guid>.Empty;
+    private static readonly PropertyChangedEventArgs TickTextChanged = new(nameof(TickText));
 
-    private readonly ILogicTextMeasure _ruler;
+    private readonly LogicArrangement _arrangement;
     private readonly LogicPlayState _play = new();
     private readonly LogicSelection _selection = new();
-    private readonly LogicWireFaces _faces = new();
-    private Guid[] _shownIds = [];
+    private readonly LogicFitRule _fit = new();
 
     private EntitySchemaCatalog? _schemas;
-    private LogicGraphInfo? _info;
     private LogicScopeMode _mode = LogicScopeMode.AroundSelection;
     private int _steps = 2;
     private string _filter = "";
@@ -40,15 +39,11 @@ public sealed class LogicViewModel : ObservableObject
     private Size _viewSize;
     private LogicStatus _status = LogicStatus.None;
     private string _emptyText = "";
+    private string _tickText = "";
     private bool _offersWholeLevel;
-
-    private bool _graphStale;
-    private bool _scopeStale;
-    private bool _dimStale;
-    private bool _layoutStale;
-    private bool _wiresStale;
-    private bool _fitPending = true;
-    private int _reservedDigits;
+    private Guid? _goingNowhereSender;
+    private Guid[] _shownIds = [];
+    private bool _shownIdsChanged;
 
     /// <summary>Creates the model of a view that measures text with the fonts it draws in.</summary>
     public LogicViewModel()
@@ -61,12 +56,18 @@ public sealed class LogicViewModel : ObservableObject
     {
         ArgumentNullException.ThrowIfNull(ruler);
 
-        _ruler = ruler;
+        _arrangement = new LogicArrangement(ruler);
         FitCommand = new RelayCommand(Fit);
         ActualSizeCommand = new RelayCommand(ShowActualSize);
+        WholeLevelCommand = new RelayCommand(() => Mode = LogicScopeMode.WholeLevel);
+        AroundSelectionCommand = new RelayCommand(() => Mode = LogicScopeMode.AroundSelection);
     }
 
-    /// <summary>Raised when a drawing of the graph would differ.</summary>
+    /// <summary>
+    /// Raised when a drawing of the graph would differ. <see cref="Scene"/>,
+    /// <see cref="Wires"/> and <see cref="View"/> are read then, they raise
+    /// no change of their own.
+    /// </summary>
     public event Action? Redraw;
 
     /// <summary>
@@ -84,7 +85,7 @@ public sealed class LogicViewModel : ObservableObject
             if (!Set(ref _schemas, value))
                 return;
 
-            _graphStale = true;
+            _arrangement.SetSchemas(value);
             Refresh();
         }
     }
@@ -100,9 +101,8 @@ public sealed class LogicViewModel : ObservableObject
 
             Raise(nameof(IsAroundSelection));
             Raise(nameof(IsWholeLevel));
-            _scopeStale = true;
-            _fitPending = true;
-            Refresh();
+            _fit.Ask();
+            Rescope();
         }
     }
 
@@ -118,11 +118,19 @@ public sealed class LogicViewModel : ObservableObject
         get => _steps;
         set
         {
-            if (!Set(ref _steps, Math.Clamp(value, MinimumSteps, MaximumSteps)))
-                return;
+            int steps = Math.Clamp(value, MinimumSteps, MaximumSteps);
 
-            _scopeStale |= IsAroundSelection;
-            Refresh();
+            // A field that shows what was typed has to be told it was not taken.
+            if (!Set(ref _steps, steps))
+            {
+                if (steps != value)
+                    Raise();
+
+                return;
+            }
+
+            if (IsAroundSelection)
+                Rescope();
         }
     }
 
@@ -132,11 +140,8 @@ public sealed class LogicViewModel : ObservableObject
         get => _filter;
         set
         {
-            if (!Set(ref _filter, value ?? ""))
-                return;
-
-            _dimStale = true;
-            Refresh();
+            if (Set(ref _filter, value ?? ""))
+                Rescope();
         }
     }
 
@@ -146,8 +151,11 @@ public sealed class LogicViewModel : ObservableObject
         get => _view;
         set
         {
-            if (Set(ref _view, value))
-                Redraw?.Invoke();
+            if (_view == value)
+                return;
+
+            _view = value;
+            Redraw?.Invoke();
         }
     }
 
@@ -158,27 +166,30 @@ public sealed class LogicViewModel : ObservableObject
         set
         {
             _viewSize = value;
-            FitIfPending();
+            FitIfAsked();
         }
     }
 
     /// <summary>The level's wiring, or null before a snapshot brought it.</summary>
-    public LogicGraph? Graph { get; private set; }
+    public LogicGraph? Graph => _arrangement.Graph;
 
     /// <summary>The part of the wiring on show and what the filter dims, or null without wiring.</summary>
-    public LogicScopedGraph? Shown { get; private set; }
+    public LogicScopedGraph? Shown => _arrangement.Shown;
 
     /// <summary>The graph laid out, or null without wiring.</summary>
-    public LogicScene? Scene { get; private set; }
+    public LogicScene? Scene => _arrangement.Scene;
 
     /// <summary>The wires as they are drawn now, one for each of the scene's edges and in their order.</summary>
-    public IReadOnlyList<LogicWireFace> Wires => _faces.All;
+    public IReadOnlyList<LogicWireFace> Wires => _arrangement.Wires;
 
     /// <summary>Whether a level is running.</summary>
     public bool IsPlaying => _play.IsPlaying;
 
     /// <summary>The running level's tick.</summary>
     public long Tick => _play.Tick;
+
+    /// <summary>The same as text, for a readout.</summary>
+    public string TickText => _tickText;
 
     /// <summary>The newest three things wires did, oldest first. Empty while editing.</summary>
     public IReadOnlyList<LogicEventLine> Events => _play.Events;
@@ -208,7 +219,11 @@ public sealed class LogicViewModel : ObservableObject
     }
 
     /// <summary>The sender of the first wire on show that goes nowhere, or null.</summary>
-    public Guid? GoingNowhereSender { get; private set; }
+    public Guid? GoingNowhereSender
+    {
+        get => _goingNowhereSender;
+        private set => Set(ref _goingNowhereSender, value);
+    }
 
     /// <summary>The entities that have a card on show, in the graph's order.</summary>
     public IReadOnlyList<Guid> ShownEntityIds => _shownIds;
@@ -219,41 +234,41 @@ public sealed class LogicViewModel : ObservableObject
     /// <summary>Shows the graph at its own size.</summary>
     public ICommand ActualSizeCommand { get; }
 
+    /// <summary>Shows every card.</summary>
+    public ICommand WholeLevelCommand { get; }
+
+    /// <summary>Shows what is near the selection.</summary>
+    public ICommand AroundSelectionCommand { get; }
+
     /// <summary>Takes one published snapshot.</summary>
     public void Apply(FrameSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        bool redraw = false;
         if (_selection.Take(snapshot.SelectedIds))
-        {
-            _scopeStale |= IsAroundSelection;
-            _wiresStale = true;
-            redraw = true;
-        }
+            _arrangement.SelectionChanged();
 
-        if (!ReferenceEquals(snapshot.LogicGraph, _info))
-        {
-            _info = snapshot.LogicGraph;
-            _graphStale = true;
-        }
-
-        redraw |= TakePlay(snapshot.LogicPlay);
-        Refresh(redraw);
+        _arrangement.SetInfo(snapshot.LogicGraph);
+        Refresh(TakePlay(snapshot.LogicPlay));
     }
 
-    /// <summary>Forgets the level, when its session stops. What the user chose stays.</summary>
+    /// <summary>
+    /// Forgets the level, when its session stops. What the user chose stays,
+    /// and so does where the graph sits: a session that comes back with the
+    /// same cards finds them where they were.
+    /// </summary>
     public void Reset()
     {
         _selection.Clear();
-        _info = null;
-        _graphStale = true;
-        _fitPending = true;
+        _arrangement.SelectionChanged();
+        _arrangement.SetInfo(null);
 
-        Set(ref _schemas, null, nameof(Schemas));
+        if (Set(ref _schemas, null, nameof(Schemas)))
+            _arrangement.SetSchemas(null);
+
         TakePlay(null);
+        _fit.Forget();
         Refresh(redraw: true);
-        View = LogicPanZoom.Identity;
     }
 
     /// <summary>Whether a card's entity is selected.</summary>
@@ -276,14 +291,36 @@ public sealed class LogicViewModel : ObservableObject
     public LogicWireFace? FaceOf(LogicSceneEdge edge)
     {
         ArgumentNullException.ThrowIfNull(edge);
-        return _faces.Of(edge);
+        return _arrangement.FaceOf(edge);
+    }
+
+    /// <summary>What is under a point of the view. A label that shows no words counts as its wire.</summary>
+    public LogicHit HitTest(Point viewPoint)
+    {
+        if (Scene is not { } scene)
+            return LogicHit.None;
+
+        Point at = _view.ToScene(viewPoint);
+        double reach = LogicDrawMetrics.PickReach / _view.Zoom;
+        LogicHit hit = scene.HitTest(at, reach);
+
+        if (hit is not { Kind: LogicHitKind.Label, Edge: { } edge })
+            return hit;
+
+        bool hasWords = LogicDrawMetrics.DetailAt(_view.Zoom) == LogicDetail.Full
+            && !string.IsNullOrEmpty(_arrangement.FaceOf(edge)?.Text);
+
+        if (hasWords)
+            return hit;
+
+        return edge.DistanceTo(at) <= reach ? hit with { Kind = LogicHitKind.Edge } : LogicHit.None;
     }
 
     /// <summary>Shows the whole graph, as large as fits and no larger than its own size.</summary>
     public void Fit()
     {
-        if (Scene is { Cards.Count: > 0 })
-            View = LogicPanZoom.Fit(Scene.Size, _viewSize);
+        if (Scene is { Cards.Count: > 0 } scene)
+            View = LogicPanZoom.Fit(scene.Size, _viewSize);
     }
 
     /// <summary>Shows the graph at its own size, about the middle of the view.</summary>
@@ -297,6 +334,12 @@ public sealed class LogicViewModel : ObservableObject
             View = _view.CenteredOn(card.Bounds, _viewSize);
     }
 
+    private void Rescope()
+    {
+        _arrangement.SetScope(new LogicScope { Mode = _mode, Steps = _steps, Filter = _filter });
+        Refresh();
+    }
+
     // Returns whether the cards would be drawn differently.
     private bool TakePlay(LogicPlayInfo? info)
     {
@@ -307,8 +350,7 @@ public sealed class LogicViewModel : ObservableObject
         if (!_play.Take(info))
             return false;
 
-        _wiresStale = true;
-        _layoutStale |= _play.IsPlaying != wasPlaying || (_play.IsPlaying && _play.Digits != _reservedDigits);
+        _arrangement.PlayChanged();
 
         if (_play.IsPlaying != wasPlaying)
         {
@@ -316,8 +358,11 @@ public sealed class LogicViewModel : ObservableObject
             Raise(nameof(Hint));
         }
 
-        if (_play.Tick != tick)
-            Raise(nameof(Tick));
+        if (_play.Tick != tick || _play.IsPlaying != wasPlaying)
+        {
+            _tickText = _play.IsPlaying ? _play.Tick.ToString(CultureInfo.InvariantCulture) : "";
+            Raise(TickTextChanged);
+        }
 
         if (!ReferenceEquals(_play.Events, events))
             Raise(nameof(Events));
@@ -325,68 +370,51 @@ public sealed class LogicViewModel : ObservableObject
         return _play.StatesChanged;
     }
 
-    // Rebuilds what is stale and nothing else, each stage from the one before.
     private void Refresh(bool redraw = false)
     {
-        if (_graphStale)
-        {
-            Graph = _info is null ? null : LogicGraph.Build(_info, _schemas);
-            _scopeStale = true;
-        }
+        Size before = Scene?.Size ?? default;
+        LogicArrangementChange change = _arrangement.Refresh(_selection, _play);
 
-        if (_scopeStale)
-        {
-            Rescope();
-            _layoutStale = true;
-        }
-        else if (_dimStale)
-        {
-            // The filter only dims. The same cards stay where they stand.
-            Shown = Scope();
-            redraw = true;
-        }
+        if (change.HasFlag(LogicArrangementChange.Shown))
+            TakeShown();
 
-        if (_layoutStale)
-        {
-            Arrange();
-            redraw = true;
-        }
-        else if (_wiresStale)
-        {
-            redraw |= _faces.Refresh(_play, _selection);
-        }
+        if (change.HasFlag(LogicArrangementChange.Scene) && Scene is { Cards.Count: > 0 } scene)
+            _fit.Placed(_shownIds, followsSelection: IsAroundSelection, resized: scene.Size != before);
 
-        _graphStale = _scopeStale = _dimStale = _layoutStale = _wiresStale = false;
-
-        if (redraw)
+        if (redraw || change.HasFlag(LogicArrangementChange.Looks))
             Redraw?.Invoke();
 
-        FitIfPending();
+        FitIfAsked();
+
+        // Last, so whoever listens finds a finished scene.
+        if (_shownIdsChanged)
+        {
+            _shownIdsChanged = false;
+            ShownEntitiesChanged?.Invoke();
+        }
     }
 
-    private LogicScopedGraph? Scope() => Graph is null
-        ? null
-        : new LogicScope { Mode = _mode, Steps = _steps, Filter = _filter }.Apply(Graph, _selection.Ids);
-
-    private void Rescope()
+    private void TakeShown()
     {
-        Shown = Scope();
+        LogicScopedGraph? shown = Shown;
+        LogicGraphInfo? info = _arrangement.Info;
+        LogicEmptyReason reason = shown?.EmptyReason ?? LogicEmptyReason.None;
 
-        LogicEmptyReason reason = Shown?.EmptyReason ?? LogicEmptyReason.None;
-        Status = Shown is null || _info is null ? LogicStatus.None : LogicStatus.Of(Shown, _info, _mode);
+        Status = shown is null || info is null ? LogicStatus.None : LogicStatus.Of(shown, info, _mode);
         EmptyText = LogicViewText.Empty(reason);
         OffersWholeLevel = reason == LogicEmptyReason.NothingSelected;
-        GoingNowhereSender = FirstGoingNowhere();
-
-        if (TakeShownIds() && IsAroundSelection)
-            _fitPending = true;
+        GoingNowhereSender = FirstGoingNowhere(shown);
+        _shownIdsChanged |= TakeShownIds(shown?.Cards ?? []);
     }
 
-    private Guid? FirstGoingNowhere()
+    private static Guid? FirstGoingNowhere(LogicScopedGraph? shown)
     {
-        foreach (LogicEdge edge in Shown?.Edges ?? [])
+        if (shown is null)
+            return null;
+
+        foreach (LogicEdge edge in shown.Edges)
         {
-            if (Shown is not null && Shown.Graph.GoesNowhere(edge.Wire))
+            if (shown.Graph.GoesNowhere(edge.Wire))
                 return edge.From.NodeId;
         }
 
@@ -394,59 +422,40 @@ public sealed class LogicViewModel : ObservableObject
     }
 
     // Returns whether the entities on show changed.
-    private bool TakeShownIds()
+    private bool TakeShownIds(IReadOnlyList<LogicCard> cards)
     {
-        var shown = new List<Guid>();
-        foreach (LogicCard card in Shown?.Cards ?? [])
+        int count = 0;
+        bool same = true;
+
+        for (int i = 0; i < cards.Count; i++)
         {
-            if (!card.IsStub)
-                shown.Add(card.NodeId);
+            if (cards[i].IsStub)
+                continue;
+
+            same = same && count < _shownIds.Length && _shownIds[count] == cards[i].NodeId;
+            count++;
         }
 
-        if (System.Runtime.InteropServices.CollectionsMarshal.AsSpan(shown).SequenceEqual(_shownIds))
+        if (same && count == _shownIds.Length)
             return false;
 
-        _shownIds = [.. shown];
-        ShownEntitiesChanged?.Invoke();
+        var ids = new Guid[count];
+        for (int i = 0, at = 0; i < cards.Count; i++)
+        {
+            if (!cards[i].IsStub)
+                ids[at++] = cards[i].NodeId;
+        }
+
+        _shownIds = ids;
         return true;
     }
 
-    private void Arrange()
+    private void FitIfAsked()
     {
-        Size before = Scene?.Size ?? default;
-
-        if (Shown is null)
-        {
-            Scene = null;
-            _faces.Clear();
-            return;
-        }
-
-        bool playing = _play.IsPlaying;
-        _reservedDigits = _play.Digits;
-        LogicScopedGraph drawn = playing ? LogicLabelRoom.Reserve(Shown, _reservedDigits, _ruler) : Shown;
-
-        // In the whole level nothing may move when the selection does, so
-        // the layout is not told of it there.
-        Scene = LogicLayout.Arrange(
-            drawn,
-            IsAroundSelection ? _selection.Ids : NoSelection,
-            new LogicLayoutOptions { ShowsState = playing },
-            _ruler);
-
-        _faces.Rebuild(Scene, drawn, Shown);
-        _faces.Refresh(_play, _selection);
-        _fitPending |= IsAroundSelection && Scene.Size != before;
-    }
-
-    // The first scene of a session is fitted, and near the selection every
-    // new one. In the whole level a new scene keeps the place the user chose.
-    private void FitIfPending()
-    {
-        if (!_fitPending || _viewSize.Width <= 0 || _viewSize.Height <= 0 || Scene is not { Cards.Count: > 0 })
+        if (_viewSize.Width <= 0 || _viewSize.Height <= 0 || Scene is not { Cards.Count: > 0 })
             return;
 
-        _fitPending = false;
-        Fit();
+        if (_fit.Take())
+            Fit();
     }
 }

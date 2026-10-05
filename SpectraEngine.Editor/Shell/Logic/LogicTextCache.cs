@@ -9,25 +9,36 @@ namespace SpectraEngine.Editor.Shell.Logic;
 // draws what an earlier frame drew lays out nothing.
 internal sealed class LogicTextCache
 {
-    // State lines change as a level runs, so the cache is emptied when full.
     private const int MostKept = 8192;
 
+    // What a running level writes changes all the time, so it has a small
+    // table of its own. Emptying it never costs the names and ports theirs.
+    private const int MostRunningKept = 512;
+
     private readonly Dictionary<Key, FormattedText> _kept = [];
+    private readonly Dictionary<Key, FormattedText> _running = [];
     private readonly LogicPalette _palette;
 
     public LogicTextCache(LogicPalette palette) => _palette = palette;
 
-    // One line of text, cut short with an ellipsis where it is wider than
-    // the room it has.
-    public FormattedText Get(string text, LogicInk ink, double room)
+    // One line of text that stays as it is while the scene does: a name, a
+    // class, a port, a note, an authored label. Cut short with an ellipsis
+    // where it is wider than the room it has.
+    public FormattedText Get(string text, LogicInk ink, double room) => Get(_kept, MostKept, text, ink, room);
+
+    // The same for text a running level writes: a state line, a count.
+    public FormattedText GetRunning(string text, LogicInk ink, double room) =>
+        Get(_running, MostRunningKept, text, ink, room);
+
+    private FormattedText Get(Dictionary<Key, FormattedText> table, int most, string text, LogicInk ink, double room)
     {
         // Rounded up: text that fits its room to the pixel must not be cut.
         var key = new Key(text, ink, Math.Max(1, (int)Math.Ceiling(room)));
-        if (_kept.TryGetValue(key, out FormattedText? laidOut))
+        if (table.TryGetValue(key, out FormattedText? laidOut))
             return laidOut;
 
-        if (_kept.Count >= MostKept)
-            _kept.Clear();
+        if (table.Count >= most)
+            table.Clear();
 
         laidOut = new FormattedText(
             text,
@@ -42,7 +53,7 @@ internal sealed class LogicTextCache
             Trimming = TextTrimming.CharacterEllipsis,
         };
 
-        return _kept[key] = laidOut;
+        return table[key] = laidOut;
     }
 
     private readonly record struct Key(string Text, LogicInk Ink, int Room);

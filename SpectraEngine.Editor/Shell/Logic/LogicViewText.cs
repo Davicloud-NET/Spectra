@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 
 namespace SpectraEngine.Editor.Shell.Logic;
@@ -68,6 +69,8 @@ public static class LogicViewText
     /// <param name="edge">The wire, with the label the level was authored with.</param>
     public static string Sentence(LogicEdge edge)
     {
+        ArgumentNullException.ThrowIfNull(edge);
+
         string target = edge.To.Stub switch
         {
             LogicStubKind.Activator => "the activator",
@@ -81,6 +84,17 @@ public static class LogicViewText
 
         string problem = Problem(edge);
         return problem.Length == 0 ? sentence + "." : $"{sentence}. {problem}";
+    }
+
+    /// <summary>One card in words, for a tooltip. A card cuts a long name short.</summary>
+    public static string Sentence(LogicCard card)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+
+        if (!card.IsStub)
+            return $"{card.Name}, {card.DisplayName}";
+
+        return card.Name.Length == 0 ? card.DisplayName + "." : $"{card.Name}. {card.DisplayName}.";
     }
 
     private static string Problem(LogicEdge edge) => edge.Verdict switch

@@ -32,7 +32,9 @@ internal sealed class LogicWireFaces
         for (int i = 0; i < _faces.Length; i++)
         {
             LogicSceneEdge edge = scene.Edges[i];
-            _faces[i] = new LogicWireFace(edge, authoredOf[edge.Edge]);
+            LogicEdge source = authoredOf[edge.Edge];
+
+            _faces[i] = new LogicWireFace(edge, source, ShowsRefusals(authored.Graph, source));
             _byEdge[edge] = _faces[i];
         }
     }
@@ -51,11 +53,46 @@ internal sealed class LogicWireFaces
                 selection.Contains(edge.From) || selection.Contains(edge.To));
 
             if (play.IsPlaying)
-                state = LogicWireState.Playing(play.Activity(edge), play.Tick, play.Time, state);
+            {
+                state = LogicWireState.Playing(
+                    play.Activity(edge), face.ShowsRefusals, play.Tick, play.Time, state);
+            }
 
             changed |= face.Take(state);
         }
 
         return changed;
+    }
+
+    // The engine counts refusals by wire, and a wire that reaches several
+    // entities has an edge to each. The edges the schemas say lack the input
+    // show the count. When they name none, every edge does, so a refusal
+    // nobody foresaw still shows.
+    private static bool ShowsRefusals(LogicGraph graph, LogicEdge edge)
+    {
+        if (edge.Verdict == LogicVerdict.NoSuchInput)
+            return true;
+
+        foreach (LogicEdge other in graph.Leaving(edge.From))
+        {
+            if (other.Verdict == LogicVerdict.NoSuchInput && SharesWire(other, edge))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool SharesWire(LogicEdge a, LogicEdge b)
+    {
+        foreach (int wire in a.WireIndices)
+        {
+            foreach (int other in b.WireIndices)
+            {
+                if (wire == other)
+                    return true;
+            }
+        }
+
+        return false;
     }
 }

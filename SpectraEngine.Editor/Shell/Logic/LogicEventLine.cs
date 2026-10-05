@@ -5,12 +5,16 @@ using System.Globalization;
 namespace SpectraEngine.Editor.Shell.Logic;
 
 /// <summary>One thing a wire did while the level ran, as a line of text.</summary>
+/// <param name="Number">The event's number, which tells it from every other.</param>
 /// <param name="Tick">The tick it happened on.</param>
 /// <param name="Route">Who sent what to whom: the sender and its output, an arrow, the receiver and its input.</param>
 /// <param name="Reason">Why it did not arrive, or empty when it did.</param>
-public sealed record LogicEventLine(string Tick, string Route, string Reason)
+public sealed record LogicEventLine(long Number, string Tick, string Route, string Reason)
 {
     private const string Arrow = "→";
+
+    /// <summary>Whether the input did not arrive.</summary>
+    public bool IsFailure => Reason.Length > 0;
 
     /// <summary>Writes an event as a line.</summary>
     public static LogicEventLine From(in LogicEventInfo info)
@@ -29,6 +33,6 @@ public sealed record LogicEventLine(string Tick, string Route, string Reason)
             _ => "",
         };
 
-        return new LogicEventLine(info.Tick.ToString(CultureInfo.InvariantCulture), route, reason);
+        return new LogicEventLine(info.Number, info.Tick.ToString(CultureInfo.InvariantCulture), route, reason);
     }
 }

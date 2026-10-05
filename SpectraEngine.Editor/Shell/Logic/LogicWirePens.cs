@@ -11,22 +11,29 @@ internal sealed class LogicWirePens
     private static readonly int Looks = Enum.GetValues<LogicWireLook>().Length;
 
     private readonly IImmutableBrush[] _brushes = new IImmutableBrush[Looks];
-    private readonly IImmutableBrush _glow;
+    private readonly double[] _widths = new double[Looks];
     private readonly ImmutablePen[] _pens = new ImmutablePen[Looks];
     private readonly ImmutablePen[] _glows = new ImmutablePen[Looks];
+    private readonly IImmutableBrush _glow = LogicTheme.Brush("SpectraControlPressed");
+    private readonly double _glowWidth = LogicTheme.Size("SpectraLogicHoverGlow");
+    private readonly double _brokenDash = LogicTheme.Size("SpectraLogicWireBrokenDash");
+    private readonly double _brokenGap = LogicTheme.Size("SpectraLogicWireBrokenGap");
+    private readonly double _waitingDash = LogicTheme.Size("SpectraLogicWireWaitingDash");
+    private readonly double _waitingGap = LogicTheme.Size("SpectraLogicWireWaitingGap");
     private double _least = double.NaN;
 
     public LogicWirePens()
     {
         IImmutableBrush accent = LogicTheme.Brush("SpectraAccent");
+        double focus = LogicTheme.Size("SpectraLogicWireFocusWidth");
+        double fired = LogicTheme.Size("SpectraLogicWireFiredWidth");
 
-        _brushes[(int)LogicWireLook.Plain] = LogicTheme.Brush("SpectraLogicWire");
-        _brushes[(int)LogicWireLook.Focus] = accent;
-        _brushes[(int)LogicWireLook.Broken] = LogicTheme.Brush("SpectraTextDanger");
-        _brushes[(int)LogicWireLook.Firing] = LogicTheme.Brush("SpectraLogicWireFiring");
-        _brushes[(int)LogicWireLook.Fired] = LogicTheme.Brush("SpectraLogicWireFired");
-        _brushes[(int)LogicWireLook.Waiting] = accent;
-        _glow = LogicTheme.Brush("SpectraControlPressed");
+        Set(LogicWireLook.Plain, LogicTheme.Brush("SpectraLogicWire"), LogicTheme.Size("SpectraLogicWireWidth"));
+        Set(LogicWireLook.Focus, accent, focus);
+        Set(LogicWireLook.Broken, LogicTheme.Brush("SpectraTextDanger"), fired);
+        Set(LogicWireLook.Firing, LogicTheme.Brush("SpectraLogicWireFiring"), LogicTheme.Size("SpectraLogicWireFiringWidth"));
+        Set(LogicWireLook.Fired, LogicTheme.Brush("SpectraLogicWireFired"), fired);
+        Set(LogicWireLook.Waiting, accent, focus);
 
         SetZoom(1);
     }
@@ -43,7 +50,7 @@ internal sealed class LogicWirePens
     public void SetZoom(double zoom)
     {
         double least = LogicDrawMetrics.LeastWireOnScreen / zoom;
-        if (least <= LogicDrawMetrics.PlainWire)
+        if (least <= _widths[(int)LogicWireLook.Plain])
             least = 0;
 
         if (least == _least)
@@ -52,30 +59,25 @@ internal sealed class LogicWirePens
         _least = least;
         for (int look = 0; look < Looks; look++)
         {
-            double width = Math.Max(Width((LogicWireLook)look), least);
+            double width = Math.Max(_widths[look], least);
 
             _pens[look] = new ImmutablePen(
                 _brushes[look], width, Dashes((LogicWireLook)look, width), PenLineCap.Round, PenLineJoin.Round);
-            _glows[look] = new ImmutablePen(
-                _glow, width + LogicDrawMetrics.HoverGlow, null, PenLineCap.Round, PenLineJoin.Round);
+            _glows[look] = new ImmutablePen(_glow, width + _glowWidth, null, PenLineCap.Round, PenLineJoin.Round);
         }
     }
 
-    private static double Width(LogicWireLook look) => look switch
+    private void Set(LogicWireLook look, IImmutableBrush brush, double width)
     {
-        LogicWireLook.Focus or LogicWireLook.Waiting => LogicDrawMetrics.FocusWire,
-        LogicWireLook.Firing => LogicDrawMetrics.FiringWire,
-        LogicWireLook.Fired or LogicWireLook.Broken => LogicDrawMetrics.FiredWire,
-        _ => LogicDrawMetrics.PlainWire,
-    };
+        _brushes[(int)look] = brush;
+        _widths[(int)look] = width;
+    }
 
     // A dash style counts in pen widths.
-    private static ImmutableDashStyle? Dashes(LogicWireLook look, double width) => look switch
+    private ImmutableDashStyle? Dashes(LogicWireLook look, double width) => look switch
     {
-        LogicWireLook.Broken => new ImmutableDashStyle(
-            [LogicDrawMetrics.BrokenDash / width, LogicDrawMetrics.BrokenGap / width], 0),
-        LogicWireLook.Waiting => new ImmutableDashStyle(
-            [LogicDrawMetrics.WaitingDash / width, LogicDrawMetrics.WaitingGap / width], 0),
+        LogicWireLook.Broken => new ImmutableDashStyle([_brokenDash / width, _brokenGap / width], 0),
+        LogicWireLook.Waiting => new ImmutableDashStyle([_waitingDash / width, _waitingGap / width], 0),
         _ => null,
     };
 }

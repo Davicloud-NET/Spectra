@@ -38,12 +38,6 @@ public sealed class LogicSceneCard
     /// <summary>Whether the card lists every port its class declares.</summary>
     public bool IsExpanded { get; internal init; }
 
-    /// <summary>Whether the card's entity is selected.</summary>
-    public bool IsSelected { get; internal init; }
-
-    /// <summary>Whether the filter leaves the card out.</summary>
-    public bool IsDimmed { get; internal init; }
-
     /// <summary>What the card stands for when it is not an entity.</summary>
     public LogicStubKind Stub => Card.Stub;
 

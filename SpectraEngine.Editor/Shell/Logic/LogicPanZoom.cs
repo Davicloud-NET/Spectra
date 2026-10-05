@@ -5,15 +5,19 @@ namespace SpectraEngine.Editor.Shell.Logic;
 
 /// <summary>
 /// Where the graph sits in its view: a scene point times <see cref="Zoom"/>
-/// plus <see cref="Offset"/> is a view point.
+/// plus <see cref="Offset"/> is a view point. The offset is kept on whole
+/// pixels, so text at 100 percent is drawn sharp.
 /// </summary>
 public readonly record struct LogicPanZoom(Vector Offset, double Zoom)
 {
-    /// <summary>The furthest out the view zooms.</summary>
+    /// <summary>The furthest out the wheel zooms.</summary>
     public const double MinimumZoom = 0.1;
 
     /// <summary>The furthest in the view zooms.</summary>
     public const double MaximumZoom = 2;
+
+    /// <summary>The furthest out <see cref="Fit"/> goes, to show the whole of a large graph.</summary>
+    public const double MinimumFitZoom = 0.02;
 
     /// <summary>The scene at its own size, its corner in the view's corner.</summary>
     public static LogicPanZoom Identity => new(default, 1);
@@ -31,19 +35,23 @@ public readonly record struct LogicPanZoom(Vector Offset, double Zoom)
     public Rect ToScene(Rect view) => new(ToScene(view.TopLeft), ToScene(view.BottomRight));
 
     /// <summary>The same zoom, moved by a distance in the view.</summary>
-    public LogicPanZoom MovedBy(Vector distance) => this with { Offset = Offset + distance };
+    public LogicPanZoom MovedBy(Vector distance) => this with { Offset = Whole(Offset + distance) };
 
     /// <summary>
-    /// Another zoom, kept between the two limits, with the scene point under
-    /// <paramref name="anchor"/> staying where it is.
+    /// Another zoom, with the scene point under <paramref name="anchor"/>
+    /// staying where it is. The zoom is kept between the two limits, or at
+    /// the zoom it starts from when a fit took it further out.
     /// </summary>
     /// <param name="anchor">A point in the view, such as the pointer.</param>
     /// <param name="zoom">The zoom asked for.</param>
     public LogicPanZoom ZoomedAbout(Point anchor, double zoom)
     {
-        zoom = ClampZoom(zoom);
+        zoom = double.IsFinite(zoom)
+            ? Math.Clamp(zoom, Math.Min(MinimumZoom, Zoom), MaximumZoom)
+            : Zoom;
+
         Point held = ToScene(anchor);
-        return new LogicPanZoom(new Vector(anchor.X - held.X * zoom, anchor.Y - held.Y * zoom), zoom);
+        return new LogicPanZoom(Whole(new Vector(anchor.X - held.X * zoom, anchor.Y - held.Y * zoom)), zoom);
     }
 
     /// <summary>The same zoom, with the middle of a scene rectangle in the middle of the view.</summary>
@@ -52,9 +60,7 @@ public readonly record struct LogicPanZoom(Vector Offset, double Zoom)
         Point middle = scene.Center;
         return this with
         {
-            Offset = new Vector(
-                Math.Round(view.Width / 2 - middle.X * Zoom),
-                Math.Round(view.Height / 2 - middle.Y * Zoom)),
+            Offset = Whole(new Vector(view.Width / 2 - middle.X * Zoom, view.Height / 2 - middle.Y * Zoom)),
         };
     }
 
@@ -67,11 +73,9 @@ public readonly record struct LogicPanZoom(Vector Offset, double Zoom)
         if (scene.Width <= 0 || scene.Height <= 0 || view.Width <= 0 || view.Height <= 0)
             return Identity;
 
-        double zoom = ClampZoom(Math.Min(1, Math.Min(view.Width / scene.Width, view.Height / scene.Height)));
-        return new LogicPanZoom(default, zoom).CenteredOn(new Rect(scene), view);
+        double zoom = Math.Min(1, Math.Min(view.Width / scene.Width, view.Height / scene.Height));
+        return new LogicPanZoom(default, Math.Max(zoom, MinimumFitZoom)).CenteredOn(new Rect(scene), view);
     }
 
-    /// <summary>A zoom brought between the two limits.</summary>
-    public static double ClampZoom(double zoom) =>
-        double.IsFinite(zoom) ? Math.Clamp(zoom, MinimumZoom, MaximumZoom) : 1;
+    private static Vector Whole(Vector offset) => new(Math.Round(offset.X), Math.Round(offset.Y));
 }

@@ -21,9 +21,6 @@ internal enum LogicInk
     // A wired input or output.
     Port,
 
-    // An input or output the class declares and nothing is wired to.
-    QuietPort,
-
     // An input or output a wire names and the class does not have.
     WrongPort,
 
@@ -50,6 +47,9 @@ internal enum LogicInk
 
     // The name on a card seen from far out.
     FarName,
+
+    // The same on a selected card, which is filled with the accent there.
+    FarSelectedName,
 
     // The same on the card of a target nothing answers to.
     FarStubName,

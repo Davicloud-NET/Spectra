@@ -214,8 +214,34 @@
   <SolidColorBrush x:Key="SpectraLogicWireFiring" Color="{DynamicResource SpectraLogicWireFiringColor}" />
   <SolidColorBrush x:Key="SpectraLogicWireFired" Color="{DynamicResource SpectraLogicWireFiredColor}" />
 
-  <!-- How much of a card or wire the filter leaves. -->
+  <!-- How the graph is drawn, in pixels at 100 percent. Where things stand
+       is LogicMetrics, in code. A wire's dash and gap are lengths along it.
+       DimOpacity is how much of a card or wire the filter leaves. -->
+  <x:Double x:Key="SpectraLogicCardRadius">6</x:Double>
+  <x:Double x:Key="SpectraLogicSelectedEdge">2</x:Double>
+  <x:Double x:Key="SpectraLogicStubDash">4</x:Double>
+  <x:Double x:Key="SpectraLogicIconStroke">1.25</x:Double>
+  <x:Double x:Key="SpectraLogicFarNameSize">26</x:Double>
+  <x:Double x:Key="SpectraLogicDotRadius">4.5</x:Double>
+  <x:Double x:Key="SpectraLogicTravelDotRadius">5.5</x:Double>
+  <x:Double x:Key="SpectraLogicTravelDotEdge">2</x:Double>
+  <x:Double x:Key="SpectraLogicWireWidth">1.6</x:Double>
+  <x:Double x:Key="SpectraLogicWireFocusWidth">2</x:Double>
+  <x:Double x:Key="SpectraLogicWireFiringWidth">2.6</x:Double>
+  <x:Double x:Key="SpectraLogicWireFiredWidth">1.8</x:Double>
+  <x:Double x:Key="SpectraLogicWireBrokenDash">6</x:Double>
+  <x:Double x:Key="SpectraLogicWireBrokenGap">5</x:Double>
+  <x:Double x:Key="SpectraLogicWireWaitingDash">2</x:Double>
+  <x:Double x:Key="SpectraLogicWireWaitingGap">6</x:Double>
+  <x:Double x:Key="SpectraLogicHoverGlow">5</x:Double>
+  <x:Double x:Key="SpectraLogicGridStep">24</x:Double>
+  <x:Double x:Key="SpectraLogicGridDot">2</x:Double>
   <x:Double x:Key="SpectraLogicDimOpacity">0.3</x:Double>
+
+  <!-- The rows round the graph. -->
+  <x:Double x:Key="SpectraLogicToolbarHeight">36</x:Double>
+  <x:Double x:Key="SpectraLogicEventRowHeight">19</x:Double>
+  <CornerRadius x:Key="SpectraLogicPillRadius">11</CornerRadius>
 
   <!-- Fonts. $Default is Avalonia's fallback; CSS generics like "monospace"
        resolve to nothing.

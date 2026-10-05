@@ -10,8 +10,8 @@ public readonly record struct LogicWireState
     /// <summary>How many ticks after it fired a wire still counts as firing.</summary>
     public const int FiringTicks = 20;
 
-    /// <summary>The fewest digits of a count a label keeps room for.</summary>
-    public const int LeastDigits = 3;
+    /// <summary>The largest number a label writes out. A larger one reads as this with a plus.</summary>
+    public const int MostWritten = 999;
 
     /// <summary>How the wire is drawn.</summary>
     public LogicWireLook Look { get; init; }
@@ -42,10 +42,12 @@ public readonly record struct LogicWireState
     /// <summary>What the label says, or empty when the authored label stands.</summary>
     public string Text => Look switch
     {
-        LogicWireLook.Broken when Amount > 0 => (IsRefusal ? "refused " : "missed ") + Number(Amount),
-        LogicWireLook.Waiting => $"in {Number(Amount / 10)}.{Number(Amount % 10)} s",
+        LogicWireLook.Broken when Amount > 0 => (IsRefusal ? "refused " : "missed ") + Count(Amount),
+        LogicWireLook.Waiting => Amount / 10 > MostWritten
+            ? $"in {Count(Amount / 10)} s"
+            : $"in {Number(Amount / 10)}.{Number(Amount % 10)} s",
         LogicWireLook.Firing => "now",
-        LogicWireLook.Fired => Amount == 1 ? "1 time" : Number(Amount) + " times",
+        LogicWireLook.Fired => Amount == 1 ? "1 time" : Count(Amount) + " times",
         _ => "",
     };
 
@@ -63,11 +65,16 @@ public readonly record struct LogicWireState
 
     /// <summary>A wire of a running level.</summary>
     /// <param name="activity">What the wire has done. Several wires drawn as one are summed first.</param>
+    /// <param name="showsRefusals">
+    /// Whether a refusal is this edge's to show. A wire that reaches several
+    /// entities is refused by the ones that lack the input, not by the rest.
+    /// </param>
     /// <param name="tick">The level's tick.</param>
     /// <param name="time">The level's time in seconds.</param>
     /// <param name="authored">What the wire is while nothing has happened to it.</param>
     public static LogicWireState Playing(
         in LogicWireActivity activity,
+        bool showsRefusals,
         long tick,
         float time,
         LogicWireState authored)
@@ -75,7 +82,7 @@ public readonly record struct LogicWireState
         if (activity.Missed > 0)
             return new LogicWireState { Look = LogicWireLook.Broken, Amount = activity.Missed };
 
-        if (activity.Refused > 0)
+        if (showsRefusals && activity.Refused > 0)
             return new LogicWireState { Look = LogicWireLook.Broken, Amount = activity.Refused, IsRefusal = true };
 
         if (activity.Waiting > 0)
@@ -110,26 +117,14 @@ public readonly record struct LogicWireState
     }
 
     /// <summary>
-    /// The longest things a label can say about a running wire whose counts
-    /// have <paramref name="digits"/> digits. A view keeps room for the widest.
+    /// The longest things a label can say about a running wire, with every
+    /// digit written as <paramref name="digit"/>. A view keeps room for the
+    /// widest, so no count can move anything while the level runs.
     /// </summary>
-    public static string[] LongestTexts(int digits)
+    public static string[] LongestTexts(char digit)
     {
-        string nines = new('9', Math.Max(digits, 1));
-        return [$"refused {nines}", $"missed {nines}", $"{nines} times", $"in {nines}.9 s"];
-    }
-
-    /// <summary>How many digits the largest number in a wire's label has.</summary>
-    public static int Digits(in LogicWireActivity activity, float time)
-    {
-        int seconds = activity.Waiting > 0 ? (int)Math.Max(0, activity.WaitingDue - time) : 0;
-        int largest = Math.Max(Math.Max(activity.Fired, seconds), Math.Max(activity.Missed, activity.Refused));
-
-        int digits = 1;
-        for (int rest = largest; rest >= 10; rest /= 10)
-            digits++;
-
-        return digits;
+        string most = new(digit, Number(MostWritten).Length);
+        return [$"refused {most}+", $"missed {most}+", $"{most}+ times", $"in {most}.{digit} s", $"in {most}+ s"];
     }
 
     private static LogicWireState Wait(in LogicWireActivity activity, float time)
@@ -140,10 +135,12 @@ public readonly record struct LogicWireState
         return new LogicWireState
         {
             Look = LogicWireLook.Waiting,
-            Amount = (int)MathF.Round(left * 10f, MidpointRounding.AwayFromZero),
+            Amount = (int)MathF.Min(int.MaxValue / 2, MathF.Round(left * 10f, MidpointRounding.AwayFromZero)),
             Travel = whole <= 0f ? 1 : Math.Clamp((time - activity.WaitingSince) / whole, 0f, 1f),
         };
     }
+
+    private static string Count(int value) => value > MostWritten ? Number(MostWritten) + "+" : Number(value);
 
     private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);
 }

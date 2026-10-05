@@ -1,11 +1,10 @@
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
-using System;
 
 namespace SpectraEngine.Editor.Shell.Logic;
 
-// The brushes, pens and typefaces the graph is drawn with, read from the
-// theme once. Everything is immutable, so drawing a frame makes none of them.
+// What the graph is drawn with, read from the theme once: brushes, pens,
+// typefaces and sizes. All of it is immutable, so drawing a frame makes none.
 internal sealed class LogicPalette
 {
     private readonly IImmutableBrush _emphasis = LogicTheme.Brush("SpectraTextEmphasis");
@@ -13,26 +12,28 @@ internal sealed class LogicPalette
     private readonly IImmutableBrush _muted = LogicTheme.Brush("SpectraTextMuted");
     private readonly IImmutableBrush _danger = LogicTheme.Brush("SpectraTextDanger");
     private readonly IImmutableBrush _stubText = LogicTheme.Brush("SpectraLogicStubText");
+    private readonly IImmutableBrush _onAccent = LogicTheme.Brush("SpectraTextOnAccent");
+    private readonly IImmutableBrush _gridDot = LogicTheme.Brush("SpectraLogicGridDot");
     private ImmutablePen? _gridPen;
-    private double _gridStep;
+    private double _gridPenStep;
 
     public LogicPalette()
     {
         IImmutableBrush seam = LogicTheme.Brush("SpectraBorderControl");
         IImmutableBrush accent = LogicTheme.Brush("SpectraAccent");
-        double dash = LogicDrawMetrics.StubDash;
+        var dashes = new ImmutableDashStyle([LogicTheme.Size("SpectraLogicStubDash"), LogicTheme.Size("SpectraLogicStubDash")], 0);
 
         CardEdge = new ImmutablePen(seam);
         HoveredEdge = new ImmutablePen(LogicTheme.Brush("SpectraBorderInputHover"));
-        SelectedEdge = new ImmutablePen(accent, LogicDrawMetrics.SelectedEdge);
-        StubEdge = new ImmutablePen(_danger, 1, new ImmutableDashStyle([dash, dash], 0));
-        QuietEdge = new ImmutablePen(LogicTheme.Brush("SpectraBorderInput"), 1, new ImmutableDashStyle([dash, dash], 0));
+        SelectedEdge = new ImmutablePen(accent, LogicTheme.Size("SpectraLogicSelectedEdge"));
+        StubEdge = new ImmutablePen(_danger, 1, dashes);
+        QuietEdge = new ImmutablePen(LogicTheme.Brush("SpectraBorderInput"), 1, dashes);
         StateRule = new ImmutablePen(CardHead);
 
         LabelEdge = CardEdge;
         LitLabelEdge = new ImmutablePen(accent);
         BrokenLabelEdge = new ImmutablePen(LogicTheme.Brush("SpectraLogicStubEdge"));
-        TravelEdge = new ImmutablePen(accent, LogicDrawMetrics.TravelDotEdge);
+        TravelEdge = new ImmutablePen(accent, LogicTheme.Size("SpectraLogicTravelDotEdge"));
     }
 
     public LogicFonts Fonts { get; } = LogicFonts.FromTheme();
@@ -51,7 +52,7 @@ internal sealed class LogicPalette
 
     public IImmutableBrush StubHead { get; } = LogicTheme.Brush("SpectraLogicStubHead");
 
-    // The fill of a selected card seen from far out, where a ring would not show.
+    // A selected card seen from far out, where a ring would not show.
     public IImmutableBrush SelectedFill { get; } = LogicTheme.Brush("SpectraAccentRest");
 
     public IImmutableBrush HoverWash { get; } = LogicTheme.Brush("SpectraRowHover");
@@ -60,7 +61,17 @@ internal sealed class LogicPalette
 
     public IImmutableBrush TravelFill => _emphasis;
 
-    public double DimOpacity { get; } = LogicTheme.Opacity("SpectraLogicDimOpacity");
+    public double DimOpacity { get; } = LogicTheme.Size("SpectraLogicDimOpacity");
+
+    public double CardRadius { get; } = LogicTheme.Size("SpectraLogicCardRadius");
+
+    public double DotRadius { get; } = LogicTheme.Size("SpectraLogicDotRadius");
+
+    public double TravelDotRadius { get; } = LogicTheme.Size("SpectraLogicTravelDotRadius");
+
+    public double GridStep { get; } = LogicTheme.Size("SpectraLogicGridStep");
+
+    public double GridDot { get; } = LogicTheme.Size("SpectraLogicGridDot");
 
     public IPen CardEdge { get; }
 
@@ -85,17 +96,16 @@ internal sealed class LogicPalette
 
     public Typeface Face(LogicInk ink) => ink switch
     {
-        LogicInk.Name or LogicInk.StubName or LogicInk.QuietName or LogicInk.FarName or LogicInk.FarStubName
-            => Fonts.SansSemiBold,
+        LogicInk.Name or LogicInk.StubName or LogicInk.QuietName
+            or LogicInk.FarName or LogicInk.FarSelectedName or LogicInk.FarStubName => Fonts.SansSemiBold,
         LogicInk.StateValue or LogicInk.MonoLabel => Fonts.Mono,
         _ => Fonts.Sans,
     };
 
     public double Size(LogicInk ink) => ink switch
     {
-        LogicInk.Name or LogicInk.StubName or LogicInk.QuietName
-            or LogicInk.Port or LogicInk.QuietPort or LogicInk.WrongPort => Fonts.Regular,
-        LogicInk.FarName or LogicInk.FarStubName => LogicDrawMetrics.FarNameSize,
+        LogicInk.Name or LogicInk.StubName or LogicInk.QuietName or LogicInk.Port or LogicInk.WrongPort => Fonts.Regular,
+        LogicInk.FarName or LogicInk.FarSelectedName or LogicInk.FarStubName => Fonts.Far,
         _ => Fonts.Small,
     };
 
@@ -104,25 +114,27 @@ internal sealed class LogicPalette
         LogicInk.Name or LogicInk.StateValue or LogicInk.LitLabel or LogicInk.FarName => _emphasis,
         LogicInk.StubName or LogicInk.WrongPort or LogicInk.BrokenLabel or LogicInk.FarStubName => _danger,
         LogicInk.StubLine => _stubText,
-        LogicInk.ClassLine or LogicInk.QuietPort or LogicInk.Note or LogicInk.StateLabel => _muted,
+        LogicInk.ClassLine or LogicInk.Note or LogicInk.StateLabel => _muted,
+        LogicInk.FarSelectedName => _onAccent,
         _ => _body,
     };
 
-    // A pen that draws a row of the ground's dots as one dashed line: dashes
-    // too short to see, with round ends as wide as a dot.
+    // Draws a row of the ground's dots as one dashed line: dashes too short
+    // to see, with round ends as wide as a dot. Made again only when the
+    // distance between dots changes, which is when the zoom does.
     public IPen GridPen(double step)
     {
-        if (_gridPen is not null && step == _gridStep)
+        if (_gridPen is not null && step == _gridPenStep)
             return _gridPen;
 
-        double dot = LogicDrawMetrics.GridDot;
-        double dash = Math.Min(0.01, step / dot / 2);
+        // A dash style counts in pen widths.
+        const double Dash = 0.01;
 
-        _gridStep = step;
+        _gridPenStep = step;
         return _gridPen = new ImmutablePen(
-            LogicTheme.Brush("SpectraLogicGridDot"),
-            dot,
-            new ImmutableDashStyle([dash, step / dot - dash], 0),
+            _gridDot,
+            GridDot,
+            new ImmutableDashStyle([Dash, step / GridDot - Dash], 0),
             PenLineCap.Round);
     }
 }

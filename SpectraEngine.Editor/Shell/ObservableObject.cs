@@ -31,4 +31,10 @@ public abstract class ObservableObject : INotifyPropertyChanged
     /// <summary>Raises a change for a property whose value is computed.</summary>
     protected void Raise([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    /// <summary>
+    /// Raises a change with arguments the caller keeps, for a property that
+    /// changes on every snapshot.
+    /// </summary>
+    protected void Raise(PropertyChangedEventArgs change) => PropertyChanged?.Invoke(this, change);
 }

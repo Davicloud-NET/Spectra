@@ -32,7 +32,7 @@ internal sealed class LogicCardPainter
             return;
         }
 
-        DrawSurface(context, card);
+        DrawSurface(context, card, detail);
         DrawHeader(context, card);
 
         if (detail == LogicDetail.Full)
@@ -51,7 +51,7 @@ internal sealed class LogicCardPainter
     private void DrawBox(DrawingContext context, LogicSceneCard card, bool isSelected, bool isHovered)
     {
         Rect box = card.Bounds;
-        double radius = LogicDrawMetrics.CardRadius;
+        double radius = _palette.CardRadius;
         bool isUnanswered = IsUnanswered(card);
 
         IBrush fill = isSelected ? _palette.SelectedFill : isUnanswered ? _palette.StubHead : _palette.CardHead;
@@ -60,19 +60,21 @@ internal sealed class LogicCardPainter
         if (isHovered)
             context.DrawRectangle(_palette.HoverWash, null, box, radius, radius);
 
-        double room = box.Width - 2 * LogicDrawMetrics.HeaderPadding;
-        FormattedText name = _texts.Get(
-            card.Card.Name, isUnanswered && !isSelected ? LogicInk.FarStubName : LogicInk.FarName, room);
+        LogicInk ink = isSelected ? LogicInk.FarSelectedName
+            : isUnanswered ? LogicInk.FarStubName
+            : LogicInk.FarName;
 
-        context.DrawText(name, new Point(
-            box.X + LogicDrawMetrics.HeaderPadding,
-            box.Center.Y - name.Height / 2));
+        FormattedText name = _texts.Get(card.Card.Name, ink, box.Width - 2 * LogicDrawMetrics.HeaderPadding);
+        if (name.Height > box.Height)
+            return;
+
+        context.DrawText(name, new Point(box.X + LogicDrawMetrics.HeaderPadding, box.Center.Y - name.Height / 2));
     }
 
-    private void DrawSurface(DrawingContext context, LogicSceneCard card)
+    private void DrawSurface(DrawingContext context, LogicSceneCard card, LogicDetail detail)
     {
         Rect box = card.Bounds;
-        double radius = LogicDrawMetrics.CardRadius;
+        double radius = _palette.CardRadius;
         bool isUnanswered = IsUnanswered(card);
 
         context.DrawRectangle(isUnanswered ? _palette.Stub : _palette.Card, null, box, radius, radius);
@@ -85,7 +87,7 @@ internal sealed class LogicCardPainter
         double rule = card.Header.Bottom - 0.5;
         context.DrawLine(_palette.CardEdge, new Point(box.X, rule), new Point(box.Right, rule));
 
-        if (card.StateRow is Rect state)
+        if (detail == LogicDetail.Full && card.StateRow is Rect state)
         {
             rule = state.Bottom - 0.5;
             context.DrawLine(_palette.StateRule, new Point(box.X, rule), new Point(box.Right, rule));
@@ -134,7 +136,7 @@ internal sealed class LogicCardPainter
         double right = row.Right - LogicDrawMetrics.HeaderPadding;
 
         // The label may take half the row. The value gets what is left.
-        FormattedText label = _texts.Get(state.Label ?? "", LogicInk.StateLabel, (right - left) / 2);
+        FormattedText label = _texts.GetRunning(state.Label ?? "", LogicInk.StateLabel, (right - left) / 2);
         double top = row.Y + (row.Height - 1 - label.Height) / 2;
         context.DrawText(label, new Point(left, top));
 
@@ -144,7 +146,7 @@ internal sealed class LogicCardPainter
         if (label.Width > 0)
             left += label.Width + LogicDrawMetrics.StateGap;
 
-        FormattedText value = _texts.Get(state.Value, LogicInk.StateValue, right - left);
+        FormattedText value = _texts.GetRunning(state.Value, LogicInk.StateValue, right - left);
         context.DrawText(value, new Point(left, top + label.Baseline - value.Baseline));
     }
 
@@ -155,9 +157,8 @@ internal sealed class LogicCardPainter
             LogicScenePort port = card.Ports[i];
             Rect row = port.Row;
 
-            LogicInk ink = !port.Port.IsWired ? LogicInk.QuietPort
-                : card.Card.IsKnownClass && !port.Port.IsDeclared ? LogicInk.WrongPort
-                : LogicInk.Port;
+            // A port only a wire names, on a class that is known not to have it.
+            LogicInk ink = card.Card.IsKnownClass && !port.Port.IsDeclared ? LogicInk.WrongPort : LogicInk.Port;
 
             FormattedText name = _texts.Get(port.Name, ink, row.Width - 2 * LogicDrawMetrics.RowPadding);
             double left = port.IsOutput
@@ -180,7 +181,7 @@ internal sealed class LogicCardPainter
     private void DrawEdge(DrawingContext context, LogicSceneCard card, bool isSelected, bool isHovered)
     {
         Rect box = card.Bounds;
-        double radius = LogicDrawMetrics.CardRadius;
+        double radius = _palette.CardRadius;
 
         if (isHovered)
             context.DrawRectangle(_palette.HoverWash, null, box, radius, radius);

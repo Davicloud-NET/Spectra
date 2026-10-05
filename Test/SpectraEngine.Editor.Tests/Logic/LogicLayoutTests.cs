@@ -219,34 +219,12 @@ public sealed class LogicLayoutTests
     }
 
     [Fact]
-    public void A_selected_card_is_marked_and_so_are_the_wires_that_touch_it()
-    {
-        LogicScene scene = Arrange(Vault(), null, OpenVault);
-
-        scene.Cards.Where(card => card.IsSelected).Select(card => card.Card.Name).ShouldBe(["OpenVault"]);
-        scene.Edges.Where(edge => edge.TouchesSelection).Select(edge => edge.Edge.To.Name)
-            .Order(StringComparer.Ordinal).ShouldBe(["Lift", "OpenVault", "VaultDoor", "VaultDor"]);
-    }
-
-    [Fact]
     public void The_group_holding_a_selected_card_comes_first()
     {
         LogicScene scene = Arrange(Vault(), null, StartDoor);
 
         scene.Card("StartZone").Bounds.Y.ShouldBe(LogicMetrics.ScenePadding);
         scene.Card("ButtonA").Bounds.Y.ShouldBeGreaterThan(scene.Card("StartDoor").Bounds.Bottom);
-    }
-
-    [Fact]
-    public void What_the_filter_leaves_out_is_dimmed_in_the_scene()
-    {
-        var selection = new HashSet<Guid>();
-        LogicScopedGraph scoped = new LogicScope { Filter = "presses" }.Apply(Vault(), selection);
-        LogicScene scene = LogicLayout.Arrange(scoped, selection, new LogicLayoutOptions(), new FixedWidthRuler());
-
-        scene.Cards.Where(card => !card.IsDimmed).Select(card => card.Card.Name).ShouldBe(["Presses"]);
-        scene.Edge("ButtonA", "Presses").IsDimmed.ShouldBeFalse();
-        scene.Edge("OpenVault", "Lift").IsDimmed.ShouldBeTrue();
     }
 
     [Fact]

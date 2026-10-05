@@ -6,13 +6,11 @@ namespace SpectraEngine.Editor.Shell.Logic;
 // The ruler and the canvas share them, so what is measured is what is drawn.
 internal sealed class LogicFonts
 {
-    private LogicFonts(FontFamily sans, FontFamily mono, double regular, double small)
+    private LogicFonts(FontFamily sans, FontFamily mono)
     {
         Sans = new Typeface(sans);
         SansSemiBold = new Typeface(sans, FontStyle.Normal, FontWeight.SemiBold);
         Mono = new Typeface(mono);
-        Regular = regular;
-        Small = small;
     }
 
     public Typeface Sans { get; }
@@ -22,14 +20,15 @@ internal sealed class LogicFonts
     public Typeface Mono { get; }
 
     // The size of a name or a port.
-    public double Regular { get; }
+    public double Regular { get; } = LogicTheme.FontSize("SpectraFontBase");
 
     // The size of a class line, a note, a state row or a label.
-    public double Small { get; }
+    public double Small { get; } = LogicTheme.FontSize("SpectraFontSmall");
+
+    // The size of the name on a card seen from far out.
+    public double Far { get; } = LogicTheme.FontSize("SpectraLogicFarNameSize");
 
     public static LogicFonts FromTheme() => new(
         LogicTheme.Font("SpectraFontUi"),
-        LogicTheme.Font("SpectraFontMono"),
-        LogicTheme.FontSize("SpectraFontBase"),
-        LogicTheme.FontSize("SpectraFontSmall"));
+        LogicTheme.Font("SpectraFontMono"));
 }

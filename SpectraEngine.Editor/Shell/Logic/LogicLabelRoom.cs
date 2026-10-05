@@ -6,17 +6,9 @@ internal static class LogicLabelRoom
 {
     // The same graph, each edge labelled with the widest thing its label may
     // have to hold. What is drawn there is decided wire by wire, later.
-    public static LogicScopedGraph Reserve(LogicScopedGraph graph, int digits, ILogicTextMeasure ruler)
+    public static LogicScopedGraph Reserve(LogicScopedGraph graph, ILogicTextMeasure ruler)
     {
-        LogicLabel room = LogicLabel.None;
-        double roomWidth = 0;
-
-        foreach (string text in LogicWireState.LongestTexts(digits))
-        {
-            double width = ruler.Width(text, LogicTextStyle.Label);
-            if (width > roomWidth)
-                (room, roomWidth) = (new LogicLabel(text, false), width);
-        }
+        LogicLabel room = Widest(ruler, out double roomWidth);
 
         return graph.WithLabels(edge =>
         {
@@ -24,5 +16,24 @@ internal static class LogicLabelRoom
             bool isWider = !edge.Label.IsEmpty && ruler.Width(edge.Label.Text, style) >= roomWidth;
             return isWider ? edge.Label : room;
         });
+    }
+
+    // Digits differ in width in a proportional font, so each is tried.
+    private static LogicLabel Widest(ILogicTextMeasure ruler, out double widest)
+    {
+        LogicLabel room = LogicLabel.None;
+        widest = 0;
+
+        for (char digit = '0'; digit <= '9'; digit++)
+        {
+            foreach (string text in LogicWireState.LongestTexts(digit))
+            {
+                double width = ruler.Width(text, LogicTextStyle.Label);
+                if (width > widest)
+                    (room, widest) = (new LogicLabel(text, false), width);
+            }
+        }
+
+        return room;
     }
 }

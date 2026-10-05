@@ -56,12 +56,6 @@ public sealed class LogicSceneEdge
     /// <summary>What the schemas say about the wire.</summary>
     public LogicVerdict Verdict => Edge.Verdict;
 
-    /// <summary>Whether the sender or the receiver is selected.</summary>
-    public bool TouchesSelection { get; internal init; }
-
-    /// <summary>Whether the filter leaves out both ends.</summary>
-    public bool IsDimmed { get; internal init; }
-
     /// <summary>A box the path cannot leave.</summary>
     public Rect Bounds { get; }
 
