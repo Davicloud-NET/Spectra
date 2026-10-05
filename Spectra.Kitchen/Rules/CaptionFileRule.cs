@@ -15,8 +15,7 @@ namespace Spectra.Kitchen.Rules;
 /// </summary>
 // It says something on every run, and a run that says anything is never
 // served from the cook cache. This rule needs that: what it says depends on
-// the project's language and on files it only probes for, and neither is in
-// a cache key.
+// the project's language, and that is in no cache key.
 public sealed class CaptionFileRule : IRule
 {
     /// <summary>The most sounds a message names before it counts the rest.</summary>

@@ -39,7 +39,7 @@ public class CaptionFileRuleTests
         asset.Rule.ShouldBe(RuleKind.CaptionFile);
         asset.Outputs.Single().Path.ShouldBe(English);
 
-        var pack = project.Track(new PackSource(NullLogger.Instance, result.OutputPath!));
+        var pack = project.Track(new PackSource(NullLogger.Instance, result.OutputPath.ShouldNotBeNull()));
         pack.TryOpen(English, out ContentBlob? blob).ShouldBeTrue();
         using (blob)
             blob.Span.ToArray().ShouldBe(source);
@@ -262,7 +262,7 @@ public class CaptionFileRuleTests
         CookResult result = Cook(project);
         result.Succeeded.ShouldBeTrue(Describe(result));
 
-        var pack = project.Track(new PackSource(NullLogger.Instance, result.OutputPath!));
+        var pack = project.Track(new PackSource(NullLogger.Instance, result.OutputPath.ShouldNotBeNull()));
         var content = new ContentSourceStack();
         content.Mount(pack);
         var library = new CaptionLibrary(content, "en", new CapturingLogger());
@@ -306,6 +306,7 @@ public class CaptionFileRuleTests
             CookDiagnosticCodes.SubtitleStartsAfterSound,
             CookDiagnosticCodes.SubtitleNameHasNoLanguage,
             CookDiagnosticCodes.SubtitleHasNoCues,
+            CookDiagnosticCodes.SubtitleRunsPastSound,
         ];
 
         warnings.ShouldAllBe(id => CookGate.Verdict(id) == CookGateVerdict.WarningUnlessStrict);

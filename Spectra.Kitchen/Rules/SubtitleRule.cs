@@ -15,6 +15,15 @@ namespace Spectra.Kitchen.Rules;
 /// </summary>
 public sealed class SubtitleRule : IRule
 {
+    /// <summary>
+    /// How many seconds a cue may run past the end of its sound before the
+    /// cook says so.
+    /// </summary>
+    // Subtitle tools pad a last cue so it can be read, and the engine keeps a
+    // line up for its reading time anyway. Past this the file is likely for
+    // another recording.
+    public const double EndSlackSeconds = 1.0;
+
     // Must match what AudioRule cooks.
     private static readonly string[] SoundExtensions = [".wav", ".wave"];
 
@@ -104,7 +113,7 @@ public sealed class SubtitleRule : IRule
 
         if (sound is not null)
         {
-            ReportCuesAfterTheEnd(context, file, sound);
+            ReportCuesPastTheEnd(context, file, sound);
             return;
         }
 
@@ -120,7 +129,7 @@ public sealed class SubtitleRule : IRule
             context.SourcePath));
     }
 
-    private static void ReportCuesAfterTheEnd(IRuleContext context, SubtitleFile file, string sound)
+    private static void ReportCuesPastTheEnd(IRuleContext context, SubtitleFile file, string sound)
     {
         double length;
         try
@@ -135,15 +144,25 @@ public sealed class SubtitleRule : IRule
 
         for (int i = 0; i < file.Lines.Count; i++)
         {
-            if (file.Lines[i].Start < length)
-                continue;
-
-            context.Report(CookDiagnostic.Warning(
-                CookDiagnosticCodes.SubtitleStartsAfterSound,
-                $"This cue starts at {Seconds(file.Lines[i].Start)} and '{sound}' is over after " +
-                $"{Seconds(length)}, so the line never shows.",
-                context.SourcePath,
-                file.SourceLines[i]));
+            CaptionLine cue = file.Lines[i];
+            if (cue.Start >= length)
+            {
+                context.Report(CookDiagnostic.Warning(
+                    CookDiagnosticCodes.SubtitleStartsAfterSound,
+                    $"This cue starts at {Seconds(cue.Start)} and '{sound}' is over after {Seconds(length)}, " +
+                    "so the line never shows.",
+                    context.SourcePath,
+                    file.SourceLines[i]));
+            }
+            else if (cue.End > length + EndSlackSeconds)
+            {
+                context.Report(CookDiagnostic.Warning(
+                    CookDiagnosticCodes.SubtitleRunsPastSound,
+                    $"This cue runs until {Seconds(cue.End)} and '{sound}' is over after {Seconds(length)}. " +
+                    "The line still shows. Check that these subtitles are for this recording.",
+                    context.SourcePath,
+                    file.SourceLines[i]));
+            }
         }
     }
 

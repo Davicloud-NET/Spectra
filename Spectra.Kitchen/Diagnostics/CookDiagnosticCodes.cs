@@ -162,8 +162,8 @@ public static class CookDiagnosticCodes
     public static readonly CookDiagnosticId CaptionLanguageSummary = CookDiagnosticId.Cook(4107);
 
     /// <summary>
-    /// A subtitle file the engine refuses: not WebVTT, a time that cannot be
-    /// read, or a cue that does not end after it starts.
+    /// A subtitle file the engine refuses, such as one that is not WebVTT or
+    /// has a time that cannot be read.
     /// </summary>
     public static readonly CookDiagnosticId SubtitleUnreadable = CookDiagnosticId.Cook(4108);
 
@@ -181,6 +181,12 @@ public static class CookDiagnosticCodes
 
     /// <summary>A subtitle file with no cue that has words, so it shows nothing.</summary>
     public static readonly CookDiagnosticId SubtitleHasNoCues = CookDiagnosticId.Cook(4112);
+
+    /// <summary>
+    /// A subtitle cue runs well past the end of its sound. The line still
+    /// shows, and the file may be for another recording.
+    /// </summary>
+    public static readonly CookDiagnosticId SubtitleRunsPastSound = CookDiagnosticId.Cook(4113);
 
     /// <summary>A material names a texture that is not there.</summary>
     public static readonly CookDiagnosticId MaterialTextureMissing = CookDiagnosticId.Cook(5001);

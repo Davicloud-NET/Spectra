@@ -40,7 +40,7 @@ public class SubtitleRuleTests
         asset.Rule.ShouldBe(RuleKind.Subtitle);
         asset.Outputs.Single().Path.ShouldBe(Subtitles);
 
-        var pack = project.Track(new PackSource(NullLogger.Instance, result.OutputPath!));
+        var pack = project.Track(new PackSource(NullLogger.Instance, result.OutputPath.ShouldNotBeNull()));
         pack.TryOpen(Subtitles, out ContentBlob? blob).ShouldBeTrue();
         using (blob)
             blob.Span.ToArray().ShouldBe(source);
@@ -93,7 +93,7 @@ public class SubtitleRuleTests
     [Fact]
     public void A_cue_that_starts_after_its_sound_has_ended_is_warned_about_with_its_line()
     {
-        // The sound is one second long. A cue that only runs past its end is fine.
+        // The sound is one second long. A cue that runs half a second past its end is fine.
         using var project = ProjectWithTheGuard();
         project.WriteAsset(
             Subtitles,
@@ -107,6 +107,29 @@ public class SubtitleRuleTests
         result.Diagnostics.Select(d => d.Line).ShouldBe([6, 9]);
         result.Diagnostics[1].Message.ShouldBe(
             $"This cue starts at 2.25 s and '{Guard}' is over after 1 s, so the line never shows.");
+    }
+
+    [Fact]
+    public void A_cue_that_runs_more_than_a_second_past_the_end_of_its_sound_is_warned_about_with_its_line()
+    {
+        // The sound is one second long.
+        using var project = ProjectWithTheGuard();
+        project.WriteAsset(
+            Subtitles,
+            "WEBVTT\n\n00:00.000 --> 00:00.400\nHey!\n\n00:00.500 --> 00:02.000\nPadded to read\n\n" +
+            "00:00.900 --> 00:02.500\nFrom a longer take\n");
+
+        CookResult result = Cook(project);
+
+        result.Succeeded.ShouldBeTrue(Describe(result));
+        CookDiagnostic warning = result.Diagnostics.ShouldHaveSingleItem();
+        warning.Id.ToString().ShouldBe("SC4113");
+        warning.Severity.ShouldBe(CookDiagnosticSeverity.Warning);
+        warning.File.ShouldBe(Subtitles);
+        warning.Line.ShouldBe(9);
+        warning.Message.ShouldBe(
+            $"This cue runs until 2.5 s and '{Guard}' is over after 1 s. The line still shows. Check that " +
+            "these subtitles are for this recording.");
     }
 
     [Fact]

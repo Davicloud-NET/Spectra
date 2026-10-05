@@ -138,6 +138,7 @@ public static class CookGate
         4110 => CookGateVerdict.WarningUnlessStrict, // SC4110 SubtitleStartsAfterSound
         4111 => CookGateVerdict.WarningUnlessStrict, // SC4111 SubtitleNameHasNoLanguage
         4112 => CookGateVerdict.WarningUnlessStrict, // SC4112 SubtitleHasNoCues
+        4113 => CookGateVerdict.WarningUnlessStrict, // SC4113 SubtitleRunsPastSound
 
         5001 => CookGateVerdict.Fatal,             // SC5001 MaterialTextureMissing
         5002 => CookGateVerdict.WarningUnlessStrict, // SC5002 MaterialFileMalformed
