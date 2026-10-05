@@ -32,7 +32,8 @@ public sealed class SoundEmitters
     /// <summary>
     /// Goes up whenever a sound starts, stops or changes. Two reads that match
     /// mean nothing here changed in between. A node that moves does not count:
-    /// read each emitter's node for where it is.
+    /// read each emitter's node for where it is. Every world counts from zero,
+    /// so a reader that outlives a world also checks which registry it read.
     /// </summary>
     public long Version { get; private set; }
 
@@ -51,7 +52,6 @@ public sealed class SoundEmitters
     /// <param name="node">Where the sound sits. It follows the node.</param>
     /// <param name="path">The authored sound's content path.</param>
     /// <param name="sound">What the world's <see cref="ISoundCatalog"/> said about that path.</param>
-    /// <param name="settings">How to play it.</param>
     /// <returns>The id to stop or change it by.</returns>
     /// <exception cref="InvalidOperationException">The world is not active.</exception>
     public int Play(SceneNode node, string path, in SoundDescription sound, in SoundEmitterSettings settings)

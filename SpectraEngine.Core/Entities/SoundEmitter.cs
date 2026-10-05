@@ -19,6 +19,8 @@ public readonly struct SoundEmitter
     /// <summary>
     /// Names this playing sound for as long as it plays. Its world never gives
     /// the number out again, so a sound that is played anew has a new one.
+    /// Another world starts at 1 again: the number means nothing outside the
+    /// registry it came from.
     /// </summary>
     public int Id { get; internal init; }
 
