@@ -64,8 +64,7 @@ public sealed class CaptionFeed
 
     /// <summary>
     /// The language captions are looked up in, as a <see cref="LanguageTag"/>.
-    /// The project's language until one is set. A sound with nothing in it
-    /// gets its caption in the project's language.
+    /// The project's language until one is set.
     /// </summary>
     /// <exception cref="ArgumentException">The value is not a language tag.</exception>
     public string Language
@@ -82,16 +81,14 @@ public sealed class CaptionFeed
     }
 
     /// <summary>
-    /// The feed's clock, in seconds. It runs while a level plays.
-    /// <see cref="Caption.StartedAt"/> and <see cref="Caption.EarliestEnd"/>
-    /// are times on it.
+    /// The clock <see cref="Caption.StartedAt"/> and <see cref="Caption.EarliestEnd"/>
+    /// are on, in seconds. It runs while a level plays.
     /// </summary>
     public double Now { get; private set; }
 
     /// <summary>
     /// The id of the caption that appeared last, or zero when none has yet.
-    /// Ids only go up, so a reader that keeps this number can tell that a
-    /// caption has appeared since without reading the list.
+    /// Ids only go up, so a view can tell an appearance without reading the list.
     /// </summary>
     public long LastId { get; private set; }
 
@@ -115,7 +112,7 @@ public sealed class CaptionFeed
     }
 
     // Goes up when what a sound's captions are may have changed: another
-    // language, another mode, another level.
+    // language, another mode, another level, files read again.
     internal int Lookup { get; private set; } = 1;
 
     internal bool Shows(CaptionKind kind) =>
