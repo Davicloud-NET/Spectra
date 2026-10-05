@@ -17,7 +17,7 @@ dotnet build                                                  # the solution, Sp
 dotnet run --project SpectraEngine.Executable -- d3d11        # demo: opengl | d3d11 | d3d12
 dotnet run --project SpectraEngine.Editor -- d3d11            # editor: d3d11 | d3d12, Windows only
 dotnet run --project Test/SpectraEngine.Bsp.Tests             # one test suite
-dotnet run --project Spectra.Kitchen.CLI -- cook <projectDir> # scook: cook | verify <pack> | inspect <pack>
+dotnet run --project Spectra.Kitchen.CLI -- cook <projectDir> # scook: cook | verify <pack> | inspect <pack> | sounds -o <dir> <contentDir>
 dotnet run --project SpectraShade.Compiler.CLI -- <file>      # ssc, the shader compiler
 dotnet run -c Release --project Benchmarks/CsgBench           # CSG benchmarks
 dotnet publish SpectraEngine.Executable -c Release -r win-x64 # NativeAOT build
@@ -72,7 +72,7 @@ Publishing:
 - `Assets/`: the content root. Textures, `.spectramat` materials, models. Copied next to the executable.
 - `SpectraEngine.Core/`: the engine. `Graphics/` (renderers, pipelines, built-in shaders), `Scene/`, `Bsp/` (brushes, CSG, BSP), `Assets/` (content sources, pack readers, caches), `Maps/`, `Projects/`, `Entities/` (the runtime and the `ent_` commands), `Play/` (`PlaySession`), `ConsoleSystem/`, `Physics/`, `Audio/`, `Input/`, `Hosting/` (`EngineHost`), `Inspection/`.
 - `SpectraEngine.Editing/`: editor logic. Commands, undo, gizmos, selection, cameras.
-- `SpectraEngine.Editor/`: the Avalonia shell. `Shell/`, `Viewport/`, `Theme/`.
+- `SpectraEngine.Editor/`: the Avalonia shell. `Shell/` (the Logic view is `Shell/Logic/`), `Viewport/`, `Theme/`, `Sounds/`.
 - `SpectraEngine.Executable/`: the demo. Also hosts the editing layer.
 - `SpectraEngine.Entities/` and `.Generator/`: built-in entities and the Roslyn generator.
 - `SpectraEngine.Physics.Box3D/`: the Box3D binding. Source is the `external/box3d` submodule.
@@ -143,6 +143,13 @@ Entities
 - The player is not an entity. A trigger or a button the player sets off is its own activator.
 - Entity motion counts ticks. World time is a float sum and drifts.
 
+Sound
+
+- What is playing lives in the simulation (`EntityWorld.Sounds`) and is counted in ticks. A sound's end and its markers never come from the audio device.
+- `SoundPresenter` gives the loudest sounds a voice each frame, on the render thread, once the camera is final.
+- Loudness over distance is the engine's (`SoundFalloff`). OpenAL's distance model is off and it only places the sound.
+- The engine reads cooked `.saudio` only. The editor cooks a wav the first time a level uses it, into a cache under `%LOCALAPPDATA%\Spectra\SoundCache`. The demo's build cooks its sounds with `scook sounds`.
+
 Play and console
 
 - `PlaySession` runs the fixed tick: entities, physics, then the character. It needs no camera, input or renderer.
@@ -169,6 +176,7 @@ Avalonia
 - Dock tool content goes through `SetToolContent`, which also sets the `DataContext`. All dock controls share one `Factory`.
 - A native viewport is a child window. Nothing drawn in the same window can cross it, only popups can, and re-parenting it destroys the session. A composited viewport has neither limit.
 - An `InputGesture` string is parsed. Use real `Key` names (`OemOpenBrackets`, `Delete`), or the window throws at startup.
+- `ApplyViewArrangement` sizes and shows the view panes and never moves one. The 3D view's track never goes to zero: a swap chain with no width may not come back.
 - The compositor waits on the shared target's key with no deadline. An engine that dies must keep answering (`Renderer.OfferSharedTurn`) until the shell has cleared `viewport.Host` and `IsAwaitingEngine` is false, or the whole window freezes.
 - When the engine's render thread dies the editor restarts the viewport and keeps the level (`MainWindow.Recovery.cs`, `SessionRecovery`). Anything a session owns must be rebuilt by that path too, or it works until the first restart.
 
@@ -176,6 +184,8 @@ Host
 
 - Apply every published `FrameSnapshot`. The scene changes and console lines in one are sent once, so sampling the newest loses the rest.
 - A scene event handler must not change the graph. Neither must an `IEntityTrace`: it runs inside the dispatch.
+- The entity world has one trace slot. `ent_watch` and the Logic view share it through `EntityTracePair.Join`. Set `SceneManager.EntityTrace` to one of them and the other goes quiet.
+- The engine publishes a level's wiring (`FrameSnapshot.LogicGraph`) only while a view asks for it through `EngineHost.RequestLogicView`. A new session has been asked for nothing.
 - A member or namespace named `Console` hides `System.Console` for the whole file.
 
 Entities and play
