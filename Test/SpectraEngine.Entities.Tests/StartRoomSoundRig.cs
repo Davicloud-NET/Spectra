@@ -4,11 +4,13 @@ using SpectraEngine.Bsp.Tests;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Sources;
 using SpectraEngine.Core.Audio;
+using SpectraEngine.Core.Audio.Captions;
 using SpectraEngine.Core.Audio.Propagation;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Physics.Character;
 using SpectraEngine.Core.Play;
+using SpectraEngine.Core.Projects;
 using SpectraEngine.Core.Scene;
 using System;
 using System.Collections.Generic;
@@ -53,7 +55,8 @@ internal sealed class StartRoomSoundRig : IDisposable
 
         Audio = new AudioManager(NullLogger.Instance, Supply);
         Audio.Initialize();
-        Presenter = new SoundPresenter(Audio, Assets, new DirectPropagation(), Log);
+        var captions = new CaptionFeed(new CaptionLibrary(Assets.Content, LanguageTag.Default, NullLogger.Instance));
+        Presenter = new SoundPresenter(Audio, Assets, new DirectPropagation(), captions, Log);
 
         Character = new CharacterSimulation(Scene) { FallOutHeight = DemoPlayArea.FallOutHeight };
         Session = new PlaySession(Manager, Character);
