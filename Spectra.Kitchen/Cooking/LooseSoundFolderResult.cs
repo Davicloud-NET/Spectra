@@ -5,10 +5,11 @@ namespace Spectra.Kitchen.Cooking;
 
 /// <summary>What <see cref="LooseSoundFolder"/> did with one folder of sounds.</summary>
 /// <param name="Cooked">Sounds that were cooked and written.</param>
-/// <param name="UpToDate">Sounds left alone because their cooked file was newer.</param>
+/// <param name="UpToDate">Sounds left alone because their stamp still held.</param>
+/// <param name="Removed">Cooked files deleted because their sound is gone.</param>
 /// <param name="Diagnostics">What the cook said, in the order the sounds were walked.</param>
 public sealed record LooseSoundFolderResult(
-    int Cooked, int UpToDate, IReadOnlyList<CookDiagnostic> Diagnostics)
+    int Cooked, int UpToDate, int Removed, IReadOnlyList<CookDiagnostic> Diagnostics)
 {
     /// <summary>Diagnostics that are errors.</summary>
     public int ErrorCount => Count(CookDiagnosticSeverity.Error);

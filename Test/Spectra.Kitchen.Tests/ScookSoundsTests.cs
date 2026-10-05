@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectra.Kitchen.CLI;
 using Spectra.Kitchen.Cooking;
+using SpectraEngine.Core;
 using SpectraEngine.Core.Assets.Audio;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Assets.Sources;
@@ -22,6 +23,8 @@ public sealed class ScookSoundsTests : IDisposable
     private const int ExitSuccess = 0;
     private const int ExitCookError = 1;
     private const int ExitUsageError = 2;
+
+    private static readonly DateTime LongAgo = new(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
 
     private readonly TempProject _project = new();
 
@@ -50,32 +53,32 @@ public sealed class ScookSoundsTests : IDisposable
     }
 
     [Fact]
-    public void A_sound_whose_cooked_file_is_newer_is_left_alone()
+    public void A_sound_whose_files_stand_is_left_alone()
     {
         _project.WriteAsset(Sound, TempProject.Wav(frames: 480));
         Invoke("sounds", Source, "-o", Output).ExitCode.ShouldBe(ExitSuccess);
 
-        // Not a sound any more: a second cook would put the real bytes back.
-        byte[] planted = TempProject.Bytes(32);
-        File.WriteAllBytes(CookedFile(Cooked), planted);
+        // A second cook would write the file again and move its time.
+        File.SetLastWriteTimeUtc(CookedFile(Cooked), LongAgo);
 
         Run again = Invoke("sounds", Source, "-o", Output);
 
         again.ExitCode.ShouldBe(ExitSuccess);
         again.Stdout.ShouldContain("cooked 0 sound(s)");
         again.Stdout.ShouldContain("1 up to date");
-        File.ReadAllBytes(CookedFile(Cooked)).ShouldBe(planted);
+        File.GetLastWriteTimeUtc(CookedFile(Cooked)).ShouldBe(LongAgo);
     }
 
     [Fact]
-    public void A_wav_newer_than_its_cooked_file_is_cooked_again()
+    public void A_changed_wav_is_cooked_again_whatever_its_file_time_says()
     {
         _project.WriteAsset(Sound, TempProject.Wav(frames: 480));
         Invoke("sounds", Source, "-o", Output).ExitCode.ShouldBe(ExitSuccess);
         byte[] before = File.ReadAllBytes(CookedFile(Cooked));
 
+        // Copied in from elsewhere: other bytes under an older time.
         _project.WriteAsset(Sound, TempProject.Wav(frames: 480, seed: 5));
-        MakeNewerThanCooked(Sound);
+        File.SetLastWriteTimeUtc(SourceFile(Sound), LongAgo);
 
         Run again = Invoke("sounds", Source, "-o", Output);
 
@@ -86,19 +89,75 @@ public sealed class ScookSoundsTests : IDisposable
     }
 
     [Fact]
-    public void A_label_file_newer_than_the_cooked_file_cooks_the_sound_again()
+    public void A_label_file_added_changed_or_deleted_cooks_the_sound_again()
     {
         _project.WriteAsset(Sound, TempProject.Wav(frames: 48_000));
         Invoke("sounds", Source, "-o", Output).ExitCode.ShouldBe(ExitSuccess);
-        SaudioReader.Read(File.ReadAllBytes(CookedFile(Cooked)), Cooked).Markers.ShouldBeEmpty();
+        CookedMarkers().ShouldBeEmpty();
 
         _project.WriteAsset(Labels, "0.5\tnow\n");
-        MakeNewerThanCooked(Labels);
+        Invoke("sounds", Source, "-o", Output).Stdout.ShouldContain("cooked 1 sound(s)");
+        CookedMarkers().ShouldBe([new AudioMarker(24_000, "now")]);
 
+        _project.WriteAsset(Labels, "0.25\topen\n");
+        Invoke("sounds", Source, "-o", Output).Stdout.ShouldContain("cooked 1 sound(s)");
+        CookedMarkers().ShouldBe([new AudioMarker(12_000, "open")]);
+
+        File.Delete(SourceFile(Labels));
+        Invoke("sounds", Source, "-o", Output).Stdout.ShouldContain("cooked 1 sound(s)");
+        CookedMarkers().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_cooked_file_that_is_gone_or_not_the_one_written_is_cooked_again()
+    {
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 480));
+        Invoke("sounds", Source, "-o", Output).ExitCode.ShouldBe(ExitSuccess);
+        byte[] cooked = File.ReadAllBytes(CookedFile(Cooked));
+
+        File.Delete(CookedFile(Cooked));
+        Invoke("sounds", Source, "-o", Output).Stdout.ShouldContain("cooked 1 sound(s)");
+        File.ReadAllBytes(CookedFile(Cooked)).ShouldBe(cooked);
+
+        File.WriteAllBytes(CookedFile(Cooked), cooked[..^8]);
+        Invoke("sounds", Source, "-o", Output).Stdout.ShouldContain("cooked 1 sound(s)");
+        File.ReadAllBytes(CookedFile(Cooked)).ShouldBe(cooked);
+    }
+
+    [Fact]
+    public void A_sound_cooked_for_another_version_of_the_sound_format_is_cooked_again()
+    {
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 480));
         Invoke("sounds", Source, "-o", Output).ExitCode.ShouldBe(ExitSuccess);
 
-        SaudioReader.Read(File.ReadAllBytes(CookedFile(Cooked)), Cooked).Markers
-            .ShouldBe([new AudioMarker(24_000, "now")]);
+        LooseSoundStamp stamp = ReadStamp(Cooked);
+        stamp.SoundFormatVersion.ShouldBe(EngineInfo.AudioFormatVersion);
+        WriteStamp(Cooked, stamp with { SoundFormatVersion = stamp.SoundFormatVersion - 1 });
+
+        Invoke("sounds", Source, "-o", Output).Stdout.ShouldContain("cooked 1 sound(s)");
+        ReadStamp(Cooked).SoundFormatVersion.ShouldBe(EngineInfo.AudioFormatVersion);
+    }
+
+    [Fact]
+    public void The_cooked_file_of_a_wav_that_is_gone_is_removed_and_nothing_else_is()
+    {
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 480));
+        _project.WriteAsset("Sounds/lift_hum.wav", TempProject.Wav(frames: 96));
+        Invoke("sounds", Source, "-o", Output).ExitCode.ShouldBe(ExitSuccess);
+
+        // Put there by hand, so it has no stamp.
+        string own = CookedFile("Sounds/own.saudio");
+        File.Copy(CookedFile(Cooked), own);
+
+        File.Delete(SourceFile(Sound));
+        Run run = Invoke("sounds", Source, "-o", Output);
+
+        run.ExitCode.ShouldBe(ExitSuccess);
+        run.Stdout.ShouldContain("1 removed");
+        File.Exists(CookedFile(Cooked)).ShouldBeFalse();
+        File.Exists(CookedFile(Cooked) + LooseSoundFolder.StampSuffix).ShouldBeFalse();
+        File.Exists(CookedFile("Sounds/lift_hum.saudio")).ShouldBeTrue();
+        File.Exists(own).ShouldBeTrue();
     }
 
     [Fact]
@@ -137,6 +196,24 @@ public sealed class ScookSoundsTests : IDisposable
         plain.Stdout.ShouldBeEmpty();
         plain.Stderr.ShouldStartWith($"{Sound}: warning SC4003: ");
         File.Exists(CookedFile(Cooked)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_warning_is_printed_again_for_a_sound_that_is_up_to_date()
+    {
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 64, channels: 2));
+        Invoke("sounds", Source, "-o", Output, "-q").ExitCode.ShouldBe(ExitSuccess);
+
+        Run again = Invoke("sounds", Source, "-o", Output);
+        again.ExitCode.ShouldBe(ExitSuccess);
+        again.Stdout.ShouldContain("cooked 0 sound(s)");
+        again.Stdout.ShouldContain("1 warning(s)");
+        again.Stderr.ShouldStartWith($"{Sound}: warning SC4003: ");
+
+        // Refused now, with nothing to cook.
+        Run strict = Invoke("sounds", Source, "-o", Output, "--strict", "-q");
+        strict.ExitCode.ShouldBe(ExitCookError);
+        strict.Stderr.ShouldStartWith($"{Sound}: error SC4003: ");
     }
 
     [Fact]
@@ -180,12 +257,22 @@ public sealed class ScookSoundsTests : IDisposable
     private string CookedFile(string cookedPath) =>
         Path.Combine(Output, cookedPath.Replace('/', Path.DirectorySeparatorChar));
 
-    // File times have a coarse clock, so a file written right after the cook
-    // can carry the cooked file's own time. Set it apart instead of waiting.
-    private void MakeNewerThanCooked(string contentPath)
+    private string SourceFile(string contentPath) =>
+        Path.Combine(Source, contentPath.Replace('/', Path.DirectorySeparatorChar));
+
+    private AudioMarker[] CookedMarkers() =>
+        [.. SaudioReader.Read(File.ReadAllBytes(CookedFile(Cooked)), Cooked).Markers];
+
+    private LooseSoundStamp ReadStamp(string cookedPath)
     {
-        string full = Path.Combine(Source, contentPath.Replace('/', Path.DirectorySeparatorChar));
-        File.SetLastWriteTimeUtc(full, File.GetLastWriteTimeUtc(CookedFile(Cooked)).AddSeconds(2));
+        using FileStream stream = File.OpenRead(CookedFile(cookedPath) + LooseSoundFolder.StampSuffix);
+        return LooseSoundStamp.Read(stream);
+    }
+
+    private void WriteStamp(string cookedPath, LooseSoundStamp stamp)
+    {
+        using FileStream stream = File.Create(CookedFile(cookedPath) + LooseSoundFolder.StampSuffix);
+        stamp.Write(stream);
     }
 
     // What scook cook writes for the project as it stands, read back out of the pack.

@@ -1,4 +1,3 @@
-using Spectra.Kitchen.Audio;
 using Spectra.Kitchen.Diagnostics;
 using Spectra.Kitchen.Packs;
 using Spectra.Kitchen.Rules;
@@ -14,15 +13,17 @@ namespace Spectra.Kitchen.Cooking;
 /// files at the same relative paths. For a build that runs a game from loose
 /// files, where nothing can cook a sound when it is first played.
 /// </summary>
-// A sound is skipped by file time, the way a build tool skips: its cooked file
-// is at least as new as the sound and the label file beside it. A label file
-// that was deleted, or a cook that changed, is not noticed. Delete the cooked
-// files to cook everything again.
+// Each cooked file has a stamp beside it. A sound is cooked again when its
+// stamp no longer holds, and what the cook said about it is said again when
+// it does. A cooked file whose sound is gone is removed.
 public static class LooseSoundFolder
 {
+    /// <summary>What a cooked sound's stamp file adds to its name.</summary>
+    public const string StampSuffix = ".stamp";
+
     /// <summary>
-    /// Cooks the sounds under <paramref name="contentRoot"/> that are newer
-    /// than their cooked file under <paramref name="outputRoot"/>.
+    /// Brings the cooked sounds under <paramref name="outputRoot"/> in step
+    /// with the sounds under <paramref name="contentRoot"/>.
     /// </summary>
     /// <param name="settings">Null cooks with a project cook's defaults.</param>
     public static LooseSoundFolderResult Cook(string contentRoot, string outputRoot, CookSettings? settings = null)
@@ -33,7 +34,7 @@ public static class LooseSoundFolder
         string source = Path.GetFullPath(contentRoot);
         string output = Path.GetFullPath(outputRoot);
 
-        var diagnostics = new List<CookDiagnostic>();
+        var log = new CookDiagnosticLog(settings?.Strict ?? false);
         var owners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         int cooked = 0, upToDate = 0;
 
@@ -45,7 +46,7 @@ public static class LooseSoundFolder
             string cookedPath = AudioContentPath.CookedPathFor(file.ContentPath);
             if (!owners.TryAdd(cookedPath, file.ContentPath))
             {
-                diagnostics.Add(CookDiagnostic.Error(
+                log.Add(CookDiagnostic.Error(
                     CookDiagnosticCodes.PackEntryCollision,
                     $"'{cookedPath}' is cooked from both '{owners[cookedPath]}' and '{file.ContentPath}'. " +
                     "One content path is one asset.",
@@ -54,47 +55,99 @@ public static class LooseSoundFolder
             }
 
             string target = Path.Combine(output, cookedPath.Replace('/', Path.DirectorySeparatorChar));
-            if (IsUpToDate(target, file.FullPath, LabelFileOf(source, file.ContentPath)))
+            if (StandingStamp(source, file.ContentPath, target, settings) is { } stamp)
             {
-                upToDate++;
+                // A warning must not go quiet, and --strict may refuse it now.
+                int errors = log.ErrorCount;
+                log.AddRange(stamp.Diagnostics);
+                if (log.ErrorCount == errors) upToDate++;
                 continue;
             }
 
             LooseSoundResult result = LooseSoundCook.Run(source, file.ContentPath, settings);
-            diagnostics.AddRange(result.Diagnostics);
+            log.AddRange(result.Diagnostics);
 
-            if (result.Cooked is { } bytes && TryWrite(target, bytes, diagnostics)) cooked++;
+            if (result.Cooked is { } bytes && TryWrite(target, bytes, LooseSoundStamp.Of(result), log)) cooked++;
         }
 
-        return new LooseSoundFolderResult(cooked, upToDate, diagnostics);
+        int removed = RemoveCookedWithNoSound(output, owners, log);
+
+        return new LooseSoundFolderResult(cooked, upToDate, removed, log.Entries);
     }
 
-    private static string LabelFileOf(string contentRoot, string soundPath) =>
-        Path.Combine(contentRoot, MarkerLabelFile.PathFor(soundPath).Replace('/', Path.DirectorySeparatorChar));
-
-    private static bool IsUpToDate(string cooked, string sound, string labels)
+    // Null when the sound has to be cooked: no stamp, one that no longer
+    // holds, or a cooked file that is not the one the stamp was written for.
+    private static LooseSoundStamp? StandingStamp(
+        string contentRoot, string soundPath, string target, CookSettings? settings)
     {
-        if (!File.Exists(cooked)) return false;
+        LooseSoundStamp stamp;
+        try
+        {
+            using FileStream stream = File.OpenRead(target + StampSuffix);
+            stamp = LooseSoundStamp.Read(stream);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return null;
+        }
 
-        DateTime cookedAt = File.GetLastWriteTimeUtc(cooked);
-        if (File.GetLastWriteTimeUtc(sound) > cookedAt) return false;
+        if (!stamp.HasSound || !stamp.Holds(contentRoot, soundPath, settings)) return null;
 
-        return !File.Exists(labels) || File.GetLastWriteTimeUtc(labels) <= cookedAt;
+        var cooked = new FileInfo(target);
+        return cooked.Exists && cooked.Length == stamp.CookedLength ? stamp : null;
     }
 
-    private static bool TryWrite(string path, byte[] bytes, List<CookDiagnostic> diagnostics)
+    // The sound first. Stopped between the two, the stamp left behind is of
+    // the sound's old files, so the sound is cooked again.
+    private static bool TryWrite(string target, byte[] cooked, LooseSoundStamp stamp, CookDiagnosticLog log)
     {
         try
         {
-            if (Path.GetDirectoryName(path) is { Length: > 0 } folder) Directory.CreateDirectory(folder);
-            AtomicOutput.Write(path, stream => stream.Write(bytes));
+            if (Path.GetDirectoryName(target) is { Length: > 0 } folder) Directory.CreateDirectory(folder);
+
+            AtomicOutput.Write(target, stream => stream.Write(cooked));
+            AtomicOutput.Write(target + StampSuffix, stamp.Write);
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            diagnostics.Add(CookDiagnostic.Error(
-                CookDiagnosticCodes.OutputNotWritable, $"Could not write '{path}': {ex.Message}", path));
+            log.Add(CookDiagnostic.Error(
+                CookDiagnosticCodes.OutputNotWritable, $"Could not write '{target}': {ex.Message}", target));
             return false;
         }
+    }
+
+    // A cooked file whose sound was deleted or renamed would still play. Only
+    // a file with a stamp goes, so nothing this did not write is deleted.
+    private static int RemoveCookedWithNoSound(
+        string output, Dictionary<string, string> owners, CookDiagnosticLog log)
+    {
+        if (!Directory.Exists(output)) return 0;
+
+        string[] stamps = Directory.GetFiles(
+            output, "*" + SaudioFormat.FileExtension + StampSuffix, SearchOption.AllDirectories);
+        Array.Sort(stamps, StringComparer.Ordinal);
+
+        int removed = 0;
+        foreach (string stamp in stamps)
+        {
+            string cooked = stamp[..^StampSuffix.Length];
+            string cookedPath = Path.GetRelativePath(output, cooked).Replace(Path.DirectorySeparatorChar, '/');
+            if (owners.ContainsKey(cookedPath)) continue;
+
+            try
+            {
+                File.Delete(cooked);
+                File.Delete(stamp);
+                removed++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                log.Add(CookDiagnostic.Error(
+                    CookDiagnosticCodes.OutputNotWritable, $"Could not remove '{cooked}': {ex.Message}", cooked));
+            }
+        }
+
+        return removed;
     }
 }

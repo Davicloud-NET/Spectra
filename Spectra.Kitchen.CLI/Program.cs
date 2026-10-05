@@ -253,7 +253,8 @@ internal static class Program
             stdout.WriteLine(
                 $"{style.Success}{ToolName}{style.Reset}: cooked {result.Cooked} sound(s) into " +
                 $"{style.Path}{output}{style.Reset} " +
-                $"{style.Dim}({result.UpToDate} up to date, {result.WarningCount} warning(s)){style.Reset}");
+                $"{style.Dim}({result.UpToDate} up to date, {result.Removed} removed, " +
+                $"{result.WarningCount} warning(s)){style.Reset}");
         }
 
         return ExitSuccess;

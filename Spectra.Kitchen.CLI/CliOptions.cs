@@ -383,8 +383,9 @@ internal sealed class CliOptions
         WriteOption(w, s, "sounds", null,
             "Cook every WAV under a content folder to a .saudio",
             "under -o, with no project and no pack. For a build",
-            "that runs from loose files. A sound whose cooked",
-            "file is newer is skipped.");
+            "that runs from loose files. Only a sound whose files",
+            "changed is cooked again, and the cooked file of a",
+            "WAV that is gone is removed.");
         w.WriteLine();
         w.WriteLine($"{s.Header}Options:{s.Reset}");
         WriteOption(w, s, "-o, --output", "<path>",
