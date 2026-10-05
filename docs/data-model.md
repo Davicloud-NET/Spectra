@@ -112,6 +112,7 @@ Two internal hooks cover what the public events do not: `OnNodeSpatialComponentC
 | Member | Where |
 | --- | --- |
 | `Scene.Raycast` → `SceneRaycastHit` | `Scene.cs:208`; hit type at `SceneBvh.cs:30` |
+| `Scene.TraceSolidSpans` → `SolidSpan` | `Scene.SolidSpans.cs`; span type in `SolidSpan.cs` |
 | `Scene.QueryFrustum` | `Scene.cs:219` |
 | `Scene.TryGetWorldBounds` | `Scene.cs:235` |
 | `Scene.BuildRenderView` | `Scene.cs:269` |
@@ -123,6 +124,10 @@ Two internal hooks cover what the public events do not: `OnNodeSpatialComponentC
 | `Camera` | `Camera.cs:14`; `ScreenPointToRay` `:213`, `ScreenRectToFrustum` `:263`, `GetFrustum` `:203` |
 
 **Non-obvious:** a node is *spatial* — i.e. tracked by the BVH — iff it carries a `MeshRenderer` **or** a `Brush` (`SceneBvh.cs:146`). That test is ancestry-blind: there is no enable flag anywhere on this path today, **and the designs deliberately keep it `BrushKind`-blind too** — the BVH must index world brushes and part brushes alike, or part brushes fall out of frustum culling and out of editor picking (`docs/physics.md` §2.3a). `realms.md` R12 adds only a *liveness* condition, never a realm one, for the mirror reason. `QueryFrustum` does not clear the results list; `Frustum.Intersects` (`Frustum.cs:76`) is conservative (false positives possible, false negatives not).
+
+`TraceSolidSpans` answers what a sound has to get through: the stretches of solid on a segment, nearest first, each with the material of the face the segment entered by. It reads the static world as last compiled, from the live placements or from a baked map's collision hulls, and the part brushes that collide, where they stand now. Cuts are open, and what lies behind a cut names the cut's face. Meshes do not block. It clips brush planes and does not ask the BSP.
+
+A segment that lies in the plane of a brush face is in solid only where there is solid on every side of it. In the seam of two flush brushes it is, and under a wall that stands on the floor. Along the face of a wall, the sill of a cut window or the jamb of an open doorway it is not. A segment counts as lying in a face when it stays within `Polygon.Epsilon` of the plane from end to end.
 
 ### 2.7 Selection
 

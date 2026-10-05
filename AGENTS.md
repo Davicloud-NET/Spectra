@@ -188,6 +188,12 @@ Host
 - The engine publishes a level's wiring (`FrameSnapshot.LogicGraph`) only while a view asks for it through `EngineHost.RequestLogicView`. A new session has been asked for nothing.
 - A member or namespace named `Console` hides `System.Console` for the whole file.
 
+Span query
+
+- `Scene.TraceSolidSpans` from a point inside a part starts in that part. A sound under a door reads as muffled by its own door unless the door is in `filter.Ignore`.
+- Its default filter leaves out a part with `CanQuery` off, also one that collides and stops the player. `IgnoreQueryFlags` counts it.
+- A map cooked before the `COLM` section still traces, and every world span names the default material. `CompiledMapLoadReport.CollisionFaceMaterialsMissing` is the only sign.
+
 Entities and play
 
 - A new built-in class goes into `BuiltinEntities.Schemas` and `ClassCount`. Left out of both, it works until a trimmed build drops it, and then every map naming it loads a placeholder.
