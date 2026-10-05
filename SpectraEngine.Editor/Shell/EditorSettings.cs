@@ -150,6 +150,52 @@ public sealed class EditorSettings
         _workspaceRecordedUtc = DateTime.UtcNow;
     }
 
+    private ViewArrangement _viewArrangement = ViewArrangement.Single;
+    private ViewArrangement _lastViewSplit = ViewPaneLayout.DefaultSplit;
+    private double _viewColumnSplit = ViewPaneLayout.DefaultColumnSplit;
+    private double _viewRowSplit = ViewPaneLayout.DefaultRowSplit;
+    private DateTime _viewsRecordedUtc = DateTime.MinValue;
+
+    /// <summary>Which view panes show. The 3D view alone by default.</summary>
+    public ViewArrangement ViewArrangement => _viewArrangement;
+
+    /// <summary>Where the Logic view last showed, for the key that brings it back.</summary>
+    public ViewArrangement LastViewSplit => _lastViewSplit;
+
+    /// <summary>The 3D view's share of the width beside the Logic view.</summary>
+    public double ViewColumnSplit => _viewColumnSplit;
+
+    /// <summary>The 3D view's share of the height above the Logic view.</summary>
+    public double ViewRowSplit => _viewRowSplit;
+
+    /// <summary>Records the arrangement for next time, and a split as the last one used.</summary>
+    public void SetViewArrangement(ViewArrangement arrangement)
+    {
+        if (_viewArrangement == arrangement) return;
+
+        _viewArrangement = arrangement;
+        if (arrangement != ViewArrangement.Single) _lastViewSplit = arrangement;
+        _viewsRecordedUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>Records the column split after a drag.</summary>
+    public void SetViewColumnSplit(double split)
+    {
+        if (!ViewPaneLayout.IsSplit(split) || _viewColumnSplit == split) return;
+
+        _viewColumnSplit = split;
+        _viewsRecordedUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>Records the row split after a drag.</summary>
+    public void SetViewRowSplit(double split)
+    {
+        if (!ViewPaneLayout.IsSplit(split) || _viewRowSplit == split) return;
+
+        _viewRowSplit = split;
+        _viewsRecordedUtc = DateTime.UtcNow;
+    }
+
     private bool _diagnosticsReadouts;
     private DateTime _diagnosticsRecordedUtc = DateTime.MinValue;
 
@@ -216,6 +262,11 @@ public sealed class EditorSettings
             settings._workspacePreset = WorkspacePreset.Compact;
             settings._drawerHeight = WorkspaceLayout.DefaultDrawerHeight;
             settings._workspaceRecordedUtc = DateTime.MinValue;
+            settings._viewArrangement = ViewArrangement.Single;
+            settings._lastViewSplit = ViewPaneLayout.DefaultSplit;
+            settings._viewColumnSplit = ViewPaneLayout.DefaultColumnSplit;
+            settings._viewRowSplit = ViewPaneLayout.DefaultRowSplit;
+            settings._viewsRecordedUtc = DateTime.MinValue;
             settings._diagnosticsReadouts = false;
             settings._diagnosticsRecordedUtc = DateTime.MinValue;
         }
@@ -307,6 +358,15 @@ public sealed class EditorSettings
             _workspaceRecordedUtc = onDisk._workspaceRecordedUtc;
         }
 
+        if (onDisk._viewsRecordedUtc > _viewsRecordedUtc)
+        {
+            _viewArrangement = onDisk._viewArrangement;
+            _lastViewSplit = onDisk._lastViewSplit;
+            _viewColumnSplit = onDisk._viewColumnSplit;
+            _viewRowSplit = onDisk._viewRowSplit;
+            _viewsRecordedUtc = onDisk._viewsRecordedUtc;
+        }
+
         if (onDisk._diagnosticsRecordedUtc > _diagnosticsRecordedUtc)
         {
             _diagnosticsReadouts = onDisk._diagnosticsReadouts;
@@ -341,6 +401,14 @@ public sealed class EditorSettings
         writer.WriteString("preset", WorkspaceLayout.NameOf(_workspacePreset));
         writer.WriteNumber("drawerHeight", _drawerHeight);
         writer.WriteString("recordedUtc", _workspaceRecordedUtc.ToString("O"));
+        writer.WriteEndObject();
+
+        writer.WriteStartObject("views");
+        writer.WriteString("arrangement", ViewPaneLayout.NameOf(_viewArrangement));
+        writer.WriteString("lastSplit", ViewPaneLayout.NameOf(_lastViewSplit));
+        writer.WriteNumber("columnSplit", _viewColumnSplit);
+        writer.WriteNumber("rowSplit", _viewRowSplit);
+        writer.WriteString("recordedUtc", _viewsRecordedUtc.ToString("O"));
         writer.WriteEndObject();
 
         writer.WriteStartObject("content");
@@ -386,6 +454,10 @@ public sealed class EditorSettings
             else if (reader.ValueTextEquals("workspace"))
             {
                 ReadWorkspace(ref reader);
+            }
+            else if (reader.ValueTextEquals("views"))
+            {
+                ReadViews(ref reader);
             }
             else if (reader.ValueTextEquals("content"))
             {
@@ -535,6 +607,69 @@ public sealed class EditorSettings
             ? drawer
             : WorkspaceLayout.DefaultDrawerHeight;
         _workspaceRecordedUtc = recorded;
+    }
+
+    private void ReadViews(ref Utf8JsonReader reader)
+    {
+        if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException("'views' must be an object.");
+
+        ViewArrangement arrangement = ViewArrangement.Single;
+        ViewArrangement lastSplit = ViewPaneLayout.DefaultSplit;
+        double columnSplit = ViewPaneLayout.DefaultColumnSplit;
+        double rowSplit = ViewPaneLayout.DefaultRowSplit;
+        DateTime recorded = DateTime.MinValue;
+
+        while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+        {
+            if (reader.ValueTextEquals("arrangement"))
+            {
+                reader.Read();
+
+                // An unknown word reads as single.
+                ViewPaneLayout.TryParse(reader.GetString(), out arrangement);
+            }
+            else if (reader.ValueTextEquals("lastSplit"))
+            {
+                reader.Read();
+                ViewPaneLayout.TryParse(reader.GetString(), out lastSplit);
+            }
+            else if (reader.ValueTextEquals("columnSplit"))
+            {
+                reader.Read();
+                columnSplit = reader.GetDouble();
+            }
+            else if (reader.ValueTextEquals("rowSplit"))
+            {
+                reader.Read();
+                rowSplit = reader.GetDouble();
+            }
+            else if (reader.ValueTextEquals("recordedUtc"))
+            {
+                reader.Read();
+                DateTime.TryParse(
+                    reader.GetString(), null,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out recorded);
+            }
+            else
+            {
+                reader.Read();
+                reader.Skip();
+            }
+        }
+
+        _viewArrangement = arrangement;
+
+        // A split that shows is the last one used, whatever the file says.
+        // Single is no split, so a file naming it there gets the default.
+        if (arrangement != ViewArrangement.Single)
+            _lastViewSplit = arrangement;
+        else
+            _lastViewSplit = lastSplit == ViewArrangement.Single ? ViewPaneLayout.DefaultSplit : lastSplit;
+
+        _viewColumnSplit = ViewPaneLayout.IsSplit(columnSplit) ? columnSplit : ViewPaneLayout.DefaultColumnSplit;
+        _viewRowSplit = ViewPaneLayout.IsSplit(rowSplit) ? rowSplit : ViewPaneLayout.DefaultRowSplit;
+        _viewsRecordedUtc = recorded;
     }
 
     private void ReadDiagnostics(ref Utf8JsonReader reader)

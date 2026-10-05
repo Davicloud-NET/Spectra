@@ -321,6 +321,152 @@ public sealed class EditorSettingsTests
     }
 
     [Fact]
+    public void The_views_default_to_the_3D_view_alone()
+    {
+        var settings = new EditorSettings();
+
+        settings.ViewArrangement.ShouldBe(ViewArrangement.Single);
+        settings.LastViewSplit.ShouldBe(ViewArrangement.LogicBelow);
+        settings.ViewColumnSplit.ShouldBe(ViewPaneLayout.DefaultColumnSplit);
+        settings.ViewRowSplit.ShouldBe(ViewPaneLayout.DefaultRowSplit);
+    }
+
+    [Fact]
+    public void The_views_block_round_trips()
+    {
+        string path = TempPath();
+        var settings = new EditorSettings();
+        settings.SetViewArrangement(ViewArrangement.LogicBeside);
+        settings.SetViewColumnSplit(0.72);
+        settings.SetViewRowSplit(0.31);
+
+        settings.Save(path, NullLogger.Instance);
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+
+        loaded.ViewArrangement.ShouldBe(ViewArrangement.LogicBeside);
+        loaded.LastViewSplit.ShouldBe(ViewArrangement.LogicBeside);
+        loaded.ViewColumnSplit.ShouldBe(0.72);
+        loaded.ViewRowSplit.ShouldBe(0.31);
+    }
+
+    [Fact]
+    public void Hiding_the_Logic_view_keeps_the_split_it_was_in()
+    {
+        string path = TempPath();
+        var settings = new EditorSettings();
+        settings.SetViewArrangement(ViewArrangement.LogicBeside);
+        settings.SetViewArrangement(ViewArrangement.Single);
+
+        settings.Save(path, NullLogger.Instance);
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+
+        loaded.ViewArrangement.ShouldBe(ViewArrangement.Single);
+        loaded.LastViewSplit.ShouldBe(ViewArrangement.LogicBeside);
+    }
+
+    [Fact]
+    public void A_file_with_no_views_block_reads_as_the_3D_view_alone()
+    {
+        string path = TempPath();
+        var settings = new EditorSettings();
+        settings.SetViewArrangement(ViewArrangement.LogicBelow);
+        settings.TouchProject(@"C:\Games\Alpha", "Alpha", DateTime.UtcNow);
+        settings.Save(path, NullLogger.Instance);
+
+        string json = File.ReadAllText(path);
+        json.ShouldContain("views");
+
+        File.WriteAllText(path, json.Replace("views", "somethingelse"));
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+
+        loaded.ViewArrangement.ShouldBe(ViewArrangement.Single);
+        loaded.RecentProjects.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void The_views_block_merges_by_recency_like_every_other_one()
+    {
+        // Whole block at a time, so an arrangement and its splits cannot come
+        // from different sessions.
+        string path = TempPath();
+
+        var first = new EditorSettings();
+        first.SetViewArrangement(ViewArrangement.LogicBeside);
+        first.SetViewColumnSplit(0.7);
+        first.Save(path, NullLogger.Instance);
+
+        var stale = new EditorSettings();
+        stale.Save(path, NullLogger.Instance);
+
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+        loaded.ViewArrangement.ShouldBe(ViewArrangement.LogicBeside);
+        loaded.ViewColumnSplit.ShouldBe(0.7);
+    }
+
+    [Fact]
+    public void An_arrangement_word_this_build_does_not_know_reads_as_single()
+    {
+        // A file written by a newer shell.
+        string path = TempPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(
+            path,
+            "{ \"views\": { \"arrangement\": \"quad\", \"lastSplit\": \"quad\", \"columnSplit\": 0.7 } }");
+
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+
+        loaded.ViewArrangement.ShouldBe(ViewArrangement.Single);
+        loaded.LastViewSplit.ShouldBe(ViewArrangement.LogicBelow);
+        loaded.ViewColumnSplit.ShouldBe(0.7);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(-0.3)]
+    [InlineData(1.4)]
+    public void A_split_that_is_not_a_share_is_refused(double split)
+    {
+        var settings = new EditorSettings();
+        settings.SetViewColumnSplit(split);
+        settings.SetViewRowSplit(split);
+
+        settings.ViewColumnSplit.ShouldBe(ViewPaneLayout.DefaultColumnSplit);
+        settings.ViewRowSplit.ShouldBe(ViewPaneLayout.DefaultRowSplit);
+    }
+
+    [Fact]
+    public void A_split_out_of_range_in_the_file_reads_as_the_default()
+    {
+        string path = TempPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(
+            path,
+            "{ \"views\": { \"arrangement\": \"logicBelow\", \"columnSplit\": 1.5, \"rowSplit\": -2 } }");
+
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+
+        loaded.ViewArrangement.ShouldBe(ViewArrangement.LogicBelow);
+        loaded.ViewColumnSplit.ShouldBe(ViewPaneLayout.DefaultColumnSplit);
+        loaded.ViewRowSplit.ShouldBe(ViewPaneLayout.DefaultRowSplit);
+    }
+
+    [Fact]
+    public void A_corrupt_file_loses_the_views_with_the_rest()
+    {
+        string path = TempPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "{ \"views\": { \"arrangement\": \"logicBeside\", \"columnSplit\": 0.7, \"rowSplit\": ");
+
+        EditorSettings loaded = EditorSettings.Load(path, NullLogger.Instance);
+
+        loaded.ViewArrangement.ShouldBe(ViewArrangement.Single);
+        loaded.ViewColumnSplit.ShouldBe(ViewPaneLayout.DefaultColumnSplit);
+    }
+
+    [Fact]
     public void The_content_view_defaults_to_the_grid_and_round_trips()
     {
         string path = TempPath();
