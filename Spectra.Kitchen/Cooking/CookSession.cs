@@ -25,7 +25,7 @@ public sealed class CookSession
 {
     private readonly ProjectLayout _layout;
     private readonly CookSettings _settings;
-    private readonly CookRuleSet _rules = new();
+    private readonly CookRuleSet _rules;
 
     /// <summary>The extension a cooked pack is written with.</summary>
     public const string PackExtension = PackFormat.FileExtension;
@@ -39,6 +39,7 @@ public sealed class CookSession
         settings.Validate();
         _layout = layout;
         _settings = settings;
+        _rules = new CookRuleSet(layout.Project.LanguageOrDefault);
     }
 
     /// <summary>Where output goes: <c>-o</c> if it was given, else the project's <c>cooked/</c>.</summary>

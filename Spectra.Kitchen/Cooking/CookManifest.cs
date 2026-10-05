@@ -59,6 +59,8 @@ public static class CookManifest
         RuleKind.Shader => "shader",
         RuleKind.Script => "script",
         RuleKind.Map => "map",
+        RuleKind.CaptionFile => "captionfile",
+        RuleKind.Subtitle => "subtitle",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown rule kind."),
     };
 

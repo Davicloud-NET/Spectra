@@ -126,6 +126,19 @@ public static class CookGate
         4009 => CookGateVerdict.WarningUnlessStrict, // SC4009 AudioMarkerLabelFileUnused
         4010 => CookGateVerdict.WarningUnlessStrict, // SC4010 AudioMarkerNameTaken
 
+        4101 => CookGateVerdict.WarningUnlessStrict, // SC4101 CaptionLineUnreadable
+        4102 => CookGateVerdict.WarningUnlessStrict, // SC4102 CaptionSoundRepeated
+        4103 => CookGateVerdict.WarningUnlessStrict, // SC4103 CaptionSoundMissing
+        4104 => CookGateVerdict.WarningUnlessStrict, // SC4104 CaptionHiddenBySubtitles
+        4105 => CookGateVerdict.WarningUnlessStrict, // SC4105 CaptionFileNotALanguage
+        4106 => CookGateVerdict.WarningUnlessStrict, // SC4106 CaptionLanguageIncomplete
+        4107 => CookGateVerdict.Note,              // SC4107 CaptionLanguageSummary
+        4108 => CookGateVerdict.Fatal,             // SC4108 SubtitleUnreadable
+        4109 => CookGateVerdict.WarningUnlessStrict, // SC4109 SubtitlePartNotRead
+        4110 => CookGateVerdict.WarningUnlessStrict, // SC4110 SubtitleStartsAfterSound
+        4111 => CookGateVerdict.WarningUnlessStrict, // SC4111 SubtitleNameHasNoLanguage
+        4112 => CookGateVerdict.WarningUnlessStrict, // SC4112 SubtitleHasNoCues
+
         5001 => CookGateVerdict.Fatal,             // SC5001 MaterialTextureMissing
         5002 => CookGateVerdict.WarningUnlessStrict, // SC5002 MaterialFileMalformed
         5003 => CookGateVerdict.Fatal,             // SC5003 MaterialShaderMissing

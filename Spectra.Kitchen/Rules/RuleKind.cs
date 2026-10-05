@@ -22,4 +22,10 @@ public enum RuleKind
     Script = 7,
 
     Map = 8,
+
+    /// <summary>A language's caption file, packed as text.</summary>
+    CaptionFile = 9,
+
+    /// <summary>A voice file's subtitles in one language, packed as text.</summary>
+    Subtitle = 10,
 }

@@ -128,6 +128,60 @@ public static class CookDiagnosticCodes
     /// </summary>
     public static readonly CookDiagnosticId AudioMarkerNameTaken = CookDiagnosticId.Cook(4010);
 
+    // Captions and subtitles have 4101 to 4199: every thousand is taken, and
+    // they are about sounds.
+
+    /// <summary>A line of a caption file that is not a sound's path, an equals sign and words.</summary>
+    public static readonly CookDiagnosticId CaptionLineUnreadable = CookDiagnosticId.Cook(4101);
+
+    /// <summary>A caption file gives one sound two captions. The later one is used.</summary>
+    public static readonly CookDiagnosticId CaptionSoundRepeated = CookDiagnosticId.Cook(4102);
+
+    /// <summary>A caption line or a subtitle file for a sound that is not in the project.</summary>
+    public static readonly CookDiagnosticId CaptionSoundMissing = CookDiagnosticId.Cook(4103);
+
+    /// <summary>
+    /// A sound has a line in a caption file and a subtitle file in the same
+    /// language. The subtitle file is used and the line is not.
+    /// </summary>
+    public static readonly CookDiagnosticId CaptionHiddenBySubtitles = CookDiagnosticId.Cook(4104);
+
+    /// <summary>
+    /// A text file in the captions folder that is not named after a language,
+    /// so the engine never reads it.
+    /// </summary>
+    public static readonly CookDiagnosticId CaptionFileNotALanguage = CookDiagnosticId.Cook(4105);
+
+    /// <summary>
+    /// Sounds that have a caption in the project's language and none in this
+    /// caption file's. They show in the project's language.
+    /// </summary>
+    public static readonly CookDiagnosticId CaptionLanguageIncomplete = CookDiagnosticId.Cook(4106);
+
+    /// <summary>How many captions a caption file holds, when nothing in it is missing.</summary>
+    public static readonly CookDiagnosticId CaptionLanguageSummary = CookDiagnosticId.Cook(4107);
+
+    /// <summary>
+    /// A subtitle file the engine refuses: not WebVTT, a time that cannot be
+    /// read, or a cue that does not end after it starts.
+    /// </summary>
+    public static readonly CookDiagnosticId SubtitleUnreadable = CookDiagnosticId.Cook(4108);
+
+    /// <summary>A subtitle file uses a part of WebVTT the engine does not read. The words still show.</summary>
+    public static readonly CookDiagnosticId SubtitlePartNotRead = CookDiagnosticId.Cook(4109);
+
+    /// <summary>A subtitle cue starts after its sound has ended, so it never shows.</summary>
+    public static readonly CookDiagnosticId SubtitleStartsAfterSound = CookDiagnosticId.Cook(4110);
+
+    /// <summary>
+    /// A subtitle file whose name has no language in it, so the engine never
+    /// reads it.
+    /// </summary>
+    public static readonly CookDiagnosticId SubtitleNameHasNoLanguage = CookDiagnosticId.Cook(4111);
+
+    /// <summary>A subtitle file with no cue that has words, so it shows nothing.</summary>
+    public static readonly CookDiagnosticId SubtitleHasNoCues = CookDiagnosticId.Cook(4112);
+
     /// <summary>A material names a texture that is not there.</summary>
     public static readonly CookDiagnosticId MaterialTextureMissing = CookDiagnosticId.Cook(5001);
 
@@ -251,7 +305,7 @@ public static class CookDiagnosticCodes
         1 => "discovery and dependencies",
         2 => "image",
         3 => "model",
-        4 => "audio",
+        4 => "audio and captions",
         5 => "material",
         6 => "shader",
         7 => "map and geometry",

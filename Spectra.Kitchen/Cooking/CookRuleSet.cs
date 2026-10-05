@@ -16,8 +16,21 @@ public sealed class CookRuleSet
     private readonly MaterialRule _material = new();
     private readonly AudioRule _audio = new();
     private readonly ModelRule _model = new();
+    private readonly SubtitleRule _subtitle = new();
+    private readonly CaptionFileRule _captionFile;
 
     private readonly MapRule _map = new();
+
+    /// <summary>Creates the rules for one project.</summary>
+    /// <param name="projectLanguage">
+    /// The language the project names as its own. The caption rule compares
+    /// every other language with it.
+    /// </param>
+    public CookRuleSet(string projectLanguage)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectLanguage);
+        _captionFile = new CaptionFileRule(projectLanguage);
+    }
 
     /// <summary>
     /// The rule that bakes a map bundle. A bundle is a folder, so it does not go
@@ -35,6 +48,8 @@ public sealed class CookRuleSet
         if (MaterialRule.Handles(contentPath)) return _material;
         if (AudioRule.Handles(contentPath)) return _audio;
         if (ModelRule.Handles(contentPath)) return _model;
+        if (SubtitleRule.Handles(contentPath)) return _subtitle;
+        if (CaptionFileRule.Handles(contentPath)) return _captionFile;
 
         return _rawCopy;
     }
