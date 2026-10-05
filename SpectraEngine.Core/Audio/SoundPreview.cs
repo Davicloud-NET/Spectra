@@ -123,8 +123,10 @@ public sealed class SoundPreview
         {
             key = ContentRoot.NormalizeRelativePath(path);
             asset = _assets.LoadAudio(key);
-            refusal = "it was released while it was opened";
-            return asset.Samples.Length == asset.Format.FramesToSamples(asset.FrameCount);
+
+            bool isWhole = asset.Samples.Length == asset.Format.FramesToSamples(asset.FrameCount);
+            refusal = isWhole ? string.Empty : "it was released while it was opened";
+            return isWhole;
         }
         // A boundary: whatever the load throws becomes the reason, and nothing
         // reaches the frame loop.
