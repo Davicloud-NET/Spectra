@@ -65,6 +65,10 @@ public sealed partial class MathCounter : Entity
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        state.Headline(
+            "value",
+            IsClamped ? HeadlineText.NumberOf(Value, Maximum) : HeadlineText.Number(Value));
+
         state.Add("value", Value);
         state.Add("min", Minimum);
         state.Add("max", Maximum);

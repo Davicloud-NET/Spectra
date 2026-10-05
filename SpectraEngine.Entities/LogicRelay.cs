@@ -37,6 +37,11 @@ public sealed partial class LogicRelay : Entity
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        if (IsEnabled)
+            state.Headline("fired", HeadlineText.Times(TriggerCount));
+        else
+            state.Headline("state", "disabled");
+
         state.Add("enabled", IsEnabled);
         state.Add("triggers", TriggerCount);
     }

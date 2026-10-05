@@ -484,6 +484,7 @@ public sealed class EntityWorld
         Entity? activator,
         string output,
         in EntityConnection wire,
+        int wireIndex,
         string? parameterOverride)
     {
         // Negative and NaN delays become zero.
@@ -500,6 +501,7 @@ public sealed class EntityWorld
             Input = wire.Input,
             Parameter = parameterOverride ?? wire.Parameter,
             Output = output,
+            WireOrdinal = wireIndex + 1,
         };
 
         _queue.Push(queued);

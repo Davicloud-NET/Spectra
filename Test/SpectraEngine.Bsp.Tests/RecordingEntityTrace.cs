@@ -21,7 +21,9 @@ internal sealed class RecordingEntityTrace : IEntityTrace
             traced.DueTime,
             Describe(traced),
             traced.WiresQueued,
-            traced.WiresSpent));
+            traced.WiresSpent,
+            traced.Wire,
+            traced.Sequence));
 
     public void EndTick(long tick, float time) => EndedTicks.Add(tick);
 
@@ -53,5 +55,7 @@ internal sealed class RecordingEntityTrace : IEntityTrace
         float DueTime,
         string Line,
         int WiresQueued,
-        int WiresSpent);
+        int WiresSpent,
+        int Wire,
+        long Sequence);
 }

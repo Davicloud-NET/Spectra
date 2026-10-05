@@ -102,8 +102,14 @@ public sealed class Engine
         _entityWatch = new EntityWatch(_console.Output);
         EntityConsoleCommands.Register(_console.Commands, _entityWatch);
         GraphicsConsoleCommands.Register(_console.Commands, renderer);
-        _entityWatch.Changed += () => _sceneManager.EntityTrace = _entityWatch.ActiveTrace;
+        _entityWatch.Changed += RefreshEntityTrace;
     }
+
+    // The world has one trace slot, and the console watch and a wiring view
+    // may both want it.
+    private void RefreshEntityTrace() =>
+        _sceneManager.EntityTrace = EntityTracePair.Join(
+            _entityWatch.ActiveTrace, _logicView.IsShown ? _wireActivity : null);
 
     // Reused across publishes; rebuilt only when the selection changed.
     private readonly List<Guid> _snapshotSelection = [];
@@ -187,6 +193,7 @@ public sealed class Engine
                 SelectionProperties = CaptureProperties(),
                 SelectionEntity = CaptureSelectionEntity(),
                 LogicGraph = CaptureLogicGraph(),
+                LogicPlay = CaptureLogicPlay(),
                 ConsoleLines = _console.Output.Drain(),
             };
         }, interacting);
@@ -251,11 +258,36 @@ public sealed class Engine
             return null;
 
         return EntityPanelInfo.Capture(
-            items[0], scene.EntitySchemas, scene, _snapshotTargetNames);
+            items[0], scene.EntitySchemas, scene, _snapshotTargetNames, _sceneManager.EntityWorld);
     }
+
+    // A state line is text, and text is garbage on this thread. Six times a
+    // second reads as live.
+    private const long LogicStateTicks = 10;
+
+    private readonly WireActivityTrace _wireActivity = new();
+    private readonly EntityHeadline _headlineScratch = new();
+    private readonly List<KeyValuePair<string, string>> _stateRowScratch = [];
 
     private LogicViewRequest _logicView = LogicViewRequest.Hidden;
     private LogicGraphInfo? _publishedLogicGraph;
+    private LogicPlayInfo? _publishedLogicPlay;
+    private LogicEntityState[] _logicStates = [];
+    private long _logicStatesTick = -1;
+
+    private void ApplyLogicView(LogicViewRequest request)
+    {
+        bool wasShown = _logicView.IsShown;
+        _logicView = request;
+        _logicStatesTick = -1;
+
+        if (request.IsShown == wasShown)
+            return;
+
+        // Attached to a level already running, it has not seen what is queued.
+        _wireActivity.Clear();
+        RefreshEntityTrace();
+    }
 
     // Null unless a wiring view is showing. The same instance while nothing changed.
     private LogicGraphInfo? CaptureLogicGraph()
@@ -264,6 +296,26 @@ public sealed class Engine
             return _publishedLogicGraph = null;
 
         return _publishedLogicGraph = LogicGraphInfo.Capture(scene, _publishedLogicGraph);
+    }
+
+    // Null unless a wiring view is showing and a level runs.
+    private LogicPlayInfo? CaptureLogicPlay()
+    {
+        if (!_logicView.IsShown || _sceneManager.EntityWorld is not { IsActive: true } world)
+        {
+            _logicStatesTick = -1;
+            return _publishedLogicPlay = null;
+        }
+
+        long sinceStates = world.TickNumber - _logicStatesTick;
+        if (_logicStatesTick < 0 || sinceStates < 0 || sinceStates >= LogicStateTicks)
+        {
+            _logicStates = LogicStateCapture.Capture(
+                world, _logicView.StateNodes, _headlineScratch, _stateRowScratch);
+            _logicStatesTick = world.TickNumber;
+        }
+
+        return _publishedLogicPlay = _wireActivity.Capture(_publishedLogicPlay, _logicStates);
     }
 
     // Returns the previous array when the selection has not changed.
@@ -630,6 +682,7 @@ public sealed class Engine
         // Suspend first. It rolls back an open drag and releases the editor's
         // cursor lock, and a spawning entity may fire outputs.
         _sceneManager.Editor?.Suspend();
+        _wireActivity.Clear();
         play.Enter();
         character.Enter();
     }
@@ -800,7 +853,7 @@ public sealed class Engine
                     _drawCharacter = !_drawCharacter;
 
                 if (Host.TryTakeLogicViewRequest(out LogicViewRequest? logicView))
-                    _logicView = logicView;
+                    ApplyLogicView(logicView);
 
                 // After the play-mode block, so a line typed with Play sees
                 // the world it started. Before the ticks, so an input fired

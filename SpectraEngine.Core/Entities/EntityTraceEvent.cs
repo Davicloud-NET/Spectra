@@ -58,6 +58,19 @@ public readonly struct EntityTraceEvent
     /// </summary>
     public int WiresSpent { get; init; }
 
+    /// <summary>
+    /// Which of the sender's wires carried the input: its index in the
+    /// entity's connection list. -1 for a fired output and for an input no
+    /// wire sent.
+    /// </summary>
+    public int Wire { get; init; }
+
+    /// <summary>
+    /// The queued input's number. Its queueing, each delivery, a refusal and a
+    /// miss all carry the same one. -1 for a fired output.
+    /// </summary>
+    public long Sequence { get; init; }
+
     // Both builders are called only behind a null check on the world's trace,
     // so an unwatched world builds no event.
     internal static EntityTraceEvent OfInput(
@@ -77,6 +90,8 @@ public readonly struct EntityTraceEvent
         Input = queued.Input,
         Parameter = queued.Parameter,
         Activator = queued.Activator,
+        Wire = queued.WireOrdinal - 1,
+        Sequence = queued.Sequence,
     };
 
     // Counts the wires as they stand, so build it before they fire.
@@ -98,6 +113,8 @@ public readonly struct EntityTraceEvent
             Activator = activator,
             WiresQueued = live,
             WiresSpent = (wired?.WireCount ?? 0) - live,
+            Wire = -1,
+            Sequence = -1,
         };
     }
 }

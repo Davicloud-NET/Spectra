@@ -259,7 +259,7 @@ public abstract class Entity
                 _outputs.Add(output);
             }
 
-            output.Add(wire);
+            output.Add(wire, i);
         }
     }
 }

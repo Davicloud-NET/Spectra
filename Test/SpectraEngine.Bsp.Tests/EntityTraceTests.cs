@@ -161,6 +161,77 @@ public sealed class EntityTraceTests
     }
 
     [Fact]
+    public void A_queued_input_names_its_wire_by_its_place_in_the_authored_list()
+    {
+        // The runtime groups wires by output. The trace still counts them the
+        // way the map lists them.
+        var scene = new Scene("Trace");
+        SceneNode source = EntityRuntime.Place(scene.Root, "source", "recorder");
+        EntityRuntime.Place(scene.Root, "target", "recorder");
+        EntityRuntime.Wire(source, "OnGo", "target", "First");
+        EntityRuntime.Wire(source, "OnOther", "target", "Second");
+        EntityRuntime.Wire(source, "OnGo", "target", "Third");
+        var trace = new RecordingEntityTrace();
+        EntityWorld world = Started(scene, trace);
+
+        EntityRuntime.Live(world, source).FireOutput("OnGo");
+        world.Tick(Tick);
+
+        trace.Entries
+            .Where(entry => entry.Kind == EntityTraceKind.InputQueued)
+            .Select(entry => entry.Wire)
+            .ShouldBe([0, 2]);
+        trace.Entries
+            .Where(entry => entry.Kind == EntityTraceKind.InputDelivered)
+            .Select(entry => entry.Wire)
+            .ShouldBe([0, 2]);
+    }
+
+    [Fact]
+    public void A_fired_output_and_an_input_no_wire_sent_name_no_wire()
+    {
+        var scene = new Scene("Trace");
+        EntityRuntime.Place(scene.Root, "relay", "relay");
+        var trace = new RecordingEntityTrace();
+        EntityWorld world = Started(scene, trace);
+
+        world.QueueInput("relay", "Trigger");
+        world.Tick(Tick);
+
+        trace.Entries.ShouldAllBe(entry => entry.Wire == -1);
+        trace.Entries.Single(entry => entry.Kind == EntityTraceKind.OutputFired).Sequence.ShouldBe(-1);
+    }
+
+    [Fact]
+    public void Everything_that_happens_to_one_queued_input_carries_its_sequence()
+    {
+        var scene = new Scene("Trace");
+        SceneNode source = EntityRuntime.Place(scene.Root, "source", "recorder");
+        EntityRuntime.Place(scene.Root, "lamp", "recorder");
+        EntityRuntime.Place(scene.Root, "lamp", "relay");
+        EntityRuntime.Wire(source, "OnGo", "lamp", "Ping");
+        EntityRuntime.Wire(source, "OnGo", "nobody", "Ping");
+        var trace = new RecordingEntityTrace();
+        EntityWorld world = Started(scene, trace);
+
+        EntityRuntime.Live(world, source).FireOutput("OnGo");
+        world.Tick(Tick);
+
+        // Two lamps share the name: one takes Ping, the relay refuses it.
+        long toLamps = trace.Entries.First(entry => entry.Kind == EntityTraceKind.InputQueued).Sequence;
+        trace.Entries.Where(entry => entry.Sequence == toLamps).Select(entry => entry.Kind).ShouldBe(
+        [
+            EntityTraceKind.InputQueued,
+            EntityTraceKind.InputDelivered,
+            EntityTraceKind.InputDelivered,
+            EntityTraceKind.InputRefused,
+        ]);
+
+        long toNobody = trace.Entries.Single(entry => entry.Kind == EntityTraceKind.TargetMissing).Sequence;
+        toNobody.ShouldNotBe(toLamps);
+    }
+
+    [Fact]
     public void Delivery_order_is_the_same_with_and_without_a_trace()
     {
         List<string> unwatched = RunEveryPath(trace: null);
@@ -233,6 +304,15 @@ public sealed class EntityTraceTests
 
         LeastAllocatedByACascade(trace).ShouldBe(0L);
         trace.Events.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Counting_wire_activity_costs_a_warmed_up_cascade_no_allocation()
+    {
+        var trace = new WireActivityTrace();
+
+        LeastAllocatedByACascade(trace).ShouldBe(0L);
+        trace.Capture(null, []).Wires.Count.ShouldBeGreaterThan(0);
     }
 
     // Eight relays in a chain, each also firing at two more by prefix. Returns

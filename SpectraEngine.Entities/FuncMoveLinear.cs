@@ -95,6 +95,7 @@ public sealed partial class FuncMoveLinear : Entity
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        state.Headline("at", HeadlineText.TicksOf(TicksTravelled, TravelTicks));
         state.Add("ticks travelled", TicksTravelled);
         state.Add("travel ticks", TravelTicks);
         state.Add("heading for tick", _mover.TargetTicks);

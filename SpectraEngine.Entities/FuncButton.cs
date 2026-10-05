@@ -120,6 +120,7 @@ public sealed partial class FuncButton : Entity
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        state.Headline("state", IsPressed ? "in" : "out");
         state.Add("pressed", IsPressed);
         state.Add("ticks travelled", TicksTravelled);
         state.Add("travel ticks", TravelTicks);

@@ -135,6 +135,15 @@ public sealed partial class FuncDoor : Entity
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        if (IsFullyOpen)
+            state.Headline("state", "open");
+        else if (IsFullyClosed)
+            state.Headline("state", "closed");
+        else
+            state.Headline(
+                _mover.TargetTicks > TicksTravelled ? "opening" : "closing",
+                HeadlineText.TicksOf(TicksTravelled, TravelTicks));
+
         state.Add("open", IsFullyOpen);
         state.Add("closed", IsFullyClosed);
         state.Add("ticks travelled", TicksTravelled);

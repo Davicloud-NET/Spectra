@@ -40,6 +40,7 @@ public sealed partial class LogicBranch : Entity
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        state.Headline("value", Value ? "true" : "false");
         state.Add("value", Value);
         state.Add("refused inputs", RefusedInputCount);
     }

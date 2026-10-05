@@ -175,6 +175,12 @@ public sealed class FrameSnapshot
     public LogicGraphInfo? LogicGraph { get; init; }
 
     /// <summary>
+    /// What the running level's wires are doing, while a host asked with
+    /// <see cref="EngineHost.RequestLogicView"/> and a level runs. Null otherwise.
+    /// </summary>
+    public LogicPlayInfo? LogicPlay { get; init; }
+
+    /// <summary>
     /// The shared colour target a composited host should import and present, or
     /// null when the engine presents for itself. Re-import when the generation
     /// changes; handle values are recycled and do not identify a target.

@@ -57,6 +57,7 @@ public sealed partial class LogicCompare : Entity
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        state.Headline("value", HeadlineText.Number(Value));
         state.Add("value", Value);
         state.Add("compare value", CompareValue);
         state.Add("refused inputs", RefusedInputCount);

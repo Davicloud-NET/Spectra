@@ -39,6 +39,11 @@ internal struct EntityEvent
 
     // Only for the budget message.
     public string Output;
+
+    // The wire's index in its sender's connection list, plus one. Zero is a
+    // think or an input no wire sent, so an event built without it is not
+    // taken for wire zero.
+    public int WireOrdinal;
 }
 
 // Min-heap ordered by (Time, Sequence). Not PriorityQueue: without the

@@ -69,6 +69,11 @@ public sealed partial class LogicTimer : Entity
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        if (IsEnabled)
+            state.Headline("fired", HeadlineText.Times(FireCount));
+        else
+            state.Headline("state", "off");
+
         state.Add("enabled", IsEnabled);
         state.Add("fires", FireCount);
         state.Add("refire time", RefireInterval);

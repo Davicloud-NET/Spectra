@@ -46,8 +46,15 @@ public sealed class EntityOutput
     /// <summary>The connection the wire at <paramref name="index"/> was built from.</summary>
     public EntityConnection ConnectionAt(int index) => _wires[index].Connection;
 
-    internal void Add(in EntityConnection connection) =>
-        _wires.Add(new Wire { Connection = connection, FiresLeft = connection.TimesToFire });
+    // authoredIndex is the wire's place in the entity's whole connection list,
+    // which is how a trace names it. Its place in this output differs.
+    internal void Add(in EntityConnection connection, int authoredIndex) =>
+        _wires.Add(new Wire
+        {
+            Connection = connection,
+            FiresLeft = connection.TimesToFire,
+            AuthoredIndex = authoredIndex,
+        });
 
     internal void Fire(Entity caller, Entity? activator, string? parameterOverride)
     {
@@ -59,7 +66,7 @@ public sealed class EntityOutput
             if (wire.FiresLeft == 0)
                 continue;
 
-            world.ScheduleOutput(caller, activator, Name, wire.Connection, parameterOverride);
+            world.ScheduleOutput(caller, activator, Name, wire.Connection, wire.AuthoredIndex, parameterOverride);
 
             if (wire.FiresLeft > 0)
             {
@@ -74,5 +81,6 @@ public sealed class EntityOutput
     {
         public EntityConnection Connection;
         public int FiresLeft;
+        public int AuthoredIndex;
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Bsp.Tests;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Inspection;
 using SpectraEngine.Core.Maps;
 using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Physics.Character;
@@ -50,6 +51,33 @@ public sealed class NoCodeLoopTests
         EntityRuntime.Live<TriggerOnce>(world, Named(scene, "Zone")).TriggerCount.ShouldBe(1);
         character.State.Position.Z.ShouldBeGreaterThan(PastTheDoor);
         character.State.Grounded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_wiring_view_sees_the_trigger_fire_its_wire_to_the_door_once()
+    {
+        SceneManager manager = Loaded();
+        Scene scene = manager.ActiveScene.ShouldNotBeNull();
+        var activity = new WireActivityTrace();
+        manager.EntityTrace = activity;
+        CharacterSimulation character = Walker(manager);
+        var session = new PlaySession(manager, character);
+
+        session.Enter();
+        Walk(session, character);
+
+        LogicPlayInfo play = activity.Capture(null, []);
+        LogicWireActivity wire = play.Wires.ShouldHaveSingleItem();
+        wire.NodeId.ShouldBe(Named(scene, "Zone").Id);
+        wire.Wire.ShouldBe(0);
+        wire.Fired.ShouldBe(1);
+        wire.Missed.ShouldBe(0);
+
+        LogicEventInfo sent = play.Recent.ShouldHaveSingleItem();
+        sent.SourceName.ShouldBe("Zone");
+        sent.Output.ShouldBe("OnTrigger");
+        sent.TargetId.ShouldBe(Named(scene, "Door").Id);
+        sent.Input.ShouldBe("Open");
     }
 
     [Fact]

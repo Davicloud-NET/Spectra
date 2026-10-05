@@ -44,6 +44,7 @@ public sealed partial class TriggerOnce : Entity, ITouchListener
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        state.Headline("triggered", HeadlineText.YesNo(TriggerCount > 0));
         state.Add("enabled", IsEnabled);
         state.Add("triggers", TriggerCount);
     }

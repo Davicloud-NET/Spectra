@@ -67,6 +67,11 @@ public sealed partial class TriggerTeleport : Entity, ITouchListener
     /// <inheritdoc/>
     public override void DescribeState(EntityStateWriter state)
     {
+        if (IsEnabled)
+            state.Headline("touched", HeadlineText.YesNo(IsTouched));
+        else
+            state.Headline("state", "disabled");
+
         state.Add("enabled", IsEnabled);
         state.Add("touched", IsTouched);
         state.Add("teleports", TeleportCount);
