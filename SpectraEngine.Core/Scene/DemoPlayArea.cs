@@ -47,6 +47,24 @@ public static class DemoPlayArea
     /// <summary>The button that sends the lift up, a <c>func_button</c>.</summary>
     public const string LiftButtonName = "LiftButton";
 
+    /// <summary>The sound of the door sliding open, a <c>point_sound</c> under the door.</summary>
+    public const string DoorOpenSoundName = "DoorOpenSound";
+
+    /// <summary>The sound of the door sliding shut, a <c>point_sound</c> under the door.</summary>
+    public const string DoorCloseSoundName = "DoorCloseSound";
+
+    /// <summary>The lift's hum while it moves, a looped <c>point_sound</c> under the lift.</summary>
+    public const string LiftMoveSoundName = "LiftMoveSound";
+
+    /// <summary>The clunk of the lift arriving, a <c>point_sound</c> under the lift.</summary>
+    public const string LiftStopSoundName = "LiftStopSound";
+
+    /// <summary>The button's click, a <c>point_sound</c> under the button.</summary>
+    public const string ButtonSoundName = "ButtonSound";
+
+    /// <summary>The start room's air, a looped <c>point_sound</c> that plays from the start.</summary>
+    public const string RoomToneName = "RoomTone";
+
     // Three units thick so the chasm can be cut straight through it.
     private const float FloorTop = 0f;
     private const float FloorThickness = 3f;
@@ -56,6 +74,9 @@ public static class DemoPlayArea
     // Sized against a 0.35 radius and 1.8 stature.
     private const float OpeningWidth = 1.4f;
     private const float OpeningHeight = 2.2f;
+
+    // How long the lift stays at the top before it comes down.
+    private const float LiftWaitSeconds = 3f;
 
     /// <summary>
     /// Authors the whole course into <paramref name="scene"/> and returns how
@@ -144,7 +165,7 @@ public static class DemoPlayArea
     // A room off the west wall where a level begins: a player start, a door
     // in the wall and a volume across the doorway, wired with no code. The
     // classes are named as text, so a host that registers none of them gets a
-    // door that stays shut.
+    // door that stays shut and a room with no sound.
     // Entity nodes have plain names, since people type them into wires and
     // into the console.
     private static int StartRoom(Scene scene, MaterialRef structure, MaterialRef wall, MaterialRef accent)
@@ -186,8 +207,7 @@ public static class DemoPlayArea
         zone.CanQuery = false;
         zone.IsRendered = false;
         zone.Entity = new Entities.EntityData("trigger_multiple");
-        zone.Entity.Connections.Add(new Entities.EntityConnection(
-            "OnTrigger", StartDoorName, "Open", "", 0f, Entities.EntityConnection.Infinite));
+        Wire(zone, "OnTrigger", StartDoorName, "Open");
 
         // Its +z is the way the player faces: east, at the door.
         SceneNode start = scene.Root.CreateChild(PlayerStartName);
@@ -204,8 +224,7 @@ public static class DemoPlayArea
         lift.Entity = new Entities.EntityData("func_movelinear");
         lift.Entity.SetValue("distance", "2.2");
         lift.Entity.SetValue("speed", "1.5");
-        lift.Entity.Connections.Add(new Entities.EntityConnection(
-            "OnFullyOpen", LiftName, "Close", "", 3f, Entities.EntityConnection.Infinite));
+        Wire(lift, "OnFullyOpen", LiftName, "Close", delay: LiftWaitSeconds);
 
         // On the west wall beside the lift, not over it, so the lift does not
         // pass through it. In reach of someone standing on the lift, and tall
@@ -215,10 +234,70 @@ public static class DemoPlayArea
         count++;
         button.Entity = new Entities.EntityData("func_button");
         button.Entity.SetValue("movedir", "-1 0 0");
-        button.Entity.Connections.Add(new Entities.EntityConnection(
-            "OnPressed", LiftName, "Open", "", 0f, Entities.EntityConnection.Infinite));
+        Wire(button, "OnPressed", LiftName, "Open");
+
+        StartRoomSounds(scene, door, lift, button);
 
         return count;
+    }
+
+    // Every sound is an entity under what it belongs to, so it goes where
+    // that goes, and wires start and stop it.
+    private static void StartRoomSounds(Scene scene, SceneNode door, SceneNode lift, SceneNode button)
+    {
+        Sound(door.CreateChild(DoorOpenSoundName), "door_open.wav", "3", "20");
+        Sound(door.CreateChild(DoorCloseSoundName), "door_close.wav", "3", "20");
+
+        // Each stops the other. A door that turns round halfway would play
+        // both, and the thud of a door that never shut.
+        Wire(door, "OnOpen", DoorOpenSoundName, "Play");
+        Wire(door, "OnOpen", DoorCloseSoundName, "Stop");
+        Wire(door, "OnClose", DoorCloseSoundName, "Play");
+        Wire(door, "OnClose", DoorOpenSoundName, "Stop");
+
+        Sound(lift.CreateChild(LiftMoveSoundName), "lift_move.wav", "2", "15").SetValue("looped", "1");
+        Sound(lift.CreateChild(LiftStopSoundName), "lift_stop.wav", "2", "15");
+
+        // A mover has no output for starting to move. The hum starts with
+        // the two wires that start the lift: the button's, and the lift's
+        // own after its wait at the top. A press while it waits up there
+        // starts the hum too, over a lift that stands still.
+        Wire(button, "OnPressed", LiftMoveSoundName, "Play");
+        Wire(lift, "OnFullyOpen", LiftMoveSoundName, "Stop");
+        Wire(lift, "OnFullyOpen", LiftStopSoundName, "Play");
+        Wire(lift, "OnFullyOpen", LiftMoveSoundName, "Play", delay: LiftWaitSeconds);
+        Wire(lift, "OnFullyClosed", LiftMoveSoundName, "Stop");
+        Wire(lift, "OnFullyClosed", LiftStopSoundName, "Play");
+
+        Sound(button.CreateChild(ButtonSoundName), "button_press.wav", "1.5", "10");
+        Wire(button, "OnPressed", ButtonSoundName, "Play");
+
+        // In the middle of the room, at full volume out to its corners.
+        SceneNode air = scene.Root.CreateChild(RoomToneName);
+        air.LocalPosition = StartRoomCenter + new Vector3(0f, 1.25f, 0f);
+        Entities.EntityData tone = Sound(air, "room_tone.wav", "6", "16");
+        tone.SetValue("looped", "1");
+        tone.SetValue("startplaying", "1");
+    }
+
+    private static Entities.EntityData Sound(SceneNode node, string file, string minDistance, string maxDistance)
+    {
+        var sound = new Entities.EntityData("point_sound");
+        sound.SetValue("sound", $"Sounds/{file}");
+        sound.SetValue("mindistance", minDistance);
+        sound.SetValue("maxdistance", maxDistance);
+
+        node.Entity = sound;
+        return sound;
+    }
+
+    private static void Wire(SceneNode from, string output, string target, string input, float delay = 0f)
+    {
+        Entities.EntityData entity = from.Entity
+            ?? throw new InvalidOperationException($"'{from.Name}' has no entity to wire from.");
+
+        entity.Connections.Add(new Entities.EntityConnection(
+            output, target, input, "", delay, Entities.EntityConnection.Infinite));
     }
 
     // Placement on the node, size in the brush. Extents must be symmetric:
