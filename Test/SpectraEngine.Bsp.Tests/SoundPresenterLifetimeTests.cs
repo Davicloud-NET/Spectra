@@ -247,7 +247,8 @@ public sealed class SoundPresenterLifetimeTests
         using var rig = new SoundPresenterRig();
         var audio = new AudioManager(new CapturingLogger(), NoDevice);
         audio.Initialize();
-        var presenter = new SoundPresenter(audio, rig.Assets, new DirectPropagation(), rig.Log);
+        var presenter = new SoundPresenter(
+            audio, rig.Assets, new DirectPropagation(), rig.NewCaptionFeed(), rig.Log);
         rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Looped);
 
         presenter.Update(rig.World, SoundPresenterRig.TickSeconds);

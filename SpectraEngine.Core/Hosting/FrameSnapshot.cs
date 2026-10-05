@@ -1,4 +1,5 @@
-﻿using SpectraEngine.Core.ConsoleSystem;
+﻿using SpectraEngine.Core.Audio.Captions;
+using SpectraEngine.Core.ConsoleSystem;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Inspection;
 using SpectraEngine.Core.Scene;
@@ -179,6 +180,19 @@ public sealed class FrameSnapshot
     /// <see cref="EngineHost.RequestLogicView"/> and a level runs. Null otherwise.
     /// </summary>
     public LogicPlayInfo? LogicPlay { get; init; }
+
+    /// <summary>
+    /// The captions that show now, by when each started and then by id. A
+    /// host that draws captions reads them here. The same instance rides
+    /// every snapshot until a caption changes.
+    /// </summary>
+    public IReadOnlyList<Caption> Captions { get; init; } = Array.Empty<Caption>();
+
+    /// <summary>
+    /// The captions' clock, in seconds. <see cref="Caption.StartedAt"/> and
+    /// <see cref="Caption.EarliestEnd"/> are times on it.
+    /// </summary>
+    public double CaptionTime { get; init; }
 
     /// <summary>
     /// The shared colour target a composited host should import and present, or

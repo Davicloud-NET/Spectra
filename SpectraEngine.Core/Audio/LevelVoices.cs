@@ -68,6 +68,14 @@ internal sealed class LevelVoices
         }
     }
 
+    // Loads the sound of an emitter that has no source yet, for what its
+    // file says about it. The log says once when it cannot be loaded.
+    public void Load(ref PresentedEmitter presented)
+    {
+        if (presented.Sound is null && _bank.TryGet(in presented.Emitter, out LevelSound? sound))
+            presented.Sound = sound;
+    }
+
     // Lets go of a voice that ended without being told to: the device played
     // it out, or another sound took its source. False when it is still going.
     public bool TryDropEnded(ref PresentedEmitter presented)

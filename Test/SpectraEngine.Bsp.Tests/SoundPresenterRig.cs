@@ -2,8 +2,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Audio;
+using SpectraEngine.Core.Audio.Captions;
 using SpectraEngine.Core.Audio.Propagation;
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Projects;
 using SpectraEngine.Core.Scene;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
@@ -48,12 +50,19 @@ internal sealed class SoundPresenterRig : IDisposable
         Audio = new AudioManager(new CapturingLogger(), Supply, sources);
         Audio.Initialize();
 
-        Presenter = new SoundPresenter(Audio, Assets, propagation ?? new DirectPropagation(), Log);
+        Captions = NewCaptionFeed();
+        Presenter = new SoundPresenter(Audio, Assets, propagation ?? new DirectPropagation(), Captions, Log);
         World = StartLevel();
     }
 
     // What the presenter logged. Nothing else writes here.
     public CapturingLogger Log { get; } = new();
+
+    // What the caption library logged.
+    public CapturingLogger CaptionLog { get; } = new();
+
+    // The feed the rig's presenter fills.
+    public CaptionFeed Captions { get; }
 
     public AssetManager Assets { get; }
 
@@ -83,6 +92,18 @@ internal sealed class SoundPresenterRig : IDisposable
         File.WriteAllBytes(
             Path.Combine(_root, Path.ChangeExtension(authoredPath, ".saudio").Replace('/', Path.DirectorySeparatorChar)),
             saudio);
+
+    // Writes a text file into the content the rig reads, such as a caption file.
+    public void WriteText(string contentPath, string text)
+    {
+        string full = Path.Combine(_root, contentPath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(full).ShouldNotBeNull());
+        File.WriteAllText(full, text);
+    }
+
+    // A feed of its own over the rig's content, for a second presenter.
+    public CaptionFeed NewCaptionFeed() =>
+        new(new CaptionLibrary(Assets.Content, LanguageTag.Default, CaptionLog));
 
     // Another world over the same scene, as the next play session has.
     public EntityWorld StartLevel()

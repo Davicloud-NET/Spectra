@@ -1,3 +1,4 @@
+using SpectraEngine.Core.Audio.Captions;
 using SpectraEngine.Core.Audio.Propagation;
 using SpectraEngine.Core.Entities;
 using System.Numerics;
@@ -34,4 +35,6 @@ internal struct PresentedEmitter
 
     // The device had no source for it. Counted once, not once a frame.
     public bool WasRefused;
+
+    public CaptionProgress Captions;
 }

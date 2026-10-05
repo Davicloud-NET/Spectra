@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Assets;
+using SpectraEngine.Core.Audio.Captions;
 using SpectraEngine.Core.Audio.Propagation;
 using SpectraEngine.Core.Entities;
 using System;
@@ -49,6 +50,7 @@ public sealed class SoundPresenter
     private readonly AudioManager _audio;
     private readonly ISoundPropagation _propagation;
     private readonly LevelVoices _voices;
+    private readonly CaptionTracker _captions;
 
     // The registry read last frame. Another one is another level.
     private SoundEmitters? _registry;
@@ -68,21 +70,29 @@ public sealed class SoundPresenter
     /// <summary>Builds a presenter that plays on <paramref name="audio"/>.</summary>
     /// <param name="assets">Where the level's sounds are loaded from.</param>
     /// <param name="propagation">Decides how each sound reaches the listener.</param>
+    /// <param name="captions">Filled each frame with the captions of the sounds that are heard.</param>
     /// <param name="logger">Told once about each sound that cannot be played.</param>
-    public SoundPresenter(AudioManager audio, AssetManager assets, ISoundPropagation propagation, ILogger logger)
+    public SoundPresenter(
+        AudioManager audio, AssetManager assets, ISoundPropagation propagation, CaptionFeed captions, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(audio);
         ArgumentNullException.ThrowIfNull(assets);
         ArgumentNullException.ThrowIfNull(propagation);
+        ArgumentNullException.ThrowIfNull(captions);
         ArgumentNullException.ThrowIfNull(logger);
 
         _audio = audio;
         _propagation = propagation;
         _voices = new LevelVoices(audio, assets, logger);
+        _captions = new CaptionTracker(captions);
+        Captions = captions;
     }
 
     /// <summary>What the last <see cref="Update"/> made of the level's sounds.</summary>
     public SoundStats Stats { get; private set; }
+
+    /// <summary>The captions of the sounds that are heard, as of the last <see cref="Update"/>.</summary>
+    public CaptionFeed Captions { get; }
 
     /// <summary>
     /// Brings the device's voices in line with what the level is playing.
@@ -114,6 +124,7 @@ public sealed class SoundPresenter
 
         _voices.GiveSourcesToLoudest(world, _presented.AsSpan(0, _count));
         ConfigureVoices();
+        _captions.Update(world, _presented.AsSpan(0, _count), _voices, deltaSeconds);
         Stats = CountSounds();
     }
 
@@ -128,6 +139,7 @@ public sealed class SoundPresenter
         _count = 0;
         _hasListener = false;
         _voices.Clear();
+        _captions.EndLevel();
         Stats = default;
     }
 

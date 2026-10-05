@@ -3,6 +3,7 @@ using Silk.NET.Input;
 using Silk.NET.Windowing;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Audio;
+using SpectraEngine.Core.Audio.Captions;
 using SpectraEngine.Core.Audio.Propagation;
 using SpectraEngine.Core.ConsoleSystem;
 using SpectraEngine.Core.Diagnostics;
@@ -14,6 +15,7 @@ using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Physics.Character;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Play;
+using SpectraEngine.Core.Projects;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Windowing;
 using System;
@@ -44,6 +46,8 @@ public sealed class Engine
     private readonly AssetManager _assetManager;
     private readonly AudioManager _audioManager;
     private readonly SoundPresenter _soundPresenter;
+    private readonly CaptionFeed _captions;
+    private readonly CaptionLogView _captionLog;
     private readonly InputManager _inputManager;
     private readonly WindowModeLatch _windowModeLatch;
 
@@ -94,7 +98,10 @@ public sealed class Engine
         _sceneManager = sceneManager;
         _assetManager = assetManager;
         _audioManager = audioManager;
-        _soundPresenter = new SoundPresenter(audioManager, assetManager, new DirectPropagation(), logger);
+        _captions = new CaptionFeed(new CaptionLibrary(assetManager.Content, LanguageTag.Default, logger));
+        _captionLog = new CaptionLogView(logger);
+        _soundPresenter = new SoundPresenter(
+            audioManager, assetManager, new DirectPropagation(), _captions, logger);
         _inputManager = inputManager;
         _windowModeLatch = new WindowModeLatch(logger);
         Host = new EngineHost(logger);
@@ -106,6 +113,7 @@ public sealed class Engine
         EntityConsoleCommands.Register(_console.Commands, _entityWatch);
         GraphicsConsoleCommands.Register(_console.Commands, renderer);
         SoundConsoleCommands.Register(_console.Commands, _soundPresenter, audioManager);
+        CaptionConsoleCommands.Register(_console.Commands, _captions);
         _entityWatch.Changed += RefreshEntityTrace;
     }
 
@@ -198,6 +206,8 @@ public sealed class Engine
                 SelectionEntity = CaptureSelectionEntity(),
                 LogicGraph = CaptureLogicGraph(),
                 LogicPlay = CaptureLogicPlay(),
+                Captions = _captions.Captions,
+                CaptionTime = _captions.Now,
                 ConsoleLines = _console.Output.Drain(),
             };
         }, interacting);
@@ -226,6 +236,9 @@ public sealed class Engine
         // First, so the presenter hands out the sources finished voices gave back.
         _audioManager.Update();
         _soundPresenter.Update(_sceneManager.EntityWorld, deltaTime);
+
+        if (LogCaptions)
+            _captionLog.Update(_captions);
     }
 
     // Last snapshot, so a shell sees the engine stop.
@@ -381,6 +394,33 @@ public sealed class Engine
     /// </summary>
     // Not named Console: that would hide System.Console in this file.
     public SpectraConsole SpectraConsole => _console;
+
+    /// <summary>
+    /// The captions that show right now. A game that draws its own captions
+    /// reads them here, on the render thread. A UI thread reads
+    /// <see cref="FrameSnapshot.Captions"/>.
+    /// </summary>
+    public CaptionFeed Captions => _captions;
+
+    /// <summary>
+    /// The language the project names as its own, as a <see cref="LanguageTag"/>.
+    /// Captions are looked up in it until <c>caption_language</c> names another,
+    /// and a sound with no caption in that other one gets its caption in this.
+    /// Set it before <see cref="Run"/> or <see cref="Start"/>, from
+    /// <see cref="SpectraProject.LanguageOrDefault"/>.
+    /// </summary>
+    public string ProjectLanguage
+    {
+        get => _captions.Library.ProjectLanguage;
+        set => _captions.Library.ProjectLanguage = value;
+    }
+
+    /// <summary>
+    /// Whether each caption is written to the log when it appears. That is
+    /// the engine's caption view until it has one that draws. A game that
+    /// shows captions itself turns it off and reads <see cref="Captions"/>.
+    /// </summary>
+    public bool LogCaptions { get; set; } = true;
 
     /// <summary>
     /// Windowed or borderless fullscreen, as a request latch. Callable from any
