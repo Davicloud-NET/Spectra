@@ -89,11 +89,11 @@ public partial class MainWindow : Window
 
     private ViewportPlacement _placement = ViewportPlacement.PinnedCell;
 
-    // The viewport tool's content for the window's life; the pane moves in and
-    // out of it, so Dock never sees a content change after its layout is built.
+    // The viewport tool's content for the window's life; the view panes move in
+    // and out of it, so Dock never sees a content change after its layout is built.
     private readonly Border _viewportDockHost = new();
 
-    private readonly int _viewportPaneIndex;
+    private readonly int _viewPanesIndex;
 
     // Set by LaunchSession, consumed by OnSurfaceCreated.
     private SessionLaunch? _pendingLaunch;
@@ -165,7 +165,10 @@ public partial class MainWindow : Window
         CenterDock.Factory = dockFactory;
 
         SetToolContent(ViewportTool, _viewportDockHost);
-        _viewportPaneIndex = EditorView.Children.IndexOf(ViewportPane);
+        _viewPanesIndex = EditorView.Children.IndexOf(ViewPanes);
+
+        ViewColumnSplitter.Tag = ViewColumnSplitInk;
+        ViewRowSplitter.Tag = ViewRowSplitInk;
 
         // The viewport tool has no XAML attribute for CanPin, so set it here.
         ApplyPlacement(ViewportPlacement.PinnedCell);
@@ -703,7 +706,7 @@ public partial class MainWindow : Window
         tool.Content = content;
     }
 
-    // Moves the viewport pane between the grid cell and the dock tool. CanPin
+    // Moves the view panes between the grid cell and the dock tool. CanPin
     // follows the placement: a pinned flyout draws in this window's own layer,
     // which a native child composites over.
     private void ApplyPlacement(ViewportPlacement placement)
@@ -714,17 +717,17 @@ public partial class MainWindow : Window
         {
             if (rules.Docked)
             {
-                EditorView.Children.Remove(ViewportPane);
-                _viewportDockHost.Child = ViewportPane;
+                EditorView.Children.Remove(ViewPanes);
+                _viewportDockHost.Child = ViewPanes;
             }
             else
             {
                 _viewportDockHost.Child = null;
 
-                // Back at its declared index: appended, it would paint over the
-                // splitters that overhang into its cell.
-                if (!EditorView.Children.Contains(ViewportPane))
-                    EditorView.Children.Insert(_viewportPaneIndex, ViewportPane);
+                // Back at their declared index: appended, they would paint over
+                // the splitters that overhang into their cell.
+                if (!EditorView.Children.Contains(ViewPanes))
+                    EditorView.Children.Insert(_viewPanesIndex, ViewPanes);
             }
 
             CenterDock.IsVisible = rules.Docked;

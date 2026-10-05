@@ -1,3 +1,4 @@
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using SpectraEngine.Editor.Shell;
 
@@ -14,4 +15,7 @@ public partial class MainWindow
 
     private void OnHideLogic(object? sender, RoutedEventArgs e) =>
         RunWorkspaceVerb(WorkspaceCommand.HideLogic);
+
+    private void OnViewSplitterDragCompleted(object? sender, VectorEventArgs e) =>
+        OnSplitterDragCompleted(sender, e);
 }

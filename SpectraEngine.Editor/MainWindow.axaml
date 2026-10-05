@@ -614,9 +614,26 @@
         </dock:DockControl>
         </Border>
 
+        <!-- The view panes: the 3D view and, when it shows, the Logic view.
+             One grid, so both travel together into a dock or float. Three
+             tracks each way: pane, gutter, pane. ApplyViewArrangement sets
+             the lengths, the cells and what shows, and never moves a child:
+             re-parenting a native viewport destroys its session. -->
+        <Grid x:Name="ViewPanes" Grid.Column="2" Grid.Row="0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="0" />
+          <ColumnDefinition Width="0" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="*" />
+          <RowDefinition Height="0" />
+          <RowDefinition Height="0" />
+        </Grid.RowDefinitions>
+
         <!-- The pane: header strip plus bezel, one control so the header
              travels with the viewport into a dock or float. -->
-        <Grid x:Name="ViewportPane" Grid.Column="2" Grid.Row="0" RowDefinitions="Auto,*">
+        <Grid x:Name="ViewportPane" Grid.Column="0" Grid.Row="0" RowDefinitions="Auto,*">
 
           <!-- Viewport header: view state in a row above the picture. Beside
                the viewport, not over it, so it works in both session kinds. -->
@@ -656,6 +673,35 @@
               </Border>
             </Grid>
           </Border>
+        </Grid>
+
+        <!-- The Logic pane, built like the viewport's: a header strip over a
+             body. Hidden until an arrangement shows it. -->
+        <Grid x:Name="LogicPane" Grid.Column="0" Grid.Row="2" RowDefinitions="Auto,*"
+              IsVisible="False">
+          <shell:LogicHeaderStrip Grid.Row="0" x:Name="LogicHeader" />
+          <Border Grid.Row="1" x:Name="LogicPaneBody"
+                  Background="{StaticResource SpectraBgPanel}" />
+        </Grid>
+
+        <!-- One splitter per axis, in the gutter track. Each ink is its
+             splitter's Tag, set in code: a failed binding in a subtree that
+             moves between parents reports nothing. -->
+        <GridSplitter x:Name="ViewColumnSplitter" Grid.Column="1" Grid.RowSpan="3"
+                      ResizeDirection="Columns" Cursor="SizeWestEast" IsVisible="False"
+                      PointerEntered="OnSplitterEntered"
+                      PointerExited="OnSplitterExited"
+                      DragStarted="OnSplitterDragStarted" DragCompleted="OnViewSplitterDragCompleted" />
+        <Border x:Name="ViewColumnSplitInk" Grid.Column="1" Grid.RowSpan="3" Width="3" CornerRadius="1.5"
+                Classes="splitink" HorizontalAlignment="Center" IsVisible="False" />
+
+        <GridSplitter x:Name="ViewRowSplitter" Grid.Row="1" Grid.ColumnSpan="3"
+                      ResizeDirection="Rows" Cursor="SizeNorthSouth" IsVisible="False"
+                      PointerEntered="OnSplitterEntered"
+                      PointerExited="OnSplitterExited"
+                      DragStarted="OnSplitterDragStarted" DragCompleted="OnViewSplitterDragCompleted" />
+        <Border x:Name="ViewRowSplitInk" Grid.Row="1" Grid.ColumnSpan="3" Height="3" CornerRadius="1.5"
+                Classes="splitink" VerticalAlignment="Center" IsVisible="False" />
         </Grid>
 
         <!-- The bottom region's splitter. -->
