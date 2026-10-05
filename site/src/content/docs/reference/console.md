@@ -3,7 +3,7 @@ title: Console
 description: The engine's command line, where to type and what each command prints.
 ---
 
-The console is the engine's command line. Its commands today are about entities and their wiring: they list what a level holds, show one entity in full, send an input by hand, and print what fires while the level plays.
+The console is the engine's command line. Most of its commands today are about entities and their wiring: they list what a level holds, show one entity in full, send an input by hand, and print what fires while the level plays.
 
 ## Where to type
 
@@ -55,6 +55,7 @@ A command that fails prints an error, and the rest of the line still runs.
 | `ent_list [pattern]` | Lists entities by name and class. |
 | `ent_show <pattern>` | Prints an entity's settings, state, wires and inputs. |
 | `ent_watch [on \| off \| <pattern> ...]` | Prints what entities fire and receive as it happens. |
+| `sound_stats` | Prints how many sounds the level is playing and how many of them are heard. |
 | `fake_device_loss` | Ends the next frame the way a lost graphics device does, to test what happens then. The demo ends with an error. The editor restarts its viewport and keeps the level. |
 
 Entities only run while the level plays, so the four `ent_` commands answer differently before and after you press Play:
@@ -160,6 +161,26 @@ ent_watch: off
 `ent_watch` alone means `on`. Each form sets the whole watch, and a new list of patterns replaces the old one. The watch stays on from one play to the next.
 
 With patterns, a line prints when a pattern matches the sender or the receiver, by name or by class. It also prints when a pattern matches the target as the wire spells it, so a wire to a misspelled name shows under a pattern for that name.
+
+### sound_stats
+
+```
+> sound_stats
+sound_stats: 5 playing, 2 with a source, 1 without, 1 silent, 1 not loaded.
+sound_stats: 2 sources, 0 starts refused.
+```
+
+| Count | Means |
+|---|---|
+| `playing` | Sounds the level is playing, heard or not. |
+| `with a source` | Sounds that are heard. Each one holds a source of the audio device. |
+| `without` | Sounds loud enough to hear that are not heard, because louder ones hold every source. |
+| `silent` | Sounds with nothing to hear: too far away, over, or on a node that was deleted. |
+| `not loaded` | Sounds whose file could not be loaded. The log names each file once. |
+| `sources` | How many sounds the audio device can play at once. |
+| `starts refused` | Sounds the device had no source for when it was asked to start them. |
+
+Before you press Play it prints `sound_stats: the level is not running, so it plays nothing.` and the number of sources. With no audio device it says so first, as a warning.
 
 ## Watch lines
 

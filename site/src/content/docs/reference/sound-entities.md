@@ -6,7 +6,7 @@ description: The entity class that plays a sound from a place in the level.
 A sound is a point in the level that plays a sound file. Wires start and stop it, and it fires when the sound ends or reaches a marker. See [Entities and wiring](/concepts/entities-and-wiring/) for how wires work.
 
 :::note
-A sound is not heard yet, in the editor or in a game. The entity runs all the same: it counts the sound's length and fires its outputs on time, so a level can be wired now. Pitch already moves the end and the markers. Volume and the two distances are kept for when the sound is heard.
+A sound is heard when a project runs from its cooked pack. See [Cook and run a project](/guides/cook-and-run-a-project/). The editor cannot play one yet: the engine plays cooked sounds only, and the editor reads the project's files as they are. There a sound is [a sound that cannot play](#a-sound-that-cannot-play).
 :::
 
 In the settings table, the first column is the name a level file uses and the second is the label in the Properties panel.
@@ -18,14 +18,14 @@ Plays a sound from where it stands: a hum, an alarm, a spoken line.
 | Setting | In the editor | Default | Meaning |
 |---|---|---|---|
 | `sound` | Sound | empty | The sound file to play, as a path inside the project's content, such as `Sounds/door_open.wav`. |
-| `volume` | Volume | 1 | How loud the sound is. 1 is the file as it is, 0 is silent. |
+| `volume` | Volume | 1 | How loud the sound is. 1 is the file as it is, 0 is silent. Above 1 it is no louder up close, and it stays at full volume further out. |
 | `pitch` | Pitch | 1 | How fast the sound plays, from 0.1 to 10. 2 is twice as fast and an octave higher. |
 | `mindistance` | Minimum distance | 2 | The sound is at full volume inside this distance. |
 | `maxdistance` | Maximum distance | 30 | The sound is silent beyond this distance. |
 | `looped` | Looped | 0 | Set to 1 and the sound repeats until something stops it. |
 | `startplaying` | Start playing | 0 | Set to 1 and the sound plays when the level starts. |
 
-Both distances are in units, and a unit is a metre. Once a sound is heard, its volume falls off between the two and reaches nothing at the far one.
+Both distances are in units, and a unit is a metre. The volume falls off between the two and reaches nothing at the far one.
 
 A volume below 0, or a pitch outside 0.1 to 10, is not used, and the default takes its place.
 
@@ -44,6 +44,12 @@ A volume below 0, or a pitch outside 0.1 to 10, is not used, and the default tak
 The sound is its own activator for both outputs.
 
 A sound sits on its node and goes where the node goes. Placed under a door in the scene tree, it moves with the door.
+
+## What is heard
+
+The audio device plays up to 32 sounds at once. When a level plays more, the loudest at the listener are heard. The rest keep counting, so a looped sound is in step when the listener walks up to it. [`sound_stats`](/reference/console/#sound_stats) prints how many are heard.
+
+A mono file is heard from where the sound stands. A stereo file is not placed. It plays in both ears, and only its volume follows the distance.
 
 ## Looped
 
@@ -79,4 +85,4 @@ An input that arrives on the tick a sound would end is handled before the end. `
 
 ## A sound that cannot play
 
-If `sound` is empty, or the file cannot be loaded, the log says why once when the level starts and names the entity. `Play` then does nothing, and neither output fires.
+If `sound` is empty, or the file cannot be loaded, the log says why once when the level starts and names the entity. `Play` then does nothing, and neither output fires. A `.wav` that has not been cooked is such a file.
