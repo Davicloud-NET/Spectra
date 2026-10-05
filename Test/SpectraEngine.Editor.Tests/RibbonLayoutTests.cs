@@ -320,6 +320,7 @@ public sealed class RibbonLayoutTests
 
         string[] builtIns =
         [
+            "info_player_start",
             "logic_auto", "logic_branch", "logic_case", "logic_compare",
             "logic_relay", "logic_timer", "math_counter",
         ];

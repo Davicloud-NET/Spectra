@@ -13,6 +13,7 @@ public sealed class BuiltinEntityRegistrationTests
 
         EntityCatalog.Shared.TryCreate("func_door", out Entity? door).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("func_movelinear", out Entity? moveLinear).ShouldBeTrue();
+        EntityCatalog.Shared.TryCreate("info_player_start", out Entity? start).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("logic_auto", out Entity? auto).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("logic_branch", out Entity? branch).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("logic_case", out Entity? cases).ShouldBeTrue();
@@ -23,6 +24,7 @@ public sealed class BuiltinEntityRegistrationTests
 
         door.ShouldBeOfType<FuncDoor>();
         moveLinear.ShouldBeOfType<FuncMoveLinear>();
+        start.ShouldBeOfType<InfoPlayerStart>();
         auto.ShouldBeOfType<LogicAuto>();
         branch.ShouldBeOfType<LogicBranch>();
         cases.ShouldBeOfType<LogicCase>();
@@ -47,6 +49,7 @@ public sealed class BuiltinEntityRegistrationTests
             .ShouldBe(
             [
                 "func_door", "func_movelinear",
+                "info_player_start",
                 "logic_auto", "logic_branch", "logic_case", "logic_compare",
                 "logic_relay", "logic_timer", "math_counter",
             ]);
@@ -55,7 +58,13 @@ public sealed class BuiltinEntityRegistrationTests
     [Fact]
     public void Every_logic_class_is_filed_under_Logic_and_placed_as_an_abstract_node()
     {
-        foreach (EntitySchema schema in BuiltinEntities.Schemas)
+        EntitySchema[] logic = BuiltinEntities.Schemas
+            .Where(schema => schema.ClassName.StartsWith("logic_", StringComparison.Ordinal)
+                          || schema.ClassName.StartsWith("math_", StringComparison.Ordinal))
+            .ToArray();
+
+        logic.Length.ShouldBe(7);
+        foreach (EntitySchema schema in logic)
         {
             bool isLogic = schema.ClassName.StartsWith("logic_", StringComparison.Ordinal)
                 || schema.ClassName == "math_counter";

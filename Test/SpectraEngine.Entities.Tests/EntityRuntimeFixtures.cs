@@ -14,6 +14,7 @@ internal static class EntityRuntime
         var catalog = new EntityCatalog();
         catalog.Add(FuncDoor.SpectraSchema, static () => new FuncDoor());
         catalog.Add(FuncMoveLinear.SpectraSchema, static () => new FuncMoveLinear());
+        catalog.Add(InfoPlayerStart.SpectraSchema, static () => new InfoPlayerStart());
         catalog.Add(LogicAuto.SpectraSchema, static () => new LogicAuto());
         catalog.Add(LogicBranch.SpectraSchema, static () => new LogicBranch());
         catalog.Add(LogicCase.SpectraSchema, static () => new LogicCase());

@@ -273,6 +273,7 @@ public sealed class SentDefTests
         catalog.Schemas.Select(schema => schema.ClassName).ShouldBe(
         [
             "func_door", "func_movelinear",
+            "info_player_start",
             "logic_auto", "logic_branch", "logic_case", "logic_compare",
             "logic_relay", "logic_timer", "math_counter",
         ]);

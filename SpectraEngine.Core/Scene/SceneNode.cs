@@ -18,6 +18,7 @@ public class SceneNode
     private BrushKind _brushKind = BrushKind.World;
     private MeshRenderer? _meshRenderer;
     private Light? _light;
+    private Entities.EntityData? _entity;
     private PhysicsFlags _physicsFlags = PhysicsFlags.Default;
     private byte _collisionGroup;
     private bool _isRendered = true;
@@ -133,9 +134,20 @@ public class SceneNode
 
     /// <summary>
     /// Entity data for this node, or null: class name, keyvalues and output
-    /// wiring. Names a class, so an unknown class still loads and saves.
+    /// wiring. Names a class, so an unknown class still loads and saves. The
+    /// owning scene tracks entity nodes in its own list.
     /// </summary>
-    public Entities.EntityData? Entity { get; set; }
+    public Entities.EntityData? Entity
+    {
+        get => _entity;
+        set
+        {
+            if (ReferenceEquals(_entity, value))
+                return;
+            _entity = value;
+            Owner?.UpdateEntityMembership(this);
+        }
+    }
 
     /// <summary>
     /// Brush geometry this node contributes, if any. The node's world

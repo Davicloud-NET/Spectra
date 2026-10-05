@@ -95,7 +95,11 @@ public sealed class FirstPersonController
     }
 
     /// <summary>The yaw <see cref="Enter"/> starts with, in radians.</summary>
-    public float SpawnYaw { get; set; }
+    public float SpawnYaw
+    {
+        get => _simulation.SpawnYaw;
+        set => _simulation.SpawnYaw = value;
+    }
 
     /// <summary>Below this height the character is respawned rather than left falling.</summary>
     public float FallOutHeight

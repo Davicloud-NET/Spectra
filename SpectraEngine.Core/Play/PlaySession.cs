@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Diagnostics;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Physics.Character;
 using SpectraEngine.Core.Scene;
@@ -14,7 +18,12 @@ namespace SpectraEngine.Core.Play;
 /// </summary>
 public sealed class PlaySession
 {
+    // A start sits on the floor. The feet go just above it and the first
+    // tick's ground snap settles them.
+    private const float StartLift = 0.05f;
+
     private readonly SceneManager _sceneManager;
+    private bool _warnedNoStart;
 
     /// <summary>Builds a session over a scene manager's scene, entities and physics.</summary>
     /// <param name="sceneManager">Owns the scene, the entity world and the physics backend.</param>
@@ -33,12 +42,16 @@ public sealed class PlaySession
     /// <summary>Times the physics step, or null to leave it unmeasured.</summary>
     public FrameProfiler? Profiler { get; init; }
 
+    /// <summary>Where a level with no player start is reported. Nowhere by default.</summary>
+    public ILogger Logger { get; init; } = NullLogger.Instance;
+
     /// <summary>Whether a level is being played.</summary>
     public bool IsActive { get; private set; }
 
     /// <summary>
-    /// Puts the character at its spawn, starts the entities and gives them the
-    /// character as their player. Does nothing without a character or while
+    /// Starts the entities, puts the character at the level's first player
+    /// start and gives it to them as their player. A level with no start uses
+    /// the scene manager's spawn. Does nothing without a character or while
     /// already playing.
     /// </summary>
     // A host with an editor suspends it first: a spawn may fire outputs, which
@@ -48,11 +61,15 @@ public sealed class PlaySession
         if (IsActive || Character is not { } character)
             return;
 
-        character.Spawn();
+        // Entities first: one of them says where the character starts.
         _sceneManager.StartEntityWorld();
+        EntityWorld? entities = _sceneManager.EntityWorld;
+
+        ResolveSpawn(character, entities);
+        character.Spawn();
 
         // The world holds the presence, so a map loaded during play drops both.
-        if (_sceneManager.EntityWorld is { } entities)
+        if (entities is not null)
             entities.Player = character;
 
         IsActive = true;
@@ -102,6 +119,56 @@ public sealed class PlaySession
         Vector3 previous = character.State.Position;
         bool respawned = character.Tick(in command, fixedDt);
         return new PlayTickResult(previous, respawned);
+    }
+
+    // Read on every Play, since the start may have moved. Only the spot and
+    // the yaw are kept, so nothing here outlives the entity world.
+    private void ResolveSpawn(CharacterSimulation character, EntityWorld? entities)
+    {
+        if (FirstPlayerStart(entities) is { } start)
+        {
+            character.SpawnPosition = start.WorldPosition + new Vector3(0f, StartLift, 0f);
+            character.SpawnYaw = FacingYaw(start);
+            return;
+        }
+
+        Vector3 spawn = _sceneManager.PlayerSpawn;
+        character.SpawnPosition = spawn;
+        character.SpawnYaw = _sceneManager.PlayerSpawnYaw;
+
+        if (_warnedNoStart)
+            return;
+
+        _warnedNoStart = true;
+        Logger.LogWarning(
+            "The level has no player start, so the character starts at ({X:0.##}, {Y:0.##}, {Z:0.##}). " +
+            "Insert a player start to choose the spot.",
+            spawn.X, spawn.Y, spawn.Z);
+    }
+
+    private static SceneNode? FirstPlayerStart(EntityWorld? entities)
+    {
+        if (entities is null)
+            return null;
+
+        IReadOnlyList<Entity> all = entities.Entities;
+        for (int i = 0; i < all.Count; i++)
+        {
+            if (all[i] is IPlayerStart)
+                return all[i].Node;
+        }
+
+        return null;
+    }
+
+    // The node's local +Z, the axis a light shines along. A start that points
+    // straight up or down has no heading and gets yaw zero.
+    private static float FacingYaw(SceneNode start)
+    {
+        Matrix4x4 world = start.WorldMatrix;
+        float x = world.M31;
+        float z = world.M33;
+        return (x * x) + (z * z) > 1e-8f ? MathF.Atan2(z, x) : 0f;
     }
 
     private void Step(IScenePhysics physics, float fixedDt)

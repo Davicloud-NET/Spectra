@@ -647,11 +647,10 @@ public sealed class Engine
                 _cameraController = new FlyCameraController(activeScene.Camera, _inputManager);
 
                 // Built here because it needs live input. The scene manager
-                // gets it only for the stats line.
+                // gets it only for the stats line. The play session places
+                // its spawn on every Play.
                 _character = new FirstPersonController(_logger, activeScene, _inputManager)
                 {
-                    SpawnPosition = _sceneManager.PlayerSpawn,
-                    SpawnYaw = _sceneManager.PlayerSpawnYaw,
                     FallOutHeight = _sceneManager.PlayerFallOutHeight,
                 };
                 _sceneManager.Character = _character;
@@ -663,7 +662,11 @@ public sealed class Engine
             }
 
             // Built even with nothing to play: its tick also steps physics.
-            var play = new PlaySession(_sceneManager, _character?.Simulation) { Profiler = Profiler };
+            var play = new PlaySession(_sceneManager, _character?.Simulation)
+            {
+                Profiler = Profiler,
+                Logger = _logger,
+            };
             _play = play;
 
             if (StartInPlayMode)

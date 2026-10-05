@@ -55,11 +55,7 @@ public sealed class LightOverlay
     public int SkippedLastDraw { get; private set; }
 
     private const int RingSegments = 32;
-    private const int IconRingSegments = 12;
     private const float DisabledDim = 0.32f;
-
-    // Drawn under each stroke, so an icon reads over sky, floor or a lit wall.
-    private static readonly Vector3 Backing = new(0.02f, 0.02f, 0.025f);
 
     /// <summary>Draws an icon per light, plus the selected lights' shapes.</summary>
     /// <param name="output">The depth-off overlay buffer.</param>
@@ -127,20 +123,6 @@ public sealed class LightOverlay
         return peak > 1e-4f ? Vector3.Max(light.Color / peak, new Vector3(0.18f)) : Vector3.One;
     }
 
-    // What an icon is drawn with: the screen plane at the light, one pixel's
-    // world size there, and which of the two passes is running.
-    private struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Vector3 colour)
-    {
-        public readonly Vector3 At = at;
-        public readonly Vector3 Right = camera.Right;
-        public readonly Vector3 Up = camera.Up;
-        public readonly Vector3 Toward = Vector3.Normalize(Vector3.Cross(camera.Right, camera.Up));
-        public readonly float Radius = radius;
-        public readonly float Pixel = pixel;
-        public readonly Vector3 Colour = colour;
-        public bool Backing;
-    }
-
     private static void DrawIcon(DebugDraw output, SceneNode node, Light light, in IconPen pen, bool detailed)
     {
         if (!detailed)
@@ -149,12 +131,12 @@ public sealed class LightOverlay
             float ring = pen.Radius * 0.8f;
             if (pen.Backing)
             {
-                ThinRing(output, in pen, ring + pen.Pixel, Backing);
+                pen.ThinRing(output, ring + pen.Pixel, IconPen.BackingColour);
             }
             else
             {
-                ThinRing(output, in pen, ring, pen.Colour);
-                ThinRing(output, in pen, ring - pen.Pixel, pen.Colour);
+                pen.ThinRing(output, ring, pen.Colour);
+                pen.ThinRing(output, ring - pen.Pixel, pen.Colour);
             }
 
             return;
@@ -167,26 +149,26 @@ public sealed class LightOverlay
             // A sun: a disc with three arrows running the way the light travels.
             case LightKind.Directional:
             {
-                IconRing(output, in pen, pen.At, pen.Right, pen.Up, pen.Radius * 0.5f);
+                pen.Ring(output, pen.At, pen.Right, pen.Up, pen.Radius * 0.5f);
 
-                Vector3 side = AcrossScreen(in pen, forward) * (pen.Radius * 0.62f);
+                Vector3 side = pen.AcrossScreen(forward) * (pen.Radius * 0.62f);
                 Vector3 from = pen.At + (forward * pen.Radius * 0.85f);
-                IconArrow(output, in pen, from, from + (forward * pen.Radius * 2.6f), forward);
-                IconArrow(output, in pen, from + side, from + side + (forward * pen.Radius * 1.9f), forward);
-                IconArrow(output, in pen, from - side, from - side + (forward * pen.Radius * 1.9f), forward);
+                pen.Arrow(output, from, from + (forward * pen.Radius * 2.6f), forward);
+                pen.Arrow(output, from + side, from + side + (forward * pen.Radius * 1.9f), forward);
+                pen.Arrow(output, from - side, from - side + (forward * pen.Radius * 1.9f), forward);
                 break;
             }
 
             // A bulb: a disc with rays in every direction.
             case LightKind.Point:
             {
-                IconRing(output, in pen, pen.At, pen.Right, pen.Up, pen.Radius * 0.45f);
+                pen.Ring(output, pen.At, pen.Right, pen.Up, pen.Radius * 0.45f);
 
                 for (int i = 0; i < 8; i++)
                 {
                     float angle = i * (MathF.Tau / 8);
                     Vector3 ray = (pen.Right * MathF.Cos(angle)) + (pen.Up * MathF.Sin(angle));
-                    Stroke(output, in pen, pen.At + (ray * pen.Radius * 0.68f), pen.At + (ray * pen.Radius));
+                    pen.Stroke(output, pen.At + (ray * pen.Radius * 0.68f), pen.At + (ray * pen.Radius));
                 }
 
                 break;
@@ -200,15 +182,15 @@ public sealed class LightOverlay
                 Vector3 mouth = pen.At + (forward * length);
                 float mouthRadius = length * MathF.Tan(half);
 
-                IconRing(output, in pen, mouth, right, up, mouthRadius);
+                pen.Ring(output, mouth, right, up, mouthRadius);
                 for (int i = 0; i < 4; i++)
                 {
                     float angle = (i * (MathF.Tau / 4)) + (MathF.PI / 4f);
                     Vector3 rim = mouth + (((right * MathF.Cos(angle)) + (up * MathF.Sin(angle))) * mouthRadius);
-                    Stroke(output, in pen, pen.At, rim);
+                    pen.Stroke(output, pen.At, rim);
                 }
 
-                IconRing(output, in pen, pen.At, pen.Right, pen.Up, pen.Radius * 0.22f);
+                pen.Ring(output, pen.At, pen.Right, pen.Up, pen.Radius * 0.22f);
                 break;
             }
 
@@ -225,90 +207,20 @@ public sealed class LightOverlay
                 Vector3 c = pen.At + halfWidth + halfHeight;
                 Vector3 d = pen.At - halfWidth + halfHeight;
 
-                Stroke(output, in pen, a, b);
-                Stroke(output, in pen, b, c);
-                Stroke(output, in pen, c, d);
-                Stroke(output, in pen, d, a);
-                IconArrow(output, in pen, pen.At, pen.At + (forward * pen.Radius * 2.2f), forward);
+                pen.Stroke(output, a, b);
+                pen.Stroke(output, b, c);
+                pen.Stroke(output, c, d);
+                pen.Stroke(output, d, a);
+                pen.Arrow(output, pen.At, pen.At + (forward * pen.Radius * 2.2f), forward);
                 break;
             }
 
             case LightKind.Disc:
             {
-                IconRing(output, in pen, pen.At, right, up, pen.Radius);
-                IconArrow(output, in pen, pen.At, pen.At + (forward * pen.Radius * 2.2f), forward);
+                pen.Ring(output, pen.At, right, up, pen.Radius);
+                pen.Arrow(output, pen.At, pen.At + (forward * pen.Radius * 2.2f), forward);
                 break;
             }
-        }
-    }
-
-    // A unit vector across the screen at right angles to a world direction, so
-    // parallel arrows stay side by side whichever way the light points.
-    private static Vector3 AcrossScreen(in IconPen pen, Vector3 direction)
-    {
-        Vector3 across = Vector3.Cross(direction, pen.Toward);
-        return across.LengthSquared() > 1e-6f ? Vector3.Normalize(across) : pen.Right;
-    }
-
-    private static void IconRing(DebugDraw output, in IconPen pen, Vector3 centre, Vector3 u, Vector3 v, float radius)
-    {
-        Vector3 previous = centre + (u * radius);
-
-        for (int i = 1; i <= IconRingSegments; i++)
-        {
-            float angle = i * (MathF.Tau / IconRingSegments);
-            Vector3 current = centre + (u * radius * MathF.Cos(angle)) + (v * radius * MathF.Sin(angle));
-            Stroke(output, in pen, previous, current);
-            previous = current;
-        }
-    }
-
-    private static void ThinRing(DebugDraw output, in IconPen pen, float radius, Vector3 colour)
-    {
-        Vector3 previous = pen.At + (pen.Right * radius);
-
-        for (int i = 1; i <= IconRingSegments; i++)
-        {
-            float angle = i * (MathF.Tau / IconRingSegments);
-            Vector3 current = pen.At + (pen.Right * radius * MathF.Cos(angle)) + (pen.Up * radius * MathF.Sin(angle));
-            output.Line(previous, current, colour);
-            previous = current;
-        }
-    }
-
-    private static void IconArrow(DebugDraw output, in IconPen pen, Vector3 from, Vector3 tip, Vector3 direction)
-    {
-        Stroke(output, in pen, from, tip);
-
-        Vector3 barb = AcrossScreen(in pen, direction) * (pen.Radius * 0.28f);
-        Vector3 neck = tip - (direction * pen.Radius * 0.5f);
-        Stroke(output, in pen, tip, neck + barb);
-        Stroke(output, in pen, tip, neck - barb);
-    }
-
-    // One stroke of an icon. The debug lane draws hairlines, so the colour is
-    // two lines a pixel apart, and the backing is one either side of those.
-    private static void Stroke(DebugDraw output, in IconPen pen, Vector3 a, Vector3 b)
-    {
-        // At right angles to the stroke as it lies on screen.
-        Vector3 along = b - a;
-        float x = Vector3.Dot(along, pen.Right);
-        float y = Vector3.Dot(along, pen.Up);
-        float length = MathF.Sqrt((x * x) + (y * y));
-
-        Vector3 across = length > 1e-6f
-            ? ((pen.Right * -y) + (pen.Up * x)) * (pen.Pixel / length)
-            : pen.Right * pen.Pixel;
-
-        if (pen.Backing)
-        {
-            output.Line(a + (across * 1.5f), b + (across * 1.5f), Backing);
-            output.Line(a - (across * 1.5f), b - (across * 1.5f), Backing);
-        }
-        else
-        {
-            output.Line(a + (across * 0.5f), b + (across * 0.5f), pen.Colour);
-            output.Line(a - (across * 0.5f), b - (across * 0.5f), pen.Colour);
         }
     }
 
@@ -520,7 +432,7 @@ public static class LightPicking
 
     // Assumes a normalised direction. Near root, clamped to zero so an origin
     // inside the sphere hits at the origin.
-    private static bool TryRaySphere(in Ray3 ray, Vector3 centre, float radius, out float distance)
+    internal static bool TryRaySphere(in Ray3 ray, Vector3 centre, float radius, out float distance)
     {
         distance = 0f;
 

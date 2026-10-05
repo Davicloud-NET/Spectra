@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Reflection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Entities;
@@ -19,6 +20,12 @@ public sealed class PlaySessionTests
     private const float Dt = PhysicsDefaults.FixedDeltaTime;
 
     private static readonly string[] PhysicsTick = ["push", "step", "drain"];
+
+    // How far above its start the session puts the feet.
+    private static readonly Vector3 StartLift = new(0f, 0.05f, 0f);
+
+    // Past the plate's edge at x = 32: nothing to land on.
+    private static readonly Vector3 OffThePlate = new(40f, 1f, 0f);
 
     [Fact]
     public void Entering_spawns_the_character_and_starts_the_entity_world()
@@ -202,12 +209,9 @@ public sealed class PlaySessionTests
     public void A_tick_that_respawns_says_so_and_gives_the_feet_it_fell_from()
     {
         SceneManager manager = Hosted([]);
-        var character = new CharacterSimulation(manager.ActiveScene.ShouldNotBeNull())
-        {
-            // Past the plate's edge at x = 32: nothing to land on.
-            SpawnPosition = new Vector3(40f, 1f, 0f),
-            FallOutHeight = -5f,
-        };
+        PlaceStart(manager, "start", OffThePlate);
+        CharacterSimulation character = Walker(manager);
+        character.FallOutHeight = -5f;
         var session = new PlaySession(manager, character);
         session.Enter();
 
@@ -224,6 +228,147 @@ public sealed class PlaySessionTests
         before.Y.ShouldBeLessThan(0f);
         character.State.Position.ShouldBe(character.SpawnPosition);
         character.Respawns.ShouldBe(1);
+    }
+
+    [Fact]
+    public void The_character_starts_on_the_first_player_start_in_traversal_order()
+    {
+        SceneManager manager = Hosted([]);
+        SceneNode root = manager.ActiveScene.ShouldNotBeNull().Root;
+
+        // Attached first, but the group goes in ahead of it: the start inside
+        // the group is the first one a walk of the graph meets.
+        PlaceStart(manager, "later", new Vector3(-6f, 0f, 2f));
+        var group = new SceneNode("group") { LocalPosition = new Vector3(4f, 0f, 0f) };
+        root.InsertChild(0, group);
+        SceneNode first = EntityRuntime.Place(group, "first", "start");
+        first.LocalPosition = new Vector3(1f, 0f, 3f);
+
+        CharacterSimulation character = Walker(manager);
+        new PlaySession(manager, character).Enter();
+
+        first.WorldPosition.ShouldBe(new Vector3(5f, 0f, 3f));
+        character.State.Position.ShouldBe(first.WorldPosition + StartLift);
+    }
+
+    [Fact]
+    public void The_character_faces_along_its_starts_local_z()
+    {
+        SceneManager manager = Hosted([]);
+        SceneNode start = PlaceStart(manager, "start", new Vector3(2f, 0f, 2f));
+        start.LocalRotation = Light.RotationForDirection(new Vector3(0f, 0f, -1f));
+        CharacterSimulation character = Walker(manager);
+        var session = new PlaySession(manager, character);
+        session.Enter();
+
+        // Walking forward with the yaw it was given goes the way the start points.
+        var walk = new CharacterCommand { MoveForward = CharacterCommand.Axis(1f), Yaw = character.SpawnYaw };
+        for (int i = 0; i < 60; i++)
+            session.Tick(Dt, in walk);
+
+        character.State.Position.Z.ShouldBeLessThan(1f);
+        character.State.Position.X.ShouldBe(2f, 1e-3f);
+    }
+
+    [Fact]
+    public void A_level_with_no_player_start_uses_the_scene_managers_spawn_and_warns_once()
+    {
+        SceneManager manager = Hosted([]);
+        var logger = new CapturingLogger();
+        CharacterSimulation character = Walker(manager);
+        var session = new PlaySession(manager, character) { Logger = logger };
+
+        session.Enter();
+
+        character.State.Position.ShouldBe(manager.PlayerSpawn);
+        character.SpawnYaw.ShouldBe(manager.PlayerSpawnYaw);
+        logger.MessagesAt(LogLevel.Warning).Count.ShouldBe(1, logger.Describe());
+        logger.MessagesAt(LogLevel.Warning)[0].ShouldContain("no player start");
+
+        session.Exit();
+        session.Enter();
+
+        logger.MessagesAt(LogLevel.Warning).Count.ShouldBe(1, logger.Describe());
+    }
+
+    [Fact]
+    public void A_level_with_a_player_start_warns_about_nothing()
+    {
+        SceneManager manager = Hosted([]);
+        PlaceStart(manager, "start", new Vector3(2f, 0f, 2f));
+        var logger = new CapturingLogger();
+        var session = new PlaySession(manager, Walker(manager)) { Logger = logger };
+
+        session.Enter();
+
+        logger.MessagesAt(LogLevel.Warning).ShouldBeEmpty(logger.Describe());
+    }
+
+    [Fact]
+    public void A_start_moved_between_two_plays_moves_the_spawn()
+    {
+        SceneManager manager = Hosted([]);
+        SceneNode start = PlaceStart(manager, "start", new Vector3(2f, 0f, 2f));
+        CharacterSimulation character = Walker(manager);
+        var session = new PlaySession(manager, character);
+
+        session.Enter();
+        character.State.Position.ShouldBe(new Vector3(2f, 0f, 2f) + StartLift);
+        session.Exit();
+
+        start.LocalPosition = new Vector3(-8f, 0f, 5f);
+        session.Enter();
+
+        character.State.Position.ShouldBe(new Vector3(-8f, 0f, 5f) + StartLift);
+    }
+
+    [Fact]
+    public void A_start_deleted_between_two_plays_leaves_the_scene_managers_spawn()
+    {
+        SceneManager manager = Hosted([]);
+        SceneNode start = PlaceStart(manager, "start", new Vector3(2f, 0f, 2f));
+        CharacterSimulation character = Walker(manager);
+        var session = new PlaySession(manager, character);
+        session.Enter();
+        session.Exit();
+
+        manager.ActiveScene.ShouldNotBeNull().Root.RemoveChild(start);
+        session.Enter();
+
+        character.State.Position.ShouldBe(manager.PlayerSpawn);
+    }
+
+    [Fact]
+    public void Falling_out_puts_the_character_back_on_its_player_start()
+    {
+        SceneManager manager = Hosted([]);
+        SceneNode start = PlaceStart(manager, "start", OffThePlate);
+        CharacterSimulation character = Walker(manager);
+        character.FallOutHeight = -5f;
+        var session = new PlaySession(manager, character);
+        session.Enter();
+
+        FallOut(session).ShouldBeTrue();
+
+        character.State.Position.ShouldBe(start.WorldPosition + StartLift);
+    }
+
+    [Fact]
+    public void Falling_out_still_returns_to_the_start_once_a_map_load_has_stopped_the_entities()
+    {
+        // The session keeps the spot, not the entity.
+        SceneManager manager = Hosted([]);
+        PlaceStart(manager, "start", OffThePlate);
+        CharacterSimulation character = Walker(manager);
+        character.FallOutHeight = -5f;
+        var session = new PlaySession(manager, character);
+        session.Enter();
+
+        manager.OnSceneReplaced();
+
+        FallOut(session).ShouldBeTrue();
+
+        character.State.Position.ShouldBe(OffThePlate + StartLift);
     }
 
     [Fact]
@@ -251,6 +396,7 @@ public sealed class PlaySessionTests
     {
         EntityCatalog catalog = EntityRuntime.Catalog(log);
         catalog.Add(new EntitySchema("thinker"), () => new ThinkingEntity(log));
+        catalog.Add(new EntitySchema("start"), static () => new StartEntity());
 
         var manager = new SceneManager(NullLogger<SceneManager>.Instance)
         {
@@ -268,12 +414,33 @@ public sealed class PlaySessionTests
     private static void Place(SceneManager manager, string name, string className) =>
         EntityRuntime.Place(manager.ActiveScene.ShouldNotBeNull().Root, name, className);
 
+    private static SceneNode PlaceStart(SceneManager manager, string name, Vector3 position)
+    {
+        SceneNode node = EntityRuntime.Place(manager.ActiveScene.ShouldNotBeNull().Root, name, "start");
+        node.LocalPosition = position;
+        return node;
+    }
+
+    // No spawn: the session places it on every Enter.
     private static CharacterSimulation Walker(SceneManager manager) =>
         new(manager.ActiveScene.ShouldNotBeNull())
         {
-            SpawnPosition = manager.PlayerSpawn,
             FallOutHeight = manager.PlayerFallOutHeight,
         };
+
+    // Ticks until the fall-out guard fires. False if it never does.
+    private static bool FallOut(PlaySession session)
+    {
+        for (int i = 0; i < 300; i++)
+        {
+            if (session.Tick(Dt, default).Respawned)
+                return true;
+        }
+
+        return false;
+    }
+
+    private sealed class StartEntity : Entity, IPlayerStart;
 
     // Logs the first entity tick: its think is due as soon as time moves.
     private sealed class ThinkingEntity : Entity

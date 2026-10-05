@@ -75,6 +75,9 @@ public sealed class SceneEditorHost : ISceneEditor
     // A part with its render bit off draws nothing either.
     private readonly VolumeOverlay _volumeOutlines = new();
 
+    // An entity with no brush, mesh or light has nothing else to see or click.
+    private readonly EntityMarkerOverlay _entityMarkers = new();
+
     /// <summary>The ground grid and the world axes, drawn depth-tested.</summary>
     public GroundGrid Grid { get; } = new();
 
@@ -752,6 +755,7 @@ public sealed class SceneEditorHost : ISceneEditor
         _negativeOutlines.Draw(output, _scene);
         _volumeOutlines.Draw(output, _scene);
         Lights.Draw(output, _scene, _scene.Camera, _viewportSize);
+        _entityMarkers.Draw(output, _scene, _scene.Camera, _viewportSize);
         LightGizmo.Draw(output, _viewportSize);
 
         Selection.Draw(output, _scene, _scene.Camera, _viewportSize, new OutlineFocus(

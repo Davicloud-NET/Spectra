@@ -184,10 +184,10 @@ public sealed class SceneManager
     // of its cell can only come from the test's drag.
     public SceneNode? SelfTestNode { get; private set; }
 
-    /// <summary>Where a first-person character starts, once the demo scene is loaded.</summary>
+    /// <summary>Where a character starts in a level that has no player start.</summary>
     public Vector3 PlayerSpawn { get; private set; }
 
-    /// <summary>The yaw a spawned character faces, in radians.</summary>
+    /// <summary>The yaw it faces there, in radians.</summary>
     public float PlayerSpawnYaw { get; private set; }
 
     /// <summary>Below this height a character has left the authored world and should be respawned.</summary>

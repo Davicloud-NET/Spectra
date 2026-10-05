@@ -425,12 +425,9 @@ public sealed class ViewportInteractionController
         bool geometry = Scene.Raycast(
             in ray, out SceneRaycastHit hit, SceneQueryFilter.EditorPicking, PickDistance);
 
-        // Lights are not in the spatial index (they would become collidable),
-        // so they are picked separately.
-        bool lamp = LightPicking.TryPick(
-            Scene, Scene.Camera, in ray, frame.ViewportSize, out SceneNode? light, out float lightDistance);
-
-        if (!lamp)
+        // Lights and point entities are not in the spatial index (they would
+        // become collidable), so their icons are picked separately.
+        if (!TryPickIcon(in ray, frame.ViewportSize, out SceneNode? icon, out float iconDistance))
         {
             node = geometry ? hit.Node : null;
             planeIndex = geometry ? hit.PlaneIndex : -1;
@@ -442,15 +439,32 @@ public sealed class ViewportInteractionController
         // otherwise be unclickable.
         if (geometry)
         {
-            float slack = LightPicking.WorldRadius(Scene.Camera, frame.ViewportSize, light!.WorldPosition);
-            if (lightDistance > hit.Distance + slack)
+            float slack = LightPicking.WorldRadius(Scene.Camera, frame.ViewportSize, icon!.WorldPosition);
+            if (iconDistance > hit.Distance + slack)
             {
                 node = hit.Node;
+                planeIndex = hit.PlaneIndex;
                 return true;
             }
         }
 
-        node = light;
+        node = icon;
+        return true;
+    }
+
+    // The nearer of a light's icon and an entity's marker.
+    private bool TryPickIcon(in Ray3 ray, Vector2 viewportSize, out SceneNode? node, out float distance)
+    {
+        bool lamp = LightPicking.TryPick(Scene, Scene.Camera, in ray, viewportSize, out node, out distance);
+
+        bool marker = EntityMarkerPicking.TryPick(
+            Scene, Scene.Camera, in ray, viewportSize, out SceneNode? marked, out float markerDistance);
+
+        if (!marker || (lamp && distance <= markerDistance))
+            return lamp;
+
+        node = marked;
+        distance = markerDistance;
         return true;
     }
 

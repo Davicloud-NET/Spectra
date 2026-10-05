@@ -54,6 +54,10 @@ public sealed class CharacterSimulation : IPlayerPresence
     /// <summary>Where <see cref="Spawn"/> and the fall-out guard put the character.</summary>
     public Vector3 SpawnPosition { get; set; }
 
+    /// <summary>The yaw a view starts with at the spawn, in radians.</summary>
+    // Kept for the view. The mover takes its yaw from the command.
+    public float SpawnYaw { get; set; }
+
     /// <summary>Below this height the character is respawned rather than left falling.</summary>
     public float FallOutHeight { get; set; } = -1000f;
 

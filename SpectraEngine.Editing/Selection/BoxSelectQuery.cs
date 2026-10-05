@@ -55,13 +55,13 @@ public static class BoxSelectQuery
 
         results.RemoveRange(write, results.Count - write);
 
-        AppendCoveredLights(scene, camera, in rect, viewportSize, mode, results);
+        AppendCoveredIcons(scene, camera, in rect, viewportSize, mode, results);
     }
 
-    // Lights are not in the spatial index (that would make them collidable),
-    // so they get their own pass. Tests the icon at the radius the overlay
-    // draws and the click picks.
-    private static void AppendCoveredLights(
+    // Lights and point entities are not in the spatial index (that would make
+    // them collidable), so they get their own pass. Tests the icon at the
+    // radius the overlay draws and the click picks.
+    private static void AppendCoveredIcons(
         Scene scene,
         Camera camera,
         in ScreenRect rect,
@@ -79,13 +79,27 @@ public static class BoxSelectQuery
             if (node.Brush is not null || node.MeshRenderer is not null)
                 continue;
 
-            if (CoversLightIcon(camera, node, in rect, viewportSize, mode))
+            if (CoversIcon(camera, node, in rect, viewportSize, mode))
+                results.Add(node);
+        }
+
+        IReadOnlyList<SceneNode> entities = scene.EntityNodes;
+
+        for (int i = 0; i < entities.Count; i++)
+        {
+            SceneNode node = entities[i];
+
+            // An entity with a light was judged by the loop above.
+            if (EntityMarkerPicking.HasMarker(node) && CoversIcon(camera, node, in rect, viewportSize, mode))
                 results.Add(node);
         }
     }
 
-    /// <summary>Whether the rectangle covers this light's icon.</summary>
-    public static bool CoversLightIcon(
+    /// <summary>
+    /// Whether the rectangle covers the icon drawn at this node: a light's,
+    /// or an entity's marker.
+    /// </summary>
+    public static bool CoversIcon(
         Camera camera,
         SceneNode node,
         in ScreenRect rect,

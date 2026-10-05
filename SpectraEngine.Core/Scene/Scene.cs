@@ -92,6 +92,7 @@ public sealed partial class Scene
         // only registers an owned node, so a light that leaves and comes back
         // (undo of a delete) has to be relisted here.
         UpdateLightMembership(node);
+        UpdateEntityMembership(node);
         NodeAdded?.Invoke(node);
     }
 
@@ -110,6 +111,7 @@ public sealed partial class Scene
         _hiddenBrushNodes.Remove(node);
         _drawableNodes.Remove(node);
         _lightNodes.Remove(node);
+        _entityNodes.Remove(node);
         NodeRemoved?.Invoke(node);
     }
 
@@ -132,6 +134,18 @@ public sealed partial class Scene
 
     /// <summary>Nodes currently carrying a <see cref="Scene.Light"/>, in attachment order.</summary>
     public IReadOnlyList<SceneNode> LightNodes => _lightNodes;
+
+    internal void UpdateEntityMembership(SceneNode node)
+    {
+        if (node.Entity is not null) _entityNodes.Add(node);
+        else _entityNodes.Remove(node);
+    }
+
+    /// <summary>
+    /// Nodes currently carrying <see cref="SceneNode.Entity"/> data, in
+    /// attachment order. Not the order entities run in.
+    /// </summary>
+    public IReadOnlyList<SceneNode> EntityNodes => _entityNodes;
 
     // The render bit changes what draws and nothing else, so world placements
     // are left alone.
@@ -598,6 +612,9 @@ public sealed partial class Scene
     // A list, not a set: light selection is a nearest-N and ties need a stable
     // order.
     private readonly OrderedIdentityList<SceneNode> _lightNodes = new();
+
+    // A list too: a pick between two markers at one depth takes the first.
+    private readonly OrderedIdentityList<SceneNode> _entityNodes = new();
 
     private readonly HashSet<SceneNode> _partBrushNodes = [];
     private readonly PartBrushMeshCache _partBrushMeshes = new();
