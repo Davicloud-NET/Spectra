@@ -105,10 +105,11 @@ public partial class MainWindow
             return 0;
 
         RowDefinition drawer = EditorView.RowDefinitions[2];
-        return Math.Max(0, drawer.ActualHeight - drawer.MinHeight);
+        return Math.Max(0, drawer.Height.Value - drawer.MinHeight);
     }
 
-    // Lowers an open drawer until the centre row has its minimum.
+    // Lowers an open drawer until the centre row has its minimum. The row's
+    // own height is read, not the saved one: a drag may have changed it.
     private void ReclampDrawer()
     {
         double available = EditorView.Bounds.Height;
@@ -116,10 +117,11 @@ public partial class MainWindow
             return;
 
         RowDefinition drawer = EditorView.RowDefinitions[2];
+        double wanted = drawer.Height.Value;
         double height = WorkspaceLayout.ClampDrawerHeight(
-            drawer.ActualHeight, available, EditorView.RowDefinitions[0].MinHeight);
+            wanted, available, EditorView.RowDefinitions[0].MinHeight);
 
-        if (height < drawer.ActualHeight)
+        if (height < wanted)
             drawer.Height = new GridLength(Math.Max(height, drawer.MinHeight));
     }
 
