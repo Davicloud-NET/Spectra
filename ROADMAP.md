@@ -27,11 +27,13 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - Camera: free look, orbit, pan, frame selection, and top, front and side views.
 - Insert blocks, parts, cuts, lights, entities and models. Make entity turns the selected blocks into a door, a trigger or another brush entity, and Remove entity turns them back.
 - A material dropped on a face paints it. Scale, offset, rotation and alignment are set in the Properties panel.
-- Entity keyvalues and output wiring are edited in panels built from the `.sentdef` schema.
+- Entity keyvalues and output wiring are edited in panels built from the `.sentdef` schema. The Properties panel lists what an entity sends and what it receives, and what it is doing while the level plays.
+- The Logic view sits below or beside the viewport and draws a level's entities as cards with their wires between them. A wire is made by dragging from one card onto another. While the level plays, each wire shows when it fires and each card what its entity is doing.
 - The Behavior rows of a node say whether it collides, is seen by queries, sends touch events and is drawn.
-- Lights have icons and handles in the viewport. Selection shows as an outline.
+- Lights have icons and handles in the viewport. Selection shows as an outline. A selected sound shows how far it is heard.
 - The Console panel runs the editor's own verbs and sends every other line to the engine's console. The console key opens it, while a level plays too.
 - F8 plays the level in first person from its player start, and F8 again stops. Stop puts back every node the run moved. A level cannot be saved while it plays.
+- A level's sounds are heard while it plays. The editor cooks a sound file the first time a level uses it.
 - Levels save and load as `.smap` folders of JSON.
 - The viewport is a native child window by default. The composited viewport can dock and takes dropped assets. It is asked for with `--viewport=composition`, and becomes the default on a machine after five clean sessions there.
 
@@ -42,7 +44,7 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - The build exports the schemas as a `.sentdef` file. The editor reads only that.
 - The runtime ticks on the fixed step while playing and never writes to the authored data.
 - Built-in logic: `logic_auto`, `logic_relay`, `logic_timer`, `math_counter`, `logic_branch`, `logic_case`, `logic_compare`.
-- Built-in world entities: `func_door`, `func_movelinear`, `func_button`, `trigger_once`, `trigger_multiple`, `trigger_teleport`, `info_teleport_destination`, `info_player_start`.
+- Built-in world entities: `func_door`, `func_movelinear`, `func_button`, `trigger_once`, `trigger_multiple`, `trigger_teleport`, `info_teleport_destination`, `info_player_start`, `point_sound`.
 - A brush entity is a part that carries an entity. A trigger is such a part that is not drawn and not solid.
 - A door, a trigger and one wire between them make a level that works with no code. The demo starts in a room built that way, and tests play the same loop from a `.smap` and from a cooked map.
 - The player is not an entity. A trigger or a button the player sets off is its own activator.
@@ -94,7 +96,14 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 
 ### Audio and animation
 
-- Audio plays through OpenAL, with a source pool and streaming voices. Nothing in a level can play a sound yet.
+- Audio plays through OpenAL, with a pool of 32 sources and streaming voices.
+- `point_sound` plays a cooked sound from a place in the level. Wires start and stop it. It fires an output when the sound ends and when it reaches a named marker in the file.
+- The simulation holds what is playing and counts it in ticks. A level with no audio device fires on the same ticks.
+- Each frame the loudest sounds at the listener get a source, and the rest keep counting. The engine works out loudness over distance itself.
+- Captions are files: a text file per language says what a sound is, and a WebVTT file beside a voice file holds its subtitles. The cook checks them. The engine works out which ones show right now and publishes that list. Nothing draws it yet, so it goes to the log.
+- A material file can say what it is made of (`acoustic = wood`), and a table turns that into how much sound a wall of it lets through. Nothing sums it along a line yet.
+- The demo's start room has placeholder sounds on its door, lift and button, made by a script.
+- Missing: walls and corners do not change a sound, and there is no reverb, no music and no compressed format.
 - Skeletons, clips and pose blending exist on the CPU. Nothing imports or draws them.
 
 ### Docs and CI
@@ -105,12 +114,15 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 ## In progress
 
 - Trying by hand what just landed. Tests cover what the door, the lift, the triggers and the console do. They do not cover how riding a lift or standing in a closing door feels, where focus goes when the console opens during play, or how the Make entity menus read.
+- Listening to what just landed. No test can say whether a sound falls off well with distance, clicks when it starts or stops, or whether the placeholder sounds are bearable.
+- Sound in the editor: a picker and a preview for sound files, and a sound dropped into the viewport.
+- Sound through walls: a sound behind a wall is quieter and duller by the wall's material and thickness. The low-pass filter was proven in a spike (`docs/spikes/2026-10-openal-filters.md`). The query for what lies between two points is being built.
 
 ## Next
 
 In order. The order follows `docs/positioning.md`: finish build, wire and play, then add what a small first-person game needs.
 
-1. Sound in a level (S). An entity that plays a cooked sound. Audio playback and the entity runtime are both there.
+1. The rest of sound (M). A switch on each sound for what is simulated: its place, distance, walls, Doppler. Doppler itself. Sound settings on doors, lifts and buttons, if wiring them by hand stays as clumsy as it is in the demo. Sound round corners gets a spike and a design before any code.
 2. Luau scripting (O1 to O5, O7 to O9; L). Scripts on nodes, generated bindings to the scene, attributes, tags and signals. The spike passed: Luau runs in a NativeAOT build on Windows and Linux, as long as a Luau error is raised from native code (`docs/spikes/2026-10-luau-aot.md`). The character mover should end up replaceable from Luau.
 3. Prefabs (P10, L). A subtree saved once and placed many times. Depends on entities in maps, which are done. Risky because the rule for names inside a prefab is saved into every map, and it is not decided.
 4. Bodies that move (Y6 and the rest of Y7 and Y8, L). Dynamic bodies, parts that push one another, and touch between bodies. The player is already carried by a moving part and already sets off triggers.
@@ -267,7 +279,7 @@ Design docs are in `docs/`. In the Design column, "archive" means `docs/archive/
 | D15 | Entity classes written in Luau | not started | formats-and-pipeline.md |
 | D16 | Entity properties and wiring from `.sentdef` | done | formats-and-pipeline.md |
 | D17 | `.smodel` and the glTF reader | done; no skins or collision hulls | formats-and-pipeline.md |
-| D18 | `.saudio` and the audio manager | done; no buses or effects | formats-and-pipeline.md |
+| D18 | `.saudio` and the audio manager | done, with markers since version 2; no buses or effects | formats-and-pipeline.md |
 | D19 | `.smaterial` cooked materials | not started; waits on S3 | formats-and-pipeline.md |
 | D20 | Patch and mod packs | partly; packs mount in order and tombstones hide entries, nothing builds a patch | formats-and-pipeline.md |
 | D21 | Engine SDK mode, Luau editor plugins | not started | formats-and-pipeline.md |
