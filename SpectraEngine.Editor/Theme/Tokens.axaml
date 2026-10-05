@@ -214,9 +214,10 @@
   <SolidColorBrush x:Key="SpectraLogicWireFiring" Color="{DynamicResource SpectraLogicWireFiringColor}" />
   <SolidColorBrush x:Key="SpectraLogicWireFired" Color="{DynamicResource SpectraLogicWireFiredColor}" />
 
-  <!-- Laid over what the filter leaves out, which leaves three tenths of it.
+  <!-- Laid over what the filter leaves out, which leaves two thirds of it:
+       its faintest text stays as readable as SpectraTextDisabled on a panel.
        It repeats the ground as a literal. Change it with SpectraLogicGroundColor. -->
-  <Color x:Key="SpectraLogicDimWashColor">#B31B1D20</Color>
+  <Color x:Key="SpectraLogicDimWashColor">#551B1D20</Color>
   <SolidColorBrush x:Key="SpectraLogicDimWash" Color="{DynamicResource SpectraLogicDimWashColor}" />
 
   <!-- How the graph is drawn, in pixels at 100 percent. Where things stand

@@ -70,6 +70,25 @@ public sealed class ThemeContrastTests
         return (lighter + 0.05) / (darker + 0.05);
     }
 
+    // How much of a colour with an alpha covers what is under it.
+    private static double Alpha(string key)
+    {
+        string tokens = File.ReadAllText(
+            Path.Combine(RepoRoot(), "SpectraEngine.Editor", "Theme", "Tokens.axaml"));
+
+        Match match = Regex.Match(tokens, $@"<Color\s+x:Key=""{key}"">\s*#(?<alpha>[0-9A-Fa-f]{{2}})[0-9A-Fa-f]{{6}}\s*</Color>");
+        match.Success.ShouldBeTrue(key);
+
+        return int.Parse(match.Groups["alpha"].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture) / 255.0;
+    }
+
+    // A colour seen through a wash that covers a share of it.
+    private static (double R, double G, double B) Under(
+        (double R, double G, double B) color, (double R, double G, double B) wash, double share) => (
+        (wash.R * share) + (color.R * (1 - share)),
+        (wash.G * share) + (color.G * (1 - share)),
+        (wash.B * share) + (color.B * (1 - share)));
+
     private static double Ratio(string text, string background)
     {
         Dictionary<string, (double R, double G, double B)> colors = Colors();
@@ -181,6 +200,29 @@ public sealed class ThemeContrastTests
         Dictionary<string, (double R, double G, double B)> colors = Colors();
 
         colors["SpectraLogicDimWashColor"].ShouldBe(colors["SpectraLogicGroundColor"]);
+    }
+
+    [Theory]
+    // A card the filter leaves out: its name, its class line, a port, the note.
+    [InlineData("SpectraTextEmphasisColor", "SpectraLogicCardHeadColor")]
+    [InlineData("SpectraTextMutedColor", "SpectraLogicCardHeadColor")]
+    [InlineData("SpectraTextBodyColor", "SpectraLogicCardColor")]
+    [InlineData("SpectraTextMutedColor", "SpectraLogicCardColor")]
+    // The card of a name nothing has, and a label.
+    [InlineData("SpectraTextDangerColor", "SpectraLogicStubHeadColor")]
+    [InlineData("SpectraLogicStubTextColor", "SpectraLogicStubHeadColor")]
+    [InlineData("SpectraTextBodyColor", "SpectraBgPanelColor")]
+    public void What_a_filter_leaves_out_is_as_readable_as_the_shell_s_dimmed_text(
+        string text, string background)
+    {
+        Dictionary<string, (double R, double G, double B)> colors = Colors();
+        (double R, double G, double B) ground = colors["SpectraLogicGroundColor"];
+        double wash = Alpha("SpectraLogicDimWashColor");
+
+        wash.ShouldBeGreaterThan(0.2, "a wash this thin dims nothing");
+        Contrast(Under(colors[text], ground, wash), Under(colors[background], ground, wash))
+            .ShouldBeGreaterThanOrEqualTo(
+                Ratio("SpectraTextDisabledColor", "SpectraBgPanelColor"), $"{text} on {background}");
     }
 
     [Fact]
