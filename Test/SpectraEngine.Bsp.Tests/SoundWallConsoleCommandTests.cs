@@ -1,6 +1,8 @@
+using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Audio;
 using SpectraEngine.Core.ConsoleSystem;
 using SpectraEngine.Core.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
@@ -66,6 +68,22 @@ public sealed class SoundWallConsoleCommandTests
     }
 
     [Fact]
+    public void With_no_audio_device_the_command_says_why_nothing_is_traced()
+    {
+        using var rig = new WalledSoundRig();
+        var silent = new AudioManager(new CapturingLogger(), NoDevice);
+        silent.Initialize();
+        var console = new SpectraConsole();
+        SoundWallConsoleCommands.Register(console.Commands, rig.Walls, silent, new FrameProfiler());
+
+        console.Execute(SoundWallConsoleCommands.Walls, new ConsoleFrame(rig.Sound.Scene, rig.Sound.World, IsPlaying: true));
+
+        ConsoleLine line = console.Output.Drain().ShouldHaveSingleItem();
+        line.Text.ShouldBe("sound_walls: audio is off, so nothing is traced. Captions go by distance alone.");
+        line.Severity.ShouldBe(LogLevel.Warning);
+    }
+
+    [Fact]
     public void Help_lists_the_command()
     {
         using var rig = new WalledSoundRig();
@@ -79,7 +97,14 @@ public sealed class SoundWallConsoleCommandTests
     private static SpectraConsole ConsoleFor(WalledSoundRig rig, FrameProfiler profiler)
     {
         var console = new SpectraConsole();
-        SoundWallConsoleCommands.Register(console.Commands, rig.Walls, profiler);
+        SoundWallConsoleCommands.Register(console.Commands, rig.Walls, rig.Sound.Audio, profiler);
         return console;
+    }
+
+    private static bool NoDevice(ILogger logger, [NotNullWhen(true)] out IAudioBackend? backend, out string reason)
+    {
+        backend = null;
+        reason = "the test has no audio device";
+        return false;
     }
 }

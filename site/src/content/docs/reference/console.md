@@ -304,6 +304,8 @@ A sound behind a wall is muffled by what a straight line to the listener passes 
 
 The time is measured only when the engine was started with `--profile`. Without it the second line says so. Before you press Play the command prints `sound_walls: the level is not running, so nothing is traced.`
 
+With no audio device nothing is traced, and the command prints a warning that says so. Captions then show by distance alone, so a sound behind a thick wall can have a caption there that it would not have on a machine with sound.
+
 ### captions
 
 ```

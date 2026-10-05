@@ -15,11 +15,14 @@ public static class SoundWallConsoleCommands
     /// <summary>Adds the command to <paramref name="table"/>.</summary>
     /// <param name="table">The console's commands.</param>
     /// <param name="walls">Whose numbers <c>sound_walls</c> prints.</param>
+    /// <param name="audio">The device the sounds play on. Without one nothing is traced.</param>
     /// <param name="profiler">Where the time under <see cref="FramePhase.SoundWalls"/> is read from.</param>
-    public static void Register(ConCommandTable table, WallPropagation walls, FrameProfiler profiler)
+    public static void Register(
+        ConCommandTable table, WallPropagation walls, AudioManager audio, FrameProfiler profiler)
     {
         ArgumentNullException.ThrowIfNull(table);
         ArgumentNullException.ThrowIfNull(walls);
+        ArgumentNullException.ThrowIfNull(audio);
         ArgumentNullException.ThrowIfNull(profiler);
 
         table.Add(new ConCommand(
@@ -27,11 +30,18 @@ public static class SoundWallConsoleCommands
             Walls,
             "Prints how many lines were traced this frame to find what stands between the sounds and " +
             "the listener, how many sounds wait for their turn and the time it takes.",
-            (in ConArgs args) => Print(walls, profiler, in args)));
+            (in ConArgs args) => Print(walls, audio, profiler, in args)));
     }
 
-    private static void Print(WallPropagation walls, FrameProfiler profiler, in ConArgs args)
+    private static void Print(WallPropagation walls, AudioManager audio, FrameProfiler profiler, in ConArgs args)
     {
+        // sound_stats says why it is off.
+        if (!audio.IsEnabled)
+        {
+            args.Out.Warn($"{Walls}: audio is off, so nothing is traced. Captions go by distance alone.");
+            return;
+        }
+
         if (args.Entities is null)
         {
             args.Out.Print($"{Walls}: the level is not running, so nothing is traced.");
