@@ -57,6 +57,22 @@ public sealed class PartBrushOverlayTests
     }
 
     [Fact]
+    public void A_hidden_part_is_left_to_the_volume_overlay()
+    {
+        // Outlined here too, it would be drawn twice in two colours.
+        var scene = new Scene("Test");
+        AddPart(scene, "trigger").IsRendered = false;
+        var overlay = new PartBrushOverlay();
+        var output = new DebugDraw();
+
+        overlay.Draw(output, scene);
+
+        overlay.DrawnLastDraw.ShouldBe(0);
+        overlay.SkippedLastDraw.ShouldBe(0);
+        output.VertexCount.ShouldBe(0);
+    }
+
+    [Fact]
     public void The_outline_follows_the_node_rather_than_the_brush()
     {
         var scene = new Scene("Test");

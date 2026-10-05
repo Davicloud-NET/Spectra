@@ -72,6 +72,9 @@ public sealed class SceneEditorHost : ISceneEditor
     // Subtractive brushes render nothing, so this is the only way to see one.
     private readonly SubtractiveBrushOverlay _negativeOutlines = new();
 
+    // A part with its render bit off draws nothing either.
+    private readonly VolumeOverlay _volumeOutlines = new();
+
     /// <summary>The ground grid and the world axes, drawn depth-tested.</summary>
     public GroundGrid Grid { get; } = new();
 
@@ -747,6 +750,7 @@ public sealed class SceneEditorHost : ISceneEditor
         // Draw order: context outlines, selection, manipulator handles, compass.
         _partOutlines.Draw(output, _scene);
         _negativeOutlines.Draw(output, _scene);
+        _volumeOutlines.Draw(output, _scene);
         Lights.Draw(output, _scene, _scene.Camera, _viewportSize);
         LightGizmo.Draw(output, _viewportSize);
 

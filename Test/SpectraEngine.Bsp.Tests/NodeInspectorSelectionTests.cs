@@ -155,10 +155,56 @@ public sealed class NodeInspectorSelectionTests
             NodeInspector.TransformGroup,
             NodeInspector.BrushGroup,
             NodeInspector.LightGroup,
+            NodeInspector.BehaviorGroup,
 
             // Last: the merged panel lays out in PropertyId order.
             NodeInspector.MaterialGroup,
         ]);
+    }
+
+    [Fact]
+    public void A_flag_that_differs_across_the_selection_is_mixed()
+    {
+        var solid = new SceneNode("Solid") { Brush = Box() };
+        var ghost = new SceneNode("Ghost") { Brush = Box(), CanCollide = false };
+
+        List<PropertyRow> rows = Describe(solid, ghost);
+
+        Row(rows, PropertyId.CanCollide).MixedAxes.ShouldBe(PropertyAxes.All);
+        Row(rows, PropertyId.CanQuery).IsMixed.ShouldBeFalse();
+        Row(rows, PropertyId.CanTouch).IsMixed.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Drawn_is_partial_when_only_some_of_the_selection_can_be_hidden()
+    {
+        var wall = new SceneNode("Wall") { Brush = Box() };
+        var part = new SceneNode("Part") { BrushKind = BrushKind.Part, Brush = Box() };
+        var lamp = new SceneNode("Lamp") { Light = new Light() };
+
+        List<PropertyRow> rows = Describe(wall, part, lamp);
+
+        PropertyRow drawn = Row(rows, PropertyId.IsRendered);
+        drawn.PresentCount.ShouldBe(1, "only the part draws on its own");
+        drawn.SelectionCount.ShouldBe(3);
+
+        PropertyRow collides = Row(rows, PropertyId.CanCollide);
+        collides.PresentCount.ShouldBe(2, "the lamp has nothing to collide with");
+    }
+
+    [Fact]
+    public void The_flag_rows_stay_together_in_a_merged_list()
+    {
+        var wall = new SceneNode("Wall") { Brush = Box() };
+        var part = new SceneNode("Part") { BrushKind = BrushKind.Part, Brush = Box() };
+
+        Describe(wall, part)
+            .Where(r => r.Group == NodeInspector.BehaviorGroup)
+            .Select(r => r.Id)
+            .ShouldBe(
+            [
+                PropertyId.CanCollide, PropertyId.CanQuery, PropertyId.CanTouch, PropertyId.IsRendered,
+            ]);
     }
 
     [Fact]

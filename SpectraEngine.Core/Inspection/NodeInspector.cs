@@ -27,6 +27,9 @@ public static class NodeInspector
     public const string FaceGroup = "Face";
     public const string LightGroup = "Light";
     public const string MeshGroup = "Mesh";
+
+    /// <summary>How the node's geometry takes part in play: solid, sensed, drawn.</summary>
+    public const string BehaviorGroup = "Behavior";
     public const string EntityGroup = "Entity";
 
     // Choice tokens per descriptor choice list. Weak, keyed on the schema's own
@@ -95,6 +98,9 @@ public static class NodeInspector
             // Names no file, so the node will not survive a save.
             into.Add(PropertyRow.ReadOnly(MeshGroup, "Model", PropertyId.MeshModel, "(built in code)"));
         }
+
+        if (HasFlagRows(node))
+            DescribeFlags(node, into);
 
         if (node.Entity is { } entity)
             DescribeEntity(entity, schemas, into);
@@ -206,6 +212,39 @@ public static class NodeInspector
         // Bounds size, the same measurement the resize gizmo works in.
         Aabb bounds = brush.LocalBounds;
         into.Add(PropertyRow.OfVector(BrushGroup, "Size", PropertyId.BrushSize, bounds.Max - bounds.Min, "su"));
+    }
+
+    /// <summary>
+    /// Whether the node shows the Collides, Seen by queries and Touch events
+    /// rows: it has a brush or a mesh for them to apply to.
+    /// </summary>
+    public static bool HasFlagRows(SceneNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        return node.Brush is not null || node.MeshRenderer is not null;
+    }
+
+    /// <summary>
+    /// Whether the node shows the Drawn row: it draws through its own mesh or
+    /// additive part brush.
+    /// </summary>
+    // Not a world brush: the static world draws that whatever the node says.
+    public static bool HasDrawnRow(SceneNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        return node.MeshRenderer is not null ||
+               (node.BrushKind == BrushKind.Part &&
+                node.Brush is { Operation: BrushOperation.Additive });
+    }
+
+    private static void DescribeFlags(SceneNode node, List<PropertyRow> into)
+    {
+        into.Add(PropertyRow.OfFlag(BehaviorGroup, "Collides", PropertyId.CanCollide, node.CanCollide));
+        into.Add(PropertyRow.OfFlag(BehaviorGroup, "Seen by queries", PropertyId.CanQuery, node.CanQuery));
+        into.Add(PropertyRow.OfFlag(BehaviorGroup, "Touch events", PropertyId.CanTouch, node.CanTouch));
+
+        if (HasDrawnRow(node))
+            into.Add(PropertyRow.OfFlag(BehaviorGroup, "Drawn", PropertyId.IsRendered, node.IsRendered));
     }
 
     private static readonly string[] FaceAlignmentChoices = ["World", "Face"];

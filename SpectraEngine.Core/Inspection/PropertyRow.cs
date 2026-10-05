@@ -38,6 +38,18 @@ public enum PropertyId
     MeshModel,
     MeshSubmesh,
 
+    /// <summary>Whether the node's geometry blocks what moves into it.</summary>
+    CanCollide,
+
+    /// <summary>Whether rays and overlap checks see the node's geometry.</summary>
+    CanQuery,
+
+    /// <summary>Whether the node raises touch events.</summary>
+    CanTouch,
+
+    /// <summary>Whether the node's own mesh or part brush is drawn.</summary>
+    IsRendered,
+
     // Every keyvalue row shares EntityKeyvalue. Row identity is (Id, PropertyRow.Key).
     EntityClassname,
     EntityKeyvalue,

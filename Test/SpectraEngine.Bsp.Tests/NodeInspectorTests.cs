@@ -1,5 +1,6 @@
 ﻿using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Inspection;
 using SpectraEngine.Core.Scene;
 using System.Collections.Generic;
@@ -65,10 +66,113 @@ public sealed class NodeInspectorTests
             NodeInspector.TransformGroup,
             NodeInspector.BrushGroup,
             NodeInspector.LightGroup,
+            NodeInspector.BehaviorGroup,
 
             // Last: the panel lays out in PropertyId order.
             NodeInspector.MaterialGroup,
         ]);
+    }
+
+    [Fact]
+    public void A_node_with_geometry_shows_its_collide_query_and_touch_bits()
+    {
+        var node = new SceneNode("Wall")
+        {
+            Brush = Brush.CreateBox(new Vector3(-1f), new Vector3(1f), default),
+            CanCollide = false,
+            CanTouch = false,
+        };
+
+        List<PropertyRow> rows = Describe(node);
+
+        PropertyRow collides = rows.Single(r => r.Id == PropertyId.CanCollide);
+        collides.Name.ShouldBe("Collides");
+        collides.Kind.ShouldBe(PropertyKind.Boolean);
+        collides.Group.ShouldBe(NodeInspector.BehaviorGroup);
+        collides.Flag.ShouldBeFalse();
+
+        PropertyRow queries = rows.Single(r => r.Id == PropertyId.CanQuery);
+        queries.Name.ShouldBe("Seen by queries");
+        queries.Flag.ShouldBeTrue();
+
+        PropertyRow touch = rows.Single(r => r.Id == PropertyId.CanTouch);
+        touch.Name.ShouldBe("Touch events");
+        touch.Flag.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_node_with_no_geometry_shows_none_of_the_flags()
+    {
+        // Nothing reads them there: the node is not in the spatial index.
+        PropertyId[] flags =
+            [PropertyId.CanCollide, PropertyId.CanQuery, PropertyId.CanTouch, PropertyId.IsRendered];
+
+        Describe(new SceneNode("Group")).ShouldNotContain(r => flags.Contains(r.Id));
+        Describe(new SceneNode("Lamp") { Light = new Light() })
+            .ShouldNotContain(r => flags.Contains(r.Id));
+    }
+
+    [Fact]
+    public void Drawn_is_offered_on_a_part_brush_and_on_a_mesh()
+    {
+        var part = new SceneNode("Trigger")
+        {
+            BrushKind = BrushKind.Part,
+            Brush = Brush.CreateBox(new Vector3(-1f), new Vector3(1f), default),
+            IsRendered = false,
+        };
+        var prop = new SceneNode("Crate")
+        {
+            MeshRenderer = new MeshRenderer(
+                SpatialTestHelpers.CreateCubeMesh(0.5f), SpatialTestHelpers.NoopMaterial),
+        };
+
+        PropertyRow drawn = Describe(part).Single(r => r.Id == PropertyId.IsRendered);
+        drawn.Name.ShouldBe("Drawn");
+        drawn.Kind.ShouldBe(PropertyKind.Boolean);
+        drawn.Flag.ShouldBeFalse();
+
+        Describe(prop).Single(r => r.Id == PropertyId.IsRendered).Flag.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Drawn_is_not_offered_where_the_bit_does_nothing()
+    {
+        // The static world draws a world brush, and a cut draws nothing.
+        var wall = new SceneNode("Wall")
+        {
+            Brush = Brush.CreateBox(new Vector3(-1f), new Vector3(1f), default),
+        };
+        var cutPart = new SceneNode("Cut")
+        {
+            BrushKind = BrushKind.Part,
+            Brush = Brush.CreateBox(new Vector3(-1f), new Vector3(1f), default)
+                .WithOperation(BrushOperation.Subtractive),
+        };
+
+        Describe(wall).ShouldNotContain(r => r.Id == PropertyId.IsRendered);
+        Describe(wall).ShouldContain(r => r.Id == PropertyId.CanCollide);
+        Describe(cutPart).ShouldNotContain(r => r.Id == PropertyId.IsRendered);
+    }
+
+    [Fact]
+    public void Rows_come_out_in_property_order()
+    {
+        // A merged selection sorts by PropertyId. One node must already agree,
+        // or selecting a second node reorders the panel.
+        var node = new SceneNode("Everything")
+        {
+            BrushKind = BrushKind.Part,
+            Brush = Brush.CreateBox(new Vector3(-1f), new Vector3(1f), default),
+            Light = new Light { Kind = LightKind.Spot },
+            MeshRenderer = new MeshRenderer(
+                SpatialTestHelpers.CreateCubeMesh(0.5f), SpatialTestHelpers.NoopMaterial),
+            Entity = new EntityData("thing"),
+        };
+
+        List<PropertyRow> rows = Describe(node);
+
+        rows.Select(r => (int)r.Id).ShouldBe(rows.Select(r => (int)r.Id).Order());
     }
 
     [Fact]

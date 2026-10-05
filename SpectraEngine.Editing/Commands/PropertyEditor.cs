@@ -111,6 +111,9 @@ public static class PropertyEditor
             or PropertyId.LightWidth or PropertyId.LightHeight
             or PropertyId.LightRadius => BuildLight(node, edit),
 
+        PropertyId.CanCollide or PropertyId.CanQuery or PropertyId.CanTouch
+            or PropertyId.IsRendered => BuildNodeFlags(node, edit),
+
         PropertyId.EntityKeyvalue => BuildEntityKeyvalue(node, edit, schemas),
 
         // Read-only properties are ignored, not thrown on.
@@ -255,6 +258,30 @@ public static class PropertyEditor
             return null;
 
         return next == current ? null : SetLightCommand.Capture(node, next);
+    }
+
+    private static IEditorCommand? BuildNodeFlags(SceneNode node, PropertyEdit edit)
+    {
+        // Only where the inspector offers the row. A bulk edit must not clear
+        // Drawn on a world brush, where nothing shows it until the brush
+        // becomes a part.
+        bool offered = edit.Id == PropertyId.IsRendered
+            ? NodeInspector.HasDrawnRow(node)
+            : NodeInspector.HasFlagRows(node);
+
+        if (!offered) return null;
+
+        SetNodeFlagsCommand.NodeFlags current = SetNodeFlagsCommand.NodeFlags.From(node);
+        SetNodeFlagsCommand.NodeFlags next = edit.Id switch
+        {
+            PropertyId.CanCollide => current.With(PhysicsFlags.CanCollide, edit.Flag),
+            PropertyId.CanQuery => current.With(PhysicsFlags.CanQuery, edit.Flag),
+            PropertyId.CanTouch => current.With(PhysicsFlags.CanTouch, edit.Flag),
+            PropertyId.IsRendered => current with { IsRendered = edit.Flag },
+            _ => current,
+        };
+
+        return next == current ? null : SetNodeFlagsCommand.Capture(node, next);
     }
 
     // Keyvalues are stored as wire text, so the edit is text too.
@@ -497,6 +524,8 @@ public static class PropertyEditor
             or PropertyId.FaceUOffset or PropertyId.FaceVOffset
             or PropertyId.FaceRotation => "Face Texture",
         PropertyId.EntityKeyvalue => "Entity Property",
+        PropertyId.CanCollide or PropertyId.CanQuery or PropertyId.CanTouch
+            or PropertyId.IsRendered => "Behavior",
         _ => "Light",
     };
 }

@@ -8,8 +8,8 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Editing.Viewport;
 
 /// <summary>
-/// Draws the edges of every <see cref="BrushKind.Part"/> brush, so a part can
-/// be told from world geometry.
+/// Draws the edges of every drawn <see cref="BrushKind.Part"/> brush, so a
+/// part can be told from world geometry.
 /// </summary>
 // A part looks like a world brush at rest but does not carve or weld, so
 // overlapping parts interpenetrate and coplanar faces z-fight.
@@ -54,6 +54,10 @@ public sealed class PartBrushOverlay
         foreach (SceneNode node in scene.PartBrushNodes)
         {
             if (node.Brush is not { } brush)
+                continue;
+
+            // VolumeOverlay outlines a hidden part, in its own colour and budget.
+            if (!node.IsRendered)
                 continue;
 
             if (DrawnLastDraw >= MaxOutlines)
