@@ -191,16 +191,14 @@ public sealed class WallPropagationBodyTests
     public void A_sound_behind_a_wall_does_not_jump_as_the_listener_steps_into_that_wall()
     {
         SpanLevel level = Room(out _);
-        var rig = new WallRig(level) { Listener = new Vector3(3f, 1.5f, -3.99f) };
-        int sound = rig.Add(new Vector3(3f, 1.5f, -8f));
-        rig.Frame();
-        float outside = rig.Through(sound).Gain;
 
-        rig.Listener = new Vector3(3f, 1.5f, -4.01f);
-        rig.Frame(2);
+        float outside = ThroughTheWallFrom(level, earZ: -3.99f);
+        float inside = ThroughTheWallFrom(level, earZ: -4.01f);
 
+        // The centimetre the listener is in is all that is missing.
         outside.ShouldBe(AcousticPresets.Brick.GainsThrough(0.5f).Gain, NearEnough);
-        rig.Through(sound).Gain.ShouldBe(outside, outside * 0.05f);
+        inside.ShouldBe(AcousticPresets.Brick.GainsThrough(0.49f).Gain, NearEnough);
+        inside.ShouldBe(outside, outside * 0.05f);
     }
 
     [Fact]
@@ -261,6 +259,18 @@ public sealed class WallPropagationBodyTests
         }
 
         return int.MaxValue;
+    }
+
+    // A rig for each place: a step this small is not traced again for a
+    // quarter of a second, and the answer kept until then says nothing.
+    private static float ThroughTheWallFrom(SpanLevel level, float earZ)
+    {
+        var rig = new WallRig(level) { Listener = new Vector3(3f, 1.5f, earZ) };
+        int sound = rig.Add(new Vector3(3f, 1.5f, -8f));
+
+        rig.Frame();
+
+        return rig.Through(sound).Gain;
     }
 
     private static SpanLevel Room(out SceneNode door)
