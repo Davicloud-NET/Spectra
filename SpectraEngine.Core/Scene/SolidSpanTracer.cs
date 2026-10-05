@@ -162,16 +162,16 @@ internal sealed class SolidSpanTracer
     }
 
     // The stretch of the segment inside the brush, and the plane whose face
-    // names its material: the one entered, or for a segment that starts inside
-    // the one it leaves by.
-    // Works in the brush's frame, measured from the brush's own position, so a
-    // level far from the origin gets the same answer as one at it. A general
-    // inverse, because a part's node may carry scale. Distances stay in world
-    // units: only the direction is scaled.
+    // names its material: the one entered, or the one left by when the segment
+    // starts inside.
     private static bool TryClip(Brush brush, in Matrix4x4 world, in Segment segment, out Stretch stretch)
     {
         stretch = default;
 
+        // The brush's frame, measured from the brush's own position: far from
+        // the world origin that subtraction keeps the digits a full inverse
+        // would lose. General, because a part's node may carry scale. Only the
+        // direction is scaled, so distances stay in world units.
         Matrix4x4 linear = world;
         linear.Translation = Vector3.Zero;
         if (!Matrix4x4.Invert(linear, out Matrix4x4 toLocal))

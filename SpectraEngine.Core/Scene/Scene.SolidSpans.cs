@@ -21,13 +21,10 @@ public sealed partial class Scene
     /// <param name="truncated">True when there was more solid than <paramref name="spans"/> has room for.</param>
     /// <returns>How many spans were written.</returns>
     // A segment that starts inside a solid gets a span from 0, and one that
-    // ends inside gets a span up to its length. One that only touches a solid,
-    // or runs along a face, passes through nothing. Neither does one with no
-    // length.
-    // Where brushes overlap, SolidSpanComposer says which one a stretch belongs to.
-    // The world is the one last compiled, so an edit counts when its compile
-    // lands. Under a baked map it is the collision hulls, and a map cooked
-    // without their face materials names the default material for every one.
+    // ends inside gets a span up to its length. One that only touches a solid
+    // or runs along a face passes through nothing, like one with no length.
+    // The world is the one last compiled. Under a baked map it is the collision
+    // hulls, which name the default material when the map kept none for them.
     public int TraceSolidSpans(Vector3 from, Vector3 to, Span<SolidSpan> spans, out bool truncated) =>
         _solidSpans.Trace(this, from, to, default, spans, out truncated);
 

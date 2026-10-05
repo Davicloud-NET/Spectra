@@ -3,12 +3,10 @@ using SpectraEngine.Core.Assets;
 
 namespace SpectraEngine.Core.Scene;
 
-// Turns the stretches a segment spends inside single brushes into the solid
-// it passes through. Works on distances along the segment and nothing else.
-// World solid is every additive stretch less every cut, whatever their order:
-// that is the rule the carve uses. Order only says who keeps an overlap. Of two
-// world brushes the earlier placement does. The world keeps what a part
-// overlaps, and of two parts the one entered first does. Nothing cuts a part.
+// Composes the stretches a segment spends inside single brushes into solid.
+// World solid is every additive stretch less every cut, in any order, as the
+// carve has it. Of two world brushes the earlier placement keeps an overlap,
+// the world keeps what a part overlaps, and of two parts the one entered first.
 internal sealed class SolidSpanComposer
 {
     private Stretch[] _worldSolids = new Stretch[16];

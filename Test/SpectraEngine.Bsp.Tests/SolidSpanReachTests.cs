@@ -98,6 +98,11 @@ public sealed class SolidSpanReachTests
             (new(-5.5f, 2.5f, 3f), new(4.25f, 0.25f, -7.5f)),
             (new(2.5f, 2f, -4.25f), new(2.5f, -3f, -4.25f)),
             (new(-1.5f, 1f, -6f), new(1.5f, 1.125f, 2f)),
+
+            // Through the ramp, which is turned off every axis.
+            (new(-3f, 3f, 1f), new(-3f, -2f, 1f)),
+            (new(-5.5f, 0.5f, 0f), new(-0.5f, 0.75f, 2f)),
+            (new(-3.5f, 1.5f, 3f), new(-2.25f, -0.5f, -1.5f)),
         ];
 
         int solids = 0;
