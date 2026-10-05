@@ -88,10 +88,23 @@ public partial class KeyboardReferenceWindow : Window
             new("F8", "Walk the level in first person. F8 or Esc leaves."),
             new("E", "Use what you are looking at, while playing."),
             new("`", "Open the console. While playing it frees the mouse, and a click in the view takes it back. On a German keyboard this key is ö."),
-            new("Ctrl + L", "Show or hide the Logic view."),
             new("F9", "Draw the character capsule, while playing."),
             new("F1 - F5", "Wireframe, CSG vertices, bounds, face normals, node axes."),
             new("F6", "Cycle the rendering pipeline."),
+        ]),
+
+        new("Logic view", [
+            new("Ctrl + L", "Show or hide the Logic view."),
+            new("Click a card", "Select its entity."),
+            new("Ctrl + click a card", "Add its entity to the selection."),
+            new("Double-click a card", "Frame its entity in the viewport."),
+            new("Drag from a card or an output", "Pull a wire. Drop it on a card and pick what it sends."),
+            new("Esc (while dragging)", "Give the wire up."),
+            new("Click a wire", "Select it and the entity that sends it."),
+            new("Del", "Remove the selected wire."),
+            new("Right-click a wire", "Open its menu."),
+            new("Drag on empty space", "Pan. Middle-drag pans from anywhere."),
+            new("Wheel", "Zoom toward the cursor."),
         ]),
     ];
 
