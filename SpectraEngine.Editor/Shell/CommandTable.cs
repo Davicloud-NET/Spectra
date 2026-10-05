@@ -106,6 +106,8 @@ public static class CommandTable
         new("Duplicate", ShellVerb.Of(EditorHostCommand.Duplicate), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Ctrl+D"),
         new("Delete", ShellVerb.Of(EditorHostCommand.Delete), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Del"),
         new("Convert block or part", ShellVerb.Of(EditorHostCommand.ToggleBrushKind), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Ctrl+T"),
+        new("Make entity...", ShellVerb.MakeEntity(), CommandNeeds.Selection | CommandNeeds.NotPlaying, "", ["door", "trigger", "tie to entity"]),
+        new("Remove entity", ShellVerb.RemoveEntity(), CommandNeeds.Selection | CommandNeeds.NotPlaying, "", ["untie", "clear entity"]),
         new("Group", ShellVerb.Of(EditorHostCommand.Group), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Ctrl+G"),
         new("Ungroup", ShellVerb.Of(EditorHostCommand.Ungroup), CommandNeeds.Selection | CommandNeeds.NotPlaying, "Ctrl+Shift+G"),
 

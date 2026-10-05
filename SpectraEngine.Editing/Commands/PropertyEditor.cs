@@ -179,7 +179,13 @@ public static class PropertyEditor
             ? BrushKind.Part
             : BrushKind.World;
 
-        return node.BrushKind == kind ? null : SetBrushKindCommand.Capture(node, kind);
+        if (node.BrushKind == kind) return null;
+        if (kind == BrushKind.World) return SetBrushKindCommand.Capture(node, kind);
+
+        // To a part, the face axes are baked so the texture stays put.
+        var commands = new List<IEditorCommand>(2);
+        BrushKindConversion.AppendToPart(node, commands);
+        return commands.Count == 1 ? commands[0] : new CompositeCommand(NameOf(PropertyId.BrushKind), commands);
     }
 
     private static IEditorCommand? BuildBrushOperation(SceneNode node, PropertyEdit edit)

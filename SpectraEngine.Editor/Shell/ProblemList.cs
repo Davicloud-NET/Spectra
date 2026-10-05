@@ -121,6 +121,9 @@ public sealed class ProblemEntry : ObservableObject
         Count++;
     }
 
+    // The same standing condition in newer words. Not a repeat, so no count.
+    internal void Restate(string message) => Message = message;
+
     private static IBrush? Resource(string key)
         => Application.Current?.TryFindResource(key, out object? value) == true ? value as IBrush : null;
 }
@@ -220,6 +223,57 @@ public sealed class ProblemList : ObservableObject
 
         RaiseCounts();
         return entry;
+    }
+
+    /// <summary>
+    /// Makes one template's rows match a freshly computed list, for a
+    /// condition that is found by looking at the scene and never logged. A row
+    /// no longer listed goes, a new one is added, and one still listed keeps
+    /// its place and its first-seen time.
+    /// </summary>
+    /// <returns>How many rows were added or removed.</returns>
+    public int Replace(
+        OutputSeverity severity, string template, ProblemScope scope, IReadOnlyList<ProblemRow> current)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        ArgumentNullException.ThrowIfNull(current);
+
+        // The first row wins a subject, as it would through Report.
+        var wanted = new Dictionary<string, ProblemRow>(StringComparer.Ordinal);
+        foreach (ProblemRow row in current)
+            wanted.TryAdd(row.Subject, row);
+
+        int changed = 0;
+        for (int i = Entries.Count - 1; i >= 0; i--)
+        {
+            ProblemEntry entry = Entries[i];
+            if (entry.Severity != severity || !string.Equals(entry.Template, template, StringComparison.Ordinal))
+                continue;
+
+            // The same subject on another node is another problem: the row
+            // selects its node.
+            if (wanted.TryGetValue(entry.Subject, out ProblemRow standing) && standing.NodeId == entry.NodeId)
+            {
+                entry.Restate(standing.Message);
+                wanted.Remove(entry.Subject);
+                continue;
+            }
+
+            RemoveAt(i);
+            changed++;
+        }
+
+        foreach (ProblemRow row in current)
+        {
+            if (!wanted.Remove(row.Subject, out ProblemRow added))
+                continue;
+
+            if (Report(severity, template, added.Message, added.Subject, scope, added.NodeId) is not null)
+                changed++;
+        }
+
+        if (changed > 0) RaiseCounts();
+        return changed;
     }
 
     /// <summary>Drops every problem about <paramref name="subject"/>. Returns how many rows went.</summary>

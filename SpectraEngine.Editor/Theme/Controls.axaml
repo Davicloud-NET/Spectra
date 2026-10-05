@@ -997,6 +997,14 @@
     <Setter Property="Stroke" Value="{StaticResource SpectraTextDisabled}" />
   </Style>
 
+  <!-- rmenu: a small row that opens a list. The caret at its end says so. -->
+  <Style Selector="Button.rmenu:pointerover Path.spincaret">
+    <Setter Property="Stroke" Value="{StaticResource SpectraTextEmphasis}" />
+  </Style>
+  <Style Selector="Button.rmenu:disabled Path.spincaret">
+    <Setter Property="Stroke" Value="{StaticResource SpectraTextDisabled}" />
+  </Style>
+
   <!-- Split button: a large cell with a caret cell beside it in the same
        tray. Explicit width: left to Stretch, the caret path draws from the
        left edge. -->

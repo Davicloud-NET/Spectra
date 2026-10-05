@@ -50,6 +50,9 @@ public enum RibbonControlKind
 
     /// <summary>A main action plus a caret that opens a list.</summary>
     Split,
+
+    /// <summary>Opens a list. Nothing happens until a row of it is picked.</summary>
+    Menu,
 }
 
 /// <summary>One control on the ribbon.</summary>
@@ -170,9 +173,18 @@ public static class RibbonLayout
                 new RibbonItem("edit.duplicate", "Duplicate", ShellVerb.Of(EditorHostCommand.Duplicate),
                     RibbonItemSize.Large),
                 new RibbonItem("edit.delete", "Delete", ShellVerb.Of(EditorHostCommand.Delete)),
-                new RibbonItem("edit.convert", "Convert", ShellVerb.Of(EditorHostCommand.ToggleBrushKind)),
                 new RibbonItem("edit.group", "Group", ShellVerb.Of(EditorHostCommand.Group)),
                 new RibbonItem("edit.ungroup", "Ungroup", ShellVerb.Of(EditorHostCommand.Ungroup)),
+
+                // The second column is what the selection is: block or part,
+                // entity or plain geometry.
+                new RibbonItem("edit.convert", "Convert", ShellVerb.Of(EditorHostCommand.ToggleBrushKind)),
+
+                // The list's classes come from the project's .sentdef at click
+                // time, so they are not roster items.
+                new RibbonItem("edit.makeentity", "Make entity", ShellVerb.MakeEntity(),
+                    RibbonItemSize.Small, RibbonControlKind.Menu),
+                new RibbonItem("edit.removeentity", "Remove entity", ShellVerb.RemoveEntity()),
             ]),
         ]),
 
@@ -296,6 +308,10 @@ public static class RibbonLayout
 
             // Only the split's main half is tagged, and it is a large button.
             RibbonControlKind.Split => "rbig",
+
+            // No geometry of its own; tells a row that opens a list from one
+            // that acts.
+            RibbonControlKind.Menu => "rmenu",
 
             _ => item.Size == RibbonItemSize.Large ? "rbig" : "rsmall",
         };

@@ -226,19 +226,6 @@
                 <TextBlock Text="Delete" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
-            <Button Classes="rsmall" Tag="edit.convert" Click="OnRibbonItemClick"
-                    IsEnabled="{Binding CanEditSelection}"
-                    ToolTip.Tip="Flip the selected brushes between block and part.  Ctrl+T">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <Path Classes="icon" Data="{StaticResource IconConvertKind}" />
-                <TextBlock Text="Convert" VerticalAlignment="Center" />
-              </StackPanel>
-            </Button>
-          </StackPanel>
-        </Border>
-
-        <Border Classes="rtray">
-          <StackPanel Classes="rcol">
             <Button Classes="rsmall" Tag="edit.group" Click="OnRibbonItemClick"
                     IsEnabled="{Binding CanEditSelection}"
                     ToolTip.Tip="Put the selection under one new parent.  Ctrl+G">
@@ -253,6 +240,39 @@
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <Path Classes="icon" Data="{StaticResource IconUngroupNodes}" />
                 <TextBlock Text="Ungroup" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Border>
+
+        <!-- What the selection is: block or part, entity or plain geometry. -->
+        <Border Classes="rtray">
+          <StackPanel Classes="rcol">
+            <Button Classes="rsmall" Tag="edit.convert" Click="OnRibbonItemClick"
+                    IsEnabled="{Binding CanEditSelection}"
+                    ToolTip.Tip="Flip the selected brushes between block and part.  Ctrl+T">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Path Classes="icon" Data="{StaticResource IconConvertKind}" />
+                <TextBlock Text="Convert" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <!-- Opens a list the window fills from the session's classes, so
+                 it has no Click here. -->
+            <Button Classes="rsmall rmenu" Tag="edit.makeentity" x:Name="MakeEntity"
+                    IsEnabled="{Binding CanMakeEntity}"
+                    ToolTip.Tip="Turn the selected block, part or group into a door, a trigger or another entity. Blocks in it become parts.">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Path Classes="icon kind-entity" Data="{StaticResource IconEntity}" />
+                <TextBlock Text="Make entity" VerticalAlignment="Center" />
+                <Path Classes="spincaret" Data="{StaticResource CaretDown}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="rsmall" Tag="edit.removeentity" Click="OnRibbonItemClick"
+                    IsEnabled="{Binding CanEditSelection}"
+                    ToolTip.Tip="Make the selected entity plain geometry again. Its parts stay parts.">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Path Classes="icon" Data="{StaticResource IconClear}" />
+                <TextBlock Text="Remove entity" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
           </StackPanel>

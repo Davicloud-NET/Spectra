@@ -27,6 +27,9 @@
       <MenuItem Header="Group" InputGesture="Ctrl+G" Click="OnMenuGroup" />
       <MenuItem Header="Ungroup" InputGesture="Ctrl+Shift+G" Click="OnMenuUngroup" />
       <MenuItem Header="Convert block / part" InputGesture="Ctrl+T" Click="OnMenuConvertKind" />
+      <!-- Its rows are the session's classes, filled as the menu opens. -->
+      <MenuItem Name="MakeEntityItem" Header="Make entity" />
+      <MenuItem Header="Remove entity" Click="OnMenuRemoveEntity" />
       <Separator IsVisible="{Binding HasChildren}" />
       <MenuItem Header="Expand all" Click="OnMenuExpandAll" IsVisible="{Binding HasChildren}" />
       <MenuItem Header="Collapse all" Click="OnMenuCollapseAll" IsVisible="{Binding HasChildren}" />

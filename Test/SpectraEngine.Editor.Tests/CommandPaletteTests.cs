@@ -92,6 +92,37 @@ public sealed class CommandPaletteTests
     }
 
     [Fact]
+    public void A_name_typed_out_in_full_finds_itself()
+    {
+        // A letter spent on a later word's first letter must not strand the
+        // rest: "rem" giving its e to "entity" leaves no m to find.
+        foreach (ShellCommand command in CommandTable.Commands)
+            CommandScore.Of(command.Title, command.Title).ShouldNotBe(CommandScore.NoMatch, command.Title);
+
+        CommandScore.Of("Remove entity", "rem").ShouldNotBe(CommandScore.NoMatch);
+        CommandScore.Of("Insert entity", "insert").ShouldNotBe(CommandScore.NoMatch);
+
+        // A word start is still preferred where it leads somewhere.
+        CommandScore.Of("Frame everything", "fe")
+            .ShouldBeGreaterThan(CommandScore.Of("Frame selection", "fe"));
+    }
+
+    [Fact]
+    public void Make_and_remove_entity_are_found_by_what_a_mapper_would_type()
+    {
+        // The row opens the class list, so it ends in an ellipsis like the
+        // other rows that ask something before acting.
+        First("make entity").ShouldBe("Make entity...");
+        First("door").ShouldBe("Make entity...");
+        First("trigger").ShouldBe("Make entity...");
+        First("remove entity").ShouldBe("Remove entity");
+
+        Titles(hasSelection: false, isPlaying: false).ShouldNotContain("Make entity...");
+        Titles(hasSelection: true, isPlaying: true).ShouldNotContain("Make entity...");
+        Titles(hasSelection: true, isPlaying: true).ShouldNotContain("Remove entity");
+    }
+
+    [Fact]
     public void The_same_query_ranks_the_same_way_every_time()
     {
         IReadOnlyList<ShellCommand> once = CommandTable.Search("in", Ready()).Rows;

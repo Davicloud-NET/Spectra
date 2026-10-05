@@ -335,6 +335,58 @@ public sealed class RibbonLayoutTests
     }
 
     [Fact]
+    public void There_is_exactly_one_menu_row_and_it_makes_an_entity()
+    {
+        // Like the split's list, its classes are the project's and not in the roster.
+        List<RibbonItem> menus = AllItems()
+            .Where(i => i.Kind == RibbonControlKind.Menu)
+            .ToList();
+
+        menus.Count.ShouldBe(1);
+        menus[0].Verb.ShouldBe(ShellVerb.MakeEntity());
+        menus[0].Size.ShouldBe(RibbonItemSize.Small);
+
+        AllItems().Count(i => i.Verb.Kind == ShellVerbKind.MakeEntity).ShouldBe(1);
+        AllItems().Count(i => i.Verb.Kind == ShellVerbKind.RemoveEntity).ShouldBe(1);
+    }
+
+    [Fact]
+    public void Arrange_holds_its_rows_three_to_a_column_in_this_order()
+    {
+        // The first column changes the structure, the second what the
+        // selection is. The page's markup stacks them in roster order.
+        RibbonGroup arrange = RibbonLayout.FindTab(RibbonLayout.DefaultTabId)!
+            .Groups.Single(g => g.Caption == "Arrange");
+
+        arrange.Items.Select(i => i.Id).ShouldBe(
+        [
+            "edit.duplicate",
+            "edit.delete", "edit.group", "edit.ungroup",
+            "edit.convert", "edit.makeentity", "edit.removeentity",
+        ]);
+
+        string markup = File.ReadAllText(Path.Combine(RibbonFolder(), "RibbonBuildTab.axaml"));
+        TagsIn(Path.Combine(RibbonFolder(), "RibbonBuildTab.axaml"))
+            .Where(tag => tag.StartsWith("edit.", StringComparison.Ordinal))
+            .ShouldBe(arrange.Items.Select(i => i.Id), "the markup draws them in roster order");
+        markup.ShouldContain("Tag=\"edit.makeentity\"");
+    }
+
+    [Fact]
+    public void The_menu_row_opens_a_list_and_does_not_post_through_the_page()
+    {
+        // Posting through the page would close a flown-out page under the
+        // list. The window opens the list from the button it is handed.
+        string markup = File.ReadAllText(Path.Combine(RibbonFolder(), "RibbonBuildTab.axaml"));
+        string window = File.ReadAllText(
+            Path.Combine(SourceRoot(), "SpectraEngine.Editor", "MainWindow.axaml.cs"));
+
+        ElementFor(markup, "edit.makeentity").ShouldNotContain("Click=");
+        ElementFor(markup, "edit.removeentity").ShouldContain("Click=\"OnRibbonItemClick\"");
+        window.ShouldContain("_buildTab.MakeEntityButton.Click +=");
+    }
+
+    [Fact]
     public void The_splits_caret_carries_no_tag_of_its_own()
     {
         // The caret opens a list and posts no verb. The page validator only

@@ -41,6 +41,12 @@ public partial class ScenePanel : UserControl
     /// </summary>
     public event Action<IReadOnlyList<Guid>, Guid, int>? ReparentRequested;
 
+    /// <summary>Make the selection an entity of the named class.</summary>
+    public event Action<string>? MakeEntityRequested;
+
+    /// <summary>Take the entity off the selection.</summary>
+    public event Action? RemoveEntityRequested;
+
     /// <summary>Where the panel's own diagnostics go. Set by the host window.</summary>
     public ILogger? Logger { get; set; }
 
@@ -101,6 +107,31 @@ public partial class ScenePanel : UserControl
         SceneTree.AddHandler(DragDrop.DragOverEvent, OnTreeDragOver);
         SceneTree.AddHandler(DragDrop.DropEvent, OnTreeDrop);
         SceneTree.AddHandler(DragDrop.DragLeaveEvent, OnTreeDragLeave);
+
+        if (Resources[RowMenuKey] is ContextMenu rowMenu)
+            rowMenu.Opening += OnRowMenuOpening;
+    }
+
+    private const string RowMenuKey = "RowMenu";
+    private const string MakeEntityItemName = "MakeEntityItem";
+
+    // Filled before the menu shows: an item with no rows has no submenu to
+    // open. Hidden when the project has no class made from geometry.
+    private void OnRowMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (sender is not ContextMenu menu)
+            return;
+
+        foreach (object? entry in menu.Items)
+        {
+            if (entry is not MenuItem { Name: MakeEntityItemName } item)
+                continue;
+
+            IReadOnlyList<EntityInsertItem> classes = Model?.MakeEntityClasses ?? [];
+            item.IsVisible = classes.Count > 0;
+            EntityInsertMenu.Fill(
+                item.Items, classes, forMake: true, className => MakeEntityRequested?.Invoke(className));
+        }
     }
 
     private ShellModel? Model => DataContext as ShellModel;
@@ -840,6 +871,9 @@ public partial class ScenePanel : UserControl
 
     private void OnMenuConvertKind(object? sender, RoutedEventArgs e) =>
         CommandRequested?.Invoke(EditorHostCommand.ToggleBrushKind);
+
+    private void OnMenuRemoveEntity(object? sender, RoutedEventArgs e) =>
+        RemoveEntityRequested?.Invoke();
 
     private void OnMenuExpandAll(object? sender, RoutedEventArgs e)
     {

@@ -179,6 +179,7 @@ public sealed class ShellModel : ObservableObject
             Raise(nameof(PlayLabel));
             Raise(nameof(CanInsertEntity));
             Raise(nameof(CanEditSelection));
+            Raise(nameof(CanMakeEntity));
             Raise(nameof(CanUndo));
             Raise(nameof(CanRedo));
         }
@@ -627,6 +628,7 @@ public sealed class ShellModel : ObservableObject
 
             Raise(nameof(HasSelection));
             Raise(nameof(CanEditSelection));
+            Raise(nameof(CanMakeEntity));
             Raise(nameof(SelectionLabel));
         }
     }
@@ -1239,14 +1241,20 @@ public sealed class ShellModel : ObservableObject
     public void SetEntityClasses(IReadOnlyList<EntityInsertItem>? items)
     {
         EntityClasses.Clear();
+        MakeEntityClasses.Clear();
         if (items is not null)
         {
             foreach (EntityInsertItem item in items)
                 EntityClasses.Add(item);
+
+            foreach (EntityInsertItem item in EntityInsertMenu.MadeFromGeometry(items))
+                MakeEntityClasses.Add(item);
         }
 
         Raise(nameof(HasEntityClasses));
         Raise(nameof(CanInsertEntity));
+        Raise(nameof(HasMakeEntityClasses));
+        Raise(nameof(CanMakeEntity));
     }
 
     /// <summary>
@@ -1255,6 +1263,22 @@ public sealed class ShellModel : ObservableObject
     // Gates both halves of the split. Raised from SetEntityClasses and from
     // the IsPlaying setter.
     public bool CanInsertEntity => EntityClasses.Count > 0 && !_isPlaying;
+
+    /// <summary>
+    /// The classes Make entity offers: the ones made from a block, a part or
+    /// a group of them. A subset of <see cref="EntityClasses"/>, in the same order.
+    /// </summary>
+    public ObservableCollection<EntityInsertItem> MakeEntityClasses { get; } = [];
+
+    /// <summary>Whether there is anything to put in a Make entity list.</summary>
+    public bool HasMakeEntityClasses => MakeEntityClasses.Count > 0;
+
+    /// <summary>
+    /// Whether Make entity can do anything: a class to make, and a selection
+    /// to make it from.
+    /// </summary>
+    // Raised wherever CanEditSelection is, and from SetEntityClasses.
+    public bool CanMakeEntity => MakeEntityClasses.Count > 0 && CanEditSelection;
 
     /// <summary>Whether a filter is narrowing the tree, for the clear button.</summary>
     public bool HasFilter => _filterText.Length > 0;

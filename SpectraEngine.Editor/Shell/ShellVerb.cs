@@ -48,6 +48,19 @@ public enum ShellVerbKind
     InsertEntity,
 
     /// <summary>
+    /// Make the selection an entity, through <c>EditorSession.MakeEntity</c>.
+    /// Carries no class: it opens the list of classes made from geometry, and
+    /// the row picked there names the class.
+    /// </summary>
+    MakeEntity,
+
+    /// <summary>
+    /// Take the entity off the selection, through
+    /// <c>EditorSession.RemoveEntity</c>.
+    /// </summary>
+    RemoveEntity,
+
+    /// <summary>
     /// A document verb: a project, a level, a save. See <see cref="DocumentVerb"/>.
     /// </summary>
     Document,
@@ -242,6 +255,14 @@ public readonly record struct ShellVerb(
     /// <summary>Place an entity of whichever class the session last used.</summary>
     public static ShellVerb InsertEntity() =>
         new(ShellVerbKind.InsertEntity, default, default, default, default, default, default);
+
+    /// <summary>Open the list of classes the selection can be made into.</summary>
+    public static ShellVerb MakeEntity() =>
+        new(ShellVerbKind.MakeEntity, default, default, default, default, default, default);
+
+    /// <summary>Take the entity off the selection.</summary>
+    public static ShellVerb RemoveEntity() =>
+        new(ShellVerbKind.RemoveEntity, default, default, default, default, default, default);
 
     /// <summary>A document verb.</summary>
     public static ShellVerb Of(DocumentVerb verb) =>

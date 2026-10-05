@@ -996,12 +996,19 @@ public sealed class SceneEditorHost : ISceneEditor
         }
 
         BrushKind target = anyWorld ? BrushKind.Part : BrushKind.World;
+        int converted = 0;
         for (int i = 0; i < selected.Count; i++)
         {
             SceneNode node = selected[i];
             if (node.Brush is null || node.BrushKind == target)
                 continue;
-            commands.Add(SetBrushKindCommand.Capture(node, target));
+
+            // To a part, the face axes are baked so the texture stays put.
+            if (target == BrushKind.Part)
+                BrushKindConversion.AppendToPart(node, commands);
+            else
+                commands.Add(SetBrushKindCommand.Capture(node, target));
+            converted++;
         }
 
         if (commands.Count == 0)
@@ -1019,7 +1026,7 @@ public sealed class SceneEditorHost : ISceneEditor
             "{Name}: {Converted} brush(es), {Skipped} selected node(s) had no brush. " +
             "Part brushes leave the CSG carve — they no longer merge with the geometry around them, " +
             "and they cost no static-world recompile when they move.",
-            name, commands.Count, skipped);
+            name, converted, skipped);
     }
 
     private void RunStructuralEdit(
@@ -1123,8 +1130,10 @@ public sealed class SceneEditorHost : ISceneEditor
 
     /// <summary>
     /// Creates one entity of <paramref name="className"/> where the user is
-    /// looking, as one history entry, and selects it. The node is named after
-    /// the class and starts with no keyvalues.
+    /// looking, as one history entry, and selects it. It starts with no
+    /// keyvalues. A class made from geometry comes as a 2x2x2 part resting on
+    /// the surface, flagged for its placement. Any other class is a bare node
+    /// named after the class.
     /// </summary>
     /// <param name="className">The class to place. Blank is refused.</param>
     /// <param name="viewportPoint">Where to aim, in viewport pixels; null is the view centre.</param>
@@ -1141,15 +1150,22 @@ public sealed class SceneEditorHost : ISceneEditor
 
         _viewport.Reset();
 
-        Vector3 position = FindInsertPosition(0f, viewportPoint);
+        EntitySchema? geometry = null;
+        if (_scene.EntitySchemas is { } schemas
+            && schemas.TryGetSchema(className, out EntitySchema? schema)
+            && EntityEditor.UsesGeometry(schema.Placement))
+        {
+            geometry = schema;
+        }
+
+        Vector3 position = FindInsertPosition(geometry is null ? 0f : InsertHalfExtent, viewportPoint);
 
         // Keyvalues stay empty: a key belongs in the map only once somebody
         // changes it, or a later change to a schema default reaches no saved level.
-        var node = new SceneNode(className)
-        {
-            Entity = new EntityData(className),
-            LocalPosition = position,
-        };
+        SceneNode node = geometry is null
+            ? new SceneNode(className) { Entity = new EntityData(className) }
+            : EntityEditor.BuildGeometryNode(_scene, geometry, InsertHalfExtent);
+        node.LocalPosition = position;
 
         _undo.Execute(new AddNodesCommand(
             [new NodePlacement(node, _scene.Root.Id, _scene.Root.Children.Count)])
@@ -1163,6 +1179,50 @@ public sealed class SceneEditorHost : ISceneEditor
             "Insert entity '{Class}' at ({X:0.##}, {Y:0.##}, {Z:0.##}) (undo {UndoDepth})",
             className, position.X, position.Y, position.Z, _undo.UndoCount);
     }
+
+    /// <summary>
+    /// Makes the selected block, part or group an entity of
+    /// <paramref name="className"/>, as one history entry. See
+    /// <see cref="EntityEditor.Make"/>.
+    /// </summary>
+    public EntityEditReport MakeEntity(string className)
+    {
+        if (RefuseEdit("Make entity"))
+            return EntityEditReport.RefusedBecause($"Make entity did nothing: {EditRefusal}");
+
+        _viewport.Reset();
+
+        EntityEditReport report = EntityEditor.Make(_scene, _undo, _scene.Selection.Items, className);
+        _logger.LogInformation("Make entity '{Class}': {Result} (undo {UndoDepth})", className, report.Message, _undo.UndoCount);
+        return report;
+    }
+
+    /// <summary>
+    /// Takes the entity off the selected nodes, as one history entry. See
+    /// <see cref="EntityEditor.Remove"/>.
+    /// </summary>
+    public EntityEditReport RemoveEntity()
+    {
+        if (RefuseEdit("Remove entity"))
+            return EntityEditReport.RefusedBecause($"Remove entity did nothing: {EditRefusal}");
+
+        _viewport.Reset();
+
+        EntityEditReport report = EntityEditor.Remove(_scene, _undo, _scene.Selection.Items);
+        _logger.LogInformation("Remove entity: {Result} (undo {UndoDepth})", report.Message, _undo.UndoCount);
+        return report;
+    }
+
+    /// <summary>
+    /// The entities that have world geometry in them and so will not work
+    /// when the level plays, for a problem list.
+    /// </summary>
+    public List<EntityProblem> FindEntityProblems() => EntityAudit.FindWorldBrushOwners(_scene);
+
+    // Why RefuseEdit just said no, as a sentence that names the way out.
+    private string EditRefusal => IsSuspended
+        ? "the level is playing. Stop it first."
+        : "a drag is in progress. Finish it first.";
 
     /// <summary>
     /// Places one model file where the pointer was, as one history entry, and

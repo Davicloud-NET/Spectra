@@ -155,6 +155,46 @@ public sealed class EditorSession : IDisposable
         Host.EnqueueCommand(_ => Editor?.InsertEntity(className, viewportPoint));
 
     /// <summary>
+    /// Makes the selected block, part or group an entity of a named class, as
+    /// one history entry.
+    /// </summary>
+    /// <param name="done">Called on the render thread with what happened.</param>
+    public void MakeEntity(string className, Action<EntityEditReport> done)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(className);
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(_ => done(
+            Editor is { } editor
+                ? editor.MakeEntity(className)
+                : EntityEditReport.RefusedBecause("Make entity did nothing: the session has no editor yet.")));
+    }
+
+    /// <summary>Takes the entity off the selected nodes, as one history entry.</summary>
+    /// <param name="done">Called on the render thread with what happened.</param>
+    public void RemoveEntity(Action<EntityEditReport> done)
+    {
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(_ => done(
+            Editor is { } editor
+                ? editor.RemoveEntity()
+                : EntityEditReport.RefusedBecause("Remove entity did nothing: the session has no editor yet.")));
+    }
+
+    /// <summary>
+    /// Lists the entities that have world geometry in them and so will not
+    /// work when the level plays.
+    /// </summary>
+    /// <param name="done">Called on the render thread with the list, empty when all is well.</param>
+    public void FindEntityProblems(Action<IReadOnlyList<EntityProblem>> done)
+    {
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(_ => done(Editor?.FindEntityProblems() ?? []));
+    }
+
+    /// <summary>
     /// Places a model file in the scene. A model that cannot be resolved still
     /// places a node; the report says which happened.
     /// </summary>

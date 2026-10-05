@@ -23,6 +23,17 @@ public static class CommandScore
             return 0;
         }
 
+        // Prefer a word start over the nearest letter: "fe" should take the
+        // e of "everything" in "Frame everything", not the e of "Frame".
+        // That can strand the rest of a query: "rem" spends its e on "entity"
+        // in "Remove entity" and finds no m after it. Then the nearest letter
+        // is tried, so a name typed out in full always finds itself.
+        int score = Match(candidate, query, preferWordStarts: true);
+        return score != NoMatch ? score : Match(candidate, query, preferWordStarts: false);
+    }
+
+    private static int Match(string candidate, string query, bool preferWordStarts)
+    {
         int score = 0;
         int at = 0;
         int run = 0;
@@ -34,9 +45,7 @@ public static class CommandScore
                 continue;
             }
 
-            // Prefer a word start over the nearest letter: "fe" should take the
-            // e of "everything" in "Frame everything", not the e of "Frame".
-            int found = IndexOf(candidate, wanted, at, wordStartOnly: true);
+            int found = preferWordStarts ? IndexOf(candidate, wanted, at, wordStartOnly: true) : -1;
             if (found < 0)
             {
                 found = IndexOf(candidate, wanted, at, wordStartOnly: false);

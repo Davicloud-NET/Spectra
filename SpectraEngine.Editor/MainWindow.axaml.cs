@@ -180,6 +180,8 @@ public partial class MainWindow : Window
         _sceneView.CommandRequested += command => _session?.Post(command);
         _sceneView.FrameRequested += () => _session?.Post(EditorCameraCommand.FrameSelection);
         _sceneView.ReparentRequested += (ids, parentId, index) => _session?.Reparent(ids, parentId, index);
+        _sceneView.MakeEntityRequested += MakeEntity;
+        _sceneView.RemoveEntityRequested += RemoveEntity;
         SetToolContent(SceneTool, _sceneView);
 
         _propertiesView = new PropertiesPanel();
@@ -852,6 +854,10 @@ public partial class MainWindow : Window
             // The same catalogue instance the render thread stamps scenes with.
             _shell.SetEntityClasses(EntityInsertMenu.Build(session.EntitySchemas));
             RefreshEntityInsertTip();
+
+            // Filled now as well as per open: a menu item with no rows has no
+            // submenu to open.
+            FillEntityMenu(InsertEntityMenu, static () => null);
             if (_shell.Properties is { } panel)
                 panel.Schemas = session.EntitySchemas;
 
@@ -962,6 +968,8 @@ public partial class MainWindow : Window
         _droppedSnapshots = false;
         _lastUndoDepth = 0;
         _lastRedoDepth = 0;
+        _entityAuditPending = false;
+        _entityAuditStale = false;
         _sceneView.ResetSelectionMemory();
 
         _stopping = false;
@@ -1164,6 +1172,49 @@ public partial class MainWindow : Window
         _lastUndoDepth = snapshot.UndoDepth;
         _lastRedoDepth = snapshot.RedoDepth;
         _document.MarkDirty();
+        RequestEntityAudit();
+    }
+
+    private const string StuckEntityTemplate = "An entity made from geometry still has world geometry in it";
+
+    private bool _entityAuditPending;
+    private bool _entityAuditStale;
+
+    // A door turned back into a block refuses to move when the level plays,
+    // and nothing logs that until then. So the scene is asked after every
+    // edit and every load, and the rows follow the answer.
+    private void RequestEntityAudit()
+    {
+        if (_session is not { } session)
+            return;
+
+        // One in flight at a time. An edit that lands meanwhile asks again.
+        if (_entityAuditPending)
+        {
+            _entityAuditStale = true;
+            return;
+        }
+
+        _entityAuditPending = true;
+        session.FindEntityProblems(problems => Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(session, _session))
+                return;
+
+            _entityAuditPending = false;
+
+            var rows = new List<ProblemRow>(problems.Count);
+            foreach (EntityProblem problem in problems)
+                rows.Add(new ProblemRow(problem.EntityName, problem.Describe(), problem.BrushId));
+
+            _shell.Problems.Replace(OutputSeverity.Warning, StuckEntityTemplate, ProblemScope.Map, rows);
+
+            if (_entityAuditStale)
+            {
+                _entityAuditStale = false;
+                RequestEntityAudit();
+            }
+        }));
     }
 
     private void OnViewportResized(Vector2D<int> size)
@@ -1947,6 +1998,14 @@ public partial class MainWindow : Window
                     _session?.InsertEntity(className);
                 break;
 
+            case ShellVerbKind.MakeEntity:
+                ShowMakeEntityList();
+                break;
+
+            case ShellVerbKind.RemoveEntity:
+                RemoveEntity();
+                break;
+
             case ShellVerbKind.Document:
                 RunDocumentVerb(verb.Document, args);
                 break;
@@ -1969,7 +2028,8 @@ public partial class MainWindow : Window
         }
 
         // The snap field and the panels own their focus; don't take it back.
-        if (verb.Kind is not (ShellVerbKind.SnapIncrement or ShellVerbKind.Panel))
+        // Nor from the Make entity list, which hands it back when it closes.
+        if (verb.Kind is not (ShellVerbKind.SnapIncrement or ShellVerbKind.Panel or ShellVerbKind.MakeEntity))
             ReturnKeyboardToEngine();
     }
 
@@ -1978,6 +2038,7 @@ public partial class MainWindow : Window
     private string? _lastEntityClass;
 
     private MenuFlyout? _entityFlyout;
+    private MenuFlyout? _makeEntityFlyout;
 
     private void WireEntitySplit()
     {
@@ -1986,6 +2047,11 @@ public partial class MainWindow : Window
         // Shown from the click, not via Button.Flyout: the list is filled first.
         _buildTab.EntityCaretButton.Click += OnEntityCaretClicked;
         _entityFlyout.Closed += (_, _) => ReturnKeyboardToEngine();
+
+        _makeEntityFlyout = new MenuFlyout();
+        _buildTab.MakeEntityButton.Click += (_, _) =>
+            ShowMakeEntityList(_buildTab.MakeEntityButton, PlacementMode.BottomEdgeAlignedLeft);
+        _makeEntityFlyout.Closed += (_, _) => ReturnKeyboardToEngine();
 
         Palette.QueryBox.TextChanged += OnPaletteQueryChanged;
         Palette.QueryBox.KeyDown += OnPaletteKeyDown;
@@ -2182,6 +2248,7 @@ public partial class MainWindow : Window
 
     private ContextMenu? _viewportMenu;
     private MenuItem? _viewportEntityMenu;
+    private MenuItem? _viewportMakeEntityMenu;
 
     // Where the menu was opened, in framebuffer pixels, for "insert here".
     private System.Numerics.Vector2 _viewportMenuPoint;
@@ -2241,6 +2308,10 @@ public partial class MainWindow : Window
         menu.Items.Add(Item("Group", "Ctrl+G", () => _session?.Post(EditorHostCommand.Group)));
         menu.Items.Add(Item("Ungroup", "Ctrl+Shift+G", () => _session?.Post(EditorHostCommand.Ungroup)));
         menu.Items.Add(Item("Convert block / part", "Ctrl+T", () => _session?.Post(EditorHostCommand.ToggleBrushKind)));
+
+        _viewportMakeEntityMenu = new MenuItem { Header = "Make entity" };
+        menu.Items.Add(_viewportMakeEntityMenu);
+        menu.Items.Add(Item("Remove entity", null, RemoveEntity));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Frame selection", "F", () => _session?.Post(EditorCameraCommand.FrameSelection)));
 
@@ -2249,8 +2320,16 @@ public partial class MainWindow : Window
         return menu;
     }
 
-    private void RefreshViewportEntityItems() =>
+    private void RefreshViewportEntityItems()
+    {
         FillEntityMenu(_viewportEntityMenu, () => _viewportMenuPoint);
+
+        if (_viewportMakeEntityMenu is { } make)
+        {
+            make.IsVisible = _shell.HasMakeEntityClasses;
+            EntityInsertMenu.Fill(make.Items, _shell.MakeEntityClasses, forMake: true, MakeEntity);
+        }
+    }
 
     // Refilled per open: the window outlives its sessions and their classes.
     private void OnInsertEntityMenuOpened(object? sender, RoutedEventArgs e) =>
@@ -2270,23 +2349,52 @@ public partial class MainWindow : Window
     // Shared by both entity submenus and the ribbon's split button.
     private void FillEntityItems(ItemCollection items, Func<System.Numerics.Vector2?> point)
     {
-        items.Clear();
-
-        foreach (EntityInsertItem entry in _shell.EntityClasses)
+        EntityInsertMenu.Fill(items, _shell.EntityClasses, forMake: false, className =>
         {
-            // Capture the name, not the item: the item's own command carries
-            // the Object menu's placement.
-            string className = entry.ClassName;
-            var item = new MenuItem { Header = entry.Display };
-            ToolTip.SetTip(item, entry.Tip);
-            item.Click += (_, _) =>
-            {
-                _lastEntityClass = className;
-                RefreshEntityInsertTip();
-                _session?.InsertEntity(className, point());
-            };
-            items.Add(item);
+            _lastEntityClass = className;
+            RefreshEntityInsertTip();
+            _session?.InsertEntity(className, point());
+        });
+    }
+
+    // The palette has no control to hang the list on, so it opens over the
+    // viewport.
+    private void ShowMakeEntityList()
+    {
+        if (_viewport is { } viewport)
+            ShowMakeEntityList(viewport.Control, PlacementMode.Center);
+    }
+
+    // Refilled at every open, like the insert list.
+    private void ShowMakeEntityList(Control anchor, PlacementMode placement)
+    {
+        if (_makeEntityFlyout is not { } flyout)
+            return;
+
+        if (!_shell.HasMakeEntityClasses)
+        {
+            _shell.SetWarning("This project declares no entity class that is made from geometry.");
+            return;
         }
+
+        EntityInsertMenu.Fill(flyout.Items, _shell.MakeEntityClasses, forMake: true, MakeEntity);
+        flyout.Placement = placement;
+        flyout.ShowAt(anchor);
+    }
+
+    private void MakeEntity(string className) =>
+        _session?.MakeEntity(className, report => Dispatcher.UIThread.Post(() => ReportEntityEdit(report)));
+
+    private void RemoveEntity() =>
+        _session?.RemoveEntity(report => Dispatcher.UIThread.Post(() => ReportEntityEdit(report)));
+
+    // A refusal changed nothing and says how to get there, so it is a warning.
+    private void ReportEntityEdit(EntityEditReport report)
+    {
+        if (report.Applied)
+            _shell.SetMessage(report.Message);
+        else
+            _shell.SetWarning(report.Message);
     }
 
 
@@ -2326,6 +2434,7 @@ public partial class MainWindow : Window
 
             _document.MarkNew();
             ResetDirtyBaseline();
+            RequestEntityAudit();
             _shell.SetMessage($"New map: {name}");
         }));
     }
@@ -2376,6 +2485,7 @@ public partial class MainWindow : Window
 
             _shell.Problems.ClearScope(ProblemScope.Map);
             RecordMapProblems(report);
+            RequestEntityAudit();
 
             _shell.SetMessage(report?.Describe() is { } missing
                 ? $"Opened {_document.MapLabel}. {missing}"

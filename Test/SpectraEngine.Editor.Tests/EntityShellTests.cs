@@ -3,6 +3,7 @@ using SpectraEngine.Core.Inspection;
 using SpectraEngine.Editing.Commands;
 using SpectraEngine.Editor.Shell;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 namespace SpectraEngine.Editor.Tests;
@@ -240,31 +241,116 @@ public sealed class EntityShellTests
         EntityCatalog.Shared.TryGetSchema("test_widget", out _).ShouldBeFalse();
     }
 
-    [Fact]
-    public void A_brush_class_is_not_offered_by_a_point_insert()
-    {
-        // A point insert creates no geometry for a brush class to act on.
-        EntitySchemaCatalog parsed = Catalog(
-            Schema("trigger_once", placement: EntityPlacement.Brush),
-            Schema("logic_relay", placement: EntityPlacement.Abstract));
+    // One class of every placement, sorted the way the catalogue sorts them.
+    private static EntitySchemaCatalog EveryPlacement() => Catalog(
+        Schema("func_door", placement: EntityPlacement.Brush),
+        Schema("info_start", placement: EntityPlacement.Point),
+        Schema("logic_relay", placement: EntityPlacement.Abstract),
+        Schema("trigger_once", placement: EntityPlacement.Volume));
 
-        EntityInsertMenu.Build(parsed)
+    [Fact]
+    public void The_insert_menu_offers_every_class_whatever_its_placement()
+    {
+        // An insert gives a brush or volume class its own part to shape.
+        EntityInsertMenu.Build(EveryPlacement())
             .Select(i => i.ClassName)
-            .ShouldBe(["logic_relay"]);
+            .ShouldBe(["func_door", "info_start", "logic_relay", "trigger_once"]);
     }
 
     [Fact]
-    public void A_volume_class_is_offered_by_a_point_insert_that_gives_it_no_brush()
+    public void Make_entity_offers_the_classes_made_from_geometry_and_no_others()
     {
-        // The menu leaves out Brush only. A volume placed this way has no brush
-        // to sense with.
-        EntitySchemaCatalog parsed = Catalog(
-            Schema("trigger_once", placement: EntityPlacement.Volume),
-            Schema("logic_relay", placement: EntityPlacement.Abstract));
+        // A point or logic class has nothing to do with a selected block.
+        List<EntityInsertItem> all = EntityInsertMenu.Build(EveryPlacement());
 
-        EntityInsertMenu.Build(parsed)
+        EntityInsertMenu.MadeFromGeometry(all)
             .Select(i => i.ClassName)
-            .ShouldBe(["logic_relay", "trigger_once"]);
+            .ShouldBe(["func_door", "trigger_once"]);
+
+        all.Single(i => i.ClassName == "func_door").Placement.ShouldBe(EntityPlacement.Brush);
+        all.Single(i => i.ClassName == "trigger_once").Placement.ShouldBe(EntityPlacement.Volume);
+    }
+
+    [Fact]
+    public void A_tip_says_what_arrives_and_what_making_one_does_to_the_selection()
+    {
+        List<EntityInsertItem> all = EntityInsertMenu.Build(EveryPlacement());
+        EntityInsertItem door = all.Single(i => i.ClassName == "func_door");
+        EntityInsertItem trigger = all.Single(i => i.ClassName == "trigger_once");
+        EntityInsertItem relay = all.Single(i => i.ClassName == "logic_relay");
+
+        relay.Tip.ShouldBe("logic_relay  (Logic)");
+        door.Tip.ShouldBe("func_door  (Logic). Arrives as a part to move and size.");
+        trigger.Tip.ShouldContain("It is not drawn or solid.");
+
+        door.MakeTip.ShouldContain("Blocks in the selection become parts.");
+        trigger.MakeTip.ShouldContain("stops being drawn and solid");
+    }
+
+    [Fact]
+    public void The_shell_model_keeps_the_make_list_beside_the_insert_list()
+    {
+        var shell = new ShellModel();
+        shell.HasMakeEntityClasses.ShouldBeFalse();
+
+        shell.SetEntityClasses(EntityInsertMenu.Build(EveryPlacement()));
+
+        shell.EntityClasses.Count.ShouldBe(4);
+        shell.MakeEntityClasses.Select(i => i.ClassName).ShouldBe(["func_door", "trigger_once"]);
+        shell.HasMakeEntityClasses.ShouldBeTrue();
+
+        shell.SetEntityClasses(null);
+        shell.MakeEntityClasses.ShouldBeEmpty();
+        shell.HasMakeEntityClasses.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Make_entity_is_live_only_with_a_class_to_make_and_something_selected()
+    {
+        var shell = new ShellModel();
+        var raised = new List<string?>();
+        shell.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        shell.SetEntityClasses(EntityInsertMenu.Build(EveryPlacement()));
+        shell.CanMakeEntity.ShouldBeFalse("nothing is selected");
+        raised.ShouldContain(nameof(ShellModel.CanMakeEntity));
+
+        raised.Clear();
+        shell.ApplySnapshot(new SpectraEngine.Core.Hosting.FrameSnapshot { SelectedIds = [System.Guid.NewGuid()] });
+        shell.CanMakeEntity.ShouldBeTrue();
+        raised.ShouldContain(nameof(ShellModel.CanMakeEntity), "the ribbon row binds to it");
+
+        shell.SetEntityClasses(EntityInsertMenu.Build(Catalog(Schema("logic_relay"))));
+        shell.CanMakeEntity.ShouldBeFalse("a project with only point classes has nothing to make");
+    }
+
+    [Fact]
+    public void Every_entity_list_is_built_by_the_one_builder()
+    {
+        // The window, the Scene panel and the ribbon each show these lists.
+        // A second hand-built loop is how two of them come to read differently.
+        string root = SourceRoot();
+        string[] files =
+        [
+            Path.Combine(root, "SpectraEngine.Editor", "MainWindow.axaml.cs"),
+            Path.Combine(root, "SpectraEngine.Editor", "Shell", "ScenePanel.axaml.cs"),
+        ];
+
+        foreach (string file in files)
+            File.ReadAllText(file).ShouldContain("EntityInsertMenu.Fill(", customMessage: Path.GetFileName(file));
+    }
+
+    private static string SourceRoot()
+    {
+        var dir = new DirectoryInfo(System.AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (dir.GetFiles("*.slnx").Length > 0)
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+
+        throw new System.InvalidOperationException("no solution file above the test binary");
     }
 
     [Fact]

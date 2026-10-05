@@ -30,4 +30,10 @@ public partial class RibbonBuildTab : RibbonTabView
 
     /// <summary>The split button's main half, whose tooltip names the live class.</summary>
     public Button EntityInsertButton => EntityInsert;
+
+    /// <summary>
+    /// The Make entity row. The window opens its class list from the live
+    /// session.
+    /// </summary>
+    public Button MakeEntityButton => MakeEntity;
 }

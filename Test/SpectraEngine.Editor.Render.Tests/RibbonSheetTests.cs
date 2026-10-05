@@ -179,12 +179,18 @@ public sealed class RibbonSheetTests(RibbonSession session)
             }
         },
 
-        // A selection and entity classes, so nothing is greyed out.
+        // A selection and entity classes, so nothing is greyed out. Fixture
+        // classes: this process registers none, and Make entity needs one
+        // that is made from geometry.
         "working" => m =>
         {
             m.ApplySnapshot(new FrameSnapshot { SelectedIds = [Guid.NewGuid()] });
             m.SetEntityClasses(EntityInsertMenu.Build(
-                EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(EntityCatalog.Shared.Schemas))));
+                EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(
+                [
+                    new EntitySchema("sheet_door", placement: EntityPlacement.Brush),
+                    new EntitySchema("sheet_relay", placement: EntityPlacement.Abstract),
+                ]))));
         },
 
         // Default model: a session that has just opened.
