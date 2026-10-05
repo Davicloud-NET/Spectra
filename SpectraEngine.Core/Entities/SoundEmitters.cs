@@ -148,6 +148,19 @@ public sealed class SoundEmitters
         Version++;
     }
 
+    // What each sound has played by the tick stays played. The rest is
+    // counted at the new step.
+    internal void OnStepChanged(long tick, float fixedDt)
+    {
+        if (_playing.Count == 0)
+            return;
+
+        for (int i = 0; i < _playing.Count; i++)
+            _playing[i] = _playing[i].WithStep(tick, fixedDt);
+
+        Version++;
+    }
+
     // An undo of a delete rebuilds the node as a new object under its old id.
     internal void OnNodeAdded(SceneNode node)
     {

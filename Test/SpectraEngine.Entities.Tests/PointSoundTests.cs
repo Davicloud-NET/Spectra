@@ -124,6 +124,18 @@ public sealed class PointSoundTests
     }
 
     [Fact]
+    public void A_sound_that_starts_with_the_level_keeps_time_when_the_host_ticks_at_another_rate()
+    {
+        _rig.Sound(SoundRig.OneSecond, ("startplaying", "1"));
+        EntityWorld world = _rig.Start();
+
+        for (int i = 0; i < 40; i++)
+            world.Tick(1f / 30f);
+
+        _rig.Fired.ShouldBe(["30:OnEnded"]);
+    }
+
+    [Fact]
     public void Play_through_a_wire_counts_from_the_tick_it_is_delivered_on()
     {
         _rig.Sound();

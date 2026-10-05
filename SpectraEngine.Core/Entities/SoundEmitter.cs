@@ -64,8 +64,9 @@ public readonly struct SoundEmitter
     /// </summary>
     public LoopRegion Loop { get; internal init; }
 
-    // Frames played by AnchorTick, and frames a tick from there on. A pitch
-    // change moves the anchor, so what was played stays played.
+    // Frames played by AnchorTick, and frames a tick from there on. A change
+    // of pitch or of the world's step moves the anchor, so what was played
+    // stays played.
     internal long AnchorTick { get; init; }
 
     internal double AnchorFrames { get; init; }
@@ -108,6 +109,8 @@ public readonly struct SoundEmitter
         AnchorFrames = FramesAt(tick),
         FramesPerTick = FramesInATick(fixedDt, SampleRate, pitch),
     };
+
+    internal SoundEmitter WithStep(long tick, float fixedDt) => WithPitch(Pitch, tick, fixedDt);
 
     private double FramesAt(long tick) => AnchorFrames + (Math.Max(tick - AnchorTick, 0L) * FramesPerTick);
 }

@@ -11,6 +11,7 @@ namespace SpectraEngine.Bsp.Tests;
 public sealed class SoundEmitterTimingTests
 {
     private const float Tick = 1f / 60f;
+    private const float Thirtieth = 1f / 30f;
     private const int Rate = 48_000;
 
     private readonly Scene _scene = new("Sounds");
@@ -77,6 +78,40 @@ public sealed class SoundEmitterTimingTests
 
         emitter.HasEndedAt(1 + 49).ShouldBeFalse();
         emitter.HasEndedAt(1 + 50).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_sound_started_while_the_level_spawns_counts_at_the_step_the_host_ticks_at()
+    {
+        EntityWorld world = Started();
+        int id = world.Sounds.Play(_scene.Root, "a.wav", new SoundDescription(Rate, Rate), Settings());
+        long version = world.Sounds.Version;
+
+        world.Tick(Thirtieth);
+
+        world.Sounds.TryGet(id, out SoundEmitter emitter).ShouldBeTrue();
+        emitter.FramesPlayedAt(1).ShouldBe(1_600L);
+        emitter.HasEndedAt(29).ShouldBeFalse();
+        emitter.HasEndedAt(30).ShouldBeTrue();
+        world.Sounds.Version.ShouldNotBe(version);
+    }
+
+    [Fact]
+    public void A_step_that_changes_part_way_keeps_what_was_played_and_counts_the_rest_anew()
+    {
+        EntityWorld world = Started();
+        int id = world.Sounds.Play(_scene.Root, "a.wav", new SoundDescription(Rate, Rate), Settings(pitch: 0.5f));
+        Run(world, 60);
+
+        world.Tick(Thirtieth);
+        world.Sounds.TryGet(id, out SoundEmitter emitter).ShouldBeTrue();
+
+        // Half played at 400 frames a tick, the other half at 800.
+        emitter.Pitch.ShouldBe(0.5f);
+        emitter.FramesPlayedAt(60).ShouldBe(24_000L);
+        emitter.FramesPlayedAt(61).ShouldBe(24_800L);
+        emitter.HasEndedAt(89).ShouldBeFalse();
+        emitter.HasEndedAt(90).ShouldBeTrue();
     }
 
     [Fact]

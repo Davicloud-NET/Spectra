@@ -292,6 +292,11 @@ public sealed class EntityWorld
         if (!IsActive)
             throw new InvalidOperationException("Tick on an entity world that is not active.");
 
+        // A playing sound counts its frames a tick from the step. One that
+        // started while the level spawned had only the engine's own to go by.
+        if (fixedDt != FixedDeltaTime)
+            Sounds.OnStepChanged(TickNumber, fixedDt);
+
         TickNumber++;
         FixedDeltaTime = fixedDt;
         _time += fixedDt;
