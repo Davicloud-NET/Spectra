@@ -133,44 +133,6 @@ public sealed class SoundPresenterSourceTests
     }
 
     [Fact]
-    public void A_sound_that_has_ended_in_the_simulation_has_no_voice_though_the_device_still_plays_it()
-    {
-        using var rig = new SoundPresenterRig();
-        rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Once);
-        rig.Frame();
-        uint source = rig.Backend.PlayingSources().ShouldHaveSingleItem();
-
-        // One second of ticks. Nothing stops the emitter and the device was
-        // never told the sound is over.
-        rig.Tick(60);
-        rig.World.Sounds.Count.ShouldBe(1);
-        rig.Backend.StateOf(source).ShouldBe(AudioSourceState.Playing);
-        rig.Frame();
-
-        rig.Backend.PlayingSources().ShouldBeEmpty();
-        rig.Audio.ActiveVoiceCount.ShouldBe(0);
-        rig.Stats.ShouldBe(new SoundStats(Playing: 1, WithSource: 0, WithoutSource: 0, RefusedStarts: 0, Unplayable: 0));
-    }
-
-    [Fact]
-    public void A_sound_the_device_played_to_its_end_is_not_started_again()
-    {
-        using var rig = new SoundPresenterRig();
-        rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Once);
-        rig.Frame();
-        uint source = rig.Backend.PlayingSources().ShouldHaveSingleItem();
-
-        // The device is ahead of the ticks, as it is after a hitch.
-        rig.Tick(50);
-        rig.Backend.Finish(source);
-        rig.Frame(3);
-
-        rig.Backend.PlayingSources().ShouldBeEmpty();
-        rig.Audio.ActiveVoiceCount.ShouldBe(0);
-        rig.Stats.Silent.ShouldBe(1);
-    }
-
-    [Fact]
     public void A_source_someone_else_plays_on_is_not_the_levels_to_take()
     {
         using var rig = new SoundPresenterRig(sources: 2);

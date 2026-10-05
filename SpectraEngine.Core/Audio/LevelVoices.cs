@@ -1,6 +1,7 @@
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Entities;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace SpectraEngine.Core.Audio;
@@ -10,8 +11,13 @@ namespace SpectraEngine.Core.Audio;
 // Render thread only.
 internal sealed class LevelVoices
 {
+    private readonly record struct Tail(AudioVoice Voice, float SecondsLeft);
+
     private readonly AudioManager _audio;
     private readonly LevelSoundBank _bank;
+
+    // Voices of sounds the simulation has finished and the device has not.
+    private readonly List<Tail> _tails = [];
 
     public LevelVoices(AudioManager audio, AssetManager assets)
     {
@@ -27,7 +33,7 @@ internal sealed class LevelVoices
 
     // Takes the source from every sound too quiet to hear, then gives the
     // free ones to the loudest sounds that have none.
-    public void HandOut(EntityWorld world, ReadOnlySpan<SoundEmitter> playing, Span<PresentedEmitter> presented)
+    public void HandOut(EntityWorld world, Span<PresentedEmitter> presented)
     {
         for (int i = 0; i < presented.Length; i++)
         {
@@ -35,8 +41,8 @@ internal sealed class LevelVoices
                 Release(ref presented[i]);
         }
 
-        // What other code plays on is not ours to hand out. Asking for more
-        // would have the pool cut off one of these voices.
+        // A source other code plays on, or a sound is playing out on, is not
+        // ours to hand out. Asking for more would have the pool cut one off.
         int sources = _audio.SourceCount - (_audio.ActiveVoiceCount - Count);
 
         for (int next = LoudestWithoutSource(presented); next >= 0; next = LoudestWithoutSource(presented))
@@ -44,7 +50,7 @@ internal sealed class LevelVoices
             ref PresentedEmitter waiting = ref presented[next];
 
             LevelSound? sound = waiting.Sound;
-            if (sound is null && !_bank.TryGet(in playing[next], out sound))
+            if (sound is null && !_bank.TryGet(in waiting.Emitter, out sound))
             {
                 waiting.IsUnplayable = true;
                 waiting.Loudness = 0f;
@@ -62,7 +68,7 @@ internal sealed class LevelVoices
                 Release(ref presented[holder]);
             }
 
-            if (!TryStart(world, ref waiting, in playing[next], sound))
+            if (!TryStart(world, ref waiting, sound))
                 break;
         }
     }
@@ -89,22 +95,57 @@ internal sealed class LevelVoices
         Count--;
     }
 
-    // For the end of a level, once every voice has been released. Frees the
-    // buffers made for its sounds.
+    // For a sound the simulation has finished. The device started it up to
+    // a frame after its tick, so it has that much left to play.
+    public void LetPlayOut(ref PresentedEmitter presented)
+    {
+        if (presented.Voice is not { } voice)
+            return;
+
+        _tails.Add(new Tail(voice, SoundPresenter.TailSeconds));
+        presented.Voice = null;
+        Count--;
+    }
+
+    // Forgets the voices that have played out, and cuts one that has had its time.
+    public void EndTails(float deltaSeconds)
+    {
+        for (int i = _tails.Count - 1; i >= 0; i--)
+        {
+            Tail tail = _tails[i];
+            float left = tail.SecondsLeft - deltaSeconds;
+
+            if (!tail.Voice.IsFinished && left > 0f)
+            {
+                _tails[i] = tail with { SecondsLeft = left };
+                continue;
+            }
+
+            _audio.Release(tail.Voice);
+            _tails.RemoveAt(i);
+        }
+    }
+
+    // For the end of a level, once every sound has let go of its voice.
+    // Frees the buffers made for its sounds.
     public void Clear()
     {
+        for (int i = 0; i < _tails.Count; i++)
+            _audio.Release(_tails[i].Voice);
+
+        _tails.Clear();
         _bank.Clear();
         RefusedStarts = 0;
     }
 
-    public static AudioSourceSettings SettingsFor(in PresentedEmitter presented, in SoundEmitter emitter)
+    public static AudioSourceSettings SettingsFor(in PresentedEmitter presented)
     {
         // OpenAL places only mono sounds, so a stereo one is played at the listener.
         bool atListener = presented.Sound is { IsStereo: true };
 
         return new AudioSourceSettings(
             presented.Loudness,
-            emitter.Pitch,
+            presented.Emitter.Pitch,
             atListener ? Vector3.Zero : presented.Position,
             Vector3.Zero,
             Relative: atListener,
@@ -112,11 +153,10 @@ internal sealed class LevelVoices
     }
 
     // False when the device had no source to give.
-    private bool TryStart(
-        EntityWorld world, ref PresentedEmitter presented, in SoundEmitter emitter, LevelSound sound)
+    private bool TryStart(EntityWorld world, ref PresentedEmitter presented, LevelSound sound)
     {
         AudioVoice? voice = _bank.Start(
-            sound, in emitter, StartFrame(world, in emitter), SettingsFor(in presented, in emitter));
+            sound, in presented.Emitter, StartFrame(world, in presented.Emitter), SettingsFor(in presented));
 
         if (voice is null)
         {

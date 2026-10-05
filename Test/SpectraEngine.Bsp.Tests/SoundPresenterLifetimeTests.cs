@@ -46,6 +46,24 @@ public sealed class SoundPresenterLifetimeTests
     }
 
     [Fact]
+    public void A_sound_that_is_playing_out_stops_when_the_level_ends()
+    {
+        using var rig = new SoundPresenterRig();
+        int id = rig.Play(rig.Scene.Root, SoundPresenterRig.Speech, SoundPresenterRig.Once);
+        rig.Frame();
+        rig.Tick(120);
+        rig.World.Sounds.Stop(id);
+        rig.Frame();
+        rig.Backend.PlayingSources().ShouldHaveSingleItem();
+
+        rig.Presenter.Update(null, SoundPresenterRig.TickSeconds);
+
+        rig.Audio.ActiveVoiceCount.ShouldBe(0);
+        rig.Backend.PlayingSources().ShouldBeEmpty();
+        rig.Backend.LiveBufferCount.ShouldBe(0);
+    }
+
+    [Fact]
     public void A_level_that_was_stopped_is_no_level_even_while_its_world_is_still_handed_over()
     {
         using var rig = new SoundPresenterRig();

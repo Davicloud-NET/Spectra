@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Audio.Propagation;
+using SpectraEngine.Core.Entities;
 using System.Numerics;
 
 namespace SpectraEngine.Core.Audio;
@@ -7,8 +8,8 @@ namespace SpectraEngine.Core.Audio;
 // sees it until the sound leaves the registry.
 internal struct PresentedEmitter
 {
-    // The emitter's id in its registry.
-    public int Id;
+    // The sound as its registry had it at the last read.
+    public SoundEmitter Emitter;
 
     // The loaded sound, once it has been asked for.
     public LevelSound? Sound;

@@ -35,6 +35,14 @@ public sealed class SoundPresenter
     // A frame can run several ticks, and skipping them would cut off the attack.
     public const float FreshStartSeconds = 0.1f;
 
+    /// <summary>
+    /// How many seconds a sound that plays once may go on after the simulation
+    /// has finished it. Past that it is cut.
+    /// </summary>
+    // The device starts a sound a frame after its tick at best, and up to
+    // FreshStartSeconds behind it, so it reaches the end that much later.
+    public const float TailSeconds = 0.25f;
+
     /// <summary>A listener that moves further than this in one frame has jumped, and nothing is smoothed.</summary>
     public const float ListenerJumpDistance = 8f;
 
@@ -92,18 +100,18 @@ public sealed class SoundPresenter
         if (world is null || registry is null)
             return;
 
-        ReadOnlySpan<SoundEmitter> playing = registry.Playing;
-        Reconcile(playing);
+        _voices.EndTails(deltaSeconds);
+        Reconcile(registry.Playing, world.TickNumber);
 
         var listener = new SoundListener(_audio.ListenerPosition, _audio.ListenerForward, _audio.ListenerUp);
         bool jumped = HasJumped(listener.Position);
 
-        int asked = Ask(world, playing);
+        int asked = Ask(world);
         _propagation.Resolve(in listener, _queries.AsSpan(0, asked), _paths.AsSpan(0, asked));
-        Hear(playing, asked, deltaSeconds, jumped);
+        Hear(asked, deltaSeconds, jumped);
 
-        _voices.HandOut(world, playing, _presented.AsSpan(0, _count));
-        Stats = Configure(playing);
+        _voices.HandOut(world, _presented.AsSpan(0, _count));
+        Stats = Configure();
     }
 
     // Stop, a map load during play and a save all end the world, so this one
@@ -122,7 +130,7 @@ public sealed class SoundPresenter
 
     // Both lists are in id order and a new sound has the highest id, so one
     // pass drops what stopped and adds what started.
-    private void Reconcile(ReadOnlySpan<SoundEmitter> playing)
+    private void Reconcile(ReadOnlySpan<SoundEmitter> playing, long tick)
     {
         Reserve(playing.Length);
 
@@ -131,16 +139,15 @@ public sealed class SoundPresenter
         for (int i = 0; i < playing.Length; i++)
         {
             int id = playing[i].Id;
-            while (read < _count && _presented[read].Id < id)
-                _voices.Release(ref _presented[read++]);
+            while (read < _count && _presented[read].Emitter.Id < id)
+                Drop(ref _presented[read++], tick);
 
-            _presented[write++] = read < _count && _presented[read].Id == id
-                ? _presented[read++]
-                : new PresentedEmitter { Id = id };
+            _presented[write] = read < _count && _presented[read].Emitter.Id == id ? _presented[read++] : default;
+            _presented[write++].Emitter = playing[i];
         }
 
         while (read < _count)
-            _voices.Release(ref _presented[read++]);
+            Drop(ref _presented[read++], tick);
 
         if (write < _count)
             Array.Clear(_presented, write, _count - write);
@@ -148,9 +155,19 @@ public sealed class SoundPresenter
         _count = write;
     }
 
+    // A sound that left the registry at its end was not cut short there, so
+    // its voice is not cut short here. One that was stopped is.
+    private void Drop(ref PresentedEmitter gone, long tick)
+    {
+        if (gone.Emitter.HasEndedAt(tick))
+            _voices.LetPlayOut(ref gone);
+        else
+            _voices.Release(ref gone);
+    }
+
     // Writes a query for every sound that can be heard at all and takes the
     // source from every sound that cannot. Returns how many it wrote.
-    private int Ask(EntityWorld world, ReadOnlySpan<SoundEmitter> playing)
+    private int Ask(EntityWorld world)
     {
         long tick = world.TickNumber;
         int asked = 0;
@@ -158,14 +175,18 @@ public sealed class SoundPresenter
         for (int i = 0; i < _count; i++)
         {
             ref PresentedEmitter presented = ref _presented[i];
-            ref readonly SoundEmitter emitter = ref playing[i];
+            ref readonly SoundEmitter emitter = ref presented.Emitter;
 
             // Not started again: the device may be ahead of the ticks, and a
             // second start would play the end of the sound twice.
             if (_voices.TryDropEnded(ref presented))
                 presented.HasPlayedOut = true;
 
-            if (!CanBeHeard(world, in emitter, in presented, tick))
+            // Still listed past its end, until its owner stops it.
+            if (emitter.HasEndedAt(tick))
+                _voices.LetPlayOut(ref presented);
+
+            if (!CanBeHeard(world, in presented, tick))
             {
                 _voices.Release(ref presented);
                 presented.Loudness = 0f;
@@ -180,16 +201,14 @@ public sealed class SoundPresenter
         return asked;
     }
 
-    // A deleted node is out of the scene until an undo restores it. A sound
-    // that plays once stays listed past its end until its owner stops it.
-    private static bool CanBeHeard(
-        EntityWorld world, in SoundEmitter emitter, in PresentedEmitter presented, long tick) =>
+    // A deleted node is out of the scene until an undo restores it.
+    private static bool CanBeHeard(EntityWorld world, in PresentedEmitter presented, long tick) =>
         !presented.IsUnplayable
         && !presented.HasPlayedOut
-        && ReferenceEquals(emitter.Node.Owner, world.Scene)
-        && !emitter.HasEndedAt(tick);
+        && ReferenceEquals(presented.Emitter.Node.Owner, world.Scene)
+        && !presented.Emitter.HasEndedAt(tick);
 
-    private void Hear(ReadOnlySpan<SoundEmitter> playing, int asked, float deltaSeconds, bool jumped)
+    private void Hear(int asked, float deltaSeconds, bool jumped)
     {
         for (int k = 0; k < asked; k++)
         {
@@ -200,12 +219,12 @@ public sealed class SoundPresenter
 
             presented.Smoother.Step(in path, deltaSeconds, jumped);
             presented.Position = path.Position;
-            presented.Loudness = playing[_asked[k]].Gain * presented.Smoother.Gain;
+            presented.Loudness = presented.Emitter.Gain * presented.Smoother.Gain;
         }
     }
 
     // Moves every voice to where its sound is now, and counts.
-    private SoundStats Configure(ReadOnlySpan<SoundEmitter> playing)
+    private SoundStats Configure()
     {
         int withoutSource = 0;
         int unplayable = 0;
@@ -215,7 +234,7 @@ public sealed class SoundPresenter
             ref PresentedEmitter presented = ref _presented[i];
 
             if (presented.Voice is { } voice)
-                voice.Configure(LevelVoices.SettingsFor(in presented, in playing[i]));
+                voice.Configure(LevelVoices.SettingsFor(in presented));
             else if (presented.Loudness > SilenceGain)
                 withoutSource++;
 
