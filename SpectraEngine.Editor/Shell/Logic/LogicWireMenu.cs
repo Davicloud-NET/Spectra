@@ -10,14 +10,21 @@ namespace SpectraEngine.Editor.Shell.Logic;
 /// </summary>
 public sealed class LogicWireMenu
 {
-    private LogicWireMenu(string title, IReadOnlyList<LogicWireMenuItem> items)
+    private LogicWireMenu(string title, string note, IReadOnlyList<LogicWireMenuItem> items)
     {
         Title = title;
+        Note = note;
         Items = items;
     }
 
     /// <summary>What the wire joins, as the menu's first line.</summary>
     public string Title { get; }
+
+    /// <summary>
+    /// What the menu says under its title when the wire would reach more
+    /// than the card it was dropped on. Empty when it reaches only that.
+    /// </summary>
+    public string Note { get; }
 
     /// <summary>The lines to pick from.</summary>
     public IReadOnlyList<LogicWireMenuItem> Items { get; }
@@ -26,24 +33,29 @@ public sealed class LogicWireMenu
     /// <param name="from">The card that sends.</param>
     /// <param name="output">The output the drag began on, or null when it began elsewhere on the card.</param>
     /// <param name="to">The card the wire was dropped on.</param>
-    public static LogicWireMenu For(LogicCard from, string? output, LogicCard to)
+    /// <param name="reached">How many entities the wire would reach: more than one when they share a name.</param>
+    public static LogicWireMenu For(LogicCard from, string? output, LogicCard to, int reached = 1)
     {
         ArgumentNullException.ThrowIfNull(from);
         ArgumentNullException.ThrowIfNull(to);
 
-        string title = LogicWireText.Title(from, output, to);
-        if (output is not null)
-            return new LogicWireMenu(title, Inputs(output, to));
+        return new LogicWireMenu(
+            LogicWireText.Title(from, output, to),
+            LogicWireText.SharedName(to.Name, reached),
+            output is null ? Outputs(from, to) : Inputs(output, to));
+    }
 
+    private static LogicWireMenuItem[] Outputs(LogicCard from, LogicCard to)
+    {
         List<string> outputs = Declared(from.Outputs);
         if (outputs.Count == 0)
-            return new LogicWireMenu(title, [new LogicWireMenuItem(LogicWireText.NoOutput(from), "", "", Inputs("", to))]);
+            return [new LogicWireMenuItem(LogicWireText.NoOutput(from), "", "", Inputs("", to))];
 
         var items = new LogicWireMenuItem[outputs.Count];
         for (int i = 0; i < items.Length; i++)
             items[i] = new LogicWireMenuItem(outputs[i], outputs[i], "", Inputs(outputs[i], to));
 
-        return new LogicWireMenu(title, items);
+        return items;
     }
 
     private static LogicWireMenuItem[] Inputs(string output, LogicCard to)

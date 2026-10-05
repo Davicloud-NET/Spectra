@@ -125,4 +125,38 @@ public sealed class LogicWireListTests
         LogicWireList.TargetOf(graph.Card("Door"), nameless).ShouldBeNull();
         LogicWireList.TargetOf(nameless, nameless).ShouldBe(TargetNameIndex.SelfToken);
     }
+
+    [Fact]
+    public void An_entity_whose_name_would_be_read_as_a_prefix_is_reached_only_by_itself()
+    {
+        // As a target, Door* is every entity whose name starts with Door.
+        LogicGraph graph = Graph(
+            Entity(1, "Door*", "func_door", Wire("OnOpen", "Relay", "Trigger")),
+            Entity(2, "Relay", "logic_relay"),
+            Entity(3, "DoorB", "func_door", Wire("OnOpen", "Relay", "Trigger")));
+
+        LogicWireList.TargetOf(graph.Card("Relay"), graph.Card("Door*")).ShouldBeNull();
+        LogicWireList.TargetOf(graph.Card("Door*"), graph.Card("Door*")).ShouldBe(TargetNameIndex.SelfToken);
+    }
+
+    [Fact]
+    public void A_name_reaches_every_entity_that_has_it()
+    {
+        LogicGraphInfo twins = LogicFixture.Level(
+            Entity(1, "Door", "func_door"),
+            Entity(2, "Door", "func_door"),
+            Entity(3, "DoorB", "func_door"));
+
+        LogicWireList.Reach(twins, "Door").ShouldBe(2);
+        LogicWireList.Reach(twins, "DoorB").ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData(TargetNameIndex.SelfToken)]
+    [InlineData("Nobody")]
+    [InlineData("")]
+    public void A_token_and_a_name_nothing_has_reach_no_entity_by_name(string target)
+    {
+        LogicWireList.Reach(Level, target).ShouldBe(0);
+    }
 }

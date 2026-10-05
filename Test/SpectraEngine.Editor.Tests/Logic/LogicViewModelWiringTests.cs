@@ -95,6 +95,21 @@ public sealed class LogicViewModelWiringTests
     }
 
     [Fact]
+    public void A_wire_dropped_on_one_of_two_entities_of_a_name_says_it_reaches_both()
+    {
+        _model.Apply(Snapshot(Level([.. VaultEntities(), Entity(14, "Lift", "func_door")])));
+        LogicSceneCard lift = Scene.Cards.First(card => card.Card.Name == "Lift");
+        Point start = InView(Scene.Card("StartZone").Header.Center);
+        Point end = InView(lift.Header.Center);
+
+        Wiring.Press(start, _model.HitTest(start));
+        Wiring.Move(end, lift);
+        Wiring.Release().ShouldBeTrue();
+
+        Wiring.Menu().ShouldNotBeNull().Note.ShouldBe("2 entities are named Lift. The wire reaches each of them.");
+    }
+
+    [Fact]
     public void Far_out_a_drag_from_where_an_output_would_be_starts_from_the_card()
     {
         LogicScenePort trigger = Scene.Card("StartZone").PortNamed("OnTrigger", isOutput: true).ShouldNotBeNull();

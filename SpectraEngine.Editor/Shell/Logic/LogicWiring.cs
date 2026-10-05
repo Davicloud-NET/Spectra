@@ -102,10 +102,14 @@ public sealed class LogicWiring
     }
 
     /// <summary>The menu of the wire that was just dropped, or null when none was.</summary>
-    public LogicWireMenu? Menu() =>
-        Gesture is { Phase: LogicWirePhase.Dropped, From: { } from, Target: { } to }
-            ? LogicWireMenu.For(from.Card, Gesture.Output, to.Card)
-            : null;
+    public LogicWireMenu? Menu()
+    {
+        if (Gesture is not { Phase: LogicWirePhase.Dropped, From: { } from, Target: { } to })
+            return null;
+
+        string target = LogicWireList.TargetOf(from.Card, to.Card) ?? "";
+        return LogicWireMenu.For(from.Card, Gesture.Output, to.Card, LogicWireList.Reach(_info, target));
+    }
 
     /// <summary>
     /// Makes the dropped wire as a line of its menu says. Returns the entity

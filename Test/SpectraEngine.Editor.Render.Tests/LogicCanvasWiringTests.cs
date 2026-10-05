@@ -67,6 +67,23 @@ public sealed class LogicCanvasWiringTests(RibbonSession session)
     }
 
     [Fact]
+    public void A_wire_dropped_on_one_of_two_entities_of_a_name_says_so_under_the_title()
+    {
+        On("whole", graph =>
+        {
+            graph.Model.Apply(Snapshot(Level([.. VaultEntities(), Entity(14, "Lift", "func_door")])));
+            Dispatcher.UIThread.RunJobs();
+            Point lift = graph.Scene.Cards.First(card => card.Card.Name == "Lift").Header.Center;
+
+            graph.Drag(graph.Scene.Card("StartZone").Header.Center, lift);
+            graph.Window.MouseUp(graph.ToWindow(lift), MouseButton.Left);
+
+            Texts(graph.Canvas.ShownMenu.ShouldNotBeNull()).Take(2).ShouldBe(
+                ["Wire StartZone to Lift", "2 entities are named Lift. The wire reaches each of them."]);
+        });
+    }
+
+    [Fact]
     public void A_pick_in_the_menu_asks_for_the_wire_and_for_its_sender_to_be_selected()
     {
         On("whole", graph =>

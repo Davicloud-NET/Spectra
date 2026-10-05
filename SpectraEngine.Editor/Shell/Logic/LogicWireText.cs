@@ -51,6 +51,21 @@ public static class LogicWireText
         return $"Wire {sender} to {Called(to)}";
     }
 
+    /// <summary>
+    /// What a dropped wire's menu says when the wire would reach several
+    /// entities because they share a name. Empty when it reaches one.
+    /// </summary>
+    /// <param name="name">The name the wire finds them by.</param>
+    /// <param name="count">How many entities have it.</param>
+    public static string SharedName(string name, int count)
+    {
+        if (count <= 1)
+            return "";
+
+        string entities = count.ToString("N0", CultureInfo.InvariantCulture);
+        return $"{entities} entities are named {name}. The wire reaches each of them.";
+    }
+
     /// <summary>The menu line that makes a wire with no input, for a class that lists none.</summary>
     public static string NoInput(LogicCard card)
     {

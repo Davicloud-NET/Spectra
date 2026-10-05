@@ -44,6 +44,9 @@ internal sealed class LogicWireMenus
 
         var menu = new ContextMenu();
         menu.Items.Add(new MenuItem { Header = Words(offer.Title), IsEnabled = false });
+        if (offer.Note.Length > 0)
+            menu.Items.Add(new MenuItem { Header = Words(offer.Note), IsEnabled = false });
+
         menu.Items.Add(new Separator());
 
         foreach (LogicWireMenuItem item in offer.Items)

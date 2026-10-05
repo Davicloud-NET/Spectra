@@ -18,7 +18,7 @@ public static class LogicWireList
     /// <summary>
     /// The target a wire from one card needs to reach another, or null when
     /// nothing reaches it. A wire finds an entity by its name. An entity
-    /// without one can still be wired to itself.
+    /// whose name cannot be a target can still be wired to itself.
     /// </summary>
     public static string? TargetOf(LogicCard from, LogicCard to)
     {
@@ -29,10 +29,28 @@ public static class LogicWireList
             return null;
 
         // A name that starts with ! is read as a token and matches nothing.
-        if (to.Name.Length > 0 && to.Name[0] != '!')
+        // One that ends in * is read as a prefix and reaches other names too.
+        if (to.Name.Length > 0 && to.Name[0] != '!' && !TargetNamePattern.IsPrefix(to.Name))
             return to.Name;
 
         return ReferenceEquals(from, to) ? TargetNameIndex.SelfToken : null;
+    }
+
+    /// <summary>How many entities a target reaches by name. None for a token such as <c>!self</c>.</summary>
+    /// <param name="info">The level's wiring as it was last published.</param>
+    /// <param name="target">The target as a wire spells it.</param>
+    public static int Reach(LogicGraphInfo? info, string target)
+    {
+        IReadOnlyList<LogicEntityInfo> entities = info?.Entities ?? [];
+        int reached = 0;
+
+        for (int i = 0; i < entities.Count; i++)
+        {
+            if (TargetNamePattern.Matches(target, entities[i].Name))
+                reached++;
+        }
+
+        return reached;
     }
 
     /// <summary>The sender's wires with one more at the end.</summary>

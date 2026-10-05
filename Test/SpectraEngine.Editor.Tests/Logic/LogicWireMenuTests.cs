@@ -81,4 +81,19 @@ public sealed class LogicWireMenuTests
         from.Items.ShouldHaveSingleItem().Text.ShouldBe("No output: Player start lists none");
         to.Items.ShouldHaveSingleItem().Text.ShouldBe("No input: Player start lists none");
     }
+
+    [Fact]
+    public void A_wire_that_reaches_one_entity_gets_no_note()
+    {
+        LogicWireMenu.For(Level.Card("Zone"), null, Level.Card("Door")).Note.ShouldBe("");
+    }
+
+    [Fact]
+    public void A_wire_that_reaches_several_entities_of_one_name_says_how_many()
+    {
+        LogicWireMenu menu = LogicWireMenu.For(Level.Card("Zone"), null, Level.Card("Door"), reached: 3);
+
+        menu.Note.ShouldBe("3 entities are named Door. The wire reaches each of them.");
+        menu.Title.ShouldBe("Wire Zone to Door");
+    }
 }
