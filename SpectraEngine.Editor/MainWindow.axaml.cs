@@ -96,7 +96,6 @@ public partial class MainWindow : Window
     private readonly int _viewportPaneIndex;
 
     // Set by LaunchSession, consumed by OnSurfaceCreated.
-    private sealed record SessionLaunch(ProjectLayout? Project, string? ContentRoot, string? OpenMapPath);
     private SessionLaunch? _pendingLaunch;
 
     // Fields rather than XAML names: a dock tool would template XAML children
@@ -245,7 +244,8 @@ public partial class MainWindow : Window
                 _shell.RequestPlaying(playing);
                 _session?.Host.RequestPlayMode(playing);
             },
-            forward: line => _session is { } s && s.SubmitConsoleLine(line));
+            forward: line => _session is { } s && s.SubmitConsoleLine(line),
+            restartViewport: RestartStoppedViewport);
 
         static bool Post(Action action)
         {
@@ -564,6 +564,7 @@ public partial class MainWindow : Window
     private ViewportCapabilities _sessionCapabilities = ViewportCapabilities.NotMeasured;
     private bool _sessionIsComposited;
     private bool _sessionFaulted;
+    private bool _sessionEngineDied;
     private int _sessionDebugLayerErrors;
 
     // Picks the viewport kind, then launches. The rehearsal import runs before
@@ -627,8 +628,10 @@ public partial class MainWindow : Window
     private void StartViewport(SessionLaunch launch, bool composited, ViewportPlacement placement)
     {
         _pendingLaunch = launch;
+        _recovery.Launched(launch);
         _sessionIsComposited = composited;
         _sessionFaulted = false;
+        _sessionEngineDied = false;
         _sessionDebugLayerErrors = 0;
 
         IEngineViewport viewport = EngineViewports.Create(
@@ -645,22 +648,36 @@ public partial class MainWindow : Window
         // Held for the session only; a raised timer rate costs battery.
         TimerResolution.Acquire(_logger);
 
-        StartView.IsVisible = false;
-        EditorView.IsVisible = true;
-        _shell.HasSession = true;
-        RefreshDocumentIdentity();
+        // A restart after a fault keeps the workspace the user arranged.
+        bool restarting = _shell.HasSession;
+        if (!restarting)
+        {
+            StartView.IsVisible = false;
+            EditorView.IsVisible = true;
+            _shell.HasSession = true;
+            RefreshDocumentIdentity();
 
-        // Workspace and placement before the control attaches, so the first
-        // surface is created at its real size.
-        ApplyWorkspace(_settings.WorkspacePreset);
-        _shell.ShowDiagnostics = _settings.DiagnosticsReadouts;
+            // Workspace and placement before the control attaches, so the
+            // first surface is created at its real size.
+            ApplyWorkspace(_settings.WorkspacePreset);
+            _shell.ShowDiagnostics = _settings.DiagnosticsReadouts;
+        }
 
         ApplyPlacement(placement);
+
+        // Somebody typing when the viewport comes back keeps the keyboard. A
+        // composited viewport can take it while it attaches, so it is handed
+        // back afterwards.
+        TextBox? typing = restarting ? FocusManager?.GetFocusedElement() as TextBox : null;
 
         // Attach last: it leads to SurfaceCreated, which needs everything above.
         // Index 0 keeps the drop overlay from the markup on top.
         ViewportHost.Children.Insert(0, viewport.Control);
-        viewport.FocusEngine();
+
+        if (typing is null)
+            viewport.FocusEngine();
+        else
+            typing.Focus();
     }
 
     // The only place a tool's content may be assigned. Dock gives the content
@@ -739,19 +756,22 @@ public partial class MainWindow : Window
         if (!_sessionIsComposited)
             return;
 
+        // A session whose engine died vouches for nothing, a lost device least
+        // of all: the engine and the compositor share a texture across devices.
         bool green = ViewportModePolicy.IsSessionGreen(
-            _sessionDebugLayerErrors, _sessionFaulted, _sessionCapabilities.CompareGreen);
+            _sessionDebugLayerErrors, _sessionFaulted || _sessionEngineDied, _sessionCapabilities.CompareGreen);
 
         _settings.RecordCompositedSession(green);
         _settings.Save(_logger);
 
         _logger.LogInformation(
             "Composited session recorded as {Verdict}: {Errors} counted debug-layer error(s), " +
-            "{Faults}, colour comparison {Compare}. {Count} of {Required} consecutive green session(s) " +
-            "on this adapter and driver.",
+            "{Faults}, {Engine}, colour comparison {Compare}. {Count} of {Required} consecutive green " +
+            "session(s) on this adapter and driver.",
             green ? "green" : "not green",
             _sessionDebugLayerErrors,
             _sessionFaulted ? "the hand-over faulted" : "no hand-over fault",
+            _sessionEngineDied ? "the engine died" : "the engine ran to the end",
             _sessionCapabilities.CompareGreen ? "green" : "missing or red for this adapter and backend",
             _settings.ViewportPreference.GreenSessions,
             ViewportModePolicy.RequiredGreenSessions);
@@ -763,36 +783,19 @@ public partial class MainWindow : Window
     // already confirmed any unsaved work.
     private void CloseSessionView()
     {
-        if (_viewport is not { } viewport)
+        // A viewport left stopped after a fault has no control, and its
+        // session view is still up.
+        if (_viewport is null && !_recovery.IsStopped)
             return;
 
-        // While the counters still describe this session.
-        RecordSessionOutcome();
+        if (_viewport is { } viewport)
+        {
+            // While the counters still describe this session.
+            RecordSessionOutcome();
+            DetachViewport(viewport);
+        }
 
-        // Shutdown first: it tells a composited viewport the coming detach is
-        // the end and not a re-dock.
-        viewport.Shutdown();
-
-        // Removing a native child raises SurfaceDestroying, which stops the
-        // engine. The explicit stop covers a viewport that never got a surface.
-        ViewportHost.Children.Remove(viewport.Control);
-        StopSession();
-
-        _shell.DropPrompt = ViewportDropPrompt.None;
-
-        // Pending optimistic values would make the next session ignore its
-        // first snapshots.
-        _shell.ResetOptimisticState();
-        TimerResolution.Release();
-
-        viewport.SurfaceCreated -= OnSurfaceCreated;
-        viewport.SurfaceDestroying -= OnSurfaceDestroying;
-        viewport.ShellChord -= OnShellChord;
-        viewport.ContextMenuRequested -= OnViewportContextMenu;
-        viewport.AssetDropped -= OnViewportAssetDropped;
-        viewport.AssetDragChanged -= OnViewportAssetDragChanged;
-        _viewport = null;
-        _pendingLaunch = null;
+        _recovery.Reset();
 
         // Pane home before the floats close, so it is not inside a window that
         // is about to be destroyed.
@@ -803,9 +806,6 @@ public partial class MainWindow : Window
         RightRoot.ExitWindows?.Execute(null);
         BottomRoot.ExitWindows?.Execute(null);
         CenterRoot.ExitWindows?.Execute(null);
-
-        _tree = null;
-        _shell.Tree = null;
 
         // Entity classes belong to the closed project's catalogue.
         _lastEntityClass = null;
@@ -836,6 +836,39 @@ public partial class MainWindow : Window
         EditorView.IsVisible = false;
         StartView.IsVisible = true;
         RefreshRecents();
+    }
+
+    // Takes the viewport out of the window and stops its session. The session
+    // view stays up: closing it, or starting another viewport, is the caller's.
+    private void DetachViewport(IEngineViewport viewport)
+    {
+        // Shutdown first: it tells a composited viewport the coming detach is
+        // the end and not a re-dock.
+        viewport.Shutdown();
+
+        // Removing a native child raises SurfaceDestroying, which stops the
+        // engine. The explicit stop covers a viewport that never got a surface.
+        ViewportHost.Children.Remove(viewport.Control);
+        StopSession();
+
+        _shell.DropPrompt = ViewportDropPrompt.None;
+
+        // Pending optimistic values would make the next session ignore its
+        // first snapshots.
+        _shell.ResetOptimisticState();
+        TimerResolution.Release();
+
+        viewport.SurfaceCreated -= OnSurfaceCreated;
+        viewport.SurfaceDestroying -= OnSurfaceDestroying;
+        viewport.ShellChord -= OnShellChord;
+        viewport.ContextMenuRequested -= OnViewportContextMenu;
+        viewport.AssetDropped -= OnViewportAssetDropped;
+        viewport.AssetDragChanged -= OnViewportAssetDragChanged;
+        _viewport = null;
+        _pendingLaunch = null;
+
+        _tree = null;
+        _shell.Tree = null;
     }
 
     private void OnSurfaceCreated(IRenderSurface surface)
@@ -874,16 +907,22 @@ public partial class MainWindow : Window
 
             // The engine boots on a baseplate; the real map opens through the
             // ordinary path so a broken bundle is reported.
-            if (launch?.OpenMapPath is { } mapPath)
+            if (launch?.Restore is { } level)
             {
-                OpenMapAt(mapPath);
+                RestoreLevel(session, level);
+            }
+            else if (launch?.OpenMapPath is { } mapPath)
+            {
+                // Refused, so the baseplate is all this session will show.
+                if (!OpenMapAt(mapPath))
+                    _recovery.LevelShown();
             }
             else
             {
                 _document.MarkNew();
 
                 // Don't overwrite a failure that was just reported.
-                if (!_shell.IsError)
+                if (!ReportRestart() && !_shell.IsError)
                 {
                     _shell.SetMessage(_document.HasProject
                         ? $"New baseplate scene. Save it to add a first map to {_document.ProjectLabel}."
@@ -894,6 +933,20 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _logger.LogCritical(ex, "The editor session could not start");
+
+            // A restart that cannot start keeps its level and waits to be
+            // asked again. Posted for the same reason as the close below.
+            if (_recovery.RestartFailed() is { } notice)
+            {
+                _shell.SetError(SessionFaultText.StartFailed(notice, ex.Message));
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (_viewport is { } failed)
+                        DetachViewport(failed);
+                });
+                return;
+            }
+
             _shell.SetError($"The engine could not start: {ex.Message}");
 
             // Back to the start page. Posted: this runs during the native
@@ -975,6 +1028,8 @@ public partial class MainWindow : Window
         _entityAuditStale = false;
         _sceneView.ResetSelectionMemory();
         _consoleFeed.Reset();
+        _deathNoticed = false;
+        _dyingSince = null;
 
         _stopping = false;
     }
@@ -1031,6 +1086,9 @@ public partial class MainWindow : Window
             _logger.LogWarning("The shell fell behind the engine's snapshots; rebuilding the scene tree");
             _tree?.MarkStale();
         }
+
+        if (_session is { Fault: not null } dying && !_deathNoticed)
+            FollowDeath(dying);
 
         FrameSnapshot snapshot = _latest;
         if (ReferenceEquals(snapshot, FrameSnapshot.Empty))
@@ -2480,15 +2538,16 @@ public partial class MainWindow : Window
         OpenMapAt(picked[0].Path.LocalPath);
     }
 
-    private void OpenMapAt(string bundlePath)
+    // False when the open was refused here and nothing was sent to the engine.
+    private bool OpenMapAt(string bundlePath)
     {
-        if (_session is not { } session) return;
+        if (_session is not { } session) return false;
 
         if (!MapBundle.IsBundle(bundlePath))
         {
             _shell.SetError(
                 $"That folder is not a map bundle: it has no {MapFormat.DocumentFileName}.");
-            return;
+            return false;
         }
 
         session.OpenMap(bundlePath, (report, error) => Dispatcher.UIThread.Post(() =>
@@ -2499,6 +2558,8 @@ public partial class MainWindow : Window
 
             if (error is not null)
             {
+                // The session shows its baseplate, which is all it will show.
+                _recovery.LevelShown();
                 _shell.SetError($"Could not open the map: {error.Message}");
                 return;
             }
@@ -2513,7 +2574,11 @@ public partial class MainWindow : Window
             _shell.SetMessage(report?.Describe() is { } missing
                 ? $"Opened {_document.MapLabel}. {missing}"
                 : $"Opened {_document.MapLabel}");
+
+            ReportRestart();
         }));
+
+        return true;
     }
 
     // One session per project: the content root is fixed when a session is
@@ -2526,7 +2591,8 @@ public partial class MainWindow : Window
     {
         // Checks the viewport, not the session: a session that failed to start
         // leaves a viewport with nothing behind it, and this must still work.
-        if (_viewport is null) return;
+        // So must closing a viewport that was left stopped.
+        if (_viewport is null && !_recovery.IsStopped) return;
         if (!await ConfirmDiscardAsync("closing the project")) return;
 
         CloseSessionView();
@@ -2910,7 +2976,14 @@ public partial class MainWindow : Window
     private Task<bool> SaveMapToAsync(string bundlePath)
     {
         if (_session is not { } session)
+        {
+            // The level is held for the restart. Doing nothing here would
+            // look like a save.
+            if (_recovery.IsStopped)
+                _shell.SetError(SessionFaultText.SaveWhileStopped);
+
             return Task.FromResult(false);
+        }
 
         var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 

@@ -80,6 +80,9 @@ public sealed class Win32EngineViewport : NativeControlHost, IEngineViewport
         }
     }
 
+    /// <inheritdoc/>
+    public bool IsAwaitingEngine => false;
+
     /// <summary>
     /// Applies the cursor mode the engine asked for. UI thread only, once per
     /// pass of the shell's pump.

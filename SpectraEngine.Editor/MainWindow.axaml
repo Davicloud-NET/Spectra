@@ -709,13 +709,16 @@
             Padding="12,0">
       <Grid ColumnDefinitions="*,Auto">
 
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <Path Classes="icon" Width="13" Height="13" Data="{StaticResource IconWarning}"
+        <!-- A dock panel, not a stack: a stack measures the text unbounded, so
+             a long message never trims and runs under the readouts. -->
+        <DockPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+          <Path DockPanel.Dock="Left" Margin="0,0,6,0"
+                Classes="icon" Width="13" Height="13" Data="{StaticResource IconWarning}"
                 Stroke="{StaticResource SpectraTextDanger}" StrokeThickness="1.3"
                 Stretch="Uniform" IsVisible="{Binding IsError}" />
           <TextBlock Classes="statusmsg" Classes.errormsg="{Binding IsError}"
                      Text="{Binding Message}" TextTrimming="CharacterEllipsis" />
-        </StackPanel>
+        </DockPanel>
 
         <StackPanel Grid.Column="1" Orientation="Horizontal" IsVisible="{Binding HasSession}">
           <!-- Static-world defect. Its own slot, so the message line cannot

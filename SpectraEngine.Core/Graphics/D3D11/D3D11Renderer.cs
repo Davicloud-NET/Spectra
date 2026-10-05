@@ -139,12 +139,14 @@ public sealed unsafe class D3D11Renderer : Renderer
     public override void AcquireContext(IRenderSurface surface) { /* D3D11 immediate context isn't thread-affine */ }
     public override void ReleaseContext(IRenderSurface surface) { }
 
+    /// <inheritdoc/>
+    public override bool CanLoseDevice => true;
+
     public override void Present(IRenderSurface surface)
     {
-        if (_swapChain.Handle is not null && !_deviceLost)
+        if (!_deviceLost)
         {
-            // A TDR usually surfaces here.
-            int hr = ((IDXGISwapChain1*)_swapChain.Handle)->Present(VSync ? 1u : 0u, 0);
+            int hr = PresentFrame();
             if (hr < 0)
             {
                 if (DxgiInterop.IsDeviceLost(hr))
@@ -153,9 +155,25 @@ public sealed unsafe class D3D11Renderer : Renderer
             }
         }
 
-        // Outside the swap-chain guard: a composited surface has no chain, and
-        // the debug layer is the only error detector it has.
+        // With or without a swap chain: on a composited surface the debug
+        // layer is the only detector of a bad call there is.
         DrainDebugMessages();
+    }
+
+    private int PresentFrame()
+    {
+        if (TakeSimulatedDeviceLoss())
+            return DxgiInterop.ErrorDeviceRemoved;
+
+        // A TDR usually surfaces here.
+        if (_swapChain.Handle is not null)
+            return ((IDXGISwapChain1*)_swapChain.Handle)->Present(VSync ? 1u : 0u, 0);
+
+        // A composited surface has no chain to report a loss, so ask the
+        // device. Any reason it gives means it is gone.
+        bool removed = _device.Handle is not null
+            && ((ID3D11Device*)_device.Handle)->GetDeviceRemovedReason() < 0;
+        return removed ? DxgiInterop.ErrorDeviceRemoved : 0;
     }
 
     private void DrainDebugMessages()
@@ -715,6 +733,18 @@ public sealed unsafe class D3D11Renderer : Renderer
                 "Releasing the shared target key failed: {Code} (0x{Hr:X8}). The consumer will not get this frame.",
                 DxgiInterop.Describe(hr), hr);
         }
+    }
+
+    /// <inheritdoc/>
+    public override void OfferSharedTurn()
+    {
+        // Does nothing unless a fault left the write bracket open.
+        EndSharedWrite();
+
+        _retirement?.OfferTurns();
+
+        if (SharedColor is { } color)
+            SharedTargetTurn.Offer(color.KeyedMutex, _logger, _presentGeneration);
     }
 
     /// <inheritdoc/>

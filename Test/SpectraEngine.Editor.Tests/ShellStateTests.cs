@@ -195,7 +195,8 @@ public sealed class ConsoleCommandsTests
     private static ConsoleCommands Build(
         List<string> log,
         bool sessionOpen = true,
-        List<string>? forwarded = null)
+        List<string>? forwarded = null,
+        bool viewportStopped = false)
     {
         return new ConsoleCommands(
             postHost: c => Record(log, $"host:{c}", sessionOpen),
@@ -213,7 +214,8 @@ public sealed class ConsoleCommandsTests
                     forwarded?.Add(line);
 
                 return sessionOpen;
-            });
+            },
+            restartViewport: () => Record(log, "restart", viewportStopped));
 
         static bool Record(List<string> log, string entry, bool ok)
         {
@@ -353,6 +355,31 @@ public sealed class ConsoleCommandsTests
 
         foreach (string name in ConsoleCommands.Names)
             Assert.Contains(name, help);
+    }
+
+    [Fact]
+    public void Restart_starts_a_viewport_that_was_left_stopped()
+    {
+        List<string> log = [];
+        List<string> forwarded = [];
+        ConsoleResult result = Build(log, sessionOpen: false, forwarded, viewportStopped: true).Execute("restart");
+
+        Assert.Equal(OutputSeverity.Info, result.Severity);
+        Assert.Equal(["restart"], log);
+
+        // The editor's own verb: the engine it would go to is the one that died.
+        Assert.Empty(forwarded);
+    }
+
+    [Fact]
+    public void Restart_with_a_viewport_that_is_running_says_so_and_does_nothing()
+    {
+        List<string> log = [];
+        ConsoleResult result = Build(log).Execute("restart");
+
+        Assert.Equal(OutputSeverity.Error, result.Severity);
+        Assert.Equal("the viewport is not stopped", result.Reply);
+        Assert.Empty(log);
     }
 
     [Fact]

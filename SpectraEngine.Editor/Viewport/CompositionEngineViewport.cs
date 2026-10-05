@@ -132,6 +132,9 @@ internal sealed class CompositionEngineViewport : Control, IEngineViewport, IVie
     }
 
     /// <inheritdoc/>
+    public bool IsAwaitingEngine => _pump is { HasHandOverInFlight: true };
+
+    /// <inheritdoc/>
     public void FocusEngine() => Focus();
 
     /// <inheritdoc/>

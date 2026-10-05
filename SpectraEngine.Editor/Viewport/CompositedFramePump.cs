@@ -157,6 +157,9 @@ internal sealed class CompositedFramePump
 
     internal bool IsPumping => _looping;
 
+    // Each one waits on a key only the producer hands over.
+    internal bool HasHandOverInFlight => _outstandingIssues.Count > 0;
+
     // Default before the first window closes.
     internal HandOverPacing LastPacing { get; private set; }
 

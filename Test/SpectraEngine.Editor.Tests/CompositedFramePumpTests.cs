@@ -461,6 +461,27 @@ public sealed class CompositedFramePumpTests
         rig.Acknowledged.ShouldBe([1]);
     }
 
+    // What a shell waits for before it lets a dead engine stop answering.
+    [Fact]
+    public void A_stopped_pump_still_waits_on_the_engine_until_its_last_hand_over_is_back()
+    {
+        var rig = new Rig();
+        FakeImage image = rig.Adopt(generation: 1);
+        rig.Pump.HasHandOverInFlight.ShouldBeTrue();
+
+        rig.Pump.Stop();
+        rig.Pump.HasHandOverInFlight.ShouldBeTrue();
+
+        image.CompleteUpdate();
+        rig.Pump.HasHandOverInFlight.ShouldBeTrue("the queue is two deep");
+
+        image.CompleteAllUpdates();
+        rig.Pump.HasHandOverInFlight.ShouldBeFalse();
+
+        // Stopped, so nothing new was asked for in the meantime.
+        image.Updates.ShouldBe(CompositedFramePump.HandOverDepth);
+    }
+
     // A dock drag detaches and re-attaches the pane. Disposing the surface at
     // detach would be a disposal under a live keyed-mutex bracket.
     [Fact]

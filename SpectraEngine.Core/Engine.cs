@@ -77,6 +77,8 @@ public sealed class Engine
 
     private volatile bool _renderThreadFaulted;
 
+    private volatile EngineFault? _fault;
+
     public Engine(
         ILogger<Engine> logger,
         Renderer renderer,
@@ -99,6 +101,7 @@ public sealed class Engine
         // gives it to each new world before that world activates.
         _entityWatch = new EntityWatch(_console.Output);
         EntityConsoleCommands.Register(_console.Commands, _entityWatch);
+        GraphicsConsoleCommands.Register(_console.Commands, renderer);
         _entityWatch.Changed += () => _sceneManager.EntityTrace = _entityWatch.ActiveTrace;
     }
 
@@ -482,6 +485,22 @@ public sealed class Engine
     public bool Faulted => _renderThreadFaulted;
 
     /// <summary>
+    /// Why the render thread ended on an exception, or null when it did not.
+    /// Set as soon as it faults. Describes the last run until the next
+    /// <see cref="Start"/>. Safe from any thread.
+    /// </summary>
+    // On a composited surface the thread then stays up to answer the
+    // consumer, until EngineHost.RequestShutdown or Stop.
+    public EngineFault? Fault => _fault;
+
+    /// <summary>
+    /// Whether the render thread has ended, on a fault or because it was asked
+    /// to. Until <see cref="Stop"/>, the subsystems are still up and nothing
+    /// else touches them. Safe from any thread.
+    /// </summary>
+    public bool RenderThreadExited => _renderThreadExited;
+
+    /// <summary>
     /// Starts the engine against a surface the caller owns and returns once the
     /// render thread is running. The caller keeps the window: input arrives
     /// through <see cref="Host"/>, and <see cref="WindowMode"/> requests are the
@@ -547,6 +566,7 @@ public sealed class Engine
         _closeRequested = false;
         _renderThreadExited = false;
         _renderThreadFaulted = false;
+        _fault = null;
 
         _renderThread = new Thread(RenderLoop)
         {
@@ -612,6 +632,32 @@ public sealed class Engine
         _character?.Exit();
 
         _sceneManager.Editor?.Resume();
+    }
+
+    // A composited host keeps turns queued on the shared target and its
+    // compositor waits for each with no deadline. If a dead engine just let
+    // go, that wait would never end and the host's window would freeze. So
+    // answer with the frame it already has until the host says it has
+    // stopped asking.
+    private void AnswerSharedConsumer()
+    {
+        try
+        {
+            if (!_renderer.TryGetSharedHandle(out _))
+                return;
+
+            while (!_closeRequested && !Host.ShutdownRequested)
+            {
+                _renderer.OfferSharedTurn();
+                Thread.Sleep(1);
+            }
+        }
+        // The boundary for a renderer too broken to answer. The teardown
+        // after this still has to run.
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not go on answering the host's viewport after the crash");
+        }
     }
 
     // Exceptions must not escape: the thread is non-background, so an unhandled
@@ -962,12 +1008,14 @@ public sealed class Engine
         }
         catch (Exception ex)
         {
+            _fault = new EngineFault(ex.Message, ex is GraphicsDeviceLostException);
             _renderThreadFaulted = true;
             _logger.LogCritical(ex, "Render thread crashed; shutting down");
 
             // A second failure here must not mask the original crash.
             try
             {
+                AnswerSharedConsumer();
                 _assetManager.ReleaseGraphicsResources();
                 _renderer.Shutdown();
                 _renderer.ReleaseContext(surface);

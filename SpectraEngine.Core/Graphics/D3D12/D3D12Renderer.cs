@@ -872,22 +872,20 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         return ComOwnership.Own(res);
     }
 
+    /// <inheritdoc/>
+    public override bool CanLoseDevice => true;
+
     public override void Present(IRenderSurface surface)
     {
         if (_deviceLost) return;
         FlushUploads(); // A collapsed viewport can skip rendering but still receive assets.
 
-        if (_swapChain.Handle is not null)
+        int hr = PresentFrame();
+        if (hr < 0)
         {
-            bool uncapped = UncappedPresentation && _swapChainFlags != 0;
-            int hr = ((IDXGISwapChain3*)_swapChain.Handle)->Present(uncapped ? 0u : VSync ? 1u : 0u,
-                uncapped ? 512u : 0u); // DXGI_PRESENT_ALLOW_TEARING
-            if (hr < 0)
-            {
-                if (DxgiInterop.IsDeviceLost(hr))
-                    throw DeviceLost(hr, "presenting a frame");
-                SilkMarshal.ThrowHResult(hr);
-            }
+            if (DxgiInterop.IsDeviceLost(hr))
+                throw DeviceLost(hr, "presenting a frame");
+            SilkMarshal.ThrowHResult(hr);
         }
 
         ReleaseCompletedResources();
@@ -899,6 +897,29 @@ public sealed unsafe partial class D3D12Renderer : Renderer
         // Outside the swap-chain guard: on a composited surface the debug layer
         // is the only error detector there is.
         DrainDebugMessages();
+    }
+
+    private int PresentFrame()
+    {
+        if (TakeSimulatedDeviceLoss())
+        {
+            // The device is alive and may still be drawing this frame. Wait,
+            // because Shutdown does not wait on a device it was told is lost.
+            WaitForGpu();
+            return DxgiInterop.ErrorDeviceRemoved;
+        }
+
+        if (_swapChain.Handle is not null)
+        {
+            bool uncapped = UncappedPresentation && _swapChainFlags != 0;
+            return ((IDXGISwapChain3*)_swapChain.Handle)->Present(uncapped ? 0u : VSync ? 1u : 0u,
+                uncapped ? 512u : 0u); // DXGI_PRESENT_ALLOW_TEARING
+        }
+
+        // A composited surface has no chain to report a loss, so ask the
+        // device. Any reason it gives means it is gone.
+        bool removed = _device.Handle is not null && DevicePtr->GetDeviceRemovedReason() < 0;
+        return removed ? DxgiInterop.ErrorDeviceRemoved : 0;
     }
 
     // Only after the frame fence completed.
@@ -1345,6 +1366,18 @@ public sealed unsafe partial class D3D12Renderer : Renderer
                 "Releasing the shared target key failed: {Code} (0x{Hr:X8}). The consumer will not get this frame.",
                 DxgiInterop.Describe(hr), hr);
         }
+    }
+
+    /// <inheritdoc/>
+    public override void OfferSharedTurn()
+    {
+        // Does nothing unless a fault left the write bracket open.
+        EndSharedWrite();
+
+        _retirement?.OfferTurns();
+
+        if (_bridge is { HasSurface: true } bridge)
+            SharedTargetTurn.Offer(bridge.KeyedMutex, _logger, _presentGeneration);
     }
 
     /// <inheritdoc/>

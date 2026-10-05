@@ -55,6 +55,7 @@ A command that fails prints an error, and the rest of the line still runs.
 | `ent_list [pattern]` | Lists entities by name and class. |
 | `ent_show <pattern>` | Prints an entity's settings, state, wires and inputs. |
 | `ent_watch [on \| off \| <pattern> ...]` | Prints what entities fire and receive as it happens. |
+| `fake_device_loss` | Ends the next frame the way a lost graphics device does, to test what happens then. The demo ends with an error. The editor restarts its viewport and keeps the level. |
 
 Entities only run while the level plays, so the four `ent_` commands answer differently before and after you press Play:
 

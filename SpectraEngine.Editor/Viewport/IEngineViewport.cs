@@ -72,6 +72,14 @@ public interface IEngineViewport
     EngineHost? Host { get; set; }
 
     /// <summary>
+    /// Whether this viewport still waits on the engine for a frame it asked
+    /// for. A host whose engine has died clears <see cref="Host"/>, which
+    /// stops the asking, and keeps the engine answering until this is false.
+    /// </summary>
+    // Always false for the native child: it asks the engine for nothing.
+    bool IsAwaitingEngine { get; }
+
+    /// <summary>
     /// Applies whatever cursor mode the engine has asked for. UI thread only,
     /// once per pass of the shell's pump.
     /// </summary>

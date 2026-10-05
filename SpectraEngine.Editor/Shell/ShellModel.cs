@@ -1380,6 +1380,12 @@ public sealed class ShellModel : ObservableObject
                 NodeCount = tree.Count;
                 MatchCount = _filterText.Length == 0 ? tree.Count : tree.MatchCount;
             }
+            else
+            {
+                // A viewport left stopped keeps its panels up with no tree.
+                NodeCount = 0;
+                MatchCount = 0;
+            }
         }
         finally
         {

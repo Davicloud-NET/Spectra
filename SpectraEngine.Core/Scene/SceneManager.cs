@@ -270,6 +270,21 @@ public sealed class SceneManager
     }
 
     /// <summary>
+    /// The active scene as a map document, as it was authored. A level that
+    /// is running is stopped first, which puts back every node the run moved.
+    /// Null with no scene. Render thread, or any thread once that one is gone.
+    /// </summary>
+    /// <param name="report">Records what a document cannot hold, such as a mesh built in code.</param>
+    public MapDocument? TakeAuthoredMap(MapSaveReport? report = null)
+    {
+        if (ActiveScene is not { } scene)
+            return null;
+
+        StopEntityWorld();
+        return MapSceneBinder.FromScene(scene, report);
+    }
+
+    /// <summary>
     /// Tears the entity runtime down because the graph under it is about to be
     /// replaced. Play mode itself keeps running.
     /// </summary>

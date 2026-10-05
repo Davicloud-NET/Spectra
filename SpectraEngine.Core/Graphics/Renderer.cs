@@ -73,6 +73,31 @@ public abstract class Renderer
     public virtual void Present(IRenderSurface surface) => surface.GLContext?.SwapBuffers();
 
     /// <summary>
+    /// Whether this backend has a device that can be lost, and so throws
+    /// <see cref="GraphicsDeviceLostException"/> from <see cref="Present"/>.
+    /// </summary>
+    public virtual bool CanLoseDevice => false;
+
+    /// <summary>
+    /// Makes the next <see cref="Present"/> fail as it does when the device is
+    /// lost. For testing what a host does about a loss. Render thread only.
+    /// </summary>
+    public void SimulateDeviceLoss() => _simulatedDeviceLoss = true;
+
+    private bool _simulatedDeviceLoss;
+
+    // True once per request. The device is still alive when this returns true.
+    private protected bool TakeSimulatedDeviceLoss()
+    {
+        if (!_simulatedDeviceLoss)
+            return false;
+
+        _simulatedDeviceLoss = false;
+        _logger.LogWarning("Reporting the graphics device as lost because a test asked for it. The device is fine.");
+        return true;
+    }
+
+    /// <summary>
     /// Whether <see cref="Present"/> waits for the display's vertical blank.
     /// Off by default; a host may change it while the render thread runs.
     /// </summary>
@@ -484,6 +509,16 @@ public abstract class Renderer
     /// <see cref="BeginSharedWrite"/> returned true.
     /// </summary>
     public virtual void EndSharedWrite()
+    {
+    }
+
+    /// <summary>
+    /// Hands the shared target's key to the consumer without drawing, so a
+    /// turn it has queued completes on the frame it already has. For an engine
+    /// that has stopped rendering while a consumer still waits. Render thread
+    /// only.
+    /// </summary>
+    public virtual void OfferSharedTurn()
     {
     }
 

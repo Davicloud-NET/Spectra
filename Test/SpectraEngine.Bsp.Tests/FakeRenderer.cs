@@ -23,6 +23,14 @@ internal sealed class FakeRenderer : Renderer
 
     public HashSet<FakeTexture> LiveTextures { get; } = new(ReferenceEqualityComparer.Instance);
 
+    // Whether this stands in for a backend whose device can be lost.
+    public bool HasDevice { get; set; }
+
+    public override bool CanLoseDevice => HasDevice;
+
+    // What a backend's Present asks: was a loss asked for since the last one?
+    public bool TakeDeviceLoss() => TakeSimulatedDeviceLoss();
+
     // CreateMesh calls left before it starts throwing. int.MaxValue never fails.
     public int CreateMeshBudget { get; set; } = int.MaxValue;
 

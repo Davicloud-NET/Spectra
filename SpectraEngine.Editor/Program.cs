@@ -3,6 +3,7 @@ using Avalonia.Media;
 using Serilog;
 using SpectraEngine.Entities;
 using System;
+using System.IO;
 
 namespace SpectraEngine.Editor;
 
@@ -12,6 +13,9 @@ internal static class Program
 
     // Created before the app so lines logged before a window exists are queued.
     internal static Shell.EngineLogRelay LogRelay { get; } = new();
+
+    // Where the run log is written, for a message that points at it.
+    internal static string LogFolder { get; } = Path.GetFullPath("logs");
 
     [STAThread]
     public static int Main(string[] args)
@@ -23,7 +27,7 @@ internal static class Program
             .MinimumLevel.Debug()
             .WriteTo.Console()
             .WriteTo.Debug()
-            .WriteTo.File("logs/spectra-editor-.log", rollingInterval: RollingInterval.Day)
+            .WriteTo.File(Path.Combine(LogFolder, "spectra-editor-.log"), rollingInterval: RollingInterval.Day)
             .WriteTo.Sink(LogRelay)
             .CreateLogger();
 

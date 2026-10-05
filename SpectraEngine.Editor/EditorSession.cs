@@ -122,6 +122,46 @@ public sealed class EditorSession : IDisposable
     /// <summary>Whether the render thread is running.</summary>
     public bool IsRunning => _engine.IsRunning;
 
+    /// <summary>
+    /// Why the render thread ended on an exception, or null while it has not.
+    /// Safe from any thread.
+    /// </summary>
+    public EngineFault? Fault => _engine.Fault;
+
+    /// <summary>
+    /// Whether the render thread died and has finished dying, so nothing is
+    /// drawing and <see cref="CaptureLevelAfterFault"/> may be called. Safe
+    /// from any thread.
+    /// </summary>
+    public bool HasDied => _engine.RenderThreadExited && _engine.Fault is not null;
+
+    /// <summary>
+    /// Takes the level out of a session that has died, so a new session can
+    /// carry on from it. A level that was playing is stopped first. Null when
+    /// the session died before it had a scene. Call before <see cref="Stop"/>,
+    /// which drops the scene.
+    /// </summary>
+    /// <param name="report">Records what a document cannot hold, such as a mesh built in code.</param>
+    /// <exception cref="InvalidOperationException">The session has not died.</exception>
+    // The only place a UI thread reads the scene. The render thread owns it
+    // while it lives, so this is legal only once that thread is gone.
+    public SessionRemains? CaptureLevelAfterFault(MapSaveReport? report = null)
+    {
+        if (!HasDied)
+        {
+            throw new InvalidOperationException(
+                "The scene can be read from here only after the render thread has ended on a fault.");
+        }
+
+        // As authored: running entities have moved nodes, and a save is
+        // refused during play for that reason.
+        if (SceneManager.TakeAuthoredMap(report) is not { } level)
+            return null;
+
+        ISceneEditor? editor = SceneManager.Editor;
+        return new SessionRemains(level, editor?.UndoDepth ?? 0, editor?.RedoDepth ?? 0);
+    }
+
     /// <summary>Starts the engine against a viewport surface.</summary>
     public void Start(IRenderSurface surface)
     {
@@ -363,30 +403,46 @@ public sealed class EditorSession : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(bundlePath);
         ArgumentNullException.ThrowIfNull(done);
 
-        Host.EnqueueCommand(scene =>
+        Host.EnqueueCommand(scene => ReplaceGraph(scene, () => MapBundle.Load(bundlePath), done));
+    }
+
+    /// <summary>
+    /// Replaces the live scene's graph with a document that is already in
+    /// memory. <c>done</c> runs on the render thread.
+    /// </summary>
+    public void ApplyMap(MapDocument document, Action<MapLoadReport?, Exception?> done)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(scene => ReplaceGraph(scene, () => document, done));
+    }
+
+    // Render thread.
+    private void ReplaceGraph(
+        Scene scene, Func<MapDocument> read, Action<MapLoadReport?, Exception?> done)
+    {
+        try
         {
-            try
-            {
-                MapDocument document = MapBundle.Load(bundlePath);
+            MapDocument document = read();
 
-                // Reset before the graph changes: the entity runtime, the
-                // selection and the undo history all refer to the old nodes,
-                // and a load keeps node ids.
-                SceneManager.OnSceneReplaced();
-                Editor?.OnSceneReplaced();
+            // Reset before the graph changes: the entity runtime, the
+            // selection and the undo history all refer to the old nodes,
+            // and a load keeps node ids.
+            SceneManager.OnSceneReplaced();
+            Editor?.OnSceneReplaced();
 
-                var report = new MapLoadReport();
-                MapSceneBinder.ApplyTo(document, scene, report);
-                scene.RebuildStaticWorld(_renderer);
+            var report = new MapLoadReport();
+            MapSceneBinder.ApplyTo(document, scene, report);
+            scene.RebuildStaticWorld(_renderer);
 
-                done(report, null);
-            }
-            catch (Exception ex) when (
-                ex is MapFormatException or IOException or UnauthorizedAccessException)
-            {
-                done(null, ex);
-            }
-        });
+            done(report, null);
+        }
+        catch (Exception ex) when (
+            ex is MapFormatException or IOException or UnauthorizedAccessException)
+        {
+            done(null, ex);
+        }
     }
 
     /// <summary>
