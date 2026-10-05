@@ -1295,6 +1295,53 @@ public sealed class SceneEditorHost : ISceneEditor
     }
 
     /// <summary>
+    /// Places a sound entity that plays one file where the pointer was, as one
+    /// history entry, and selects it. The node is named after the file.
+    /// </summary>
+    /// <param name="contentPath">The sound, as a path relative to the content root.</param>
+    /// <param name="viewportPoint">Where to aim, in viewport pixels; null means the centre of the view.</param>
+    public SoundInsertReport InsertSound(string contentPath, Vector2? viewportPoint = null)
+    {
+        if (string.IsNullOrWhiteSpace(contentPath))
+        {
+            _logger.LogWarning("Insert sound: refused, no asset path");
+            return SoundInsertReport.RefusedBecause(contentPath ?? string.Empty, "no asset path was given");
+        }
+
+        if (RefuseEdit("Insert sound"))
+        {
+            return SoundInsertReport.RefusedBecause(
+                contentPath,
+                IsSuspended ? "play mode owns the scene" : "a manipulation is in progress");
+        }
+
+        if (!SoundEntityBuilder.TryBuild(_scene.EntitySchemas, contentPath, out SceneNode? node, out string refusal))
+        {
+            _logger.LogWarning("Insert sound '{Path}': refused, {Reason}", contentPath, refusal);
+            return SoundInsertReport.RefusedBecause(contentPath, refusal);
+        }
+
+        _viewport.Reset();
+
+        Vector3 position = FindInsertPosition(0f, viewportPoint);
+        node.LocalPosition = position;
+
+        _undo.Execute(new AddNodesCommand(
+            [new NodePlacement(node, _scene.Root.Id, _scene.Root.Children.Count)])
+        {
+            Name = $"Insert {node.Name}",
+        });
+
+        _scene.Selection.Select(node);
+
+        _logger.LogInformation(
+            "Insert sound '{Path}' at ({X:0.##}, {Y:0.##}, {Z:0.##}) (undo {UndoDepth})",
+            contentPath, position.X, position.Y, position.Z, _undo.UndoCount);
+
+        return new SoundInsertReport(contentPath, node.Id, node.Name, null);
+    }
+
+    /// <summary>
     /// Paints the brush face under the pointer, or the whole brush. Does not
     /// change the selection.
     /// </summary>
