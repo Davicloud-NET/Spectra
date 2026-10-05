@@ -81,6 +81,9 @@ public sealed partial class AssetManager
     /// false when nothing was open under that path. Clips already created from
     /// it keep playing; they hold their own copy of the samples.
     /// </summary>
+    // A level's looped and long sounds are streamed from these bytes in place.
+    // Unloading one that is playing must happen on the render thread, and its
+    // voice then runs dry and ends.
     public bool UnloadAudio(string relativePath)
     {
         string key = ContentRoot.NormalizeRelativePath(relativePath);
