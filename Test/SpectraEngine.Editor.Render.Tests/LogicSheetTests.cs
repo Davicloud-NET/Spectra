@@ -128,7 +128,7 @@ public sealed class LogicSheetTests(RibbonSession session)
     [InlineData("whole")]
     [InlineData("around-relay")]
     [InlineData("playing")]
-    public void The_vault_level_fitted_into_a_pane_480_wide_keeps_its_ports_state_and_labels(string state)
+    public void The_vault_level_in_a_pane_480_wide_starts_readable_and_keeps_its_detail_when_fitted(string state)
     {
         session.On(() =>
         {
@@ -137,6 +137,11 @@ public sealed class LogicSheetTests(RibbonSession session)
             try
             {
                 LogicViewModel model = view.Model.ShouldNotBeNull();
+
+                // Too large to fit with readable text, so it is not shrunk until asked.
+                model.View.Zoom.ShouldBe(LogicPanZoom.ReadableZoom);
+
+                model.FitCommand.Execute(null);
 
                 model.View.ShouldBe(LogicPanZoom.Fit(model.Scene.ShouldNotBeNull().Size, model.ViewSize));
                 LogicDrawMetrics.DetailAt(model.View.Zoom).ShouldBe(LogicDetail.Full);

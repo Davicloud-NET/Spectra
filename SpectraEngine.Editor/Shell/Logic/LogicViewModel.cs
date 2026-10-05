@@ -389,10 +389,11 @@ public sealed class LogicViewModel : ObservableObject
 
     private void FitIfAsked()
     {
-        if (_viewSize.Width <= 0 || _viewSize.Height <= 0 || Scene is not { Cards.Count: > 0 })
+        if (_viewSize.Width <= 0 || _viewSize.Height <= 0 || Scene is not { Cards.Count: > 0 } scene || !_fit.Take())
             return;
 
-        if (_fit.Take())
-            Fit();
+        // Placed, not fitted: in a low pane a fit would shrink the text away.
+        View = LogicPanZoom.Placed(scene.Size, _viewSize, scene.BoundsOf(_selection.Ids));
+        _fit.Fitted();
     }
 }

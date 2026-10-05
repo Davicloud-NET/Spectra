@@ -13,7 +13,11 @@ namespace SpectraEngine.Editor.Tests.Logic;
 /// </summary>
 public sealed class LogicViewModelPlaceTests
 {
-    private static readonly Size Pane = new(700, 400);
+    // Large enough that the vault level fits with its text still readable.
+    private static readonly Size Pane = new(1000, 600);
+
+    // Too low for that.
+    private static readonly Size LowPane = new(700, 220);
     private static readonly LogicPanZoom Chosen = new(new Vector(-120, 35), 1.5);
 
     private readonly LogicGraphInfo _level = Level(VaultEntities());
@@ -33,6 +37,44 @@ public sealed class LogicViewModelPlaceTests
 
         model.View.ShouldBe(Fitted(model));
         model.View.Zoom.ShouldBeLessThan(1);
+    }
+
+    [Fact]
+    public void A_graph_too_large_to_read_when_fitted_starts_readable_at_its_corner()
+    {
+        LogicViewModel model = Model(LogicScopeMode.WholeLevel);
+        model.ViewSize = LowPane;
+
+        model.Apply(Snapshot(_level));
+
+        model.View.ShouldBe(new LogicPanZoom(default, LogicPanZoom.ReadableZoom));
+    }
+
+    [Fact]
+    public void Near_the_selection_such_a_graph_starts_readable_with_the_selected_card_in_the_middle()
+    {
+        LogicViewModel model = Model(LogicScopeMode.AroundSelection);
+        model.ViewSize = LowPane;
+
+        model.Apply(Snapshot(_level, null, OpenVault));
+
+        model.View.Zoom.ShouldBe(LogicPanZoom.ReadableZoom);
+        Point card = model.View.ToView(model.Scene.ShouldNotBeNull().CardOf(OpenVault).ShouldNotBeNull().Bounds.Center);
+        Math.Abs(card.X - LowPane.Width / 2).ShouldBeLessThanOrEqualTo(1);
+        Math.Abs(card.Y - LowPane.Height / 2).ShouldBeLessThanOrEqualTo(1);
+    }
+
+    [Fact]
+    public void The_fit_command_still_shows_all_of_a_graph_that_large()
+    {
+        LogicViewModel model = Model(LogicScopeMode.WholeLevel);
+        model.ViewSize = LowPane;
+        model.Apply(Snapshot(_level));
+
+        model.FitCommand.Execute(null);
+
+        model.View.ShouldBe(LogicPanZoom.Fit(model.Scene.ShouldNotBeNull().Size, LowPane));
+        model.View.Zoom.ShouldBeLessThan(LogicPanZoom.ReadableZoom);
     }
 
     [Fact]

@@ -10,6 +10,34 @@ public sealed class LogicPanZoomTests
     private static readonly Size View = new(800, 600);
 
     [Fact]
+    public void A_graph_that_fits_readably_is_placed_fitted()
+    {
+        var scene = new Size(900, 500);
+
+        LogicPanZoom.Placed(scene, View, null).ShouldBe(LogicPanZoom.Fit(scene, View));
+    }
+
+    [Fact]
+    public void A_graph_that_would_be_too_small_to_read_is_placed_readable_at_its_corner()
+    {
+        LogicPanZoom.Placed(new Size(4000, 3000), View, null)
+            .ShouldBe(new LogicPanZoom(default, LogicPanZoom.ReadableZoom));
+    }
+
+    [Fact]
+    public void With_something_to_focus_on_it_is_placed_readable_about_that()
+    {
+        var focus = new Rect(2000, 1500, 184, 90);
+
+        LogicPanZoom placed = LogicPanZoom.Placed(new Size(4000, 3000), View, focus);
+
+        placed.Zoom.ShouldBe(LogicPanZoom.ReadableZoom);
+        Point middle = placed.ToView(focus.Center);
+        Math.Abs(middle.X - View.Width / 2).ShouldBeLessThanOrEqualTo(1);
+        Math.Abs(middle.Y - View.Height / 2).ShouldBeLessThanOrEqualTo(1);
+    }
+
+    [Fact]
     public void A_scene_point_goes_to_the_view_and_back()
     {
         var at = new LogicPanZoom(new Vector(30, -12), 0.5);

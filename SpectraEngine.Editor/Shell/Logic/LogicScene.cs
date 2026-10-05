@@ -34,6 +34,23 @@ public sealed class LogicScene
     /// <summary>The card of an entity, or null when the scene does not show it.</summary>
     public LogicSceneCard? CardOf(Guid nodeId) => _byNode.GetValueOrDefault(nodeId);
 
+    /// <summary>The room the cards of these entities take together, or null when none is on show.</summary>
+    public Rect? BoundsOf(IReadOnlySet<Guid> nodes)
+    {
+        ArgumentNullException.ThrowIfNull(nodes);
+
+        Rect? bounds = null;
+        foreach (LogicSceneCard card in Cards)
+        {
+            if (card.Card.IsStub || !nodes.Contains(card.Card.NodeId))
+                continue;
+
+            bounds = bounds is { } sofar ? sofar.Union(card.Bounds) : card.Bounds;
+        }
+
+        return bounds;
+    }
+
     /// <summary>
     /// What is under a point. A port wins over its card, a card over a label,
     /// a label over a wire. Among several of one kind the nearest wins.

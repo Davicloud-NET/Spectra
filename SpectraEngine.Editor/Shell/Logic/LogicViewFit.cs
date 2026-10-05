@@ -20,7 +20,7 @@ public readonly record struct LogicViewFit
     public const double LongPlaceholderWidth = 150;
 
     /// <summary>The least height the graph keeps before the event strip gives way.</summary>
-    public const double LeastGraphHeight = 96;
+    public const double LeastGraphHeight = 200;
 
     // The toolbar and the status row, which are always there, and the event
     // strip. LogicViewFitTests holds them to the theme's heights.

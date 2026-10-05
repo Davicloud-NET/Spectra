@@ -19,6 +19,9 @@ public readonly record struct LogicPanZoom(Vector Offset, double Zoom)
     /// <summary>The furthest out <see cref="Fit"/> goes, to show the whole of a large graph.</summary>
     public const double MinimumFitZoom = 0.02;
 
+    /// <summary>The smallest zoom a graph is placed at without being asked: its text can still be read.</summary>
+    public const double ReadableZoom = 0.75;
+
     /// <summary>The scene at its own size, its corner in the view's corner.</summary>
     public static LogicPanZoom Identity => new(default, 1);
 
@@ -75,6 +78,23 @@ public readonly record struct LogicPanZoom(Vector Offset, double Zoom)
 
         double zoom = Math.Min(1, Math.Min(view.Width / scene.Width, view.Height / scene.Height));
         return new LogicPanZoom(default, Math.Max(zoom, MinimumFitZoom)).CenteredOn(new Rect(scene), view);
+    }
+
+    /// <summary>
+    /// Where a graph goes when nobody asked for a place: fitted when that
+    /// leaves its text readable, otherwise at <see cref="ReadableZoom"/> with
+    /// <paramref name="focus"/> in the middle, or the scene's corner in the
+    /// view's corner when there is nothing to focus on.
+    /// </summary>
+    /// <param name="focus">The part of the scene to keep in view, such as the selected cards.</param>
+    public static LogicPanZoom Placed(Size scene, Size view, Rect? focus)
+    {
+        LogicPanZoom fitted = Fit(scene, view);
+        if (fitted.Zoom >= ReadableZoom)
+            return fitted;
+
+        var readable = new LogicPanZoom(default, ReadableZoom);
+        return focus is { } rect ? readable.CenteredOn(rect, view) : readable;
     }
 
     private static Vector Whole(Vector offset) => new(Math.Round(offset.X), Math.Round(offset.Y));
