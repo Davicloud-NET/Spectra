@@ -18,12 +18,10 @@ public sealed class LogicCanvas : Control
         AvaloniaProperty.Register<LogicCanvas, LogicViewModel?>(nameof(Model));
 
     private readonly LogicWireMenus _menus;
+    private readonly LogicHover _hover;
     private LogicGraphPainter? _painter;
     private LogicViewModel? _heard;
     private bool _isShown;
-    private LogicScene? _hoverScene;
-    private LogicSceneCard? _hoveredCard;
-    private LogicSceneEdge? _hoveredEdge;
 
     // A press that has not been let go of yet.
     private IPointer? _pressed;
@@ -43,6 +41,7 @@ public sealed class LogicCanvas : Control
     public LogicCanvas()
     {
         _menus = new LogicWireMenus(this, entity => SelectRequested?.Invoke(entity, false));
+        _hover = new LogicHover(this);
         ClipToBounds = true;
 
         // A press here takes the keyboard, so the window's keys act on what
@@ -77,7 +76,7 @@ public sealed class LogicCanvas : Control
         // Not in the constructor: the theme is read here, and a canvas may be
         // made before the application has one.
         _painter ??= new LogicGraphPainter();
-        _painter.Draw(context, Bounds.Size, Model, _hoveredCard, _hoveredEdge);
+        _painter.Draw(context, Bounds.Size, Model, _hover.Card, _hover.Edge);
     }
 
     /// <inheritdoc/>
@@ -178,7 +177,7 @@ public sealed class LogicCanvas : Control
         Point at = e.GetPosition(this);
         if (_pressed is null)
         {
-            Hover(at);
+            _hover.MoveTo(Model, at);
             return;
         }
 
@@ -236,7 +235,7 @@ public sealed class LogicCanvas : Control
         else if (clicked)
             Click(hit, e.KeyModifiers.HasFlag(KeyModifiers.Control));
 
-        Hover(at);
+        _hover.MoveTo(Model, at);
     }
 
     /// <inheritdoc/>
@@ -264,7 +263,7 @@ public sealed class LogicCanvas : Control
         if (model.Wiring.Gesture.ShowsWire)
             DragWire(model, at);
         else
-            Hover(at);
+            _hover.MoveTo(model, at);
 
         e.Handled = true;
     }
@@ -273,7 +272,7 @@ public sealed class LogicCanvas : Control
     protected override void OnPointerExited(PointerEventArgs e)
     {
         base.OnPointerExited(e);
-        SetHover(null, null);
+        _hover.Clear(Model);
     }
 
     /// <inheritdoc/>
@@ -319,7 +318,7 @@ public sealed class LogicCanvas : Control
         }
 
         _heard = model;
-        SetHover(null, null);
+        _hover.Clear(Model);
 
         if (model is not null)
         {
@@ -332,10 +331,7 @@ public sealed class LogicCanvas : Control
 
     private void OnRedraw()
     {
-        // What the pointer was on belongs to a scene that may be gone.
-        if (!ReferenceEquals(Model?.Scene, _hoverScene))
-            SetHover(null, null);
-
+        _hover.ClearIfStale(Model);
         _menus.CloseStale(Model);
         InvalidateVisual();
     }
@@ -357,7 +353,7 @@ public sealed class LogicCanvas : Control
 
         // The sender is not under the pointer for the tooltip any more.
         if (!showedWire && model.Wiring.Gesture.ShowsWire)
-            SetHover(null, null);
+            _hover.Clear(model);
     }
 
     // Whatever button comes up next ends the press, and must not click.
@@ -365,33 +361,5 @@ public sealed class LogicCanvas : Control
     {
         _clicks = false;
         model.Wiring.Cancel();
-    }
-
-    private void Hover(Point at)
-    {
-        LogicHit hit = Model?.HitTest(at) ?? LogicHit.None;
-        SetHover(hit.Card, hit.Edge);
-    }
-
-    private void SetHover(LogicSceneCard? card, LogicSceneEdge? edge)
-    {
-        _hoverScene = Model?.Scene;
-        if (ReferenceEquals(card, _hoveredCard) && ReferenceEquals(edge, _hoveredEdge))
-            return;
-
-        _hoveredCard = card;
-        _hoveredEdge = edge;
-
-        // A wire says what it does in a sentence. A card says its whole
-        // name, which the card itself may have cut short.
-        string? tip = edge is not null ? Model?.FaceOf(edge)?.Sentence
-            : card is not null ? LogicViewText.Sentence(card.Card)
-            : null;
-
-        ToolTip.SetTip(this, tip);
-        if (tip is null)
-            ToolTip.SetIsOpen(this, false);
-
-        InvalidateVisual();
     }
 }
