@@ -69,6 +69,15 @@ public sealed class DemoStartupOptionsTests
         Should.Throw<ArgumentException>(() => DemoStartupOptions.Parse([argument], null));
 
     [Fact]
+    public void Console_is_off_unless_asked_for()
+    {
+        DemoStartupOptions.Parse(["d3d11"], null).ConsoleInput.ShouldBeFalse();
+        DemoStartupOptions.Parse(["d3d11", "--command=help"], null).ConsoleInput.ShouldBeFalse();
+        DemoStartupOptions.Parse(["d3d11", "--console"], null).ConsoleInput.ShouldBeTrue();
+        DemoStartupOptions.Parse(["d3d11", "--console=false"], "true").ConsoleInput.ShouldBeFalse();
+    }
+
+    [Fact]
     public void The_pipeline_compare_runs_only_when_asked_for()
     {
         DemoStartupOptions.Parse(["d3d11"], null).PipelineCompare.ShouldBeFalse();

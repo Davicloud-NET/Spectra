@@ -221,6 +221,12 @@ try
 
     DemoConsole.Attach(engine.Host, options.Commands, loggerFactory.CreateLogger("Console"));
 
+    if (options.ConsoleInput)
+    {
+        Log.Information("Console input is on: type a line in this terminal, such as help.");
+        ConsoleLineReader.Start(Console.In, engine.Host.SubmitConsoleLine);
+    }
+
     // Both probes replace the ordinary session and end themselves.
     if (options.ViewportCompare)
     {
