@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>SoundCornersSpike</RootNamespace>
+    <!-- Tiered PGO re-instruments mid-run and moves the medians, as in CsgBench. -->
+    <TieredCompilation>false</TieredCompilation>
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <!-- Only for run.ps1 -Aot. Set on the command line, PublishAot would reach every referenced project. -->
+    <PublishAot Condition="'$(SpikeAot)' == 'true'">true</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\SpectraEngine.Core\SpectraEngine.Core.csproj" />
+  </ItemGroup>
+
+</Project>
