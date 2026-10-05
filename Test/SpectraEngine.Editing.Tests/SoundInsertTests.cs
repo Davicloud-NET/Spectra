@@ -147,6 +147,38 @@ public sealed class SoundInsertTests
     }
 
     [Fact]
+    public void With_several_classes_to_choose_from_the_report_names_the_one_it_took()
+    {
+        Scene scene = SceneWith(
+            new EntitySchema("test_door", placement: EntityPlacement.Brush, keyvalues: [Setting("opensound", KeyvalueType.AssetSound)]),
+            new EntitySchema("test_radio", keyvalues: [Setting("station", KeyvalueType.AssetSound)]),
+            new EntitySchema(Speaker, keyvalues: [Setting("file", KeyvalueType.AssetSound)]));
+        SceneEditorHost host = NewHost(scene);
+
+        SoundInsertReport report = host.InsertSound(DoorOpen);
+
+        // The door is made from geometry, so a file is never placed as one.
+        SoundEntityBuilder.CountClasses(scene.EntitySchemas).ShouldBe(2);
+        report.ClassName.ShouldBe("test_radio");
+        report.OtherClasses.ShouldBe(1);
+        report.Describe().ShouldBe(
+            "Sounds/door_open.wav placed as 'door_open' of class test_radio. 1 other class takes a sound file too.");
+        scene.Root.Children.ShouldHaveSingleItem().Entity.ShouldNotBeNull().ClassName.ShouldBe("test_radio");
+    }
+
+    [Fact]
+    public void With_one_class_to_choose_from_the_report_has_nothing_to_add()
+    {
+        Scene scene = SceneWithASpeaker();
+        SceneEditorHost host = NewHost(scene);
+
+        SoundInsertReport report = host.InsertSound(DoorOpen);
+
+        report.ClassName.ShouldBe(Speaker);
+        report.OtherClasses.ShouldBe(0);
+    }
+
+    [Fact]
     public void A_project_with_no_class_that_plays_a_sound_file_refuses_the_drop()
     {
         Scene scene = SceneWith(new EntitySchema("test_light", keyvalues: [Setting("color", KeyvalueType.Color)]));

@@ -15,7 +15,8 @@ public static class SoundEntityBuilder
 {
     /// <summary>
     /// Finds the class a sound file is placed as: the first one placed at a
-    /// point that has a sound file among its settings.
+    /// point that has a sound file among its settings. With several, that is
+    /// the first by name, and <see cref="CountClasses"/> says there were more.
     /// </summary>
     /// <param name="setting">The name of the setting that takes the file.</param>
     public static bool TryFindClass(
@@ -29,19 +30,47 @@ public static class SoundEntityBuilder
 
         foreach (EntitySchema candidate in schemas.Schemas)
         {
-            if (candidate.Placement != EntityPlacement.Point)
+            if (!TakesSoundFile(candidate, out setting))
                 continue;
 
-            IReadOnlyList<KeyvalueDescriptor> declared = candidate.Keyvalues;
-            for (int i = 0; i < declared.Count; i++)
-            {
-                if (declared[i].Type != KeyvalueType.AssetSound)
-                    continue;
+            schema = candidate;
+            return true;
+        }
 
-                schema = candidate;
-                setting = declared[i].Name;
-                return true;
-            }
+        return false;
+    }
+
+    /// <summary>How many classes a sound file could be placed as.</summary>
+    public static int CountClasses(EntitySchemaCatalog? schemas)
+    {
+        if (schemas is null)
+            return 0;
+
+        int count = 0;
+        foreach (EntitySchema candidate in schemas.Schemas)
+        {
+            if (TakesSoundFile(candidate, out _))
+                count++;
+        }
+
+        return count;
+    }
+
+    private static bool TakesSoundFile(EntitySchema schema, out string setting)
+    {
+        setting = string.Empty;
+
+        if (schema.Placement != EntityPlacement.Point)
+            return false;
+
+        IReadOnlyList<KeyvalueDescriptor> declared = schema.Keyvalues;
+        for (int i = 0; i < declared.Count; i++)
+        {
+            if (declared[i].Type != KeyvalueType.AssetSound)
+                continue;
+
+            setting = declared[i].Name;
+            return true;
         }
 
         return false;

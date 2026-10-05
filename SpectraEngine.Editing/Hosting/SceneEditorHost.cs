@@ -1334,11 +1334,16 @@ public sealed class SceneEditorHost : ISceneEditor
 
         _scene.Selection.Select(node);
 
+        string className = node.Entity?.ClassName ?? string.Empty;
         _logger.LogInformation(
-            "Insert sound '{Path}' at ({X:0.##}, {Y:0.##}, {Z:0.##}) (undo {UndoDepth})",
-            contentPath, position.X, position.Y, position.Z, _undo.UndoCount);
+            "Insert sound '{Path}' as {Class} at ({X:0.##}, {Y:0.##}, {Z:0.##}) (undo {UndoDepth})",
+            contentPath, className, position.X, position.Y, position.Z, _undo.UndoCount);
 
-        return new SoundInsertReport(contentPath, node.Id, node.Name, null);
+        return new SoundInsertReport(contentPath, node.Id, node.Name, null)
+        {
+            ClassName = className,
+            OtherClasses = SoundEntityBuilder.CountClasses(_scene.EntitySchemas) - 1,
+        };
     }
 
     /// <summary>
