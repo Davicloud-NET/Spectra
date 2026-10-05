@@ -43,7 +43,7 @@ public sealed class DemoStartRoomSoundTests : IClassFixture<CookedDemoSounds>
     {
         List<EntityData> sounds = SoundsOfTheStartRoom();
 
-        sounds.Count.ShouldBe(6);
+        sounds.Count.ShouldBe(7);
         foreach (EntityData sound in sounds)
         {
             sound.TryGetValue("sound", out string path).ShouldBeTrue();
@@ -192,7 +192,7 @@ public sealed class DemoStartRoomSoundTests : IClassFixture<CookedDemoSounds>
         using var rig = new StartRoomSoundRig(_cooked);
         rig.Session.Enter();
         FuncMoveLinear lift = rig.Live<FuncMoveLinear>(DemoPlayArea.LiftName);
-        PressTheLiftButton(rig);
+        rig.PressTheLiftButton();
 
         int moved = 0;
         bool wasUp = false;
@@ -218,7 +218,7 @@ public sealed class DemoStartRoomSoundTests : IClassFixture<CookedDemoSounds>
         using var rig = new StartRoomSoundRig(_cooked);
         rig.Session.Enter();
         FuncMoveLinear lift = rig.Live<FuncMoveLinear>(DemoPlayArea.LiftName);
-        PressTheLiftButton(rig);
+        rig.PressTheLiftButton();
         for (int i = 0; i < 300 && lift.TicksTravelled < lift.TravelTicks; i++)
             rig.Tick(default);
 
@@ -259,20 +259,6 @@ public sealed class DemoStartRoomSoundTests : IClassFixture<CookedDemoSounds>
 
         door.IsFullyOpen.ShouldBeTrue();
         return slides;
-    }
-
-    // Stands on the lift and uses the button, which is on the wall to its south.
-    private static void PressTheLiftButton(StartRoomSoundRig rig)
-    {
-        rig.Character.Teleport(new Vector3(123f, 0.35f, -3f));
-        rig.Idle(30);
-
-        var press = new CharacterCommand
-        {
-            Yaw = MathF.Atan2(1.5f, -0.85f),
-            Buttons = CharacterButtons.Use,
-        };
-        rig.Tick(in press);
     }
 
     private static List<EntityData> SoundsOfTheStartRoom()

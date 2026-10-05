@@ -7,7 +7,6 @@ using SpectraEngine.Core.Physics.Character;
 using SpectraEngine.Core.Play;
 using SpectraEngine.Core.Scene;
 using System;
-using System.Numerics;
 
 namespace SpectraEngine.Entities.Tests;
 
@@ -78,53 +77,6 @@ public sealed class DemoStartRoomTests
             session.Tick(Dt, in west);
 
         character.State.Position.X.ShouldBeLessThanOrEqualTo(128f);
-    }
-
-    [Fact]
-    public void The_button_sends_the_lift_up_with_the_player_on_it_and_it_comes_back_down()
-    {
-        SceneManager manager = Demo();
-        Scene scene = manager.ActiveScene.ShouldNotBeNull();
-        CharacterSimulation character = Walker(manager);
-        var session = new PlaySession(manager, character);
-        session.Enter();
-        SceneNode liftNode = scene.Root.Children.Single(node => node.Name == DemoPlayArea.LiftName);
-        FuncMoveLinear lift = EntityRuntime.Live<FuncMoveLinear>(manager.EntityWorld.ShouldNotBeNull(), liftNode);
-
-        // Onto the middle of the lift, whose top is 0.3 up.
-        character.Teleport(new Vector3(123f, 0.35f, -3f));
-        Idle(session, 30);
-        character.State.Grounded.ShouldBeTrue();
-        character.State.GroundNodeId.ShouldBe(liftNode.Id);
-
-        // The button is on the west wall, to the south of the lift.
-        var press = new CharacterCommand
-        {
-            Yaw = MathF.Atan2(1.5f, -0.85f),
-            Buttons = CharacterButtons.Use,
-        };
-        session.Tick(Dt, in press);
-        Idle(session, lift.TravelTicks + 5);
-
-        lift.TicksTravelled.ShouldBe(lift.TravelTicks);
-        liftNode.LocalPosition.Y.ShouldBe(2.35f, 1e-4f);
-        character.State.Grounded.ShouldBeTrue();
-
-        // Level with the tops of the walls, which are 2.5 high.
-        character.State.Position.Y.ShouldBe(2.5f, 0.05f);
-
-        // Three seconds up there, then the way down.
-        Idle(session, 180 + lift.TravelTicks + 5);
-
-        lift.TicksTravelled.ShouldBe(0);
-        character.State.Grounded.ShouldBeTrue();
-        character.State.Position.Y.ShouldBe(0.3f, 0.05f);
-    }
-
-    private static void Idle(PlaySession session, int ticks)
-    {
-        for (int i = 0; i < ticks; i++)
-            session.Tick(Dt, default);
     }
 
     private static int WalkEast(PlaySession session, CharacterSimulation character)

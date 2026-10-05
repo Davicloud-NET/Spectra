@@ -79,6 +79,9 @@ internal sealed class StartRoomSoundRig : IDisposable
 
     public SoundPresenter Presenter { get; }
 
+    // Speech only until a test sets it, as the engine starts.
+    public CaptionFeed Captions => Presenter.Captions;
+
     public CharacterSimulation Character { get; }
 
     public PlaySession Session { get; }
@@ -104,6 +107,22 @@ internal sealed class StartRoomSoundRig : IDisposable
     {
         for (int i = 0; i < ticks; i++)
             Tick(default);
+    }
+
+    // Stands on the lift and uses the button, which is on the wall to its
+    // south. The button takes the press on the tick after this.
+    public void PressTheLiftButton()
+    {
+        // Onto the middle of the lift, whose top is 0.3 up.
+        Character.Teleport(new Vector3(123f, 0.35f, -3f));
+        Idle(30);
+
+        var press = new CharacterCommand
+        {
+            Yaw = MathF.Atan2(1.5f, -0.85f),
+            Buttons = CharacterButtons.Use,
+        };
+        Tick(in press);
     }
 
     // The listener is the player's eye, as the camera is in play.

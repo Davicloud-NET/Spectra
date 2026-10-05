@@ -59,6 +59,12 @@ public static class DemoPlayArea
     /// <summary>The clunk of the lift arriving, a <c>point_sound</c> under the lift.</summary>
     public const string LiftStopSoundName = "LiftStopSound";
 
+    /// <summary>The lift's spoken line, a <c>point_sound</c> under the lift.</summary>
+    public const string LiftVoiceName = "LiftVoice";
+
+    /// <summary>What tells the markers of the lift's line apart, a <c>logic_case</c> under the lift.</summary>
+    public const string LiftVoiceMarkersName = "LiftVoiceMarkers";
+
     /// <summary>The button's click, a <c>point_sound</c> under the button.</summary>
     public const string ButtonSoundName = "ButtonSound";
 
@@ -77,6 +83,12 @@ public static class DemoPlayArea
 
     // How long the lift stays at the top before it comes down.
     private const float LiftWaitSeconds = 3f;
+
+    // The length of lift_voice.wav.
+    private const string LiftLineSeconds = "1.2";
+
+    // The marker in lift_voice.wav where the second word starts.
+    private const string LiftStartMarker = "up";
 
     /// <summary>
     /// Authors the whole course into <paramref name="scene"/> and returns how
@@ -234,7 +246,10 @@ public static class DemoPlayArea
         count++;
         button.Entity = new Entities.EntityData("func_button");
         button.Entity.SetValue("movedir", "-1 0 0");
-        Wire(button, "OnPressed", LiftName, "Open");
+
+        // In for as long as the lift's line takes to say. A button that is
+        // in takes no press, so a second one cannot start the line over.
+        button.Entity.SetValue("wait", LiftLineSeconds);
 
         StartRoomSounds(scene, door, lift, button);
 
@@ -258,11 +273,26 @@ public static class DemoPlayArea
         Sound(lift.CreateChild(LiftMoveSoundName), "lift_move.wav", "2", "15").SetValue("looped", "1");
         Sound(lift.CreateChild(LiftStopSoundName), "lift_stop.wav", "2", "15");
 
+        // The button says the line, and the line sends the lift up on its
+        // second word. OnMarker carries the marker's name to the case, and
+        // the case fires for the one name it holds. Where the line cannot
+        // be loaded no marker fires, and the lift stays down.
+        SceneNode voice = lift.CreateChild(LiftVoiceName);
+        Sound(voice, "lift_voice.wav", "3", "20");
+
+        SceneNode markers = lift.CreateChild(LiftVoiceMarkersName);
+        markers.Entity = new Entities.EntityData("logic_case");
+        markers.Entity.SetValue("case01", LiftStartMarker);
+
+        Wire(button, "OnPressed", LiftVoiceName, "Play");
+        Wire(voice, "OnMarker", LiftVoiceMarkersName, "InValue");
+        Wire(markers, "OnCase01", LiftName, "Open");
+
         // A mover has no output for starting to move. The hum starts with
-        // the two wires that start the lift: the button's, and the lift's
+        // the two wires that start the lift: the case's, and the lift's
         // own after its wait at the top. A press while it waits up there
         // starts the hum too, over a lift that stands still.
-        Wire(button, "OnPressed", LiftMoveSoundName, "Play");
+        Wire(markers, "OnCase01", LiftMoveSoundName, "Play");
         Wire(lift, "OnFullyOpen", LiftMoveSoundName, "Stop");
         Wire(lift, "OnFullyOpen", LiftStopSoundName, "Play");
         Wire(lift, "OnFullyOpen", LiftMoveSoundName, "Play", delay: LiftWaitSeconds);
