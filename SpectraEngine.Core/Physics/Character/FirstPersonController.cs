@@ -294,8 +294,8 @@ public sealed class FirstPersonController
 
     /// <summary>
     /// Takes the news that the view was put somewhere else with nothing to
-    /// blend from: a teleport or a respawn, however short. True once for
-    /// each. Call after <see cref="UpdateView"/>.
+    /// blend from: a teleport or a respawn, however short. True once, then
+    /// false until the next. Call after <see cref="UpdateView"/>.
     /// </summary>
     // For what follows the camera, such as the sound listener. A short hop
     // looks like fast motion from the positions alone.

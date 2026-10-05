@@ -49,7 +49,7 @@ internal sealed class LevelDoppler
         {
             ref PresentedEmitter sound = ref presented[i];
 
-            // A loop turns round on the level's count, so that is all it is followed by.
+            // A loop turns round on the level's count, so its captions keep to that.
             if (sound.Voice is not null && !sound.Emitter.Loop.IsLooping)
                 sound.VoiceLead += (sound.PitchFactor - 1f) * deltaSeconds;
         }
