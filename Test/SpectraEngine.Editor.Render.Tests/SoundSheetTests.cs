@@ -276,6 +276,6 @@ public sealed class SoundSheetTests(RibbonSession session) : IDisposable
         WriteableBitmap frame = surface.GetLastRenderedFrame().ShouldNotBeNull("nothing was rasterised");
 
         Directory.CreateDirectory(RibbonSheetTests.OutputDirectory);
-        frame.Save(Path.Combine(RibbonSheetTests.OutputDirectory, fileName), quality: null);
+        frame.Save(Path.Combine(RibbonSheetTests.OutputDirectory, fileName), new PngBitmapEncoderOptions());
     }
 }
