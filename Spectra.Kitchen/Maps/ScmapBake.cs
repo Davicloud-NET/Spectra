@@ -6,6 +6,7 @@ using SpectraEngine.Core;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps;
 using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Scene;
@@ -132,6 +133,14 @@ public static class ScmapBake
             else if (node.Brush is { } unkept)
                 ClaimFaceMaterials(unkept, assets);
 
+            if (node.Entity is { } entity)
+            {
+                if (node.IsStaticWorldBrush) report(EntityOnWorldBrush(node, entity, sourcePath));
+
+                builder.AddEntity(new ScmapEntitySource(
+                    index, entity.ClassName, [.. entity.Keyvalues], [.. entity.Connections]));
+            }
+
             PushChildren(pending, mapped.Children, node, index);
         }
 
@@ -164,10 +173,30 @@ public static class ScmapBake
         return mapped.Mesh is not null ? ScmapPayloadKind.MeshInstance : ScmapPayloadKind.None;
     }
 
-    private static ScmapPayloadFlags PayloadFlagsOf(SceneNode node) =>
-        node.Brush is { Operation: BrushOperation.Subtractive }
-            ? ScmapPayloadFlags.SubtractiveBrush
-            : ScmapPayloadFlags.None;
+    private static ScmapPayloadFlags PayloadFlagsOf(SceneNode node)
+    {
+        ScmapPayloadFlags flags = ScmapPayloadFlags.None;
+
+        if (node.Brush is { Operation: BrushOperation.Subtractive }) flags |= ScmapPayloadFlags.SubtractiveBrush;
+        if (node.Brush is not null && node.Entity is not null) flags |= ScmapPayloadFlags.IsEntityOwned;
+
+        if (!node.CanCollide) flags |= ScmapPayloadFlags.NoCollide;
+        if (!node.CanQuery) flags |= ScmapPayloadFlags.NoQuery;
+        if (!node.CanTouch) flags |= ScmapPayloadFlags.NoTouch;
+        if (!node.IsRendered) flags |= ScmapPayloadFlags.NoRender;
+
+        return flags;
+    }
+
+    // Said here because a cooked world brush node has no brush left: at run
+    // time nothing can tell it was world geometry.
+    private static CookDiagnostic EntityOnWorldBrush(SceneNode node, EntityData entity, string sourcePath) =>
+        CookDiagnostic.Warning(
+            CookDiagnosticCodes.MapEntityOnWorldBrush,
+            $"Node '{node.Name}' in '{sourcePath}' carries the entity '{entity.ClassName}' and a world " +
+            "brush. A world brush is baked into the level, so the entity cannot move it, hide it or switch " +
+            "its collision off. Make the brush a part.",
+            sourcePath);
 
     // Zero for a brush: the BRSH record points at its node, not the other way round.
     private static uint PayloadIndexOf(MapNode mapped, AssetTable assets) =>

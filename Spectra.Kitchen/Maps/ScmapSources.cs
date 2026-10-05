@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Scene;
 
@@ -103,6 +105,18 @@ public readonly record struct ScmapBrushSourceEntry(
     int NodeIndex,
     Plane[] Planes,
     ScmapFaceSource[] Faces);
+
+/// <summary>
+/// One entity on its way into an <c>ENTT</c> record, with its keyvalues and wires.
+/// </summary>
+/// <param name="NodeIndex">The <c>NODE</c> record this entity sits on.</param>
+/// <param name="Keyvalues">In authored order. A key may repeat.</param>
+/// <param name="Connections">In authored order.</param>
+public readonly record struct ScmapEntitySource(
+    int NodeIndex,
+    string ClassName,
+    KeyValuePair<string, string>[] Keyvalues,
+    EntityConnection[] Connections);
 
 /// <summary>One asset on its way into an <c>ASTB</c> record.</summary>
 /// <param name="ContentPath">The normalised content-relative path.</param>

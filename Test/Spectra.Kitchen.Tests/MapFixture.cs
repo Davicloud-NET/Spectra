@@ -3,6 +3,7 @@ using System.IO;
 using System.Numerics;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps;
 using SpectraEngine.Core.Scene;
 
@@ -35,7 +36,8 @@ internal sealed class MapFixture
             $"Materials/{caller}_{stamp}_floor.spectramat");
     }
 
-    public SpectraEngine.Core.Scene.Scene BuildScene(bool withDoorway = true, bool withPart = true)
+    public SpectraEngine.Core.Scene.Scene BuildScene(
+        bool withDoorway = true, bool withPart = true, bool withEntities = false)
     {
         var scene = new SpectraEngine.Core.Scene.Scene("BakeRoom");
 
@@ -64,12 +66,58 @@ internal sealed class MapFixture
             part.BrushKind = BrushKind.Part;
         }
 
+        if (withEntities) AddEntities(scene, wall);
+
         return scene;
     }
 
-    public string WriteBundle(TempProject project, string bundleName, bool withDoorway = true, bool withPart = true)
+    // A door, the trigger volume wired to it, a relay and a player start. Last
+    // in the walk, parts or bare nodes, wearing a material the room already
+    // names: they change neither the chunks nor the asset rows.
+    private static void AddEntities(SpectraEngine.Core.Scene.Scene scene, MaterialRef wall)
     {
-        SpectraEngine.Core.Scene.Scene scene = BuildScene(withDoorway, withPart);
+        SceneNode door = Box(scene, "Door", new Vector3(0f, 1.2f, -4.25f), new Vector3(1f, 1.2f, 0.1f), wall);
+        door.BrushKind = BrushKind.Part;
+        door.Entity = new EntityData("func_door");
+        door.Entity.Keyvalues.Add(new("speed", "100"));
+        door.Entity.Keyvalues.Add(new("movedir", "0 1 0"));
+        door.Entity.Connections.Add(new EntityConnection(
+            "OnFullyOpen", "Relay", "Trigger", "", 0f, EntityConnection.Infinite));
+
+        // A trigger volume: touched, never bumped into, never drawn.
+        SceneNode trigger = Box(scene, "DoorTrigger", new Vector3(0f, 1.2f, -3f), new Vector3(1f, 1.2f, 1f), wall);
+        trigger.BrushKind = BrushKind.Part;
+        trigger.CanCollide = false;
+        trigger.CanQuery = false;
+        trigger.IsRendered = false;
+        trigger.Entity = new EntityData("trigger_multiple");
+        trigger.Entity.Connections.Add(new EntityConnection(
+            "OnStartTouch", "Door", "Open", "", 0f, EntityConnection.Infinite));
+        trigger.Entity.Connections.Add(new EntityConnection(
+            "OnEndTouch", "Door", "Close", "", 2.5f, EntityConnection.Infinite));
+
+        // A repeated key: both are kept, in order.
+        SceneNode relay = scene.Root.CreateChild("Relay");
+        relay.Entity = new EntityData("logic_relay");
+        relay.Entity.Keyvalues.Add(new("tag", "first"));
+        relay.Entity.Keyvalues.Add(new("spawnflags", "1"));
+        relay.Entity.Keyvalues.Add(new("tag", "second"));
+        relay.Entity.Connections.Add(new EntityConnection("OnTrigger", "Door*", "Lock", "now", 0.5f, 1));
+
+        SceneNode start = scene.Root.CreateChild("Start");
+        start.LocalPosition = new Vector3(0f, 1f, 2f);
+        start.CanTouch = false;
+        start.Entity = new EntityData("info_player_start");
+    }
+
+    public string WriteBundle(
+        TempProject project,
+        string bundleName,
+        bool withDoorway = true,
+        bool withPart = true,
+        bool withEntities = false)
+    {
+        SpectraEngine.Core.Scene.Scene scene = BuildScene(withDoorway, withPart, withEntities);
         return WriteBundle(project, bundleName, scene);
     }
 

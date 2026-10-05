@@ -80,7 +80,8 @@ public class ScmapBuilderTests
     [Fact]
     public void Strings_are_emitted_in_first_reference_order_during_the_canonical_walk()
     {
-        // Empty string, scene name, asset table order, node names in pre-order.
+        // Empty string, scene name, asset table order, node names in pre-order,
+        // then each entity's strings.
         ScmapProbe probe = ScmapProbe.Read(ScmapFixture.Build());
         probe.Strings.ShouldBe(ScmapFixture.ExpectedStrings());
     }
@@ -132,8 +133,6 @@ public class ScmapBuilderTests
 
         foreach (uint kind in new[]
         {
-            ScmapFormat.EntitySection,
-            ScmapFormat.EntityConnectionSection,
             ScmapFormat.ScriptSection,
             ScmapFormat.ScriptBytecodeSection,
             ScmapFormat.ScriptSourceSection,
@@ -159,8 +158,8 @@ public class ScmapBuilderTests
     {
         // A section a later cooker adds must not make the map unreadable.
         byte[] file = ScmapFixture.Build();
-        (int offset, _) = FindSection(file, ScmapFormat.EntitySection);
-        int record = TableRecordOffset(file, ScmapFormat.EntitySection);
+        (int offset, _) = FindSection(file, ScmapFormat.ScriptSection);
+        int record = TableRecordOffset(file, ScmapFormat.ScriptSection);
 
         BinaryPrimitives.WriteUInt32LittleEndian(
             file.AsSpan(record), 'Z' | ('Z' << 8) | ('Z' << 16) | ((uint)'Z' << 24));

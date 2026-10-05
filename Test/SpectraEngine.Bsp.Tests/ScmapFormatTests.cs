@@ -40,6 +40,15 @@ public class ScmapFormatTests
         Unsafe.SizeOf<ScmapMeta>().ShouldBe(48);
         Unsafe.SizeOf<ScmapMeta>().ShouldBe(ScmapFormat.MetaPreambleSize);
 
+        Unsafe.SizeOf<ScmapEntityRecord>().ShouldBe(24);
+        Unsafe.SizeOf<ScmapEntityRecord>().ShouldBe(ScmapFormat.EntityRecordSize);
+
+        Unsafe.SizeOf<ScmapKeyvalueRecord>().ShouldBe(8);
+        Unsafe.SizeOf<ScmapKeyvalueRecord>().ShouldBe(ScmapFormat.KeyvalueRecordSize);
+
+        Unsafe.SizeOf<ScmapConnectionRecord>().ShouldBe(24);
+        Unsafe.SizeOf<ScmapConnectionRecord>().ShouldBe(ScmapFormat.ConnectionRecordSize);
+
         // Framework types the records embed. Their layout is not a documented contract.
         Unsafe.SizeOf<Vector3>().ShouldBe(12);
         Unsafe.SizeOf<Quaternion>().ShouldBe(16);
@@ -59,6 +68,59 @@ public class ScmapFormatTests
         (ScmapFormat.ChunkRecordSize % ScmapFormat.PayloadAlignment).ShouldBe(0);
         (ScmapFormat.MetaPreambleSize % ScmapFormat.PayloadAlignment).ShouldBe(0);
         (ScmapFormat.SpawnRecordSize % ScmapFormat.PayloadAlignment).ShouldBe(0);
+
+        // The entity tables hold four-byte fields only, so their strides need
+        // not be multiples of 16. Their preambles are.
+        ScmapFormat.EntityPreambleSize.ShouldBe(16);
+        ScmapFormat.ConnectionPreambleSize.ShouldBe(16);
+        (ScmapFormat.EntityRecordSize % sizeof(uint)).ShouldBe(0);
+        (ScmapFormat.KeyvalueRecordSize % sizeof(uint)).ShouldBe(0);
+        (ScmapFormat.ConnectionRecordSize % sizeof(uint)).ShouldBe(0);
+    }
+
+    [Fact]
+    public void Entity_keyvalue_and_connection_fields_sit_at_the_documented_offsets()
+    {
+        Offset<ScmapEntityRecord>(nameof(ScmapEntityRecord.NodeIndex)).ShouldBe(0x00);
+        Offset<ScmapEntityRecord>(nameof(ScmapEntityRecord.ClassNameString)).ShouldBe(0x04);
+        Offset<ScmapEntityRecord>(nameof(ScmapEntityRecord.KeyvalueStart)).ShouldBe(0x08);
+        Offset<ScmapEntityRecord>(nameof(ScmapEntityRecord.KeyvalueCount)).ShouldBe(0x0C);
+        Offset<ScmapEntityRecord>(nameof(ScmapEntityRecord.ConnectionStart)).ShouldBe(0x10);
+        Offset<ScmapEntityRecord>(nameof(ScmapEntityRecord.ConnectionCount)).ShouldBe(0x14);
+
+        Offset<ScmapKeyvalueRecord>(nameof(ScmapKeyvalueRecord.KeyString)).ShouldBe(0x00);
+        Offset<ScmapKeyvalueRecord>(nameof(ScmapKeyvalueRecord.ValueString)).ShouldBe(0x04);
+
+        Offset<ScmapConnectionRecord>(nameof(ScmapConnectionRecord.OutputNameString)).ShouldBe(0x00);
+        Offset<ScmapConnectionRecord>(nameof(ScmapConnectionRecord.TargetNameString)).ShouldBe(0x04);
+        Offset<ScmapConnectionRecord>(nameof(ScmapConnectionRecord.InputNameString)).ShouldBe(0x08);
+        Offset<ScmapConnectionRecord>(nameof(ScmapConnectionRecord.ParameterString)).ShouldBe(0x0C);
+        Offset<ScmapConnectionRecord>(nameof(ScmapConnectionRecord.Delay)).ShouldBe(0x10);
+        Offset<ScmapConnectionRecord>(nameof(ScmapConnectionRecord.TimesToFire)).ShouldBe(0x14);
+    }
+
+    [Fact]
+    public void The_node_flags_are_bits_8_to_11_and_leave_the_realm_and_state_fields_alone()
+    {
+        ((ushort)ScmapPayloadFlags.NoCollide).ShouldBe((ushort)0x0100);
+        ((ushort)ScmapPayloadFlags.NoQuery).ShouldBe((ushort)0x0200);
+        ((ushort)ScmapPayloadFlags.NoTouch).ShouldBe((ushort)0x0400);
+        ((ushort)ScmapPayloadFlags.NoRender).ShouldBe((ushort)0x0800);
+
+        const ScmapPayloadFlags All =
+            ScmapPayloadFlags.NoCollide | ScmapPayloadFlags.NoQuery |
+            ScmapPayloadFlags.NoTouch | ScmapPayloadFlags.NoRender;
+
+        var record = new ScmapNodeRecord(
+            Guid.Empty, 0, -1, Vector3.Zero, Quaternion.Identity, Vector3.One,
+            ScmapPayloadKind.PartBrush,
+            All | ScmapPayloadFlags.IsEntityOwned,
+            ScmapNodeRealm.Client,
+            ScmapNodeState.Active);
+
+        record.PayloadFlags.ShouldBe(All | ScmapPayloadFlags.IsEntityOwned);
+        record.DeclaredRealm.ShouldBe(ScmapNodeRealm.Client);
+        record.DeclaredState.ShouldBe(ScmapNodeState.Active);
     }
 
     [Fact]
@@ -230,7 +292,8 @@ public class ScmapFormatTests
     [Fact]
     public void The_compiled_map_version_is_declared_and_gated_exactly()
     {
-        EngineInfo.CompiledMapFormatVersion.ShouldBe((ushort)1);
+        // 2: entities, connections and node flags.
+        EngineInfo.CompiledMapFormatVersion.ShouldBe((ushort)2);
     }
 
     [Fact]

@@ -63,7 +63,8 @@ namespace SpectraEngine.Core
         /// Version of the .scmap container, enforced on read as an exact match.
         /// Raise it when the container layout moves.
         /// </summary>
-        public const ushort CompiledMapFormatVersion = 1;
+        // 2: entities, their connections and the four node flags.
+        public const ushort CompiledMapFormatVersion = 2;
 
         /// <summary>Version of the .spack container a cook writes.</summary>
         public const ushort PackFormatVersion = 1;

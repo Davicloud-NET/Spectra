@@ -16,6 +16,9 @@ public readonly ref struct ScmapDocument
         ScmapMeta meta,
         ReadOnlySpan<ScmapSpawn> spawns,
         ReadOnlySpan<ScmapNodeRecord> nodes,
+        ReadOnlySpan<ScmapEntityRecord> entities,
+        ReadOnlySpan<ScmapKeyvalueRecord> keyvalues,
+        ReadOnlySpan<ScmapConnectionRecord> connections,
         ReadOnlySpan<ScmapChunkRecord> chunks,
         ReadOnlySpan<byte> chunkMeshBlob,
         ReadOnlySpan<byte> chunkBspBlob,
@@ -34,6 +37,9 @@ public readonly ref struct ScmapDocument
         Meta = meta;
         Spawns = spawns;
         Nodes = nodes;
+        Entities = entities;
+        Keyvalues = keyvalues;
+        Connections = connections;
         Chunks = chunks;
         ChunkMeshBlob = chunkMeshBlob;
         ChunkBspBlob = chunkBspBlob;
@@ -62,6 +68,18 @@ public readonly ref struct ScmapDocument
 
     /// <summary>The <c>NODE</c> section, in pre-order.</summary>
     public ReadOnlySpan<ScmapNodeRecord> Nodes { get; }
+
+    /// <summary>
+    /// The entity records of <c>ENTT</c>, in ascending node index. At most one
+    /// per node.
+    /// </summary>
+    public ReadOnlySpan<ScmapEntityRecord> Entities { get; }
+
+    /// <summary>The keyvalue records of <c>ENTT</c>, which entity records index into.</summary>
+    public ReadOnlySpan<ScmapKeyvalueRecord> Keyvalues { get; }
+
+    /// <summary>The <c>ECON</c> section, which entity records index into.</summary>
+    public ReadOnlySpan<ScmapConnectionRecord> Connections { get; }
 
     /// <summary>The <c>CHDR</c> section, sorted by cell coordinate.</summary>
     public ReadOnlySpan<ScmapChunkRecord> Chunks { get; }
@@ -155,6 +173,9 @@ public readonly ref struct ScmapDocument
 
     /// <summary>The content path of asset <paramref name="index"/>, decoded.</summary>
     public string AssetPath(int index) => Strings.GetStringOrEmpty((int)Assets[index].PathString);
+
+    /// <summary>The string at <paramref name="index"/> of <c>STRT</c>, decoded.</summary>
+    public string StringAt(uint index) => Strings.GetStringOrEmpty((int)index);
 
     /// <summary>The scene's name, decoded.</summary>
     public string SceneName => Strings.GetStringOrEmpty((int)Meta.SceneNameString);

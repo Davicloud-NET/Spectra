@@ -181,6 +181,12 @@ public static class CookDiagnosticCodes
     /// </summary>
     public static readonly CookDiagnosticId MapFileUnreadable = CookDiagnosticId.Cook(7009);
 
+    /// <summary>
+    /// A node carries an entity and a world brush. The brush is baked into the
+    /// level, so the entity cannot move or hide it.
+    /// </summary>
+    public static readonly CookDiagnosticId MapEntityOnWorldBrush = CookDiagnosticId.Cook(7010);
+
     /// <summary>A script the Luau front end refuses.</summary>
     public static readonly CookDiagnosticId ScriptSyntaxError = CookDiagnosticId.Cook(8001);
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using SpectraEngine.Core.Assets.Packs;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps.Compiled;
 
 namespace Spectra.Kitchen.Tests;
@@ -23,6 +24,7 @@ internal sealed class ScmapProbe
     public required List<CellGeometry> Geometry { get; init; }
     public required bool HasBrushSource { get; init; }
     public required List<BrushCopy> Brushes { get; init; }
+    public required List<EntityCopy> Entities { get; init; }
 
     // The document's own count, not recomputed here: tests grade the reader on it.
     public required int TriangleCount { get; init; }
@@ -44,6 +46,12 @@ internal sealed class ScmapProbe
         uint NodeIndex,
         System.Numerics.Plane[] Planes,
         ScmapFaceRecord[] Faces);
+
+    public sealed record EntityCopy(
+        uint NodeIndex,
+        string ClassName,
+        List<KeyValuePair<string, string>> Keyvalues,
+        List<EntityConnection> Connections);
 
     public static ScmapProbe Read(ReadOnlySpan<byte> file, string source = "fixture.scmap")
     {
@@ -116,6 +124,33 @@ internal sealed class ScmapProbe
             }
         }
 
+        var entities = new List<EntityCopy>(document.Entities.Length);
+        foreach (ScmapEntityRecord record in document.Entities)
+        {
+            var keyvalues = new List<KeyValuePair<string, string>>();
+            foreach (ScmapKeyvalueRecord pair in
+                document.Keyvalues.Slice((int)record.KeyvalueStart, (int)record.KeyvalueCount))
+            {
+                keyvalues.Add(new(document.StringAt(pair.KeyString), document.StringAt(pair.ValueString)));
+            }
+
+            var connections = new List<EntityConnection>();
+            foreach (ScmapConnectionRecord wire in
+                document.Connections.Slice((int)record.ConnectionStart, (int)record.ConnectionCount))
+            {
+                connections.Add(new EntityConnection(
+                    document.StringAt(wire.OutputNameString),
+                    document.StringAt(wire.TargetNameString),
+                    document.StringAt(wire.InputNameString),
+                    document.StringAt(wire.ParameterString),
+                    wire.Delay,
+                    wire.TimesToFire));
+            }
+
+            entities.Add(new EntityCopy(
+                record.NodeIndex, document.StringAt(record.ClassNameString), keyvalues, connections));
+        }
+
         var spawns = new List<ScmapSpawn>(document.Spawns.Length);
         for (int i = 0; i < document.Spawns.Length; i++) spawns.Add(document.Spawns[i]);
 
@@ -135,6 +170,7 @@ internal sealed class ScmapProbe
             Geometry = geometry,
             HasBrushSource = document.HasBrushSource,
             Brushes = brushes,
+            Entities = entities,
             TriangleCount = document.TriangleCount,
         };
     }

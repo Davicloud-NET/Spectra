@@ -6,13 +6,14 @@ using System.Runtime.InteropServices;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps.Compiled;
 
 namespace Spectra.Kitchen.Maps;
 
 /// <summary>
-/// Collects a compiled map's assets, nodes, chunks, spawns and brush sources and
-/// writes them through <see cref="ScmapWriter"/>.
+/// Collects a compiled map's assets, nodes, entities, chunks, spawns and brush
+/// sources and writes them through <see cref="ScmapWriter"/>.
 /// </summary>
 // The chunk directory is sorted at build time; nodes keep the caller's order,
 // because sibling order is authored data.
@@ -25,6 +26,7 @@ public sealed class ScmapBuilder
     private readonly HashSet<ChunkCoord> _chunkCoords = [];
     private readonly List<ScmapSpawnSource> _spawns = [];
     private readonly List<ScmapBrushSourceEntry> _brushes = [];
+    private readonly List<ScmapEntitySource> _entities = [];
 
     /// <summary>Creates a builder for a scene.</summary>
     public ScmapBuilder(string sceneName)
@@ -47,6 +49,9 @@ public sealed class ScmapBuilder
 
     /// <summary>How many authored brushes <c>BRSH</c> will carry.</summary>
     public int BrushSourceCount => _brushes.Count;
+
+    /// <summary>How many entities <c>ENTT</c> will carry.</summary>
+    public int EntityCount => _entities.Count;
 
     /// <summary>Adds a spawn point.</summary>
     public void AddSpawn(ScmapSpawnSource spawn) => _spawns.Add(spawn);
@@ -201,6 +206,28 @@ public sealed class ScmapBuilder
         _brushes.Add(brush);
     }
 
+    /// <summary>
+    /// Adds one node's entity to <c>ENTT</c> and its wires to <c>ECON</c>. Call
+    /// in node pre-order, once per node. The node index is checked in
+    /// <see cref="Write"/>.
+    /// </summary>
+    public void AddEntity(ScmapEntitySource entity)
+    {
+        ArgumentNullException.ThrowIfNull(entity.ClassName);
+        ArgumentNullException.ThrowIfNull(entity.Keyvalues);
+        ArgumentNullException.ThrowIfNull(entity.Connections);
+
+        if (_entities.Count > 0 && entity.NodeIndex <= _entities[^1].NodeIndex)
+        {
+            throw new InvalidOperationException(
+                $"The entity on node {entity.NodeIndex} was added after the one on node " +
+                $"{_entities[^1].NodeIndex}. Entity records are in node order, one per node, and a loader " +
+                "walks them in step with the nodes.");
+        }
+
+        _entities.Add(entity);
+    }
+
     private static void ValidateSubmeshes(ScmapChunkSource chunk)
     {
         if (chunk.Submeshes is not { Length: > 0 }) return;
@@ -252,8 +279,8 @@ public sealed class ScmapBuilder
         var strings = new ScmapStringTableBuilder();
 
         // Strings are interned here in a fixed order (scene name, asset paths,
-        // node names), not as callers add things, so the blob does not depend
-        // on call order.
+        // node names, entity strings), not as callers add things, so the blob
+        // does not depend on call order.
         uint sceneNameString = strings.Intern(SceneName);
 
         var assetPathStrings = new uint[_assets.Count];
@@ -261,6 +288,9 @@ public sealed class ScmapBuilder
 
         var nodeNameStrings = new uint[_nodes.Count];
         for (int i = 0; i < _nodes.Count; i++) nodeNameStrings[i] = strings.Intern(_nodes[i].Name);
+
+        // Before the string blob is built: this interns as it goes.
+        byte[] entityBody = BuildEntities(strings, out byte[] connectionBody);
 
         byte[] stringBody = strings.Build();
         byte[] assetBody = BuildAssets(assetPathStrings);
@@ -285,9 +315,10 @@ public sealed class ScmapBuilder
         writer.AddSection(ScmapFormat.ChunkMeshSection, meshBody);
         writer.AddSection(ScmapFormat.ChunkBspSection, bspBody);
 
+        writer.AddSection(ScmapFormat.EntitySection, entityBody);
+        writer.AddSection(ScmapFormat.EntityConnectionSection, connectionBody);
+
         // Empty for now. Written so nothing else takes these codes.
-        writer.AddSection(ScmapFormat.EntitySection, ReadOnlySpan<byte>.Empty);
-        writer.AddSection(ScmapFormat.EntityConnectionSection, ReadOnlySpan<byte>.Empty);
         writer.AddSection(ScmapFormat.ScriptSection, ReadOnlySpan<byte>.Empty);
         writer.AddSection(ScmapFormat.ScriptBytecodeSection, ReadOnlySpan<byte>.Empty);
         writer.AddSection(ScmapFormat.ScriptSourceSection, ReadOnlySpan<byte>.Empty);
@@ -359,6 +390,87 @@ public sealed class ScmapBuilder
         }
 
         return body;
+    }
+
+    // ENTT, and ECON beside it. Interns per entity: its class, its keys and
+    // values, then each wire's output, target, input and parameter. That order
+    // is part of the file's bytes.
+    private byte[] BuildEntities(ScmapStringTableBuilder strings, out byte[] connectionBody)
+    {
+        CountEntityRecords(out int keyvalueCount, out int connectionCount);
+
+        long keyvalueStart = ScmapLayout.PaddedSectionSize(
+            ScmapFormat.EntityPreambleSize + ((long)_entities.Count * ScmapFormat.EntityRecordSize));
+
+        var body = new byte[keyvalueStart + ((long)keyvalueCount * ScmapFormat.KeyvalueRecordSize)];
+        connectionBody = new byte[
+            ScmapFormat.ConnectionPreambleSize + ((long)connectionCount * ScmapFormat.ConnectionRecordSize)];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(body, (uint)_entities.Count);
+        BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(4), (uint)keyvalueCount);
+        BinaryPrimitives.WriteUInt32LittleEndian(connectionBody, (uint)connectionCount);
+
+        int keyvalue = 0;
+        int connection = 0;
+        for (int i = 0; i < _entities.Count; i++)
+        {
+            ScmapEntitySource entity = _entities[i];
+
+            var record = new ScmapEntityRecord(
+                (uint)entity.NodeIndex,
+                strings.Intern(entity.ClassName),
+                (uint)keyvalue,
+                (uint)entity.Keyvalues.Length,
+                (uint)connection,
+                (uint)entity.Connections.Length);
+
+            MemoryMarshal.Write(
+                body.AsSpan(ScmapFormat.EntityPreambleSize + (i * ScmapFormat.EntityRecordSize)), in record);
+
+            foreach (KeyValuePair<string, string> pair in entity.Keyvalues)
+            {
+                var pairRecord = new ScmapKeyvalueRecord(strings.Intern(pair.Key), strings.Intern(pair.Value));
+                MemoryMarshal.Write(
+                    body.AsSpan((int)keyvalueStart + (keyvalue++ * ScmapFormat.KeyvalueRecordSize)), in pairRecord);
+            }
+
+            foreach (EntityConnection wire in entity.Connections)
+            {
+                var wireRecord = new ScmapConnectionRecord(
+                    strings.Intern(wire.Output),
+                    strings.Intern(wire.TargetName),
+                    strings.Intern(wire.Input),
+                    strings.Intern(wire.Parameter),
+                    wire.Delay,
+                    wire.TimesToFire);
+
+                MemoryMarshal.Write(
+                    connectionBody.AsSpan(
+                        ScmapFormat.ConnectionPreambleSize + (connection++ * ScmapFormat.ConnectionRecordSize)),
+                    in wireRecord);
+            }
+        }
+
+        return body;
+    }
+
+    private void CountEntityRecords(out int keyvalues, out int connections)
+    {
+        keyvalues = 0;
+        connections = 0;
+
+        foreach (ScmapEntitySource entity in _entities)
+        {
+            if (entity.NodeIndex < 0 || entity.NodeIndex >= _nodes.Count)
+            {
+                throw new InvalidOperationException(
+                    $"An entity names node {entity.NodeIndex} of a {_nodes.Count}-node map. An entity that " +
+                    "cannot name its node has no target name and no place in the level.");
+            }
+
+            keyvalues += entity.Keyvalues.Length;
+            connections += entity.Connections.Length;
+        }
     }
 
     // Sorts the directory and writes both blob sections in the same pass, so

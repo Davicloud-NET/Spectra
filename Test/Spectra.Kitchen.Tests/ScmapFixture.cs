@@ -4,6 +4,7 @@ using Spectra.Kitchen.Maps;
 using SpectraEngine.Core;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Scene;
 
@@ -14,8 +15,8 @@ namespace Spectra.Kitchen.Tests;
 // sorted order, so the ordering rules have something to do.
 internal static class ScmapFixture
 {
-    // ENTT, ECON, SCPT, LUAB, LUAS.
-    public const int ReservedEmptySections = 5;
+    // SCPT, LUAB, LUAS.
+    public const int ReservedEmptySections = 3;
 
     public const string SceneName = "Determinism";
 
@@ -40,16 +41,43 @@ internal static class ScmapFixture
         "Crate",
     ];
 
-    // Empty string, scene name, asset paths, node names.
-    public static string[] ExpectedStrings()
-    {
-        var all = new string[1 + 1 + AssetPaths.Length + NodeNames.Length];
-        all[0] = string.Empty;
-        all[1] = SceneName;
-        AssetPaths.CopyTo(all, 2);
-        NodeNames.CopyTo(all, 2 + AssetPaths.Length);
-        return all;
-    }
+    // What the entities add to the string table, in first-reference order: per
+    // entity its class, its keys and values, then each wire's output, target,
+    // input and parameter. A string already in the table is not added again.
+    public static readonly string[] EntityStrings =
+    [
+        "logic_auto", "OnMapSpawn", "Trigger",
+        "logic_relay", "delay", "0.5", "tag", "first", "second", "OnTrigger", "Open", "zeta_*", "Kill", "now",
+        "func_door", "speed", "100",
+    ];
+
+    // Empty string, scene name, asset paths, node names, entity strings.
+    public static string[] ExpectedStrings() =>
+        [string.Empty, SceneName, .. AssetPaths, .. NodeNames, .. EntityStrings];
+
+    // In node order. The first has only wires, the last only a keyvalue, and
+    // the middle one repeats a key.
+    public static readonly ScmapEntitySource[] Entities =
+    [
+        new(1, "logic_auto",
+            [],
+            [new EntityConnection("OnMapSpawn", "Lamp", "Trigger", "", 0f, 1)]),
+
+        new(5, "logic_relay",
+            [new("delay", "0.5"), new("tag", "first"), new("tag", "second")],
+            [
+                new EntityConnection("OnTrigger", "Crate", "Open", "", 0f, EntityConnection.Infinite),
+                new EntityConnection("OnTrigger", "zeta_*", "Kill", "now", 1.5f, 3),
+            ]),
+
+        new(6, "func_door",
+            [new("speed", "100")],
+            []),
+    ];
+
+    // What a trigger volume wears: no collision, no queries, not drawn, touch on.
+    public const ScmapPayloadFlags LampFlags =
+        ScmapPayloadFlags.NoCollide | ScmapPayloadFlags.NoQuery | ScmapPayloadFlags.NoRender;
 
     // Index-aligned to NodeNames. Public so the bit-identity test compares the
     // file against the authored values, not against itself.
@@ -89,7 +117,9 @@ internal static class ScmapFixture
             NodeId(1), NodeNames[1], 0, Transforms[1], ScmapPayloadKind.None));
 
         builder.AddNode(new ScmapNodeSource(
-            NodeId(2), NodeNames[2], 1, Transforms[2], ScmapPayloadKind.StaticWorldBrush));
+            NodeId(2), NodeNames[2], 1, Transforms[2],
+            ScmapPayloadKind.StaticWorldBrush,
+            ScmapPayloadFlags.NoTouch));
 
         builder.AddNode(new ScmapNodeSource(
             NodeId(3), NodeNames[3], 1, Transforms[3],
@@ -100,13 +130,15 @@ internal static class ScmapFixture
             NodeId(4), NodeNames[4], 0, Transforms[4], ScmapPayloadKind.None));
 
         builder.AddNode(new ScmapNodeSource(
-            NodeId(5), NodeNames[5], 4, Transforms[5], ScmapPayloadKind.None));
+            NodeId(5), NodeNames[5], 4, Transforms[5], ScmapPayloadKind.None, LampFlags));
 
         builder.AddNode(new ScmapNodeSource(
             NodeId(6), NodeNames[6], 4, Transforms[6],
             ScmapPayloadKind.MeshInstance,
             ScmapPayloadFlags.IsEntityOwned,
             PayloadIndex: 3));
+
+        foreach (ScmapEntitySource entity in Entities) builder.AddEntity(entity);
 
         // Unsorted on every axis.
         builder.AddChunk(Cell(2, 0, -1));

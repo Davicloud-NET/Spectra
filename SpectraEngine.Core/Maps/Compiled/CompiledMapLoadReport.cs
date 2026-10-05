@@ -21,7 +21,6 @@ public sealed class CompiledMapLoadReport
     [
         "lights (no ScmapPayloadKind value and no light table, so a lamp's node arrives without its lamp)",
         "spawns (scene.spawn is a preserved .smap member, so META always writes a spawn count of zero)",
-        "entities and their connections (ENTT/ECON are claimed and empty)",
         "scripts (SCPT/LUAB/LUAS are claimed and empty)",
         "mesh-instance submesh indices (MeshSource.SubmeshIndex has no table to name)",
         "standalone brush transforms (BRSH carries planes and faces; a node-attached brush ignores it)",
@@ -40,6 +39,9 @@ public sealed class CompiledMapLoadReport
 
     /// <summary>Nodes rebuilt from the file.</summary>
     public int NodesLoaded { get; internal set; }
+
+    /// <summary>Nodes that got an entity from the file.</summary>
+    public int EntitiesLoaded { get; internal set; }
 
     /// <summary>Asset-table rows interned into this process's material registry.</summary>
     public int MaterialsInterned { get; internal set; }

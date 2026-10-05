@@ -124,6 +124,27 @@ public static class ScmapFormat
     public const int BrushFaceRecordSize = 48;
 
     /// <summary>
+    /// Bytes of fixed preamble in <c>ENTT</c>: the entity count and the keyvalue
+    /// count, padded to the payload alignment.
+    /// </summary>
+    public const int EntityPreambleSize = 16;
+
+    /// <summary>Bytes in one <see cref="ScmapEntityRecord"/>.</summary>
+    public const int EntityRecordSize = 24;
+
+    /// <summary>Bytes in one <see cref="ScmapKeyvalueRecord"/>.</summary>
+    public const int KeyvalueRecordSize = 8;
+
+    /// <summary>
+    /// Bytes of fixed preamble in <c>ECON</c>: the connection count, padded to
+    /// the payload alignment.
+    /// </summary>
+    public const int ConnectionPreambleSize = 16;
+
+    /// <summary>Bytes in one <see cref="ScmapConnectionRecord"/>.</summary>
+    public const int ConnectionRecordSize = 24;
+
+    /// <summary>
     /// The <c>assetIndex</c> a submesh or a face carries when it names no asset.
     /// Not 0: row 0 of <c>ASTB</c> is a real asset.
     /// </summary>
@@ -150,10 +171,13 @@ public static class ScmapFormat
     /// <summary>Section <c>CBSP</c>: the per-cell flat BSP blobs the directory points into.</summary>
     public const uint ChunkBspSection = 'C' | ('B' << 8) | ('S' << 16) | ((uint)'P' << 24);
 
-    /// <summary>Section <c>ENTT</c>: entity records, one per entity-bearing node.</summary>
+    /// <summary>
+    /// Section <c>ENTT</c>: one entity record per node that carries an entity, in
+    /// node order, then every entity's keyvalues.
+    /// </summary>
     public const uint EntitySection = 'E' | ('N' << 8) | ('T' << 16) | ((uint)'T' << 24);
 
-    /// <summary>Section <c>ECON</c>: entity output connections.</summary>
+    /// <summary>Section <c>ECON</c>: every entity's output connections.</summary>
     public const uint EntityConnectionSection = 'E' | ('C' << 8) | ('O' << 16) | ((uint)'N' << 24);
 
     /// <summary>Section <c>SCPT</c>: script records.</summary>

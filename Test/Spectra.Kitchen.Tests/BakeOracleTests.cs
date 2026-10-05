@@ -273,6 +273,37 @@ public class BakeOracleTests
     }
 
     [Fact]
+    public void A_level_bakes_the_same_chunks_with_and_without_its_entities()
+    {
+        // A door and its trigger are parts, and a part never enters the carve.
+        using var project = new TempProject();
+        MapFixture fixture = MapFixture.Fresh();
+        fixture.WriteBundle(project, "Plain.smap");
+        fixture.WriteBundle(project, "Doors.smap", withEntities: true);
+
+        byte[] plain = BakeFile(project, "Maps/Plain.smap");
+        byte[] doors = BakeFile(project, "Maps/Doors.smap");
+
+        ScmapProbe.Read(plain).Entities.ShouldBeEmpty();
+        ScmapProbe.Read(doors).Entities.Count.ShouldBe(4);
+
+        // The asset table too: a submesh names its material by row.
+        foreach (uint section in new[]
+        {
+            ScmapFormat.AssetSection,
+            ScmapFormat.ChunkDirectorySection,
+            ScmapFormat.ChunkMeshSection,
+            ScmapFormat.ChunkBspSection,
+        })
+        {
+            byte[] expected = ScmapSurgery.Body(plain, section);
+            expected.Length.ShouldBeGreaterThan(0);
+
+            ScmapSurgery.Body(doors, section).ShouldBe(expected, ScmapFormat.DescribeFourCc(section));
+        }
+    }
+
+    [Fact]
     public void The_corpus_is_enumerated_in_one_place()
     {
         // InlineData cannot read BakeCorpus.Names, so the rows above repeat it.
@@ -358,6 +389,17 @@ public class BakeOracleTests
             project.Dispose();
             throw;
         }
+    }
+
+    private static byte[] BakeFile(TempProject project, string bundlePath)
+    {
+        var context = new RuleContext(project.Root, bundlePath, CookProfile.Ship);
+        new MapRule().Cook(context);
+
+        context.Diagnostics.Count.ShouldBe(
+            0, string.Join(Environment.NewLine, context.Diagnostics.Select(d => d.ToString())));
+
+        return context.Emissions[0].Payload;
     }
 
     private static CsgWorld Compile(SpectraEngine.Core.Scene.Scene scene)

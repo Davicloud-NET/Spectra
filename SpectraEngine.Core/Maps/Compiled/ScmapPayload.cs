@@ -98,4 +98,19 @@ public enum ScmapPayloadFlags : ushort
     /// kinds; a reader ignores it on any other.
     /// </summary>
     SubtractiveBrush = 1 << 7,
+
+    // The four node flags are stored inverted, so a record with none of them
+    // set has the node's defaults.
+
+    /// <summary>The node's <c>CanCollide</c> is off.</summary>
+    NoCollide = 1 << 8,
+
+    /// <summary>The node's <c>CanQuery</c> is off.</summary>
+    NoQuery = 1 << 9,
+
+    /// <summary>The node's <c>CanTouch</c> is off.</summary>
+    NoTouch = 1 << 10,
+
+    /// <summary>The node's <c>IsRendered</c> is off.</summary>
+    NoRender = 1 << 11,
 }

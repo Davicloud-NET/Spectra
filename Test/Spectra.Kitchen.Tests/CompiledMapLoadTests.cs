@@ -341,10 +341,11 @@ public class CompiledMapLoadTests
 
         said.ShouldContain("lights");
         said.ShouldContain("spawns");
-        said.ShouldContain("entities");
+        said.ShouldContain("scripts");
         said.ShouldContain("submesh indices");
         said.ShouldContain("collision");
-        CompiledMapLoadReport.FormatGaps.Count.ShouldBe(7);
+        said.ShouldNotContain("entities");
+        CompiledMapLoadReport.FormatGaps.Count.ShouldBe(6);
     }
 
     [Fact]

@@ -282,3 +282,109 @@ public readonly struct ScmapSpawn
         Reserved = 0;
     }
 }
+
+/// <summary>
+/// One 24-byte <c>ENTT</c> record: the entity a node carries. Records are in
+/// node order, at most one per node.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public readonly struct ScmapEntityRecord
+{
+    /// <summary>Index into <c>NODE</c> of the node this entity sits on.</summary>
+    public readonly uint NodeIndex;
+
+    /// <summary>Index into <c>STRT</c> of the class name.</summary>
+    public readonly uint ClassNameString;
+
+    /// <summary>Index of this entity's first keyvalue in the keyvalue array.</summary>
+    public readonly uint KeyvalueStart;
+
+    /// <summary>How many keyvalues this entity has, in authored order.</summary>
+    public readonly uint KeyvalueCount;
+
+    /// <summary>Index of this entity's first connection in <c>ECON</c>.</summary>
+    public readonly uint ConnectionStart;
+
+    /// <summary>How many connections this entity has, in authored order.</summary>
+    public readonly uint ConnectionCount;
+
+    /// <summary>Builds one entity record.</summary>
+    public ScmapEntityRecord(
+        uint nodeIndex,
+        uint classNameString,
+        uint keyvalueStart,
+        uint keyvalueCount,
+        uint connectionStart,
+        uint connectionCount)
+    {
+        NodeIndex = nodeIndex;
+        ClassNameString = classNameString;
+        KeyvalueStart = keyvalueStart;
+        KeyvalueCount = keyvalueCount;
+        ConnectionStart = connectionStart;
+        ConnectionCount = connectionCount;
+    }
+}
+
+/// <summary>
+/// One 8-byte <c>ENTT</c> keyvalue record. Both halves are strings; a key may
+/// repeat within one entity.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public readonly struct ScmapKeyvalueRecord
+{
+    /// <summary>Index into <c>STRT</c> of the key.</summary>
+    public readonly uint KeyString;
+
+    /// <summary>Index into <c>STRT</c> of the value.</summary>
+    public readonly uint ValueString;
+
+    /// <summary>Builds one keyvalue record.</summary>
+    public ScmapKeyvalueRecord(uint keyString, uint valueString)
+    {
+        KeyString = keyString;
+        ValueString = valueString;
+    }
+}
+
+/// <summary>
+/// One 24-byte <c>ECON</c> record: a wire from an entity's output to an input.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public readonly struct ScmapConnectionRecord
+{
+    /// <summary>Index into <c>STRT</c> of the output that fires this wire.</summary>
+    public readonly uint OutputNameString;
+
+    /// <summary>Index into <c>STRT</c> of the target name.</summary>
+    public readonly uint TargetNameString;
+
+    /// <summary>Index into <c>STRT</c> of the input to send.</summary>
+    public readonly uint InputNameString;
+
+    /// <summary>Index into <c>STRT</c> of the parameter. Zero, the empty string, for none.</summary>
+    public readonly uint ParameterString;
+
+    /// <summary>Seconds to wait before sending.</summary>
+    public readonly float Delay;
+
+    /// <summary>How many times the wire may fire. Negative for no limit.</summary>
+    public readonly int TimesToFire;
+
+    /// <summary>Builds one connection record.</summary>
+    public ScmapConnectionRecord(
+        uint outputNameString,
+        uint targetNameString,
+        uint inputNameString,
+        uint parameterString,
+        float delay,
+        int timesToFire)
+    {
+        OutputNameString = outputNameString;
+        TargetNameString = targetNameString;
+        InputNameString = inputNameString;
+        ParameterString = parameterString;
+        Delay = delay;
+        TimesToFire = timesToFire;
+    }
+}

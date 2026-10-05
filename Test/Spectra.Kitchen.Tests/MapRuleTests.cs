@@ -10,6 +10,7 @@ using Spectra.Kitchen.Rules;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps;
 using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Scene;
@@ -350,6 +351,51 @@ public class MapRuleTests
         // The editor only warns here. The cook must refuse.
         file.ShouldBeNull();
         said.Single().Id.ToString().ShouldBe("SC7001");
+    }
+
+    [Fact]
+    public void An_entity_on_a_world_brush_bakes_and_warns_naming_the_node()
+    {
+        using var project = new TempProject();
+        MapFixture fixture = MapFixture.Fresh();
+
+        SpectraEngine.Core.Scene.Scene scene = fixture.BuildScene();
+        scene.Root.Children.Single(node => node.Name == "Wall").Entity = new EntityData("func_door");
+        MapFixture.WriteBundle(project, "Stuck.smap", scene);
+
+        (byte[]? file, List<CookDiagnostic> said) = TryBake(project, "Maps/Stuck.smap");
+
+        // A warning: the level still bakes, with the entity on its node.
+        CookDiagnostic warned = said.Single();
+        warned.Id.ToString().ShouldBe("SC7010");
+        warned.IsError.ShouldBeFalse();
+        warned.Message.ShouldContain("'Wall'");
+        warned.Message.ShouldContain("func_door");
+
+        CookGate.Verdict(CookDiagnosticCodes.MapEntityOnWorldBrush)
+            .ShouldBe(CookGateVerdict.WarningUnlessStrict);
+
+        ScmapProbe map = ScmapProbe.Read(file.ShouldNotBeNull());
+        map.NodeNames[(int)map.Entities.Single().NodeIndex].ShouldBe("Wall");
+    }
+
+    [Fact]
+    public void Entities_on_parts_and_on_bare_nodes_bake_without_a_warning()
+    {
+        using var project = new TempProject();
+        MapFixture fixture = MapFixture.Fresh();
+        fixture.WriteBundle(project, "Room.smap", withEntities: true);
+
+        // BakeBytes refuses any diagnostic at all.
+        ScmapProbe map = Bake(project, "Maps/Room.smap");
+
+        map.Entities.Select(entity => map.NodeNames[(int)entity.NodeIndex])
+            .ShouldBe(["Door", "DoorTrigger", "Relay", "Start"]);
+
+        // Entity-owned is a brush node that carries an entity.
+        map.NodeNames
+            .Where((_, i) => (map.Nodes[i].PayloadFlags & ScmapPayloadFlags.IsEntityOwned) != 0)
+            .ShouldBe(["Door", "DoorTrigger"]);
     }
 
     [Fact]

@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Assets.Sources;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
 
@@ -13,7 +15,7 @@ namespace SpectraEngine.Core.Maps.Compiled;
 /// Loads a baked <c>.scmap</c> into a live scene without running any CSG.
 /// </summary>
 // Pass order: reader gates, ASTB interned in table order, nodes rebuilt in one
-// forward pass, chunks adopted.
+// forward pass with their flags and entities, chunks adopted.
 // A baked world brush gets no Brush even when BRSH holds its planes. Rebuilding
 // it would carve the level again and draw every wall twice.
 public static class CompiledMapLoader
@@ -109,11 +111,13 @@ public static class CompiledMapLoader
             brushOfNode[(int)brushes.Brushes[b].NodeIndex] = b;
 
         var nodes = new SceneNode[document.Nodes.Length];
+        int nextEntity = 0;
 
         for (int i = 0; i < nodes.Length; i++)
         {
             ScmapNodeRecord record = document.Nodes[i];
             string name = document.NodeName(i);
+            ScmapPayloadFlags flags = record.PayloadFlags;
 
             // Keeps the stored id. Commands and entity wires address nodes by it.
             var node = new SceneNode(name, record.NodeId)
@@ -124,9 +128,17 @@ public static class CompiledMapLoader
                     Rotation = record.LocalRotation,
                     Scale = record.LocalScale,
                 },
+                CanCollide = (flags & ScmapPayloadFlags.NoCollide) == 0,
+                CanQuery = (flags & ScmapPayloadFlags.NoQuery) == 0,
+                CanTouch = (flags & ScmapPayloadFlags.NoTouch) == 0,
+                IsRendered = (flags & ScmapPayloadFlags.NoRender) == 0,
             };
 
             AttachPayload(node, in record, i, name, brushes, brushOfNode[i], materials, report);
+
+            // Entity records are in node order, so one cursor finds them all.
+            if (nextEntity < document.Entities.Length && document.Entities[nextEntity].NodeIndex == (uint)i)
+                node.Entity = BuildEntity(in document, document.Entities[nextEntity++]);
 
             if (record.ParentIndex < 0) scene.Root.AddChild(node);
             else nodes[record.ParentIndex].AddChild(node);
@@ -135,6 +147,40 @@ public static class CompiledMapLoader
         }
 
         report.NodesLoaded = nodes.Length;
+        report.EntitiesLoaded = nextEntity;
+    }
+
+    // No catalogue lookup: the class is a name, and a class this build lacks
+    // must still load.
+    private static EntityData BuildEntity(scoped in ScmapDocument document, ScmapEntityRecord record)
+    {
+        var data = new EntityData(document.StringAt(record.ClassNameString));
+
+        ReadOnlySpan<ScmapKeyvalueRecord> keyvalues =
+            document.Keyvalues.Slice((int)record.KeyvalueStart, (int)record.KeyvalueCount);
+
+        // Add, not SetValue, which would collapse a duplicate key.
+        foreach (ScmapKeyvalueRecord pair in keyvalues)
+        {
+            data.Keyvalues.Add(new KeyValuePair<string, string>(
+                document.StringAt(pair.KeyString), document.StringAt(pair.ValueString)));
+        }
+
+        ReadOnlySpan<ScmapConnectionRecord> wires =
+            document.Connections.Slice((int)record.ConnectionStart, (int)record.ConnectionCount);
+
+        foreach (ScmapConnectionRecord wire in wires)
+        {
+            data.Connections.Add(new EntityConnection(
+                document.StringAt(wire.OutputNameString),
+                document.StringAt(wire.TargetNameString),
+                document.StringAt(wire.InputNameString),
+                document.StringAt(wire.ParameterString),
+                wire.Delay,
+                wire.TimesToFire));
+        }
+
+        return data;
     }
 
     private static void AttachPayload(
