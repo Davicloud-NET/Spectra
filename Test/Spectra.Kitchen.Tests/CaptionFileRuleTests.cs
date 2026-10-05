@@ -29,9 +29,8 @@ public class CaptionFileRuleTests
     public void A_caption_file_is_packed_byte_for_byte()
     {
         using var project = ProjectWithSounds(Door, Lift);
-        byte[] source = project.WriteAsset(
-            English,
-            [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes($"// Doors.\r\n{Door} = Door opens\r\n\r\n{Lift} = Aufzug summt, 扉\r\n")]);
+        string text = $"// Doors.\r\n{Door} = Door opens\r\n\r\n{Lift} = Aufzug summt, 扉\r\n";
+        byte[] source = project.WriteAsset(English, [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes(text)]);
 
         CookResult result = Cook(project);
 

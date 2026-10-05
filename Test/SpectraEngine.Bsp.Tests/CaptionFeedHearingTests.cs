@@ -151,9 +151,10 @@ public sealed class CaptionFeedHearingTests
 
         rig.Step();
 
+        FakeAudioBackend device = rig.Sound.Backend;
         Caption caption = rig.Shown.ShouldHaveSingleItem();
         caption.Position.ShouldBe(new Vector3(2, 0, -1));
-        caption.Audibility.ShouldBe(rig.Sound.Backend.PlayingSources().Max(source => rig.Sound.Backend.SettingsOf(source).Gain));
+        caption.Audibility.ShouldBe(device.PlayingSources().Max(source => device.SettingsOf(source).Gain));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Audio.Captions;
+using SpectraEngine.Core.ConsoleSystem;
 
 namespace SpectraEngine.Bsp.Tests;
 
@@ -166,6 +167,45 @@ public sealed class CaptionFeedSettingTests
         english.Text.ShouldBe("Beep sounds");
         german.Text.ShouldBe("Piepton");
         german.Id.ShouldBeGreaterThan(english.Id);
+    }
+
+    [Fact]
+    public void The_language_command_switches_the_words_of_what_shows()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Captions("en", BeepCaption);
+        rig.Captions("de", $"{Beep} = Piepton");
+        var console = new SpectraConsole();
+        CaptionConsoleCommands.Register(console.Commands, rig.Feed);
+        rig.Play(Beep, CaptionFeedRig.Near, looped: true);
+        rig.Step();
+
+        console.Execute("caption_language de", new ConsoleFrame(rig.Sound.Scene, rig.Sound.World, IsPlaying: true));
+        rig.Step();
+
+        rig.Shown.ShouldHaveSingleItem().Text.ShouldBe("Piepton");
+        rig.Written.ShouldBe(["Caption: [Beep sounds]", "Caption: [Piepton]"]);
+    }
+
+    [Fact]
+    public void The_captions_command_switches_sound_captions_on_and_off_while_a_sound_plays()
+    {
+        using var rig = new CaptionFeedRig(CaptionMode.Voice);
+        rig.Captions("en", BeepCaption);
+        var console = new SpectraConsole();
+        CaptionConsoleCommands.Register(console.Commands, rig.Feed);
+        var frame = new ConsoleFrame(rig.Sound.Scene, rig.Sound.World, IsPlaying: true);
+        rig.Play(Beep, CaptionFeedRig.Near, looped: true);
+        rig.Step(5);
+        rig.Shown.ShouldBeEmpty();
+
+        console.Execute("captions all", frame);
+        rig.Step();
+        string[] on = [.. rig.Shown.Select(caption => caption.Text)];
+        console.Execute("captions off", frame);
+
+        on.ShouldBe(["Beep sounds"]);
+        rig.Shown.ShouldBeEmpty();
     }
 
     [Fact]

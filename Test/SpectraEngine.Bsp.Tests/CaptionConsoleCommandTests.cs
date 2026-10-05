@@ -180,14 +180,14 @@ public sealed class CaptionConsoleCommandTests : IDisposable
         Run("captions_missing", level)[0].ShouldStartWith("captions_missing: none.");
     }
 
-    [Theory]
-    [InlineData("captions_missing de", "captions_missing: it takes nothing after its name. caption_language sets the language it checks.")]
-    public void Captions_missing_refuses_an_argument(string line, string refusal)
+    [Fact]
+    public void Captions_missing_refuses_an_argument()
     {
-        ConsoleLine reply = RunLines(line, Level("Sounds/alarm.wav")).ShouldHaveSingleItem();
+        ConsoleLine reply = RunLines("captions_missing de", Level("Sounds/alarm.wav")).ShouldHaveSingleItem();
 
         reply.Severity.ShouldBe(LogLevel.Error);
-        reply.Text.ShouldBe(refusal);
+        reply.Text.ShouldBe(
+            "captions_missing: it takes nothing after its name. caption_language sets the language it checks.");
     }
 
     [Fact]
