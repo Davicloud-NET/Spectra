@@ -296,6 +296,41 @@ public sealed class DemoPlayAreaTests
     }
 
     [Fact]
+    public void The_start_room_door_is_solid_while_nothing_opens_it()
+    {
+        // No entity classes are registered here, so the door is a part that
+        // never moves.
+        var course = new Course();
+        CharacterState state = course.Settle(Course.SpawnAt(new Vector3(125f, 0.05f, 0f)), 10);
+
+        state = course.Walk(state, East, 240);
+
+        // The door's west face is at x = 130.1.
+        float reach = 130.1f - course.Tuning.Radius;
+        Assert.InRange(state.Position.X, reach - 0.05f, reach + 0.01f);
+    }
+
+    [Fact]
+    public void No_direction_walked_from_the_start_room_leaves_it()
+    {
+        var course = new Course();
+
+        for (int i = 0; i < 16; i++)
+        {
+            float yaw = i * MathF.Tau / 16f;
+            CharacterState state = course.Settle(Course.SpawnAt(new Vector3(125f, 0.05f, 0f)), 10);
+            state = course.Walk(state, yaw, 300);
+
+            // Inside x in [122,130], z in [-4,4], or in the doorway up to the door.
+            Assert.True(
+                state.Position.Y > -0.1f
+                && state.Position.X > 122f && state.Position.X < 130.1f
+                && MathF.Abs(state.Position.Z) < 4f,
+                $"walking at yaw {yaw:0.00} rad ended at {state.Position}");
+        }
+    }
+
+    [Fact]
     public void Walking_does_not_rebuild_the_world_lane_every_tick()
     {
         var course = new Course();

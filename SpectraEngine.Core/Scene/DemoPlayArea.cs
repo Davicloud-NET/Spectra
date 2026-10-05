@@ -29,6 +29,18 @@ public static class DemoPlayArea
     /// <summary>Below this the character has left the course and is respawned.</summary>
     public const float FallOutHeight = -20f;
 
+    /// <summary>The middle of the start room's floor.</summary>
+    public static readonly Vector3 StartRoomCenter = new(126f, 0f, 0f);
+
+    /// <summary>The node that carries the start room's player start.</summary>
+    public const string PlayerStartName = "PlayerStart";
+
+    /// <summary>The start room's door, a <c>func_door</c>.</summary>
+    public const string StartDoorName = "StartDoor";
+
+    /// <summary>The volume in front of the door that opens it, a <c>trigger_multiple</c>.</summary>
+    public const string StartZoneName = "StartZone";
+
     // Three units thick so the chasm can be cut straight through it.
     private const float FloorTop = 0f;
     private const float FloorThickness = 3f;
@@ -118,6 +130,65 @@ public static class DemoPlayArea
         count += Box(scene, "Play.PillarC", new Vector3(163.1f, 1.5f, 10.2f), new Vector3(0.5f, 1.5f, 0.5f), wall);
         count += Box(scene, "Play.PillarD", new Vector3(167f, 1.5f, 14f), new Vector3(0.5f, 1.5f, 0.5f), wall);
 
+        count += StartRoom(scene, structure, wall, accent);
+
+        return count;
+    }
+
+    // A room off the west wall where a level begins: a player start, a door
+    // in the wall and a volume across the doorway, wired with no code. The
+    // classes are named as text, so a host that registers none of them gets a
+    // door that stays shut.
+    // Entity nodes have plain names, since people type them into wires and
+    // into the console.
+    private static int StartRoom(Scene scene, MaterialRef structure, MaterialRef wall, MaterialRef accent)
+    {
+        int count = 0;
+
+        // Inside: x in [122,130], z in [-4,4]. The east side is the course's
+        // west wall. The floor reaches under the room's own walls.
+        count += Box(scene, "Play.StartFloor",
+            new Vector3(125.5f, -0.5f, 0f), new Vector3(4.5f, 0.5f, 5f), structure);
+        count += Box(scene, "Play.StartWallWest",
+            new Vector3(121.5f, 1.25f, 0f), new Vector3(0.5f, 1.25f, 5f), wall);
+        count += Box(scene, "Play.StartWallNorth",
+            new Vector3(126f, 1.25f, -4.5f), new Vector3(4f, 1.25f, 0.5f), wall);
+        count += Box(scene, "Play.StartWallSouth",
+            new Vector3(126f, 1.25f, 4.5f), new Vector3(4f, 1.25f, 0.5f), wall);
+
+        // Through the west wall, flush with both of its faces.
+        var doorway = new Vector3(130.5f, OpeningHeight * 0.5f, 0f);
+        count += Cut(scene, "Play.StartDoorCut",
+            doorway, new Vector3(0.5f, OpeningHeight * 0.5f, OpeningWidth * 0.5f), accent);
+
+        // Thinner than the wall, so it slides along z out of sight inside it.
+        SceneNode door = PartNode(scene, StartDoorName,
+            doorway, new Vector3(0.4f, OpeningHeight * 0.5f, OpeningWidth * 0.5f), accent);
+        count++;
+        door.Entity = new Entities.EntityData("func_door");
+        door.Entity.SetValue("movedir", "0 0 1");
+        door.Entity.SetValue("speed", "3");
+        door.Entity.SetValue("wait", "3");
+
+        // Across the doorway and out to both sides, so the door opens from
+        // either. It stops short of Spawn: a level with no start begins there.
+        SceneNode zone = PartNode(scene, StartZoneName,
+            new Vector3(130.15f, OpeningHeight * 0.5f, 0f),
+            new Vector3(2.15f, OpeningHeight * 0.5f, 1.5f), accent);
+        count++;
+        zone.CanCollide = false;
+        zone.CanQuery = false;
+        zone.IsRendered = false;
+        zone.Entity = new Entities.EntityData("trigger_multiple");
+        zone.Entity.Connections.Add(new Entities.EntityConnection(
+            "OnTrigger", StartDoorName, "Open", "", 0f, Entities.EntityConnection.Infinite));
+
+        // Its +z is the way the player faces: east, at the door.
+        SceneNode start = scene.Root.CreateChild(PlayerStartName);
+        start.LocalPosition = new Vector3(125f, 0f, 0f);
+        start.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f);
+        start.Entity = new Entities.EntityData("info_player_start");
+
         return count;
     }
 
@@ -143,11 +214,18 @@ public static class DemoPlayArea
 
     private static int Part(Scene scene, string name, Vector3 center, Vector3 half, MaterialRef material)
     {
+        PartNode(scene, name, center, half, material);
+        return 1;
+    }
+
+    private static SceneNode PartNode(
+        Scene scene, string name, Vector3 center, Vector3 half, MaterialRef material)
+    {
         var node = scene.Root.CreateChild(name);
         node.LocalPosition = center;
         node.BrushKind = BrushKind.Part;
         node.Brush = Brush.CreateBox(-half, half, material);
-        return 1;
+        return node;
     }
 
     // One box per tread, each reaching down into the floor. Thin slabs would

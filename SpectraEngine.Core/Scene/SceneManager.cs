@@ -1009,6 +1009,9 @@ public sealed class SceneManager
 
         AddPointLight(scene, "PlayAreaLamp", DemoPlayArea.Center + new Vector3(-8f, 4f, 0f),
             new Vector3(0.9f, 0.9f, 1f), intensity: 110f, range: 18f);
+
+        AddPointLight(scene, "StartRoomLamp", DemoPlayArea.StartRoomCenter + new Vector3(0f, 2.2f, 0f),
+            new Vector3(1f, 0.85f, 0.65f), intensity: 30f, range: 9f);
     }
 
     private static void AddPointLight(
