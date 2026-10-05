@@ -92,10 +92,13 @@ public class WallPropagationCostTests
                 acoustics.Resolve(materials[i]);
             double known = Stopwatch.GetElapsedTime(again).TotalNanoseconds / files;
 
-            Array.Sort(each);
+            // The first one also pays for code that has not run before.
+            double first = each[0];
+            Array.Sort(each, 1, files - 1);
             TestContext.Current.TestOutputHelper?.WriteLine(
-                $"first look at a loose material file: median {each[files / 2]:0} us, " +
-                $"slowest {each[^1]:0} us over {files} files. A material already known: {known:0} ns.");
+                $"first look at a loose material file: the very first {first:0} us, then median " +
+                $"{each[files / 2]:0} us and slowest {each[^1]:0} us over {files - 1} files. " +
+                $"A material already known: {known:0} ns.");
 
             each[files / 2].ShouldBeLessThan(5_000);
         }

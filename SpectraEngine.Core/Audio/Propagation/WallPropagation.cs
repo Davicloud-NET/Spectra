@@ -10,15 +10,16 @@ namespace SpectraEngine.Core.Audio.Propagation;
 /// Propagation through walls: a sound is as loud as its distance says, times
 /// what the solids between it and the listener let through, and as dull as
 /// they make it. Each solid costs what its material takes at its thickness.
-/// The part a sound sits on, and the parts above that one in the tree, are
-/// not in its way. A solid the sound or the listener is inside counts by how
-/// deep that end is in it. Render thread only.
+/// What a sound is part of is not in its way, by the rule of
+/// <see cref="ISoundObstacles.Trace"/>. Any other solid the sound or the
+/// listener is inside counts by how deep that end is in it. A list of solids
+/// that ran out of room counts for what it holds. Render thread only.
 /// </summary>
 // A sound is heard along several lines, to the listener and to a ring round
-// the listener's head, and their gains are averaged. An opening that half the
-// lines pass lets half the sound through, as it does in a room, where a door
-// ajar leaks most of what an open one does. Averaging the decibels would
-// make that door sound nearly shut.
+// the listener's head, and their gains are averaged: an opening that half the
+// lines pass lets half the sound through. Averaged in decibels, a view half
+// open beside a thick wall would sound nearly shut, and a real gap leaks far
+// more than that.
 public sealed class WallPropagation : ISoundPropagation
 {
     /// <summary>A sound at or below this gain from distance alone is not traced. 60 dB down.</summary>

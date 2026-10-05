@@ -27,7 +27,8 @@ public interface ISoundObstacles
     /// </summary>
     /// <param name="body">
     /// The node the sound sits on, or null. That node and the parts above it
-    /// in the tree are not in the way.
+    /// in the tree are not in the way. Where there is such a part, neither
+    /// is a solid that <paramref name="from"/> lies in.
     /// </param>
     /// <param name="truncated">True when there was more solid than <paramref name="spans"/> has room for.</param>
     /// <returns>How many spans were written.</returns>

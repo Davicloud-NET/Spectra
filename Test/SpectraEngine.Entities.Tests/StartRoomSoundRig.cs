@@ -26,7 +26,8 @@ internal sealed class StartRoomSoundRig : IDisposable
 {
     public const float Dt = PhysicsDefaults.FixedDeltaTime;
 
-    public StartRoomSoundRig(CookedDemoSounds cooked)
+    // With walls, sound is heard through them as the engine hears it.
+    public StartRoomSoundRig(CookedDemoSounds cooked, bool walls = false)
     {
         // As the demo mounts them: the content root, and below it the folder
         // its sounds were cooked into.
@@ -56,7 +57,11 @@ internal sealed class StartRoomSoundRig : IDisposable
         Audio = new AudioManager(NullLogger.Instance, Supply);
         Audio.Initialize();
         var captions = new CaptionFeed(new CaptionLibrary(Assets.Content, LanguageTag.Default, NullLogger.Instance));
-        Presenter = new SoundPresenter(Audio, Assets, new DirectPropagation(), captions, Log);
+        ISoundPropagation propagation = walls
+            ? new WallPropagation(
+                new SceneSoundObstacles(() => Manager.ActiveScene), Assets.Acoustics, settings: null, WallClock)
+            : new DirectPropagation();
+        Presenter = new SoundPresenter(Audio, Assets, propagation, captions, Log);
 
         Character = new CharacterSimulation(Scene) { FallOutHeight = DemoPlayArea.FallOutHeight };
         Session = new PlaySession(Manager, Character);
@@ -64,6 +69,9 @@ internal sealed class StartRoomSoundRig : IDisposable
 
     // What the presenter logged.
     public CapturingLogger Log { get; } = new();
+
+    // What the walls read an answer's age from. It moves a tick a frame.
+    public ManualClock WallClock { get; } = new();
 
     public FiredOutputLog Outputs { get; } = new();
 
@@ -131,6 +139,7 @@ internal sealed class StartRoomSoundRig : IDisposable
 
     public void PresentFrom(Vector3 ear)
     {
+        WallClock.Advance(Dt);
         Audio.SetListener(ear, Vector3.UnitX, Vector3.UnitY);
         Audio.Update();
         Presenter.Update(Manager.EntityWorld, Dt);

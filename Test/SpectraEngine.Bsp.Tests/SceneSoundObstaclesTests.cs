@@ -102,6 +102,27 @@ public sealed class SceneSoundObstaclesTests
     }
 
     [Fact]
+    public void A_solid_that_a_sound_on_a_part_stands_in_is_left_out_and_the_next_one_is_not()
+    {
+        SpanLevel level = Walled();
+        SceneNode door = level.Part("Door", new Vector3(3f, 1f, -4.25f), new Vector3(1f, 1f, 0.2f));
+        SceneNode speaker = level.Scene.Root.CreateChild("Speaker");
+        level.Part("Crate", new Vector3(3f, 1f, -2f), new Vector3(1f, 1f, 0.5f));
+        var obstacles = new SceneSoundObstacles(() => level.Scene);
+        var spans = new SolidSpan[4];
+        Vector3 inTheWall = door.WorldPosition;
+        var ear = new Vector3(3f, 1f, 0f);
+
+        // The wall the door stands in, then the crate.
+        obstacles.Trace(inTheWall, ear, door, spans, out _).ShouldBe(1);
+        spans[0].Start.ShouldBe(1.75f, 1e-4f);
+
+        // A sound on no part is behind the wall it stands in.
+        obstacles.Trace(inTheWall, ear, speaker, spans, out _).ShouldBe(2);
+        spans[0].Start.ShouldBe(0f);
+    }
+
+    [Fact]
     public void A_full_list_says_so()
     {
         var level = new SpanLevel();

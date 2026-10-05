@@ -18,6 +18,8 @@
     <Compile Include="..\SpectraEngine.Bsp.Tests\SpatialTestHelpers.cs" Link="SpatialTestHelpers.cs" />
     <!-- An audio device with no sound card. -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\FakeAudioBackend.cs" Link="FakeAudioBackend.cs" />
+    <!-- The clock the walls age their answers by. -->
+    <Compile Include="..\SpectraEngine.Bsp.Tests\ManualClock.cs" Link="ManualClock.cs" />
   </ItemGroup>
 
   <ItemGroup>

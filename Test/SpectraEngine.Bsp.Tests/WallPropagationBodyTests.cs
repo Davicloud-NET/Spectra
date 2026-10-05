@@ -67,8 +67,11 @@ public sealed class WallPropagationBodyTests
     {
         var level = new SpanLevel();
         SceneNode lift = level.Part("Lift", new Vector3(0f, 1.2f, -4f), new Vector3(1f, 1.2f, 1f), SpanLevel.Wood);
-        SceneNode panel = level.Part("Panel", new Vector3(0f, 1.2f, -3.5f), new Vector3(0.5f, 0.5f, 0.75f), SpanLevel.Wood);
+        SceneNode panel = level.Part("Panel", default, new Vector3(0.5f, 0.5f, 0.75f), SpanLevel.Wood);
         lift.AddChild(panel);
+        panel.LocalPosition = new Vector3(0f, 0f, 0.5f);
+
+        // Inside the panel, which is half inside the lift.
         SceneNode voice = panel.CreateChild("Voice");
         var rig = new WallRig(level) { Listener = Ear };
         int sound = rig.Add(voice);
@@ -106,6 +109,54 @@ public sealed class WallPropagationBodyTests
 
         // Its line leaves the door after 0.2 units of wood.
         rig.Through(sound).Gain.ShouldBeInRange(0.3f, 0.45f);
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-8f)]
+    public void A_sound_under_a_door_that_slid_into_the_wall_is_not_muffled_by_that_wall(float earZ)
+    {
+        SpanLevel level = Room(out SceneNode door);
+        SceneNode squeak = door.CreateChild("Squeak");
+        door.LocalPosition += new Vector3(2.2f, 0f, 0f);
+        var rig = new WallRig(level) { Listener = new Vector3(0f, 1.2f, earZ) };
+        int sound = rig.Add(squeak);
+
+        rig.Frame();
+
+        rig.Heard(sound).ShouldBe(rig.Direct(sound));
+    }
+
+    [Fact]
+    public void A_sound_under_a_door_that_slid_into_the_wall_is_muffled_by_the_next_wall()
+    {
+        SpanLevel level = Room(out SceneNode door);
+        SceneNode squeak = door.CreateChild("Squeak");
+        door.LocalPosition += new Vector3(2.2f, 0f, 0f);
+        level.Part("Screen", new Vector3(1f, 1.2f, -2f), new Vector3(3f, 1.2f, 0.025f), SpanLevel.Wood);
+        var rig = new WallRig(level) { Listener = Ear };
+        int sound = rig.Add(squeak);
+
+        rig.Frame();
+
+        // The screen is met a little aslant.
+        rig.Through(sound).Gain.ShouldBe(AcousticPresets.Wood.GainsThrough(0.05f).Gain, 0.01f);
+    }
+
+    [Fact]
+    public void A_sound_under_no_part_that_stands_inside_a_wall_is_behind_that_wall()
+    {
+        SpanLevel level = Room(out _);
+        SceneNode speaker = level.Scene.Root.CreateChild("Speaker");
+        speaker.LocalPosition = new Vector3(3f, 1.5f, -4.25f);
+        var rig = new WallRig(level) { Listener = new Vector3(3f, 1.5f, 0f) };
+        int sound = rig.Add(speaker);
+
+        rig.Frame();
+
+        // A quarter metre deep in a wall with plaster on this side.
+        AcousticGains table = AcousticPresets.Plaster.GainsThrough(0.25f);
+        rig.Through(sound).Gain.ShouldBe(table.Gain, 0.01f);
     }
 
     [Fact]

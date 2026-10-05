@@ -60,7 +60,7 @@ public sealed class WallPropagationPopTests
 
         foreach (float speed in (float[])[Stroll, Walk])
         {
-            output.WriteLine($"walking at {speed:0.0} units a second");
+            output.WriteLine(FormattableString.Invariant($"walking at {speed:0.0} units a second"));
             output.WriteLine($"  1    none   {WalkPast(Engine with { Lines = 1 }, speed)}");
 
             foreach (int lines in (int[])[3, 5, 7, 9])
@@ -68,7 +68,7 @@ public sealed class WallPropagationPopTests
                 foreach (float radius in (float[])[0.1f, 0.175f, 0.25f, 0.35f, 0.5f])
                 {
                     Steps steps = WalkPast(Engine with { Lines = lines, HeadRadius = radius }, speed);
-                    output.WriteLine($"  {lines}    {radius:0.000}  {steps}");
+                    output.WriteLine(FormattableString.Invariant($"  {lines}    {radius:0.000}  {steps}"));
                 }
             }
         }

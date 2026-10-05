@@ -8,8 +8,10 @@ namespace SpectraEngine.Core.Audio.Propagation;
 
 /// <summary>
 /// The scene that is current as sound's obstacles: its static world, live or
-/// baked, and its parts that collide. It asks for the scene on every call
-/// and keeps none. Render thread only.
+/// baked, and its parts that collide. A sound on or under a part is not
+/// behind that part, the parts above it in the tree, or a solid the sound
+/// stands in. It asks for the scene on every call and keeps none. Render
+/// thread only.
 /// </summary>
 public sealed class SceneSoundObstacles : ISoundObstacles
 {
@@ -71,9 +73,11 @@ public sealed class SceneSoundObstacles : ISoundObstacles
         _ownBody.Clear();
         for (SceneNode? node = body; node is not null; node = node.Parent)
         {
-            if (node.Brush is not null)
+            if (node.Brush is not null && node.BrushKind == BrushKind.Part)
                 _ownBody.Add(node);
         }
+
+        bool isOnAPart = _ownBody.Count > 0;
 
         // Collide decides what blocks. A part that rays do not hit is still solid.
         var filter = new SceneQueryFilter { IgnoreQueryFlags = true, Ignore = _ownBody };
@@ -81,6 +85,15 @@ public sealed class SceneSoundObstacles : ISoundObstacles
 
         // Do not keep the nodes alive between traces.
         _ownBody.Clear();
+
+        // A door that slides into its wall takes its sounds in with it. The
+        // wall is then no more in their way than the door is.
+        if (isOnAPart && count > 0 && spans[0].Start <= SolidSpan.Tolerance)
+        {
+            spans[1..count].CopyTo(spans);
+            count--;
+        }
+
         return count;
     }
 
