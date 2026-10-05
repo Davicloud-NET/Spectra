@@ -1230,9 +1230,41 @@ public sealed class ShellModel : ObservableObject
             Raise(nameof(NoMatchLabel));
             _filterDebounce?.Stop();
             _filterDebounce ??= new DispatcherTimer(
-                TimeSpan.FromMilliseconds(120), DispatcherPriority.Background, (_, _) => ApplyFilterNow());
+                TimeSpan.FromMilliseconds(120), DispatcherPriority.Background, (_, _) => ApplyTypedFilter());
             _filterDebounce.Start();
         }
+    }
+
+    /// <summary>
+    /// A filter match whose row the tree should scroll to: the first one once
+    /// typing pauses, or the one a key in the filter box picked. Its parents
+    /// are open by the time this is raised.
+    /// </summary>
+    public event Action<SceneTreeNode>? FilterMatchRevealed;
+
+    /// <summary>
+    /// The match a key in the filter box selects, or null when nothing matches.
+    /// </summary>
+    /// <param name="step">0 for Enter, 1 for Down, -1 for Up. See <see cref="SceneTreeModel.PickMatch"/>.</param>
+    public SceneTreeNode? PickFilterMatch(int step)
+    {
+        // The key can beat the pause.
+        if (_filterDebounce is { IsEnabled: true })
+            ApplyFilterNow();
+
+        if (_tree?.PickMatch(step) is not { } match)
+            return null;
+
+        FilterMatchRevealed?.Invoke(match);
+        return match;
+    }
+
+    private void ApplyTypedFilter()
+    {
+        ApplyFilterNow();
+
+        if (_tree?.RevealFirstMatch() is { } first)
+            FilterMatchRevealed?.Invoke(first);
     }
 
     /// <summary>

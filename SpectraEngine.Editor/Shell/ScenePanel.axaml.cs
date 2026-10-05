@@ -110,6 +110,21 @@ public partial class ScenePanel : UserControl
 
         if (Resources[RowMenuKey] is ContextMenu rowMenu)
             rowMenu.Opening += OnRowMenuOpening;
+
+        DataContextChanged += (_, _) => Subscribe();
+    }
+
+    private ShellModel? _subscribed;
+
+    private void Subscribe()
+    {
+        if (_subscribed is not null)
+            _subscribed.FilterMatchRevealed -= OnFilterMatchRevealed;
+
+        _subscribed = Model;
+
+        if (_subscribed is not null)
+            _subscribed.FilterMatchRevealed += OnFilterMatchRevealed;
     }
 
     private const string RowMenuKey = "RowMenu";
@@ -269,14 +284,25 @@ public partial class ScenePanel : UserControl
             return;
         }
 
-        // Posted: rows an expand just added have no extent until layout runs.
         // Don't assign SelectedItem here, it would collapse a multi-selection.
+        PostScroll(tree, node, leaveIfOnScreen: false);
+    }
+
+    private void OnFilterMatchRevealed(SceneTreeNode node)
+    {
+        if (Model?.Tree is { } tree)
+            PostScroll(tree, node, leaveIfOnScreen: true);
+    }
+
+    // Posted: rows an expand just added have no extent until layout runs.
+    private void PostScroll(SceneTreeModel tree, SceneTreeNode node, bool leaveIfOnScreen)
+    {
         Dispatcher.UIThread.Post(() =>
         {
             if (Model?.Tree is not { } current || !ReferenceEquals(current, tree))
                 return;
 
-            ScrollWithContext(tree, node);
+            ScrollWithContext(tree, node, leaveIfOnScreen);
         }, DispatcherPriority.Loaded);
     }
 
@@ -286,7 +312,7 @@ public partial class ScenePanel : UserControl
     // Computed from the row's index: an off-screen row has no container under
     // virtualization. Sets the offset directly because an oversized
     // BringIntoView rect is clamped to the control and does nothing.
-    private void ScrollWithContext(SceneTreeModel tree, SceneTreeNode node)
+    private void ScrollWithContext(SceneTreeModel tree, SceneTreeNode node, bool leaveIfOnScreen)
     {
         int index = tree.Rows.IndexOf(node);
         if (index < 0 || tree.Rows.Count == 0)
@@ -299,9 +325,16 @@ public partial class ScenePanel : UserControl
         if (rowHeight <= 0)
             return;
 
+        double top = index * rowHeight;
+        double viewTop = scroller.Offset.Y;
+
+        // Typing in the filter should not move a list that already shows the match.
+        if (leaveIfOnScreen && top >= viewTop && top + rowHeight <= viewTop + scroller.Viewport.Height)
+            return;
+
         double resting = (scroller.Viewport.Height - rowHeight) * RevealRestingFraction;
         double target = Math.Clamp(
-            (index * rowHeight) - resting,
+            top - resting,
             0,
             Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height));
 
@@ -753,11 +786,40 @@ public partial class ScenePanel : UserControl
 
     private void OnFilterKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape)
+        switch (e.Key)
+        {
+            case Key.Escape:
+                Model?.ClearFilter();
+                break;
+
+            case Key.Enter:
+                SelectFilterMatch(step: 0);
+                break;
+
+            case Key.Down:
+                SelectFilterMatch(step: 1);
+                break;
+
+            case Key.Up:
+                SelectFilterMatch(step: -1);
+                break;
+
+            default:
+                return;
+        }
+
+        e.Handled = true;
+    }
+
+    // Replaces the selection through the list, as a click on the row does.
+    // Focus is left alone, so the keyboard stays in the filter box.
+    private void SelectFilterMatch(int step)
+    {
+        if (Model?.PickFilterMatch(step) is not { } match)
             return;
 
-        Model?.ClearFilter();
-        e.Handled = true;
+        _gestureModifiers = KeyModifiers.None;
+        SceneTree.SelectedItem = match;
     }
 
     private void OnClearFilterClicked(object? sender, RoutedEventArgs e) => Model?.ClearFilter();

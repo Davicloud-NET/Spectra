@@ -207,6 +207,10 @@ public sealed class SceneTreeModel
 
     private string _filter = string.Empty;
 
+    // The filter's matches top to bottom, and the one the filter box picked last.
+    private readonly List<SceneTreeNode> _matches = [];
+    private SceneTreeNode? _pickedMatch;
+
     // Scratch for the visible-row list, reused across rebuilds.
     private readonly List<SceneTreeNode> _desired = [];
     private readonly HashSet<SceneTreeNode> _desiredSet = [];
@@ -481,7 +485,14 @@ public sealed class SceneTreeModel
     public void ApplyFilter(string? text)
     {
         string query = (text ?? string.Empty).Trim();
+
+        // New text starts again at the first match. A re-run after a scene
+        // change keeps the pick.
+        if (!string.Equals(query, _filter, StringComparison.Ordinal))
+            _pickedMatch = null;
+
         _filter = query;
+        _matches.Clear();
 
         if (query.Length == 0)
         {
@@ -537,6 +548,60 @@ public sealed class SceneTreeModel
                 current = parent;
             }
         }
+
+        for (int i = 0; i < Roots.Count; i++)
+            CollectMatches(Roots[i]);
+    }
+
+    // Parent before children, the order the rows read in with everything
+    // open. A dimmed node has no match under it.
+    private void CollectMatches(SceneTreeNode node)
+    {
+        if (node.Match == SceneTreeMatch.None)
+            return;
+
+        if (node.Match == SceneTreeMatch.Match)
+            _matches.Add(node);
+
+        for (int i = 0; i < node.Children.Count; i++)
+            CollectMatches(node.Children[i]);
+    }
+
+    /// <summary>
+    /// Opens the parents of the first match in tree order so it has a row.
+    /// Null when there is no filter or nothing passes it.
+    /// </summary>
+    public SceneTreeNode? RevealFirstMatch() => _matches.Count > 0 ? Revealed(_matches[0]) : null;
+
+    /// <summary>
+    /// Picks the match a key in the filter box selects, and opens its parents
+    /// so it has a row. Null when there is no filter or nothing passes it.
+    /// </summary>
+    /// <param name="step">
+    /// 0 keeps the last pick, or takes the first match when the filter text is
+    /// new. 1 and -1 go to the next match in tree order and the one before,
+    /// wrapping at the ends.
+    /// </param>
+    public SceneTreeNode? PickMatch(int step)
+    {
+        int count = _matches.Count;
+        if (count == 0)
+            return null;
+
+        // -1 too for a pick that left the scene or stopped matching.
+        int at = _pickedMatch is null ? -1 : _matches.IndexOf(_pickedMatch);
+        int next = at < 0
+            ? (step < 0 ? count - 1 : 0)
+            : (((at + step) % count) + count) % count;
+
+        _pickedMatch = _matches[next];
+        return Revealed(_pickedMatch);
+    }
+
+    private SceneTreeNode Revealed(SceneTreeNode node)
+    {
+        TryReveal(node.Id, out _);
+        return node;
     }
 
     /// <summary>Whether the filter is a <c>t:</c> query naming no known kind.</summary>
