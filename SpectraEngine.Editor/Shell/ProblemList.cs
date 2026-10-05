@@ -276,15 +276,23 @@ public sealed class ProblemList : ObservableObject
         return changed;
     }
 
-    /// <summary>Drops every problem about <paramref name="subject"/>. Returns how many rows went.</summary>
-    public int Resolve(string subject)
+    /// <summary>
+    /// Drops the problems about <paramref name="subject"/>: every one, or only
+    /// those reported under <paramref name="template"/> when one is given.
+    /// Returns how many rows went.
+    /// </summary>
+    public int Resolve(string subject, string template = "")
     {
+        ArgumentNullException.ThrowIfNull(template);
         if (string.IsNullOrEmpty(subject)) return 0;
 
         int removed = 0;
         for (int i = Entries.Count - 1; i >= 0; i--)
         {
             if (!string.Equals(Entries[i].Subject, subject, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (template.Length > 0 && !string.Equals(Entries[i].Template, template, StringComparison.Ordinal))
                 continue;
 
             RemoveAt(i);

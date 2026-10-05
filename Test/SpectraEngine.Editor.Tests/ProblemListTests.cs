@@ -88,6 +88,22 @@ public sealed class ProblemListTests
     }
 
     [Fact]
+    public void Resolve_with_a_template_removes_only_that_condition_for_the_subject()
+    {
+        var problems = new ProblemList();
+        problems.Report(OutputSeverity.Warning, Template, "a", "Sounds/a.wav");
+        problems.Report(OutputSeverity.Warning, "Sound {Path} was not played", "p", "Sounds/a.wav");
+        problems.Report(OutputSeverity.Warning, "Sound {Path} was not played", "p", "Sounds/b.wav");
+
+        Assert.Equal(1, problems.Resolve("Sounds/a.wav", "Sound {Path} was not played"));
+
+        Assert.Equal(2, problems.Entries.Count);
+        Assert.Contains(problems.Entries, entry => entry.Subject == "Sounds/a.wav" && entry.Template == Template);
+        Assert.Contains(problems.Entries, entry => entry.Subject == "Sounds/b.wav");
+        Assert.Equal("2 warnings", problems.Summary);
+    }
+
+    [Fact]
     public void Resolving_something_that_was_never_wrong_does_nothing()
     {
         var problems = new ProblemList();

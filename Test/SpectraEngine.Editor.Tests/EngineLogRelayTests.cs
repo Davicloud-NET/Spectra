@@ -1,4 +1,5 @@
 using Serilog;
+using SpectraEngine.Core.Audio;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Sounds;
 
@@ -102,6 +103,43 @@ public sealed class EngineLogRelayTests
         Assert.Contains(problems.Entries, entry => entry.Message.Contains("its loop cannot play"));
 
         Assert.Equal(2, problems.Resolve(lines[2].Subject));
+    }
+
+    [Fact]
+    public void A_sound_that_plays_after_a_refusal_clears_the_refusal_and_leaves_its_cook_warning()
+    {
+        (_, ILogger logger, List<EngineLogLine> lines) = Rig();
+
+        logger.Warning("Sound {Path}: {CookCode}: {Message}", "Sounds/door.wav", "SC4003", "it is stereo");
+        logger.Warning(SoundPreview.RefusedTemplate, "Sounds/door.wav", "the audio device has no source left for it");
+        logger.Information(SoundPreview.PlayedAfterRefusalTemplate, "Sounds/door.wav");
+
+        Assert.Equal(3, lines.Count);
+        Assert.True(lines[2].IsResolution);
+        Assert.Equal(SoundPreview.RefusedTemplate, lines[2].Ends);
+
+        // As the window does it.
+        var problems = new ProblemList();
+        foreach (EngineLogLine line in lines.Take(2))
+            problems.Report(line.Severity, line.Template, line.Message, line.Subject);
+
+        Assert.Equal(1, problems.Resolve(lines[2].Subject, lines[2].Ends ?? string.Empty));
+        Assert.Contains("it is stereo", Assert.Single(problems.Entries).Message);
+    }
+
+    [Fact]
+    public void A_line_that_ends_nothing_names_no_template_to_end()
+    {
+        (_, ILogger logger, List<EngineLogLine> lines) = Rig();
+
+        logger.Warning(SoundPreview.RefusedTemplate, "Sounds/door.wav", "audio is off");
+        logger.Information(CookedSoundSource.CookedAgainTemplate, "Sounds/door.wav");
+
+        Assert.Null(lines[0].Ends);
+        Assert.False(lines[0].IsResolution);
+
+        // Empty: every problem about the file is over.
+        Assert.Equal(string.Empty, lines[1].Ends);
     }
 
     [Fact]

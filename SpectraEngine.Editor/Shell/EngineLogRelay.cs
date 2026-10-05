@@ -1,5 +1,6 @@
 using Serilog.Core;
 using Serilog.Events;
+using SpectraEngine.Core.Audio;
 using SpectraEngine.Editor.Sounds;
 using System;
 using System.Collections.Concurrent;
@@ -14,14 +15,21 @@ namespace SpectraEngine.Editor.Shell;
 /// line carries one. Problems are grouped by it.
 /// </param>
 /// <param name="Subject">The asset path or file the line is about, or empty.</param>
-/// <param name="IsResolution">Whether this line says an earlier failure is over.</param>
+/// <param name="Ends">
+/// The template of the problem this line says is over, or an empty string for
+/// every problem about the subject. Null when the line ends nothing.
+/// </param>
 public readonly record struct EngineLogLine(
     OutputSeverity Severity,
     string Template,
     string Message,
     string Subject,
     DateTime Timestamp,
-    bool IsResolution);
+    string? Ends)
+{
+    /// <summary>Whether this line says an earlier failure is over.</summary>
+    public bool IsResolution => Ends is not null;
+}
 
 /// <summary>
 /// Serilog sink that carries the engine's warnings and errors into the shell.
@@ -46,13 +54,17 @@ public sealed class EngineLogRelay : ILogEventSink
     // file are two problems, so the code is part of what they are grouped by.
     private const string CookCodeProperty = "CookCode";
 
-    // Templates that end an earlier failure. Matched whole: a line that only
-    // mentions a path must not clear a problem.
-    private static readonly string[] ResolutionTemplates =
+    // Templates that end an earlier failure, each with the template of the
+    // problem it ends. An empty one ends every problem about the subject.
+    // Matched whole: a line that only mentions a path must not clear a problem.
+    private static readonly (string Template, string Ends)[] Resolutions =
     [
-        "Loaded texture {Path} after an earlier failure ({Description})",
-        "Texture {Verb} {Path} ({Description})",
-        CookedSoundSource.CookedAgainTemplate,
+        ("Loaded texture {Path} after an earlier failure ({Description})", string.Empty),
+        ("Texture {Verb} {Path} ({Description})", string.Empty),
+        (CookedSoundSource.CookedAgainTemplate, string.Empty),
+
+        // Only the refusal: a cook warning about the file still stands.
+        (SoundPreview.PlayedAfterRefusalTemplate, SoundPreview.RefusedTemplate),
     ];
 
     /// <summary>Lines lost to overflow since construction.</summary>
@@ -85,8 +97,8 @@ public sealed class EngineLogRelay : ILogEventSink
     {
         if (logEvent is null) return;
 
-        bool resolution = IsResolution(logEvent.MessageTemplate.Text);
-        if (logEvent.Level < LogEventLevel.Warning && !resolution)
+        string? ends = EndsOf(logEvent.MessageTemplate.Text);
+        if (logEvent.Level < LogEventLevel.Warning && ends is null)
             return;
 
         if (_queue.Count >= Capacity)
@@ -102,20 +114,27 @@ public sealed class EngineLogRelay : ILogEventSink
             Render(logEvent),
             SubjectOf(logEvent),
             logEvent.Timestamp.LocalDateTime,
-            resolution));
+            ends));
 
         ScheduleDrain();
     }
 
     /// <summary>Whether a template says an earlier failure is over.</summary>
-    public static bool IsResolution(string template)
+    public static bool IsResolution(string template) => EndsOf(template) is not null;
+
+    /// <summary>
+    /// The template of the problem a line with <paramref name="template"/>
+    /// ends, or an empty string for every problem about its subject. Null
+    /// when it ends nothing.
+    /// </summary>
+    public static string? EndsOf(string template)
     {
-        foreach (string known in ResolutionTemplates)
+        foreach ((string known, string ends) in Resolutions)
         {
-            if (string.Equals(template, known, StringComparison.Ordinal)) return true;
+            if (string.Equals(template, known, StringComparison.Ordinal)) return ends;
         }
 
-        return false;
+        return null;
     }
 
     /// <summary>The path or file a line is about, or empty.</summary>
