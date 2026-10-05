@@ -182,9 +182,8 @@ public sealed class PointSoundMarkerTests
     }
 
     [Fact]
-    public void A_loop_shorter_than_a_tick_fires_a_marker_once_a_tick_not_once_a_pass()
+    public void A_loop_that_turns_round_eight_times_a_tick_does_not_fire_a_marker_once_a_pass()
     {
-        // 100 frames repeat eight times in every tick.
         Describe(Rate, new LoopRegion(0, 100), (50, "buzz"));
         _rig.Sound(Line, ("startplaying", "1"), ("looped", "1"));
         EntityWorld world = _rig.Start();
@@ -193,6 +192,97 @@ public sealed class PointSoundMarkerTests
 
         _rig.Fired.Count.ShouldBe(10);
         world.DispatchBudgetTripCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void A_loop_shorter_than_a_tick_fires_a_marker_twice_a_tick_at_most()
+    {
+        // 300 frames turn round two and two thirds times in a tick of 800.
+        Describe(Rate, new LoopRegion(0, 300), (50, "buzz"));
+        _rig.Sound(Line, ("startplaying", "1"), ("looped", "1"));
+        EntityWorld world = _rig.Start();
+
+        Movers.Run(world, 6);
+
+        // A tick fires the rest of the pass the last tick left off in and the
+        // start of the pass it ends in. The passes in between fire nothing.
+        _rig.Fired.ShouldBe(
+        [
+            "1:OnMarker:buzz", "1:OnMarker:buzz",
+            "2:OnMarker:buzz",
+            "4:OnMarker:buzz", "4:OnMarker:buzz",
+            "5:OnMarker:buzz",
+        ]);
+    }
+
+    [Fact]
+    public void A_pitch_change_between_markers_fires_each_once_and_the_later_ones_sooner()
+    {
+        Describe(Rate, default, (12_000, "before"), (24_000, "at"), (36_000, "after"));
+        SceneNode node = _rig.Sound(Line, ("startplaying", "1"));
+        EntityWorld world = _rig.Start();
+        Movers.Run(world, 30);
+
+        // Half is played, up to the marker "at". The rest goes by at 1600
+        // frames a tick.
+        EntityRuntime.Send(EntityRuntime.Live<PointSound>(world, node), "SetPitch", "2");
+        Movers.Run(world, 100);
+
+        _rig.Fired.ShouldBe(
+            ["15:OnMarker:before", "30:OnMarker:at", "38:OnMarker:after", "45:OnEnded"]);
+    }
+
+    [Fact]
+    public void A_pitch_change_on_a_looped_sound_keeps_its_place_and_fires_a_marker_once_a_pass()
+    {
+        Describe(Rate, default, (24_000, "half"));
+        SceneNode node = _rig.Sound(Line, ("startplaying", "1"), ("looped", "1"));
+        EntityWorld world = _rig.Start();
+        Movers.Run(world, 45);
+
+        // Three quarters round. From here it plays 400 frames a tick, so the
+        // pass ends on tick 75 and each one after takes 120 ticks.
+        EntityRuntime.Send(EntityRuntime.Live<PointSound>(world, node), "SetPitch", "0.5");
+        Movers.Run(world, 215);
+
+        _rig.Fired.ShouldBe(["30:OnMarker:half", "135:OnMarker:half", "255:OnMarker:half"]);
+        world.Sounds.Playing[0].PositionAt(world.TickNumber).ShouldBe(new SoundPosition(2, 26_000));
+    }
+
+    [Fact]
+    public void Stop_on_the_tick_a_sound_would_end_comes_first_so_the_end_never_fires()
+    {
+        Describe(Rate, default, (Rate, "end"));
+        _rig.Sound(Line, ("startplaying", "1"));
+        EntityWorld world = _rig.Start();
+        Movers.Run(world, 59);
+
+        // Delivered on tick 60, before the sound's own turn in that tick.
+        world.QueueInput("sound", "Stop");
+        Movers.Run(world, 60);
+
+        _rig.Fired.ShouldBeEmpty();
+        world.Sounds.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Play_on_the_tick_a_sound_would_end_starts_it_over_and_the_end_it_had_never_fires()
+    {
+        Describe(Rate, default, (0, "start"), (Rate, "end"));
+        _rig.Sound(Line, ("startplaying", "1"));
+        EntityWorld world = _rig.Start();
+        Movers.Run(world, 59);
+
+        // Delivered on tick 60, before the sound's own turn in that tick.
+        world.QueueInput("sound", "Play");
+        Movers.Run(world, 100);
+
+        _rig.Fired.ShouldBe(
+        [
+            "1:OnMarker:start",
+            "60:OnMarker:start",
+            "120:OnMarker:end", "120:OnEnded",
+        ]);
     }
 
     [Fact]

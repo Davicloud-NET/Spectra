@@ -35,20 +35,69 @@ public sealed class SoundHostingTests
     }
 
     [Fact]
-    public void A_hosted_level_with_no_catalog_set_asks_the_asset_manager()
+    public void A_hosted_level_with_no_catalog_set_plays_what_the_asset_manager_can_open()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "SpectraSoundHostingTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "Sounds"));
+        File.WriteAllBytes(
+            Path.Combine(root, "Sounds", "spawn.saudio"), HandBuiltSaudio.Resident(frames: 480, sampleRate: 44_100));
+        var assets = new AssetManager(NullLogger<AssetManager>.Instance, root, hotReloadEnabled: false);
+
+        try
+        {
+            SceneManager manager = Hosted(assets);
+            SceneNode node = Place(manager, "speaker");
+
+            manager.StartEntityWorld();
+
+            EntityWorld world = manager.EntityWorld.ShouldNotBeNull();
+            world.SoundCatalog.ShouldBeOfType<AssetSoundCatalog>();
+
+            var speaker = EntityRuntime.Live(world, node).ShouldBeOfType<SpawnSoundEntity>();
+            world.Sounds.TryGet(speaker.Emitter, out SoundEmitter emitter).ShouldBeTrue();
+            emitter.FrameCount.ShouldBe(480L);
+            emitter.SampleRate.ShouldBe(44_100);
+            assets.AudioCount.ShouldBe(1);
+        }
+        finally
+        {
+            // First, or the open sound still holds its file.
+            assets.Shutdown();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_hosted_level_with_no_catalog_set_plays_nothing_the_asset_manager_cannot_open()
     {
         SceneManager manager = Hosted();
         SceneNode node = Place(manager, "speaker");
 
         manager.StartEntityWorld();
 
+        // The repo ships no cooked sound by that name.
         EntityWorld world = manager.EntityWorld.ShouldNotBeNull();
-        world.SoundCatalog.ShouldBeOfType<AssetSoundCatalog>();
-
-        // The repo ships no cooked sound by that name, so nothing plays.
         var speaker = EntityRuntime.Live(world, node).ShouldBeOfType<SpawnSoundEntity>();
         speaker.SawCatalog.ShouldBeTrue();
         world.Sounds.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Every_play_session_has_a_registry_of_its_own_that_counts_from_the_start()
+    {
+        EntityWorld first = PlayingOneSound(out SceneManager manager);
+        int id = first.Sounds.Playing[0].Id;
+        long version = first.Sounds.Version;
+
+        manager.StopEntityWorld();
+        manager.StartEntityWorld();
+
+        // Same id and same version as the run before: only the registry
+        // tells the two apart.
+        EntityWorld second = manager.EntityWorld.ShouldNotBeNull();
+        second.Sounds.ShouldNotBeSameAs(first.Sounds);
+        second.Sounds.Playing[0].Id.ShouldBe(id);
+        second.Sounds.Version.ShouldBe(version);
     }
 
     [Fact]
@@ -113,7 +162,7 @@ public sealed class SoundHostingTests
         EntityRuntime.Place(manager.ActiveScene.ShouldNotBeNull().Root, name, "spawn_sound");
 
     // Own catalogue: EntityCatalog.Shared freezes on first read.
-    private static SceneManager Hosted()
+    private static SceneManager Hosted(AssetManager? assets = null)
     {
         EntityCatalog catalog = EntityRuntime.Catalog([]);
         catalog.Add(new EntitySchema("spawn_sound"), () => new SpawnSoundEntity());
@@ -124,7 +173,8 @@ public sealed class SoundHostingTests
             EntityCatalog = catalog,
         };
 
-        manager.LoadStartupScene(new FakeRenderer(), new AssetManager(NullLogger<AssetManager>.Instance));
+        manager.LoadStartupScene(
+            new FakeRenderer(), assets ?? new AssetManager(NullLogger<AssetManager>.Instance));
         return manager;
     }
 }

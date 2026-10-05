@@ -230,7 +230,7 @@ public sealed class PointSoundTests
     [Fact]
     public void A_sound_not_set_to_start_stays_silent_until_it_is_played()
     {
-        _rig.Sound();
+        SceneNode node = _rig.Sound();
         EntityWorld world = _rig.Start();
 
         Movers.Run(world, 120);
@@ -238,6 +238,12 @@ public sealed class PointSoundTests
         world.Sounds.Count.ShouldBe(0);
         world.TickingEntityCount.ShouldBe(0);
         _rig.Fired.ShouldBeEmpty();
+
+        EntityRuntime.Send(EntityRuntime.Live<PointSound>(world, node), "Play");
+
+        world.Sounds.Count.ShouldBe(1);
+        world.Sounds.Playing[0].StartTick.ShouldBe(120L);
+        world.TickingEntityCount.ShouldBe(1);
     }
 
     [Fact]
