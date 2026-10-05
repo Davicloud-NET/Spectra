@@ -1,5 +1,6 @@
 ﻿<Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia">
 
   <!--
@@ -554,6 +555,40 @@
   </Style>
   <Style Selector="Button.ghost:pointerover Path.icon">
     <Setter Property="Stroke" Value="{StaticResource SpectraTextEmphasis}" />
+  </Style>
+
+  <!-- The play button beside a sound file. As big as it is made where it is
+       used, so it fits a list row and a field row alike. -->
+  <Style Selector="shell|SoundPreviewButton">
+    <Setter Property="Width" Value="18" />
+    <Setter Property="Height" Value="18" />
+    <!-- #00FFFFFF, as on .ghost. Not null: the whole box takes the pointer. -->
+    <Setter Property="Background" Value="#00FFFFFF" />
+    <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background"
+                         Duration="{StaticResource SpectraMotionFast}"
+                         Easing="{StaticResource SpectraEaseOut}" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="shell|SoundPreviewButton:pointerover">
+    <Setter Property="Background" Value="{StaticResource SpectraControlHover}" />
+  </Style>
+  <Style Selector="shell|SoundPreviewButton:pressed">
+    <Setter Property="Background" Value="{StaticResource SpectraControlPressed}" />
+  </Style>
+
+  <!-- Filled, like the Play key's glyphs. Stop is amber there too. -->
+  <Style Selector="shell|SoundPreviewButton Path.playglyph">
+    <Setter Property="Fill" Value="{StaticResource SpectraTextBody}" />
+  </Style>
+  <Style Selector="shell|SoundPreviewButton:pointerover Path.playglyph">
+    <Setter Property="Fill" Value="{StaticResource SpectraTextEmphasis}" />
+  </Style>
+  <Style Selector="shell|SoundPreviewButton Path.stopglyph">
+    <Setter Property="Fill" Value="{StaticResource SpectraMode}" />
   </Style>
 
   <!-- Mode chip: a two-way choice shown as subject plus current value. -->
@@ -1224,6 +1259,14 @@
   </Style>
   <Style Selector="ListBox.palettelist ListBoxItem:selected TextBlock.palettechord">
     <Setter Property="Foreground" Value="{StaticResource SpectraTextOnAccent}" />
+  </Style>
+
+  <!-- A sound picker's play and stop glyphs change colour with the row's text. -->
+  <Style Selector="ListBox.palettelist ListBoxItem:selected shell|SoundPreviewButton Path.playglyph">
+    <Setter Property="Fill" Value="{StaticResource SpectraTextOnAccent}" />
+  </Style>
+  <Style Selector="ListBox.palettelist ListBoxItem:selected shell|SoundPreviewButton Path.stopglyph">
+    <Setter Property="Fill" Value="{StaticResource SpectraTextOnAccent}" />
   </Style>
 
   <Style Selector="TextBlock.palettechord">

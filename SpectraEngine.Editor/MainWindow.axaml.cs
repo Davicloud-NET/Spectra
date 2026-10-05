@@ -208,7 +208,8 @@ public partial class MainWindow : Window
 
         _shell.Content = new ContentBrowserModel(_loggerFactory.CreateLogger<ContentBrowserModel>());
         _shell.Assets = new AssetCatalog(_loggerFactory.CreateLogger<AssetCatalog>());
-        _shell.SoundPreview.Requested += path => _session?.PreviewSound(path);
+        _shell.SoundPreview.Send = SendSoundPreview;
+        _shell.SoundPreview.NotSent += () => _shell.SetWarning(SessionFaultText.ListenWhileStopped);
 
         // Saved on change, not at shutdown, so a crash doesn't lose it.
         _shell.Content.ViewMode = _settings.ContentView;
@@ -1326,13 +1327,13 @@ public partial class MainWindow : Window
 
     private void OnShowProblemsPanel(object? sender, RoutedEventArgs e) => ShowToolInDrawer(ProblemsTool);
 
-    // A resolution line clears the problems about its subject and is only
-    // logged when it cleared one.
+    // A resolution line clears the problems it ends about its subject and is
+    // only logged when it cleared one.
     private void OnEngineLogLine(EngineLogLine line)
     {
-        if (line.IsResolution)
+        if (line.Ends is { } ends)
         {
-            if (_shell.Problems.Resolve(line.Subject) > 0)
+            if (_shell.Problems.Resolve(line.Subject, ends) > 0)
                 _shell.Output.Append(OutputSeverity.Info, line.Message);
             return;
         }
@@ -1543,6 +1544,17 @@ public partial class MainWindow : Window
     {
         if (report.Placed) _shell.SetMessage(report.Describe());
         else _shell.SetWarning(report.Describe());
+    }
+
+    // False while the viewport is stopped: the files are still listed, and
+    // there is no engine to play one.
+    private bool SendSoundPreview(string path)
+    {
+        if (_session is not { } session)
+            return false;
+
+        session.PreviewSound(path);
+        return true;
     }
 
     // Splitter hover is set from code on the 1px ink child (in Tag): a child

@@ -114,5 +114,6 @@ public sealed class SessionFaultTextTests
     {
         ConsoleCommands.Names.ShouldContain(SessionFaultText.RestartVerb);
         SessionFaultText.SaveWhileStopped.ShouldContain($"Type {SessionFaultText.RestartVerb} ");
+        SessionFaultText.ListenWhileStopped.ShouldContain($"Type {SessionFaultText.RestartVerb} ");
     }
 }

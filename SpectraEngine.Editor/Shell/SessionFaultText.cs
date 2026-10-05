@@ -14,6 +14,10 @@ public static class SessionFaultText
     public const string SaveWhileStopped =
         "The viewport is stopped, so the level cannot be saved yet. Type " + RestartVerb + " in the console first.";
 
+    /// <summary>The line for a sound's play button pressed while the viewport is stopped.</summary>
+    public const string ListenWhileStopped =
+        "The viewport is stopped, so no sound can be played yet. Type " + RestartVerb + " in the console first.";
+
     /// <summary>The line for a viewport that is drawing again.</summary>
     /// <param name="notice">What happened.</param>
     /// <param name="hasSavedLevel">Whether the level has a save on disk it was opened from again.</param>

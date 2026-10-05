@@ -53,6 +53,13 @@ internal sealed class SoundProjectFixture : IDisposable
         ]),
     ]));
 
+    // An engine that takes every request a play button sends.
+    public static Func<string, bool> Taking(List<string> asked) => path =>
+    {
+        asked.Add(path);
+        return true;
+    };
+
     public void Dispose()
     {
         try

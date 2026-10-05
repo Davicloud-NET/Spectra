@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Interactivity;
+using Avalonia.Input;
+using Avalonia.Media;
 using System.ComponentModel;
+using Path = Avalonia.Controls.Shapes.Path;
 
 namespace SpectraEngine.Editor.Shell;
 
@@ -9,9 +11,10 @@ namespace SpectraEngine.Editor.Shell;
 /// The small play button beside a sound file. It shows stop while the engine
 /// says that file is the one playing.
 /// </summary>
-// Don't hand-write InitializeComponent: a parameterless one shadows the
-// generated overload and every x:Name field stays null.
-public partial class SoundPreviewButton : UserControl
+// A border and one glyph, not a Button with a template: a grid of tiles
+// builds one of these per tile, and a hidden one builds nothing at all. Its
+// looks are in Theme/Controls.axaml.
+public sealed class SoundPreviewButton : Border
 {
     /// <summary>
     /// Defines the model every button below a control talks to. Inherited, so
@@ -31,21 +34,22 @@ public partial class SoundPreviewButton : UserControl
     /// <summary>What the button says while its file is playing.</summary>
     public const string StopTip = "Stop";
 
-    // Listened to only while the button is on screen, so a row a list has
-    // thrown away is not kept alive by the model.
+    private const string PlayClass = "playglyph";
+    private const string StopClass = "stopglyph";
+
+    // Listened to only while the button is on screen and shown, so a row a
+    // list has thrown away is not kept alive by the model.
     private SoundPreviewModel? _heard;
+    private Path? _glyph;
     private bool _isAttached;
+    private bool _isPressed;
 
     /// <summary>Creates the button.</summary>
     public SoundPreviewButton()
     {
-        InitializeComponent();
-
         // A second click on the button must not reach the row under it, where
         // a double click picks or inserts the file.
         AddHandler(DoubleTappedEvent, static (_, e) => e.Handled = true);
-
-        Show(false);
     }
 
     /// <summary>The sound file this button plays, as a content path.</summary>
@@ -70,8 +74,12 @@ public partial class SoundPreviewButton : UserControl
     {
         base.OnPropertyChanged(change);
 
-        if (change.Property == PreviewProperty || change.Property == ContentPathProperty)
-            Hear(_isAttached ? GetValue(PreviewProperty) : null);
+        if (change.Property == PreviewProperty
+            || change.Property == ContentPathProperty
+            || change.Property == IsVisibleProperty)
+        {
+            Hear();
+        }
     }
 
     /// <inheritdoc/>
@@ -80,20 +88,64 @@ public partial class SoundPreviewButton : UserControl
         base.OnAttachedToVisualTree(e);
 
         _isAttached = true;
-        Hear(GetValue(PreviewProperty));
+        Hear();
     }
 
     /// <inheritdoc/>
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         _isAttached = false;
-        Hear(null);
+        Hear();
 
         base.OnDetachedFromVisualTree(e);
     }
 
-    private void Hear(SoundPreviewModel? model)
+    /// <inheritdoc/>
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
+        base.OnPointerPressed(e);
+
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
+
+        // Handled, or the row under the button takes the press as its own.
+        SetPressed(true);
+        e.Handled = true;
+    }
+
+    /// <inheritdoc/>
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+
+        if (!_isPressed || e.InitialPressMouseButton != MouseButton.Left)
+            return;
+
+        SetPressed(false);
+        e.Handled = true;
+
+        // A press dragged off the button and let go there is no press.
+        if (new Rect(Bounds.Size).Contains(e.GetPosition(this)))
+            _heard?.Press(ContentPath);
+    }
+
+    /// <inheritdoc/>
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        SetPressed(false);
+    }
+
+    private void SetPressed(bool pressed)
+    {
+        _isPressed = pressed;
+        PseudoClasses.Set(":pressed", pressed);
+    }
+
+    private void Hear()
+    {
+        SoundPreviewModel? model = _isAttached && IsVisible ? GetValue(PreviewProperty) : null;
+
         if (!ReferenceEquals(_heard, model))
         {
             if (_heard is not null)
@@ -108,20 +160,37 @@ public partial class SoundPreviewButton : UserControl
         Show(model?.IsPlaying(ContentPath) ?? false);
     }
 
-    private void OnPreviewChanged(object? sender, PropertyChangedEventArgs e) =>
-        Show(_heard?.IsPlaying(ContentPath) ?? false);
+    private void OnPreviewChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SoundPreviewModel.Playing))
+            Show(_heard?.IsPlaying(ContentPath) ?? false);
+    }
 
     private void Show(bool playing)
     {
         ShowsStop = playing;
-        PlayGlyph.IsVisible = !playing;
-        StopGlyph.IsVisible = playing;
-        ToolTip.SetTip(ButtonPart, playing ? StopTip : PlayTip);
+
+        // A button nobody sees needs no glyph.
+        if (_glyph is null && !(_isAttached && IsVisible))
+            return;
+
+        _glyph ??= NewGlyph();
+        _glyph.Classes.Set(PlayClass, !playing);
+        _glyph.Classes.Set(StopClass, playing);
+        _glyph.Data = Icon(playing ? "IconStop" : "IconPlay");
+        ToolTip.SetTip(this, playing ? StopTip : PlayTip);
     }
 
-    private void OnPressed(object? sender, RoutedEventArgs e)
+    private Path NewGlyph()
     {
-        _heard?.Press(ContentPath);
-        e.Handled = true;
+        // Filled, where the other icons are stroked. The border takes the
+        // pointer, so a press on the ink and one beside it are the same press.
+        var glyph = new Path { StrokeThickness = 0, IsHitTestVisible = false };
+        glyph.Classes.Add("icon");
+        Child = glyph;
+        return glyph;
     }
+
+    private static Geometry? Icon(string key) =>
+        Application.Current?.TryFindResource(key, out object? value) == true ? value as Geometry : null;
 }

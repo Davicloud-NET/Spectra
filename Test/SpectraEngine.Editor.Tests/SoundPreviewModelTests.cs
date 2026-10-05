@@ -86,7 +86,7 @@ public sealed class SoundPreviewModelTests
     {
         var preview = new SoundPreviewModel();
         var asked = new List<string>();
-        preview.Requested += asked.Add;
+        preview.Send = Taking(asked);
 
         preview.Press(Open);
 
@@ -99,7 +99,7 @@ public sealed class SoundPreviewModelTests
     {
         var preview = new SoundPreviewModel();
         var asked = new List<string>();
-        preview.Requested += asked.Add;
+        preview.Send = Taking(asked);
         preview.Apply(Open);
 
         preview.Press(Open);
@@ -113,7 +113,7 @@ public sealed class SoundPreviewModelTests
     {
         var preview = new SoundPreviewModel();
         var asked = new List<string>();
-        preview.Requested += asked.Add;
+        preview.Send = Taking(asked);
         preview.Apply(Open);
 
         preview.Press(Close);
@@ -126,7 +126,7 @@ public sealed class SoundPreviewModelTests
     {
         var preview = new SoundPreviewModel();
         var asked = new List<string>();
-        preview.Requested += asked.Add;
+        preview.Send = Taking(asked);
 
         preview.Press(string.Empty);
         preview.Press(null);
@@ -149,7 +149,11 @@ public sealed class SoundPreviewModelTests
     {
         var preview = new SoundPreviewModel();
         int changes = 0;
-        preview.PropertyChanged += (_, _) => changes++;
+        preview.PropertyChanged += (_, change) =>
+        {
+            if (change.PropertyName == nameof(SoundPreviewModel.Playing))
+                changes++;
+        };
 
         preview.Apply(Open);
         preview.Apply(Open);
@@ -158,4 +162,127 @@ public sealed class SoundPreviewModelTests
 
         changes.ShouldBe(2);
     }
+
+    [Fact]
+    public void A_button_that_asks_as_it_is_told_gets_the_new_answer()
+    {
+        var preview = new SoundPreviewModel();
+        var answers = new List<bool>();
+        preview.PropertyChanged += (_, change) =>
+        {
+            if (change.PropertyName == nameof(SoundPreviewModel.Playing))
+                answers.Add(preview.IsPlaying(Open));
+        };
+
+        preview.Apply(Open);
+        preview.Apply(Close);
+
+        answers.ShouldBe([true, false]);
+    }
+
+    [Theory]
+    [InlineData("Sounds/door_open")]
+    [InlineData("Sounds/door_open.saudio")]
+    [InlineData("Sounds/door_open.wave")]
+    [InlineData(@"Sounds\door_open.wav")]
+    [InlineData("/Sounds/door_open.wav")]
+    [InlineData("Sounds//door_open.wav")]
+    public void A_file_plays_under_any_spelling_of_its_path(string spelling)
+    {
+        var preview = new SoundPreviewModel();
+
+        // What the console was given.
+        preview.Apply(spelling);
+        preview.IsPlaying(Open).ShouldBeTrue();
+
+        // What a level stores.
+        preview.Apply(Open);
+        preview.IsPlaying(spelling).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_press_on_a_row_that_spells_the_playing_file_another_way_asks_for_a_stop()
+    {
+        var preview = new SoundPreviewModel();
+        var asked = new List<string>();
+        preview.Send = Taking(asked);
+        preview.Apply(Open);
+
+        preview.Press(@"\Sounds\door_open.wav");
+
+        asked.ShouldBe([string.Empty]);
+    }
+
+    [Theory]
+    [InlineData("Music/door_open.wav")]
+    [InlineData("Sounds/door_open_far.wav")]
+    [InlineData("../door_open.wav")]
+    [InlineData("C:/Sounds/door_open.wav")]
+    public void Another_file_is_not_the_one_playing(string other)
+    {
+        var preview = new SoundPreviewModel();
+
+        preview.Apply(Open);
+
+        preview.IsPlaying(other).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_press_with_no_engine_to_ask_is_reported_and_not_lost()
+    {
+        var preview = new SoundPreviewModel();
+        int notSent = 0;
+        preview.NotSent += () => notSent++;
+
+        preview.Press(Open);
+        notSent.ShouldBe(1, "nothing takes requests yet");
+
+        preview.Send = _ => false;
+        preview.Press(Open);
+        notSent.ShouldBe(2, "the viewport is stopped");
+
+        preview.Send = _ => true;
+        preview.Press(Open);
+        notSent.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Stop_asks_for_a_stop_whichever_file_plays()
+    {
+        var preview = new SoundPreviewModel();
+        var asked = new List<string>();
+        preview.Send = Taking(asked);
+
+        preview.Stop();
+        asked.ShouldBeEmpty("nothing plays");
+
+        preview.Apply(Close);
+        preview.Stop();
+
+        asked.ShouldBe([string.Empty]);
+    }
+
+    [Fact]
+    public void What_plays_is_named_by_its_file_alone()
+    {
+        var preview = new SoundPreviewModel();
+        var raised = new List<string?>();
+        preview.PropertyChanged += (_, change) => raised.Add(change.PropertyName);
+        preview.HasPlaying.ShouldBeFalse();
+        preview.PlayingName.ShouldBeEmpty();
+
+        preview.Apply("Sounds/ambience/wind.wav");
+
+        preview.HasPlaying.ShouldBeTrue();
+        preview.PlayingName.ShouldBe("wind.wav");
+        raised.ShouldBe(
+            [nameof(SoundPreviewModel.Playing), nameof(SoundPreviewModel.PlayingName), nameof(SoundPreviewModel.HasPlaying)]);
+    }
+
+    // An engine that takes every request.
+    private static Func<string, bool> Taking(List<string> asked) => path =>
+    {
+        asked.Add(path);
+        return true;
+    };
 }

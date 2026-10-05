@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -30,11 +29,11 @@ public sealed class SoundPreviewButtonTests(RibbonSession session) : IDisposable
         {
             (Window window, SoundPreviewButton button, SoundPreviewModel model) = Open(SoundProjectFixture.DoorOpen);
             button.ShowsStop.ShouldBeFalse();
-            ToolTip.GetTip(Inner(button)).ShouldBe(SoundPreviewButton.PlayTip);
+            ToolTip.GetTip(button).ShouldBe(SoundPreviewButton.PlayTip);
 
             model.Apply(SoundProjectFixture.DoorOpen);
             button.ShowsStop.ShouldBeTrue();
-            ToolTip.GetTip(Inner(button)).ShouldBe(SoundPreviewButton.StopTip);
+            ToolTip.GetTip(button).ShouldBe(SoundPreviewButton.StopTip);
 
             model.Apply(SoundProjectFixture.DoorClose);
             button.ShowsStop.ShouldBeFalse();
@@ -54,15 +53,75 @@ public sealed class SoundPreviewButtonTests(RibbonSession session) : IDisposable
         {
             (Window window, SoundPreviewButton button, SoundPreviewModel model) = Open(SoundProjectFixture.DoorOpen);
             var asked = new List<string>();
-            model.Requested += asked.Add;
+            model.Send = SoundProjectFixture.Taking(asked);
 
-            Inner(button).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            ContentPanelHarness.Click(window, button);
             button.ShowsStop.ShouldBeFalse("the engine has not said it plays");
 
             model.Apply(SoundProjectFixture.DoorOpen);
-            Inner(button).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            ContentPanelHarness.Click(window, button);
 
             asked.ShouldBe([SoundProjectFixture.DoorOpen, string.Empty]);
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void A_press_anywhere_in_the_buttons_box_counts_and_not_only_on_the_glyph()
+    {
+        session.On(() =>
+        {
+            (Window window, SoundPreviewButton button, SoundPreviewModel model) = Open(SoundProjectFixture.DoorOpen);
+            var asked = new List<string>();
+            model.Send = SoundProjectFixture.Taking(asked);
+            button.Bounds.Size.ShouldBe(new Size(18, 18));
+
+            // The glyph's ink stops short of the top edge.
+            Point edge = button.TranslatePoint(new Point(9, 1), window).ShouldNotBeNull();
+
+            window.MouseDown(edge, MouseButton.Left);
+            window.MouseUp(edge, MouseButton.Left);
+
+            asked.ShouldBe([SoundProjectFixture.DoorOpen]);
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void A_press_that_is_dragged_off_the_button_asks_for_nothing()
+    {
+        session.On(() =>
+        {
+            (Window window, SoundPreviewButton button, SoundPreviewModel model) = Open(SoundProjectFixture.DoorOpen);
+            var asked = new List<string>();
+            model.Send = SoundProjectFixture.Taking(asked);
+            Point centre = button.TranslatePoint(new Point(9, 9), window).ShouldNotBeNull();
+            Point away = centre + new Vector(40, 0);
+
+            window.MouseDown(centre, MouseButton.Left);
+            window.MouseMove(away);
+            window.MouseUp(away, MouseButton.Left);
+
+            asked.ShouldBeEmpty();
+            button.Classes.ShouldNotContain(":pressed");
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void Another_mouse_button_asks_for_nothing()
+    {
+        session.On(() =>
+        {
+            (Window window, SoundPreviewButton button, SoundPreviewModel model) = Open(SoundProjectFixture.DoorOpen);
+            var asked = new List<string>();
+            model.Send = SoundProjectFixture.Taking(asked);
+            Point centre = button.TranslatePoint(new Point(9, 9), window).ShouldNotBeNull();
+
+            window.MouseDown(centre, MouseButton.Right);
+            window.MouseUp(centre, MouseButton.Right);
+
+            asked.ShouldBeEmpty();
             window.Close();
         });
     }
@@ -103,6 +162,31 @@ public sealed class SoundPreviewButtonTests(RibbonSession session) : IDisposable
     }
 
     [Fact]
+    public void A_hidden_button_builds_no_glyph_and_does_not_listen_until_it_is_shown()
+    {
+        session.On(() =>
+        {
+            var model = new SoundPreviewModel();
+            var button = new SoundPreviewButton { ContentPath = SoundProjectFixture.DoorOpen, IsVisible = false };
+            var holder = new Decorator { Child = button };
+            SoundPreviewButton.SetPreview(holder, model);
+            var window = new Window { Content = holder, Width = 120, Height = 80 };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            model.Apply(SoundProjectFixture.DoorOpen);
+            button.Child.ShouldBeNull();
+            button.ShowsStop.ShouldBeFalse();
+
+            button.IsVisible = true;
+
+            button.Child.ShouldNotBeNull();
+            button.ShowsStop.ShouldBeTrue();
+            window.Close();
+        });
+    }
+
+    [Fact]
     public void A_double_click_on_a_rows_play_button_does_not_pick_the_row()
     {
         session.On(() =>
@@ -111,20 +195,18 @@ public sealed class SoundPreviewButtonTests(RibbonSession session) : IDisposable
             var picked = new List<string>();
             var asked = new List<string>();
             picker.Picked += picked.Add;
-            model.Requested += asked.Add;
+            model.Send = SoundProjectFixture.Taking(asked);
 
             SoundPreviewButton button = picker.GetVisualDescendants().OfType<SoundPreviewButton>()
                 .First(candidate => candidate.IsEffectivelyVisible);
             string path = button.ContentPath.ShouldNotBeNull();
-            DoubleClick(window, button);
+            ContentPanelHarness.Click(window, button, times: 2);
 
             picked.ShouldBeEmpty();
             asked.ShouldBe([path, path]);
 
             // The same two clicks on the row's name do pick it, so the clicks are real.
-            TextBlock name = picker.GetVisualDescendants().OfType<TextBlock>()
-                .First(text => text.Text == "wind" && text.IsEffectivelyVisible);
-            DoubleClick(window, name);
+            ContentPanelHarness.Click(window, ContentPanelHarness.NameOf(picker, "wind"), times: 2);
 
             picked.ShouldBe(["Sounds/ambience/wind.wav"]);
             window.Close();
@@ -160,22 +242,5 @@ public sealed class SoundPreviewButtonTests(RibbonSession session) : IDisposable
         Dispatcher.UIThread.RunJobs();
 
         return (window, picker, model);
-    }
-
-    private static Button Inner(SoundPreviewButton button) =>
-        button.GetVisualDescendants().OfType<Button>().Single();
-
-    private static void DoubleClick(Window window, Visual target)
-    {
-        Point centre = target.TranslatePoint(
-            new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window).ShouldNotBeNull();
-
-        for (int click = 0; click < 2; click++)
-        {
-            window.MouseDown(centre, MouseButton.Left);
-            window.MouseUp(centre, MouseButton.Left);
-        }
-
-        Dispatcher.UIThread.RunJobs();
     }
 }
