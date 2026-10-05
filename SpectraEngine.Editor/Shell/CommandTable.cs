@@ -183,6 +183,13 @@ public static class CommandTable
             CommandNeeds.Session, "", ["counters", "fps"]),
         new("Diagnostics readouts: hide", ShellVerb.Of(WorkspaceCommand.HideDiagnostics),
             CommandNeeds.Session),
+
+        new("Logic view: below the viewport", ShellVerb.Of(WorkspaceCommand.ShowLogicBelow),
+            CommandNeeds.Session, "", ["wiring", "connections"]),
+        new("Logic view: beside the viewport", ShellVerb.Of(WorkspaceCommand.ShowLogicBeside),
+            CommandNeeds.Session, "", ["wiring", "connections"]),
+        new("Logic view: hide", ShellVerb.Of(WorkspaceCommand.HideLogic),
+            CommandNeeds.Session),
     ];
 
     /// <summary>

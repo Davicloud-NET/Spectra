@@ -348,6 +348,19 @@
                         Click="OnToggleDiagnostics" />
             </MenuItem>
 
+            <!-- Three set verbs, like Grid below. -->
+            <MenuItem Header="Logic view">
+              <MenuItem Header="Below the viewport" ToggleType="Radio"
+                        IsChecked="{Binding IsLogicBelow, Mode=OneWay}"
+                        Click="OnShowLogicBelow" />
+              <MenuItem Header="Beside the viewport" ToggleType="Radio"
+                        IsChecked="{Binding IsLogicBeside, Mode=OneWay}"
+                        Click="OnShowLogicBeside" />
+              <MenuItem Header="Hidden" ToggleType="Radio"
+                        IsChecked="{Binding IsLogicHidden, Mode=OneWay}"
+                        Click="OnHideLogic" />
+            </MenuItem>
+
             <MenuItem Header="Panels">
               <MenuItem Header="Scene" Click="OnShowScenePanel">
                 <MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconGroup}" /></MenuItem.Icon>

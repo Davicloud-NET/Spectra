@@ -189,6 +189,15 @@ public enum WorkspaceCommand
 
     /// <summary>Hide them.</summary>
     HideDiagnostics,
+
+    /// <summary>Show the Logic view under the 3D view.</summary>
+    ShowLogicBelow,
+
+    /// <summary>Show the Logic view beside the 3D view.</summary>
+    ShowLogicBeside,
+
+    /// <summary>Give the centre back to the 3D view.</summary>
+    HideLogic,
 }
 
 /// <summary>

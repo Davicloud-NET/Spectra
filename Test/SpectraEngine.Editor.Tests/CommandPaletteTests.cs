@@ -212,6 +212,35 @@ public sealed class CommandPaletteTests
     }
 
     [Fact]
+    public void The_Logic_view_has_a_row_for_each_place_it_can_be()
+    {
+        // Three set verbs, all offered whatever shows: a toggle row would
+        // have to know the window's state.
+        (string Title, WorkspaceCommand Command)[] rows =
+        [
+            ("Logic view: below the viewport", WorkspaceCommand.ShowLogicBelow),
+            ("Logic view: beside the viewport", WorkspaceCommand.ShowLogicBeside),
+            ("Logic view: hide", WorkspaceCommand.HideLogic),
+        ];
+
+        foreach ((string title, WorkspaceCommand command) in rows)
+        {
+            ShellCommand row = CommandTable.Commands.Single(c => c.Verb == ShellVerb.Of(command));
+
+            row.Title.ShouldBe(title);
+            row.Needs.ShouldBe(CommandNeeds.Session, title);
+        }
+
+        IReadOnlyList<string> found = CommandTable.Search("logic", Ready()).Rows.Select(c => c.Title).ToList();
+        found.ShouldBe(rows.Select(r => r.Title), ignoreOrder: true);
+
+        First("wiring").ShouldStartWith("Logic view:");
+
+        CommandTable.Search("logic", Ready(hasSession: false, hasProject: false, canPlay: false))
+            .Rows.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void A_document_verb_needs_whatever_it_acts_on()
     {
         IReadOnlyList<string> nothingOpen = CommandTable.Search(

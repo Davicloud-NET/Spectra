@@ -1155,6 +1155,31 @@ public sealed class ShellModel : ObservableObject
         set => Set(ref _viewportMaximised, value);
     }
 
+    private ViewArrangement _viewArrangement = ViewArrangement.Single;
+
+    /// <summary>Which view panes the centre of the window shows.</summary>
+    public ViewArrangement ViewArrangement
+    {
+        get => _viewArrangement;
+        set
+        {
+            if (!Set(ref _viewArrangement, value)) return;
+
+            Raise(nameof(IsLogicHidden));
+            Raise(nameof(IsLogicBelow));
+            Raise(nameof(IsLogicBeside));
+        }
+    }
+
+    /// <summary>Whether the 3D view has the centre to itself.</summary>
+    public bool IsLogicHidden => _viewArrangement == ViewArrangement.Single;
+
+    /// <summary>Whether the Logic view shows under the 3D view.</summary>
+    public bool IsLogicBelow => _viewArrangement == ViewArrangement.LogicBelow;
+
+    /// <summary>Whether it shows beside it.</summary>
+    public bool IsLogicBeside => _viewArrangement == ViewArrangement.LogicBeside;
+
     private string _interactionState = string.Empty;
     private string _gestureHint = string.Empty;
 
