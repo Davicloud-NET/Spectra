@@ -127,6 +127,65 @@ public sealed class CookedSoundSourceTests : IDisposable
     }
 
     [Fact]
+    public void A_label_file_that_is_deleted_cooks_the_sound_again_and_its_markers_go()
+    {
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 48_000));
+        _project.WriteAsset(Labels, "0.25\topen\n");
+        CookedSoundSource source = Source();
+        AssetManager assets = Assets(source);
+
+        assets.LoadAudio(Sound).Markers.ShouldBe([new AudioMarker(12_000, "open")]);
+
+        File.Delete(ContentRoot.ResolveAbsolute(Root, Labels));
+        assets.UnloadAudio(Sound).ShouldBeTrue();
+
+        assets.LoadAudio(Sound).Markers.ShouldBeEmpty();
+        source.CookCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public void A_cached_sound_of_another_sound_format_version_is_cooked_again()
+    {
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 480));
+        byte[] cooked = Open(Source());
+
+        string entry = Directory.EnumerateFiles(_cache, "*", SearchOption.AllDirectories).ShouldHaveSingleItem();
+        LooseSoundStamp stamp;
+        using (FileStream stream = File.OpenRead(entry)) stamp = LooseSoundStamp.Read(stream);
+
+        using (FileStream stream = File.Create(entry))
+        {
+            (stamp with { SoundFormatVersion = stamp.SoundFormatVersion - 1 }).Write(stream);
+            stream.Write(cooked);
+        }
+
+        CookedSoundSource next = Source();
+        Open(next).ShouldBe(cooked);
+        next.CookCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_cook_that_could_not_read_the_wav_is_not_kept_in_the_cache()
+    {
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 96));
+        string wav = ContentRoot.ResolveAbsolute(Root, Sound);
+        CookedSoundSource source = Source();
+
+        using (new FileStream(wav, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.SkipUnless(IsLockedAgainstReaders(wav), "This system lets a second reader into a locked file.");
+
+            Should.Throw<InvalidDataException>(() => source.TryOpen(Cooked, out _));
+        }
+
+        // Kept, the entry would hold for as long as the WAV stays as it is.
+        Directory.Exists(_cache).ShouldBeFalse();
+
+        Open(source).Length.ShouldBeGreaterThan(0);
+        source.CookCount.ShouldBe(2);
+    }
+
+    [Fact]
     public void A_wav_the_cook_refuses_fails_the_load_with_the_cooks_message()
     {
         _project.WriteAsset(Sound, TempProject.Bytes(64));
@@ -191,6 +250,34 @@ public sealed class CookedSoundSourceTests : IDisposable
 
         next.CookCount.ShouldBe(0);
         _log.MessagesAt(LogLevel.Warning).Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Two_warnings_about_one_sound_are_two_lines_each_with_its_code()
+    {
+        // Stereo, and a loop that plays back and forth, which is not carried.
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 64, channels: 2, loopStart: 8, loopEnd: 32, loopType: 1));
+
+        Open(Source());
+
+        IReadOnlyList<string> warnings = _log.MessagesAt(LogLevel.Warning);
+        warnings.Count.ShouldBe(2);
+        warnings.ShouldContain(w => w.StartsWith($"Sound {Sound}: SC4003: "));
+        warnings.ShouldContain(w => w.StartsWith($"Sound {Sound}: SC4005: "));
+    }
+
+    [Fact]
+    public void A_sound_that_comes_back_from_changed_files_says_so()
+    {
+        _project.WriteAsset(Sound, TempProject.Bytes(64));
+        AssetManager assets = Assets(Source());
+        Should.Throw<InvalidDataException>(() => assets.LoadAudio(Sound));
+        _log.MessagesAt(LogLevel.Information).ShouldNotContain(m => m.Contains("cooked again"));
+
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 96));
+        assets.LoadAudio(Sound);
+
+        _log.MessagesAt(LogLevel.Information).ShouldContain($"Sound {Sound} changed and was cooked again");
     }
 
     [Fact]
@@ -334,6 +421,19 @@ public sealed class CookedSoundSourceTests : IDisposable
         using ContentBlob opened = blob.ShouldNotBeNull();
 
         return opened.Span.ToArray();
+    }
+
+    private static bool IsLockedAgainstReaders(string path)
+    {
+        try
+        {
+            File.ReadAllBytes(path);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
     }
 
     // What scook writes for the project as it stands, read back out of the pack.

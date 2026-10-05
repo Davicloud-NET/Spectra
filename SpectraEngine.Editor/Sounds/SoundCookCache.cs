@@ -13,6 +13,10 @@ namespace SpectraEngine.Editor.Sounds;
 internal sealed class SoundCookCache
 {
     private const string EntryExtension = ".cache";
+    private const string TemporaryExtension = ".tmp";
+
+    // Older than any write still running in another editor.
+    private static readonly TimeSpan StoppedWriteAge = TimeSpan.FromHours(1);
 
     public SoundCookCache(string directory)
     {
@@ -72,7 +76,7 @@ internal sealed class SoundCookCache
         {
             return SoundCacheEntry.Read(stream);
         }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException)
+        catch (Exception ex) when (ex is IOException or InvalidDataException)
         {
             stream.Dispose();
             return null;
@@ -82,11 +86,11 @@ internal sealed class SoundCookCache
     public void Write(string cookedPath, LooseSoundResult result)
     {
         string path = EntryPath(cookedPath);
-        if (Path.GetDirectoryName(path) is { Length: > 0 } folder)
-            Directory.CreateDirectory(folder);
+        string folder = Path.GetDirectoryName(path) ?? Root;
+        Directory.CreateDirectory(folder);
 
         // Never a half-written entry under the real name.
-        string temporary = $"{path}.{Guid.NewGuid():N}.tmp";
+        string temporary = $"{path}.{Guid.NewGuid():N}{TemporaryExtension}";
         try
         {
             using (FileStream stream = File.Create(temporary))
@@ -97,6 +101,24 @@ internal sealed class SoundCookCache
         finally
         {
             File.Delete(temporary);
+        }
+
+        RemoveStoppedWrites(folder, Path.GetFileName(path));
+    }
+
+    // An editor that died while writing left its temp file behind.
+    private static void RemoveStoppedWrites(string folder, string entryName)
+    {
+        try
+        {
+            foreach (string leftover in Directory.EnumerateFiles(folder, $"{entryName}.*{TemporaryExtension}"))
+            {
+                if (DateTime.UtcNow - File.GetLastWriteTimeUtc(leftover) >= StoppedWriteAge) File.Delete(leftover);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Tidying only. The entry is written either way.
         }
     }
 

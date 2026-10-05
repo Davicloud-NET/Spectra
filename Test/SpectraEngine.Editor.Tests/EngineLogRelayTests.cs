@@ -1,5 +1,6 @@
 using Serilog;
 using SpectraEngine.Editor.Shell;
+using SpectraEngine.Editor.Sounds;
 
 namespace SpectraEngine.Editor.Tests;
 
@@ -75,6 +76,32 @@ public sealed class EngineLogRelayTests
         EngineLogLine line = Assert.Single(lines);
         Assert.True(line.IsResolution);
         Assert.Equal("Textures/wall.png", line.Subject);
+    }
+
+    [Fact]
+    public void Two_cook_codes_about_one_file_are_two_problems_and_one_resolution_clears_both()
+    {
+        (_, ILogger logger, List<EngineLogLine> lines) = Rig();
+
+        logger.Warning("Sound {Path}: {CookCode}: {Message}", "Sounds/door.wav", "SC4003", "it is stereo");
+        logger.Warning("Sound {Path}: {CookCode}: {Message}", "Sounds/door.wav", "SC4005", "its loop cannot play");
+        logger.Information(CookedSoundSource.CookedAgainTemplate, "Sounds/door.wav");
+
+        Assert.Equal(3, lines.Count);
+        Assert.Equal("Sound {Path}: SC4003: {Message}", lines[0].Template);
+        Assert.Equal("Sound {Path}: SC4005: {Message}", lines[1].Template);
+        Assert.True(lines[2].IsResolution);
+
+        // As the window does it.
+        var problems = new ProblemList();
+        foreach (EngineLogLine line in lines.Take(2))
+            problems.Report(line.Severity, line.Template, line.Message, line.Subject);
+
+        Assert.Equal(2, problems.Entries.Count);
+        Assert.Contains(problems.Entries, entry => entry.Message.Contains("it is stereo"));
+        Assert.Contains(problems.Entries, entry => entry.Message.Contains("its loop cannot play"));
+
+        Assert.Equal(2, problems.Resolve(lines[2].Subject));
     }
 
     [Fact]

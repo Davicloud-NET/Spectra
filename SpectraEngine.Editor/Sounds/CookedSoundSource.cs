@@ -17,14 +17,17 @@ namespace SpectraEngine.Editor.Sounds;
 
 // Makes a loose WAV answer for its cooked name, so the editor plays the bytes
 // a cook would ship. Asked for Sounds/x.saudio where the content root has only
-// Sounds/x.wav, it runs the cook's own rule over the WAV and keeps the result
-// in a cache outside the project. A changed WAV, or a changed or new label
-// file beside it, is cooked again.
+// Sounds/x.wav, it cooks the WAV with the cook's own rule and keeps the result
+// in a cache outside the project.
 internal sealed class CookedSoundSource : IContentSource
 {
     // Below a loose folder at its default priority, so a cooked file the
     // project has itself wins.
     public const int BelowLooseFiles = -1;
+
+    // Logged when a sound asked for before comes back from changed files. The
+    // shell drops its problems about that sound on it.
+    public const string CookedAgainTemplate = "Sound {Path} changed and was cooked again";
 
     private readonly ILogger _logger;
     private readonly string _contentRoot;
@@ -34,8 +37,8 @@ internal sealed class CookedSoundSource : IContentSource
     // One per sound, so two callers asking at once cook it once.
     private readonly ConcurrentDictionary<string, object> _gates = new(StringComparer.OrdinalIgnoreCase);
 
-    // The cook key each sound's notes were last logged under. Every entity
-    // that names a broken sound asks for it, and one telling is enough.
+    // The cook key each sound's diagnostics were last logged under. Every
+    // entity that names a broken sound asks for it, and one telling is enough.
     private readonly ConcurrentDictionary<string, UInt128> _said = new(StringComparer.OrdinalIgnoreCase);
 
     private int _cookCount;
@@ -59,6 +62,7 @@ internal sealed class CookedSoundSource : IContentSource
 
     public bool Exists(string path) => LooseSoundCook.FindSource(_contentRoot, path) is not null;
 
+    // Cooks when the cache has nothing for the sound's files as they are now.
     // Throws InvalidDataException with the cook's message for a WAV the cook
     // refuses. That is not a miss: the sound is there and cannot be played.
     public bool TryOpen(string path, [NotNullWhen(true)] out ContentBlob? blob)
@@ -118,18 +122,17 @@ internal sealed class CookedSoundSource : IContentSource
     private ContentBlob? OpenCached(string cookedPath, string sound)
     {
         using SoundCacheEntry? entry = _cache.TryOpen(cookedPath);
-        if (entry is null || !IsCookOf(entry, sound)) return null;
+        if (entry is null || !entry.Stamp.Holds(_contentRoot, sound, _settings)) return null;
 
-        if (LooseSoundCook.CurrentKey(_contentRoot, entry.Dependencies, _settings) != entry.Key) return null;
-
-        if (!entry.HasSound)
+        LooseSoundStamp stamp = entry.Stamp;
+        if (!stamp.HasSound)
         {
-            Say(sound, entry.Key, entry.Notes);
-            throw Refusal(sound, entry.Notes);
+            Say(sound, stamp.Key, stamp.Diagnostics);
+            throw Refusal(sound, stamp.Diagnostics);
         }
 
         ContentBlob? cached = entry.ReadSound();
-        if (cached is not null) Say(sound, entry.Key, entry.Notes);
+        if (cached is not null) Say(sound, stamp.Key, stamp.Diagnostics);
 
         return cached;
     }
@@ -151,13 +154,10 @@ internal sealed class CookedSoundSource : IContentSource
             throw new InvalidDataException($"The cook failed on '{sound}': {fault.Message}", fault);
         }
 
-        var notes = new SoundCookNote[result.Diagnostics.Count];
-        for (int i = 0; i < notes.Length; i++) notes[i] = SoundCookNote.From(result.Diagnostics[i]);
-
-        Say(sound, result.Key, notes);
+        Say(sound, result.Key, result.Diagnostics);
         if (result.IsRepeatable) Keep(cookedPath, sound, result);
 
-        if (result.Cooked is not { } cooked) throw Refusal(sound, notes);
+        if (result.Cooked is not { } cooked) throw Refusal(sound, result.Diagnostics);
 
         _logger.LogInformation(
             "Cooked sound {Path} for the editor in {Milliseconds:0} ms",
@@ -183,37 +183,31 @@ internal sealed class CookedSoundSource : IContentSource
     }
 
     // Warnings, not errors, also for a refusal: a sound that cannot play is a
-    // content problem, and the level still runs.
-    private void Say(string sound, UInt128 key, IReadOnlyList<SoundCookNote> notes)
+    // content problem, and the level still runs. The code is a property of its
+    // own, so the shell keeps two codes about one sound apart.
+    private void Say(string sound, UInt128 key, IReadOnlyList<CookDiagnostic> diagnostics)
     {
-        if (_said.TryGetValue(sound, out UInt128 said) && said == key) return;
+        if (_said.TryGetValue(sound, out UInt128 said))
+        {
+            if (said == key) return;
+
+            _logger.LogInformation(CookedAgainTemplate, sound);
+        }
+
         _said[sound] = key;
 
-        foreach (SoundCookNote note in notes)
+        foreach (CookDiagnostic diagnostic in diagnostics)
         {
-            if (note.Severity == CookDiagnosticSeverity.Info) _logger.LogDebug("Sound {Path}: {Note}", sound, note.Text);
-            else _logger.LogWarning("Sound {Path}: {Note}", sound, note.Text);
+            LogLevel level = diagnostic.Severity == CookDiagnosticSeverity.Info ? LogLevel.Debug : LogLevel.Warning;
+            _logger.Log(level, "Sound {Path}: {CookCode}: {Message}", sound, diagnostic.Id.ToString(), diagnostic.Message);
         }
     }
 
-    // A .wav and a .wave of one name share a cooked path, and so an entry.
-    // One cooked from the other file is unchanged by its own key and still
-    // not this sound.
-    private static bool IsCookOf(SoundCacheEntry entry, string sound)
+    private static InvalidDataException Refusal(string sound, IReadOnlyList<CookDiagnostic> diagnostics)
     {
-        foreach (RuleDependency dependency in entry.Dependencies)
+        foreach (CookDiagnostic diagnostic in diagnostics)
         {
-            if (string.Equals(dependency.Path, sound, StringComparison.OrdinalIgnoreCase)) return true;
-        }
-
-        return false;
-    }
-
-    private static InvalidDataException Refusal(string sound, IReadOnlyList<SoundCookNote> notes)
-    {
-        foreach (SoundCookNote note in notes)
-        {
-            if (note.Severity == CookDiagnosticSeverity.Error) return new InvalidDataException(note.Text);
+            if (diagnostic.IsError) return new InvalidDataException($"{diagnostic.Id}: {diagnostic.Message}");
         }
 
         return new InvalidDataException($"The cook wrote nothing for '{sound}'");

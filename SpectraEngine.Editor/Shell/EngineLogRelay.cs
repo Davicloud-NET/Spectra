@@ -1,5 +1,6 @@
 using Serilog.Core;
 using Serilog.Events;
+using SpectraEngine.Editor.Sounds;
 using System;
 using System.Collections.Concurrent;
 using System.Globalization;
@@ -8,7 +9,10 @@ using System.Threading;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>One engine log line on its way to the shell.</summary>
-/// <param name="Template">The unrendered message template. Problems are grouped by it.</param>
+/// <param name="Template">
+/// The unrendered message template, with the cook's code filled in when the
+/// line carries one. Problems are grouped by it.
+/// </param>
 /// <param name="Subject">The asset path or file the line is about, or empty.</param>
 /// <param name="IsResolution">Whether this line says an earlier failure is over.</param>
 public readonly record struct EngineLogLine(
@@ -38,12 +42,17 @@ public sealed class EngineLogRelay : ILogEventSink
     private static readonly string[] SubjectProperties =
         ["Path", "Texture", "Material", "Model", "Shader", "File", "Bundle"];
 
+    // Property a line carries a cook diagnostic's code in. Two codes about one
+    // file are two problems, so the code is part of what they are grouped by.
+    private const string CookCodeProperty = "CookCode";
+
     // Templates that end an earlier failure. Matched whole: a line that only
     // mentions a path must not clear a problem.
     private static readonly string[] ResolutionTemplates =
     [
         "Loaded texture {Path} after an earlier failure ({Description})",
         "Texture {Verb} {Path} ({Description})",
+        CookedSoundSource.CookedAgainTemplate,
     ];
 
     /// <summary>Lines lost to overflow since construction.</summary>
@@ -89,7 +98,7 @@ public sealed class EngineLogRelay : ILogEventSink
 
         _queue.Enqueue(new EngineLogLine(
             SeverityOf(logEvent.Level),
-            logEvent.MessageTemplate.Text,
+            GroupingTemplate(logEvent),
             Render(logEvent),
             SubjectOf(logEvent),
             logEvent.Timestamp.LocalDateTime,
@@ -149,6 +158,16 @@ public sealed class EngineLogRelay : ILogEventSink
         if (Interlocked.Exchange(ref _drainScheduled, 1) == 1) return;
 
         post(Drain);
+    }
+
+    private static string GroupingTemplate(LogEvent logEvent)
+    {
+        string template = logEvent.MessageTemplate.Text;
+
+        return logEvent.Properties.TryGetValue(CookCodeProperty, out LogEventPropertyValue? value) &&
+               value is ScalarValue { Value: string code }
+            ? template.Replace("{" + CookCodeProperty + "}", code, StringComparison.Ordinal)
+            : template;
     }
 
     private static OutputSeverity SeverityOf(LogEventLevel level) => level switch

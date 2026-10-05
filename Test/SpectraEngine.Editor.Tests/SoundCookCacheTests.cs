@@ -58,6 +58,41 @@ public sealed class SoundCookCacheTests : IDisposable
     }
 
     [Fact]
+    public void The_casing_of_the_path_picks_another_cache_only_where_it_picks_another_folder()
+    {
+        string upper = SoundCookCache.DirectoryFor(Root.ToUpperInvariant());
+        string lower = SoundCookCache.DirectoryFor(Root.ToLowerInvariant());
+
+        // The folder name in front follows the spelling. The id behind it must not.
+        string IdOf(string cache) => cache[(cache.LastIndexOf('-') + 1)..];
+
+        if (OperatingSystem.IsWindows()) IdOf(upper).ShouldBe(IdOf(lower));
+        else IdOf(upper).ShouldNotBe(IdOf(lower));
+    }
+
+    [Fact]
+    public void A_temp_file_a_stopped_write_left_goes_with_the_next_cook_of_that_sound()
+    {
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 480));
+        CookedSoundSource source = Source();
+        Open(source);
+        string entry = FilesUnder(_cache).ShouldHaveSingleItem();
+
+        string stopped = $"{entry}.{Guid.NewGuid():N}.tmp";
+        File.WriteAllBytes(stopped, TempProject.Bytes(64));
+        File.SetLastWriteTimeUtc(stopped, DateTime.UtcNow.AddDays(-2));
+
+        // Fresh: another editor may be writing it right now.
+        string running = $"{entry}.{Guid.NewGuid():N}.tmp";
+        File.WriteAllBytes(running, TempProject.Bytes(64));
+
+        _project.WriteAsset(Sound, TempProject.Wav(frames: 480, seed: 2));
+        Open(source);
+
+        FilesUnder(_cache).ShouldBe(new[] { entry, running }.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void Cooking_a_sound_writes_nothing_into_the_content_root()
     {
         _project.WriteAsset(Sound, TempProject.Wav(frames: 441, sampleRate: 44_100));
