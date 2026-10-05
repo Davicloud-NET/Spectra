@@ -272,6 +272,7 @@ public sealed class SentDefTests
         catalog.Count.ShouldBe(BuiltinEntities.ClassCount);
         catalog.Schemas.Select(schema => schema.ClassName).ShouldBe(
         [
+            "func_door", "func_movelinear",
             "logic_auto", "logic_branch", "logic_case", "logic_compare",
             "logic_relay", "logic_timer", "math_counter",
         ]);
@@ -280,6 +281,10 @@ public sealed class SentDefTests
         catalog.TryGetSchema("logic_case", out EntitySchema? cases).ShouldBeTrue();
         cases!.Keyvalues.Count.ShouldBe(LogicCase.CaseCount);
         cases.Outputs.ShouldBe(LogicCase.SpectraSchema.Outputs);
+
+        catalog.TryGetSchema("func_door", out EntitySchema? door).ShouldBeTrue();
+        door!.Placement.ShouldBe(EntityPlacement.Brush);
+        door.Keyvalues.Single(keyvalue => keyvalue.Name == "movedir").Type.ShouldBe(KeyvalueType.Vec3);
 
         catalog.TryGetSchema("logic_relay", out EntitySchema? relay).ShouldBeTrue();
         relay!.Placement.ShouldBe(EntityPlacement.Abstract);

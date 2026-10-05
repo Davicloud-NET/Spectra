@@ -16,12 +16,14 @@ public static class BuiltinEntities
 {
     /// <summary>How many entity classes this assembly declares.</summary>
     // A constant, so a class dropped from Schemas throws instead of going unanchored.
-    public const int ClassCount = 7;
+    public const int ClassCount = 9;
 
     /// <summary>Every built-in class's schema, in declaration order.</summary>
     // Touching each class here is what keeps the trimmer from removing it.
     public static IReadOnlyList<EntitySchema> Schemas { get; } =
     [
+        FuncDoor.SpectraSchema,
+        FuncMoveLinear.SpectraSchema,
         LogicAuto.SpectraSchema,
         LogicBranch.SpectraSchema,
         LogicCase.SpectraSchema,

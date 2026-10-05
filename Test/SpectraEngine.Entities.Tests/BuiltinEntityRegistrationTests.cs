@@ -11,6 +11,8 @@ public sealed class BuiltinEntityRegistrationTests
     {
         BuiltinEntities.EnsureRegistered();
 
+        EntityCatalog.Shared.TryCreate("func_door", out Entity? door).ShouldBeTrue();
+        EntityCatalog.Shared.TryCreate("func_movelinear", out Entity? moveLinear).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("logic_auto", out Entity? auto).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("logic_branch", out Entity? branch).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("logic_case", out Entity? cases).ShouldBeTrue();
@@ -19,6 +21,8 @@ public sealed class BuiltinEntityRegistrationTests
         EntityCatalog.Shared.TryCreate("logic_timer", out Entity? timer).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("math_counter", out Entity? counter).ShouldBeTrue();
 
+        door.ShouldBeOfType<FuncDoor>();
+        moveLinear.ShouldBeOfType<FuncMoveLinear>();
         auto.ShouldBeOfType<LogicAuto>();
         branch.ShouldBeOfType<LogicBranch>();
         cases.ShouldBeOfType<LogicCase>();
@@ -36,22 +40,28 @@ public sealed class BuiltinEntityRegistrationTests
     }
 
     [Fact]
-    public void The_built_in_roster_is_these_seven_classes()
+    public void The_built_in_roster_is_these_classes()
     {
         BuiltinEntities.Schemas
             .Select(schema => schema.ClassName)
             .ShouldBe(
             [
+                "func_door", "func_movelinear",
                 "logic_auto", "logic_branch", "logic_case", "logic_compare",
                 "logic_relay", "logic_timer", "math_counter",
             ]);
     }
 
     [Fact]
-    public void Every_built_in_class_is_filed_under_Logic_and_placed_as_an_abstract_node()
+    public void Every_logic_class_is_filed_under_Logic_and_placed_as_an_abstract_node()
     {
         foreach (EntitySchema schema in BuiltinEntities.Schemas)
         {
+            bool isLogic = schema.ClassName.StartsWith("logic_", StringComparison.Ordinal)
+                || schema.ClassName == "math_counter";
+            if (!isLogic)
+                continue;
+
             schema.Group.ShouldBe("Logic", schema.ClassName);
             schema.Placement.ShouldBe(EntityPlacement.Abstract, schema.ClassName);
         }
