@@ -137,6 +137,7 @@ public sealed class SoundPresenter
         _voices.ExpireTails(deltaSeconds);
         Reconcile(registry.Playing, world.TickNumber);
         CountStall(stalledSeconds);
+        LevelDoppler.CountLead(_presented.AsSpan(0, _count), deltaSeconds);
 
         var listener = new SoundListener(_audio.ListenerPosition, _audio.ListenerForward, _audio.ListenerUp);
         bool jumped = HasJumped(listener.Position);

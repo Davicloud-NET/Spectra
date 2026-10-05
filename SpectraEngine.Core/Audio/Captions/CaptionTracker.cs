@@ -116,9 +116,10 @@ internal sealed class CaptionTracker
         progress.Pass = at.Pass;
     }
 
-    // The voice ended by itself in a frame so long that the ticks are not
-    // there yet, and the presenter follows it no further. The lines it said
-    // in that frame still show, each for its reading time.
+    // The voice ended by itself ahead of the ticks: in a frame so long that
+    // they are not there yet, or with its pitch bent up. The presenter
+    // follows it no further. The lines it said that nobody saw still show,
+    // each for its reading time.
     private void ShowWhatWasSaidUnseen(ref PresentedEmitter presented, long tick)
     {
         ref readonly CaptionProgress progress = ref presented.Captions;
@@ -150,7 +151,7 @@ internal sealed class CaptionTracker
     // never goes back: it may lose the voice that was ahead of the ticks.
     private static double SecondsHeard(in PresentedEmitter presented, SoundPosition at)
     {
-        double seconds = presented.Voice is StaticVoice
+        double seconds = presented.Voice is not null
             ? SecondsPlayed(in presented, at)
             : at.Frame / (double)presented.Emitter.SampleRate;
 
@@ -158,10 +159,13 @@ internal sealed class CaptionTracker
         return canGoBack ? seconds : Math.Max(seconds, presented.Captions.Seconds);
     }
 
-    // The level's count, and on top what a voice on one buffer played while
-    // a long frame held the ticks back.
+    // The level's count, and on top what the voice has played ahead of it:
+    // through a long frame that held the ticks back, or with its pitch bent
+    // up. A voice that is behind counts as level with it. It is cut at the
+    // level's end, and a line that waited for it would never show.
     private static double SecondsPlayed(in PresentedEmitter presented, SoundPosition at) =>
-        (at.Frame / (double)presented.Emitter.SampleRate) + (presented.VoiceLead * presented.Emitter.Pitch);
+        (at.Frame / (double)presented.Emitter.SampleRate)
+        + (MathF.Max(presented.VoiceLead, 0f) * presented.Emitter.Pitch);
 
     // The stretch of a sound that playback went over since the last look.
     // When a loop turned round that is two: the rest of the pass, and from

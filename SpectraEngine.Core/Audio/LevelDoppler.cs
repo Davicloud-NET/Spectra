@@ -36,6 +36,25 @@ internal sealed class LevelDoppler
         _clock.Advance(deltaSeconds, tickSeconds);
     }
 
+    // A voice with its pitch bent gets ahead of the level's count, or falls
+    // behind it. Once a frame, before the frame's sounds are read: the pitch
+    // is still the one the device played the frame at, and a voice that
+    // ended in it is counted to its end.
+    public static void CountLead(Span<PresentedEmitter> presented, float deltaSeconds)
+    {
+        if (!(deltaSeconds > 0f))
+            return;
+
+        for (int i = 0; i < presented.Length; i++)
+        {
+            ref PresentedEmitter sound = ref presented[i];
+
+            // A loop turns round on the level's count, so that is all it is followed by.
+            if (sound.Voice is not null && !sound.Emitter.Loop.IsLooping)
+                sound.VoiceLead += (sound.PitchFactor - 1f) * deltaSeconds;
+        }
+    }
+
     // For a sound that was asked about this frame, once its place is known.
     public void Step(ref PresentedEmitter presented, bool listenerJumped)
     {

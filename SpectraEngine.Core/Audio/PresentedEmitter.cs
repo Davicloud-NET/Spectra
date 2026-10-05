@@ -18,8 +18,9 @@ internal struct PresentedEmitter
     // Null while the sound has no source.
     public AudioVoice? Voice;
 
-    // Seconds the voice has played that the level's ticks have not counted.
-    // Means nothing without a voice.
+    // Seconds the voice is ahead of the level's count: what it played through
+    // a long frame, and what a bent pitch has gained it. Below zero when the
+    // pitch has put it behind. Means nothing for a sound that never had a voice.
     public float VoiceLead;
 
     public SoundPathSmoother Smoother;
