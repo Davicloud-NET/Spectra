@@ -29,6 +29,7 @@ public sealed class LogicViewModel : ObservableObject
     private readonly LogicArrangement _arrangement;
     private readonly LogicPlayState _play = new();
     private readonly LogicSelection _selection = new();
+    private readonly LogicShownEntities _shown = new();
     private readonly LogicFitRule _fit = new();
 
     private EntitySchemaCatalog? _schemas;
@@ -38,12 +39,9 @@ public sealed class LogicViewModel : ObservableObject
     private LogicPanZoom _view = LogicPanZoom.Identity;
     private Size _viewSize;
     private LogicStatus _status = LogicStatus.None;
-    private string _emptyText = "";
+    private LogicEmptyReason _emptyReason;
     private string _tickText = "";
-    private bool _offersWholeLevel;
-    private Guid? _goingNowhereSender;
-    private Guid[] _shownIds = [];
-    private bool _shownIdsChanged;
+    private bool _shownChanged;
 
     /// <summary>Creates the model of a view that measures text with the fonts it draws in.</summary>
     public LogicViewModel()
@@ -65,7 +63,7 @@ public sealed class LogicViewModel : ObservableObject
 
     /// <summary>
     /// Raised when a drawing of the graph would differ. <see cref="Scene"/>,
-    /// <see cref="Wires"/> and <see cref="View"/> are read then, they raise
+    /// <see cref="Wires"/> and <see cref="View"/> are read then. They raise
     /// no change of their own.
     /// </summary>
     public event Action? Redraw;
@@ -188,45 +186,26 @@ public sealed class LogicViewModel : ObservableObject
     /// <summary>The running level's tick.</summary>
     public long Tick => _play.Tick;
 
-    /// <summary>The same as text, for a readout.</summary>
+    /// <summary>The same as text, for a readout. Empty while editing.</summary>
     public string TickText => _tickText;
 
     /// <summary>The newest three things wires did, oldest first. Empty while editing.</summary>
     public IReadOnlyList<LogicEventLine> Events => _play.Events;
 
-    /// <summary>What the status row says.</summary>
-    public LogicStatus Status
-    {
-        get => _status;
-        private set => Set(ref _status, value);
-    }
+    /// <summary>What the status row says, and where its link leads.</summary>
+    public LogicStatus Status => _status;
 
     /// <summary>The hint at the right of the status row.</summary>
     public string Hint => IsPlaying ? LogicViewText.PlayingHint : LogicViewText.EditingHint;
 
     /// <summary>What the view says in place of a graph, or empty when it has one.</summary>
-    public string EmptyText
-    {
-        get => _emptyText;
-        private set => Set(ref _emptyText, value);
-    }
+    public string EmptyText => LogicViewText.Empty(_emptyReason);
 
     /// <summary>Whether the empty state offers to show the whole level.</summary>
-    public bool OffersWholeLevel
-    {
-        get => _offersWholeLevel;
-        private set => Set(ref _offersWholeLevel, value);
-    }
-
-    /// <summary>The sender of the first wire on show that goes nowhere, or null.</summary>
-    public Guid? GoingNowhereSender
-    {
-        get => _goingNowhereSender;
-        private set => Set(ref _goingNowhereSender, value);
-    }
+    public bool OffersWholeLevel => _emptyReason == LogicEmptyReason.NothingSelected;
 
     /// <summary>The entities that have a card on show, in the graph's order.</summary>
-    public IReadOnlyList<Guid> ShownEntityIds => _shownIds;
+    public IReadOnlyList<Guid> ShownEntityIds => _shown.Ids;
 
     /// <summary>Shows the whole graph.</summary>
     public ICommand FitCommand { get; }
@@ -295,26 +274,10 @@ public sealed class LogicViewModel : ObservableObject
     }
 
     /// <summary>What is under a point of the view. A label that shows no words counts as its wire.</summary>
-    public LogicHit HitTest(Point viewPoint)
-    {
-        if (Scene is not { } scene)
-            return LogicHit.None;
-
-        Point at = _view.ToScene(viewPoint);
-        double reach = LogicDrawMetrics.PickReach / _view.Zoom;
-        LogicHit hit = scene.HitTest(at, reach);
-
-        if (hit is not { Kind: LogicHitKind.Label, Edge: { } edge })
-            return hit;
-
-        bool hasWords = LogicDrawMetrics.DetailAt(_view.Zoom) == LogicDetail.Full
-            && !string.IsNullOrEmpty(_arrangement.FaceOf(edge)?.Text);
-
-        if (hasWords)
-            return hit;
-
-        return edge.DistanceTo(at) <= reach ? hit with { Kind = LogicHitKind.Edge } : LogicHit.None;
-    }
+    public LogicHit HitTest(Point viewPoint) => _arrangement.HitTest(
+        _view.ToScene(viewPoint),
+        LogicDrawMetrics.PickReach / _view.Zoom,
+        LogicDrawMetrics.DetailAt(_view.Zoom) == LogicDetail.Full);
 
     /// <summary>Shows the whole graph, as large as fits and no larger than its own size.</summary>
     public void Fit()
@@ -379,7 +342,7 @@ public sealed class LogicViewModel : ObservableObject
             TakeShown();
 
         if (change.HasFlag(LogicArrangementChange.Scene) && Scene is { Cards.Count: > 0 } scene)
-            _fit.Placed(_shownIds, followsSelection: IsAroundSelection, resized: scene.Size != before);
+            _fit.Placed(_shown.Ids, followsSelection: IsAroundSelection, resized: scene.Size != before);
 
         if (redraw || change.HasFlag(LogicArrangementChange.Looks))
             Redraw?.Invoke();
@@ -387,9 +350,9 @@ public sealed class LogicViewModel : ObservableObject
         FitIfAsked();
 
         // Last, so whoever listens finds a finished scene.
-        if (_shownIdsChanged)
+        if (_shownChanged)
         {
-            _shownIdsChanged = false;
+            _shownChanged = false;
             ShownEntitiesChanged?.Invoke();
         }
     }
@@ -398,56 +361,14 @@ public sealed class LogicViewModel : ObservableObject
     {
         LogicScopedGraph? shown = Shown;
         LogicGraphInfo? info = _arrangement.Info;
-        LogicEmptyReason reason = shown?.EmptyReason ?? LogicEmptyReason.None;
 
-        Status = shown is null || info is null ? LogicStatus.None : LogicStatus.Of(shown, info, _mode);
-        EmptyText = LogicViewText.Empty(reason);
-        OffersWholeLevel = reason == LogicEmptyReason.NothingSelected;
-        GoingNowhereSender = FirstGoingNowhere(shown);
-        _shownIdsChanged |= TakeShownIds(shown?.Cards ?? []);
-    }
+        LogicStatus status = shown is null || info is null ? LogicStatus.None : LogicStatus.Of(shown, info, _mode);
 
-    private static Guid? FirstGoingNowhere(LogicScopedGraph? shown)
-    {
-        if (shown is null)
-            return null;
+        Set(ref _status, status, nameof(Status));
+        if (Set(ref _emptyReason, shown?.EmptyReason ?? LogicEmptyReason.None, nameof(EmptyText)))
+            Raise(nameof(OffersWholeLevel));
 
-        foreach (LogicEdge edge in shown.Edges)
-        {
-            if (shown.Graph.GoesNowhere(edge.Wire))
-                return edge.From.NodeId;
-        }
-
-        return null;
-    }
-
-    // Returns whether the entities on show changed.
-    private bool TakeShownIds(IReadOnlyList<LogicCard> cards)
-    {
-        int count = 0;
-        bool same = true;
-
-        for (int i = 0; i < cards.Count; i++)
-        {
-            if (cards[i].IsStub)
-                continue;
-
-            same = same && count < _shownIds.Length && _shownIds[count] == cards[i].NodeId;
-            count++;
-        }
-
-        if (same && count == _shownIds.Length)
-            return false;
-
-        var ids = new Guid[count];
-        for (int i = 0, at = 0; i < cards.Count; i++)
-        {
-            if (!cards[i].IsStub)
-                ids[at++] = cards[i].NodeId;
-        }
-
-        _shownIds = ids;
-        return true;
+        _shownChanged |= _shown.Take(shown?.Cards ?? []);
     }
 
     private void FitIfAsked()

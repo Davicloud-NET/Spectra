@@ -265,8 +265,11 @@ public sealed class LogicViewModelTests
             "9 wires",
             "1 wire goes nowhere",
             "PlayerStart and 3 more entities have no wires and are not shown.",
-            ""));
-        model.GoingNowhereSender.ShouldBe(OpenVault);
+            "")
+        {
+            // Where the link about the wire that goes nowhere leads.
+            GoingNowhereSender = OpenVault,
+        });
         model.Hint.ShouldBe("Double-click a card to frame it in the viewport.");
         model.EmptyText.ShouldBe("");
     }
@@ -278,7 +281,7 @@ public sealed class LogicViewModelTests
         model.Apply(Snapshot(_level, null, StartZone));
 
         model.Status.ShouldBe(new LogicStatus("2 entities", "1 wire", "", "", ""));
-        model.GoingNowhereSender.ShouldBeNull();
+        model.Status.GoingNowhereSender.ShouldBeNull();
     }
 
     [Fact]

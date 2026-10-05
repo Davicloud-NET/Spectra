@@ -64,7 +64,8 @@ internal sealed class LogicCardPainter
             : isUnanswered ? LogicInk.FarStubName
             : LogicInk.FarName;
 
-        FormattedText name = _texts.Get(card.Card.Name, ink, box.Width - 2 * LogicDrawMetrics.HeaderPadding);
+        string words = card.Card.Name.Length > 0 ? card.Card.Name : card.Card.DisplayName;
+        FormattedText name = _texts.Get(words, ink, box.Width - 2 * LogicDrawMetrics.HeaderPadding);
         if (name.Height > box.Height)
             return;
 
@@ -115,6 +116,15 @@ internal sealed class LogicCardPainter
             LogicStubKind.Activator => (LogicInk.QuietName, LogicInk.ClassLine),
             _ => (LogicInk.StubName, LogicInk.StubLine),
         };
+
+        // A wire with no target has no name to show. Its one line stands in
+        // the middle, in the place and the ink of a name.
+        if (card.Card.Name.Length == 0)
+        {
+            FormattedText only = _texts.Get(card.Card.DisplayName, nameInk, room);
+            context.DrawText(only, new Point(left, box.Y + (LogicMetrics.HeaderHeight - only.Height) / 2));
+            return;
+        }
 
         FormattedText name = _texts.Get(card.Card.Name, nameInk, room);
         context.DrawText(name, new Point(left, box.Y + LogicDrawMetrics.NameLine - name.Height / 2));

@@ -195,7 +195,7 @@ public partial class LogicView : UserControl
 
     private void OnGoingNowhereClicked(object? sender, RoutedEventArgs e)
     {
-        if (Model is not { GoingNowhereSender: Guid entity } model)
+        if (Model is not { Status.GoingNowhereSender: Guid entity } model)
             return;
 
         SelectRequested?.Invoke(entity, false);

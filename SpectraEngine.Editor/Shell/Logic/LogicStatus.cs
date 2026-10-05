@@ -19,6 +19,12 @@ public sealed record LogicStatus(
     /// <summary>The status of a view with nothing to show.</summary>
     public static LogicStatus None { get; } = new("", "", "", "", "");
 
+    /// <summary>
+    /// The sender of the first wire on show that goes nowhere, or null. It is
+    /// where <see cref="GoingNowhere"/> leads when it is pressed.
+    /// </summary>
+    public Guid? GoingNowhereSender { get; init; }
+
     /// <summary>Reads the status off what a scope shows.</summary>
     /// <param name="scoped">The cards and edges shown.</param>
     /// <param name="info">The snapshot they were built from, for how much of the level it lists.</param>
@@ -43,7 +49,21 @@ public sealed record LogicStatus(
             LogicViewText.Wires(counts.Wires),
             LogicViewText.GoingNowhere(counts.WiresGoingNowhere),
             unwired,
-            TruncatedText(info));
+            TruncatedText(info))
+        {
+            GoingNowhereSender = FirstGoingNowhere(scoped),
+        };
+    }
+
+    private static Guid? FirstGoingNowhere(LogicScopedGraph scoped)
+    {
+        foreach (LogicEdge edge in scoped.Edges)
+        {
+            if (scoped.Graph.GoesNowhere(edge.Wire))
+                return edge.From.NodeId;
+        }
+
+        return null;
     }
 
     private static string TruncatedText(LogicGraphInfo info) =>

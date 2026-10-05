@@ -186,7 +186,6 @@ public sealed class LogicViewModelPlaceTests
         model.Events.ShouldBeEmpty();
         model.Status.ShouldBe(LogicStatus.None);
         model.EmptyText.ShouldBe("");
-        model.GoingNowhereSender.ShouldBeNull();
         model.ShownEntityIds.ShouldBeEmpty();
         model.TryGetState(VaultDoor, out _).ShouldBeFalse();
         announced.ShouldBe(1);

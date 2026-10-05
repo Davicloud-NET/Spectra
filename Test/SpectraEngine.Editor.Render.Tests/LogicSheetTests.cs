@@ -67,10 +67,11 @@ public sealed class LogicSheetTests(RibbonSession session)
     }
 
     // Not asked for by name. They show what the others cannot: text cut to
-    // its card, what a filter dims, the cards between near and far, a level
-    // with no wires, and the smallest pane.
+    // its card, the cards that are not entities, what a filter dims, the
+    // cards between near and far, a level with no wires, and the smallest pane.
     [Theory]
     [InlineData("long-names", 1123, 500)]
+    [InlineData("stubs", 1123, 500)]
     [InlineData("filter", 1123, 880)]
     [InlineData("compact", 1123, 880)]
     [InlineData("playing-near", 900, 700)]
@@ -165,10 +166,30 @@ public sealed class LogicSheetTests(RibbonSession session)
                 model.Mode = LogicScopeMode.WholeLevel;
                 model.Apply(Snapshot(LongNames(), LongPlaying()));
                 break;
+
+            case "stubs":
+                model.Mode = LogicScopeMode.WholeLevel;
+                model.Apply(Snapshot(Stubs()));
+                break;
         }
 
         return model;
     }
+
+    // Every card that is not an entity: the activator, a prefix nothing
+    // matches and a wire with no target. Also a wire to its own sender and an
+    // output the sender's class does not have.
+    private static LogicGraphInfo Stubs() => Level(
+        Entity(
+            1, "Zone", "trigger_multiple",
+            Wire("OnStartTouch", "!activator", "Kill"),
+            Wire("OnEndTouch", "Crate*", "Break"),
+            Wire("OnTrigger", "", "Open"),
+            Wire("OnTrigger", "!self", "Disable", times: 1)),
+        Entity(
+            2, "Relay", "logic_relay",
+            Wire("OnTrigger", "Zone", "Enable"),
+            Wire("OnSpawn", "Zone", "Toggle")));
 
     // Names, classes, ports, state and a parameter, each longer than a card
     // or a lane has room for.

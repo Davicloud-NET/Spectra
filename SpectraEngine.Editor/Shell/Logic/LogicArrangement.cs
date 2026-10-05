@@ -1,3 +1,4 @@
+using Avalonia;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Inspection;
 using System;
@@ -44,6 +45,23 @@ internal sealed class LogicArrangement
     private bool IsAroundSelection => _scope.Mode == LogicScopeMode.AroundSelection;
 
     public LogicWireFace? FaceOf(LogicSceneEdge edge) => _faces.Of(edge);
+
+    // What is under a point of the scene. A label with no words in it counts
+    // as its wire, and as nothing where the wire is out of reach.
+    public LogicHit HitTest(Point at, double reach, bool showsLabels)
+    {
+        if (Scene is not { } scene)
+            return LogicHit.None;
+
+        LogicHit hit = scene.HitTest(at, reach);
+        if (hit is not { Kind: LogicHitKind.Label, Edge: { } edge })
+            return hit;
+
+        if (showsLabels && !string.IsNullOrEmpty(_faces.Of(edge)?.Text))
+            return hit;
+
+        return edge.DistanceTo(at) <= reach ? hit with { Kind = LogicHitKind.Edge } : LogicHit.None;
+    }
 
     // The engine hands on the same instance until the wiring changes.
     public void SetInfo(LogicGraphInfo? info)
