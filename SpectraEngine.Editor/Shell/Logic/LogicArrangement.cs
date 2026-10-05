@@ -48,17 +48,25 @@ internal sealed class LogicArrangement
 
     // What is under a point of the scene. A label is where its words are
     // drawn. The rest of the room the layout kept for it belongs to whatever
-    // wire runs there, its own or another.
-    public LogicHit HitTest(Point at, double reach, bool showsLabels)
+    // wire runs there, its own or another. From too far out to draw them,
+    // labels and port rows are not there to be on: a row is its card.
+    public LogicHit HitTest(Point at, double reach, bool showsDetail)
     {
         if (Scene is not { } scene)
             return LogicHit.None;
 
         LogicHit hit = scene.HitTest(at, reach);
+        if (!showsDetail && hit is { Kind: LogicHitKind.Port, Card: { } card })
+        {
+            return card.Bounds.Contains(at)
+                ? new LogicHit(LogicHitKind.Card, card, null, null)
+                : scene.HitEdge(at, reach);
+        }
+
         if (hit is not { Kind: LogicHitKind.Label, Edge: { } edge })
             return hit;
 
-        if (showsLabels && _faces.Of(edge) is { } face)
+        if (showsDetail && _faces.Of(edge) is { } face)
         {
             LogicTextStyle style = face.IsMono ? LogicTextStyle.MonoLabel : LogicTextStyle.Label;
             if (face.Pill(_ruler.Width(face.Text, style)) is Rect pill && pill.Contains(at))

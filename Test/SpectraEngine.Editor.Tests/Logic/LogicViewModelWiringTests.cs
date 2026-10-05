@@ -95,6 +95,19 @@ public sealed class LogicViewModelWiringTests
     }
 
     [Fact]
+    public void Far_out_a_drag_from_where_an_output_would_be_starts_from_the_card()
+    {
+        LogicScenePort trigger = Scene.Card("StartZone").PortNamed("OnTrigger", isOutput: true).ShouldNotBeNull();
+        _model.View = new LogicPanZoom(default, 0.3);
+
+        Drag(trigger.Row.Center, "Lift").ShouldBeTrue();
+
+        Wiring.Gesture.Output.ShouldBeNull();
+        Wiring.Menu().ShouldNotBeNull().Items.Select(item => item.Text)
+            .ShouldBe(["OnStartTouch", "OnEndTouch", "OnTrigger"]);
+    }
+
+    [Fact]
     public void A_pick_asks_for_the_senders_wires_with_the_new_one_at_the_end()
     {
         Drag(Scene.Card("StartZone").Header.Center, "Lift");

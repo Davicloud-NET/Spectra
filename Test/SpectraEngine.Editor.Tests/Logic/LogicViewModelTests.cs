@@ -395,4 +395,35 @@ public sealed class LogicViewModelTests
         hit.Kind.ShouldBe(LogicHitKind.Edge);
         hit.Edge.ShouldBeSameAs(labelled);
     }
+
+    [Fact]
+    public void Far_out_a_port_row_is_not_drawn_and_a_point_on_it_is_on_its_card()
+    {
+        LogicViewModel model = Model();
+        model.Apply(Snapshot(_level));
+        LogicSceneCard zone = model.Scene.ShouldNotBeNull().Card("StartZone");
+        LogicScenePort trigger = zone.PortNamed("OnTrigger", isOutput: true).ShouldNotBeNull();
+        model.View = new LogicPanZoom(default, 0.3);
+
+        LogicHit hit = model.HitTest(model.View.ToView(trigger.Row.Center));
+
+        hit.Kind.ShouldBe(LogicHitKind.Card);
+        hit.Card.ShouldBeSameAs(zone);
+        hit.Port.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Far_out_a_point_beside_a_card_in_reach_of_a_ports_dot_is_on_the_wire_there()
+    {
+        LogicViewModel model = Model();
+        model.Apply(Snapshot(_level));
+        LogicScene scene = model.Scene.ShouldNotBeNull();
+        LogicScenePort trigger = scene.Card("StartZone").PortNamed("OnTrigger", isOutput: true).ShouldNotBeNull();
+        model.View = new LogicPanZoom(default, 0.3);
+
+        LogicHit hit = model.HitTest(model.View.ToView(trigger.Anchor + new Vector(6, 0)));
+
+        hit.Kind.ShouldBe(LogicHitKind.Edge);
+        hit.Edge.ShouldBeSameAs(scene.Edge("StartZone", "StartDoor"));
+    }
 }

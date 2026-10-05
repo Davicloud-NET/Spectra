@@ -286,7 +286,7 @@ public sealed class LogicViewModel : ObservableObject
         return _arrangement.FaceOf(edge);
     }
 
-    /// <summary>What is under a point of the view. A label counts where its words are drawn.</summary>
+    /// <summary>What is under a point of the view. Labels and port rows count only where they are drawn.</summary>
     public LogicHit HitTest(Point viewPoint) => _arrangement.HitTest(
         _view.ToScene(viewPoint),
         LogicDrawMetrics.PickReach / _view.Zoom,
