@@ -56,6 +56,9 @@ jobs:
       - name: SpectraEngine.Editing.Tests
         run: dotnet run --project Test/SpectraEngine.Editing.Tests
 
+      - name: SpectraEngine.Entities.Tests
+        run: dotnet run --project Test/SpectraEngine.Entities.Tests
+
       - name: SpectraEngine.Editor.Tests
         run: dotnet run --project Test/SpectraEngine.Editor.Tests
 
@@ -189,6 +192,9 @@ jobs:
 
       - name: SpectraEngine.Editing.Tests
         run: dotnet run --project Test/SpectraEngine.Editing.Tests
+
+      - name: SpectraEngine.Entities.Tests
+        run: dotnet run --project Test/SpectraEngine.Entities.Tests
 
       - name: SpectraEngine.Editor.Tests
         run: dotnet run --project Test/SpectraEngine.Editor.Tests
