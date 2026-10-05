@@ -167,7 +167,11 @@ try
             packMount.Content,
             packMount.HotReloadEnabled)
         : project is null
-            ? new AssetManager(loggerFactory.CreateLogger<AssetManager>())
+            ? new AssetManager(
+                loggerFactory.CreateLogger<AssetManager>(),
+                ContentRoot.Path,
+                DemoContent.Mount(loggerFactory.CreateLogger<AssetManager>()),
+                ContentRoot.IsDeveloperBuild)
             : new AssetManager(loggerFactory.CreateLogger<AssetManager>(), project.AssetsPath);
     var audioManager = new AudioManager(loggerFactory.CreateLogger<AudioManager>());
     var inputManager = new InputManager(loggerFactory.CreateLogger<InputManager>());

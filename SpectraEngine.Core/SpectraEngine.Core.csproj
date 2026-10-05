@@ -30,6 +30,11 @@
              Link="Assets\Models\%(RecursiveDir)%(Filename)%(Extension)"
              TargetPath="Assets\Models\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
+    <!-- Whole folder: a sound may have a label file beside it. -->
+    <Content Include="..\Assets\Sounds\**\*.*"
+             Link="Assets\Sounds\%(RecursiveDir)%(Filename)%(Extension)"
+             TargetPath="Assets\Sounds\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!--
