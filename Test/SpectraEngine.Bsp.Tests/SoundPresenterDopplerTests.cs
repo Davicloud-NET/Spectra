@@ -119,6 +119,36 @@ public sealed class SoundPresenterDopplerTests
     }
 
     [Fact]
+    public void A_stereo_sound_the_listener_walks_into_hearing_of_starts_at_its_own_pitch()
+    {
+        // Out of earshot its file is not loaded, and nothing says it is stereo.
+        using var rig = new SoundPresenterRig();
+        rig.Play(rig.Place("radio", new Vector3(0, 0, -60)), SoundPresenterRig.Music, SoundPresenterRig.Looped);
+        int framesHeard = 0;
+        var pacer = new SoundFramePacer(rig, 144)
+        {
+            OnFrame = now => rig.Listen(new Vector3(0, 0, -20 * (float)now)),
+            AfterFrame = () =>
+            {
+                foreach (uint source in rig.Backend.PlayingSources())
+                {
+                    rig.Backend.SettingsWhenStarted(source).Pitch.ShouldBe(1f);
+                    rig.Backend.SettingsOf(source).Pitch.ShouldBe(1f);
+                    framesHeard++;
+                }
+            },
+        };
+
+        pacer.Run(1);
+        framesHeard.ShouldBe(0);
+
+        pacer.Run(1.5);
+
+        framesHeard.ShouldBeGreaterThan(0);
+        rig.OnlyVoice().Relative.ShouldBeTrue();
+    }
+
+    [Fact]
     public void With_doppler_off_in_the_engine_nothing_shifts_until_it_is_switched_on_again()
     {
         using var rig = new SoundPresenterRig();

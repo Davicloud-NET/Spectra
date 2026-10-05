@@ -53,4 +53,9 @@ internal struct PresentedEmitter
     // says. Until the sound is loaded, the switch alone decides.
     public readonly bool IsPlaced =>
         (Simulated & SoundSimulation.Placed) != 0 && Sound is not { IsStereo: true };
+
+    // What the device multiplies the sound's pitch by. A sound that plays at
+    // the listener has no path to get longer. Not Doppler.Factor alone: a
+    // stereo file is measured as if it were placed until its file is loaded.
+    public readonly float PitchFactor => IsPlaced ? Doppler.Factor : 1f;
 }

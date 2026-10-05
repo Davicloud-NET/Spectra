@@ -148,7 +148,7 @@ internal sealed class LevelVoices
         // sound's end and its markers from the emitter's own pitch, so a
         // sound heard while closing in fast is over on the device a little
         // before the level says it ended.
-        float pitch = presented.Emitter.Pitch * presented.Doppler.Factor;
+        float pitch = presented.Emitter.Pitch * presented.PitchFactor;
 
         return new AudioSourceSettings(
             presented.Loudness,
