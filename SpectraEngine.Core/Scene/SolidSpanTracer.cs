@@ -30,21 +30,21 @@ internal sealed class SolidSpanTracer
         if (!(length > 0f) || !float.IsFinite(length))
             return 0;
 
-        Vector3 direction = offset / length;
+        var segment = new Segment(from, offset / length, length);
 
         _composer.Clear();
 
         if (!filter.ExcludeStaticWorldBrushes)
-            AddWorld(scene, from, direction, length);
+            AddWorld(scene, in segment);
 
-        AddParts(scene, from, direction, length, in filter);
+        AddParts(scene, in segment, in filter);
 
         return _composer.Compose(spans, out truncated);
     }
 
     // The live world's placements, or a baked map's hulls. Both are bucketed
     // by cell the same way.
-    private void AddWorld(Scene scene, Vector3 from, Vector3 direction, float length)
+    private void AddWorld(Scene scene, in Segment segment)
     {
         IReadOnlyList<BrushPlacement> placements;
         ChunkGrid cells;
@@ -66,8 +66,8 @@ internal sealed class SolidSpanTracer
 
         BeginTrace(placements.Count);
 
-        var walk = new CellResidents(this, placements, cells, from, direction, length);
-        ChunkRayWalk.Cast(walk, from, direction, length, out _);
+        var walk = new CellResidents(this, placements, cells, segment);
+        ChunkRayWalk.Cast(walk, segment.From, segment.Direction, segment.Length, out _);
     }
 
     private void BeginTrace(int placementCount)
@@ -84,8 +84,7 @@ internal sealed class SolidSpanTracer
         _trace++;
     }
 
-    private void AddWorldBrush(
-        IReadOnlyList<BrushPlacement> placements, int index, Vector3 from, Vector3 direction, float length)
+    private void AddWorldBrush(IReadOnlyList<BrushPlacement> placements, int index, in Segment segment)
     {
         if (_clippedInTrace[index] == _trace)
             return;
@@ -110,26 +109,28 @@ internal sealed class SolidSpanTracer
         }
 
         Brush brush = placement.Brush;
-        if (!TryClip(brush, placement.Transform, from, direction, length,
-                out float start, out float end, out int facePlane))
+        if (!TryClip(brush, placement.Transform, in segment, out Stretch stretch))
+            return;
+
+        if (brush.Operation == BrushOperation.Subtractive)
         {
+            _composer.AddCut(stretch.Start, stretch.End);
             return;
         }
 
-        if (brush.Operation == BrushOperation.Subtractive)
-            _composer.AddCut(start, end);
-        else
-            _composer.AddWorldSolid(start, end, brush.FaceSurfaces[facePlane].Material, rank);
+        _composer.AddWorldSolid(
+            stretch.Start, stretch.End, brush.FaceSurfaces[stretch.FacePlane].Material, rank);
     }
 
-    private void AddParts(Scene scene, Vector3 from, Vector3 direction, float length, in SceneQueryFilter filter)
+    private void AddParts(Scene scene, in Segment segment, in SceneQueryFilter filter)
     {
         // World brush nodes are in the index too. The compiled world answers
         // for them.
         SceneQueryFilter partFilter = filter with { ExcludeStaticWorldBrushes = true };
 
         _partScratch.Clear();
-        scene.Bvh.QueryRay(new Ray3(from, direction), length, _partScratch, in partFilter);
+        scene.Bvh.QueryRay(
+            new Ray3(segment.From, segment.Direction), segment.Length, _partScratch, in partFilter);
 
         for (int i = 0; i < _partScratch.Count; i++)
         {
@@ -143,10 +144,10 @@ internal sealed class SolidSpanTracer
                 continue;
             }
 
-            if (TryClip(brush, node.WorldMatrix, from, direction, length,
-                    out float start, out float end, out int facePlane))
+            if (TryClip(brush, node.WorldMatrix, in segment, out Stretch stretch))
             {
-                _composer.AddPart(start, end, brush.FaceSurfaces[facePlane].Material, RankOf(node.Id));
+                _composer.AddPart(
+                    stretch.Start, stretch.End, brush.FaceSurfaces[stretch.FacePlane].Material, RankOf(node.Id));
             }
         }
 
@@ -161,37 +162,29 @@ internal sealed class SolidSpanTracer
     // level far from the origin gets the same answer as one at it. A general
     // inverse, because a part's node may carry scale. Distances stay in world
     // units: only the direction is scaled.
-    private static bool TryClip(
-        Brush brush, in Matrix4x4 world, Vector3 from, Vector3 direction, float length,
-        out float start, out float end, out int facePlane)
+    private static bool TryClip(Brush brush, in Matrix4x4 world, in Segment segment, out Stretch stretch)
     {
-        start = 0f;
-        end = 0f;
-        facePlane = -1;
+        stretch = default;
 
         Matrix4x4 linear = world;
         linear.Translation = Vector3.Zero;
         if (!Matrix4x4.Invert(linear, out Matrix4x4 toLocal))
             return false;
 
-        Vector3 origin = Vector3.TransformNormal(from - world.Translation, toLocal);
-        Vector3 localDirection = Vector3.TransformNormal(direction, toLocal);
+        Vector3 origin = Vector3.TransformNormal(segment.From - world.Translation, toLocal);
+        Vector3 direction = Vector3.TransformNormal(segment.Direction, toLocal);
 
-        float tEnter = float.NegativeInfinity;
-        float tExit = float.PositiveInfinity;
-        if (!BrushLineClip.Clip(
-                brush.LocalPlaneSpan, origin, localDirection, surfaceIsInside: false,
-                ref tEnter, ref tExit, out int enterPlane, out int exitPlane))
-        {
+        var clip = new BrushLineClip(float.NegativeInfinity, float.PositiveInfinity);
+        if (!clip.Clip(brush.LocalPlaneSpan, origin, direction, surfaceIsInside: false))
             return false;
-        }
 
-        start = MathF.Max(tEnter, 0f);
-        end = MathF.Min(tExit, length);
+        float start = MathF.Max(clip.Enter, 0f);
+        float end = MathF.Min(clip.Exit, segment.Length);
         if (!(end > start))
             return false;
 
-        facePlane = tEnter >= 0f || exitPlane < 0 ? enterPlane : exitPlane;
+        int facePlane = clip.Enter >= 0f || clip.ExitPlane < 0 ? clip.EnterPlane : clip.ExitPlane;
+        stretch = new Stretch(start, end, facePlane);
         return facePlane >= 0;
     }
 
@@ -202,12 +195,17 @@ internal sealed class SolidSpanTracer
         return MemoryMarshal.Read<UInt128>(bytes);
     }
 
+    // Direction is unit length, so a distance along it is in world units.
+    private readonly record struct Segment(Vector3 From, Vector3 Direction, float Length);
+
+    private readonly record struct Stretch(float Start, float End, int FacePlane);
+
     // Lets ChunkRayWalk step through the cells: every cell reports no hit, so
     // the walk goes on to the segment's end, and each cell's residents are
     // clipped on the way.
     private readonly struct CellResidents(
-        SolidSpanTracer tracer, IReadOnlyList<BrushPlacement> placements, ChunkGrid cells,
-        Vector3 from, Vector3 direction, float length) : IChunkRayCells
+        SolidSpanTracer tracer, IReadOnlyList<BrushPlacement> placements, ChunkGrid cells, Segment segment)
+        : IChunkRayCells
     {
         public bool TryGetCellBounds(out ChunkCoord min, out ChunkCoord max) =>
             cells.TryGetCellBounds(out min, out max);
@@ -215,7 +213,7 @@ internal sealed class SolidSpanTracer
         public bool ContainsPoint(Vector3 point) => false;
 
         public bool RaycastCell(
-            ChunkCoord cell, Vector3 origin, Vector3 cellDirection, float maxDistance, out BspRaycastHit hit)
+            ChunkCoord cell, Vector3 origin, Vector3 direction, float maxDistance, out BspRaycastHit hit)
         {
             hit = default;
 
@@ -223,7 +221,7 @@ internal sealed class SolidSpanTracer
             {
                 IReadOnlyList<int> residents = chunk.ResidentBrushIndices;
                 for (int i = 0; i < residents.Count; i++)
-                    tracer.AddWorldBrush(placements, residents[i], from, direction, length);
+                    tracer.AddWorldBrush(placements, residents[i], in segment);
             }
 
             return false;

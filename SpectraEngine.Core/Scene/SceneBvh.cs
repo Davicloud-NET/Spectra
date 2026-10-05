@@ -652,23 +652,17 @@ internal sealed class SceneBvh
         Vector3 origin = Vector3.Transform(ray.Origin, inverse);
         Vector3 direction = Vector3.TransformNormal(ray.Direction, inverse);
 
-        float tEnter = 0f;
-        float tExit = best;
-
         ReadOnlySpan<Plane> planes = brush.LocalPlaneSpan;
-        if (!BrushLineClip.Clip(
-                planes, origin, direction, surfaceIsInside: true,
-                ref tEnter, ref tExit, out int enterPlane, out _))
-        {
-            return false;
-        }
-
-        if (enterPlane < 0 || tEnter >= best)
+        var clip = new BrushLineClip(0f, best);
+        if (!clip.Clip(planes, origin, direction, surfaceIsInside: true))
             return false;
 
-        t = tEnter;
-        normal = WorldNormal(planes[enterPlane].Normal, inverse);
-        planeIndex = enterPlane;
+        if (clip.EnterPlane < 0 || clip.Enter >= best)
+            return false;
+
+        t = clip.Enter;
+        normal = WorldNormal(planes[clip.EnterPlane].Normal, inverse);
+        planeIndex = clip.EnterPlane;
         return true;
     }
 

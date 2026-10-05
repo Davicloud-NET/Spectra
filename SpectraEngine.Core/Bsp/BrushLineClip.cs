@@ -3,24 +3,27 @@ using System.Numerics;
 
 namespace SpectraEngine.Core.Bsp;
 
-// Clips a line against a brush's planes, in the brush's own frame.
-internal static class BrushLineClip
+// The stretch of a line inside a brush: where the line enters and leaves, as
+// distances along it, and the planes it does so through. Start from the
+// stretch of the line that matters and call Clip.
+internal struct BrushLineClip(float enter, float exit)
 {
     // Below this the line counts as parallel to a plane.
     private const float ParallelEpsilon = 1e-9f;
 
-    // Narrows [tEnter, tExit] to the stretch of origin + t * direction that is
-    // inside every plane. Planes face outward, so inside is distance <= 0.
-    // False when nothing is left. enterPlane and exitPlane name the planes that
-    // moved the two bounds, or -1 for a bound the caller's value still holds.
-    // surfaceIsInside says which way a line lying in a face goes.
-    public static bool Clip(
-        ReadOnlySpan<Plane> planes, Vector3 origin, Vector3 direction, bool surfaceIsInside,
-        ref float tEnter, ref float tExit, out int enterPlane, out int exitPlane)
-    {
-        enterPlane = -1;
-        exitPlane = -1;
+    public float Enter = enter;
+    public float Exit = exit;
 
+    // -1 while the bound is still the one this started with.
+    public int EnterPlane = -1;
+    public int ExitPlane = -1;
+
+    // Narrows the stretch to the inside of every plane, in the planes' own
+    // frame. Planes face outward, so inside is distance <= 0. False when
+    // nothing is left. surfaceIsInside says which way a line lying in a face
+    // goes.
+    public bool Clip(ReadOnlySpan<Plane> planes, Vector3 origin, Vector3 direction, bool surfaceIsInside)
+    {
         for (int i = 0; i < planes.Length; i++)
         {
             Plane plane = planes[i];
@@ -37,19 +40,19 @@ internal static class BrushLineClip
             float tPlane = -distance / denom;
             if (denom < 0f)
             {
-                if (tPlane > tEnter)
+                if (tPlane > Enter)
                 {
-                    tEnter = tPlane;
-                    enterPlane = i;
+                    Enter = tPlane;
+                    EnterPlane = i;
                 }
             }
-            else if (tPlane < tExit)
+            else if (tPlane < Exit)
             {
-                tExit = tPlane;
-                exitPlane = i;
+                Exit = tPlane;
+                ExitPlane = i;
             }
 
-            if (tEnter > tExit)
+            if (Enter > Exit)
                 return false;
         }
 
