@@ -12,7 +12,7 @@ internal sealed class DopplerBench
     private readonly Func<double, double, double> _length;
     private readonly double _frameSeconds;
     private readonly double _unevenness;
-    private readonly Random _random = new(1);
+    private readonly Random _random;
 
     private DopplerClock _clock;
     private DopplerShift _shift;
@@ -20,12 +20,15 @@ internal sealed class DopplerBench
 
     // length: the path's length, from the seconds the ticks have covered and
     // the seconds the frames have. unevenness: how far a frame's length
-    // strays from the rate, as a share of it.
-    public DopplerBench(double framesPerSecond, Func<double, double, double> length, double unevenness = 0)
+    // strays from the rate, as a share of it. seed: which run of uneven
+    // frames it gets.
+    public DopplerBench(
+        double framesPerSecond, Func<double, double, double> length, double unevenness = 0, int seed = 1)
     {
         _length = length;
         _frameSeconds = 1.0 / framesPerSecond;
         _unevenness = unevenness;
+        _random = new Random(seed);
     }
 
     public float Strength { get; set; } = 1f;

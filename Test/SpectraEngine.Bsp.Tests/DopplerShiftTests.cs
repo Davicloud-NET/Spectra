@@ -16,11 +16,9 @@ public sealed class DopplerShiftTests
     // frames a second. Measured: 0.005, which is the rounding of the lengths.
     private const double Flutter = 0.05;
 
-    // The same for a sound that moves in ticks, where the frames do not line
-    // up with them: a frame now and then holds a tick more or less than the
-    // others. Measured: 1.8 at 59 and 61 frames a second, 3.3 at an uneven
-    // 30, each as a slow drift and not a buzz. A moving listener has none.
-    private const double FlutterOffTheTickRate = 4.0;
+    // How many runs of uneven frames a bound is taken over. Which frames run
+    // long is luck, and one run finds half of what three hundred do.
+    private const int UnevenRuns = 300;
 
     // Seconds for a path that stopped at 20 units a second to be heard
     // within a cent of its own pitch, and to be at it. Measured: 0.20 and 0.29.
@@ -333,25 +331,39 @@ public sealed class DopplerShiftTests
         lowest.ShouldBe(DopplerBench.Cents(343.0 / 323.0), Flutter);
     }
 
+    // A sound that moves in ticks, with frames that do not line up with
+    // them. Its factor drifts slowly and does not buzz. Measured in cents,
+    // the most over six seconds on any run: 1.8 at 59 and 61 frames a second,
+    // 2.9 at an uneven 60, 5.1 at an uneven 30, and 6.3 at that 30 over a
+    // minute. A moving listener has none.
     [Theory]
-    [InlineData(59, 0)]
-    [InlineData(61, 0)]
-    [InlineData(60, 0.01)]
-    [InlineData(60, 0.05)]
-    [InlineData(30, 0.05)]
-    [InlineData(144, 0.3)]
-    public void Frames_that_do_not_line_up_with_the_ticks_wander_by_little(int framesPerSecond, double unevenness)
+    [InlineData(59, 0, 2.0)]
+    [InlineData(61, 0, 2.0)]
+    [InlineData(60, 0.01, 2.0)]
+    [InlineData(60, 0.05, 3.5)]
+    [InlineData(30, 0.05, 6.0)]
+    [InlineData(144, 0.3, 0.05)]
+    public void Frames_that_do_not_line_up_with_the_ticks_wander_by_little_on_any_run(
+        int framesPerSecond, double unevenness, double most)
     {
-        var sound = new DopplerBench(framesPerSecond, (ticked, _) => 500 - (20 * ticked), unevenness);
-        var listener = new DopplerBench(framesPerSecond, (_, now) => 500 - (20 * now), unevenness);
-        sound.Run(1);
-        listener.Run(1);
+        double soundWorst = 0;
+        double listenerWorst = 0;
 
-        (double soundLowest, double soundHighest) = sound.CentsOver(6);
-        (double listenerLowest, double listenerHighest) = listener.CentsOver(6);
+        for (int run = 1; run <= (unevenness > 0 ? UnevenRuns : 1); run++)
+        {
+            var sound = new DopplerBench(framesPerSecond, (ticked, _) => 500 - (20 * ticked), unevenness, run);
+            var listener = new DopplerBench(framesPerSecond, (_, now) => 500 - (20 * now), unevenness, run);
+            sound.Run(1);
+            listener.Run(1);
 
-        (soundHighest - soundLowest).ShouldBeLessThan(FlutterOffTheTickRate);
-        (listenerHighest - listenerLowest).ShouldBeLessThan(Flutter);
+            (double soundLowest, double soundHighest) = sound.CentsOver(6);
+            (double listenerLowest, double listenerHighest) = listener.CentsOver(6);
+            soundWorst = Math.Max(soundWorst, soundHighest - soundLowest);
+            listenerWorst = Math.Max(listenerWorst, listenerHighest - listenerLowest);
+        }
+
+        soundWorst.ShouldBeLessThan(most);
+        listenerWorst.ShouldBeLessThan(Flutter);
     }
 
     [Fact]
