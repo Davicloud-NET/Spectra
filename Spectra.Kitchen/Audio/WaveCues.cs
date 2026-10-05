@@ -13,6 +13,9 @@ internal sealed class WaveCues
 {
     private const int CuePointSize = 24;
 
+    // dwPosition, the place in play order. With no playlist that is the frame too.
+    private const int CuePositionAt = 4;
+
     // dwSampleOffset. For plain PCM in one data chunk it is the sample frame.
     private const int CueSampleOffsetAt = 20;
 
@@ -33,6 +36,11 @@ internal sealed class WaveCues
             ReadOnlySpan<byte> point = body.Slice((int)at, CuePointSize);
             uint id = BinaryPrimitives.ReadUInt32LittleEndian(point);
             uint frame = BinaryPrimitives.ReadUInt32LittleEndian(point[CueSampleOffsetAt..]);
+
+            // A writer that fills only the position leaves the offset zero, and
+            // read as given every marker of its file would sit at the start.
+            if (frame == 0) frame = BinaryPrimitives.ReadUInt32LittleEndian(point[CuePositionAt..]);
+
             _points.Add((id, frame));
         }
     }

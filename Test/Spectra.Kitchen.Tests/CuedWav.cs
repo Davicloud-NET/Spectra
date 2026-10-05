@@ -9,8 +9,9 @@ namespace Spectra.Kitchen.Tests;
 // from the RIFF spec, not through engine code.
 internal static class CuedWav
 {
-    // A cue point, and the label naming it when it has one.
-    public readonly record struct Cue(uint Id, uint Frame, string? Label = null);
+    // A cue point, and the label naming it when it has one. Frame is written
+    // as the sample offset, and as the position too unless one is given.
+    public readonly record struct Cue(uint Id, uint Frame, string? Label = null, uint? Position = null);
 
     // The WAV with a cue chunk and a LIST chunk of type adtl after its data.
     public static byte[] Add(byte[] wav, params Cue[] cues) =>
@@ -50,7 +51,7 @@ internal static class CuedWav
         {
             Span<byte> point = body.AsSpan(4 + i * 24, 24);
             BinaryPrimitives.WriteUInt32LittleEndian(point, cues[i].Id);
-            BinaryPrimitives.WriteUInt32LittleEndian(point[4..], cues[i].Frame);
+            BinaryPrimitives.WriteUInt32LittleEndian(point[4..], cues[i].Position ?? cues[i].Frame);
             Encoding.ASCII.GetBytes("data").CopyTo(point[8..]);
             BinaryPrimitives.WriteUInt32LittleEndian(point[20..], cues[i].Frame);
         }

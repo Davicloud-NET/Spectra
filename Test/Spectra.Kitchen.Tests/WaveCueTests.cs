@@ -21,6 +21,22 @@ public class WaveCueTests
     }
 
     [Fact]
+    public void A_cue_point_is_placed_by_its_sample_offset_and_not_by_its_position()
+    {
+        byte[] wav = CuedWav.Add(TempProject.Wav(frames: 1000), new CuedWav.Cue(1, 640, "now", Position: 7));
+
+        WaveDecoder.Decode(wav).Markers.ShouldBe([new SourceMarker(640, "now")]);
+    }
+
+    [Fact]
+    public void A_cue_point_with_no_sample_offset_is_placed_by_its_position()
+    {
+        byte[] wav = CuedWav.Add(TempProject.Wav(frames: 1000), new CuedWav.Cue(1, 0, "now", Position: 640));
+
+        WaveDecoder.Decode(wav).Markers.ShouldBe([new SourceMarker(640, "now")]);
+    }
+
+    [Fact]
     public void A_label_is_matched_by_cue_id_and_not_by_its_place_in_the_file()
     {
         // The labels sit in front of the cue points and in the other order.
