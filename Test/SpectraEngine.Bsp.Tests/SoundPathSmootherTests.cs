@@ -77,12 +77,90 @@ public sealed class SoundPathSmootherTests
         SoundPathSmoother whole = StartedAt(1f, 1f);
         SoundPathSmoother halves = StartedAt(1f, 1f);
 
-        whole.Step(Target(0f, 0f), 0.04f);
-        halves.Step(Target(0f, 0f), 0.02f);
-        halves.Step(Target(0f, 0f), 0.02f);
+        // The high end moves too little here for its step limit to matter.
+        whole.Step(Target(0f, 0.99f), 0.04f);
+        halves.Step(Target(0f, 0.99f), 0.02f);
+        halves.Step(Target(0f, 0.99f), 0.02f);
 
         halves.Gain.ShouldBe(whole.Gain, 1e-5f);
         halves.GainHf.ShouldBe(whole.GainHf, 1e-5f);
+    }
+
+    [Theory]
+    [InlineData(1f / 240f)]
+    [InlineData(1f / 60f)]
+    [InlineData(1f / 30f)]
+    [InlineData(0.5f)]
+    public void The_high_end_gain_never_moves_further_than_its_step_limit(float deltaSeconds)
+    {
+        SoundPathSmoother falling = StartedAt(1f, 1f);
+        SoundPathSmoother rising = StartedAt(1f, 0f);
+
+        for (int i = 0; i < 600; i++)
+        {
+            float wasFalling = falling.GainHf;
+            float wasRising = rising.GainHf;
+
+            falling.Step(Target(1f, 0f), deltaSeconds);
+            rising.Step(Target(1f, 1f), deltaSeconds);
+
+            (wasFalling - falling.GainHf).ShouldBeInRange(0f, SoundPathSmoother.MaxGainHfStep + 1e-6f);
+            (rising.GainHf - wasRising).ShouldBeInRange(0f, SoundPathSmoother.MaxGainHfStep + 1e-6f);
+        }
+
+        falling.GainHf.ShouldBe(0f);
+        rising.GainHf.ShouldBe(1f);
+    }
+
+    [Fact]
+    public void The_step_limit_leaves_the_gain_alone()
+    {
+        SoundPathSmoother smoother = StartedAt(1f, 1f);
+
+        smoother.Step(Target(0f, 0f), Frame);
+
+        smoother.Gain.ShouldBe(MathF.Exp(-Frame / SoundPathSmoother.DefaultTimeConstant), 1e-5f);
+        smoother.GainHf.ShouldBe(1f - SoundPathSmoother.MaxGainHfStep, 1e-6f);
+    }
+
+    [Theory]
+    [InlineData(60)]
+    [InlineData(120)]
+    [InlineData(240)]
+    public void The_high_end_gain_goes_as_far_in_half_a_second_at_any_frame_rate_from_60_up(int framesPerSecond)
+    {
+        SoundPathSmoother smoother = StartedAt(1f, 1f);
+
+        for (int i = 0; i < framesPerSecond / 2; i++) smoother.Step(Target(1f, 0.1f), 1f / framesPerSecond);
+
+        smoother.GainHf.ShouldBe(1f - (SoundPathSmoother.MaxGainHfRate / 2f), 1e-3f);
+    }
+
+    [Fact]
+    public void A_sound_takes_three_quarters_of_a_second_to_go_dull()
+    {
+        // The price of the step limit. Without it this is 0.3 s.
+        SoundPathSmoother smoother = StartedAt(1f, 1f);
+        int steps = 0;
+
+        while (smoother.GainHf - 0.1f > 0.05f * 0.9f)
+        {
+            smoother.Step(Target(1f, 0.1f), Frame);
+            steps++;
+        }
+
+        steps.ShouldBe(45);
+    }
+
+    [Fact]
+    public void The_high_end_gain_of_a_silent_path_lands_at_once()
+    {
+        SoundPathSmoother smoother = StartedAt(0f, 1f);
+
+        smoother.Step(Target(1f, 0.2f), Frame);
+
+        smoother.Gain.ShouldBeInRange(0.1f, 0.2f);
+        smoother.GainHf.ShouldBe(0.2f);
     }
 
     [Theory]
