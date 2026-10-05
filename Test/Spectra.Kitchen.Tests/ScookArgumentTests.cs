@@ -140,13 +140,13 @@ public class ScookArgumentTests
     {
         CliOptions options = Options(line);
 
-        CliOptions.ToWire(options.Verb).ShouldBe(verb);
+        CliParser.ToWire(options.Verb).ShouldBe(verb);
         options.Target.ShouldBe(target);
         options.Json.ShouldBe(line.Contains("--json"));
     }
 
     private static ParseResult Parse(string line) =>
-        CliOptions.Parse(line.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        CliParser.Parse(line.Split(' ', StringSplitOptions.RemoveEmptyEntries));
 
     private static CliOptions Options(string line)
     {

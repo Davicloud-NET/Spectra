@@ -32,11 +32,11 @@ internal static class Program
 
         try
         {
-            var parse = CliOptions.Parse(args);
+            var parse = CliParser.Parse(args);
             switch (parse.Mode)
             {
                 case CliMode.Help:
-                    CliOptions.PrintUsage(stdout, outStyle.Enabled);
+                    CliUsage.Print(stdout, outStyle.Enabled);
                     return ExitSuccess;
                 case CliMode.Version:
                     stdout.WriteLine(
@@ -265,7 +265,7 @@ internal static class Program
     {
         writer.Write(CookDiagnostic.Error(
             CookDiagnosticCodes.VerbNotImplemented,
-            $"'{CliOptions.ToWire(opts.Verb)}' is not built yet.",
+            $"'{CliParser.ToWire(opts.Verb)}' is not built yet.",
             opts.Target));
 
         return ExitCookError;
