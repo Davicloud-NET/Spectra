@@ -225,7 +225,7 @@ public sealed class Engine
 
     // The render thread owns the AL context. Runs every frame, or streaming
     // queues drain. Listener first, or positional sounds play at the origin.
-    private void UpdateAudio(float deltaTime)
+    private void UpdateAudio(float deltaTime, float stalledTime)
     {
         if (_sceneManager.ActiveScene is { } scene)
         {
@@ -235,7 +235,7 @@ public sealed class Engine
 
         // First, so the presenter hands out the sources finished voices gave back.
         _audioManager.Update();
-        _soundPresenter.Update(_sceneManager.EntityWorld, deltaTime);
+        _soundPresenter.Update(_sceneManager.EntityWorld, deltaTime, stalledTime);
 
         if (LogCaptions)
             _captionLog.Update(_captions);
@@ -1011,8 +1011,10 @@ public sealed class Engine
                     _character!.UpdateView(deltaTime, _physicsTicks.Alpha);
 
                 // After the view is written, or the listener is last frame's camera.
+                // The part of a long frame the clamp above cut off. The audio
+                // device played through it.
                 using (Profiler.Measure(FramePhase.Audio))
-                    UpdateAudio((float)deltaTime);
+                    UpdateAudio((float)deltaTime, (float)(rawDelta - deltaTime));
 
                 if (_inputManager.WasKeyPressed(InputKey.F1)) _debugFlags ^= DebugVisualization.Wireframe;
                 if (_inputManager.WasKeyPressed(InputKey.F2)) _debugFlags ^= DebugVisualization.Vertices;

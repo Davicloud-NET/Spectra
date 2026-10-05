@@ -100,7 +100,12 @@ public sealed class SoundPresenter
     /// </summary>
     /// <param name="world">The running level, or null when none is.</param>
     /// <param name="deltaSeconds">The frame's length, for smoothing.</param>
-    public void Update(EntityWorld? world, float deltaSeconds)
+    /// <param name="stalledSeconds">
+    /// How much longer the frame really took, when a long frame was cut short
+    /// for the level's ticks. A sound the device plays from one buffer went on
+    /// playing through it, and its captions follow what was heard.
+    /// </param>
+    public void Update(EntityWorld? world, float deltaSeconds, float stalledSeconds = 0f)
     {
         SoundEmitters? registry = world is { IsActive: true } ? world.Sounds : null;
         if (!ReferenceEquals(registry, _registry))
@@ -114,6 +119,7 @@ public sealed class SoundPresenter
 
         _voices.ExpireTails(deltaSeconds);
         Reconcile(registry.Playing, world.TickNumber);
+        CountStall(stalledSeconds);
 
         var listener = new SoundListener(_audio.ListenerPosition, _audio.ListenerForward, _audio.ListenerUp);
         bool jumped = HasJumped(listener.Position);
@@ -126,6 +132,21 @@ public sealed class SoundPresenter
         ConfigureVoices();
         _captions.Update(world, _presented.AsSpan(0, _count), _voices, deltaSeconds);
         Stats = CountSounds();
+    }
+
+    // The ticks lose the part of a long frame the engine cuts off. A voice
+    // on one buffer does not: the device plays it to its end by itself. A
+    // stream runs dry in such a frame and is not counted.
+    private void CountStall(float seconds)
+    {
+        if (!(seconds > 0f))
+            return;
+
+        for (int i = 0; i < _count; i++)
+        {
+            if (_presented[i].Voice is StaticVoice)
+                _presented[i].VoiceLead += seconds;
+        }
     }
 
     // Stop, a map load during play and a save all end the world, so this one

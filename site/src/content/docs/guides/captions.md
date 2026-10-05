@@ -111,7 +111,7 @@ These rules are the engine's, so every game's captions follow them however they 
 - A sound that plays once keeps its sound caption for as long as it plays. A looped sound shows its caption for its reading time each time it comes into hearing, not for as long as it plays.
 - Captions are listed in the order they started.
 
-A line's time is counted in the level's ticks, the way a sound's [markers](/reference/sound-entities/#timing) are. After a long stall, such as a level's first frame, a line of a sound that was already playing can show later than it is heard.
+A line's time is counted in the level's ticks, the way a sound's [markers](/reference/sound-entities/#timing) are. A frame that hangs holds the ticks back while the sound plays on. For a sound of up to ten seconds that plays once, the engine moves the lines on by what was heard meanwhile. A longer or looped sound is played as a stream, and after such a frame its lines can show a little later than they are heard.
 
 ## Languages
 

@@ -9,7 +9,8 @@ namespace SpectraEngine.Core.Audio.Captions;
 // feed which lines are due. A sound is followed while it can be heard, by the
 // presenter's own loudness, so a sound and its caption cannot disagree.
 // Where a sound is in its playback is the simulation's count, the one a
-// voice is started by. Render thread only.
+// voice is started by, moved on by what a voice played while a long frame
+// held the ticks back. Render thread only.
 internal sealed class CaptionTracker
 {
     private readonly CaptionFeed _feed;
@@ -36,6 +37,9 @@ internal sealed class CaptionTracker
     {
         if (presented.Loudness <= SoundPresenter.SilenceGain)
         {
+            if (presented.HasPlayedOut && presented.VoiceLead > 0f)
+                ShowWhatWasSaidUnseen(ref presented);
+
             presented.Captions.WasHeard = false;
             return;
         }
@@ -86,12 +90,11 @@ internal sealed class CaptionTracker
     // that comes into hearing in the middle of a line shows that line.
     private void FollowSpeech(SoundCaptions captions, ref PresentedEmitter presented, Vector3? place, long tick)
     {
-        ref readonly SoundEmitter emitter = ref presented.Emitter;
-        if (emitter.SampleRate <= 0)
+        if (presented.Emitter.SampleRate <= 0)
             return;
 
-        double now = emitter.PositionAt(tick).Frame / (double)emitter.SampleRate;
         ref CaptionProgress progress = ref presented.Captions;
+        double now = SecondsHeard(in presented, tick);
         IReadOnlyList<CaptionLine> lines = captions.Lines;
 
         for (int i = 0; i < lines.Count; i++)
@@ -109,6 +112,48 @@ internal sealed class CaptionTracker
         }
 
         progress.Seconds = now;
+    }
+
+    // The device played the sound to its end in a frame so long that the
+    // ticks are not there yet, and the presenter follows it no further. The
+    // lines it said in that frame still show, each for its reading time.
+    private void ShowWhatWasSaidUnseen(ref PresentedEmitter presented)
+    {
+        ref readonly CaptionProgress progress = ref presented.Captions;
+        ref readonly SoundEmitter emitter = ref presented.Emitter;
+
+        if (!progress.WasHeard
+            || progress.Lookup != _feed.Lookup
+            || progress.Captions is not { Kind: CaptionKind.Voice } captions
+            || emitter.SampleRate <= 0)
+        {
+            return;
+        }
+
+        double length = emitter.FrameCount / (double)emitter.SampleRate;
+        Vector3? place = presented.Sound is { IsStereo: true } ? null : presented.Position;
+
+        for (int i = 0; i < captions.Lines.Count; i++)
+        {
+            double start = captions.Lines[i].Start;
+            if (start > progress.Seconds && start < length)
+                _feed.Show(captions, i, place, 0f);
+        }
+    }
+
+    // Seconds into the sound that have been heard. That is the level's count,
+    // and for a voice that played on through a long frame what it played on
+    // top. A sound that plays once never goes back: it may lose that voice.
+    private static double SecondsHeard(in PresentedEmitter presented, long tick)
+    {
+        ref readonly SoundEmitter emitter = ref presented.Emitter;
+        double seconds = emitter.PositionAt(tick).Frame / (double)emitter.SampleRate;
+
+        if (presented.Voice is StaticVoice)
+            seconds += presented.VoiceLead * emitter.Pitch;
+
+        bool canGoBack = emitter.Loop.IsLooping || !presented.Captions.WasHeard;
+        return canGoBack ? seconds : Math.Max(seconds, presented.Captions.Seconds);
     }
 
     // Whether playback passed a moment since the last look. A looped sound

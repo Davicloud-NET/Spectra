@@ -12,6 +12,11 @@ public sealed class CaptionFeedVoiceTests
     // Two seconds long.
     private const string Speech = SoundPresenterRig.Speech;
 
+    // One second long.
+    private const string Beep = SoundPresenterRig.Beep;
+
+    private const string EarlyAndLate = "WEBVTT\n\n00:00.000 --> 00:00.300\nOne\n\n00:00.700 --> 00:00.900\nTwo";
+
     private const string TwoLines =
         """
         WEBVTT
@@ -140,6 +145,87 @@ public sealed class CaptionFeedVoiceTests
         rig.Sound.Frame();
 
         Texts(rig).ShouldBe(["Duck!"]);
+    }
+
+    [Fact]
+    public void A_voice_that_played_on_through_a_stalled_frame_shows_the_line_it_reached()
+    {
+        // One second on one buffer: the device plays it to the end by itself.
+        using var rig = new CaptionFeedRig();
+        rig.Subtitles(Beep, "en", EarlyAndLate);
+        rig.Play(Beep);
+        rig.RunTo(0.2);
+        string[] before = Texts(rig);
+
+        rig.Stall(0.6f);
+
+        before.ShouldBe(["One"]);
+        Texts(rig).ShouldBe(["One", "Two"]);
+        rig.Written.ShouldBe(["Caption: One", "Caption: Two"]);
+    }
+
+    [Fact]
+    public void A_line_a_stalled_frame_brought_forward_does_not_show_again_when_the_ticks_reach_it()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Subtitles(Beep, "en", EarlyAndLate);
+        rig.Play(Beep);
+        rig.RunTo(0.2);
+        rig.Stall(0.6f);
+
+        rig.RunTo(0.95);
+
+        rig.Feed.LastId.ShouldBe(2L);
+        rig.Written.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void A_voice_the_device_played_out_in_a_stalled_frame_still_shows_the_line_it_said()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Subtitles(Beep, "en", EarlyAndLate);
+        rig.Play(Beep);
+        rig.RunTo(0.2);
+
+        // The frame hangs for two seconds, and the device plays the sound out meanwhile.
+        rig.Sound.Backend.Finish(rig.Sound.Backend.PlayingSources().ShouldHaveSingleItem());
+        rig.Stall(2f);
+
+        Texts(rig).ShouldBe(["One", "Two"]);
+        rig.Shown[1].Audibility.ShouldBe(0f);
+        rig.Shown[1].Position.ShouldBe(CaptionFeedRig.Near);
+        rig.Sound.Stats.WithSource.ShouldBe(0);
+    }
+
+    [Fact]
+    public void A_voice_that_loses_its_source_with_no_stalled_frame_shows_no_line_it_did_not_reach()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Subtitles(Beep, "en", EarlyAndLate);
+        rig.Play(Beep);
+        rig.RunTo(0.2);
+
+        rig.Sound.Backend.Finish(rig.Sound.Backend.PlayingSources().ShouldHaveSingleItem());
+        rig.RunTo(0.95);
+
+        rig.Written.ShouldBe(["Caption: One"]);
+    }
+
+    [Fact]
+    public void A_stream_runs_dry_in_a_stalled_frame_so_its_lines_keep_to_the_ticks()
+    {
+        // Two seconds, played as a stream.
+        using var rig = new CaptionFeedRig();
+        rig.Subtitles(Speech, "en", EarlyAndLate);
+        rig.Play(Speech);
+        rig.RunTo(0.2);
+
+        rig.Stall(0.6f);
+        string[] afterTheStall = Texts(rig);
+        rig.RunTo(0.75);
+
+        afterTheStall.ShouldBe(["One"]);
+        Texts(rig).ShouldBe(["One", "Two"]);
     }
 
     [Fact]

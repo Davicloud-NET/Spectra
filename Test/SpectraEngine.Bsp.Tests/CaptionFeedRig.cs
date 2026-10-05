@@ -72,6 +72,15 @@ internal sealed class CaptionFeedRig : IDisposable
         }
     }
 
+    // One frame that took this much longer than the level could tick for.
+    public void Stall(float seconds)
+    {
+        Sound.Tick();
+        Sound.Audio.Update();
+        Sound.Presenter.Update(Sound.World, SoundPresenterRig.TickSeconds, seconds);
+        _view.Update(Feed);
+    }
+
     // Steps up to a moment, in seconds since the level started. A sound
     // played before the first step is that far into its playback then.
     public void RunTo(double seconds)

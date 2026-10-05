@@ -189,6 +189,7 @@ internal sealed class LevelVoices
         }
 
         presented.Voice = voice;
+        presented.VoiceLead = 0f;
         Count++;
         return true;
     }
