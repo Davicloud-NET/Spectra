@@ -43,15 +43,17 @@ public partial class MainWindow
     {
         _drawerOpen = open;
 
+        // The centre row's minimum is the view panes', which is the viewport's
+        // own while the 3D view has the centre to itself.
         double available = EditorView.Bounds.Height;
         double height = available > 0
-            ? WorkspaceLayout.ClampDrawerHeight(_drawerHeight, available)
+            ? WorkspaceLayout.ClampDrawerHeight(_drawerHeight, available, EditorView.RowDefinitions[0].MinHeight)
             : _drawerHeight;
 
         if (open && height < _drawerHeight)
         {
             _logger.LogDebug(
-                "Bottom drawer clamped from {Wanted} to {Actual}: the viewport row keeps its minimum",
+                "Bottom drawer clamped from {Wanted} to {Actual}: the centre row keeps its minimum",
                 _drawerHeight, height);
         }
 
@@ -246,6 +248,18 @@ public partial class MainWindow
                 _shell.ShowDiagnostics = shown;
                 _settings.SetDiagnosticsReadouts(shown);
                 _settings.Save(_logger);
+                break;
+
+            case WorkspaceCommand.ShowLogicBelow:
+                RequestViewArrangement(ViewArrangement.LogicBelow);
+                break;
+
+            case WorkspaceCommand.ShowLogicBeside:
+                RequestViewArrangement(ViewArrangement.LogicBeside);
+                break;
+
+            case WorkspaceCommand.HideLogic:
+                RequestViewArrangement(ViewArrangement.Single);
                 break;
         }
     }

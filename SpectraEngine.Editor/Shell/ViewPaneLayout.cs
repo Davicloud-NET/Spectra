@@ -16,19 +16,19 @@ public enum ViewArrangement
 }
 
 /// <summary>One axis of the pane grid: a pane, the gutter, a second pane.</summary>
-/// <param name="First">The first pane's length at the size asked about.</param>
+/// <param name="First">The first pane's length.</param>
 /// <param name="Gutter">The gap the splitter fills. Zero when the axis has one pane.</param>
 /// <param name="Second">The second pane's length, or zero.</param>
 /// <param name="FirstMin">The least the first pane may be.</param>
 /// <param name="SecondMin">The least the second may be, or zero.</param>
-/// <param name="Split">The first pane's share as asked for, before any minimum.</param>
+// The pane lengths are pixels when a size was given and shares when none was.
+// A grid takes the shares as star weights and does the clamping itself.
 public readonly record struct ViewPaneAxis(
     double First,
     double Gutter,
     double Second,
     double FirstMin,
-    double SecondMin,
-    double Split)
+    double SecondMin)
 {
     /// <summary>Whether the axis has two panes with a splitter between them.</summary>
     public bool IsSplit => Gutter > 0;
@@ -73,8 +73,16 @@ public static class ViewPaneLayout
     public const ViewArrangement DefaultSplit = ViewArrangement.LogicBelow;
 
     /// <summary>
-    /// The pane grid for an arrangement in a space of the given size. With no
-    /// size yet, pass zero and the pane lengths are the shares themselves.
+    /// The pane grid for an arrangement, with each pane's length as its share
+    /// of the space. What a grid is set up from.
+    /// </summary>
+    public static ViewPaneGrid Arrange(ViewArrangement arrangement, double columnSplit, double rowSplit) =>
+        Arrange(arrangement, columnSplit, rowSplit, 0, 0);
+
+    /// <summary>
+    /// The pane grid for an arrangement in a space of the given size, with
+    /// each pane's length in pixels. What the grid comes to once the minimums
+    /// have had their say.
     /// </summary>
     public static ViewPaneGrid Arrange(
         ViewArrangement arrangement, double columnSplit, double rowSplit, double width, double height)
@@ -98,7 +106,7 @@ public static class ViewPaneLayout
     /// <summary>The least space an arrangement needs.</summary>
     public static (double Width, double Height) MinimumSize(ViewArrangement arrangement)
     {
-        ViewPaneGrid grid = Arrange(arrangement, DefaultColumnSplit, DefaultRowSplit, 0, 0);
+        ViewPaneGrid grid = Arrange(arrangement, DefaultColumnSplit, DefaultRowSplit);
 
         return (grid.Columns.Min, grid.Rows.Min);
     }
@@ -192,7 +200,7 @@ public static class ViewPaneLayout
         arrangement == ViewArrangement.LogicBelow;
 
     private static ViewPaneAxis Whole(double available, double min) =>
-        new(Math.Max(available, 0), 0, 0, min, 0, 1);
+        new(available > 0 ? available : 1, 0, 0, min, 0);
 
     private static ViewPaneAxis Divide(double split, double available, double firstMin, double secondMin)
     {
@@ -200,11 +208,11 @@ public static class ViewPaneLayout
         double usable = available - gutter;
 
         if (!(usable > 0))
-            return new ViewPaneAxis(split, gutter, 1 - split, firstMin, secondMin, split);
+            return new ViewPaneAxis(split, gutter, 1 - split, firstMin, secondMin);
 
         double first = FirstLength(split, usable, firstMin, secondMin);
 
-        return new ViewPaneAxis(first, gutter, Math.Max(usable - first, 0), firstMin, secondMin, split);
+        return new ViewPaneAxis(first, gutter, Math.Max(usable - first, 0), firstMin, secondMin);
     }
 
     private static double FirstLength(double split, double usable, double firstMin, double secondMin)

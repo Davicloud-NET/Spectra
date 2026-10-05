@@ -131,25 +131,30 @@ public sealed class ViewPaneLayoutTests
     }
 
     [Fact]
-    public void With_no_size_yet_the_pane_lengths_are_the_shares()
+    public void With_no_size_the_pane_lengths_are_the_shares()
     {
-        // Used as star weights, so the first layout pass divides the space.
-        ViewPaneGrid grid = ViewPaneLayout.Arrange(ViewArrangement.LogicBeside, 0.6, 0.45, 0, 0);
+        // A grid takes them as star weights and divides its own space.
+        ViewPaneGrid grid = ViewPaneLayout.Arrange(ViewArrangement.LogicBeside, 0.6, 0.45);
 
         grid.Columns.First.ShouldBe(0.6);
         grid.Columns.Second.ShouldBe(0.4, tolerance: 1e-12);
         grid.Columns.Gutter.ShouldBe(Gutter);
+
+        grid.Rows.First.ShouldBe(1);
+        grid.Rows.Second.ShouldBe(0);
+        grid.Rows.Gutter.ShouldBe(0);
     }
 
     [Fact]
-    public void An_axis_remembers_the_split_it_was_asked_for()
+    public void The_shares_are_as_asked_for_even_where_a_minimum_would_bite()
     {
-        // The minimum bites here, and the share asked for is still there to
-        // give back when the window grows.
-        ViewPaneGrid grid = ViewPaneLayout.Arrange(ViewArrangement.LogicBelow, 0.6, 0.1, 900, 607);
+        // So the proportion comes back when the window grows.
+        ViewPaneGrid grid = ViewPaneLayout.Arrange(ViewArrangement.LogicBelow, 0.6, 0.1);
 
-        grid.Rows.Split.ShouldBe(0.1);
-        grid.Rows.First.ShouldBeGreaterThan(0.1 * 600);
+        grid.Rows.First.ShouldBe(0.1);
+        grid.Rows.Second.ShouldBe(0.9, tolerance: 1e-12);
+        grid.Rows.FirstMin.ShouldBe(WorkspaceLayout.ViewportMinHeight);
+        grid.Rows.SecondMin.ShouldBe(ViewPaneLayout.LogicMinHeight);
     }
 
     [Fact]

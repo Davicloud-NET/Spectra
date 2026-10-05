@@ -123,6 +123,7 @@ public partial class MainWindow : Window
         DataContext = _shell;
 
         HeaderStrip.Activated += OnHeaderAction;
+        LogicHeader.HideRequested += () => OnShellVerb(ShellVerb.Of(WorkspaceCommand.HideLogic));
 
         // Somewhere for focus to land when a field must blur (CommitFocusedEdit).
         Focusable = true;
@@ -661,9 +662,10 @@ public partial class MainWindow : Window
             _shell.HasSession = true;
             RefreshDocumentIdentity();
 
-            // Workspace and placement before the control attaches, so the
-            // first surface is created at its real size.
+            // Workspace, view panes and placement before the control attaches,
+            // so the first surface is created at its real size.
             ApplyWorkspace(_settings.WorkspacePreset);
+            ApplyViewArrangement(_settings.ViewArrangement);
             _shell.ShowDiagnostics = _settings.DiagnosticsReadouts;
         }
 
