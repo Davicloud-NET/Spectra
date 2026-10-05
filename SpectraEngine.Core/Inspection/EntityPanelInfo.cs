@@ -62,6 +62,21 @@ public sealed class EntityPanelInfo
     public bool TargetsTruncated { get; init; }
 
     /// <summary>
+    /// The wires that arrive here, from other entities and from this one, in
+    /// the order their senders joined the scene.
+    /// </summary>
+    public IReadOnlyList<EntityIncomingInfo> Incoming { get; init; } = [];
+
+    /// <summary>Whether more wires arrive than <see cref="Incoming"/> carries.</summary>
+    public bool IncomingTruncated { get; init; }
+
+    /// <summary>
+    /// The entity's live state while a level runs, one name and value per row.
+    /// Empty when nothing is running.
+    /// </summary>
+    public IReadOnlyList<KeyValuePair<string, string>> State { get; init; } = [];
+
+    /// <summary>
     /// Describes <paramref name="node"/>'s entity payload, or null when it
     /// carries none. Render thread only.
     /// </summary>
@@ -72,11 +87,13 @@ public sealed class EntityPanelInfo
     /// reports as unresolved.
     /// </param>
     /// <param name="targetScratch">A list the caller owns, reused across calls to avoid allocating.</param>
+    /// <param name="world">The running level, or null. Gives <see cref="State"/>.</param>
     public static EntityPanelInfo? Capture(
         SceneNode node,
         EntitySchemaCatalog? schemas,
         Scene.Scene? scene,
-        List<EntityTargetInfo>? targetScratch = null)
+        List<EntityTargetInfo>? targetScratch = null,
+        EntityWorld? world = null)
     {
         ArgumentNullException.ThrowIfNull(node);
 
@@ -101,6 +118,9 @@ public sealed class EntityPanelInfo
         for (int i = 0; i < wires.Count; i++)
             described[i] = new EntityConnectionInfo(wires[i], Resolves(wires[i].TargetName, targets));
 
+        bool incomingTruncated = false;
+        EntityIncomingInfo[] incoming = scene is null ? [] : CollectIncoming(scene, node, out incomingTruncated);
+
         return new EntityPanelInfo
         {
             NodeId = node.Id,
@@ -110,11 +130,69 @@ public sealed class EntityPanelInfo
             Connections = described,
             Targets = targets.ToArray(),
             TargetsTruncated = truncated,
+            Incoming = incoming,
+            IncomingTruncated = incomingTruncated,
+            State = ReadState(node, world),
         };
     }
 
     /// <summary>How many entities one capture will list.</summary>
     public const int MaxTargets = 2000;
+
+    /// <summary>How many arriving wires one capture will list.</summary>
+    public const int MaxIncoming = 200;
+
+    private static EntityIncomingInfo[] CollectIncoming(Scene.Scene scene, SceneNode node, out bool truncated)
+    {
+        truncated = false;
+        List<EntityIncomingInfo>? found = null;
+
+        IReadOnlyList<SceneNode> senders = scene.EntityNodes;
+        for (int i = 0; i < senders.Count; i++)
+        {
+            SceneNode sender = senders[i];
+            if (sender.Entity is not { } data)
+                continue;
+
+            bool isSelf = ReferenceEquals(sender, node);
+            for (int w = 0; w < data.Connections.Count; w++)
+            {
+                EntityConnection wire = data.Connections[w];
+                if (!Arrives(wire.TargetName, node.Name, isSelf))
+                    continue;
+
+                found ??= [];
+                if (found.Count >= MaxIncoming)
+                {
+                    truncated = true;
+                    return [.. found];
+                }
+
+                found.Add(new EntityIncomingInfo(sender.Id, sender.Name, wire.Output, wire.Input));
+            }
+        }
+
+        return found is null ? [] : [.. found];
+    }
+
+    // For a wire, !self and !caller are both the entity that sends it.
+    private static bool Arrives(string target, string name, bool fromSelf) =>
+        TargetNamePattern.Matches(target, name)
+        || (fromSelf && target is TargetNameIndex.SelfToken or TargetNameIndex.CallerToken);
+
+    private static KeyValuePair<string, string>[] ReadState(SceneNode node, EntityWorld? world)
+    {
+        if (world is not { IsActive: true, Index: { } index }
+            || !index.TryGetByNodeId(node.Id, out Entity? live)
+            || live is null)
+        {
+            return [];
+        }
+
+        var rows = new List<KeyValuePair<string, string>>();
+        live.DescribeState(new EntityStateWriter(rows));
+        return [.. rows];
+    }
 
     /// <summary>
     /// Collects every entity in the scene as a name and a class. Only nodes
