@@ -68,14 +68,15 @@ public sealed class CaptionFeedHearingTests
     }
 
     // The rig's sounds are at full volume up to 2 units and silent from 30.
-    // At 23 units one is just loud enough for a caption, at 25 it is between
-    // the two numbers, and at 28 it has a voice and is too faint to count.
+    // At 27.5 units one is just loud enough for a caption, at 28.6 it is
+    // between the two numbers, and at 29.3 it has a voice and is too faint
+    // to count.
     [Fact]
     public void A_sound_too_faint_to_hear_has_a_voice_and_no_caption()
     {
         using var rig = new CaptionFeedRig();
         rig.Captions("en", $"{Beep} = Beep sounds");
-        rig.Play(Beep, new Vector3(0, 0, -28), looped: true);
+        rig.Play(Beep, new Vector3(0, 0, -29.3f), looped: true);
 
         rig.Step(5);
 
@@ -88,13 +89,13 @@ public sealed class CaptionFeedHearingTests
     {
         using var rig = new CaptionFeedRig();
         rig.Captions("en", $"{Beep} = Beep sounds");
-        rig.Play(Beep, new Vector3(0, 0, -23), looped: true);
+        rig.Play(Beep, new Vector3(0, 0, -27.5f), looped: true);
         rig.Step();
         long first = rig.Shown.ShouldHaveSingleItem().Id;
 
         for (int i = 0; i < 20; i++)
         {
-            rig.Sound.Listen(new Vector3(0, 0, i % 2 == 0 ? 2f : 0f));
+            rig.Sound.Listen(new Vector3(0, 0, i % 2 == 0 ? 1.1f : 0f));
             rig.Step(30);
         }
 
@@ -106,11 +107,11 @@ public sealed class CaptionFeedHearingTests
     {
         using var rig = new CaptionFeedRig();
         rig.Captions("en", $"{Beep} = Beep sounds");
-        rig.Play(Beep, new Vector3(0, 0, -23), looped: true);
+        rig.Play(Beep, new Vector3(0, 0, -27.5f), looped: true);
         rig.Step();
         long first = rig.Shown.ShouldHaveSingleItem().Id;
 
-        rig.Sound.Listen(new Vector3(0, 0, 5));
+        rig.Sound.Listen(new Vector3(0, 0, 1.8f));
         rig.Step(120);
         rig.Shown.ShouldBeEmpty();
 

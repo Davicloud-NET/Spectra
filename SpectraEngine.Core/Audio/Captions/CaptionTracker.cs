@@ -13,11 +13,13 @@ internal sealed class CaptionTracker
 {
     // A caption comes up for a sound at least this loud at the listener, and
     // is let go once the sound falls under the lower number. The gap keeps a
-    // sound at the edge of hearing from showing over and over. Both are far
-    // above the presenter's own silence, which only says a sound needs no
-    // source: at a five hundredth of full volume nobody hears it.
-    internal const float HeardFrom = 0.02f;
-    internal const float HeardDownTo = 0.01f;
+    // sound at the edge of hearing from showing over and over. Both are above
+    // the presenter's own silence, which only says a sound needs no source,
+    // and low enough that a sound behind a thick wall keeps its caption.
+    // First guesses: the engine goes by the volume it plays a file at and
+    // does not know how loud the recording is.
+    internal const float HeardFrom = 0.005f;
+    internal const float HeardDownTo = 0.0025f;
 
     private readonly CaptionFeed _feed;
 
