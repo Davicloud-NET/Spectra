@@ -8,7 +8,7 @@ using System.Linq;
 
 namespace SpectraEngine.Editor.Tests;
 
-/// <summary>The Outputs section: the shell's half of entity wiring.</summary>
+/// <summary>The Sends section: the shell's half of entity wiring.</summary>
 // Every edit posts the whole connection list, since the command is absolute.
 public sealed class EntityWiringPanelTests
 {

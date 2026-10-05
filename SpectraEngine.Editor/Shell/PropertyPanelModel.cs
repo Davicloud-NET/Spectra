@@ -687,10 +687,16 @@ public sealed class PropertyPanelModel : ObservableObject
     /// <summary>The rows, in display order, with group headers folded in.</summary>
     public ObservableCollection<PropertyGroupModel> Groups { get; } = [];
 
-    /// <summary>The Outputs section: the selected entity's wires.</summary>
+    /// <summary>The Sends section: the selected entity's wires.</summary>
     // Not a PropertyGroupModel: a wire has no (id, key) identity and is
     // edited as a whole list.
     public EntityWiringModel Wiring { get; }
+
+    /// <summary>The Receives section: the wires that arrive at the selected entity.</summary>
+    public EntityArrivalsModel Arrivals { get; } = new();
+
+    /// <summary>The Now section: the selected entity's state while the level runs.</summary>
+    public EntityLiveStateModel LiveState { get; } = new();
 
     /// <summary>Whether anything is selected at all.</summary>
     public bool HasSelection => _selectionCount > 0;
@@ -778,6 +784,8 @@ public sealed class PropertyPanelModel : ObservableObject
         ArgumentNullException.ThrowIfNull(rows);
 
         Wiring.Apply(entity);
+        Arrivals.Apply(entity);
+        LiveState.Apply(entity);
 
         if (_selectionCount != selectionCount)
         {

@@ -219,7 +219,7 @@
       <Setter Property="CornerRadius" Value="{StaticResource SpectraRadiusControl}" />
     </Style>
 
-    <!-- Outputs: one wire is a block of labelled fields read downwards.
+    <!-- Sends: one wire is a block of labelled fields read downwards.
          Six columns do not fit in 308px. -->
     <Style Selector="Border.wire">
       <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderSoft}" />
@@ -317,8 +317,32 @@
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                   IsVisible="{Binding Properties.HasSelection}">
-      <!-- Property groups and the Outputs section scroll together. -->
+      <!-- Everything below the header scrolls together. -->
       <StackPanel>
+
+      <!-- Now: what the entity is doing, while the level runs. -->
+      <StackPanel IsVisible="{Binding Properties.LiveState.HasRows}">
+        <Border Classes="sectionband">
+          <TextBlock Classes="sectionhead" Text="Now" />
+        </Border>
+        <ItemsControl ItemsSource="{Binding Properties.LiveState.Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="shell:EntityStateRowModel">
+              <Border Classes="proprow">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Grid.Column="0" Classes="rowlabel" Text="{Binding Name}" />
+                  <TextBlock Grid.Column="1" Classes="value" Text="{Binding Value}"
+                             FontFamily="{StaticResource SpectraFontMono}"
+                             FontSize="{StaticResource SpectraFontSmall}"
+                             Foreground="{StaticResource SpectraTextEmphasis}"
+                             VerticalAlignment="Center" Margin="8,0,0,0" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
       <ItemsControl ItemsSource="{Binding Properties.Groups}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="shell:PropertyGroupModel">
@@ -520,12 +544,12 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <!-- Outputs: the wires leaving this entity. Single-entity selection only. -->
+      <!-- Sends: the wires leaving this entity. Single-entity selection only. -->
       <StackPanel Margin="12,12,12,14" Spacing="4"
                   IsVisible="{Binding Properties.Wiring.HasEntity}">
 
         <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Grid.Column="0" Classes="sectionhead" Text="Outputs" />
+          <TextBlock Grid.Column="0" Classes="sectionhead" Text="Sends" />
           <Button Grid.Column="1" Classes="seg" Content="Add"
                   Click="OnAddConnection"
                   ToolTip.Tip="Wire one of this entity's outputs to another entity's input." />
@@ -662,6 +686,48 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+      </StackPanel>
+
+      <!-- Receives: the wires that arrive here. Read only: a wire is edited
+           on the entity that sends it. -->
+      <StackPanel Margin="12,0,12,14" Spacing="4"
+                  IsVisible="{Binding Properties.Arrivals.HasEntity}">
+
+        <TextBlock Classes="sectionhead" Text="Receives" />
+
+        <TextBlock Classes="prose" Foreground="{StaticResource SpectraTextMuted}"
+                   IsVisible="{Binding Properties.Arrivals.IsEmpty}"
+                   Text="Nothing is wired to this." />
+
+        <ItemsControl ItemsSource="{Binding Properties.Arrivals.Rows}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="shell:EntityArrivalRow">
+              <Border Classes="wire">
+                <WrapPanel Orientation="Horizontal">
+                  <!-- A key, so the name reads as something to press. -->
+                  <Button Classes="chip" Height="22" MaxWidth="150" Margin="0,0,8,0"
+                          Click="OnArrivalSenderClicked"
+                          ToolTip.Tip="Select the entity that sends this.">
+                    <TextBlock Text="{Binding SourceName}" TextTrimming="CharacterEllipsis"
+                               Foreground="{StaticResource SpectraTextEmphasis}" />
+                  </Button>
+                  <TextBlock Text="{Binding Output}" VerticalAlignment="Center" />
+                  <TextBlock Text="&#8594;" Margin="6,0" VerticalAlignment="Center"
+                             Foreground="{StaticResource SpectraTextMuted}" />
+                  <TextBlock Text="{Binding Input}" VerticalAlignment="Center" />
+                </WrapPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Classes="micro" TextWrapping="Wrap"
+                   IsVisible="{Binding Properties.Arrivals.HasRows}"
+                   Text="A wire that arrives here is edited on the entity that sends it. Click a name to go there." />
+
+        <TextBlock Classes="micro" TextWrapping="Wrap"
+                   Text="{Binding Properties.Arrivals.TruncatedNote}"
+                   IsVisible="{Binding Properties.Arrivals.IsTruncated}" />
       </StackPanel>
       </StackPanel>
     </ScrollViewer>

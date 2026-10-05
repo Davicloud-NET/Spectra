@@ -31,6 +31,9 @@ public partial class PropertiesPanel : UserControl
     /// <summary>Raised when Escape ends an edit, so the host can take focus back.</summary>
     public event Action? EscapePressed;
 
+    /// <summary>Raised with a node's id when a row asks to go to that entity.</summary>
+    public event Action<Guid>? SelectRequested;
+
     private PropertyRowModel? _scrubRow;
     private PropertyFieldModel? _scrubField;
     private PropertyPanelModel? _scrubPanel;
@@ -127,6 +130,12 @@ public partial class PropertiesPanel : UserControl
     {
         if (DataContext is ShellModel { Properties: { } panel })
             panel.Wiring.Add();
+    }
+
+    private void OnArrivalSenderClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: EntityArrivalRow row })
+            SelectRequested?.Invoke(row.SourceId);
     }
 
     private void OnRemoveConnection(object? sender, RoutedEventArgs e)

@@ -31,7 +31,7 @@ Everything you insert comes from the Build tab of the ribbon:
 
 5. Add a trigger. Click the arrow beside Entity and pick Trigger Once. It appears as a yellow outline: a volume that is not drawn and not solid. Move it onto the path between the player start and the door, and size it so the player can't walk round it.
 
-6. Wire the trigger to the door. With the trigger selected, find Outputs at the bottom of the Properties panel and press Add. In the new wire:
+6. Wire the trigger to the door. With the trigger selected, find Sends near the bottom of the Properties panel and press Add. In the new wire:
 
    - pick `OnTrigger` from the list at the top
    - type `Door` beside Target, or press the `...` button and pick it
@@ -71,7 +71,7 @@ A button is pressed by the player instead of walked into.
 
 3. Check which way it goes in. A button goes in along its own negative Z axis, by its depth less a small lip. If that is not into the wall, rotate the button, or change Move direction in the Properties panel.
 
-4. Wire the button to the door. With the button selected, press Add under Outputs, pick `OnPressed`, type `Door` beside Target and `Open` beside Input.
+4. Wire the button to the door. With the button selected, press Add under Sends, pick `OnPressed`, type `Door` beside Target and `Open` beside Input.
 
 5. Press Play. Walk up to the button, look at it and press <kbd>E</kbd>. You have to be within 2 units.
 

@@ -8,7 +8,7 @@ using System.Globalization;
 namespace SpectraEngine.Editor.Shell;
 
 /// <summary>
-/// One wire in the Outputs section: which output fires it, what it sends and to
+/// One wire in the Sends section: which output fires it, what it sends and to
 /// whom.
 /// </summary>
 // Every commit posts the whole wire list; the command carries absolute arrays.
@@ -433,7 +433,7 @@ public sealed class ConnectionRowModel : ObservableObject
 }
 
 /// <summary>
-/// The Outputs section: the wires leaving the selected entity. Present only
+/// The Sends section: the wires leaving the selected entity. Present only
 /// when one entity is selected. UI thread only.
 /// </summary>
 // After an edit, stale snapshots are ignored until the engine echoes it, or

@@ -187,6 +187,7 @@ public partial class MainWindow : Window
 
         _propertiesView = new PropertiesPanel();
         _propertiesView.EscapePressed += () => _viewport?.FocusEngine();
+        _propertiesView.SelectRequested += id => _session?.Select(id);
         SetToolContent(PropertiesTool, _propertiesView);
 
         _mapsView = new MapsPanel();
