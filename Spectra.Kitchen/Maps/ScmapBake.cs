@@ -134,9 +134,13 @@ public static class ScmapBake
                 ClaimFaceMaterials(unkept, assets);
 
             // Not tied to KeepsSource: the chunks hold how a world brush looks,
-            // this is what a character collides with.
+            // this is what a character collides with and what a sound has to
+            // get through.
             if (node.Brush is { } solid && node.IsStaticWorldBrush)
-                builder.AddCollisionHull(new ScmapCollisionHullSource(index, [.. solid.LocalPlanes]));
+            {
+                builder.AddCollisionHull(new ScmapCollisionHullSource(
+                    index, [.. solid.LocalPlanes], FaceMaterialsOf(solid, assets)));
+            }
 
             if (node.Light is { } light)
                 builder.AddLight(new ScmapLightSource(index, light));
@@ -237,6 +241,15 @@ public static class ScmapBake
         }
 
         return new ScmapBrushSourceEntry(nodeIndex, planes, faces);
+    }
+
+    // One row per plane, in plane order. Every row is already claimed by the
+    // brush source or by ClaimFaceMaterials, so this adds none.
+    private static uint[] FaceMaterialsOf(Brush brush, AssetTable assets)
+    {
+        var rows = new uint[brush.FaceSurfaces.Count];
+        for (int i = 0; i < rows.Length; i++) rows[i] = assets.Material(brush.FaceSurfaces[i].Material);
+        return rows;
     }
 
     // Claimed even when the source is dropped, so --keep-brush-source does

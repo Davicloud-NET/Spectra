@@ -84,7 +84,8 @@ public sealed class CompiledStaticWorld : IDisposable
     /// <summary>
     /// The baked world brushes as convex hulls, each with the world transform it
     /// was baked at, in node order. No node carries these brushes, so nothing
-    /// can carve them again.
+    /// can carve them again. A hull's faces name their materials when the map
+    /// kept them, and the default material when it did not.
     /// </summary>
     public IReadOnlyList<BrushPlacement> CollisionPlacements => _collision;
 

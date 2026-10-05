@@ -15,34 +15,24 @@ internal sealed class SpanLevel(Vector3 origin = default)
     public static readonly MaterialRef Tile = MaterialRegistry.Intern("Materials/span_tile.spectramat");
     public static readonly MaterialRef Wood = MaterialRegistry.Intern("Materials/span_wood.spectramat");
 
+    // Brush.CreateBox's plane order.
+    private const int PlusX = 0;
+    private const int PlusZ = 4;
+
     public Scene Scene { get; } = new("SpanLevel");
 
-    public SceneNode Box(string name, Vector3 center, Vector3 half, MaterialRef material = default)
-    {
-        SceneNode node = Scene.Root.CreateChild(name);
-        node.LocalPosition = origin + center;
-        node.Brush = Brush.CreateBox(-half, half, material);
-        return node;
-    }
+    public SceneNode Box(string name, Vector3 center, Vector3 half, MaterialRef material = default) =>
+        Place(name, center, BrushKind.World, Brush.CreateBox(-half, half, material));
 
-    public SceneNode Cut(string name, Vector3 center, Vector3 half, MaterialRef material = default)
-    {
-        SceneNode node = Scene.Root.CreateChild(name);
-        node.LocalPosition = origin + center;
-        node.Brush = Brush.CreateBox(-half, half, material).WithOperation(BrushOperation.Subtractive);
-        return node;
-    }
+    public SceneNode Cut(string name, Vector3 center, Vector3 half, MaterialRef material = default) =>
+        Place(name, center, BrushKind.World, Subtractive(half, material));
 
-    public SceneNode Part(string name, Vector3 center, Vector3 half, MaterialRef material = default)
-    {
-        SceneNode node = Scene.Root.CreateChild(name);
-        node.LocalPosition = origin + center;
+    public SceneNode Part(string name, Vector3 center, Vector3 half, MaterialRef material = default) =>
+        Place(name, center, BrushKind.Part, Brush.CreateBox(-half, half, material));
 
-        // Kind before brush, or the node is briefly a world brush.
-        node.BrushKind = BrushKind.Part;
-        node.Brush = Brush.CreateBox(-half, half, material);
-        return node;
-    }
+    // A part that carves nothing: a mistake a level can hold.
+    public SceneNode SubtractivePart(string name, Vector3 center, Vector3 half) =>
+        Place(name, center, BrushKind.Part, Subtractive(half, default));
 
     public SpanLevel Compile()
     {
@@ -71,9 +61,12 @@ internal sealed class SpanLevel(Vector3 origin = default)
     // end toward +x.
     public SceneNode Wall(string name = "Wall")
     {
-        SceneNode wall = Box(name, new Vector3(0f, 1.5f, -4.25f), new Vector3(6f, 1.5f, 0.25f), Brick);
-        wall.Brush = wall.Brush!.WithFaceMaterial(PlusZ, Plaster).WithFaceMaterial(PlusX, Tile);
-        return wall;
+        var half = new Vector3(6f, 1.5f, 0.25f);
+        Brush brush = Brush.CreateBox(-half, half, Brick)
+            .WithFaceMaterial(PlusZ, Plaster)
+            .WithFaceMaterial(PlusX, Tile);
+
+        return Place(name, new Vector3(0f, 1.5f, -4.25f), BrushKind.World, brush);
     }
 
     // A doorway through that wall, flush with both faces and with its base:
@@ -81,7 +74,17 @@ internal sealed class SpanLevel(Vector3 origin = default)
     public SceneNode Doorway(string name = "Doorway") =>
         Cut(name, new Vector3(0f, 1.2f, -4.25f), new Vector3(1f, 1.2f, 0.25f));
 
-    // Brush.CreateBox's plane order.
-    public const int PlusX = 0;
-    public const int PlusZ = 4;
+    private SceneNode Place(string name, Vector3 center, BrushKind kind, Brush brush)
+    {
+        SceneNode node = Scene.Root.CreateChild(name);
+        node.LocalPosition = origin + center;
+
+        // Kind before brush, or a part is briefly a world brush.
+        node.BrushKind = kind;
+        node.Brush = brush;
+        return node;
+    }
+
+    private static Brush Subtractive(Vector3 half, MaterialRef material) =>
+        Brush.CreateBox(-half, half, material).WithOperation(BrushOperation.Subtractive);
 }

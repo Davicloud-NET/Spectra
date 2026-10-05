@@ -138,10 +138,8 @@ public sealed class SolidSpanPartTests
         var aside = new Vector3(3f, 0f, 0f);
 
         // One across the wall and one in open air.
-        SceneNode inWall = level.Part("HoleInWall", new Vector3(3f, 1f, -4.25f), new Vector3(0.5f, 0.5f, 1f));
-        inWall.Brush = inWall.Brush!.WithOperation(SpectraEngine.Core.Bsp.BrushOperation.Subtractive);
-        SceneNode inAir = level.Part("HoleInAir", new Vector3(0f, 1f, -2f), new Vector3(0.5f));
-        inAir.Brush = inAir.Brush!.WithOperation(SpectraEngine.Core.Bsp.BrushOperation.Subtractive);
+        level.SubtractivePart("HoleInWall", new Vector3(3f, 1f, -4.25f), new Vector3(0.5f, 0.5f, 1f));
+        level.SubtractivePart("HoleInAir", new Vector3(0f, 1f, -2f), new Vector3(0.5f));
 
         var everything = new SceneQueryFilter { IgnoreQueryFlags = true, IncludeSubtractiveBrushes = true };
 

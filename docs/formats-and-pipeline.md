@@ -520,7 +520,7 @@ Section table entry — 32 bytes
 
 **Unknown section kinds are skipped, not fatal** — that is what makes a future lightmap, navmesh or audio-occlusion section additive.
 
-Sections: `STRT` strings · `ASTB` asset table · `META` map metadata and compile constants · `NODE` node graph · `CHDR` chunk directory · `CMSH` chunk meshes · `CBSP` chunk BSPs · `RGNI` region index (reserved, §4.5) · `BMDL` brush models (**reserved, no longer emitted** — §2.7's `PayloadKind` ruling) · `BRSH` authored brush source (optional) · `ENTT`/`ECON` entities and connections · `COLL` world collision hulls · `LGHT` lights · `SCPT`/`LUAB`/`LUAS` scripts · `NBND` per-node local bounds (optional).
+Sections: `STRT` strings · `ASTB` asset table · `META` map metadata and compile constants · `NODE` node graph · `CHDR` chunk directory · `CMSH` chunk meshes · `CBSP` chunk BSPs · `RGNI` region index (reserved, §4.5) · `BMDL` brush models (**reserved, no longer emitted**, by §2.7's `PayloadKind` ruling) · `BRSH` authored brush source (optional) · `ENTT`/`ECON` entities and connections · `COLL` world collision hulls · `COLM` what their faces are made of (optional) · `LGHT` lights · `SCPT`/`LUAB`/`LUAS` scripts · `NBND` per-node local bounds (optional).
 
 **`STRT`** — `u32 count`, `u32 offsets[count+1]`, `u32 blobSize`, UTF-8 blob (not NUL-terminated). Index 0 is the empty string. Strings are emitted in **first-reference order during the canonical node walk**, never dictionary iteration order, which would leak the runtime hash seed into the file and break the two-process byte-identity test.
 
@@ -698,6 +698,24 @@ COLL
 - A ray against the world reads the baked trees in `CBSP` and not the hulls, because only the trees know what a cut removed. `CompiledStaticWorld.Raycast` and `CsgWorld.Raycast` share one cell walk, `ChunkRayWalk`, and `Scene.RaycastGameplay` asks whichever world the scene has. A hit on baked geometry names no material: the section holds planes and no faces.
 - A file at format version 2 is refused. It had no hulls, and loading it would give a level the player falls through.
 
+**`COLM`.** What each collision hull face is made of. The section is optional. A map without it loads, and a reader that does not know the code steps over it, so the format version did not move.
+
+```
+COLM
++0x00  u32  faceCount       equals COLL's planeCount
++0x04  12   Reserved = 0
++0x10       face records, 4 bytes each, in the order of COLL's plane array
+              { u32 assetIndex }   index into ASTB, or 0xFFFFFFFF for no material
+```
+
+- Record *i* is the face of plane *i* of `COLL`, so a hull's faces are the run its hull record names. The reader refuses a face count that is not the plane count.
+- A face names its material as an `ASTB` row, as a `BRSH` face and a chunk submesh do. `MaterialRef.Id` is never written. The reader refuses a row past the table and a row that is not a material.
+- The bake already claims a row for every face of every brush, so the section adds nothing to `ASTB` or `STRT`.
+- It follows `COLL` in the file. The cook writes it for every map with a world brush. `ScmapBuilder` leaves it out when no hull names its faces, and refuses a map where only some do.
+- At load, `CompiledMapLoader` gives each hull's `Brush` one `FaceSurface` per plane that holds the material and nothing else. A hull is never drawn, so it has no texture axes.
+- `Scene.TraceSolidSpans` reads these materials to say what a segment passes through. Without the section it finds the same solid and every span names the default material, and `CompiledMapLoadReport.CollisionFaceMaterialsMissing` says so.
+- `MapRule`'s version moved with the section, so a cached bake from before it is not served.
+
 **`LGHT`.** Lights, since format version 3. The section is required and is written even for a map with no lights.
 
 ```
@@ -725,7 +743,7 @@ LGHT
 - `flags` bit0 is set for a light that is switched off, so a record with no flag set has a light's defaults. A light that is off is still written, because something may switch it on.
 - The reader refuses a kind it does not know, a negative intensity and a range that is not positive. `Light` throws on the last two, which would end a load half way through the graph.
 
-`ScmapBuilder.AddCollisionHull`, `ScmapBuilder.AddLight` and `ScmapBake` write the two sections. `ScmapCollisionTable` and `ScmapLightTable` validate them for `ScmapReader`. Oracles: `ScmapCollisionTableTests` and `ScmapLightTableTests` (sizes, offsets and refusals), `CompiledMapWalkTests` (the character mover and the gameplay ray over a cooked level beside its authored one, with no carve), `CompiledMapLightTests`, `CompiledMapPhysicsTests`, and `ScmapDeterminismTests` over a fixture with lights.
+`ScmapBuilder.AddCollisionHull`, `ScmapBuilder.AddLight` and `ScmapBake` write the three sections. `ScmapCollisionTable`, `ScmapHullMaterialTable` and `ScmapLightTable` validate them for `ScmapReader`. Oracles: `ScmapCollisionTableTests`, `ScmapHullMaterialTableTests` and `ScmapLightTableTests` (sizes, offsets and refusals), `CompiledMapWalkTests` (the character mover and the gameplay ray over a cooked level beside its authored one, with no carve), `CompiledMapSolidSpanTests` (the spans and materials of a cooked level beside its authored one, and a map with the section taken out), `CompiledMapLightTests`, `CompiledMapPhysicsTests`, and `ScmapDeterminismTests` over a fixture with lights.
 
 **`SCPT`.** Scripts: `{ u32 nodeIndex; u8 kind; u8 flags; u16 reserved; u32 chunkNameString; u32 bytecodeOffset, bytecodeSize; u32 sourceOffset, sourceSize; u32 reserved }`, with `chunkNameString` stored independently of `LUAS` so tracebacks still name the script when source is stripped.
 

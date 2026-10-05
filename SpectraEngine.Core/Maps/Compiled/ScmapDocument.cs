@@ -22,6 +22,8 @@ public readonly ref struct ScmapDocument
         ReadOnlySpan<ScmapConnectionRecord> connections,
         ReadOnlySpan<ScmapHullRecord> collisionHulls,
         ReadOnlySpan<Plane> collisionPlanes,
+        ReadOnlySpan<uint> collisionFaceAssets,
+        bool hasCollisionFaceMaterials,
         ReadOnlySpan<ScmapLightRecord> lights,
         ReadOnlySpan<ScmapChunkRecord> chunks,
         ReadOnlySpan<byte> chunkMeshBlob,
@@ -46,6 +48,8 @@ public readonly ref struct ScmapDocument
         Connections = connections;
         CollisionHulls = collisionHulls;
         CollisionPlanes = collisionPlanes;
+        CollisionFaceAssets = collisionFaceAssets;
+        HasCollisionFaceMaterials = hasCollisionFaceMaterials;
         Lights = lights;
         Chunks = chunks;
         ChunkMeshBlob = chunkMeshBlob;
@@ -99,6 +103,20 @@ public readonly ref struct ScmapDocument
     /// authored.
     /// </summary>
     public ReadOnlySpan<Plane> CollisionPlanes { get; }
+
+    /// <summary>
+    /// The face records of <c>COLM</c>: for each plane of
+    /// <see cref="CollisionPlanes"/>, its face's material as an index into
+    /// <see cref="Assets"/>, or <see cref="ScmapFormat.NoAssetIndex"/>. Empty
+    /// when the map has no such section.
+    /// </summary>
+    public ReadOnlySpan<uint> CollisionFaceAssets { get; }
+
+    /// <summary>
+    /// Whether the map carries <c>COLM</c>. Without it a collision hull knows
+    /// its shape and not what it is made of.
+    /// </summary>
+    public bool HasCollisionFaceMaterials { get; }
 
     /// <summary>
     /// The <c>LGHT</c> section, in ascending node index. At most one record per

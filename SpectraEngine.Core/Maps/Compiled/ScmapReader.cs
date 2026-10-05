@@ -27,7 +27,8 @@ public static class ScmapReader
     private const int ConnectionSlot = 9;
     private const int CollisionSlot = 10;
     private const int LightSlot = 11;
-    private const int KnownSectionCount = 12;
+    private const int HullMaterialSlot = 12;
+    private const int KnownSectionCount = 13;
 
     /// <summary>
     /// Validates <paramref name="file"/> and returns its tables as spans into it.
@@ -210,6 +211,15 @@ public static class ScmapReader
             strings,
             out ReadOnlySpan<Plane> hullPlanes);
 
+        // Optional: a map cooked without it loads, and its hulls name no material.
+        ReadOnlySpan<uint> hullFaceAssets = sectionPresent[HullMaterialSlot]
+            ? ScmapHullMaterialTable.Read(
+                source,
+                file.Slice(sectionOffset[HullMaterialSlot], sectionLength[HullMaterialSlot]),
+                hullPlanes.Length,
+                assets)
+            : default;
+
         ReadOnlySpan<ScmapLightRecord> lights = ScmapLightTable.Read(
             source,
             file.Slice(sectionOffset[LightSlot], sectionLength[LightSlot]),
@@ -246,6 +256,8 @@ public static class ScmapReader
             connections,
             hulls,
             hullPlanes,
+            hullFaceAssets,
+            sectionPresent[HullMaterialSlot],
             lights,
             chunks,
             meshBlob,
@@ -271,6 +283,7 @@ public static class ScmapReader
         ScmapFormat.EntityConnectionSection => ConnectionSlot,
         ScmapFormat.CollisionSection => CollisionSlot,
         ScmapFormat.LightSection => LightSlot,
+        ScmapFormat.HullMaterialSection => HullMaterialSlot,
 
         // Reserved codes with no consumer yet (SCPT, LUAB, LUAS, NBND, RGNI,
         // BMDL) are skipped like any unknown one.

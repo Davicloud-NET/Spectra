@@ -239,9 +239,10 @@ public sealed class ScmapBuilder
     }
 
     /// <summary>
-    /// Adds one baked world brush's planes to <c>COLL</c>. Call in node
-    /// pre-order, once per baked brush node. <see cref="Write"/> checks that
-    /// every such node got one.
+    /// Adds one baked world brush's planes to <c>COLL</c> and, when the hull
+    /// names them, its face materials to <c>COLM</c>. Call in node pre-order,
+    /// once per baked brush node. <see cref="Write"/> checks that every such
+    /// node got one.
     /// </summary>
     public void AddCollisionHull(ScmapCollisionHullSource hull)
     {
@@ -259,6 +260,13 @@ public sealed class ScmapBuilder
             throw new InvalidOperationException(
                 $"The collision hull on node {hull.NodeIndex} was added after the one on node " +
                 $"{_hulls[^1].NodeIndex}. Hull records are in node order, one per baked brush.");
+        }
+
+        if (hull.FaceAssets is { } faces && faces.Length != hull.Planes.Length)
+        {
+            throw new InvalidOperationException(
+                $"The collision hull on node {hull.NodeIndex} has {hull.Planes.Length} planes and names " +
+                $"materials for {faces.Length} faces. There is one face per plane.");
         }
 
         _hulls.Add(hull);
@@ -354,6 +362,7 @@ public sealed class ScmapBuilder
         byte[] nodeBody = BuildNodes(nodeNameStrings);
         byte[] chunkBody = BuildChunks(out byte[] meshBody, out byte[] bspBody);
         byte[] collisionBody = BuildCollision();
+        byte[]? hullMaterialBody = ScmapHullMaterialSection.Build(_hulls, _assets);
         byte[] lightBody = BuildLights();
         byte[]? brushBody = BuildBrushSource();
 
@@ -376,6 +385,11 @@ public sealed class ScmapBuilder
         writer.AddSection(ScmapFormat.EntitySection, entityBody);
         writer.AddSection(ScmapFormat.EntityConnectionSection, connectionBody);
         writer.AddSection(ScmapFormat.CollisionSection, collisionBody);
+
+        // Beside the planes it describes. Left out when no hull names its
+        // faces: a reader takes a missing section as "not said".
+        if (hullMaterialBody is not null) writer.AddSection(ScmapFormat.HullMaterialSection, hullMaterialBody);
+
         writer.AddSection(ScmapFormat.LightSection, lightBody);
 
         // Empty for now. Written so nothing else takes these codes.

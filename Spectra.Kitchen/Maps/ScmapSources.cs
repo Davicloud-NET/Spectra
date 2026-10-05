@@ -124,7 +124,12 @@ public readonly record struct ScmapEntitySource(
 /// </summary>
 /// <param name="NodeIndex">The <c>NODE</c> record of the brush.</param>
 /// <param name="Planes">Brush-local planes, as authored. At least four.</param>
-public readonly record struct ScmapCollisionHullSource(int NodeIndex, Plane[] Planes);
+/// <param name="FaceAssets">
+/// Each plane's face material as an <c>ASTB</c> row, or
+/// <c>ScmapFormat.NoAssetIndex</c>, on its way into <c>COLM</c>. Null when the
+/// hull does not say. Either every hull of a map says or none does.
+/// </param>
+public readonly record struct ScmapCollisionHullSource(int NodeIndex, Plane[] Planes, uint[]? FaceAssets = null);
 
 /// <summary>One light on its way into an <c>LGHT</c> record.</summary>
 /// <param name="NodeIndex">The <c>NODE</c> record this light sits on.</param>

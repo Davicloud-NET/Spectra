@@ -157,6 +157,15 @@ public static class ScmapFormat
     public const int MinimumHullPlanes = 4;
 
     /// <summary>
+    /// Bytes of fixed preamble in <c>COLM</c>: the face count, padded to the
+    /// payload alignment.
+    /// </summary>
+    public const int HullMaterialPreambleSize = 16;
+
+    /// <summary>Bytes in one <c>COLM</c> face record: an asset index.</summary>
+    public const int HullMaterialRecordSize = 4;
+
+    /// <summary>
     /// Bytes of fixed preamble in <c>LGHT</c>: the light count, padded to the
     /// payload alignment.
     /// </summary>
@@ -206,6 +215,12 @@ public static class ScmapFormat
     /// authored planes.
     /// </summary>
     public const uint CollisionSection = 'C' | ('O' << 8) | ('L' << 16) | ((uint)'L' << 24);
+
+    /// <summary>
+    /// Section <c>COLM</c>: the material of each collision hull face, one
+    /// record per plane of <c>COLL</c>. Optional.
+    /// </summary>
+    public const uint HullMaterialSection = 'C' | ('O' << 8) | ('L' << 16) | ((uint)'M' << 24);
 
     /// <summary>
     /// Section <c>LGHT</c>: one light record per node that carries a light, in

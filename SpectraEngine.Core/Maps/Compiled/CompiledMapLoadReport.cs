@@ -56,6 +56,13 @@ public sealed class CompiledMapLoadReport
     /// <summary>Baked world brushes that became collision hulls.</summary>
     public int CollisionHullsLoaded { get; internal set; }
 
+    /// <summary>
+    /// True when the map has collision hulls and no <c>COLM</c> section to say
+    /// what their faces are made of. The hulls still collide. A solid span
+    /// through the world then names the default material.
+    /// </summary>
+    public bool CollisionFaceMaterialsMissing { get; internal set; }
+
     /// <summary>Asset-table rows interned into this process's material registry.</summary>
     public int MaterialsInterned { get; internal set; }
 
@@ -83,7 +90,7 @@ public sealed class CompiledMapLoadReport
     /// <summary>Whether nothing in this file was lost. Says nothing about <see cref="FormatGaps"/>.</summary>
     public bool IsComplete =>
         _unboundMeshInstances.Count == 0 && _partBrushesWithoutSource.Count == 0 && _brushesRefused.Count == 0
-        && _collisionHullsRefused.Count == 0;
+        && _collisionHullsRefused.Count == 0 && !CollisionFaceMaterialsMissing;
 
     /// <summary>One sentence naming what this file lost, or null when nothing was.</summary>
     public string? Describe()
@@ -102,6 +109,13 @@ public sealed class CompiledMapLoadReport
             parts.Add(
                 $"{_collisionHullsRefused.Count} world brush(es) with no collision " +
                 $"({Join(_collisionHullsRefused)})");
+        }
+
+        if (CollisionFaceMaterialsMissing)
+        {
+            parts.Add(
+                "no materials on the world's collision hulls (the map has no COLM section, so a solid span " +
+                "through the world names the default material; recook the map)");
         }
 
         return string.Join("; ", parts) + ".";

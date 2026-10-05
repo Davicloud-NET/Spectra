@@ -26,6 +26,7 @@ internal sealed class ScmapProbe
     public required List<BrushCopy> Brushes { get; init; }
     public required List<EntityCopy> Entities { get; init; }
     public required List<HullCopy> Hulls { get; init; }
+    public required bool HasHullMaterials { get; init; }
     public required List<ScmapLightRecord> Lights { get; init; }
 
     // The document's own count, not recomputed here: tests grade the reader on it.
@@ -49,7 +50,8 @@ internal sealed class ScmapProbe
         System.Numerics.Plane[] Planes,
         ScmapFaceRecord[] Faces);
 
-    public sealed record HullCopy(uint NodeIndex, System.Numerics.Plane[] Planes);
+    // FaceAssets is empty when the map has no COLM section.
+    public sealed record HullCopy(uint NodeIndex, System.Numerics.Plane[] Planes, uint[] FaceAssets);
 
     public sealed record EntityCopy(
         uint NodeIndex,
@@ -160,7 +162,10 @@ internal sealed class ScmapProbe
         {
             hulls.Add(new HullCopy(
                 hull.NodeIndex,
-                document.CollisionPlanes.Slice((int)hull.PlaneStart, (int)hull.PlaneCount).ToArray()));
+                document.CollisionPlanes.Slice((int)hull.PlaneStart, (int)hull.PlaneCount).ToArray(),
+                document.HasCollisionFaceMaterials
+                    ? document.CollisionFaceAssets.Slice((int)hull.PlaneStart, (int)hull.PlaneCount).ToArray()
+                    : []));
         }
 
         var spawns = new List<ScmapSpawn>(document.Spawns.Length);
@@ -184,6 +189,7 @@ internal sealed class ScmapProbe
             Brushes = brushes,
             Entities = entities,
             Hulls = hulls,
+            HasHullMaterials = document.HasCollisionFaceMaterials,
             Lights = [.. document.Lights],
             TriangleCount = document.TriangleCount,
         };

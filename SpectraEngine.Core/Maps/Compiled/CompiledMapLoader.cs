@@ -53,7 +53,7 @@ public static class CompiledMapLoader
 
             MaterialRef[] materials = InternAssets(in document, report);
             SceneNode[] nodes = RebuildGraph(scene, in document, materials, report);
-            BrushPlacement[] collision = BuildCollision(in document, nodes, report);
+            BrushPlacement[] collision = BuildCollision(in document, nodes, materials, report);
 
             scene.AdoptCompiledStaticWorld(renderer, in document, materials, collision, file, report);
             return report;
@@ -164,7 +164,10 @@ public static class CompiledMapLoader
     // The world brushes come back as hulls placed by their nodes, for collision
     // only. No node gets the brush, so no compile can pick it up.
     private static BrushPlacement[] BuildCollision(
-        scoped in ScmapDocument document, SceneNode[] nodes, CompiledMapLoadReport report)
+        scoped in ScmapDocument document,
+        SceneNode[] nodes,
+        ReadOnlySpan<MaterialRef> materials,
+        CompiledMapLoadReport report)
     {
         var placements = new List<BrushPlacement>(document.CollisionHulls.Length);
 
@@ -176,7 +179,7 @@ public static class CompiledMapLoader
             // A scaled placement gives planes that are not unit length, which
             // collides in the wrong place. The cook refuses one.
             if (Scene.Scene.DescribeNonRigidDefect(world) is not null ||
-                !TryBuildHull(in document, hull, out Brush? brush))
+                !TryBuildHull(in document, hull, materials, out Brush? brush))
             {
                 report.CollisionHullRefused(node.Name);
                 continue;
@@ -186,11 +189,17 @@ public static class CompiledMapLoader
         }
 
         report.CollisionHullsLoaded = placements.Count;
+        report.CollisionFaceMaterialsMissing =
+            document.CollisionHulls.Length > 0 && !document.HasCollisionFaceMaterials;
+
         return [.. placements];
     }
 
     private static bool TryBuildHull(
-        scoped in ScmapDocument document, ScmapHullRecord hull, [NotNullWhen(true)] out Brush? brush)
+        scoped in ScmapDocument document,
+        ScmapHullRecord hull,
+        ReadOnlySpan<MaterialRef> materials,
+        [NotNullWhen(true)] out Brush? brush)
     {
         Plane[] planes = document.CollisionPlanes.Slice((int)hull.PlaneStart, (int)hull.PlaneCount).ToArray();
 
@@ -200,7 +209,7 @@ public static class CompiledMapLoader
 
         try
         {
-            brush = new Brush(planes, Matrix4x4.Identity, faceSurfaces: null, operation);
+            brush = new Brush(planes, Matrix4x4.Identity, HullFaces(in document, hull, materials), operation);
             return true;
         }
         catch (ArgumentException)
@@ -210,6 +219,27 @@ public static class CompiledMapLoader
             brush = null;
             return false;
         }
+    }
+
+    // What each face of a hull is made of, so a query can name it. Null when
+    // the map carries no face materials: every face is then the default one.
+    // Only the material is kept. A hull is never drawn, so it has no texture axes.
+    private static FaceSurface[]? HullFaces(
+        scoped in ScmapDocument document, ScmapHullRecord hull, ReadOnlySpan<MaterialRef> materials)
+    {
+        if (!document.HasCollisionFaceMaterials) return null;
+
+        ReadOnlySpan<uint> rows = document.CollisionFaceAssets.Slice((int)hull.PlaneStart, (int)hull.PlaneCount);
+        var faces = new FaceSurface[rows.Length];
+
+        for (int i = 0; i < faces.Length; i++)
+        {
+            // The reader has checked that a row is a material of this table.
+            faces[i] = new FaceSurface(
+                rows[i] == ScmapFormat.NoAssetIndex ? MaterialRef.Default : materials[(int)rows[i]]);
+        }
+
+        return faces;
     }
 
     // No catalogue lookup: the class is a name, and a class this build lacks

@@ -35,6 +35,12 @@ public class ScmapDeterminismTests
         // The bytes compared carry lights and collision hulls too.
         probe.Lights.Count.ShouldBe(6);
         probe.Hulls.Count.ShouldBe(4);
+
+        // And what every hull face is made of: both materials are in there.
+        probe.HasHullMaterials.ShouldBeTrue();
+        uint[] faces = [.. probe.Hulls.SelectMany(hull => hull.FaceAssets)];
+        faces.Length.ShouldBe(24);
+        faces.Distinct().Count().ShouldBe(2);
     }
 
     [Fact]

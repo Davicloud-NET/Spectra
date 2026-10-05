@@ -95,6 +95,15 @@ internal static class ScmapFixture
         ]),
     ];
 
+    // What each hull plane's face is made of, as asset rows, for a fixture
+    // built with hull materials. Rows 0 and 1 are the two materials. The
+    // sentinel is a face that names none.
+    public static readonly uint[][] HullFaceAssets =
+    [
+        [0, 1, 0, ScmapFormat.NoAssetIndex, 1, 1],
+        [1, ScmapFormat.NoAssetIndex, 0, 0, 1],
+    ];
+
     // In node order. The first is a light left at its defaults, the second
     // sets every field to something else.
     public static readonly ScmapLightSource[] Lights =
@@ -133,11 +142,12 @@ internal static class ScmapFixture
         Placed(2f, 0.5f, -2f),
     ];
 
-    public static byte[] Build() => CreateBuilder().Build(Digest, EngineInfo.MapFormatVersion);
+    public static byte[] Build(bool withHullMaterials = false) =>
+        CreateBuilder(withHullMaterials).Build(Digest, EngineInfo.MapFormatVersion);
 
     public static UInt128 Digest => new(0x0123456789ABCDEFul, 0xFEDCBA9876543210ul);
 
-    public static ScmapBuilder CreateBuilder()
+    public static ScmapBuilder CreateBuilder(bool withHullMaterials = false)
     {
         var builder = new ScmapBuilder(SceneName);
 
@@ -180,7 +190,12 @@ internal static class ScmapFixture
             PayloadIndex: 3));
 
         foreach (ScmapEntitySource entity in Entities) builder.AddEntity(entity);
-        foreach (ScmapCollisionHullSource hull in Hulls) builder.AddCollisionHull(hull);
+        for (int i = 0; i < Hulls.Length; i++)
+        {
+            builder.AddCollisionHull(
+                withHullMaterials ? Hulls[i] with { FaceAssets = HullFaceAssets[i] } : Hulls[i]);
+        }
+
         foreach (ScmapLightSource light in Lights) builder.AddLight(light);
 
         // Unsorted on every axis.

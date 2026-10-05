@@ -20,6 +20,9 @@
     <Compile Include="..\SpectraEngine.Bsp.Tests\CapturingLogger.cs" Link="CapturingLogger.cs" />
     <!-- .smodel written from the format spec, not the engine's types. Reader and writer are both checked against it. -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\HandBuiltSmodel.cs" Link="HandBuiltSmodel.cs" />
+    <!-- The span query's level and its oracle. Run here over cooked levels. -->
+    <Compile Include="..\SpectraEngine.Bsp.Tests\SpanLevel.cs" Link="SpanLevel.cs" />
+    <Compile Include="..\SpectraEngine.Bsp.Tests\SolidSpanOracle.cs" Link="SolidSpanOracle.cs" />
     <!-- The level NoCodeLoopTests plays authored. Played cooked here. -->
     <Compile Include="..\SpectraEngine.Entities.Tests\NoCodeLoopLevel.cs" Link="NoCodeLoopLevel.cs" />
   </ItemGroup>
