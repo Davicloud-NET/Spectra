@@ -4,6 +4,7 @@ using SpectraEngine.Core.Scene;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 
 namespace SpectraEngine.Core.Hosting;
@@ -15,7 +16,12 @@ namespace SpectraEngine.Core.Hosting;
 /// </summary>
 public sealed class EngineHost
 {
+    /// <summary>How many console lines may wait to run. The next one is refused.</summary>
+    public const int MaxQueuedConsoleLines = 4096;
+
     private readonly ConcurrentQueue<Action<Scene.Scene>> _commands = new();
+    private readonly ConcurrentQueue<string> _consoleLines = new();
+    private int _queuedConsoleLines;
     private readonly SceneChangeLog _changeLog = new();
     private readonly ILogger _logger;
 
@@ -96,6 +102,28 @@ public sealed class EngineHost
 
         // Publish the echo on the next frame instead of waiting for the interval.
         _stateDirty = true;
+    }
+
+    /// <summary>
+    /// Queues a typed console line to run on the render thread, as typed. Safe
+    /// from any thread. Lines run in the order they were submitted, and what
+    /// they print comes back in <see cref="FrameSnapshot.ConsoleLines"/>.
+    /// </summary>
+    /// <returns>False when <see cref="MaxQueuedConsoleLines"/> are already waiting.</returns>
+    // A queue, not a latch: a line is a command and every one must run.
+    public bool SubmitConsoleLine(string line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+
+        if (Interlocked.Increment(ref _queuedConsoleLines) > MaxQueuedConsoleLines)
+        {
+            Interlocked.Decrement(ref _queuedConsoleLines);
+            return false;
+        }
+
+        _consoleLines.Enqueue(line);
+        MarkDirty();
+        return true;
     }
 
     /// <summary>
@@ -210,6 +238,15 @@ public sealed class EngineHost
 
     internal string? TakeRequestedPipeline() =>
         Interlocked.Exchange(ref _pipelineRequest, null);
+
+    internal bool TryTakeConsoleLine([NotNullWhen(true)] out string? line)
+    {
+        if (!_consoleLines.TryDequeue(out line))
+            return false;
+
+        Interlocked.Decrement(ref _queuedConsoleLines);
+        return true;
+    }
 
     /// <summary>
     /// Runs queued commands against the active scene, at most

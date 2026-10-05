@@ -219,6 +219,8 @@ try
         engine.Host.FrameCompleted += _ => engine.Host.RequestShutdown();
     }
 
+    DemoConsole.Attach(engine.Host, options.Commands, loggerFactory.CreateLogger("Console"));
+
     // Both probes replace the ordinary session and end themselves.
     if (options.ViewportCompare)
     {

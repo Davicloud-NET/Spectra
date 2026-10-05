@@ -42,6 +42,33 @@ public sealed class DemoStartupOptionsTests
         Should.Throw<ArgumentException>(() => DemoStartupOptions.Parse([argument], null));
 
     [Fact]
+    public void Command_can_be_given_more_than_once_and_keeps_its_order()
+    {
+        DemoStartupOptions.Parse(["d3d11"], null).Commands.ShouldBeEmpty();
+
+        DemoStartupOptions options = DemoStartupOptions.Parse(
+            ["d3d11", "--command=ent_watch on; wait; ent_list", "--play", "--command=ent_fire \"Main Door\" Open"],
+            null);
+
+        // As typed: case, quotes and semicolons are the console's to read.
+        options.Commands.ShouldBe(["ent_watch on; wait; ent_list", "ent_fire \"Main Door\" Open"]);
+        options.StartInPlayMode.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Command_keeps_everything_after_its_first_equals_sign()
+    {
+        DemoStartupOptions.Parse(["--command=echo a=b"], "true").Commands.ShouldBe(["echo a=b"]);
+    }
+
+    [Theory]
+    [InlineData("--command")]
+    [InlineData("--command=")]
+    [InlineData("--command=   ")]
+    public void Command_needs_a_value(string argument) =>
+        Should.Throw<ArgumentException>(() => DemoStartupOptions.Parse([argument], null));
+
+    [Fact]
     public void The_pipeline_compare_runs_only_when_asked_for()
     {
         DemoStartupOptions.Parse(["d3d11"], null).PipelineCompare.ShouldBeFalse();

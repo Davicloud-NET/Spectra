@@ -50,6 +50,9 @@ internal sealed record DemoStartupOptions(
     GBufferLayout GBufferLayout = GBufferLayout.Standard,
     bool PipelineCompare = false)
 {
+    // Console lines to run once the scene is loaded, in the order given.
+    public IReadOnlyList<string> Commands { get; init; } = [];
+
     // Read only when no command-line switch names the self-test.
     public const string SelfTestEnvironmentVariable = "SPECTRA_SELFTEST";
 
@@ -63,7 +66,7 @@ internal sealed record DemoStartupOptions(
         "[--project=<folder>] [--save-project=<folder>] [--pack[=true|false]] [--dev[=true|false]] " +
         "[--exit-after-save[=true|false]] " +
         "[--export-entity-schema=<file.sentdef>] [--viewport-compare[=true|false]] " +
-        "[--pacing-probe[=true|false]] [--pipeline-compare[=true|false]].";
+        "[--pacing-probe[=true|false]] [--pipeline-compare[=true|false]] [--command=<console line>].";
 
     // Throws ArgumentException on a bad argument; Program logs it as a usage error.
     // An explicit --selftest=false beats the environment value.
@@ -100,6 +103,7 @@ internal sealed record DemoStartupOptions(
         bool pacingProbe = false;
         bool pipelineCompare = false;
         TimeSpan? fullscreenCycle = null;
+        IReadOnlyList<string> commands = [];
 
         for (int i = 0; i < args.Count; i++)
         {
@@ -259,6 +263,17 @@ internal sealed record DemoStartupOptions(
                 case "pipeline-compare" or "pipelinecompare":
                     pipelineCompare = ParseBoolean(value, token);
                     continue;
+
+                // Repeatable. Kept as typed: the console does its own splitting.
+                case "command":
+                    if (string.IsNullOrWhiteSpace(value))
+                    {
+                        throw new ArgumentException(
+                            $"'{token}' needs a console line, e.g. --command=\"ent_list\". {Usage}");
+                    }
+
+                    commands = [.. commands, value];
+                    continue;
             }
 
             // Anything else is the positional backend. A second one is a typo.
@@ -310,7 +325,7 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromCommandLine, SelfTestSource.CommandLine,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare);
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands };
 
         if (!string.IsNullOrWhiteSpace(selfTestEnvironmentValue))
         {
@@ -320,14 +335,14 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromEnvironment, SelfTestSource.Environment,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare);
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands };
         }
 
         return new DemoStartupOptions(
             backend ?? GraphicsBackend.OpenGL, false, SelfTestSource.Default,
             fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare);
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands };
     }
 
     private static string ParseName(string? value, string origin)

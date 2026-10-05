@@ -3,6 +3,7 @@ using Silk.NET.Input;
 using Silk.NET.Windowing;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Audio;
+using SpectraEngine.Core.ConsoleSystem;
 using SpectraEngine.Core.Diagnostics;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Hosting;
@@ -50,6 +51,7 @@ public sealed class Engine
     private Thread? _renderThread;
     private FlyCameraController? _cameraController;
     private PlaySession? _play;
+    private readonly SpectraConsole _console = new();
     private FirstPersonController? _character;
     private DebugVisualization _debugFlags = DebugVisualization.None;
 
@@ -173,8 +175,18 @@ public sealed class Engine
                 PipelineNames = _renderer.PipelineNames,
                 SelectionProperties = CaptureProperties(),
                 SelectionEntity = CaptureSelectionEntity(),
+                ConsoleLines = _console.Output.Drain(),
             };
         }, interacting);
+    }
+
+    // Lines wait for a scene, as host commands do.
+    private void DrainConsole()
+    {
+        if (_sceneManager.ActiveScene is not { } scene)
+            return;
+
+        _console.Drain(Host, new ConsoleFrame(scene, _sceneManager.EntityWorld));
     }
 
     // Last snapshot, so a shell sees the engine stop.
@@ -265,6 +277,14 @@ public sealed class Engine
     /// stop, and hear about finished frames.
     /// </summary>
     public EngineHost Host { get; }
+
+    /// <summary>
+    /// The engine's command line. A host adds its own commands before
+    /// <see cref="Run"/> and sends lines with
+    /// <see cref="EngineHost.SubmitConsoleLine"/>.
+    /// </summary>
+    // Not named Console: that would hide System.Console in this file.
+    public SpectraConsole SpectraConsole => _console;
 
     /// <summary>
     /// Windowed or borderless fullscreen, as a request latch. Callable from any
@@ -669,6 +689,10 @@ public sealed class Engine
             };
             _play = play;
 
+            // Before play starts, so a startup line sees the level as it was
+            // loaded. A line that needs the running level waits a frame.
+            DrainConsole();
+
             if (StartInPlayMode)
                 EnterPlayMode();
 
@@ -706,6 +730,11 @@ public sealed class Engine
 
                 if (_inputManager.WasKeyPressed(CharacterOverlayKey))
                     _drawCharacter = !_drawCharacter;
+
+                // After the play-mode block, so a line typed with Play sees
+                // the world it started. Before the ticks, so an input fired
+                // by hand is delivered this frame.
+                DrainConsole();
 
                 bool playing = play.IsActive;
 

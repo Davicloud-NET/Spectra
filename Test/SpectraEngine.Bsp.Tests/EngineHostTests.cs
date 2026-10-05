@@ -503,6 +503,49 @@ public sealed class EngineHostTests
         input.IsCursorLocked.ShouldBeTrue();
     }
 
+    [Fact]
+    public void Console_lines_are_taken_in_the_order_they_were_submitted()
+    {
+        EngineHost host = NewHost();
+
+        host.SubmitConsoleLine("first").ShouldBeTrue();
+        host.SubmitConsoleLine("Second  \"as typed\"").ShouldBeTrue();
+
+        host.TryTakeConsoleLine(out string? line).ShouldBeTrue();
+        line.ShouldBe("first");
+        host.TryTakeConsoleLine(out line).ShouldBeTrue();
+        line.ShouldBe("Second  \"as typed\"");
+        host.TryTakeConsoleLine(out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_submitted_line_forces_the_next_snapshot_out()
+    {
+        EngineHost host = NewHost();
+        host.SnapshotInterval = TimeSpan.FromSeconds(10);
+        host.PublishFrame(TimeSpan.Zero, Build);
+        host.PublishFrame(TimeSpan.FromMilliseconds(1), Build).ShouldBeNull();
+
+        host.SubmitConsoleLine("echo hi");
+
+        host.PublishFrame(TimeSpan.FromMilliseconds(2), Build).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void A_full_line_queue_refuses_the_next_line()
+    {
+        EngineHost host = NewHost();
+        for (int i = 0; i < EngineHost.MaxQueuedConsoleLines; i++)
+            host.SubmitConsoleLine("echo").ShouldBeTrue();
+
+        host.SubmitConsoleLine("one too many").ShouldBeFalse();
+
+        // Taking one makes room for one.
+        host.TryTakeConsoleLine(out _).ShouldBeTrue();
+        host.SubmitConsoleLine("fits now").ShouldBeTrue();
+        host.SubmitConsoleLine("still full").ShouldBeFalse();
+    }
+
     private static FrameSnapshot Build(FrameSnapshotBuilder builder) => new()
     {
         FrameNumber = builder.FrameNumber,

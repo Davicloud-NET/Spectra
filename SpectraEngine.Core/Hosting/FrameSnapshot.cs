@@ -1,4 +1,5 @@
-﻿using SpectraEngine.Core.Graphics;
+﻿using SpectraEngine.Core.ConsoleSystem;
+using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Inspection;
 using SpectraEngine.Core.Scene;
 using System;
@@ -185,4 +186,11 @@ public sealed class FrameSnapshot
     /// replay. Also set for the first snapshot after a scene swap.
     /// </summary>
     public bool ChangesOverflowed { get; init; }
+
+    /// <summary>
+    /// What the console printed since the previous snapshot, in order. Sent
+    /// once, so a reader that skips a snapshot loses its lines. A gap in
+    /// <see cref="ConsoleLine.Sequence"/> says how many.
+    /// </summary>
+    public IReadOnlyList<ConsoleLine> ConsoleLines { get; init; } = Array.Empty<ConsoleLine>();
 }
