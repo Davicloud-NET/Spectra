@@ -46,6 +46,7 @@ public sealed class Engine
     private readonly AssetManager _assetManager;
     private readonly AudioManager _audioManager;
     private readonly SoundPresenter _soundPresenter;
+    private readonly SoundPreview _soundPreview;
     private readonly CaptionFeed _captions;
     private readonly CaptionLogView _captionLog;
     private readonly InputManager _inputManager;
@@ -102,6 +103,7 @@ public sealed class Engine
         _captionLog = new CaptionLogView(logger);
         _soundPresenter = new SoundPresenter(
             audioManager, assetManager, new DirectPropagation(), _captions, logger);
+        _soundPreview = new SoundPreview(audioManager, assetManager, logger);
         _inputManager = inputManager;
         _windowModeLatch = new WindowModeLatch(logger);
         Host = new EngineHost(logger);
@@ -112,7 +114,7 @@ public sealed class Engine
         _entityWatch = new EntityWatch(_console.Output);
         EntityConsoleCommands.Register(_console.Commands, _entityWatch);
         GraphicsConsoleCommands.Register(_console.Commands, renderer);
-        SoundConsoleCommands.Register(_console.Commands, _soundPresenter, audioManager);
+        SoundConsoleCommands.Register(_console.Commands, _soundPresenter, audioManager, _soundPreview);
         SoundSimulationConsoleCommands.Register(_console.Commands, _soundPresenter.Simulation);
         CaptionConsoleCommands.Register(_console.Commands, _captions);
         _entityWatch.Changed += RefreshEntityTrace;
@@ -133,6 +135,7 @@ public sealed class Engine
     // A composited host imports on the generation, never on the handle.
     private Renderer.SharedTargetHandle? _publishedSharedTarget;
     private int _publishedSharedGeneration;
+    private string _publishedPreview = string.Empty;
     private Func<FrameSnapshotBuilder, FrameSnapshot>? _snapshotBuilder;
 
     // Render thread only. The one place engine state is read for a UI.
@@ -157,6 +160,11 @@ public sealed class Engine
             _publishedSharedGeneration = _publishedSharedTarget?.Generation ?? 0;
             Host.MarkDirty();
         }
+
+        // A preview that starts or ends publishes at once, so a shell's play
+        // button keeps up with the sound.
+        if (_soundPreview.Path != _publishedPreview)
+            Host.MarkDirty();
 
         Host.PublishFrame(elapsed, _snapshotBuilder ??= builder =>
         {
@@ -209,6 +217,7 @@ public sealed class Engine
                 LogicPlay = CaptureLogicPlay(),
                 Captions = _captions.Captions,
                 CaptionTime = _captions.Now,
+                PreviewingSound = _publishedPreview = _soundPreview.Path,
                 ConsoleLines = _console.Output.Drain(),
             };
         }, interacting);
@@ -234,8 +243,12 @@ public sealed class Engine
             _audioManager.SetListener(listener.Position, listener.Forward, listener.Up);
         }
 
+        if (Host.TryTakeSoundPreviewRequest(out string? preview))
+            _soundPreview.Apply(preview);
+
         // First, so the presenter hands out the sources finished voices gave back.
         _audioManager.Update();
+        _soundPreview.Update();
 
         if (_character is { } character && character.TryTakeViewJump())
             _soundPresenter.ListenerJumped();

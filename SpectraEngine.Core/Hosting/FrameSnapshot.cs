@@ -196,6 +196,13 @@ public sealed class FrameSnapshot
     public double CaptionTime { get; init; }
 
     /// <summary>
+    /// The content path of the sound that plays by itself, because a host
+    /// asked with <see cref="EngineHost.RequestSoundPreview"/> or the console
+    /// did. Empty when none plays.
+    /// </summary>
+    public string PreviewingSound { get; init; } = string.Empty;
+
+    /// <summary>
     /// The shared colour target a composited host should import and present, or
     /// null when the engine presents for itself. Re-import when the generation
     /// changes; handle values are recycled and do not identify a target.

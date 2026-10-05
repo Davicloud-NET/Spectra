@@ -14,7 +14,7 @@ public sealed class SoundConsoleCommandTests
     public void The_command_prints_how_many_sounds_play_and_how_many_have_a_source()
     {
         using var rig = new SoundPresenterRig(sources: 2);
-        var console = ConsoleFor(rig.Presenter, rig.Audio);
+        var console = ConsoleFor(rig);
         rig.Play(rig.Place("a", new Vector3(0, 0, -1)), SoundPresenterRig.Beep, SoundPresenterRig.Looped);
         rig.Play(rig.Place("b", new Vector3(0, 0, -2)), SoundPresenterRig.Beep, SoundPresenterRig.Looped);
         rig.Play(rig.Place("c", new Vector3(0, 0, -6)), SoundPresenterRig.Beep, SoundPresenterRig.Looped);
@@ -33,6 +33,7 @@ public sealed class SoundConsoleCommandTests
         [
             "sound_stats: 5 playing, 2 with a source, 1 without, 1 silent, 1 not loaded.",
             "sound_stats: 2 sources, 0 starts refused.",
+            "sound_stats: preview none, volume 1.",
         ]);
         lines.ShouldAllBe(line => line.Severity == LogLevel.Information);
     }
@@ -41,12 +42,29 @@ public sealed class SoundConsoleCommandTests
     public void With_no_level_running_the_command_says_so()
     {
         using var rig = new SoundPresenterRig();
-        var console = ConsoleFor(rig.Presenter, rig.Audio);
+        var console = ConsoleFor(rig);
 
         console.Execute(SoundConsoleCommands.Stats, new ConsoleFrame(rig.Scene, null));
 
-        console.Output.Drain().ShouldHaveSingleItem().Text.ShouldBe(
-            "sound_stats: the level is not running, so it plays nothing. 32 sources.");
+        console.Output.Drain().Select(line => line.Text).ShouldBe(
+        [
+            "sound_stats: the level is not running, so it plays nothing. 32 sources.",
+            "sound_stats: preview none, volume 1.",
+        ]);
+    }
+
+    [Fact]
+    public void The_command_names_the_preview_and_the_volume()
+    {
+        using var rig = new SoundPresenterRig(spareSources: 1);
+        SoundPreview preview = SoundPreviewTests.PreviewOn(rig);
+        var console = ConsoleFor(rig, preview: preview);
+        preview.Play(SoundPresenterRig.Beep, out _).ShouldBeTrue();
+        rig.Audio.MasterGain = 0.25f;
+
+        console.Execute(SoundConsoleCommands.Stats, new ConsoleFrame(rig.Scene, null));
+
+        console.Output.Drain()[^1].Text.ShouldBe("sound_stats: preview Sounds/beep.wav, volume 0.25.");
     }
 
     [Fact]
@@ -57,7 +75,7 @@ public sealed class SoundConsoleCommandTests
         audio.Initialize();
         var presenter = new SoundPresenter(
             audio, rig.Assets, new DirectPropagation(), rig.NewCaptionFeed(), rig.Log);
-        var console = ConsoleFor(presenter, audio);
+        var console = ConsoleFor(rig, presenter, audio);
         rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Looped);
         presenter.Update(rig.World, SoundPresenterRig.TickSeconds);
 
@@ -70,20 +88,40 @@ public sealed class SoundConsoleCommandTests
     }
 
     [Fact]
-    public void Help_lists_the_command()
+    public void Help_lists_the_commands()
     {
         using var rig = new SoundPresenterRig();
-        var console = ConsoleFor(rig.Presenter, rig.Audio);
+        var console = ConsoleFor(rig);
 
         console.Execute("help", default);
 
-        console.Output.Drain().ShouldContain(line => line.Text.StartsWith(SoundConsoleCommands.Stats));
+        IReadOnlyList<ConsoleLine> lines = console.Output.Drain();
+        foreach (string command in new[]
+                 {
+                     SoundConsoleCommands.Stats, SoundConsoleCommands.Play,
+                     SoundConsoleCommands.Stop, SoundConsoleCommands.Volume,
+                 })
+        {
+            lines.ShouldContain(line => line.Text.StartsWith(command + "  "));
+        }
     }
 
-    private static SpectraConsole ConsoleFor(SoundPresenter presenter, AudioManager audio)
+    // A console with the sound commands over the rig's own presenter, device
+    // and a preview, unless another is given.
+    internal static SpectraConsole ConsoleFor(
+        SoundPresenterRig rig,
+        SoundPresenter? presenter = null,
+        AudioManager? audio = null,
+        SoundPreview? preview = null)
     {
+        audio ??= rig.Audio;
+
         var console = new SpectraConsole();
-        SoundConsoleCommands.Register(console.Commands, presenter, audio);
+        SoundConsoleCommands.Register(
+            console.Commands,
+            presenter ?? rig.Presenter,
+            audio,
+            preview ?? new SoundPreview(audio, rig.Assets, new CapturingLogger()));
         return console;
     }
 

@@ -61,8 +61,14 @@ public sealed class AudioManager : IDisposable
     /// <summary>Sources the driver granted; 0 when disabled.</summary>
     public int SourceCount => _pool?.Capacity ?? 0;
 
-    /// <summary>Voices currently playing.</summary>
+    /// <summary>Voices currently playing on the pool's sources.</summary>
     public int ActiveVoiceCount => _voices.Count;
+
+    /// <summary>
+    /// A source of its own for listening to one sound outside a level. Not
+    /// counted in <see cref="SourceCount"/> or <see cref="ActiveVoiceCount"/>.
+    /// </summary>
+    public AudioPreviewSource Preview { get; } = new();
 
     /// <summary>Sounds cut off because every source was busy.</summary>
     public int StolenVoiceCount => _pool?.StolenCount ?? 0;
@@ -115,6 +121,7 @@ public sealed class AudioManager : IDisposable
         _pool = new AudioSourcePool(backend, _requestedSourceCount);
         backend.SetListenerGain(_masterGain);
         backend.SetListener(ListenerPosition, ListenerVelocity, ListenerForward, ListenerUp);
+        Preview.Attach(backend);
 
         _logger.LogInformation(
             "Audio manager initialized on {Device} with {Sources} sources",
@@ -152,6 +159,7 @@ public sealed class AudioManager : IDisposable
         }
 
         _voices.Clear();
+        Preview.Release();
 
         for (int i = 0; i < _clips.Count; i++)
         {
@@ -327,6 +335,7 @@ public sealed class AudioManager : IDisposable
             _voices.RemoveAt(i);
         }
 
+        Preview.Update();
         return _voices.Count;
     }
 

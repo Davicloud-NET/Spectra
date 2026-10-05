@@ -209,6 +209,23 @@ public sealed class EngineHost
         MarkDirty();
     }
 
+    private string? _soundPreviewRequest;
+
+    /// <summary>
+    /// Asks the engine to play one sound file by itself, once from its start,
+    /// so it can be listened to with no level running. An empty path stops
+    /// what is playing. The newest request wins, and
+    /// <see cref="FrameSnapshot.PreviewingSound"/> reports what plays. Safe
+    /// from any thread.
+    /// </summary>
+    /// <param name="path">The sound's content path, such as <c>Sounds/door_open.wav</c>.</param>
+    public void RequestSoundPreview(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        Interlocked.Exchange(ref _soundPreviewRequest, path);
+        MarkDirty();
+    }
+
     /// <summary>
     /// Reports that a composited host has finished with every shared-target
     /// generation up to and including <paramref name="generation"/>, so the
@@ -257,6 +274,12 @@ public sealed class EngineHost
     {
         request = Interlocked.Exchange(ref _logicViewRequest, null);
         return request is not null;
+    }
+
+    internal bool TryTakeSoundPreviewRequest([NotNullWhen(true)] out string? path)
+    {
+        path = Interlocked.Exchange(ref _soundPreviewRequest, null);
+        return path is not null;
     }
 
     internal bool TryTakeConsoleLine([NotNullWhen(true)] out string? line)

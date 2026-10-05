@@ -36,7 +36,9 @@ internal sealed class SoundPresenterRig : IDisposable
 
     private readonly AssetSoundCatalog _catalog;
 
-    public SoundPresenterRig(int sources = AudioManager.DefaultSourceCount, ISoundPropagation? propagation = null)
+    // spareSources is how many more sources the device has than the pool asks for.
+    public SoundPresenterRig(
+        int sources = AudioManager.DefaultSourceCount, ISoundPropagation? propagation = null, int spareSources = 0)
     {
         Directory.CreateDirectory(Path.Combine(_root, "Sounds"));
         Cook(Beep, HandBuiltSaudio.Resident(frames: Rate));
@@ -46,7 +48,7 @@ internal sealed class SoundPresenterRig : IDisposable
         Assets = new AssetManager(NullLogger.Instance, _root, hotReloadEnabled: false);
         _catalog = new AssetSoundCatalog(Assets);
 
-        Backend = new FakeAudioBackend(sources);
+        Backend = new FakeAudioBackend(sources + spareSources);
         Audio = new AudioManager(new CapturingLogger(), Supply, sources);
         Audio.Initialize();
 

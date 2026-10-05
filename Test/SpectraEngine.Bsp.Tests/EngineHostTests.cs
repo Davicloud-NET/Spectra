@@ -199,6 +199,56 @@ public sealed class EngineHostTests
     }
 
     [Fact]
+    public void A_sound_preview_request_is_latched_until_the_engine_takes_it()
+    {
+        EngineHost host = NewHost();
+
+        host.TryTakeSoundPreviewRequest(out _).ShouldBeFalse("nothing was requested");
+
+        host.RequestSoundPreview("Sounds/door_open.wav");
+
+        host.TryTakeSoundPreviewRequest(out string? path).ShouldBeTrue();
+        path.ShouldBe("Sounds/door_open.wav");
+
+        // Taken once, or the sound starts over every frame.
+        host.TryTakeSoundPreviewRequest(out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_newest_sound_preview_request_wins_and_an_empty_one_is_a_stop()
+    {
+        EngineHost host = NewHost();
+
+        host.RequestSoundPreview("Sounds/door_open.wav");
+        host.RequestSoundPreview(string.Empty);
+
+        host.TryTakeSoundPreviewRequest(out string? path).ShouldBeTrue();
+        path.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_sound_preview_request_publishes_the_next_frame_without_waiting_for_the_interval()
+    {
+        EngineHost host = NewHost();
+        host.PublishFrame(TimeSpan.Zero, builder => new FrameSnapshot { FrameNumber = builder.FrameNumber });
+        host.PublishFrame(TimeSpan.FromMilliseconds(1), builder => new FrameSnapshot()).ShouldBeNull();
+
+        host.RequestSoundPreview("Sounds/door_open.wav");
+
+        host.PublishFrame(
+            TimeSpan.FromMilliseconds(2),
+            builder => new FrameSnapshot { PreviewingSound = "Sounds/door_open.wav" })
+            .ShouldNotBeNull().PreviewingSound.ShouldBe("Sounds/door_open.wav");
+    }
+
+    [Fact]
+    public void A_snapshot_names_no_previewing_sound_until_the_engine_says_one_plays()
+    {
+        FrameSnapshot.Empty.PreviewingSound.ShouldBeEmpty();
+        new FrameSnapshot().PreviewingSound.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void Debug_visualisation_requests_accumulate_until_taken()
     {
         EngineHost host = NewHost();
