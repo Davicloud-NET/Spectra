@@ -26,7 +26,7 @@ Plays a sound from where it stands: a hum, an alarm, a spoken line.
 | `startplaying` | Start playing | 0 | Set to 1 and the sound plays when the level starts. |
 | `placed` | Placed | 1 | The sound is heard from where it stands. Set to 0 and it plays in both ears. |
 | `fades` | Fades with distance | 1 | The sound gets quieter with distance. Set to 0 and it is as loud everywhere as it is up close. |
-| `walls` | Muffled by walls | 1 | Walls between the sound and the listener make it quieter and duller. Set to 0 and it passes through them. |
+| `walls` | Muffled by walls | 1 | Walls between the sound and the listener will make it quieter and duller. The engine does not do that yet, so this setting changes nothing for now. |
 | `doppler` | Doppler | 1 | The pitch rises while the sound and the listener close in and falls while they part. Set to 0 and it keeps its own pitch. |
 
 Both distances are in units, and a unit is a metre. The volume falls off between the two and reaches nothing at the far one.
@@ -61,29 +61,32 @@ A sound can have a caption that says in words what is heard, for players who can
 
 ## What is simulated
 
-Four things are worked out for a sound on its way to the listener. Each has a setting of its own, and all four start at 1.
+A sound has four settings for what is worked out on its way to the listener. All four start at 1. Three of them do something today:
 
 | Setting | At 1 | At 0 |
 |---|---|---|
 | `placed` | The sound is heard from where it stands. | It plays in both ears, the same from every side. |
 | `fades` | It gets quieter with distance, between its two distances. | It is as loud everywhere as it is up close. |
-| `walls` | Walls between the sound and the listener make it quieter and duller. | It passes through walls as if they were not there. |
 | `doppler` | Its pitch rises while it and the listener close in, and falls while they part. | It keeps its own pitch. |
 
-Walls do not muffle a sound yet. Until they do, `walls` changes nothing.
+The fourth is `walls`. It is for walls that make a sound behind them quieter and duller, and the engine does not do that yet. Every sound passes through walls, so `walls` changes nothing at 1 or at 0. Neither does `walls` in [`sound_simulate`](/reference/console/#sound_simulate).
 
-The four do not depend on each other. Some combinations a level needs:
+Each setting can be changed without the others, with one exception: a sound that is not placed has no Doppler. Some combinations a level needs:
 
 - An alarm heard through a whole building: `fades` at 0. It is as loud in every room, and it still comes from the alarm's side.
 - Rain, room tone or music that belongs to a place: `placed` at 0. It fills both ears, and it fades as the player walks away.
 - A narrator, or a voice in the player's head: `placed` and `fades` at 0. It sounds the same wherever the player stands.
 - A radio in a passing car whose music should not bend: `doppler` at 0.
 
-A stereo file is never placed, whatever `placed` says. A sound that is not placed has no Doppler either: it has no way to the listener that could get longer or shorter.
+A stereo file is never placed, whatever `placed` says. A sound that is not placed has no Doppler, whatever `doppler` says: it has no way to the listener that could get longer or shorter.
 
 Doppler is the change of pitch a moving sound has: a siren is higher while it comes at you and lower once it has passed. The engine works it out from how fast the way from the sound to the listener gets longer or shorter, so it makes no difference which of the two moves. Sound travels 343 units a second. Closing in at 20 units a second raises the pitch by about a semitone, and at walking speed the change is hard to hear. The pitch never goes more than an octave up or down.
 
+A teleport is not motion. When a [`trigger_teleport`](/reference/trigger-entities/#trigger_teleport) moves the player, no sound bends.
+
 Doppler changes what is heard and nothing else. The end of a sound and its markers are counted from the sound's own pitch, as [Timing](#timing) says, so `OnEnded` and `OnMarker` fire on the same ticks with Doppler at 1 or at 0. A sound that plays once while the listener closes in fast is over in the ears a little before `OnEnded` fires. One heard while they part fast is still playing then, and is cut off a quarter of a second later.
+
+Subtitles keep to what is heard. While the listener closes in on a spoken sound that plays once, each line shows when it is said, a little before the sound's own count reaches it. While they part, a line shows on the count, a little before it is said, so the last line is not lost when the sound is cut off.
 
 A caption of a sound that is not placed has no place either, like the caption of a stereo file.
 

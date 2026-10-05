@@ -126,11 +126,11 @@ public sealed partial class PointSound : Entity
         Default = "1")]
     public bool FadesWithDistance { get; set; } = true;
 
-    /// <summary>Whether what lies between the sound and the listener muffles it.</summary>
+    /// <summary>Whether what lies between the sound and the listener muffles it. Nothing muffles a sound yet.</summary>
     [Keyvalue(
         "walls",
         Display = "Muffled by walls",
-        Tooltip = "Walls between the sound and the listener make it quieter and duller. Off, it passes through them.",
+        Tooltip = "Walls in the way will make the sound quieter and duller. The engine does not do that yet, so this changes nothing.",
         Default = "1")]
     public bool IsMuffledByWalls { get; set; } = true;
 
