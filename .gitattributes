@@ -28,8 +28,11 @@ Assets/**/*.obj text eol=lf
 Assets/**/*.mtl text eol=lf
 Assets/**/*.gltf text eol=lf
 Assets/**/*.spectramat text eol=lf
+Assets/**/*.py text eol=lf
+Assets/**/*.md text eol=lf
 *.spectrashade text eol=lf
 Assets/**/*.png binary
+Assets/**/*.wav binary
 
 # Verify snapshot files are byte-exact golden outputs — pin them to LF so
 # CRLF normalization on Windows doesn't cause phantom diffs.
