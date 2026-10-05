@@ -1,0 +1,9 @@
+// What the demo's sounds are, in words.
+// The lift's spoken line is not here. Its subtitles are beside it, in Sounds/lift_voice.en.vtt.
+
+Sounds/button_press.wav = Button clicks
+Sounds/door_close.wav = Door slides shut
+Sounds/door_open.wav = Door slides open
+Sounds/lift_move.wav = Lift hums
+Sounds/lift_stop.wav = Lift clunks to a stop
+Sounds/room_tone.wav = Air hums quietly

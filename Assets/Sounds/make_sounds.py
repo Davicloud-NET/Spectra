@@ -17,6 +17,10 @@ FULL_SCALE = 32767
 # in that time and ring out after it.
 DOOR_TRAVEL = 0.45
 
+# Where the second word of the lift's line starts, in seconds. The start
+# room's lift starts on the marker that stands here.
+LIFT_VOICE_UP = 0.6
+
 
 class Noise:
     """White noise from a generator of our own, so Python's does not decide the bytes."""
@@ -196,6 +200,110 @@ def room_tone():
     return to_peak(out, -30.0)
 
 
+def track(count, points):
+    """A value for every sample, on straight lines through (seconds, value) points."""
+    out = []
+    at = 0
+    for i in range(count):
+        t = i / RATE
+        while at + 2 < len(points) and t >= points[at + 1][0]:
+            at += 1
+
+        (start, low), (end, high) = points[at], points[at + 1]
+        along = min(max((t - start) / (end - start), 0.0), 1.0)
+        out.append(low + (high - low) * along)
+    return out
+
+
+def glottal_pulses(pitch):
+    """The buzz under a voice: one puff of air a cycle, at a pitch for every sample."""
+    out = []
+    phase = 0.0
+    held = 0.0
+    for frequency in pitch:
+        # The folds open slowly, shut fast and stay shut for the rest.
+        if phase < 0.4:
+            flow = 0.5 - 0.5 * math.cos(math.pi * phase / 0.4)
+        elif phase < 0.56:
+            flow = math.cos(0.5 * math.pi * (phase - 0.4) / 0.16)
+        else:
+            flow = 0.0
+
+        # What leaves the mouth is the change in flow.
+        out.append(flow - held)
+        held = flow
+
+        phase += frequency / RATE
+        if phase >= 1.0:
+            phase -= 1.0
+    return out
+
+
+def formant(samples, frequency, width):
+    """One resonance of a mouth, at a frequency for every sample."""
+    radius = math.exp(-math.pi * width / RATE)
+    out = []
+    one_back = 0.0
+    two_back = 0.0
+    for sample, centre in zip(samples, frequency):
+        near = 2.0 * radius * math.cos(2.0 * math.pi * centre / RATE)
+        far = -radius * radius
+        value = (1.0 - near - far) * sample + near * one_back + far * two_back
+        out.append(value)
+        two_back = one_back
+        one_back = value
+    return out
+
+
+def lift_voice():
+    count = int(1.2 * RATE)
+    up = LIFT_VOICE_UP
+
+    # "Going up." Each row is a moment: seconds, pitch, the three formants
+    # and how loud. The pitch falls to the end, the way a statement does.
+    shape = [
+        # g, with the two upper formants close together
+        (0.00, 178.0, 250.0, 1600.0, 2200.0, 0.0),
+        # o
+        (0.05, 177.0, 520.0, 920.0, 2500.0, 1.0),
+        (0.17, 172.0, 440.0, 880.0, 2450.0, 1.0),
+        # i
+        (0.27, 168.0, 380.0, 1950.0, 2600.0, 0.9),
+        # ng
+        (0.35, 164.0, 290.0, 1400.0, 2500.0, 0.4),
+        (0.42, 160.0, 280.0, 1300.0, 2500.0, 0.3),
+        (0.48, 158.0, 280.0, 1300.0, 2500.0, 0.0),
+        # u
+        (up, 170.0, 600.0, 1200.0, 2500.0, 0.0),
+        (up + 0.04, 169.0, 680.0, 1250.0, 2500.0, 1.0),
+        (up + 0.20, 140.0, 680.0, 1200.0, 2500.0, 0.95),
+        # p: the lips shut
+        (up + 0.27, 126.0, 480.0, 1000.0, 2400.0, 0.6),
+        (up + 0.31, 120.0, 350.0, 850.0, 2300.0, 0.0),
+        (1.20, 120.0, 350.0, 850.0, 2300.0, 0.0),
+    ]
+
+    def column(index):
+        return track(count, [(row[0], row[index]) for row in shape])
+
+    level = column(5)
+    buzz = to_peak(glottal_pulses(column(1)), 0.0)
+    breath = high_pass(white(count, 61), 1500.0)
+    throat = [(pulse + 0.03 * air) * loud for pulse, air, loud in zip(buzz, breath, level)]
+
+    mouth = formant(formant(formant(throat, column(2), 70.0), column(3), 100.0), column(4), 140.0)
+
+    # Three formants leave the high end too quiet to tell the vowels apart.
+    # Taking most of the sample before off each one brings it up.
+    spoken = to_peak([now - 0.95 * before for now, before in zip(mouth, [0.0] + mouth)], 0.0)
+
+    # The lips let go a moment after they shut. Without it "up" is "uh".
+    puff = to_peak(band(white(count, 62), 200.0, 1500.0), 0.0)
+    release = gain(burst(count, up + 0.38, puff, 0.004, 0.02), 0.25)
+
+    return played_once(mix(spoken, release), -9.0, 0.02)
+
+
 def chunk(name, body):
     padding = b"\x00" if len(body) % 2 else b""
     return name + struct.pack("<I", len(body)) + body + padding
@@ -209,14 +317,29 @@ def loop_chunk(frames):
     return chunk(b"smpl", header + loop)
 
 
-def write(name, samples, looped=False):
+def marker_chunks(markers):
+    """A cue point for each (seconds, name) marker, and a label that names it."""
+    points = struct.pack("<I", len(markers))
+    labels = b"adtl"
+    for number, (seconds, name) in enumerate(markers, start=1):
+        frame = int(round(seconds * RATE))
+
+        # The frame goes in twice: readers disagree about which field holds it.
+        points += struct.pack("<II4sIII", number, frame, b"data", 0, 0, frame)
+        labels += chunk(b"labl", struct.pack("<I", number) + name.encode("ascii") + b"\x00")
+    return chunk(b"cue ", points) + chunk(b"LIST", labels)
+
+
+def write(name, samples, looped=False, markers=()):
     whole = [int(round(sample * FULL_SCALE)) for sample in samples]
 
-    # The wave module cannot write a loop, so the chunks are written here.
+    # The wave module cannot write a loop or a marker, so the chunks are written here.
     form = struct.pack("<HHIIHH", 1, 1, RATE, RATE * 2, 2, 16)
     body = chunk(b"fmt ", form) + chunk(b"data", struct.pack("<%dh" % len(whole), *whole))
     if looped:
         body += loop_chunk(len(whole))
+    if markers:
+        body += marker_chunks(markers)
 
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
     with open(path, "wb") as file:
@@ -230,6 +353,7 @@ def main():
     write("lift_stop.wav", lift_stop())
     write("button_press.wav", button_press())
     write("room_tone.wav", room_tone(), looped=True)
+    write("lift_voice.wav", lift_voice(), markers=[(0.0, "going"), (LIFT_VOICE_UP, "up")])
 
 
 if __name__ == "__main__":
