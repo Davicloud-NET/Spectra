@@ -115,6 +115,7 @@ public sealed class EntityPropertyRowTests
     [InlineData(KeyvalueType.Bool, "1", PropertyKind.Boolean)]
     [InlineData(KeyvalueType.Int, "7", PropertyKind.Number)]
     [InlineData(KeyvalueType.Float, "2.5", PropertyKind.Number)]
+    [InlineData(KeyvalueType.Distance, "30", PropertyKind.Number)]
     [InlineData(KeyvalueType.Vec3, "1 2 3", PropertyKind.Vector3)]
     [InlineData(KeyvalueType.Angles, "0 90 0", PropertyKind.Vector3)]
     [InlineData(KeyvalueType.Color, "1 0.5 0", PropertyKind.Color)]
@@ -172,6 +173,21 @@ public sealed class EntityPropertyRowTests
             new EntitySchema("thing", keyvalues: [Kv("angles", KeyvalueType.Angles, "0 0 0")]));
 
         Row(Describe(Placed("thing"), catalog), "angles").Unit.ShouldBe("deg");
+    }
+
+    [Fact]
+    public void A_distance_row_says_it_is_units_and_a_float_row_says_nothing()
+    {
+        EntitySchemaCatalog catalog = Catalog(new EntitySchema("thing", keyvalues:
+        [
+            Kv("reach", KeyvalueType.Distance, "30"),
+            Kv("speed", KeyvalueType.Float, "30"),
+        ]));
+
+        List<PropertyRow> rows = Describe(Placed("thing"), catalog);
+        Row(rows, "reach").Unit.ShouldBe("su");
+        Row(rows, "reach").Number.ShouldBe(30f);
+        Row(rows, "speed").Unit.ShouldBe("");
     }
 
     [Fact]

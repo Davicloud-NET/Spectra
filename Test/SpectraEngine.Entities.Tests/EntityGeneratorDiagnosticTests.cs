@@ -50,6 +50,29 @@ public sealed class EntityGeneratorDiagnosticTests
     }
 
     [Fact]
+    public void A_distance_on_a_member_that_is_not_a_float_is_refused()
+    {
+        const string source = """
+            using SpectraEngine.Core.Entities;
+
+            namespace TestGame.Entities;
+
+            [SpectraEntity("env_beacon")]
+            public sealed partial class EnvBeacon : Entity
+            {
+                [Keyvalue("reach", Type = KeyvalueType.Distance)]
+                public int Reach { get; set; }
+            }
+            """;
+
+        GeneratorRun run = GeneratorHarness.Run(source);
+
+        run.DiagnosticIds.ShouldBe(["SPE006"]);
+        run.Diagnostics.Single().GetMessage()
+            .ShouldContain("KeyvalueType.Distance, which is read as 'float'");
+    }
+
+    [Fact]
     public void A_keyvalue_the_binder_cannot_assign_to_is_refused()
     {
         GeneratorRun run = GeneratorHarness.Run(Fixtures.KeyvalueNotAssignable);

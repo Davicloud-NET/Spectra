@@ -79,6 +79,7 @@ public sealed partial class PointSound : Entity
         Display = "Minimum distance",
         Tooltip = "The sound is at full volume inside this distance.",
         Default = "2",
+        Type = KeyvalueType.Distance,
         Min = 0f)]
     public float MinDistance { get; set; } = 2f;
 
@@ -88,6 +89,7 @@ public sealed partial class PointSound : Entity
         Display = "Maximum distance",
         Tooltip = "The sound is silent beyond this distance.",
         Default = "30",
+        Type = KeyvalueType.Distance,
         Min = 0f)]
     public float MaxDistance { get; set; } = 30f;
 

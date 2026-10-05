@@ -50,6 +50,33 @@ public sealed class EntityGeneratorSnapshotTests
     }
 
     [Fact]
+    public void A_distance_is_read_as_a_float_and_carries_its_bounds_into_the_schema()
+    {
+        const string source = """
+            using SpectraEngine.Core.Entities;
+
+            namespace TestGame.Entities;
+
+            [SpectraEntity("env_beacon")]
+            public sealed partial class EnvBeacon : Entity
+            {
+                [Keyvalue("reach", Default = "12", Type = KeyvalueType.Distance, Min = 0f, Max = 500f)]
+                public float Reach { get; set; } = 12f;
+            }
+            """;
+
+        GeneratorRun run = GeneratorHarness.Run(source);
+
+        run.Diagnostics.ShouldBeEmpty(run.Describe());
+        run.CompileErrors().ShouldBeEmpty();
+
+        // Without the layout, so the lines of one descriptor can be read as one.
+        string generated = string.Concat(run.OnlySource().Where(c => !char.IsWhiteSpace(c)));
+        generated.ShouldContain("KeyvalueWire.TryParseFloat(value,outfloatparsed)");
+        generated.ShouldContain("KeyvalueType.Distance,(byte)0,0f,500f,");
+    }
+
+    [Fact]
     public void An_entity_with_no_keyvalues_and_no_inputs_still_gets_a_schema_and_a_registration()
     {
         const string source = """

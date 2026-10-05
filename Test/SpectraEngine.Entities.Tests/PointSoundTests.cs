@@ -427,4 +427,20 @@ public sealed class PointSoundTests
         pitch.Min.ShouldBe(PointSound.MinimumPitch);
         pitch.Max.ShouldBe(PointSound.MaximumPitch);
     }
+
+    [Fact]
+    public void Both_distances_are_declared_as_distances_and_nothing_else_is()
+    {
+        // What an editor draws round a selected sound.
+        EntitySchema schema = PointSound.SpectraSchema;
+
+        schema.Keyvalues
+            .Where(keyvalue => keyvalue.Type == KeyvalueType.Distance)
+            .Select(keyvalue => keyvalue.Name)
+            .ShouldBe(["mindistance", "maxdistance"]);
+
+        KeyvalueDescriptor far = schema.Keyvalues[4];
+        far.Min.ShouldBe(0f);
+        far.HasMax.ShouldBeFalse();
+    }
 }

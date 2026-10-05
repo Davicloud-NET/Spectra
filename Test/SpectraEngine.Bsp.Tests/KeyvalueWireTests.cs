@@ -64,6 +64,38 @@ public sealed class KeyvalueWireTests
         }
     }
 
+    public static TheoryData<KeyvalueType> EveryType => new(Enum.GetValues<KeyvalueType>());
+
+    // A type the check does not know refuses every value, and the Properties
+    // panel then shows the setting as text.
+    [Theory]
+    [MemberData(nameof(EveryType))]
+    public void Every_type_accepts_a_value_written_for_it(KeyvalueType type)
+    {
+        string written = type switch
+        {
+            KeyvalueType.Bool => "1",
+            KeyvalueType.Int or KeyvalueType.Flags => "3",
+            KeyvalueType.Float or KeyvalueType.Distance => "1.5",
+            KeyvalueType.Vec2 => "1 2",
+            KeyvalueType.Vec3 or KeyvalueType.Color or KeyvalueType.Angles => "1 2 3",
+            KeyvalueType.Vec4 => "1 2 3 4",
+            KeyvalueType.NodeRef => KeyvalueWire.Format(Guid.NewGuid()),
+            _ => "text",
+        };
+
+        KeyvalueWire.IsWellFormed(type, written).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_distance_is_one_finite_float()
+    {
+        KeyvalueWire.IsWellFormed(KeyvalueType.Distance, "12.5").ShouldBeTrue();
+        KeyvalueWire.IsWellFormed(KeyvalueType.Distance, "far").ShouldBeFalse();
+        KeyvalueWire.IsWellFormed(KeyvalueType.Distance, "1 2").ShouldBeFalse();
+        KeyvalueWire.IsWellFormed(KeyvalueType.Distance, "Infinity").ShouldBeFalse();
+    }
+
     [Fact]
     public void The_vector_types_round_trip_component_wise()
     {

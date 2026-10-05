@@ -480,9 +480,11 @@ public static class NodeInspector
                     EntityGroup, label, PropertyId.EntityKeyvalue, whole, "", key);
 
             case KeyvalueType.Float:
+            case KeyvalueType.Distance:
                 KeyvalueWire.TryParseFloat(value, out float number);
                 return PropertyRow.OfNumber(
-                    EntityGroup, label, PropertyId.EntityKeyvalue, number, "", key);
+                    EntityGroup, label, PropertyId.EntityKeyvalue, number,
+                    descriptor.Type == KeyvalueType.Distance ? "su" : "", key);
 
             case KeyvalueType.Vec3:
                 KeyvalueWire.TryParseVec3(value, out Vector3 vector);

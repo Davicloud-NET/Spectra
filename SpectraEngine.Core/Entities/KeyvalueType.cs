@@ -60,4 +60,10 @@ public enum KeyvalueType : byte
 
     /// <summary>A bit set, written as one non-negative integer.</summary>
     Flags = 16,
+
+    /// <summary>
+    /// A length in units from the node's position, written as one float. An
+    /// editor draws it as a sphere round the node while the node is selected.
+    /// </summary>
+    Distance = 17,
 }

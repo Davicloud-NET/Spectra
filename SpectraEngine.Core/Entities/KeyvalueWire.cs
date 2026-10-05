@@ -19,7 +19,10 @@ public static class KeyvalueWire
     /// <summary>The wire form of a <see cref="KeyvalueType.Flags"/> bit set.</summary>
     public static string Format(uint value) => value.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>The wire form of a <see cref="KeyvalueType.Float"/>.</summary>
+    /// <summary>
+    /// The wire form of a <see cref="KeyvalueType.Float"/> or a
+    /// <see cref="KeyvalueType.Distance"/>.
+    /// </summary>
     public static string Format(float value) => Finite(value).ToString(CultureInfo.InvariantCulture);
 
     /// <summary>The wire form of a <see cref="KeyvalueType.Vec2"/>: <c>"x y"</c>.</summary>
@@ -77,7 +80,10 @@ public static class KeyvalueWire
     public static bool TryParseFlags(string? text, out uint value) =>
         uint.TryParse(Trim(text), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
 
-    /// <summary>Reads a finite <see cref="KeyvalueType.Float"/>.</summary>
+    /// <summary>
+    /// Reads a finite <see cref="KeyvalueType.Float"/> or
+    /// <see cref="KeyvalueType.Distance"/>.
+    /// </summary>
     public static bool TryParseFloat(string? text, out float value) =>
         TryParseComponent(Trim(text), out value);
 
@@ -155,6 +161,7 @@ public static class KeyvalueWire
             case KeyvalueType.Int:
                 return TryParseInt(text, out _);
             case KeyvalueType.Float:
+            case KeyvalueType.Distance:
                 return TryParseFloat(text, out _);
             case KeyvalueType.Vec2:
                 return TryParseVec2(text, out _);

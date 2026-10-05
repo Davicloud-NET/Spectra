@@ -305,7 +305,30 @@ public sealed class SentDefTests
         sound.DisplayName.ShouldBe("Sound");
         sound.Placement.ShouldBe(EntityPlacement.Point);
         sound.Keyvalues.Single(keyvalue => keyvalue.Name == "sound").Type.ShouldBe(KeyvalueType.AssetSound);
+        sound.Keyvalues.Single(keyvalue => keyvalue.Name == "maxdistance").Type.ShouldBe(KeyvalueType.Distance);
         sound.Outputs.ShouldBe([PointSound.OnEnded, PointSound.OnMarker]);
+    }
+
+    [Fact]
+    public void A_distance_is_type_17_in_the_file_and_comes_back_with_its_bounds()
+    {
+        var schema = new EntitySchema(
+            "env_beacon",
+            keyvalues:
+            [
+                new KeyvalueDescriptor(
+                    "reach", "Reach", "", "12", KeyvalueType.Distance, KeyvalueWidget.Auto,
+                    0f, 500f, 0u, KeyvalueDescriptor.NoChoices),
+            ]);
+
+        byte[] image = SentDef.Write([schema]);
+        KeyvalueDescriptor reach = SentDef.Read(image)[0].Keyvalues[0];
+
+        image[SentDef.HeaderSize + SentDef.TypeRecordFixedSize + 0x10].ShouldBe((byte)17);
+        reach.Type.ShouldBe(KeyvalueType.Distance);
+        reach.Default.ShouldBe("12");
+        reach.Min.ShouldBe(0f);
+        reach.Max.ShouldBe(500f);
     }
 
     [Fact]

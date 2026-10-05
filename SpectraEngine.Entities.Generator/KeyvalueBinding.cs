@@ -29,7 +29,8 @@ internal readonly record struct KeyvalueRow(
 // Mirrors Core's KeyvalueType, which this assembly cannot reference. The
 // numbering is a wire byte: append only, never renumber.
 // Kinds that share a C# type (Color and Angles in a Vector3, asset paths and
-// TargetName in a string) are never inferred and must be stated.
+// TargetName in a string, Distance in a float) are never inferred and must be
+// stated.
 internal static class KeyvalueBinding
 {
     // KeyvalueType.NodeRef.
@@ -54,6 +55,7 @@ internal static class KeyvalueBinding
         new KeyvalueRow("AssetSound", 14, ClrKind.String, "string", null),
         new KeyvalueRow("Choices", 15, ClrKind.String, "string", null),
         new KeyvalueRow("Flags", 16, ClrKind.UInt, "uint", "TryParseFlags"),
+        new KeyvalueRow("Distance", 17, ClrKind.Float, "float", "TryParseFloat"),
     ];
 
     public static bool TryGet(byte value, out KeyvalueRow row)

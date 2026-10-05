@@ -822,7 +822,8 @@ Keyvalue record — 32 bytes + a variable choice list
 +0x0C  u32   DefaultRef    a STRING reference, never a typed value
 +0x10  u8    Type          closed KeyvalueType: bool, int, float, string, vec2, vec3,
                            vec4, color, angles, targetname, noderef, asset:model,
-                           asset:material, asset:texture, asset:sound, choices, flags
+                           asset:material, asset:texture, asset:sound, choices, flags,
+                           distance
 +0x11  u8    Widget        0 auto, 1 slider, 2 assetPicker, 3 entityPicker, 4 color, 5 flags
 +0x12  u16   ChoiceCount
 +0x14  f32   Min
