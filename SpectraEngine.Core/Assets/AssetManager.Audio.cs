@@ -70,6 +70,19 @@ public sealed partial class AssetManager
     }
 
     /// <summary>
+    /// Opens a cooked sound for one caller, read from the content sources now
+    /// and kept apart from the sounds <see cref="LoadAudio"/> holds. Any
+    /// thread. The caller disposes it, on the thread that reads its samples.
+    /// Throws what <see cref="LoadAudio"/> throws.
+    /// </summary>
+    public AudioAsset OpenAudio(string relativePath)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        return ReadAudioThroughContent(ContentRoot.NormalizeRelativePath(relativePath));
+    }
+
+    /// <summary>
     /// Whether any mounted source can answer for <paramref name="relativePath"/>
     /// as a sound. Any thread.
     /// </summary>

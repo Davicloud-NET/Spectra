@@ -7,9 +7,11 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Assets;
 
 /// <summary>
-/// A cooked sound the asset manager has open: the parsed <c>.saudio</c> header
-/// and a live view of its PCM. Owned by the asset manager: release it with
-/// <c>AssetManager.UnloadAudio</c>, never by disposing it yourself.
+/// A cooked sound that is open: the parsed <c>.saudio</c> header and a live
+/// view of its PCM. One from <c>AssetManager.LoadAudio</c> is the asset
+/// manager's: release it with <c>AssetManager.UnloadAudio</c>, never by
+/// disposing it yourself. One from <c>AssetManager.OpenAudio</c> is the
+/// caller's to dispose.
 /// </summary>
 public sealed class AudioAsset : IDisposable
 {
@@ -46,7 +48,7 @@ public sealed class AudioAsset : IDisposable
     /// <summary>The sound's markers in frame order; empty when it has none.</summary>
     public IReadOnlyList<AudioMarker> Markers => Info.Markers;
 
-    /// <summary>True once the manager has released it; the samples are empty afterwards.</summary>
+    /// <summary>True once it has been released; the samples are empty afterwards.</summary>
     public bool IsReleased => _blob is null;
 
     /// <summary>
@@ -56,7 +58,7 @@ public sealed class AudioAsset : IDisposable
     public ReadOnlySpan<short> Samples =>
         _blob is { } blob ? Info.Pcm(blob.Span) : default;
 
-    /// <summary>Releases the content reference. For the manager to call; idempotent.</summary>
+    /// <summary>Releases the content reference. For its owner to call; idempotent.</summary>
     public void Dispose()
     {
         _blob?.Dispose();

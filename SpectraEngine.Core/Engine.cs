@@ -768,6 +768,9 @@ public sealed class Engine
         }
 
         _inputManager.Shutdown();
+
+        // A preview holds its sound open, and may have a file on the way.
+        _soundPreview.Stop();
         _audioManager.Shutdown();
         _sceneManager.Shutdown();
         _assetManager.Shutdown();

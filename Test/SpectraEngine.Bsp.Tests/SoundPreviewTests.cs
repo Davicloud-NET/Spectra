@@ -144,6 +144,7 @@ public sealed class SoundPreviewTests
         var preview = new SoundPreview(rig.Audio, rig.Assets, log);
 
         preview.Apply("Sounds/nothing.wav");
+        WaitUntilRead(preview);
         RunFrames(rig, preview, 5);
 
         preview.Path.ShouldBeEmpty();
@@ -151,6 +152,40 @@ public sealed class SoundPreviewTests
         string line = log.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem();
         line.ShouldStartWith("Sound Sounds/nothing.wav was not played: ");
         log.MessagesAt(LogLevel.Error).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_file_that_plays_after_it_was_refused_says_so_once()
+    {
+        using var rig = new SoundPresenterRig(spareSources: 1);
+        var log = new CapturingLogger();
+        var preview = new SoundPreview(rig.Audio, rig.Assets, log);
+        preview.Apply("Sounds/later.wav");
+        WaitUntilRead(preview);
+        log.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem();
+
+        rig.Cook("Sounds/later.wav", HandBuiltSaudio.Resident(frames: 600));
+        preview.Apply("Sounds/later.wav");
+        WaitUntilRead(preview);
+        preview.Apply("Sounds/later.wav");
+        WaitUntilRead(preview);
+
+        preview.Path.ShouldBe("Sounds/later.wav");
+        log.MessagesAt(LogLevel.Information).ShouldBe(["Played sound Sounds/later.wav after an earlier refusal"]);
+    }
+
+    [Fact]
+    public void A_file_that_was_never_refused_plays_without_a_word()
+    {
+        using var rig = new SoundPresenterRig(spareSources: 1);
+        var log = new CapturingLogger();
+        var preview = new SoundPreview(rig.Audio, rig.Assets, log);
+
+        preview.Apply(SoundPresenterRig.Beep);
+        WaitUntilRead(preview);
+
+        preview.Path.ShouldBe(SoundPresenterRig.Beep);
+        log.Describe().ShouldBe("(no log entries)");
     }
 
     [Fact]
@@ -174,6 +209,7 @@ public sealed class SoundPreviewTests
         SoundPreview preview = PreviewOn(rig);
 
         preview.Apply(SoundPresenterRig.Beep);
+        WaitUntilRead(preview);
         preview.Path.ShouldBe(SoundPresenterRig.Beep);
 
         preview.Apply(string.Empty);
@@ -190,6 +226,7 @@ public sealed class SoundPreviewTests
         host.RequestSoundPreview(SoundPresenterRig.Speech);
 
         preview.TakeRequest(host);
+        WaitUntilRead(preview);
         preview.Path.ShouldBe(SoundPresenterRig.Speech);
         int uploads = rig.Backend.UploadCount;
 
@@ -303,6 +340,17 @@ public sealed class SoundPreviewTests
             rig.Presenter.Update(rig.World, SoundPresenterRig.TickSeconds);
         }
     }
+
+    // A file a host asks for is read on another thread and starts in the
+    // first frame after it has landed.
+    internal static void WaitUntilRead(SoundPreview preview) =>
+        SpinWait.SpinUntil(
+            () =>
+            {
+                preview.Update();
+                return !preview.IsLoading;
+            },
+            TimeSpan.FromSeconds(10)).ShouldBeTrue("the file was never read");
 
     internal static SoundPreview PreviewOn(SoundPresenterRig rig) =>
         new(rig.Audio, rig.Assets, new CapturingLogger());
