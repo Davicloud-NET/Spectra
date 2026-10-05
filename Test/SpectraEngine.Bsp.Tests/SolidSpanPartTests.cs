@@ -87,6 +87,20 @@ public sealed class SolidSpanPartTests
     }
 
     [Fact]
+    public void A_part_on_a_scaled_node_is_met_at_the_size_it_is_drawn()
+    {
+        var level = new SpanLevel();
+        SceneNode crate = level.Part("Crate", new Vector3(0f, 1f, -2f), new Vector3(0.5f), SpanLevel.Wood);
+        crate.LocalScale = new Vector3(1f, 1f, 3f);
+
+        SolidSpan span = level.Trace(Near, Far).ShouldHaveSingleItem();
+
+        // Three times as deep, and still measured in world units.
+        span.Start.ShouldBe(0.5f, Exact);
+        span.End.ShouldBe(3.5f, Exact);
+    }
+
+    [Fact]
     public void A_trigger_never_blocks()
     {
         SpanLevel level = Room(out SceneNode door);
