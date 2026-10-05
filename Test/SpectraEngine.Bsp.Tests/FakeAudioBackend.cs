@@ -41,11 +41,25 @@ internal sealed class FakeAudioBackend : IAudioBackend
     // Every buffer upload since the last reset, oldest first.
     public List<short[]> Uploads { get; } = [];
 
+    // Off for a test that counts allocations: an upload is then copied into
+    // the array the buffer already has, and is not listed.
+    public bool KeepsUploads { get; set; } = true;
+
+    // Uploads so far, listed or not.
+    public int UploadCount { get; private set; }
+
     // Pretends the driver consumed queued buffers.
     public void Consume(uint source, int count)
     {
         SourceRecord record = _sources[source];
         record.Processed = Math.Min(record.Queue.Count, record.Processed + count);
+    }
+
+    // Pretends the driver finished one buffer of every queue. Allocates nothing.
+    public void ConsumeOneEverywhere()
+    {
+        foreach (SourceRecord record in _sources.Values)
+            record.Processed = Math.Min(record.Queue.Count, record.Processed + 1);
     }
 
     // An underrun: everything queued played out and the source stopped.
@@ -85,9 +99,19 @@ internal sealed class FakeAudioBackend : IAudioBackend
 
     public void UploadBuffer(uint buffer, AudioBufferFormat format, ReadOnlySpan<short> pcm, int sampleRate)
     {
+        UploadCount++;
+
+        if (!KeepsUploads && _buffers.TryGetValue(buffer, out short[]? held) && held.Length == pcm.Length)
+        {
+            pcm.CopyTo(held);
+            return;
+        }
+
         short[] copy = pcm.ToArray();
         _buffers[buffer] = copy;
-        Uploads.Add(copy);
+
+        if (KeepsUploads)
+            Uploads.Add(copy);
     }
 
     public bool TryCreateSource(out uint source)

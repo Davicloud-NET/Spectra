@@ -16,14 +16,19 @@ namespace SpectraEngine.Bsp.Tests;
 public sealed class SoundPresenterLifetimeTests
 {
     [Fact]
-    public void With_no_level_running_nothing_plays()
+    public void When_the_level_ends_a_sound_other_code_plays_goes_on()
     {
         using var rig = new SoundPresenterRig();
+        AudioClip clip = rig.Audio.CreateClip(new AudioFormat(SoundPresenterRig.Rate, 1), new short[600]).ShouldNotBeNull();
+        AudioVoice preview = rig.Audio.Play(clip).ShouldNotBeNull();
+        rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Looped);
+        rig.Frame();
+        rig.Audio.ActiveVoiceCount.ShouldBe(2);
 
         rig.Presenter.Update(null, SoundPresenterRig.TickSeconds);
 
-        rig.Audio.ActiveVoiceCount.ShouldBe(0);
-        rig.Stats.ShouldBe(default(SoundStats));
+        preview.IsFinished.ShouldBeFalse();
+        rig.Audio.ActiveVoiceCount.ShouldBe(1);
     }
 
     [Fact]
@@ -67,12 +72,15 @@ public sealed class SoundPresenterLifetimeTests
     public void A_level_that_was_stopped_is_no_level_even_while_its_world_is_still_handed_over()
     {
         using var rig = new SoundPresenterRig();
-        rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Looped);
+        rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Once);
         rig.Frame();
+        rig.Backend.LiveBufferCount.ShouldBe(1);
 
         rig.World.Deactivate();
         rig.Frame();
 
+        // The buffer the sound was played from is the level's and goes with
+        // it. A sound that only stopped would leave it for the next play.
         rig.Audio.ActiveVoiceCount.ShouldBe(0);
         rig.Backend.LiveBufferCount.ShouldBe(0);
     }

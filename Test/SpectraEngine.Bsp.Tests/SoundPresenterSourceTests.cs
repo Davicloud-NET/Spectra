@@ -179,6 +179,7 @@ public sealed class SoundPresenterSourceTests
             rig.Play(speaker, i % 3 == 0 ? SoundPresenterRig.Music : SoundPresenterRig.Beep, SoundPresenterRig.Looped);
         }
 
+        rig.Backend.KeepsUploads = false;
         RunFrames(rig, door, 120);
         rig.Stats.WithSource.ShouldBe(32);
         rig.Stats.WithoutSource.ShouldBe(168);
@@ -186,6 +187,7 @@ public sealed class SoundPresenterSourceTests
         // The least of several rounds: a one-off from the runtime is not a
         // cost per frame.
         long least = long.MaxValue;
+        int uploads = rig.Backend.UploadCount;
         for (int round = 0; round < 5; round++)
         {
             long before = GC.GetAllocatedBytesForCurrentThread();
@@ -195,16 +197,21 @@ public sealed class SoundPresenterSourceTests
 
         least.ShouldBe(0L);
         rig.Stats.WithSource.ShouldBe(32);
+
+        // Every voice refilled its queue in every one of those frames.
+        (rig.Backend.UploadCount - uploads).ShouldBe(5 * 100 * 32);
     }
 
-    // A tick and a frame each, with the sounds' parent swaying a little so
-    // every source is moved every frame.
+    // A tick and a frame each. The sounds' parent sways a little, so every
+    // source is moved every frame, and the device finishes a buffer of every
+    // stream, so every queue is refilled every frame.
     private static void RunFrames(SoundPresenterRig rig, SceneNode door, int frames)
     {
         for (int i = 0; i < frames; i++)
         {
             door.LocalPosition = new Vector3(0, (i % 2) * 0.01f, 0);
             rig.World.Tick(SoundPresenterRig.TickSeconds);
+            rig.Backend.ConsumeOneEverywhere();
             rig.Audio.Update();
             rig.Presenter.Update(rig.World, SoundPresenterRig.TickSeconds);
         }
