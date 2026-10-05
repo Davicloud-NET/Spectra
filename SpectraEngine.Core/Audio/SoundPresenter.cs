@@ -240,7 +240,10 @@ public sealed class SoundPresenter
             ref readonly SoundEmitter emitter = ref presented.Emitter;
             presented.Simulated = Simulation.For(emitter.Simulated);
             _queries[asked] = new SoundQuery(
-                emitter.Node.WorldPosition, emitter.MinDistance, emitter.MaxDistance, presented.Simulated);
+                emitter.Node.WorldPosition, emitter.MinDistance, emitter.MaxDistance, presented.Simulated)
+            {
+                Body = emitter.Node,
+            };
             _asked[asked++] = i;
         }
 

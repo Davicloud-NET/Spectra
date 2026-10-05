@@ -101,8 +101,12 @@ public sealed class Engine
         _audioManager = audioManager;
         _captions = new CaptionFeed(new CaptionLibrary(assetManager.Content, LanguageTag.Default, logger));
         _captionLog = new CaptionLogView(logger);
+        var soundWalls = new WallPropagation(new SceneSoundObstacles(HeardScene), assetManager.Acoustics)
+        {
+            Profiler = renderer.Profiler,
+        };
         _soundPresenter = new SoundPresenter(
-            audioManager, assetManager, new DirectPropagation(), _captions, logger);
+            audioManager, assetManager, soundWalls, _captions, logger);
         _soundPreview = new SoundPreview(audioManager, assetManager, logger);
         _inputManager = inputManager;
         _windowModeLatch = new WindowModeLatch(logger);
@@ -116,9 +120,14 @@ public sealed class Engine
         GraphicsConsoleCommands.Register(_console.Commands, renderer);
         SoundConsoleCommands.Register(_console.Commands, _soundPresenter, audioManager, _soundPreview);
         SoundSimulationConsoleCommands.Register(_console.Commands, _soundPresenter.Simulation);
+        SoundWallConsoleCommands.Register(_console.Commands, soundWalls, renderer.Profiler);
         CaptionConsoleCommands.Register(_console.Commands, _captions);
         _entityWatch.Changed += RefreshEntityTrace;
     }
+
+    // The scene whose walls stand in a sound's way. None while there is no
+    // audio device, so nothing is traced for sound nobody hears.
+    private Scene.Scene? HeardScene() => _audioManager.IsEnabled ? _sceneManager.ActiveScene : null;
 
     // The world has one trace slot, and the console watch and a wiring view
     // may both want it.

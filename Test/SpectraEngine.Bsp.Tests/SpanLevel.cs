@@ -7,8 +7,9 @@ namespace SpectraEngine.Bsp.Tests;
 
 // A level for the span query: boxes placed by centre and half size, as world
 // brushes, cuts or parts. Origin moves the whole level and every trace with
-// it, so one test can run near the world origin and far from it.
-internal sealed class SpanLevel(Vector3 origin = default)
+// it, so one test can run near the world origin and far from it. A scene
+// given to it is built into, for a test that has one already.
+internal sealed class SpanLevel(Vector3 origin = default, Scene? scene = null)
 {
     public static readonly MaterialRef Brick = MaterialRegistry.Intern("Materials/span_brick.spectramat");
     public static readonly MaterialRef Plaster = MaterialRegistry.Intern("Materials/span_plaster.spectramat");
@@ -19,7 +20,7 @@ internal sealed class SpanLevel(Vector3 origin = default)
     private const int PlusX = 0;
     private const int PlusZ = 4;
 
-    public Scene Scene { get; } = new("SpanLevel");
+    public Scene Scene { get; } = scene ?? new("SpanLevel");
 
     public SceneNode Box(string name, Vector3 center, Vector3 half, MaterialRef material = default) =>
         Place(name, center, BrushKind.World, Brush.CreateBox(-half, half, material));

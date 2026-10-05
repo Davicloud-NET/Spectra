@@ -23,6 +23,10 @@
     <!-- The span query's level and its oracle. Run here over cooked levels. -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\SpanLevel.cs" Link="SpanLevel.cs" />
     <Compile Include="..\SpectraEngine.Bsp.Tests\SolidSpanOracle.cs" Link="SolidSpanOracle.cs" />
+    <!-- Sound through walls, heard here through a cooked level. -->
+    <Compile Include="..\SpectraEngine.Bsp.Tests\WallRig.cs" Link="WallRig.cs" />
+    <Compile Include="..\SpectraEngine.Bsp.Tests\FakeAcousticMaterials.cs" Link="FakeAcousticMaterials.cs" />
+    <Compile Include="..\SpectraEngine.Bsp.Tests\ManualClock.cs" Link="ManualClock.cs" />
     <!-- The level NoCodeLoopTests plays authored. Played cooked here. -->
     <Compile Include="..\SpectraEngine.Entities.Tests\NoCodeLoopLevel.cs" Link="NoCodeLoopLevel.cs" />
   </ItemGroup>

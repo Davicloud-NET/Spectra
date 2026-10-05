@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Assets.Images;
 using SpectraEngine.Core.Assets.Sources;
+using SpectraEngine.Core.Audio.Acoustics;
 using SpectraEngine.Core.Graphics;
 using System;
 using System.Collections.Concurrent;
@@ -123,6 +124,7 @@ public sealed partial class AssetManager : IDisposable
         ContentRootPath = Path.GetFullPath(contentRoot);
         HotReloadEnabled = hotReloadEnabled;
         Content = content;
+        Acoustics = new MaterialAcoustics(logger, content);
 
         _defaultMaterial = new Material(null) { Name = DefaultMaterialName };
         SeedBuiltInParameters(_defaultMaterial);
@@ -155,6 +157,12 @@ public sealed partial class AssetManager : IDisposable
     /// Where content bytes come from. Mounted at start-up; safe to read from any thread.
     /// </summary>
     public ContentSourceStack Content { get; }
+
+    /// <summary>
+    /// What each material is made of, for sound, read from
+    /// <see cref="Content"/>. Any thread.
+    /// </summary>
+    public MaterialAcoustics Acoustics { get; }
 
     /// <summary>
     /// Whether changed files are re-decoded and swapped in. Set before loading
@@ -234,6 +242,9 @@ public sealed partial class AssetManager : IDisposable
         {
             return false;
         }
+
+        // It may have asked before the file was there, when nothing drew with it.
+        Acoustics.Forget(MaterialRegistry.Intern(key));
 
         lock (_materialSync)
         {

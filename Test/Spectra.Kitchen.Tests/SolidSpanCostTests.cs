@@ -98,7 +98,7 @@ public class SolidSpanCostTests
     // The demo's world as brushes: its play area with the start room, its small
     // room, and a field of 192 scattered boxes laid out like the demo's. The
     // real demo scene needs a renderer and loaded assets to build.
-    private static Scene DemoSizedLevel()
+    internal static Scene DemoSizedLevel()
     {
         var scene = new Scene("DemoSized");
 
