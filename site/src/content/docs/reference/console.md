@@ -15,7 +15,9 @@ The panel also runs the editor's own words, such as `undo` and `snap off`. A lin
 
 Replies show in the Console and Output panels, which share one list of 500 lines. Everything the engine's console prints also goes to the log file in the `logs` folder, marked `[console]`.
 
-Play mode holds the mouse, so you can't type in the panel while the level is playing. Turn the watch on before you press Play and read the lines as you walk. To send an input to a running level, use the demo.
+While the level plays, the game holds the mouse. Press <kbd>&#96;</kbd> to take it back: the Console panel opens with the caret in it, and the level keeps running while you type. Click in the view to walk again.
+
+On a German keyboard that key is <kbd>ö</kbd>.
 
 ### The demo
 
@@ -26,6 +28,8 @@ dotnet run --project SpectraEngine.Executable -- d3d11 --play --command="ent_wat
 Each `--command` is one line. The lines run in the order given, once the level has loaded and before `--play` starts it. A line that needs the running level starts with `wait`.
 
 Replies go to the log, marked `[console]`. An error reads `[console] error:` and a warning `[console] warning:`.
+
+Add `--console` and the demo also reads lines from the terminal it was started in, for as long as it runs. That is how you send an input to a level while you watch it in the demo's window.
 
 ## Syntax
 

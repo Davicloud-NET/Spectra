@@ -7,8 +7,9 @@ As of 2026-10-05 these parts exist. Everything else below is still a design.
 - The console core in `SpectraEngine.Core/ConsoleSystem`: the tokenizer, the command table, and `help`, `echo` and `wait`.
 - The host queue, `EngineHost.SubmitConsoleLine`, and `FrameSnapshot.ConsoleLines`, which carries what the console printed back to the host.
 - The entity commands `ent_fire`, `ent_list`, `ent_show` and `ent_watch`.
-- The demo's `--command="<line>"`.
+- The demo's `--command="<line>"`, and `--console`, which reads lines from its terminal.
 - The editor's Console panel, which forwards any line it does not know to the engine.
+- The console key during play: it frees the mouse and opens the panel, and a click in the view takes the mouse back.
 
 Two things were built differently from the text below. There is one console per engine: `SpectraConsole` is an instance that `Engine` owns, not a static facade. And the command that prints an entity is `ent_show`, not `ent_dump`.
 

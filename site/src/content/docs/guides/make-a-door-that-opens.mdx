@@ -45,7 +45,7 @@ Everything you insert comes from the Build tab of the ribbon:
 
 </Steps>
 
-The door closes by itself after 4 seconds, and a Trigger Once fires only the first time. So the door opens once and stays shut after that.
+The door closes by itself after 4 seconds, and a Trigger Once fires only the first time. So the door opens once and stays shut after that. If you are standing in the doorway when it closes, it opens again and waits another 4 seconds.
 
 To keep it open, select the door and set Wait to -1. To have it open every time the player walks in, use a Trigger Multiple in place of the Trigger Once.
 
@@ -56,6 +56,8 @@ Look at the wire first. A wire whose target matches nothing says so underneath, 
 Then open the Problems panel: View, Panels, Problems. A door that still has a block inside it cannot move, and the panel lists it with the fix.
 
 To see the wire fire, open the Console panel, type `ent_watch on` and then press Play. Every output that fires and every input that arrives prints a line. The lines are explained in [Console](/reference/console/).
+
+You can also open the door by hand. While the level plays, press <kbd>&#96;</kbd>, type `ent_fire Door Open` and press <kbd>Enter</kbd>. If that opens it, the door is fine and the fault is in the trigger or the wire.
 
 ## With a button
 

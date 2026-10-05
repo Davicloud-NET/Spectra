@@ -98,7 +98,7 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 
 ### Docs and CI
 
-- The user docs are a Starlight site in `site/`: first pages on the concepts, level and material files, logic entities, the cook and the keyboard. The C# reference is generated from `///` comments.
+- The user docs are a Starlight site in `site/`: pages on the concepts, level and material files, the entity classes, the console, the cook and the keyboard, and a first guide that builds a door with no code. The C# reference is generated from `///` comments.
 - CI runs on Windows and Linux: the test suites, a NativeAOT publish on each, the cook determinism tests and a boot from a cooked pack.
 
 ## In progress

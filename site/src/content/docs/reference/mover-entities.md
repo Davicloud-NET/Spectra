@@ -1,6 +1,6 @@
 ---
 title: Mover entities
-description: Doors, buttons and pistons, the entity classes that slide a brush.
+description: Doors, buttons and lifts, the entity classes that slide a brush.
 ---
 
 These classes slide the brush they are on. Each one is a part, or a group of parts, that carries the entity. See [Entities and wiring](/concepts/entities-and-wiring/) for how an entity gets a shape.
@@ -16,6 +16,10 @@ Where you place the brush in the editor is one end of its trip: a door is built 
 A trip takes its distance divided by its speed, rounded up to a whole tick. There are 60 ticks a second. The trip back takes as long as the trip out, and the brush ends on the spot you built it at.
 
 Only parts move. If a block is still inside the entity, the brush stays where it is and the log names it. The editor's Problems panel lists these.
+
+A player standing on a brush that moves is carried along with it. A player who jumps off does not keep its speed.
+
+A door or a linear mover does not crush the player. If its next step would press further into a player who is already caught against something, it does not take the step. What happens next is listed under each class. A button never stops.
 
 ## func_door
 
@@ -47,9 +51,11 @@ A door with nothing set slides up by its own height, less 0.05.
 
 A door that starts open fires nothing when the level starts.
 
+A door that would close on the player opens again, fires `OnOpen`, and closes after its wait as usual. A door that would open into the player closes again the same way. A door stopped before it has left its place stays there and tries again on every tick.
+
 ## func_movelinear
 
-A brush that slides to wherever it is sent and rests there: a piston, a sliding wall, a gate that stops half way.
+A brush that slides to wherever it is sent and rests there: a lift, a piston, a gate that stops half way.
 
 | Setting | In the editor | Default | Meaning |
 |---|---|---|---|
@@ -70,6 +76,10 @@ A brush that slides to wherever it is sent and rests there: a piston, a sliding 
 | `OnFullyClosed` | The brush arrives at position 0. |
 
 Stopping anywhere between the two ends fires nothing. Neither does a start position.
+
+A linear mover that would squeeze the player waits where it is, and goes on once they are out of the way.
+
+It has no input that sends it back by itself. For a lift that returns, wire its own `OnFullyOpen` to its own `Close` with a delay of a few seconds.
 
 ## func_button
 

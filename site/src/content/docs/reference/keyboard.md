@@ -3,7 +3,7 @@ title: Keyboard and mouse
 description: Every shortcut in the editor, and the keys that work while you play.
 ---
 
-The editor shows this list under Help, Keyboard reference, without the Playing section.
+The editor shows this list under Help, Keyboard reference. Of the Playing section it has only <kbd>E</kbd> and the console key.
 
 Letter keys stand down while a camera is driving: with the right mouse button held, <kbd>W</kbd> flies forward instead of picking the move tool.
 
@@ -82,6 +82,9 @@ Letter keys stand down while a camera is driving: with the right mouse button he
 | <kbd>F9</kbd> | Draw the character capsule, while playing. |
 | <kbd>F1</kbd> to <kbd>F5</kbd> | Wireframe, CSG vertices, bounds, face normals, node axes. |
 | <kbd>F6</kbd> | Cycle the rendering pipeline. |
+| <kbd>&#96;</kbd> | Open the Console panel. |
+| <kbd>Ctrl</kbd> + <kbd>&#96;</kbd> | Show or hide the bottom panel. |
+| <kbd>F11</kbd> | Give the view the whole window, or put the panels back. |
 
 ## Playing
 
@@ -94,4 +97,6 @@ These work while the level plays. <kbd>F8</kbd> starts it.
 | <kbd>Shift</kbd> | Run. |
 | <kbd>Space</kbd> | Jump. |
 | <kbd>E</kbd> | Use what you are looking at, from up to 2 units away. This presses a button. |
+| <kbd>&#96;</kbd> | Free the mouse and open the Console panel. The level keeps running. On a German keyboard this key is <kbd>ö</kbd>. |
+| Click in the view | Take the mouse back after the console, or after switching to another window. |
 | <kbd>F8</kbd> or <kbd>Esc</kbd> | Stop playing. |

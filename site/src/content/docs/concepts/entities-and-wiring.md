@@ -72,7 +72,7 @@ A wire with a limited number of fires is the same: the count runs down while you
 
 ## Watching the wiring
 
-The console can print every output that fires and every input that arrives while you play. Type `ent_watch on` in the editor's Console panel, then press Play. A wire aimed at a name nothing has prints a `miss` line.
+The console can print every output that fires and every input that arrives while you play. Type `ent_watch on` in the editor's Console panel, then press Play. A wire aimed at a name nothing has prints a `miss` line. The <kbd>&#96;</kbd> key opens the panel while the level plays.
 
 The console also lists a level's entities, shows one entity's wires and state, and sends an input by hand. See [Console](/reference/console/).
 
