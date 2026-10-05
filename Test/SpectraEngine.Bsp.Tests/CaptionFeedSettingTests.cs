@@ -273,4 +273,41 @@ public sealed class CaptionFeedSettingTests
         next.Text.ShouldBe("A short beep");
         next.Id.ShouldBeGreaterThan(first);
     }
+
+    [Fact]
+    public void Reading_the_files_again_while_a_sound_plays_shows_its_caption_once_with_the_new_words()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Captions("en", BeepCaption);
+        rig.Play(Beep);
+        rig.Step();
+        long before = rig.Shown.ShouldHaveSingleItem().Id;
+
+        rig.Captions("en", $"{Beep} = A short beep");
+        rig.Feed.Library.Reload();
+        rig.Play(Beep);
+        rig.Step();
+
+        Caption after = rig.Shown.ShouldHaveSingleItem();
+        after.Text.ShouldBe("A short beep");
+        after.Id.ShouldBeGreaterThan(before);
+    }
+
+    [Fact]
+    public void Another_project_language_switches_the_words_of_a_sound_that_fell_back_to_it()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Captions("en", BeepCaption);
+        rig.Captions("de", $"{Beep} = Piepton");
+        rig.Feed.Language = "fr";
+        rig.Play(Beep, CaptionFeedRig.Near, looped: true);
+        rig.Step();
+        string inEnglish = rig.Shown.ShouldHaveSingleItem().Text;
+
+        rig.Feed.Library.ProjectLanguage = "de";
+        rig.Step();
+
+        inEnglish.ShouldBe("Beep sounds");
+        rig.Shown.ShouldHaveSingleItem().Text.ShouldBe("Piepton");
+    }
 }

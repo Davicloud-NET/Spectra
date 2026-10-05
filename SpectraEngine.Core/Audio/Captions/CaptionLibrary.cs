@@ -8,26 +8,24 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Audio.Captions;
 
 /// <summary>
-/// Answers what captions a sound has in a language. A sound with a subtitle
-/// file beside it is speech. A sound with a line in the language's caption
-/// file is a sound caption. A sound with nothing in the language asked for
-/// gets the captions of the project's language. Each file is read once and
-/// kept. Render thread only.
+/// Answers what captions a sound has in a language: speech from a subtitle
+/// file beside it, or a sound caption from the language's caption file.
 /// </summary>
+// Each file is read once and kept until Reload. Render thread only.
 public sealed class CaptionLibrary
 {
     private readonly IContentSource _content;
     private readonly ILogger _logger;
     private readonly Dictionary<string, LanguageCaptions> _languages = new(StringComparer.Ordinal);
 
-    // Files the log has named as missing or refused. Each is named once.
-    private readonly HashSet<string> _reported = new(StringComparer.OrdinalIgnoreCase);
+    // Caption files the log has named as missing. Each is named once.
+    private readonly HashSet<string> _reportedMissing = new(StringComparer.OrdinalIgnoreCase);
 
     private string _projectLanguage;
 
     /// <param name="content">Where the caption and subtitle files are read from.</param>
     /// <param name="projectLanguage">The language the project names as its own.</param>
-    /// <param name="logger">Told once about a file that is missing or cannot be read.</param>
+    /// <param name="logger">Told about a file that is missing or cannot be read.</param>
     public CaptionLibrary(IContentSource content, string projectLanguage, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(content);
@@ -47,9 +45,17 @@ public sealed class CaptionLibrary
         set
         {
             ThrowIfNotALanguage(value);
+            if (string.Equals(value, _projectLanguage, StringComparison.Ordinal))
+                return;
+
             _projectLanguage = value;
+            Generation++;
         }
     }
+
+    // Goes up when a sound's answer may have changed: a reload, or another
+    // project language. The feed starts over then.
+    internal int Generation { get; private set; }
 
     /// <summary>
     /// The captions of a sound in a language, or in the project's language
@@ -76,8 +82,15 @@ public sealed class CaptionLibrary
         return _content.Exists(CaptionFile.PathFor(language));
     }
 
-    /// <summary>Forgets what was read, so a file that has changed since is read again.</summary>
-    public void Reload() => _languages.Clear();
+    /// <summary>
+    /// Forgets what was read, so a file that has changed since is read again.
+    /// A subtitle file that is still refused is warned about again.
+    /// </summary>
+    public void Reload()
+    {
+        _languages.Clear();
+        Generation++;
+    }
 
     private SoundCaptions? FindIn(string soundPath, string language)
     {
@@ -141,9 +154,9 @@ public sealed class CaptionLibrary
         }
         catch (SubtitleFormatException refusal)
         {
-            if (_reported.Add(path))
-                _logger.LogWarning("Subtitles will not show: {Reason}", refusal.Message);
-
+            // Said on every read: a file is read once until Reload, and
+            // silence after an edit would look like a fix.
+            _logger.LogWarning("Subtitles will not show: {Reason}", refusal.Message);
             return null;
         }
         finally
@@ -173,7 +186,7 @@ public sealed class CaptionLibrary
 
     private void ReportMissing(string path, string language)
     {
-        if (!_reported.Add(path))
+        if (!_reportedMissing.Add(path))
             return;
 
         if (string.Equals(language, _projectLanguage, StringComparison.Ordinal))

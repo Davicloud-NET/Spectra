@@ -7,14 +7,12 @@ namespace SpectraEngine.Core.Audio.Captions;
 
 /// <summary>
 /// The captions that show right now. The sound presenter fills it once a
-/// frame, and whatever draws captions only reads it: the engine's own view, a
-/// game that restyles that view, or a game that draws its own. The feed keeps
-/// the rules about hearing and reading. Nothing about looks is in it.
-/// Render thread only. Another thread reads the list a
-/// <see cref="Hosting.FrameSnapshot"/> carries.
+/// frame, and whatever draws captions only reads it.
 /// </summary>
-// A caption is one line of one sound. Several playing copies of the sound
-// share it, so a sound that plays again refreshes its caption and adds none.
+// It keeps the rules about hearing and reading and nothing about looks. A
+// caption is one line of one sound: playing copies of the sound share it, so
+// a sound that plays again refreshes its caption and adds none. Render thread
+// only. Another thread reads the list a FrameSnapshot carries.
 public sealed class CaptionFeed
 {
     private Shown[] _shown = new Shown[8];
@@ -28,8 +26,10 @@ public sealed class CaptionFeed
     // Null follows the project's language.
     private string? _language;
 
-    // The language the captions on show were looked up in.
+    // The language the captions on show were looked up in, and the library's
+    // generation then.
     private string _shownLanguage;
+    private int _shownGeneration;
 
     /// <param name="library">Where each sound's captions are looked up.</param>
     public CaptionFeed(CaptionLibrary library)
@@ -38,6 +38,7 @@ public sealed class CaptionFeed
 
         Library = library;
         _shownLanguage = library.ProjectLanguage;
+        _shownGeneration = library.Generation;
     }
 
     /// <summary>Where each sound's captions are looked up.</summary>
@@ -95,9 +96,9 @@ public sealed class CaptionFeed
     public long LastId { get; private set; }
 
     /// <summary>
-    /// The captions that show now, by when each started and then by id. The
-    /// same list until something in it changes, and a list is never changed
-    /// once it has been handed out.
+    /// The captions that show now, by when each started and then by id. A
+    /// list that was handed out is never changed: a caption that appears,
+    /// goes, moves or is heard better or worse makes a new one.
     /// </summary>
     public IReadOnlyList<Caption> Captions
     {
@@ -125,10 +126,16 @@ public sealed class CaptionFeed
         if (deltaSeconds > 0f)
             Now += deltaSeconds;
 
+        // Captions are told apart by the answer the library gave. After a
+        // reload a sound gets another answer, so what shows starts over.
         string language = Language;
-        if (!string.Equals(language, _shownLanguage, StringComparison.Ordinal))
+        bool isStale = Library.Generation != _shownGeneration
+            || !string.Equals(language, _shownLanguage, StringComparison.Ordinal);
+
+        if (isStale)
         {
             _shownLanguage = language;
+            _shownGeneration = Library.Generation;
             Lookup++;
             RemoveAll();
         }
@@ -212,9 +219,10 @@ public sealed class CaptionFeed
     // for the next one, so an edit made in between shows.
     internal void EndLevel()
     {
+        Library.Reload();
+        _shownGeneration = Library.Generation;
         Lookup++;
         RemoveAll();
-        Library.Reload();
     }
 
     private void Listen(ref Shown shown, Vector3? place, float loudness)

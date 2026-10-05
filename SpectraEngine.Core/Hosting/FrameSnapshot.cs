@@ -184,7 +184,8 @@ public sealed class FrameSnapshot
     /// <summary>
     /// The captions that show now, by when each started and then by id. A
     /// host that draws captions reads them here. The same instance rides
-    /// every snapshot until a caption changes.
+    /// every snapshot until a caption appears, goes, moves or is heard
+    /// better or worse.
     /// </summary>
     public IReadOnlyList<Caption> Captions { get; init; } = Array.Empty<Caption>();
 

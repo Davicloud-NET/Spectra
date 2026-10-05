@@ -177,12 +177,47 @@ public sealed class CaptionLibraryTests
         CaptionLibrary library = content.Library();
 
         SoundCaptions captions = library.Find(Guard, "en").ShouldNotBeNull();
-        library.Reload();
         library.Find(Guard, "en");
+        library.Find(@"sounds\vo\GUARD_HEY.wav", "en");
 
         captions.Kind.ShouldBe(CaptionKind.Sound);
         content.Log.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem().ShouldStartWith(
             "Subtitles will not show: Sounds/vo/guard_hey.en.vtt(3): '00:00,000' is not a time");
+    }
+
+    [Fact]
+    public void A_subtitle_file_that_is_still_refused_when_it_is_read_again_is_warned_about_again()
+    {
+        const string SecondCue = "\nHey!\n\n00:02 --> 00:03.000\nStop.";
+        using var content = new CaptionContent();
+        content.Write("Sounds/vo/guard_hey.en.vtt", "WEBVTT\n\n00:00,000 --> 00:01.400" + SecondCue);
+        CaptionLibrary library = content.Library();
+        library.Find(Guard, "en").ShouldBeNull();
+
+        // The first mistake is put right and the second is still there.
+        content.Write("Sounds/vo/guard_hey.en.vtt", "WEBVTT\n\n00:00.000 --> 00:01.400" + SecondCue);
+        library.Reload();
+        library.Find(Guard, "en").ShouldBeNull();
+
+        IReadOnlyList<string> said = content.Log.MessagesAt(LogLevel.Warning);
+        said.Count.ShouldBe(2);
+        said[0].ShouldStartWith("Subtitles will not show: Sounds/vo/guard_hey.en.vtt(3): '00:00,000' is not a time");
+        said[1].ShouldStartWith("Subtitles will not show: Sounds/vo/guard_hey.en.vtt(6): '00:02' is not a time");
+    }
+
+    [Fact]
+    public void A_subtitle_file_that_was_refused_and_is_put_right_gives_its_lines_when_it_is_read_again()
+    {
+        using var content = new CaptionContent();
+        content.Write("Sounds/vo/guard_hey.en.vtt", "WEBVTT\n\n00:00,000 --> 00:01,400\nHey!");
+        CaptionLibrary library = content.Library();
+        library.Find(Guard, "en").ShouldBeNull();
+
+        content.Write("Sounds/vo/guard_hey.en.vtt", GuardInEnglish);
+        library.Reload();
+
+        library.Find(Guard, "en").ShouldNotBeNull().Lines.Count.ShouldBe(2);
+        content.Log.MessagesAt(LogLevel.Warning).Count.ShouldBe(1);
     }
 
     [Fact]
