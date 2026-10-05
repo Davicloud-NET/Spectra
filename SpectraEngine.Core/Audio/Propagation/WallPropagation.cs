@@ -2,24 +2,15 @@ using System;
 using System.Numerics;
 using SpectraEngine.Core.Audio.Acoustics;
 using SpectraEngine.Core.Diagnostics;
-using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Core.Audio.Propagation;
 
 /// <summary>
 /// Propagation through walls: a sound is as loud as its distance says, times
-/// what the solids between it and the listener let through, and as dull as
-/// they make it. Each solid costs what its material takes at its thickness.
-/// What a sound is part of is not in its way, by the rule of
-/// <see cref="ISoundObstacles.Trace"/>. Any other solid the sound or the
-/// listener is inside counts by how deep that end is in it. A list of solids
-/// that ran out of room counts for what it holds. Render thread only.
+/// what the solids between it and the listener let through. Render thread only.
 /// </summary>
-// A sound is heard along several lines, to the listener and to a ring round
-// the listener's head, and their gains are averaged: an opening that half the
-// lines pass lets half the sound through. Averaged in decibels, a view half
-// open beside a thick wall would sound nearly shut, and a real gap leaks far
-// more than that.
+// It keeps an answer for each sound and traces the ones that are due, within
+// a number of lines a frame.
 public sealed class WallPropagation : ISoundPropagation
 {
     /// <summary>A sound at or below this gain from distance alone is not traced. 60 dB down.</summary>
@@ -31,9 +22,6 @@ public sealed class WallPropagation : ISoundPropagation
     /// </summary>
     public const float JumpDistance = SoundPresenter.ListenerJumpDistance;
 
-    // More solids than this on one line are past the most walls can take.
-    private const int MaxSpans = 16;
-
     // What a sound's turn is ranked by, most urgent first: one with no answer,
     // one traced along a single line so far, one whose answer has grown old,
     // and one whose world, listener or place changed. Within the first, second
@@ -44,15 +32,13 @@ public sealed class WallPropagation : ISoundPropagation
     private const double OldestCounted = 900;
 
     private readonly ISoundObstacles _world;
-    private readonly IAcousticMaterials _materials;
     private readonly WallPropagationSettings _settings;
     private readonly TimeProvider _clock;
     private readonly double _secondsPerTick;
 
     private readonly DirectPropagation _distance = new();
-    private readonly HeadLines _lines;
+    private readonly SoundLines _lines;
     private readonly WallAnswers _answers = new();
-    private readonly SolidSpan[] _spans = new SolidSpan[MaxSpans];
 
     // Per sound of the frame: its answer's slot, or -1 where walls do not count.
     private int[] _slots = [];
@@ -84,10 +70,9 @@ public sealed class WallPropagation : ISoundPropagation
         ArgumentOutOfRangeException.ThrowIfLessThan(_settings.TracesPerFrame, _settings.Lines, nameof(settings));
 
         _world = world;
-        _materials = materials;
         _clock = clock ?? TimeProvider.System;
         _secondsPerTick = 1d / _clock.TimestampFrequency;
-        _lines = new HeadLines(_settings.Lines, _settings.HeadRadius);
+        _lines = new SoundLines(world, materials, _settings);
     }
 
     /// <summary>Times the tracing under <see cref="FramePhase.SoundWalls"/> when set.</summary>
@@ -257,48 +242,15 @@ public sealed class WallPropagation : ISoundPropagation
 
     private void Trace(in Frame frame, in SoundQuery sound, ref WallAnswer answer, int lines)
     {
-        HeadLines.Ends ends = _lines.From(sound.Position, frame.Listener);
+        AcousticGains through = _lines.Through(in sound, frame.Listener, lines);
 
-        AcousticGains toListener = Through(in sound, ends[0], out bool listenerInSolid);
-        float gain = toListener.Gain;
-        float high = toListener.Gain * toListener.GainHf;
-
-        for (int line = 1; line < lines; line++)
-        {
-            AcousticGains through = Through(in sound, ends[line], out bool endInSolid);
-
-            // A point of the ring inside a wall the listener is not in is no
-            // place to listen from. Its line counts as the listener's own.
-            if (endInSolid && !listenerInSolid)
-                through = toListener;
-
-            gain += through.Gain;
-            high += through.Gain * through.GainHf;
-        }
-
-        // The high end is what the lines leave at 5 kHz over what they leave
-        // in all, so the open lines carry it, as an opening does.
-        answer.Gain = gain / lines;
-        answer.GainHf = MathF.Min(high / gain, 1f);
+        answer.Gain = through.Gain;
+        answer.GainHf = through.GainHf;
         answer.Lines = lines;
         answer.Sound = sound.Position;
         answer.Listener = frame.Listener;
         answer.Revision = frame.Revision;
         answer.TracedAt = frame.Now;
-    }
-
-    // What the solids on the line from a sound to one end leave of it.
-    private AcousticGains Through(in SoundQuery sound, Vector3 end, out bool endInSolid)
-    {
-        Vector3 from = _world.HeardFrom(sound.Position, end, sound.Body);
-        float length = Vector3.Distance(from, end);
-
-        // A list that ran out of room still counts for what it holds.
-        int count = _world.Trace(from, end, sound.Body, _spans, out _);
-        ReadOnlySpan<SolidSpan> solids = _spans.AsSpan(0, count);
-
-        endInSolid = WallLoss.EndsInSolid(solids, length);
-        return WallLoss.Sum(solids, length, _materials).ToGains();
     }
 
     private void Apply(Span<SoundPaths> results)

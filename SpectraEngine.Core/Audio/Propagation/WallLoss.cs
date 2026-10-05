@@ -17,11 +17,10 @@ public static class WallLoss
     public const float EndDepth = 0.25f;
 
     /// <summary>
-    /// The loss along a line of <paramref name="length"/> that crosses
-    /// <paramref name="spans"/>: each solid's material through its thickness,
-    /// added up. A solid the line starts or ends in counts by how deep that
-    /// end is in it, see <see cref="EndDepth"/>.
+    /// The loss along a line of <paramref name="length"/>: what each of
+    /// <paramref name="spans"/> takes at its thickness, added up.
     /// </summary>
+    // A solid the line starts or ends in counts by how deep that end is in it.
     public static AcousticLoss Sum(ReadOnlySpan<SolidSpan> spans, float length, IAcousticMaterials materials)
     {
         ArgumentNullException.ThrowIfNull(materials);
