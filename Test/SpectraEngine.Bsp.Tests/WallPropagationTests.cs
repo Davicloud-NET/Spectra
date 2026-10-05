@@ -54,6 +54,34 @@ public sealed class WallPropagationTests
     }
 
     [Fact]
+    public void A_sound_with_walls_switched_off_is_heard_through_them_and_costs_no_trace()
+    {
+        WallRig rig = OneWall(thickness: 1f, WallRig.Concrete, out int sound);
+        rig.Heard(sound).Gain.ShouldBeLessThan(rig.Direct(sound).Gain * 0.5f);
+
+        rig.Simulate(sound, SoundSimulation.All & ~SoundSimulation.Walls);
+        rig.Frame();
+
+        rig.Heard(sound).ShouldBe(rig.Direct(sound));
+        rig.Walls.Stats.Sounds.ShouldBe(0);
+        rig.Walls.Stats.Traces.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Switching_walls_back_on_muffles_the_sound_on_that_frame()
+    {
+        WallRig rig = OneWall(thickness: 1f, WallRig.Concrete, out int sound);
+        SoundPath muffled = rig.Heard(sound);
+        rig.Simulate(sound, SoundSimulation.All & ~SoundSimulation.Walls);
+        rig.Frame();
+
+        rig.Simulate(sound, SoundSimulation.All);
+        rig.Frame();
+
+        rig.Heard(sound).ShouldBe(muffled);
+    }
+
+    [Fact]
     public void Five_centimetres_of_wood_let_more_through_than_a_metre_of_concrete()
     {
         AcousticGains wood = ThroughOneWall(thickness: 0.05f, SpanLevel.Wood);

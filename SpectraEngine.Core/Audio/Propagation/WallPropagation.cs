@@ -118,8 +118,9 @@ public sealed class WallPropagation : ISoundPropagation
         Stats = default;
     }
 
-    // The one place a sound says whether walls count for it.
-    private static bool WallsCountFor(in SoundQuery sound) => true;
+    // The one place a sound says whether walls count for it: its own
+    // switch, less the engine's. Not HasFlag, which boxes in a Debug build.
+    private static bool WallsCountFor(in SoundQuery sound) => (sound.Simulated & SoundSimulation.Walls) != 0;
 
     // Gives every sound that walls count for its answer from last frame, or
     // an empty one, and lists the ones whose answer is due, most urgent first.

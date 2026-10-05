@@ -57,6 +57,10 @@ internal sealed class WallRig
 
     public void Move(int sound, Vector3 position) => _sounds[sound] = _sounds[sound] with { Position = position };
 
+    // Says what is worked out for a sound, as the presenter does from its switches.
+    public void Simulate(int sound, SoundSimulation simulated) =>
+        _sounds[sound] = _sounds[sound] with { Simulated = simulated };
+
     public void RemoveAt(int sound) => _sounds.RemoveAt(sound);
 
     // One frame: the clock moves on and every sound is asked about.

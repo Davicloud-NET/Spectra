@@ -262,7 +262,7 @@ sound_simulate: placed on, fades off, walls on, doppler on.
 sound_simulate: placed on, fades on, walls on, doppler on.
 ```
 
-Alone it prints the four parts. With a name and `on` or `off` it sets that part, and `all` sets the four together. [What is simulated](/reference/sound-entities/#what-is-simulated) says what each part does. `walls` does nothing yet: the engine does not muffle a sound behind a wall.
+Alone it prints the four parts. With a name and `on` or `off` it sets that part, and `all` sets the four together. [What is simulated](/reference/sound-entities/#what-is-simulated) says what each part does.
 
 It is for listening: switch a part off, hear the level without it, and switch it on again. Every sound has the same four as settings of its own. A part is heard when it is on here and on the sound, so `off` here switches it off for every sound, and `on` leaves each sound to its own setting.
 

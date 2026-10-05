@@ -28,7 +28,7 @@ Plays a sound from where it stands: a hum, an alarm, a spoken line.
 | `startplaying` | Start playing | 0 | Set to 1 and the sound plays when the level starts. |
 | `placed` | Placed | 1 | The sound is heard from where it stands. Set to 0 and it plays in both ears. |
 | `fades` | Fades with distance | 1 | The sound gets quieter with distance. Set to 0 and it is as loud everywhere as it is up close. |
-| `walls` | Muffled by walls | 1 | Walls between the sound and the listener will make it quieter and duller. The engine does not do that yet, so this setting changes nothing for now. |
+| `walls` | Muffled by walls | 1 | Walls between the sound and the listener make it quieter and duller. Set to 0 and it is heard through them as if they were not there. |
 | `doppler` | Doppler | 1 | The pitch rises while the sound and the listener close in and falls while they part. Set to 0 and it keeps its own pitch. |
 
 Both distances are in units, and a unit is a metre. The volume falls off between the two and reaches nothing at the far one.
@@ -86,17 +86,17 @@ A stereo file is muffled too, by what stands between its node and the listener.
 A muffled sound keeps its caption for as long as it can be heard at all.
 
 Sound does not go round corners yet. A sound in the next room is heard through the wall, also when a door further along stands open. [`sound_walls`](/reference/console/#sound_walls) prints what the walls cost a frame.
+
 ## What is simulated
 
-A sound has four settings for what is worked out on its way to the listener. All four start at 1. Three of them do something today:
+A sound has four settings for what is worked out on its way to the listener. All four start at 1.
 
 | Setting | At 1 | At 0 |
 |---|---|---|
 | `placed` | The sound is heard from where it stands. | It plays in both ears, the same from every side. |
 | `fades` | It gets quieter with distance, between its two distances. | It is as loud everywhere as it is up close. |
+| `walls` | What stands between it and the listener makes it quieter and duller. See [Behind a wall](#behind-a-wall). | It is heard through walls as if they were not there. |
 | `doppler` | Its pitch rises while it and the listener close in, and falls while they part. | It keeps its own pitch. |
-
-The fourth is `walls`. It is for walls that make a sound behind them quieter and duller, and the engine does not do that yet. Every sound passes through walls, so `walls` changes nothing at 1 or at 0. Neither does `walls` in [`sound_simulate`](/reference/console/#sound_simulate).
 
 Each setting can be changed without the others, with one exception: a sound that is not placed has no Doppler. Some combinations a level needs:
 
@@ -104,6 +104,7 @@ Each setting can be changed without the others, with one exception: a sound that
 - Rain, room tone or music that belongs to a place: `placed` at 0. It fills both ears, and it fades as the player walks away.
 - A narrator, or a voice in the player's head: `placed` and `fades` at 0. It sounds the same wherever the player stands.
 - A radio in a passing car whose music should not bend: `doppler` at 0.
+- A call over the radio, or a cue the player must not miss behind a door: `walls` at 0.
 
 A stereo file is never placed, whatever `placed` says. A sound that is not placed has no Doppler, whatever `doppler` says: it has no way to the listener that could get longer or shorter.
 

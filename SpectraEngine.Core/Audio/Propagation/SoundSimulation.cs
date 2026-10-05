@@ -19,8 +19,7 @@ public enum SoundSimulation
     Fades = 2,
 
     /// <summary>What lies between the sound and the listener makes it quieter and duller.</summary>
-    // For a propagation that knows walls, which gets it in its SoundQuery.
-    // DirectPropagation knows none and does not read it.
+    // Read by WallPropagation. DirectPropagation knows no walls.
     Walls = 4,
 
     /// <summary>The pitch rises as the sound and the listener close in and falls as they part.</summary>
