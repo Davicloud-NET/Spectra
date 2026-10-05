@@ -4,7 +4,7 @@ using System.Globalization;
 
 namespace SpectraEngine.Editor.Shell.Logic;
 
-/// <summary>Measures a label's text in the fonts the canvas draws it in.</summary>
+/// <summary>Measures text in the fonts the Logic view draws it in.</summary>
 public sealed class LogicTextRuler : ILogicTextMeasure
 {
     private const int MostRemembered = 4096;
@@ -29,7 +29,7 @@ public sealed class LogicTextRuler : ILogicTextMeasure
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
             style == LogicTextStyle.MonoLabel ? _fonts.Mono : _fonts.Sans,
-            _fonts.Small,
+            style == LogicTextStyle.Status ? _fonts.Secondary : _fonts.Small,
             foreground: null);
 
         if (_widths.Count >= MostRemembered)

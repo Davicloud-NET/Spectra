@@ -1,28 +1,36 @@
 using Avalonia;
 using SpectraEngine.Editor.Shell.Logic;
+using System;
+using System.Globalization;
+using System.IO;
+using System.Text.RegularExpressions;
 
 namespace SpectraEngine.Editor.Tests.Logic;
 
 /// <summary>What the rows round the Logic view's graph show as the view narrows.</summary>
 public sealed class LogicViewFitTests
 {
-    private static readonly LogicStatus Busy = new(
-        "9 entities",
-        "9 wires",
-        "1 wire goes nowhere",
-        "PlayerStart and 3 more entities have no wires and are not shown.",
-        "");
+    private const string LongNote = "PlayerStart and 3 more entities have no wires and are not shown.";
+    private const string ShortNote = "4 entities have no wires.";
+
+    private static readonly FixedWidthRuler Ruler = new();
+
+    private static readonly LogicStatus Busy =
+        new("9 entities", "9 wires", "1 wire goes nowhere", LongNote, "") { UnwiredShort = ShortNote };
 
     private static readonly LogicStatus Quiet = new("2 entities", "1 wire", "", "", "");
 
     private static LogicViewFit Fit(double width, bool isPlaying = false, double height = 600) =>
-        LogicViewFit.For(new Size(width, height), isPlaying, Busy);
+        LogicViewFit.For(new Size(width, height), isPlaying, Busy, Ruler);
+
+    // What a part of the status row takes under the fake ruler, with its gap.
+    private static double Part(string text) => text.Length * FixedWidthRuler.CharacterWidth + 14;
 
     [Fact]
     public void A_wide_view_shows_everything_and_the_pill_only_while_a_level_runs()
     {
-        Fit(1123, isPlaying: true).ShouldBe(LogicViewFit.Everything);
-        Fit(1123).ShouldBe(LogicViewFit.Everything with { ShowsPlaying = false, ShowsTick = false, ShowsEvents = false });
+        Fit(1200, isPlaying: true).ShouldBe(LogicViewFit.Everything);
+        Fit(1200).ShouldBe(LogicViewFit.Everything with { ShowsPlaying = false, ShowsTick = false, ShowsEvents = false });
     }
 
     [Fact]
@@ -105,24 +113,50 @@ public sealed class LogicViewFitTests
     }
 
     [Fact]
-    public void The_status_row_keeps_the_link_longest_and_shows_a_sentence_only_with_room_to_read_it()
+    public void The_status_row_keeps_the_link_longest_and_shows_a_sentence_whole_or_not_at_all()
     {
-        LogicViewFit wide = Fit(1123);
-        LogicViewFit middle = Fit(480);
+        double fixedParts = 20 + Part(Busy.Entities) + Part(Busy.Wires) + Part(Busy.GoingNowhere);
+
+        LogicViewFit wide = Fit(1200);
+        LogicViewFit holdsTheLong = Fit(fixedParts + Part(LongNote));
+        LogicViewFit holdsTheShort = Fit(fixedParts + Part(LongNote) - 1);
+        LogicViewFit holdsNeither = Fit(fixedParts + Part(ShortNote) - 1);
         LogicViewFit narrow = Fit(200);
 
         (wide.ShowsCounts && wide.ShowsNotes && wide.ShowsHint).ShouldBeTrue();
-        (middle.ShowsCounts && middle.ShowsNotes).ShouldBeTrue();
-        middle.ShowsHint.ShouldBeFalse();
+        wide.UsesShortNotes.ShouldBeFalse();
+
+        (holdsTheLong.ShowsNotes && !holdsTheLong.UsesShortNotes).ShouldBeTrue();
+        (holdsTheShort.ShowsNotes && holdsTheShort.UsesShortNotes).ShouldBeTrue();
+        holdsTheShort.ShowsHint.ShouldBeFalse();
+        (holdsNeither.ShowsCounts && !holdsNeither.ShowsNotes && !holdsNeither.UsesShortNotes).ShouldBeTrue();
         (narrow.ShowsCounts || narrow.ShowsNotes || narrow.ShowsHint).ShouldBeFalse();
     }
 
     [Fact]
     public void A_status_row_with_less_to_say_has_room_for_the_hint_sooner()
     {
-        LogicViewFit.For(new Size(480, 500), false, Quiet).ShowsHint.ShouldBeTrue();
-        LogicViewFit.For(new Size(480, 500), false, Busy).ShowsHint.ShouldBeFalse();
-        LogicViewFit.For(new Size(180, 500), false, Quiet).ShowsCounts.ShouldBeTrue();
+        LogicViewFit.For(new Size(600, 500), false, Quiet, Ruler).ShowsHint.ShouldBeTrue();
+        LogicViewFit.For(new Size(600, 500), false, Busy, Ruler).ShowsHint.ShouldBeFalse();
+        LogicViewFit.For(new Size(180, 500), false, Quiet, Ruler).ShowsCounts.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Counts_that_run_to_thousands_take_the_room_they_need_from_the_hint()
+    {
+        var large = new LogicStatus("4,000 entities", "12,345 wires", "", "", "");
+        double counts = 20 + Part(large.Entities) + Part(large.Wires);
+        double hint = Part(LogicViewText.EditingHint);
+
+        LogicViewFit.For(new Size(counts + hint, 500), false, large, Ruler).ShowsHint.ShouldBeTrue();
+        LogicViewFit.For(new Size(counts + hint - 1, 500), false, large, Ruler).ShowsHint.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_heights_the_fit_reckons_with_are_the_theme_s()
+    {
+        LogicViewFit.Rows.ShouldBe(Token("SpectraLogicToolbarHeight") + Token("SpectraStatusBarHeight"));
+        LogicViewFit.EventStrip.ShouldBe(Token("SpectraLogicEventStripHeight"));
     }
 
     [Fact]
@@ -131,6 +165,22 @@ public sealed class LogicViewFitTests
         Fit(480, isPlaying: true, height: 500).ShowsEvents.ShouldBeTrue();
         Fit(480, isPlaying: true, height: 200).ShowsEvents.ShouldBeFalse();
         Fit(480, isPlaying: false, height: 500).ShowsEvents.ShouldBeFalse();
+    }
+
+    // Tokens.axaml is read as text: this project loads no theme.
+    private static double Token(string key)
+    {
+        var folder = new DirectoryInfo(AppContext.BaseDirectory);
+        while (folder is not null && !File.Exists(Path.Combine(folder.FullName, "Spectra.slnx")))
+            folder = folder.Parent;
+
+        string tokens = File.ReadAllText(Path.Combine(
+            folder.ShouldNotBeNull().FullName, "SpectraEngine.Editor", "Theme", "Tokens.axaml"));
+
+        Match match = Regex.Match(tokens, $@"<x:Double\s+x:Key=""{key}"">\s*(?<value>[0-9.]+)\s*</x:Double>");
+        match.Success.ShouldBeTrue(key);
+
+        return double.Parse(match.Groups["value"].Value, CultureInfo.InvariantCulture);
     }
 
     private static int Count(params bool[] shown)

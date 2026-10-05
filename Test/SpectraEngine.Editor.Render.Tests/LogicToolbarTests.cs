@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using SpectraEngine.Editor.Shell.Logic;
 
@@ -41,6 +42,97 @@ public sealed class LogicToolbarTests(RibbonSession session)
             {
                 if (part.IsVisible && part.Name != "FilterBox")
                     Width(part).ShouldBeGreaterThanOrEqualTo(part.DesiredSize.Width - Slack, $"{part.Name}, {state} at {width}");
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData("whole")]
+    [InlineData("playing")]
+    public void Every_sentence_under_the_graph_shows_whole_or_not_at_all_at_any_width(string state)
+    {
+        var ruler = new LogicTextRuler();
+
+        Sweep(state, (view, width) =>
+        {
+            Control status = view.FindControl<DockPanel>("StatusRow").ShouldNotBeNull();
+            foreach (TextBlock text in Shown(status))
+                Holds(text, ruler.Width(text.Text ?? "", LogicTextStyle.Status), $"{state} at {width}");
+
+            // A line of the event strip gives up its route first. What went
+            // wrong stays whole for as long as the strip can hold it.
+            Control strip = view.FindControl<Control>("EventStrip").ShouldNotBeNull();
+            foreach (TextBlock text in Shown(strip).Where(text => text.Text == "nothing is named VaultDor"))
+            {
+                if (width >= 320)
+                    Holds(text, ruler.Width(text.Text ?? "", LogicTextStyle.MonoLabel), $"{state} at {width}");
+            }
+        });
+    }
+
+    [Fact]
+    public void At_480_the_status_row_says_in_fewer_words_what_it_has_no_room_to_say_in_full()
+    {
+        session.On(() =>
+        {
+            (LogicView view, Window window) = LogicSheetTests.Open(LogicSheetTests.Drive("whole", 480, Height), 480, Height);
+
+            try
+            {
+                TextBlock note = view.FindControl<TextBlock>("UnwiredNote").ShouldNotBeNull();
+
+                note.IsEffectivelyVisible.ShouldBeTrue();
+                note.Text.ShouldBe("4 entities have no wires.");
+                ToolTip.GetTip(note).ShouldBe("PlayerStart and 3 more entities have no wires and are not shown.");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void A_running_level_says_so_in_the_event_strip_until_a_wire_has_fired()
+    {
+        session.On(() =>
+        {
+            (LogicView view, Window window) = LogicSheetTests.Open(
+                LogicSheetTests.Drive("quiet-playing", 480, Height), 480, Height);
+            (LogicView busy, Window other) = LogicSheetTests.Open(LogicSheetTests.Drive("playing", 480, Height), 480, Height);
+
+            try
+            {
+                view.FindControl<TextBlock>("NoEvents").ShouldNotBeNull().IsEffectivelyVisible.ShouldBeTrue();
+                busy.FindControl<TextBlock>("NoEvents").ShouldNotBeNull().IsVisible.ShouldBeFalse();
+            }
+            finally
+            {
+                window.Close();
+                other.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void A_view_with_no_model_shows_nothing_to_press()
+    {
+        session.On(() =>
+        {
+            var view = new LogicView();
+            var window = new Window { Content = view, Width = 480, Height = Height };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            try
+            {
+                view.GetVisualDescendants().OfType<Button>()
+                    .Where(button => button.IsEffectivelyVisible)
+                    .ShouldBeEmpty();
+            }
+            finally
+            {
+                window.Close();
             }
         });
     }
@@ -151,4 +243,12 @@ public sealed class LogicToolbarTests(RibbonSession session)
     }
 
     private static double Width(Control part) => part.Bounds.Width + part.Margin.Left + part.Margin.Right;
+
+    private static IEnumerable<TextBlock> Shown(Control within) => within.GetVisualDescendants()
+        .OfType<TextBlock>()
+        .Where(text => text.IsEffectivelyVisible && !string.IsNullOrEmpty(text.Text));
+
+    // A text block that is narrower than its words has cut them.
+    private static void Holds(TextBlock text, double words, string where) =>
+        text.Bounds.Width.ShouldBeGreaterThanOrEqualTo(words - Slack, $"'{text.Text}', {where}");
 }

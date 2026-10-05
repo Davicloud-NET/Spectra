@@ -255,6 +255,29 @@ public sealed class LogicViewModelTests
     }
 
     [Fact]
+    public void Wiring_that_goes_away_is_not_announced_and_wiring_that_comes_back_is()
+    {
+        LogicViewModel model = Model(LogicScopeMode.AroundSelection);
+        model.Apply(Snapshot(_level, null, StartZone));
+
+        int announced = 0;
+        model.ShownEntitiesChanged += () => announced++;
+
+        // The engine was told the view is hidden and sends no wiring. A
+        // request sent now would have it send wiring again.
+        model.Apply(Snapshot(null, null, StartZone));
+
+        model.ShownEntityIds.ShouldBeEmpty();
+        announced.ShouldBe(0);
+
+        // Shown again, the same entities have to be asked for again.
+        model.Apply(Snapshot(_level, null, StartZone));
+
+        model.ShownEntityIds.ShouldBe([StartZone, StartDoor]);
+        announced.ShouldBe(1);
+    }
+
+    [Fact]
     public void The_status_row_counts_what_is_on_show_and_names_what_is_wrong()
     {
         LogicViewModel model = Model();
@@ -269,6 +292,7 @@ public sealed class LogicViewModelTests
         {
             // Where the link about the wire that goes nowhere leads.
             GoingNowhereSender = OpenVault,
+            UnwiredShort = "4 entities have no wires.",
         });
         model.Hint.ShouldBe("Double-click a card to frame it in the viewport.");
         model.EmptyText.ShouldBe("");

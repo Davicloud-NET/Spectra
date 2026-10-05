@@ -25,6 +25,9 @@ internal sealed class LogicFonts
     // The size of a class line, a note, a state row or a label.
     public double Small { get; } = LogicTheme.FontSize("SpectraFontSmall");
 
+    // The size of the status row's sentences.
+    public double Secondary { get; } = LogicTheme.FontSize("SpectraFontSecondary");
+
     // The size of the name on a card seen from far out.
     public double Far { get; } = LogicTheme.FontSize("SpectraLogicFarNameSize");
 

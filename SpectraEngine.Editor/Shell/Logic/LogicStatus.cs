@@ -25,6 +25,9 @@ public sealed record LogicStatus(
     /// </summary>
     public Guid? GoingNowhereSender { get; init; }
 
+    /// <summary>The same as <see cref="Unwired"/> in fewer words, for a narrow row.</summary>
+    public string UnwiredShort { get; init; } = "";
+
     /// <summary>Reads the status off what a scope shows.</summary>
     /// <param name="scoped">The cards and edges shown.</param>
     /// <param name="info">The snapshot they were built from, for how much of the level it lists.</param>
@@ -40,9 +43,8 @@ public sealed record LogicStatus(
             return None with { Truncated = TruncatedText(info) };
 
         // Near a selection most of the level is left out, wired or not.
-        string unwired = mode == LogicScopeMode.WholeLevel
-            ? LogicViewText.Unwired(scoped.Graph.FirstUnwiredName, counts.UnwiredEntities)
-            : "";
+        int unwiredCount = mode == LogicScopeMode.WholeLevel ? counts.UnwiredEntities : 0;
+        string unwired = LogicViewText.Unwired(scoped.Graph.FirstUnwiredName, unwiredCount);
 
         return new LogicStatus(
             LogicViewText.Entities(counts.Entities),
@@ -52,6 +54,7 @@ public sealed record LogicStatus(
             TruncatedText(info))
         {
             GoingNowhereSender = FirstGoingNowhere(scoped),
+            UnwiredShort = LogicViewText.UnwiredShort(unwiredCount),
         };
     }
 

@@ -82,15 +82,16 @@
             BorderThickness="0,0,0,1"
             Padding="8,0"
             ClipToBounds="True">
-      <!-- The filter box takes what is left, up to its full width. The column
-           after it takes the rest, so the keys at the right stay there. -->
+      <!-- The filter box takes what is left, up to its full width, which the
+           code sets on its column. The column after it takes the rest, so the
+           keys at the right stay there. -->
       <Grid x:Name="Toolbar">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="1000*" MaxWidth="228" />
+          <ColumnDefinition Width="1000*" />
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
@@ -187,24 +188,36 @@
             BorderThickness="0,1,0,0"
             Padding="10,3"
             ClipToBounds="True">
-      <ItemsControl ItemsSource="{Binding Events}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="logic:LogicEventLine">
-            <DockPanel Height="{StaticResource SpectraLogicEventRowHeight}">
-              <TextBlock DockPanel.Dock="Left" Classes="event tick" MinWidth="30" TextAlignment="Right"
-                         Text="{Binding Tick}" />
-              <TextBlock DockPanel.Dock="Left" Classes="event" Classes.failed="{Binding IsFailure}"
-                         Margin="12,0,0,0" Text="{Binding Route}" />
-              <TextBlock Classes="event failed" Margin="16,0,0,0" Text="{Binding Reason}" />
-            </DockPanel>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <Panel>
+        <!-- The reason is given its room before the route, so a strip too
+             narrow for a whole line cuts the route short and keeps the
+             reason, which names what went wrong. The line is only as wide as
+             its words, so the reason follows the route and is not pushed to
+             the far side. -->
+        <ItemsControl ItemsSource="{Binding Events}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="logic:LogicEventLine">
+              <DockPanel Height="{StaticResource SpectraLogicEventRowHeight}" HorizontalAlignment="Left">
+                <TextBlock DockPanel.Dock="Left" Classes="event tick" MinWidth="30" TextAlignment="Right"
+                           Text="{Binding Tick}" />
+                <TextBlock DockPanel.Dock="Right" Classes="event failed" Margin="12,0,0,0"
+                           Text="{Binding Reason}" IsVisible="{Binding IsFailure}" />
+                <TextBlock Classes="event" Classes.failed="{Binding IsFailure}"
+                           Margin="12,0,0,0" Text="{Binding Route}" />
+              </DockPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock x:Name="NoEvents" Classes="status" Margin="12,0,0,0"
+                   Text="{x:Static logic:LogicViewText.NoEvents}" />
+      </Panel>
     </Border>
 
     <!-- Docked in the order they are given room: the counts and the link
-         first, the sentence about entities with no wires last, cut short
-         where the row is too narrow for all of it. -->
+         first, the sentences last. The code shows a sentence only where all
+         of it fits, and the short one about entities with no wires where the
+         long one does not. -->
     <Border Grid.Row="3"
             Height="{StaticResource SpectraStatusBarHeight}"
             BorderBrush="{StaticResource SpectraBorderSoft}"
@@ -232,7 +245,7 @@
           <TextBlock DockPanel.Dock="Left" Classes="status" Margin="0,0,14,0"
                      Text="{Binding Status.Truncated}"
                      IsVisible="{Binding Status.Truncated, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-          <TextBlock Classes="status" Text="{Binding Status.Unwired}" />
+          <TextBlock x:Name="UnwiredNote" Classes="status" />
         </DockPanel>
       </DockPanel>
     </Border>

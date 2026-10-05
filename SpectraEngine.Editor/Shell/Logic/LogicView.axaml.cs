@@ -20,6 +20,9 @@ public partial class LogicView : UserControl
     public static readonly StyledProperty<LogicViewModel?> ModelProperty =
         AvaloniaProperty.Register<LogicView, LogicViewModel?>(nameof(Model));
 
+    private readonly LogicTextRuler _ruler = new();
+    private const int FilterColumn = 4;
+
     private LogicViewModel? _heard;
     private bool _isShown;
 
@@ -30,7 +33,8 @@ public partial class LogicView : UserControl
 
         Graph.SelectRequested += (entity, adds) => SelectRequested?.Invoke(entity, adds);
         Graph.FrameRequested += entity => FrameRequested?.Invoke(entity);
-        ApplyFit();
+        Toolbar.ColumnDefinitions[FilterColumn].MaxWidth = LogicViewFit.MostFilterWidth + FilterBox.Margin.Left;
+        ShowModel();
     }
 
     /// <summary>
@@ -57,8 +61,7 @@ public partial class LogicView : UserControl
         if (change.Property != ModelProperty)
             return;
 
-        Root.DataContext = Model;
-        Graph.Model = Model;
+        ShowModel();
         Listen(_isShown ? Model : null);
     }
 
@@ -100,7 +103,17 @@ public partial class LogicView : UserControl
             model.PropertyChanged += OnModelChanged;
 
         ShowSteps();
+        ShowEvents();
         ApplyFit();
+    }
+
+    // Without a model the view is blank. Its bindings would otherwise fall
+    // back to showing everything, the Whole level button among it.
+    private void ShowModel()
+    {
+        Root.DataContext = Model;
+        Root.IsVisible = Model is not null;
+        Graph.Model = Model;
     }
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs change)
@@ -109,6 +122,10 @@ public partial class LogicView : UserControl
         {
             case nameof(LogicViewModel.Steps):
                 ShowSteps();
+                break;
+
+            case nameof(LogicViewModel.Events):
+                ShowEvents();
                 break;
 
             case nameof(LogicViewModel.IsPlaying) or nameof(LogicViewModel.Status):
@@ -122,8 +139,8 @@ public partial class LogicView : UserControl
     private void ApplyFit()
     {
         double width = Bounds.Width;
-        LogicViewFit fit = LogicViewFit.For(
-            Bounds.Size, Model?.IsPlaying ?? false, Model?.Status ?? LogicStatus.None);
+        LogicStatus status = Model?.Status ?? LogicStatus.None;
+        LogicViewFit fit = LogicViewFit.For(Bounds.Size, Model?.IsPlaying ?? false, status, _ruler);
 
         ShowLabel.IsVisible = fit.ShowsLabels;
         StepsLabel.IsVisible = fit.ShowsLabels;
@@ -141,9 +158,13 @@ public partial class LogicView : UserControl
 
         Counts.IsVisible = fit.ShowsCounts;
         Notes.IsVisible = fit.ShowsNotes;
+        UnwiredNote.Text = fit.UsesShortNotes ? status.UnwiredShort : status.Unwired;
+        ToolTip.SetTip(UnwiredNote, fit.UsesShortNotes ? status.Unwired : null);
         HintText.IsVisible = fit.ShowsHint;
         EventStrip.IsVisible = fit.ShowsEvents;
     }
+
+    private void ShowEvents() => NoEvents.IsVisible = Model is not { Events.Count: > 0 };
 
     private void ShowSteps() =>
         StepsBox.Text = Model?.Steps.ToString(CultureInfo.InvariantCulture) ?? "";

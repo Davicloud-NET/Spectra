@@ -19,11 +19,13 @@ public readonly record struct LogicViewFit
     /// <summary>The narrowest the filter box still has room for its whole placeholder.</summary>
     public const double LongPlaceholderWidth = 150;
 
-    /// <summary>The least of a status sentence that is worth reading.</summary>
-    public const double LeastNoteWidth = 160;
-
     /// <summary>The least height the graph keeps before the event strip gives way.</summary>
     public const double LeastGraphHeight = 96;
+
+    // The toolbar and the status row, which are always there, and the event
+    // strip. LogicViewFitTests holds them to the theme's heights.
+    internal const double Rows = 62;
+    internal const double EventStrip = 64;
 
     // What each part of the toolbar takes with its margin, measured in the
     // shell's fonts with a little to spare. LogicToolbarTests holds the
@@ -39,15 +41,11 @@ public readonly record struct LogicViewFit
     private const double Tick = 76;
     private const double ZoomKeys = 92;
 
-    // The rows that are always there, and the strip.
-    private const double Rows = 62;
-    private const double EventStrip = 64;
-
-    // The status row: its padding, the two counts, the link and the hint.
+    // The status row's padding, and the gap that sets one of its parts off
+    // from the next. The parts themselves are measured: they are sentences
+    // with names and counts in them.
     private const double StatusPadding = 20;
-    private const double Counts = 122;
-    private const double Link = 128;
-    private const double Hint = 280;
+    private const double StatusGap = 14;
 
     /// <summary>Everything, as in a wide view of a running level.</summary>
     public static LogicViewFit Everything { get; } = new()
@@ -91,6 +89,9 @@ public readonly record struct LogicViewFit
     /// <summary>The status row's sentences: what the level has more of than the view shows.</summary>
     public bool ShowsNotes { get; init; }
 
+    /// <summary>Whether the sentence about entities with no wires is the short one.</summary>
+    public bool UsesShortNotes { get; init; }
+
     /// <summary>The hint at the right of the status row.</summary>
     public bool ShowsHint { get; init; }
 
@@ -111,9 +112,11 @@ public readonly record struct LogicViewFit
     /// <param name="size">The size of the whole view.</param>
     /// <param name="isPlaying">Whether a level runs, which adds the pill, the tick and the strip.</param>
     /// <param name="status">What the status row has to say.</param>
-    public static LogicViewFit For(Size size, bool isPlaying, LogicStatus status)
+    /// <param name="ruler">Measures the status row's sentences.</param>
+    public static LogicViewFit For(Size size, bool isPlaying, LogicStatus status, ILogicTextMeasure ruler)
     {
         ArgumentNullException.ThrowIfNull(status);
+        ArgumentNullException.ThrowIfNull(ruler);
 
         LogicViewFit fit = Everything with
         {
@@ -122,29 +125,47 @@ public readonly record struct LogicViewFit
             ShowsEvents = isPlaying && size.Height >= Rows + EventStrip + LeastGraphHeight,
         };
 
-        return fit.WithStatus(size.Width, status).WithToolbar(size.Width);
+        string hint = isPlaying ? LogicViewText.PlayingHint : LogicViewText.EditingHint;
+        return fit.WithStatus(size.Width, status, hint, ruler).WithToolbar(size.Width);
     }
 
     /// <summary>How wide the filter box is in a view of a width. Zero when it is not shown.</summary>
     public double FilterWidth(double width) =>
         ShowsFilter ? Math.Clamp(width - ToolbarWidth - FilterGap, 0, MostFilterWidth) : 0;
 
-    // The link is the row's news and stays. The counts give way to it, a
-    // sentence shows only with room to be read, and the hint comes last.
-    private LogicViewFit WithStatus(double width, LogicStatus status)
+    // The link is the row's news and stays. The counts give way to it. A
+    // sentence shows whole or not at all, the short one where the long one
+    // has no room. The hint comes last.
+    private LogicViewFit WithStatus(double width, LogicStatus status, string hint, ILogicTextMeasure ruler)
     {
-        bool hasNotes = status.Unwired.Length > 0 || status.Truncated.Length > 0;
-        double link = status.GoingNowhere.Length > 0 ? Link : 0;
+        double link = Part(status.GoingNowhere, ruler);
+        double counts = Part(status.Entities, ruler) + Part(status.Wires, ruler);
         double left = width - StatusPadding - link;
 
-        bool counts = link == 0 || left >= Counts;
-        left -= counts ? Counts : 0;
+        bool showsCounts = link == 0 || left >= counts;
+        left -= showsCounts ? counts : 0;
 
-        bool notes = hasNotes && left >= LeastNoteWidth;
-        left -= notes ? LeastNoteWidth : 0;
+        double truncated = Part(status.Truncated, ruler);
+        double longNotes = truncated + Part(status.Unwired, ruler);
+        double shortNotes = truncated + Part(status.UnwiredShort, ruler);
 
-        return this with { ShowsCounts = counts, ShowsNotes = notes, ShowsHint = left >= Hint };
+        bool showsLong = longNotes > 0 && left >= longNotes;
+        bool showsShort = !showsLong && status.UnwiredShort.Length > 0 && left >= shortNotes;
+        left -= showsLong ? longNotes : showsShort ? shortNotes : 0;
+
+        return this with
+        {
+            ShowsCounts = showsCounts,
+            ShowsNotes = showsLong || showsShort,
+            UsesShortNotes = showsShort,
+            ShowsHint = left >= Part(hint, ruler),
+        };
     }
+
+    // What a part of the status row takes with the gap that sets it off.
+    // Nothing when it has nothing to say.
+    private static double Part(string text, ILogicTextMeasure ruler) =>
+        text.Length == 0 ? 0 : Math.Ceiling(ruler.Width(text, LogicTextStyle.Status)) + StatusGap;
 
     // Each step gives up the next thing, until what is left fits.
     private LogicViewFit WithToolbar(double width)

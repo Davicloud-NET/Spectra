@@ -30,6 +30,9 @@ public static class LogicViewText
     /// <summary>The same where the box is too narrow for it.</summary>
     public const string FilterPlaceholderShort = "Filter";
 
+    /// <summary>What the event strip says before any wire has done anything.</summary>
+    public const string NoEvents = "Nothing has fired yet.";
+
     /// <summary>How many entities have a card.</summary>
     public static string Entities(int count) => count == 1 ? "1 entity" : $"{Number(count)} entities";
 
@@ -66,6 +69,14 @@ public static class LogicViewText
             _ => $"{first} and {Number(count - 1)} more entities have no wires and are not shown.",
         };
     }
+
+    /// <summary>The same in fewer words, for a row too narrow for the name.</summary>
+    public static string UnwiredShort(int count) => count switch
+    {
+        <= 0 => "",
+        1 => "1 entity has no wires.",
+        _ => $"{Number(count)} entities have no wires.",
+    };
 
     /// <summary>What to say when the level has more entities than the view was given.</summary>
     public static string Truncated(int listed, int total) =>

@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using SpectraEngine.Editor.Shell.Logic;
 
 using static SpectraEngine.Editor.Tests.Logic.LogicFixture;
+using static SpectraEngine.Editor.Tests.Logic.LogicPlayFixture;
 
 namespace SpectraEngine.Editor.Render.Tests;
 
@@ -86,6 +87,83 @@ public sealed class LogicCanvasTests(RibbonSession session)
 
             graph.Selected.ShouldBe([(VaultDoor, false)]);
             graph.Framed.ShouldBe([VaultDoor]);
+        });
+    }
+
+    [Fact]
+    public void A_double_click_frames_the_card_it_began_on_though_the_first_click_moved_the_graph()
+    {
+        On("around-relay", graph =>
+        {
+            Point door = graph.ToWindow(graph.Scene.Card("VaultDoor").Header.Center);
+            Point onCanvas = graph.Window.TranslatePoint(door, graph.Canvas).ShouldNotBeNull();
+
+            graph.Window.MouseDown(door, MouseButton.Left);
+            graph.Window.MouseUp(door, MouseButton.Left);
+
+            // The engine answers the first click before the second press
+            // comes. Near the selection that is another graph, fitted anew.
+            graph.Model.Apply(Snapshot(Level(VaultEntities()), null, VaultDoor));
+            Dispatcher.UIThread.RunJobs();
+            graph.Model.HitTest(onCanvas).Card.ShouldNotBeSameAs(graph.Scene.Card("VaultDoor"));
+
+            graph.Window.MouseDown(door, MouseButton.Left);
+            graph.Window.MouseUp(door, MouseButton.Left);
+
+            graph.Selected.ShouldBe([(VaultDoor, false)]);
+            graph.Framed.ShouldBe([VaultDoor]);
+        });
+    }
+
+    [Fact]
+    public void A_press_on_the_graph_takes_the_keyboard_from_the_filter_box()
+    {
+        On("whole", graph =>
+        {
+            TextBox filter = graph.View.FindControl<TextBox>("FilterBox").ShouldNotBeNull();
+            filter.Focus();
+            filter.IsFocused.ShouldBeTrue();
+
+            graph.Click(graph.Scene.Card("Presses").Header.Center);
+
+            filter.IsFocused.ShouldBeFalse();
+            graph.Canvas.IsFocused.ShouldBeTrue();
+        });
+    }
+
+    [Fact]
+    public void A_wheel_notch_during_a_drag_stays_and_the_drag_goes_on_from_there()
+    {
+        On("whole", graph =>
+        {
+            Point from = graph.ToWindow(Ground);
+
+            graph.Window.MouseDown(from, MouseButton.Left);
+            graph.Window.MouseMove(from + new Vector(30, 12));
+            graph.Window.MouseWheel(from + new Vector(30, 12), new Vector(0, 1));
+            LogicPanZoom zoomed = graph.Model.View;
+
+            graph.Window.MouseMove(from + new Vector(50, 22));
+            graph.Window.MouseUp(from + new Vector(50, 22), MouseButton.Left);
+
+            zoomed.Zoom.ShouldBeGreaterThan(LogicPanZoom.Fit(graph.Scene.Size, graph.Model.ViewSize).Zoom);
+            graph.Model.View.ShouldBe(zoomed.MovedBy(new Vector(20, 10)));
+        });
+    }
+
+    [Fact]
+    public void A_level_that_starts_is_fitted_into_the_room_the_event_strip_leaves()
+    {
+        On("around-relay", graph =>
+        {
+            double before = graph.Canvas.Bounds.Height;
+
+            graph.Model.Apply(Snapshot(Level(VaultEntities()), VaultPlaying(), OpenVault));
+            Dispatcher.UIThread.RunJobs();
+
+            graph.Canvas.Bounds.Height.ShouldBe(before - LogicViewFit.EventStrip);
+            graph.Model.ViewSize.ShouldBe(graph.Canvas.Bounds.Size);
+            graph.Model.View.ShouldBe(LogicPanZoom.Fit(graph.Scene.Size, graph.Canvas.Bounds.Size));
         });
     }
 
@@ -202,6 +280,10 @@ public sealed class LogicCanvasTests(RibbonSession session)
 
                 graph.Model.ViewSize.ShouldBe(graph.Canvas.Bounds.Size);
                 graph.Selected.ShouldBe([(Presses, false)]);
+
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+                LogicSheetTests.DistinctColours(other.GetLastRenderedFrame().ShouldNotBeNull())
+                    .ShouldBeGreaterThan(8, "the view drew nothing in the window it moved to");
             }
             finally
             {

@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 
+using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Inspection;
 using SpectraEngine.Editor.Shell.Logic;
 
@@ -25,8 +26,29 @@ public sealed class LogicSheetTests(RibbonSession session)
 {
     private const double Scaling = 2.0;
 
-    // The toolbar and the status row, which the graph does not get.
-    private const double Rows = 62;
+    // Everything a sheet shows is decided here, before its window opens: a
+    // change made after the first layout may miss the frame that is captured.
+    // The size is the graph's, for the sheets that look from a zoom.
+    private static readonly Dictionary<string, Action<LogicViewModel, Size>> States = new()
+    {
+        ["whole"] = (model, _) => Whole(model, Snapshot(VaultLevel())),
+        ["around-relay"] = (model, _) => model.Apply(Snapshot(VaultLevel(), null, OpenVault)),
+        ["playing"] = (model, _) => Whole(model, Snapshot(VaultLevel(), VaultPlaying(), OpenVault)),
+        ["playing-near"] = (model, _) => model.Apply(Snapshot(VaultLevel(), VaultPlaying(), OpenVault)),
+        ["empty"] = (model, _) => model.Apply(Snapshot(VaultLevel())),
+        ["no-wires"] = (model, _) => model.Apply(Snapshot(Level(Entity(1, "PlayerStart", "info_player_start")))),
+        ["far"] = (model, graph) => LookFrom(model, 0.2, graph),
+        ["compact"] = (model, graph) => LookFrom(model, 0.35, graph),
+        ["filter"] = (model, _) =>
+        {
+            model.Filter = "door";
+            Whole(model, Snapshot(VaultLevel(), null, OpenVault));
+        },
+        ["long-names"] = (model, _) => Whole(model, Snapshot(LongNames())),
+        ["long-names-playing"] = (model, _) => Whole(model, Snapshot(LongNames(), LongPlaying())),
+        ["quiet-playing"] = (model, _) => Whole(model, Snapshot(VaultLevel(), Playing())),
+        ["stubs"] = (model, _) => Whole(model, Snapshot(Stubs())),
+    };
 
     /// <summary>Where the sheets land. Gitignored.</summary>
     public static string OutputDirectory { get; } =
@@ -67,10 +89,14 @@ public sealed class LogicSheetTests(RibbonSession session)
     }
 
     // Not asked for by name. They show what the others cannot: text cut to
-    // its card, the cards that are not entities, what a filter dims, the
-    // cards between near and far, a level with no wires, and the smallest pane.
+    // its card and a label wider than a lane, the same level running, a
+    // level that runs before any wire has fired, the cards that are not
+    // entities, what a filter dims, the cards between near and far, a level
+    // with no wires, and the smallest pane.
     [Theory]
     [InlineData("long-names", 1123, 500)]
+    [InlineData("long-names-playing", 1123, 500)]
+    [InlineData("quiet-playing", 480, 500)]
     [InlineData("stubs", 1123, 500)]
     [InlineData("filter", 1123, 880)]
     [InlineData("compact", 1123, 880)]
@@ -98,6 +124,30 @@ public sealed class LogicSheetTests(RibbonSession session)
         });
     }
 
+    [Theory]
+    [InlineData("whole")]
+    [InlineData("around-relay")]
+    [InlineData("playing")]
+    public void The_vault_level_fitted_into_a_pane_480_wide_keeps_its_ports_state_and_labels(string state)
+    {
+        session.On(() =>
+        {
+            (LogicView view, Window window) = Open(Drive(state, 480, 500), 480, 500);
+
+            try
+            {
+                LogicViewModel model = view.Model.ShouldNotBeNull();
+
+                model.View.ShouldBe(LogicPanZoom.Fit(model.Scene.ShouldNotBeNull().Size, model.ViewSize));
+                LogicDrawMetrics.DetailAt(model.View.Zoom).ShouldBe(LogicDetail.Full);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     internal static (LogicView View, Window Window) Open(LogicViewModel model, double width, double height)
     {
         var view = new LogicView { Model = model };
@@ -109,71 +159,19 @@ public sealed class LogicSheetTests(RibbonSession session)
         return (view, window);
     }
 
-    // Everything a sheet shows is decided here, before its window opens: a
-    // change made after the first layout may miss the frame that is captured.
     internal static LogicViewModel Drive(string state, double width, double height)
     {
         var model = new LogicViewModel { Schemas = Catalog };
-        LogicGraphInfo level = Level(VaultEntities());
-
-        switch (state)
-        {
-            case "whole":
-                model.Mode = LogicScopeMode.WholeLevel;
-                model.Apply(Snapshot(level));
-                break;
-
-            case "around-relay":
-                model.Apply(Snapshot(level, null, OpenVault));
-                break;
-
-            case "playing":
-                model.Mode = LogicScopeMode.WholeLevel;
-                model.Apply(Snapshot(level, VaultPlaying(), OpenVault));
-                break;
-
-            case "playing-near":
-                model.Apply(Snapshot(level, VaultPlaying(), OpenVault));
-                break;
-
-            case "empty":
-                model.Apply(Snapshot(level));
-                break;
-
-            case "no-wires":
-                model.Apply(Snapshot(Level(Entity(1, "PlayerStart", "info_player_start"))));
-                break;
-
-            case "far":
-                model.Mode = LogicScopeMode.WholeLevel;
-                model.Apply(Snapshot(level, null, OpenVault));
-                LookFrom(model, 0.2, new Size(width, height - Rows));
-                break;
-
-            case "compact":
-                model.Mode = LogicScopeMode.WholeLevel;
-                model.Apply(Snapshot(level, null, OpenVault));
-                LookFrom(model, 0.35, new Size(width, height - Rows));
-                break;
-
-            case "filter":
-                model.Mode = LogicScopeMode.WholeLevel;
-                model.Filter = "door";
-                model.Apply(Snapshot(level, null, OpenVault));
-                break;
-
-            case "long-names":
-                model.Mode = LogicScopeMode.WholeLevel;
-                model.Apply(Snapshot(LongNames(), LongPlaying()));
-                break;
-
-            case "stubs":
-                model.Mode = LogicScopeMode.WholeLevel;
-                model.Apply(Snapshot(Stubs()));
-                break;
-        }
-
+        States[state](model, new Size(width, height - LogicViewFit.Rows));
         return model;
+    }
+
+    private static LogicGraphInfo VaultLevel() => Level(VaultEntities());
+
+    private static void Whole(LogicViewModel model, FrameSnapshot snapshot)
+    {
+        model.Mode = LogicScopeMode.WholeLevel;
+        model.Apply(snapshot);
     }
 
     // Every card that is not an entity: the activator, a prefix nothing
@@ -215,10 +213,12 @@ public sealed class LogicSheetTests(RibbonSession session)
         ],
     };
 
-    // Puts the middle of the graph in the middle of a pane, at a zoom. The
-    // model is told the pane's size first, so the fit it owes is spent here.
+    // Shows the whole level with the relay selected, the middle of the graph
+    // in the middle of a pane, at a zoom. The model is told the pane's size
+    // first, so the fit it owes is spent here.
     private static void LookFrom(LogicViewModel model, double zoom, Size pane)
     {
+        Whole(model, Snapshot(VaultLevel(), null, OpenVault));
         model.ViewSize = pane;
         model.View = new LogicPanZoom(default, zoom)
             .CenteredOn(new Rect(model.Scene.ShouldNotBeNull().Size), pane);
@@ -236,7 +236,7 @@ public sealed class LogicSheetTests(RibbonSession session)
         frame.Save(Path.Combine(OutputDirectory, $"{name}@2x.png"), quality: null);
     }
 
-    private static int DistinctColours(WriteableBitmap frame)
+    internal static int DistinctColours(WriteableBitmap frame)
     {
         using ILockedFramebuffer buffer = frame.Lock();
         var seen = new HashSet<uint>();
