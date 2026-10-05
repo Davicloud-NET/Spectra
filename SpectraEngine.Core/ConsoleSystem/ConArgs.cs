@@ -28,6 +28,7 @@ public readonly ref struct ConArgs
         Out = output;
         Scene = frame.Scene;
         Entities = frame.Entities;
+        IsPlaying = frame.IsPlaying;
     }
 
     /// <summary>The command's name, in the case it was typed in.</summary>
@@ -54,6 +55,12 @@ public readonly ref struct ConArgs
 
     /// <summary>The running entity world, or null when the level is not running.</summary>
     public EntityWorld? Entities { get; }
+
+    /// <summary>
+    /// Whether play mode is on. With no <see cref="Entities"/>, the level was
+    /// replaced during play.
+    /// </summary>
+    public bool IsPlaying { get; }
 
     /// <summary>
     /// Reads an argument as a finite number with a dot for the decimal point,
