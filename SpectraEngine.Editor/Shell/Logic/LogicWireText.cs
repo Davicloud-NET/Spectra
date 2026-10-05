@@ -88,10 +88,25 @@ public static class LogicWireText
     private static string Route(string sender, EntityConnection wire)
     {
         string from = string.IsNullOrEmpty(wire.Output) ? sender : $"{sender}.{wire.Output}";
-        string target = string.IsNullOrEmpty(wire.TargetName) ? "nothing" : wire.TargetName;
-        string to = string.IsNullOrEmpty(wire.Input) ? target : $"{target}.{wire.Input}";
+        return $"{from} to {Receiver(wire)}";
+    }
 
-        return $"{from} to {to}";
+    // A target that is not a name is said in words, as a wire's tip says it.
+    private static string Receiver(EntityConnection wire)
+    {
+        string who = wire.TargetName switch
+        {
+            null or "" => "nothing",
+            TargetNameIndex.SelfToken => "itself",
+            TargetNameIndex.ActivatorToken => "the activator",
+            TargetNameIndex.CallerToken => "the caller",
+            _ => "",
+        };
+
+        if (who.Length == 0)
+            return string.IsNullOrEmpty(wire.Input) ? wire.TargetName : $"{wire.TargetName}.{wire.Input}";
+
+        return string.IsNullOrEmpty(wire.Input) ? who : $"{wire.Input} on {who}";
     }
 
     private static string Called(LogicCard card) => card.Name.Length > 0 ? card.Name : Kind(card);
