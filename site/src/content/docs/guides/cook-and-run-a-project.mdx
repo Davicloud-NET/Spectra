@@ -94,7 +94,9 @@ Four warnings are about markers:
 
 The engine reads cooked sounds only. The editor works on your loose files, so it cooks a `.wav` itself the first time a level uses it, and keeps the result. The next start reads it back and does not cook again.
 
-It cooks the way `scook` does, so the editor has the same sound the pack will hold. When you change the `.wav`, or add or change its `.markers.txt`, the sound is cooked again.
+It cooks the way `scook` does, so the editor has the same sound the pack will hold. When you change the `.wav`, or add, change or delete its `.markers.txt`, the editor cooks the sound again the next time it loads it.
+
+A sound the editor has already loaded stays as it was. To hear a changed sound, restart the editor.
 
 The kept sounds are not in your project, so they never reach a pack or source control. They are in a folder per project under your local application data:
 
