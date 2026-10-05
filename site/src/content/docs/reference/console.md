@@ -56,6 +56,8 @@ A command that fails prints an error, and the rest of the line still runs.
 | `ent_show <pattern>` | Prints an entity's settings, state, wires and inputs. |
 | `ent_watch [on \| off \| <pattern> ...]` | Prints what entities fire and receive as it happens. |
 | `sound_stats` | Prints how many sounds the level is playing and how many of them are heard. |
+| `sound_simulate [placed \| fades \| walls \| doppler \| all] [on \| off]` | Switches a part of the sound simulation on or off for every sound. |
+| `sound_doppler [strength]` | Sets how strong Doppler is, from 0 to 4. |
 | `fake_device_loss` | Ends the next frame the way a lost graphics device does, to test what happens then. The demo ends with an error. The editor restarts its viewport and keeps the level. |
 | `captions [off \| voice \| all]` | Sets which captions show: none, speech only, or speech and other sounds. |
 | `caption_language [language]` | Sets the language captions are looked up in. |
@@ -184,6 +186,43 @@ sound_stats: 2 sources, 0 starts refused.
 | `starts refused` | Sounds the device had no source for when it was asked to start them. |
 
 Before you press Play it prints `sound_stats: the level is not running, so it plays nothing.` and the number of sources. With no audio device it says so first, as a warning.
+
+### sound_simulate
+
+```
+> sound_simulate
+sound_simulate: placed on, fades on, walls on, doppler on.
+
+> sound_simulate fades off
+sound_simulate: placed on, fades off, walls on, doppler on.
+
+> sound_simulate all on
+sound_simulate: placed on, fades on, walls on, doppler on.
+```
+
+Alone it prints the four parts. With a name and `on` or `off` it sets that part, and `all` sets the four together. [What is simulated](/reference/sound-entities/#what-is-simulated) says what each part does.
+
+It is for listening: switch a part off, hear the level without it, and switch it on again. Every sound has the same four as settings of its own. A part is heard when it is on here and on the sound, so `off` here switches it off for every sound, and `on` leaves each sound to its own setting.
+
+A wrong name or word is refused: `sound_simulate: 'echo' is not a part. Give placed, fades, walls, doppler or all, then on or off.`
+
+The engine starts with all four on.
+
+### sound_doppler
+
+```
+> sound_doppler
+sound_doppler: 1. 1 is the real shift and 0 is none.
+
+> sound_doppler 2
+sound_doppler: 2. 1 is the real shift and 0 is none.
+```
+
+Alone it prints the strength. A number from 0 to 4 sets it. 1 is what a moving sound really does, 0 is no shift, and 2 doubles the shift: a sound that was a semitone high is two semitones high. Whatever the strength, the pitch never goes more than an octave up or down. Anything else is refused: `sound_doppler: 'loud' is not a number from 0 to 4.`
+
+While Doppler is switched off, a second line says so: `sound_doppler: Doppler is switched off. 'sound_simulate doppler on' switches it on.`
+
+The engine starts at 1.
 
 ### captions
 
