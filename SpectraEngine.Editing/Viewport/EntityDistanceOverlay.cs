@@ -19,7 +19,9 @@ public sealed class EntityDistanceOverlay
     public static readonly Vector3 DefaultColor = EntityMarkerOverlay.DefaultColor;
 
     /// <summary>The default colour of every larger distance, the same green dimmed.</summary>
-    public static readonly Vector3 DefaultOuterColor = EntityMarkerOverlay.DefaultColor * 0.45f;
+    // Dimmed less than a light's inner cone is: the far sphere is mostly seen
+    // from inside, as thin arcs against sky.
+    public static readonly Vector3 DefaultOuterColor = EntityMarkerOverlay.DefaultColor * 0.7f;
 
     /// <summary>Whether the overlay draws at all.</summary>
     public bool Enabled { get; set; } = true;
