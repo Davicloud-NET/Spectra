@@ -1,3 +1,4 @@
+using SpectraEngine.Core.Audio.Acoustics;
 using SpectraEngine.Core.Graphics;
 using System.Collections.Generic;
 using System.Numerics;
@@ -81,6 +82,13 @@ public sealed class MaterialDefinition
     /// Shader named by the file's <c>shader</c> key. Null means the built-in lit shader.
     /// </summary>
     public string? ShaderName { get; }
+
+    /// <summary>
+    /// The preset named by the file's <c>acoustic</c> key. Null when the file
+    /// has no such line or names a preset that does not exist, which is not
+    /// the same as naming <see cref="AcousticPresets.Generic"/>.
+    /// </summary>
+    public AcousticPreset? Acoustic { get; internal init; }
 
     /// <summary>Texture slots in declaration order; the index is also the texture unit.</summary>
     public IReadOnlyList<MaterialTextureSlot> Textures { get; }

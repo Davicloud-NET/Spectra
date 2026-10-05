@@ -1,7 +1,7 @@
+using SpectraEngine.Core.Audio.Acoustics;
 using SpectraEngine.Core.Graphics;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Numerics;
 using System.Text;
@@ -16,6 +16,7 @@ namespace SpectraEngine.Core.Assets;
 /// <c>//</c> starts a comment. Names match shader uniforms case-sensitively.
 /// <code>
 /// shader = lit                                     // optional, lit is the default
+/// acoustic = brick                                 // optional, what it is made of, for sound
 /// texture uDiffuse = Textures/wall_brick.png, linearmipmap, repeat
 /// color   uBaseColor = #B4A08C                     // or: 0.706 0.627 0.549
 /// float   uRoughness = 0.8
@@ -26,6 +27,7 @@ namespace SpectraEngine.Core.Assets;
 /// A <c>color</c> is read as sRGB and stored linear (alpha untouched); a
 /// <c>vec3</c> is passed through as written. Use <c>data</c> for normal,
 /// roughness and mask textures.
+/// <c>acoustic</c> takes a name from <see cref="AcousticPresets"/>, in any case.
 /// Nothing in a file is fatal: a bad line becomes a warning and parsing continues.
 /// Callable from any thread.
 /// </remarks>
@@ -73,7 +75,7 @@ public static class MaterialParser
         var textures = new List<MaterialTextureSlot>();
         var parameters = new List<MaterialParameter>();
         var warnings = new List<string>();
-        string? shaderName = null;
+        var keys = new BareKeys();
 
         int lineNumber = 0;
         foreach (ReadOnlySpan<char> rawLine in text.AsSpan().EnumerateLines())
@@ -102,7 +104,7 @@ public static class MaterialParser
             int split = IndexOfWhitespace(left);
             if (split < 0)
             {
-                ParseBareKey(left, value, ref shaderName, warnings, originForErrors, lineNumber);
+                ParseBareKey(left, value, ref keys, warnings, originForErrors, lineNumber);
                 continue;
             }
 
@@ -119,13 +121,23 @@ public static class MaterialParser
                 kind, name, value, textures, parameters, warnings, originForErrors, lineNumber);
         }
 
-        return new MaterialDefinition(originForErrors, shaderName, textures, parameters, warnings);
+        return new MaterialDefinition(originForErrors, keys.Shader, textures, parameters, warnings)
+        {
+            Acoustic = keys.Acoustic,
+        };
+    }
+
+    // What the lines with a key and no kind have set so far.
+    private struct BareKeys
+    {
+        public string? Shader;
+        public AcousticPreset? Acoustic;
     }
 
     private static void ParseBareKey(
         ReadOnlySpan<char> key,
         ReadOnlySpan<char> value,
-        ref string? shaderName,
+        ref BareKeys keys,
         List<string> warnings,
         string origin,
         int line)
@@ -137,15 +149,46 @@ public static class MaterialParser
                 Warn(warnings, origin, line, "'shader' has no value; using the built-in lit shader");
                 return;
             }
-            if (shaderName is not null)
-                Warn(warnings, origin, line, $"'shader' set again; '{value.ToString()}' replaces '{shaderName}'");
+            if (keys.Shader is not null)
+                Warn(warnings, origin, line, $"'shader' set again; '{value.ToString()}' replaces '{keys.Shader}'");
 
-            shaderName = value.ToString();
+            keys.Shader = value.ToString();
+            return;
+        }
+
+        if (key.Equals("acoustic", StringComparison.OrdinalIgnoreCase))
+        {
+            ParseAcoustic(value, ref keys.Acoustic, warnings, origin, line);
             return;
         }
 
         // Warn, don't fail: a file written for a newer engine should still load.
         Warn(warnings, origin, line, $"unknown key '{key.ToString()}' ignored");
+    }
+
+    // A bare key, not a float: every typed value is pushed to the shader as a uniform.
+    private static void ParseAcoustic(
+        ReadOnlySpan<char> value,
+        ref AcousticPreset? acoustic,
+        List<string> warnings,
+        string origin,
+        int line)
+    {
+        if (value.IsEmpty)
+        {
+            Warn(warnings, origin, line, "'acoustic' has no value; ignored");
+            return;
+        }
+        if (!AcousticPresets.TryFind(value, out AcousticPreset? named))
+        {
+            Warn(warnings, origin, line,
+                $"unknown acoustic preset '{value.ToString()}' ignored (expected {AcousticPresets.NameList})");
+            return;
+        }
+        if (acoustic is not null)
+            Warn(warnings, origin, line, $"'acoustic' set again; '{named.Name}' replaces '{acoustic.Name}'");
+
+        acoustic = named;
     }
 
     private static void ParseTypedDirective(
@@ -183,7 +226,7 @@ public static class MaterialParser
         }
 
         Span<float> components = stackalloc float[4];
-        if (!TryParseNumbers(value, components, out int count))
+        if (!MaterialNumbers.TryParseList(value, components, out int count))
         {
             Warn(warnings, origin, line,
                 $"'{name.ToString()}' is not a list of up to 4 numbers: '{value.ToString()}'");
@@ -215,14 +258,14 @@ public static class MaterialParser
 
         if (!value.IsEmpty && value[0] == '#')
         {
-            if (!TryParseHexColor(value[1..], components, out count))
+            if (!MaterialNumbers.TryParseHexColor(value[1..], components, out count))
             {
                 Warn(warnings, origin, line,
                     $"'{name.ToString()}' is not a #RRGGBB or #RRGGBBAA colour: '{value.ToString()}'");
                 return;
             }
         }
-        else if (!TryParseNumbers(value, components, out count))
+        else if (!MaterialNumbers.TryParseList(value, components, out count))
         {
             Warn(warnings, origin, line,
                 $"'{name.ToString()}' is neither a hex colour nor a number list: '{value.ToString()}'");
@@ -331,52 +374,6 @@ public static class MaterialParser
             if (char.IsWhiteSpace(span[i])) return i;
         }
         return -1;
-    }
-
-    // Whitespace or comma separated, invariant culture.
-    private static bool TryParseNumbers(ReadOnlySpan<char> value, Span<float> destination, out int count)
-    {
-        destination.Clear();
-        count = 0;
-
-        ReadOnlySpan<char> remaining = value;
-        while (true)
-        {
-            while (!remaining.IsEmpty && (char.IsWhiteSpace(remaining[0]) || remaining[0] == ','))
-                remaining = remaining[1..];
-            if (remaining.IsEmpty) break;
-
-            int end = 0;
-            while (end < remaining.Length && !char.IsWhiteSpace(remaining[end]) && remaining[end] != ',')
-                end++;
-
-            if (count == destination.Length) return false;
-            if (!float.TryParse(remaining[..end], NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed))
-                return false;
-
-            destination[count++] = parsed;
-            remaining = remaining[end..];
-        }
-
-        return count > 0;
-    }
-
-    private static bool TryParseHexColor(ReadOnlySpan<char> digits, Span<float> destination, out int count)
-    {
-        destination.Clear();
-        count = 0;
-        if (digits.Length is not (6 or 8)) return false;
-
-        int components = digits.Length / 2;
-        for (int i = 0; i < components; i++)
-        {
-            if (!byte.TryParse(digits.Slice(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte b))
-                return false;
-            destination[i] = b / 255f;
-        }
-
-        count = components;
-        return true;
     }
 
     private static bool TryParseFilter(ReadOnlySpan<char> token, out TextureFilter filter)
