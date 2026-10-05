@@ -188,8 +188,10 @@ public static class CommandTable
             CommandNeeds.Session, "", ["wiring", "connections"]),
         new("Logic view: beside the viewport", ShellVerb.Of(WorkspaceCommand.ShowLogicBeside),
             CommandNeeds.Session, "", ["wiring", "connections"]),
+        // The key shows the split last used, which no one row can name, so
+        // only the row it always means carries it.
         new("Logic view: hide", ShellVerb.Of(WorkspaceCommand.HideLogic),
-            CommandNeeds.Session),
+            CommandNeeds.Session, "Ctrl+L"),
     ];
 
     /// <summary>

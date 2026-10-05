@@ -372,6 +372,7 @@ public sealed class ViewportInputRouterTests
     [InlineData(InputKey.Number2, ShellChord.InsertPart)]
     [InlineData(InputKey.Number3, ShellChord.InsertCut)]
     [InlineData(InputKey.Number4, ShellChord.InsertLight)]
+    [InlineData(InputKey.L, ShellChord.ToggleLogicView)]
     public void A_chord_in_the_table_is_claimed_and_kept_from_the_engine(InputKey key, ShellChord expected)
     {
         _router.OnKeyDown(key, KeyModifiers.Control).ShouldBeTrue();

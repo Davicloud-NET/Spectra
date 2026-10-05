@@ -160,6 +160,16 @@ public partial class MainWindow
         _logger.LogInformation("View panes: {Arrangement}", ViewPaneLayout.NameOf(arrangement));
     }
 
+    // The set verb Ctrl+L stands for right now: hide a Logic view that shows,
+    // else show it in the split last used.
+    private WorkspaceCommand LogicViewFlipVerb() =>
+        ViewPaneLayout.Flip(_viewArrangement, _settings.LastViewSplit) switch
+        {
+            ViewArrangement.LogicBelow => WorkspaceCommand.ShowLogicBelow,
+            ViewArrangement.LogicBeside => WorkspaceCommand.ShowLogicBeside,
+            _ => WorkspaceCommand.HideLogic,
+        };
+
     private void OnShowLogicBelow(object? sender, RoutedEventArgs e) =>
         RunWorkspaceVerb(WorkspaceCommand.ShowLogicBelow);
 

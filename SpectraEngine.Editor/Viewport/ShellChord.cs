@@ -48,4 +48,9 @@ public enum ShellChord
 
     /// <summary>Ctrl+P: the command palette.</summary>
     OpenPalette,
+
+    /// <summary>
+    /// Ctrl+L: hide the Logic view, or bring it back where it last was.
+    /// </summary>
+    ToggleLogicView,
 }

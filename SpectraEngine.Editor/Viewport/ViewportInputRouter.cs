@@ -79,6 +79,7 @@ internal sealed class ViewportInputRouter
             InputKey.Number4 when control => Viewport.ShellChord.InsertLight,
 
             InputKey.P when control => Viewport.ShellChord.OpenPalette,
+            InputKey.L when control => Viewport.ShellChord.ToggleLogicView,
 
             _ => null,
         };

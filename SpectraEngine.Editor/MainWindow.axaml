@@ -348,8 +348,9 @@
                         Click="OnToggleDiagnostics" />
             </MenuItem>
 
-            <!-- Three set verbs, like Grid below. -->
-            <MenuItem Header="Logic view">
+            <!-- Three set verbs, like Grid below. The key flips between hidden
+                 and the split last used, so it is on the heading. -->
+            <MenuItem Header="Logic view" InputGesture="Ctrl+L">
               <MenuItem Header="Below the viewport" ToggleType="Radio"
                         IsChecked="{Binding IsLogicBelow, Mode=OneWay}"
                         Click="OnShowLogicBelow" />

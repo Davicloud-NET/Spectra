@@ -348,6 +348,7 @@ public partial class MainWindow : Window
 
         AddChord(Key.F11, KeyModifiers.None, () => OnShellChord(ShellChord.MaximiseViewport));
         AddChord(Key.OemTilde, KeyModifiers.Control, () => OnShellChord(ShellChord.ToggleBottomDrawer));
+        AddChord(Key.L, KeyModifiers.Control, () => OnShellChord(ShellChord.ToggleLogicView));
 
         // The window is the drop target: a native viewport never sees Avalonia
         // drag events.
@@ -2329,6 +2330,10 @@ public partial class MainWindow : Window
                 RunWorkspaceVerb(_shell.IsDrawerOpen
                     ? WorkspaceCommand.CloseBottomDrawer
                     : WorkspaceCommand.OpenBottomDrawer);
+                break;
+
+            case ShellChord.ToggleLogicView:
+                RunWorkspaceVerb(LogicViewFlipVerb());
                 break;
         }
     }
