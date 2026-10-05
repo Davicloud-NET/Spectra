@@ -61,6 +61,10 @@ internal sealed class FakeAudioBackend : IAudioBackend
 
     public AudioSourceState StateOf(uint source) => _sources[source].State;
 
+    // The sources that are playing now, lowest handle first.
+    public uint[] PlayingSources() =>
+        [.. _sources.Where(pair => pair.Value.State == AudioSourceState.Playing).Select(pair => pair.Key).Order()];
+
     public int QueueDepth(uint source) => _sources[source].Queue.Count;
 
     public short[] Contents(uint buffer) => _buffers[buffer];

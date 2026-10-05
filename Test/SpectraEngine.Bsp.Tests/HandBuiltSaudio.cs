@@ -175,10 +175,13 @@ internal static class HandBuiltSaudio
         // SectionTableOffsetOffset stays 0: no sections.
     }
 
+    // The payload's sample at an index, counted over every channel.
+    public static short Sample(long index) => unchecked((short)(index * 37 - 4000));
+
     // A ramp, not zeros, so an unwritten buffer reads differently.
     private static void FillPayload(byte[] file, int at, int bytes)
     {
         for (int i = 0; i < bytes / 2; i++)
-            BinaryPrimitives.WriteInt16LittleEndian(file.AsSpan(at + i * 2), (short)(i * 37 - 4000));
+            BinaryPrimitives.WriteInt16LittleEndian(file.AsSpan(at + i * 2), Sample(i));
     }
 }
