@@ -69,8 +69,10 @@ public sealed class LogicViewModel : ObservableObject
     public event Action? Redraw;
 
     /// <summary>
-    /// Raised when <see cref="ShownEntityIds"/> changes, so a window can ask
-    /// the engine for those entities' state.
+    /// Raised when <see cref="ShownEntityIds"/> changes while there is wiring
+    /// to show, so a window can ask the engine for those entities' state. Not
+    /// raised when the wiring goes away. The first request of a session, and
+    /// the one after the view was hidden, are the window's to send.
     /// </summary>
     public event Action? ShownEntitiesChanged;
 
@@ -153,17 +155,26 @@ public sealed class LogicViewModel : ObservableObject
                 return;
 
             _view = value;
+            _fit.Moved();
             Redraw?.Invoke();
         }
     }
 
-    /// <summary>How large the view is. The control that draws the graph keeps this current.</summary>
+    /// <summary>
+    /// How large the view is. The control that draws the graph keeps this
+    /// current. A graph that still sits as a fit left it is fitted again.
+    /// </summary>
     public Size ViewSize
     {
         get => _viewSize;
         set
         {
-            _viewSize = value;
+            if (_viewSize != value)
+            {
+                _viewSize = value;
+                _fit.Resized();
+            }
+
             FitIfAsked();
         }
     }
@@ -273,7 +284,7 @@ public sealed class LogicViewModel : ObservableObject
         return _arrangement.FaceOf(edge);
     }
 
-    /// <summary>What is under a point of the view. A label that shows no words counts as its wire.</summary>
+    /// <summary>What is under a point of the view. A label counts where its words are drawn.</summary>
     public LogicHit HitTest(Point viewPoint) => _arrangement.HitTest(
         _view.ToScene(viewPoint),
         LogicDrawMetrics.PickReach / _view.Zoom,
@@ -282,8 +293,11 @@ public sealed class LogicViewModel : ObservableObject
     /// <summary>Shows the whole graph, as large as fits and no larger than its own size.</summary>
     public void Fit()
     {
-        if (Scene is { Cards.Count: > 0 } scene)
-            View = LogicPanZoom.Fit(scene.Size, _viewSize);
+        if (Scene is not { Cards.Count: > 0 } scene)
+            return;
+
+        View = LogicPanZoom.Fit(scene.Size, _viewSize);
+        _fit.Fitted();
     }
 
     /// <summary>Shows the graph at its own size, about the middle of the view.</summary>
@@ -367,7 +381,10 @@ public sealed class LogicViewModel : ObservableObject
         if (Set(ref _emptyReason, shown?.EmptyReason ?? LogicEmptyReason.None, nameof(EmptyText)))
             Raise(nameof(OffersWholeLevel));
 
-        _shownChanged |= _shown.Take(shown?.Cards ?? []);
+        // Wiring that went away asks for nothing: a request sent then would
+        // undo the one that hid the view.
+        bool changed = _shown.Take(shown?.Cards ?? []);
+        _shownChanged |= changed && shown is not null;
     }
 
     private void FitIfAsked()

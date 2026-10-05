@@ -4,17 +4,29 @@ using System.Collections.Generic;
 
 namespace SpectraEngine.Editor.Shell.Logic;
 
-// Says when a scene that was just laid out is fitted into the view, and when
-// it keeps the place the user gave the one before.
+// Says when the graph is fitted into the view, and when it keeps the place
+// the user gave it.
 internal sealed class LogicFitRule
 {
     private Guid[] _placed = [];
     private Size _placedSize;
     private bool _awaitsFirst = true;
+    private bool _sitsFitted;
     private bool _asked;
 
     // The user asked for another picture, so the next scene is fitted.
     public void Ask() => _asked = true;
+
+    // A fit put the graph where it is.
+    public void Fitted() => _sitsFitted = true;
+
+    // Something else did: a drag, the wheel, a jump to a card.
+    public void Moved() => _sitsFitted = false;
+
+    // The view changed size. A graph nobody moved since it was fitted stays
+    // fitted, so a pane that is resized, or gives room to the event strip,
+    // goes on showing all of it.
+    public void Resized() => _asked |= _sitsFitted;
 
     // The session ended. What was on show is remembered: the same level
     // coming back, as after a restart, keeps its place.
@@ -31,7 +43,9 @@ internal sealed class LogicFitRule
     {
         bool same = shown.AsSpan().SequenceEqual(_placed);
 
-        if (_awaitsFirst)
+        if (_sitsFitted)
+            _asked = true;
+        else if (_awaitsFirst)
             _asked |= !same;
         else if (followsSelection)
             _asked |= !same || size != _placedSize;
@@ -51,8 +65,8 @@ internal sealed class LogicFitRule
         return asked;
     }
 
-    // In the whole level a new scene keeps its place, unless it is another
-    // level altogether.
+    // In the whole level a new scene keeps the place the user gave the last
+    // one, unless it is another level altogether.
     private static bool SharesNone(Guid[] shown, Guid[] placed)
     {
         var before = new HashSet<Guid>(placed);

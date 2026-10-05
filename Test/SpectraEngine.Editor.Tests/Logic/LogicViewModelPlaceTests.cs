@@ -123,6 +123,45 @@ public sealed class LogicViewModelPlaceTests
     }
 
     [Fact]
+    public void A_graph_nobody_moved_since_it_was_fitted_stays_fitted_when_the_view_changes_size()
+    {
+        LogicViewModel model = Model(LogicScopeMode.WholeLevel);
+        model.Apply(Snapshot(_level));
+        var shorter = new Size(Pane.Width, Pane.Height - 64);
+
+        model.ViewSize = shorter;
+
+        model.View.ShouldBe(LogicPanZoom.Fit(model.Scene.ShouldNotBeNull().Size, shorter));
+        model.View.ShouldNotBe(Fitted(model));
+    }
+
+    [Fact]
+    public void A_graph_the_user_moved_keeps_its_place_when_the_view_changes_size()
+    {
+        LogicViewModel model = Model(LogicScopeMode.WholeLevel);
+        model.Apply(Snapshot(_level));
+        model.View = Chosen;
+
+        model.ViewSize = new Size(Pane.Width, Pane.Height - 64);
+
+        model.View.ShouldBe(Chosen);
+    }
+
+    [Fact]
+    public void In_the_whole_level_a_new_scene_is_fitted_while_nobody_has_moved_the_graph()
+    {
+        LogicViewModel model = Model(LogicScopeMode.WholeLevel);
+        model.Apply(Snapshot(_level));
+        LogicPanZoom editing = model.View;
+
+        // Starting the level gives every card a row of state.
+        model.Apply(Snapshot(_level, VaultPlaying()));
+
+        model.View.ShouldBe(Fitted(model));
+        model.View.ShouldNotBe(editing);
+    }
+
+    [Fact]
     public void Another_mode_is_another_picture_and_is_fitted()
     {
         LogicViewModel model = Model(LogicScopeMode.WholeLevel);
@@ -206,8 +245,10 @@ public sealed class LogicViewModelPlaceTests
         model.EmptyText.ShouldBe("");
         model.ShownEntityIds.ShouldBeEmpty();
         model.TryGetState(VaultDoor, out _).ShouldBeFalse();
-        announced.ShouldBe(1);
         redraws.ShouldBeGreaterThan(0);
+
+        // The session that is stopping is asked for nothing more.
+        announced.ShouldBe(0);
     }
 
     [Fact]
