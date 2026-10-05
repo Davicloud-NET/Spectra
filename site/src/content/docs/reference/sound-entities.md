@@ -5,6 +5,10 @@ description: The entity class that plays a sound from a place in the level.
 
 A sound is a point in the level that plays a sound file. Wires start and stop it, and it fires when the sound ends or reaches a marker. See [Entities and wiring](/concepts/entities-and-wiring/) for how wires work.
 
+:::note
+A sound is not heard yet, in the editor or in a game. The entity runs all the same: it counts the sound's length and fires its outputs on time, so a level can be wired now. Pitch already moves the end and the markers. Volume and the two distances are kept for when the sound is heard.
+:::
+
 In the settings table, the first column is the name a level file uses and the second is the label in the Properties panel.
 
 ## point_sound
@@ -21,7 +25,7 @@ Plays a sound from where it stands: a hum, an alarm, a spoken line.
 | `looped` | Looped | 0 | Set to 1 and the sound repeats until something stops it. |
 | `startplaying` | Start playing | 0 | Set to 1 and the sound plays when the level starts. |
 
-Both distances are in units, and a unit is a metre. Between the two the volume falls off with distance and reaches nothing at the far one.
+Both distances are in units, and a unit is a metre. Once a sound is heard, its volume falls off between the two and reaches nothing at the far one.
 
 A volume below 0, or a pitch outside 0.1 to 10, is not used, and the default takes its place.
 
@@ -30,7 +34,7 @@ A volume below 0, or a pitch outside 0.1 to 10, is not used, and the default tak
 | `Play` | Plays the sound from its start. On a sound that is already playing it starts over. |
 | `Stop` | Stops the sound. It fires nothing. |
 | `SetVolume` | Sets the volume to the parameter, a number from 0 up. It holds for every later `Play` too. Anything else is ignored. |
-| `SetPitch` | Sets the pitch to the parameter, a number from 0.1 to 10. What has played so far stays played, and the rest plays at the new speed. Anything else is ignored. |
+| `SetPitch` | Sets the pitch to the parameter, a number from 0.1 to 10. What has played so far stays played, and the rest plays at the new speed. It holds for every later `Play` too. Anything else is ignored. |
 
 | Output | Fires when |
 |---|---|
@@ -59,6 +63,8 @@ Markers that are reached on the same tick fire in the order the file lists them.
 
 A looped sound fires its markers again on every pass. A marker before the loop region fires once, and one after it never fires. A marker at the very end of the region fires as each pass ends.
 
+A loop shorter than a tick is the exception. It turns round more than once in a tick, and a marker in it then fires at most twice a tick, not once for every pass.
+
 `Play` on a playing sound starts the markers over as well.
 
 ## Timing
@@ -68,6 +74,8 @@ The end of a sound and its markers are counted in ticks, from the length of the 
 The count comes from the level's ticks, not from a clock or a sound device. A level that runs with no sound device, such as one on a server, fires on the same ticks.
 
 Both outputs fire at the end of a tick, so what they are wired to gets its input on the next one.
+
+An input that arrives on the tick a sound would end is handled before the end. `Stop` on that tick means `OnEnded` does not fire. `Play` on that tick starts the sound over, and the end it was about to reach does not fire either. Markers the sound had not reached by then are skipped.
 
 ## A sound that cannot play
 
