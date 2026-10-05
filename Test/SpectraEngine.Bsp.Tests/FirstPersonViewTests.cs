@@ -74,8 +74,10 @@ public sealed class FirstPersonViewTests
     public void A_respawn_puts_the_view_at_the_spawn_facing_the_spawn_yaw()
     {
         var rig = new PlayRig();
-        rig.View.SpawnYaw = 0.5f;
         rig.Play();
+
+        // After Play: starting a level sets the spawn from the level.
+        rig.View.SpawnYaw = 0.5f;
         Turn(rig);
 
         // Past the plate's edge at x = 32: nothing to land on.
