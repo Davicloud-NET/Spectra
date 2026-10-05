@@ -90,6 +90,24 @@ Four warnings are about markers:
 | `SC4009` | A `.markers.txt` file sits beside a `.wav` that has markers of its own. The file is not read. |
 | `SC4010` | A marker with no name got a number that another marker already has as its name, such as `marker2`. Name it. |
 
+## Sounds in the editor
+
+The engine reads cooked sounds only. The editor works on your loose files, so it cooks a `.wav` itself the first time a level uses it, and keeps the result. The next start reads it back and does not cook again.
+
+It cooks the way `scook` does, so the editor has the same sound the pack will hold. When you change the `.wav`, or add or change its `.markers.txt`, the sound is cooked again.
+
+The kept sounds are not in your project, so they never reach a pack or source control. They are in a folder per project under your local application data:
+
+```
+%LOCALAPPDATA%\Spectra\SoundCache
+```
+
+You can delete that folder at any time. The editor fills it again.
+
+A warning the cook has about a sound, such as `SC4003` for a stereo sound, shows in the editor's Output panel. A `.wav` the cook cannot read fails to load, and the message is the cook's.
+
+A game does not do this. It reads cooked sounds from its pack and nothing else. If you run a project without `--pack`, its sounds do not load.
+
 ## Changing a file while running from a pack
 
 Add `--dev` and the engine lays your project folder over the pack, so a file you edit wins over the cooked one:

@@ -17,6 +17,7 @@ dotnet run --project Spectra.Kitchen.CLI -- <command> [options] <path>
 | `verify <pack>` | Checks a pack: every entry decodes and everything it refers to is inside. |
 | `inspect <pack>` | Lists the pack's header and entries. Add `--json` for JSON. |
 | `clean <projectDir>` | Deletes the project's cook output and cook cache. |
+| `sounds <contentDir> -o <dir>` | Cooks every `.wav` under a folder into `.saudio` files under `<dir>`, with no project and no pack. A sound whose cooked file is newer is skipped. The demo's build uses it. |
 
 ## Options
 
