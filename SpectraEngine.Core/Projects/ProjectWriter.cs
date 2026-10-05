@@ -36,17 +36,22 @@ public static class ProjectWriter
         writer.WriteString(ProjectFormat.IdMember, project.Id.ToString("D"));
         CanonicalJson.Flush(writer, project.Unknown, 4);
 
+        // Omitted when the file names none, so such a file keeps its bytes.
+        if (project.Language is { } language)
+            writer.WriteString(ProjectFormat.LanguageMember, language);
+        CanonicalJson.Flush(writer, project.Unknown, 5);
+
         // Omitted, not null: absent reads as "not chosen".
         if (!string.IsNullOrEmpty(project.StartupMap))
             writer.WriteString(ProjectFormat.StartupMapMember, project.StartupMap);
-        CanonicalJson.Flush(writer, project.Unknown, 5);
+        CanonicalJson.Flush(writer, project.Unknown, 6);
 
         // One path per line, so adding a level is a one-line diff.
         var maps = new List<byte[]>(project.Maps.Count);
         foreach (string map in project.Maps)
             maps.Add(CanonicalJson.Compact(w => w.WriteStringValue(map)));
         CanonicalJson.WriteRecordArray(writer, ProjectFormat.MapsMember, maps);
-        CanonicalJson.Flush(writer, project.Unknown, 6);
+        CanonicalJson.Flush(writer, project.Unknown, 7);
 
         // Omitted when empty: a manifest without 'packs' must round-trip
         // byte-identical.
@@ -61,15 +66,15 @@ public static class ProjectWriter
                 w.WriteEndArray();
             }));
         }
-        CanonicalJson.Flush(writer, project.Unknown, 7);
+        CanonicalJson.Flush(writer, project.Unknown, 8);
 
         writer.WritePropertyName(ProjectFormat.DisplayMember);
         writer.WriteRawValue(CompactDisplay(project.Display));
-        CanonicalJson.Flush(writer, project.Unknown, 8);
+        CanonicalJson.Flush(writer, project.Unknown, 9);
 
         if (project.DefaultBackend is { } backend)
             writer.WriteString(ProjectFormat.DefaultBackendMember, ProjectFormat.ToWire(backend));
-        CanonicalJson.Flush(writer, project.Unknown, 9);
+        CanonicalJson.Flush(writer, project.Unknown, 10);
 
         // Empty means no restriction, so it is omitted.
         if (project.AllowedBackends.Count > 0)
@@ -83,7 +88,7 @@ public static class ProjectWriter
                 w.WriteEndArray();
             }));
         }
-        CanonicalJson.Flush(writer, project.Unknown, 10);
+        CanonicalJson.Flush(writer, project.Unknown, 11);
 
         writer.WriteEndObject();
     }

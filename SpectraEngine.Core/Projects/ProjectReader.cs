@@ -75,34 +75,39 @@ public static class ProjectReader
                     anchor = 4;
                     break;
 
+                case ProjectFormat.LanguageMember:
+                    project.Language = ReadLanguage(ref reader, member);
+                    anchor = 5;
+                    break;
+
                 case ProjectFormat.StartupMapMember:
                     project.StartupMap = ReadString(ref reader, member);
-                    anchor = 5;
+                    anchor = 6;
                     break;
 
                 case ProjectFormat.MapsMember:
                     ReadStringArray(ref reader, member, project.Maps);
-                    anchor = 6;
+                    anchor = 7;
                     break;
 
                 case ProjectFormat.PacksMember:
                     ReadStringArray(ref reader, member, project.Packs);
-                    anchor = 7;
+                    anchor = 8;
                     break;
 
                 case ProjectFormat.DisplayMember:
                     ReadDisplay(ref reader, utf8, project.Display);
-                    anchor = 8;
+                    anchor = 9;
                     break;
 
                 case ProjectFormat.DefaultBackendMember:
                     project.DefaultBackend = ReadBackend(ref reader, member);
-                    anchor = 9;
+                    anchor = 10;
                     break;
 
                 case ProjectFormat.AllowedBackendsMember:
                     ReadBackendArray(ref reader, member, project.AllowedBackends);
-                    anchor = 10;
+                    anchor = 11;
                     break;
 
                 default:
@@ -166,6 +171,19 @@ public static class ProjectReader
                     break;
             }
         }
+    }
+
+    private static string ReadLanguage(ref Utf8JsonReader reader, string member)
+    {
+        string value = ReadString(ref reader, member);
+        if (!LanguageTag.IsValid(value))
+        {
+            // No default: captions are looked up by this tag, and a wrong
+            // one finds nothing and says nothing.
+            throw Fail(ref reader,
+                $"'{member}' must be a short lowercase language tag such as en, de or pt-br, not '{value}'");
+        }
+        return value;
     }
 
     private static GraphicsBackend ReadBackend(ref Utf8JsonReader reader, string member)

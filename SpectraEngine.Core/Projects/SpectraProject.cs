@@ -14,9 +14,10 @@ public sealed class SpectraProject
 {
     internal static readonly string[] MemberOrder =
         [ProjectFormat.FormatVersionMember, ProjectFormat.MinimumReadableMember, ProjectFormat.EngineMember,
-         ProjectFormat.NameMember, ProjectFormat.IdMember, ProjectFormat.StartupMapMember,
-         ProjectFormat.MapsMember, ProjectFormat.PacksMember, ProjectFormat.DisplayMember,
-         ProjectFormat.DefaultBackendMember, ProjectFormat.AllowedBackendsMember];
+         ProjectFormat.NameMember, ProjectFormat.IdMember, ProjectFormat.LanguageMember,
+         ProjectFormat.StartupMapMember, ProjectFormat.MapsMember, ProjectFormat.PacksMember,
+         ProjectFormat.DisplayMember, ProjectFormat.DefaultBackendMember,
+         ProjectFormat.AllowedBackendsMember];
 
     public int FormatVersion { get; set; } = EngineInfo.ProjectFormatVersion;
 
@@ -37,6 +38,18 @@ public sealed class SpectraProject
     /// Survives a rename, which the name would not.
     /// </summary>
     public Guid Id { get; set; }
+
+    /// <summary>
+    /// The language the project's own text is written in, as a
+    /// <see cref="LanguageTag"/>, or null when the file names none.
+    /// </summary>
+    public string? Language { get; set; }
+
+    /// <summary>
+    /// <see cref="Language"/>, or <see cref="LanguageTag.Default"/> for a
+    /// project that names none. Captions in another language fall back to it.
+    /// </summary>
+    public string LanguageOrDefault => Language ?? LanguageTag.Default;
 
     /// <summary>
     /// Project-relative path of the map bundle a shipped game boots into, or

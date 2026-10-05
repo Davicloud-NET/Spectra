@@ -33,6 +33,7 @@ public static class ProjectFormat
     public const string EngineMember = "engine";
     public const string NameMember = "name";
     public const string IdMember = "id";
+    public const string LanguageMember = "language";
     public const string StartupMapMember = "startupMap";
     public const string MapsMember = "maps";
     public const string PacksMember = "packs";
