@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Audio;
+using SpectraEngine.Core.Hosting;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 
@@ -19,6 +21,7 @@ public sealed class SoundPreviewTests
 
         preview.Play(SoundPresenterRig.Beep, out string refusal).ShouldBeTrue(refusal);
 
+        refusal.ShouldBeEmpty();
         preview.Path.ShouldBe(SoundPresenterRig.Beep);
         preview.IsPlaying.ShouldBeTrue();
         AudioSourceSettings settings = rig.OnlyVoice();
@@ -176,6 +179,57 @@ public sealed class SoundPreviewTests
         preview.Apply(string.Empty);
         preview.Path.ShouldBeEmpty();
         rig.Backend.PlayingSources().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void What_a_host_asks_for_is_played_once_and_not_started_over_each_frame()
+    {
+        using var rig = new SoundPresenterRig(spareSources: 1);
+        SoundPreview preview = PreviewOn(rig);
+        var host = new EngineHost(NullLogger.Instance);
+        host.RequestSoundPreview(SoundPresenterRig.Speech);
+
+        preview.TakeRequest(host);
+        preview.Path.ShouldBe(SoundPresenterRig.Speech);
+        int uploads = rig.Backend.UploadCount;
+
+        for (int frame = 0; frame < 3; frame++)
+        {
+            preview.TakeRequest(host);
+            rig.Audio.Update();
+            preview.Update();
+        }
+
+        // Nothing was consumed, so a voice that carried on uploaded nothing more.
+        rig.Backend.UploadCount.ShouldBe(uploads);
+        preview.Path.ShouldBe(SoundPresenterRig.Speech);
+    }
+
+    [Fact]
+    public void A_host_that_asks_for_a_stop_gets_one()
+    {
+        using var rig = new SoundPresenterRig(spareSources: 1);
+        SoundPreview preview = PreviewOn(rig);
+        var host = new EngineHost(NullLogger.Instance);
+        preview.Play(SoundPresenterRig.Speech, out _).ShouldBeTrue();
+
+        host.RequestSoundPreview(string.Empty);
+        preview.TakeRequest(host);
+
+        preview.Path.ShouldBeEmpty();
+        rig.Backend.PlayingSources().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void With_no_request_waiting_a_preview_plays_on()
+    {
+        using var rig = new SoundPresenterRig(spareSources: 1);
+        SoundPreview preview = PreviewOn(rig);
+        preview.Play(SoundPresenterRig.Speech, out _).ShouldBeTrue();
+
+        preview.TakeRequest(new EngineHost(NullLogger.Instance));
+
+        preview.Path.ShouldBe(SoundPresenterRig.Speech);
     }
 
     [Fact]

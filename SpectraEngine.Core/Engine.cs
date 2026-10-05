@@ -243,8 +243,7 @@ public sealed class Engine
             _audioManager.SetListener(listener.Position, listener.Forward, listener.Up);
         }
 
-        if (Host.TryTakeSoundPreviewRequest(out string? preview))
-            _soundPreview.Apply(preview);
+        _soundPreview.TakeRequest(Host);
 
         // First, so the presenter hands out the sources finished voices gave back.
         _audioManager.Update();

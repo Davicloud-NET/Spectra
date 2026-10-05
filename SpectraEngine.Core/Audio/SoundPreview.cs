@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Assets;
+using SpectraEngine.Core.Hosting;
 using System;
 using System.Diagnostics.CodeAnalysis;
 
@@ -40,9 +41,21 @@ public sealed class SoundPreview
     public bool IsPlaying => Path.Length > 0;
 
     /// <summary>
-    /// Does what a host asked through <see cref="Hosting.EngineHost.RequestSoundPreview"/>:
-    /// plays the file, or stops when the path is empty. A file that cannot be
-    /// played is logged once, with the reason.
+    /// Takes what <paramref name="host"/> was last asked through
+    /// <see cref="EngineHost.RequestSoundPreview"/>, if anything, and does it.
+    /// Call once a frame.
+    /// </summary>
+    public void TakeRequest(EngineHost host)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+
+        if (host.TryTakeSoundPreviewRequest(out string? request))
+            Apply(request);
+    }
+
+    /// <summary>
+    /// Does what a host asked: plays the file, or stops when the path is
+    /// empty. A file that cannot be played is logged once, with the reason.
     /// </summary>
     public void Apply(string request)
     {
