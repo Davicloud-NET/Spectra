@@ -4,6 +4,11 @@
     <OutputType>Exe</OutputType>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!--
+      A publish is self-contained and scook is not. That is fine for a tool
+      the build runs from its own folder. Without this: NETSDK1150.
+    -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
   </PropertyGroup>
 
   <!-- Editing and Entities are optional for a host. A shipped game drops them. -->
