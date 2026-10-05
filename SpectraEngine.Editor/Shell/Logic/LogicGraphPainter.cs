@@ -115,7 +115,7 @@ internal sealed class LogicGraphPainter
                 _cards.Draw(context, card, model, _detail, ReferenceEquals(card, _hoveredCard));
         }
 
-        if (_detail == LogicDetail.Far)
+        if (_detail >= LogicDetail.Far)
             return;
 
         for (int i = 0; i < faces.Count; i++)

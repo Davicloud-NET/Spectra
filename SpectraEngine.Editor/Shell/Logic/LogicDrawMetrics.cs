@@ -35,10 +35,14 @@ public static class LogicDrawMetrics
     public const double LeastGridStepOnScreen = 14;
 
     /// <summary>Under this zoom port names, notes, state and labels are left out.</summary>
-    public const double CompactZoom = 0.45;
+    // Four columns of cards fitted into a pane 480 wide are at 0.43, and keep all of it.
+    public const double CompactZoom = 0.4;
 
     /// <summary>Under this zoom a card is a plain box with its name.</summary>
     public const double FarZoom = 0.25;
+
+    /// <summary>Under this zoom the boxes carry no name.</summary>
+    public const double FarthestZoom = 0.15;
 
     /// <summary>How much one notch of the wheel zooms.</summary>
     public const double WheelZoom = 1.15;
@@ -50,7 +54,8 @@ public static class LogicDrawMetrics
     public const double ClickSlop = 4;
 
     internal static LogicDetail DetailAt(double zoom) =>
-        zoom < FarZoom ? LogicDetail.Far
+        zoom < FarthestZoom ? LogicDetail.Farthest
+        : zoom < FarZoom ? LogicDetail.Far
         : zoom < CompactZoom ? LogicDetail.Compact
         : LogicDetail.Full;
 }

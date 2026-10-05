@@ -26,9 +26,9 @@ internal sealed class LogicCardPainter
     {
         bool isSelected = model.IsSelected(card.Card);
 
-        if (detail == LogicDetail.Far)
+        if (detail >= LogicDetail.Far)
         {
-            DrawBox(context, card, isSelected, isHovered);
+            DrawBox(context, card, isSelected, isHovered, hasName: detail == LogicDetail.Far);
             return;
         }
 
@@ -48,7 +48,7 @@ internal sealed class LogicCardPainter
     private static bool IsUnanswered(LogicSceneCard card) =>
         card.Stub is LogicStubKind.MissingName or LogicStubKind.MissingPrefix or LogicStubKind.NoTarget;
 
-    private void DrawBox(DrawingContext context, LogicSceneCard card, bool isSelected, bool isHovered)
+    private void DrawBox(DrawingContext context, LogicSceneCard card, bool isSelected, bool isHovered, bool hasName)
     {
         Rect box = card.Bounds;
         double radius = _palette.CardRadius;
@@ -59,6 +59,9 @@ internal sealed class LogicCardPainter
 
         if (isHovered)
             context.DrawRectangle(_palette.HoverWash, null, box, radius, radius);
+
+        if (!hasName)
+            return;
 
         LogicInk ink = isSelected ? LogicInk.FarSelectedName
             : isUnanswered ? LogicInk.FarStubName
@@ -144,20 +147,26 @@ internal sealed class LogicCardPainter
 
         double left = row.X + LogicDrawMetrics.HeaderPadding;
         double right = row.Right - LogicDrawMetrics.HeaderPadding;
+        double middle = row.Y + (row.Height - 1) / 2;
+        double? baseline = null;
 
-        // The label may take half the row. The value gets what is left.
-        FormattedText label = _texts.GetRunning(state.Label ?? "", LogicInk.StateLabel, (right - left) / 2);
-        double top = row.Y + (row.Height - 1 - label.Height) / 2;
-        context.DrawText(label, new Point(left, top));
+        if (!string.IsNullOrEmpty(state.Label))
+        {
+            // The label may take half the row. The value gets what is left.
+            FormattedText label = _texts.GetRunning(state.Label, LogicInk.StateLabel, (right - left) / 2);
+            double top = middle - label.Height / 2;
+
+            context.DrawText(label, new Point(left, top));
+            left += label.Width + LogicDrawMetrics.StateGap;
+            baseline = top + label.Baseline;
+        }
 
         if (string.IsNullOrEmpty(state.Value))
             return;
 
-        if (label.Width > 0)
-            left += label.Width + LogicDrawMetrics.StateGap;
-
+        // On the label's line where there is one, in the middle of the row where there is none.
         FormattedText value = _texts.GetRunning(state.Value, LogicInk.StateValue, right - left);
-        context.DrawText(value, new Point(left, top + label.Baseline - value.Baseline));
+        context.DrawText(value, new Point(left, baseline - value.Baseline ?? middle - value.Height / 2));
     }
 
     private void DrawPorts(DrawingContext context, LogicSceneCard card)

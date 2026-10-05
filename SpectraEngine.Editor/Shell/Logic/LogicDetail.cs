@@ -11,4 +11,7 @@ internal enum LogicDetail
 
     // Cards as plain boxes with a name.
     Far,
+
+    // Cards as plain boxes. A name would be a smudge.
+    Farthest,
 }
