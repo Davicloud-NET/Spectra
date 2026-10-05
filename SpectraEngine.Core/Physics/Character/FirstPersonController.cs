@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Input;
+using SpectraEngine.Core.Play;
 using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Core.Physics.Character;
@@ -112,7 +113,15 @@ public sealed class FirstPersonController
     /// <summary>Horizontal speed in spectraunits per second.</summary>
     public float HorizontalSpeed => _simulation.HorizontalSpeed;
 
-    /// <summary>Takes the camera, locks the cursor, and puts the character at its spawn.</summary>
+    /// <summary>
+    /// The command <see cref="BeginFrame"/> sampled, for every tick of the frame.
+    /// </summary>
+    public CharacterCommand Command => _command;
+
+    /// <summary>
+    /// Takes the camera and locks the cursor. Call once the
+    /// <see cref="PlaySession"/> has put the character at its spawn.
+    /// </summary>
     public void Enter()
     {
         if (Active)
@@ -122,7 +131,6 @@ public sealed class FirstPersonController
         _restoreCameraYaw = _camera.Yaw;
         _restoreCameraPitch = _camera.Pitch;
 
-        _simulation.Spawn();
         _command = default;
         _yaw = SpawnYaw;
         _pitch = 0f;
@@ -156,13 +164,6 @@ public sealed class FirstPersonController
         _camera.Pitch = _restoreCameraPitch;
 
         _logger.LogInformation("Play mode OFF: camera restored to where it was left");
-    }
-
-    /// <summary>Enters if idle, leaves if active.</summary>
-    public void Toggle()
-    {
-        if (Active) Exit();
-        else Enter();
     }
 
     /// <summary>
@@ -208,20 +209,18 @@ public sealed class FirstPersonController
         };
     }
 
-    /// <summary>Advances the character by one fixed tick.</summary>
-    public void Tick(float deltaTime)
+    /// <summary>Takes in one tick the <see cref="PlaySession"/> ran with <see cref="Command"/>.</summary>
+    public void OnTick(in PlayTickResult tick)
     {
         if (!Active)
             return;
 
-        _renderPrevious = _simulation.State.Position;
-
-        bool respawned = _simulation.Tick(in _command, deltaTime);
+        _renderPrevious = tick.PreviousPosition;
 
         // Accumulate: a frame can step up twice.
         _eyeLag += _simulation.State.SteppedUpBy;
 
-        if (respawned)
+        if (tick.Respawned)
         {
             _logger.LogWarning(
                 "Character fell below y={Limit:0.0} and was respawned (respawn {Count})",

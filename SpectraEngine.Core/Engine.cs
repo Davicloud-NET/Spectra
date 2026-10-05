@@ -10,6 +10,7 @@ using SpectraEngine.Core.Inspection;
 using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Physics.Character;
 using SpectraEngine.Core.Input;
+using SpectraEngine.Core.Play;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Windowing;
 using System;
@@ -48,6 +49,7 @@ public sealed class Engine
     private IRenderSurface? _surface;
     private Thread? _renderThread;
     private FlyCameraController? _cameraController;
+    private PlaySession? _play;
     private FirstPersonController? _character;
     private DebugVisualization _debugFlags = DebugVisualization.None;
 
@@ -164,7 +166,7 @@ public sealed class Engine
                 SharedAcquireWaitMs = acquireWaitMs,
                 SharedAcquirePeakMs = acquirePeakMs,
                 SharedTarget = _publishedSharedTarget,
-                IsPlaying = _character is { Active: true },
+                IsPlaying = _play is { IsActive: true },
                 CanPlay = _character is not null,
                 DebugFlags = _debugFlags,
                 PipelineName = _renderer.CurrentPipelineName,
@@ -554,37 +556,31 @@ public sealed class Engine
 
     private void TogglePlayMode()
     {
-        if (_character is not { } character)
-            return;
-
-        if (character.Active) ExitPlayMode();
+        if (_play is { IsActive: true }) ExitPlayMode();
         else EnterPlayMode();
     }
 
     private void EnterPlayMode()
     {
-        if (_character is not { } character || character.Active)
+        if (_play is not { IsActive: false } play || _character is not { } character)
             return;
 
-        // Suspend before the character asks for the cursor: it rolls back an
-        // open drag and releases the editor's cursor lock.
+        // Suspend first. It rolls back an open drag and releases the editor's
+        // cursor lock, and a spawning entity may fire outputs.
         _sceneManager.Editor?.Suspend();
+        play.Enter();
         character.Enter();
-
-        // Last: spawns may fire outputs, which must not run with a drag open.
-        // A scene with no character never gets here, so its entities never tick.
-        _sceneManager.StartEntityWorld();
     }
 
     private void ExitPlayMode()
     {
-        if (_character is not { Active: true } character)
+        if (_play is not { IsActive: true } play)
             return;
 
-        // First: OnRemove must run before the editor takes the scene back.
-        _sceneManager.StopEntityWorld();
-
-        character.Exit();
+        // The session first: OnRemove must run before the editor takes the
+        // scene back.
+        play.Exit();
+        _character?.Exit();
 
         _sceneManager.Editor?.Resume();
     }
@@ -664,10 +660,14 @@ public sealed class Engine
                     "{Key} enters play mode (walk the world as a {Height:0.0} sunit character); " +
                     "{OverlayKey} toggles the capsule overlay",
                     PlayModeKey, _character.Tuning.StandHeight, CharacterOverlayKey);
-
-                if (StartInPlayMode)
-                    EnterPlayMode();
             }
+
+            // Built even with nothing to play: its tick also steps physics.
+            var play = new PlaySession(_sceneManager, _character?.Simulation) { Profiler = Profiler };
+            _play = play;
+
+            if (StartInPlayMode)
+                EnterPlayMode();
 
             _logger.LogInformation("All subsystems initialized");
 
@@ -698,13 +698,13 @@ public sealed class Engine
 
                 if (_inputManager.WasKeyPressed(PlayModeKey))
                     TogglePlayMode();
-                else if (_character is { Active: true } && _inputManager.WasKeyPressed(InputKey.Escape))
+                else if (play.IsActive && _inputManager.WasKeyPressed(InputKey.Escape))
                     ExitPlayMode();
 
                 if (_inputManager.WasKeyPressed(CharacterOverlayKey))
                     _drawCharacter = !_drawCharacter;
 
-                bool playing = _character is { Active: true };
+                bool playing = play.IsActive;
 
                 // One command per frame, replayed by every tick. Sampling per
                 // tick would multiply mouse look by the tick count.
@@ -730,24 +730,13 @@ public sealed class Engine
                 // Fixed steps only, never frame deltas, or the simulation
                 // depends on how fast the machine is.
                 IScenePhysics physics = _sceneManager.Physics;
+                CharacterCommand command = playing ? _character!.Command : default;
                 int ticks = _physicsTicks.Advance(deltaTime);
                 for (int tick = 0; tick < ticks; tick++)
                 {
-                    // Entities first: one that moves a platform must decide
-                    // before the step resolves against it. Null outside play mode.
-                    _sceneManager.EntityWorld?.Tick(_physicsTicks.FixedDeltaTime);
-
-                    physics.PushKinematicTargets(_physicsTicks.FixedDeltaTime);
-                    using (Profiler.Measure(FramePhase.Physics))
-                        physics.Step(_physicsTicks.FixedDeltaTime);
-
-                    // Inside the loop: the next step overwrites the event buffers.
-                    physics.DrainEvents();
-
-                    // After the step, so the character sees this tick's
-                    // kinematic poses and rides a moving platform.
+                    PlayTickResult result = play.Tick(_physicsTicks.FixedDeltaTime, in command);
                     if (playing)
-                        _character!.Tick(_physicsTicks.FixedDeltaTime);
+                        _character!.OnTick(in result);
                 }
 
                 // Right before the compile pump, so a UI edit and the recompile
