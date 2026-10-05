@@ -20,6 +20,22 @@ public sealed class RibbonSession : IDisposable
     /// <summary>Runs <paramref name="body"/> on the session's UI thread and rethrows here.</summary>
     public void On(Action body) => _session.Dispatch(body, CancellationToken.None).GetAwaiter().GetResult();
 
+    /// <summary>
+    /// Runs <paramref name="body"/> on the session's UI thread and blocks
+    /// until it has finished, for a test that waits on work the shell does
+    /// off that thread.
+    /// </summary>
+    // Blocks, and is not awaited: an awaiting test would carry on inline on
+    // the session's thread, and the suite would then end by waiting on itself.
+    public void On(Func<Task> body) =>
+        _session.Dispatch(
+            async () =>
+            {
+                await body();
+                return true;
+            },
+            CancellationToken.None).GetAwaiter().GetResult();
+
     /// <inheritdoc/>
     public void Dispose() => _session.Dispose();
 }

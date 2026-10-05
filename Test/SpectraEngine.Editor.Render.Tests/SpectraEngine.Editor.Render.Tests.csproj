@@ -28,4 +28,9 @@
     <Compile Include="..\SpectraEngine.Editor.Tests\Logic\FixedWidthRuler.cs" Link="Logic\FixedWidthRuler.cs" />
   </ItemGroup>
 
+  <!-- The WAV writer the cook's tests use, for the sheets that list sounds. -->
+  <ItemGroup>
+    <Compile Include="..\Spectra.Kitchen.Tests\TempProject.cs" Link="TempProject.cs" />
+  </ItemGroup>
+
 </Project>
