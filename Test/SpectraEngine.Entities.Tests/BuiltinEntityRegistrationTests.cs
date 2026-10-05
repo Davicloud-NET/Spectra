@@ -21,6 +21,10 @@ public sealed class BuiltinEntityRegistrationTests
         EntityCatalog.Shared.TryCreate("logic_relay", out Entity? relay).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("logic_timer", out Entity? timer).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("math_counter", out Entity? counter).ShouldBeTrue();
+        EntityCatalog.Shared.TryCreate("info_teleport_destination", out Entity? destination).ShouldBeTrue();
+        EntityCatalog.Shared.TryCreate("trigger_multiple", out Entity? multiple).ShouldBeTrue();
+        EntityCatalog.Shared.TryCreate("trigger_once", out Entity? once).ShouldBeTrue();
+        EntityCatalog.Shared.TryCreate("trigger_teleport", out Entity? teleport).ShouldBeTrue();
 
         door.ShouldBeOfType<FuncDoor>();
         moveLinear.ShouldBeOfType<FuncMoveLinear>();
@@ -32,6 +36,10 @@ public sealed class BuiltinEntityRegistrationTests
         relay.ShouldBeOfType<LogicRelay>();
         timer.ShouldBeOfType<LogicTimer>();
         counter.ShouldBeOfType<MathCounter>();
+        destination.ShouldBeOfType<InfoTeleportDestination>();
+        multiple.ShouldBeOfType<TriggerMultiple>();
+        once.ShouldBeOfType<TriggerOnce>();
+        teleport.ShouldBeOfType<TriggerTeleport>();
     }
 
     [Fact]
@@ -50,8 +58,10 @@ public sealed class BuiltinEntityRegistrationTests
             [
                 "func_door", "func_movelinear",
                 "info_player_start",
+                "info_teleport_destination",
                 "logic_auto", "logic_branch", "logic_case", "logic_compare",
                 "logic_relay", "logic_timer", "math_counter",
+                "trigger_multiple", "trigger_once", "trigger_teleport",
             ]);
     }
 

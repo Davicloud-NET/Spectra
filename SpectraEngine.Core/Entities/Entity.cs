@@ -184,6 +184,12 @@ public abstract class Entity
         World.ReportRefusedKeyvalue(this, key, value);
 
     /// <summary>
+    /// Logs a warning that names this entity. <paramref name="problem"/>
+    /// finishes the sentence "Entity 'name' (class) ...", with no full stop.
+    /// </summary>
+    protected void Warn(string problem) => World.ReportWarning(this, problem);
+
+    /// <summary>
     /// Asks for <see cref="OnTick"/> every tick, or stops asking. Turned on
     /// while handling an input, the first call comes in the same tick.
     /// </summary>

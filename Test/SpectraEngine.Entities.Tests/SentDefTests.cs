@@ -274,8 +274,10 @@ public sealed class SentDefTests
         [
             "func_door", "func_movelinear",
             "info_player_start",
+            "info_teleport_destination",
             "logic_auto", "logic_branch", "logic_case", "logic_compare",
             "logic_relay", "logic_timer", "math_counter",
+            "trigger_multiple", "trigger_once", "trigger_teleport",
         ]);
 
         // The widest record: sixteen keyvalues and seventeen outputs.

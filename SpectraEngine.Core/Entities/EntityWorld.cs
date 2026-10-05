@@ -65,6 +65,7 @@ public sealed class EntityWorld
         _scene = scene;
         _logger = logger;
         _catalog = catalog ?? EntityCatalog.Shared;
+        Touches = new TouchTracker(this);
     }
 
     /// <summary>The scene this world runs over.</summary>
@@ -100,6 +101,12 @@ public sealed class EntityWorld
     /// leaves it null while entities spawn. <see cref="Deactivate"/> clears it.
     /// </summary>
     public IPlayerPresence? Player { get; set; }
+
+    /// <summary>
+    /// Which sensing entities the player is inside. An entity registers its
+    /// brushes here to hear touches start and end.
+    /// </summary>
+    public TouchTracker Touches { get; }
 
     /// <summary>
     /// Every live entity, in the traversal order they were built in. Empty while
@@ -174,6 +181,7 @@ public sealed class EntityWorld
         _tickingCount = 0;
         RefusedMoveCount = 0;
         _refusedMoveNodes.Clear();
+        Touches.Clear();
         _queue.Clear();
         _entities.Clear();
         _pendingSpawn.Clear();
@@ -226,6 +234,9 @@ public sealed class EntityWorld
 
         IsActive = false;
 
+        // Before OnRemove: a stop tells no listener that its touch ended.
+        Touches.Clear();
+
         _removing = true;
         for (int i = 0; i < _entities.Count; i++)
             _entities[i].OnRemove();
@@ -248,8 +259,9 @@ public sealed class EntityWorld
     }
 
     /// <summary>
-    /// Runs one tick of <paramref name="fixedDt"/> seconds: delivers everything
-    /// now due, calls <see cref="Entity.OnTick"/> on the entities that asked
+    /// Runs one tick of <paramref name="fixedDt"/> seconds: finds the touches
+    /// that started and ended since the last tick, delivers everything now
+    /// due, calls <see cref="Entity.OnTick"/> on the entities that asked
     /// for it, in <see cref="Entities"/> order, then drains the deferred spawn
     /// and despawn queues.
     /// </summary>
@@ -262,6 +274,9 @@ public sealed class EntityWorld
         TickNumber++;
         FixedDeltaTime = fixedDt;
         _time += fixedDt;
+
+        // Before the drain: an output a touch fires is delivered this tick.
+        Touches.Update();
 
         int dispatched = 0;
         while (_queue.TryPeek(out EntityEvent next) && next.Time <= _time)
@@ -523,6 +538,10 @@ public sealed class EntityWorld
             "Entity '{TargetName}' ({ClassName}) cannot read keyvalue '{Key}' = '{Value}'; keeping the default.",
             entity.TargetName, entity.ClassName, key, value);
 
+    internal void ReportWarning(Entity entity, string problem) =>
+        _logger.LogWarning(
+            "Entity '{TargetName}' ({ClassName}) {Problem}.", entity.TargetName, entity.ClassName, problem);
+
     internal void ReportPlaceholderInput(Entity entity, string input)
     {
         if (!_warnedPlaceholderInputs.Add(entity.ClassName))
@@ -718,6 +737,8 @@ public sealed class EntityWorld
         if (at < 0)
             return;
 
+        // Before OnRemove: a touch that started must be told it ended.
+        Touches.Unregister(entity);
         entity.OnRemove();
         SetTicking(entity, false);
         _index!.Unregister(entity);

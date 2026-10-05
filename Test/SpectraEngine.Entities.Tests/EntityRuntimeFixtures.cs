@@ -22,6 +22,10 @@ internal static class EntityRuntime
         catalog.Add(LogicRelay.SpectraSchema, static () => new LogicRelay());
         catalog.Add(LogicTimer.SpectraSchema, static () => new LogicTimer());
         catalog.Add(MathCounter.SpectraSchema, static () => new MathCounter());
+        catalog.Add(InfoTeleportDestination.SpectraSchema, static () => new InfoTeleportDestination());
+        catalog.Add(TriggerMultiple.SpectraSchema, static () => new TriggerMultiple());
+        catalog.Add(TriggerOnce.SpectraSchema, static () => new TriggerOnce());
+        catalog.Add(TriggerTeleport.SpectraSchema, static () => new TriggerTeleport());
         catalog.Add(new EntitySchema("test_recorder"), () => new RecordingEntity(log));
         return catalog;
     }

@@ -139,6 +139,12 @@ public sealed class Brush
     /// </summary>
     public IReadOnlyList<Polygon> LocalFaces => _localFaces;
 
+    /// <summary><see cref="LocalPlanes"/> as a span, for code that runs every tick.</summary>
+    public ReadOnlySpan<Plane> LocalPlaneSpan => _localPlanes;
+
+    /// <summary><see cref="LocalFaces"/> as a span, for code that runs every tick.</summary>
+    public ReadOnlySpan<Polygon> LocalFaceSpan => _localFaces;
+
     /// <summary>The per-face surfaces, in the same order as <see cref="LocalPlanes"/>.</summary>
     public IReadOnlyList<FaceSurface> FaceSurfaces => _faceSurfaces;
 

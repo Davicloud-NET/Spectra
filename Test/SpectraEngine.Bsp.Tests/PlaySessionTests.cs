@@ -372,6 +372,38 @@ public sealed class PlaySessionTests
     }
 
     [Fact]
+    public void A_character_walking_into_a_volume_touches_it_and_what_it_is_wired_to_hears()
+    {
+        var log = new List<string>();
+        SceneManager manager = Hosted(log);
+        Scene scene = manager.ActiveScene.ShouldNotBeNull();
+
+        // Across the way the character walks, its near face 3 ahead of the spawn.
+        SceneNode zone = Touching.Volume(
+            scene.Root, "zone", manager.PlayerSpawn + new Vector3(4f, 1f, 0f), new Vector3(1f, 2f, 2f));
+        Place(manager, "door", "recorder");
+        EntityRuntime.Wire(zone, "OnStartTouch", "door", "Open");
+
+        CharacterSimulation character = Walker(manager);
+        var session = new PlaySession(manager, character);
+        session.Enter();
+
+        // Yaw zero walks along +X.
+        var walk = new CharacterCommand { MoveForward = CharacterCommand.Axis(1f) };
+        for (int i = 0; i < 240 && log.Count == 0; i++)
+            session.Tick(Dt, in walk);
+
+        // The door hears it in the tick the touch starts.
+        log.ShouldBe(new[] { "start:zone", "door:Open::zone:zone" });
+        float reach = manager.PlayerSpawn.X + 3f - character.Tuning.Radius;
+        character.State.Position.X.ShouldBeInRange(reach, reach + 0.3f);
+
+        session.Exit();
+
+        log.Count.ShouldBe(2);
+    }
+
+    [Fact]
     public void The_session_names_no_rendering_or_input_type_in_its_surface()
     {
         // Matched by name, so the test need not reference graphics or input.
@@ -397,6 +429,7 @@ public sealed class PlaySessionTests
         EntityCatalog catalog = EntityRuntime.Catalog(log);
         catalog.Add(new EntitySchema("thinker"), () => new ThinkingEntity(log));
         catalog.Add(new EntitySchema("start"), static () => new StartEntity());
+        catalog.Add(new EntitySchema("sensor"), () => new TouchSensorEntity(log));
 
         var manager = new SceneManager(NullLogger<SceneManager>.Instance)
         {
