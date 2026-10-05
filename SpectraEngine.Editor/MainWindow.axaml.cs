@@ -45,6 +45,7 @@ public partial class MainWindow : Window
     private readonly ILogger<MainWindow> _logger;
     private readonly DispatcherTimer _pump;
     private readonly ShellModel _shell = new();
+    private readonly CaptionOutput _captions;
     private readonly EditorDocument _document = new();
 
     // Every snapshot is queued, not just the newest: a structural change rides
@@ -121,6 +122,7 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         DataContext = _shell;
+        _captions = new CaptionOutput(_shell.Output);
 
         HeaderStrip.Activated += OnHeaderAction;
         LogicHeader.HideRequested += () => OnShellVerb(ShellVerb.Of(WorkspaceCommand.HideLogic));
@@ -1041,6 +1043,7 @@ public partial class MainWindow : Window
         _sceneView.ResetSelectionMemory();
         _consoleFeed.Reset();
         _logic.Reset();
+        _captions.Reset();
         _deathNoticed = false;
         _dyingSince = null;
 
@@ -1129,6 +1132,7 @@ public partial class MainWindow : Window
 
         _shell.ApplySnapshot(snapshot);
         _logic.Apply(snapshot);
+        _captions.Apply(snapshot);
         RefreshSnapField(snapshot);
 
         if (pipelineCountBefore != _shell.PipelineNames.Count

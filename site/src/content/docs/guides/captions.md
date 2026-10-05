@@ -184,7 +184,7 @@ Caption and subtitle files go into the pack as the text you wrote.
 
 ### The log
 
-Each caption is written to the log once, when it appears. A project that runs from its cooked pack prints the log in its terminal. The editor [cannot play a sound yet](/reference/sound-entities/), so no caption appears in its Output panel.
+Each caption is written to the log once, when it appears. A project that runs from its cooked pack prints the log in its terminal. The editor writes each caption into its Output panel while the level plays.
 
 ```
 Caption: Guard: Hey! You there!
