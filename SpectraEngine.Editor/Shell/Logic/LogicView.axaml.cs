@@ -2,7 +2,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using SpectraEngine.Core.Entities;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
 
@@ -45,6 +47,12 @@ public partial class LogicView : UserControl
 
     /// <summary>Raised when the view asks for an entity to be selected and framed in the 3D view.</summary>
     public event Action<Guid>? FrameRequested;
+
+    /// <summary>
+    /// Raised when the view asks for an entity's wires to be replaced: the
+    /// entity, and its whole list as it should be.
+    /// </summary>
+    public event Action<Guid, IReadOnlyList<EntityConnection>>? WiringRequested;
 
     /// <summary>What the view shows. It remembers everything, the view nothing.</summary>
     public LogicViewModel? Model
@@ -95,12 +103,18 @@ public partial class LogicView : UserControl
             return;
 
         if (_heard is not null)
+        {
             _heard.PropertyChanged -= OnModelChanged;
+            _heard.Wiring.Requested -= OnWiringRequested;
+        }
 
         _heard = model;
 
         if (model is not null)
+        {
             model.PropertyChanged += OnModelChanged;
+            model.Wiring.Requested += OnWiringRequested;
+        }
 
         ShowSteps();
         ShowEvents();
@@ -161,8 +175,12 @@ public partial class LogicView : UserControl
         UnwiredNote.Text = fit.UsesShortNotes ? status.UnwiredShort : status.Unwired;
         ToolTip.SetTip(UnwiredNote, fit.UsesShortNotes ? status.Unwired : null);
         HintText.IsVisible = fit.ShowsHint;
+        HintText.Text = fit.UsesShortHint ? LogicViewText.EditingHintShort : Model?.Hint ?? "";
         EventStrip.IsVisible = fit.ShowsEvents;
     }
+
+    private void OnWiringRequested(Guid entity, IReadOnlyList<EntityConnection> wires) =>
+        WiringRequested?.Invoke(entity, wires);
 
     private void ShowEvents() => NoEvents.IsVisible = Model is not { Events.Count: > 0 };
 

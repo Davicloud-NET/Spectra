@@ -28,6 +28,12 @@ public sealed record LogicStatus(
     /// <summary>The same as <see cref="Unwired"/> in fewer words, for a narrow row.</summary>
     public string UnwiredShort { get; init; } = "";
 
+    /// <summary>
+    /// What the last edit in the view did, or empty. While it has something
+    /// to say it stands in the place of <see cref="Unwired"/> and <see cref="Truncated"/>.
+    /// </summary>
+    public string News { get; init; } = "";
+
     /// <summary>Reads the status off what a scope shows.</summary>
     /// <param name="scoped">The cards and edges shown.</param>
     /// <param name="info">The snapshot they were built from, for how much of the level it lists.</param>

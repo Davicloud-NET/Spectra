@@ -1,6 +1,7 @@
 using SpectraEngine.Core.Inspection;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace SpectraEngine.Editor.Shell.Logic;
 
@@ -20,6 +21,9 @@ internal sealed class LogicPlayState
     public long Tick => _info?.Tick ?? 0;
 
     public float Time => _info?.Time ?? 0f;
+
+    // The tick as text, for a readout. Empty while editing.
+    public string TickText { get; private set; } = "";
 
     // The newest events, oldest first. A new list whenever they change.
     public IReadOnlyList<LogicEventLine> Events { get; private set; } = [];
@@ -44,8 +48,12 @@ internal sealed class LogicPlayState
             _states.Clear();
             _statesTaken = null;
             Events = [];
+            TickText = "";
             return true;
         }
+
+        if (before is null || before.Tick != info.Tick)
+            TickText = info.Tick.ToString(CultureInfo.InvariantCulture);
 
         // The engine hands the same lists on until what they hold changes.
         if (!ReferenceEquals(info.Wires, before?.Wires))

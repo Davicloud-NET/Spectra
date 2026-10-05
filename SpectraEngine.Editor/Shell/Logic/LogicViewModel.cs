@@ -5,7 +5,6 @@ using SpectraEngine.Core.Inspection;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Globalization;
 using System.Windows.Input;
 
 namespace SpectraEngine.Editor.Shell.Logic;
@@ -40,7 +39,6 @@ public sealed class LogicViewModel : ObservableObject
     private Size _viewSize;
     private LogicStatus _status = LogicStatus.None;
     private LogicEmptyReason _emptyReason;
-    private string _tickText = "";
     private bool _shownChanged;
 
     /// <summary>Creates the model of a view that measures text with the fonts it draws in.</summary>
@@ -55,6 +53,7 @@ public sealed class LogicViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(ruler);
 
         _arrangement = new LogicArrangement(ruler);
+        Wiring = new LogicWiring(() => Redraw?.Invoke(), () => Raise(nameof(Status)));
         FitCommand = new RelayCommand(Fit);
         ActualSizeCommand = new RelayCommand(ShowActualSize);
         WholeLevelCommand = new RelayCommand(() => Mode = LogicScopeMode.WholeLevel);
@@ -198,13 +197,16 @@ public sealed class LogicViewModel : ObservableObject
     public long Tick => _play.Tick;
 
     /// <summary>The same as text, for a readout. Empty while editing.</summary>
-    public string TickText => _tickText;
+    public string TickText => _play.TickText;
 
     /// <summary>The newest three things wires did, oldest first. Empty while editing.</summary>
     public IReadOnlyList<LogicEventLine> Events => _play.Events;
 
+    /// <summary>The drag that makes a wire, the selected wire, and the edits the view asks for.</summary>
+    public LogicWiring Wiring { get; }
+
     /// <summary>What the status row says, and where its link leads.</summary>
-    public LogicStatus Status => _status;
+    public LogicStatus Status => Wiring.News.Length == 0 ? _status : _status with { News = Wiring.News };
 
     /// <summary>The hint at the right of the status row.</summary>
     public string Hint => IsPlaying ? LogicViewText.PlayingHint : LogicViewText.EditingHint;
@@ -336,10 +338,7 @@ public sealed class LogicViewModel : ObservableObject
         }
 
         if (_play.Tick != tick || _play.IsPlaying != wasPlaying)
-        {
-            _tickText = _play.IsPlaying ? _play.Tick.ToString(CultureInfo.InvariantCulture) : "";
             Raise(TickTextChanged);
-        }
 
         if (!ReferenceEquals(_play.Events, events))
             Raise(nameof(Events));
@@ -357,6 +356,7 @@ public sealed class LogicViewModel : ObservableObject
         if (change.HasFlag(LogicArrangementChange.Scene) && Scene is { Cards.Count: > 0 } scene)
             _fit.Placed(_shown.Ids, scene.Size, followsSelection: IsAroundSelection);
 
+        redraw |= Wiring.Take(_arrangement.Info, Shown, Scene, IsPlaying);
         if (redraw || change.HasFlag(LogicArrangementChange.Looks))
             Redraw?.Invoke();
 

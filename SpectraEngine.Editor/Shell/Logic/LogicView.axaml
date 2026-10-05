@@ -24,6 +24,10 @@
       <Setter Property="TextTrimming" Value="CharacterEllipsis" />
       <Setter Property="ClipToBounds" Value="True" />
     </Style>
+    <!-- What the last edit did. It is the row's news, so it is not muted. -->
+    <Style Selector="TextBlock.status.news">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
+    </Style>
 
     <Style Selector="TextBlock.event">
       <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
@@ -214,10 +218,11 @@
       </Panel>
     </Border>
 
-    <!-- Docked in the order they are given room: the counts and the link
-         first, the sentences last. The code shows a sentence only where all
-         of it fits, and the short one about entities with no wires where the
-         long one does not. -->
+    <!-- Docked in the order they are given room: the counts, the link and
+         what the last edit did first, the sentences last. The code shows a
+         sentence only where all of it fits, and the short one about entities
+         with no wires where the long one does not. It writes the hint too,
+         whole or cut to its first sentence. -->
     <Border Grid.Row="3"
             Height="{StaticResource SpectraStatusBarHeight}"
             BorderBrush="{StaticResource SpectraBorderSoft}"
@@ -239,8 +244,10 @@
                 ToolTip.Tip="Select the entity that sends it.">
           <TextBlock Text="{Binding Status.GoingNowhere}" />
         </Button>
-        <TextBlock x:Name="HintText" DockPanel.Dock="Right" Classes="status" Margin="14,0,0,0"
-                   Text="{Binding Hint}" />
+        <TextBlock x:Name="NewsText" DockPanel.Dock="Left" Classes="status news" Margin="0,0,14,0"
+                   Text="{Binding Status.News}"
+                   IsVisible="{Binding Status.News, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <TextBlock x:Name="HintText" DockPanel.Dock="Right" Classes="status" Margin="14,0,0,0" />
         <DockPanel x:Name="Notes">
           <TextBlock DockPanel.Dock="Left" Classes="status" Margin="0,0,14,0"
                      Text="{Binding Status.Truncated}"

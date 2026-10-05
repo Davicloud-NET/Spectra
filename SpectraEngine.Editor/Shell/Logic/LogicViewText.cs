@@ -7,7 +7,10 @@ namespace SpectraEngine.Editor.Shell.Logic;
 public static class LogicViewText
 {
     /// <summary>The hint at the right of the status row while editing.</summary>
-    public const string EditingHint = "Double-click a card to frame it in the viewport.";
+    public const string EditingHint = EditingHintShort + " Double-click a card to frame it in the viewport.";
+
+    /// <summary>The same where the row has no room for all of it.</summary>
+    public const string EditingHintShort = "Drag from a card or an output onto a card to wire it.";
 
     /// <summary>The hint at the right of the status row while a level runs.</summary>
     public const string PlayingHint = "Wires light up as they fire. Stop to edit.";

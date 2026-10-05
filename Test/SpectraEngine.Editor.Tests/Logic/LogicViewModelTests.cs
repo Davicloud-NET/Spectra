@@ -294,7 +294,8 @@ public sealed class LogicViewModelTests
             GoingNowhereSender = OpenVault,
             UnwiredShort = "4 entities have no wires.",
         });
-        model.Hint.ShouldBe("Double-click a card to frame it in the viewport.");
+        model.Hint.ShouldBe(
+            "Drag from a card or an output onto a card to wire it. Double-click a card to frame it in the viewport.");
         model.EmptyText.ShouldBe("");
     }
 

@@ -95,6 +95,9 @@ public readonly record struct LogicViewFit
     /// <summary>The hint at the right of the status row.</summary>
     public bool ShowsHint { get; init; }
 
+    /// <summary>Whether the hint is cut down to its first sentence.</summary>
+    public bool UsesShortHint { get; init; }
+
     /// <summary>The strip of what the wires just did.</summary>
     public bool ShowsEvents { get; init; }
 
@@ -125,40 +128,46 @@ public readonly record struct LogicViewFit
             ShowsEvents = isPlaying && size.Height >= Rows + EventStrip + LeastGraphHeight,
         };
 
-        string hint = isPlaying ? LogicViewText.PlayingHint : LogicViewText.EditingHint;
-        return fit.WithStatus(size.Width, status, hint, ruler).WithToolbar(size.Width);
+        return fit.WithStatus(size.Width, status, isPlaying, ruler).WithToolbar(size.Width);
     }
 
     /// <summary>How wide the filter box is in a view of a width. Zero when it is not shown.</summary>
     public double FilterWidth(double width) =>
         ShowsFilter ? Math.Clamp(width - ToolbarWidth - FilterGap, 0, MostFilterWidth) : 0;
 
-    // The link is the row's news and stays. The counts give way to it. A
-    // sentence shows whole or not at all, the short one where the long one
-    // has no room. The hint comes last.
-    private LogicViewFit WithStatus(double width, LogicStatus status, string hint, ILogicTextMeasure ruler)
+    // The link and what the last edit did are the row's news and stay. The
+    // counts give way to them. A sentence shows whole or not at all, the
+    // short one where the long one has no room, and none beside an edit's
+    // news. The hint comes last, and loses its second sentence first.
+    private LogicViewFit WithStatus(double width, LogicStatus status, bool isPlaying, ILogicTextMeasure ruler)
     {
-        double link = Part(status.GoingNowhere, ruler);
+        double news = Part(status.GoingNowhere, ruler) + Part(status.News, ruler);
         double counts = Part(status.Entities, ruler) + Part(status.Wires, ruler);
-        double left = width - StatusPadding - link;
+        double left = width - StatusPadding - news;
 
-        bool showsCounts = link == 0 || left >= counts;
+        bool showsCounts = news == 0 || left >= counts;
         left -= showsCounts ? counts : 0;
 
+        bool hasNotes = status.News.Length == 0;
         double truncated = Part(status.Truncated, ruler);
         double longNotes = truncated + Part(status.Unwired, ruler);
         double shortNotes = truncated + Part(status.UnwiredShort, ruler);
 
-        bool showsLong = longNotes > 0 && left >= longNotes;
-        bool showsShort = !showsLong && status.UnwiredShort.Length > 0 && left >= shortNotes;
+        bool showsLong = hasNotes && longNotes > 0 && left >= longNotes;
+        bool showsShort = hasNotes && !showsLong && status.UnwiredShort.Length > 0 && left >= shortNotes;
         left -= showsLong ? longNotes : showsShort ? shortNotes : 0;
+
+        string hint = isPlaying ? LogicViewText.PlayingHint : LogicViewText.EditingHint;
+        bool showsWhole = left >= Part(hint, ruler);
+        bool showsShortHint = !showsWhole && !isPlaying && left >= Part(LogicViewText.EditingHintShort, ruler);
 
         return this with
         {
             ShowsCounts = showsCounts,
             ShowsNotes = showsLong || showsShort,
             UsesShortNotes = showsShort,
-            ShowsHint = left >= Part(hint, ruler),
+            ShowsHint = showsWhole || showsShortHint,
+            UsesShortHint = showsShortHint,
         };
     }
 

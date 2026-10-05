@@ -29,8 +29,8 @@ public sealed class LogicViewFitTests
     [Fact]
     public void A_wide_view_shows_everything_and_the_pill_only_while_a_level_runs()
     {
-        Fit(1200, isPlaying: true).ShouldBe(LogicViewFit.Everything);
-        Fit(1200).ShouldBe(LogicViewFit.Everything with { ShowsPlaying = false, ShowsTick = false, ShowsEvents = false });
+        Fit(1600, isPlaying: true).ShouldBe(LogicViewFit.Everything);
+        Fit(1600).ShouldBe(LogicViewFit.Everything with { ShowsPlaying = false, ShowsTick = false, ShowsEvents = false });
     }
 
     [Fact]
@@ -146,10 +146,60 @@ public sealed class LogicViewFitTests
     {
         var large = new LogicStatus("4,000 entities", "12,345 wires", "", "", "");
         double counts = 20 + Part(large.Entities) + Part(large.Wires);
-        double hint = Part(LogicViewText.EditingHint);
+        double hint = Part(LogicViewText.EditingHintShort);
 
         LogicViewFit.For(new Size(counts + hint, 500), false, large, Ruler).ShowsHint.ShouldBeTrue();
         LogicViewFit.For(new Size(counts + hint - 1, 500), false, large, Ruler).ShowsHint.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_hint_loses_its_second_sentence_before_it_goes()
+    {
+        double counts = 20 + Part(Quiet.Entities) + Part(Quiet.Wires);
+        double whole = Part(LogicViewText.EditingHint);
+        double first = Part(LogicViewText.EditingHintShort);
+
+        LogicViewFit holdsAll = LogicViewFit.For(new Size(counts + whole, 500), false, Quiet, Ruler);
+        LogicViewFit holdsTheFirst = LogicViewFit.For(new Size(counts + first, 500), false, Quiet, Ruler);
+        LogicViewFit holdsNone = LogicViewFit.For(new Size(counts + first - 1, 500), false, Quiet, Ruler);
+
+        (holdsAll.ShowsHint && !holdsAll.UsesShortHint).ShouldBeTrue();
+        (holdsTheFirst.ShowsHint && holdsTheFirst.UsesShortHint).ShouldBeTrue();
+        (holdsNone.ShowsHint || holdsNone.UsesShortHint).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_hint_of_a_running_level_shows_whole_or_not_at_all()
+    {
+        double counts = 20 + Part(Quiet.Entities) + Part(Quiet.Wires);
+        double hint = Part(LogicViewText.PlayingHint);
+
+        LogicViewFit.For(new Size(counts + hint, 500), true, Quiet, Ruler).ShowsHint.ShouldBeTrue();
+
+        LogicViewFit narrower = LogicViewFit.For(new Size(counts + hint - 1, 500), true, Quiet, Ruler);
+        (narrower.ShowsHint || narrower.UsesShortHint).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void What_the_last_edit_did_stands_in_the_place_of_the_notes()
+    {
+        LogicStatus edited = Busy with { News = "Wired LiftButton.OnPressed to Lift.Open." };
+
+        LogicViewFit fit = LogicViewFit.For(new Size(1600, 500), false, edited, Ruler);
+
+        fit.ShowsNotes.ShouldBeFalse();
+        (fit.ShowsCounts && fit.ShowsHint).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void The_counts_give_way_to_what_the_last_edit_did()
+    {
+        LogicStatus edited = Quiet with { News = "Wired LiftButton.OnPressed to Lift.Open." };
+        double counts = Part(edited.Entities) + Part(edited.Wires);
+        double news = 20 + Part(edited.News);
+
+        LogicViewFit.For(new Size(news + counts, 500), false, edited, Ruler).ShowsCounts.ShouldBeTrue();
+        LogicViewFit.For(new Size(news + counts - 1, 500), false, edited, Ruler).ShowsCounts.ShouldBeFalse();
     }
 
     [Fact]
