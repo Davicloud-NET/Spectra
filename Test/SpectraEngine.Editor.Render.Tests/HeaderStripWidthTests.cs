@@ -26,7 +26,7 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
         return width;
     }
 
-    private static (ViewportHeaderStrip Strip, Window Window) Open(ShellModel model)
+    internal static (ViewportHeaderStrip Strip, Window Window) Open(ShellModel model)
     {
         var strip = new ViewportHeaderStrip { DataContext = model };
 
@@ -50,7 +50,7 @@ public sealed class HeaderStripWidthTests(RibbonSession session)
         return width;
     }
 
-    private static ShellModel AtRest()
+    internal static ShellModel AtRest()
     {
         var model = new ShellModel { HasSession = true };
 
