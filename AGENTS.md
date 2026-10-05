@@ -31,11 +31,11 @@ Tests are xUnit v3 on Microsoft.Testing.Platform. Run a suite with `dotnet run`,
 | Suite | Covers |
 |---|---|
 | `SpectraShade.Compiler.Tests` | the shader compiler |
-| `SpectraEngine.Bsp.Tests` | CSG, scene, maps, assets, entity runtime |
+| `SpectraEngine.Bsp.Tests` | CSG, scene, maps, assets, entity runtime, play session, console |
 | `SpectraEngine.Editing.Tests` | commands, undo, gizmos, cameras |
 | `SpectraEngine.Editor.Tests` | the shell's models, plus tests that read the shell's sources |
 | `SpectraEngine.Editor.Render.Tests` | shell controls rendered headless with real Skia |
-| `SpectraEngine.Entities.Tests` | the entity generator and `.sentdef` |
+| `SpectraEngine.Entities.Tests` | the entity generator, `.sentdef`, the built-in classes, a no-code level played end to end |
 | `SpectraEngine.Physics.Tests` | Box3D binding and the character mover |
 | `Spectra.Kitchen.Tests` | the cook, pack formats, determinism |
 | `SpectraEngine.Graphics.Tests` | pixel tests on a real GL driver |
@@ -54,6 +54,10 @@ Demo switches worth knowing (`docs/performance.md` has the profiling ones):
 | `--project=<dir>` with `--pack`, `--dev` | run a project, from cooked packs, with loose files on top |
 | `--save-project=<dir>` with `--exit-after-save` | export the scene as a project |
 | `--offscreen-probe`, `--viewport-compare`, `--pacing-probe`, `--pipeline-compare` | render checks that need no person |
+| `--command="<line>"`, repeatable | run a console line once the scene is loaded; replies are logged with `[console]` |
+| `--console` | read console lines from the terminal while the demo runs |
+
+A `--command` line runs before `--play` starts the level. Put `wait` in front of anything that needs it running: `--play --command="ent_watch on; wait; ent_list"`. This is how an agent checks entity wiring with no person present.
 
 Publishing:
 
@@ -64,7 +68,7 @@ Publishing:
 ## Layout
 
 - `Assets/`: the content root. Textures, `.spectramat` materials, models. Copied next to the executable.
-- `SpectraEngine.Core/`: the engine. `Graphics/` (renderers, pipelines, built-in shaders), `Scene/`, `Bsp/` (brushes, CSG, BSP), `Assets/` (content sources, pack readers, caches), `Maps/`, `Projects/`, `Entities/`, `Physics/`, `Audio/`, `Input/`, `Hosting/` (`EngineHost`), `Inspection/`.
+- `SpectraEngine.Core/`: the engine. `Graphics/` (renderers, pipelines, built-in shaders), `Scene/`, `Bsp/` (brushes, CSG, BSP), `Assets/` (content sources, pack readers, caches), `Maps/`, `Projects/`, `Entities/` (the runtime and the `ent_` commands), `Play/` (`PlaySession`), `ConsoleSystem/`, `Physics/`, `Audio/`, `Input/`, `Hosting/` (`EngineHost`), `Inspection/`.
 - `SpectraEngine.Editing/`: editor logic. Commands, undo, gizmos, selection, cameras.
 - `SpectraEngine.Editor/`: the Avalonia shell. `Shell/`, `Viewport/`, `Theme/`.
 - `SpectraEngine.Executable/`: the demo. Also hosts the editing layer.
@@ -132,6 +136,16 @@ Entities
 
 - An entity is strings on the node (`SceneNode.Entity`). The runtime copies them and never writes back.
 - The editor learns schemas only from `.sentdef` bytes, even in process.
+- A brush entity is a part that carries an entity. A trigger is such a part with collide, query and render off.
+- While a level plays, only `EntityWorld.SetLocalTransform` moves a node. It keeps the authored pose and Stop puts it back.
+- The player is not an entity. A trigger or a button the player sets off is its own activator.
+- Entity motion counts ticks. World time is a float sum and drifts.
+
+Play and console
+
+- `PlaySession` runs the fixed tick: entities, physics, then the character. It needs no camera, input or renderer.
+- There is one `SpectraConsole` per engine, never a static. A line goes in as a string through `EngineHost.SubmitConsoleLine`, and what it prints comes back in `FrameSnapshot.ConsoleLines`.
+- A command reads `Scene.EntitySchemas`, never `EntityCatalog.Shared`, which freezes on its first read.
 
 ## Things that fail quietly
 
@@ -156,8 +170,17 @@ Avalonia
 
 Host
 
-- Apply every published `FrameSnapshot`. The scene changes in one are sent once, so sampling the newest loses the rest.
-- A scene event handler must not change the graph.
+- Apply every published `FrameSnapshot`. The scene changes and console lines in one are sent once, so sampling the newest loses the rest.
+- A scene event handler must not change the graph. Neither must an `IEntityTrace`: it runs inside the dispatch.
+- A member or namespace named `Console` hides `System.Console` for the whole file.
+
+Entities and play
+
+- A new built-in class goes into `BuiltinEntities.Schemas` and `ClassCount`. Left out of both, it works until a trimmed build drops it, and then every map naming it loads a placeholder.
+- The entity generator reads only the members a class declares itself. A keyvalue on a base class binds nothing.
+- `MapSceneBinder.FromScene` builds fresh nodes. A node member it does not copy is deleted by the next save.
+- A default `SceneQueryFilter` wants `CanQuery`, which a trigger has off.
+- A wire's input name is case sensitive, and a wrong one is only a Debug log line. `ent_watch` shows it as `deny`.
 
 Tests and tools
 
