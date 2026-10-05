@@ -21,6 +21,8 @@ public sealed class WallPropagationPopTests
     private const float Walk = 4.5f;
     private const float Stroll = 1.4f;
 
+    private const string TableSwitch = "SPECTRA_WALL_POPS";
+
     private static readonly Vector3 Sound = new(0f, 1.5f, -8f);
     private static readonly WallPropagationSettings Engine = WallPropagationSettings.Default;
 
@@ -51,9 +53,18 @@ public sealed class WallPropagationPopTests
         several.Played.Gain.ShouldBeLessThan(one.Played.Gain * 0.7f);
     }
 
+    // Opt-in: it checks nothing and walks the level 42 times. For choosing
+    // the lines and the ring by its table:
+    //   PowerShell:  $env:SPECTRA_WALL_POPS = "1"
+    //   bash:        export SPECTRA_WALL_POPS=1
+    //   dotnet run --project Test/SpectraEngine.Bsp.Tests -- -class "SpectraEngine.Bsp.Tests.WallPropagationPopTests" -showLiveOutput
     [Fact]
     public void The_steps_for_every_count_of_lines_and_every_ring_are_printed()
     {
+        Assert.SkipUnless(
+            Environment.GetEnvironmentVariable(TableSwitch) == "1",
+            $"Opt-in: set {TableSwitch}=1 to print the table.");
+
         var output = TestContext.Current.TestOutputHelper.ShouldNotBeNull();
         output.WriteLine("Largest step in one frame, of a full scale of 1.");
         output.WriteLine("lines  ring   asked gain  asked high end  played gain  played high end");
