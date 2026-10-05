@@ -6,11 +6,9 @@ using System.Numerics;
 namespace SpectraEngine.Core.Audio.Captions;
 
 // Follows each sound the presenter plays through its captions and tells the
-// feed which lines are due. A sound is followed while it can be heard, by the
-// presenter's own loudness, so a sound and its caption cannot disagree.
-// Where a sound is in its playback is the simulation's count, the one a
-// voice is started by, moved on by what a voice played while a long frame
-// held the ticks back. Render thread only.
+// feed which lines are due. A sound is followed while the presenter's own
+// loudness says it is heard, so a sound and its caption cannot disagree.
+// Render thread only.
 internal sealed class CaptionTracker
 {
     private readonly CaptionFeed _feed;
@@ -38,7 +36,7 @@ internal sealed class CaptionTracker
         if (presented.Loudness <= SoundPresenter.SilenceGain)
         {
             if (presented.HasPlayedOut && presented.VoiceLead > 0f)
-                ShowWhatWasSaidUnseen(ref presented);
+                ShowWhatWasSaidUnseen(ref presented, tick);
 
             presented.Captions.WasHeard = false;
             return;
@@ -90,11 +88,14 @@ internal sealed class CaptionTracker
     // that comes into hearing in the middle of a line shows that line.
     private void FollowSpeech(SoundCaptions captions, ref PresentedEmitter presented, Vector3? place, long tick)
     {
-        if (presented.Emitter.SampleRate <= 0)
+        ref readonly SoundEmitter emitter = ref presented.Emitter;
+        if (emitter.SampleRate <= 0)
             return;
 
         ref CaptionProgress progress = ref presented.Captions;
-        double now = SecondsHeard(in presented, tick);
+        SoundPosition at = emitter.PositionAt(tick);
+        double now = SecondsHeard(in presented, at);
+        Passage passed = progress.WasHeard ? Passage.Since(in progress, now, at.Pass, in emitter) : default;
         IReadOnlyList<CaptionLine> lines = captions.Lines;
 
         for (int i = 0; i < lines.Count; i++)
@@ -103,7 +104,7 @@ internal sealed class CaptionTracker
             bool isSaid = line.Start <= now && now < line.End;
 
             // A long frame can pass a short line whole. It still shows.
-            if (progress.WasHeard ? HasReached(line.Start, progress.Seconds, now) : isSaid)
+            if (progress.WasHeard ? passed.Holds(line.Start) : isSaid)
                 _feed.Show(captions, i, place, presented.Loudness);
             else if (isSaid)
                 _feed.Hold(captions, i, place, presented.Loudness);
@@ -112,12 +113,13 @@ internal sealed class CaptionTracker
         }
 
         progress.Seconds = now;
+        progress.Pass = at.Pass;
     }
 
-    // The device played the sound to its end in a frame so long that the
-    // ticks are not there yet, and the presenter follows it no further. The
-    // lines it said in that frame still show, each for its reading time.
-    private void ShowWhatWasSaidUnseen(ref PresentedEmitter presented)
+    // The voice ended by itself in a frame so long that the ticks are not
+    // there yet, and the presenter follows it no further. The lines it said
+    // in that frame still show, each for its reading time.
+    private void ShowWhatWasSaidUnseen(ref PresentedEmitter presented, long tick)
     {
         ref readonly CaptionProgress progress = ref presented.Captions;
         ref readonly SoundEmitter emitter = ref presented.Emitter;
@@ -130,34 +132,67 @@ internal sealed class CaptionTracker
             return;
         }
 
+        // No further than the device can have come. A voice also ends when
+        // another sound takes its source, and what it had left was not said.
         double length = emitter.FrameCount / (double)emitter.SampleRate;
+        double reached = Math.Min(length, SecondsPlayed(in presented, emitter.PositionAt(tick)));
         Vector3? place = presented.Sound is { IsStereo: true } ? null : presented.Position;
 
         for (int i = 0; i < captions.Lines.Count; i++)
         {
             double start = captions.Lines[i].Start;
-            if (start > progress.Seconds && start < length)
+            if (start > progress.Seconds && start <= reached && start < length)
                 _feed.Show(captions, i, place, 0f);
         }
     }
 
-    // Seconds into the sound that have been heard. That is the level's count,
-    // and for a voice that played on through a long frame what it played on
-    // top. A sound that plays once never goes back: it may lose that voice.
-    private static double SecondsHeard(in PresentedEmitter presented, long tick)
+    // Seconds into the sound that have been heard. A sound that plays once
+    // never goes back: it may lose the voice that was ahead of the ticks.
+    private static double SecondsHeard(in PresentedEmitter presented, SoundPosition at)
     {
-        ref readonly SoundEmitter emitter = ref presented.Emitter;
-        double seconds = emitter.PositionAt(tick).Frame / (double)emitter.SampleRate;
+        double seconds = presented.Voice is StaticVoice
+            ? SecondsPlayed(in presented, at)
+            : at.Frame / (double)presented.Emitter.SampleRate;
 
-        if (presented.Voice is StaticVoice)
-            seconds += presented.VoiceLead * emitter.Pitch;
-
-        bool canGoBack = emitter.Loop.IsLooping || !presented.Captions.WasHeard;
+        bool canGoBack = presented.Emitter.Loop.IsLooping || !presented.Captions.WasHeard;
         return canGoBack ? seconds : Math.Max(seconds, presented.Captions.Seconds);
     }
 
-    // Whether playback passed a moment since the last look. A looped sound
-    // that has turned round has passed everything up to where it is now.
-    private static bool HasReached(double moment, double before, double now) =>
-        now >= before ? moment > before && moment <= now : moment <= now;
+    // The level's count, and on top what a voice on one buffer played while
+    // a long frame held the ticks back.
+    private static double SecondsPlayed(in PresentedEmitter presented, SoundPosition at) =>
+        (at.Frame / (double)presented.Emitter.SampleRate) + (presented.VoiceLead * presented.Emitter.Pitch);
+
+    // The stretch of a sound that playback went over since the last look.
+    // When a loop turned round that is two: the rest of the pass, and from
+    // the loop's start to where it is now. What lies before the loop's start
+    // is not said again.
+    private readonly struct Passage
+    {
+        private readonly double _after;
+        private readonly double _upTo;
+        private readonly double _againFrom;
+        private readonly double _againUpTo;
+
+        private Passage(double after, double upTo, double againFrom, double againUpTo)
+        {
+            _after = after;
+            _upTo = upTo;
+            _againFrom = againFrom;
+            _againUpTo = againUpTo;
+        }
+
+        public static Passage Since(in CaptionProgress progress, double now, long pass, in SoundEmitter emitter)
+        {
+            if (pass == progress.Pass)
+                return new Passage(progress.Seconds, now, double.PositiveInfinity, double.NegativeInfinity);
+
+            double rate = emitter.SampleRate;
+            double loopEnd = emitter.Loop.EndFrame / rate;
+            return new Passage(progress.Seconds, Math.BitDecrement(loopEnd), emitter.Loop.StartFrame / rate, now);
+        }
+
+        public bool Holds(double moment) =>
+            (moment > _after && moment <= _upTo) || (moment >= _againFrom && moment <= _againUpTo);
+    }
 }

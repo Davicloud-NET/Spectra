@@ -12,6 +12,8 @@ internal struct CaptionProgress
     // Whether the sound was heard at the last look.
     public bool WasHeard;
 
-    // Seconds into the sound at the last look. Means nothing unless WasHeard.
+    // Seconds into the sound at the last look, and which pass of its loop
+    // that was. They mean nothing unless WasHeard.
     public double Seconds;
+    public long Pass;
 }

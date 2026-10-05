@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Audio.Captions;
+using SpectraEngine.Core.Scene;
 using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
@@ -14,6 +15,8 @@ public sealed class CaptionFeedVoiceTests
 
     // One second long.
     private const string Beep = SoundPresenterRig.Beep;
+
+    private const string Announcement = "Sounds/announcement.wav";
 
     private const string EarlyAndLate = "WEBVTT\n\n00:00.000 --> 00:00.300\nOne\n\n00:00.700 --> 00:00.900\nTwo";
 
@@ -212,6 +215,22 @@ public sealed class CaptionFeedVoiceTests
     }
 
     [Fact]
+    public void A_voice_that_loses_its_source_after_a_stalled_frame_shows_no_line_it_did_not_reach()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Subtitles(Beep, "en", EarlyAndLate);
+        rig.Play(Beep);
+        rig.RunTo(0.1);
+        rig.Stall(0.2f);
+
+        // Another sound takes the source a third of a second in.
+        rig.Sound.Backend.Finish(rig.Sound.Backend.PlayingSources().ShouldHaveSingleItem());
+        rig.RunTo(0.95);
+
+        rig.Written.ShouldBe(["Caption: One"]);
+    }
+
+    [Fact]
     public void A_stream_runs_dry_in_a_stalled_frame_so_its_lines_keep_to_the_ticks()
     {
         // Two seconds, played as a stream.
@@ -262,6 +281,105 @@ public sealed class CaptionFeedVoiceTests
     }
 
     [Fact]
+    public void A_voice_that_loops_part_of_its_file_does_not_show_the_lines_before_that_part_again()
+    {
+        using var rig = RigWithAnnouncement();
+        rig.Play(Announcement, CaptionFeedRig.Near, looped: true);
+
+        // Four seconds, then the last two of them twice more.
+        rig.RunTo(7);
+
+        rig.Written.ShouldBe(
+        [
+            "Caption: Attention.",
+            "Caption: Mind the gap.",
+            "Caption: Stand clear.",
+            "Caption: Mind the gap.",
+            "Caption: Stand clear.",
+            "Caption: Mind the gap.",
+        ]);
+    }
+
+    [Fact]
+    public void A_long_frame_in_which_a_loop_turns_round_shows_the_lines_on_both_sides_of_the_turn()
+    {
+        using var rig = RigWithAnnouncement();
+        rig.Play(Announcement, CaptionFeedRig.Near, looped: true);
+        rig.RunTo(3.8);
+        int before = rig.Written.Count;
+
+        // Half a second in one frame: on from 3.8 seconds, round at 4, to 2.3.
+        rig.Sound.Tick(29);
+        rig.Step();
+
+        before.ShouldBe(2);
+        rig.Written.Skip(before).ShouldBe(["Caption: Mind the gap.", "Caption: Stand clear."], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void A_voice_that_is_stopped_in_the_middle_of_a_line_keeps_the_line_up_until_it_has_been_read()
+    {
+        const string Words = "Stop right where you are.";
+        double reading = CaptionTiming.ReadingSeconds(Words);
+        using var rig = new CaptionFeedRig();
+        rig.Subtitles(Speech, "en", $"WEBVTT\n\n00:00.000 --> 00:01.900\n{Words}");
+        int playing = rig.Play(Speech);
+        rig.RunTo(0.5);
+
+        rig.Sound.World.Sounds.Stop(playing);
+        rig.RunTo(reading - 0.05);
+        Caption afterTheStop = rig.Shown.ShouldHaveSingleItem();
+        rig.RunTo(reading + 0.05);
+
+        afterTheStop.Text.ShouldBe(Words);
+        afterTheStop.Audibility.ShouldBe(0f);
+        rig.Shown.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_voice_that_is_played_again_in_the_middle_of_a_line_refreshes_the_line_and_adds_none()
+    {
+        using var rig = new CaptionFeedRig();
+        rig.Subtitles(Speech, "en", TwoLines);
+        SceneNode guard = rig.Place(CaptionFeedRig.Near);
+        int first = rig.Play(Speech, guard, SoundPresenterRig.Once);
+        rig.RunTo(0.5);
+        Caption before = rig.Shown.ShouldHaveSingleItem();
+
+        rig.Sound.World.Sounds.Stop(first);
+        rig.Play(Speech, guard, SoundPresenterRig.Once);
+        rig.Step();
+
+        Caption after = rig.Shown.ShouldHaveSingleItem();
+        after.Id.ShouldBe(before.Id);
+        after.Text.ShouldBe("Hey! You there!");
+        after.EarliestEnd.ShouldBeGreaterThan(before.EarliestEnd);
+        rig.Written.ShouldBe(["Caption: Guard: Hey! You there!"]);
+    }
+
+    [Fact]
+    public void Another_language_switches_the_words_of_the_line_that_is_being_said()
+    {
+        const string InGerman = "WEBVTT\n\n00:00.000 --> 00:00.800\nHe! Sie da!\n\n00:01.000 --> 00:01.800\nHalt.";
+        using var rig = new CaptionFeedRig();
+        rig.Subtitles(Speech, "en", TwoLines);
+        rig.Subtitles(Speech, "de", InGerman);
+        rig.Play(Speech);
+        rig.RunTo(0.5);
+        Caption english = rig.Shown.ShouldHaveSingleItem();
+
+        rig.Feed.Language = "de";
+        rig.Step();
+        Caption german = rig.Shown.ShouldHaveSingleItem();
+        rig.RunTo(1.1);
+
+        english.Text.ShouldBe("Hey! You there!");
+        german.Text.ShouldBe("He! Sie da!");
+        german.Id.ShouldBeGreaterThan(english.Id);
+        rig.Shown.Select(caption => caption.Text).ShouldBe(["He! Sie da!", "Halt."]);
+    }
+
+    [Fact]
     public void Two_copies_of_a_voice_share_each_line()
     {
         using var rig = new CaptionFeedRig();
@@ -272,6 +390,34 @@ public sealed class CaptionFeedVoiceTests
         rig.Step();
 
         Texts(rig).ShouldBe(["Hey! You there!"]);
+    }
+
+    // Four seconds of which the last two repeat. One line is said before
+    // that part, one early in it and one just before its end.
+    private static CaptionFeedRig RigWithAnnouncement()
+    {
+        var rig = new CaptionFeedRig();
+        rig.Sound.Cook(
+            Announcement,
+            HandBuiltSaudio.Resident(
+                frames: 4 * SoundPresenterRig.Rate, loopStart: 2 * SoundPresenterRig.Rate, loopEnd: 4 * SoundPresenterRig.Rate));
+        rig.Subtitles(
+            Announcement,
+            "en",
+            """
+            WEBVTT
+
+            00:00.200 --> 00:00.800
+            Attention.
+
+            00:02.200 --> 00:02.800
+            Mind the gap.
+
+            00:03.900 --> 00:03.950
+            Stand clear.
+            """);
+
+        return rig;
     }
 
     private static string[] Texts(CaptionFeedRig rig) => [.. rig.Shown.Select(caption => caption.Text)];
