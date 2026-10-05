@@ -12,6 +12,24 @@ public static class LogicViewText
     /// <summary>The hint at the right of the status row while a level runs.</summary>
     public const string PlayingHint = "Wires light up as they fire. Stop to edit.";
 
+    /// <summary>The key that shows what is near the selection.</summary>
+    public const string AroundSelection = "Around the selection";
+
+    /// <summary>The same key where the toolbar is narrow.</summary>
+    public const string AroundSelectionShort = "Selection";
+
+    /// <summary>The key that shows every card.</summary>
+    public const string WholeLevel = "Whole level";
+
+    /// <summary>The same key where the toolbar is narrow.</summary>
+    public const string WholeLevelShort = "Level";
+
+    /// <summary>What the empty filter box says.</summary>
+    public const string FilterPlaceholder = "Filter by name or class";
+
+    /// <summary>The same where the box is too narrow for it.</summary>
+    public const string FilterPlaceholderShort = "Filter";
+
     /// <summary>How many entities have a card.</summary>
     public static string Entities(int count) => count == 1 ? "1 entity" : $"{Number(count)} entities";
 

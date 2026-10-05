@@ -20,4 +20,12 @@
     <PackageReference Include="Avalonia.Skia" />
   </ItemGroup>
 
+  <!-- The level the Logic view was designed on. Linked, so the sheets and the
+       model's tests draw the same one. -->
+  <ItemGroup>
+    <Compile Include="..\SpectraEngine.Editor.Tests\Logic\LogicFixture.cs" Link="Logic\LogicFixture.cs" />
+    <Compile Include="..\SpectraEngine.Editor.Tests\Logic\LogicPlayFixture.cs" Link="Logic\LogicPlayFixture.cs" />
+    <Compile Include="..\SpectraEngine.Editor.Tests\Logic\FixedWidthRuler.cs" Link="Logic\FixedWidthRuler.cs" />
+  </ItemGroup>
+
 </Project>

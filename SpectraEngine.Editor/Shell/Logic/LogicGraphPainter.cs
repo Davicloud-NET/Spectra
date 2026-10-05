@@ -59,16 +59,16 @@ internal sealed class LogicGraphPainter
         _wires.Use(scene);
         _palette.Wires.SetZoom(at.Zoom);
 
-        using (context.PushTransform(at.Matrix))
+        if (!string.IsNullOrWhiteSpace(model.Filter))
         {
-            if (!string.IsNullOrWhiteSpace(model.Filter))
-            {
-                using (context.PushOpacity(_palette.DimOpacity))
-                    DrawPass(context, model, scene, dimmed: true);
-            }
+            using (context.PushTransform(at.Matrix))
+                DrawPass(context, model, scene, dimmed: true);
 
-            DrawPass(context, model, scene, dimmed: false);
+            context.FillRectangle(_palette.DimWash, view);
         }
+
+        using (context.PushTransform(at.Matrix))
+            DrawPass(context, model, scene, dimmed: false);
 
         _model = null;
     }

@@ -61,7 +61,10 @@ internal sealed class LogicPalette
 
     public IImmutableBrush TravelFill => _emphasis;
 
-    public double DimOpacity { get; } = LogicTheme.Size("SpectraLogicDimOpacity");
+    // Laid over what the filter leaves out. Not an opacity pushed on the
+    // drawing: that thins each shape by itself, and a wire then shows
+    // through the card it runs behind.
+    public IImmutableBrush DimWash { get; } = LogicTheme.Brush("SpectraLogicDimWash");
 
     public double CardRadius { get; } = LogicTheme.Size("SpectraLogicCardRadius");
 
@@ -71,7 +74,7 @@ internal sealed class LogicPalette
 
     public double GridStep { get; } = LogicTheme.Size("SpectraLogicGridStep");
 
-    public double GridDot { get; } = LogicTheme.Size("SpectraLogicGridDot");
+    public double GridDot { get; } = LogicTheme.Size("SpectraLogicGridDotSize");
 
     public IPen CardEdge { get; }
 

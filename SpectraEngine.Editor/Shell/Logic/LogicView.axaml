@@ -1,0 +1,238 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:logic="using:SpectraEngine.Editor.Shell.Logic"
+             x:Class="SpectraEngine.Editor.Shell.Logic.LogicView"
+             x:DataType="logic:LogicViewModel"
+             Background="{StaticResource SpectraBgPanel}">
+
+  <!--
+    The body of the Logic pane: a toolbar, the graph, what the wires just did
+    while a level runs, and a status row. The pane's own header is above it.
+
+    The pane is moved between parents and may sit in a floated window, so this
+    relies on app-scoped styles and its own, and keeps nothing: Root's
+    DataContext is the model, which the window owns.
+
+    A part that is hidden takes its margin with it, so the rows carry their
+    gaps as margins and not as spacing.
+  -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.status">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+
+    <Style Selector="TextBlock.event">
+      <Setter Property="FontFamily" Value="{StaticResource SpectraFontMono}" />
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSmall}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+    <Style Selector="TextBlock.event.tick">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextMuted}" />
+    </Style>
+    <Style Selector="TextBlock.event.failed">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextDanger}" />
+    </Style>
+
+    <!-- A sentence that is also a button: the wire that goes nowhere. -->
+    <Style Selector="Button.link">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.link /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.link TextBlock">
+      <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextDanger}" />
+      <Setter Property="TextDecorations" Value="Underline" />
+      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="Button.link:pointerover TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+    </Style>
+
+    <!-- The steps field in the whole level, where steps mean nothing. -->
+    <Style Selector="TextBox.field:disabled">
+      <Setter Property="Foreground" Value="{StaticResource SpectraTextDisabled}" />
+    </Style>
+    <Style Selector="TextBox.field:disabled /template/ Border#PART_BorderElement">
+      <Setter Property="Background" Value="{StaticResource SpectraBgPanel}" />
+      <Setter Property="BorderBrush" Value="{StaticResource SpectraBorderStrong}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid x:Name="Root" RowDefinitions="Auto,*,Auto,Auto">
+
+    <Border Grid.Row="0"
+            Height="{StaticResource SpectraLogicToolbarHeight}"
+            BorderBrush="{StaticResource SpectraBorderSoft}"
+            BorderThickness="0,0,0,1"
+            Padding="8,0"
+            ClipToBounds="True">
+      <!-- The filter box takes what is left, up to its full width. The column
+           after it takes the rest, so the keys at the right stay there. -->
+      <Grid x:Name="Toolbar">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="1000*" MaxWidth="228" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <TextBlock x:Name="ShowLabel" Grid.Column="0" Classes="label" Margin="2,0,8,0" Text="Show" />
+
+        <Border x:Name="ModeKeys" Grid.Column="1" Classes="rtray" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal">
+            <Button Classes="rsmall" Classes.active="{Binding IsAroundSelection}"
+                    Command="{Binding AroundSelectionCommand}"
+                    ToolTip.Tip="Show the selected entities and what is wired to them.">
+              <TextBlock x:Name="AroundName" />
+            </Button>
+            <Button Classes="rsmall" Classes.active="{Binding IsWholeLevel}"
+                    Command="{Binding WholeLevelCommand}"
+                    ToolTip.Tip="Show every entity that has a wire.">
+              <TextBlock x:Name="WholeName" />
+            </Button>
+          </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="StepsLabel" Grid.Column="2" Classes="label" Margin="10,0,0,0" Text="Steps away" />
+
+        <TextBox x:Name="StepsBox" Grid.Column="3" Classes="field num" Width="34" Margin="8,0,0,0"
+                 VerticalAlignment="Center" TextAlignment="Center" MaxLength="1"
+                 IsEnabled="{Binding IsAroundSelection}"
+                 KeyDown="OnStepsKeyDown" LostFocus="OnStepsLostFocus"
+                 ToolTip.Tip="How many wires away from the selection an entity may be, from 1 to 6." />
+
+        <TextBox x:Name="FilterBox" Grid.Column="4" Classes="field" Margin="8,0,0,0"
+                 VerticalAlignment="Center"
+                 Text="{Binding Filter}" />
+
+        <Border x:Name="PlayingPill" Grid.Column="6" Margin="8,0,0,0" Padding="8,0"
+                Height="{StaticResource SpectraLogicPillHeight}"
+                VerticalAlignment="Center"
+                BorderBrush="{StaticResource SpectraPlayFill}"
+                BorderThickness="1"
+                CornerRadius="{StaticResource SpectraLogicPillRadius}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse Width="{StaticResource SpectraLogicPillDot}"
+                     Height="{StaticResource SpectraLogicPillDot}"
+                     VerticalAlignment="Center"
+                     Fill="{StaticResource SpectraSuccess}" />
+            <TextBlock Text="Playing" VerticalAlignment="Center" FontWeight="SemiBold"
+                       Foreground="{StaticResource SpectraSuccess}" />
+          </StackPanel>
+        </Border>
+
+        <!-- The number keeps room for six digits, so the pill does not step
+             aside as the tick grows. -->
+        <StackPanel x:Name="TickReadout" Grid.Column="7" Orientation="Horizontal" Spacing="5" Margin="8,0,0,0">
+          <TextBlock Classes="label" Text="tick" />
+          <TextBlock Classes="value" MinWidth="42"
+                     FontFamily="{StaticResource SpectraFontMono}"
+                     Foreground="{StaticResource SpectraTextEmphasis}"
+                     Text="{Binding TickText}" />
+        </StackPanel>
+
+        <Border x:Name="ZoomKeys" Grid.Column="8" Classes="rtray" Margin="8,0,0,0" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal">
+            <Button Classes="rsmall" Command="{Binding FitCommand}" ToolTip.Tip="Show the whole graph.">
+              <TextBlock Text="Fit" />
+            </Button>
+            <Button Classes="rsmall" Command="{Binding ActualSizeCommand}" ToolTip.Tip="Show the graph at its own size.">
+              <TextBlock Text="100%" />
+            </Button>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Border>
+
+    <Panel Grid.Row="1" ClipToBounds="True">
+      <logic:LogicCanvas x:Name="Graph" />
+
+      <StackPanel x:Name="EmptyState" MaxWidth="260" Margin="16" Spacing="14"
+                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                  IsVisible="{Binding EmptyText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+        <TextBlock Classes="prose" TextWrapping="Wrap" TextAlignment="Center" Text="{Binding EmptyText}" />
+        <Button Classes="secondary" HorizontalAlignment="Center"
+                Command="{Binding WholeLevelCommand}"
+                IsVisible="{Binding OffersWholeLevel}">
+          <TextBlock Text="Whole level" />
+        </Button>
+      </StackPanel>
+    </Panel>
+
+    <Border x:Name="EventStrip" Grid.Row="2"
+            Height="{StaticResource SpectraLogicEventStripHeight}"
+            Background="{StaticResource SpectraBgInput}"
+            BorderBrush="{StaticResource SpectraBorderSoft}"
+            BorderThickness="0,1,0,0"
+            Padding="10,3"
+            ClipToBounds="True">
+      <ItemsControl ItemsSource="{Binding Events}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="logic:LogicEventLine">
+            <DockPanel Height="{StaticResource SpectraLogicEventRowHeight}">
+              <TextBlock DockPanel.Dock="Left" Classes="event tick" MinWidth="30" TextAlignment="Right"
+                         Text="{Binding Tick}" />
+              <TextBlock DockPanel.Dock="Left" Classes="event" Classes.failed="{Binding IsFailure}"
+                         Margin="12,0,0,0" Text="{Binding Route}" />
+              <TextBlock Classes="event failed" Margin="16,0,0,0" Text="{Binding Reason}" />
+            </DockPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Border>
+
+    <!-- Docked in the order they are given room: the counts and the link
+         first, the sentence about entities with no wires last, cut short
+         where the row is too narrow for all of it. -->
+    <Border Grid.Row="3"
+            Height="{StaticResource SpectraStatusBarHeight}"
+            BorderBrush="{StaticResource SpectraBorderSoft}"
+            BorderThickness="0,1,0,0"
+            Padding="10,0"
+            ClipToBounds="True">
+      <DockPanel x:Name="StatusRow">
+        <StackPanel x:Name="Counts" DockPanel.Dock="Left" Orientation="Horizontal">
+          <TextBlock Classes="status" Margin="0,0,14,0"
+                     Text="{Binding Status.Entities}"
+                     IsVisible="{Binding Status.Entities, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <TextBlock Classes="status" Margin="0,0,14,0"
+                     Text="{Binding Status.Wires}"
+                     IsVisible="{Binding Status.Wires, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+        <Button DockPanel.Dock="Left" Classes="link" Margin="0,0,14,0"
+                Click="OnGoingNowhereClicked"
+                IsVisible="{Binding Status.GoingNowhere, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                ToolTip.Tip="Select the entity that sends it.">
+          <TextBlock Text="{Binding Status.GoingNowhere}" />
+        </Button>
+        <TextBlock x:Name="HintText" DockPanel.Dock="Right" Classes="status" Margin="14,0,0,0"
+                   Text="{Binding Hint}" />
+        <TextBlock DockPanel.Dock="Left" Classes="status" Margin="0,0,14,0"
+                   Text="{Binding Status.Truncated}"
+                   IsVisible="{Binding Status.Truncated, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <TextBlock Classes="status" Text="{Binding Status.Unwired}" />
+      </DockPanel>
+    </Border>
+  </Grid>
+</UserControl>
