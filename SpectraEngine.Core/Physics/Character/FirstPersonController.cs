@@ -25,12 +25,18 @@ public sealed class FirstPersonController
     // About four ticks: smooths a riser without lagging into the next step.
     private const float EyeSmoothingSeconds = 0.06f;
 
+    private const InputKey UseKey = InputKey.E;
+
     private readonly Camera _camera;
     private readonly InputManager _input;
     private readonly CharacterSimulation _simulation;
     private readonly ILogger _logger;
 
     private CharacterCommand _command;
+
+    // A use press no tick has carried yet. A tap can start and end on a frame
+    // that runs no tick.
+    private bool _usePending;
 
     private float _yaw;
     private float _pitch;
@@ -94,7 +100,7 @@ public sealed class FirstPersonController
         set => _simulation.SpawnPosition = value;
     }
 
-    /// <summary>The yaw <see cref="Enter"/> starts with, in radians.</summary>
+    /// <summary>The yaw <see cref="Enter"/> and a respawn start with, in radians.</summary>
     public float SpawnYaw
     {
         get => _simulation.SpawnYaw;
@@ -136,6 +142,7 @@ public sealed class FirstPersonController
         _restoreCameraPitch = _camera.Pitch;
 
         _command = default;
+        _usePending = false;
         _yaw = SpawnYaw;
         _pitch = 0f;
         _eyeLag = 0f;
@@ -147,8 +154,8 @@ public sealed class FirstPersonController
         UpdateView(0d, 1f);
 
         _logger.LogInformation(
-            "Play mode ON: WASD walks, Shift sprints, Space jumps, mouse looks, Escape or the toggle key " +
-            "leaves. Spawned at ({X:0.0}, {Y:0.0}, {Z:0.0}); {Speed:0.0} sunit/s walk, {Jump:0.00} sunit jump, " +
+            "Play mode ON: WASD walks, Shift sprints, Space jumps, E uses, mouse looks, Escape or the toggle " +
+            "key leaves. Spawned at ({X:0.0}, {Y:0.0}, {Z:0.0}); {Speed:0.0} sunit/s walk, {Jump:0.00} sunit jump, " +
             "{Step:0.00} sunit step, {Slope:0} degree slope limit",
             SpawnPosition.X, SpawnPosition.Y, SpawnPosition.Z,
             Tuning.WalkSpeed, Tuning.JumpHeight, Tuning.StepHeight, Tuning.MaxSlopeAngleDegrees);
@@ -198,6 +205,12 @@ public sealed class FirstPersonController
         if (_input.IsKeyDown(InputKey.ShiftLeft) || _input.IsKeyDown(InputKey.ShiftRight))
             buttons |= CharacterButtons.Sprint;
 
+        // Held, or pressed since the last tick.
+        if (_input.WasKeyPressed(UseKey))
+            _usePending = true;
+        if (_usePending || _input.IsKeyDown(UseKey))
+            buttons |= CharacterButtons.Use;
+
         // Crouch is unbound: the mover does nothing with it yet.
 
         float forward = (_input.IsKeyDown(InputKey.W) ? 1f : 0f) - (_input.IsKeyDown(InputKey.S) ? 1f : 0f);
@@ -219,6 +232,9 @@ public sealed class FirstPersonController
         if (!Active)
             return;
 
+        // This tick carried the press.
+        _usePending = false;
+
         _renderPrevious = tick.PreviousPosition;
 
         // Accumulate: a frame can step up twice.
@@ -230,10 +246,7 @@ public sealed class FirstPersonController
                 "Character fell below y={Limit:0.0} and was respawned (respawn {Count})",
                 FallOutHeight, Respawns);
 
-            // Reset both ends of the blend or the view slides back to spawn.
-            _eyeLag = 0f;
-            _renderPrevious = SpawnPosition;
-            _renderPosition = SpawnPosition;
+            SnapView(SpawnYaw);
         }
     }
 
@@ -249,6 +262,10 @@ public sealed class FirstPersonController
         if (!Active)
             return;
 
+        // Once a frame, not per tick: a teleport can come from outside a tick.
+        if (_simulation.TryTakeTeleport(out float? facing))
+            SnapView(facing);
+
         if (_eyeLag > 0f)
         {
             _eyeLag *= MathF.Exp(-(float)deltaTime / EyeSmoothingSeconds);
@@ -261,6 +278,18 @@ public sealed class FirstPersonController
         _camera.Position = _renderPosition + new Vector3(0f, Tuning.EyeHeight - _eyeLag, 0f);
         _camera.Yaw = _yaw;
         _camera.Pitch = _pitch;
+    }
+
+    // Puts the view where the character now is, with nothing to blend from.
+    // Both ends, or the view slides there across the map.
+    private void SnapView(float? yaw)
+    {
+        _eyeLag = 0f;
+        _renderPrevious = _simulation.State.Position;
+        _renderPosition = _renderPrevious;
+
+        if (yaw is { } facing)
+            _yaw = facing;
     }
 
     /// <summary>

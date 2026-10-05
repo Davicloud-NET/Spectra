@@ -11,6 +11,7 @@ public sealed class BuiltinEntityRegistrationTests
     {
         BuiltinEntities.EnsureRegistered();
 
+        EntityCatalog.Shared.TryCreate("func_button", out Entity? button).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("func_door", out Entity? door).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("func_movelinear", out Entity? moveLinear).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("info_player_start", out Entity? start).ShouldBeTrue();
@@ -26,6 +27,7 @@ public sealed class BuiltinEntityRegistrationTests
         EntityCatalog.Shared.TryCreate("trigger_once", out Entity? once).ShouldBeTrue();
         EntityCatalog.Shared.TryCreate("trigger_teleport", out Entity? teleport).ShouldBeTrue();
 
+        button.ShouldBeOfType<FuncButton>();
         door.ShouldBeOfType<FuncDoor>();
         moveLinear.ShouldBeOfType<FuncMoveLinear>();
         start.ShouldBeOfType<InfoPlayerStart>();
@@ -56,6 +58,7 @@ public sealed class BuiltinEntityRegistrationTests
             .Select(schema => schema.ClassName)
             .ShouldBe(
             [
+                "func_button",
                 "func_door", "func_movelinear",
                 "info_player_start",
                 "info_teleport_destination",

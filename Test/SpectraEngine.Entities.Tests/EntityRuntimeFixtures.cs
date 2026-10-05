@@ -12,6 +12,7 @@ internal static class EntityRuntime
     public static EntityCatalog Catalog(List<string> log)
     {
         var catalog = new EntityCatalog();
+        catalog.Add(FuncButton.SpectraSchema, static () => new FuncButton());
         catalog.Add(FuncDoor.SpectraSchema, static () => new FuncDoor());
         catalog.Add(FuncMoveLinear.SpectraSchema, static () => new FuncMoveLinear());
         catalog.Add(InfoPlayerStart.SpectraSchema, static () => new InfoPlayerStart());

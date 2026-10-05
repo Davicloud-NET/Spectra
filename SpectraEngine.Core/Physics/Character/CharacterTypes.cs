@@ -102,6 +102,9 @@ public enum CharacterButtons : byte
     Jump = 1 << 0,
     Sprint = 1 << 1,
     Crouch = 1 << 2,
+
+    /// <summary>Uses what the view points at. Acts once per press.</summary>
+    Use = 1 << 3,
 }
 
 /// <summary>

@@ -272,6 +272,7 @@ public sealed class SentDefTests
         catalog.Count.ShouldBe(BuiltinEntities.ClassCount);
         catalog.Schemas.Select(schema => schema.ClassName).ShouldBe(
         [
+            "func_button",
             "func_door", "func_movelinear",
             "info_player_start",
             "info_teleport_destination",

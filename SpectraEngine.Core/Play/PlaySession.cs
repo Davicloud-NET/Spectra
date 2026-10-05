@@ -22,6 +22,12 @@ public sealed class PlaySession
     // tick's ground snap settles them.
     private const float StartLift = 0.05f;
 
+    /// <summary>How far from the eye the character can use something, in units.</summary>
+    public const float UseReach = 2f;
+
+    /// <summary>The input a use sends to the entity it reaches.</summary>
+    public const string UseInput = "Use";
+
     private readonly SceneManager _sceneManager;
     private bool _warnedNoStart;
 
@@ -92,7 +98,8 @@ public sealed class PlaySession
 
     /// <summary>
     /// Runs one fixed tick: entities, physics, then the character. Physics
-    /// steps outside play too.
+    /// steps outside play too. A use pressed on this tick reaches its entity
+    /// on the next one.
     /// </summary>
     /// <param name="fixedDt">The fixed step, never a frame delta.</param>
     /// <param name="command">What the character is asked to do. Unused outside play.</param>
@@ -113,6 +120,10 @@ public sealed class PlaySession
 
         if (!IsActive || Character is not { } character)
             return default;
+
+        // Before the character tick, which overwrites the previous buttons.
+        if (IsUsePressed(character.State, in command))
+            Use(character, in command);
 
         // After the step, so the character sees this tick's kinematic poses
         // and rides a moving platform.
@@ -169,6 +180,45 @@ public sealed class PlaySession
         float x = world.M31;
         float z = world.M33;
         return (x * x) + (z * z) > 1e-8f ? MathF.Atan2(z, x) : 0f;
+    }
+
+    // The edge comes from the state: one command is replayed for every tick
+    // of a frame, and a held button must use once.
+    private static bool IsUsePressed(in CharacterState state, in CharacterCommand command) =>
+        (command.Buttons & CharacterButtons.Use) != 0 &&
+        (state.PrevButtons & CharacterButtons.Use) == 0;
+
+    // Aimed by the command, not by a camera: a server and a replay have no view.
+    private void Use(CharacterSimulation character, in CharacterCommand command)
+    {
+        // Null once a map has been loaded during play.
+        if (_sceneManager.EntityWorld is not { } entities)
+            return;
+
+        Vector3 eye = character.State.Position + new Vector3(0f, character.Tuning.EyeHeight, 0f);
+        var ray = new Ray3(eye, ViewDirection(in command));
+
+        // The default filter wants the query flag, which a trigger volume has
+        // off, so a volume does not shield what is behind it.
+        if (!entities.Scene.RaycastGameplay(in ray, out GameplayRayHit hit, UseReach) ||
+            hit.Node is not { } node)
+        {
+            return;
+        }
+
+        // No activator: the player is not an entity.
+        if (entities.TryFindOwner(node, out Entity? owner))
+            entities.QueueInput(owner, UseInput);
+    }
+
+    // The mover's forward axis, tilted by the pitch.
+    private static Vector3 ViewDirection(in CharacterCommand command)
+    {
+        float cosPitch = MathF.Cos(command.Pitch);
+        return new Vector3(
+            MathF.Cos(command.Yaw) * cosPitch,
+            MathF.Sin(command.Pitch),
+            MathF.Sin(command.Yaw) * cosPitch);
     }
 
     private void Step(IScenePhysics physics, float fixedDt)
