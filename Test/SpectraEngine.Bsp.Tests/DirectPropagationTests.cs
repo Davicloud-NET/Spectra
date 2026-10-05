@@ -45,6 +45,28 @@ public sealed class DirectPropagationTests
     }
 
     [Fact]
+    public void An_emitter_that_does_not_fade_arrives_at_full_volume_from_any_distance()
+    {
+        SoundSimulation unfading = SoundSimulation.All & ~SoundSimulation.Fades;
+        SoundQuery[] emitters =
+        [
+            new(new Vector3(0, 1, -1), MinDistance: 2f, MaxDistance: 30f, unfading),
+            new(new Vector3(16, 1, 0), MinDistance: 2f, MaxDistance: 30f, unfading),
+            new(new Vector3(0, 1, 100), MinDistance: 2f, MaxDistance: 30f, unfading),
+            new(new Vector3(0, 1, 100), MinDistance: 2f, MaxDistance: 30f, SoundSimulation.Fades),
+        ];
+        var results = new SoundPaths[emitters.Length];
+
+        new DirectPropagation().Resolve(Listener, emitters, results);
+
+        results[0][0].Gain.ShouldBe(1f);
+        results[1][0].Gain.ShouldBe(1f);
+        results[2][0].Gain.ShouldBe(1f);
+        results[2][0].Position.ShouldBe(emitters[2].Position);
+        results[3][0].Gain.ShouldBe(0f);
+    }
+
+    [Fact]
     public void Results_past_the_last_emitter_are_left_alone()
     {
         SoundQuery[] emitters = [new(Vector3.Zero, MinDistance: 2f, MaxDistance: 30f)];
