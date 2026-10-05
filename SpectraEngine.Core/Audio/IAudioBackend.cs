@@ -41,8 +41,12 @@ public enum AudioBufferFormat
 /// <param name="Velocity">World velocity, for Doppler.</param>
 /// <param name="Relative">True pins the source to the listener.</param>
 /// <param name="GainHf">
-/// How much of the high end survives; 1 is unfiltered. Carried to the backend.
-/// The OpenAL backend does not apply it yet.
+/// How much of the high end survives, from 0 to 1; 1 is unfiltered. It is the
+/// level left at 5 kHz, as OpenAL Soft reads it: 0.5 leaves half there (6 dB
+/// down) and 0.1 a tenth (20 dB down). Above 5 kHz the sound falls further,
+/// to about the square at the top: a quarter for 0.5, a hundredth for 0.1.
+/// Low notes pass, but from about 0.1 down the middle goes too: at 0.01 a
+/// 1 kHz tone is 12 dB down.
 /// </param>
 public readonly record struct AudioSourceSettings(
     float Gain,

@@ -18,6 +18,9 @@ internal sealed class FakeAudioBackend : IAudioBackend
 
         // What ConfigureSource was last given. Null until the first call.
         public AudioSourceSettings? Settings;
+
+        // What Settings held when Play was last called.
+        public AudioSourceSettings? SettingsAtPlay;
     }
 
     private readonly Dictionary<uint, SourceRecord> _sources = [];
@@ -88,6 +91,12 @@ internal sealed class FakeAudioBackend : IAudioBackend
         _sources[source].Settings
         ?? throw new InvalidOperationException($"Source {source} was never configured.");
 
+    // The settings the source had when it was last told to play. A real
+    // source plays with these until the next mix, whatever comes after.
+    public AudioSourceSettings SettingsWhenStarted(uint source) =>
+        _sources[source].SettingsAtPlay
+        ?? throw new InvalidOperationException($"Source {source} was started before it was configured, or never.");
+
     public uint CreateBuffer()
     {
         uint buffer = _nextBuffer++;
@@ -155,7 +164,12 @@ internal sealed class FakeAudioBackend : IAudioBackend
         return buffer;
     }
 
-    public void Play(uint source) => _sources[source].State = AudioSourceState.Playing;
+    public void Play(uint source)
+    {
+        SourceRecord record = _sources[source];
+        record.SettingsAtPlay = record.Settings;
+        record.State = AudioSourceState.Playing;
+    }
 
     public void Stop(uint source)
     {

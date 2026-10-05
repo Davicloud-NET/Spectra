@@ -20,18 +20,26 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
     private readonly AL _al;
     private readonly ALContext _alc;
 
+    // Null on a device that plays.
+    private readonly OpenAlLoopback? _loopback;
+
+    // Null when the library has no filters.
+    private OpenAlLowPass? _lowPass;
+
     private Device* _device;
     private Context* _context;
     private bool _disposed;
 
-    private OpenAlBackend(ILogger logger, AL al, ALContext alc, Device* device, Context* context, string deviceName)
+    private OpenAlBackend(
+        ILogger logger, AL al, ALContext alc, Device* device, Context* context, OpenAlLoopback? loopback)
     {
         _logger = logger;
         _al = al;
         _alc = alc;
         _device = device;
         _context = context;
-        DeviceName = deviceName;
+        _loopback = loopback;
+        DeviceName = alc.GetContextProperty(device, GetContextString.DeviceSpecifier) ?? "unnamed device";
     }
 
     /// <inheritdoc />
@@ -46,11 +54,78 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         [NotNullWhen(true)] out IAudioBackend? backend,
         out string failureReason)
     {
+        bool isOpen = TryOpen(logger, inMemory: false, withheld: null, out OpenAlBackend? opened, out failureReason);
+        backend = opened;
+        return isOpen;
+    }
+
+    // Opens a device that renders into memory and reaches no sound card, for
+    // tests of what the library does to a sound. Sounds move on only when
+    // Render is called.
+    // withheld names extensions and entry points to treat as absent.
+    internal static bool TryCreateLoopback(
+        ILogger logger,
+        [NotNullWhen(true)] out OpenAlBackend? backend,
+        out string failureReason,
+        Predicate<string>? withheld = null) =>
+        TryOpen(logger, inMemory: true, withheld, out backend, out failureReason);
+
+    private static bool TryOpen(
+        ILogger logger,
+        bool inMemory,
+        Predicate<string>? withheld,
+        [NotNullWhen(true)] out OpenAlBackend? backend,
+        out string failureReason)
+    {
         backend = null;
+        if (!TryLoadLibrary(out AL? al, out ALContext? alc, out failureReason))
+            return false;
+
+        OpenAlLoopback? loopback = null;
+        Device* device = null;
+        Context* context = null;
+        try
+        {
+            if (inMemory) loopback = OpenAlLoopback.TryLoad(alc);
+
+            failureReason = inMemory && loopback is null
+                ? "this OpenAL has no loopback device"
+                : OpenDevice(alc, loopback, out device, out context);
+        }
+        catch (Exception ex)
+        {
+            // Reported to the caller, which goes on with no sound.
+            failureReason = $"opening the audio device threw ({ex.GetType().Name}: {ex.Message})";
+        }
+
+        if (failureReason.Length > 0)
+        {
+            if (context is not null) alc.DestroyContext(context);
+            if (device is not null) alc.CloseDevice(device);
+            alc.Dispose();
+            al.Dispose();
+            return false;
+        }
+
+        // The engine computes loudness from distance itself, so OpenAL only pans.
+        al.DistanceModel(DistanceModel.None);
+
+        LogCapabilities(logger, al, alc, device);
+
+        backend = new OpenAlBackend(logger, al, alc, device, context, loopback);
+        backend.MakeLowPass(withheld);
+        return true;
+    }
+
+    private static bool TryLoadLibrary(
+        [NotNullWhen(true)] out AL? al,
+        [NotNullWhen(true)] out ALContext? alc,
+        out string failureReason)
+    {
+        al = null;
+        alc = null;
         failureReason = string.Empty;
 
-        AL al;
-        ALContext alc;
         try
         {
             // GetApi throws when no OpenAL runtime is installed. soft asks for
@@ -59,65 +134,44 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
             SilkPlatform.UsePortableRuntimeId();
             alc = ALContext.GetApi(soft: true);
             al = AL.GetApi(soft: true);
+            return true;
         }
         catch (Exception ex)
         {
+            alc?.Dispose();
+            alc = null;
             failureReason = $"the OpenAL runtime could not be loaded ({ex.GetType().Name}: {ex.Message})";
             return false;
         }
+    }
 
-        Device* device = null;
-        Context* context = null;
-        try
+    // Returns why it could not, or nothing when the device is open and its
+    // context current. The caller closes whatever was opened.
+    private static string OpenDevice(ALContext alc, OpenAlLoopback? loopback, out Device* device, out Context* context)
+    {
+        context = null;
+        device = loopback is null ? alc.OpenDevice(string.Empty) : loopback.OpenDevice();
+        if (device is null)
+            return "no audio output device is available";
+
+        context = loopback is null ? alc.CreateContext(device, null) : loopback.CreateContext(alc, device);
+        if (context is null)
+            return $"the audio device refused a context ({alc.GetError(device)})";
+
+        if (!alc.MakeContextCurrent(context))
+            return $"the audio context could not be made current ({alc.GetError(device)})";
+
+        return string.Empty;
+    }
+
+    private void MakeLowPass(Predicate<string>? withheld)
+    {
+        _lowPass = OpenAlLowPass.TryCreate(_al, _alc, _device, withheld, out string reason);
+        if (_lowPass is null)
         {
-            device = alc.OpenDevice(string.Empty);
-            if (device is null)
-            {
-                failureReason = "no audio output device is available";
-                alc.Dispose();
-                al.Dispose();
-                return false;
-            }
-
-            context = alc.CreateContext(device, null);
-            if (context is null)
-            {
-                failureReason = $"the audio device refused a context ({alc.GetError(device)})";
-                alc.CloseDevice(device);
-                alc.Dispose();
-                al.Dispose();
-                return false;
-            }
-
-            if (!alc.MakeContextCurrent(context))
-            {
-                failureReason = $"the audio context could not be made current ({alc.GetError(device)})";
-                alc.DestroyContext(context);
-                alc.CloseDevice(device);
-                alc.Dispose();
-                al.Dispose();
-                return false;
-            }
+            _logger.LogWarning(
+                "No low-pass filter: {Reason}. Sounds behind walls will be quieter but not duller", reason);
         }
-        catch (Exception ex)
-        {
-            failureReason = $"opening the audio device threw ({ex.GetType().Name}: {ex.Message})";
-            if (context is not null) alc.DestroyContext(context);
-            if (device is not null) alc.CloseDevice(device);
-            alc.Dispose();
-            al.Dispose();
-            return false;
-        }
-
-        string name = alc.GetContextProperty(device, GetContextString.DeviceSpecifier) ?? "unnamed device";
-
-        // The engine computes loudness from distance itself, so OpenAL only pans.
-        al.DistanceModel(DistanceModel.None);
-
-        LogCapabilities(logger, al, alc, device);
-
-        backend = new OpenAlBackend(logger, al, alc, device, context, name);
-        return true;
     }
 
     // IsExtensionPresent only. AL.TryGetExtension reflects, which an AOT build trims.
@@ -165,7 +219,10 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         source = _al.GenSource();
         AudioError error = _al.GetError();
         if (error == AudioError.NoError && source != 0)
+        {
+            _lowPass?.Track(source);
             return true;
+        }
 
         // A driver at its source limit reports OutOfMemory here.
         if (source != 0) _al.DeleteSource(source);
@@ -174,7 +231,11 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
     }
 
     /// <inheritdoc />
-    public void DestroySource(uint source) => _al.DeleteSource(source);
+    public void DestroySource(uint source)
+    {
+        _al.DeleteSource(source);
+        _lowPass?.Forget(source);
+    }
 
     /// <inheritdoc />
     public void ConfigureSource(uint source, in AudioSourceSettings settings)
@@ -185,7 +246,9 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         _al.SetSourceProperty(source, SourceVector3.Velocity, settings.Velocity.X, settings.Velocity.Y, settings.Velocity.Z);
         _al.SetSourceProperty(source, SourceBoolean.SourceRelative, settings.Relative);
 
-        // GainHf is not applied: it needs an EFX filter and this backend makes none.
+        // A pooled source still has the last sound's filter. Every sound
+        // starts with a call here, which is what clears it.
+        _lowPass?.Apply(source, settings.GainHf);
 
         // Never set AL_LOOPING, loops go through the buffer queue. Cleared
         // here because pooled sources are reused.
@@ -265,11 +328,24 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
     /// <inheritdoc />
     public void SetListenerGain(float gain) => _al.SetListenerProperty(ListenerFloat.Gain, gain);
 
+    // Mixes the next samples of a loopback device, one float a frame.
+    internal void Render(Span<float> samples)
+    {
+        if (_loopback is null)
+            throw new InvalidOperationException("Only a loopback device renders into memory.");
+
+        _loopback.Render(_device, samples);
+    }
+
     /// <summary>Drops the context and closes the device. Idempotent.</summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+
+        // While the context is still current.
+        _lowPass?.Delete();
+        _lowPass = null;
 
         // Unbind first: destroying the current context is undefined in ALC
         // and crashes on some drivers.

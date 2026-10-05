@@ -232,6 +232,27 @@ public sealed class AudioManagerTests
         audio.Shutdown();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_sound_that_takes_a_source_configures_it_before_it_plays(bool looping)
+    {
+        // The source still has the last sound's filter until it is configured.
+        var backend = new FakeAudioBackend(maxSources: 1);
+        var audio = NewManager(backend, sources: 1);
+        var format = new AudioFormat(Rate, 1);
+        AudioClip shot = audio.CreateClip(format, Tone(600)).ShouldNotBeNull();
+        AudioClip loop = audio.CreateClip(format, Tone(4000), new LoopRegion(0, 4000)).ShouldNotBeNull();
+        uint source = audio.Play(shot, Muffled).ShouldNotBeNull().Source;
+
+        AudioVoice next = audio.Play(looping ? loop : shot).ShouldNotBeNull();
+
+        next.Source.ShouldBe(source);
+        backend.SettingsWhenStarted(source).ShouldBe(AudioSourceSettings.Default);
+
+        audio.Shutdown();
+    }
+
     [Fact]
     public void Settings_are_unfiltered_unless_they_say_otherwise()
     {
