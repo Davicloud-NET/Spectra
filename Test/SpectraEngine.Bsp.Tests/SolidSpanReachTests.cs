@@ -33,6 +33,9 @@ public sealed class SolidSpanReachTests
         lengthwise.Start.ShouldBe(0f);
         lengthwise.End.ShouldBe(180f);
 
+        // Met in every one of those cells and clipped once.
+        level.Scene.LastSolidSpanBrushCount.ShouldBe(1);
+
         // Down through it where four cells meet.
         SolidSpan across = level.Trace(new Vector3(0f, 5f, 0f), new Vector3(0f, -5f, 0f)).ShouldHaveSingleItem();
         across.Start.ShouldBe(5f, Exact);
@@ -54,6 +57,7 @@ public sealed class SolidSpanReachTests
         SolidSpan[] spans = level.Trace(from, to);
 
         spans.Length.ShouldBe(2);
+        level.Scene.LastSolidSpanBrushCount.ShouldBe(2);
         spans[0].Material.ShouldBe(SpanLevel.Brick);
         spans[1].Start.ShouldBe(300f * perUnitOfX, 1e-3f);
         spans[1].End.ShouldBe(301f * perUnitOfX, 1e-3f);

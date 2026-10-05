@@ -7,6 +7,9 @@ public sealed partial class Scene
 {
     private readonly SolidSpanTracer _solidSpans = new();
 
+    // How many brushes the last trace had to clip.
+    internal int LastSolidSpanBrushCount => _solidSpans.BrushesClipped;
+
     /// <summary>
     /// The solid a straight line from <paramref name="from"/> to
     /// <paramref name="to"/> passes through, nearest first. This is what a
@@ -21,6 +24,7 @@ public sealed partial class Scene
     // ends inside gets a span up to its length. One that only touches a solid,
     // or runs along a face, passes through nothing. Neither does one with no
     // length.
+    // Where brushes overlap, SolidSpanComposer says which one a stretch belongs to.
     // The world is the one last compiled, so an edit counts when its compile
     // lands. Under a baked map it is the collision hulls, and a map cooked
     // without their face materials names the default material for every one.

@@ -7,8 +7,10 @@ namespace SpectraEngine.Core.Scene;
 /// world units from the segment's first point, and what it is made of.
 /// </summary>
 /// <param name="Material">
-/// The material of the face the segment entered the solid through. For a
-/// segment that starts inside the solid, the face it leaves through.
+/// What the stretch is made of: the material of the face through which the
+/// segment entered the brush it belongs to, even where a cut or another brush
+/// took the first part of that brush. For a segment that starts inside the
+/// brush, the face it leaves by.
 /// </param>
 public readonly record struct SolidSpan(float Start, float End, MaterialRef Material)
 {

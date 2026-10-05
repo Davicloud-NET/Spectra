@@ -695,7 +695,7 @@ COLL
 - `CompiledStaticWorld.CollisionCells` sorts the placements into cells with `ChunkGrid.Build`, which carves nothing. Those cells hold owner and resident lists and no surfaces or tree.
 - `BrushPlaneCollisionSource` reads the placements and the cells where it reads `Scene.StaticWorld` in an authored level, and builds the same cover of a cut brush from them. `Box3DScenePhysics` builds its static hulls from the same two.
 - A hull whose node transform is not rigid, or whose planes bound no solid, gets no collision. The load carries on and `CompiledMapLoadReport.CollisionHullsRefused` names the node. The cook refuses both.
-- A ray against the world reads the baked trees in `CBSP` and not the hulls, because only the trees know what a cut removed. `CompiledStaticWorld.Raycast` and `CsgWorld.Raycast` share one cell walk, `ChunkRayWalk`, and `Scene.RaycastGameplay` asks whichever world the scene has. A hit on baked geometry names no material: the section holds planes and no faces.
+- A ray against the world reads the baked trees in `CBSP` and not the hulls, because only the trees know what a cut removed. `CompiledStaticWorld.Raycast` and `CsgWorld.Raycast` share one cell walk, `ChunkRayWalk`, and `Scene.RaycastGameplay` asks whichever world the scene has. A ray hit on baked geometry names no material: the trees hold planes and no faces. What a hull is made of is in `COLM`, below.
 - A file at format version 2 is refused. It had no hulls, and loading it would give a level the player falls through.
 
 **`COLM`.** What each collision hull face is made of. The section is optional. A map without it loads, and a reader that does not know the code steps over it, so the format version did not move.

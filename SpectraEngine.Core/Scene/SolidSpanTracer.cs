@@ -19,6 +19,9 @@ internal sealed class SolidSpanTracer
     private int[] _clippedInTrace = [];
     private int _trace;
 
+    // Brushes the last trace clipped, world and part. For tests of the cell walk.
+    public int BrushesClipped { get; private set; }
+
     public int Trace(
         Scene scene, Vector3 from, Vector3 to, in SceneQueryFilter filter,
         Span<SolidSpan> spans, out bool truncated)
@@ -33,6 +36,7 @@ internal sealed class SolidSpanTracer
         var segment = new Segment(from, offset / length, length);
 
         _composer.Clear();
+        BrushesClipped = 0;
 
         if (!filter.ExcludeStaticWorldBrushes)
             AddWorld(scene, in segment);
@@ -89,6 +93,7 @@ internal sealed class SolidSpanTracer
         if (_clippedInTrace[index] == _trace)
             return;
         _clippedInTrace[index] = _trace;
+        BrushesClipped++;
 
         BrushPlacement placement;
         UInt128 rank;
@@ -144,6 +149,7 @@ internal sealed class SolidSpanTracer
                 continue;
             }
 
+            BrushesClipped++;
             if (TryClip(brush, node.WorldMatrix, in segment, out Stretch stretch))
             {
                 _composer.AddPart(
