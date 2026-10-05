@@ -11,6 +11,8 @@ internal static class SubtitleText
 {
     private const int LongestEntity = 8;
 
+    private const string LoneBracket = "a < that opens no tag, so it shows as written";
+
     // What an entity's name is made of. "this & that;" has a gap in it, so it is plain words.
     private static readonly SearchValues<char> EntityLetters =
         SearchValues.Create("#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
@@ -20,16 +22,16 @@ internal static class SubtitleText
     public static string Read(
         string[] lines, int first, int end, List<SubtitleUnreadPart> unread, out string? speaker)
     {
-        speaker = null;
+        var cue = new Cue(unread);
         var words = new StringBuilder();
-        var line = new StringBuilder();
 
         for (int i = first; i < end; i++)
         {
-            line.Clear();
-            ReadLine(lines[i], i + 1, hasWords: words.Length > 0, line, unread, ref speaker);
+            cue.Line.Clear();
+            cue.Number = i + 1;
+            ReadLine(lines[i], cue);
 
-            ReadOnlySpan<char> read = line.ToString().AsSpan().Trim();
+            ReadOnlySpan<char> read = cue.Line.ToString().AsSpan().Trim();
             if (read.IsEmpty)
                 continue;
 
@@ -37,34 +39,47 @@ internal static class SubtitleText
             words.Append(read);
         }
 
+        speaker = cue.Speaker;
         return words.ToString();
     }
 
-    private static void ReadLine(
-        ReadOnlySpan<char> line,
-        int number,
-        bool hasWords,
-        StringBuilder into,
-        List<SubtitleUnreadPart> unread,
-        ref string? speaker)
+    private static void ReadLine(ReadOnlySpan<char> line, Cue cue)
     {
+        // Where the next > is, or the line's length when there is none. Kept,
+        // so a line of nothing but < is searched once and not once for each.
+        int nextClose = -1;
+
         int at = 0;
         while (at < line.Length)
         {
             ReadOnlySpan<char> rest = line[at..];
-            int close = rest[0] == '<' ? rest.IndexOf('>') : -1;
-
-            if (close > 0)
+            if (rest[0] == '<')
             {
-                ReadTag(rest[1..close], number, hasWords, unread, ref speaker);
-                at += close + 1;
-                continue;
+                if (nextClose < at)
+                {
+                    int found = rest.IndexOf('>');
+                    nextClose = found < 0 ? line.Length : at + found;
+                }
+
+                int close = nextClose - at;
+                if (nextClose < line.Length && close > 1 && OpensTag(rest[1]))
+                {
+                    ReadTag(rest[1..close], cue);
+                    at = nextClose + 1;
+                    continue;
+                }
+
+                // Shown, so no word is lost: "a < b" and a tag with its > left out.
+                cue.Note(LoneBracket);
             }
 
-            at += rest[0] == '&' ? ReadEntity(rest, number, into, unread) : AppendLetter(rest[0], into);
-            hasWords |= !char.IsWhiteSpace(into[^1]);
+            at += rest[0] == '&' ? ReadEntity(rest, cue.Line, cue) : AppendLetter(rest[0], cue.Line);
+            cue.HasWords |= !char.IsWhiteSpace(cue.Line[^1]);
         }
     }
+
+    // A name, a closing slash, or the digits of a time.
+    private static bool OpensTag(char letter) => char.IsAsciiLetterOrDigit(letter) || letter == '/';
 
     private static int AppendLetter(char letter, StringBuilder into)
     {
@@ -72,28 +87,27 @@ internal static class SubtitleText
         return 1;
     }
 
-    private static void ReadTag(
-        ReadOnlySpan<char> tag, int number, bool hasWords, List<SubtitleUnreadPart> unread, ref string? speaker)
+    private static void ReadTag(ReadOnlySpan<char> tag, Cue cue)
     {
         if (tag is "/v")
             return;
 
         if (!IsVoice(tag))
         {
-            SubtitleReader.NoteUnread(unread, number, NameOf(tag));
+            cue.Note(NameOf(tag));
             return;
         }
 
-        if (hasWords || speaker is not null)
+        if (cue.HasWords || cue.Speaker is not null)
         {
-            SubtitleReader.NoteUnread(unread, number, "a voice span that is not at the start of the words");
+            cue.Note("a voice span that is not at the start of the words");
             return;
         }
 
         // <v.loud Guard>: the name is what follows the first gap.
         int gap = tag.IndexOfAny(' ', '\t');
         string name = gap < 0 ? "" : ReadEntities(tag[(gap + 1)..].Trim());
-        speaker = name.Length == 0 ? null : name;
+        cue.Speaker = name.Length == 0 ? null : name;
     }
 
     private static bool IsVoice(ReadOnlySpan<char> tag) =>
@@ -101,7 +115,7 @@ internal static class SubtitleText
 
     private static string NameOf(ReadOnlySpan<char> tag)
     {
-        if (tag.Length > 0 && char.IsAsciiDigit(tag[0]))
+        if (char.IsAsciiDigit(tag[0]))
             return "a time inside the words";
 
         ReadOnlySpan<char> name = tag.TrimStart('/');
@@ -120,18 +134,19 @@ internal static class SubtitleText
         var read = new StringBuilder(text.Length);
         int at = 0;
         while (at < text.Length)
-            at += text[at] == '&' ? ReadEntity(text[at..], 0, read, null) : AppendLetter(text[at], read);
+            at += text[at] == '&' ? ReadEntity(text[at..], read, null) : AppendLetter(text[at], read);
 
         return read.ToString();
     }
 
     // Appends what the entity at the start of text stands for and returns
     // how many letters it took. One the engine does not read stays as written.
-    private static int ReadEntity(
-        ReadOnlySpan<char> text, int number, StringBuilder into, List<SubtitleUnreadPart>? unread)
+    private static int ReadEntity(ReadOnlySpan<char> text, StringBuilder into, Cue? cue)
     {
-        int end = text.IndexOf(';');
-        if (end < 2 || end > LongestEntity)
+        // No further than an entity can reach, or a line of & is searched to
+        // its end once for each.
+        int end = text[..Math.Min(text.Length, LongestEntity + 1)].IndexOf(';');
+        if (end < 2)
             return AppendLetter('&', into);
 
         ReadOnlySpan<char> name = text[1..end];
@@ -150,9 +165,26 @@ internal static class SubtitleText
             return end + 1;
         }
 
-        if (unread is not null && !name.ContainsAnyExcept(EntityLetters))
-            SubtitleReader.NoteUnread(unread, number, $"the entity &{name};");
+        if (cue is not null && !name.ContainsAnyExcept(EntityLetters))
+            cue.Note($"the entity &{name};");
 
         return AppendLetter('&', into);
+    }
+
+    // One cue as it is read.
+    private sealed class Cue(List<SubtitleUnreadPart> unread)
+    {
+        // The line being read, with its tags taken out.
+        public StringBuilder Line { get; } = new();
+
+        // That line's number in the file, counted from one.
+        public int Number { get; set; }
+
+        public string? Speaker { get; set; }
+
+        // Whether any word has been read yet, on this line or an earlier one.
+        public bool HasWords { get; set; }
+
+        public void Note(string what) => SubtitleReader.NoteUnread(unread, Number, what);
     }
 }

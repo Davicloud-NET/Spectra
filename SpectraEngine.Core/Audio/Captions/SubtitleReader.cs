@@ -22,11 +22,13 @@ namespace SpectraEngine.Core.Audio.Captions;
 /// and the entities for an ampersand, less than, greater than and a
 /// non-breaking space. What else a file uses is listed in
 /// <see cref="SubtitleFile.Unread"/> and the words are still read. A file
-/// that is not WebVTT, a time that cannot be read and a cue that does not end
-/// after it starts are refused. Any thread.
+/// whose cues cannot be told apart or timed is refused. Any thread.
 /// </remarks>
 public static class SubtitleReader
 {
+    /// <summary>The most parts <see cref="SubtitleFile.Unread"/> lists for one file.</summary>
+    public const int MaxUnreadParts = 64;
+
     private const string Signature = "WEBVTT";
     private const string Arrow = "-->";
 
@@ -38,33 +40,30 @@ public static class SubtitleReader
         ArgumentNullException.ThrowIfNull(originForErrors);
 
         string text = Encoding.UTF8.GetString(CanonicalJson.StripBom(utf8));
-        string[] lines = text.ReplaceLineEndings("\n").Split('\n');
+        var file = new Reading(text.ReplaceLineEndings("\n").Split('\n'), originForErrors);
 
-        var cues = new List<CaptionLine>();
-        var cueLines = new List<int>();
-        var unread = new List<SubtitleUnreadPart>();
-
-        int at = ReadHeader(lines, originForErrors, unread);
-        while (at < lines.Length)
+        int at = ReadHeader(file);
+        while (at < file.Lines.Length)
         {
-            if (IsBlank(lines[at]))
+            if (IsBlank(file.Lines[at]))
             {
                 at++;
                 continue;
             }
 
             int end = at;
-            while (end < lines.Length && !IsBlank(lines[end]))
+            while (end < file.Lines.Length && !IsBlank(file.Lines[end]))
                 end++;
 
-            ReadBlock(lines, at, end, originForErrors, cues, cueLines, unread);
+            ReadBlock(file, at, end);
             at = end;
         }
 
-        return new SubtitleFile(cues, cueLines, unread);
+        return new SubtitleFile(file.Cues, file.CueLines, file.Unread);
     }
 
-    // Names a part once, at the first line that uses it.
+    // Names a part once, at the first line that uses it. Past the most a
+    // file lists a part is dropped, so the search stays short.
     internal static void NoteUnread(List<SubtitleUnreadPart> unread, int line, string what)
     {
         for (int i = 0; i < unread.Count; i++)
@@ -73,42 +72,39 @@ public static class SubtitleReader
                 return;
         }
 
-        unread.Add(new SubtitleUnreadPart(line, what));
+        if (unread.Count < MaxUnreadParts)
+            unread.Add(new SubtitleUnreadPart(line, what));
     }
 
     // Returns the index of the first line after the header.
-    private static int ReadHeader(string[] lines, string origin, List<SubtitleUnreadPart> unread)
+    private static int ReadHeader(Reading file)
     {
+        string[] lines = file.Lines;
         if (!StartsWithWord(lines[0], Signature))
         {
             throw new SubtitleFormatException(
-                origin, 1, "the first line is not WEBVTT, so this is not a WebVTT file");
+                file.Origin, 1, "the first line is not WEBVTT, so this is not a WebVTT file");
         }
 
         // A cue may follow with no blank line between.
         int at = 1;
         while (at < lines.Length && !IsBlank(lines[at]) && !lines[at].Contains(Arrow, StringComparison.Ordinal))
         {
-            NoteUnread(unread, at + 1, "header lines after WEBVTT");
+            NoteUnread(file.Unread, at + 1, "header lines after WEBVTT");
             at++;
         }
 
         return at;
     }
 
-    private static void ReadBlock(
-        string[] lines,
-        int first,
-        int end,
-        string origin,
-        List<CaptionLine> cues,
-        List<int> cueLines,
-        List<SubtitleUnreadPart> unread)
+    // A block is the lines from first up to end, with no blank line among them.
+    private static void ReadBlock(Reading file, int first, int end)
     {
+        string[] lines = file.Lines;
         int timing = first;
         if (!lines[first].Contains(Arrow, StringComparison.Ordinal))
         {
-            if (IsSkippedBlock(lines[first], first + 1, unread))
+            if (IsSkippedBlock(lines[first], first + 1, file.Unread))
                 return;
 
             // The first line is the cue's name.
@@ -116,24 +112,24 @@ public static class SubtitleReader
             if (timing >= end || !lines[timing].Contains(Arrow, StringComparison.Ordinal))
             {
                 throw new SubtitleFormatException(
-                    origin,
+                    file.Origin,
                     first + 1,
                     "this block has no line of times. A cue is an optional name, then a line like " +
                     "00:01.000 --> 00:02.500, then the words");
             }
         }
 
-        ReadTimes(lines[timing], timing + 1, origin, unread, out double start, out double stop);
+        ReadTimes(file, timing, out double start, out double stop);
 
-        string words = SubtitleText.Read(lines, timing + 1, end, unread, out string? speaker);
+        string words = SubtitleText.Read(lines, timing + 1, end, file.Unread, out string? speaker);
         if (words.Length == 0)
         {
-            NoteUnread(unread, timing + 1, "a cue with no words");
+            NoteUnread(file.Unread, timing + 1, "a cue with no words");
             return;
         }
 
-        cues.Add(new CaptionLine(start, stop, speaker, words));
-        cueLines.Add(timing + 1);
+        file.Cues.Add(new CaptionLine(start, stop, speaker, words));
+        file.CueLines.Add(timing + 1);
     }
 
     private static bool IsSkippedBlock(string head, int number, List<SubtitleUnreadPart> unread)
@@ -156,9 +152,12 @@ public static class SubtitleReader
         return false;
     }
 
-    private static void ReadTimes(
-        string line, int number, string origin, List<SubtitleUnreadPart> unread, out double start, out double stop)
+    private static void ReadTimes(Reading file, int at, out double start, out double stop)
     {
+        string line = file.Lines[at];
+        string origin = file.Origin;
+        int number = at + 1;
+
         int arrow = line.IndexOf(Arrow, StringComparison.Ordinal);
         ReadOnlySpan<char> left = line.AsSpan(0, arrow);
         ReadOnlySpan<char> right = line.AsSpan(arrow + Arrow.Length);
@@ -186,7 +185,7 @@ public static class SubtitleReader
         }
 
         if (cut >= 0 && !right[cut..].Trim().IsEmpty)
-            NoteUnread(unread, number, "cue settings after the times");
+            NoteUnread(file.Unread, number, "cue settings after the times");
     }
 
     private static string NotATime(ReadOnlySpan<char> text) =>
@@ -236,4 +235,20 @@ public static class SubtitleReader
     private static bool IsBlank(string line) => line.AsSpan().Trim().IsEmpty;
 
     private static bool IsGap(char letter) => letter is ' ' or '\t';
+
+    // One file as it is read: its lines, and what has been made of them.
+    private sealed class Reading(string[] lines, string origin)
+    {
+        public string[] Lines { get; } = lines;
+
+        // The file's name, for the message of a refusal.
+        public string Origin { get; } = origin;
+
+        public List<CaptionLine> Cues { get; } = [];
+
+        // The line of the file each cue's times are on, counted from one.
+        public List<int> CueLines { get; } = [];
+
+        public List<SubtitleUnreadPart> Unread { get; } = [];
+    }
 }

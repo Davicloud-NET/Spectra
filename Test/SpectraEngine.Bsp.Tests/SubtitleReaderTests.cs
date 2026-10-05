@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Audio.Captions;
+using System.Diagnostics;
 using System.Text;
 
 namespace SpectraEngine.Bsp.Tests;
@@ -209,6 +210,58 @@ public sealed class SubtitleReaderTests
 
         file.Lines.ShouldHaveSingleItem().Text.ShouldBe("Words");
         file.Unread.ShouldContain(new SubtitleUnreadPart(3, "a cue with no words"));
+    }
+
+    [Theory]
+    [InlineData("<v Guard Hey!")]
+    [InlineData("5 < 7, and 9 > 7")]
+    [InlineData("<> and <")]
+    public void A_bracket_that_opens_no_tag_is_shown_as_written_and_listed(string words)
+    {
+        SubtitleFile file = Read($"WEBVTT\n\n00:00.000 --> 00:01.000\n{words}");
+
+        CaptionLine line = file.Lines.ShouldHaveSingleItem();
+        line.Text.ShouldBe(words);
+        line.Speaker.ShouldBeNull();
+        file.Unread.ShouldHaveSingleItem().ShouldBe(
+            new SubtitleUnreadPart(4, "a < that opens no tag, so it shows as written"));
+    }
+
+    [Fact]
+    public void A_bracket_that_opens_no_tag_does_not_hide_a_tag_after_it()
+    {
+        SubtitleFile file = Read("WEBVTT\n\n00:00.000 --> 00:01.000\n1 < 2, <i>always</i>");
+
+        file.Lines.ShouldHaveSingleItem().Text.ShouldBe("1 < 2, always");
+        file.Unread.Select(part => part.What).ShouldBe(
+            ["a < that opens no tag, so it shows as written", "the <i> tag"]);
+    }
+
+    [Fact]
+    public void A_megabyte_of_brackets_and_of_ampersands_on_a_line_is_read_in_one_pass()
+    {
+        // Searching the rest of the line again for each would take minutes.
+        const int Count = 1_000_000;
+        string text = $"WEBVTT\n\n00:00.000 --> 00:01.000\n{new string('<', Count)}\n{new string('&', Count)}";
+        var watch = Stopwatch.StartNew();
+
+        SubtitleFile file = Read(text);
+
+        watch.Stop();
+        file.Lines.ShouldHaveSingleItem().Text.Length.ShouldBe(Count + 1 + Count);
+        watch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void A_file_lists_no_more_parts_it_does_not_read_than_the_limit()
+    {
+        string tags = string.Concat(
+            Enumerable.Range(0, 300).Select(i => $"<{(char)('a' + (i / 26))}{(char)('a' + (i % 26))}x>"));
+
+        SubtitleFile file = Read($"WEBVTT\n\n00:00.000 --> 00:01.000\n{tags}Words");
+
+        file.Lines.ShouldHaveSingleItem().Text.ShouldBe("Words");
+        file.Unread.Count.ShouldBe(SubtitleReader.MaxUnreadParts);
     }
 
     [Fact]
