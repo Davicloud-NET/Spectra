@@ -229,24 +229,8 @@ public sealed class CookSession
             _settings.Targets,
             _settings.AudioSampleRate,
             _settings.KeepBrushSource, payloadStore, cancellationToken);
-        CookDiagnostic? failure = null;
 
-        try
-        {
-            item.Rule.Cook(context);
-        }
-        catch (RuleInputMissingException ex)
-        {
-            failure = CookDiagnostic.Error(
-                CookDiagnosticCodes.InputMissing, ex.Message, item.File.FullPath);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
-        {
-            failure = CookDiagnostic.Error(
-                CookDiagnosticCodes.RuleFailed,
-                $"The {item.Rule.Kind} rule failed on '{item.File.ContentPath}': {ex.Message}",
-                item.File.FullPath);
-        }
+        CookDiagnostic? failure = RuleRun.Cook(item.Rule, context, item.File.FullPath);
 
         // Don't record a run that failed or reported. The cache keeps no
         // diagnostics, so a later hit would drop the message.

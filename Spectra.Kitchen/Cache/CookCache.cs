@@ -97,7 +97,9 @@ public sealed class CookCache
             return false;
         }
 
-        IReadOnlyList<RuleDependency> restated = Restate(contentRoot, record.Dependencies);
+        // Usually answered by the stat cache.
+        IReadOnlyList<RuleDependency> restated =
+            RestatedDependencies.Of(contentRoot, record.Dependencies, _stat.TryGetHash);
         UInt128 key = CookCacheKey.Compute(
             rule.Kind, rule.Version, rule.SettingsRead, settings, restated);
 
@@ -174,33 +176,5 @@ public sealed class CookCache
     {
         if (_graph.IsDirty) _graph.Save(Path.Combine(_root, GraphFileName));
         if (_stat.IsDirty) _stat.Save(Path.Combine(_root, StatFileName));
-    }
-
-    // Keep the recorded order, or the restated key cannot match the recorded one.
-    private IReadOnlyList<RuleDependency> Restate(
-        string contentRoot, IReadOnlyList<RuleDependency> recorded)
-    {
-        var restated = new RuleDependency[recorded.Count];
-        for (int i = 0; i < recorded.Count; i++)
-        {
-            RuleDependency dependency = recorded[i];
-            string full = Path.Combine(
-                contentRoot, dependency.Path.Replace('/', Path.DirectorySeparatorChar));
-
-            restated[i] = dependency.Kind switch
-            {
-                // Contents are in the key, so re-hash (usually answered by the stat cache).
-                RuleDependencyKind.Read => _stat.TryGetHash(dependency.Path, full, out UInt128 hash)
-                    ? new RuleDependency(dependency.Path, RuleDependencyKind.Read, hash)
-                    : new RuleDependency(dependency.Path, RuleDependencyKind.ProbeMissing, UInt128.Zero),
-
-                // A probe only asked whether the file exists. No hash.
-                _ => File.Exists(full)
-                    ? new RuleDependency(dependency.Path, RuleDependencyKind.ProbeFound, UInt128.Zero)
-                    : new RuleDependency(dependency.Path, RuleDependencyKind.ProbeMissing, UInt128.Zero),
-            };
-        }
-
-        return restated;
     }
 }

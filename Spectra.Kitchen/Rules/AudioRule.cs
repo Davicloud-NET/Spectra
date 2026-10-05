@@ -17,7 +17,7 @@ namespace Spectra.Kitchen.Rules;
 public sealed class AudioRule : IRule
 {
     // Must match what WaveDecoder reads.
-    private static readonly string[] SourceExtensions = [".wav", ".wave"];
+    internal static readonly string[] SourceExtensions = [".wav", ".wave"];
 
     /// <summary>
     /// Suffix on a file's stem that marks a sound as non-positional. Matched
