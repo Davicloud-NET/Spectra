@@ -525,7 +525,10 @@ public static class NodeInspector
                 return PropertyRow.OfAsset(
                     EntityGroup, label, PropertyId.EntityKeyvalue, value, AssetKind.Model, key: key);
 
-            // AssetSound stays text: the content browser has no sound kind.
+            case KeyvalueType.AssetSound:
+                return PropertyRow.OfAsset(
+                    EntityGroup, label, PropertyId.EntityKeyvalue, value, AssetKind.Sound, key: key);
+
             default:
                 return PropertyRow.OfText(EntityGroup, label, PropertyId.EntityKeyvalue, value, key);
         }

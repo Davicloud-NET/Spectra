@@ -126,9 +126,7 @@ public sealed class EntityPropertyRowTests
     [InlineData(KeyvalueType.AssetModel, "Models/x.obj", PropertyKind.Asset)]
     [InlineData(KeyvalueType.AssetMaterial, "Materials/x.spectramat", PropertyKind.Asset)]
     [InlineData(KeyvalueType.AssetTexture, "Textures/x.png", PropertyKind.Asset)]
-
-    // The content browser has no sound kind, so a picker would list nothing.
-    [InlineData(KeyvalueType.AssetSound, "Sounds/x.wav", PropertyKind.Text)]
+    [InlineData(KeyvalueType.AssetSound, "Sounds/x.wav", PropertyKind.Asset)]
     [InlineData(KeyvalueType.Flags, "3", PropertyKind.Text)]
     [InlineData(KeyvalueType.Vec2, "1 2", PropertyKind.Text)]
     public void A_declared_type_picks_the_editor(KeyvalueType type, string value, PropertyKind kind)
@@ -143,6 +141,7 @@ public sealed class EntityPropertyRowTests
     [InlineData(KeyvalueType.AssetModel, AssetKind.Model)]
     [InlineData(KeyvalueType.AssetMaterial, AssetKind.Material)]
     [InlineData(KeyvalueType.AssetTexture, AssetKind.Texture)]
+    [InlineData(KeyvalueType.AssetSound, AssetKind.Sound)]
     public void An_asset_row_says_which_kind_of_file_it_wants(KeyvalueType type, AssetKind kind)
     {
         EntitySchemaCatalog catalog = Catalog(
