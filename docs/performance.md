@@ -28,6 +28,8 @@ Normal presentation behavior is preserved unless uncapped mode is requested. Sha
 
 CPU scopes are exclusive: editor interaction, collision synchronization, part mesh maintenance, audio, snapshot publication, presentation and fence waits are separately accounted, with remaining frame time reported as Unaccounted. CPU EMA and the host's frame average use different smoothing; compare like with like. Percentiles are sorted only on the reporting cadence using reusable storage. A 2,048-frame window lasts over a minute at 30 fps, so a short capture can retain startup stalls.
 
+Tracing the walls between the sounds and the listener has its own scope, `SoundWalls`, opened inside `Audio` and not counted in it. The console command `sound_walls` prints its time and how many lines the frame traced.
+
 GPU timestamps are read asynchronously on OpenGL, D3D11 and D3D12. Unavailable/disjoint samples are unavailable, never a fabricated zero duration. Busy query rings drop instrumentation without waiting for the GPU. Driver scheduling/preemption can appear inside a measured pass; timestamps do not by themselves identify that cause. Existing allocation rates, GC counts, draw/triangle/instancing statistics and mesh buffer memory counters remain available.
 
 ## Current defaults and ownership
@@ -54,6 +56,31 @@ RTX 4070 Ti 1080p D3D12 host frame averages fell from 0.54–0.55 ms with one co
 The overlapping-submesh fixture retains 10 MiB of CPU geometry in Full mode instead of 116 MiB; its largest upload pump is 0.95 ms instead of about 22 ms. A 2 GiB raw cook peaks at approximately 14 MiB private memory instead of 4.6–5.2 GiB, with identical output bytes. The cold cached cook takes additional disk I/O (11.31 versus 9.40 seconds in the recorded run); warm replay is faster. Do not treat single disk-throughput runs as stable percentage guarantees.
 
 Full measurements, repetitions, allocation traces, suite logs and caveats are in the dated review. [Reproduction probes](reviews/probes/README.md) include 1k/10k/50k visibility controls, structural editing, maintenance, scratch reuse, model/cook memory, GPU captures and runtime stress scripts.
+
+## Sound through walls
+
+`WallPropagation` traces five lines for a sound, one to the listener and four to a ring of a quarter unit round the listener's head, and 60 lines a frame at most over all sounds. That is twelve sounds a frame. The numbers are in `WallPropagationSettings`.
+
+An answer is traced again when the world is another one, when the listener or the sound has moved a tenth of a unit, or after a quarter of a second, because a door that moves raises no signal. A sound with no answer yet goes first, then one heard along a single line so far, then the answers that have grown old, oldest first, then the rest, loudest first. With more due than fits, every sound still gets its turn within the quarter second plus one round: sounds times five over 60, in frames.
+
+Measured in Release on the review machine, on a level the size of the demo's, with sounds up to 60 units from the listener. Other builds ran at the time, so each time is the span of two runs:
+
+| Case | Lines a frame | Time a frame |
+|---|---|---|
+| 8 sounds, listener standing | 2.7 | 0.005 to 0.008 ms mean, 0.001 median |
+| 8 sounds, listener walking at 4.5 units a second | 20 | 0.04 to 0.055 ms |
+| 32 sounds, listener standing | 10.7 | 0.018 to 0.026 ms mean, 0.001 median |
+| 32 sounds, listener walking | 60 | 0.11 to 0.16 ms, and 0.08 to 0.09 on the cooked level |
+| 200 sounds, listener walking | 60 | 0.12 to 0.17 ms |
+
+So a frame at the full budget costs 0.1 to 0.17 ms, which is 2 to 3 microseconds a line with the sum. The 99th frame in a hundred took about twice the mean. Nothing allocates. The first look at a material's file costs about 60 microseconds for a loose file, once for each material, in the frame a line first meets it. A level's materials are not read ahead for that reason.
+
+The times are taken round the whole of `WallPropagation.Resolve` in `WallPropagationCostTests`, which is opt-in. They are not from `--profile` on a level being played:
+
+```powershell
+$env:SPECTRA_WALL_COST = "1"
+dotnet run -c Release --project Test/Spectra.Kitchen.Tests -- -trait "Suite=WallCost" -showLiveOutput
+```
 
 ## Deliberately separate future work
 

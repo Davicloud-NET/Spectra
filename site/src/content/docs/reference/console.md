@@ -61,6 +61,7 @@ A command that fails prints an error, and the rest of the line still runs.
 | `sound_volume [0..1]` | Prints the volume of everything heard, or sets it. |
 | `sound_simulate [placed \| fades \| walls \| doppler \| all] [on \| off]` | Switches a part of the sound simulation on or off for every sound. |
 | `sound_doppler [strength]` | Sets how strong Doppler is, from 0 to 4. |
+| `sound_walls` | Prints what it costs a frame to find the walls between the sounds and the listener. |
 | `fake_device_loss` | Ends the next frame the way a lost graphics device does, to test what happens then. The demo ends with an error. The editor restarts its viewport and keeps the level. |
 | `captions [off \| voice \| all]` | Sets which captions show: none, speech only, or speech and other sounds. |
 | `caption_language [language]` | Sets the language captions are looked up in. |
@@ -284,6 +285,24 @@ Alone it prints the strength. A number from 0 to 4 sets it. 1 is what a moving s
 While Doppler is switched off, a second line says so: `sound_doppler: Doppler is switched off. 'sound_simulate doppler on' switches it on.`
 
 The engine starts at 1.
+
+### sound_walls
+
+```
+> sound_walls
+sound_walls: 14 in earshot, 60 of 60 lines traced this frame, 2 waiting for their turn.
+sound_walls: 0.085 ms a frame.
+```
+
+A sound behind a wall is muffled by what a straight line to the listener passes through. The engine traces five such lines for a sound, and 60 lines a frame at most over all sounds. A sound whose answer is due and did not fit this frame waits for the next one and keeps its old answer until then. See [Behind a wall](/reference/sound-entities/#behind-a-wall).
+
+| Count | Means |
+|---|---|
+| `in earshot` | Sounds loud enough at their distance for walls to matter. A sound too far away to hear is not traced. |
+| `lines traced` | Lines traced this frame, and the most a frame may trace. |
+| `waiting` | Sounds that are due and did not fit this frame. A number that stays high means answers are late. |
+
+The time is measured only when the engine was started with `--profile`. Without it the second line says so. Before you press Play the command prints `sound_walls: the level is not running, so nothing is traced.`
 
 ### captions
 

@@ -150,6 +150,7 @@ Sound
 - What is playing lives in the simulation (`EntityWorld.Sounds`) and is counted in ticks. A sound's end and its markers never come from the audio device.
 - `SoundPresenter` gives the loudest sounds a voice each frame, on the render thread, once the camera is final.
 - Loudness over distance is the engine's (`SoundFalloff`). OpenAL's distance model is off and it only places the sound.
+- `WallPropagation` muffles a sound by the solids between it and the listener. It keeps an answer for each sound and traces 60 lines a frame, so an answer can be a quarter of a second old.
 - The engine reads cooked `.saudio` only. The editor cooks a wav the first time a level uses it, into a cache under `%LOCALAPPDATA%\Spectra\SoundCache`. The demo's build cooks its sounds with `scook sounds`.
 
 Play and console
@@ -195,6 +196,14 @@ Span query
 - `Scene.TraceSolidSpans` from a point inside a part starts in that part. A sound under a door reads as muffled by its own door unless the door is in `filter.Ignore`.
 - Its default filter leaves out a part with `CanQuery` off, also one that collides and stops the player. `IgnoreQueryFlags` counts it.
 - A map cooked before the `COLM` section still traces, and every world span names the default material. `CompiledMapLoadReport.CollisionFaceMaterialsMissing` is the only sign.
+
+Sound through walls
+
+- A `SoundQuery` without its `Body` is muffled by the part its sound sits in. `SoundPresenter` sets it to the emitter's node.
+- A sound under a part is not behind a solid it stands in, so a door's sound stays clear inside the wall the door slid into. It is then heard clear from both sides of that wall.
+- A part that moves raises no signal. `WallPropagation` hears it once the answer is `RefreshSeconds` old, by its own clock: a test passes a `ManualClock` and steps it, or the door never moves.
+- With no audio device the engine traces nothing (`Engine.HeardScene`), and captions then go by distance alone.
+- A voice that starts allocates. An allocation test with walls has to keep the same sounds loudest, or sources change hands and it fails for that.
 
 Entities and play
 

@@ -61,6 +61,29 @@ A mono file is heard from where the sound stands. A stereo file is not placed. I
 
 A sound can have a caption that says in words what is heard, for players who cannot hear it. See [Captions and subtitles](/guides/captions/).
 
+### Behind a wall
+
+A sound with something solid between it and the listener is quieter and duller. How much depends on what the solid is made of and how thick it is. A thin wooden door takes a little. A metre of concrete takes nearly everything. Two walls take more than one.
+
+Blocks are in the way, and so are parts that are solid. A cut opens a block for sound as it does for the player, so a sound is heard clear through a doorway or a window. Models are not in the way. Neither is a trigger, or any other part with `collide` off.
+
+The thickness is the one you built: the engine measures how much of each block and part lies on the straight line from the sound to the listener.
+
+What a block or a part is made of comes from its material. Give the material's file a line such as `acoustic = wood`. See [What it is made of](/reference/material-files/#what-it-is-made-of) for the names. A material with no such line counts as `generic`.
+
+A sound is not muffled by what it sits on. Placed under a door in the scene tree, it is not behind its own door, though it is behind every other one. The same goes for each part further up the tree, so a sound under a panel under a lift is behind neither. When the door slides into the wall, its sound goes in with it and is not behind that wall either.
+
+A sound that is under no part and stands inside a block is behind that block. Move it out into the room.
+
+The edge of an opening is soft. Step past a door frame and the sound does not switch from muffled to clear. It comes in over about half a unit of the way.
+
+A door that opens or shuts is heard within a quarter of a second, and the change then fades in. A sound that starts behind a wall is muffled from its first moment.
+
+A stereo file is muffled too, by what stands between its node and the listener.
+
+A muffled sound keeps its caption for as long as it can be heard at all.
+
+Sound does not go round corners yet. A sound in the next room is heard through the wall, also when a door further along stands open. [`sound_walls`](/reference/console/#sound_walls) prints what the walls cost a frame.
 ## What is simulated
 
 A sound has four settings for what is worked out on its way to the listener. All four start at 1. Three of them do something today:

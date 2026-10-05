@@ -80,9 +80,7 @@ Each name makes a sound behind the surface quieter and duller by its own amount.
 
 A name that isn't in the list is a warning with the file and the line, and the material counts as having no `acoustic` line.
 
-:::note
-Nothing is heard through walls yet. The engine reads the line and keeps the answer for the sound work that comes next.
-:::
+The line counts on every face of a block or a part that wears the material. When a sound passes through a block whose faces wear different materials, the face the sound enters by decides. See [Behind a wall](/reference/sound-entities/#behind-a-wall) for what is in a sound's way and what is not.
 
 ## When something is missing
 
