@@ -177,12 +177,69 @@ public sealed class SoundPresenterLifetimeTests
     }
 
     [Fact]
+    public void A_sound_that_cannot_be_loaded_is_named_in_the_log_once()
+    {
+        using var rig = new SoundPresenterRig();
+        var missing = new SoundDescription(SoundPresenterRig.Rate, SoundPresenterRig.Rate);
+        rig.World.Sounds.Play(rig.Scene.Root, "Sounds/nothing.wav", in missing, SoundPresenterRig.Looped);
+        rig.World.Sounds.Play(rig.Scene.Root, "Sounds/nothing.wav", in missing, SoundPresenterRig.Looped);
+
+        rig.Frame(3);
+
+        string warning = rig.Log.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem();
+        warning.ShouldStartWith("Sound Sounds/nothing.wav will not be heard: ");
+    }
+
+    [Fact]
+    public void A_file_that_is_not_the_sound_the_level_counted_is_named_in_the_log_once()
+    {
+        using var rig = new SoundPresenterRig();
+        var other = new SoundDescription(2 * SoundPresenterRig.Rate, SoundPresenterRig.Rate);
+        rig.World.Sounds.Play(rig.Scene.Root, SoundPresenterRig.Beep, in other, SoundPresenterRig.Looped);
+        rig.World.Sounds.Play(rig.Scene.Root, SoundPresenterRig.Beep, in other, SoundPresenterRig.Looped);
+
+        rig.Frame(3);
+
+        rig.Log.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem().ShouldBe(
+            "Sound Sounds/beep.wav will not be heard: the level counted 96000 frames and the file has 48000");
+    }
+
+    [Fact]
+    public void A_sound_that_plays_leaves_the_log_alone()
+    {
+        using var rig = new SoundPresenterRig();
+        rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Once);
+        rig.Play(rig.Scene.Root, SoundPresenterRig.Music, SoundPresenterRig.Looped);
+
+        rig.Frame(3);
+
+        rig.Log.Describe().ShouldBe("(no log entries)");
+    }
+
+    [Fact]
+    public void A_sound_unloaded_while_the_level_runs_is_opened_again_for_its_next_play()
+    {
+        using var rig = new SoundPresenterRig();
+        rig.Play(rig.Place("first", new Vector3(1, 0, 0)), SoundPresenterRig.Beep, SoundPresenterRig.Looped);
+        rig.Frame();
+
+        rig.Assets.UnloadAudio(SoundPresenterRig.Beep).ShouldBeTrue();
+        rig.Play(rig.Place("second", new Vector3(-1, 0, 0)), SoundPresenterRig.Beep, SoundPresenterRig.Once);
+        rig.Frame();
+
+        // A whole second in one buffer, not the nothing the released sound holds.
+        rig.Backend.Uploads[^1].Length.ShouldBe(SoundPresenterRig.Rate);
+        rig.HasVoiceAt(new Vector3(-1, 0, 0)).ShouldBeTrue();
+        rig.Stats.Unplayable.ShouldBe(0);
+    }
+
+    [Fact]
     public void With_no_audio_device_the_sounds_are_counted_and_nothing_else_happens()
     {
         using var rig = new SoundPresenterRig();
         var audio = new AudioManager(new CapturingLogger(), NoDevice);
         audio.Initialize();
-        var presenter = new SoundPresenter(audio, rig.Assets, new DirectPropagation());
+        var presenter = new SoundPresenter(audio, rig.Assets, new DirectPropagation(), rig.Log);
         rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Looped);
 
         presenter.Update(rig.World, SoundPresenterRig.TickSeconds);

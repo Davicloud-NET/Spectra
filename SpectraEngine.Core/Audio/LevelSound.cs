@@ -22,6 +22,9 @@ internal sealed class LevelSound
     // Made the first time the sound is played that way.
     public AudioClip? Clip { get; set; }
 
+    // The log has said that the file is not as long as the level counted.
+    public bool HasLengthWarning { get; set; }
+
     // Kept, so starting a voice makes no new provider.
     public AssetSampleProvider ProviderFor(LoopRegion loop)
     {

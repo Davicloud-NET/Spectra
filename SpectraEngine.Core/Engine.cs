@@ -94,7 +94,7 @@ public sealed class Engine
         _sceneManager = sceneManager;
         _assetManager = assetManager;
         _audioManager = audioManager;
-        _soundPresenter = new SoundPresenter(audioManager, assetManager, new DirectPropagation());
+        _soundPresenter = new SoundPresenter(audioManager, assetManager, new DirectPropagation(), logger);
         _inputManager = inputManager;
         _windowModeLatch = new WindowModeLatch(logger);
         Host = new EngineHost(logger);

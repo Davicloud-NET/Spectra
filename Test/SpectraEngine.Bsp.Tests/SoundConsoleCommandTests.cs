@@ -55,7 +55,7 @@ public sealed class SoundConsoleCommandTests
         using var rig = new SoundPresenterRig();
         var audio = new AudioManager(new CapturingLogger(), NoDevice);
         audio.Initialize();
-        var presenter = new SoundPresenter(audio, rig.Assets, new DirectPropagation());
+        var presenter = new SoundPresenter(audio, rig.Assets, new DirectPropagation(), rig.Log);
         var console = ConsoleFor(presenter, audio);
         rig.Play(rig.Scene.Root, SoundPresenterRig.Beep, SoundPresenterRig.Looped);
         presenter.Update(rig.World, SoundPresenterRig.TickSeconds);

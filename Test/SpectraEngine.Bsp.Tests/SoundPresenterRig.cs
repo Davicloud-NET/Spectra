@@ -48,9 +48,12 @@ internal sealed class SoundPresenterRig : IDisposable
         Audio = new AudioManager(new CapturingLogger(), Supply, sources);
         Audio.Initialize();
 
-        Presenter = new SoundPresenter(Audio, Assets, propagation ?? new DirectPropagation());
+        Presenter = new SoundPresenter(Audio, Assets, propagation ?? new DirectPropagation(), Log);
         World = StartLevel();
     }
+
+    // What the presenter logged. Nothing else writes here.
+    public CapturingLogger Log { get; } = new();
 
     public AssetManager Assets { get; }
 

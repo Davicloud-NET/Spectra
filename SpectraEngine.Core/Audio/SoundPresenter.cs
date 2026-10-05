@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Audio.Propagation;
 using SpectraEngine.Core.Entities;
@@ -68,15 +69,17 @@ public sealed class SoundPresenter
     /// <summary>Builds a presenter that plays on <paramref name="audio"/>.</summary>
     /// <param name="assets">Where the level's sounds are loaded from.</param>
     /// <param name="propagation">Decides how each sound reaches the listener.</param>
-    public SoundPresenter(AudioManager audio, AssetManager assets, ISoundPropagation propagation)
+    /// <param name="logger">Told once about each sound that cannot be played.</param>
+    public SoundPresenter(AudioManager audio, AssetManager assets, ISoundPropagation propagation, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(audio);
         ArgumentNullException.ThrowIfNull(assets);
         ArgumentNullException.ThrowIfNull(propagation);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _audio = audio;
         _propagation = propagation;
-        _voices = new LevelVoices(audio, assets);
+        _voices = new LevelVoices(audio, assets, logger);
     }
 
     /// <summary>What the last <see cref="Update"/> made of the level's sounds.</summary>

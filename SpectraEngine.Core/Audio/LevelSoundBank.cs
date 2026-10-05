@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Entities;
 using System;
@@ -12,28 +13,50 @@ internal sealed class LevelSoundBank
 {
     private readonly AudioManager _audio;
     private readonly AssetManager _assets;
+    private readonly ILogger _logger;
 
     // Null for a sound that cannot be loaded, so it is asked for once.
     private readonly Dictionary<string, LevelSound?> _sounds = new(StringComparer.Ordinal);
 
-    public LevelSoundBank(AudioManager audio, AssetManager assets)
+    public LevelSoundBank(AudioManager audio, AssetManager assets, ILogger logger)
     {
         _audio = audio;
         _assets = assets;
+        _logger = logger;
     }
 
-    // False for a sound that cannot be played here.
+    // False for a sound that cannot be played here. The log says why, once
+    // for each path.
     public bool TryGet(in SoundEmitter emitter, [NotNullWhen(true)] out LevelSound? sound)
     {
-        if (!_sounds.TryGetValue(emitter.Path, out sound))
+        if (!_sounds.TryGetValue(emitter.Path, out sound) || sound is { Asset.IsReleased: true })
         {
+            // Unloaded since it was opened. The file is opened again, and a
+            // buffer made from the old samples goes with them.
+            _audio.DestroyClip(sound?.Clip);
             sound = Load(emitter.Path);
-            _sounds.Add(emitter.Path, sound);
+            _sounds[emitter.Path] = sound;
         }
+
+        if (sound is null)
+            return false;
 
         // The level counts this sound's frames. A file of another length is
         // another sound, and its loop may not fit.
-        return sound is not null && sound.Asset.FrameCount == emitter.FrameCount;
+        if (sound.Asset.FrameCount == emitter.FrameCount)
+            return true;
+
+        if (!sound.HasLengthWarning)
+        {
+            sound.HasLengthWarning = true;
+            _logger.LogWarning(
+                "Sound {Path} will not be heard: the level counted {Counted} frames and the file has {Loaded}",
+                emitter.Path,
+                emitter.FrameCount,
+                sound.Asset.FrameCount);
+        }
+
+        return false;
     }
 
     // Null when the device has no source to give.
@@ -63,14 +86,18 @@ internal sealed class LevelSoundBank
         try
         {
             AudioAsset asset = _assets.LoadAudio(path);
-            bool isWhole = asset.Samples.Length == asset.Format.FramesToSamples(asset.FrameCount);
-            return isWhole ? new LevelSound(asset) : null;
+            if (asset.Samples.Length == asset.Format.FramesToSamples(asset.FrameCount))
+                return new LevelSound(asset);
+
+            _logger.LogWarning("Sound {Path} will not be heard: it was released while it was opened", path);
         }
-        // A boundary: the level said what is wrong with this sound when it
-        // spawned. Here it is counted, and nothing reaches the frame loop.
-        catch (Exception)
+        // A boundary: whatever the load throws is logged here, and nothing
+        // reaches the frame loop.
+        catch (Exception failure)
         {
-            return null;
+            _logger.LogWarning("Sound {Path} will not be heard: {Reason}", path, failure.Message);
         }
+
+        return null;
     }
 }

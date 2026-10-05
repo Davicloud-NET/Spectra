@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Entities;
 using System;
@@ -19,10 +20,10 @@ internal sealed class LevelVoices
     // Voices of sounds the simulation has finished and the device has not.
     private readonly List<Tail> _tails = [];
 
-    public LevelVoices(AudioManager audio, AssetManager assets)
+    public LevelVoices(AudioManager audio, AssetManager assets, ILogger logger)
     {
         _audio = audio;
-        _bank = new LevelSoundBank(audio, assets);
+        _bank = new LevelSoundBank(audio, assets, logger);
     }
 
     // Sounds that hold a source now.
@@ -49,8 +50,8 @@ internal sealed class LevelVoices
         {
             ref PresentedEmitter waiting = ref presented[next];
 
-            LevelSound? sound = waiting.Sound;
-            if (sound is null && !_bank.TryGet(in waiting.Emitter, out sound))
+            // Asked every time: the sound may have been unloaded since.
+            if (!_bank.TryGet(in waiting.Emitter, out LevelSound? sound))
             {
                 waiting.IsUnplayable = true;
                 waiting.Loudness = 0f;

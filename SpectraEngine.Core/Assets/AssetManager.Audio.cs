@@ -77,13 +77,14 @@ public sealed partial class AssetManager
     }
 
     /// <summary>
-    /// Releases one open sound and its content reference. Any thread. Returns
-    /// false when nothing was open under that path. Clips already created from
-    /// it keep playing; they hold their own copy of the samples.
+    /// Releases one open sound and its content reference. Render thread only.
+    /// Returns false when nothing was open under that path. A voice a level
+    /// streams from the sound runs dry and ends. Clips already created from it
+    /// keep playing; they hold their own copy of the samples.
     /// </summary>
-    // A level's looped and long sounds are streamed from these bytes in place.
-    // Unloading one that is playing must happen on the render thread, and its
-    // voice then runs dry and ends.
+    // A level streams its looped and long sounds from these bytes in place,
+    // on the render thread. Released from another one, a read in progress
+    // would be left with unmapped memory.
     public bool UnloadAudio(string relativePath)
     {
         string key = ContentRoot.NormalizeRelativePath(relativePath);
