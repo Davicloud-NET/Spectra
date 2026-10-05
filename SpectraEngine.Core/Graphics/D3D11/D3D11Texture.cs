@@ -462,9 +462,8 @@ internal sealed unsafe partial class D3D11Texture : Texture
                 TextureUploadLayout.CopyRows(bytes, mip.RowPitch, expanded, pitch, mip.Width, rowCount, Format);
                 bytes = expanded.AsSpan(0, pitch * rowCount);
             }
-            uint blockHeight = TextureFormatInfo.IsBlockCompressed(Format) ? 4u : 1u;
-            uint y = (uint)firstRow * blockHeight;
-            var box = new Box(0, y, 0, (uint)mip.Width, Math.Min((uint)mip.Height, y + (uint)rowCount * blockHeight), 1);
+            (uint top, uint right, uint bottom) = TextureUploadLayout.RowBox(Format, in mip, firstRow, rowCount);
+            var box = new Box(0, top, 0, right, bottom, 1);
             fixed (byte* source = bytes)
                 context->UpdateSubresource(Resource, (uint)level, &box, source, (uint)pitch, 0);
         }

@@ -21,6 +21,20 @@ internal static class TextureUploadLayout
             }
         }
     }
+    // The texels a run of rows covers in a mip, as (top, right, bottom). A row
+    // is a row of 4x4 blocks in a compressed format, and the box is in whole
+    // blocks too: a 2x2 mip is one block, 4 across and 4 down. D3D11 refuses
+    // an unaligned box and the mip keeps whatever was in it.
+    internal static (uint Top, uint Right, uint Bottom) RowBox(
+        TextureFormat format, in TextureMipDesc mip, int firstRow, int rowCount)
+    {
+        uint block = TextureFormatInfo.IsBlockCompressed(format) ? 4u : 1u;
+        uint width = ((uint)mip.Width + block - 1) / block * block;
+        uint height = ((uint)mip.Height + block - 1) / block * block;
+        uint top = (uint)firstRow * block;
+        return (top, width, Math.Min(height, top + ((uint)rowCount * block)));
+    }
+
     internal static int TightLevelSize(TextureFormat format, in TextureMipDesc mip) =>
         TextureFormatInfo.RowCount(format, mip.Height) * TextureFormatInfo.TightRowPitch(format, mip.Width);
 
