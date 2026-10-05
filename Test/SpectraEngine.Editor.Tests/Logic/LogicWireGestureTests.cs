@@ -100,18 +100,35 @@ public sealed class LogicWireGestureTests
     }
 
     [Fact]
-    public void A_press_on_empty_ground_on_a_wire_or_on_the_card_of_a_missing_name_starts_nothing()
+    public void A_press_on_empty_ground_starts_nothing()
+    {
+        var gesture = new LogicWireGesture();
+
+        gesture.Press(Ground, On(Ground), canEdit: true).ShouldBeFalse();
+
+        gesture.Phase.ShouldBe(LogicWirePhase.Idle);
+    }
+
+    [Fact]
+    public void A_press_on_a_wire_starts_nothing()
     {
         Point wire = Scene.Edge("StartZone", "StartDoor").Segments[0].At(0.5);
+        var gesture = new LogicWireGesture();
+
+        gesture.Press(wire, On(wire), canEdit: true).ShouldBeFalse();
+
+        gesture.Phase.ShouldBe(LogicWirePhase.Idle);
+    }
+
+    [Fact]
+    public void A_press_on_the_card_of_a_missing_name_starts_nothing()
+    {
         Point stub = Middle("VaultDor");
+        var gesture = new LogicWireGesture();
 
-        foreach (Point at in new[] { Ground, wire, stub })
-        {
-            var gesture = new LogicWireGesture();
+        gesture.Press(stub, On(stub), canEdit: true).ShouldBeFalse();
 
-            gesture.Press(at, On(at), canEdit: true).ShouldBeFalse();
-            gesture.Phase.ShouldBe(LogicWirePhase.Idle);
-        }
+        gesture.Phase.ShouldBe(LogicWirePhase.Idle);
     }
 
     [Fact]
@@ -152,17 +169,42 @@ public sealed class LogicWireGestureTests
     }
 
     [Fact]
-    public void A_drag_lights_the_entity_card_under_the_pointer_and_nothing_else()
+    public void A_drag_over_the_card_of_an_entity_lights_it()
+    {
+        LogicWireGesture gesture = Pressed("StartZone");
+
+        gesture.Move(Middle("Lift"), Scene.Card("Lift"));
+
+        gesture.Target.ShouldBeSameAs(Scene.Card("Lift"));
+    }
+
+    [Fact]
+    public void A_drag_over_empty_ground_lights_nothing()
     {
         LogicWireGesture gesture = Pressed("StartZone");
 
         gesture.Move(Ground, null);
-        gesture.Target.ShouldBeNull();
 
-        gesture.Move(Middle("Lift"), Scene.Card("Lift"));
-        gesture.Target.ShouldBeSameAs(Scene.Card("Lift"));
+        gesture.Target.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_drag_over_the_card_of_a_missing_name_lights_nothing()
+    {
+        LogicWireGesture gesture = Pressed("StartZone");
 
         gesture.Move(Middle("VaultDor"), Scene.Card("VaultDor"));
+
+        gesture.Target.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_drag_that_has_stayed_on_the_senders_card_lights_nothing()
+    {
+        LogicWireGesture gesture = Pressed("Lift");
+
+        gesture.Move(Middle("Lift") + new Vector(12, 0), Scene.Card("Lift"));
+
         gesture.Target.ShouldBeNull();
     }
 
@@ -171,12 +213,10 @@ public sealed class LogicWireGestureTests
     {
         LogicSceneCard lift = Scene.Card("Lift");
         LogicWireGesture gesture = Pressed("Lift");
-
-        gesture.Move(Middle("Lift") + new Vector(12, 0), lift);
-        gesture.Target.ShouldBeNull();
-
         gesture.Move(Ground, null);
+
         gesture.Move(Middle("Lift"), lift);
+
         gesture.Target.ShouldBeSameAs(lift);
     }
 
@@ -254,31 +294,44 @@ public sealed class LogicWireGestureTests
         gesture.Phase.ShouldBe(LogicWirePhase.Idle);
     }
 
-    [Fact]
-    public void A_lost_pointer_gives_up_a_press_and_a_drag_but_not_a_wire_that_waits_for_its_menu()
+    [Theory]
+    [InlineData(LogicWirePhase.Pressed, false)]
+    [InlineData(LogicWirePhase.Dragging, true)]
+    public void A_lost_pointer_gives_up_a_press_and_a_drag(LogicWirePhase phase, bool showedWire)
     {
-        LogicWireGesture pressed = In(LogicWirePhase.Pressed);
-        LogicWireGesture dragging = In(LogicWirePhase.Dragging);
-        LogicWireGesture dropped = In(LogicWirePhase.Dropped);
+        LogicWireGesture gesture = In(phase);
 
-        pressed.LoseCapture();
-        dragging.LoseCapture().ShouldBeTrue();
-        dropped.LoseCapture().ShouldBeFalse();
+        gesture.LoseCapture().ShouldBe(showedWire);
 
-        pressed.Phase.ShouldBe(LogicWirePhase.Cancelled);
-        dragging.Phase.ShouldBe(LogicWirePhase.Cancelled);
-        dropped.Phase.ShouldBe(LogicWirePhase.Dropped);
+        gesture.Phase.ShouldBe(LogicWirePhase.Cancelled);
     }
 
     [Fact]
-    public void A_press_during_a_gesture_is_refused_and_one_after_it_starts_anew()
+    public void A_lost_pointer_leaves_a_wire_that_waits_for_its_menu()
+    {
+        LogicWireGesture gesture = In(LogicWirePhase.Dropped);
+
+        gesture.LoseCapture().ShouldBeFalse();
+
+        gesture.Phase.ShouldBe(LogicWirePhase.Dropped);
+    }
+
+    [Fact]
+    public void A_press_during_a_gesture_is_refused()
     {
         LogicWireGesture gesture = In(LogicWirePhase.Dropped);
 
         gesture.Press(Middle("Lift"), On(Middle("Lift")), canEdit: true).ShouldBeFalse();
-        gesture.From.ShouldBeSameAs(Scene.Card("StartZone"));
 
+        gesture.From.ShouldBeSameAs(Scene.Card("StartZone"));
+    }
+
+    [Fact]
+    public void A_press_after_a_gesture_was_given_up_starts_anew()
+    {
+        LogicWireGesture gesture = In(LogicWirePhase.Dropped);
         gesture.Cancel();
+
         gesture.Press(Middle("Lift"), On(Middle("Lift")), canEdit: true).ShouldBeTrue();
 
         gesture.Phase.ShouldBe(LogicWirePhase.Pressed);
@@ -287,17 +340,24 @@ public sealed class LogicWireGestureTests
     }
 
     [Fact]
-    public void A_move_with_nothing_pressed_and_one_after_the_drop_do_nothing()
+    public void A_move_with_nothing_pressed_does_nothing()
     {
-        var idle = new LogicWireGesture();
-        LogicWireGesture dropped = In(LogicWirePhase.Dropped);
-        Point droppedAt = dropped.Pointer;
+        var gesture = new LogicWireGesture();
 
-        idle.Move(Middle("Lift"), Scene.Card("Lift")).ShouldBeFalse();
-        dropped.Move(Ground, null).ShouldBeFalse();
+        gesture.Move(Middle("Lift"), Scene.Card("Lift")).ShouldBeFalse();
 
-        idle.Phase.ShouldBe(LogicWirePhase.Idle);
-        dropped.Pointer.ShouldBe(droppedAt);
-        dropped.Target.ShouldBeSameAs(Scene.Card("Lift"));
+        gesture.Phase.ShouldBe(LogicWirePhase.Idle);
+    }
+
+    [Fact]
+    public void A_move_after_the_drop_leaves_the_wire_where_it_was_let_go()
+    {
+        LogicWireGesture gesture = In(LogicWirePhase.Dropped);
+        Point droppedAt = gesture.Pointer;
+
+        gesture.Move(Ground, null).ShouldBeFalse();
+
+        gesture.Pointer.ShouldBe(droppedAt);
+        gesture.Target.ShouldBeSameAs(Scene.Card("Lift"));
     }
 }
