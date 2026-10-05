@@ -34,6 +34,7 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - The Console panel runs the editor's own verbs and sends every other line to the engine's console. The console key opens it, while a level plays too.
 - F8 plays the level in first person from its player start, and F8 again stops. Stop puts back every node the run moved. A level cannot be saved while it plays.
 - A level's sounds are heard while it plays. The editor cooks a sound file the first time a level uses it.
+- A sound file is content like a texture: it has a row in the Content panel, a picker in the Properties panel and a play button to listen to it, and a sound dropped into the viewport becomes a sound entity.
 - Levels save and load as `.smap` folders of JSON.
 - The viewport is a native child window by default. The composited viewport can dock and takes dropped assets. It is asked for with `--viewport=composition`, and becomes the default on a machine after five clean sessions there.
 
@@ -100,10 +101,12 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 - `point_sound` plays a cooked sound from a place in the level. Wires start and stop it. It fires an output when the sound ends and when it reaches a named marker in the file.
 - The simulation holds what is playing and counts it in ticks. A level with no audio device fires on the same ticks.
 - Each frame the loudest sounds at the listener get a source, and the rest keep counting. The engine works out loudness over distance itself.
-- Captions are files: a text file per language says what a sound is, and a WebVTT file beside a voice file holds its subtitles. The cook checks them. The engine works out which ones show right now and publishes that list. Nothing draws it yet, so it goes to the log.
+- Each sound has four switches for what is worked out on its way to the listener: its place, fading with distance, walls and Doppler. The console has the same four for the whole engine, to hear what each does.
+- Doppler: the pitch of a sound follows how fast the way to the listener gets shorter or longer. A sound's end and its markers do not move with it.
+- Captions are files: a text file per language says what a sound is, and a WebVTT file beside a voice file holds its subtitles. The cook checks them. The engine works out which ones show right now and publishes that list. Nothing draws it yet, so it goes to the log and to the editor's Output panel.
 - A material file can say what it is made of (`acoustic = wood`), and a table turns that into how much sound a wall of it lets through. A sound behind walls is quieter and duller by each wall's material and thickness.
 - The demo's start room has placeholder sounds on its door, lift and button, made by a script.
-- Missing: sound does not go round corners, and there is no reverb, no music and no compressed format.
+- Missing: sound does not go round corners, and there is no reverb, no music and no compressed format. `docs/audio.md` says how sound is built and has the design for corners.
 - Skeletons, clips and pose blending exist on the CPU. Nothing imports or draws them.
 
 ### Docs and CI
@@ -115,14 +118,13 @@ Milestone ids are listed with their status at the end. Sizes are S, M and L, and
 
 - Trying by hand what just landed. Tests cover what the door, the lift, the triggers and the console do. They do not cover how riding a lift or standing in a closing door feels, where focus goes when the console opens during play, or how the Make entity menus read.
 - Listening to what just landed. No test can say whether a sound falls off well with distance, clicks when it starts or stops, or whether the placeholder sounds are bearable.
-- Sound in the editor: a picker and a preview for sound files, and a sound dropped into the viewport.
 - Sound through walls is built and nobody has heard it yet. Still to do by ear: the material presets, the demo's door, and whether a sound steps when the listener passes a door frame.
 
 ## Next
 
 In order. The order follows `docs/positioning.md`: finish build, wire and play, then add what a small first-person game needs.
 
-1. The rest of sound (M). A switch on each sound for what is simulated: its place, distance, walls, Doppler. Doppler itself. Sound settings on doors, lifts and buttons, if wiring them by hand stays as clumsy as it is in the demo. Sound round corners gets a spike and a design before any code.
+1. Sound settings on doors, lifts and buttons (S), if wiring a sound by hand stays as clumsy as it is in the demo: its start room took seven sound entities and a dozen wires for a door, a lift and a button, and the lift's hum can still start over a lift that stands still.
 2. Luau scripting (O1 to O5, O7 to O9; L). Scripts on nodes, generated bindings to the scene, attributes, tags and signals. The spike passed: Luau runs in a NativeAOT build on Windows and Linux, as long as a Luau error is raised from native code (`docs/spikes/2026-10-luau-aot.md`). The character mover should end up replaceable from Luau.
 3. Prefabs (P10, L). A subtree saved once and placed many times. Depends on entities in maps, which are done. Risky because the rule for names inside a prefab is saved into every map, and it is not decided.
 4. Bodies that move (Y6 and the rest of Y7 and Y8, L). Dynamic bodies, parts that push one another, and touch between bodies. The player is already carried by a moving part and already sets off triggers.
@@ -135,6 +137,7 @@ In order. The order follows `docs/positioning.md`: finish build, wire and play, 
 ## Later
 
 - Networking: a headless server, replication and prediction, then collaborative editing. `docs/networking.md`.
+- Sound round corners. A spike says a grid of air cells flooded from the listener holds, with limits (`docs/spikes/2026-10-sound-round-corners.md`). The design is in `docs/audio.md`. No code yet.
 - Realms: which side of a session a node exists on. `docs/realms.md`. Lands with networking.
 - Entity classes written in Luau (D15) and Luau in the console (C7), after scripting.
 - More rendering: screen-space ambient occlusion and reflections, light shafts, decals, particles, compute dispatch, MSAA for the editor viewport.
