@@ -13,11 +13,16 @@ namespace Spectra.Kitchen.Tests;
 /// cooked. The numbers are printed. The test fails only on a trace far slower
 /// than a frame could afford.
 /// </summary>
-// To read the numbers, run this class alone and in Release:
-//   dotnet run -c Release --project Test/Spectra.Kitchen.Tests --
-//       -class "Spectra.Kitchen.Tests.SolidSpanCostTests" -showLiveOutput on
+// Opt-in: it reads the clock, which says little on a busy machine. To run it,
+// in Release:
+//   PowerShell:  $env:SPECTRA_SPAN_COST = "1"
+//   bash:        export SPECTRA_SPAN_COST=1
+//   dotnet run -c Release --project Test/Spectra.Kitchen.Tests -- -trait "Suite=SpanCost" -showLiveOutput
+[Trait("Suite", "SpanCost")]
 public class SolidSpanCostTests
 {
+    private const string Switch = "SPECTRA_SPAN_COST";
+
     // A hundred traces a frame at this cost would take 25 ms. The measured
     // cost is a few hundred times below it.
     private const double CeilingNanoseconds = 250_000;
@@ -41,6 +46,10 @@ public class SolidSpanCostTests
     [Fact]
     public void A_trace_on_a_level_the_size_of_the_demo_costs_microseconds_authored_and_cooked()
     {
+        Assert.SkipUnless(
+            Environment.GetEnvironmentVariable(Switch) == "1",
+            $"Opt-in: set {Switch}=1 to time the span trace.");
+
         using CookedLevel level = CookedLevel.Bake(DemoSizedLevel());
 
         var scratch = new SolidSpan[32];
