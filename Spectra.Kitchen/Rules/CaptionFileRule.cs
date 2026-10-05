@@ -109,9 +109,8 @@ public sealed class CaptionFileRule : IRule
         }
     }
 
-    // Says how this language stands against the project's. Only caption
-    // files are compared: a rule sees one file and cannot list the project's
-    // subtitle files.
+    // Says how this language's caption file stands against the project's.
+    // SubtitleCoverage does the same for the subtitle files.
     private void ReportCoverage(IRuleContext context, CaptionFile file, string language)
     {
         if (string.Equals(language, _projectLanguage, StringComparison.Ordinal))
@@ -143,16 +142,18 @@ public sealed class CaptionFileRule : IRule
             Summarize(
                 context,
                 $"'{language}' has a caption for every sound that has one in '{_projectLanguage}', the " +
-                $"project's language ({project.Entries.Count} of {project.Entries.Count}). Subtitle files " +
-                "are not compared.");
+                $"project's language ({project.Entries.Count} of {project.Entries.Count}).");
             return;
         }
 
+        string captioned = project.Entries.Count == 1 ? "sound that has" : "sounds that have";
+        string shown = missing.Count == 1 ? "It shows" : "They show";
+
         context.Report(CookDiagnostic.Warning(
             CookDiagnosticCodes.CaptionLanguageIncomplete,
-            $"'{language}' has no caption for {missing.Count} of the {project.Entries.Count} sounds that " +
-            $"have one in '{_projectLanguage}', the project's language: {Name(missing)}. They show in " +
-            $"'{_projectLanguage}'. Subtitle files are not compared.",
+            $"'{language}' has no caption for {missing.Count} of the {project.Entries.Count} {captioned} " +
+            $"one in '{_projectLanguage}', the project's language: {Name(missing)}. {shown} in " +
+            $"'{_projectLanguage}'.",
             context.SourcePath));
     }
 

@@ -188,6 +188,12 @@ public static class CookDiagnosticCodes
     /// </summary>
     public static readonly CookDiagnosticId SubtitleRunsPastSound = CookDiagnosticId.Cook(4113);
 
+    /// <summary>
+    /// Sounds that have subtitles in the project's language and none in
+    /// another language the project has. They show in the project's language.
+    /// </summary>
+    public static readonly CookDiagnosticId SubtitleLanguageIncomplete = CookDiagnosticId.Cook(4114);
+
     /// <summary>A material names a texture that is not there.</summary>
     public static readonly CookDiagnosticId MaterialTextureMissing = CookDiagnosticId.Cook(5001);
 

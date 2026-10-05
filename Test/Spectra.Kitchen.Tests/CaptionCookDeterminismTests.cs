@@ -38,14 +38,15 @@ public class CaptionCookDeterminismTests
         CookRun clean = Cook(project, "cold");
         CookRun cached = Cook(project, "warm");
 
-        // The four sounds and the clean subtitle file. A caption file and a
-        // file with a warning are cooked every time.
-        cached.Stdout.ShouldContain("5 from cache");
+        // The four sounds and the two clean subtitle files. A caption file
+        // and a file with a warning are cooked every time.
+        cached.Stdout.ShouldContain("6 from cache");
         cached.Pack.ShouldBe(clean.Pack);
-        // A sound that is gone, a missing translation, and two parts of
-        // WebVTT that are not read.
+
+        // A sound that is gone, a missing translation, two parts of WebVTT
+        // that are not read, and subtitles missing in one language.
         Warnings(cached).ShouldBe(Warnings(clean));
-        Warnings(cached).Length.ShouldBe(4);
+        Warnings(cached).Length.ShouldBe(5);
     }
 
     [Fact]
@@ -65,8 +66,8 @@ public class CaptionCookDeterminismTests
         Warnings(parallel).ShouldBe(Warnings(serial));
     }
 
-    // Two languages, one of them incomplete, speech with subtitles in both,
-    // and one subtitle file that uses what the engine does not read.
+    // Two languages, one of them incomplete in both kinds, and one subtitle
+    // file that uses what the engine does not read.
     private static void WriteFixture(TempProject project)
     {
         string[] sounds = ["Sounds/door_open.wav", "Sounds/lift_hum.wav", "Sounds/vo/guard_hey.wav", "Sounds/vo/radio.wav"];
@@ -80,6 +81,8 @@ public class CaptionCookDeterminismTests
 
         project.WriteAsset(
             "Sounds/vo/guard_hey.en.vtt", "WEBVTT\n\n00:00.000 --> 00:00.050\n<v Guard>Hey! You there!\n");
+        project.WriteAsset(
+            "Sounds/vo/guard_hey.de.vtt", "WEBVTT\n\n00:00.000 --> 00:00.050\n<v Wache>He! Sie da!\n");
         project.WriteAsset(
             "Sounds/vo/radio.en.vtt", "WEBVTT\n\n00:00.000 --> 00:00.050 align:start\n<i>Static</i>\n");
     }

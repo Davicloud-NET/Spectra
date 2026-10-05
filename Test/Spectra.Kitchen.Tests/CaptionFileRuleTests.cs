@@ -154,7 +154,7 @@ public class CaptionFileRuleTests
         warning.File.ShouldBe(German);
         warning.Message.ShouldBe(
             $"'de' has no caption for 2 of the 3 sounds that have one in 'en', the project's language: " +
-            $"{Door}, {Alarm}. They show in 'en'. Subtitle files are not compared.");
+            $"{Door}, {Alarm}. They show in 'en'.");
     }
 
     [Fact]
@@ -169,8 +169,7 @@ public class CaptionFileRuleTests
 
         result.Diagnostics.ShouldNotContain(d => d.Id.ToString() == "SC4106");
         result.Diagnostics.Single(d => d.File == German).Message.ShouldBe(
-            "'de' has a caption for every sound that has one in 'en', the project's language (2 of 2). " +
-            "Subtitle files are not compared.");
+            "'de' has a caption for every sound that has one in 'en', the project's language (2 of 2).");
     }
 
     [Fact]
@@ -187,6 +186,18 @@ public class CaptionFileRuleTests
             "no caption for 8 of the 8 sounds that have one in 'en', the project's language: " +
             "Sounds/step_0.wav, Sounds/step_1.wav, Sounds/step_2.wav, Sounds/step_3.wav, Sounds/step_4.wav " +
             "and 3 more.");
+    }
+
+    [Fact]
+    public void One_missing_caption_of_one_is_told_in_the_singular()
+    {
+        using var project = ProjectWithSounds(Door);
+        project.WriteAsset(English, $"{Door} = Door opens\n");
+        project.WriteAsset(German, "// Nothing yet.\n");
+
+        Cook(project).Diagnostics.Single(d => d.Id.ToString() == "SC4106").Message.ShouldBe(
+            $"'de' has no caption for 1 of the 1 sound that has one in 'en', the project's language: {Door}. " +
+            "It shows in 'en'.");
     }
 
     [Fact]
@@ -307,6 +318,7 @@ public class CaptionFileRuleTests
             CookDiagnosticCodes.SubtitleNameHasNoLanguage,
             CookDiagnosticCodes.SubtitleHasNoCues,
             CookDiagnosticCodes.SubtitleRunsPastSound,
+            CookDiagnosticCodes.SubtitleLanguageIncomplete,
         ];
 
         warnings.ShouldAllBe(id => CookGate.Verdict(id) == CookGateVerdict.WarningUnlessStrict);

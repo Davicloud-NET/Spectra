@@ -157,6 +157,9 @@ public sealed class CookSession
             });
         }
 
+        // A subtitle file that is missing has no rule to run for it.
+        diagnostics.AddRange(SubtitleCoverage.Check(content, _layout.Project.LanguageOrDefault));
+
         // Save even when the cook failed, so one broken file does not re-cook
         // everything else on the next attempt.
         CloseCache(cache, cookedPaths, diagnostics);
