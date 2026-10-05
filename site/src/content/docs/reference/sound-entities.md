@@ -27,6 +27,8 @@ Plays a sound from where it stands: a hum, an alarm, a spoken line.
 
 Both distances are in units, and a unit is a metre. The volume falls off between the two and reaches nothing at the far one.
 
+Select a sound in the editor and the viewport draws both distances round it.
+
 A volume below 0, or a pitch outside 0.1 to 10, is not used, and the default takes its place.
 
 | Input | Does |

@@ -78,6 +78,8 @@ public sealed class SceneEditorHost : ISceneEditor
     // An entity with no brush, mesh or light has nothing else to see or click.
     private readonly EntityMarkerOverlay _entityMarkers = new();
 
+    private readonly EntityDistanceOverlay _entityDistances = new();
+
     /// <summary>The ground grid and the world axes, drawn depth-tested.</summary>
     public GroundGrid Grid { get; } = new();
 
@@ -755,6 +757,7 @@ public sealed class SceneEditorHost : ISceneEditor
         _negativeOutlines.Draw(output, _scene);
         _volumeOutlines.Draw(output, _scene);
         Lights.Draw(output, _scene, _scene.Camera, _viewportSize);
+        _entityDistances.Draw(output, _scene);
         _entityMarkers.Draw(output, _scene, _scene.Camera, _viewportSize);
         LightGizmo.Draw(output, _viewportSize);
 

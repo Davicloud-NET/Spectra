@@ -54,7 +54,6 @@ public sealed class LightOverlay
     /// <summary>Lights the last draw skipped because <see cref="MaxIcons"/> was reached.</summary>
     public int SkippedLastDraw { get; private set; }
 
-    private const int RingSegments = 32;
     private const float DisabledDim = 0.32f;
 
     /// <summary>Draws an icon per light, plus the selected lights' shapes.</summary>
@@ -241,9 +240,7 @@ public sealed class LightOverlay
                 break;
 
             case LightKind.Point:
-                DrawRing(output, at, Vector3.UnitX, Vector3.UnitY, light.Range, colour);
-                DrawRing(output, at, Vector3.UnitY, Vector3.UnitZ, light.Range, colour);
-                DrawRing(output, at, Vector3.UnitZ, Vector3.UnitX, light.Range, colour);
+                WireRing.Sphere(output, at, light.Range, colour);
                 break;
 
             case LightKind.Spot:
@@ -280,7 +277,7 @@ public sealed class LightOverlay
         Vector3 centre = apex + (forward * reach * MathF.Cos(radians));
         float radius = reach * MathF.Sin(radians);
 
-        DrawRing(output, centre, right, up, radius, colour);
+        WireRing.Draw(output, centre, right, up, radius, colour);
 
         // Four rays only; a full fan hides what the light points at.
         for (int i = 0; i < 4; i++)
@@ -299,7 +296,7 @@ public sealed class LightOverlay
 
         if (light.Kind == LightKind.Disc)
         {
-            DrawRing(output, at, right, up, light.Radius, colour);
+            WireRing.Draw(output, at, right, up, light.Radius, colour);
         }
         else
         {
@@ -328,24 +325,6 @@ public sealed class LightOverlay
         forward = Vector3.Normalize(new Vector3(world.M31, world.M32, world.M33));
         right = Vector3.Normalize(new Vector3(world.M11, world.M12, world.M13));
         up = Vector3.Normalize(new Vector3(world.M21, world.M22, world.M23));
-    }
-
-    // Line by line: DebugDraw.Polyline takes a list, which would allocate per
-    // ring per frame. EditingAllocationTests holds this path to zero.
-    private static void DrawRing(DebugDraw output, Vector3 centre, Vector3 u, Vector3 v, float radius, Vector3 colour)
-    {
-        if (radius <= 0f)
-            return;
-
-        Vector3 previous = centre + (u * radius);
-
-        for (int i = 1; i <= RingSegments; i++)
-        {
-            float angle = i * (MathF.Tau / RingSegments);
-            Vector3 current = centre + (u * radius * MathF.Cos(angle)) + (v * radius * MathF.Sin(angle));
-            output.Line(previous, current, colour);
-            previous = current;
-        }
     }
 }
 
