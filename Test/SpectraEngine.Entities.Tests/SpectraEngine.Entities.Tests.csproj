@@ -8,12 +8,16 @@
     <ProjectReference Include="..\..\SpectraEngine.Entities\SpectraEngine.Entities.csproj" />
     <!-- A normal reference, not an analyzer: the tests run the generator themselves. -->
     <ProjectReference Include="..\..\SpectraEngine.Entities.Generator\SpectraEngine.Entities.Generator.csproj" />
+    <!-- For the one suite that plays the demo's start room with its sounds cooked. -->
+    <ProjectReference Include="..\..\Spectra.Kitchen\Spectra.Kitchen.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- A scene manager loads a scene through a renderer. -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\FakeRenderer.cs" Link="FakeRenderer.cs" />
     <Compile Include="..\SpectraEngine.Bsp.Tests\SpatialTestHelpers.cs" Link="SpatialTestHelpers.cs" />
+    <!-- An audio device with no sound card. -->
+    <Compile Include="..\SpectraEngine.Bsp.Tests\FakeAudioBackend.cs" Link="FakeAudioBackend.cs" />
   </ItemGroup>
 
   <ItemGroup>
