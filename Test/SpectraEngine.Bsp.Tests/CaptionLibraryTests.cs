@@ -128,7 +128,11 @@ public sealed class CaptionLibraryTests
         content.Write("Captions/en.txt", $"{Door} = Door opens");
         CaptionLibrary library = content.Library();
 
-        library.Find(@"sounds\DOOR_OPEN.wav", "en").ShouldNotBeNull().Lines[0].Text.ShouldBe("Door opens");
+        SoundCaptions spelledOddly = library.Find(@"sounds\DOOR_OPEN.wav", "en").ShouldNotBeNull();
+
+        spelledOddly.Lines[0].Text.ShouldBe("Door opens");
+        library.Find(Door, "en").ShouldBeSameAs(spelledOddly);
+        library.Find("/Sounds//door_open.wav", "en").ShouldBeSameAs(spelledOddly);
     }
 
     [Fact]

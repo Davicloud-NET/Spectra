@@ -87,27 +87,38 @@ public sealed class CaptionLibrary
             _languages.Add(language, known);
         }
 
-        // Kept under the path as it was asked, so asking again normalizes nothing.
+        // Kept under the path as it was asked too, so asking again normalizes nothing.
         if (known.BySound.TryGetValue(soundPath, out SoundCaptions? captions))
             return captions;
 
-        captions = Load(soundPath, language, known.File);
-        known.BySound.Add(soundPath, captions);
+        // One answer for a sound however its path is spelled: a caption that
+        // shows is told from another by the answer it came from.
+        if (TryNormalize(soundPath, out string sound) && !known.BySound.TryGetValue(sound, out captions))
+        {
+            captions = Load(sound, language, known.File);
+            known.BySound[sound] = captions;
+        }
+
+        known.BySound[soundPath] = captions;
         return captions;
     }
 
-    private SoundCaptions? Load(string soundPath, string language, CaptionFile? file)
+    private static bool TryNormalize(string soundPath, out string sound)
     {
-        string sound;
         try
         {
             sound = ContentRoot.NormalizeRelativePath(soundPath);
+            return true;
         }
         catch (ArgumentException)
         {
-            return null;
+            sound = "";
+            return false;
         }
+    }
 
+    private SoundCaptions? Load(string sound, string language, CaptionFile? file)
+    {
         // The subtitle file wins over a line in the caption file.
         if (ReadSubtitles(SubtitlePath.For(sound, language)) is { Count: > 0 } cues)
             return new SoundCaptions(CaptionKind.Voice, language, cues);
