@@ -145,6 +145,20 @@ public sealed class LogicCanvasWiringTests(RibbonSession session)
     }
 
     [Fact]
+    public void A_view_taken_out_of_its_window_mid_drag_gives_the_wire_up()
+    {
+        On("whole", graph =>
+        {
+            graph.Drag(graph.Scene.Card("StartZone").Header.Center, graph.Scene.Card("Lift").Header.Center);
+
+            graph.Window.Content = null;
+            Dispatcher.UIThread.RunJobs();
+
+            graph.Model.Wiring.Gesture.Phase.ShouldBe(LogicWirePhase.Cancelled);
+        });
+    }
+
+    [Fact]
     public void A_wire_let_go_on_empty_ground_opens_no_menu_and_asks_for_nothing()
     {
         On("whole", graph =>

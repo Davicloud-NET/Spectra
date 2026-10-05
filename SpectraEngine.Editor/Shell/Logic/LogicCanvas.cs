@@ -322,11 +322,7 @@ public sealed class LogicCanvas : Control
             return;
 
         if (_heard is not null)
-        {
-            // While still listening, so the menu of a dropped wire closes.
-            _heard.Wiring.Cancel();
             _heard.Redraw -= OnRedraw;
-        }
 
         _heard = model;
         _hover.Clear(Model);
