@@ -39,6 +39,8 @@ Everything you insert comes from the Build tab of the ribbon:
 
    Press <kbd>Enter</kbd> after each one you type.
 
+   The same wire can be made by dragging from the trigger's card onto the door's card in the Logic view. See [See and wire a level's logic](/guides/see-and-wire-a-levels-logic/).
+
 7. Press Play, or <kbd>F8</kbd>. Walk forward with <kbd>W</kbd>. The door slides up when you reach the trigger.
 
 8. Press <kbd>F8</kbd> or <kbd>Esc</kbd> to stop. The door is back where you built it. Stop before you save: the editor does not save a level while it plays.
@@ -55,7 +57,9 @@ Look at the wire first. A wire whose target matches nothing says so underneath, 
 
 Then open the Problems panel: View, Panels, Problems. A door that still has a block inside it cannot move, and the panel lists it with the fix.
 
-To see the wire fire, open the Console panel, type `ent_watch on` and then press Play. Every output that fires and every input that arrives prints a line. The lines are explained in [Console](/reference/console/).
+To see the wire fire, press <kbd>Ctrl</kbd> + <kbd>L</kbd> to open the Logic view, select the trigger and press Play. The wire lights up when it fires, and one that finds no door says `missed`. See [See and wire a level's logic](/guides/see-and-wire-a-levels-logic/).
+
+The console tells the same story in lines. Open the Console panel, type `ent_watch on` and then press Play. Every output that fires and every input that arrives prints a line. The lines are explained in [Console](/reference/console/).
 
 You can also open the door by hand. While the level plays, press <kbd>&#96;</kbd>, type `ent_fire Door Open` and press <kbd>Enter</kbd>. If that opens it, the door is fine and the fault is in the trigger or the wire.
 

@@ -86,6 +86,24 @@ Letter keys stand down while a camera is driving: with the right mouse button he
 | <kbd>Ctrl</kbd> + <kbd>&#96;</kbd> | Show or hide the bottom panel. |
 | <kbd>F11</kbd> | Give the view the whole window, or put the panels back. |
 
+## Logic view
+
+<kbd>Ctrl</kbd> + <kbd>L</kbd> works anywhere. The rest work in the Logic view, which [See and wire a level's logic](/guides/see-and-wire-a-levels-logic/) explains.
+
+| Input | Does |
+|---|---|
+| <kbd>Ctrl</kbd> + <kbd>L</kbd> | Show or hide the Logic view. |
+| Click a card | Select its entity. |
+| <kbd>Ctrl</kbd> + click a card | Add its entity to the selection. |
+| Double-click a card | Frame its entity in the viewport. |
+| Drag from a card or an output | Pull a wire. Drop it on a card and pick what it sends. |
+| <kbd>Esc</kbd> while dragging | Give the wire up. |
+| Click a wire | Select it and the entity that sends it. |
+| <kbd>Del</kbd> | Remove the selected wire. |
+| Right-click a wire | Open its menu. |
+| Drag on empty space | Pan. Middle-drag pans from anywhere. |
+| Wheel | Zoom toward the cursor. |
+
 ## Playing
 
 These work while the level plays. <kbd>F8</kbd> starts it.

@@ -37,6 +37,7 @@ export default defineConfig({
 					label: 'Guides',
 					items: [
 						{ label: 'Make a door that opens', slug: 'guides/make-a-door-that-opens' },
+						{ label: "See and wire a level's logic", slug: 'guides/see-and-wire-a-levels-logic' },
 						{ label: 'Cook and run a project', slug: 'guides/cook-and-run-a-project' },
 					],
 				},
