@@ -1,5 +1,19 @@
 # Spectra — The Console
 
+## What is built
+
+As of 2026-10-05 these parts exist. Everything else below is still a design.
+
+- The console core in `SpectraEngine.Core/ConsoleSystem`: the tokenizer, the command table, and `help`, `echo` and `wait`.
+- The host queue, `EngineHost.SubmitConsoleLine`, and `FrameSnapshot.ConsoleLines`, which carries what the console printed back to the host.
+- The entity commands `ent_fire`, `ent_list`, `ent_show` and `ent_watch`.
+- The demo's `--command="<line>"`.
+- The editor's Console panel, which forwards any line it does not know to the engine.
+
+Two things were built differently from the text below. There is one console per engine: `SpectraConsole` is an instance that `Engine` owns, not a static facade. And the command that prints an entity is `ent_show`, not `ent_dump`.
+
+The user reference is `site/src/content/docs/reference/console.md`.
+
 > A typed ConVar/ConCommand control surface with binds, config files and discovery, stolen from Source; plus a live Luau line, stolen from Roblox. One registry, one command buffer, one bind table.
 > Companion to [`ROADMAP.md`](../ROADMAP.md) (arcs `F`/`E`/`P`/`S`/`R`/`H`), [`docs/roblox-onboarding.md`](roblox-onboarding.md) (`O0`–`O9`) and [`docs/formats-and-pipeline.md`](formats-and-pipeline.md) (`D0`–`D22`). This document owns one arc — **`C*`**, for console — and references milestones in the others by id rather than restating them.
 > Sizes are relative (**S / M / L**), never calendar. Nothing here was built or run — another workflow holds the tree — so every claim about the tree was read out of source on **2026-08-21**, every claim about a .NET library was checked against its source or documentation on the same date and is marked, and everything speculative is labelled as such in §8.

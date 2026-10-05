@@ -35,13 +35,20 @@ export default defineConfig({
 				},
 				{
 					label: 'Guides',
-					items: [{ label: 'Cook and run a project', slug: 'guides/cook-and-run-a-project' }],
+					items: [
+						{ label: 'Make a door that opens', slug: 'guides/make-a-door-that-opens' },
+						{ label: 'Cook and run a project', slug: 'guides/cook-and-run-a-project' },
+					],
 				},
 				{
 					label: 'Reference',
 					items: [
 						{ label: 'Keyboard and mouse', slug: 'reference/keyboard' },
 						{ label: 'Logic entities', slug: 'reference/logic-entities' },
+						{ label: 'Mover entities', slug: 'reference/mover-entities' },
+						{ label: 'Trigger entities', slug: 'reference/trigger-entities' },
+						{ label: 'Player entities', slug: 'reference/player-entities' },
+						{ label: 'Console', slug: 'reference/console' },
 						{ label: 'Material files', slug: 'reference/material-files' },
 						{ label: 'Level files', slug: 'reference/level-files' },
 						{ label: 'scook', slug: 'reference/scook' },

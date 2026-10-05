@@ -1,9 +1,9 @@
 ---
 title: Keyboard and mouse
-description: Every shortcut in the editor.
+description: Every shortcut in the editor, and the keys that work while you play.
 ---
 
-The editor shows this same list under Help, Keyboard reference.
+The editor shows this list under Help, Keyboard reference, without the Playing section.
 
 Letter keys stand down while a camera is driving: with the right mouse button held, <kbd>W</kbd> flies forward instead of picking the move tool.
 
@@ -82,3 +82,16 @@ Letter keys stand down while a camera is driving: with the right mouse button he
 | <kbd>F9</kbd> | Draw the character capsule, while playing. |
 | <kbd>F1</kbd> to <kbd>F5</kbd> | Wireframe, CSG vertices, bounds, face normals, node axes. |
 | <kbd>F6</kbd> | Cycle the rendering pipeline. |
+
+## Playing
+
+These work while the level plays. <kbd>F8</kbd> starts it.
+
+| Input | Does |
+|---|---|
+| Mouse | Look. |
+| <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> | Walk. |
+| <kbd>Shift</kbd> | Run. |
+| <kbd>Space</kbd> | Jump. |
+| <kbd>E</kbd> | Use what you are looking at, from up to 2 units away. This presses a button. |
+| <kbd>F8</kbd> or <kbd>Esc</kbd> | Stop playing. |

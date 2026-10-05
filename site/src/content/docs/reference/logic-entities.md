@@ -5,13 +5,17 @@ description: The entity classes that ship with the engine.
 
 These classes have no shape. They exist to be wired together. See [Entities and wiring](/concepts/entities-and-wiring/) for how wires work.
 
+The classes with a shape are on [Mover entities](/reference/mover-entities/) and [Trigger entities](/reference/trigger-entities/). The player's start is on [Player entities](/reference/player-entities/).
+
+In each settings table, the first column is the name a level file uses and the second is the label in the Properties panel.
+
 ## logic_relay
 
 Passes a trigger on, and can be switched off.
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `startdisabled` | 0 | Set to 1 and the relay ignores `Trigger` until it gets `Enable`. |
+| Setting | In the editor | Default | Meaning |
+|---|---|---|---|
+| `startdisabled` | Start disabled | 0 | Set to 1 and the relay ignores `Trigger` until it gets `Enable`. |
 
 | Input | Does |
 |---|---|
@@ -28,14 +32,14 @@ Passes a trigger on, and can be switched off.
 
 Fires on a fixed interval.
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `startdisabled` | 0 | Set to 1 and the timer waits for `Enable`. |
-| `refiretime` | 1 | Seconds between fires. |
+| Setting | In the editor | Default | Meaning |
+|---|---|---|---|
+| `startdisabled` | Start disabled | 0 | Set to 1 and the timer waits for `Enable`. |
+| `refiretime` | Refire time | 1 | Seconds between fires. Anything below 0.01 counts as 0.01. |
 
 | Input | Does |
 |---|---|
-| `Enable` | Starts the timer. |
+| `Enable` | Starts the timer with a whole interval ahead. On a running timer it starts the interval over. |
 | `Disable` | Stops it. |
 | `Toggle` | Starts it if stopped, stops it if running. |
 | `ResetTimer` | Starts the interval over without firing. Does nothing on a stopped timer. |
@@ -50,11 +54,11 @@ Fires on a fixed interval.
 
 Holds a number, with an optional floor and ceiling.
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `startvalue` | 0 | The number it starts at. |
-| `min` | 0 | The floor. |
-| `max` | 0 | The ceiling. |
+| Setting | In the editor | Default | Meaning |
+|---|---|---|---|
+| `startvalue` | Start value | 0 | The number it starts at. |
+| `min` | Minimum | 0 | The floor. |
+| `max` | Maximum | 0 | The ceiling. |
 
 The floor and ceiling only apply when `max` is above `min`. With both left at 0 the counter has no limits.
 
@@ -64,8 +68,8 @@ The floor and ceiling only apply when `max` is above `min`. With both left at 0 
 | `Subtract` | Subtracts the parameter, or 1 if there is none. |
 | `SetValue` | Sets the number to the parameter. |
 | `SetValueNoFire` | Sets the number without firing any output. |
-| `SetHitMax` | Changes the ceiling. |
-| `SetHitMin` | Changes the floor. |
+| `SetHitMax` | Changes the ceiling. Fires nothing. |
+| `SetHitMin` | Changes the floor. Fires nothing. |
 | `GetValue` | Fires `OutValue` with the current number. |
 
 | Output | Fires when |
@@ -86,9 +90,9 @@ Fires once when the level starts. It has no settings and takes no inputs.
 
 Holds a true or false value.
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `initialvalue` | 0 | The value it starts with: 0 for false, 1 for true. |
+| Setting | In the editor | Default | Meaning |
+|---|---|---|---|
+| `initialvalue` | Initial value | 0 | The value it starts with: 0 for false, 1 for true. |
 
 Setting the value fires nothing. The outputs fire only when the branch is tested.
 
@@ -109,9 +113,9 @@ Setting the value fires nothing. The outputs fire only when the branch is tested
 
 Compares a value against up to 16 cases and fires the output of the one it matches.
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `case01` to `case16` | empty | The value that fires the output with the same number. An empty case is not used. |
+| Setting | In the editor | Default | Meaning |
+|---|---|---|---|
+| `case01` to `case16` | Case 01 to Case 16 | empty | The value that fires the output with the same number. An empty case is not used. |
 
 Numbers match as numbers, so `3` and `3.0` are the same case. Anything else matches as text, and capitals count. If two cases hold the same value, the lower number wins.
 
@@ -130,10 +134,10 @@ For more than 16 cases, wire `OnDefault` to the `InValue` of a second `logic_cas
 
 Holds a number and compares it against another.
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `initialvalue` | 0 | The number it starts with. |
-| `comparevalue` | 0 | The number to compare against. |
+| Setting | In the editor | Default | Meaning |
+|---|---|---|---|
+| `initialvalue` | Initial value | 0 | The number it starts with. |
+| `comparevalue` | Compare value | 0 | The number to compare against. |
 
 Setting either number fires nothing. The outputs fire only on a comparison.
 
