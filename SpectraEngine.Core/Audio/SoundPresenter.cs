@@ -12,10 +12,9 @@ namespace SpectraEngine.Core.Audio;
 /// level is playing, works out how each sound reaches the listener and gives
 /// the audio device's sources to the loudest. Render thread only.
 /// </summary>
-// The simulation never hears of this class. It goes on counting a sound that
-// has no source, which is how a loop comes back in step.
-// A voice is lined up with the simulation when it starts and left alone
-// after. The device and the tick count drift apart after a hitch, and a
+// The simulation goes on counting a sound that has no source, which is how
+// a loop comes back in step. A voice is lined up with the ticks when it
+// starts and never after: the two clocks drift apart after a hitch, and a
 // voice that chased the ticks would be heard doing it.
 public sealed class SoundPresenter
 {
@@ -103,18 +102,19 @@ public sealed class SoundPresenter
         if (world is null || registry is null)
             return;
 
-        _voices.EndTails(deltaSeconds);
+        _voices.ExpireTails(deltaSeconds);
         Reconcile(registry.Playing, world.TickNumber);
 
         var listener = new SoundListener(_audio.ListenerPosition, _audio.ListenerForward, _audio.ListenerUp);
         bool jumped = HasJumped(listener.Position);
 
-        int asked = Ask(world);
+        int asked = QueryAudible(world);
         _propagation.Resolve(in listener, _queries.AsSpan(0, asked), _paths.AsSpan(0, asked));
         Hear(asked, deltaSeconds, jumped);
 
-        _voices.HandOut(world, _presented.AsSpan(0, _count));
-        Stats = Configure();
+        _voices.GiveSourcesToLoudest(world, _presented.AsSpan(0, _count));
+        ConfigureVoices();
+        Stats = CountSounds();
     }
 
     // Stop, a map load during play and a save all end the world, so this one
@@ -168,9 +168,7 @@ public sealed class SoundPresenter
             _voices.Release(ref gone);
     }
 
-    // Writes a query for every sound that can be heard at all and takes the
-    // source from every sound that cannot. Returns how many it wrote.
-    private int Ask(EntityWorld world)
+    private int QueryAudible(EntityWorld world)
     {
         long tick = world.TickNumber;
         int asked = 0;
@@ -178,30 +176,32 @@ public sealed class SoundPresenter
         for (int i = 0; i < _count; i++)
         {
             ref PresentedEmitter presented = ref _presented[i];
-            ref readonly SoundEmitter emitter = ref presented.Emitter;
-
-            // Not started again: the device may be ahead of the ticks, and a
-            // second start would play the end of the sound twice.
-            if (_voices.TryDropEnded(ref presented))
-                presented.HasPlayedOut = true;
-
-            // Still listed past its end, until its owner stops it.
-            if (emitter.HasEndedAt(tick))
-                _voices.LetPlayOut(ref presented);
+            LetGoOfEndedVoice(ref presented, tick);
 
             if (!CanBeHeard(world, in presented, tick))
             {
-                _voices.Release(ref presented);
-                presented.Loudness = 0f;
-                presented.Smoother.Reset();
+                Silence(ref presented);
                 continue;
             }
 
+            ref readonly SoundEmitter emitter = ref presented.Emitter;
             _queries[asked] = new SoundQuery(emitter.Node.WorldPosition, emitter.MinDistance, emitter.MaxDistance);
             _asked[asked++] = i;
         }
 
         return asked;
+    }
+
+    private void LetGoOfEndedVoice(ref PresentedEmitter presented, long tick)
+    {
+        // Not started again: the device may be ahead of the ticks, and a
+        // second start would play the end of the sound twice.
+        if (_voices.TryDropEnded(ref presented))
+            presented.HasPlayedOut = true;
+
+        // Still listed past its end, until its owner stops it.
+        if (presented.Emitter.HasEndedAt(tick))
+            _voices.LetPlayOut(ref presented);
     }
 
     // A deleted node is out of the scene until an undo restores it.
@@ -210,6 +210,13 @@ public sealed class SoundPresenter
         && !presented.HasPlayedOut
         && ReferenceEquals(presented.Emitter.Node.Owner, world.Scene)
         && !presented.Emitter.HasEndedAt(tick);
+
+    private void Silence(ref PresentedEmitter presented)
+    {
+        _voices.Release(ref presented);
+        presented.Loudness = 0f;
+        presented.Smoother.Reset();
+    }
 
     private void Hear(int asked, float deltaSeconds, bool jumped)
     {
@@ -237,19 +244,25 @@ public sealed class SoundPresenter
     private static bool IsFinite(Vector3 place) =>
         float.IsFinite(place.X) && float.IsFinite(place.Y) && float.IsFinite(place.Z);
 
-    // Moves every voice to where its sound is now, and counts.
-    private SoundStats Configure()
+    private void ConfigureVoices()
+    {
+        for (int i = 0; i < _count; i++)
+        {
+            if (_presented[i].Voice is { } voice)
+                voice.Configure(LevelVoices.SettingsFor(in _presented[i]));
+        }
+    }
+
+    private SoundStats CountSounds()
     {
         int withoutSource = 0;
         int unplayable = 0;
 
         for (int i = 0; i < _count; i++)
         {
-            ref PresentedEmitter presented = ref _presented[i];
+            ref readonly PresentedEmitter presented = ref _presented[i];
 
-            if (presented.Voice is { } voice)
-                voice.Configure(LevelVoices.SettingsFor(in presented));
-            else if (presented.Loudness > SilenceGain)
+            if (presented.Voice is null && presented.Loudness > SilenceGain)
                 withoutSource++;
 
             if (presented.IsUnplayable)

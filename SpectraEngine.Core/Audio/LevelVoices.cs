@@ -26,21 +26,15 @@ internal sealed class LevelVoices
         _bank = new LevelSoundBank(audio, assets, logger);
     }
 
-    // Sounds that hold a source now.
+    // Sounds that hold a source now. One that is playing out is not counted.
     public int Count { get; private set; }
 
     // Sounds the device refused a source, since the last Clear.
     public int RefusedStarts { get; private set; }
 
-    // Takes the source from every sound too quiet to hear, then gives the
-    // free ones to the loudest sounds that have none.
-    public void HandOut(EntityWorld world, Span<PresentedEmitter> presented)
+    public void GiveSourcesToLoudest(EntityWorld world, Span<PresentedEmitter> presented)
     {
-        for (int i = 0; i < presented.Length; i++)
-        {
-            if (presented[i].Loudness <= SoundPresenter.SilenceGain)
-                Release(ref presented[i]);
-        }
+        ReleaseSilent(presented);
 
         // A source other code plays on, or a sound is playing out on, is not
         // ours to hand out. Asking for more would have the pool cut one off.
@@ -108,8 +102,7 @@ internal sealed class LevelVoices
         Count--;
     }
 
-    // Forgets the voices that have played out, and cuts one that has had its time.
-    public void EndTails(float deltaSeconds)
+    public void ExpireTails(float deltaSeconds)
     {
         for (int i = _tails.Count - 1; i >= 0; i--)
         {
@@ -151,6 +144,15 @@ internal sealed class LevelVoices
             Vector3.Zero,
             Relative: atListener,
             presented.Smoother.GainHf);
+    }
+
+    private void ReleaseSilent(Span<PresentedEmitter> presented)
+    {
+        for (int i = 0; i < presented.Length; i++)
+        {
+            if (presented[i].Loudness <= SoundPresenter.SilenceGain)
+                Release(ref presented[i]);
+        }
     }
 
     // False when the device had no source to give.
