@@ -40,6 +40,10 @@ public static class WallLoss
         return total;
     }
 
+    /// <summary>Whether a line of <paramref name="length"/> ends inside the last of its <paramref name="spans"/>.</summary>
+    public static bool EndsInSolid(ReadOnlySpan<SolidSpan> spans, float length) =>
+        spans.Length > 0 && spans[^1].End >= length - SolidSpan.Tolerance;
+
     private static AcousticLoss LossInside(AcousticPreset preset, float depth)
     {
         // Also catches NaN.

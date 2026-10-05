@@ -244,20 +244,19 @@ public sealed class WallPropagation : ISoundPropagation
     private void Trace(in Frame frame, in SoundQuery sound, ref WallAnswer answer, int lines)
     {
         HeadLines.Ends ends = _lines.From(sound.Position, frame.Listener);
-        float gain = 0f;
-        float high = 0f;
 
-        for (int line = 0; line < lines; line++)
+        AcousticGains toListener = Through(in sound, ends[0], out bool listenerInSolid);
+        float gain = toListener.Gain;
+        float high = toListener.Gain * toListener.GainHf;
+
+        for (int line = 1; line < lines; line++)
         {
-            Vector3 end = ends[line];
-            Vector3 from = _world.HeardFrom(sound.Position, end, sound.Body);
+            AcousticGains through = Through(in sound, ends[line], out bool endInSolid);
 
-            // A list that ran out of room still counts for what it holds.
-            int count = _world.Trace(from, end, sound.Body, _spans, out _);
-
-            AcousticGains through = WallLoss
-                .Sum(_spans.AsSpan(0, count), Vector3.Distance(from, end), _materials)
-                .ToGains();
+            // A point of the ring inside a wall the listener is not in is no
+            // place to listen from. Its line counts as the listener's own.
+            if (endInSolid && !listenerInSolid)
+                through = toListener;
 
             gain += through.Gain;
             high += through.Gain * through.GainHf;
@@ -272,6 +271,20 @@ public sealed class WallPropagation : ISoundPropagation
         answer.Listener = frame.Listener;
         answer.Revision = frame.Revision;
         answer.TracedAt = frame.Now;
+    }
+
+    // What the solids on the line from a sound to one end leave of it.
+    private AcousticGains Through(in SoundQuery sound, Vector3 end, out bool endInSolid)
+    {
+        Vector3 from = _world.HeardFrom(sound.Position, end, sound.Body);
+        float length = Vector3.Distance(from, end);
+
+        // A list that ran out of room still counts for what it holds.
+        int count = _world.Trace(from, end, sound.Body, _spans, out _);
+        ReadOnlySpan<SolidSpan> solids = _spans.AsSpan(0, count);
+
+        endInSolid = WallLoss.EndsInSolid(solids, length);
+        return WallLoss.Sum(solids, length, _materials).ToGains();
     }
 
     private void Apply(Span<SoundPaths> results)

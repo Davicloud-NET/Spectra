@@ -13,8 +13,9 @@ public sealed record WallPropagationSettings
     public int Lines { get; init; } = 5;
 
     /// <summary>The ring's radius, in units.</summary>
-    // Inside the player's capsule at eye height, so no line ends in a wall
-    // the player is leaning on.
+    // Narrower than the player's capsule at eye height, so no line ends in a
+    // wall the player leans on. Its top is over the capsule's, under a low
+    // ceiling, and a line that ends in a solid counts as the listener's own.
     public float HeadRadius { get; init; } = 0.25f;
 
     /// <summary>The most lines traced in one frame, over all sounds. At least <see cref="Lines"/>.</summary>

@@ -199,10 +199,11 @@ public sealed class WallPropagationTests
     [Fact]
     public void A_view_that_is_partly_open_lets_that_share_of_the_sound_through_and_most_of_its_high_end()
     {
-        // The slab's edge runs past the listener's head. Three of the five
-        // lines end beside it and two end metres deep in concrete.
+        // A thin slab stands edge on beside the listener's head. Three of the
+        // five lines end on this side of it, and two cross it so aslant that
+        // they run a metre or more through its concrete.
         var world = new FakeSoundObstacles();
-        world.Slab(8.05f, 20f, WallRig.Concrete);
+        world.Slab(8.05f, 8.09f, WallRig.Concrete);
         var rig = new WallRig(world, WallRig.SpanMaterials()) { Listener = new Vector3(8f, 0f, 0f) };
         int sound = rig.Add(new Vector3(8f, 0f, 6f), minDistance: 10f);
 
