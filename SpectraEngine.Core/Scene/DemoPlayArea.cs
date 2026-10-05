@@ -41,6 +41,12 @@ public static class DemoPlayArea
     /// <summary>The volume in front of the door that opens it, a <c>trigger_multiple</c>.</summary>
     public const string StartZoneName = "StartZone";
 
+    /// <summary>The start room's lift, a <c>func_movelinear</c>.</summary>
+    public const string LiftName = "Lift";
+
+    /// <summary>The button that sends the lift up, a <c>func_button</c>.</summary>
+    public const string LiftButtonName = "LiftButton";
+
     // Three units thick so the chasm can be cut straight through it.
     private const float FloorTop = 0f;
     private const float FloorThickness = 3f;
@@ -188,6 +194,29 @@ public static class DemoPlayArea
         start.LocalPosition = new Vector3(125f, 0f, 0f);
         start.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f);
         start.Entity = new Entities.EntityData("info_player_start");
+
+        // A lift in the north-west corner. It lies on the floor, low enough
+        // to step onto, and rises until its top is level with the walls. Up
+        // there it waits three seconds and comes down by a wire to itself.
+        SceneNode lift = PartNode(scene, LiftName,
+            new Vector3(123f, 0.15f, -3f), new Vector3(1f, 0.15f, 1f), structure);
+        count++;
+        lift.Entity = new Entities.EntityData("func_movelinear");
+        lift.Entity.SetValue("distance", "2.2");
+        lift.Entity.SetValue("speed", "1.5");
+        lift.Entity.Connections.Add(new Entities.EntityConnection(
+            "OnFullyOpen", LiftName, "Close", "", 3f, Entities.EntityConnection.Infinite));
+
+        // On the west wall beside the lift, not over it, so the lift does not
+        // pass through it. In reach of someone standing on the lift, and tall
+        // enough to be in front of the eye from there and from the floor.
+        SceneNode button = PartNode(scene, LiftButtonName,
+            new Vector3(122.075f, 1.75f, -1.5f), new Vector3(0.075f, 0.3f, 0.3f), accent);
+        count++;
+        button.Entity = new Entities.EntityData("func_button");
+        button.Entity.SetValue("movedir", "-1 0 0");
+        button.Entity.Connections.Add(new Entities.EntityConnection(
+            "OnPressed", LiftName, "Open", "", 0f, Entities.EntityConnection.Infinite));
 
         return count;
     }
