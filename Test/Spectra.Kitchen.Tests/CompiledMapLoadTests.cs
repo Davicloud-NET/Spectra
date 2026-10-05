@@ -339,13 +339,53 @@ public class CompiledMapLoadTests
     {
         string said = CompiledMapLoadReport.DescribeFormatGaps();
 
-        said.ShouldContain("lights");
         said.ShouldContain("spawns");
         said.ShouldContain("scripts");
         said.ShouldContain("submesh indices");
-        said.ShouldContain("collision");
+        said.ShouldContain("materials for ray hits");
         said.ShouldNotContain("entities");
-        CompiledMapLoadReport.FormatGaps.Count.ShouldBe(6);
+        said.ShouldNotContain("lights");
+        said.ShouldNotContain("collision");
+        CompiledMapLoadReport.FormatGaps.Count.ShouldBe(5);
+    }
+
+    [Fact]
+    public void A_hull_on_a_scaled_node_is_named_rather_than_given_collision_in_the_wrong_place()
+    {
+        // The fixture's nodes are scaled, which the cook refuses for a brush.
+        // Planes under scale are not unit length, so the hull would be wrong.
+        byte[] file = ScmapFixture.Build();
+
+        var renderer = new FakeRenderer();
+        var scene = new SpectraEngine.Core.Scene.Scene("empty");
+        CompiledMapLoadReport report = Load(scene, renderer, file);
+
+        report.CollisionHullsRefused.ShouldBe(new[] { "Wall", "Cut" });
+        report.CollisionHullsLoaded.ShouldBe(0);
+        report.Describe().ShouldNotBeNull().ShouldContain("2 world brush(es) with no collision (Wall, Cut)");
+        scene.CompiledStaticWorld.ShouldNotBeNull().CollisionPlacements.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_light_arrives_on_its_node_from_the_table()
+    {
+        byte[] file = ScmapFixture.Build();
+
+        var renderer = new FakeRenderer();
+        var scene = new SpectraEngine.Core.Scene.Scene("empty");
+        CompiledMapLoadReport report = Load(scene, renderer, file);
+
+        report.LightsLoaded.ShouldBe(ScmapFixture.Lights.Length);
+
+        scene.TryFindById(ScmapFixture.NodeId(5), out SceneNode? lamp).ShouldBeTrue();
+        Light spot = lamp.ShouldNotBeNull().Light.ShouldNotBeNull();
+        spot.Kind.ShouldBe(LightKind.Spot);
+        spot.Enabled.ShouldBeFalse();
+        spot.OuterAngle.ShouldBe(40f);
+
+        // A node the table does not name gets no light.
+        scene.TryFindById(ScmapFixture.NodeId(2), out SceneNode? wall).ShouldBeTrue();
+        wall.ShouldNotBeNull().Light.ShouldBeNull();
     }
 
     [Fact]

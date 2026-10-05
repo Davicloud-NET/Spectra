@@ -1331,7 +1331,7 @@ public sealed partial class Scene
 
     // Null when the matrix is rigid. The CSG tolerances assume it: under scale
     // or shear, Plane.Transform returns planes that are not normalized.
-    private static string? DescribeNonRigidDefect(in Matrix4x4 m)
+    internal static string? DescribeNonRigidDefect(in Matrix4x4 m)
     {
         const float tolerance = RigidTransformTolerance;
 

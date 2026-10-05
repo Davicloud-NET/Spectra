@@ -102,6 +102,7 @@ World geometry
 - BSP answers queries. It is never the render path.
 - A face is named by its plane index. `Brush.FaceSurfaces` has one entry per plane, `Brush.LocalFaces` skips planes that clip away.
 - A baked map (`.scmap`) is adopted as is. Never carve it again: ask `ScmapBrushSource.IsReCarvable`.
+- Under a baked map `Scene.StaticWorld` is null and no node carries a world brush. Collision reads `CompiledStaticWorld.CollisionPlacements` and world rays read its trees. Loading one does not move `StaticWorldCompileCount`, so a cache of world data must also compare `Scene.CompiledStaticWorld`.
 
 Editing
 

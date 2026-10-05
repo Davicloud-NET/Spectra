@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Runtime.InteropServices;
 
 namespace SpectraEngine.Core.Maps.Compiled;
@@ -24,7 +25,9 @@ public static class ScmapReader
     private const int BrushSourceSlot = 7;
     private const int EntitySlot = 8;
     private const int ConnectionSlot = 9;
-    private const int KnownSectionCount = 10;
+    private const int CollisionSlot = 10;
+    private const int LightSlot = 11;
+    private const int KnownSectionCount = 12;
 
     /// <summary>
     /// Validates <paramref name="file"/> and returns its tables as spans into it.
@@ -153,6 +156,8 @@ public static class ScmapReader
         RequireSection(source, sectionPresent, ChunkSlot, ScmapFormat.ChunkDirectorySection);
         RequireSection(source, sectionPresent, EntitySlot, ScmapFormat.EntitySection);
         RequireSection(source, sectionPresent, ConnectionSlot, ScmapFormat.EntityConnectionSection);
+        RequireSection(source, sectionPresent, CollisionSlot, ScmapFormat.CollisionSection);
+        RequireSection(source, sectionPresent, LightSlot, ScmapFormat.LightSection);
 
         // The header flag and the section table must agree about BRSH.
         if (((header.FileFlags & ScmapFlags.HasBrushSource) != 0) != sectionPresent[BrushSourceSlot])
@@ -198,6 +203,18 @@ public static class ScmapReader
             connections.Length,
             out ReadOnlySpan<ScmapKeyvalueRecord> keyvalues);
 
+        ReadOnlySpan<ScmapHullRecord> hulls = ScmapCollisionTable.Read(
+            source,
+            file.Slice(sectionOffset[CollisionSlot], sectionLength[CollisionSlot]),
+            nodes,
+            strings,
+            out ReadOnlySpan<Plane> hullPlanes);
+
+        ReadOnlySpan<ScmapLightRecord> lights = ScmapLightTable.Read(
+            source,
+            file.Slice(sectionOffset[LightSlot], sectionLength[LightSlot]),
+            nodes.Length);
+
         ReadOnlySpan<byte> meshBlob = sectionPresent[ChunkMeshSlot]
             ? file.Slice(sectionOffset[ChunkMeshSlot], sectionLength[ChunkMeshSlot])
             : default;
@@ -227,6 +244,9 @@ public static class ScmapReader
             entities,
             keyvalues,
             connections,
+            hulls,
+            hullPlanes,
+            lights,
             chunks,
             meshBlob,
             bspBlob,
@@ -249,6 +269,8 @@ public static class ScmapReader
         ScmapFormat.BrushSourceSection => BrushSourceSlot,
         ScmapFormat.EntitySection => EntitySlot,
         ScmapFormat.EntityConnectionSection => ConnectionSlot,
+        ScmapFormat.CollisionSection => CollisionSlot,
+        ScmapFormat.LightSection => LightSlot,
 
         // Reserved codes with no consumer yet (SCPT, LUAB, LUAS, NBND, RGNI,
         // BMDL) are skipped like any unknown one.

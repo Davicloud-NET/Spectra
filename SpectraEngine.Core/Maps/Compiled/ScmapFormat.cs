@@ -145,6 +145,27 @@ public static class ScmapFormat
     public const int ConnectionRecordSize = 24;
 
     /// <summary>
+    /// Bytes of fixed preamble in <c>COLL</c>: the hull count and the plane
+    /// count, padded to the payload alignment.
+    /// </summary>
+    public const int CollisionPreambleSize = 16;
+
+    /// <summary>Bytes in one <see cref="ScmapHullRecord"/>.</summary>
+    public const int HullRecordSize = 16;
+
+    /// <summary>The fewest planes a collision hull may have. Fewer bound no volume.</summary>
+    public const int MinimumHullPlanes = 4;
+
+    /// <summary>
+    /// Bytes of fixed preamble in <c>LGHT</c>: the light count, padded to the
+    /// payload alignment.
+    /// </summary>
+    public const int LightPreambleSize = 16;
+
+    /// <summary>Bytes in one <see cref="ScmapLightRecord"/>.</summary>
+    public const int LightRecordSize = 48;
+
+    /// <summary>
     /// The <c>assetIndex</c> a submesh or a face carries when it names no asset.
     /// Not 0: row 0 of <c>ASTB</c> is a real asset.
     /// </summary>
@@ -179,6 +200,18 @@ public static class ScmapFormat
 
     /// <summary>Section <c>ECON</c>: every entity's output connections.</summary>
     public const uint EntityConnectionSection = 'E' | ('C' << 8) | ('O' << 16) | ((uint)'N' << 24);
+
+    /// <summary>
+    /// Section <c>COLL</c>: one convex hull per baked world brush, as the brush's
+    /// authored planes.
+    /// </summary>
+    public const uint CollisionSection = 'C' | ('O' << 8) | ('L' << 16) | ((uint)'L' << 24);
+
+    /// <summary>
+    /// Section <c>LGHT</c>: one light record per node that carries a light, in
+    /// node order.
+    /// </summary>
+    public const uint LightSection = 'L' | ('G' << 8) | ('H' << 16) | ((uint)'T' << 24);
 
     /// <summary>Section <c>SCPT</c>: script records.</summary>
     public const uint ScriptSection = 'S' | ('C' << 8) | ('P' << 16) | ((uint)'T' << 24);

@@ -133,6 +133,14 @@ public static class ScmapBake
             else if (node.Brush is { } unkept)
                 ClaimFaceMaterials(unkept, assets);
 
+            // Not tied to KeepsSource: the chunks hold how a world brush looks,
+            // this is what a character collides with.
+            if (node.Brush is { } solid && node.IsStaticWorldBrush)
+                builder.AddCollisionHull(new ScmapCollisionHullSource(index, [.. solid.LocalPlanes]));
+
+            if (node.Light is { } light)
+                builder.AddLight(new ScmapLightSource(index, light));
+
             if (node.Entity is { } entity)
             {
                 if (node.IsStaticWorldBrush) report(EntityOnWorldBrush(node, entity, sourcePath));

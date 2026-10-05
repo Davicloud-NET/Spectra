@@ -75,6 +75,47 @@ internal static class ScmapFixture
             []),
     ];
 
+    // One hull per baked brush, in node order: a box on "Wall" and a
+    // five-plane wedge on "Cut", so the two plane counts differ.
+    public static readonly ScmapCollisionHullSource[] Hulls =
+    [
+        new(2,
+        [
+            new Plane(1f, 0f, 0f, -0.5f), new Plane(-1f, 0f, 0f, -0.5f),
+            new Plane(0f, 1f, 0f, -0.5f), new Plane(0f, -1f, 0f, -0.5f),
+            new Plane(0f, 0f, 1f, -0.5f), new Plane(0f, 0f, -1f, -0.5f),
+        ]),
+
+        new(3,
+        [
+            new Plane(0f, -1f, 0f, -0.5f),
+            new Plane(0f, 0f, 1f, -0.5f), new Plane(0f, 0f, -1f, -0.5f),
+            new Plane(0.70710677f, 0.70710677f, 0f, -0.35355338f),
+            new Plane(-0.70710677f, 0.70710677f, 0f, -0.35355338f),
+        ]),
+    ];
+
+    // In node order. The first is a light left at its defaults, the second
+    // sets every field to something else.
+    public static readonly ScmapLightSource[] Lights =
+    [
+        new(0, new Light()),
+
+        new(5, new Light
+        {
+            Kind = LightKind.Spot,
+            Color = new Vector3(1f, 0.5f, 0.25f),
+            Intensity = 3.5f,
+            Range = 12.25f,
+            Enabled = false,
+            InnerAngle = 15f,
+            OuterAngle = 40f,
+            Width = 2f,
+            Height = 0.75f,
+            Radius = 0.3f,
+        }),
+    ];
+
     // What a trigger volume wears: no collision, no queries, not drawn, touch on.
     public const ScmapPayloadFlags LampFlags =
         ScmapPayloadFlags.NoCollide | ScmapPayloadFlags.NoQuery | ScmapPayloadFlags.NoRender;
@@ -139,6 +180,8 @@ internal static class ScmapFixture
             PayloadIndex: 3));
 
         foreach (ScmapEntitySource entity in Entities) builder.AddEntity(entity);
+        foreach (ScmapCollisionHullSource hull in Hulls) builder.AddCollisionHull(hull);
+        foreach (ScmapLightSource light in Lights) builder.AddLight(light);
 
         // Unsorted on every axis.
         builder.AddChunk(Cell(2, 0, -1));

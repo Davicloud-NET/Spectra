@@ -7,6 +7,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Spectra.Kitchen\Spectra.Kitchen.csproj" />
     <ProjectReference Include="..\..\Spectra.Kitchen.CLI\Spectra.Kitchen.CLI.csproj" />
+    <!-- For the one suite that puts a cooked level under the physics backend. -->
+    <ProjectReference Include="..\..\SpectraEngine.Physics.Box3D\SpectraEngine.Physics.Box3D.csproj" />
   </ItemGroup>
 
   <ItemGroup>

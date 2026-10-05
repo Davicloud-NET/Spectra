@@ -118,6 +118,18 @@ public readonly record struct ScmapEntitySource(
     KeyValuePair<string, string>[] Keyvalues,
     EntityConnection[] Connections);
 
+/// <summary>
+/// One baked world brush on its way into a <c>COLL</c> hull. Every node whose
+/// payload kind is <c>StaticWorldBrush</c> needs one.
+/// </summary>
+/// <param name="NodeIndex">The <c>NODE</c> record of the brush.</param>
+/// <param name="Planes">Brush-local planes, as authored. At least four.</param>
+public readonly record struct ScmapCollisionHullSource(int NodeIndex, Plane[] Planes);
+
+/// <summary>One light on its way into an <c>LGHT</c> record.</summary>
+/// <param name="NodeIndex">The <c>NODE</c> record this light sits on.</param>
+public readonly record struct ScmapLightSource(int NodeIndex, Light Light);
+
 /// <summary>One asset on its way into an <c>ASTB</c> record.</summary>
 /// <param name="ContentPath">The normalised content-relative path.</param>
 /// <param name="ContentHash">

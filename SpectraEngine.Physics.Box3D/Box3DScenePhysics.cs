@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Physics.Box3D.Native;
@@ -10,8 +11,9 @@ using SpectraEngine.Physics.Box3D.Native;
 namespace SpectraEngine.Physics.Box3D;
 
 /// <summary>
-/// Box3D-backed <see cref="IScenePhysics"/>. The static world becomes one static
-/// body per chunk cell, with one convex hull per authored brush.
+/// Box3D-backed <see cref="IScenePhysics"/>. The static world, compiled live or
+/// loaded baked, becomes one static body per chunk cell, with one convex hull
+/// per authored brush.
 /// </summary>
 // Hulls come from the authored brushes, which are convex; the carved skin is not.
 // Each body sits at its cell's corner so hull coordinates stay small however
@@ -28,6 +30,7 @@ public sealed class Box3DScenePhysics : IScenePhysics
 
     private B3WorldId _world;
     private CsgWorld? _syncedWorld;
+    private CompiledStaticWorld? _syncedBaked;
     private bool _disposed;
 
     /// <summary>Creates the world. Throws if the loaded box3d library is a double-precision build.</summary>
@@ -101,9 +104,11 @@ public sealed class Box3DScenePhysics : IScenePhysics
         ThrowIfDisposed();
 
         CsgWorld? world = scene.StaticWorld;
+        CompiledStaticWorld? baked = scene.CompiledStaticWorld;
 
-        // A landed compile is always a new CsgWorld instance.
-        if (ReferenceEquals(world, _syncedWorld))
+        // A landed compile is always a new CsgWorld instance, and a loaded map
+        // a new baked world.
+        if (ReferenceEquals(world, _syncedWorld) && ReferenceEquals(baked, _syncedBaked))
             return;
 
         if (world is null)
@@ -111,10 +116,17 @@ public sealed class Box3DScenePhysics : IScenePhysics
             DestroyAllChunkBodies();
             _staticShapeChurnSinceRebuild = 0;
             _syncedWorld = null;
+            _syncedBaked = baked;
+
+            if (baked is not null)
+                BuildBakedBodies(baked);
+
             return;
         }
 
-        IReadOnlyList<ChunkCoord>? dirty = world.DirtyCells;
+        // Bodies left from a baked world are in no dirty set.
+        IReadOnlyList<ChunkCoord>? dirty = _syncedBaked is null ? world.DirtyCells : null;
+        IReadOnlyList<BrushPlacement> placements = world.Placements;
         try
         {
             if (dirty is null)
@@ -123,7 +135,7 @@ public sealed class Box3DScenePhysics : IScenePhysics
                 DestroyAllChunkBodies();
                 CutBrushesWithoutCollision = 0;
                 foreach (WorldChunk chunk in world.Chunks.OrderedChunks)
-                    BuildChunkBody(world, chunk);
+                    BuildChunkBody(placements, chunk);
 
                 RebuildStaticTree();
             }
@@ -139,7 +151,7 @@ public sealed class Box3DScenePhysics : IScenePhysics
                     int destroyed = DestroyChunkBody(coord);
                     int created = 0;
                     if (world.Chunks.TryGet(coord, out WorldChunk chunk))
-                        created = BuildChunkBody(world, chunk);
+                        created = BuildChunkBody(placements, chunk);
 
                     // Net change only. An animating brush rebuilds the same cell
                     // with near-identical AABBs every compile, which barely
@@ -159,6 +171,24 @@ public sealed class Box3DScenePhysics : IScenePhysics
         }
 
         _syncedWorld = world;
+        _syncedBaked = baked;
+    }
+
+    // A baked world never changes, so its bodies are built once, whole.
+    private void BuildBakedBodies(CompiledStaticWorld baked)
+    {
+        try
+        {
+            CutBrushesWithoutCollision = 0;
+            foreach (WorldChunk chunk in baked.CollisionCells.OrderedChunks)
+                BuildChunkBody(baked.CollisionPlacements, chunk);
+
+            RebuildStaticTree();
+        }
+        finally
+        {
+            ReleaseSyncHulls();
+        }
     }
 
     // Below this much churn the tree is never rebuilt.
@@ -229,7 +259,7 @@ public sealed class Box3DScenePhysics : IScenePhysics
     private const int SubStepCount = 4;
 
     // Returns the number of shapes created.
-    private int BuildChunkBody(CsgWorld world, WorldChunk chunk)
+    private int BuildChunkBody(IReadOnlyList<BrushPlacement> placements, WorldChunk chunk)
     {
         IReadOnlyList<int> owned = chunk.OwnedBrushIndices;
         if (owned.Count == 0)
@@ -253,7 +283,6 @@ public sealed class Box3DScenePhysics : IScenePhysics
         shapeDef.UpdateBodyMass = 0;
 
         int shapes = 0;
-        IReadOnlyList<BrushPlacement> placements = world.Placements;
 
         for (int i = 0; i < owned.Count; i++)
         {
@@ -265,7 +294,7 @@ public sealed class Box3DScenePhysics : IScenePhysics
             if (brush.Operation == BrushOperation.Subtractive)
                 continue;
 
-            if (IsCutBySubtractiveBrush(world, chunk, placement))
+            if (IsCutBySubtractiveBrush(placements, chunk, placement))
                 CutBrushesWithoutCollision++;
 
             nint hull = AcquireHull(brush);
@@ -302,11 +331,11 @@ public sealed class Box3DScenePhysics : IScenePhysics
     }
 
     // AABB test only, so it can over-report. Fine for a warning.
-    private static bool IsCutBySubtractiveBrush(CsgWorld world, WorldChunk chunk, BrushPlacement placement)
+    private static bool IsCutBySubtractiveBrush(
+        IReadOnlyList<BrushPlacement> placements, WorldChunk chunk, BrushPlacement placement)
     {
         Aabb bounds = placement.WorldBounds;
         IReadOnlyList<int> resident = chunk.ResidentBrushIndices;
-        IReadOnlyList<BrushPlacement> placements = world.Placements;
 
         for (int i = 0; i < resident.Count; i++)
         {

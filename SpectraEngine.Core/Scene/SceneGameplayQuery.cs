@@ -25,9 +25,10 @@ public sealed partial class Scene
     /// Reports the first solid surface of the world as drawn, so it passes
     /// through openings a subtractive brush cut. Dynamic bodies are not covered.
     /// </summary>
-    // Unlike Raycast, world geometry comes from the compiled static world (the
-    // only thing that knows what the carve removed). Parts and meshes come from
-    // the spatial index, with world brushes skipped so nothing answers twice.
+    // Unlike Raycast, world geometry comes from the compiled static world, live
+    // or baked (the only thing that knows what the carve removed). Parts and
+    // meshes come from the spatial index, with world brushes skipped so nothing
+    // answers twice.
     public bool RaycastGameplay(
         in Ray3 ray,
         out GameplayRayHit hit,
@@ -63,6 +64,16 @@ public sealed partial class Scene
                 : default;
 
             hit = new GameplayRayHit(null, worldHit.Point, worldHit.Normal, worldHit.Distance, material, true);
+        }
+        else if (_compiledStaticWorld is { } baked &&
+            baked.Raycast(ray.Origin, direction, maxDistance, out BspRaycastHit bakedHit))
+        {
+            found = true;
+            best = bakedHit.Distance;
+
+            // A baked world keeps no surfaces on the CPU, so the hit names no
+            // material.
+            hit = new GameplayRayHit(null, bakedHit.Point, bakedHit.Normal, bakedHit.Distance, default, true);
         }
 
         // Parts and meshes, bounded by the world hit.

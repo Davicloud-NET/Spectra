@@ -15,6 +15,8 @@ namespace Spectra.Kitchen.Tests;
 // Two materials so submesh order is testable; a part brush so BRSH is always
 // present. Material paths are unique per instance because MaterialRegistry is
 // process-global and append-only.
+// The room is big enough to walk: a character fits through the doorway and
+// the floor runs a little way past the wall.
 internal sealed class MapFixture
 {
     private MapFixture(string wall, string floor)
@@ -37,7 +39,7 @@ internal sealed class MapFixture
     }
 
     public SpectraEngine.Core.Scene.Scene BuildScene(
-        bool withDoorway = true, bool withPart = true, bool withEntities = false)
+        bool withDoorway = true, bool withPart = true, bool withEntities = false, bool withLights = false)
     {
         var scene = new SpectraEngine.Core.Scene.Scene("BakeRoom");
 
@@ -67,8 +69,71 @@ internal sealed class MapFixture
         }
 
         if (withEntities) AddEntities(scene, wall);
+        if (withLights) AddLights(scene, wall);
 
         return scene;
+    }
+
+    // One light of each kind with no field left at its default, a disabled
+    // one, and one on a node that is also a part brush. Last in the walk and
+    // never world brushes, so the chunks do not change.
+    private static void AddLights(SpectraEngine.Core.Scene.Scene scene, MaterialRef wall)
+    {
+        SceneNode sun = scene.Root.CreateChild("Sun");
+        sun.LocalRotation = Light.RotationForDirection(new Vector3(-0.3f, -1f, 0.2f));
+        sun.Light = new Light { Color = new Vector3(1f, 0.95f, 0.8f), Intensity = 3.5f };
+
+        SceneNode lamp = scene.Root.CreateChild("Lamp");
+        lamp.LocalPosition = new Vector3(-3f, 2.5f, 1f);
+        lamp.Light = new Light
+        {
+            Kind = LightKind.Point,
+            Color = new Vector3(1f, 0.6f, 0.2f),
+            Intensity = 12f,
+            Range = 6.5f,
+        };
+
+        SceneNode spot = lamp.CreateChild("Spot");
+        spot.LocalPosition = new Vector3(0f, 0.25f, 0f);
+        spot.LocalRotation = Light.RotationForDirection(new Vector3(0.5f, -1f, 0f));
+        spot.Light = new Light
+        {
+            Kind = LightKind.Spot,
+            Color = new Vector3(0.2f, 0.4f, 1f),
+            Intensity = 40f,
+            Range = 9.25f,
+            InnerAngle = 12.5f,
+            OuterAngle = 28f,
+        };
+
+        SceneNode panel = scene.Root.CreateChild("Panel");
+        panel.LocalPosition = new Vector3(3f, 2.75f, 0f);
+        panel.Light = new Light
+        {
+            Kind = LightKind.Rect,
+            Color = new Vector3(0.9f, 1f, 0.9f),
+            Intensity = 6f,
+            Range = 5f,
+            Width = 2f,
+            Height = 0.75f,
+        };
+
+        // Switched off: it still has to arrive, or a script cannot turn it on.
+        SceneNode disc = scene.Root.CreateChild("Disc");
+        disc.LocalPosition = new Vector3(0f, 2.9f, 3f);
+        disc.Light = new Light
+        {
+            Kind = LightKind.Disc,
+            Color = new Vector3(1f, 0.1f, 0.1f),
+            Intensity = 2f,
+            Range = 4f,
+            Radius = 0.4f,
+            Enabled = false,
+        };
+
+        SceneNode bulb = Box(scene, "Bulb", new Vector3(-2f, 2f, -2f), new Vector3(0.1f), wall);
+        bulb.BrushKind = BrushKind.Part;
+        bulb.Light = new Light { Kind = LightKind.Point, Intensity = 4f, Range = 3f };
     }
 
     // A door, the trigger volume wired to it, a relay and a player start. Last
@@ -115,9 +180,10 @@ internal sealed class MapFixture
         string bundleName,
         bool withDoorway = true,
         bool withPart = true,
-        bool withEntities = false)
+        bool withEntities = false,
+        bool withLights = false)
     {
-        SpectraEngine.Core.Scene.Scene scene = BuildScene(withDoorway, withPart, withEntities);
+        SpectraEngine.Core.Scene.Scene scene = BuildScene(withDoorway, withPart, withEntities, withLights);
         return WriteBundle(project, bundleName, scene);
     }
 

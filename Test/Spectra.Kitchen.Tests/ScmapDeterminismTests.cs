@@ -29,7 +29,12 @@ public class ScmapDeterminismTests
         second.ShouldBe(first);
 
         // The entity strings are what a hash-order leak would reorder.
-        ScmapProbe.Read(first).Entities.Count.ShouldBe(4);
+        ScmapProbe probe = ScmapProbe.Read(first);
+        probe.Entities.Count.ShouldBe(4);
+
+        // The bytes compared carry lights and collision hulls too.
+        probe.Lights.Count.ShouldBe(6);
+        probe.Hulls.Count.ShouldBe(4);
     }
 
     [Fact]
@@ -78,13 +83,13 @@ public class ScmapDeterminismTests
     }
 
     // Two materials (submesh ordering), a flush doorway cut (coincident planes),
-    // a part brush (brush-source section always present) and four entities with
-    // keyvalues, wires and node flags.
+    // a part brush (brush-source section always present), four entities with
+    // keyvalues, wires and node flags, and six lights.
     private static void WriteFixture(TempProject project)
     {
         MapFixture fixture = MapFixture.Fresh();
         fixture.WriteMaterials(project);
-        fixture.WriteBundle(project, "Room.smap", withEntities: true);
+        fixture.WriteBundle(project, "Room.smap", withEntities: true, withLights: true);
     }
 
     // --loose, so the .scmap is a file to compare directly.

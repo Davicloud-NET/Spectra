@@ -672,6 +672,8 @@ Authored-hull collision **inverts** which `.scmap` section the runtime cannot li
 
 And the hulls must be baked as **plane sets, never as native hull blobs** — a baked blob would bind the file format to Box3D's internal ABI version. `.smodel`'s `COLL` section already made exactly this call, before any physics decision existed: *"collision as convex hulls expressed as plane sets is exactly `Brush`'s constructor input"* (`formats-and-pipeline.md`:151). Reuse that representation verbatim for `.scmap`, so there is one collision-hull encoding in the engine and one loader that runs `Brush`'s constructor over it — which also makes a malformed cooked hull a named `ArgumentException` at cook time rather than a physics explosion at runtime.
 
+As built: `.scmap` has a required `COLL` section with one plane-set hull per baked world brush ([`docs/formats-and-pipeline.md`](formats-and-pipeline.md) section 2.7). The character mover and `Box3DScenePhysics` both build from it under a compiled map. `BRSH` did not become mandatory: the hulls have a section of their own, so a pack carries collision without carrying the authored faces. `CBSP` stays required, because the world ray reads it.
+
 ---
 
 ## 7. Decisions that need the user

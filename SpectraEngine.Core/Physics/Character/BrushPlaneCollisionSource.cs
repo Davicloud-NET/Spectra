@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Core.Physics.Character;
@@ -13,8 +14,9 @@ namespace SpectraEngine.Core.Physics.Character;
 // A \ N is the union of A ∩ {hk >= 0} over N's planes: an overlapping cover of
 // convex plane lists. That is how a cut doorway is walkable, which one hull per
 // brush cannot express. A sweep is the minimum over elements.
-// World brushes come from the compiled static world, part brushes live from the
-// spatial index. A part is never cut by anything.
+// World brushes come from the compiled static world, or from a baked map's
+// collision hulls. Part brushes come live from the spatial index. A part is
+// never cut by anything.
 public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
 {
     /// <summary>Cover elements one additive brush may expand to before it is refused.</summary>
@@ -37,6 +39,7 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
 
     private readonly List<ConvexPiece> _worldPieces = [];
     private int _builtCompileCount = -1;
+    private CompiledStaticWorld? _builtBakedWorld;
     private Aabb _builtRegion;
     private bool _hasRegion;
 
@@ -309,7 +312,12 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
     private void RebuildWorldLaneIfStale(in Aabb volume)
     {
         int compileCount = _scene.StaticWorldCompileCount;
-        bool covered = _hasRegion && Contains(in _builtRegion, in volume);
+
+        // A baked world never compiles, so the counter cannot say that one
+        // arrived or left.
+        CompiledStaticWorld? baked = _scene.CompiledStaticWorld;
+        bool covered = ReferenceEquals(baked, _builtBakedWorld)
+            && _hasRegion && Contains(in _builtRegion, in volume);
         if (compileCount == _builtCompileCount && covered)
             return;
         if (covered && !_scene.WorldChangedSince(_builtCompileCount, _dependencyBounds))
@@ -331,6 +339,7 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
             !SameSelection(_builtNegatives, _scratchNegatives);
 
         _builtCompileCount = compileCount;
+        _builtBakedWorld = baked;
         _builtRegion = region;
         _hasRegion = true;
         Vector3 dependencyMin = region.Min, dependencyMax = region.Max;
@@ -366,13 +375,26 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
         additives.Clear();
         negatives.Clear();
 
-        if (_scene.StaticWorld is not { } world)
+        IReadOnlyList<BrushPlacement> placements;
+        ChunkGrid cells;
+        if (_scene.StaticWorld is { } world)
+        {
+            placements = world.StoragePlacements;
+            cells = world.StorageChunks;
+        }
+        else if (_scene.CompiledStaticWorld is { } baked)
+        {
+            placements = baked.CollisionPlacements;
+            cells = baked.CollisionCells;
+        }
+        else
+        {
             return;
+        }
 
-        IReadOnlyList<BrushPlacement> placements = world.StoragePlacements;
         _selectionIndices.Clear();
         _cutterIndices.Clear();
-        world.StorageChunks.CollectResidents(region, _selectionIndices);
+        cells.CollectResidents(region, _selectionIndices);
         _selectionOrder.Clear();
         _selectionOrder.AddRange(_selectionIndices);
         _selectionOrder.Sort(placements as IComparer<int>);
@@ -382,7 +404,7 @@ public sealed class BrushPlaneCollisionSource : ICharacterCollisionSource
             if (placement.Brush.Operation == BrushOperation.Additive && placement.WorldBounds.Intersects(region))
             {
                 additives.Add(placement);
-                world.StorageChunks.CollectResidents(placement.WorldBounds, _cutterIndices);
+                cells.CollectResidents(placement.WorldBounds, _cutterIndices);
             }
         }
         _selectionOrder.Clear();

@@ -8,12 +8,14 @@ using SpectraEngine.Core.Assets.Packs;
 using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps.Compiled;
+using SpectraEngine.Core.Scene;
 
 namespace Spectra.Kitchen.Maps;
 
 /// <summary>
-/// Collects a compiled map's assets, nodes, entities, chunks, spawns and brush
-/// sources and writes them through <see cref="ScmapWriter"/>.
+/// Collects a compiled map's assets, nodes, entities, lights, collision hulls,
+/// chunks, spawns and brush sources and writes them through
+/// <see cref="ScmapWriter"/>.
 /// </summary>
 // The chunk directory is sorted at build time; nodes keep the caller's order,
 // because sibling order is authored data.
@@ -27,6 +29,8 @@ public sealed class ScmapBuilder
     private readonly List<ScmapSpawnSource> _spawns = [];
     private readonly List<ScmapBrushSourceEntry> _brushes = [];
     private readonly List<ScmapEntitySource> _entities = [];
+    private readonly List<ScmapCollisionHullSource> _hulls = [];
+    private readonly List<ScmapLightSource> _lights = [];
 
     /// <summary>Creates a builder for a scene.</summary>
     public ScmapBuilder(string sceneName)
@@ -52,6 +56,12 @@ public sealed class ScmapBuilder
 
     /// <summary>How many entities <c>ENTT</c> will carry.</summary>
     public int EntityCount => _entities.Count;
+
+    /// <summary>How many hulls <c>COLL</c> will carry.</summary>
+    public int CollisionHullCount => _hulls.Count;
+
+    /// <summary>How many lights <c>LGHT</c> will carry.</summary>
+    public int LightCount => _lights.Count;
 
     /// <summary>Adds a spawn point.</summary>
     public void AddSpawn(ScmapSpawnSource spawn) => _spawns.Add(spawn);
@@ -228,6 +238,52 @@ public sealed class ScmapBuilder
         _entities.Add(entity);
     }
 
+    /// <summary>
+    /// Adds one baked world brush's planes to <c>COLL</c>. Call in node
+    /// pre-order, once per baked brush node. <see cref="Write"/> checks that
+    /// every such node got one.
+    /// </summary>
+    public void AddCollisionHull(ScmapCollisionHullSource hull)
+    {
+        ArgumentNullException.ThrowIfNull(hull.Planes);
+
+        if (hull.Planes.Length < ScmapFormat.MinimumHullPlanes)
+        {
+            throw new InvalidOperationException(
+                $"The collision hull on node {hull.NodeIndex} has {hull.Planes.Length} planes, and fewer " +
+                $"than {ScmapFormat.MinimumHullPlanes} half-spaces bound no volume.");
+        }
+
+        if (_hulls.Count > 0 && hull.NodeIndex <= _hulls[^1].NodeIndex)
+        {
+            throw new InvalidOperationException(
+                $"The collision hull on node {hull.NodeIndex} was added after the one on node " +
+                $"{_hulls[^1].NodeIndex}. Hull records are in node order, one per baked brush.");
+        }
+
+        _hulls.Add(hull);
+    }
+
+    /// <summary>
+    /// Adds one node's light to <c>LGHT</c>. Call in node pre-order, once per
+    /// node. The node index is checked in <see cref="Write"/>.
+    /// </summary>
+    public void AddLight(ScmapLightSource light)
+    {
+        ArgumentNullException.ThrowIfNull(light.Light);
+
+        if (_lights.Count > 0 && light.NodeIndex <= _lights[^1].NodeIndex)
+        {
+            throw new InvalidOperationException(
+                $"The light on node {light.NodeIndex} was added after the one on node " +
+                $"{_lights[^1].NodeIndex}. Light records are in node order, one per node, and a loader " +
+                "walks them in step with the nodes.");
+        }
+
+        // A copy: Light is mutable, and the file is built later.
+        _lights.Add(light with { Light = light.Light.Clone() });
+    }
+
     private static void ValidateSubmeshes(ScmapChunkSource chunk)
     {
         if (chunk.Submeshes is not { Length: > 0 }) return;
@@ -297,6 +353,8 @@ public sealed class ScmapBuilder
         byte[] metaBody = BuildMeta(sceneNameString);
         byte[] nodeBody = BuildNodes(nodeNameStrings);
         byte[] chunkBody = BuildChunks(out byte[] meshBody, out byte[] bspBody);
+        byte[] collisionBody = BuildCollision();
+        byte[] lightBody = BuildLights();
         byte[]? brushBody = BuildBrushSource();
 
         // The reader cross-checks this flag against the section table, so it
@@ -317,6 +375,8 @@ public sealed class ScmapBuilder
 
         writer.AddSection(ScmapFormat.EntitySection, entityBody);
         writer.AddSection(ScmapFormat.EntityConnectionSection, connectionBody);
+        writer.AddSection(ScmapFormat.CollisionSection, collisionBody);
+        writer.AddSection(ScmapFormat.LightSection, lightBody);
 
         // Empty for now. Written so nothing else takes these codes.
         writer.AddSection(ScmapFormat.ScriptSection, ReadOnlySpan<byte>.Empty);
@@ -471,6 +531,85 @@ public sealed class ScmapBuilder
             keyvalues += entity.Keyvalues.Length;
             connections += entity.Connections.Length;
         }
+    }
+
+    // COLL. A baked brush with no hull is refused here: the reader would
+    // refuse the file.
+    private byte[] BuildCollision()
+    {
+        int planes = 0;
+        int next = 0;
+
+        for (int i = 0; i < _nodes.Count; i++)
+        {
+            if (_nodes[i].PayloadKind != ScmapPayloadKind.StaticWorldBrush) continue;
+
+            if (next >= _hulls.Count || _hulls[next].NodeIndex != i)
+            {
+                throw new InvalidOperationException(
+                    $"Node {i} ('{_nodes[i].Name}') is a baked world brush with no collision hull. Every " +
+                    "baked brush needs one, or a character walks through a wall that is drawn.");
+            }
+
+            planes += _hulls[next++].Planes.Length;
+        }
+
+        if (next < _hulls.Count)
+        {
+            throw new InvalidOperationException(
+                $"A collision hull names node {_hulls[next].NodeIndex}, which is not a baked world brush of " +
+                $"this {_nodes.Count}-node map. Only a brush baked into the chunks carries a hull.");
+        }
+
+        long planeStart = ScmapFormat.CollisionPreambleSize + ((long)_hulls.Count * ScmapFormat.HullRecordSize);
+        var body = new byte[planeStart + ((long)planes * ScmapFormat.PlaneSize)];
+        Span<byte> span = body;
+
+        BinaryPrimitives.WriteUInt32LittleEndian(span, (uint)_hulls.Count);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[4..], (uint)planes);
+
+        int plane = 0;
+        for (int i = 0; i < _hulls.Count; i++)
+        {
+            ScmapCollisionHullSource hull = _hulls[i];
+            var record = new ScmapHullRecord((uint)hull.NodeIndex, (uint)hull.Planes.Length, (uint)plane);
+            MemoryMarshal.Write(
+                span[(ScmapFormat.CollisionPreambleSize + (i * ScmapFormat.HullRecordSize))..], in record);
+
+            for (int p = 0; p < hull.Planes.Length; p++, plane++)
+            {
+                MemoryMarshal.Write(
+                    span[(int)(planeStart + ((long)plane * ScmapFormat.PlaneSize))..], in hull.Planes[p]);
+            }
+        }
+
+        return body;
+    }
+
+    private byte[] BuildLights()
+    {
+        var body = new byte[ScmapFormat.LightPreambleSize + (_lights.Count * ScmapFormat.LightRecordSize)];
+        Span<byte> span = body;
+
+        BinaryPrimitives.WriteUInt32LittleEndian(span, (uint)_lights.Count);
+
+        for (int i = 0; i < _lights.Count; i++)
+        {
+            ScmapLightSource light = _lights[i];
+
+            if (light.NodeIndex < 0 || light.NodeIndex >= _nodes.Count)
+            {
+                throw new InvalidOperationException(
+                    $"A light names node {light.NodeIndex} of a {_nodes.Count}-node map. A light that cannot " +
+                    "name its node has no position and no direction.");
+            }
+
+            var record = new ScmapLightRecord((uint)light.NodeIndex, light.Light);
+            MemoryMarshal.Write(
+                span[(ScmapFormat.LightPreambleSize + (i * ScmapFormat.LightRecordSize))..], in record);
+        }
+
+        return body;
     }
 
     // Sorts the directory and writes both blob sections in the same pass, so

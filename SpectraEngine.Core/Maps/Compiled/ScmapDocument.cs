@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 
 namespace SpectraEngine.Core.Maps.Compiled;
 
@@ -19,6 +20,9 @@ public readonly ref struct ScmapDocument
         ReadOnlySpan<ScmapEntityRecord> entities,
         ReadOnlySpan<ScmapKeyvalueRecord> keyvalues,
         ReadOnlySpan<ScmapConnectionRecord> connections,
+        ReadOnlySpan<ScmapHullRecord> collisionHulls,
+        ReadOnlySpan<Plane> collisionPlanes,
+        ReadOnlySpan<ScmapLightRecord> lights,
         ReadOnlySpan<ScmapChunkRecord> chunks,
         ReadOnlySpan<byte> chunkMeshBlob,
         ReadOnlySpan<byte> chunkBspBlob,
@@ -40,6 +44,9 @@ public readonly ref struct ScmapDocument
         Entities = entities;
         Keyvalues = keyvalues;
         Connections = connections;
+        CollisionHulls = collisionHulls;
+        CollisionPlanes = collisionPlanes;
+        Lights = lights;
         Chunks = chunks;
         ChunkMeshBlob = chunkMeshBlob;
         ChunkBspBlob = chunkBspBlob;
@@ -80,6 +87,24 @@ public readonly ref struct ScmapDocument
 
     /// <summary>The <c>ECON</c> section, which entity records index into.</summary>
     public ReadOnlySpan<ScmapConnectionRecord> Connections { get; }
+
+    /// <summary>
+    /// The hull records of <c>COLL</c>: one per baked world brush, in ascending
+    /// node index.
+    /// </summary>
+    public ReadOnlySpan<ScmapHullRecord> CollisionHulls { get; }
+
+    /// <summary>
+    /// The planes of <c>COLL</c>, which hull records index into. Brush-local, as
+    /// authored.
+    /// </summary>
+    public ReadOnlySpan<Plane> CollisionPlanes { get; }
+
+    /// <summary>
+    /// The <c>LGHT</c> section, in ascending node index. At most one record per
+    /// node.
+    /// </summary>
+    public ReadOnlySpan<ScmapLightRecord> Lights { get; }
 
     /// <summary>The <c>CHDR</c> section, sorted by cell coordinate.</summary>
     public ReadOnlySpan<ScmapChunkRecord> Chunks { get; }

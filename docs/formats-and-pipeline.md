@@ -441,7 +441,7 @@ Section table entry — 32 bytes
 
 **Unknown section kinds are skipped, not fatal** — that is what makes a future lightmap, navmesh or audio-occlusion section additive.
 
-Sections: `STRT` strings · `ASTB` asset table · `META` map metadata and compile constants · `NODE` node graph · `CHDR` chunk directory · `CMSH` chunk meshes · `CBSP` chunk BSPs · `RGNI` region index (reserved, §4.5) · `BMDL` brush models (**reserved, no longer emitted** — §2.7's `PayloadKind` ruling) · `BRSH` authored brush source (optional) · `ENTT`/`ECON` entities and connections · `SCPT`/`LUAB`/`LUAS` scripts · `NBND` per-node local bounds (optional).
+Sections: `STRT` strings · `ASTB` asset table · `META` map metadata and compile constants · `NODE` node graph · `CHDR` chunk directory · `CMSH` chunk meshes · `CBSP` chunk BSPs · `RGNI` region index (reserved, §4.5) · `BMDL` brush models (**reserved, no longer emitted** — §2.7's `PayloadKind` ruling) · `BRSH` authored brush source (optional) · `ENTT`/`ECON` entities and connections · `COLL` world collision hulls · `LGHT` lights · `SCPT`/`LUAB`/`LUAS` scripts · `NBND` per-node local bounds (optional).
 
 **`STRT`** — `u32 count`, `u32 offsets[count+1]`, `u32 blobSize`, UTF-8 blob (not NUL-terminated). Index 0 is the empty string. Strings are emitted in **first-reference order during the canonical node walk**, never dictionary iteration order, which would leak the runtime hash seed into the file and break the two-process byte-identity test.
 
@@ -592,6 +592,62 @@ ECON
 
 `ScmapBuilder.AddEntity` and `ScmapBake` write the sections. `ScmapReader` validates them, and `CompiledMapLoader` attaches the entities and the flags. Oracles: `ScmapEntityTableTests` (sizes, offsets and reader refusals), `CompiledMapEntityLoadTests` (a cooked level against its authored one, including an `EntityWorld` over each), `ScmapDeterminismTests` over a fixture with entities, and one `BakeOracleTests` case that a level bakes the same chunks with and without them.
 
+**`COLL`.** World collision, since format version 3. The section is required and is written even for a map with no world brushes.
+
+```
+COLL
++0x00  u32  hullCount
++0x04  u32  planeCount
++0x08  u64  Reserved = 0
++0x10       hull records, 16 bytes each, in ascending nodeIndex
+              { u32 nodeIndex;    index into NODE
+                u32 planeCount;   at least 4
+                u32 planeStart;   first record in the plane array below
+                u32 Reserved = 0 }
+            plane records, 16 bytes each
+              { f32 nx, ny, nz, d }   brush-local, as authored
+```
+
+- There is one hull for every node whose `PayloadKind` is `StaticWorldBrush`, and none for any other node. Records are in node order. The reader refuses a baked brush that has no hull, and a hull that names any other node.
+- A hull is the brush's own planes, the numbers `BRSH` holds for the same brush when its source is kept. The node's transform places the hull and the node's `SubtractiveBrush` bit says whether it cuts. The section stores no world matrix and no operation of its own.
+- The preamble and both records are 16 bytes, so the plane array follows the hull records with no padding.
+- The cook writes the section whether or not brush source is kept. `BRSH` stays what it was: the authored source, with faces, of a brush that may be carved again.
+- At load, `CompiledMapLoader` builds one `Brush` per hull and pairs it with its node's world matrix. These placements go to `CompiledStaticWorld.CollisionPlacements`. No node gets the brush, so no compile can pick it up and the level is not carved again.
+- `CompiledStaticWorld.CollisionCells` sorts the placements into cells with `ChunkGrid.Build`, which carves nothing. Those cells hold owner and resident lists and no surfaces or tree.
+- `BrushPlaneCollisionSource` reads the placements and the cells where it reads `Scene.StaticWorld` in an authored level, and builds the same cover of a cut brush from them. `Box3DScenePhysics` builds its static hulls from the same two.
+- A hull whose node transform is not rigid, or whose planes bound no solid, gets no collision. The load carries on and `CompiledMapLoadReport.CollisionHullsRefused` names the node. The cook refuses both.
+- A ray against the world reads the baked trees in `CBSP` and not the hulls, because only the trees know what a cut removed. `CompiledStaticWorld.Raycast` and `CsgWorld.Raycast` share one cell walk, `ChunkRayWalk`, and `Scene.RaycastGameplay` asks whichever world the scene has. A hit on baked geometry names no material: the section holds planes and no faces.
+- A file at format version 2 is refused. It had no hulls, and loading it would give a level the player falls through.
+
+**`LGHT`.** Lights, since format version 3. The section is required and is written even for a map with no lights.
+
+```
+LGHT
++0x00  u32  lightCount
++0x04  12   Reserved = 0
++0x10       light records, 48 bytes each, in ascending nodeIndex
+              { u32 nodeIndex;     index into NODE
+                u16 kind;          0 directional · 1 point · 2 spot · 3 rect · 4 disc
+                u16 flags;         bit0 Disabled
+                f32 color[3];      linear RGB
+                f32 intensity;
+                f32 range;
+                f32 innerAngle;    degrees
+                f32 outerAngle;    degrees
+                f32 width;
+                f32 height;
+                f32 radius }
+```
+
+- There is one record per node that carries a light, and never two for one node. Records are in node order, and the loader walks them with one cursor as it does the entities.
+- A light has a table of its own and is not a `PayloadKind`, because a node can carry a light beside a brush or an entity.
+- A record holds every field of `Light`. The node gives the position and the direction.
+- `kind` is the file's own numbering. `ScmapLightRecord` maps it to and from `LightKind` in one place, so reordering the engine's enum does not change a file.
+- `flags` bit0 is set for a light that is switched off, so a record with no flag set has a light's defaults. A light that is off is still written, because something may switch it on.
+- The reader refuses a kind it does not know, a negative intensity and a range that is not positive. `Light` throws on the last two, which would end a load half way through the graph.
+
+`ScmapBuilder.AddCollisionHull`, `ScmapBuilder.AddLight` and `ScmapBake` write the two sections. `ScmapCollisionTable` and `ScmapLightTable` validate them for `ScmapReader`. Oracles: `ScmapCollisionTableTests` and `ScmapLightTableTests` (sizes, offsets and refusals), `CompiledMapWalkTests` (the character mover and the gameplay ray over a cooked level beside its authored one, with no carve), `CompiledMapLightTests`, `CompiledMapPhysicsTests`, and `ScmapDeterminismTests` over a fixture with lights.
+
 **`SCPT`.** Scripts: `{ u32 nodeIndex; u8 kind; u8 flags; u16 reserved; u32 chunkNameString; u32 bytecodeOffset, bytecodeSize; u32 sourceOffset, sourceSize; u32 reserved }`, with `chunkNameString` stored independently of `LUAS` so tracebacks still name the script when source is stripped.
 
 **Scripts: source is the ground truth, bytecode is a cache.** Luau's own documentation is explicit that bytecode is *not* a durable storage format — the supported version range is bounded and old versions are dropped over time, and users are expected to recompile on upgrade. The safe design is therefore: `LUAS` (source, compressed) always present unless explicitly stripped; `LUAB` (bytecode) stamped with the Luau bytecode version and the vendored Luau commit id, validated on load, **falling back to compiling the source when the stamp mismatches**. `--script-source=strip` remains available for a shipper who accepts that the pack is then only loadable by the engine build that produced it. Whether the shipped runtime *also* links Luau.Compiler is a build property, not a format decision, and the format supports all four combinations deliberately because `docs/roblox-onboarding.md` §5 item 1 is explicitly unanswered.
@@ -631,7 +687,7 @@ Nine more things the spec left open, settled here:
 - **The link between a brush and its node runs ONE way**, from the `BRSH` record's `nodeIndex`. A brush node's `PayloadIndex` stays zero; a mesh instance's is its model's `ASTB` row, which is the table its payload kind names.
 - **`editor.user.json` is not read and not hashed.** It is gitignored per-user state that changes every time somebody moves a viewport camera: hashed into `SourceMapDigest` it would put a different number in every developer's compiled map for one level, and read as a dependency it would miss the cook cache on every launch. One predicate (`MapBundleDigest.IsSourceFile`) answers for the rule and for both ways of gathering the digest.
 
-**What is not built, named so it is a gap rather than a discovery.** `ScmapPayloadKind` **has no light value and the format has no light table**, so a compiled map v1 carries a lamp's node and not its lamp; both are append-only additions and neither can be invented here without the other. `MeshSource.SubmeshIndex` has nowhere to go either - a mesh instance names its model through `ASTB` and not which submesh of it - so mesh instancing needs a table of its own before it means anything. Spawns are still absent because `scene.spawn` is a PRESERVED member of `.smap` rather than a bound one, so `META` writes a spawn count of zero. `NBND` and the three script sections have no producer. `PayloadFlags` bits 3 to 6 are written as `Inherit` because the engine has no realm or state enum yet, and the format owns that numbering, so the enum that lands later must match it. (The 7xxx verifier arm this paragraph originally listed as missing landed with the runtime loader below.) And **a file newly ADDED to a bundle does not invalidate a cached bake**: `IRuleContext.ListFiles` is how a rule over a FOLDER names its inputs, every file it returns becomes a dependency when the rule reads it, and a directory listing is not something `CookCache` can restate - it closes the day a directory observation joins `RuleDependencyKind`.
+**What is not built, named so it is a gap rather than a discovery.** `MeshSource.SubmeshIndex` has nowhere to go - a mesh instance names its model through `ASTB` and not which submesh of it - so mesh instancing needs a table of its own before it means anything. Spawns are still absent because `scene.spawn` is a PRESERVED member of `.smap` rather than a bound one, so `META` writes a spawn count of zero. `NBND` and the three script sections have no producer. `PayloadFlags` bits 3 to 6 are written as `Inherit` because the engine has no realm or state enum yet, and the format owns that numbering, so the enum that lands later must match it. (The 7xxx verifier arm this paragraph originally listed as missing landed with the runtime loader below.) And **a file newly ADDED to a bundle does not invalidate a cached bake**: `IRuleContext.ListFiles` is how a rule over a FOLDER names its inputs, every file it returns becomes a dependency when the rule reads it, and a directory listing is not something `CookCache` can restate - it closes the day a directory observation joins `RuleDependencyKind`.
 
 **AS BUILT (2026-09-03), the runtime load: a shipped game runs ZERO CSG.** `SpectraEngine.Core/Maps/Compiled/` gains `CompiledMapLoader` (the load), `CompiledStaticWorld` and `CompiledStaticWorldChunk` (the adopted per-cell data and its point query), `CompiledMapLoadReport` (what one FILE lost, and what this BUILD cannot carry whatever the file holds), `CompiledMapPath` (the one expression of the `.smap` to `.scmap` redirect, which `MapRule.CookedPath` now calls) and `MappedBspNodes`; `Scene` gains a partial, `Scene.CompiledWorld.cs`, carrying `AdoptCompiledStaticWorld`, `ReleaseCompiledStaticWorld` and the refusals. **The four passes and their ORDER are the design**: the reader's version, geometry, vertex-layout and compile-constant gates before a single table is trusted; `ASTB` walked IN TABLE ORDER to build the file-index to `MaterialRef` remap; `NODE` rebuilt in ONE FORWARD PASS, which is exactly what `ParentIndex < SelfIndex` was written to permit; then one GPU mesh per (cell, material) straight from the mapped `CMSH` spans and one `FlatBspTree` per cell over the mapped `CBSP` view. `PackVerifier` grows the 7xxx arm it already had a place reserved for. The demo boots it: `--project <dir> --pack` resolves `Maps/<Name>.scmap` through the mounted sources and adopts it, and the loose bundle stays as a fallback the load reports at Error rather than takes in silence. Measured end to end on **d3d11, d3d12 and opengl** out of one `.spack`: 252 nodes, 83 chunks as 96 GPU meshes and 3,391 triangles, 110 BSP trees, 4 materials interned, 5 unknown sections skipped, **0 carves**, offscreen probe PASS, nothing at `ERR`.
 
@@ -647,7 +703,7 @@ Nine more things the spec left open, settled here:
 
 **Every claim about the FILE is still tested by editing bytes.** The version refusal, the cell-size refusal and the snap-grid refusal are byte surgery on a valid map, for the reason D-Stage 19 recorded: a builder refusing is a fact about this cook, a reader refusing is a fact about the bytes, and only the second survives a file written by something else. The `ASTB` test interns FIVE unrelated materials first, because with ids and row indices agreeing by coincidence a loader that read the row index as a `MaterialRef.Id` passes every assertion; that is the same coincidence D-Stage 20 measured, where its ordering test stayed green under a deliberately broken build. And **a refused load releases the bytes it was handed**, which is not housekeeping: on a mounted pack the blob holds a `PackHandle` reference, so one left undisposed by a failed load is a mount that can never be released for the life of the process, with no message anywhere.
 
-**What the runtime load does NOT do, named so each is a gap rather than a discovery.** A `MeshInstance` node is rebuilt in its place, with its id, drawing nothing, and its name goes in the report: the format gives it one asset row and no submesh index, so binding submesh 0 would be right for a single-submesh prop and quietly wrong for every other one. **A compiled map has no placement list, so `BrushPlaneCollisionSource` finds no plane sets and the character mover has nothing to walk on** - a compiled map is today a level you can look at and not one you can walk in, and closing that is `COLL`'s job rather than this loader's. `CompiledStaticWorld` answers `ContainsPoint` and not `Raycast`, because the DDA walk has no caller on this path yet and a second copy of it written for nobody is a second thing to keep in step. `Brush.Transform` is not in `BRSH` and is rebuilt as the identity, which is exact for every node-attached brush (the scene snapshots the node's world matrix into a placement instead) and lossy for a standalone one. And the lights, spawns and scripts §2.7 already names as absent are absent here too, which is why `CompiledMapLoadReport.FormatGaps` is a constant printed at Warning on every load: a level that quietly loses its lights is exactly the failure a standing line exists to prevent, and no amount of looking at the file can tell a loader whether the author put one there.
+**What the runtime load does NOT do, named so each is a gap rather than a discovery.** A `MeshInstance` node is rebuilt in its place, with its id, drawing nothing, and its name goes in the report: the format gives it one asset row and no submesh index, so binding submesh 0 would be right for a single-submesh prop and quietly wrong for every other one. World collision and the world ray are built: see `COLL` above. A ray that hits baked geometry names no material. `Brush.Transform` is not in `BRSH` and is rebuilt as the identity, which is exact for every node-attached brush (the scene snapshots the node's world matrix into a placement instead) and lossy for a standalone one. The spawns and scripts §2.7 names as absent are absent here too. `CompiledMapLoadReport.FormatGaps` lists what is left and is logged at Warning on every load, because nothing in the file can tell a loader that the author wanted one.
 
 **AS BUILT (2026-09-03), the bake oracle over a CORPUS, and the suite it now belongs to.** `Test/Spectra.Kitchen.Tests/BakeOracleTests.cs` is `P11b`'s replacement guard in the form this section specified it: cook through the real `MapRule`, load through `CompiledMapLoader`, and assert that the per-cell vertex arrays, index arrays, submesh directories **and flattened BSP nodes** are element-identical to a fresh cache-free `CsgWorld.Build` plus `BspFlattener.Flatten` of the same bundle. `docs/archive/roadmap-2026-10.md` `P11b` names the file, so the cross-reference resolves to something that exists.
 

@@ -184,6 +184,33 @@ public class MapRuleTests
     }
 
     [Fact]
+    public void Every_world_brush_bakes_a_collision_hull_whether_or_not_its_source_is_kept()
+    {
+        // Collision is not the kept source: a level cooked without it still has a floor.
+        using var project = new TempProject();
+        MapFixture fixture = MapFixture.Fresh();
+        fixture.WriteBundle(project, "Room.smap");
+
+        ScmapProbe without = Bake(project, "Maps/Room.smap", keepBrushSource: false);
+        ScmapProbe with = Bake(project, "Maps/Room.smap", keepBrushSource: true);
+
+        // The crate is a part, so it is not among them.
+        without.Hulls.Select(hull => without.NodeNames[(int)hull.NodeIndex])
+            .ShouldBe(["Floor", "Wall", "BackWall", "Doorway"]);
+
+        with.Hulls.Count.ShouldBe(without.Hulls.Count);
+        for (int i = 0; i < with.Hulls.Count; i++)
+        {
+            with.Hulls[i].NodeIndex.ShouldBe(without.Hulls[i].NodeIndex);
+            with.Hulls[i].Planes.ShouldBe(without.Hulls[i].Planes);
+
+            // The planes the kept source holds for the same brush.
+            with.Brushes.Single(brush => brush.NodeIndex == with.Hulls[i].NodeIndex)
+                .Planes.ShouldBe(with.Hulls[i].Planes);
+        }
+    }
+
+    [Fact]
     public void A_baked_brush_is_never_offered_for_re_carving_and_a_part_always_is()
     {
         using var project = new TempProject();

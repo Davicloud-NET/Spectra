@@ -521,10 +521,12 @@ public sealed class SceneManager
             _logger.LogInformation(
                 "Compiled map '{Path}' loaded in {Ms:0.0} ms: scene '{Name}', {Nodes} node(s), {Chunks} " +
                 "chunk(s) as {Submeshes} GPU mesh(es) and {Triangles} triangle(s), {Trees} BSP tree(s), " +
+                "{Hulls} collision hull(s), {Lights} light(s), {Entities} entity(ies), " +
                 "{Materials} material(s) interned, {Skipped} unknown section(s) skipped; "
                 + "{Carves} carve(s) run",
                 contentPath, milliseconds, scene.Name, report.NodesLoaded, report.ChunksLoaded,
                 report.SubmeshesUploaded, report.TriangleCount, report.BspChunksLoaded,
+                report.CollisionHullsLoaded, report.LightsLoaded, report.EntitiesLoaded,
                 report.MaterialsInterned, report.SkippedSections,
                 Csg.CarveInvocationsOnThisThread - carvesBefore);
 

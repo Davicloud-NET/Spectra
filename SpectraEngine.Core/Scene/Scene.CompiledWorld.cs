@@ -47,12 +47,17 @@ public sealed partial class Scene
     /// <summary>
     /// Installs a compiled map's baked chunks as this scene's static world:
     /// one GPU mesh per (cell, material) and one flat BSP tree per cell, both
-    /// straight from the mapped bytes. Runs no CSG. Render thread only.
+    /// straight from the mapped bytes, plus the world's collision hulls. Runs
+    /// no CSG. Render thread only.
     /// </summary>
     /// <param name="assetMaterials">
     /// One entry per <c>ASTB</c> row, in table order: the material this process
     /// interned for that row. A row that is not a material carries
     /// <see cref="MaterialRef.Default"/>.
+    /// </param>
+    /// <param name="collision">
+    /// The baked world brushes as collision hulls, in node order, each at its
+    /// node's world transform.
     /// </param>
     /// <param name="file">
     /// The map's bytes. The adopted world owns them from here and holds them
@@ -65,10 +70,12 @@ public sealed partial class Scene
         Renderer renderer,
         scoped in Maps.Compiled.ScmapDocument document,
         ReadOnlySpan<MaterialRef> assetMaterials,
+        BrushPlacement[] collision,
         ContentBlob file,
         CompiledMapLoadReport report)
     {
         ArgumentNullException.ThrowIfNull(renderer);
+        ArgumentNullException.ThrowIfNull(collision);
         ArgumentNullException.ThrowIfNull(file);
         ArgumentNullException.ThrowIfNull(report);
 
@@ -183,7 +190,7 @@ public sealed partial class Scene
         // and no compile will run to clear it.
         _handledStaticWorldVersion = _staticWorldVersion;
         _compiledStaticWorld?.Dispose();
-        _compiledStaticWorld = new CompiledStaticWorld(document.Source, compiled, file);
+        _compiledStaticWorld = new CompiledStaticWorld(document.Source, compiled, file, collision);
 
         report.ChunksLoaded = replacement.Count;
         report.SubmeshesUploaded = submeshCount;

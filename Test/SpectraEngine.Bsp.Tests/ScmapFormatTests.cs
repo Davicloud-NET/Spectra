@@ -7,6 +7,7 @@ using System.Text;
 using SpectraEngine.Core;
 using SpectraEngine.Core.Assets.Models;
 using SpectraEngine.Core.Maps.Compiled;
+using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
@@ -49,6 +50,12 @@ public class ScmapFormatTests
         Unsafe.SizeOf<ScmapConnectionRecord>().ShouldBe(24);
         Unsafe.SizeOf<ScmapConnectionRecord>().ShouldBe(ScmapFormat.ConnectionRecordSize);
 
+        Unsafe.SizeOf<ScmapHullRecord>().ShouldBe(16);
+        Unsafe.SizeOf<ScmapHullRecord>().ShouldBe(ScmapFormat.HullRecordSize);
+
+        Unsafe.SizeOf<ScmapLightRecord>().ShouldBe(48);
+        Unsafe.SizeOf<ScmapLightRecord>().ShouldBe(ScmapFormat.LightRecordSize);
+
         // Framework types the records embed. Their layout is not a documented contract.
         Unsafe.SizeOf<Vector3>().ShouldBe(12);
         Unsafe.SizeOf<Quaternion>().ShouldBe(16);
@@ -76,6 +83,76 @@ public class ScmapFormatTests
         (ScmapFormat.EntityRecordSize % sizeof(uint)).ShouldBe(0);
         (ScmapFormat.KeyvalueRecordSize % sizeof(uint)).ShouldBe(0);
         (ScmapFormat.ConnectionRecordSize % sizeof(uint)).ShouldBe(0);
+
+        // Hull planes follow the hull records with no padding, so both the
+        // preamble and the stride have to be multiples of 16.
+        (ScmapFormat.CollisionPreambleSize % ScmapFormat.PayloadAlignment).ShouldBe(0);
+        (ScmapFormat.HullRecordSize % ScmapFormat.PayloadAlignment).ShouldBe(0);
+        (ScmapFormat.PlaneSize % ScmapFormat.PayloadAlignment).ShouldBe(0);
+
+        ScmapFormat.LightPreambleSize.ShouldBe(16);
+        (ScmapFormat.LightRecordSize % sizeof(uint)).ShouldBe(0);
+    }
+
+    [Fact]
+    public void Hull_and_light_fields_sit_at_the_documented_offsets()
+    {
+        Offset<ScmapHullRecord>(nameof(ScmapHullRecord.NodeIndex)).ShouldBe(0x00);
+        Offset<ScmapHullRecord>(nameof(ScmapHullRecord.PlaneCount)).ShouldBe(0x04);
+        Offset<ScmapHullRecord>(nameof(ScmapHullRecord.PlaneStart)).ShouldBe(0x08);
+        Offset<ScmapHullRecord>(nameof(ScmapHullRecord.Reserved)).ShouldBe(0x0C);
+
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.NodeIndex)).ShouldBe(0x00);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.KindRaw)).ShouldBe(0x04);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.Flags)).ShouldBe(0x06);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.Color)).ShouldBe(0x08);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.Intensity)).ShouldBe(0x14);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.Range)).ShouldBe(0x18);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.InnerAngle)).ShouldBe(0x1C);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.OuterAngle)).ShouldBe(0x20);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.Width)).ShouldBe(0x24);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.Height)).ShouldBe(0x28);
+        Offset<ScmapLightRecord>(nameof(ScmapLightRecord.Radius)).ShouldBe(0x2C);
+    }
+
+    [Theory]
+    [InlineData(LightKind.Directional, 0)]
+    [InlineData(LightKind.Point, 1)]
+    [InlineData(LightKind.Spot, 2)]
+    [InlineData(LightKind.Rect, 3)]
+    [InlineData(LightKind.Disc, 4)]
+    public void A_light_kind_has_the_number_the_format_gives_it(LightKind kind, ushort stored)
+    {
+        // The file's numbering, whatever order the engine's enum is in.
+        var record = new ScmapLightRecord(7, new Light { Kind = kind });
+
+        record.KindRaw.ShouldBe(stored);
+        ScmapLightRecord.TryDecodeKind(stored, out LightKind decoded).ShouldBeTrue();
+        decoded.ShouldBe(kind);
+    }
+
+    [Fact]
+    public void Every_light_kind_the_engine_has_can_be_stored()
+    {
+        // A kind added to the engine and not to the format throws in the cook.
+        foreach (LightKind kind in Enum.GetValues<LightKind>())
+        {
+            var record = new ScmapLightRecord(0, new Light { Kind = kind });
+            record.ToLight().Kind.ShouldBe(kind);
+        }
+
+        ScmapLightRecord.TryDecodeKind((ushort)Enum.GetValues<LightKind>().Length, out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_light_record_stores_a_disabled_light_as_a_set_flag()
+    {
+        new ScmapLightRecord(0, new Light()).Flags.ShouldBe((ushort)0);
+
+        var off = new ScmapLightRecord(0, new Light { Enabled = false });
+        off.Flags.ShouldBe(ScmapLightRecord.DisabledFlag);
+        off.Enabled.ShouldBeFalse();
+        off.ToLight().Enabled.ShouldBeFalse();
     }
 
     [Fact]
@@ -292,8 +369,8 @@ public class ScmapFormatTests
     [Fact]
     public void The_compiled_map_version_is_declared_and_gated_exactly()
     {
-        // 2: entities, connections and node flags.
-        EngineInfo.CompiledMapFormatVersion.ShouldBe((ushort)2);
+        // 3: world collision hulls and lights.
+        EngineInfo.CompiledMapFormatVersion.ShouldBe((ushort)3);
     }
 
     [Fact]

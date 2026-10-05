@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Packs;
@@ -15,7 +16,8 @@ namespace SpectraEngine.Core.Maps.Compiled;
 /// Loads a baked <c>.scmap</c> into a live scene without running any CSG.
 /// </summary>
 // Pass order: reader gates, ASTB interned in table order, nodes rebuilt in one
-// forward pass with their flags and entities, chunks adopted.
+// forward pass with their flags, lights and entities, collision hulls built,
+// chunks adopted.
 // A baked world brush gets no Brush even when BRSH holds its planes. Rebuilding
 // it would carve the level again and draw every wall twice.
 public static class CompiledMapLoader
@@ -50,9 +52,10 @@ public static class CompiledMapLoader
             scene.ReleaseCompiledStaticWorld(renderer);
 
             MaterialRef[] materials = InternAssets(in document, report);
-            RebuildGraph(scene, in document, materials, report);
+            SceneNode[] nodes = RebuildGraph(scene, in document, materials, report);
+            BrushPlacement[] collision = BuildCollision(in document, nodes, report);
 
-            scene.AdoptCompiledStaticWorld(renderer, in document, materials, file, report);
+            scene.AdoptCompiledStaticWorld(renderer, in document, materials, collision, file, report);
             return report;
         }
         catch
@@ -89,7 +92,7 @@ public static class CompiledMapLoader
 
     // One forward pass: the reader has checked ParentIndex < own index, so a
     // parent exists before its child is read.
-    private static void RebuildGraph(
+    private static SceneNode[] RebuildGraph(
         Scene.Scene scene,
         scoped in ScmapDocument document,
         ReadOnlySpan<MaterialRef> materials,
@@ -112,6 +115,7 @@ public static class CompiledMapLoader
 
         var nodes = new SceneNode[document.Nodes.Length];
         int nextEntity = 0;
+        int nextLight = 0;
 
         for (int i = 0; i < nodes.Length; i++)
         {
@@ -136,7 +140,11 @@ public static class CompiledMapLoader
 
             AttachPayload(node, in record, i, name, brushes, brushOfNode[i], materials, report);
 
-            // Entity records are in node order, so one cursor finds them all.
+            // Light and entity records are in node order, so one cursor each
+            // finds them all.
+            if (nextLight < document.Lights.Length && document.Lights[nextLight].NodeIndex == (uint)i)
+                node.Light = document.Lights[nextLight++].ToLight();
+
             if (nextEntity < document.Entities.Length && document.Entities[nextEntity].NodeIndex == (uint)i)
                 node.Entity = BuildEntity(in document, document.Entities[nextEntity++]);
 
@@ -148,6 +156,60 @@ public static class CompiledMapLoader
 
         report.NodesLoaded = nodes.Length;
         report.EntitiesLoaded = nextEntity;
+        report.LightsLoaded = nextLight;
+
+        return nodes;
+    }
+
+    // The world brushes come back as hulls placed by their nodes, for collision
+    // only. No node gets the brush, so no compile can pick it up.
+    private static BrushPlacement[] BuildCollision(
+        scoped in ScmapDocument document, SceneNode[] nodes, CompiledMapLoadReport report)
+    {
+        var placements = new List<BrushPlacement>(document.CollisionHulls.Length);
+
+        foreach (ScmapHullRecord hull in document.CollisionHulls)
+        {
+            SceneNode node = nodes[(int)hull.NodeIndex];
+            Matrix4x4 world = node.WorldMatrix;
+
+            // A scaled placement gives planes that are not unit length, which
+            // collides in the wrong place. The cook refuses one.
+            if (Scene.Scene.DescribeNonRigidDefect(world) is not null ||
+                !TryBuildHull(in document, hull, out Brush? brush))
+            {
+                report.CollisionHullRefused(node.Name);
+                continue;
+            }
+
+            placements.Add(new BrushPlacement(brush, world));
+        }
+
+        report.CollisionHullsLoaded = placements.Count;
+        return [.. placements];
+    }
+
+    private static bool TryBuildHull(
+        scoped in ScmapDocument document, ScmapHullRecord hull, [NotNullWhen(true)] out Brush? brush)
+    {
+        Plane[] planes = document.CollisionPlanes.Slice((int)hull.PlaneStart, (int)hull.PlaneCount).ToArray();
+
+        BrushOperation operation = document.Nodes[(int)hull.NodeIndex].IsSubtractiveBrush
+            ? BrushOperation.Subtractive
+            : BrushOperation.Additive;
+
+        try
+        {
+            brush = new Brush(planes, Matrix4x4.Identity, faceSurfaces: null, operation);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            // Planes that bound no solid. One wall without collision is
+            // reported; it should not fail the whole load.
+            brush = null;
+            return false;
+        }
     }
 
     // No catalogue lookup: the class is a name, and a class this build lacks

@@ -25,6 +25,8 @@ internal sealed class ScmapProbe
     public required bool HasBrushSource { get; init; }
     public required List<BrushCopy> Brushes { get; init; }
     public required List<EntityCopy> Entities { get; init; }
+    public required List<HullCopy> Hulls { get; init; }
+    public required List<ScmapLightRecord> Lights { get; init; }
 
     // The document's own count, not recomputed here: tests grade the reader on it.
     public required int TriangleCount { get; init; }
@@ -46,6 +48,8 @@ internal sealed class ScmapProbe
         uint NodeIndex,
         System.Numerics.Plane[] Planes,
         ScmapFaceRecord[] Faces);
+
+    public sealed record HullCopy(uint NodeIndex, System.Numerics.Plane[] Planes);
 
     public sealed record EntityCopy(
         uint NodeIndex,
@@ -151,6 +155,14 @@ internal sealed class ScmapProbe
                 record.NodeIndex, document.StringAt(record.ClassNameString), keyvalues, connections));
         }
 
+        var hulls = new List<HullCopy>(document.CollisionHulls.Length);
+        foreach (ScmapHullRecord hull in document.CollisionHulls)
+        {
+            hulls.Add(new HullCopy(
+                hull.NodeIndex,
+                document.CollisionPlanes.Slice((int)hull.PlaneStart, (int)hull.PlaneCount).ToArray()));
+        }
+
         var spawns = new List<ScmapSpawn>(document.Spawns.Length);
         for (int i = 0; i < document.Spawns.Length; i++) spawns.Add(document.Spawns[i]);
 
@@ -171,6 +183,8 @@ internal sealed class ScmapProbe
             HasBrushSource = document.HasBrushSource,
             Brushes = brushes,
             Entities = entities,
+            Hulls = hulls,
+            Lights = [.. document.Lights],
             TriangleCount = document.TriangleCount,
         };
     }

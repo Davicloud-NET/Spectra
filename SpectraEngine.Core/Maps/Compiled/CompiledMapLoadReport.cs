@@ -12,6 +12,7 @@ public sealed class CompiledMapLoadReport
     private readonly List<string> _unboundMeshInstances = [];
     private readonly List<string> _partBrushesWithoutSource = [];
     private readonly List<string> _brushesRefused = [];
+    private readonly List<string> _collisionHullsRefused = [];
 
     /// <summary>
     /// What a <c>.scmap</c> at this format version cannot carry, whatever is in
@@ -19,13 +20,12 @@ public sealed class CompiledMapLoadReport
     /// </summary>
     public static IReadOnlyList<string> FormatGaps { get; } =
     [
-        "lights (no ScmapPayloadKind value and no light table, so a lamp's node arrives without its lamp)",
         "spawns (scene.spawn is a preserved .smap member, so META always writes a spawn count of zero)",
         "scripts (SCPT/LUAB/LUAS are claimed and empty)",
         "mesh-instance submesh indices (MeshSource.SubmeshIndex has no table to name)",
         "standalone brush transforms (BRSH carries planes and faces; a node-attached brush ignores it)",
-        "static-world collision (a baked world has no placement list, so the character mover has no plane " +
-            "sets: a compiled map is a level you can look at, not one you can walk in)",
+        "world surface materials for ray hits (COLL carries planes and no faces, so a ray that hits baked " +
+            "geometry names no material)",
     ];
 
     /// <summary>Nodes that named a mesh this loader did not attach.</summary>
@@ -37,11 +37,24 @@ public sealed class CompiledMapLoadReport
     /// <summary>Brushes whose planes this engine's <c>Brush</c> refused to build.</summary>
     public IReadOnlyList<string> BrushesRefused => _brushesRefused;
 
+    /// <summary>
+    /// Baked world brushes that got no collision hull, because their planes
+    /// bound no solid or their node's transform is not rigid. They are drawn
+    /// and can be walked through.
+    /// </summary>
+    public IReadOnlyList<string> CollisionHullsRefused => _collisionHullsRefused;
+
     /// <summary>Nodes rebuilt from the file.</summary>
     public int NodesLoaded { get; internal set; }
 
     /// <summary>Nodes that got an entity from the file.</summary>
     public int EntitiesLoaded { get; internal set; }
+
+    /// <summary>Nodes that got a light from the file.</summary>
+    public int LightsLoaded { get; internal set; }
+
+    /// <summary>Baked world brushes that became collision hulls.</summary>
+    public int CollisionHullsLoaded { get; internal set; }
 
     /// <summary>Asset-table rows interned into this process's material registry.</summary>
     public int MaterialsInterned { get; internal set; }
@@ -69,20 +82,27 @@ public sealed class CompiledMapLoadReport
 
     /// <summary>Whether nothing in this file was lost. Says nothing about <see cref="FormatGaps"/>.</summary>
     public bool IsComplete =>
-        _unboundMeshInstances.Count == 0 && _partBrushesWithoutSource.Count == 0 && _brushesRefused.Count == 0;
+        _unboundMeshInstances.Count == 0 && _partBrushesWithoutSource.Count == 0 && _brushesRefused.Count == 0
+        && _collisionHullsRefused.Count == 0;
 
     /// <summary>One sentence naming what this file lost, or null when nothing was.</summary>
     public string? Describe()
     {
         if (IsComplete) return null;
 
-        var parts = new List<string>(3);
+        var parts = new List<string>(4);
         if (_unboundMeshInstances.Count > 0)
             parts.Add($"{_unboundMeshInstances.Count} mesh instance(s) unbound ({Join(_unboundMeshInstances)})");
         if (_partBrushesWithoutSource.Count > 0)
             parts.Add($"{_partBrushesWithoutSource.Count} part brush(es) with no planes ({Join(_partBrushesWithoutSource)})");
         if (_brushesRefused.Count > 0)
             parts.Add($"{_brushesRefused.Count} brush(es) refused ({Join(_brushesRefused)})");
+        if (_collisionHullsRefused.Count > 0)
+        {
+            parts.Add(
+                $"{_collisionHullsRefused.Count} world brush(es) with no collision " +
+                $"({Join(_collisionHullsRefused)})");
+        }
 
         return string.Join("; ", parts) + ".";
     }
@@ -98,6 +118,8 @@ public sealed class CompiledMapLoadReport
     internal void PartBrushWithoutSource(string node) => _partBrushesWithoutSource.Add(node);
 
     internal void BrushRefused(string node) => _brushesRefused.Add(node);
+
+    internal void CollisionHullRefused(string node) => _collisionHullsRefused.Add(node);
 
     private static string Join(List<string> names) =>
         names.Count <= 5
