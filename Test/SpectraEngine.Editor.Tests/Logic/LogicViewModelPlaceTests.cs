@@ -104,6 +104,24 @@ public sealed class LogicViewModelPlaceTests
         model.View.ShouldBe(Chosen);
     }
 
+    [Theory]
+    [InlineData(LogicScopeMode.AroundSelection)]
+    [InlineData(LogicScopeMode.WholeLevel)]
+    public void A_view_that_had_nothing_to_show_for_a_while_finds_its_graph_where_it_left_it(LogicScopeMode mode)
+    {
+        LogicViewModel model = Model(mode);
+        model.Apply(Snapshot(_level, null, StartZone));
+        model.View = Chosen;
+
+        // Hidden, the view is sent no wiring. Shown again, it is sent the same.
+        model.Apply(Snapshot(null, null, StartZone));
+        model.Scene.ShouldBeNull();
+        model.Apply(Snapshot(_level, null, StartZone));
+
+        model.Scene.ShouldNotBeNull().Cards.ShouldNotBeEmpty();
+        model.View.ShouldBe(Chosen);
+    }
+
     [Fact]
     public void Another_mode_is_another_picture_and_is_fitted()
     {

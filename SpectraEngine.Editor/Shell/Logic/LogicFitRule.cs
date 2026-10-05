@@ -1,3 +1,4 @@
+using Avalonia;
 using System;
 using System.Collections.Generic;
 
@@ -8,6 +9,7 @@ namespace SpectraEngine.Editor.Shell.Logic;
 internal sealed class LogicFitRule
 {
     private Guid[] _placed = [];
+    private Size _placedSize;
     private bool _awaitsFirst = true;
     private bool _asked;
 
@@ -22,20 +24,23 @@ internal sealed class LogicFitRule
         _asked = false;
     }
 
-    // A scene with cards was laid out.
-    public void Placed(Guid[] shown, bool followsSelection, bool resized)
+    // A scene with cards was laid out. It is compared with the last scene
+    // that had cards, so a view that showed nothing for a while, hidden or
+    // between sessions, finds its graph where it left it.
+    public void Placed(Guid[] shown, Size size, bool followsSelection)
     {
         bool same = shown.AsSpan().SequenceEqual(_placed);
 
         if (_awaitsFirst)
             _asked |= !same;
         else if (followsSelection)
-            _asked |= !same || resized;
+            _asked |= !same || size != _placedSize;
         else
             _asked |= !same && SharesNone(shown, _placed);
 
         _awaitsFirst = false;
         _placed = shown;
+        _placedSize = size;
     }
 
     // Whether to fit now. Asked once there is a scene and a view to fit it in.

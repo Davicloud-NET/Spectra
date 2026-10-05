@@ -335,14 +335,13 @@ public sealed class LogicViewModel : ObservableObject
 
     private void Refresh(bool redraw = false)
     {
-        Size before = Scene?.Size ?? default;
         LogicArrangementChange change = _arrangement.Refresh(_selection, _play);
 
         if (change.HasFlag(LogicArrangementChange.Shown))
             TakeShown();
 
         if (change.HasFlag(LogicArrangementChange.Scene) && Scene is { Cards.Count: > 0 } scene)
-            _fit.Placed(_shown.Ids, followsSelection: IsAroundSelection, resized: scene.Size != before);
+            _fit.Placed(_shown.Ids, scene.Size, followsSelection: IsAroundSelection);
 
         if (redraw || change.HasFlag(LogicArrangementChange.Looks))
             Redraw?.Invoke();
