@@ -1,0 +1,5 @@
+# These run under bash in WSL from a Windows checkout. A CRLF ending breaks them.
+*.sh text eol=lf
+
+# The note quotes source sizes in bytes. CRLF would change them.
+*.luau text eol=lf

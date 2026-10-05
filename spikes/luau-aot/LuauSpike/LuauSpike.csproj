@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>LuauSpike</RootNamespace>
+
+    <!-- static-full: VM, compiler and code generator linked into the executable.
+         static-compiler: VM and compiler. static-vm: VM only, runs bytecode.
+         shared: nothing linked in, luau.dll or libluau.so sits beside the executable. -->
+    <LuauLink Condition="'$(LuauLink)' == ''">static-full</LuauLink>
+    <!-- longjmp or cxx: how the Luau build raises errors. -->
+    <LuauUnwind Condition="'$(LuauUnwind)' == ''">longjmp</LuauUnwind>
+
+    <LuauRid>$(RuntimeIdentifier)</LuauRid>
+    <LuauRid Condition="'$(LuauRid)' == ''">win-x64</LuauRid>
+    <LuauBuildDir>$(MSBuildThisFileDirectory)../build/$(LuauRid)/$(LuauUnwind)/</LuauBuildDir>
+    <LuauIsWindows Condition="$(LuauRid.StartsWith('win'))">true</LuauIsWindows>
+
+    <LuauHasCompiler Condition="'$(LuauLink)' != 'static-vm'">true</LuauHasCompiler>
+    <LuauHasCodeGen Condition="'$(LuauLink)' == 'static-full' or '$(LuauLink)' == 'shared'">true</LuauHasCodeGen>
+    <DefineConstants Condition="'$(LuauHasCompiler)' == 'true'">$(DefineConstants);LUAU_COMPILER</DefineConstants>
+    <DefineConstants Condition="'$(LuauHasCodeGen)' == 'true'">$(DefineConstants);LUAU_CODEGEN</DefineConstants>
+    <DefineConstants Condition="'$(LuauLink)' == 'shared'">$(DefineConstants);LUAU_SHARED</DefineConstants>
+
+    <!-- One obj tree per variant. The link step compares timestamps, so two
+         variants sharing a tree would reuse each other's executable. -->
+    <IntermediateOutputPath>obj/$(Configuration)/$(LuauRid)/$(LuauLink)-$(LuauUnwind)/</IntermediateOutputPath>
+    <OutputPath>bin/$(Configuration)/$(LuauRid)/$(LuauLink)-$(LuauUnwind)/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+
+    <!-- Luau is C++. On Linux the AOT link leaves libstdc++ out unless asked. -->
+    <LinkStandardCPlusPlusLibrary>true</LinkStandardCPlusPlusLibrary>
+  </PropertyGroup>
+
+  <!-- Order matters to a single-pass Unix linker: a library comes before what it depends on. -->
+  <ItemGroup Condition="'$(LuauLink)' != 'shared'">
+    <DirectPInvoke Include="luau" />
+    <LuauStaticLibrary Include="spectra_luau_compile_shim" Condition="'$(LuauHasCompiler)' == 'true'" />
+    <LuauStaticLibrary Include="spectra_luau_shim" />
+    <LuauStaticLibrary Include="Luau.CodeGen" Condition="'$(LuauHasCodeGen)' == 'true'" />
+    <LuauStaticLibrary Include="Luau.VM" />
+    <LuauStaticLibrary Include="Luau.Compiler;Luau.Bytecode;Luau.Ast" Condition="'$(LuauHasCompiler)' == 'true'" />
+    <LuauStaticLibrary Include="Luau.Common" />
+    <NativeLibrary Include="@(LuauStaticLibrary->'$(LuauBuildDir)lib/%(Identity).lib')" Condition="'$(LuauIsWindows)' == 'true'" />
+    <NativeLibrary Include="@(LuauStaticLibrary->'$(LuauBuildDir)lib/lib%(Identity).a')" Condition="'$(LuauIsWindows)' != 'true'" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(LuauLink)' == 'shared'">
+    <None Include="$(LuauBuildDir)shared/luau.dll" Condition="'$(LuauIsWindows)' == 'true'" Link="luau.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(LuauBuildDir)shared/libluau.so" Condition="'$(LuauIsWindows)' != 'true'" Link="libluau.so" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../scripts/*.luau" LinkBase="scripts" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

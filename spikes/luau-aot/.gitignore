@@ -1,0 +1,6 @@
+.luau/
+build/
+bin/
+obj/
+out/
+*.luauc
