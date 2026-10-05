@@ -103,6 +103,41 @@ public sealed class DemoStartRoomWallTests : IClassFixture<CookedDemoSounds>
         heard.ShouldBeGreaterThan(40);
     }
 
+    // Outside, where someone walking along the wall sets the door off. The
+    // line from the door's middle to there crosses the jamb. The door slides
+    // toward +z, so from -z it leaves the jamb between itself and the ear.
+    [Theory]
+    [InlineData(1.5f, 0.85f)]
+    [InlineData(-1.5f, 0.7f)]
+    public void The_doors_own_sound_stays_bright_for_someone_beside_the_doorway(float earZ, float leastOfClear)
+    {
+        using var rig = new StartRoomSoundRig(_cooked, walls: true);
+        SceneNode sound = rig.Node(DemoPlayArea.DoorOpenSoundName);
+        var ear = new Vector3(131.5f, 1.62f, earZ);
+        rig.Session.Enter();
+        FuncDoor door = rig.Live<FuncDoor>(DemoPlayArea.StartDoorName);
+        Listen(rig, ear, ticks: 5);
+
+        EntityRuntime.Send(door, "Open");
+        int heard = 0;
+
+        for (int tick = 0; tick < 55; tick++)
+        {
+            Listen(rig, ear, ticks: 1);
+
+            foreach (AudioSourceSettings voice in rig.SourcesAt(sound.WorldPosition))
+            {
+                float reach = SoundFalloff.Gain(Vector3.Distance(sound.WorldPosition, ear), 3f, 20f);
+                voice.GainHf.ShouldBeGreaterThan(0.85f, $"tick {tick}, door at {door.TicksTravelled} of {door.TravelTicks}");
+                voice.Gain.ShouldBeGreaterThan(reach * leastOfClear, $"tick {tick}");
+                heard++;
+            }
+        }
+
+        door.IsFullyOpen.ShouldBeTrue();
+        heard.ShouldBeGreaterThan(40);
+    }
+
     [Fact]
     public void The_lifts_hum_is_not_muffled_by_the_lift_for_someone_riding_it()
     {

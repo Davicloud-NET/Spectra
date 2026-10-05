@@ -71,9 +71,11 @@ The thickness is the one you built: the engine measures how much of each block a
 
 What a block or a part is made of comes from its material. Give the material's file a line such as `acoustic = wood`. See [What it is made of](/reference/material-files/#what-it-is-made-of) for the names. A material with no such line counts as `generic`.
 
-A sound is not muffled by what it sits on. Placed under a door in the scene tree, it is not behind its own door, though it is behind every other one. The same goes for each part further up the tree, so a sound under a panel under a lift is behind neither. When the door slides into the wall, its sound goes in with it and is not behind that wall either.
+A sound is not muffled by what it sits on. Placed under a door in the scene tree, it is not behind its own door, though it is behind every other one. The same goes for each part further up the tree, so a sound under a panel under a lift is behind neither.
 
-A sound that is under no part and stands inside a block is behind that block. Move it out into the room.
+A sound on a part is heard from that part, not from one point inside it. What lies within a quarter of a unit of the part is not in the sound's way either. So a door that slides into its wall is still heard clear from in front of the doorway, and its jamb does not muffle it for someone standing a little to the side. The rest of the wall counts as always: the door is muffled in the next room, and for someone far off to the side.
+
+Only a solid part does this. A sound under a trigger, or under no part at all, that stands inside a block is behind that block. Move it out into the room.
 
 The edge of an opening is soft. Step past a door frame and the sound does not switch from muffled to clear. It comes in over about half a unit of the way.
 

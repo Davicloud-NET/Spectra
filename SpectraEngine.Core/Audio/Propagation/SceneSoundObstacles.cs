@@ -1,20 +1,27 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Core.Audio.Propagation;
 
 /// <summary>
-/// The scene that is current as sound's obstacles: its static world, live or
-/// baked, and its parts that collide. A sound on or under a part is not
-/// behind that part, the parts above it in the tree, or a solid the sound
-/// stands in. It asks for the scene on every call and keeps none. Render
-/// thread only.
+/// The current scene as sound's obstacles: its static world, live or baked,
+/// and its parts that collide. Render thread only.
 /// </summary>
+// It asks for the scene on every call and keeps none.
 public sealed class SceneSoundObstacles : ISoundObstacles
 {
+    /// <summary>
+    /// How far round its part a sound on one is heard from, in units. Solid
+    /// this close to the part is what the part is set in.
+    /// </summary>
+    // A door slides into a wall a little thicker than itself. This is the
+    // wall's skin over the door, and its jamb for a listener off to one side.
+    public const float BodyReach = 0.25f;
+
     private readonly Func<Scene.Scene?> _current;
 
     // The sound's node and the parts above it, for the trace in hand.
@@ -64,6 +71,26 @@ public sealed class SceneSoundObstacles : ISoundObstacles
     }
 
     /// <inheritdoc/>
+    public Vector3 HeardFrom(Vector3 from, Vector3 to, SceneNode? body)
+    {
+        if (SolidPartOf(body) is not { Brush: { } brush } part)
+            return from;
+
+        // The part's own frame, taken as the span query takes it.
+        Matrix4x4 world = part.WorldMatrix;
+        Matrix4x4 linear = world;
+        linear.Translation = Vector3.Zero;
+        if (!Matrix4x4.Invert(linear, out Matrix4x4 toLocal))
+            return from;
+
+        Aabb reach = brush.LocalBounds.Expanded(BodyReach);
+        Vector3 start = Vector3.TransformNormal(from - world.Translation, toLocal);
+        Vector3 step = Vector3.TransformNormal(to - from, toLocal);
+
+        return from + ((to - from) * ShareInside(in reach, start, step));
+    }
+
+    /// <inheritdoc/>
     public int Trace(Vector3 from, Vector3 to, SceneNode? body, Span<SolidSpan> spans, out bool truncated)
     {
         truncated = false;
@@ -77,24 +104,53 @@ public sealed class SceneSoundObstacles : ISoundObstacles
                 _ownBody.Add(node);
         }
 
-        bool isOnAPart = _ownBody.Count > 0;
-
         // Collide decides what blocks. A part that rays do not hit is still solid.
         var filter = new SceneQueryFilter { IgnoreQueryFlags = true, Ignore = _ownBody };
         int count = scene.TraceSolidSpans(from, to, in filter, spans, out truncated);
 
         // Do not keep the nodes alive between traces.
         _ownBody.Clear();
+        return count;
+    }
 
-        // A door that slides into its wall takes its sounds in with it. The
-        // wall is then no more in their way than the door is.
-        if (isOnAPart && count > 0 && spans[0].Start <= SolidSpan.Tolerance)
+    // The nearest part a sound sits on or under that blocks sound. A trigger
+    // blocks none, so a sound under one has no body.
+    private static SceneNode? SolidPartOf(SceneNode? body)
+    {
+        for (SceneNode? node = body; node is not null; node = node.Parent)
         {
-            spans[1..count].CopyTo(spans);
-            count--;
+            if (node.BrushKind == BrushKind.Part && node.CanCollide &&
+                node.Brush is { Operation: BrushOperation.Additive })
+            {
+                return node;
+            }
         }
 
-        return count;
+        return null;
+    }
+
+    // How much of a step that starts inside the box stays inside it, from 0
+    // to 1. Zero for one that starts outside.
+    private static float ShareInside(in Aabb box, Vector3 start, Vector3 step)
+    {
+        float share = 1f;
+
+        for (int axis = 0; axis < 3; axis++)
+        {
+            float at = start[axis];
+
+            // Written so a NaN is outside.
+            if (!(at >= box.Min[axis] && at <= box.Max[axis]))
+                return 0f;
+
+            float by = step[axis];
+            if (by > 0f)
+                share = MathF.Min(share, (box.Max[axis] - at) / by);
+            else if (by < 0f)
+                share = MathF.Min(share, (box.Min[axis] - at) / by);
+        }
+
+        return share;
     }
 
     private bool IsSeen(Scene.Scene scene, CompiledStaticWorld? baked)

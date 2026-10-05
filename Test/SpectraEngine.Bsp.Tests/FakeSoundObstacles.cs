@@ -41,6 +41,9 @@ internal sealed class FakeSoundObstacles : ISoundObstacles
         return HasWorld;
     }
 
+    // Every sound is heard from where it is.
+    public Vector3 HeardFrom(Vector3 from, Vector3 to, SceneNode? body) => from;
+
     public int Trace(Vector3 from, Vector3 to, SceneNode? body, Span<SolidSpan> spans, out bool truncated)
     {
         Traces++;

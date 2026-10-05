@@ -13,6 +13,11 @@ public sealed class SceneSoundObstaclesTests
     private static readonly Vector3 Near = new(0f, 1f, 0f);
     private static readonly Vector3 Far = new(0f, 1f, -8f);
 
+    // A door 0.4 thick, in the plane of the wall the span level builds.
+    private static readonly Vector3 DoorCenter = new(3f, 1f, -4.25f);
+    private static readonly Vector3 DoorHalf = new(1f, 1f, 0.2f);
+    private static readonly Vector3 DoorEar = new(3f, 1f, 0f);
+
     [Fact]
     public void With_no_scene_there_is_no_world_and_a_trace_finds_nothing()
     {
@@ -102,24 +107,101 @@ public sealed class SceneSoundObstaclesTests
     }
 
     [Fact]
-    public void A_solid_that_a_sound_on_a_part_stands_in_is_left_out_and_the_next_one_is_not()
+    public void A_solid_that_a_sound_on_a_part_stands_in_is_traced_like_any_other()
     {
         SpanLevel level = Walled();
-        SceneNode door = level.Part("Door", new Vector3(3f, 1f, -4.25f), new Vector3(1f, 1f, 0.2f));
-        SceneNode speaker = level.Scene.Root.CreateChild("Speaker");
-        level.Part("Crate", new Vector3(3f, 1f, -2f), new Vector3(1f, 1f, 0.5f));
+        SceneNode door = level.Part("Door", DoorCenter, DoorHalf);
         var obstacles = new SceneSoundObstacles(() => level.Scene);
         var spans = new SolidSpan[4];
-        Vector3 inTheWall = door.WorldPosition;
-        var ear = new Vector3(3f, 1f, 0f);
 
-        // The wall the door stands in, then the crate.
-        obstacles.Trace(inTheWall, ear, door, spans, out _).ShouldBe(1);
-        spans[0].Start.ShouldBe(1.75f, 1e-4f);
-
-        // A sound on no part is behind the wall it stands in.
-        obstacles.Trace(inTheWall, ear, speaker, spans, out _).ShouldBe(2);
+        // The door is in the wall, a quarter unit from the face toward the ear.
+        obstacles.Trace(DoorCenter, DoorEar, door, spans, out _).ShouldBe(1);
         spans[0].Start.ShouldBe(0f);
+        spans[0].End.ShouldBe(0.25f, 1e-4f);
+    }
+
+    [Fact]
+    public void A_sound_on_a_part_is_heard_from_the_reach_outside_that_part()
+    {
+        var level = new SpanLevel();
+        SceneNode door = level.Part("Door", DoorCenter, DoorHalf);
+        SceneNode squeak = door.CreateChild("Squeak");
+        var obstacles = new SceneSoundObstacles(() => level.Scene);
+
+        // Out by the door's face at z = -4.05, and on by the reach.
+        var outside = new Vector3(3f, 1f, -4.05f + SceneSoundObstacles.BodyReach);
+        Apart(obstacles.HeardFrom(DoorCenter, DoorEar, door), outside).ShouldBeLessThan(1e-4f);
+        Apart(obstacles.HeardFrom(DoorCenter, DoorEar, squeak), outside).ShouldBeLessThan(1e-4f);
+    }
+
+    [Fact]
+    public void A_sound_under_a_group_under_a_part_is_heard_from_that_part()
+    {
+        var level = new SpanLevel();
+        SceneNode door = level.Part("Door", DoorCenter, DoorHalf);
+        SceneNode squeak = door.CreateChild("Sounds").CreateChild("Squeak");
+        var obstacles = new SceneSoundObstacles(() => level.Scene);
+
+        obstacles.HeardFrom(DoorCenter, DoorEar, squeak).Z.ShouldBe(-3.8f, 1e-4f);
+    }
+
+    [Fact]
+    public void The_reach_turns_with_the_part()
+    {
+        var level = new SpanLevel();
+        SceneNode door = level.Part("Door", DoorCenter, DoorHalf);
+        door.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f);
+        var obstacles = new SceneSoundObstacles(() => level.Scene);
+
+        // The door's thin way now lies along x, and its width along z.
+        obstacles.HeardFrom(DoorCenter, DoorCenter + (Vector3.UnitX * 4f), door).X.ShouldBe(3.45f, 1e-4f);
+        obstacles.HeardFrom(DoorCenter, DoorEar, door).Z.ShouldBe(-3f, 1e-4f);
+    }
+
+    [Fact]
+    public void A_listener_within_the_reach_of_the_part_is_where_the_line_ends()
+    {
+        var level = new SpanLevel();
+        SceneNode door = level.Part("Door", DoorCenter, DoorHalf);
+        var obstacles = new SceneSoundObstacles(() => level.Scene);
+        var close = new Vector3(3.5f, 1f, -3.9f);
+
+        Apart(obstacles.HeardFrom(DoorCenter, close, door), close).ShouldBeLessThan(1e-5f);
+    }
+
+    [Fact]
+    public void A_sound_on_no_part_is_heard_from_where_it_is()
+    {
+        var level = new SpanLevel();
+        level.Part("Door", DoorCenter, DoorHalf);
+        SceneNode speaker = level.Scene.Root.CreateChild("Speaker");
+        var obstacles = new SceneSoundObstacles(() => level.Scene);
+
+        obstacles.HeardFrom(DoorCenter, DoorEar, speaker).ShouldBe(DoorCenter);
+        obstacles.HeardFrom(DoorCenter, DoorEar, null).ShouldBe(DoorCenter);
+    }
+
+    [Fact]
+    public void A_sound_further_from_its_part_than_the_reach_is_heard_from_where_it_is()
+    {
+        var level = new SpanLevel();
+        SceneNode door = level.Part("Door", DoorCenter, DoorHalf);
+        SceneNode horn = door.CreateChild("Horn");
+        horn.LocalPosition = new Vector3(0f, 0f, 1f);
+        var obstacles = new SceneSoundObstacles(() => level.Scene);
+
+        obstacles.HeardFrom(horn.WorldPosition, DoorEar, horn).ShouldBe(horn.WorldPosition);
+    }
+
+    [Fact]
+    public void A_sound_under_a_trigger_has_no_part_to_be_heard_from()
+    {
+        var level = new SpanLevel();
+        SceneNode zone = level.Part("Zone", DoorCenter, DoorHalf);
+        zone.CanCollide = false;
+        var obstacles = new SceneSoundObstacles(() => level.Scene);
+
+        obstacles.HeardFrom(DoorCenter, DoorEar, zone.CreateChild("Hum")).ShouldBe(DoorCenter);
     }
 
     [Fact]
@@ -136,6 +218,8 @@ public sealed class SceneSoundObstaclesTests
         truncated.ShouldBeTrue();
         spans[0].Start.ShouldBe(1.75f, 1e-4f);
     }
+
+    private static float Apart(Vector3 a, Vector3 b) => Vector3.Distance(a, b);
 
     private static SpanLevel Walled()
     {

@@ -250,12 +250,13 @@ public sealed class WallPropagation : ISoundPropagation
         for (int line = 0; line < lines; line++)
         {
             Vector3 end = ends[line];
+            Vector3 from = _world.HeardFrom(sound.Position, end, sound.Body);
 
             // A list that ran out of room still counts for what it holds.
-            int count = _world.Trace(sound.Position, end, sound.Body, _spans, out _);
+            int count = _world.Trace(from, end, sound.Body, _spans, out _);
 
             AcousticGains through = WallLoss
-                .Sum(_spans.AsSpan(0, count), Vector3.Distance(sound.Position, end), _materials)
+                .Sum(_spans.AsSpan(0, count), Vector3.Distance(from, end), _materials)
                 .ToGains();
 
             gain += through.Gain;

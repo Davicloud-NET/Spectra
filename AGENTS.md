@@ -200,7 +200,7 @@ Span query
 Sound through walls
 
 - A `SoundQuery` without its `Body` is muffled by the part its sound sits in. `SoundPresenter` sets it to the emitter's node.
-- A sound under a part is not behind a solid it stands in, so a door's sound stays clear inside the wall the door slid into. It is then heard clear from both sides of that wall.
+- A sound on a part is heard from that part: its lines start where they leave the part's box grown by `SceneSoundObstacles.BodyReach`. So a door's sound stays clear inside the wall the door slid into, and solid that close to any part does not muffle that part's sounds.
 - A part that moves raises no signal. `WallPropagation` hears it once the answer is `RefreshSeconds` old, by its own clock: a test passes a `ManualClock` and steps it, or the door never moves.
 - With no audio device the engine traces nothing (`Engine.HeardScene`), and captions then go by distance alone.
 - A voice that starts allocates. An allocation test with walls has to keep the same sounds loudest, or sources change hands and it fails for that.

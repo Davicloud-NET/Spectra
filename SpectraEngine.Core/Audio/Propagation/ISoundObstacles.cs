@@ -22,13 +22,21 @@ public interface ISoundObstacles
     bool TryReadWorld(out long revision);
 
     /// <summary>
+    /// Where a sound at <paramref name="from"/> starts its way to
+    /// <paramref name="to"/>. A sound on a part is heard from that part, so
+    /// this is where the line leaves the part and what it is set in.
+    /// </summary>
+    /// <param name="body">The node the sound sits on, or null.</param>
+    /// <returns>A point on the line. <paramref name="from"/> for a sound on no part.</returns>
+    Vector3 HeardFrom(Vector3 from, Vector3 to, SceneNode? body);
+
+    /// <summary>
     /// The solids on the line from <paramref name="from"/> to
     /// <paramref name="to"/>, nearest first.
     /// </summary>
     /// <param name="body">
     /// The node the sound sits on, or null. That node and the parts above it
-    /// in the tree are not in the way. Where there is such a part, neither
-    /// is a solid that <paramref name="from"/> lies in.
+    /// in the tree are not in the way.
     /// </param>
     /// <param name="truncated">True when there was more solid than <paramref name="spans"/> has room for.</param>
     /// <returns>How many spans were written.</returns>
