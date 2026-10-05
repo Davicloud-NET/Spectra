@@ -3,6 +3,7 @@
              xmlns:shell="using:SpectraEngine.Editor.Shell"
              x:Class="SpectraEngine.Editor.Shell.ContentPanel"
              x:DataType="shell:ShellModel"
+             shell:SoundPreviewButton.Preview="{Binding SoundPreview}"
              Background="{StaticResource SpectraBgPanel}">
 
   <!-- Tiles rather than rows because a texture's picture is the information. -->
@@ -50,7 +51,7 @@
                Text="{Binding Content.Query, Mode=TwoWay}"
                KeyDown="OnSearchKeyDown" />
 
-      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="3">
+      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="2">
         <Button Classes="chip filter" Classes.active="{Binding Content.IsFilterAll}"
                 Tag="All" Click="OnFilterClicked">
           <TextBlock Classes="chipsubject" Text="All" />
@@ -66,6 +67,10 @@
         <Button Classes="chip filter" Classes.active="{Binding Content.IsFilterModels}"
                 Tag="Models" Click="OnFilterClicked">
           <TextBlock Classes="chipsubject" Text="Models" />
+        </Button>
+        <Button Classes="chip filter" Classes.active="{Binding Content.IsFilterSounds}"
+                Tag="Sounds" Click="OnFilterClicked">
+          <TextBlock Classes="chipsubject" Text="Sounds" />
         </Button>
       </StackPanel>
 
@@ -99,7 +104,7 @@
       </ListBox.IsVisible>
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="shell:ContentEntry">
-          <Grid ColumnDefinitions="20,*,Auto,Auto" ColumnSpacing="8"
+          <Grid ColumnDefinitions="20,*,Auto,Auto,Auto" ColumnSpacing="8"
                 ContextMenu="{StaticResource ContentMenu}">
             <Panel Grid.Column="0" Width="20" Height="16">
               <Path Classes="icon" IsVisible="{Binding !HasThumbnail}"
@@ -110,10 +115,12 @@
             <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis"
                        FontSize="{StaticResource SpectraFontSmall}" />
-            <TextBlock Grid.Column="2" Text="{Binding FolderLabel}" Classes="micro"
+            <shell:SoundPreviewButton Grid.Column="2" IsVisible="{Binding IsSound}"
+                                      ContentPath="{Binding ContentPath}" />
+            <TextBlock Grid.Column="3" Text="{Binding FolderLabel}" Classes="micro"
                        VerticalAlignment="Center" MaxWidth="140"
                        TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="3" Text="{Binding SizeLabel}" Classes="micro"
+            <TextBlock Grid.Column="4" Text="{Binding SizeLabel}" Classes="micro"
                        VerticalAlignment="Center" MinWidth="52" TextAlignment="Right" />
           </Grid>
         </DataTemplate>
@@ -154,6 +161,11 @@
                         Data="{Binding Icon}" />
                   <Image Source="{Binding Thumbnail}" IsVisible="{Binding HasThumbnail}"
                          Stretch="Uniform" Margin="4" />
+                  <!-- In the corner, clear of the glyph. -->
+                  <shell:SoundPreviewButton HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                            Margin="0,0,6,2"
+                                            IsVisible="{Binding IsSound}"
+                                            ContentPath="{Binding ContentPath}" />
                 </Panel>
 
                 <TextBlock Text="{Binding Name}" FontSize="{StaticResource SpectraFontSmall}"
@@ -224,6 +236,12 @@
     </Style>
     <Style Selector="Button.crumb:pointerover">
       <Setter Property="Foreground" Value="{StaticResource SpectraTextEmphasis}" />
+    </Style>
+
+    <!-- Five chips share the row with the search box, so they sit closer than
+         a chip elsewhere. -->
+    <Style Selector="Button.chip.filter">
+      <Setter Property="Padding" Value="6,0" />
     </Style>
 
     <Style Selector="Button.chip.filter.active /template/ ContentPresenter#PART_ContentPresenter">

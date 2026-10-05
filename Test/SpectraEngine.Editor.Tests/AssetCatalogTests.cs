@@ -154,8 +154,9 @@ public sealed class AssetCatalogTests : IDisposable
         AssetCatalog.KindFor(AssetKind.Material).ShouldBe(ContentKind.Material);
         AssetCatalog.KindFor(AssetKind.Texture).ShouldBe(ContentKind.Texture);
         AssetCatalog.KindFor(AssetKind.Model).ShouldBe(ContentKind.Model);
+        AssetCatalog.KindFor(AssetKind.Sound).ShouldBe(ContentKind.Sound);
 
-        // No browser kind for sound yet. Other keeps the picker empty.
-        AssetCatalog.KindFor(AssetKind.Sound).ShouldBe(ContentKind.Other);
+        // Other is what no file is listed as, so such a picker stays empty.
+        AssetCatalog.KindFor(AssetKind.None).ShouldBe(ContentKind.Other);
     }
 }

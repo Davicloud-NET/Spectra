@@ -35,10 +35,10 @@ public static class AssetDropPolicy
             $"{payload.Name} is a texture; drop a material instead. " +
             "A face wears a material file, and making one out of a texture is not built yet.",
 
-        _ => $"{payload.Name} cannot be dropped into the scene; only models and materials can.",
+        _ => $"{payload.Name} cannot be dropped into the scene; only models, materials and sounds can.",
     };
 
     /// <summary>Whether dropping this kind into the scene does anything.</summary>
     public static bool CanPlace(ContentKind kind) =>
-        kind is ContentKind.Model or ContentKind.Material;
+        kind is ContentKind.Model or ContentKind.Material or ContentKind.Sound;
 }

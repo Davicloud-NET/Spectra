@@ -264,6 +264,27 @@ public sealed class EditorSession : IDisposable
                 : ModelInsertReport.RefusedBecause(contentPath, "the session has no editor yet")));
     }
 
+    /// <summary>Places a sound entity that plays one sound file.</summary>
+    /// <param name="contentPath">The sound, relative to the content root.</param>
+    /// <param name="viewportPoint">Where to place it, in viewport pixels; null means the centre of the view.</param>
+    /// <param name="done">Called on the render thread with what happened.</param>
+    public void InsertSound(string contentPath, Vector2? viewportPoint, Action<SoundInsertReport> done)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentPath);
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(_ => done(
+            Editor is { } editor
+                ? editor.InsertSound(contentPath, viewportPoint)
+                : SoundInsertReport.RefusedBecause(contentPath, "the session has no editor yet")));
+    }
+
+    /// <summary>
+    /// Asks the engine to play one sound file by itself, or to stop when the
+    /// path is empty. <see cref="FrameSnapshot.PreviewingSound"/> says what plays.
+    /// </summary>
+    public void PreviewSound(string contentPath) => Host.RequestSoundPreview(contentPath);
+
     /// <summary>
     /// Paints a material onto the face under a viewport point, or onto the whole
     /// brush there. An empty path means no material.

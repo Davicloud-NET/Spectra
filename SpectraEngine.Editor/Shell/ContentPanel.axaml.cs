@@ -89,6 +89,7 @@ public partial class ContentPanel : UserControl
             "Textures" => ContentFilter.Textures,
             "Materials" => ContentFilter.Materials,
             "Models" => ContentFilter.Models,
+            "Sounds" => ContentFilter.Sounds,
             _ => ContentFilter.All,
         };
     }
@@ -140,6 +141,10 @@ public partial class ContentPanel : UserControl
             return;
 
         if (EntryFrom(e.Source) is not { IsFolder: false } entry)
+            return;
+
+        // A press on a row's play button plays the file. It never drags it.
+        if (IsOnPlayButton(e.Source))
             return;
 
         _pressedEntry = entry;
@@ -208,6 +213,17 @@ public partial class ContentPanel : UserControl
         {
             _dragInProgress = false;
         }
+    }
+
+    private static bool IsOnPlayButton(object? source)
+    {
+        for (Visual? visual = source as Visual; visual is not null; visual = visual.GetVisualParent())
+        {
+            if (visual is SoundPreviewButton)
+                return true;
+        }
+
+        return false;
     }
 
     // Walks up from the leaf under the pointer to the row's DataContext.

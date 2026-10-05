@@ -17,10 +17,17 @@
       <ListBox x:Name="Rows" Classes="palettelist" MaxHeight="300">
         <ListBox.ItemTemplate>
           <DataTemplate DataType="shell:AssetPickerRow">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Grid.Column="0" Text="{Binding Stem}" VerticalAlignment="Center"
+            <!-- Sounds only: a play button before the name. The "None" row
+                 keeps the column empty, so the names line up. -->
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <Panel Grid.Column="0" Width="24" IsVisible="{Binding IsSound}">
+                <shell:SoundPreviewButton HorizontalAlignment="Left"
+                                          IsVisible="{Binding CanPreview}"
+                                          ContentPath="{Binding ContentPath}" />
+              </Panel>
+              <TextBlock Grid.Column="1" Text="{Binding Stem}" VerticalAlignment="Center"
                          TextTrimming="CharacterEllipsis" />
-              <TextBlock Grid.Column="1" Classes="palettechord" Text="{Binding Folder}"
+              <TextBlock Grid.Column="2" Classes="palettechord" Text="{Binding Folder}"
                          VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                          MaxWidth="120" />
             </Grid>

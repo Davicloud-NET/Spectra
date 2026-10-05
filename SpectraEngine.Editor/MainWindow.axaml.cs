@@ -208,6 +208,7 @@ public partial class MainWindow : Window
 
         _shell.Content = new ContentBrowserModel(_loggerFactory.CreateLogger<ContentBrowserModel>());
         _shell.Assets = new AssetCatalog(_loggerFactory.CreateLogger<AssetCatalog>());
+        _shell.SoundPreview.Requested += path => _session?.PreviewSound(path);
 
         // Saved on change, not at shutdown, so a crash doesn't lose it.
         _shell.Content.ViewMode = _settings.ContentView;
@@ -1044,6 +1045,7 @@ public partial class MainWindow : Window
         _consoleFeed.Reset();
         _logic.Reset();
         _captions.Reset();
+        _shell.SoundPreview.EndSession();
         _deathNoticed = false;
         _dyingSince = null;
 
@@ -1484,11 +1486,11 @@ public partial class MainWindow : Window
             _shell.Output.Append(result.Severity, result.Reply);
     }
 
-    // Double-click in the content browser: a model is placed at the view
-    // centre, a material paints the selection, anything else is selected.
+    // Double-click in the content browser: a model or a sound is placed at the
+    // view centre, a material paints the selection, anything else is selected.
     private void OnContentActivated(ContentEntry entry)
     {
-        if (entry.Kind is not (ContentKind.Model or ContentKind.Material))
+        if (!AssetDropPolicy.CanPlace(entry.Kind))
         {
             _shell.Content?.Select(entry);
             return;
@@ -1516,10 +1518,31 @@ public partial class MainWindow : Window
         }
 
         // Null point means the view centre. The report arrives on the render thread.
+        PlaceAsset(session, payload, null);
+    }
+
+    // A model becomes a mesh node, a sound a sound entity that plays it.
+    private void PlaceAsset(EditorSession session, ContentDragPayload payload, System.Numerics.Vector2? point)
+    {
+        if (payload.Kind == ContentKind.Sound)
+        {
+            session.InsertSound(
+                payload.ContentPath,
+                point,
+                report => Dispatcher.UIThread.Post(() => ReportSoundInsert(report)));
+            return;
+        }
+
         session.InsertModel(
             payload.ContentPath,
-            null,
+            point,
             report => Dispatcher.UIThread.Post(() => ReportModelInsert(report)));
+    }
+
+    private void ReportSoundInsert(SoundInsertReport report)
+    {
+        if (report.Placed) _shell.SetMessage(report.Describe());
+        else _shell.SetWarning(report.Describe());
     }
 
     // Splitter hover is set from code on the 1px ink child (in Tag): a child
@@ -1678,10 +1701,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        session.InsertModel(
-            payload.ContentPath,
-            point,
-            report => Dispatcher.UIThread.Post(() => ReportModelInsert(report)));
+        PlaceAsset(session, payload, point);
     }
 
     // Refused: nothing happened (warning). Missing file: the faces were painted

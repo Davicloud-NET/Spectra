@@ -1210,6 +1210,9 @@ public sealed class ShellModel : ObservableObject
     /// </summary>
     public AssetCatalog? Assets { get; set; }
 
+    /// <summary>Which sound the engine is playing by itself, for the play buttons beside sound files.</summary>
+    public SoundPreviewModel SoundPreview { get; } = new();
+
     /// <summary>
     /// The scene filter's text. Applied to the tree after a short pause rather
     /// than per keystroke, because a filter pass touches every node.
@@ -1399,6 +1402,8 @@ public sealed class ShellModel : ObservableObject
 
             _properties?.Apply(
                 snapshot.SelectionProperties, snapshot.SelectedIds.Count, snapshot.SelectionEntity);
+
+            SoundPreview.Apply(snapshot.PreviewingSound);
 
             if (_tree is { } tree)
             {

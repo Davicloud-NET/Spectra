@@ -34,6 +34,9 @@ public enum ContentKind
     /// <summary>A <c>.spectrashade</c>.</summary>
     Shader,
 
+    /// <summary>A <c>.wav</c>.</summary>
+    Sound,
+
     /// <summary>Anything else. Listed rather than hidden.</summary>
     Other,
 }
@@ -95,8 +98,12 @@ public sealed class ContentEntry : ObservableObject
         ContentKind.Material => "material",
         ContentKind.Model => "model",
         ContentKind.Shader => "shader",
+        ContentKind.Sound => "sound",
         _ => "file",
     };
+
+    /// <summary>Whether this is a sound, which a row can play.</summary>
+    public bool IsSound => Kind == ContentKind.Sound;
 
     public bool IsFolder => Kind == ContentKind.Folder;
 
@@ -108,6 +115,7 @@ public sealed class ContentEntry : ObservableObject
         ContentKind.Material => "IconBrushPart",
         ContentKind.Model => "IconMesh",
         ContentKind.Shader => "IconBrushWorld",
+        ContentKind.Sound => "IconEntitySound",
         _ => "IconEmpty",
     });
 
@@ -119,6 +127,9 @@ public sealed class ContentEntry : ObservableObject
         ContentKind.Material => "SpectraKindBrushPart",
         ContentKind.Model => "SpectraKindBrushWorld",
         ContentKind.Shader => "SpectraKindLight",
+
+        // The tint a sound has in the Logic view.
+        ContentKind.Sound => "SpectraKindBrushSubtractive",
         _ => "SpectraTextMuted",
     });
 
@@ -200,6 +211,7 @@ public sealed class ContentBrowserModel : ObservableObject
             Raise(nameof(IsFilterTextures));
             Raise(nameof(IsFilterMaterials));
             Raise(nameof(IsFilterModels));
+            Raise(nameof(IsFilterSounds));
             Relist();
         }
     }
@@ -208,6 +220,7 @@ public sealed class ContentBrowserModel : ObservableObject
     public bool IsFilterTextures => _filter == ContentFilter.Textures;
     public bool IsFilterMaterials => _filter == ContentFilter.Materials;
     public bool IsFilterModels => _filter == ContentFilter.Models;
+    public bool IsFilterSounds => _filter == ContentFilter.Sounds;
 
     /// <summary>Tiles or dense rows. Only the list virtualises.</summary>
     public ContentViewMode ViewMode
@@ -447,6 +460,7 @@ public sealed class ContentBrowserModel : ObservableObject
         {
             ContentKind.Texture => await Task.Run(() => DescribeTexture(entry.FullPath)).ConfigureAwait(true),
             ContentKind.Material => await Task.Run(() => DescribeMaterial(entry.FullPath)).ConfigureAwait(true),
+            ContentKind.Sound => await Task.Run(() => SoundDetails.Describe(entry.FullPath)).ConfigureAwait(true),
             _ => string.Empty,
         };
 
@@ -574,6 +588,7 @@ public sealed class ContentBrowserModel : ObservableObject
         ContentFilter.Textures => kind == ContentKind.Texture,
         ContentFilter.Materials => kind == ContentKind.Material,
         ContentFilter.Models => kind == ContentKind.Model,
+        ContentFilter.Sounds => kind == ContentKind.Sound,
         _ => true,
     };
 

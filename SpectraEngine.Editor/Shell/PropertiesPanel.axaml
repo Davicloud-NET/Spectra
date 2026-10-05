@@ -3,6 +3,7 @@
              xmlns:shell="clr-namespace:SpectraEngine.Editor.Shell"
              x:Class="SpectraEngine.Editor.Shell.PropertiesPanel"
              x:DataType="shell:ShellModel"
+             shell:SoundPreviewButton.Preview="{Binding SoundPreview}"
              Background="{StaticResource SpectraBgPanel}">
 
   <!--
@@ -510,20 +511,28 @@
                         </Grid>
 
                         <!-- Asset: file stem, full path in the tooltip. The whole
-                             cell opens the picker. -->
-                        <Button Grid.Column="1" Classes="assetcell"
-                                IsVisible="{Binding IsAsset}"
-                                Click="OnAssetCellPressed"
-                                ToolTip.Tip="{Binding AssetPath}">
-                          <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0" Classes="assetname"
-                                       Text="{Binding AssetLabel}" />
-                            <Border Grid.Column="1" Classes="notebadge"
-                                    IsVisible="{Binding HasNote}">
-                              <TextBlock Text="{Binding Note}" />
-                            </Border>
-                          </Grid>
-                        </Button>
+                             cell opens the picker. A sound has a play button
+                             beside it. -->
+                        <Grid Grid.Column="1" ColumnDefinitions="*,Auto"
+                              IsVisible="{Binding IsAsset}">
+                          <Button Grid.Column="0" Classes="assetcell"
+                                  Click="OnAssetCellPressed"
+                                  ToolTip.Tip="{Binding AssetPath}">
+                            <Grid ColumnDefinitions="*,Auto">
+                              <TextBlock Grid.Column="0" Classes="assetname"
+                                         Text="{Binding AssetLabel}" />
+                              <Border Grid.Column="1" Classes="notebadge"
+                                      IsVisible="{Binding HasNote}">
+                                <TextBlock Text="{Binding Note}" />
+                              </Border>
+                            </Grid>
+                          </Button>
+                          <shell:SoundPreviewButton Grid.Column="1" Margin="4,0,0,0"
+                                                    Width="{StaticResource SpectraFieldHeight}"
+                                                    Height="{StaticResource SpectraFieldHeight}"
+                                                    IsVisible="{Binding CanPreview}"
+                                                    ContentPath="{Binding AssetPath}" />
+                        </Grid>
 
                         <TextBlock Grid.Column="1" Text="{Binding ReadOnlyText}"
                                    IsVisible="{Binding IsReadOnly}"

@@ -37,6 +37,9 @@ public readonly record struct ViewportDropPrompt(
     /// <summary>The icon a material drop wears.</summary>
     public const string MaterialIcon = "IconBrushPart";
 
+    /// <summary>The icon a sound drop wears.</summary>
+    public const string SoundIcon = "IconEntitySound";
+
     /// <summary>
     /// What to draw for <paramref name="payload"/> hovering over the viewport,
     /// or <see cref="None"/> when nothing should be.
@@ -64,6 +67,13 @@ public readonly record struct ViewportDropPrompt(
                     ? "this face; hold Ctrl for the whole block"
                     : "the whole block; release Ctrl for one face",
                 MaterialIcon);
+        }
+
+        if (payload.Kind == ContentKind.Sound)
+        {
+            return new ViewportDropPrompt(
+                true, true, "Drop to place", payload.ContentPath, string.Empty,
+                "as a sound that plays this file", SoundIcon);
         }
 
         return new ViewportDropPrompt(true, true, "Drop to place", payload.ContentPath, string.Empty);

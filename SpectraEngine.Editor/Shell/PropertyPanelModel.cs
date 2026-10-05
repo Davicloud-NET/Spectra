@@ -261,18 +261,26 @@ public sealed class PropertyRowModel : ObservableObject
         get => _assetPath;
         private set
         {
-            if (Set(ref _assetPath, value))
-                Raise(nameof(AssetLabel));
+            if (!Set(ref _assetPath, value))
+                return;
+
+            Raise(nameof(AssetLabel));
+            Raise(nameof(CanPreview));
         }
     }
 
-    /// <summary>The file's stem, or "(default)" or "(mixed)".</summary>
+    /// <summary>Whether the row holds one sound file, which its play button can play.</summary>
+    public bool CanPreview => AssetKind == AssetKind.Sound && _assetPath.Length > 0;
+
+    /// <summary>The file's stem, or "(mixed)", or what an empty row means for its kind.</summary>
     public string AssetLabel
     {
         get
         {
             if (IsPartial || _assetMixed) return "(mixed)";
-            if (_assetPath.Length == 0) return "(default)";
+
+            // An empty material is the engine's default one. No sound stands in for an empty sound.
+            if (_assetPath.Length == 0) return AssetKind == AssetKind.Sound ? "(none)" : "(default)";
 
             int slash = _assetPath.LastIndexOf('/');
             string name = slash >= 0 ? _assetPath[(slash + 1)..] : _assetPath;

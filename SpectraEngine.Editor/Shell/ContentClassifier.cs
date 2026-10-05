@@ -12,6 +12,9 @@ public static class ContentClassifier
         ".spectramat" => ContentKind.Material,
         ".obj" or ".gltf" or ".glb" or ".fbx" or ".mtl" => ContentKind.Model,
         ".spectrashade" => ContentKind.Shader,
+
+        // What the cook reads as a sound.
+        ".wav" or ".wave" => ContentKind.Sound,
         _ => ContentKind.Other,
     };
 
@@ -23,6 +26,7 @@ public static class ContentClassifier
         ContentKind.Material => "Material",
         ContentKind.Model => "Model",
         ContentKind.Shader => "Shader",
+        ContentKind.Sound => "Sound",
         _ => "File",
     };
 }

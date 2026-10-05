@@ -8,7 +8,12 @@ namespace SpectraEngine.Editor.Shell;
 
 /// <summary>One row in the asset picker.</summary>
 /// <param name="ContentPath">What picking it writes. Empty means the engine default.</param>
-public sealed record AssetPickerRow(string ContentPath, string Stem, string Folder);
+/// <param name="IsSound">Whether the picker lists sounds, whose rows have a play button.</param>
+public sealed record AssetPickerRow(string ContentPath, string Stem, string Folder, bool IsSound = false)
+{
+    /// <summary>Whether the row names a sound file to play.</summary>
+    public bool CanPreview => IsSound && ContentPath.Length > 0;
+}
 
 /// <summary>
 /// The list an asset row opens: the project's files of one kind, searchable.
@@ -18,6 +23,9 @@ public partial class AssetPickerView : UserControl
 {
     /// <summary>The row for wearing no material at all.</summary>
     public static readonly AssetPickerRow None = new(string.Empty, "None", "engine default");
+
+    /// <summary>The row for playing no sound. Nothing stands in for an empty sound.</summary>
+    public static readonly AssetPickerRow NoSound = new(string.Empty, "None", "no sound", IsSound: true);
 
     private readonly List<AssetPickerRow> _rows = [];
     private AssetCatalog? _catalog;
@@ -44,6 +52,9 @@ public partial class AssetPickerView : UserControl
     /// <summary>How many rows the last search produced, for tests.</summary>
     public int RowCount => _rows.Count;
 
+    // For tests.
+    internal IReadOnlyList<AssetPickerRow> ShownRows => _rows;
+
     /// <summary>Fills the list and takes the keyboard.</summary>
     /// <param name="currentPath">What the row holds now, preselected.</param>
     public void Open(AssetCatalog catalog, ContentKind kind, string currentPath)
@@ -64,8 +75,10 @@ public partial class AssetPickerView : UserControl
     {
         string query = Query.Text ?? string.Empty;
 
+        bool sounds = _kind == ContentKind.Sound;
+
         _rows.Clear();
-        _rows.Add(None);
+        _rows.Add(sounds ? NoSound : None);
 
         int matches = 0;
         if (_catalog is { } catalog)
@@ -73,7 +86,7 @@ public partial class AssetPickerView : UserControl
             foreach (AssetCatalogEntry entry in catalog.Search(query, _kind, MaxRows))
             {
                 _rows.Add(new AssetPickerRow(
-                    entry.ContentPath, entry.Stem, entry.Folder));
+                    entry.ContentPath, entry.Stem, entry.Folder, sounds));
                 matches++;
             }
         }

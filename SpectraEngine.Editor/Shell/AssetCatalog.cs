@@ -112,6 +112,7 @@ public sealed class AssetCatalog(ILogger logger)
         AssetKind.Material => ContentKind.Material,
         AssetKind.Texture => ContentKind.Texture,
         AssetKind.Model => ContentKind.Model,
+        AssetKind.Sound => ContentKind.Sound,
         _ => ContentKind.Other,
     };
 }
