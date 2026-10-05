@@ -139,6 +139,10 @@ public sealed class CharacterSimulation : IPlayerPresence
         Mover.Tick(ref _state, in command, _source, Tuning, deltaTime);
         _state.GroundOrigin = TryFindGround(out Scene.SceneNode? ground) ? ground.WorldPosition : default;
 
+        // Here as well as in the mover: a replaced mover that forgets would
+        // turn one held button into a press on every tick.
+        _state.PrevButtons = command.Buttons;
+
         if (_state.Position.Y >= FallOutHeight)
             return false;
 

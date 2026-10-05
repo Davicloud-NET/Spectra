@@ -50,6 +50,21 @@ public sealed class PlayUseTests
     }
 
     [Fact]
+    public void A_held_button_uses_once_under_a_mover_that_keeps_no_buttons()
+    {
+        // A mover written from scratch need not know the simulation's
+        // bookkeeping. The press edge must not depend on it.
+        var rig = new PlayRig();
+        Panel(rig, "button", nearFace: 1.25f);
+        rig.Play();
+        rig.Character.Mover = new ForgetfulMover();
+
+        rig.Tick(in UseAhead, ticks: 30);
+
+        rig.Log.Count.ShouldBe(1);
+    }
+
+    [Fact]
     public void A_button_let_go_and_pressed_again_uses_again()
     {
         var rig = new PlayRig();
@@ -280,5 +295,18 @@ public sealed class PlayUseTests
     {
         rig.Tick(in command);
         rig.Tick(in Idle);
+    }
+
+    // Stands where it is and writes nothing back, the previous buttons included.
+    private sealed class ForgetfulMover : ICharacterMover
+    {
+        public void Tick(
+            ref CharacterState state,
+            in CharacterCommand command,
+            ICharacterCollisionSource source,
+            CharacterTuning tuning,
+            float deltaTime)
+        {
+        }
     }
 }
