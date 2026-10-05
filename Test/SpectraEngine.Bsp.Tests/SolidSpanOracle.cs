@@ -4,20 +4,27 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-// Checks the span query against the world's own trees: along random segments,
-// a point is inside a span when the tree says the point is solid.
+// Checks the span query against the world's own trees: along a segment, a
+// point is inside a span when the tree says there is solid all round it.
 // Shared by the live suite and the cooked one, which hands in a baked world.
 internal static class SolidSpanOracle
 {
-    // How far a sample must be from any change of solid to be compared. The
-    // trees are built from welded surfaces and the spans from authored planes,
-    // so the two may put a boundary a little apart.
-    public const float Margin = 0.02f;
+    // A sample is compared when the tree says the same at every corner of a
+    // box this far round it. The query joins and drops what is thinner than
+    // its tolerance, and the trees are built from surfaces snapped to a grid a
+    // tenth of that, so nearer a boundary than this the two may differ.
+    public const float Margin = 2f * SolidSpan.Tolerance;
 
     private const int SegmentsPerLevel = 48;
     private const int SamplesPerSegment = 48;
 
-    public readonly record struct Tally(int Compared, int Skipped, int Solid);
+    public readonly record struct Tally(int Compared, int Skipped, int Solid)
+    {
+        public Tally Plus(Tally other) =>
+            new(Compared + other.Compared, Skipped + other.Skipped, Solid + other.Solid);
+
+        public override string ToString() => $"compared {Compared}, skipped {Skipped}, solid {Solid}";
+    }
 
     // World brushes only: additive and subtractive boxes, overlapping, on a
     // quarter-unit lattice so faces often share a plane, some turned off axis.
@@ -49,70 +56,166 @@ internal static class SolidSpanOracle
         return scene;
     }
 
+    // As BuildLevel, with every corner on a whole number and nothing turned,
+    // so many boxes stand flush against each other.
+    public static Scene BuildFlushLevel(int seed)
+    {
+        var random = new Random(seed);
+        var scene = new Scene($"Flush{seed}");
+        int brushes = 12 + random.Next(8);
+
+        for (int i = 0; i < brushes; i++)
+        {
+            Vector3 min = new(random.Next(-10, 3), random.Next(-6, 1), random.Next(-10, 3));
+            Vector3 half = new Vector3(1 + random.Next(10), 1 + random.Next(8), 1 + random.Next(10)) * 0.5f;
+
+            SceneNode node = scene.Root.CreateChild($"Brush{i}");
+            node.LocalPosition = min + half;
+
+            Brush brush = Brush.CreateBox(-half, half);
+            node.Brush = random.Next(3) == 0 ? brush.WithOperation(BrushOperation.Subtractive) : brush;
+        }
+
+        return scene;
+    }
+
+    // The carve's rule read off the level's brushes: a point is solid inside
+    // an additive brush and inside no cut. A flush level is checked against
+    // this and not its trees, which can read solid as air where boxes stand
+    // flush.
+    public static Func<Vector3, bool> CarveRule(Scene scene)
+    {
+        var brushes = new List<(Plane[] Planes, Matrix4x4 ToLocal, bool Cuts)>();
+        foreach (SceneNode node in scene.Root.Children)
+        {
+            if (node.Brush is { } brush && Matrix4x4.Invert(node.WorldMatrix, out Matrix4x4 toLocal))
+                brushes.Add(([.. brush.LocalPlanes], toLocal, brush.Operation == BrushOperation.Subtractive));
+        }
+
+        return point =>
+        {
+            bool solid = false;
+            foreach ((Plane[] planes, Matrix4x4 toLocal, bool cuts) in brushes)
+            {
+                if (!Inside(planes, Vector3.Transform(point, toLocal)))
+                    continue;
+                if (cuts)
+                    return false;
+                solid = true;
+            }
+
+            return solid;
+        };
+    }
+
     // Traces random segments through the level and compares each sample with
     // isSolid. Fails on the first sample that disagrees.
     public static Tally Check(Scene scene, Func<Vector3, bool> isSolid, int seed)
     {
         var random = new Random(seed ^ 0x5EED);
-        var spans = new SolidSpan[64];
-        int compared = 0, skipped = 0, solid = 0;
+        var tally = new Tally();
 
         for (int s = 0; s < SegmentsPerLevel; s++)
         {
             Vector3 from = Point(random);
             Vector3 to = Point(random);
-            float length = Vector3.Distance(from, to);
-            if (length < 1f)
-                continue;
+            if (Vector3.Distance(from, to) >= 1f)
+                tally = tally.Plus(CompareAlong(scene, isSolid, from, to, random));
+        }
 
-            int count = scene.TraceSolidSpans(from, to, spans, out bool truncated);
-            truncated.ShouldBeFalse();
+        return tally;
+    }
 
-            Vector3 direction = (to - from) / length;
-            Sideways(direction, out Vector3 right, out Vector3 up);
+    // As Check, along segments that run with an axis between whole-number
+    // points. In a flush level many lie in a brush face, along an edge, or in
+    // the seam of two boxes.
+    public static Tally CheckWholeNumberLines(Scene scene, Func<Vector3, bool> isSolid, int seed)
+    {
+        var random = new Random(seed ^ 0x1A77);
+        var tally = new Tally();
 
-            for (int i = 0; i < SamplesPerSegment; i++)
+        for (int s = 0; s < SegmentsPerLevel * 2; s++)
+        {
+            Vector3 from = new(random.Next(-11, 12), random.Next(-7, 8), random.Next(-11, 12));
+            Vector3 axis = random.Next(3) switch { 0 => Vector3.UnitX, 1 => Vector3.UnitY, _ => Vector3.UnitZ };
+
+            // Toward the middle, where the boxes are.
+            if (Vector3.Dot(from, axis) > 0f)
+                axis = -axis;
+
+            tally = tally.Plus(CompareAlong(scene, isSolid, from, from + axis * random.Next(6, 25), random));
+        }
+
+        return tally;
+    }
+
+    private static Tally CompareAlong(
+        Scene scene, Func<Vector3, bool> isSolid, Vector3 from, Vector3 to, Random random)
+    {
+        var spans = new SolidSpan[64];
+        int count = scene.TraceSolidSpans(from, to, spans, out bool truncated);
+        truncated.ShouldBeFalse();
+
+        float length = Vector3.Distance(from, to);
+        Vector3 direction = (to - from) / length;
+        Sideways(direction, out Vector3 right, out Vector3 up);
+
+        int compared = 0, skipped = 0, solid = 0;
+        for (int i = 0; i < SamplesPerSegment; i++)
+        {
+            float t = (i + (float)random.NextDouble()) / SamplesPerSegment * length;
+            Vector3 point = from + direction * t;
+
+            if (!TryReadSurroundings(point, isSolid, direction, right, up, out bool expected))
             {
-                float t = (i + (float)random.NextDouble()) / SamplesPerSegment * length;
-                Vector3 point = from + direction * t;
-
-                bool expected = isSolid(point);
-                if (NearAChange(point, expected, isSolid, direction, right, up) ||
-                    NearASpanEnd(spans.AsSpan(0, count), t))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                bool actual = InsideASpan(spans.AsSpan(0, count), t);
-                actual.ShouldBe(
-                    expected,
-                    $"level {scene.Name}, from {from} to {to}, {t} along at {point}: " +
-                    $"the tree says {(expected ? "solid" : "air")}, spans {Describe(spans.AsSpan(0, count))}");
-
-                compared++;
-                if (expected) solid++;
+                skipped++;
+                continue;
             }
+
+            bool actual = InsideASpan(spans.AsSpan(0, count), t);
+            actual.ShouldBe(
+                expected,
+                $"level {scene.Name}, from {from} to {to}, {t} along at {point}: " +
+                $"expected {(expected ? "solid" : "air")}, spans {Describe(spans.AsSpan(0, count))}");
+
+            compared++;
+            if (expected) solid++;
         }
 
         return new Tally(compared, skipped, solid);
     }
 
-    private static bool NearAChange(
-        Vector3 point, bool here, Func<Vector3, bool> isSolid, Vector3 direction, Vector3 right, Vector3 up) =>
-        isSolid(point + direction * Margin) != here || isSolid(point - direction * Margin) != here ||
-        isSolid(point + right * Margin) != here || isSolid(point - right * Margin) != here ||
-        isSolid(point + up * Margin) != here || isSolid(point - up * Margin) != here;
-
-    private static bool NearASpanEnd(ReadOnlySpan<SolidSpan> spans, float t)
+    // False near a change of solid. The corners are asked and not the point:
+    // a point of a segment that lies in a brush face is on a plane of the
+    // tree, and the tree may answer for either side of it.
+    private static bool TryReadSurroundings(
+        Vector3 point, Func<Vector3, bool> isSolid, Vector3 direction, Vector3 right, Vector3 up, out bool solid)
     {
-        foreach (SolidSpan span in spans)
+        solid = isSolid(point + (direction + right + up) * Margin);
+
+        for (int corner = 1; corner < 8; corner++)
         {
-            if (MathF.Abs(t - span.Start) < Margin || MathF.Abs(t - span.End) < Margin)
-                return true;
+            Vector3 offset =
+                ((corner & 1) == 0 ? direction : -direction) +
+                ((corner & 2) == 0 ? right : -right) +
+                ((corner & 4) == 0 ? up : -up);
+
+            if (isSolid(point + offset * Margin) != solid)
+                return false;
         }
 
-        return false;
+        return true;
+    }
+
+    private static bool Inside(Plane[] planes, Vector3 local)
+    {
+        foreach (Plane plane in planes)
+        {
+            if (Plane.DotCoordinate(plane, local) >= 0f)
+                return false;
+        }
+
+        return true;
     }
 
     private static bool InsideASpan(ReadOnlySpan<SolidSpan> spans, float t)

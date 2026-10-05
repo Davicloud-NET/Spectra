@@ -200,23 +200,37 @@ public class CompiledMapSolidSpanTests
     [Fact]
     public void Along_random_segments_a_point_is_inside_a_span_when_the_baked_world_says_it_is_solid()
     {
-        int compared = 0, skipped = 0, solid = 0;
+        var tally = new SolidSpanOracle.Tally();
 
         for (int seed = 1; seed <= 12; seed++)
         {
             using CookedLevel level = CookedLevel.Bake(SolidSpanOracle.BuildLevel(seed));
             CompiledStaticWorld baked = level.Scene.CompiledStaticWorld.ShouldNotBeNull();
 
-            SolidSpanOracle.Tally tally = SolidSpanOracle.Check(level.Scene, baked.ContainsPoint, seed);
-            compared += tally.Compared;
-            skipped += tally.Skipped;
-            solid += tally.Solid;
+            tally = tally.Plus(SolidSpanOracle.Check(level.Scene, baked.ContainsPoint, seed));
         }
 
-        string counts = $"compared {compared}, skipped {skipped}, solid {solid}";
-        compared.ShouldBeGreaterThan(skipped * 3, counts);
-        solid.ShouldBeGreaterThan(compared / 10, counts);
-        (compared - solid).ShouldBeGreaterThan(compared / 10, counts);
+        tally.Compared.ShouldBeGreaterThan(tally.Skipped * 20, tally.ToString());
+        tally.Solid.ShouldBeGreaterThan(tally.Compared / 10, tally.ToString());
+        (tally.Compared - tally.Solid).ShouldBeGreaterThan(tally.Compared / 10, tally.ToString());
+    }
+
+    [Fact]
+    public void Along_lines_that_lie_in_brush_faces_a_baked_world_has_solid_where_its_brushes_do()
+    {
+        var tally = new SolidSpanOracle.Tally();
+
+        for (int seed = 1; seed <= 12; seed++)
+        {
+            using CookedLevel level = CookedLevel.Bake(SolidSpanOracle.BuildFlushLevel(seed));
+
+            tally = tally.Plus(SolidSpanOracle.CheckWholeNumberLines(
+                level.Scene, SolidSpanOracle.CarveRule(level.Authored), seed));
+        }
+
+        tally.Compared.ShouldBeGreaterThan(tally.Skipped, tally.ToString());
+        tally.Solid.ShouldBeGreaterThan(tally.Compared / 20, tally.ToString());
+        (tally.Compared - tally.Solid).ShouldBeGreaterThan(tally.Compared / 10, tally.ToString());
     }
 
     [Fact]
@@ -313,6 +327,12 @@ public class CompiledMapSolidSpanTests
         yield return (new(2.5f, 2f, -4.25f), new(2.5f, -3f, -4.25f));
         yield return (new(4f, 3f, 2f), new(4f, -2f, 2f));
         yield return (new(-6f, 0.5f, 1f), new(6f, 0.75f, 2f));
+
+        // Lying in faces: along the floor under the wall, along a jamb with
+        // the door shut, and along the wall's near face.
+        yield return (new(3f, 0f, 0f), new(3f, 0f, -8f));
+        yield return (new(1f, 1f, 0f), new(1f, 1f, -5.5f));
+        yield return (new(-5f, 1f, -4f), new(5f, 1f, -4f));
 
         var random = new Random(4711);
         for (int i = 0; i < 250; i++)
