@@ -147,6 +147,9 @@ public sealed class SoundPresenter
         _propagation.Resolve(in listener, _queries.AsSpan(0, asked), _paths.AsSpan(0, asked));
         Hear(asked, deltaSeconds, jumped);
 
+        // A query names its node, and a node holds its whole level.
+        Array.Clear(_queries, 0, asked);
+
         _voices.GiveSourcesToLoudest(world, _presented.AsSpan(0, _count));
         ConfigureVoices();
         _captions.Update(world, _presented.AsSpan(0, _count), _voices, deltaSeconds);

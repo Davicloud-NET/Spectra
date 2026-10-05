@@ -6,6 +6,7 @@ using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace SpectraEngine.Bsp.Tests;
 
@@ -107,6 +108,21 @@ public sealed class SoundPresenterLifetimeTests
         rig.HasVoiceAt(second.WorldPosition).ShouldBeTrue();
         rig.Audio.ActiveVoiceCount.ShouldBe(1);
         rig.Backend.Uploads[0][0].ShouldBe(HandBuiltSaudio.Sample(0));
+    }
+
+    [Fact]
+    public void A_level_that_ended_is_not_kept_alive_by_the_presenter()
+    {
+        using var rig = new SoundPresenterRig();
+        WeakReference<Scene> gone = PlayALevelToItsEnd(rig);
+
+        // The rig's own level, with no sound in it.
+        rig.Frame();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        gone.TryGetTarget(out _).ShouldBeFalse();
     }
 
     [Fact]
@@ -283,6 +299,23 @@ public sealed class SoundPresenterLifetimeTests
         rig.Audio.ActiveVoiceCount.ShouldBe(0);
         rig.Backend.PlayingSources().ShouldBeEmpty();
         rig.Backend.LiveBufferCount.ShouldBe(0);
+    }
+
+    // In a method of its own, so no local of the test holds the level.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference<Scene> PlayALevelToItsEnd(SoundPresenterRig rig)
+    {
+        var scene = new Scene("Gone");
+        var world = new EntityWorld(scene, new CapturingLogger(), new EntityCatalog());
+        world.Activate();
+
+        var beep = new SoundDescription(SoundPresenterRig.Rate, SoundPresenterRig.Rate);
+        world.Sounds.Play(scene.Root.CreateChild("speaker"), SoundPresenterRig.Beep, in beep, SoundPresenterRig.Looped);
+        rig.Presenter.Update(world, SoundPresenterRig.TickSeconds);
+        rig.Audio.ActiveVoiceCount.ShouldBe(1);
+
+        world.Deactivate();
+        return new WeakReference<Scene>(scene);
     }
 
     // The pool hands out every source it has without taking one from a
