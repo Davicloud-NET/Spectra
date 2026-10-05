@@ -13,6 +13,7 @@ internal sealed class LogicIcons
     private readonly Geometry? _logic = LogicTheme.Icon("IconEntityLogic");
     private readonly Geometry? _trigger = LogicTheme.Icon("IconEntityTrigger");
     private readonly Geometry? _player = LogicTheme.Icon("IconEntityPlayer");
+    private readonly Geometry? _sound = LogicTheme.Icon("IconEntitySound");
     private readonly Geometry? _entity = LogicTheme.Icon("IconEntity");
     private readonly Geometry? _missing = LogicTheme.Icon("IconWarning");
 
@@ -20,6 +21,7 @@ internal sealed class LogicIcons
     private readonly IPen _logicPen = Pen("SpectraKindEntity");
     private readonly IPen _triggerPen = Pen("SpectraKindLight");
     private readonly IPen _playerPen = Pen("SpectraKindBrushPart");
+    private readonly IPen _soundPen = Pen("SpectraKindBrushSubtractive");
     private readonly IPen _entityPen = Pen("SpectraKindEntity");
     private readonly IPen _quietPen = Pen("SpectraTextMuted");
     private readonly IPen _missingPen = Pen("SpectraTextDanger");
@@ -63,6 +65,12 @@ internal sealed class LogicIcons
         {
             pen = _playerPen;
             return _player;
+        }
+
+        if (Is(card, "Sound"))
+        {
+            pen = _soundPen;
+            return _sound;
         }
 
         pen = _entityPen;

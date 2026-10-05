@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Drawn by hand: a speaker and two waves of sound. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 2.667 6.333 h 2 l 3.333 -2.667 v 8.667 l -3.333 -2.667 h -2 v -3.333" />
+  <path d="M 10.333 6.333 a 2.4 2.4 0 0 1 0 3.333" />
+  <path d="M 12 4.333 a 5 5 0 0 1 0 7.333" />
+</svg>
