@@ -58,6 +58,7 @@ public partial class MainWindow
 
         _viewArrangement = arrangement;
         _shell.ViewArrangement = arrangement;
+        SendLogicRequest();
     }
 
     private static GridLength Weight(double share) =>

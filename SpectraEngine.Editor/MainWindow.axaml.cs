@@ -236,6 +236,8 @@ public partial class MainWindow : Window
         _consoleView.CommandSubmitted += OnConsoleCommand;
         SetToolContent(ConsoleTool, _consoleView);
 
+        CreateLogicView();
+
         // Each lambda returns false with no session, so the console can say so.
         _console = new ConsoleCommands(
             postHost: command => _session is { } s && Post(() => s.Post(command)),
@@ -912,6 +914,9 @@ public partial class MainWindow : Window
             _session = session;
             _pump.Start();
 
+            _logic.Schemas = session.EntitySchemas;
+            SendLogicRequest();
+
             // The engine boots on a baseplate; the real map opens through the
             // ordinary path so a broken bundle is reported.
             if (launch?.Restore is { } level)
@@ -1035,6 +1040,7 @@ public partial class MainWindow : Window
         _entityAuditStale = false;
         _sceneView.ResetSelectionMemory();
         _consoleFeed.Reset();
+        _logic.Reset();
         _deathNoticed = false;
         _dyingSince = null;
 
@@ -1122,6 +1128,7 @@ public partial class MainWindow : Window
         int pipelineCountBefore = _shell.PipelineNames.Count;
 
         _shell.ApplySnapshot(snapshot);
+        _logic.Apply(snapshot);
         RefreshSnapField(snapshot);
 
         if (pipelineCountBefore != _shell.PipelineNames.Count
