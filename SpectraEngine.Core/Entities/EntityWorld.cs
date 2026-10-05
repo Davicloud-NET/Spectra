@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SpectraEngine.Core.Audio;
 using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Scene;
 using System;
@@ -66,6 +67,7 @@ public sealed class EntityWorld
         _logger = logger;
         _catalog = catalog ?? EntityCatalog.Shared;
         Touches = new TouchTracker(this);
+        Sounds = new SoundEmitters(this);
     }
 
     /// <summary>The scene this world runs over.</summary>
@@ -125,6 +127,20 @@ public sealed class EntityWorld
     public IEntityTrace? Trace { get; set; }
 
     /// <summary>
+    /// The sounds playing in the level. Entities start and stop them here.
+    /// <see cref="Deactivate"/> empties it.
+    /// </summary>
+    public SoundEmitters Sounds { get; }
+
+    /// <summary>
+    /// What entities ask about a sound: whether it is there, how long it is
+    /// and where its markers are. Null when the host has given none, and then
+    /// no sound can play. Set it before <see cref="Activate"/>, so a sound
+    /// that plays as the level spawns finds it.
+    /// </summary>
+    public ISoundCatalog? SoundCatalog { get; set; }
+
+    /// <summary>
     /// How many events one <see cref="Tick"/> may dispatch before the cascade
     /// is treated as a runaway loop, logged and dropped.
     /// </summary>
@@ -182,6 +198,7 @@ public sealed class EntityWorld
         RefusedMoveCount = 0;
         _refusedMoveNodes.Clear();
         Touches.Clear();
+        Sounds.Clear();
         _queue.Clear();
         _entities.Clear();
         _pendingSpawn.Clear();
@@ -241,6 +258,8 @@ public sealed class EntityWorld
         for (int i = 0; i < _entities.Count; i++)
             _entities[i].OnRemove();
         _removing = false;
+
+        Sounds.Clear();
 
         // After every OnRemove: an entity being removed must still read the
         // pose it moved to, not the authored one.

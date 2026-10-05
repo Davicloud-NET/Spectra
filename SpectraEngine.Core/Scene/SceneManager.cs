@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using Silk.NET.Maths;
 using SpectraEngine.Core.Assets;
+using SpectraEngine.Core.Audio;
 using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
@@ -236,6 +237,13 @@ public sealed class SceneManager
         }
     }
 
+    /// <summary>
+    /// What a level's entities ask about its sounds, or null to answer from
+    /// the asset manager's cooked sounds. Kept between play sessions: each
+    /// new world has it before it activates. A server or a test sets its own.
+    /// </summary>
+    public ISoundCatalog? SoundCatalog { get; set; }
+
     // Not cached: a host may assign EntityCatalog between loads. Reading
     // Schemas freezes the catalogue.
     private EntitySchemaCatalog ResolveEntitySchemas() =>
@@ -252,8 +260,13 @@ public sealed class SceneManager
             return;
 
         // Before Activate, or the outputs fired while spawning go unseen and
-        // their deliveries on the first tick seem to come from nowhere.
-        var world = new EntityWorld(scene, _logger, EntityCatalog) { Trace = _entityTrace };
+        // their deliveries on the first tick seem to come from nowhere. The
+        // sound catalog too: a sound that plays at spawn asks it then.
+        var world = new EntityWorld(scene, _logger, EntityCatalog)
+        {
+            Trace = _entityTrace,
+            SoundCatalog = SoundCatalog ?? (_assets is { } assets ? new AssetSoundCatalog(assets) : null),
+        };
         world.Activate();
         EntityWorld = world;
 
