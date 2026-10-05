@@ -75,6 +75,54 @@ public sealed class MaterialAcoustics : IAcousticMaterials
         }
     }
 
+    /// <summary>
+    /// Drops the answer for every material that names the file at
+    /// <paramref name="contentPath"/>, however its path was spelled.
+    /// </summary>
+    /// <returns>Whether there was an answer to drop.</returns>
+    // The registry tells "./Materials/x" from "Materials/x" and gives each an
+    // id. Both read the one file.
+    public bool Forget(string contentPath)
+    {
+        ArgumentNullException.ThrowIfNull(contentPath);
+        if (!TryNormalize(contentPath, out string key)) return false;
+
+        lock (_sync)
+        {
+            AcousticPreset?[] presets = _presets;
+            bool dropped = false;
+
+            for (int id = 1; id < presets.Length; id++)
+            {
+                if (presets[id] is null || !Names(new MaterialRef(id), key)) continue;
+
+                presets[id] = null;
+                dropped = true;
+            }
+
+            return dropped;
+        }
+    }
+
+    private static bool Names(MaterialRef material, string key) =>
+        MaterialRegistry.TryGetPath(material, out string path) &&
+        TryNormalize(path, out string named) &&
+        string.Equals(named, key, StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryNormalize(string path, out string key)
+    {
+        try
+        {
+            key = ContentRoot.NormalizeRelativePath(path);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            key = string.Empty;
+            return false;
+        }
+    }
+
     private AcousticPreset ReadAndRemember(MaterialRef material)
     {
         // An id the registry never gave out. Not remembered, so it cannot grow the table.

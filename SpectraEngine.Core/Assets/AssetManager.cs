@@ -244,7 +244,7 @@ public sealed partial class AssetManager : IDisposable
         }
 
         // It may have asked before the file was there, when nothing drew with it.
-        Acoustics.Forget(MaterialRegistry.Intern(key));
+        Acoustics.Forget(key);
 
         lock (_materialSync)
         {

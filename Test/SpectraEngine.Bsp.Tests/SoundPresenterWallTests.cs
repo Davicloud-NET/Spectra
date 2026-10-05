@@ -205,6 +205,26 @@ public sealed class SoundPresenterWallTests
     }
 
     [Fact]
+    public void A_late_material_file_is_heard_also_when_the_wall_spells_its_path_another_way()
+    {
+        // As a hand-written map might: the same file, and another material id.
+        var late = SpectraEngine.Core.Assets.MaterialRegistry.Intern("./Materials/span_late_dotted.spectramat");
+
+        using WalledSoundRig rig = Listening(materialFiles: true);
+        rig.Level.Box("Wall", HalfWay, SheetOfWood, late);
+        rig.Level.Compile();
+        rig.Sound.Play(rig.Sound.Place("speaker", Behind), SoundPresenterRig.Beep, SoundPresenterRig.Looped);
+        rig.Step();
+        rig.Sound.OnlyVoice().GainHf.ShouldBe(AcousticPresets.Generic.GainsThrough(0.05f).GainHf, NearEnough);
+
+        rig.Sound.WriteText("Materials/span_late_dotted.spectramat", "acoustic = fabric\n");
+        rig.Sound.Assets.ForgetFailedMaterial("Materials/span_late_dotted.spectramat");
+        rig.Step(120);
+
+        rig.Sound.OnlyVoice().GainHf.ShouldBe(AcousticPresets.Fabric.GainsThrough(0.05f).GainHf, NearEnough);
+    }
+
+    [Fact]
     public void Two_hundred_sounds_behind_walls_on_thirty_two_sources_allocate_nothing_a_frame_once_running()
     {
         using WalledSoundRig rig = Listening(sources: 32);

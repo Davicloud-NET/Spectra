@@ -188,6 +188,25 @@ public sealed class MaterialAcousticsTests
     }
 
     [Fact]
+    public void Forgetting_a_file_drops_the_answer_of_every_spelling_of_its_path()
+    {
+        string path = PathOf("late-spelled");
+        MaterialRef plain = MaterialRegistry.Intern(path);
+        MaterialRef dotted = MaterialRegistry.Intern(@".\Materials\\acoustics-tests\late-spelled.spectramat");
+        dotted.ShouldNotBe(plain);
+
+        _acoustics.Resolve(plain).ShouldBeSameAs(AcousticPresets.Generic);
+        _acoustics.Resolve(dotted).ShouldBeSameAs(AcousticPresets.Generic);
+        _acoustics.Forget(PathOf("never-asked")).ShouldBeFalse();
+
+        _source.Add(path, "acoustic = metal");
+        _acoustics.Forget(path).ShouldBeTrue();
+
+        _acoustics.Resolve(plain).ShouldBeSameAs(AcousticPresets.Metal);
+        _acoustics.Resolve(dotted).ShouldBeSameAs(AcousticPresets.Metal);
+    }
+
+    [Fact]
     public void Many_threads_asking_at_once_read_the_file_once_and_warn_once()
     {
         MaterialRef wall = Author("crowd", "acoustic = rock");
