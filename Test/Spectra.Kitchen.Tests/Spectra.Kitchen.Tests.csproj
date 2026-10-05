@@ -9,6 +9,8 @@
     <ProjectReference Include="..\..\Spectra.Kitchen.CLI\Spectra.Kitchen.CLI.csproj" />
     <!-- For the one suite that puts a cooked level under the physics backend. -->
     <ProjectReference Include="..\..\SpectraEngine.Physics.Box3D\SpectraEngine.Physics.Box3D.csproj" />
+    <!-- For the one suite that plays a cooked level with the real door and trigger. -->
+    <ProjectReference Include="..\..\SpectraEngine.Entities\SpectraEngine.Entities.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,6 +20,8 @@
     <Compile Include="..\SpectraEngine.Bsp.Tests\CapturingLogger.cs" Link="CapturingLogger.cs" />
     <!-- .smodel written from the format spec, not the engine's types. Reader and writer are both checked against it. -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\HandBuiltSmodel.cs" Link="HandBuiltSmodel.cs" />
+    <!-- The level NoCodeLoopTests plays authored. Played cooked here. -->
+    <Compile Include="..\SpectraEngine.Entities.Tests\NoCodeLoopLevel.cs" Link="NoCodeLoopLevel.cs" />
   </ItemGroup>
 
 </Project>
