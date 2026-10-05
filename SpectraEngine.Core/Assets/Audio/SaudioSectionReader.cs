@@ -24,45 +24,20 @@ internal static class SaudioSectionReader
         skipped = 0;
         if (tableOffset == 0) return [];
 
-        if (tableOffset < SaudioFormat.HeaderSize ||
-            (long)tableOffset + SaudioFormat.SectionTableHeaderSize > file.Length)
-        {
-            throw SaudioReader.Refuse(
-                origin,
-                $"its section table starts at byte {tableOffset}, which is outside the {file.Length}-byte file.");
-        }
-
-        uint count = BinaryPrimitives.ReadUInt32LittleEndian(file[(int)tableOffset..]);
-        long entriesAt = (long)tableOffset + SaudioFormat.SectionTableHeaderSize;
-        long tableEnd = entriesAt + ((long)count * SaudioFormat.SectionEntrySize);
-        if (tableEnd > file.Length)
-        {
-            throw SaudioReader.Refuse(
-                origin,
-                $"its section table declares {count} sections, whose {SaudioFormat.SectionEntrySize}-byte " +
-                $"entries would end at byte {tableEnd} of a {file.Length}-byte file.");
-        }
+        uint count = RequireTable(file, tableOffset, origin);
+        int entriesAt = (int)tableOffset + SaudioFormat.SectionTableHeaderSize;
 
         AudioMarker[]? markers = null;
 
         for (int i = 0; i < count; i++)
         {
             ReadOnlySpan<byte> entry = file.Slice(
-                (int)entriesAt + (i * SaudioFormat.SectionEntrySize), SaudioFormat.SectionEntrySize);
+                entriesAt + (i * SaudioFormat.SectionEntrySize), SaudioFormat.SectionEntrySize);
 
+            // Sliced for unknown sections too, so the skip rule cannot let a
+            // malformed file through.
             uint tag = BinaryPrimitives.ReadUInt32LittleEndian(entry);
-            uint offset = BinaryPrimitives.ReadUInt32LittleEndian(entry[4..]);
-            uint length = BinaryPrimitives.ReadUInt32LittleEndian(entry[8..]);
-
-            // Checked for unknown sections too, so the skip rule cannot let a
-            // malformed file through. Subtract, don't add: the sum can wrap.
-            if (offset < SaudioFormat.HeaderSize || offset > (uint)file.Length || length > (uint)file.Length - offset)
-            {
-                throw SaudioReader.Refuse(
-                    origin,
-                    $"its '{SmodelFormat.DescribeFourCc(tag)}' section claims {length} bytes at offset {offset}, " +
-                    $"which is not inside the {file.Length}-byte file after the header.");
-            }
+            ReadOnlySpan<byte> section = RequireSection(file, entry, origin);
 
             if (tag != SaudioFormat.MarkerSection)
             {
@@ -77,10 +52,55 @@ internal static class SaudioSectionReader
                     "it carries the 'MARK' section more than once, and a reader would have to choose one.");
             }
 
-            markers = ReadMarkers(file.Slice((int)offset, (int)length), frameCount, origin);
+            markers = ReadMarkers(section, frameCount, origin);
         }
 
         return markers ?? [];
+    }
+
+    // Returns the number of entries, once the whole table is known to lie in the file.
+    private static uint RequireTable(ReadOnlySpan<byte> file, uint tableOffset, string origin)
+    {
+        if (tableOffset < SaudioFormat.HeaderSize ||
+            (long)tableOffset + SaudioFormat.SectionTableHeaderSize > file.Length)
+        {
+            throw SaudioReader.Refuse(
+                origin,
+                $"its section table starts at byte {tableOffset}, which is outside the {file.Length}-byte file.");
+        }
+
+        uint count = BinaryPrimitives.ReadUInt32LittleEndian(file[(int)tableOffset..]);
+        long tableEnd = (long)tableOffset + SaudioFormat.SectionTableHeaderSize +
+            ((long)count * SaudioFormat.SectionEntrySize);
+
+        if (tableEnd > file.Length)
+        {
+            throw SaudioReader.Refuse(
+                origin,
+                $"its section table declares {count} sections, whose {SaudioFormat.SectionEntrySize}-byte " +
+                $"entries would end at byte {tableEnd} of a {file.Length}-byte file.");
+        }
+
+        return count;
+    }
+
+    // The bytes a table entry names.
+    private static ReadOnlySpan<byte> RequireSection(ReadOnlySpan<byte> file, ReadOnlySpan<byte> entry, string origin)
+    {
+        uint tag = BinaryPrimitives.ReadUInt32LittleEndian(entry);
+        uint offset = BinaryPrimitives.ReadUInt32LittleEndian(entry[4..]);
+        uint length = BinaryPrimitives.ReadUInt32LittleEndian(entry[8..]);
+
+        // Subtract, don't add: the sum can wrap.
+        if (offset < SaudioFormat.HeaderSize || offset > (uint)file.Length || length > (uint)file.Length - offset)
+        {
+            throw SaudioReader.Refuse(
+                origin,
+                $"its '{SmodelFormat.DescribeFourCc(tag)}' section claims {length} bytes at offset {offset}, " +
+                $"which is not inside the {file.Length}-byte file after the header.");
+        }
+
+        return file.Slice((int)offset, (int)length);
     }
 
     private static AudioMarker[] ReadMarkers(ReadOnlySpan<byte> section, long frameCount, string origin)

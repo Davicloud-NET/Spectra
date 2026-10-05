@@ -30,6 +30,7 @@ public static class SaudioWriter
     /// <param name="markers">
     /// Named moments in the sound, in any order. None writes no section table.
     /// </param>
+    // Six parameters, because an options type would only wrap the last two.
     public static byte[] Write(
         AudioFormat format,
         ReadOnlySpan<short> pcm,
@@ -67,28 +68,10 @@ public static class SaudioWriter
         if (positional && format.Channels == 1) flags |= SaudioFlags.PositionalIntent;
 
         WriteShape(file, format, flags, frames, loop);
-
-        BinaryPrimitives.WriteUInt32LittleEndian(
-            file.AsSpan(SaudioFormat.SeekTableOffsetOffset),
-            streaming ? SaudioFormat.HeaderSize : 0u);
-
-        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(SaudioFormat.DataOffsetOffset), (uint)dataOffset);
-
-        BinaryPrimitives.WriteUInt32LittleEndian(
-            file.AsSpan(SaudioFormat.SectionTableOffsetOffset),
-            sections ? (uint)sectionTableOffset : 0u);
+        WriteOffsets(file, streaming ? SaudioFormat.HeaderSize : 0, dataOffset, sections ? sectionTableOffset : 0);
 
         if (streaming) WriteSeekTable(file, format, dataOffset, entryCount, framesPerSeekEntry);
-
-        if (sections)
-        {
-            Span<byte> table = file.AsSpan(sectionTableOffset);
-            BinaryPrimitives.WriteUInt32LittleEndian(table, 1);
-            BinaryPrimitives.WriteUInt32LittleEndian(table[4..], SaudioFormat.MarkerSection);
-            BinaryPrimitives.WriteUInt32LittleEndian(table[8..], (uint)markerOffset);
-            BinaryPrimitives.WriteUInt32LittleEndian(table[12..], (uint)markerSection.Length);
-            markerSection.CopyTo(file.AsSpan(markerOffset));
-        }
+        if (sections) WriteMarkerSection(file, sectionTableOffset, markerOffset, markerSection);
 
         // Per sample, not a span cast, so the file is little-endian on any host.
         Span<byte> payload = file.AsSpan(dataOffset, payloadBytes);
@@ -96,6 +79,26 @@ public static class SaudioWriter
             BinaryPrimitives.WriteInt16LittleEndian(payload[(i * 2)..], pcm[i]);
 
         return file;
+    }
+
+    // The header fields that say where things are. Zero means the file has no such table.
+    private static void WriteOffsets(Span<byte> file, int seekTableOffset, int dataOffset, int sectionTableOffset)
+    {
+        BinaryPrimitives.WriteUInt32LittleEndian(file[SaudioFormat.SeekTableOffsetOffset..], (uint)seekTableOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(file[SaudioFormat.DataOffsetOffset..], (uint)dataOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            file[SaudioFormat.SectionTableOffsetOffset..], (uint)sectionTableOffset);
+    }
+
+    // A section table of one entry, then the section it names.
+    private static void WriteMarkerSection(Span<byte> file, int tableOffset, int markerOffset, byte[] markerSection)
+    {
+        Span<byte> table = file[tableOffset..];
+        BinaryPrimitives.WriteUInt32LittleEndian(table, 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(table[4..], SaudioFormat.MarkerSection);
+        BinaryPrimitives.WriteUInt32LittleEndian(table[8..], (uint)markerOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(table[12..], (uint)markerSection.Length);
+        markerSection.CopyTo(file[markerOffset..]);
     }
 
     // Returns the length in frames.
