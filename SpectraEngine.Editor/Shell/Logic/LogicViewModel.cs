@@ -29,14 +29,12 @@ public sealed class LogicViewModel : ObservableObject
     private readonly LogicPlayState _play = new();
     private readonly LogicSelection _selection = new();
     private readonly LogicShownEntities _shown = new();
-    private readonly LogicFitRule _fit = new();
+    private readonly LogicViewPlace _place;
 
     private EntitySchemaCatalog? _schemas;
     private LogicScopeMode _mode = LogicScopeMode.AroundSelection;
     private int _steps = 2;
     private string _filter = "";
-    private LogicPanZoom _view = LogicPanZoom.Identity;
-    private Size _viewSize;
     private LogicStatus _status = LogicStatus.None;
     private LogicEmptyReason _emptyReason;
     private bool _shownChanged;
@@ -53,6 +51,7 @@ public sealed class LogicViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(ruler);
 
         _arrangement = new LogicArrangement(ruler);
+        _place = new LogicViewPlace(() => Redraw?.Invoke());
         Wiring = new LogicWiring(() => Redraw?.Invoke(), () => Raise(nameof(Status)));
         FitCommand = new RelayCommand(Fit);
         ActualSizeCommand = new RelayCommand(ShowActualSize);
@@ -100,7 +99,7 @@ public sealed class LogicViewModel : ObservableObject
 
             Raise(nameof(IsAroundSelection));
             Raise(nameof(IsWholeLevel));
-            _fit.Ask();
+            _place.AskForFit();
             Rescope();
         }
     }
@@ -147,16 +146,8 @@ public sealed class LogicViewModel : ObservableObject
     /// <summary>Where the graph sits in the view.</summary>
     public LogicPanZoom View
     {
-        get => _view;
-        set
-        {
-            if (_view == value)
-                return;
-
-            _view = value;
-            _fit.Moved();
-            Redraw?.Invoke();
-        }
+        get => _place.View;
+        set => _place.View = value;
     }
 
     /// <summary>
@@ -165,16 +156,11 @@ public sealed class LogicViewModel : ObservableObject
     /// </summary>
     public Size ViewSize
     {
-        get => _viewSize;
+        get => _place.Size;
         set
         {
-            if (_viewSize != value)
-            {
-                _viewSize = value;
-                _fit.Resized();
-            }
-
-            FitIfAsked();
+            _place.Resize(value);
+            _place.FitIfAsked(Scene, _selection.Ids);
         }
     }
 
@@ -259,7 +245,7 @@ public sealed class LogicViewModel : ObservableObject
             _arrangement.SetSchemas(null);
 
         TakePlay(null);
-        _fit.Forget();
+        _place.Forget();
         Refresh(redraw: true);
     }
 
@@ -288,29 +274,25 @@ public sealed class LogicViewModel : ObservableObject
 
     /// <summary>What is under a point of the view. Labels and port rows count only where they are drawn.</summary>
     public LogicHit HitTest(Point viewPoint) => _arrangement.HitTest(
-        _view.ToScene(viewPoint),
-        LogicDrawMetrics.PickReach / _view.Zoom,
-        LogicDrawMetrics.DetailAt(_view.Zoom) == LogicDetail.Full);
+        View.ToScene(viewPoint),
+        LogicDrawMetrics.PickReach / View.Zoom,
+        LogicDrawMetrics.DetailAt(View.Zoom) == LogicDetail.Full);
 
     /// <summary>Shows the whole graph, as large as fits and no larger than its own size.</summary>
     public void Fit()
     {
-        if (Scene is not { Cards.Count: > 0 } scene)
-            return;
-
-        View = LogicPanZoom.Fit(scene.Size, _viewSize);
-        _fit.Fitted();
+        if (Scene is { Cards.Count: > 0 } scene)
+            _place.Fit(scene);
     }
 
     /// <summary>Shows the graph at its own size, about the middle of the view.</summary>
-    public void ShowActualSize() =>
-        View = _view.ZoomedAbout(new Point(_viewSize.Width / 2, _viewSize.Height / 2), 1);
+    public void ShowActualSize() => _place.ShowActualSize();
 
     /// <summary>Puts an entity's card in the middle of the view, when it has one on show.</summary>
     public void CenterOn(Guid nodeId)
     {
         if (Scene?.CardOf(nodeId) is { } card)
-            View = _view.CenteredOn(card.Bounds, _viewSize);
+            _place.CenterOn(card.Bounds);
     }
 
     private void Rescope()
@@ -354,13 +336,18 @@ public sealed class LogicViewModel : ObservableObject
             TakeShown();
 
         if (change.HasFlag(LogicArrangementChange.Scene) && Scene is { Cards.Count: > 0 } scene)
-            _fit.Placed(_shown.Ids, scene.Size, followsSelection: IsAroundSelection);
+            _place.LaidOut(_shown.Ids, scene.Size, followsSelection: IsAroundSelection);
 
         redraw |= Wiring.Take(_arrangement.Info, Shown, Scene, IsPlaying);
         if (redraw || change.HasFlag(LogicArrangementChange.Looks))
             Redraw?.Invoke();
 
-        FitIfAsked();
+        _place.FitIfAsked(Scene, _selection.Ids);
+
+        // Wired cards keep their places, so the card a selection gives an
+        // entity with no wires lands past them, perhaps out of sight.
+        if (_shown.TakeArrived() is Guid arrived && Scene?.CardOf(arrived) is { } card)
+            _place.Reveal(card.Bounds);
 
         // Last, so whoever listens finds a finished scene.
         if (_shownChanged)
@@ -385,15 +372,5 @@ public sealed class LogicViewModel : ObservableObject
         // Wiring that went away asks for nothing: a request sent then would
         // undo the one that hid the view.
         _shownChanged |= _shown.Take(shown?.Cards ?? []) && shown is not null;
-    }
-
-    private void FitIfAsked()
-    {
-        if (_viewSize.Width <= 0 || _viewSize.Height <= 0 || Scene is not { Cards.Count: > 0 } scene || !_fit.Take())
-            return;
-
-        // Placed, not fitted: in a low pane a fit would shrink the text away.
-        View = LogicPanZoom.Placed(scene.Size, _viewSize, scene.BoundsOf(_selection.Ids));
-        _fit.Fitted();
     }
 }

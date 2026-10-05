@@ -33,6 +33,13 @@ public sealed class LogicViewModelUnwiredTests
     private static string[] Names(LogicViewModel model) =>
         [.. model.Scene.ShouldNotBeNull().Cards.Select(card => card.Card.Name)];
 
+    // Where a card is drawn in the view.
+    private static Rect OnScreen(LogicViewModel model, string name)
+    {
+        Rect bounds = model.Scene.ShouldNotBeNull().Card(name).Bounds;
+        return new Rect(model.View.ToView(bounds.TopLeft), model.View.ToView(bounds.BottomRight));
+    }
+
     // Presses on one card's header and lets go on another's.
     private static bool Drag(LogicViewModel model, string from, string onto)
     {
@@ -121,6 +128,48 @@ public sealed class LogicViewModelUnwiredTests
         model.Scene.ShouldBeSameAs(scene);
     }
 
+    [Fact]
+    public void In_the_whole_level_a_new_card_out_of_sight_is_brought_into_the_view_at_the_same_zoom()
+    {
+        LogicViewModel model = Model(LogicScopeMode.WholeLevel);
+        model.Apply(Snapshot(_level));
+        model.View = new LogicPanZoom(new Vector(4000, 3000), 0.8);
+
+        model.Apply(Snapshot(_level, null, SideDoor));
+
+        model.View.Zoom.ShouldBe(0.8);
+        Rect card = OnScreen(model, "SideDoor");
+        new Rect(model.ViewSize).Contains(card).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_new_card_that_lands_in_sight_moves_nothing()
+    {
+        LogicViewModel model = Model(LogicScopeMode.WholeLevel);
+        model.Apply(Snapshot(_level));
+        model.View = new LogicPanZoom(new Vector(4000, 3000), 0.8);
+        model.Apply(Snapshot(_level, null, SideDoor));
+        LogicPanZoom revealed = model.View;
+
+        model.Apply(Snapshot(_level));
+        model.Apply(Snapshot(_level, null, SideDoor));
+
+        model.View.ShouldBe(revealed);
+    }
+
+    [Fact]
+    public void Selecting_an_entity_whose_card_was_there_already_moves_nothing()
+    {
+        LogicViewModel model = Model(LogicScopeMode.WholeLevel);
+        model.Apply(Snapshot(_level));
+        var away = new LogicPanZoom(new Vector(4000, 3000), 0.8);
+        model.View = away;
+
+        model.Apply(Snapshot(_level, null, OpenVault));
+
+        model.View.ShouldBe(away);
+    }
+
     [Theory]
     [InlineData(LogicScopeMode.WholeLevel)]
     [InlineData(LogicScopeMode.AroundSelection)]
@@ -161,8 +210,7 @@ public sealed class LogicViewModelUnwiredTests
 
         model.Status.ShouldBe(new LogicStatus("1 entity", "0 wires", "", "", "")
         {
-            Hint = "Drag from this card onto another to wire it. Select both to see both.",
-            HintShort = "Drag from this card onto another to wire it.",
+            Hint = "Drag from a card or an output onto a card to wire it. Ctrl-click another entity to give it a card too.",
         });
         model.Hint.ShouldBe(model.Status.Hint);
     }
@@ -212,7 +260,6 @@ public sealed class LogicViewModelUnwiredTests
         model.Apply(Snapshot(_level, null, OpenVault));
 
         model.Hint.ShouldBe(LogicViewText.EditingHint);
-        model.Status.HintShort.ShouldBe(LogicViewText.EditingHintShort);
         raised.ShouldContain(nameof(LogicViewModel.Hint));
     }
 

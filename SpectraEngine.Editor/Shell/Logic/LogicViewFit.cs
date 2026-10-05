@@ -159,7 +159,7 @@ public readonly record struct LogicViewFit
 
         string hint = isPlaying ? LogicViewText.PlayingHint : status.Hint;
         bool showsWhole = left >= Part(hint, ruler);
-        bool showsShortHint = !showsWhole && !isPlaying && left >= Part(status.HintShort, ruler);
+        bool showsShortHint = !showsWhole && !isPlaying && left >= Part(LogicViewText.EditingHintShort, ruler);
 
         return this with
         {

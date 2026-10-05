@@ -7,7 +7,19 @@ namespace SpectraEngine.Editor.Shell.Logic;
 // the engine for a line of state for each of them.
 internal sealed class LogicShownEntities
 {
+    private Guid? _arrived;
+
     public Guid[] Ids { get; private set; } = [];
+
+    // The first entity with no wires whose card came on show with the last
+    // change, or null. Read once: the next read has nothing until another
+    // such card comes.
+    public Guid? TakeArrived()
+    {
+        Guid? arrived = _arrived;
+        _arrived = null;
+        return arrived;
+    }
 
     // Returns whether the entities differ from the ones before. Compared in
     // place: most rescopes show the same cards.
@@ -28,6 +40,8 @@ internal sealed class LogicShownEntities
         if (same && count == Ids.Length)
             return false;
 
+        _arrived = FirstNewUnwired(cards);
+
         var ids = new Guid[count];
         for (int i = 0, at = 0; i < cards.Count; i++)
         {
@@ -37,5 +51,24 @@ internal sealed class LogicShownEntities
 
         Ids = ids;
         return true;
+    }
+
+    // Looked for before Ids is replaced. The set is only built when a card
+    // with no wires is on show, which is when one is selected.
+    private Guid? FirstNewUnwired(IReadOnlyList<LogicCard> cards)
+    {
+        HashSet<Guid>? before = null;
+
+        for (int i = 0; i < cards.Count; i++)
+        {
+            if (cards[i].IsStub || cards[i].IsWired)
+                continue;
+
+            before ??= [.. Ids];
+            if (!before.Contains(cards[i].NodeId))
+                return cards[i].NodeId;
+        }
+
+        return null;
     }
 }

@@ -175,7 +175,7 @@ public partial class LogicView : UserControl
         UnwiredNote.Text = fit.UsesShortNotes ? status.UnwiredShort : status.Unwired;
         ToolTip.SetTip(UnwiredNote, fit.UsesShortNotes ? status.Unwired : null);
         HintText.IsVisible = fit.ShowsHint;
-        HintText.Text = fit.UsesShortHint ? status.HintShort : Model?.Hint ?? "";
+        HintText.Text = fit.UsesShortHint ? LogicViewText.EditingHintShort : Model?.Hint ?? "";
         EventStrip.IsVisible = fit.ShowsEvents;
     }
 

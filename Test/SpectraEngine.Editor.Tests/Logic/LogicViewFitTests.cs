@@ -171,15 +171,11 @@ public sealed class LogicViewFitTests
     [Fact]
     public void The_hint_a_status_carries_is_the_one_that_is_fitted()
     {
-        LogicStatus unwired = Quiet with
-        {
-            Hint = LogicViewText.UnwiredHint,
-            HintShort = LogicViewText.UnwiredHintShort,
-        };
+        LogicStatus unwired = Quiet with { Hint = LogicViewText.UnwiredHint };
 
         double counts = 20 + Part(unwired.Entities) + Part(unwired.Wires);
         double whole = Part(LogicViewText.UnwiredHint);
-        double first = Part(LogicViewText.UnwiredHintShort);
+        double first = Part(LogicViewText.EditingHintShort);
 
         LogicViewFit holdsAll = LogicViewFit.For(new Size(counts + whole, 500), false, unwired, Ruler);
         LogicViewFit holdsTheFirst = LogicViewFit.For(new Size(counts + whole - 1, 500), false, unwired, Ruler);

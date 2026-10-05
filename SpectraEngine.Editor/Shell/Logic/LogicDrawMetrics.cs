@@ -53,6 +53,9 @@ public static class LogicDrawMetrics
     /// <summary>How far the pointer may travel between press and release and still click.</summary>
     public const double ClickSlop = 4;
 
+    /// <summary>The room kept round a card that is brought into the view, on screen.</summary>
+    public const double RevealMargin = 24;
+
     internal static LogicDetail DetailAt(double zoom) =>
         zoom < FarthestZoom ? LogicDetail.Farthest
         : zoom < FarZoom ? LogicDetail.Far

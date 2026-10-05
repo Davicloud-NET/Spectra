@@ -10,6 +10,60 @@ public sealed class LogicPanZoomTests
     private static readonly Size View = new(800, 600);
 
     [Fact]
+    public void Showing_a_rectangle_that_is_in_the_view_moves_nothing()
+    {
+        var view = new LogicPanZoom(new Vector(-120, 40), 0.8);
+
+        view.Showing(new Rect(400, 200, 184, 90), View, 24).ShouldBe(view);
+    }
+
+    [Fact]
+    public void Showing_one_past_the_right_and_bottom_edges_brings_it_just_inside_the_margin()
+    {
+        var view = new LogicPanZoom(default, 0.5);
+        var card = new Rect(2000, 1500, 184, 90);
+
+        LogicPanZoom shown = view.Showing(card, View, 24);
+
+        shown.Zoom.ShouldBe(0.5);
+        shown.ToView(card.BottomRight).ShouldBe(new Point(View.Width - 24, View.Height - 24));
+    }
+
+    [Fact]
+    public void Showing_one_past_the_left_and_top_edges_brings_it_just_inside_the_margin()
+    {
+        var view = new LogicPanZoom(new Vector(-900, -700), 1);
+        var card = new Rect(100, 60, 184, 90);
+
+        LogicPanZoom shown = view.Showing(card, View, 24);
+
+        shown.ToView(card.TopLeft).ShouldBe(new Point(24, 24));
+    }
+
+    [Fact]
+    public void Showing_one_that_is_off_one_way_only_moves_it_that_way_only()
+    {
+        var view = new LogicPanZoom(default, 1);
+        var card = new Rect(1000, 200, 184, 90);
+
+        LogicPanZoom shown = view.Showing(card, View, 24);
+
+        shown.Offset.Y.ShouldBe(0);
+        shown.ToView(card.BottomRight).X.ShouldBe(View.Width - 24);
+    }
+
+    [Fact]
+    public void Showing_one_larger_than_the_view_keeps_its_top_left_corner_in()
+    {
+        var view = new LogicPanZoom(new Vector(300, 300), 1);
+        var group = new Rect(0, 0, 2000, 1500);
+
+        LogicPanZoom shown = view.Showing(group, View, 24);
+
+        shown.ToView(group.TopLeft).ShouldBe(new Point(24, 24));
+    }
+
+    [Fact]
     public void A_graph_that_fits_readably_is_placed_fitted()
     {
         var scene = new Size(900, 500);

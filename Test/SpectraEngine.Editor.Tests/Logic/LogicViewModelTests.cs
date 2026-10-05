@@ -346,7 +346,7 @@ public sealed class LogicViewModelTests
         model.Apply(Snapshot(Level(Entity(1, "PlayerStart", "info_player_start")), null, Id(900)));
 
         model.EmptyText.ShouldBe(
-            "No entity in this level is wired yet. Select one and press Add under Sends in the Properties panel.");
+            "Nothing in this level is wired yet. Select two entities, then drag from one card onto the other.");
         model.OffersWholeLevel.ShouldBeFalse();
     }
 

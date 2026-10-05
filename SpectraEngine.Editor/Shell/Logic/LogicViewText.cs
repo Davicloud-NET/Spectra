@@ -12,11 +12,11 @@ public static class LogicViewText
     /// <summary>The same where the row has no room for all of it.</summary>
     public const string EditingHintShort = "Drag from a card or an output onto a card to wire it.";
 
-    /// <summary>The hint while a card on show has no wires.</summary>
-    public const string UnwiredHint = UnwiredHintShort + " Select both to see both.";
-
-    /// <summary>The same where the row has no room for all of it.</summary>
-    public const string UnwiredHintShort = "Drag from this card onto another to wire it.";
+    /// <summary>
+    /// The hint while a card on show has no wires. Its entity has a card
+    /// only because it is selected, and so will the one it is wired to.
+    /// </summary>
+    public const string UnwiredHint = EditingHintShort + " Ctrl-click another entity to give it a card too.";
 
     /// <summary>The hint at the right of the status row while a level runs.</summary>
     public const string PlayingHint = "Wires light up as they fire. Stop to edit.";
@@ -103,7 +103,7 @@ public static class LogicViewText
         LogicEmptyReason.NoEntitySelected =>
             "Select an entity to see what it is wired to, or show the whole level.",
         LogicEmptyReason.LevelHasNoWires =>
-            "No entity in this level is wired yet. Select one and press Add under Sends in the Properties panel.",
+            "Nothing in this level is wired yet. Select two entities, then drag from one card onto the other.",
         _ => "",
     };
 

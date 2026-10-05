@@ -68,6 +68,26 @@ public readonly record struct LogicPanZoom(Vector Offset, double Zoom)
     }
 
     /// <summary>
+    /// The same zoom, moved no further than it takes to have a scene
+    /// rectangle in the view. One too large for the view keeps its top left
+    /// corner in.
+    /// </summary>
+    /// <param name="scene">The part of the scene to show, such as a card.</param>
+    /// <param name="view">How large the view is.</param>
+    /// <param name="margin">The room to keep between the rectangle and the view's edges.</param>
+    public LogicPanZoom Showing(Rect scene, Size view, double margin)
+    {
+        Point from = ToView(scene.TopLeft);
+        Point to = ToView(scene.BottomRight);
+
+        var shift = new Vector(
+            Shift(from.X, to.X, view.Width, margin),
+            Shift(from.Y, to.Y, view.Height, margin));
+
+        return shift == default ? this : MovedBy(shift);
+    }
+
+    /// <summary>
     /// The whole scene in the middle of the view, as large as fits and never
     /// larger than its own size.
     /// </summary>
@@ -95,6 +115,15 @@ public readonly record struct LogicPanZoom(Vector Offset, double Zoom)
 
         var readable = new LogicPanZoom(default, ReadableZoom);
         return focus is { } rect ? readable.CenteredOn(rect, view) : readable;
+    }
+
+    // How far a span has to move to lie between the margins of a room.
+    private static double Shift(double start, double end, double room, double margin)
+    {
+        if (start < margin || end - start > room - (2 * margin))
+            return margin - start;
+
+        return end > room - margin ? room - margin - end : 0;
     }
 
     private static Vector Whole(Vector offset) => new(Math.Round(offset.X), Math.Round(offset.Y));

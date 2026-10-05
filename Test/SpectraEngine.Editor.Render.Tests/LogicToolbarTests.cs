@@ -95,8 +95,8 @@ public sealed class LogicToolbarTests(RibbonSession session)
     }
 
     [Theory]
-    [InlineData(Widest, "Drag from this card onto another to wire it. Select both to see both.")]
-    [InlineData(900, "Drag from this card onto another to wire it.")]
+    [InlineData(Widest, "Drag from a card or an output onto a card to wire it. Ctrl-click another entity to give it a card too.")]
+    [InlineData(1000, "Drag from a card or an output onto a card to wire it.")]
     public void With_a_card_that_has_no_wires_on_show_the_status_row_says_how_to_wire_it(double width, string hint)
     {
         session.On(() =>

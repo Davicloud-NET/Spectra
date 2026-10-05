@@ -34,11 +34,12 @@ public sealed record LogicStatus(
     /// </summary>
     public string News { get; init; } = "";
 
-    /// <summary>The hint at the right of the row while the level is edited.</summary>
+    /// <summary>
+    /// The hint at the right of the row while the level is edited. A narrow
+    /// row shows <see cref="LogicViewText.EditingHintShort"/>, which every
+    /// hint begins with.
+    /// </summary>
     public string Hint { get; init; } = LogicViewText.EditingHint;
-
-    /// <summary>The same cut to its first sentence, for a narrow row.</summary>
-    public string HintShort { get; init; } = LogicViewText.EditingHintShort;
 
     /// <summary>Reads the status off what a scope shows.</summary>
     /// <param name="scoped">The cards and edges shown.</param>
@@ -57,7 +58,6 @@ public sealed record LogicStatus(
         // Near a selection most of the level is left out, wired or not.
         int unwiredCount = mode == LogicScopeMode.WholeLevel ? counts.HiddenUnwiredEntities : 0;
         string unwired = LogicViewText.Unwired(scoped.FirstHiddenUnwiredName, unwiredCount);
-        bool showsUnwired = counts.UnwiredCards > 0;
 
         return new LogicStatus(
             LogicViewText.Entities(counts.Entities),
@@ -68,8 +68,7 @@ public sealed record LogicStatus(
         {
             GoingNowhereSender = FirstGoingNowhere(scoped),
             UnwiredShort = LogicViewText.UnwiredShort(unwiredCount, counts.UnwiredCards),
-            Hint = showsUnwired ? LogicViewText.UnwiredHint : LogicViewText.EditingHint,
-            HintShort = showsUnwired ? LogicViewText.UnwiredHintShort : LogicViewText.EditingHintShort,
+            Hint = counts.UnwiredCards > 0 ? LogicViewText.UnwiredHint : LogicViewText.EditingHint,
         };
     }
 
