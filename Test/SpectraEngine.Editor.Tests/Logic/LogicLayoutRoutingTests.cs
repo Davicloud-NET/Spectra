@@ -249,8 +249,47 @@ public sealed class LogicLayoutRoutingTests
             Relay(6, "Zulu2", "Zulu3"),
             Relay(7, "Zulu3")));
 
+        // Read like a page: the largest first, then the next row from the left.
         scene.Card("Zulu1").Bounds.Y.ShouldBeLessThan(scene.Card("Alpha1").Bounds.Y);
-        scene.Card("Alpha1").Bounds.Y.ShouldBeLessThan(scene.Card("Bravo1").Bounds.Y);
+        scene.Card("Alpha1").Bounds.Y.ShouldBe(scene.Card("Bravo1").Bounds.Y);
+        scene.Card("Alpha2").Bounds.Right.ShouldBeLessThan(scene.Card("Bravo1").Bounds.X);
+    }
+
+    [Fact]
+    public void Groups_that_share_no_wire_fill_a_row_before_the_next_one_starts()
+    {
+        // Three pairs: two fit the page side by side, the third starts a row.
+        LogicScene scene = Arrange(Graph(
+            Relay(1, "Alpha1", "Alpha2"),
+            Relay(2, "Alpha2"),
+            Relay(3, "Bravo1", "Bravo2"),
+            Relay(4, "Bravo2"),
+            Relay(5, "Charlie1", "Charlie2"),
+            Relay(6, "Charlie2")));
+
+        scene.Card("Bravo1").Bounds.Y.ShouldBe(scene.Card("Alpha1").Bounds.Y);
+        scene.Card("Bravo1").Bounds.X.ShouldBeGreaterThan(scene.Card("Alpha2").Bounds.Right);
+        scene.Card("Charlie1").Bounds.Y.ShouldBeGreaterThan(scene.Card("Alpha1").Bounds.Bottom);
+        scene.Card("Charlie1").Bounds.X.ShouldBe(scene.Card("Alpha1").Bounds.X);
+        scene.Size.Width.ShouldBeLessThanOrEqualTo(LogicMetrics.PageWidth + 2 * LogicMetrics.ScenePadding);
+    }
+
+    [Fact]
+    public void A_group_wider_than_the_page_has_a_row_to_itself()
+    {
+        LogicScene scene = Arrange(Graph(
+            Relay(1, "Long1", "Long2"),
+            Relay(2, "Long2", "Long3"),
+            Relay(3, "Long3", "Long4"),
+            Relay(4, "Long4", "Long5"),
+            Relay(5, "Long5", "Long6"),
+            Relay(6, "Long6"),
+            Relay(7, "Short1", "Short2"),
+            Relay(8, "Short2")));
+
+        scene.Size.Width.ShouldBeGreaterThan(LogicMetrics.PageWidth);
+        scene.Card("Short1").Bounds.Y.ShouldBeGreaterThan(scene.Card("Long1").Bounds.Bottom);
+        scene.Card("Short1").Bounds.X.ShouldBe(scene.Card("Long1").Bounds.X);
     }
 
     [Fact]

@@ -77,4 +77,11 @@ public static class LogicMetrics
 
     /// <summary>The room around the whole graph.</summary>
     public const double ScenePadding = 24;
+
+    /// <summary>
+    /// How wide a row of groups may grow before the next group starts a new
+    /// row. About four columns of cards. A group wider than this has a row
+    /// to itself.
+    /// </summary>
+    public const double PageWidth = 1100;
 }

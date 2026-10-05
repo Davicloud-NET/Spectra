@@ -36,18 +36,29 @@ public static class LogicLayout
             return scene.Build(default);
 
         double width = 0;
+        double left = 0;
         double top = LogicMetrics.ScenePadding;
+        double rowHeight = 0;
 
-        // Groups that share no wire stack from the top.
+        // Groups that share no wire fill a row like words fill a line, so a
+        // level of many small groups is not one tall column in a wide pane.
         foreach (LogicGroupLayout group in LogicGroups.Split(graph, scene, options, measure))
         {
-            group.Emit(new Point(LogicMetrics.ScenePadding, top), scene);
-            width = Math.Max(width, group.Size.Width);
-            top += group.Size.Height + LogicMetrics.GroupGap;
+            if (left > 0 && left + group.Size.Width > LogicMetrics.PageWidth)
+            {
+                top += rowHeight + LogicMetrics.GroupGap;
+                left = 0;
+                rowHeight = 0;
+            }
+
+            group.Emit(new Point(LogicMetrics.ScenePadding + left, top), scene);
+            width = Math.Max(width, left + group.Size.Width);
+            left += group.Size.Width + LogicMetrics.GroupGap;
+            rowHeight = Math.Max(rowHeight, group.Size.Height);
         }
 
         return scene.Build(new Size(
             width + 2 * LogicMetrics.ScenePadding,
-            top - LogicMetrics.GroupGap + LogicMetrics.ScenePadding));
+            top + rowHeight + LogicMetrics.ScenePadding));
     }
 }
