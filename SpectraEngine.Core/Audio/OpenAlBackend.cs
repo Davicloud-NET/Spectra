@@ -53,10 +53,12 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         ALContext alc;
         try
         {
-            // GetApi throws when no OpenAL runtime is installed.
+            // GetApi throws when no OpenAL runtime is installed. soft asks for
+            // the packaged OpenAL Soft first: a system OpenAL can be older and
+            // lack filters.
             SilkPlatform.UsePortableRuntimeId();
-            alc = ALContext.GetApi();
-            al = AL.GetApi();
+            alc = ALContext.GetApi(soft: true);
+            al = AL.GetApi(soft: true);
         }
         catch (Exception ex)
         {
@@ -109,12 +111,29 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
 
         string name = alc.GetContextProperty(device, GetContextString.DeviceSpecifier) ?? "unnamed device";
 
-        // AL's default, set anyway.
-        al.DistanceModel(DistanceModel.InverseDistanceClamped);
+        // The engine computes loudness from distance itself, so OpenAL only pans.
+        al.DistanceModel(DistanceModel.None);
+
+        LogCapabilities(logger, al, alc, device);
 
         backend = new OpenAlBackend(logger, al, alc, device, context, name);
         return true;
     }
+
+    // IsExtensionPresent only. AL.TryGetExtension reflects, which an AOT build trims.
+    private static void LogCapabilities(ILogger logger, AL al, ALContext alc, Device* device)
+    {
+        logger.LogInformation(
+            "OpenAL {Version} by {Vendor}, renderer {Renderer}. EFX {Efx}, HRTF {Hrtf}, loopback {Loopback}",
+            al.GetStateProperty(StateString.Version),
+            al.GetStateProperty(StateString.Vendor),
+            al.GetStateProperty(StateString.Renderer),
+            YesOrNo(alc.IsExtensionPresent(device, "ALC_EXT_EFX")),
+            YesOrNo(alc.IsExtensionPresent(device, "ALC_SOFT_HRTF")),
+            YesOrNo(alc.IsExtensionPresent(device, "ALC_SOFT_loopback")));
+    }
+
+    private static string YesOrNo(bool present) => present ? "yes" : "no";
 
     /// <inheritdoc />
     public uint CreateBuffer()
@@ -165,6 +184,8 @@ public sealed unsafe class OpenAlBackend : IAudioBackend
         _al.SetSourceProperty(source, SourceVector3.Position, settings.Position.X, settings.Position.Y, settings.Position.Z);
         _al.SetSourceProperty(source, SourceVector3.Velocity, settings.Velocity.X, settings.Velocity.Y, settings.Velocity.Z);
         _al.SetSourceProperty(source, SourceBoolean.SourceRelative, settings.Relative);
+
+        // GainHf is not applied: it needs an EFX filter and this backend makes none.
 
         // Never set AL_LOOPING, loops go through the buffer queue. Cleared
         // here because pooled sources are reused.

@@ -10,6 +10,15 @@ public sealed class AudioManagerTests
 {
     private const int Rate = 48000;
 
+    // Every member away from its default, so a dropped one shows.
+    private static readonly AudioSourceSettings Muffled = new(
+        Gain: 0.4f,
+        Pitch: 1.25f,
+        Position: new Vector3(3, 1, -2),
+        Velocity: new Vector3(0, 0, 5),
+        Relative: false,
+        GainHf: 0.3f);
+
     [Fact]
     public void No_device_is_disabled_mode_and_every_call_is_a_safe_no_op()
     {
@@ -151,6 +160,84 @@ public sealed class AudioManagerTests
         backend.ListenerGain.ShouldBe(0f);
 
         audio.Shutdown();
+    }
+
+    [Fact]
+    public void A_played_clip_reaches_the_driver_with_the_settings_it_was_given()
+    {
+        var backend = new FakeAudioBackend();
+        var audio = NewManager(backend);
+        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600))!;
+
+        AudioVoice voice = audio.Play(clip, Muffled)!;
+
+        AudioSourceSettings given = backend.SettingsOf(voice.Source);
+        given.Gain.ShouldBe(0.4f);
+        given.Pitch.ShouldBe(1.25f);
+        given.Position.ShouldBe(new Vector3(3, 1, -2));
+        given.Velocity.ShouldBe(new Vector3(0, 0, 5));
+        given.Relative.ShouldBeFalse();
+        given.GainHf.ShouldBe(0.3f);
+
+        audio.Shutdown();
+    }
+
+    [Fact]
+    public void A_stream_reaches_the_driver_with_the_settings_it_was_given()
+    {
+        var backend = new FakeAudioBackend();
+        var audio = NewManager(backend);
+        var provider = new RampSampleProvider(new AudioFormat(Rate, 1), 4000, LoopRegion.None);
+
+        StreamingVoice voice = audio.PlayStream(provider, Muffled)!;
+
+        backend.SettingsOf(voice.Source).ShouldBe(Muffled);
+
+        audio.Shutdown();
+    }
+
+    [Fact]
+    public void Reconfiguring_a_playing_voice_reaches_the_driver()
+    {
+        var backend = new FakeAudioBackend();
+        var audio = NewManager(backend);
+        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600))!;
+        AudioVoice voice = audio.Play(clip, AudioSourceSettings.At(Vector3.Zero))!;
+
+        voice.Configure(Muffled);
+
+        backend.SettingsOf(voice.Source).ShouldBe(Muffled);
+        voice.Settings.ShouldBe(Muffled);
+
+        audio.Shutdown();
+    }
+
+    [Fact]
+    public void A_reused_source_keeps_nothing_of_the_sound_it_carried_before()
+    {
+        var backend = new FakeAudioBackend(maxSources: 1);
+        var audio = NewManager(backend, sources: 1);
+        AudioClip clip = audio.CreateClip(new AudioFormat(Rate, 1), Tone(600))!;
+
+        AudioVoice first = audio.Play(clip, Muffled)!;
+        uint source = first.Source;
+        backend.Finish(source);
+        audio.Update().ShouldBe(0);
+
+        AudioVoice second = audio.Play(clip)!;
+
+        second.Source.ShouldBe(source);
+        backend.SettingsOf(source).ShouldBe(AudioSourceSettings.Default);
+
+        audio.Shutdown();
+    }
+
+    [Fact]
+    public void Settings_are_unfiltered_unless_they_say_otherwise()
+    {
+        AudioSourceSettings.Default.GainHf.ShouldBe(1f);
+        AudioSourceSettings.At(Vector3.One).GainHf.ShouldBe(1f);
+        new AudioSourceSettings(1f, 1f, Vector3.Zero, Vector3.Zero, Relative: true).GainHf.ShouldBe(1f);
     }
 
     [Fact]

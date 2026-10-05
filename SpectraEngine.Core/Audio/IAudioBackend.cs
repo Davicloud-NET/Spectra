@@ -40,12 +40,17 @@ public enum AudioBufferFormat
 /// <param name="Position">World position. Ignored by the driver for a stereo buffer.</param>
 /// <param name="Velocity">World velocity, for Doppler.</param>
 /// <param name="Relative">True pins the source to the listener.</param>
+/// <param name="GainHf">
+/// How much of the high end survives; 1 is unfiltered. Carried to the backend.
+/// The OpenAL backend does not apply it yet.
+/// </param>
 public readonly record struct AudioSourceSettings(
     float Gain,
     float Pitch,
     Vector3 Position,
     Vector3 Velocity,
-    bool Relative)
+    bool Relative,
+    float GainHf = 1f)
 {
     /// <summary>Unattenuated, unpitched, at the listener.</summary>
     public static AudioSourceSettings Default => new(1f, 1f, Vector3.Zero, Vector3.Zero, Relative: true);
@@ -79,7 +84,7 @@ public interface IAudioBackend : IDisposable
     /// <summary>Frees an AL source handle.</summary>
     void DestroySource(uint source);
 
-    /// <summary>Applies gain, pitch, position, velocity and listener-relative in one call.</summary>
+    /// <summary>Applies every member of <paramref name="settings"/> in one call.</summary>
     void ConfigureSource(uint source, in AudioSourceSettings settings);
 
     /// <summary>Reads the source's play state.</summary>

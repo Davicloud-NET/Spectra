@@ -15,6 +15,9 @@ internal sealed class FakeAudioBackend : IAudioBackend
 
         // Buffers at the head of the queue the driver has finished with.
         public int Processed;
+
+        // What ConfigureSource was last given. Null until the first call.
+        public AudioSourceSettings? Settings;
     }
 
     private readonly Dictionary<uint, SourceRecord> _sources = [];
@@ -62,6 +65,11 @@ internal sealed class FakeAudioBackend : IAudioBackend
 
     public short[] Contents(uint buffer) => _buffers[buffer];
 
+    // The settings the source was last configured with.
+    public AudioSourceSettings SettingsOf(uint source) =>
+        _sources[source].Settings
+        ?? throw new InvalidOperationException($"Source {source} was never configured.");
+
     public uint CreateBuffer()
     {
         uint buffer = _nextBuffer++;
@@ -93,11 +101,8 @@ internal sealed class FakeAudioBackend : IAudioBackend
 
     public void DestroySource(uint source) => _sources.Remove(source);
 
-    public void ConfigureSource(uint source, in AudioSourceSettings settings)
-    {
-        _ = _sources[source];
-        _ = settings;
-    }
+    public void ConfigureSource(uint source, in AudioSourceSettings settings) =>
+        _sources[source].Settings = settings;
 
     public AudioSourceState GetSourceState(uint source) => _sources[source].State;
 
