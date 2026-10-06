@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Logo_editable_gradient_ribbons" data-name="Logo — editable gradient ribbons" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1254 1254">
+  <defs>
+    <linearGradient id="linear-gradient" x1="253.19" y1="826.893" x2="977.944" y2="754.418" gradientTransform="translate(0 1251.8898) scale(1 -1)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34bbfe"/>
+      <stop offset=".167" stop-color="#47a7fd"/>
+      <stop offset=".333" stop-color="#5193fd"/>
+      <stop offset=".5" stop-color="#587bfd"/>
+      <stop offset=".667" stop-color="#686bfc"/>
+      <stop offset=".833" stop-color="#745bfc"/>
+      <stop offset="1" stop-color="#7b4bfd"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="222.22" y1="365.895" x2="1004.848" y2="538.073" gradientTransform="translate(0 1251.8898) scale(1 -1)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#bd4cc8"/>
+      <stop offset=".167" stop-color="#d457b3"/>
+      <stop offset=".333" stop-color="#e75e99"/>
+      <stop offset=".5" stop-color="#f86383"/>
+      <stop offset=".667" stop-color="#fe6e6d"/>
+      <stop offset=".833" stop-color="#fd7a65"/>
+      <stop offset="1" stop-color="#fe825a"/>
+    </linearGradient>
+  </defs>
+  <g id="Logo">
+    <path id="upper-ribbon" d="M626.305,163.403h158.976c112.759,0,216.223,54.56,216.223,162.873,0,73.174-59.382,132.541-132.572,132.541-77.569,0-134.544-50.017-220.064-50.017-58,0-107.522,32.736-107.522,87.625s48.628,102.164,76.433,132.294c23.341,25.295,73.619,75.431,73.619,120.195,0,20.882-12.247,33.069-31.453,33.069-37.747,0-176.697-64.252-206.787-81.174-86.39-48.58-206.912-114.999-206.912-249.572,0-94.089,64.388-161.954,118.965-202.318,65.995-48.808,147.787-85.516,261.096-85.516Z" style="fill: url(#linear-gradient);"/>
+    <path id="lower-ribbon" d="M647.359,478.824c55.18,0,205.441,73.086,243.736,97.904,65.719,42.587,132.916,110.534,132.916,218.395,0,97.44-50.814,160.756-101.148,207.768-50.021,46.716-138.365,87.706-236.467,87.706h-278.947c-96.724,0-177.46-66.208-177.46-161.587,0-84.534,65.584-161.337,145.105-161.337,96.966,0,194.896,88.642,279.076,88.642,60.226,0,104.751-38.471,104.751-97.445,0-72.656-48.444-127.463-84.06-165.976-14.936-16.149-61.963-61.586-61.963-86.944,0-20.132,13.76-27.127,34.462-27.127Z" style="fill: url(#linear-gradient-2);"/>
+  </g>
+</svg>
