@@ -13,7 +13,9 @@
   -->
 
   <UserControl.Styles>
-    <!-- Row label. Also the drag handle when the value is a number. -->
+    <!-- Row label. Also the drag handle when the value is a number. A name too
+         long for its room ends in an ellipsis and is said in full by the
+         tooltip. -->
     <Style Selector="TextBlock.rowlabel">
       <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
       <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
@@ -319,7 +321,7 @@
     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                   IsVisible="{Binding Properties.HasSelection}">
       <!-- Everything below the header scrolls together. -->
-      <StackPanel>
+      <StackPanel Grid.IsSharedSizeScope="True">
 
       <!-- Now: what the entity is doing, while the level runs. -->
       <StackPanel IsVisible="{Binding Properties.LiveState.HasRows}">
@@ -331,7 +333,7 @@
             <DataTemplate x:DataType="shell:EntityStateRowModel">
               <Border Classes="proprow">
                 <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Grid.Column="0" Classes="rowlabel" Text="{Binding Name}" />
+                  <shell:RowLabel Grid.Column="0" Classes="rowlabel" Text="{Binding Name}" />
                   <TextBlock Grid.Column="1" Classes="value" Text="{Binding Value}"
                              FontFamily="{StaticResource SpectraFontMono}"
                              FontSize="{StaticResource SpectraFontSmall}"
@@ -367,12 +369,13 @@
                       <!-- Vector: label line, then three cells -->
                       <StackPanel IsVisible="{Binding IsVector}" Margin="0,2,0,4">
                         <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,3">
-                          <TextBlock Grid.Column="0" Classes="rowlabel scrub" Text="{Binding Name}"
-                                     PointerPressed="OnLabelPressed"
-                                     PointerMoved="OnScrubMoved"
-                                     PointerReleased="OnScrubReleased"
-                                     PointerCaptureLost="OnScrubLost"
-                                     ToolTip.Tip="Drag sideways to change all three. Shift for ten times, Ctrl for a tenth." />
+                          <shell:RowLabel Grid.Column="0" Classes="rowlabel scrub" Text="{Binding Name}"
+                                          Help="{Binding Help}"
+                                          Hint="Drag sideways to change all three. Shift for ten times, Ctrl for a tenth."
+                                          PointerPressed="OnLabelPressed"
+                                          PointerMoved="OnScrubMoved"
+                                          PointerReleased="OnScrubReleased"
+                                          PointerCaptureLost="OnScrubLost" />
                           <TextBlock Grid.Column="1" Text="{Binding PartialLabel}" Margin="6,0"
                                      FontSize="{StaticResource SpectraFontMicro}"
                                      Foreground="{StaticResource SpectraTextMuted}"
@@ -416,22 +419,35 @@
                         </ItemsControl>
                       </StackPanel>
 
-                      <!-- Everything else: label left, editor right -->
-                      <Grid ColumnDefinitions="86,*" Margin="0,1" IsVisible="{Binding !IsVector}">
+                      <!-- Everything else: label left, editor right. The label
+                           column is one width down the whole panel: as wide as
+                           the longest label, up to what the row can spare. -->
+                      <Grid Margin="0,1" IsVisible="{Binding !IsVector}">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="Auto" SharedSizeGroup="RowLabel"
+                                            MinWidth="{x:Static shell:RowLabelCell.Floor}" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
 
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                          <TextBlock Classes="rowlabel" Classes.scrub="{Binding IsScrubbable}"
-                                     Text="{Binding Name}"
-                                     PointerPressed="OnLabelPressed"
-                                     PointerMoved="OnScrubMoved"
-                                     PointerReleased="OnScrubReleased"
-                                     PointerCaptureLost="OnScrubLost" />
-                          <TextBlock Text="{Binding PartialLabel}" Margin="5,0,0,0"
-                                     FontSize="{StaticResource SpectraFontMicro}"
-                                     Foreground="{StaticResource SpectraTextMuted}"
-                                     VerticalAlignment="Center"
-                                     IsVisible="{Binding IsPartial}" />
-                        </StackPanel>
+                        <!-- The tag is docked first, so it keeps its width and
+                             a label too long for the limit is what trims. -->
+                        <shell:RowLabelCell Grid.Column="0" VerticalAlignment="Center"
+                                            RowWidth="{Binding $parent[Grid].Bounds.Width}">
+                          <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding PartialLabel}" Margin="5,0,0,0"
+                                       FontSize="{StaticResource SpectraFontMicro}"
+                                       Foreground="{StaticResource SpectraTextMuted}"
+                                       VerticalAlignment="Center"
+                                       IsVisible="{Binding IsPartial}" />
+                            <shell:RowLabel Classes="rowlabel" Classes.scrub="{Binding IsScrubbable}"
+                                            Text="{Binding Name}"
+                                            Help="{Binding Help}"
+                                            PointerPressed="OnLabelPressed"
+                                            PointerMoved="OnScrubMoved"
+                                            PointerReleased="OnScrubReleased"
+                                            PointerCaptureLost="OnScrubLost" />
+                          </DockPanel>
+                        </shell:RowLabelCell>
 
                         <!-- Scalar -->
                         <ItemsControl Grid.Column="1" ItemsSource="{Binding Fields}"

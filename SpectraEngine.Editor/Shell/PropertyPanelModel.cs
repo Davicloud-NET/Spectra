@@ -107,7 +107,7 @@ public sealed class PropertyRowModel : ObservableObject
     /// <summary>The words shown for <see cref="Choices"/>, index for index.</summary>
     public IReadOnlyList<string> ChoiceLabels { get; }
 
-    /// <summary>One line explaining the choices, for the row's tooltip.</summary>
+    /// <summary>One line of help, for the tooltip of the row's label.</summary>
     public string Help { get; }
 
     /// <summary>Whether there is anything to explain.</summary>
