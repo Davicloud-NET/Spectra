@@ -205,7 +205,7 @@ Run entirely on a thread-pool thread by `Scene.CompileStaticWorld` (`Scene.cs:10
 | **Carve** | Per-brush visible exterior surfaces — each brush's faces minus every overlapping brush's volume | `Csg.CarvePerBrush`, called at `CsgWorld.cs:467` |
 | **Bucket** | The sparse chunk partition: each placement into the cells its weld-band-inflated AABB touches | `ChunkGrid.Build` (`ChunkGrid.cs:167`), called at `CsgWorld.cs:527` |
 | **Snap + weld** | Per-cell vertex snapping to a grid and T-junction welding | `ChunkWelder.Weld`, `CsgWorld.cs:534` |
-| **Per-cell BSP** | One solid-leaf tree per cell over its residents' welded surfaces | `ChunkBspBuilder.Build`, `CsgWorld.cs:544` |
+| **Per-cell BSP** | One solid-leaf tree per cell over its residents' welded surfaces, cut to the cell | `ChunkBspBuilder.Build`, `CsgWorld.cs:544` |
 | **Per-cell mesh** | One `ChunkMesh` per geometry-owning cell, split into one `ChunkSubmesh` per face material | `ChunkMeshBuilder.Build`, `CsgWorld.cs:553` |
 | **GPU upload** | One `Mesh` per (chunk, material), materials resolved here | `Scene.CreateChunkSubmeshes` (`Scene.cs:1192`) — **render thread only** |
 

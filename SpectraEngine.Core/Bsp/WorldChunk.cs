@@ -50,8 +50,9 @@ public sealed class WorldChunk
     public IReadOnlyList<Polygon> WeldedSurfaces => _weldedSurfaces;
 
     /// <summary>
-    /// This cell's BSP tree, built from all its resident brushes. Only valid
-    /// for points and ray segments inside this cell.
+    /// This cell's BSP tree, built from what lies in the cell of its
+    /// resident brushes' surfaces. Only valid for points and ray segments
+    /// inside this cell.
     /// </summary>
     public BspTree Bsp { get; private set; } = null!;
 

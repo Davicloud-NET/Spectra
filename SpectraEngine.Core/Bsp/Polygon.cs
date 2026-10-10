@@ -185,6 +185,32 @@ public sealed class Polygon
         back = backVerts is not null ? new Polygon(backVerts, Surface, Face) : null;
     }
 
+    /// <summary>
+    /// The part of this polygon inside <paramref name="box"/>, or null when
+    /// none is. Cut with <see cref="Split"/>, so a polygon lying in a face of
+    /// the box is kept.
+    /// </summary>
+    public Polygon? ClippedTo(in Aabb box)
+    {
+        Polygon? inside = this;
+        if (Bounds.Min.X < box.Min.X) inside = InFrontOf(inside, new Plane(Vector3.UnitX, -box.Min.X));
+        if (Bounds.Max.X > box.Max.X) inside = InFrontOf(inside, new Plane(-Vector3.UnitX, box.Max.X));
+        if (Bounds.Min.Y < box.Min.Y) inside = InFrontOf(inside, new Plane(Vector3.UnitY, -box.Min.Y));
+        if (Bounds.Max.Y > box.Max.Y) inside = InFrontOf(inside, new Plane(-Vector3.UnitY, box.Max.Y));
+        if (Bounds.Min.Z < box.Min.Z) inside = InFrontOf(inside, new Plane(Vector3.UnitZ, -box.Min.Z));
+        if (Bounds.Max.Z > box.Max.Z) inside = InFrontOf(inside, new Plane(-Vector3.UnitZ, box.Max.Z));
+        return inside;
+
+        static Polygon? InFrontOf(Polygon? polygon, Plane plane)
+        {
+            if (polygon is null)
+                return null;
+
+            polygon.Split(plane, out Polygon? front, out _);
+            return front;
+        }
+    }
+
     /// <summary>Fan-triangulates the polygon into vertex triples.</summary>
     public IEnumerable<(Vector3 A, Vector3 B, Vector3 C)> Triangulate()
     {

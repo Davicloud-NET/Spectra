@@ -48,4 +48,23 @@ public sealed class SolidSpanOracleTests
         tally.Solid.ShouldBeGreaterThan(tally.Compared / 20, tally.ToString());
         (tally.Compared - tally.Solid).ShouldBeGreaterThan(tally.Compared / 10, tally.ToString());
     }
+
+    [Fact]
+    public void Along_lines_that_lie_in_brush_faces_a_point_is_inside_a_span_when_the_live_world_says_so_all_round_it()
+    {
+        var tally = new SolidSpanOracle.Tally();
+
+        for (int seed = 1; seed <= 40; seed++)
+        {
+            Scene scene = SolidSpanOracle.BuildFlushLevel(seed, cuts: false);
+            scene.RebuildStaticWorld(new FakeRenderer());
+            CsgWorld world = scene.StaticWorld.ShouldNotBeNull();
+
+            tally = tally.Plus(SolidSpanOracle.CheckWholeNumberLines(scene, world.ContainsPoint, seed));
+        }
+
+        tally.Compared.ShouldBeGreaterThan(tally.Skipped, tally.ToString());
+        tally.Solid.ShouldBeGreaterThan(tally.Compared / 20, tally.ToString());
+        (tally.Compared - tally.Solid).ShouldBeGreaterThan(tally.Compared / 10, tally.ToString());
+    }
 }

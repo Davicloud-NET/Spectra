@@ -5,14 +5,18 @@ using System.Threading.Tasks;
 namespace SpectraEngine.Core.Bsp;
 
 // Per-cell BSP stage of a static-world compile. Each occupied cell gets a
-// tree built from the welded surfaces of every brush resident in it. Routed
-// queries must answer the same as one tree over the whole world; tests pin that.
+// tree built from the welded surfaces of every brush resident in it, cut to
+// the cell grown by ChunkGrid.WeldBand. Routed queries must answer the same
+// as one tree over the whole world; tests pin that.
 //
-// Why a cell's subset is enough, within the cell plus ChunkGrid.WeldBand:
-// - each resident contributes its complete surface set, not one clipped to the cell
-// - a brush containing a point of the cell is resident, so only residents make it solid
-// - a carver reaching within the band is resident too, so its faces close the union there
-// Holes can exist beyond the band, where no routed query asks this cell.
+// Why a cell's subset is enough inside the grown cell:
+// - a brush containing a point of it is resident, so only residents make it solid
+// - a carver reaching into it is resident too, so its faces close the union there
+//
+// Why the cut: a leaf is solid or empty by the side of the surface that split
+// it off last, which holds only where the surfaces are closed. Past the band
+// a resident's face can be buried in a brush that is not resident. A leaf
+// that reaches the cell through that gap takes its answer from out there.
 //
 // A cell rebuilds when a resident's welded array is not reference-identical to
 // the previous compile's (CsgBspCache). The dirty-cell set is not consulted.
@@ -75,26 +79,26 @@ internal static class ChunkBspBuilder
 
     // Shared with the incremental compile so both build identical trees.
     // Input is every resident's welded set in ascending placement order, the
-    // same order as CsgWorld.Surfaces. residentWelded is what a cache entry stores.
+    // same order as CsgWorld.Surfaces, less what lies outside the grown cell.
+    // residentWelded is what a cache entry stores.
     internal static BspTree BuildCellTree(
         WorldChunk chunk, Func<int, Polygon[]> weldedOf, out Polygon[][] residentWelded)
     {
         IReadOnlyList<int> residents = chunk.ResidentBrushIndices;
 
         residentWelded = new Polygon[residents.Count][];
-        int total = 0;
         for (int k = 0; k < residentWelded.Length; k++)
-        {
             residentWelded[k] = weldedOf(residents[k]);
-            total += residentWelded[k].Length;
-        }
 
-        var input = new Polygon[total];
-        int offset = 0;
+        Aabb reach = chunk.Coord.Bounds.Expanded(ChunkGrid.WeldBand);
+        var input = new List<Polygon>();
         foreach (Polygon[] surfaces in residentWelded)
         {
-            surfaces.CopyTo(input, offset);
-            offset += surfaces.Length;
+            foreach (Polygon surface in surfaces)
+            {
+                if (surface.ClippedTo(reach) is { } inside)
+                    input.Add(inside);
+            }
         }
 
         return BspTree.BuildFromSurfaces(input);

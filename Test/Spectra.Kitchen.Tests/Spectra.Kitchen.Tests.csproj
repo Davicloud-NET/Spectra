@@ -23,6 +23,8 @@
     <!-- The span query's level and its oracle. Run here over cooked levels. -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\SpanLevel.cs" Link="SpanLevel.cs" />
     <Compile Include="..\SpectraEngine.Bsp.Tests\SolidSpanOracle.cs" Link="SolidSpanOracle.cs" />
+    <!-- The trees against the brushes they were built from. Run here over baked worlds. -->
+    <Compile Include="..\SpectraEngine.Bsp.Tests\TreeSolidityOracle.cs" Link="TreeSolidityOracle.cs" />
     <!-- Sound through walls, heard here through a cooked level. -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\WallRig.cs" Link="WallRig.cs" />
     <Compile Include="..\SpectraEngine.Bsp.Tests\FakeAcousticMaterials.cs" Link="FakeAcousticMaterials.cs" />

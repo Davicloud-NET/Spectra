@@ -9,7 +9,8 @@ internal static class ChunkRayWalk
     // How far a cell's ray segment may overshoot its interval when accepting a
     // hit, so a crossing that rounds just past a cell boundary is taken by the
     // earlier cell. Must stay at most ChunkGrid.WeldBand: brushes with geometry
-    // in the overshoot window are then resident in the current cell too.
+    // in the overshoot window are then resident in the current cell too, and
+    // its tree keeps their surfaces that far out.
     private const float IntervalEpsilon = Polygon.Epsilon;
 
     public static bool Cast<TCells>(

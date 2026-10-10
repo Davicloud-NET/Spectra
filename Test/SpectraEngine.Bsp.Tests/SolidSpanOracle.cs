@@ -57,8 +57,9 @@ internal static class SolidSpanOracle
     }
 
     // As BuildLevel, with every corner on a whole number and nothing turned,
-    // so many boxes stand flush against each other.
-    public static Scene BuildFlushLevel(int seed)
+    // so many boxes stand flush against each other. Without cuts the boxes are
+    // the same ones, all additive.
+    public static Scene BuildFlushLevel(int seed, bool cuts = true)
     {
         var random = new Random(seed);
         var scene = new Scene($"Flush{seed}");
@@ -73,16 +74,18 @@ internal static class SolidSpanOracle
             node.LocalPosition = min + half;
 
             Brush brush = Brush.CreateBox(-half, half);
-            node.Brush = random.Next(3) == 0 ? brush.WithOperation(BrushOperation.Subtractive) : brush;
+            bool cut = random.Next(3) == 0;
+            node.Brush = cut && cuts ? brush.WithOperation(BrushOperation.Subtractive) : brush;
         }
 
         return scene;
     }
 
     // The carve's rule read off the level's brushes: a point is solid inside
-    // an additive brush and inside no cut. A flush level is checked against
-    // this and not its trees, which can read solid as air where boxes stand
-    // flush.
+    // an additive brush and inside no cut. A flush level with cuts is checked
+    // against this and not its trees: where a cut stands flush against a box
+    // the carve can leave the skin open, and a tree over an open skin reads
+    // wrong.
     public static Func<Vector3, bool> CarveRule(Scene scene)
     {
         var brushes = new List<(Plane[] Planes, Matrix4x4 ToLocal, bool Cuts)>();

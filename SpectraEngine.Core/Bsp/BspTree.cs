@@ -95,6 +95,14 @@ public sealed class BspTree
                     Plane surface = poly.Surface;
                     if (surface.Normal.Equals(splitter.Normal) && surface.D == splitter.D)
                         continue;
+
+                    // The same plane facing the other way goes too. Routed
+                    // back, its own back child is a solid leaf with no volume.
+                    // No point lands there, but a ray's crossing point can
+                    // round onto that side and report a hit in open air.
+                    if (surface.Normal.Equals(-splitter.Normal) && surface.D == -splitter.D)
+                        continue;
+
                     if (Vector3.Dot(surface.Normal, splitter.Normal) >= 0f)
                         front.Add(poly);
                     else
