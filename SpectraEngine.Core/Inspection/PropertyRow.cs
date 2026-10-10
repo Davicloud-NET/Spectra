@@ -195,7 +195,8 @@ public readonly record struct PropertyRow
     public IReadOnlyList<string> ChoiceLabels { get; init; }
 
     /// <summary>
-    /// One line explaining what this row's choices mean, or empty.
+    /// One line of help for this row, or empty: what its choices mean, or the
+    /// tooltip an entity class declares for the setting.
     /// </summary>
     public string Help { get; init; }
 

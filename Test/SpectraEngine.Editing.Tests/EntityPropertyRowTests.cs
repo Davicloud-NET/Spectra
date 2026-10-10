@@ -190,6 +190,23 @@ public sealed class EntityPropertyRowTests
     }
 
     [Fact]
+    public void A_row_carries_the_tooltip_its_setting_declares()
+    {
+        EntitySchemaCatalog catalog = Catalog(new EntitySchema("horn", keyvalues:
+        [
+            new KeyvalueDescriptor(
+                "reach", "Reach", "How far the horn is heard.", "30", KeyvalueType.Distance,
+                KeyvalueWidget.Auto, float.NaN, float.NaN, 0u, KeyvalueDescriptor.NoChoices),
+            Kv("loud", KeyvalueType.Bool, "0"),
+        ]));
+
+        List<PropertyRow> rows = Describe(Placed("horn"), catalog);
+
+        Row(rows, "reach").Help.ShouldBe("How far the horn is heard.");
+        Row(rows, "loud").Help.ShouldBe("");
+    }
+
+    [Fact]
     public void A_value_the_declared_type_cannot_carry_degrades_to_text()
     {
         // A typed row would parse it as zero and commit the zero.

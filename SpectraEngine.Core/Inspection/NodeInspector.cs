@@ -413,7 +413,7 @@ public static class NodeInspector
                     ? stored
                     : descriptor.Default;
 
-                into.Add(RowFor(descriptor, value));
+                into.Add(RowFor(descriptor, value) with { Help = descriptor.Tooltip });
             }
         }
 
