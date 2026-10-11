@@ -19,7 +19,6 @@ internal sealed class CliOptions
     public bool Loose { get; init; }
     public bool Watch { get; init; }
     public bool KeepBrushSource { get; init; }
-    public ScriptSourceMode ScriptSource { get; init; } = ScriptSourceMode.Embed;
     public CookEncoder Encoder { get; init; } = CookEncoder.Managed;
     public bool Strict { get; init; }
     public string? ManifestPath { get; init; }
@@ -44,7 +43,6 @@ internal sealed class CliOptions
         // --watch implies --loose
         Loose = Loose || Watch,
         KeepBrushSource = KeepBrushSource,
-        ScriptSource = ScriptSource,
         Encoder = Encoder,
         Strict = Strict,
         ManifestPath = ManifestPath,

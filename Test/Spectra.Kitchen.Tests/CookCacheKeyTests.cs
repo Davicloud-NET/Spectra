@@ -79,12 +79,12 @@ public class CookCacheKeyTests
         UInt128 ignoresProfileUnderFast = Key(RuleKind.RawCopy, 1, CookSettingKeys.None, fast);
         ignoresProfileUnderFast.ShouldBe(ignoresProfileUnderShip);
 
-        // A rule that declares only ScriptSource ignores a profile switch too.
-        var strip = new CookSettings { Profile = CookProfile.Fast, ScriptSource = ScriptSourceMode.Strip };
-        Key(RuleKind.Script, 1, CookSettingKeys.ScriptSource, fast)
-            .ShouldBe(Key(RuleKind.Script, 1, CookSettingKeys.ScriptSource, ship));
-        Key(RuleKind.Script, 1, CookSettingKeys.ScriptSource, strip)
-            .ShouldNotBe(Key(RuleKind.Script, 1, CookSettingKeys.ScriptSource, ship));
+        // A rule that declares only KeepBrushSource ignores a profile switch too.
+        var kept = new CookSettings { Profile = CookProfile.Fast, KeepBrushSource = true };
+        Key(RuleKind.Map, 1, CookSettingKeys.KeepBrushSource, fast)
+            .ShouldBe(Key(RuleKind.Map, 1, CookSettingKeys.KeepBrushSource, ship));
+        Key(RuleKind.Map, 1, CookSettingKeys.KeepBrushSource, kept)
+            .ShouldNotBe(Key(RuleKind.Map, 1, CookSettingKeys.KeepBrushSource, ship));
     }
 
     [Fact]
@@ -131,8 +131,8 @@ public class CookCacheKeyTests
     }
 
     private const CookSettingKeys AllSettingKeys =
-        CookSettingKeys.Profile | CookSettingKeys.Targets | CookSettingKeys.ScriptSource |
-        CookSettingKeys.Encoder | CookSettingKeys.KeepBrushSource;
+        CookSettingKeys.Profile | CookSettingKeys.Targets | CookSettingKeys.Encoder |
+        CookSettingKeys.KeepBrushSource | CookSettingKeys.AudioSampleRate;
 
     private static byte[] Stream(
         RuleKind kind, int ruleVersion, CookSettingKeys declared, CookSettings settings) =>

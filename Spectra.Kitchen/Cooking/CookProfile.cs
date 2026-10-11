@@ -15,16 +15,6 @@ public enum CookProfile
     Preview,
 }
 
-/// <summary>Whether cooked scripts keep their source text beside their bytecode.</summary>
-public enum ScriptSourceMode
-{
-    /// <summary>Keep the source, so a stack trace can quote the line it names.</summary>
-    Embed,
-
-    /// <summary>Drop it.</summary>
-    Strip,
-}
-
 /// <summary>Which block-compression encoder a cook uses.</summary>
 // Managed has to stay the default: the AOT editor hosts this library in process.
 public enum CookEncoder

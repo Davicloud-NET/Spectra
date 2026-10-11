@@ -47,9 +47,6 @@ public sealed class CookSettings
     /// <summary>Keep authored brush geometry in a cooked map, so a verify can recompile it.</summary>
     public bool KeepBrushSource { get; init; }
 
-    /// <summary>Whether cooked scripts keep their source text.</summary>
-    public ScriptSourceMode ScriptSource { get; init; } = ScriptSourceMode.Embed;
-
     /// <summary>Which block-compression encoder to use.</summary>
     public CookEncoder Encoder { get; init; } = CookEncoder.Managed;
 

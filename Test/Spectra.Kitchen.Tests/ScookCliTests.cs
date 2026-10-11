@@ -197,8 +197,8 @@ public class ScookCliTests
         using var project = new TempProject();
         project.WriteAsset("Data/strings.bin", TempProject.Bytes(40));
 
-        // --script-source: there is no script rule yet, so nothing acts on it.
-        var run = Invoke("cook", project.Root, "--script-source", "strip", "--strict");
+        // --encoder native: there is one encoder, so nothing acts on it.
+        var run = Invoke("cook", project.Root, "--encoder", "native", "--strict");
 
         // Still a warning under --strict: the cook itself happened.
         run.ExitCode.ShouldBe(ExitSuccess);

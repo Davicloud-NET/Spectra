@@ -15,7 +15,6 @@ internal sealed class CliParser
     private string? _output;
     private string? _manifest;
     private CookProfile _profile = CookProfile.Ship;
-    private ScriptSourceMode _scriptSource = ScriptSourceMode.Embed;
     private CookEncoder _encoder = CookEncoder.Managed;
     private int _jobs = 1;
     private bool _useCache = true;
@@ -124,7 +123,6 @@ internal sealed class CliParser
         "--profile" => "a profile",
         "-t" or "--target" => "a backend",
         "-j" or "--jobs" => "a worker count",
-        "--script-source" => "embed or strip",
         "--encoder" => "managed or native",
         _ => null,
     };
@@ -155,10 +153,6 @@ internal sealed class CliParser
                     return $"'{option}' requires a worker count of 1 or more, not '{value}'";
                 _jobsGiven = true;
                 return null;
-            case "--script-source":
-                return TryParseScriptSource(value, out _scriptSource)
-                    ? null
-                    : $"unknown script source mode '{value}'. Valid: embed, strip";
             default:
                 return TryParseEncoder(value, out _encoder)
                     ? null
@@ -202,7 +196,6 @@ internal sealed class CliParser
             Loose = _loose,
             Watch = _watch,
             KeepBrushSource = _keepBrush,
-            ScriptSource = _scriptSource,
             Encoder = _encoder,
             Strict = _strict,
             ManifestPath = _manifest,
@@ -238,16 +231,6 @@ internal sealed class CliParser
             case "fast": profile = CookProfile.Fast; return true;
             case "preview": profile = CookProfile.Preview; return true;
             default: profile = CookProfile.Ship; return false;
-        }
-    }
-
-    private static bool TryParseScriptSource(string value, out ScriptSourceMode mode)
-    {
-        switch (value)
-        {
-            case "embed": mode = ScriptSourceMode.Embed; return true;
-            case "strip": mode = ScriptSourceMode.Strip; return true;
-            default: mode = ScriptSourceMode.Embed; return false;
         }
     }
 

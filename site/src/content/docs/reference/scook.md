@@ -34,7 +34,7 @@ dotnet run --project Spectra.Kitchen.CLI -- <command> [options] <path>
 | `-q`, `--quiet` | Prints errors only. |
 | `--no-color` | Plain text output. `NO_COLOR` works too. |
 
-`--profile`, `--script-source` and `--encoder` are accepted but do nothing yet.
+`--profile` and `--encoder` are accepted but do nothing yet.
 
 ## The cache
 

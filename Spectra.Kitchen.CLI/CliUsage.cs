@@ -84,8 +84,6 @@ internal static class CliUsage
         WriteOption(w, s, "    --keep-brush-source", null,
             "Keep authored brushes in a cooked map, so a verify",
             "can recompile them and compare.");
-        WriteOption(w, s, "    --script-source", "<mode>",
-            $"Values: {s.Value}embed, strip{s.Reset}. Default: {s.Value}embed{s.Reset}");
         WriteOption(w, s, "    --encoder", "<name>",
             $"Values: {s.Value}managed, native{s.Reset}. Default: {s.Value}managed{s.Reset}");
         WriteOption(w, s, "    --strict", null,

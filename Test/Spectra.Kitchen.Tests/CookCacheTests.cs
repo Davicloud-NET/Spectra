@@ -104,10 +104,10 @@ public class CookCacheTests
         underFast.CacheHits.ShouldBe(2);
         underFast.CacheMisses.ShouldBe(1);
 
-        // No rule here declares ScriptSource.
-        CookResult stripped = Cook(project, new CookSettings { ScriptSource = ScriptSourceMode.Strip });
-        stripped.CacheHits.ShouldBe(3);
-        stripped.CacheMisses.ShouldBe(0);
+        // No rule here declares KeepBrushSource.
+        CookResult kept = Cook(project, new CookSettings { KeepBrushSource = true });
+        kept.CacheHits.ShouldBe(3);
+        kept.CacheMisses.ShouldBe(0);
     }
 
     [Fact]

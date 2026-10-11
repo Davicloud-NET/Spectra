@@ -20,18 +20,15 @@ public enum CookSettingKeys
     /// <summary>Reads <c>CookSettings.Targets</c>: which backends are cooked for.</summary>
     Targets = 1 << 1,
 
-    /// <summary>Reads <c>CookSettings.ScriptSource</c>: embed or strip.</summary>
-    ScriptSource = 1 << 2,
-
     /// <summary>Reads <c>CookSettings.Encoder</c>: managed or native.</summary>
-    Encoder = 1 << 3,
+    Encoder = 1 << 2,
 
     /// <summary>Reads <c>CookSettings.KeepBrushSource</c>.</summary>
-    KeepBrushSource = 1 << 4,
+    KeepBrushSource = 1 << 3,
 
     /// <summary>
     /// Reads <c>CookSettings.AudioSampleRate</c>: the one rate every cooked
     /// sound is resampled to.
     /// </summary>
-    AudioSampleRate = 1 << 5,
+    AudioSampleRate = 1 << 4,
 }

@@ -29,9 +29,6 @@ public static class CookSettingsDigest
         if ((declared & CookSettingKeys.Targets) != 0)
             pairs.Add(new("targets", DescribeTargets(settings.Targets)));
 
-        if ((declared & CookSettingKeys.ScriptSource) != 0)
-            pairs.Add(new("scriptSource", ToWire(settings.ScriptSource)));
-
         if ((declared & CookSettingKeys.Encoder) != 0)
             pairs.Add(new("encoder", ToWire(settings.Encoder)));
 
@@ -48,14 +45,6 @@ public static class CookSettingsDigest
         pairs.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
         return pairs;
     }
-
-    /// <summary>The script source mode's spelling, which is the command line's.</summary>
-    public static string ToWire(ScriptSourceMode mode) => mode switch
-    {
-        ScriptSourceMode.Embed => "embed",
-        ScriptSourceMode.Strip => "strip",
-        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown script source mode."),
-    };
 
     /// <summary>The encoder's spelling, which is the command line's.</summary>
     public static string ToWire(CookEncoder encoder) => encoder switch

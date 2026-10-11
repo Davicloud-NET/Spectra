@@ -19,8 +19,7 @@ public class ScookArgumentTests
     [InlineData("-j", "'-j' requires a worker count")]
     [InlineData("--jobs 0", "'--jobs' requires a worker count of 1 or more, not '0'")]
     [InlineData("-j many", "'-j' requires a worker count of 1 or more, not 'many'")]
-    [InlineData("--script-source", "'--script-source' requires embed or strip")]
-    [InlineData("--script-source keep", "unknown script source mode 'keep'. Valid: embed, strip")]
+    [InlineData("--script-source strip", "unknown option: --script-source")]
     [InlineData("--encoder", "'--encoder' requires managed or native")]
     [InlineData("--encoder gpu", "unknown encoder 'gpu'. Valid: managed, native")]
     [InlineData("--manifest", "'--manifest' requires a path")]
@@ -68,7 +67,6 @@ public class ScookArgumentTests
         options.Targets.ShouldBeEmpty();
         options.Jobs.ShouldBe(1);
         options.UseCache.ShouldBeTrue();
-        options.ScriptSource.ShouldBe(ScriptSourceMode.Embed);
         options.Encoder.ShouldBe(CookEncoder.Managed);
         options.ManifestPath.ShouldBeNull();
         options.UseColor.ShouldBeFalse();
@@ -85,7 +83,7 @@ public class ScookArgumentTests
     {
         CliOptions options = Options(
             "cook here -o out --profile fast -t gl,dx12 -t gl -j 4 --no-cache --loose --watch " +
-            "--keep-brush-source --script-source strip --encoder native --strict --manifest m.json -q --no-color");
+            "--keep-brush-source --encoder native --strict --manifest m.json -q --no-color");
 
         options.Verb.ShouldBe(CliVerb.Cook);
         options.Target.ShouldBe("here");
@@ -94,7 +92,6 @@ public class ScookArgumentTests
         options.Targets.ShouldBe([GraphicsBackend.OpenGL, GraphicsBackend.D3D12]);
         options.Jobs.ShouldBe(4);
         options.UseCache.ShouldBeFalse();
-        options.ScriptSource.ShouldBe(ScriptSourceMode.Strip);
         options.Encoder.ShouldBe(CookEncoder.Native);
         options.ManifestPath.ShouldBe("m.json");
         options.UseColor.ShouldBeFalse();

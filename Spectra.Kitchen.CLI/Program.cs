@@ -305,9 +305,6 @@ internal static class Program
         if (opts.ProfileGiven && opts.Profile != CookProfile.Ship)
             Say(writer, $"--profile {CookManifest.ToWire(opts.Profile)} is recorded and no rule varies by profile yet.");
 
-        if (opts.ScriptSource == ScriptSourceMode.Strip)
-            Say(writer, "--script-source strip does nothing yet: the script cook rule is not built.");
-
         if (opts.Encoder == CookEncoder.Native)
             Say(writer, "--encoder native does nothing yet: the image cook rule is not built.");
     }
