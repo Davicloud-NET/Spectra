@@ -225,6 +225,15 @@ public sealed class ProblemList : ObservableObject
         return entry;
     }
 
+    /// <summary>The row that stands for a subject under a template, or null.</summary>
+    public ProblemEntry? Find(OutputSeverity severity, string template, string subject)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        ArgumentNullException.ThrowIfNull(subject);
+
+        return _index.GetValueOrDefault((severity, template, subject));
+    }
+
     /// <summary>
     /// Makes one template's rows match a freshly computed list, for a
     /// condition that is found by looking at the scene and never logged. A row

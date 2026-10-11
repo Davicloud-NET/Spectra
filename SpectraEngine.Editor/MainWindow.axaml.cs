@@ -1076,15 +1076,24 @@ public partial class MainWindow : Window
     {
         _latest = snapshot;
 
+        FrameSnapshot queued = snapshot;
         if (Interlocked.Increment(ref _queuedSnapshots) > MaxQueuedSnapshots)
         {
             // Flag the drop so the tree rebuilds from the live graph.
-            Interlocked.Decrement(ref _queuedSnapshots);
             _droppedSnapshots = true;
-            return;
+
+            // A script that did not start is said once. That much still goes
+            // through, in its turn, or Problems has no row for it.
+            if (ScriptStartProblems.KeptOf(snapshot) is not { } kept)
+            {
+                Interlocked.Decrement(ref _queuedSnapshots);
+                return;
+            }
+
+            queued = kept;
         }
 
-        _published.Enqueue(snapshot);
+        _published.Enqueue(queued);
 
         // Post a pump per publish so the UI doesn't wait on its own timer.
         // Coalesced: the pump drains every queued snapshot in one pass.

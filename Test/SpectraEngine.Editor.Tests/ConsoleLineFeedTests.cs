@@ -135,6 +135,27 @@ public sealed class ConsoleLineFeedTests
     }
 
     [Fact]
+    public void A_script_that_prints_an_empty_line_gets_a_row_for_it()
+    {
+        var console = new ConsoleOutput();
+        var sink = new ConsoleScriptSink(console);
+        var feed = new ConsoleLineFeed();
+        var output = new OutputLog();
+
+        sink.Report(new ScriptMessage(ScriptSeverity.Print, string.Empty, "Scripts/spinner.luau", 3));
+        sink.Report(new ScriptMessage(ScriptSeverity.Error, string.Empty, "Scripts/spinner.luau", 4));
+        console.Print(string.Empty);
+        feed.Feed(Snapshot(console), output);
+
+        // A command's empty line has nothing to show and nothing to open.
+        output.Entries.Select(entry => (entry.Severity, entry.Text, entry.PlaceLabel)).ShouldBe(
+        [
+            (OutputSeverity.Info, "", "spinner.luau:3"),
+            (OutputSeverity.Error, "", "spinner.luau:4"),
+        ]);
+    }
+
+    [Fact]
     public void Lines_the_engine_dropped_at_the_end_of_a_burst_are_reported_with_that_snapshot()
     {
         const int Lost = 6;
@@ -159,6 +180,65 @@ public sealed class ConsoleLineFeedTests
 
         output.Entries.Count.ShouldBe(3, "what was reported is not reported again");
         output.Entries[^1].Text.ShouldBe("and on");
+    }
+
+    [Fact]
+    public void An_error_after_a_flood_of_warnings_arrives_behind_the_count_of_what_was_dropped()
+    {
+        var console = new ConsoleOutput();
+        var sink = new ConsoleScriptSink(console);
+        var feed = new ConsoleLineFeed();
+        var output = new OutputLog();
+
+        for (int i = 0; i < ConsoleOutput.Capacity + 300; i++)
+            console.Warn("careful");
+        sink.Report(new ScriptMessage(ScriptSeverity.Error, "it broke", "Scripts/door.luau", 12));
+        feed.Feed(Snapshot(console), output);
+
+        output.Entries.Select(entry => (entry.Severity, entry.Text, entry.Count)).ShouldBe(
+        [
+            (OutputSeverity.Warning, "careful", ConsoleOutput.Capacity),
+            (OutputSeverity.Warning,
+                "300 console line(s) are missing here: more were printed than the editor kept up with.", 1),
+            (OutputSeverity.Error, "it broke", 1),
+        ]);
+        output.Entries[^1].PlaceLabel.ShouldBe("door.luau:12");
+    }
+
+    [Fact]
+    public void What_is_kept_of_a_dropped_snapshot_shows_with_the_count_of_the_lines_around_it()
+    {
+        var feed = new ConsoleLineFeed();
+        var output = new OutputLog();
+        feed.Feed(
+            new FrameSnapshot { ConsoleLines = [new ConsoleLine(0, LogLevel.Information, "before")], ConsoleLinesWritten = 1 },
+            output);
+
+        var dropped = new FrameSnapshot
+        {
+            IsPlaying = true,
+            ConsoleLines =
+            [
+                new ConsoleLine(1, LogLevel.Information, "hello"),
+                new ConsoleLine(2, LogLevel.Error, "The script on 'Door' did not start.")
+                {
+                    Place = new ConsolePlace("Scripts/door.luau", 2),
+                    ProblemNode = Guid.NewGuid(),
+                },
+                new ConsoleLine(3, LogLevel.Information, "and on"),
+                new ConsoleLine(4, LogLevel.Information, "and on again"),
+            ],
+            ConsoleLinesWritten = 5,
+        };
+        feed.Feed(ScriptStartProblems.KeptOf(dropped).ShouldNotBeNull(), output);
+
+        output.Entries.Select(entry => (entry.Severity, entry.Text)).ShouldBe(
+        [
+            (OutputSeverity.Info, "before"),
+            (OutputSeverity.Warning, "1 console line(s) are missing here: more were printed than the editor kept up with."),
+            (OutputSeverity.Error, "The script on 'Door' did not start."),
+            (OutputSeverity.Warning, "2 console line(s) are missing here: more were printed than the editor kept up with."),
+        ]);
     }
 
     [Fact]

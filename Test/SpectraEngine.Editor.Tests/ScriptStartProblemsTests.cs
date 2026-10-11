@@ -123,17 +123,108 @@ public sealed class ScriptStartProblemsTests
     }
 
     [Fact]
-    public void One_broken_file_on_two_nodes_is_one_row_that_counts_both()
+    public void One_broken_file_on_two_nodes_is_one_row_that_names_the_node_it_selects()
     {
         Guid first = Guid.NewGuid();
 
         _feed.Apply(Playing(
-            DidNotStart(first, "The script on 'Spin' did not start.", new ConsolePlace(Door, 2)),
-            DidNotStart(Guid.NewGuid(), "The script on 'Spin' did not start.", new ConsolePlace(Door, 2))));
+            DidNotStart(first, "The script on 'Door' did not start.", new ConsolePlace(Door, 2)),
+            DidNotStart(Guid.NewGuid(), "The script on 'Gate' did not start.", new ConsolePlace(Door, 2))));
 
         ProblemEntry entry = _problems.Entries.ShouldHaveSingleItem();
-        entry.CountLabel.ShouldBe("x2");
         entry.NodeId.ShouldBe(first);
+        entry.Message.ShouldBe(
+            "Scripts/door.luau:2: The script on 'Door' did not start. The same goes for 1 more node.");
+        entry.CountLabel.ShouldBe("x2");
+    }
+
+    [Fact]
+    public void Each_further_node_with_the_same_broken_file_is_counted_in_the_rows_words()
+    {
+        Guid first = Guid.NewGuid();
+        _feed.Apply(Playing(
+            DidNotStart(first, "The script on 'Door' did not start.", new ConsolePlace(Door, 2)),
+            DidNotStart(Guid.NewGuid(), "The script on 'Gate' did not start.", new ConsolePlace(Door, 2))));
+
+        // A script that starts later, as one under a clone will.
+        _feed.Apply(Playing(
+            DidNotStart(Guid.NewGuid(), "The script on 'Hatch' did not start.", new ConsolePlace(Door, 2))));
+
+        ProblemEntry entry = _problems.Entries.ShouldHaveSingleItem();
+        entry.NodeId.ShouldBe(first);
+        entry.Message.ShouldBe(
+            "Scripts/door.luau:2: The script on 'Door' did not start. The same goes for 2 more nodes.");
+    }
+
+    [Fact]
+    public void The_next_play_counts_the_nodes_of_a_broken_file_again()
+    {
+        Guid gate = Guid.NewGuid();
+        _feed.Apply(Playing(
+            DidNotStart(Guid.NewGuid(), "The script on 'Door' did not start.", new ConsolePlace(Door, 2)),
+            DidNotStart(gate, "The script on 'Gate' did not start.", new ConsolePlace(Door, 2))));
+        _feed.Apply(Stopped());
+
+        // The door's script was taken off its node. The gate's is as broken as it was.
+        _feed.Apply(Playing(DidNotStart(gate, "The script on 'Gate' did not start.", new ConsolePlace(Door, 2))));
+
+        ProblemEntry entry = _problems.Entries.ShouldHaveSingleItem();
+        entry.NodeId.ShouldBe(gate);
+        entry.Message.ShouldBe("Scripts/door.luau:2: The script on 'Gate' did not start.");
+        entry.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_row_somebody_dismissed_comes_back_with_the_words_of_the_node_that_says_it_next()
+    {
+        Guid hatch = Guid.NewGuid();
+        _feed.Apply(Playing(
+            DidNotStart(Guid.NewGuid(), "The script on 'Door' did not start.", new ConsolePlace(Door, 2))));
+        _problems.Remove(_problems.Entries[0]);
+
+        _feed.Apply(Playing(DidNotStart(hatch, "The script on 'Hatch' did not start.", new ConsolePlace(Door, 2))));
+
+        ProblemEntry entry = _problems.Entries.ShouldHaveSingleItem();
+        entry.NodeId.ShouldBe(hatch);
+        entry.Message.ShouldBe("Scripts/door.luau:2: The script on 'Hatch' did not start.");
+    }
+
+    [Fact]
+    public void A_snapshot_the_shell_has_no_room_for_still_gives_the_row_of_a_script_that_did_not_start()
+    {
+        Guid door = Guid.NewGuid();
+        var dropped = new FrameSnapshot
+        {
+            FrameNumber = 40,
+            IsPlaying = true,
+            ConsoleLines =
+            [
+                new ConsoleLine(7, LogLevel.Information, "hello") { Place = new ConsolePlace(Door, 3) },
+                DidNotStart(door, "The script on 'Door' did not start.", new ConsolePlace(Door, 2)) with { Sequence = 8 },
+                new ConsoleLine(9, LogLevel.Error, "it broke") { Place = new ConsolePlace(Door, 12) },
+            ],
+            ConsoleLinesWritten = 10,
+        };
+
+        FrameSnapshot kept = ScriptStartProblems.KeptOf(dropped).ShouldNotBeNull();
+
+        kept.ConsoleLines.ShouldHaveSingleItem().Sequence.ShouldBe(8);
+        kept.IsPlaying.ShouldBeTrue("the play that starts with it still clears the rows of the last one");
+        kept.FrameNumber.ShouldBe(40);
+        kept.ConsoleLinesWritten.ShouldBe(10);
+
+        _feed.Apply(kept);
+
+        _problems.Entries.ShouldHaveSingleItem().NodeId.ShouldBe(door);
+    }
+
+    [Fact]
+    public void A_dropped_snapshot_that_names_no_script_that_did_not_start_keeps_nothing()
+    {
+        ScriptStartProblems.KeptOf(Stopped()).ShouldBeNull();
+        ScriptStartProblems.KeptOf(Playing(
+            new ConsoleLine(0, LogLevel.Information, "hello") { Place = new ConsolePlace(Door, 3) },
+            new ConsoleLine(1, LogLevel.Error, "it broke") { Place = new ConsolePlace(Door, 12) })).ShouldBeNull();
     }
 
     [Fact]
