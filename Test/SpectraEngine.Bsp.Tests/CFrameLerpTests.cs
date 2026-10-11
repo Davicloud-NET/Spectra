@@ -72,6 +72,53 @@ public sealed class CFrameLerpTests
         CFrame.Identity.Lerp(sameGoal, 0.5f).ShouldBeNear(CFrame.Identity.Lerp(goal, 0.5f));
     }
 
+    // Our choice for the next three: Roblox's documentation does not say what
+    // an alpha outside 0 to 1 gives. Ours keeps to the same line and the same arc.
+    [Fact]
+    public void Lerp_at_two_goes_twice_as_far()
+    {
+        CFrame goal = new CFrame(10f, 0f, -4f) * CFrame.Angles(0f, Quarter, 0f);
+
+        // Twice a quarter turn about Y is the half turn.
+        CFrame.Identity.Lerp(goal, 2f).ShouldHaveComponents(
+            20, 0, -8,
+            -1, 0, 0,
+            0, 1, 0,
+            0, 0, -1);
+    }
+
+    [Fact]
+    public void Lerp_at_minus_one_goes_the_other_way()
+    {
+        CFrame goal = new CFrame(10f, 0f, -4f) * CFrame.Angles(0f, Quarter, 0f);
+
+        // Ry(-90).
+        CFrame.Identity.Lerp(goal, -1f).ShouldHaveComponents(
+            -10, 0, 4,
+            0, 0, -1,
+            0, 1, 0,
+            1, 0, 0);
+    }
+
+    [Fact]
+    public void Lerp_far_past_a_goal_a_small_turn_away_still_follows_the_arc()
+    {
+        // A thousand times a thousandth of a radian about Y is one radian.
+        float cosine = MathF.Cos(1f), sine = MathF.Sin(1f);
+
+        CFrame.Identity.Lerp(CFrame.Angles(0f, 1e-3f, 0f), 1000f).ShouldHaveRotation(
+            cosine, 0, sine,
+            0, 1, 0,
+            -sine, 0, cosine);
+    }
+
+    [Fact]
+    public void Lerp_at_one_gives_the_goal_with_no_rounding()
+    {
+        Start.Lerp(Goal, 1f).ShouldBe(Goal);
+        Start.Lerp(Goal, 1f).Rotation.ShouldBe(Goal.Rotation);
+    }
+
     [Fact]
     public void Lerp_between_equal_frames_stays_there()
     {

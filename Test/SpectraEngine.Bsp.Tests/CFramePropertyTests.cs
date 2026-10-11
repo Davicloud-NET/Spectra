@@ -245,4 +245,24 @@ public sealed class CFramePropertyTests
             start.Lerp(goal, alpha).ShouldBeNear(expected, Loose);
         }
     }
+
+    // Our choice: Roblox's documentation is silent on an alpha outside 0 to 1.
+    [Fact]
+    public void Lerp_outside_zero_to_one_carries_on_along_the_same_line_and_arc()
+    {
+        var random = new Random(4114);
+        for (int i = 0; i < Rounds; i++)
+        {
+            CFrame start = RandomFrames.Frame(random);
+            Vector3 axis = Vector3.Normalize(RandomFrames.Axis(random));
+            float angle = RandomFrames.Between(random, -1f, 1f);
+            Vector3 offset = RandomFrames.Vector(random);
+            CFrame goal = (start + offset) * CFrame.FromAxisAngle(axis, angle);
+            float alpha = RandomFrames.Between(random, -3f, 4f);
+
+            CFrame expected = (start + (offset * alpha)) * CFrame.FromAxisAngle(axis, angle * alpha);
+
+            start.Lerp(goal, alpha).ShouldBeNear(expected, Loose);
+        }
+    }
 }

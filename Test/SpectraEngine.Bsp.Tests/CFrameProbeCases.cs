@@ -166,6 +166,13 @@ internal sealed class CFrameProbeCases
         Frame("choice_from_matrix_parallel_columns", Matrix(V(1f, 2f, 3f), V(1f, 0f, 0f), V(2f, 0f, 0f)), ourChoice: true);
         Angles("choice_to_euler_angles_xyz_at_pole", Probe.Angles(0.4f, Quarter, -0.9f).ToEulerAnglesXYZ(), ourChoice: true);
         Angles("choice_to_orientation_at_pole", Orientation(Quarter, 0.4f, -0.9f).ToOrientation(), ourChoice: true);
+
+        // The documentation does not say what an alpha outside 0 to 1 gives.
+        // Ours carries on along the same line and the same arc.
+        Probed<CFrame> quarterY = At(10f, 0f, -4f).Times(Probe.Angles(0f, Quarter, 0f));
+        Frame("choice_lerp_at_two", Identity.Lerp(quarterY, 2f), ourChoice: true);
+        Frame("choice_lerp_at_minus_one", Identity.Lerp(quarterY, -1f), ourChoice: true);
+        Frame("choice_lerp_far_past_a_small_turn", Identity.Lerp(Probe.Angles(0f, 0.001f, 0f), 1000f), ourChoice: true);
     }
 
     private void AddRandom()

@@ -201,11 +201,12 @@ public readonly struct CFrame : IEquatable<CFrame>
 
     /// <summary>
     /// The frame part of the way to <paramref name="goal"/>. The position
-    /// moves in a straight line and the rotation along the shortest arc.
+    /// moves in a straight line and the rotation along the shortest arc. An
+    /// alpha below 0 or above 1 carries on along both.
     /// </summary>
     public CFrame Lerp(CFrame goal, float alpha) => new(
         Vector3.Lerp(Position, goal.Position, alpha),
-        Quaternion.Slerp(Rotation, goal.Rotation, alpha));
+        RotationArc.At(Rotation, goal.Rotation, alpha));
 
     /// <summary>A frame given in this frame's space, in world space.</summary>
     public CFrame ToWorldSpace(CFrame local) => this * local;
