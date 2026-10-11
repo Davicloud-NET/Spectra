@@ -231,7 +231,9 @@ Tests and tools
 | File | Covers |
 |---|---|
 | `docs/code-style.md` | how code, comments and commits are written |
-| `ROADMAP.md` | milestones and their order |
+| `README.md` | what works today and what does not |
+| `ROADMAP.md` | what is being worked on, what comes next and in what order |
+| `docs/milestones.md` | every milestone id and its status |
 | `site/src/content/docs/contributing/writing-docs.mdx` | how to write user docs: pages, images, video |
 | `docs/data-model.md` | `SceneNode`, `Scene` and the payloads |
 | `docs/formats-and-pipeline.md` | every file format and the cook |

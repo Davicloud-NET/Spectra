@@ -1,217 +1,156 @@
+<p align="center">
+  <img src="Assets/Logo/LogoSpectra.svg" width="120" alt="Spectra logo">
+</p>
+
 # Spectra Engine
 
-A cross-platform game engine in C# / .NET 10, built around brush geometry and a
-scene graph, with its own shader language. The goal is general purpose: anything
-from an FPS to a third-person RPG to a large-scale RTS should be buildable in
-it, as content and scripts rather than as engine code.
+Spectra is a game engine and an editor for it, written in C# on .NET 10.
 
-The editor takes its cues from HAMMER and Roblox Studio: you author solid world
-geometry with brushes, place everything else freely in an unbounded world, and
-edits recompile in the background without the world size mattering.
+The short version: it's the editing experience of Roblox Studio and Hammer, in an engine where you own the game. You build the world right in the editor, wire up doors and buttons without code, and press play in the level you're working on. A project is a folder of plain files, and the game you get out of it is a normal executable that belongs to you.
+
+I'm building it for people who make worlds. Mostly that's Roblox developers who want to leave but find Unity and Unreal too hard to get into, and Hammer mappers who want a current engine they can ship a game on. It isn't tied to a genre though. Nothing genre specific goes into the engine, so a horror game, a shooter or an RTS should all end up possible as content and scripts.
+
+![The Logic view while a level plays](site/src/assets/logic-view.png)
+
+That's the Logic view while a level plays. Each card is an entity and each line is a wire, and a wire lights up when it fires. The red one points at a name nothing has.
+
+## Where it's at
+
+It's early. You can build a level, wire it up, walk around in it and cook it into packs the game runs from. You can't script it yet, and until Luau is in you can't make a real game with it. There are no downloads either, so the way in is building from source.
+
+| | Works today | Not yet |
+|---|---|---|
+| Building | Blocks that fuse into one solid world, parts that keep their own shape and can move, cuts for doorways and windows, and a material per face. The world recompiles in the background and only where you edited, so a huge world edits as fast as a small one. | Terrain |
+| Editor | The engine runs inside an Avalonia shell with a ribbon, docking panels and a command palette. Move, rotate and size gizmos with snapping, box select, duplicate, group, and undo where one drag is one step. | Linux. Importing assets from inside the editor. Vertex snapping. A second viewport. |
+| Logic without code | Entities like Source has them: doors, lifts, buttons, triggers, teleports, timers, counters, relays, sounds. You connect an output of one to an input of another in the Properties panel, or drag a wire in the Logic view. | Prefabs. Only the player sets off a trigger. |
+| Playing | F8 plays the level you're editing in first person, and F8 again puts everything back where it was. The character walks, jumps, climbs steps, rides lifts and presses buttons. Physics is Box3D. | Bodies that fall over and get pushed around |
+| Rendering | OpenGL, D3D11 and D3D12. Deferred by default with forward next to it, physically based, HDR with tone mapping. Directional, point, spot, rect and disc lights, and cascaded shadows from the sun. | Anti-aliasing, normal maps, transparent materials, bloom, fog, image-based lighting, particles, decals. Eight lights at most, and only one casts shadows. |
+| Shaders | SpectraShade, the engine's own shader language. One `.spectrashade` file compiles to GLSL and HLSL and reloads when you save it. It has a command line compiler, a language server and a Visual Studio extension. | Imports, a type checker, material parameters |
+| Sound | Positional sound through OpenAL with distance falloff, Doppler, and walls that muffle a sound by what they're made of and how thick they are. Captions and subtitles come from plain text files. | Sound around corners, reverb, music, compressed audio. Nothing draws the captions on screen yet. |
+| Content | Everything loads from loose files or from `.spack` packs. `scook` cooks a project into packs: compressed textures, glTF models, audio, compiled shaders and baked levels. The same input gives the same bytes, on Windows and on Linux. | Cooked materials, skinned models, collision shapes on models |
+| Console | One command line per engine. You reach it from the editor, from the terminal or from the demo's command line. `ent_fire`, `ent_list`, `ent_show` and `ent_watch` poke at a running level. | Variables, key binds, config files, completion |
+
+Not started at all: scripting, multiplayer, game UI, terrain and save games. Animation has skeletons, clips and pose blending on the CPU, but nothing imports or draws them.
+
+## Build and run
+
+You need Windows 10 or 11, the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Git. Physics is native code, so you also need CMake and Visual Studio with the C++ workload to build it once.
 
 ```bash
-git submodule update --init --recursive   # Box3D, pinned
-dotnet build                              # Spectra.slnx
+git submodule update --init --recursive   # the Box3D source
+```
+
+```powershell
+native/build-box3d.ps1                    # builds box3d.dll, only needed once
+```
+
+```bash
+dotnet build
+dotnet run --project SpectraEngine.Editor -- d3d11
+```
+
+The editor opens on a start page where you make or open a project. It runs on `d3d11` or `d3d12`.
+
+There's also a demo without the editor around it, and that one takes `opengl` too:
+
+```bash
 dotnet run --project SpectraEngine.Executable -- d3d11
 ```
 
-Press **F8** to drop into the character and walk around. **F7** switches
-camera. **F11** toggles fullscreen. **F1** to **F6** are debug views.
+In both, hold the right mouse button to look around and fly with W, A, S and D. F8 drops you into the level as a character and F8 again brings you back.
 
----
+Tests are xUnit v3 on Microsoft.Testing.Platform, so every suite is its own program. Run one with `dotnet run`, not `dotnet test`:
 
-## What works today
+```bash
+dotnet run --project Test/SpectraEngine.Bsp.Tests
+```
 
-| Area | State |
-|---|---|
-| **Brush world** | CSG carve, snap, weld, per-cell BSP, chunked open world. Edits recompile incrementally in the background, at a cost independent of world size. |
-| **Subtractive brushes** | Doorways and holes cut by negative brushes, unordered composition, cavity walls. |
-| **Rendering** | OpenGL, D3D11 and D3D12 backends, live. Forward and wireframe pipelines over one shared draw list, through a render-pass seam that targets the window or an offscreen texture. The scene renders to a half-float target and is exposed and tone-mapped on the way out; all shading is in linear light, with sRGB decode and display encode done by the hardware. |
-| **Shader language** | SpectraShade compiles `.spectrashade` to GLSL and HLSL at runtime, with hot reload. LSP and a Visual Studio extension ship alongside. |
-| **Editor** | Translate / rotate / resize gizmos, undo with gesture transactions, multi-select and marquee, Studio-style camera. |
-| **Assets** | Textures, materials and models from real files, background decode with a render-thread upload pump, hot reload. Materials declare whether a texture is colour or data. |
-| **Physics** | Box3D vendored and bound, the compiled world as static collision, a first-person character that walks CSG holes, and one gameplay raycast that agrees with what is drawn. |
-| **Animation** | Skeletons, clips and pose blending. CPU only so far, nothing imports or draws them yet. |
+The other suites sit next to it in `Test/`.
 
-Not built yet, and worth naming: skeletal mesh import and skinning on the GPU,
-terrain, navmesh, particles, in-game UI, scripting, shadows, audio beyond a
-stub.
-
----
+On Linux the engine, the cook and the tests build and pass in CI. The editor doesn't run there yet.
 
 ## Roadmap
 
-Work is organised into lettered arcs that run in parallel, but the capabilities
-they add are ordered, and the spine below is that order. Each level says what
-the engine can do once it is reached, not what is being worked on this week:
-the arcs interleave, so the rendering arc has already delivered two of level
-3's prerequisites while level 1 is still open.
-
-Per-milestone dependencies, sizes and open decisions live in the design
-documents; this is the shape.
-
 ```mermaid
 flowchart TD
-    L0["<b>Level 0: The world exists</b><br/>brush CSG world, chunked and incremental · three render backends<br/>own shader language · gizmos and undo · assets · character physics<br/>linear-light colour"]
-    L1["<b>Level 1: You can build a level in it</b><br/>face texturing · duplicate, delete, group<br/>.spectramap save and load · play / stop"]
-    L2["<b>Level 2: You can make a game in it</b><br/>Luau scripting · entities, attributes, signals<br/>console and cvars · dynamic bodies and kinematic parts"]
-    L3["<b>Level 3: It looks like a game</b><br/>render targets · post and tone mapping · shadows · many lights<br/>PBR · transparency · anti-aliasing · instancing<br/>skeletal import and GPU skinning · audio"]
-    L4["<b>Level 4: You can ship it</b><br/>cooked content packs · the cook pipeline<br/>data-driven runtime executable · packaging"]
-    L5["<b>Level 5: Other people can play it</b><br/>replication and prediction · dedicated server<br/>headless world compilation · collaborative editing"]
-    L6["<b>Level 6: The full studio</b><br/>Uno editor shell · multi-viewport · terrain<br/>navmesh and AI · particles · in-game UI<br/>Vulkan and Linux"]
+    build["<b>Build a world</b><br/>blocks, parts, cuts, a material per face, undo, save and load"]
+    wire["<b>Wire it up</b><br/>doors, lifts, buttons, triggers, the Logic view, no code"]
+    play["<b>Play it</b><br/>F8 in the level you're editing, first person, with sound"]
+    cook["<b>Cook it</b><br/>one command packs a project, the game runs from the packs"]
+    script["<b>Script it</b><br/>Luau on nodes, attributes, tags, signals"]
+    more["<b>More to build with</b><br/>asset import, prefabs, physics bodies, the full console"]
+    look["<b>Make it look good</b><br/>normal maps, bloom, fog, anti-aliasing, transparency"]
+    game["<b>A first game</b><br/>game UI, animated characters, a small first-person template"]
+    net["<b>Multiplayer</b><br/>a server, replication, prediction, editing a level together"]
+    world["<b>Bigger worlds</b><br/>terrain, streaming, save games, navmesh"]
 
-    L0 --> L1 --> L2 --> L3 --> L4 --> L5 --> L6
-
-    classDef done fill:#1f6f3f,stroke:#2fbf6f,color:#fff
-    classDef doing fill:#7a5c12,stroke:#e0a800,color:#fff
-    classDef todo fill:#2b2f36,stroke:#5a6068,color:#c9ced6
-
-    class L0 done
-    class L1,L3 doing
-    class L2,L4,L5,L6 todo
-```
-
-<sub>Green: landed. Amber: underway. Grey: designed, not started.</sub>
-
-### The critical path
-
-The shortest sequence to an engine somebody else can build and ship a game in.
-Everything not on this line is deliberately off it, however much it improves
-the picture.
-
-```mermaid
-flowchart LR
-    F2["F2<br/>node identity"]:::done
-    F1["F1<br/>materials<br/>+ faces"]:::done
-    E1["E1<br/>gizmo, undo"]:::done
-    E3["E3<br/>multi-select"]:::done
-    E7["E7<br/>face texturing"]:::todo
-    E6["E6<br/>duplicate,<br/>delete, group"]:::todo
-    P2["P2<br/>.spectramap<br/>save + load"]:::todo
-    O0["O0<br/>Luau gate"]:::todo
-    P11a["P11a<br/>play / stop"]:::todo
-    D0["D0<br/>cook gate"]:::todo
-    SHIP["a game<br/>you can hand<br/>to someone"]:::todo
-
-    F2 --> E1 --> E3 --> P2
-    F1 --> E7 --> E6 --> P2
-    P2 --> O0 --> P11a --> D0 --> SHIP
+    build --> wire --> play --> cook --> script --> more --> look --> game --> net --> world
 
     classDef done fill:#1f6f3f,stroke:#2fbf6f,color:#fff
+    classDef next fill:#7a5c12,stroke:#e0a800,color:#fff
     classDef todo fill:#2b2f36,stroke:#5a6068,color:#c9ced6
+
+    class build,wire,play,cook done
+    class script next
+    class more,look,game,net,world todo
 ```
 
-### The dependencies that are not linear
+<sub>Green works today. Amber is next. Grey is planned, in this order.</sub>
 
-Five real constraints cut across the spine, and they are the reason the arcs
-exist at all:
+The first real target is a small first-person game made completely in the editor and in Luau, with no engine code. [ROADMAP.md](ROADMAP.md) has what I'm working on right now, what comes after and what I'm not going to do.
 
-- **`R3` offscreen render targets was the rendering keystone, and it has
-  landed.** Shadows, post processing, anti-aliasing, material previews and the
-  Uno viewport were all waiting on it; `R4` has since put the linear-to-display
-  conversion in exactly one place on top of it, and the deferred G-buffer and
-  its Cook-Torrance light pass on top of that, and four cascaded shadow maps on
-  top of that.
-- **Uncapped lights wait on blend state, which no backend has.** Deferred
-  removes the reason for a light cap, but the version that actually removes it
-  draws a bounding volume per light and adds the results, and today D3D11 never
-  calls `OMSetBlendState`, OpenGL never enables `GL_BLEND`, and D3D12 hardcodes
-  `BlendEnable = 0`. Until then the light pass carries the forward path's
-  eight-light array.
-- **GPU skinning waits on `R5` array uniforms, which have landed.** The
-  animation arc has skeletons, clips and pose blending, all on the CPU;
-  `vec4[N]` and `mat4[N]` are settable on all three backends now, so an array of
-  bone matrices is no longer the blocker.
-- **Performance is a pillar, not a phase, and it has a measured baseline.**
-  The engine targets low-power integrated GPUs as first-class hardware.
-  [docs/performance.md](docs/performance.md) is the catalogue: what exists,
-  what a frame costs today, and every technique worth adding with what each
-  would buy here. Nothing on that list should be acted on without a
-  measurement first, because the two largest wins found so far were both
-  invisible to reasoning.
-- **A dedicated server waits on headless world compilation.**
-  `Scene.RebuildStaticWorld` still needs a `Renderer`, which is the next
-  coupling to break before anything can simulate a world without a GPU.
+## What it's built around
 
-### Arc status
+- Everything is written to be AOT compiled. No reflection and no runtime codegen, so entity classes get their parsing and registration from a source generator.
+- Open world from the start. There are no sealed maps, no vis compile and no map size limit. You place a block the way you place a part in Studio, wherever you want.
+- Blocks are there to build quickly. The engine is still asset first: a finished game is mostly models and materials.
+- A project is plain files. A level is a folder of JSON you can diff and edit outside the editor, and only the cooked game is binary.
+- It has to run well on weak hardware. People with bad computers should get to play too.
+- Editor code never ships in a game. The tools live in their own assemblies and a game only reads packs.
 
-| Arc | Document | Shipped | Next up |
-|---|---|---|---|
-| **F** Foundations | [ROADMAP](ROADMAP.md) | F1, F2 | F3 ViewDrawer, F4 diagnostics contract |
-| **E** Editor | [ROADMAP](ROADMAP.md) | E1 to E5 | E7 face texturing, E6 structural edits |
-| **P** Persistence, entities | [ROADMAP](ROADMAP.md), [data-model](docs/data-model.md) | P7a, P7b | P2 map format, P11a play/stop |
-| **R** Rendering | [ROADMAP](ROADMAP.md) | R1 PSO key, R2 sRGB, R3 targets, R4 tone mapping, R5 array uniforms, R8 lights, deferred + PBR, R6/R7 cascaded shadows | blend state, IBL, D3D12 pipelining |
-| **S** Shader authoring | [ROADMAP](ROADMAP.md) | the language itself, GLSL, HLSL, LSP | S2 parameter scopes, S5 type checker |
-| **Y** Physics | [physics](docs/physics.md) | Y0 to Y5 | Y6 dynamic bodies, Y7 kinematic parts |
-| **A** Animation | this README, for now | pose primitives | import, then R5, then skinning |
-| **D** Formats, pipeline | [formats-and-pipeline](docs/formats-and-pipeline.md) | none | D0 cook gate |
-| **O** Scripting | [roblox-onboarding](docs/roblox-onboarding.md) | none | O0 Luau gate |
-| **C** Console | [console](docs/console.md) | none | C0 cvar registry |
-| **N** Networking | [networking](docs/networking.md) | none | N0 transport gate |
-| **X** Performance | [performance](docs/performance.md) | frustum culling, chunking, cascades, pooling | G-buffer trim, render scale, chunk BVH |
-| **H** Uno host | [ROADMAP](ROADMAP.md) | none | H1 EngineHost seam |
+## Docs
 
-Arc **A** is new and has no design document yet.
-
----
-
-## Repository layout
-
-```
-Assets/                      content root: textures, materials, models, shaders
-SpectraEngine.Core/          the engine
-  Animation/                 skeletons, clips, pose blending
-  Assets/                    content root, typed caches, importers
-  Bsp/                       brushes, CSG, chunked world, BSP queries
-  Graphics/                  renderer abstraction, GL / D3D11 / D3D12 backends
-  Input/                     backend-neutral input, cursor lock
-  Physics/                   fixed tick, physics seam, character mover
-  Scene/                     scene graph, camera, culling, demo scene
-SpectraEngine.Editing/       editor-only: gizmos, undo, tools, selection
-SpectraEngine.Executable/    demo host, wires editor and physics in
-SpectraEngine.Physics.Box3D/ native binding, kept out of Core on purpose
-SpectraShade.Compiler/       shader language: lexer, parser, analyser, codegen
-SpectraShade.LSP/            language server
-SpectraShade.VSIX/           Visual Studio extension
-Test/                        xUnit v3 suites, run with dotnet run
-docs/                        design documents, one per arc
-native/                      Box3D submodule build
-```
-
-## Building and testing
-
-Test projects run through `dotnet run`, not `dotnet test`, because they use
-xUnit v3 on Microsoft.Testing.Platform.
+The user docs are a Starlight site in `site/`:
 
 ```bash
-dotnet run --project Test/SpectraEngine.Bsp.Tests       # CSG, BSP, scene, character, animation
-dotnet run --project Test/SpectraEngine.Editing.Tests   # gizmos, undo, viewport
-dotnet run --project Test/SpectraEngine.Physics.Tests   # Box3D binding, ABI guard
-dotnet run --project Test/SpectraShade.Compiler.Tests   # shader compiler
-dotnet run --project Test/SpectraEngine.Graphics.Tests  # GL smoke tests, needs a driver
+npm --prefix site install
+npm --prefix site run dev    # http://localhost:4321
 ```
 
-The demo doubles as a smoke gate. A short run with `--selftest` must log
-`Editing self-test: PASS` every few seconds with nothing at `ERR`.
+Run `npm --prefix site run api` before `dev` if you also want the C# reference. A good first page is "Make a door that opens", which builds a working door with no code.
 
-```bash
-dotnet run --project SpectraEngine.Executable -- d3d11 --selftest
+If you want to work on the engine itself, these are the ones to read:
+
+- [docs/positioning.md](docs/positioning.md): who the engine is for and why
+- [docs/data-model.md](docs/data-model.md): the scene, its nodes and what hangs off them
+- [docs/formats-and-pipeline.md](docs/formats-and-pipeline.md): every file format and the cook
+- [docs/code-style.md](docs/code-style.md): how code and text get written here
+- [AGENTS.md](AGENTS.md): the short guide to the codebase. It's written for coding agents but it's just as useful for a person.
+
+## What's where
+
+```
+Assets/                        the content root: textures, materials, models, sounds
+SpectraEngine.Core/            the engine
+SpectraEngine.Editing/         editor logic: commands, undo, gizmos, cameras
+SpectraEngine.Editor/          the editor shell (Avalonia)
+SpectraEngine.Executable/      the demo
+SpectraEngine.Entities/        the built-in entities, with their source generator next to it
+SpectraEngine.Physics.Box3D/   the Box3D binding
+Spectra.Kitchen/               the cook (scook)
+SpectraShade.*/                the shader compiler, its CLI, language server and VS extension
+Test/                          the test suites
+site/                          the user docs
+docs/                          design notes
+native/, external/             the Box3D build script and its source
 ```
 
-Native code needs no Developer Command Prompt. CMake locates MSVC through the
-registry. The one exception is the NativeAOT publish, which shells out to
-`findvcvarsall.bat`. See [`native/README.md`](native/README.md).
+## Contributing
 
-## Design principles
+If you want to work on this, read [docs/code-style.md](docs/code-style.md) first. Keep AOT in mind, and think things through before you reach for AI. Review AI code before you use it and test it properly.
 
-The full set lives in [AGENTS.md](AGENTS.md). The main ones:
+Other than that, have fun working on this!
 
-- **The scene graph is the spine.** Brushes are nodes. The compiled world is
-  derived data, never authored.
-- **Open world is first class.** No sealed levels, no PVS, no map extents. A
-  brush edit costs the same at the origin and at 8,000 units out.
-- **BSP is a query structure only.** Never the render path.
-- **Editing lives above the engine**, in its own assembly, so gizmo and undo
-  code never links into a shipped game.
-- **Content is real files.** Never string literals, never byte arrays in code.
-- **AOT everywhere.** No reflection-heavy patterns, no runtime codegen.
+## License
+
+There's no license file yet. The plan is MPL-2.0 for the engine and MIT for templates and example projects.
