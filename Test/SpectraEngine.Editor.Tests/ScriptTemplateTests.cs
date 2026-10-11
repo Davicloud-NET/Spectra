@@ -15,14 +15,15 @@ public sealed class ScriptTemplateTests
     }
 
     [Fact]
-    public void It_prints_one_line_that_names_the_scripts_parent()
+    public void It_prints_one_line_that_reads_the_same_under_a_node_and_for_the_level()
     {
-        // So the first Play of a new script shows something in Output.
+        // So the first Play of a new script shows something in Output. A level
+        // script sits under the root, whose name is shown nowhere.
         string[] code = ScriptTemplate.Read().Split('\n')
             .Where(line => line.Length > 0 && !line.StartsWith("--", StringComparison.Ordinal))
             .ToArray();
 
-        code.ShouldBe(["print(\"Hello from \" .. script.Parent.Name)"]);
+        code.ShouldBe(["print(\"Hello world!\")"]);
     }
 
     [Fact]
