@@ -41,7 +41,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             // is made, and the library makes CFrame.identity.
             CFrameMembers.Install(_host);
             CFrameLibrary.Install(_host);
-            ObjectMembers.Install(_host, new NodeMembers(_host, _world));
+            ObjectMembers.Install(_host, new NodeMembers(_host, new ScriptWrites(_world)));
 
             _tasks = new TaskLibrary(_host, _world, _waiting);
             _runService = new RunService(_host, new SignalMethods(_host, _waiting));

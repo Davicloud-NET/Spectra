@@ -207,7 +207,7 @@ public sealed class ScriptFailureTests
             local door = script.Parent
             print(pcall(function() door.Position = 5 end))
             print(pcall(function() door.CFrame = Vector3.new(1, 2, 3) end))
-            print(pcall(function() door.Name = 'Gate' end))
+            print(pcall(function() door.Name = 5 end))
             print(pcall(function() door.ClassName = 'Gate' end))
             print(pcall(function() door.Parent = workspace end))
             """);
@@ -219,7 +219,7 @@ public sealed class ScriptFailureTests
         [
             $"false {here}:2: Unable to assign property Position. Vector3 expected, got number",
             $"false {here}:3: Unable to assign property CFrame. CFrame expected, got Vector3",
-            $"false {here}:4: Name cannot be set from a script yet",
+            $"false {here}:4: Unable to assign property Name. string expected, got number",
             $"false {here}:5: Unable to assign property ClassName. Property is read only",
             $"false {here}:6: Parent cannot be set from a script yet",
         ]);

@@ -1,29 +1,24 @@
 using System.Numerics;
-using SpectraEngine.Core.Entities;
+using System.Text;
+using System.Text.Unicode;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// What a script reads and writes on a node. A write moves the node through
-// the entity world, which keeps where it was authored, so Stop puts it back.
-internal sealed class NodeMembers(LuauHost host, EntityWorld world)
+// What a script reads and writes on a node. ScriptWrites is the list of what
+// can be set and the only thing here that sets it, so Stop puts every write
+// back. Nothing in the binding changes a node itself.
+internal sealed class NodeMembers(LuauHost host, ScriptWrites writes)
 {
     public int Read(LuauStack stack, SceneNode node, ReadOnlySpan<byte> name)
     {
-        if (name.SequenceEqual("Name"u8))
-            return ScriptResult.Of(stack.Push(node.Name));
+        if (ScriptWrites.TryFind(name, out SettableMember member))
+            return Push(stack, ScriptWrites.Read(node, member.Id));
         if (name.SequenceEqual("ClassName"u8))
             return ScriptResult.Of(stack.Push(NodeClassName.Of(node)));
         if (name.SequenceEqual("Parent"u8))
             return PushNode(stack, node.Parent);
-        if (name.SequenceEqual("Position"u8))
-            return ScriptResult.Of(stack.Push(node.WorldPosition));
-        if (name.SequenceEqual("CFrame"u8))
-            return ScriptResult.Of(FrameValue.Push(stack, node.CFrame));
-        if (name.SequenceEqual("LocalPosition"u8))
-            return ScriptResult.Of(stack.Push(node.LocalPosition));
-        if (name.SequenceEqual("LocalCFrame"u8))
-            return ScriptResult.Of(FrameValue.Push(stack, node.LocalCFrame));
 
         return stack.Fail(NotAMember(stack, node));
     }
@@ -31,73 +26,60 @@ internal sealed class NodeMembers(LuauHost host, EntityWorld world)
     // The value to write is the third argument of __newindex.
     public int Write(LuauStack stack, SceneNode node, ReadOnlySpan<byte> name)
     {
-        if (name.SequenceEqual("Position"u8))
-        {
-            return stack.TryGetVector(3, out Vector3 position)
-                ? MoveTo(stack, node, new CFrame(position, node.CFrame.Rotation))
-                : WrongValue(stack, "Position", "Vector3");
-        }
+        if (!ScriptWrites.TryFind(name, out SettableMember member))
+            return stack.Fail(WhyNotWritable(stack, node, name));
+        if (ReadValue(stack, 3, in member, out MemberValue value) is { } wrong)
+            return stack.Fail(wrong);
 
-        if (name.SequenceEqual("CFrame"u8))
-        {
-            return FrameValue.TryGet(stack, 3, out CFrame frame)
-                ? MoveTo(stack, node, frame)
-                : WrongValue(stack, "CFrame", "CFrame");
-        }
-
-        if (name.SequenceEqual("LocalPosition"u8))
-        {
-            return stack.TryGetVector(3, out Vector3 position)
-                ? Move(stack, node, node.LocalTransform with { Position = position })
-                : WrongValue(stack, "LocalPosition", "Vector3");
-        }
-
-        if (name.SequenceEqual("LocalCFrame"u8))
-        {
-            return FrameValue.TryGet(stack, 3, out CFrame frame)
-                ? Move(stack, node, LocalAt(node, frame))
-                : WrongValue(stack, "LocalCFrame", "CFrame");
-        }
-
-        return stack.Fail(WhyNotWritable(stack, node, name));
+        return writes.TryWrite(node, member.Id, in value, out string? refusal) ? 0 : stack.Fail(refusal);
     }
 
     public int PushNode(LuauStack stack, SceneNode? node) =>
         ScriptResult.Of(node is null ? stack.PushNil() : host.Objects.Push(stack, ScriptTags.Object, node));
 
-    // The node's own setter leaves a frame the node already has alone, since
-    // solving it again comes back a rounding error away.
-    private int MoveTo(LuauStack stack, SceneNode node, CFrame world) =>
-        Move(stack, node, world == node.CFrame ? node.LocalTransform : node.LocalTransformAt(world));
-
-    private static Transform LocalAt(SceneNode node, CFrame local) =>
-        local == node.LocalCFrame
-            ? node.LocalTransform
-            : node.LocalTransform with { Position = local.Position, Rotation = local.Rotation };
-
-    private int Move(LuauStack stack, SceneNode node, in Transform local)
+    private static int Push(LuauStack stack, in MemberValue value) => ScriptResult.Of(value.Kind switch
     {
-        if (!world.IsActive)
-            return stack.Fail($"{node.Name} cannot be moved: the level has stopped.");
+        MemberValueKind.Text => stack.Push(value.Text),
+        MemberValueKind.Vector3 => stack.Push(value.Vector),
+        MemberValueKind.CFrame => FrameValue.Push(stack, value.Frame),
+        _ => stack.PushNil(),
+    });
 
-        // A node at such a place is in no cell of the scene's index, and no
-        // query finds it again. A rotation is brought to unit length when a
-        // CFrame is made, so only the position can be off.
-        Vector3 position = local.Position;
-        if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z))
-            return stack.Fail($"{node.Name} cannot be moved: a position must be three numbers, with none of them infinite.");
+    // Null when the value is of the kind the member takes. Otherwise what to
+    // tell the script.
+    private static string? ReadValue(LuauStack stack, int index, in SettableMember member, out MemberValue value)
+    {
+        value = default;
+        switch (member.Kind)
+        {
+            case MemberValueKind.Vector3 when stack.TryGetVector(index, out Vector3 vector):
+                value = MemberValue.Of(vector);
+                return null;
 
-        return world.TrySetLocalTransform(node, in local, out string? refusal)
-            ? 0
-            : stack.Fail($"{node.Name} cannot be moved: {refusal}.");
+            case MemberValueKind.CFrame when FrameValue.TryGet(stack, index, out CFrame frame):
+                value = MemberValue.Of(frame);
+                return null;
+
+            case MemberValueKind.Text when stack.TryGetUtf8(index, out ReadOnlySpan<byte> text):
+                // A string of Luau is bytes. Bytes that are no text would
+                // read back as other bytes than the script wrote.
+                if (!Utf8.IsValid(text))
+                    return $"Unable to assign property {member.Name}. The string is not valid UTF-8";
+
+                value = MemberValue.Of(Encoding.UTF8.GetString(text));
+                return null;
+
+            default:
+                return ScriptWrites.WrongKind(in member, ScriptArguments.TypeName(stack, index));
+        }
     }
 
     private static string WhyNotWritable(LuauStack stack, SceneNode node, ReadOnlySpan<byte> name)
     {
         if (name.SequenceEqual("ClassName"u8))
             return "Unable to assign property ClassName. Property is read only";
-        if (name.SequenceEqual("Name"u8) || name.SequenceEqual("Parent"u8))
-            return $"{stack.GetText(2)} cannot be set from a script yet";
+        if (name.SequenceEqual("Parent"u8))
+            return "Parent cannot be set from a script yet";
 
         return NotAMember(stack, node);
     }
@@ -105,8 +87,4 @@ internal sealed class NodeMembers(LuauHost host, EntityWorld world)
     // Roblox's words for a name a class does not have.
     private static string NotAMember(LuauStack stack, SceneNode node) =>
         $"{stack.GetText(2)} is not a valid member of {NodeClassName.Of(node)} \"{node.Name}\"";
-
-    private static int WrongValue(LuauStack stack, string property, string expected) =>
-        stack.Fail(
-            $"Unable to assign property {property}. {expected} expected, got {ScriptArguments.TypeName(stack, 3)}");
 }
