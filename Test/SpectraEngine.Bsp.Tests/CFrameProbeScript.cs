@@ -2,16 +2,14 @@ using System.Text;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The part of <c>Data/cframe-probe.luau</c> that is written from
-/// <see cref="CFrameProbeCases"/>: one line per case, between two marks.
-/// </summary>
+// The part of Data/cframe-probe.luau that is written from CFrameProbeCases:
+// one line per case, between two marks.
 internal static class CFrameProbeScript
 {
     public const string CasesMark = "--[[ cases ]]";
     public const string EndMark = "--[[ end of cases ]]";
 
-    /// <summary>One Luau line per case, in order, with line feeds between them.</summary>
+    // One Luau line per case, in order, with line feeds between them.
     public static string CaseLines(IReadOnlyList<CFrameProbeCase> cases)
     {
         var lines = new StringBuilder();
@@ -25,14 +23,14 @@ internal static class CFrameProbeScript
         return lines.ToString();
     }
 
-    /// <summary>The lines between the two marks of a probe script.</summary>
+    // The lines between the two marks of a probe script.
     public static string CasesIn(string script)
     {
         (int start, int end) = Block(script);
         return script[start..end].ReplaceLineEndings("\n").Trim('\n');
     }
 
-    /// <summary>The script with the lines between its two marks replaced.</summary>
+    // The script with the lines between its two marks replaced.
     public static string WithCases(string script, string caseLines)
     {
         (int start, int end) = Block(script);

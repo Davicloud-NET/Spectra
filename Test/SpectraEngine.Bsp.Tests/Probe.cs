@@ -4,15 +4,13 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The CFrame operations, each as a pair: the engine's value and the Luau
-/// expression that asks Roblox for the same thing with the same numbers.
-/// </summary>
+// The CFrame operations, each as a pair: the engine's value and the Luau
+// expression that asks Roblox for the same thing with the same numbers.
 internal static class Probe
 {
     public static Probed<CFrame> Identity => new("CFrame.new()", CFrame.Identity);
 
-    /// <summary>A float as Luau reads it back to the same float.</summary>
+    // A float as Luau reads it back to the same float.
     public static string Number(float value) => value.ToString("R", CultureInfo.InvariantCulture);
 
     public static Probed<Vector3> V(float x, float y, float z) =>
@@ -21,13 +19,13 @@ internal static class Probe
     public static Probed<CFrame> At(float x, float y, float z) =>
         new($"CFrame.new({Number(x)}, {Number(y)}, {Number(z)})", new CFrame(x, y, z));
 
-    /// <summary>CFrame.new with a position and a quaternion, given as qX, qY, qZ, qW.</summary>
+    // CFrame.new with a position and a quaternion, given as qX, qY, qZ, qW.
     public static Probed<CFrame> FromQuaternion(Vector3 position, Quaternion rotation) => new(
         $"CFrame.new({Number(position.X)}, {Number(position.Y)}, {Number(position.Z)}, " +
         $"{Number(rotation.X)}, {Number(rotation.Y)}, {Number(rotation.Z)}, {Number(rotation.W)})",
         new CFrame(position, rotation));
 
-    /// <summary>CFrame.new with all twelve components, in the order GetComponents gives them.</summary>
+    // CFrame.new with all twelve components, in the order GetComponents gives them.
     public static Probed<CFrame> FromComponents(params float[] c) => new(
         $"CFrame.new({string.Join(", ", c.Select(Number))})",
         CFrame.FromMatrix(
@@ -126,11 +124,11 @@ internal static class Probe
 
     public static Probed<Vector3> ZVector(this Probed<CFrame> a) => new($"({a.Luau}).ZVector", a.Value.ZVector);
 
-    /// <summary>Three angles. In Luau the call returns three numbers, not a vector.</summary>
+    // Three angles. In Luau the call returns three numbers, not a vector.
     public static Probed<Vector3> ToEulerAnglesXYZ(this Probed<CFrame> a) =>
         new($"({a.Luau}):ToEulerAnglesXYZ()", a.Value.ToEulerAnglesXYZ());
 
-    /// <summary>Three angles. In Luau the call returns three numbers, not a vector.</summary>
+    // Three angles. In Luau the call returns three numbers, not a vector.
     public static Probed<Vector3> ToOrientation(this Probed<CFrame> a) =>
         new($"({a.Luau}):ToOrientation()", a.Value.ToOrientation());
 }

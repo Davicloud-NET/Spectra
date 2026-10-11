@@ -2,19 +2,15 @@ using System.Numerics;
 
 namespace SpectraEngine.Core.Scene;
 
-/// <summary>
-/// Rotations built from directions, for a frame that looks along its -Z with
-/// +X right and +Y up. No input gives a NaN.
-/// </summary>
+// Rotations built from directions, for a frame that looks along its -Z with
+// +X right and +Y up. No input gives a NaN.
 internal static class LookRotation
 {
     // Below this sine of the angle between them, two directions count as one line.
     private const float ParallelSine = 1e-5f;
 
-    /// <summary>
-    /// The rotation that looks along a direction: right is look cross up, up
-    /// is right cross look. A direction of no length gives no rotation.
-    /// </summary>
+    // The rotation that looks along a direction: right is look cross up, up
+    // is right cross look. A direction of no length gives no rotation.
     public static Quaternion Along(Vector3 direction, Vector3 up)
     {
         if (!UnitLength.TryOf(direction, out Vector3 look))
@@ -24,10 +20,8 @@ internal static class LookRotation
         return FromColumns(right, Vector3.Cross(right, look), -look);
     }
 
-    /// <summary>
-    /// The rotation whose first column runs along <paramref name="vX"/> and
-    /// whose third is vX cross vY. Columns that span no plane give no rotation.
-    /// </summary>
+    // The rotation whose first column runs along vX and whose third is
+    // vX cross vY. Columns that span no plane give no rotation.
     public static Quaternion FromAxes(Vector3 vX, Vector3 vY)
     {
         if (!UnitLength.TryOf(vX, out Vector3 x) || !TryUnitCross(x, vY, out Vector3 z))

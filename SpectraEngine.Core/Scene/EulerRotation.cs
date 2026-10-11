@@ -3,10 +3,8 @@ using System.Numerics;
 
 namespace SpectraEngine.Core.Scene;
 
-/// <summary>
-/// Rotations to and from three angles in radians, in the two orders a CFrame
-/// offers. Rx, Ry and Rz are right-handed turns about X, Y and Z.
-/// </summary>
+// Rotations to and from three angles in radians, in the two orders a CFrame
+// offers. Rx, Ry and Rz are right-handed turns about X, Y and Z.
 internal static class EulerRotation
 {
     // Below this cosine the middle angle is a quarter turn, and the two outer
@@ -14,16 +12,16 @@ internal static class EulerRotation
     // matrix, about 1e-7 divided by the cosine, grows past the cosine itself.
     private const float PoleCosine = 3e-4f;
 
-    /// <summary>Rx * Ry * Rz: the Z turn is applied first.</summary>
+    // Rx * Ry * Rz: the Z turn is applied first.
     public static Quaternion FromXyz(float rx, float ry, float rz) =>
         AboutX(rx) * AboutY(ry) * AboutZ(rz);
 
-    /// <summary>Ry * Rx * Rz: the Z turn is applied first, then X, then Y.</summary>
+    // Ry * Rx * Rz: the Z turn is applied first, then X, then Y.
     public static Quaternion FromYxz(float rx, float ry, float rz) =>
         AboutY(ry) * AboutX(rx) * AboutZ(rz);
 
-    /// <summary>The angles (rx, ry, rz) of <see cref="FromXyz"/>, ry within a quarter turn of zero.</summary>
-    /// <param name="basis">The rotation as a matrix whose rows are the turned X, Y and Z axes.</param>
+    // The angles (rx, ry, rz) of FromXyz, ry within a quarter turn of zero.
+    // The rows of the basis are the turned X, Y and Z axes.
     // With R = Rx * Ry * Rz on column vectors: R02 = sin ry, R12 = -sin rx cos ry,
     // R22 = cos rx cos ry, R01 = -cos ry sin rz, R00 = cos ry cos rz.
     public static Vector3 ToXyz(in Matrix4x4 basis)
@@ -43,8 +41,8 @@ internal static class EulerRotation
             MathF.Atan2(-basis.M21, basis.M11));
     }
 
-    /// <summary>The angles (rx, ry, rz) of <see cref="FromYxz"/>, rx within a quarter turn of zero.</summary>
-    /// <param name="basis">The rotation as a matrix whose rows are the turned X, Y and Z axes.</param>
+    // The angles (rx, ry, rz) of FromYxz, rx within a quarter turn of zero.
+    // The rows of the basis are the turned X, Y and Z axes.
     // With R = Ry * Rx * Rz on column vectors: R12 = -sin rx, R02 = sin ry cos rx,
     // R22 = cos ry cos rx, R10 = cos rx sin rz, R11 = cos rx cos rz.
     public static Vector3 ToYxz(in Matrix4x4 basis)

@@ -4,11 +4,9 @@ using static SpectraEngine.Bsp.Tests.Probe;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The cases Roblox Studio is asked about, each with the engine's own answer.
-/// The hand-worked cases of the CFrame tests are here again, and a seeded set
-/// of random ones.
-/// </summary>
+// The cases Roblox Studio is asked about, each with the engine's own answer.
+// The hand-worked cases of the CFrame tests are here again, and a seeded set
+// of random ones.
 internal sealed class CFrameProbeCases
 {
     private const float Quarter = MathF.PI / 2f;

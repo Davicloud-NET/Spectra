@@ -3,7 +3,7 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>Seeded random inputs for the CFrame tests.</summary>
+// Seeded random inputs for the CFrame tests.
 internal static class RandomFrames
 {
     public static float Between(Random random, float low, float high) =>
@@ -14,7 +14,7 @@ internal static class RandomFrames
     public static Vector3 Vector(Random random, float reach = 20f) =>
         new(Between(random, -reach, reach), Between(random, -reach, reach), Between(random, -reach, reach));
 
-    /// <summary>An axis that is never short enough to lose its direction.</summary>
+    // An axis that is never short enough to lose its direction.
     public static Vector3 Axis(Random random)
     {
         while (true)

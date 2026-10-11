@@ -8,7 +8,7 @@ internal static class CFrameAssertions
 {
     public const float Tolerance = 1e-5f;
 
-    /// <summary>The twelve numbers of <c>GetComponents</c>.</summary>
+    // The twelve numbers of GetComponents.
     public static float[] Components(this CFrame frame)
     {
         var components = new float[CFrame.ComponentCount];
@@ -16,14 +16,14 @@ internal static class CFrameAssertions
         return components;
     }
 
-    /// <summary>Position, then the rotation matrix row by row.</summary>
+    // Position, then the rotation matrix row by row.
     public static void ShouldHaveComponents(this CFrame frame, params float[] expected)
     {
         expected.Length.ShouldBe(CFrame.ComponentCount);
         ShouldBeNear(frame.Components(), expected, Tolerance);
     }
 
-    /// <summary>The rotation matrix row by row: R00, R01, R02, R10 and on.</summary>
+    // The rotation matrix row by row: R00, R01, R02, R10 and on.
     public static void ShouldHaveRotation(this CFrame frame, params float[] rows)
     {
         rows.Length.ShouldBe(9);

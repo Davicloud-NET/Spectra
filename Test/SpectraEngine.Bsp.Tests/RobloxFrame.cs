@@ -2,12 +2,10 @@ using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// Roblox's rules for a CFrame written out the way its documentation states
-/// them: a position and a 3 by 3 matrix that acts on column vectors, in
-/// doubles. The tests hold the engine's <c>CFrame</c> against it.
-/// </summary>
-// Uses no quaternion and no System.Numerics matrix, so none of the engine's
+// Roblox's rules for a CFrame written out the way its documentation states
+// them: a position and a 3 by 3 matrix that acts on column vectors, in
+// doubles. The tests hold the engine's CFrame against it. It uses no
+// quaternion and no System.Numerics matrix, so none of the engine's
 // conventions can leak into the expected values.
 internal sealed class RobloxFrame
 {
@@ -43,15 +41,15 @@ internal sealed class RobloxFrame
         return new([0, 0, 0], [c, -s, 0, s, c, 0, 0, 0, 1]);
     }
 
-    /// <summary>CFrame.Angles and fromEulerAnglesXYZ: Z is applied first.</summary>
+    // CFrame.Angles and fromEulerAnglesXYZ: Z is applied first.
     public static RobloxFrame Angles(double rx, double ry, double rz) =>
         RotationX(rx) * RotationY(ry) * RotationZ(rz);
 
-    /// <summary>fromEulerAnglesYXZ and fromOrientation: Z first, then X, then Y.</summary>
+    // fromEulerAnglesYXZ and fromOrientation: Z first, then X, then Y.
     public static RobloxFrame Orientation(double rx, double ry, double rz) =>
         RotationY(ry) * RotationX(rx) * RotationZ(rz);
 
-    /// <summary>Rodrigues' formula for a right-handed turn about an axis.</summary>
+    // Rodrigues' formula for a right-handed turn about an axis.
     public static RobloxFrame AxisAngle(Vector3 axis, double angle)
     {
         double length = Math.Sqrt((double)axis.X * axis.X + (double)axis.Y * axis.Y + (double)axis.Z * axis.Z);
@@ -65,7 +63,7 @@ internal sealed class RobloxFrame
         ]);
     }
 
-    /// <summary>lookAlong: right is look cross up, up is right cross look, and Z is minus look.</summary>
+    // lookAlong: right is look cross up, up is right cross look, and Z is minus look.
     public static RobloxFrame LookAlong(Vector3 at, Vector3 direction, Vector3 up)
     {
         double[] look = Normalized([direction.X, direction.Y, direction.Z]);
@@ -97,7 +95,7 @@ internal sealed class RobloxFrame
         return new([a._p[0] + turned[0], a._p[1] + turned[1], a._p[2] + turned[2]], r);
     }
 
-    /// <summary>The rotation transposed, and minus that times the position.</summary>
+    // The rotation transposed, and minus that times the position.
     public RobloxFrame Inverse()
     {
         double[] t = [_r[0], _r[3], _r[6], _r[1], _r[4], _r[7], _r[2], _r[5], _r[8]];
@@ -106,14 +104,14 @@ internal sealed class RobloxFrame
         return new([-p[0], -p[1], -p[2]], t);
     }
 
-    /// <summary>The frame times a point: the position plus the rotation times the point.</summary>
+    // The frame times a point: the position plus the rotation times the point.
     public Vector3 Apply(Vector3 point)
     {
         double[] turned = Turn([point.X, point.Y, point.Z]);
         return new Vector3((float)(_p[0] + turned[0]), (float)(_p[1] + turned[1]), (float)(_p[2] + turned[2]));
     }
 
-    /// <summary>What GetComponents returns: the position, then the matrix row by row.</summary>
+    // What GetComponents returns: the position, then the matrix row by row.
     public float[] Components()
     {
         var components = new float[12];

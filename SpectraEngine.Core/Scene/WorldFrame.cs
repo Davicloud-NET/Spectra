@@ -2,17 +2,15 @@ using System.Numerics;
 
 namespace SpectraEngine.Core.Scene;
 
-/// <summary>A node's <see cref="CFrame"/> in the world, read from the graph and solved back into it.</summary>
+// A node's CFrame in the world, read from the graph and solved back into it.
 internal static class WorldFrame
 {
-    /// <summary>
-    /// The node's world position with the rotations of the node and its
-    /// ancestors composed. Scale moves the position and is left out of the
-    /// rotation.
-    /// </summary>
+    // The node's world position with the rotations of the node and its
+    // ancestors composed. Scale moves the position and is left out of the
+    // rotation, a mirror too.
     public static CFrame Of(SceneNode node) => new(node.WorldPosition, RotationOf(node));
 
-    /// <summary>The local transform that puts the node at a world frame. The scale is kept.</summary>
+    // The local transform that puts the node at a world frame. The scale is kept.
     public static Transform LocalFor(SceneNode node, CFrame world)
     {
         Transform local = node.LocalTransform;

@@ -1,15 +1,13 @@
 namespace SpectraEngine.Bsp.Tests;
 
-/// <summary>
-/// The seeded numbers the CFrame probe is built from. Roblox Studio's answers
-/// are for these numbers, so they must come out the same on every runtime.
-/// </summary>
+// The seeded numbers the CFrame probe is built from. Roblox Studio's answers
+// are for these numbers, so they must come out the same on every runtime.
 // Not System.Random: its sequence for a seed is not promised to stay.
 internal sealed class ProbeNumbers(uint seed)
 {
     private uint _state = seed;
 
-    /// <summary>The next number in a range, rounded to three decimals so it reads the same in Luau.</summary>
+    // The next number in a range, rounded to three decimals so it reads the same in Luau.
     public float Next(float low, float high)
     {
         // The generator from Numerical Recipes. The top 24 bits are the good ones.
