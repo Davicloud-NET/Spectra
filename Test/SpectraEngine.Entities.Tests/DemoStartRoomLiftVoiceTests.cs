@@ -2,6 +2,7 @@ using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Audio;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
+using System.Globalization;
 using System.Linq;
 
 namespace SpectraEngine.Entities.Tests;
@@ -168,6 +169,34 @@ public sealed class DemoStartRoomLiftVoiceTests : IClassFixture<CookedDemoSounds
         lift.TicksTravelled.ShouldBe(0);
         rig.Character.State.Grounded.ShouldBeTrue();
         rig.Character.State.Position.Y.ShouldBe(0.3f, 0.05f);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(20 * 60 * 60)]
+    public void The_lift_waits_its_three_seconds_to_the_tick_however_long_the_level_has_run(int ticksBefore)
+    {
+        using var rig = new StartRoomSoundRig(_cooked);
+        rig.Session.Enter();
+        FuncMoveLinear lift = rig.Live<FuncMoveLinear>(DemoPlayArea.LiftName);
+        rig.Idle(ticksBefore);
+
+        rig.PressTheLiftButton();
+        rig.Idle(TicksFromUseToLift + lift.TravelTicks + 180 + lift.TravelTicks + 5);
+
+        long arrived = TickOf(rig, FuncMoveLinear.OnFullyOpen);
+        long landed = TickOf(rig, FuncMoveLinear.OnFullyClosed);
+
+        // Its wire to itself lands 180 ticks after it arrives, and it moves
+        // on the tick the wire lands on.
+        (landed - arrived).ShouldBe(180 + lift.TravelTicks - 1);
+    }
+
+    // The tick the lift fired an output on. It fires each once in these tests.
+    private static long TickOf(StartRoomSoundRig rig, string output)
+    {
+        string fired = rig.Outputs.Fired.Single(entry => entry.EndsWith($":{DemoPlayArea.LiftName}.{output}"));
+        return long.Parse(fired.AsSpan(0, fired.IndexOf(':')), CultureInfo.InvariantCulture);
     }
 
     // Uses the button and runs to the tick the line starts on. The button

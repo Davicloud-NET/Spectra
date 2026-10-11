@@ -81,6 +81,32 @@ public sealed class NoCodeLoopTests
     }
 
     [Fact]
+    public void The_walk_is_traced_as_one_touch_one_wire_and_a_door_that_takes_thirty_ticks()
+    {
+        SceneManager manager = Loaded();
+        var trace = new RecordingEntityTrace();
+        manager.EntityTrace = trace;
+        CharacterSimulation character = Walker(manager);
+        var session = new PlaySession(manager, character);
+
+        session.Enter();
+        Walk(session, character);
+
+        // Counted from the tick of the touch. The door has 2 units to go at
+        // 4 a second, and its first tick of travel is the one it is told on.
+        long touched = trace.Entries[0].Tick;
+        trace.Entries.Select(entry => $"{entry.Tick - touched} {entry.Line}").ShouldBe(
+        [
+            "0 fire Zone.OnStartTouch by=Zone",
+            "0 fire Zone.OnTrigger by=Zone",
+            "0 queue Zone.OnTrigger -> Door.Open by=Zone",
+            "0 send Zone.OnTrigger -> Door.Open by=Zone",
+            "0 fire Door.OnOpen by=Zone",
+            "29 fire Door.OnFullyOpen by=Door",
+        ]);
+    }
+
+    [Fact]
     public void A_door_nothing_opens_stops_the_player()
     {
         SceneManager manager = Loaded();

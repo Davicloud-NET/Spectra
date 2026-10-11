@@ -20,6 +20,8 @@
     <Compile Include="..\SpectraEngine.Bsp.Tests\FakeAudioBackend.cs" Link="FakeAudioBackend.cs" />
     <!-- The clock the walls age their answers by. -->
     <Compile Include="..\SpectraEngine.Bsp.Tests\ManualClock.cs" Link="ManualClock.cs" />
+    <!-- Every traced event as a line of text. -->
+    <Compile Include="..\SpectraEngine.Bsp.Tests\RecordingEntityTrace.cs" Link="RecordingEntityTrace.cs" />
   </ItemGroup>
 
   <ItemGroup>
