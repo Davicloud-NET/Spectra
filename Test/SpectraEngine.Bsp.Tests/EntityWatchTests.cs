@@ -183,6 +183,19 @@ public sealed class EntityWatchTests
     }
 
     [Fact]
+    public void An_input_that_would_never_come_due_does_not_hold_the_trace()
+    {
+        var rig = new EntityConsoleRig();
+        rig.Place("door1", "recorder");
+        rig.Play();
+
+        rig.Watch.ExpectHandFired(rig.World, 1e30f);
+
+        rig.Watch.ActiveTrace.ShouldBeNull();
+        rig.World.Trace.ShouldBeNull();
+    }
+
+    [Fact]
     public void An_input_fired_by_hand_at_a_level_that_stopped_does_not_hold_the_next_one()
     {
         var rig = new EntityConsoleRig();

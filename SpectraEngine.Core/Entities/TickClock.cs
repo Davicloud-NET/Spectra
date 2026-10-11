@@ -34,7 +34,7 @@ internal sealed class TickClock
     public long TickAfter(double seconds)
     {
         long ticks = TicksIn(seconds);
-        return ticks > long.MaxValue - Tick ? long.MaxValue : Tick + ticks;
+        return ticks > WholeTicks.Never - Tick ? WholeTicks.Never : Tick + ticks;
     }
 
     // The tick a world time falls on, counted from the start of the level and
@@ -43,5 +43,5 @@ internal sealed class TickClock
     public long TickAt(double time) => Math.Max(Tick, TicksIn(time));
 
     public float TimeAt(long tick) =>
-        tick == long.MaxValue ? float.PositiveInfinity : (float)(tick * (double)Step);
+        tick == WholeTicks.Never ? float.PositiveInfinity : (float)(tick * (double)Step);
 }

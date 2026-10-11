@@ -47,7 +47,7 @@ public abstract class Entity
     /// <summary>
     /// What <see cref="NextThinkTick"/> reads when no think is pending.
     /// </summary>
-    public const long NoThink = long.MaxValue;
+    public const long NoThink = WholeTicks.Never;
 
     /// <summary>
     /// The tick this entity next thinks on, or <see cref="NoThink"/> when it
@@ -257,9 +257,7 @@ public abstract class Entity
 
         // A wait too long to count is no think at all, and neither is one
         // the queue had no room for.
-        _nextThinkTick = tick != NoThink && World.Dispatcher.ScheduleThink(this, tick, _thinkSerial)
-            ? tick
-            : NoThink;
+        _nextThinkTick = World.Dispatcher.ScheduleThink(this, tick, _thinkSerial) ? tick : NoThink;
     }
 
     internal void Bind(SceneNode node, EntityWorld world, EntityData data)

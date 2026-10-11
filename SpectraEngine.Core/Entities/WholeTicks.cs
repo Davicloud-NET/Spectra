@@ -19,9 +19,16 @@ public static class WholeTicks
     private const double MostSlack = 0.5;
 
     /// <summary>
+    /// What <see cref="In"/> gives for a wait too long to count. As a tick
+    /// it is one that never comes.
+    /// </summary>
+    public const long Never = long.MaxValue;
+
+    /// <summary>
     /// How many ticks a wait takes, rounded up: an event is due on the first
     /// tick at or after its time. Any wait above zero is at least one tick.
-    /// Zero, a negative wait and NaN are no ticks.
+    /// Zero, a negative wait and NaN are no ticks. A wait too long to count
+    /// is <see cref="Never"/>.
     /// </summary>
     /// <param name="seconds">How long to wait.</param>
     /// <param name="step">The length of a tick in seconds, above zero.</param>
@@ -39,8 +46,8 @@ public static class WholeTicks
         double whole = Math.Ceiling(ticks - Math.Clamp(ticks * SlackPerTick, Slack, MostSlack));
 
         // A long cannot hold 2^63, which is what its largest value widens to.
-        if (whole >= long.MaxValue)
-            return long.MaxValue;
+        if (whole >= Never)
+            return Never;
 
         return whole < 1d ? 1 : (long)whole;
     }

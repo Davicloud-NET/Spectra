@@ -79,6 +79,14 @@ public static class EntityConsoleCommands
             return;
         }
 
+        if (world.TickAfter(delay) == WholeTicks.Never)
+        {
+            args.Out.Error(
+                $"ent_fire: '{args[3]}' seconds is longer than a level can count, " +
+                "so the input would never arrive. Give a shorter delay.");
+            return;
+        }
+
         string parameter = args[2].ToString();
         watch.ExpectHandFired(world, delay);
         world.QueueInput(target, input, parameter, delay);

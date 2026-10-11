@@ -226,6 +226,23 @@ public sealed class EntityConsoleCommandTests
     }
 
     [Fact]
+    public void A_delay_too_long_to_count_is_refused_and_nothing_waits_for_it()
+    {
+        var rig = new EntityConsoleRig();
+        rig.Place("door", "recorder");
+        rig.Play();
+
+        rig.Run("ent_fire door Open \"\" 1e30").ShouldBe(
+        [
+            "ent_fire: '1e30' seconds is longer than a level can count, " +
+            "so the input would never arrive. Give a shorter delay.",
+        ]);
+
+        rig.World.PendingEventCount.ShouldBe(0);
+        rig.World.Trace.ShouldBeNull();
+    }
+
+    [Fact]
     public void A_line_that_is_not_a_target_and_an_input_says_what_to_type()
     {
         var rig = new EntityConsoleRig();

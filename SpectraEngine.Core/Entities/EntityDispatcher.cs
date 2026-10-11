@@ -186,6 +186,20 @@ internal sealed class EntityDispatcher
 
     private bool TryPush(in EntityEvent made)
     {
+        // It would sit in the queue until the level stops.
+        if (made.Tick == WholeTicks.Never)
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug(
+                    "Not queued: {What} at '{TargetName}' waits longer than a level can count, so it " +
+                    "would never come.",
+                    Describe(made), NameOf(made));
+            }
+
+            return false;
+        }
+
         if (_queue.Count >= _maxPendingEvents)
         {
             RefuseForRoom(made);

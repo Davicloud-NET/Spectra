@@ -428,7 +428,8 @@ public sealed class EntityWorld
     /// <param name="input">The input's name.</param>
     /// <param name="parameter">The argument, or null for none.</param>
     /// <param name="delay">
-    /// Seconds to wait, counted in whole ticks. Zero delivers on the next drain.
+    /// Seconds to wait, counted in whole ticks. Zero delivers on the next
+    /// drain. A wait too long to count queues nothing.
     /// </param>
     /// <exception cref="InvalidOperationException">The world is not active.</exception>
     public void QueueInput(string targetName, string input, string? parameter = null, float delay = 0f)

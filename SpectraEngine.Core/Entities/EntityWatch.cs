@@ -101,8 +101,12 @@ public sealed class EntityWatch : IEntityTrace
     {
         ArgumentNullException.ThrowIfNull(world);
 
-        // The tick the world gives the input when it queues it.
+        // The tick the world gives the input when it queues it. One that
+        // never comes is not queued, so there is nothing to wait for.
         long due = world.TickAfter(delay);
+        if (due == WholeTicks.Never)
+            return;
+
         if (due > _handFiredDueTick)
             _handFiredDueTick = due;
 

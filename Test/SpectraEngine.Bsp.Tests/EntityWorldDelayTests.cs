@@ -186,6 +186,26 @@ public sealed class EntityWorldDelayTests
         world.PendingEventCount.ShouldBe(0);
     }
 
+    [Theory]
+    [InlineData(1e30f)]
+    [InlineData(float.PositiveInfinity)]
+    public void A_wire_or_an_input_that_waits_too_long_to_count_is_not_queued(float delay)
+    {
+        SceneNode source = EntityRuntime.Place(_scene.Root, "source", "recorder");
+        EntityRuntime.Place(_scene.Root, "target", "recorder");
+        EntityRuntime.Wire(source, "OnGo", "target", "Ping", delay: delay);
+        EntityRuntime.Wire(source, "OnGo", "target", "Pong", delay: 0.1f);
+        EntityWorld world = Started();
+
+        EntityRuntime.Live(world, source).FireOutput("OnGo");
+        world.QueueInput("target", "Ping", delay: delay);
+
+        // Only the wire that will arrive is waiting, and only it was said to be.
+        world.PendingEventCount.ShouldBe(1);
+        _trace.Entries.Where(entry => entry.Kind == EntityTraceKind.InputQueued)
+            .ShouldHaveSingleItem().Line.ShouldContain("target.Pong");
+    }
+
     [Fact]
     public void Events_due_on_one_tick_run_in_the_order_they_were_queued_whichever_tick_that_was()
     {
