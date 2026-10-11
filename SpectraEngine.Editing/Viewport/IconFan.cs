@@ -179,9 +179,8 @@ public sealed class IconFan
         if (fromSeam >= SeamHalfWidth)
             return Unit(over);
 
-        // Across the seam the two ways are opposite at one distance, and the
-        // pair is drawn on one point there. A turn that never jumps has one
-        // such point.
+        // Across the seam the two ways are opposite at one distance and
+        // cancel there. A turn that never jumps has one such place.
         return Vector2.Lerp(Unit(under), Unit(over), (fromSeam + SeamHalfWidth) / (SeamHalfWidth * 2f));
     }
 
