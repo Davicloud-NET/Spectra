@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SpectraEngine.Scripting.Luau</RootNamespace>
+    <!-- Ships in game binaries: run the trim/AOT analysers on every build. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SpectraEngine.Core\SpectraEngine.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    The native library is not referenced here. The executable that runs
+    scripts imports native/Luau.targets, which copies or links it.
+  -->
+
+</Project>
