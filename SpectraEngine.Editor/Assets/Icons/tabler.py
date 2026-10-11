@@ -48,7 +48,6 @@ SMALL = {
     "IconRefresh": "refresh",
     "IconResize": "resize",
     "IconRotate": "rotate-clockwise",
-    "IconSurfaceLight": "lamp",
     "IconUndo": "arrow-back-up",
     "IconUngroupNodes": "stack-2",
     "IconWarning": "alert-triangle",
@@ -81,15 +80,15 @@ WORLD = {
     "IconLightSpot": "cone-2",
     "IconLightSun": "sun",
 }
+# No entity or light here. A large button that shows one draws its WORLD file
+# scaled up, so the two sizes cannot be two drawings.
 LARGE = {
     "IconLgBrushPart": "box",
     "IconLgBrushSubtractive": "cube-off",
     "IconLgBrushWorld": "cube",
     "IconLgDuplicate": "copy",
-    "IconLgEntity": "diamond",
     "IconLgFrame": "focus-centered",
     "IconLgFrameAll": "maximize",
-    "IconLgLight": "bulb",
     "IconLgMap": "map",
     "IconLgMove": "arrows-move",
     "IconLgNewProject": "folder-plus",

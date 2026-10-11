@@ -28,6 +28,11 @@ folders, and the three tables at its top say which Tabler icon each key is.
 Tabler draws on 24. The small set is the same paths scaled to 16 by
 `tabler.py`.
 
+An entity or a light has no `IconLg` file. A large button that shows one asks
+`EditorIcons.LargeGlyph`, which scales the world's file up, so the two sizes
+cannot be two drawings. A test holds every other large file to the Tabler icon
+its small twin is.
+
 A few are drawn by hand and are not in the script: `CaretDown`, `IconCheckBox`,
 `IconCheckTick`, `IconRadio`, `IconRadioDot`, `IconPlay`, `IconStop` and
 `IconEmpty`.

@@ -21,7 +21,8 @@ public sealed class IconDriftConventionTests
     // Icons.targets writes this one from the icon files.
     private const string Generated = "Icons.axaml";
 
-    private static readonly Regex GuardedKey = new(@"\bIcon(?:Entity|Light|File)[A-Za-z0-9]*\b");
+    // Lg too: a large copy named in markup is a second drawing of the thing.
+    private static readonly Regex GuardedKey = new(@"\bIcon(?:Lg)?(?:Entity|Light|File)[A-Za-z0-9]*\b");
 
     [Fact]
     public void Outside_the_registry_no_shell_source_names_an_entity_light_or_file_icon()
@@ -131,8 +132,35 @@ public sealed class IconDriftConventionTests
     {
         Regex world = new("^Icon(?:Entity|Light)");
 
+        // Nor a large copy of one: the ribbon scales the world's own file up.
+        Regex copy = new("^Icon(?:Lg)?(?:Entity|Light)");
+
         IconFiles.KeysIn(IconFiles.WorldFolder).Where(key => !world.IsMatch(key)).ShouldBeEmpty();
-        IconFiles.KeysIn(IconFiles.ShellFolder).Where(key => world.IsMatch(key)).ShouldBeEmpty();
+        IconFiles.KeysIn(IconFiles.ShellFolder).Where(key => copy.IsMatch(key)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_large_icon_is_the_tabler_drawing_its_small_twin_is()
+    {
+        Dictionary<string, Dictionary<string, string>> tables = TablerTables();
+        HashSet<string> files = IconFiles.Keys();
+        var problems = new List<string>();
+        int twins = 0;
+
+        foreach ((string key, string tabler) in tables["LARGE"])
+        {
+            string twin = "Icon" + key["IconLg".Length..];
+            if (!files.Contains(twin))
+                continue;
+
+            twins++;
+            string? small = tables["SMALL"].GetValueOrDefault(twin) ?? tables["WORLD"].GetValueOrDefault(twin);
+            if (small != tabler)
+                problems.Add($"{key} is '{tabler}' and {twin} is '{small ?? "drawn by hand"}'");
+        }
+
+        twins.ShouldBeGreaterThan(8, "the large icons should have been read, not skipped");
+        problems.ShouldBeEmpty("a large button and a small one that mean the same thing show the same drawing");
     }
 
     [Fact]

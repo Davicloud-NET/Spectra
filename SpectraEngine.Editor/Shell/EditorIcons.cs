@@ -27,6 +27,9 @@ public static class EditorIcons
     /// <summary>What a group's tint token starts with. The group's name follows.</summary>
     public const string GroupTintPrefix = "SpectraGroup";
 
+    // A large ribbon button's 24 box against the 16 box the icon files are on.
+    private const double LargeScale = 24.0 / 16.0;
+
     private static readonly Dictionary<string, string> GroupTints = BuildGroupTints();
 
     // The file a sound entity plays looks as that entity does.
@@ -43,6 +46,15 @@ public static class EditorIcons
 
     /// <summary>For markup: <see cref="PlainLight"/>'s glyph.</summary>
     public static Geometry? PlainLightGlyph => Glyph(PlainLight);
+
+    /// <summary>For markup: <see cref="PlainEntity"/>'s glyph on a large button.</summary>
+    public static Geometry? PlainEntityLargeGlyph => LargeGlyph(PlainEntity);
+
+    /// <summary>For markup: <see cref="PlainLight"/>'s glyph on a large button.</summary>
+    public static Geometry? PlainLightLargeGlyph => LargeGlyph(PlainLight);
+
+    /// <summary>For markup: the glyph of the light a surface light is, a panel.</summary>
+    public static Geometry? SurfaceLightGlyph => Glyph(ForLight(LightKind.Rect));
 
     /// <summary>
     /// The look of a node in the scene. An entity shows its class, whatever
@@ -115,6 +127,29 @@ public static class EditorIcons
 
     /// <summary>The look's glyph from the theme, or null when the theme lacks it.</summary>
     public static Geometry? Glyph(IconLook look) => Find<Geometry>(look.Icon);
+
+    /// <summary>
+    /// The look's glyph for the ribbon's large buttons, or null when the theme
+    /// lacks it. It is the small glyph scaled up, so a large button cannot
+    /// show another drawing.
+    /// </summary>
+    // A Path draws it with Stretch None. Avalonia throws when a stretched
+    // Path draws a geometry that carries a transform.
+    public static Geometry? LargeGlyph(IconLook look)
+    {
+        // The build writes every icon as a PathGeometry.
+        if (Glyph(look) is not PathGeometry small)
+            return null;
+
+        Matrix placed = small.Transform?.Value ?? Matrix.Identity;
+
+        return new PathGeometry
+        {
+            Figures = small.Figures,
+            FillRule = small.FillRule,
+            Transform = new MatrixTransform(placed * Matrix.CreateScale(LargeScale, LargeScale)),
+        };
+    }
 
     /// <summary>The look's tint from the theme, or null when the theme lacks it.</summary>
     public static IBrush? Brush(IconLook look) => Find<IBrush>(look.Tint);

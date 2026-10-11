@@ -300,7 +300,7 @@
             <MenuItem Header="Insert cut" InputGesture="Ctrl+D3" Click="OnInsertSubtractiveBrushClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon kind-cut" Data="{StaticResource IconBrushSubtractive}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Insert light" InputGesture="Ctrl+D4" Click="OnInsertLightClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon kind-light" Data="{x:Static shell:EditorIcons.PlainLightGlyph}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Insert surface light" Click="OnInsertSurfaceLightClicked" IsEnabled="{Binding !IsPlaying}"
-                      ToolTip.Tip="A lit panel flat on the surface you are looking at, parented to it."><MenuItem.Icon><Path Classes="icon menuicon kind-light" Data="{StaticResource IconSurfaceLight}" /></MenuItem.Icon></MenuItem>
+                      ToolTip.Tip="A lit panel flat on the surface you are looking at, parented to it."><MenuItem.Icon><Path Classes="icon menuicon kind-light" Data="{x:Static shell:EditorIcons.SurfaceLightGlyph}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Insert empty group" Click="OnInsertGroupClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconGroup}" /></MenuItem.Icon></MenuItem>
 
             <!-- Entries are built in code when the submenu opens, from the

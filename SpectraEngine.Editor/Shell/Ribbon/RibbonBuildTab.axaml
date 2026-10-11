@@ -52,7 +52,7 @@
                     IsEnabled="{Binding !IsPlaying}"
                     ToolTip.Tip="A point light.  Ctrl+4">
               <StackPanel Classes="rbigstack">
-                <Path Classes="icon-lg kind-light" Data="{StaticResource IconLgLight}" />
+                <Path Classes="icon-lg kind-light" Data="{x:Static shell:EditorIcons.PlainLightLargeGlyph}" />
                 <TextBlock Text="Light" />
               </StackPanel>
             </Button>
@@ -65,7 +65,7 @@
                     IsEnabled="{Binding !IsPlaying}"
                     ToolTip.Tip="A lit panel flat on the surface you are looking at, parented to it.">
               <StackPanel Orientation="Horizontal" Spacing="6">
-                <Path Classes="icon kind-light" Data="{StaticResource IconSurfaceLight}" />
+                <Path Classes="icon kind-light" Data="{x:Static shell:EditorIcons.SurfaceLightGlyph}" />
                 <TextBlock Text="Light panel" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
@@ -89,7 +89,7 @@
                     x:Name="EntityInsert" Click="OnRibbonItemClick"
                     IsEnabled="{Binding CanInsertEntity}">
               <StackPanel Classes="rbigstack">
-                <Path Classes="icon-lg kind-entity" Data="{StaticResource IconLgEntity}" />
+                <Path Classes="icon-lg kind-entity" Data="{x:Static shell:EditorIcons.PlainEntityLargeGlyph}" />
                 <TextBlock Text="Entity" />
               </StackPanel>
             </Button>

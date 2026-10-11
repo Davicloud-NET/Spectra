@@ -53,10 +53,8 @@
   <PathGeometry x:Key="IconLgBrushSubtractive" Figures="M20.83 16.809c.11 -.248 .17 -.52 .17 -.801v-8.018a1.98 1.98 0 0 0 -1 -1.717l-7 -4.008a2.016 2.016 0 0 0 -2 0l-3.012 1.725m-2.547 1.458l-1.441 .825c-.619 .355 -1 1.01 -1 1.718v8.018c0 .709 .381 1.363 1 1.717l7 4.008a2.016 2.016 0 0 0 2 0l5.544 -3.174 M12 22v-10 M14.532 10.538l6.198 -3.578 M3.27 6.96l8.73 5.04 M3 3l18 18" />
   <PathGeometry x:Key="IconLgBrushWorld" Figures="M21 16.008v-8.018a1.98 1.98 0 0 0 -1 -1.717l-7 -4.008a2.016 2.016 0 0 0 -2 0l-7 4.008c-.619 .355 -1 1.01 -1 1.718v8.018c0 .709 .381 1.363 1 1.717l7 4.008a2.016 2.016 0 0 0 2 0l7 -4.008c.619 -.355 1 -1.01 1 -1.718 M12 22v-10 M12 12l8.73 -5.04 M3.27 6.96l8.73 5.04" />
   <PathGeometry x:Key="IconLgDuplicate" Figures="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666 M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" />
-  <PathGeometry x:Key="IconLgEntity" Figures="M6 5h12l3 5l-8.5 9.5a.7 .7 0 0 1 -1 0l-8.5 -9.5l3 -5 M10 12l-2 -2.2l.6 -1" />
   <PathGeometry x:Key="IconLgFrame" Figures="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0 M4 8v-2a2 2 0 0 1 2 -2h2 M4 16v2a2 2 0 0 0 2 2h2 M16 4h2a2 2 0 0 1 2 2v2 M16 20h2a2 2 0 0 0 2 -2v-2" />
   <PathGeometry x:Key="IconLgFrameAll" Figures="M4 8v-2a2 2 0 0 1 2 -2h2 M4 16v2a2 2 0 0 0 2 2h2 M16 4h2a2 2 0 0 1 2 2v2 M16 20h2a2 2 0 0 0 2 -2v-2" />
-  <PathGeometry x:Key="IconLgLight" Figures="M3 12h1m8 -9v1m8 8h1m-15.4 -6.4l.7 .7m12.1 -.7l-.7 .7 M9 16a5 5 0 1 1 6 0a3.5 3.5 0 0 0 -1 3a2 2 0 0 1 -4 0a3.5 3.5 0 0 0 -1 -3 M9.7 17l4.6 0" />
   <PathGeometry x:Key="IconLgMap" Figures="M3 7l6 -3l6 3l6 -3v13l-6 3l-6 -3l-6 3v-13 M9 4v13 M15 7v13" />
   <PathGeometry x:Key="IconLgMove" Figures="M18 9l3 3l-3 3 M15 12h6 M6 9l-3 3l3 3 M3 12h6 M9 18l3 3l3 -3 M12 15v6 M15 6l-3 -3l-3 3 M12 3v6" />
   <PathGeometry x:Key="IconLgNewProject" Figures="M12 19h-7a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v3.5 M16 19h6 M19 16v6" />
@@ -81,7 +79,6 @@
   <PathGeometry x:Key="IconResize" Figures="M 2.667 7.333 v 5.333 a 0.667 0.667 0 0 0 0.667 0.667 h 5.333 m -6 -9.333 v -0.667 a 0.667 0.667 0 0 1 0.667 -0.667 h 0.667 m 3.333 0 h 1.333 m 3.333 0 h 0.667 a 0.667 0.667 0 0 1 0.667 0.667 v 0.667 m 0 3.333 v 1.333 m 0 3.333 v 0.667 a 0.667 0.667 0 0 1 -0.667 0.667 h -0.667 M 2.667 8 h 4.667 a 0.667 0.667 0 0 1 0.667 0.667 v 4.667" />
   <PathGeometry x:Key="IconRotate" Figures="M 2.7 7.333 a 5.333 5.333 0 1 1 0.333 2.667 m -0.333 3.333 v -3.333 h 3.333" />
   <PathGeometry x:Key="IconStop" Figures="M4.4,4.4 L11.6,4.4 L11.6,11.6 L4.4,11.6 Z" />
-  <PathGeometry x:Key="IconSurfaceLight" Figures="M 6 13.333 h 4 M 8 13.333 v -5.333 M 3.333 8 h 9.333 l -2.667 -5.333 h -4 l -2.667 5.333" />
   <PathGeometry x:Key="IconUndo" Figures="M 6 9.333 l -2.667 -2.667 l 2.667 -2.667 M 3.333 6.667 h 7.333 a 2.667 2.667 0 1 1 0 5.333 h -0.667" />
   <PathGeometry x:Key="IconUngroupNodes" Figures="M 8 2.667 l -5.333 2.667 l 5.333 2.667 l 5.333 -2.667 l -5.333 -2.667 M 2.667 8 l 5.333 2.667 l 5.333 -2.667 M 2.667 10.667 l 5.333 2.667 l 5.333 -2.667" />
   <PathGeometry x:Key="IconWarning" Figures="M 8 6 v 2.667 M 6.909 2.394 l -5.404 9.023 a 1.276 1.276 0 0 0 1.091 1.914 h 10.809 a 1.276 1.276 0 0 0 1.091 -1.913 l -5.404 -9.024 a 1.276 1.276 0 0 0 -2.183 0 M 8 10.667 h 0.007" />
