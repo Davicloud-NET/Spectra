@@ -30,11 +30,14 @@ public sealed class RuntimeCloseTests
         level.Play();
         var ticking = new Thread(() => level.Tick());
         ticking.Start();
-        sink.Blocked.Wait(_deadline).ShouldBeTrue("the script never reached its print");
+        sink.Blocked.Wait(_deadline, TestContext.Current.CancellationToken)
+            .ShouldBeTrue("the script never reached its print");
 
         // What the editor does once the engine's thread is gone.
-        Task<MapDocument?> taken = Task.Run(() => level.Manager.TakeAuthoredMap());
-        bool wasTaken = taken.Wait(_deadline);
+        MapDocument? taken = null;
+        var taking = new Thread(() => taken = level.Manager.TakeAuthoredMap());
+        taking.Start();
+        bool wasTaken = taking.Join(_deadline);
 
         // Let the held thread end before anything is asserted, so a failure
         // leaves no thread behind.
@@ -42,6 +45,7 @@ public sealed class RuntimeCloseTests
         ticking.Join(_deadline).ShouldBeTrue("the held tick never ended");
 
         wasTaken.ShouldBeTrue("taking the level waited for the script's call");
+        taken.ShouldNotBeNull();
         level.Manager.EntityWorld.ShouldBeNull();
         level.Runtime.ShouldNotBeNull().IsClosed.ShouldBeTrue();
         part.LocalPosition.ShouldBe(new Vector3(0f, 2f, 0f));

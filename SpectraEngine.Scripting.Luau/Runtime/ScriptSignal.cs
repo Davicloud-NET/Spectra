@@ -45,14 +45,19 @@ internal sealed class ScriptSignal : ScriptObject
             return;
 
         _fireDepth++;
-        for (int i = 0; i < count; i++)
+        try
         {
-            if (_connections[i].IsConnected)
-                _connections[i].Run(arguments);
+            for (int i = 0; i < count; i++)
+            {
+                if (_connections[i].IsConnected)
+                    _connections[i].Run(arguments);
+            }
         }
-
-        _fireDepth--;
-        DropDisconnected();
+        finally
+        {
+            _fireDepth--;
+            DropDisconnected();
+        }
     }
 
     public void OnDisconnected()

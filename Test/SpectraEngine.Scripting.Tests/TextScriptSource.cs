@@ -11,7 +11,8 @@ internal sealed class TextScriptSource : IScriptSource
     public void Add(string path, string text) => _files[path] = Encoding.UTF8.GetBytes(text);
 
     // As a Windows editor saves a file, with a byte order mark in front.
-    public void AddWithMark(string path, string text) => _files[path] = [.. Encoding.UTF8.Preamble, .. Encoding.UTF8.GetBytes(text)];
+    public void AddWithMark(string path, string text) =>
+        _files[path] = [.. Encoding.UTF8.Preamble, .. Encoding.UTF8.GetBytes(text)];
 
     public byte[]? Read(string path) => _files.GetValueOrDefault(path);
 }

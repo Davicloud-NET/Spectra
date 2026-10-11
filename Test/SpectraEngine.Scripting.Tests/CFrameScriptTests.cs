@@ -124,7 +124,8 @@ public sealed class CFrameScriptTests
         printed[4].ShouldEndWith("Position cannot be assigned to");
         printed[5].ShouldEndWith("attempt to perform arithmetic (mul) on CFrame and number");
         printed[6].ShouldEndWith("invalid argument #1 to 'Lerp' (CFrame expected, got number)");
-        printed[7].ShouldEndWith("CFrame.new takes nothing, a position, a position and a point to look at, or 3, 7 or 12 numbers");
+        printed[7].ShouldEndWith(
+            "CFrame.new takes nothing, a position, a position and a point to look at, or 3, 7 or 12 numbers");
     }
 
     [Fact]

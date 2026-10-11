@@ -46,6 +46,49 @@ public sealed unsafe class ValueTests
         doubled.ShouldBe(new Vector3(2, 4, 6));
     }
 
+    // No global is named Vector3 here. So what comes back was made by the
+    // compiled code itself, with no call.
+    [Fact]
+    public void The_compiler_makes_a_vector_of_Vector3_new_with_three_numbers()
+    {
+        using LuauHost host = TestHost.Open(out _);
+        LuauScript script = host.LoadText(
+            "local function make(z: number): Vector3 return Vector3.new(1, 2, z) end return make(3)");
+
+        script.Start().ShouldBe(LuauResume.Finished);
+
+        script.Thread.Values.TryGetVector(1, out Vector3 made).ShouldBeTrue();
+        made.ShouldBe(new Vector3(1, 2, 3));
+    }
+
+    [Fact]
+    public void A_host_gives_every_vector_a_metatable_of_its_own()
+    {
+        using LuauHost host = TestHost.Open(out _, host =>
+        {
+            LuauStack stack = host.Stack;
+            stack.NewTable().ShouldBeTrue();
+            host.PushFunction(stack, "__index"u8, Index).ShouldBeTrue();
+            stack.SetField(-2, "__index"u8).ShouldBeTrue();
+            stack.SetVectorMetatable().ShouldBeTrue();
+            stack.Count.ShouldBe(0);
+        });
+        LuauScript script = host.LoadText(
+            "local v = ...\nreturn v.Answer, v.y, v['Other'], pcall(function() getmetatable(v).__index = nil end)");
+
+        script.Start([new Vector3(1, 2, 3)]).ShouldBe(LuauResume.Finished);
+
+        LuauStack values = script.Thread.Values;
+        values.TryGetNumber(1, out double answer).ShouldBeTrue();
+        values.TryGetNumber(2, out double y).ShouldBeTrue();
+        values.TryGetNumber(3, out double other).ShouldBeTrue();
+        (answer, y, other).ShouldBe((42, 2, -1));
+        values.GetBoolean(4).ShouldBeFalse("the metatable all scripts share could be changed");
+
+        static int Index(LuauStack members) =>
+            members.Push(members.GetText(2) == "Answer" ? 42 : -1) ? 1 : LuauStack.Raise;
+    }
+
     [Fact]
     public void A_read_of_the_wrong_kind_says_so()
     {

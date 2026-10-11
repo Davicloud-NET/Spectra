@@ -13,9 +13,12 @@ internal static class CFrameLibrary
         new ApiTable(host)
             .Function("new"u8, New)
             .Function("Angles"u8, static stack => FromAngles(stack, "Angles", CFrame.Angles))
-            .Function("fromEulerAnglesXYZ"u8, static stack => FromAngles(stack, "fromEulerAnglesXYZ", CFrame.Angles))
-            .Function("fromEulerAnglesYXZ"u8, static stack => FromAngles(stack, "fromEulerAnglesYXZ", CFrame.FromEulerAnglesYXZ))
-            .Function("fromOrientation"u8, static stack => FromAngles(stack, "fromOrientation", CFrame.FromOrientation))
+            .Function("fromEulerAnglesXYZ"u8, static stack =>
+                FromAngles(stack, "fromEulerAnglesXYZ", CFrame.FromEulerAnglesXYZ))
+            .Function("fromEulerAnglesYXZ"u8, static stack =>
+                FromAngles(stack, "fromEulerAnglesYXZ", CFrame.FromEulerAnglesYXZ))
+            .Function("fromOrientation"u8, static stack =>
+                FromAngles(stack, "fromOrientation", CFrame.FromOrientation))
             .Function("lookAt"u8, static stack => Look(stack, "lookAt", CFrame.LookAt))
             .Function("lookAlong"u8, static stack => Look(stack, "lookAlong", CFrame.LookAlong))
             .Function("fromAxisAngle"u8, FromAxisAngle)

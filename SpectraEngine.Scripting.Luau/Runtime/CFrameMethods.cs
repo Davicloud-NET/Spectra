@@ -9,18 +9,28 @@ internal static class CFrameMethods
     public static MethodTable Build(LuauHost host) =>
         new ApiTable(host)
             .Function("Inverse"u8, static stack => Frame(stack, "Inverse", static self => self.Inverse()))
-            .Function("Orthonormalize"u8, static stack => Frame(stack, "Orthonormalize", static self => self.Orthonormalize()))
+            .Function("Orthonormalize"u8, static stack =>
+                Frame(stack, "Orthonormalize", static self => self.Orthonormalize()))
             .Function("Lerp"u8, Lerp)
             .Function("FuzzyEq"u8, FuzzyEq)
-            .Function("ToWorldSpace"u8, static stack => WithFrame(stack, "ToWorldSpace", static (self, other) => self.ToWorldSpace(other)))
-            .Function("ToObjectSpace"u8, static stack => WithFrame(stack, "ToObjectSpace", static (self, other) => self.ToObjectSpace(other)))
-            .Function("PointToWorldSpace"u8, static stack => WithVector(stack, "PointToWorldSpace", static (self, v) => self.PointToWorldSpace(v)))
-            .Function("PointToObjectSpace"u8, static stack => WithVector(stack, "PointToObjectSpace", static (self, v) => self.PointToObjectSpace(v)))
-            .Function("VectorToWorldSpace"u8, static stack => WithVector(stack, "VectorToWorldSpace", static (self, v) => self.VectorToWorldSpace(v)))
-            .Function("VectorToObjectSpace"u8, static stack => WithVector(stack, "VectorToObjectSpace", static (self, v) => self.VectorToObjectSpace(v)))
-            .Function("ToEulerAnglesXYZ"u8, static stack => Angles(stack, "ToEulerAnglesXYZ", static self => self.ToEulerAnglesXYZ()))
-            .Function("ToEulerAnglesYXZ"u8, static stack => Angles(stack, "ToEulerAnglesYXZ", static self => self.ToEulerAnglesYXZ()))
-            .Function("ToOrientation"u8, static stack => Angles(stack, "ToOrientation", static self => self.ToOrientation()))
+            .Function("ToWorldSpace"u8, static stack =>
+                WithFrame(stack, "ToWorldSpace", static (self, other) => self.ToWorldSpace(other)))
+            .Function("ToObjectSpace"u8, static stack =>
+                WithFrame(stack, "ToObjectSpace", static (self, other) => self.ToObjectSpace(other)))
+            .Function("PointToWorldSpace"u8, static stack =>
+                WithVector(stack, "PointToWorldSpace", static (self, point) => self.PointToWorldSpace(point)))
+            .Function("PointToObjectSpace"u8, static stack =>
+                WithVector(stack, "PointToObjectSpace", static (self, point) => self.PointToObjectSpace(point)))
+            .Function("VectorToWorldSpace"u8, static stack =>
+                WithVector(stack, "VectorToWorldSpace", static (self, vector) => self.VectorToWorldSpace(vector)))
+            .Function("VectorToObjectSpace"u8, static stack =>
+                WithVector(stack, "VectorToObjectSpace", static (self, vector) => self.VectorToObjectSpace(vector)))
+            .Function("ToEulerAnglesXYZ"u8, static stack =>
+                Angles(stack, "ToEulerAnglesXYZ", static self => self.ToEulerAnglesXYZ()))
+            .Function("ToEulerAnglesYXZ"u8, static stack =>
+                Angles(stack, "ToEulerAnglesYXZ", static self => self.ToEulerAnglesYXZ()))
+            .Function("ToOrientation"u8, static stack =>
+                Angles(stack, "ToOrientation", static self => self.ToOrientation()))
             .Function("GetComponents"u8, static stack => Components(stack, "GetComponents"))
             .Function("components"u8, static stack => Components(stack, "components"))
             .KeepAsMethods();
