@@ -315,7 +315,8 @@ public sealed class SceneManager
         }
         finally
         {
-            // After the entities, which may still read what a script moved.
+            // Last, and also when an entity's removal threw: the runtime owns
+            // native memory and a thread of its own.
             world.Scripts?.Close();
         }
     }
