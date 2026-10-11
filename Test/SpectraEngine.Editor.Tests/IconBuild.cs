@@ -39,6 +39,11 @@ internal sealed class IconBuild
     // A name is a key, or a folder and a key: "World/IconTwin".
     public static async Task<IconBuild> RunAsync(params (string Name, string Svg)[] icons)
     {
+        // Skip, not fail: a machine that only runs built tests has a runtime
+        // and no SDK, and that is not a broken build.
+        (int listed, string sdks) = await DotnetAsync(Path.GetTempPath(), "--list-sdks");
+        Assert.SkipWhen(listed != 0 || sdks.Trim().Length == 0, "There is no .NET SDK here to run the icon build with.");
+
         string folder = Path.Combine(Path.GetTempPath(), "spectra-icon-build-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
 
@@ -54,7 +59,9 @@ internal sealed class IconBuild
             string project = Path.Combine(folder, "icons.proj");
             File.WriteAllText(project, Project(output));
 
-            (int exitCode, string log) = await BuildAsync(project);
+            // No node reuse: a build node left running would hold the folder.
+            (int exitCode, string log) = await DotnetAsync(
+                folder, "msbuild", project, "-t:Fixtures", "-nologo", "-nodeReuse:false");
             string resources = File.Exists(output) ? File.ReadAllText(output) : string.Empty;
             return new IconBuild(exitCode, log, ReadFigures(resources));
         }
@@ -90,18 +97,18 @@ internal sealed class IconBuild
             """;
     }
 
-    private static async Task<(int ExitCode, string Log)> BuildAsync(string project)
+    // Runs dotnet and gives back its exit code and everything it printed.
+    private static async Task<(int ExitCode, string Output)> DotnetAsync(string folder, params string[] arguments)
     {
         var info = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-            WorkingDirectory = Path.GetDirectoryName(project),
+            WorkingDirectory = folder,
         };
 
-        // No node reuse: a build node left running would hold the folder.
-        foreach (string argument in new[] { "msbuild", project, "-t:Fixtures", "-nologo", "-nodeReuse:false" })
+        foreach (string argument in arguments)
             info.ArgumentList.Add(argument);
 
         using var process = Process.Start(info)
