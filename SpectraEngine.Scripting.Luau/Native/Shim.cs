@@ -9,7 +9,7 @@ namespace SpectraEngine.Scripting.Luau.Native;
 internal static unsafe partial class Shim
 {
     // Moves with SL_SHIM_REVISION in spectra_luau.h. LuauLibrary compares the two.
-    internal const int Revision = 6;
+    internal const int Revision = 7;
 
     // What a host function returns instead of a result count. The shim raises
     // the error or yields once the managed frame has returned.
@@ -82,6 +82,7 @@ internal static unsafe partial class Shim
 
     // Takes the table on top, whether it succeeds or not.
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_setuserdatametatable(nint L, int tag, int releases);
+    [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_setvectormetatable(nint L);
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_pushobject(nint L, int tag, uint slot, uint generation, uint nextGeneration, int* created);
     [LibraryImport(Lua.Library)] internal static partial int sl_takereleased(nint L, ulong* buffer, int capacity);
 
@@ -103,7 +104,10 @@ internal static unsafe partial class Shim
 
     // Null when the compiler itself failed. A script with a mistake in it still
     // compiles, and sl_load then reports the mistake. Free the result with sl_free.
-    [LibraryImport(Lua.Library)] internal static partial byte* sl_compile(byte* source, nuint size, int optimizationLevel, int debugLevel, nuint* bytecodeSize);
+    // The two names end with a zero, or are null to leave the vector names out.
+    [LibraryImport(Lua.Library)]
+    internal static partial byte* sl_compile(
+        byte* source, nuint size, int optimizationLevel, int debugLevel, byte* vectorLibrary, byte* vectorConstructor, nuint* bytecodeSize);
     [LibraryImport(Lua.Library)] internal static partial void sl_free(void* block);
 
     // The serial of the outermost call that is running or ran last.

@@ -8,7 +8,18 @@
 // Returns the bytecode, to be freed with sl_free, or null when the compiler
 // itself failed. A script with a mistake in it still compiles: the bytecode
 // then carries the message and sl_load reports it.
-SL_API char* sl_compile(const char* source, size_t size, int optimizationLevel, int debugLevel, size_t* bytecodeSize)
+//
+// With `vectorLibrary` and `vectorConstructor`, say "Vector3" and "new", a
+// call of that global with three numbers makes a vector with no call, and
+// the library's name is also a name for the vector type. Null leaves both out.
+SL_API char* sl_compile(
+    const char* source,
+    size_t size,
+    int optimizationLevel,
+    int debugLevel,
+    const char* vectorLibrary,
+    const char* vectorConstructor,
+    size_t* bytecodeSize)
 {
     sl_apply_flags();
     *bytecodeSize = 0;
@@ -17,6 +28,13 @@ SL_API char* sl_compile(const char* source, size_t size, int optimizationLevel, 
     lua_CompileOptions options = {};
     options.optimizationLevel = optimizationLevel;
     options.debugLevel = debugLevel;
+
+    if (vectorLibrary && vectorConstructor)
+    {
+        options.vectorLib = vectorLibrary;
+        options.vectorCtor = vectorConstructor;
+        options.vectorType = vectorLibrary;
+    }
 
     // The compiler is ordinary C++ and may throw, for one when memory runs
     // out. An exception must not reach the caller's managed frame.

@@ -47,6 +47,7 @@ enum Body
     CreateTableBody,
     NewUserdataBody,
     SetMetatableBody,
+    SetVectorMetatableBody,
     NewObjectBody,
     SpawnBody,
     KeepBody,
@@ -485,6 +486,17 @@ int setMetatableBody(lua_State* L)
     return 0;
 }
 
+// Arguments: the table. Luau keeps one metatable for all vectors, and setting
+// it on any vector sets it for the type.
+int setVectorMetatableBody(lua_State* L)
+{
+    freezeDeep(L, 1, 0);
+    lua_pushvector(L, 0.0f, 0.0f, 0.0f);
+    lua_pushvalue(L, 1);
+    lua_setmetatable(L, -2);
+    return 0;
+}
+
 int loadBody(lua_State* L)
 {
     const Chunk* chunk = static_cast<const Chunk*>(lua_tolightuserdata(L, 1));
@@ -650,6 +662,7 @@ const BodyEntry bodyEntries[BodyCount] = {
     {createTableBody, "sl_createtable"},
     {newUserdataBody, "sl_newuserdata"},
     {setMetatableBody, "sl_setuserdatametatable"},
+    {setVectorMetatableBody, "sl_setvectormetatable"},
     {newObjectBody, "sl_pushobject"},
     {spawnBody, "sl_spawn"},
     {keepBody, "sl_keep"},
@@ -1127,6 +1140,22 @@ SL_API int sl_setuserdatametatable(lua_State* L, int tag, int releases)
     // The table is still under what the call left.
     lua_remove(L, status == LUA_OK ? -1 : -2);
     return status;
+}
+
+// Takes the table on top and makes it the metatable of every vector, in place
+// of the one Luau's vector library set. That is how a vector gets members
+// beyond x, y and z. The table is frozen with all it holds, since every
+// script shares it.
+SL_API int sl_setvectormetatable(lua_State* L)
+{
+    if (lua_gettop(L) < 1 || !lua_istable(L, -1))
+        return refuse(L, 1, "a vector metatable must be a table");
+    if (const char* reason = whyNot(L, 3))
+        return refuse(L, 1, reason);
+
+    pushBody(L, SetVectorMetatableBody);
+    lua_insert(L, -2);
+    return lua_pcall(L, 1, 0, 0);
 }
 
 // Pushes the userdata that stands for a slot of the host's object table. One

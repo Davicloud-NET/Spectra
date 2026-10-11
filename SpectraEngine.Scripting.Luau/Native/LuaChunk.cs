@@ -10,6 +10,13 @@ internal static unsafe class LuaChunk
     private const int OptimizationLevel = 1;
     private const int DebugLevel = 1;
 
+    // The name a script makes a vector by, as in Roblox. The compiler turns
+    // Vector3.new with three numbers into a vector with no call, and takes
+    // Vector3 for a name of the vector type. Each ends with a zero.
+    private static ReadOnlySpan<byte> VectorLibrary => "Vector3\0"u8;
+
+    private static ReadOnlySpan<byte> VectorConstructor => "new\0"u8;
+
     // Compiles the source and pushes it as a function. When the status is not
     // Ok, the message is on top instead, and a mistake in the script starts it
     // with the chunk's name and the line. Luau shows that name without its
@@ -23,7 +30,12 @@ internal static unsafe class LuaChunk
         nuint size;
         byte* bytecode;
         fixed (byte* text = source)
-            bytecode = Shim.sl_compile(text, (nuint)source.Length, OptimizationLevel, DebugLevel, &size);
+        fixed (byte* library = VectorLibrary)
+        fixed (byte* constructor = VectorConstructor)
+        {
+            bytecode = Shim.sl_compile(
+                text, (nuint)source.Length, OptimizationLevel, DebugLevel, library, constructor, &size);
+        }
 
         if (bytecode == null)
         {

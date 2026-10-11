@@ -178,6 +178,13 @@ public readonly unsafe ref struct LuauStack
     /// </summary>
     public bool SetUserdataMetatable(int tag) => Shim.sl_setuserdatametatable(_state, tag, 0) == LuaStatus.Ok;
 
+    /// <summary>
+    /// Takes the table on top and makes it the metatable of every vector, which is how a vector
+    /// gets members beyond x, y and z. The table is frozen with all it holds. Do this before the
+    /// host is sealed.
+    /// </summary>
+    public bool SetVectorMetatable() => Shim.sl_setvectormetatable(_state) == LuaStatus.Ok;
+
     /// <summary>Pushes the value at the index as text, the way <c>tostring</c> gives it.</summary>
     public bool PushAsText(int index) => Shim.sl_tostring(_state, index) == LuaStatus.Ok;
 
