@@ -205,6 +205,56 @@ public sealed class SceneNodeCFrameTests
         child.LocalRotation.ShouldBe(before.Rotation);
     }
 
+    // In Roblox part.CFrame = part.CFrame * CFrame.Angles(0, 0.01, 0) turns
+    // the part where it stands: the product's position is the part's own.
+    [Theory]
+    [InlineData(-3f, 1.5f, 8f)]
+    [InlineData(1000f, 30f, -1000f)]
+    [InlineData(100_000f, 300f, -100_000f)]
+    public void Spinning_a_node_in_place_under_a_turned_parent_does_not_move_it(float x, float y, float z)
+    {
+        var (_, _, child) = ParentAndChild(new CFrame(x, y, z) * CFrame.Angles(0.3f, -0.7f, 1.1f));
+        child.LocalCFrame = B;
+        Vector3 local = child.LocalPosition;
+        Vector3 world = child.WorldPosition;
+
+        for (int i = 0; i < 2000; i++)
+            child.CFrame *= CFrame.Angles(0f, 0.01f, 0f);
+
+        child.LocalPosition.ShouldBe(local);
+        child.WorldPosition.ShouldBe(world);
+        child.CFrame.Rotation.Length().ShouldBe(1f, 1e-6f);
+    }
+
+    [Fact]
+    public void Spinning_a_node_in_place_under_a_scaled_parent_does_not_move_it()
+    {
+        var (_, parent, child) = ParentAndChild(Slanted);
+        parent.LocalScale = new Vector3(3f, 0.5f, 2f);
+        child.LocalCFrame = B;
+        Vector3 local = child.LocalPosition;
+
+        for (int i = 0; i < 2000; i++)
+            child.CFrame *= CFrame.Angles(0f, 0.01f, 0f);
+
+        child.LocalPosition.ShouldBe(local);
+    }
+
+    [Fact]
+    public void Setting_the_world_frame_far_from_the_origin_lands_within_a_float_step()
+    {
+        var (_, _, child) = ParentAndChild(new CFrame(70_000f, 300f, -70_000f) * CFrame.Angles(0.3f, -0.7f, 1.1f));
+        var asked = new Vector3(70_001f, 302f, -69_997f);
+
+        child.CFrame = new CFrame(asked);
+
+        // Floats near 70000 are 1/128 apart, and near 300 they are 1/32768 apart.
+        Vector3 off = Vector3.Abs(child.WorldPosition - asked);
+        off.X.ShouldBeLessThanOrEqualTo(1f / 128f);
+        off.Y.ShouldBeLessThanOrEqualTo(1f / 32768f);
+        off.Z.ShouldBeLessThanOrEqualTo(1f / 128f);
+    }
+
     [Fact]
     public void Writing_the_frame_a_brush_already_has_does_not_dirty_the_static_world()
     {

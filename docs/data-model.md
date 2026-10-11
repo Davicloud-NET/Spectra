@@ -100,7 +100,8 @@ On a node:
 
 - `LocalCFrame` reads and writes `LocalPosition` and `LocalRotation` and keeps `LocalScale`.
 - `CFrame` is the world frame. Its position is `WorldPosition`. Its rotation is the rotations of the node and its ancestors composed, with scale left out. Under a stretched and turned ancestor the world matrix is sheared and holds no rotation of its own, so this is the one definition that always has an answer.
-- Setting `CFrame` solves the local transform under the parent. The position goes through the inverse of the parent's whole world matrix, so it lands where asked under a scaled ancestor too.
+- Setting `CFrame` solves the local transform under the parent. The position goes through the inverse of the parent's world matrix, so it lands where asked under a scaled ancestor too. The parent's own position is taken off before the matrix is inverted, which keeps the answer to a float step far from the origin.
+- A world position the node already has is not solved again. So `node.CFrame = node.CFrame * CFrame.Angles(0, 0.01, 0)` turns the node where it stands, as in Roblox, however often it is written.
 - Both setters go through `LocalTransform`, so an equal write still changes nothing. A world frame the node already has is not solved at all: the answer would come back a rounding error away and count as a move.
 
 Where Roblox's documentation gives no answer, the engine's is its own and the tests say so: a look along the up vector keeps the right vector on +X, a look at the frame's own position gives no rotation, `FromAxisAngle` takes an axis of any length, `FromMatrix` squares up columns that are not a rotation, and at an Euler pole the Z angle is zero.

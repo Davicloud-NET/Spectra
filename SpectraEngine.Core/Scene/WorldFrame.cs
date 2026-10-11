@@ -26,13 +26,23 @@ internal static class WorldFrame
         CFrame solved = Of(parent).ToObjectSpace(world);
         local.Rotation = solved.Rotation;
 
-        // The parent's whole matrix, so the position lands under a scaled
-        // ancestor too. An ancestor scaled to nothing has no inverse, and the
-        // position is then solved as if nothing were scaled.
-        local.Position = Matrix4x4.Invert(parent.WorldMatrix, out Matrix4x4 toParent)
-            ? Vector3.Transform(world.Position, toParent)
-            : solved.Position;
+        // A turn in place asks for the position the node has. Solved again it
+        // would come back a rounding error away, and a spinning node would creep.
+        if (world.Position != node.WorldPosition)
+            local.Position = PositionUnder(parent, world.Position) ?? solved.Position;
         return local;
+    }
+
+    // By the parent's whole matrix, so the position lands under a scaled
+    // ancestor too. The parent's own position comes off first: far from the
+    // origin the inverse of the whole matrix loses the low digits of the
+    // answer. Null under an ancestor scaled to nothing, which has no inverse.
+    private static Vector3? PositionUnder(SceneNode parent, Vector3 worldPosition)
+    {
+        Matrix4x4 axes = parent.WorldMatrix;
+        Vector3 offset = worldPosition - axes.Translation;
+        axes.Translation = Vector3.Zero;
+        return Matrix4x4.Invert(axes, out Matrix4x4 back) ? Vector3.TransformNormal(offset, back) : null;
     }
 
     // The parent's rotation goes on the left: the engine turns a point by the
