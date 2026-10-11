@@ -31,7 +31,9 @@ A class names its icon in `[SpectraEntity(Icon = "door")]`. The name travels in
 the `.sentdef`, so a class from a game or a script names one the same way.
 
 The colour is the entity's group: `Icons/EntityGroupTints.cs`, which repeats
-the theme's `SpectraGroup` tokens. A light is drawn in its own colour.
+the theme's `SpectraGroup` tokens. The outline of an entity's volume and the
+distance spheres of a selected entity are drawn in it too. A light is drawn in
+its own colour, whatever icon it wears.
 
 ## Where the files come from
 
