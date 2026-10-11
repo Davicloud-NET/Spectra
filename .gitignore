@@ -377,9 +377,9 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-# Native (CMake) build trees and their output. Both are rebuildable from the
-# pinned Box3D submodule, so the SHA is what is under version control — a
-# committed binary that can drift from its source is worse than no binary.
+# Native build trees and their output, for Box3D and for Luau. Both are
+# rebuilt from a pinned submodule, so the SHA is what is under version control.
+# A committed binary that can drift from its source is worse than no binary.
 build/
 native/runtimes/
 

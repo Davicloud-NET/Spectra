@@ -119,3 +119,106 @@ recent single-author package. This project has already been burned twice by
 that class of dependency — a recommended-then-archived Luau binding, and a
 networking library that published clean under NativeAOT and then crashed the
 native binary on its default API through a reflective assembly scan.
+
+## Luau
+
+The script VM, a git submodule at `external/luau` pinned to release 0.742.
+Upstream is [luau-lang/luau](https://github.com/luau-lang/luau), MIT licensed.
+
+```powershell
+native/build-luau.ps1                   # win-x64
+native/build-luau.ps1 -Rid win-arm64
+native/build-luau.ps1 -Clean
+```
+
+```bash
+native/build-luau.sh                    # the host it runs on, linux-x64 or linux-arm64
+```
+
+Two files come out. Neither is committed.
+
+| File | For |
+| --- | --- |
+| `native/runtimes/<rid>/native/spectra_luau.dll`, `libspectra_luau.so` | `dotnet run` and the test suites, which run under the JIT |
+| `native/runtimes/<rid>/static/spectra_luau.lib`, `libspectra_luau.a` | a NativeAOT publish, which links it into the executable |
+
+Each holds the shim in `native/luau` and the parts of Luau it needs: the VM
+and the compiler.
+
+On Windows the script needs CMake and MSVC and no Developer prompt, as for
+Box3D. On Linux it calls `clang++` and `ar` and nothing else. It does not use
+CMake there, so the options are written down twice: in
+`native/luau/CMakeLists.txt` and in `build-luau.sh`.
+
+### The shim is the only way in
+
+Luau raises an error with `longjmp`, to the nearest protected call. When that
+jump crosses a managed frame, the .NET runtime keeps a record of a stack that
+is gone. Under the JIT nothing happens. A NativeAOT build dies at a later
+garbage collection, or goes on with damaged objects.
+
+So managed code never calls anything in Luau that can raise.
+`native/luau/spectra_luau.cpp` owns:
+
+- `callHost`, the one function Luau sees for every managed function. The
+  managed function returns a count, `-1` for an error with the value on top, or
+  `-2 - n` to yield `n` values. `callHost` raises or yields after it has returned.
+- every call that can raise, in a form that runs under `lua_pcall` and returns
+  a status: load, call, resume, read and write a field, push a string, make a
+  table, make userdata, turn a value into text, open the libraries.
+- the allocator. It counts and has no limit, because a refused allocation is a
+  raise from whichever call allocated.
+- the interrupt, which another thread arms to stop a script.
+- the panic handler. It keeps its message in `sl_fatal_message` for a debugger
+  and prints nothing.
+- Luau's feature flags, set the way Luau's own tools set them.
+- `sl_constant`, which reports every number the binding copied from the
+  headers. `LuauLibrary.FindProblem` compares them at startup.
+
+`Test/SpectraEngine.Scripting.CrashCases` is a console that shows the rule
+holding and what happens without it. It only means something as a native
+executable:
+
+```powershell
+dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r win-x64
+dotnet run --project Test/SpectraEngine.Scripting.Tests
+```
+
+### How an executable gets it
+
+It imports `native/Luau.targets`. The demo, the editor and `scook` do.
+
+- A build copies the shared library beside the output when it has been built,
+  and says nothing when it has not.
+- A NativeAOT publish links the static library. When it is missing the publish
+  stops with one line that names the script to run.
+
+### Build options
+
+| Option | Value | Why |
+| --- | --- | --- |
+| `LUA_USE_LONGJMP` | 1 | A caught error costs less than with C++ exceptions, and an error nobody catches reaches the panic handler with its message. `docs/spikes/2026-10-luau-aot.md` has the numbers. |
+| `LUA_VECTOR_SIZE` | 3 | A vector is three floats. It is Luau's default, set anyway so that a change is made on purpose. |
+| C runtime | `/MT` | The one a NativeAOT executable links. With `/MD` the publish fails with LNK2038. |
+| Code generator | left out | It helps arithmetic and little else, and it makes executable memory at run time. |
+
+The shim refuses to compile with another unwind mode or vector size, and the
+binding checks both at startup.
+
+### Moving the pin
+
+1. Check out the new release tag in `external/luau`.
+2. Change `SL_LUAU_RELEASE` in `native/luau/spectra_luau.h` and `Lua.Release`
+   in `SpectraEngine.Scripting.Luau/Native/Lua.cs`. The build scripts compare
+   the first with the submodule's tag when the checkout has tags.
+3. Build, and run `SpectraEngine.Scripting.Tests`. A constant that moved shows
+   up there by name.
+4. Read the calls listed in `BindingSourceTests` again in the new `lapi.cpp`.
+   The list says they cannot raise, and only reading the source can confirm it.
+5. Publish the crash cases and run the suite once more.
+
+### Not proven
+
+- `win-arm64` and `linux-arm64`. The scripts accept them and nobody has run them.
+- A publish on a Linux machine. The Linux executable that was tested was
+  compiled on Windows and linked in WSL.

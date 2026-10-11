@@ -21,8 +21,9 @@ dotnet run --project Spectra.Kitchen.CLI -- cook <projectDir> # scook: cook | ve
 dotnet run --project SpectraShade.Compiler.CLI -- <file>      # ssc, the shader compiler
 dotnet run -c Release --project Benchmarks/CsgBench           # CSG benchmarks
 dotnet publish SpectraEngine.Executable -c Release -r win-x64 # NativeAOT build
-git submodule update --init --recursive                       # Box3D source
+git submodule update --init --recursive                       # Box3D and Luau source
 native/build-box3d.ps1                                        # builds box3d.dll
+native/build-luau.ps1                                         # builds Luau and its shim (build-luau.sh on Linux)
 npm --prefix site run api && npm --prefix site run dev         # the docs site, on localhost:4321
 ```
 
@@ -37,6 +38,7 @@ Tests are xUnit v3 on Microsoft.Testing.Platform. Run a suite with `dotnet run`,
 | `SpectraEngine.Editor.Render.Tests` | shell controls rendered headless with real Skia |
 | `SpectraEngine.Entities.Tests` | the entity generator, `.sentdef`, the built-in classes, a no-code level played end to end |
 | `SpectraEngine.Physics.Tests` | Box3D binding and the character mover |
+| `SpectraEngine.Scripting.Tests` | the Luau shim and its binding, and the crash cases of a published console |
 | `Spectra.Kitchen.Tests` | the cook, pack formats, determinism |
 | `SpectraEngine.Graphics.Tests` | pixel tests on a real GL driver |
 
@@ -78,6 +80,7 @@ Publishing:
 - `SpectraEngine.Executable/`: the demo. Also hosts the editing layer.
 - `SpectraEngine.Entities/` and `.Generator/`: built-in entities and the Roslyn generator.
 - `SpectraEngine.Physics.Box3D/`: the Box3D binding. Source is the `external/box3d` submodule.
+- `SpectraEngine.Scripting.Luau/`: the Luau binding. Source is the `external/luau` submodule, and the shim between them is `native/luau`.
 - `Spectra.Kitchen/` and `.CLI/`: the cook (`scook`).
 - `SpectraShade.Compiler/`, `.CLI/` (`ssc`), `.LSP/`, `.VSIX/`.
 - `site/`: the user docs, built with Starlight. `npm run api` generates the C# reference from the `///` comments.
@@ -230,6 +233,11 @@ Entities and play
 - A wire's input name is case sensitive, and a wrong one is only a Debug log line. `ent_watch` shows it as `deny`.
 - A tick sends at most `MaxDispatchesPerTick` of the events that were waiting, and as many again of those it makes. Waiting ones past that go out on later ticks, in order, and are never dropped. What a tick makes past it is a loop with no delay, and is dropped. A loop that waits and multiplies is stopped by `MaxPendingEvents`: an event made while the queue is full is dropped.
 - Whatever puts the play camera somewhere else in one frame calls `SoundPresenter.ListenerJumped`. A hop under 8 units is otherwise heard as motion, and every sound chirps.
+
+Luau
+
+- A Luau call that can raise, made from managed code, works under the JIT and kills a NativeAOT build at a later garbage collection. Managed code reaches Luau through `Shim`, whose calls return a status, and a host function fails by returning `Shim.HostError`. `BindingSourceTests` holds the short list of direct calls.
+- So the crash cases only count from a published console: `dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r win-x64`, then `SpectraEngine.Scripting.Tests`. Until then they skip, and a stale publish is run as it is.
 
 Tests and tools
 
