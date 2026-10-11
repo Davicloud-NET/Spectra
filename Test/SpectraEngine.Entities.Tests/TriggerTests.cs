@@ -75,7 +75,7 @@ public sealed class TriggerTests
     public void A_wait_is_counted_in_whole_ticks_rounded_up_as_any_wait_in_the_world_is(string wait, int ticks)
     {
         SceneNode zone = Zone("trigger_multiple");
-        zone.Entity!.SetValue("wait", wait);
+        zone.Entity.ShouldNotBeNull().SetValue("wait", wait);
         EntityRuntime.Wire(zone, TriggerMultiple.OnTrigger, "sink", "Trigger");
         _player.Feet = Inside;
         EntityWorld world = Play();
