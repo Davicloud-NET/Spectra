@@ -123,6 +123,9 @@ Editing
 - Tools read an `EditorInputFrame`.
 - A UI sends set verbs ("snap on"), not toggles. A toggle against a stale snapshot flips the wrong way.
 - Undoing a structural edit puts the node back at its old sibling index. Child order is placement order for the carve.
+- A script with no children has no place (`SceneNodeClassifier.HasPlace`): no Transform rows, no handles, and `PropertyEditor` and `GizmoTool` skip it. A new tool that moves the selection asks the same question.
+- Insert Script makes its file in the command that adds the node (`ScriptFileMaker`), on the render thread, because the name comes from the live selection. Undo leaves the file.
+- A drop in the viewport lands on what a click there selects (`ViewportInteractionController.NodeAt`). `Scene.Raycast` alone never finds a light or a point entity.
 - A tap puts a press and its release in one frame. A gesture ends when its button is up, or it waits for a release that never comes.
 - The icon of a light or a point entity is drawn and picked where `SceneIcons` puts it, which is beside the node when icons pile up. Code that draws or picks one at the node's position misses.
 
@@ -197,6 +200,7 @@ Avalonia
 - Put a fill's alpha in the colour, not in the brush's `Opacity`, when the fill is transitioned.
 - Dock tool content goes through `SetToolContent`, which also sets the `DataContext`. All dock controls share one `Factory`.
 - A native viewport is a child window. Nothing drawn in the same window can cross it, only popups can, and re-parenting it destroys the session. A composited viewport has neither limit.
+- A `ListBox` marks Enter handled. The Content panel hears it with a tunnel handler.
 - An `InputGesture` string is parsed. Use real `Key` names (`OemOpenBrackets`, `Delete`), or the window throws at startup.
 - `ApplyViewArrangement` sizes and shows the view panes and never moves one. The 3D view's track never goes to zero: a swap chain with no width may not come back.
 - The compositor waits on the shared target's key with no deadline. An engine that dies must keep answering (`Renderer.OfferSharedTurn`) until the shell has cleared `viewport.Host` and `IsAwaitingEngine` is false, or the whole window freezes.
@@ -261,6 +265,7 @@ Tests and tools
 - The tests that render through the real OpenAL (`-- -trait "Suite=AudioLoopback"`) skip unless `SPECTRA_AUDIO_LOOPBACK=1` is set. A green scene suite says nothing about `OpenAlBackend` or the low-pass filter.
 - An agent cannot drive the running editor. `SpectraEngine.Editor.Render.Tests` renders controls and writes PNGs under `artifacts/`. Colour, feel and gestures still need a person, and say so when you hand over.
 - After any agent run with write access, check `git status` before staging. Probes get left behind.
+- Everything that opens a script goes through `ScriptLauncher`, and it starts a program only for a `.luau` file (`ScriptOpenPlan.IsScriptFile`), since a level can name any file as its script. No test starts a program: `FakeProgramStarter` keeps what was asked.
 - An agent's worktree keeps about 4.6 GB of build output. Delete `bin` and `obj` in a worktree once its branch is merged, or the drive fills.
 - A build that runs out of disk leaves truncated files in `obj` that the next build takes for up to date. Delete `bin` and `obj`.
 - A save stamps `spectramap` with `EngineInfo.MapFormatVersion`. Raise it and every fixture that compares saved bytes has to name the new number.
