@@ -67,7 +67,11 @@
   <!--
     A NativeAOT publish links Luau into the executable. SetupOSSpecificProps
     only exists and only runs in such a publish, and it runs before the
-    compiler reads DirectPInvoke and before the linker reads NativeLibrary.
+    compiler reads DirectPInvoke and before the linker reads LinkerArg.
+
+    The library is a quoted LinkerArg, not a NativeLibrary. Off Windows the
+    link line takes a NativeLibrary bare, and a repository under a path with
+    a space in it would hand the linker two arguments.
   -->
   <Target Name="LinkLuauLibrary" BeforeTargets="SetupOSSpecificProps" DependsOnTargets="FindLuauLibraries">
     <Error Condition="!Exists('$(_LuauStatic)')"
@@ -75,8 +79,20 @@
 
     <ItemGroup>
       <DirectPInvoke Include="spectra_luau" />
-      <NativeLibrary Include="$(_LuauStatic)" />
+      <LinkerArg Include="&quot;$(_LuauStatic)&quot;" />
     </ItemGroup>
+  </Target>
+
+  <!--
+    The link decides whether it is due from its NativeLibrary items alone. So
+    a Luau newer than the executable removes the executable, and the link runs.
+  -->
+  <Target Name="RelinkForNewLuau"
+          BeforeTargets="LinkNative"
+          DependsOnTargets="FindLuauLibraries"
+          Inputs="$(_LuauStatic)"
+          Outputs="$(NativeBinary)">
+    <Delete Files="$(NativeBinary)" />
   </Target>
 
 </Project>
