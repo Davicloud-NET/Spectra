@@ -62,8 +62,19 @@ public static class ScmapBake
 
         WriteChunks(world, builder, assets);
 
+        if (scene.ScriptNodes.Count > 0) report(ScriptsLeftOut(scene.ScriptNodes.Count, sourcePath));
+
         return builder.Build(sourceMapDigest, (uint)document.FormatVersion);
     }
+
+    // The node records are written, so the map loads with its script nodes as
+    // plain nodes.
+    private static CookDiagnostic ScriptsLeftOut(int count, string sourcePath) =>
+        CookDiagnostic.Warning(
+            CookDiagnosticCodes.MapScriptsLeftOut,
+            $"'{sourcePath}' has {count} script node(s). A baked map does not carry scripts yet, so the " +
+            "bake leaves them out and they do not run from a pack.",
+            sourcePath);
 
     // Walks document and scene together in pre-order. The binder builds the
     // scene in document order, so the two sequences match.

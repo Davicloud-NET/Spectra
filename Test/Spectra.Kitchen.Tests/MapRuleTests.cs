@@ -407,6 +407,60 @@ public class MapRuleTests
     }
 
     [Fact]
+    public void A_map_with_scripts_bakes_and_says_in_one_line_that_they_are_left_out()
+    {
+        using var project = new TempProject();
+        MapFixture fixture = MapFixture.Fresh();
+
+        SpectraEngine.Core.Scene.Scene scene = fixture.BuildScene();
+        SceneNode crate = scene.Root.Children.Single(node => node.BrushKind == BrushKind.Part);
+        crate.AddChild(new SceneNode("Spin") { Script = new Script("Scripts/spin.luau") });
+        scene.Root.AddChild(new SceneNode("Rules") { Script = new Script("Scripts/rules.luau") { IsModule = true } });
+        MapFixture.WriteBundle(project, "Scripted.smap", scene);
+
+        (byte[]? file, List<CookDiagnostic> said) = TryBake(project, "Maps/Scripted.smap");
+
+        // One line for the map, not one a script.
+        CookDiagnostic warned = said.Single();
+        warned.Id.ToString().ShouldBe("SC7011");
+        warned.IsError.ShouldBeFalse();
+        warned.Message.ShouldContain("2 script node(s)");
+        warned.Message.ShouldContain("Maps/Scripted.smap");
+        warned.Message.ShouldNotContain("\n");
+
+        // Under --strict too: nothing in the map is wrong.
+        CookGate.Verdict(CookDiagnosticCodes.MapScriptsLeftOut).ShouldBe(CookGateVerdict.Warning);
+        CookGate.Apply(warned, strict: true).IsError.ShouldBeFalse();
+
+        // The nodes are baked, as plain nodes.
+        ScmapProbe map = ScmapProbe.Read(file.ShouldNotBeNull());
+        ScmapNodeRecord spin = map.Nodes[map.NodeNames.IndexOf("Spin")];
+        spin.PayloadKind.ShouldBe(ScmapPayloadKind.None);
+        map.NodeNames[spin.ParentIndex].ShouldBe(crate.Name);
+        map.NodeNames.ShouldContain("Rules");
+    }
+
+    [Fact]
+    public void The_scripts_change_nothing_else_in_the_baked_map()
+    {
+        using var project = new TempProject();
+        MapFixture fixture = MapFixture.Fresh();
+        fixture.WriteBundle(project, "Plain.smap");
+
+        SpectraEngine.Core.Scene.Scene scene = fixture.BuildScene();
+        scene.Root.AddChild(new SceneNode("Rules") { Script = new Script("Scripts/rules.luau") });
+        MapFixture.WriteBundle(project, "Scripted.smap", scene);
+
+        ScmapProbe plain = Bake(project, "Maps/Plain.smap");
+        ScmapProbe scripted = ScmapProbe.Read(TryBake(project, "Maps/Scripted.smap").File.ShouldNotBeNull());
+
+        scripted.TriangleCount.ShouldBe(plain.TriangleCount);
+        scripted.Assets.ShouldBe(plain.Assets);
+        scripted.Hulls.Count.ShouldBe(plain.Hulls.Count);
+        scripted.NodeNames.Count.ShouldBe(plain.NodeNames.Count + 1);
+    }
+
+    [Fact]
     public void Entities_on_parts_and_on_bare_nodes_bake_without_a_warning()
     {
         using var project = new TempProject();
