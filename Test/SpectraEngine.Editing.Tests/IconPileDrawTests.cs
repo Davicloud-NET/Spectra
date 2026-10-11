@@ -14,9 +14,9 @@ namespace SpectraEngine.Editing.Tests;
 /// </summary>
 public sealed class IconPileDrawTests
 {
-    // A stroke is two lines in colour. A line home is one, and its mark four.
+    // A stroke is two lines in colour. A mark is four hairlines.
     private const int LinesAStroke = 2;
-    private const int LinesHome = 5;
+    private const int LinesAMark = 4;
 
     private static DebugDraw Draw(IconPileRig rig, EntityMarkerOverlay? overlay = null)
     {
@@ -80,7 +80,7 @@ public sealed class IconPileDrawTests
     }
 
     [Fact]
-    public void Each_icon_of_a_pile_has_a_line_from_its_rim_to_the_point_and_a_mark_on_the_point()
+    public void Each_icon_of_a_pile_has_a_line_home_from_its_rim_and_a_mark_on_the_point()
     {
         var rig = new IconPileRig();
         rig.AddLift(Vector3.Zero);
@@ -90,22 +90,94 @@ public sealed class IconPileDrawTests
 
         List<Vector3> sounds = DebugLines.Colored(output, IconPileRig.SoundTint * LightOverlay.HomeLineDim);
         List<Vector3> relays = DebugLines.Colored(output, IconPileRig.RelayTint * LightOverlay.HomeLineDim);
-        sounds.Count.ShouldBe(3 * LinesHome * 2);
-        relays.Count.ShouldBe(LinesHome * 2);
+
+        // The two in the middle reach the point in one piece. The two at the
+        // ends have an icon in the way, so theirs is in two.
+        sounds.Count.ShouldBe((2 + 1 + 1 + (3 * LinesAMark)) * 2);
+        relays.Count.ShouldBe((2 + LinesAMark) * 2);
 
         for (int i = 0; i < 4; i++)
-            HasLineHome(i < 3 ? sounds : relays, in markers[i]).ShouldBeTrue($"icon {i}");
-
-        // The mark is small: two pixels either way.
-        foreach (Vector3 vertex in sounds)
         {
-            bool onRim = false;
-            foreach (SceneIcon marker in markers)
-                onRim |= MathF.Abs(Vector3.Distance(vertex, marker.At) - marker.Radius) < 1e-4f;
-
-            if (!onRim)
-                vertex.Length().ShouldBeLessThanOrEqualTo((2f * markers[0].Pixel) + 1e-5f);
+            List<Vector3> lines = i < 3 ? sounds : relays;
+            StartsOnRim(lines, in markers[i]).ShouldBeTrue($"icon {i} leaves its rim");
+            EndsOnNode(lines, in markers[i]).ShouldBeTrue($"icon {i} reaches the point");
         }
+    }
+
+    [Fact]
+    public void A_line_home_is_not_drawn_where_another_icon_stands_over_it()
+    {
+        var rig = new IconPileRig();
+        rig.AddLift(Vector3.Zero);
+        SceneIcon[] markers = rig.Place().Markers.ToArray();
+
+        DebugDraw output = Draw(rig);
+
+        // Whatever is not a mark's edge is a piece of a line home. No point
+        // of one is inside an icon's rim.
+        float mark = 2f * markers[0].Pixel;
+        foreach (Vector3 tint in new[] { IconPileRig.SoundTint, IconPileRig.RelayTint })
+        {
+            List<Vector3> lines = DebugLines.Colored(output, tint * LightOverlay.HomeLineDim);
+            for (int i = 0; i + 1 < lines.Count; i += 2)
+            {
+                if (MathF.Abs(lines[i].Length() - mark) < 1e-5f && MathF.Abs(lines[i + 1].Length() - mark) < 1e-5f)
+                    continue;
+
+                Vector3 middle = (lines[i] + lines[i + 1]) * 0.5f;
+                foreach (SceneIcon marker in markers)
+                    Vector3.Distance(middle, marker.At).ShouldBeGreaterThan(marker.Radius);
+            }
+        }
+    }
+
+    [Fact]
+    public void In_a_row_of_three_the_lines_home_stop_at_the_icon_in_the_middle()
+    {
+        // That one stands on the point, so the point needs no mark.
+        var rig = new IconPileRig();
+        rig.AddEntity(IconPileRig.Sound, Vector3.Zero);
+        rig.AddEntity(IconPileRig.Relay, Vector3.Zero);
+        rig.AddEntity(IconPileRig.Sound, Vector3.Zero);
+        SceneIcon[] markers = rig.Place().Markers.ToArray();
+
+        DebugDraw output = Draw(rig);
+
+        List<Vector3> sounds = DebugLines.Colored(output, IconPileRig.SoundTint * LightOverlay.HomeLineDim);
+        sounds.Count.ShouldBe(2 * 2);
+        DebugLines.CountOf(output, IconPileRig.RelayTint * LightOverlay.HomeLineDim).ShouldBe(0);
+
+        foreach (SceneIcon end in new[] { markers[0], markers[2] })
+        {
+            StartsOnRim(sounds, in end).ShouldBeTrue();
+            EndsOnNode(sounds, in end).ShouldBeFalse();
+        }
+
+        // Each ends on the middle icon's rim.
+        for (int i = 1; i < sounds.Count; i += 2)
+            Vector3.Distance(sounds[i], markers[1].At).ShouldBe(markers[1].Radius, tolerance: 1e-4f);
+    }
+
+    [Fact]
+    public void An_icon_that_still_covers_its_node_has_no_line_home_and_no_mark()
+    {
+        // Nine tenths of a width apart, each is moved a little.
+        var rig = new IconPileRig();
+        rig.AddEntity(IconPileRig.Sound, Vector3.Zero);
+        SceneIcon alone = rig.Place().Markers[0];
+        float width = alone.Radius * ViewportGlyphs.Reach * 2f;
+        rig.AddEntity(IconPileRig.Relay, new Vector3(width * 0.9f, 0f, 0f));
+
+        DebugDraw output = Draw(rig);
+
+        foreach (SceneIcon marker in rig.Place().Markers)
+        {
+            marker.IsMoved.ShouldBeTrue();
+            Vector3.Distance(marker.At, marker.Anchor).ShouldBeLessThan(marker.Radius * 0.5f);
+        }
+
+        DebugLines.CountOf(output, IconPileRig.SoundTint * LightOverlay.HomeLineDim).ShouldBe(0);
+        DebugLines.CountOf(output, IconPileRig.RelayTint * LightOverlay.HomeLineDim).ShouldBe(0);
     }
 
     [Fact]
@@ -116,7 +188,11 @@ public sealed class IconPileDrawTests
 
         DebugDraw output = Draw(rig);
 
-        // Twenty lines home, and no vertex of them after the first of anything else.
+        int home = DebugLines.Colored(output, IconPileRig.SoundTint * LightOverlay.HomeLineDim).Count +
+                   DebugLines.Colored(output, IconPileRig.RelayTint * LightOverlay.HomeLineDim).Count;
+        home.ShouldBeGreaterThan(0);
+
+        // No vertex of them after the first of anything else.
         ReadOnlySpan<float> data = output.Vertices;
         for (int vertex = 0; vertex < output.VertexCount; vertex++)
         {
@@ -124,7 +200,7 @@ public sealed class IconPileDrawTests
             bool isHome = color == IconPileRig.SoundTint * LightOverlay.HomeLineDim ||
                           color == IconPileRig.RelayTint * LightOverlay.HomeLineDim;
 
-            isHome.ShouldBe(vertex < 4 * LinesHome * 2, $"vertex {vertex}");
+            isHome.ShouldBe(vertex < home, $"vertex {vertex}");
         }
     }
 
@@ -380,13 +456,28 @@ public sealed class IconPileDrawTests
         return counts;
     }
 
-    // Whether one of these lines runs from the icon's rim to its node.
-    private static bool HasLineHome(List<Vector3> lines, in SceneIcon icon)
+    // Whether one of these lines starts on the icon's rim, on the side its node is.
+    private static bool StartsOnRim(List<Vector3> lines, in SceneIcon icon)
     {
+        Vector3 rim = icon.At + (Vector3.Normalize(icon.Anchor - icon.At) * icon.Radius);
         for (int i = 0; i + 1 < lines.Count; i += 2)
         {
+            if (Vector3.Distance(lines[i], rim) < 1e-4f)
+                return true;
+        }
+
+        return false;
+    }
+
+    // Whether one of these lines comes from the icon's side and ends on its node.
+    private static bool EndsOnNode(List<Vector3> lines, in SceneIcon icon)
+    {
+        Vector3 toward = Vector3.Normalize(icon.Anchor - icon.At);
+        for (int i = 0; i + 1 < lines.Count; i += 2)
+        {
+            Vector3 along = lines[i + 1] - lines[i];
             if (Vector3.Distance(lines[i + 1], icon.Anchor) < 1e-5f &&
-                MathF.Abs(Vector3.Distance(lines[i], icon.At) - icon.Radius) < 1e-4f)
+                Vector3.Dot(Vector3.Normalize(along), toward) > 0.999f)
             {
                 return true;
             }

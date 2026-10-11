@@ -109,10 +109,16 @@ public sealed class LightOverlay
         IReadOnlyList<SceneNode> nodes = scene.LightNodes;
         SkippedLastDraw = _icons.SkippedLights;
 
-        foreach (ref readonly SceneIcon icon in icons)
+        // The lines home first, so they lie under every glyph. Lights come
+        // first among all the icons.
+        for (int i = 0; i < icons.Length; i++)
         {
-            if (icon.IsDrawn && icon.IsMoved && nodes[icon.Node].Light is { } light)
-                new IconPen(camera, icon.At, icon.Radius, icon.Pixel, IconColor(light)).Home(output, icon.Anchor);
+            ref readonly SceneIcon icon = ref icons[i];
+            if (!icon.IsDrawn || !icon.IsMoved || nodes[icon.Node].Light is not { } light)
+                continue;
+
+            var pen = new IconPen(camera, icon.At, icon.Radius, icon.Pixel, IconColor(light));
+            IconHome.Draw(output, in pen, _icons.All, i);
         }
 
         foreach (ref readonly SceneIcon icon in icons)

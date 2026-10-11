@@ -22,8 +22,6 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
 
     private const int RingSegments = 12;
 
-    private const float HomeMarkPixels = 2f;
-
     public readonly Vector3 At = at;
     public readonly Vector3 Right = camera.Right;
     public readonly Vector3 Up = camera.Up;
@@ -129,26 +127,5 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
         output.Line(centre + along, centre - across, color);
         output.Line(centre - across, centre - along, color);
         output.Line(centre - along, centre + across, color);
-    }
-
-    // Shows where the node of a moved icon is: a small mark on it, and a line
-    // to it from the icon's rim once it is out from under the icon. Hairlines
-    // with no backing, drawn before any glyph so they lie under all of them.
-    public readonly void Home(DebugDraw output, Vector3 home)
-    {
-        Vector3 away = home - At;
-        float distance = away.Length();
-        if (distance <= 0f)
-            return;
-
-        Vector3 dim = Color * LightOverlay.HomeLineDim;
-
-        // Full size once the icon has moved by half its width. It grows with
-        // the move, so the mark does not appear from nothing.
-        float grown = MathF.Min(distance / (Radius * ViewportGlyphs.Reach), 1f);
-        ThinDiamond(output, home, HomeMarkPixels * Pixel * grown, dim);
-
-        if (distance > Radius)
-            output.Line(At + (away * (Radius / distance)), home, dim);
     }
 }

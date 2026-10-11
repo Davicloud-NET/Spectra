@@ -60,6 +60,9 @@ public sealed class SceneIcons
     // A glyph costs ten times the lines of a small mark.
     public int MaxMarkerGlyphs { get; set; } = 64;
 
+    /// <summary>Every icon in view: the lights, then the point entities.</summary>
+    public ReadOnlySpan<SceneIcon> All => _icons.AsSpan(0, _lightCount + _markerCount);
+
     /// <summary>Every light in view, in the order the scene lists them.</summary>
     public ReadOnlySpan<SceneIcon> Lights => _icons.AsSpan(0, _lightCount);
 
