@@ -13,8 +13,6 @@ internal sealed class IconsAcrossScreen
     private Vector3 _eye;
     private Vector3 _right;
 
-    public void Clear() => _count = 0;
-
     // Sorts the drawn icons by how far across the screen each stands, in pixels.
     public void Sort(ReadOnlySpan<SceneIcon> icons, Vector3 eye, Vector3 right)
     {
