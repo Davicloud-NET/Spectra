@@ -155,6 +155,21 @@ public sealed class EntityWorldDelayTests
     }
 
     [Fact]
+    public void A_think_does_not_come_to_an_entity_that_was_despawned_while_it_waited()
+    {
+        SceneNode node = EntityRuntime.Place(_scene.Root, "thinker", "thinker");
+        EntityWorld world = Started();
+        Entity thinker = EntityRuntime.Live(world, node);
+        thinker.SetNextThinkIn(0.1f);
+
+        world.QueueDespawn(thinker);
+        Run(world, 10);
+
+        _log.ShouldBeEmpty();
+        thinker.NextThinkTick.ShouldBe(Entity.NoThink);
+    }
+
+    [Fact]
     public void An_entity_with_no_think_pending_says_so()
     {
         SceneNode node = EntityRuntime.Place(_scene.Root, "thinker", "thinker");

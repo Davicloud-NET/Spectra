@@ -639,6 +639,9 @@ public sealed class EntityWorld
         // Before OnRemove: a touch that started must be told it ended.
         Touches.Unregister(entity);
         entity.OnRemove();
+
+        // After OnRemove, so a think it asks for goes too.
+        entity.CancelThink();
         SetTicking(entity, false);
         _index!.Unregister(entity);
         _entities.RemoveAt(at);
