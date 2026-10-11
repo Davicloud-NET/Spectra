@@ -207,6 +207,7 @@ public sealed class IconSheetTests(RibbonSession session)
         Add("Block", SceneNodeKind.BrushWorld);
         Add("Part", SceneNodeKind.BrushPart);
         Add("Cut", SceneNodeKind.BrushSubtractive);
+        Add("Script", SceneNodeKind.Script);
 
         foreach (LightKind kind in Enum.GetValues<LightKind>())
             Add($"Light: {kind}", SceneNodeKind.Light, light: kind);

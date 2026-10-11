@@ -188,6 +188,25 @@ public sealed class SceneTreeFilterTests
         tree.FilterIsUnknown.ShouldBeFalse();
     }
 
+    [Theory]
+    [InlineData("t:script")]
+    [InlineData("t:scripts")]
+    [InlineData("T:Script")]
+    [InlineData("t:luau")]
+    public void A_type_filter_finds_scripts(string filter)
+    {
+        SceneTreeModel tree = Populated();
+        tree.ApplyChanges(Batch(2, Added(Guid.NewGuid(), Wall, "Opener", 1, SceneNodeKind.Script)));
+
+        tree.ApplyFilter(filter);
+
+        Find(tree, "Opener").Match.ShouldBe(SceneTreeMatch.Match);
+        Find(tree, "WallNorth").Match.ShouldBe(SceneTreeMatch.Ancestor, "the script's part stays to hold it");
+        Find(tree, "LampWarm").Match.ShouldBe(SceneTreeMatch.None);
+        tree.MatchCount.ShouldBe(1);
+        tree.FilterIsUnknown.ShouldBeFalse();
+    }
+
     [Fact]
     public void A_door_is_found_as_an_entity_and_as_a_part()
     {

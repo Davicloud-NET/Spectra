@@ -864,7 +864,7 @@ public sealed class ShellModel : ObservableObject
     /// <summary>What to say when the filter matched nothing.</summary>
     public string NoMatchLabel =>
         _tree is { FilterIsUnknown: true }
-            ? $"“{_filterText}” is not a kind. Try t:block, t:part, t:cut, t:light, t:mesh or t:group."
+            ? $"“{_filterText}” is not a kind. Try t:block, t:part, t:cut, t:light, t:mesh, t:group or t:script."
             : $"Nothing here is called “{_filterText}”.";
 
     /// <summary>The viewport's pixel size, which is not the window's.</summary>

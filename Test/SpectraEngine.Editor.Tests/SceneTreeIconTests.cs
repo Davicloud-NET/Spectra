@@ -180,6 +180,54 @@ public sealed class SceneTreeIconTests
     }
 
     [Fact]
+    public void A_script_under_a_part_shows_the_script_icon_in_its_own_tint()
+    {
+        var rig = new Rig();
+        SceneNode door = rig.Add(Part("Door"));
+        SceneNode opener = door.AddChild(new SceneNode("Opener") { Script = new Script("Scripts/door.luau") });
+
+        rig.Publish();
+
+        IconLook look = rig.LookOf(opener);
+        look.ShouldBe(EditorIcons.ForNode(SceneNodeKind.Script, null, null, null));
+        look.Icon.ShouldBe("IconScript");
+        look.Icon.ShouldNotBe(rig.LookOf(door).Icon);
+        look.Tint.ShouldNotBe(rig.LookOf(door).Tint);
+        rig.Tree.TryGetNode(opener.Id, out SceneTreeNode row).ShouldBeTrue();
+        row.Kind.ShouldBe(SceneNodeKind.Script);
+        rig.Tree.ParentOf(row).ShouldNotBeNull().Id.ShouldBe(door.Id);
+    }
+
+    [Fact]
+    public void Putting_a_script_on_a_node_changes_its_row_and_taking_it_off_changes_it_back()
+    {
+        var rig = new Rig();
+        SceneNode node = rig.Add(new SceneNode("Opener"));
+        rig.Publish();
+        IconLook empty = rig.LookOf(node);
+
+        node.Script = new Script("Scripts/door.luau");
+        rig.Publish();
+        rig.LookOf(node).ShouldBe(EditorIcons.ForNode(SceneNodeKind.Script, null, null, null));
+
+        node.Script = null;
+        rig.Publish();
+        rig.LookOf(node).ShouldBe(empty);
+    }
+
+    [Fact]
+    public void A_part_that_carries_a_script_keeps_the_part_icon()
+    {
+        var rig = new Rig();
+        SceneNode crate = rig.Add(Part("Crate"));
+        crate.Script = new Script("Scripts/crate.luau");
+
+        rig.Publish();
+
+        rig.LookOf(crate).ShouldBe(EditorIcons.ForNode(SceneNodeKind.BrushPart, null, null, null));
+    }
+
+    [Fact]
     public void A_tree_rebuilt_from_the_whole_graph_carries_the_same_icons()
     {
         // What the tree asks for when it fell behind: every node as an Added change.

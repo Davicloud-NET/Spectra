@@ -828,13 +828,8 @@ public sealed class PropertyPanelModel : ObservableObject
 
         string name = string.Empty;
         bool nameMixed = false;
-        string brushKind = string.Empty;
-        string brushOperation = string.Empty;
         string className = string.Empty;
         bool classMixed = false;
-        bool hasLight = false;
-        bool hasMesh = false;
-        bool hasBrush = false;
         bool hasEntity = false;
 
         foreach (PropertyRow row in rows)
@@ -844,19 +839,6 @@ public sealed class PropertyPanelModel : ObservableObject
                 case PropertyId.NodeName:
                     name = row.Text;
                     nameMixed = row.IsMixed;
-                    break;
-                case PropertyId.BrushKind:
-                    hasBrush = true;
-                    brushKind = row.IsMixed ? string.Empty : row.Text;
-                    break;
-                case PropertyId.BrushOperation:
-                    brushOperation = row.IsMixed ? string.Empty : row.Text;
-                    break;
-                case PropertyId.LightKind:
-                    hasLight = true;
-                    break;
-                case PropertyId.MeshModel:
-                    hasMesh = true;
                     break;
                 case PropertyId.EntityClassname:
                     hasEntity = true;
@@ -868,7 +850,7 @@ public sealed class PropertyPanelModel : ObservableObject
 
         NameField.Refresh(name, nameMixed);
 
-        HeaderKind = DescribeKind(hasBrush, brushKind, brushOperation, hasEntity, hasLight, hasMesh);
+        HeaderKind = DescribeKind(rows);
 
         // No badge for a mixed classname: it would be wrong for part of the selection.
         UnknownClassLabel =
@@ -881,16 +863,39 @@ public sealed class PropertyPanelModel : ObservableObject
     private bool Knows(string className) =>
         Schemas is null || Schemas.TryGetSchema(className, out _);
 
-    private static string DescribeKind(
-        bool hasBrush, string kind, string operation, bool hasEntity, bool hasLight, bool hasMesh)
+    // The kind word, from which sections the rows hold.
+    private static string DescribeKind(IReadOnlyList<PropertyRow> rows)
     {
+        string brushKind = string.Empty;
+        string brushOperation = string.Empty;
+        bool hasBrush = false, hasEntity = false, hasLight = false, hasMesh = false, hasScript = false;
+
+        for (int i = 0; i < rows.Count; i++)
+        {
+            PropertyRow row = rows[i];
+            switch (row.Id)
+            {
+                case PropertyId.BrushKind:
+                    hasBrush = true;
+                    brushKind = row.IsMixed ? string.Empty : row.Text;
+                    break;
+                case PropertyId.BrushOperation:
+                    brushOperation = row.IsMixed ? string.Empty : row.Text;
+                    break;
+                case PropertyId.EntityClassname: hasEntity = true; break;
+                case PropertyId.LightKind: hasLight = true; break;
+                case PropertyId.MeshModel: hasMesh = true; break;
+                case PropertyId.ScriptFile: hasScript = true; break;
+            }
+        }
+
         if (hasBrush)
         {
             // Subtractive outranks the kind, as in the tree.
-            if (operation.Equals("Subtractive", StringComparison.OrdinalIgnoreCase))
+            if (brushOperation.Equals("Subtractive", StringComparison.OrdinalIgnoreCase))
                 return "Cut";
 
-            return kind switch
+            return brushKind switch
             {
                 "World" => "Block",
                 "Part" => "Part",
@@ -902,6 +907,7 @@ public sealed class PropertyPanelModel : ObservableObject
         if (hasEntity) return "Entity";
         if (hasLight) return "Light";
         if (hasMesh) return "Mesh";
+        if (hasScript) return "Script";
         return string.Empty;
     }
 

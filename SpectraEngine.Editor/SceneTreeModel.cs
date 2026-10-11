@@ -624,6 +624,7 @@ public sealed class SceneTreeModel
         "entity" or "entitie" or "logic" => SceneNodeKind.Entity,
         "mesh" or "model" or "prop" => SceneNodeKind.Mesh,
         "group" or "folder" => SceneNodeKind.Group,
+        "script" or "luau" => SceneNodeKind.Script,
         "empty" or "node" => SceneNodeKind.Empty,
         _ => null,
     };
