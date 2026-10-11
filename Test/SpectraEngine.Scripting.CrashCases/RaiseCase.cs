@@ -5,10 +5,9 @@ using SpectraEngine.Scripting.Luau.Native;
 namespace SpectraEngine.Scripting.CrashCases;
 
 // A host function fails, the script catches the error with pcall, and a second
-// host function then collects garbage. Done through the shim this goes on for
-// as long as you like. Done with a raise from the managed frame, the collector
-// walks a stack that is no longer there: a native build dies at the collection
-// or soon after it.
+// host function then collects garbage. Through the shim that goes on for as
+// long as you like. With the raise in the managed frame the collector walks a
+// stack that is gone, and a native build dies there or soon after.
 internal static unsafe class RaiseCase
 {
     private const int Rounds = 200;
@@ -24,13 +23,13 @@ internal static unsafe class RaiseCase
         end
         """;
 
-    private static int s_finallyRuns;
-    private static bool s_isTracing;
+    private static int _finallyRuns;
+    private static bool _isTracing;
 
     internal static int Run(bool throughShim)
     {
-        s_finallyRuns = 0;
-        s_isTracing = !throughShim;
+        _finallyRuns = 0;
+        _isTracing = !throughShim;
 
         using ProbeState state = new();
         state.Require(state.Run(Script, results: 1));
@@ -43,16 +42,16 @@ internal static unsafe class RaiseCase
             if (failure is not null)
             {
                 Console.WriteLine($"CASE failed in round {round}: {failure}");
-                return throughShim ? CaseExit.Failed : CaseExit.DamagedByTheWrongWay;
+                return throughShim ? CaseExit.Failed : CaseExit.BrokenByTheWrongWay;
             }
 
             Lua.lua_gc(state.L, LuaGc.Collect, 0);
         }
 
-        Console.WriteLine($"CASE survived {Rounds} rounds, finally ran {s_finallyRuns} times");
+        Console.WriteLine($"CASE survived {Rounds} rounds, finally ran {_finallyRuns} times");
         if (!throughShim)
             return CaseExit.SurvivedTheWrongWay;
-        return s_finallyRuns == Rounds ? CaseExit.Passed : CaseExit.Failed;
+        return _finallyRuns == Rounds ? CaseExit.Passed : CaseExit.Failed;
     }
 
     // Null when the round went as it should.
@@ -119,7 +118,7 @@ internal static unsafe class RaiseCase
         }
         finally
         {
-            s_finallyRuns++;
+            _finallyRuns++;
         }
     }
 
@@ -138,14 +137,14 @@ internal static unsafe class RaiseCase
         }
         finally
         {
-            s_finallyRuns++;
+            _finallyRuns++;
         }
     }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int Churn(nint L)
     {
-        if (s_isTracing)
+        if (_isTracing)
             Console.WriteLine("step: collecting garbage");
 
         object[] garbage = new object[256];
@@ -155,7 +154,7 @@ internal static unsafe class RaiseCase
         GC.Collect();
         GC.KeepAlive(garbage);
 
-        if (s_isTracing)
+        if (_isTracing)
             Console.WriteLine("step: collected");
         return 0;
     }

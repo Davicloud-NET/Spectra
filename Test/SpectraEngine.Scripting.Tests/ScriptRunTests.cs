@@ -100,6 +100,21 @@ public sealed class ScriptRunTests
         Lua.lua_gettop(state.L).ShouldBe(0);
     }
 
+    // Past its recursion limit Luau's parser throws a C++ exception and catches it itself.
+    [Fact]
+    public void A_script_nested_too_deep_comes_back_as_a_message()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+
+        LuaStatus status = state.Run("return " + new string('(', 1200) + "1" + new string(')', 1200));
+
+        status.ShouldNotBe(LuaStatus.Ok);
+        string? message = state.PopText();
+        message.ShouldNotBeNull();
+        message.ShouldContain("recursion depth");
+    }
+
     // An empty span is pinned as a null pointer, which the compiler must not be handed.
     [Fact]
     public void An_empty_script_runs_and_returns_nothing()

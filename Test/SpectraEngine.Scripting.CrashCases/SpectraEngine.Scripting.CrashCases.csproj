@@ -15,6 +15,11 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsTestProject>false</IsTestProject>
+    <!--
+      The collector as the demo and a game run it. Test/Directory.Build.props
+      turns background collection off for the allocation tests.
+    -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
   </PropertyGroup>
 
   <!-- Test/Directory.Build.props makes every project in this folder an xUnit suite. -->

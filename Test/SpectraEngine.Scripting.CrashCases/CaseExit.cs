@@ -12,11 +12,11 @@ internal static class CaseExit
     // The raise over a managed frame went unpunished, as it does under the JIT.
     internal const int SurvivedTheWrongWay = 4;
 
-    // The raise over a managed frame did not kill the process, and the
-    // collector then freed or moved what the program still held.
-    internal const int DamagedByTheWrongWay = 5;
+    // The raise over a managed frame did not kill the process, and a later
+    // round then went wrong or found an object changed that nothing wrote to.
+    internal const int BrokenByTheWrongWay = 5;
 
-    // How the wrong way ends in a native build: killed, or caught damaged.
+    // How the wrong way ends in a native build: killed, or caught broken.
     internal static bool ShowsTheBreach(int exitCode) =>
-        exitCode == DamagedByTheWrongWay || exitCode is < Passed or > DamagedByTheWrongWay;
+        exitCode == BrokenByTheWrongWay || exitCode is < Passed or > BrokenByTheWrongWay;
 }

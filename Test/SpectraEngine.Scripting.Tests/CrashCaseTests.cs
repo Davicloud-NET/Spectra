@@ -22,6 +22,16 @@ public sealed class CrashCaseTests
     }
 
     [Fact]
+    public async Task The_compiler_refuses_scripts_in_a_native_build()
+    {
+        CrashCaseProcess.Require();
+
+        CrashCaseProcess.Result result = await CrashCaseProcess.Run("compile-error");
+
+        result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
+    }
+
+    [Fact]
     public async Task An_error_raised_through_the_shim_survives_garbage_collection()
     {
         CrashCaseProcess.Require();
@@ -32,9 +42,10 @@ public sealed class CrashCaseTests
         result.Output.ShouldContain("finally ran 200 times");
     }
 
-    // The reason for the shim. The process is killed, or it goes on and finds
-    // its own objects damaged. If it ever gets through clean, the rule the
-    // shim serves has gone, or the console was not built natively.
+    // The reason for the shim. What happens is undefined, and each of these
+    // counts: the process dies, hangs, or goes on and finds itself broken. A
+    // clean run fails the test, because the right way then proves nothing:
+    // the wrong way gets through as well.
     [Fact]
     public async Task A_raise_from_a_managed_frame_breaks_a_native_build()
     {
@@ -44,7 +55,8 @@ public sealed class CrashCaseTests
 
         result.Output.ShouldContain("NativeAOT: True");
         result.Output.ShouldContain("step: calling lua_error from a managed frame");
-        CaseExit.ShowsTheBreach(result.ExitCode).ShouldBeTrue($"the process ended with {result.ExitCode}:\n{result.Output}");
+        (result.WasKilled || CaseExit.ShowsTheBreach(result.ExitCode)).ShouldBeTrue(
+            $"the process got through a raise over a managed frame and ended with {result.ExitCode}:\n{result.Output}");
     }
 
     [Fact]

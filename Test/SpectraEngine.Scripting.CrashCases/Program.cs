@@ -5,14 +5,13 @@ using SpectraEngine.Scripting.Luau;
 
 namespace SpectraEngine.Scripting.CrashCases;
 
-// Runs one case and exits with a CaseExit code, or dies trying.
-//
-//   --case=call-host-function         a script calls the host function and gets values back
-//   --case=raise-through-shim         a host error raised by the shim, 200 rounds under collection
-//   --case=raise-from-managed-frame   the same with the raise in the managed frame; a native build dies
-//   --case=close-from-another-thread  states used on one thread and closed from another
+// Runs one case and exits with a CaseExit code, or dies trying. Each case
+// class says what it shows.
 internal static partial class Program
 {
+    private const string Cases =
+        "call-host-function, compile-error, raise-through-shim, raise-from-managed-frame or close-from-another-thread";
+
     // A native executable has no assembly file. The dynamic code switch alone
     // says nothing: PublishAot turns it off for a JIT run too.
     private static bool IsNativeAot
@@ -45,6 +44,8 @@ internal static partial class Program
         {
             case "call-host-function":
                 return CallCase.Run();
+            case "compile-error":
+                return CompileCase.Run();
             case "raise-through-shim":
                 return RaiseCase.Run(throughShim: true);
             case "raise-from-managed-frame":
@@ -52,7 +53,7 @@ internal static partial class Program
             case "close-from-another-thread":
                 return CloseCase.Run();
             default:
-                Console.WriteLine("Give one case: --case=call-host-function, raise-through-shim, raise-from-managed-frame or close-from-another-thread.");
+                Console.WriteLine($"Give one case: --case={Cases}.");
                 return CaseExit.UnknownCase;
         }
     }
