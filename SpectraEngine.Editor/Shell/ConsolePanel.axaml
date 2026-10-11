@@ -9,35 +9,8 @@
        command and the error it caused sit together in order. -->
 
   <Grid RowDefinitions="*,Auto">
-    <Grid.Styles>
-      <Style Selector="TextBlock.line">
-        <Setter Property="FontSize" Value="{StaticResource SpectraFontSecondary}" />
-        <Setter Property="Foreground" Value="{StaticResource SpectraTextBody}" />
-        <Setter Property="Margin" Value="0,1" />
-      </Style>
-    </Grid.Styles>
-
     <ScrollViewer Grid.Row="0" Name="Scroller" HorizontalScrollBarVisibility="Disabled">
-      <!-- Keep geometry and font identical to the Output tab: same log, same rows. -->
-      <ItemsControl ItemsSource="{Binding Output.Entries}" Margin="0,6,0,4">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="shell:OutputEntry">
-            <Grid ColumnDefinitions="Auto,*,Auto" Margin="8,0" ColumnSpacing="8">
-              <TextBlock Grid.Column="0" Classes="value" VerticalAlignment="Top"
-                         Margin="0,2,0,0"
-                         Foreground="{StaticResource SpectraTextDisabled}"
-                         Text="{Binding TimeLabel}" />
-              <TextBlock Grid.Column="1" Classes="line" Text="{Binding Text}"
-                         Foreground="{Binding SeverityBrush}"
-                         TextWrapping="Wrap" />
-              <TextBlock Grid.Column="2" Classes="value" VerticalAlignment="Top"
-                         Margin="0,2,0,0"
-                         Foreground="{StaticResource SpectraTextDisabled}"
-                         Text="{Binding CountLabel}" />
-            </Grid>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <shell:OutputRows Margin="0,6,0,4" />
     </ScrollViewer>
 
     <Grid Grid.Row="1" ColumnDefinitions="Auto,*" Margin="8,4,8,8" ColumnSpacing="6">

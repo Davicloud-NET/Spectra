@@ -200,6 +200,34 @@ public sealed class OutputSheetTests(RibbonSession session)
         });
     }
 
+    [Fact]
+    public void The_console_panel_shows_the_same_log_with_the_same_rows()
+    {
+        session.On(() =>
+        {
+            var model = new ShellModel();
+            Fill(model.Output);
+            var asked = new List<ConsolePlace>();
+            model.Output.PlaceRequested += asked.Add;
+
+            var panel = new ConsolePanel { DataContext = model };
+            var window = new Window { Content = panel, Width = 760, Height = 320 };
+            window.SetRenderScaling(2.0);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            Shown(panel, "spinner.luau:5").ShouldHaveSingleItem();
+            Shown(panel, "door.luau:30 in press").ShouldHaveSingleItem();
+            Shown(panel, "Opened level one").ShouldHaveSingleItem();
+
+            ContentPanelHarness.Click(window, Shown(panel, "the door has no hinge").Single());
+
+            asked.ShouldBe([new ConsolePlace(Door, 9)]);
+            ScriptSheet.Save(window, "output-script-console@2x.png");
+            window.Close();
+        });
+    }
+
     private const string DroppedNotice =
         "150 more lines were printed in this tick and dropped. Scripts may print 100 lines a tick.";
 
