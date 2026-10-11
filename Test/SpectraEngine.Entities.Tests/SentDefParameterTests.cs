@@ -127,6 +127,19 @@ public sealed class SentDefParameterTests
     }
 
     [Fact]
+    public void Everything_an_older_reader_reads_is_where_it_was()
+    {
+        // It reads a record up to its class flags, skips the rest by the
+        // record's size, and finds the strings by the header's offset.
+        const int olderRecord = 52;
+        int afterSize = SentDef.HeaderSize + sizeof(uint);
+
+        ImageWithTheTypes.AsSpan(afterSize, olderRecord - sizeof(uint)).ToArray()
+            .ShouldBe(ImageBeforeTheTypes.AsSpan(afterSize, olderRecord - sizeof(uint)).ToArray());
+        ImageWithTheTypes.AsSpan(80).ToArray().ShouldBe(ImageBeforeTheTypes.AsSpan(72).ToArray());
+    }
+
+    [Fact]
     public void A_class_built_from_names_alone_writes_zeros_and_reads_back_with_no_type_said()
     {
         byte[] image = SentDef.Write([Gate(saysTypes: false)]);

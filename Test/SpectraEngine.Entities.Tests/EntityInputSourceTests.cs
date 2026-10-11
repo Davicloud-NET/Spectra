@@ -54,6 +54,21 @@ public sealed class EntityInputSourceTests
     }
 
     [Fact]
+    public void Every_input_is_written_in_the_shape_these_tests_can_read()
+    {
+        // An input written another way would pass the others unread.
+        foreach (string file in EntitySources.Files())
+        {
+            string code = LineComment.Replace(File.ReadAllText(file), "");
+
+            InputsOf(code).Count.ShouldBe(
+                Regex.Matches(code, @"\[EntityInput\b").Count,
+                $"{Path.GetFileName(file)}: write an input as [EntityInput(\"Name\")] on " +
+                "private void Name(ref EntityInputContext context)");
+        }
+    }
+
+    [Fact]
     public void A_class_reads_its_parameters_as_the_types_its_inputs_say()
     {
         var wrong = new List<string>();
