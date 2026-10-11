@@ -521,7 +521,7 @@ public sealed class SceneTreeModel
         {
             bool hit = !FilterIsUnknown
                 && (kindQuery is { } wanted
-                    ? node.Kind == wanted
+                    ? IsOfKind(node, wanted)
                     : node.Name.Contains(query, StringComparison.OrdinalIgnoreCase));
 
             node.Match = hit ? SceneTreeMatch.Match : SceneTreeMatch.None;
@@ -609,6 +609,11 @@ public sealed class SceneTreeModel
 
     // The words the toolbar and menus use, plus the enum names. Case and a
     // trailing plural s are ignored.
+    // A door or a trigger is a part underneath and an entity as well, so
+    // t:entity finds it and so does t:part.
+    private static bool IsOfKind(SceneTreeNode node, SceneNodeKind wanted) =>
+        node.Kind == wanted || (wanted == SceneNodeKind.Entity && node.EntityClass is not null);
+
     private static SceneNodeKind? ParseKind(string text) => text.Trim().TrimEnd('s').ToLowerInvariant() switch
     {
         "block" or "world" or "brush" or "brushworld" => SceneNodeKind.BrushWorld,
