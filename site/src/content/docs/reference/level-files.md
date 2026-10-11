@@ -11,7 +11,7 @@ The file is plain JSON, written the same way every time, so a saved level only d
 
 ```json
 {
-  "spectramap": 4,
+  "spectramap": 5,
   "minimumReadableVersion": 1,
   "engine": "1.0.0",
   "scene": {

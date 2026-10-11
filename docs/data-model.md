@@ -2,7 +2,7 @@
 
 > **How to read this page.** What exists is cited by file. What is marked **PLANNED** names the document that designs it and is not in the code.
 >
-> The payload list in section 3, section 6 and the summary table in section 8 were checked against the tree on 2026-10-05. The `file:line` citations in the other sections were read on 2026-08-21 and the line numbers have moved since. Trust the file name, not the number.
+> The payload list in section 3, section 6 and the summary table in section 8 were checked against the tree on 2026-10-11. The `file:line` citations in the other sections were read on 2026-08-21 and the line numbers have moved since. Trust the file name, not the number.
 
 ---
 
@@ -14,7 +14,7 @@ Everything below follows from three decisions. They are worth reading first, bec
 
 One concrete class — `SceneNode` (`SpectraEngine.Core/Scene/SceneNode.cs:14`) — holds a name, a local transform, a parent and children, and *optional payload fields*. There is no component registry, no archetype table, no node subclassing, no polymorphic node types. World geometry is not a parallel system: a brush is a field on a node (`SceneNode.cs:116`).
 
-**Consequence:** every new capability is a nullable field on `SceneNode` or it does not exist. That is cheap to reason about and cheap to traverse, and it makes the payload count a real, watched cost on the hottest type in the engine. There are four payload fields today (§3), and each addition is a deliberate act.
+**Consequence:** every new capability is a nullable field on `SceneNode` or it does not exist. That is cheap to reason about and cheap to traverse, and it makes the payload count a real, watched cost on the hottest type in the engine. There are five payload fields today (§3), and each addition is a deliberate act.
 
 ### Derived data is never authored.
 
@@ -170,10 +170,11 @@ A segment that lies in the plane of a brush face is in solid only where there is
 
 A **payload** is an optional, nullable field on `SceneNode` that gives the node a job beyond being a named transform. It is composition, not subclassing: there is one node class and no `IPayload` interface. Assigning a payload notifies the owning scene through the internal hooks, which is how the BVH and the static world stay in step.
 
-**Four payloads exist today**, and this page is the counting authority the other documents cite. They are `MeshRenderer`, `Brush`, `Light` and `Entity`. Two more are designed and unbuilt: `Script` and `PrefabInstance` (§6). A document that names an ordinal ("the fifth payload") must agree with this paragraph or say that it is counting designed ones.
+**Five payloads exist today**, and this page is the counting authority the other documents cite. They are `MeshRenderer`, `Brush`, `Light`, `Entity` and `Script`. One more is designed and unbuilt: `PrefabInstance` (§6). A document that names an ordinal ("the sixth payload") must agree with this paragraph or say that it is counting designed ones.
 
 Some node fields are not payloads and do not move the count:
 
+- `DeclaredRealm` and `DeclaredState` are two one-byte enums. See "Declared realm and state" below.
 - `BrushKind` is a one-byte enum that qualifies the `Brush` the node already carries.
 - `PhysicsFlags` is one byte of bits and `CollisionGroup` is another byte. Physics bodies are kept out of the payload list on purpose (`docs/physics.md` §2.6). They are meant to live in a side table, which is not built.
 - `IsRendered` is a bool.
@@ -254,6 +255,24 @@ What sits on the node is authored data. While a level plays, `EntityWorld` (`Ent
 
 `PlaySession` runs the entity tick first, then physics, then the character.
 
+### `Script`
+
+`SceneNode.Script` is a `Script` (`Scene/Script.cs`): the `.luau` file the node names, whether it is switched on, and whether it is a module. A script is a node of its own, so the node above it is what the script calls its parent, as in Roblox. Nothing runs a script yet. The payload only exists, saves, loads, copies and shows.
+
+- `Path` is a normalized content-relative path (`ContentRoot.NormalizeRelativePath`), the identity every asset has. A script cannot name nothing, and it cannot name a file outside the content root. Whether the file exists is not checked.
+- `IsEnabled` is on unless switched off.
+- `IsModule` is off unless switched on. A module does not run when the level starts. It runs when another script asks for it.
+
+A `Script` never changes once made. An edit makes a new one, `script with { IsEnabled = false }`, and sets it on the node, so an undo entry holds the script before and the script after. Two scripts that say the same are equal. `Clone` hands the copy the same `Script`.
+
+The setter is reference-compared. It keeps `Scene.ScriptNodes`, which lists script nodes in the order they were attached, and it raises `Scene.NodeKindChanged` when a script arrives or leaves. A script swapped for another raises nothing. A script does not put its node in the BVH, moves no brush count and dirties nothing.
+
+A node whose only payload is a script is a `SceneNodeKind.Script`. A part, an entity, a light or a mesh that also carries one keeps its own kind.
+
+A `.smap` saves the payload as `script`, with `path`, and with `enabled` and `module` only when they differ from the default. A baked map does not carry scripts yet: the cook bakes the node as a plain node and warns with `SC7011`.
+
+The editor writes it with `SetScriptCommand`.
+
 ### Node flags
 
 Four switches on the node say how it behaves. They are not payloads, and each applies to its own node only.
@@ -270,6 +289,16 @@ The first three are bits in `PhysicsFlags` (`Scene/PhysicsFlags.cs`), one byte o
 A `.smap` saves the four as `collide`, `query`, `touch` and `render`, each written only when it is off. A `.scmap` node record stores them inverted, as `NoCollide`, `NoQuery`, `NoTouch` and `NoRender` bits, so a record with none set has the defaults. `Anchored`, `Massless` and the collision group are not saved.
 
 The editor writes the flags with `SetNodeFlagsCommand`.
+
+### Declared realm and state
+
+`SceneNode.DeclaredRealm` is a `NodeRealm` (`Scene/NodeRealm.cs`): `Inherit`, `Shared`, `Server` or `Client`. `SceneNode.DeclaredState` is a `NodeState` (`Scene/NodeState.cs`): `Inherit`, `Active` or `Dormant`. Both are `Inherit` unless set. `docs/realms.md` says what they mean.
+
+They are the node's own declaration, as its map states it. Nothing resolves them and nothing reads them: there is no effective realm, a dormant node is still carved, drawn and queried, and a script does not ask where it runs. They are on the node so that a save keeps them. Before, the map reader read both and a save from the editor dropped them.
+
+Writing one raises nothing and dirties nothing. `Clone` copies both.
+
+A `.smap` saves them as `realm` and `state`, by name, and leaves each out when it is `Inherit`. The enums are numbered as the `.scmap` node record's two-bit fields are (`ScmapNodeRealm`, `ScmapNodeState`), but the cook does not write them into a baked map yet.
 
 ---
 
@@ -350,15 +379,15 @@ Every command's `NodeId` is a `Guid` (`SetTransformCommand.cs:87`, `SetLocalTran
 
 ## 6. What the designs add: all PLANNED, none in the tree
 
-Nothing in this section exists in the code. Each row names the document that owns it. What is built is in §3: `BrushKind`, `Brush.Operation`, the light and entity payloads and the node flags.
+Nothing in this section exists in the code, but for the two enums the first two rows name. Each row names the document that owns it. What is built is in §3: `BrushKind`, `Brush.Operation`, the light, entity and script payloads, the node flags, and the declared realm and state.
 
 | Concept | What it is | Why | Owner |
 | --- | --- | --- | --- |
-| `NodeRealm` — `Inherit \| Shared \| Server \| Client` | A declared, inherited byte on `SceneNode` saying **who holds this node**. | Deletes Roblox's container zoo: audience becomes data on the node, so the tree can be organised around the game instead of around replication. **Name is LOCKED to `Realm`.** | `docs/realms.md` §2.2 |
-| `NodeState` — `Inherit \| Active \| Dormant` | Whether the node is **live**: carved, in the BVH, drawn, queried, ticking. | There is no way to make a brush inert today — `SnapshotFullWalk` admits every brush unconditionally (`Scene.cs:1349`) and `IsSpatial` is ancestry-blind (`SceneBvh.cs:146`) — so a parked template would carve the world. Ship both axes or neither. | `docs/realms.md` §2.1–2.2 |
+| `NodeRealm`: `Inherit \| Shared \| Server \| Client` | A declared, inherited byte on `SceneNode` saying **who holds this node**. The enum and the node's own declaration are built and saved (§3). That anything inherits or reads it is planned. | Deletes Roblox's container zoo: audience becomes data on the node, so the tree can be organised around the game instead of around replication. **Name is LOCKED to `Realm`.** | `docs/realms.md` §2.2 |
+| `NodeState`: `Inherit \| Active \| Dormant` | Whether the node is **live**: carved, in the BVH, drawn, queried, ticking. Built and planned as the row above: a dormant node is declared and saved, and still live. | There is no way to make a brush inert today: `SnapshotFullWalk` admits every brush unconditionally (`Scene.cs:1349`) and `IsSpatial` is ancestry-blind (`SceneBvh.cs:146`), so a parked template would carve the world. Ship both axes or neither. | `docs/realms.md` §2.1–2.2 |
 | `RealmSet` — `[Flags] Inert \| Server \| Client \| Shared` | The **resolved** value, and it is a *set*, not an enum value. | Resolution is an intersection: `ToSet(declared) & parentEffective`. `Server ∩ Client` is empty, and the empty set has a name — `Inert` — rather than being promoted to the ancestor's realm, which would turn a dragged client HUD subtree into server code holding authority. | `docs/realms.md` §2.3, §3 R1–R3 |
 | `SceneNode.EffectiveRealm` / `IsLive` / `IsVisibleTo(mask)` | Cached resolved fields, maintained on declaration change and reparent only — never on the transform path. | `IsVisibleTo` is one AND and one compare: the entire enforcement primitive. | `docs/realms.md` §2.4 |
-| `Script` payload | A **node** with a `Script` payload — so `script.Parent` is literally the parent node — carrying **one axis, `bool IsModule`**, plus `Disabled`. | Matches Roblox character-for-character, and falls out free: a script-only node carries no `MeshRenderer` or `Brush`, so the BVH and static world ignore it automatically. **There is no `ScriptKind.Server`/`.Client`:** run location is the *node's* `Realm`, so a client script is a node declared `Realm = "Client"` (`realms.md` §6.2 spends `O8`'s reservation; `networking.md` `N15` records the same correction). | `docs/roblox-onboarding.md` O8, corrected by `docs/realms.md` §6.2 |
+| Running a `Script` | The payload is built (§3): a node that names a `.luau` file, with `IsEnabled` and `IsModule`. What runs it is planned. | A script is a node, so `script.Parent` is the parent node, as in Roblox. **There is no `ScriptKind.Server`/`.Client`:** run location is the *node's* `Realm`, so a client script is a node declared `Realm = "Client"` (`realms.md` §6.2 spends `O8`'s reservation; `networking.md` `N15` records the same correction). | `docs/roblox-onboarding.md` O8, corrected by `docs/realms.md` §6.2 |
 | Attributes | A closed `AttributeValue` readonly-struct union (Bool, Int, Double, String, Vector2, Vector3, Color3, CFrame, NumberRange…) **plus a `NodeRef` wrapping the node's `Guid`**, in a lazily allocated per-node dictionary. | **One** keyvalue mechanism serves both Roblox attributes and Source entity keyvalues — they are the same feature. `NodeRef` is the addition Roblox lacks and the entity wiring is unusable without it. | `docs/roblox-onboarding.md` O3 |
 | Tags | Per-node lazy tag list, a `Scene` reverse index, `GetTagged`, `TagAdded`/`TagRemoved`, and `ObserveTag` which **replays already-tagged nodes before connecting**. | The `CollectionService` equivalent, minus the `GetTagged`-loop-beside-every-connect boilerplate. The reverse index must take an audience mask or it enumerates content the caller cannot see. | `docs/roblox-onboarding.md` O3; `docs/roblox-to-spectra.md` (Instance API) |
 | `NetId` — packed `(index, generation)` `uint` | A **second, session-scoped** identity for gameplay replication. 20 index bits, generation above. | 16-byte Guids in every gameplay packet cost 64 KB/s per client in identifiers alone at 200 objects / 20 Hz. Authored nodes derive their index from the `.scmap` pre-order position, so both sides agree with zero spawn traffic. | `docs/networking.md` §3.3 |
@@ -430,7 +459,10 @@ One consequence already written down: instantiating a project template must **re
 | `EntityWorld` / `Entity` / `EntityCatalog` | **Yes** | `Entities/EntityWorld.cs`, `Entities/Entity.cs`, `Entities/EntityCatalog.cs` | The entity runtime: builds live entities from the authored data while a level plays, and never writes back |
 | Node flags `CanCollide`, `CanQuery`, `CanTouch` | **Yes** | `Scene/SceneNode.cs`; bits in `Scene/PhysicsFlags.cs` | Whether the node collides, is seen by queries and raises touch events. Not payloads. Saved in `.smap` as `collide`, `query`, `touch` |
 | Node flag `IsRendered` | **Yes** | `Scene/SceneNode.cs` | Whether the node's own mesh or part brush is drawn. Not a payload. Saved in `.smap` as `render` |
-| `SetNodeFlagsCommand`, `SetEntityCommand`, `SetEntityKeyvalueCommand`, `SetEntityConnectionsCommand`, `SetLightCommand` | **Yes** | `Editing/Commands/` | Undoable edits of the flags, the entity payload and the light |
+| `Script` payload | **Yes** | `Scene/SceneNode.cs`; type in `Scene/Script.cs` | A node that names a `.luau` file by its content path, with `IsEnabled` and `IsModule`. A script is a node, so `script.Parent` is the parent node. Nothing runs it yet |
+| `Scene.ScriptNodes` / `SceneNodeKind.Script` | **Yes** | `Scene/Scene.cs`, `Scene/SceneNodeKind.cs` | The script nodes in attachment order, and the kind of a node whose only payload is a script |
+| Declared realm and state on a node | **Yes** | `Scene/SceneNode.cs`; enums in `Scene/NodeRealm.cs`, `Scene/NodeState.cs` | The node's own declaration, saved in `.smap` as `realm` and `state`. Not payloads. Nothing resolves them yet |
+| `SetNodeFlagsCommand`, `SetEntityCommand`, `SetEntityKeyvalueCommand`, `SetEntityConnectionsCommand`, `SetLightCommand`, `SetScriptCommand` | **Yes** | `Editing/Commands/` | Undoable edits of the flags, the entity payload, the light and the script |
 | `BrushPlacement` | **Yes** | `Bsp/BrushPlacement.cs` | Brush + captured world matrix: the snapshot unit |
 | Rigidity validation | **Yes** | `Scene/Scene.cs`, `Scene/Scene.Placements.cs` | Rejects scale/shear/mirror/NaN brush placements at the snapshot |
 | `CsgWorld` | **Yes** | `Bsp/CsgWorld.cs` | The compiled static world (derived, never authored) |
@@ -444,10 +476,10 @@ One consequence already written down: instantiating a project template must **re
 | `ICoalescingCommand` | **Yes** | `Editing/Commands/ICoalescingCommand.cs` | One drag → one undo entry |
 | `SetTransformCommand` / `SetLocalTransformCommand` / `SetBrushCommand` / `CompositeCommand` | **Yes** | `Editing/Commands/` | Absolute-value, Guid-addressed edits |
 | `UndoStack` | **Yes** | `Editing/Undo/UndoStack.cs` | Bounded ring history with gesture transactions |
-| `NodeRealm` (audience) | **No** | `docs/realms.md` §2.2 | Declared, inherited "who holds this node" |
-| `NodeState` (liveness) | **No** | `docs/realms.md` §2.2 | Declared, inherited "is this node live" |
+| Inherited `NodeRealm` (audience) | **No** | `docs/realms.md` §2.2 | "Who holds this node", taken from the nodes above. The declaration is built, the inheriting is not |
+| Inherited `NodeState` (liveness) | **No** | `docs/realms.md` §2.2 | "Is this node live", taken from the nodes above. The declaration is built, the inheriting is not |
 | `RealmSet` / `EffectiveRealm` / `IsLive` | **No** | `docs/realms.md` §2.3–2.4 | Set-valued resolution; the empty set is `Inert` |
-| `Script` payload | **No** | `docs/roblox-onboarding.md` O8 | A script is a node, so `script.Parent` is the parent node |
+| A script runtime | **No** | `docs/roblox-onboarding.md` O8 | What runs a `Script` payload while a level plays |
 | Attributes (`AttributeValue`, `NodeRef`) | **No** | `docs/roblox-onboarding.md` O3 | One typed keyvalue bag for both Roblox attributes and entity keyvalues |
 | Tags + reverse index + `ObserveTag` | **No** | `docs/roblox-onboarding.md` O3 | `CollectionService` equivalent with the boilerplate removed |
 | `NetId` | **No** | `docs/networking.md` §3.3 | Session-scoped 4-byte gameplay identity, `Shared` nodes only |
