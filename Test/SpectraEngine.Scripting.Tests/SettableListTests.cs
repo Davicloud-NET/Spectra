@@ -11,6 +11,8 @@ namespace SpectraEngine.Scripting.Tests;
 /// A member the binding wrote some other way would have no first value in
 /// the play journal, and Stop would leave the write in the level.
 /// </summary>
+// Only an assignment is tried. A method that changes a node is not seen
+// here, and neither is a member that takes one certain string.
 public sealed class SettableListTests
 {
     // What a Roblox script would try first.
@@ -78,19 +80,43 @@ public sealed class SettableListTests
         return names;
     }
 
-    // Tries every name with a value of every kind, on the script's own node
-    // and the one above it, and prints each name that took one.
+    // Tries every name with a value of every kind, and prints each name that
+    // took one: on the script's own node and the one above it by the name
+    // alone, and on what is no node with the object in front.
     private static string Probe(IEnumerable<string> names) => $$"""
         local names = { {{string.Join(", ", names.Select(name => $"\"{name}\""))}} }
-        local values = { 1, "text", true, Vector3.new(1, 2, 3), CFrame.new(1, 2, 3), workspace, {}, print }
-        for _, target in { script, script.Parent } do
+        local values = { 1, true, workspace, {}, print, {{string.Join(", ", ValuesOfEveryKind())}} }
+        local function takes(target, name)
+            local took = pcall(function() target[name] = nil end)
+            for _, value in values do
+                if pcall(function() target[name] = value end) then took = true end
+            end
+            return took
+        end
+        for _, node in { script, script.Parent } do
             for _, name in names do
-                local took = pcall(function() target[name] = nil end)
-                for _, value in values do
-                    if pcall(function() target[name] = value end) then took = true end
-                end
-                if took then print(name) end
+                if takes(node, name) then print(name) end
+            end
+        end
+        local run = game:GetService("RunService")
+        local others = { game = game, RunService = run, Heartbeat = run.Heartbeat }
+        others.connection = run.Heartbeat:Connect(function() end)
+        for label, other in others do
+            for _, name in names do
+                if takes(other, name) then print(label .. "." .. name) end
             end
         end
         """;
+
+    // A Luau value of each kind a member takes. A kind with none would leave
+    // its members untried, and the lists would still match.
+    private static IEnumerable<string> ValuesOfEveryKind() =>
+        Enum.GetValues<MemberValueKind>().Where(kind => kind != MemberValueKind.None).Select(kind => kind switch
+        {
+            MemberValueKind.Text => "\"text\"",
+            MemberValueKind.Vector3 => "Vector3.new(1, 2, 3)",
+            MemberValueKind.CFrame => "CFrame.new(1, 2, 3)",
+            _ => throw new NotSupportedException(
+                $"The probe has no value of the kind {kind}. Add one, so a member of that kind is tried."),
+        });
 }
