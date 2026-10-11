@@ -21,6 +21,21 @@ internal static class Probe
     public static Probed<CFrame> At(float x, float y, float z) =>
         new($"CFrame.new({Number(x)}, {Number(y)}, {Number(z)})", new CFrame(x, y, z));
 
+    /// <summary>CFrame.new with a position and a quaternion, given as qX, qY, qZ, qW.</summary>
+    public static Probed<CFrame> FromQuaternion(Vector3 position, Quaternion rotation) => new(
+        $"CFrame.new({Number(position.X)}, {Number(position.Y)}, {Number(position.Z)}, " +
+        $"{Number(rotation.X)}, {Number(rotation.Y)}, {Number(rotation.Z)}, {Number(rotation.W)})",
+        new CFrame(position, rotation));
+
+    /// <summary>CFrame.new with all twelve components, in the order GetComponents gives them.</summary>
+    public static Probed<CFrame> FromComponents(params float[] c) => new(
+        $"CFrame.new({string.Join(", ", c.Select(Number))})",
+        CFrame.FromMatrix(
+            new Vector3(c[0], c[1], c[2]),
+            new Vector3(c[3], c[6], c[9]),
+            new Vector3(c[4], c[7], c[10]),
+            new Vector3(c[5], c[8], c[11])));
+
     public static Probed<CFrame> Angles(float rx, float ry, float rz) =>
         new($"CFrame.Angles({Number(rx)}, {Number(ry)}, {Number(rz)})", CFrame.Angles(rx, ry, rz));
 

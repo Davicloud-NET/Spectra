@@ -61,6 +61,24 @@ public sealed class CFrameRotationTests
     }
 
     [Fact]
+    public void A_frame_from_a_quaternion_turns_about_the_quaternions_axis()
+    {
+        // (axis * sin(angle / 2), cos(angle / 2)) for a quarter turn about Y,
+        // and for a third of a turn about the diagonal.
+        float root = MathF.Sqrt(0.5f);
+
+        new CFrame(new Vector3(1f, 2f, 3f), new Quaternion(0f, root, 0f, root)).ShouldHaveComponents(
+            1, 2, 3,
+            0, 0, 1,
+            0, 1, 0,
+            -1, 0, 0);
+        new CFrame(Vector3.Zero, new Quaternion(0.5f, 0.5f, 0.5f, 0.5f)).ShouldHaveRotation(
+            0, 0, 1,
+            1, 0, 0,
+            0, 1, 0);
+    }
+
+    [Fact]
     public void A_half_turn_about_an_axis_flips_the_other_two()
     {
         CFrame.Angles(Half, 0f, 0f).ShouldHaveRotation(1, 0, 0, 0, -1, 0, 0, 0, -1);

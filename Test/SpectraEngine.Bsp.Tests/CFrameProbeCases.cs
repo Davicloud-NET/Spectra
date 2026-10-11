@@ -72,6 +72,11 @@ internal sealed class CFrameProbeCases
         Frame("euler_yxz_slanted", EulerYxz(0.3f, -0.7f, 1.1f));
         Frame("orientation_slanted", Orientation(0.3f, -0.7f, 1.1f));
 
+        float root = MathF.Sqrt(0.5f);
+        Frame("new_from_quaternion_quarter_y", FromQuaternion(new Vector3(1f, 2f, 3f), new Quaternion(0f, root, 0f, root)));
+        Frame("new_from_quaternion_diagonal_third", FromQuaternion(Vector3.Zero, new Quaternion(0.5f, 0.5f, 0.5f, 0.5f)));
+        Frame("new_from_components", FromComponents(1, 2, 3, 0, 0, 1, 0, 1, 0, -1, 0, 0));
+
         float third = 1f / MathF.Sqrt(3f);
         Frame("axis_angle_quarter_y", AxisAngle(V(0f, 1f, 0f), Quarter));
         Frame("axis_angle_diagonal_third", AxisAngle(V(third, third, third), 2f * MathF.PI / 3f));
@@ -173,6 +178,7 @@ internal sealed class CFrameProbeCases
             Probed<Vector3> v = RandomVector(numbers, 20f);
 
             Frame(name + "frame", a);
+            Frame(name + "new_from_quaternion", FromQuaternion(a.Value.Position, a.Value.Rotation));
             Frame(name + "product", a.Times(b));
             Frame(name + "inverse", a.Inverse());
             Frame(name + "to_object_space", a.ToObjectSpace(b));
