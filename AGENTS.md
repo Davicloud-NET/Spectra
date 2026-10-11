@@ -119,6 +119,7 @@ Editing
 - Tools read an `EditorInputFrame`.
 - A UI sends set verbs ("snap on"), not toggles. A toggle against a stale snapshot flips the wrong way.
 - Undoing a structural edit puts the node back at its old sibling index. Child order is placement order for the carve.
+- A tap puts a press and its release in one frame. A gesture ends when its button is up, or it waits for a release that never comes.
 - The icon of a light or a point entity is drawn and picked where `SceneIcons` puts it, which is beside the node when icons pile up. Code that draws or picks one at the node's position misses.
 
 Rendering
