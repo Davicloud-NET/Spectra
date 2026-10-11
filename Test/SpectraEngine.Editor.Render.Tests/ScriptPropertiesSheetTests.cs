@@ -176,6 +176,35 @@ public sealed class ScriptPropertiesSheetTests(RibbonSession session) : IDisposa
         });
     }
 
+    [Theory]
+    [InlineData(@"Scripts\Door.luau")]
+    [InlineData(@"\scripts\DOOR.luau")]
+    [InlineData("./Scripts//Door.luau ")]
+    public void A_path_typed_with_other_slashes_is_offered_as_the_file_it_is(string typed)
+    {
+        // The search goes by the text as typed and finds nothing for these.
+        session.On(() =>
+        {
+            (Window window, PropertiesPanel panel, List<PropertyEdit> edits) =
+                OpenProperties(ScriptProjectFixture.Spin);
+            AssetPickerView picker = OpenPicker(panel);
+
+            picker.FindControl<TextBox>("Query").ShouldNotBeNull().Text = typed;
+            Dispatcher.UIThread.RunJobs();
+
+            AssetPickerRow row = picker.ShownRows.ShouldHaveSingleItem();
+            row.ContentPath.ShouldBe("Scripts/Door.luau");
+            row.Folder.ShouldBe("Scripts", "it is the file's row, not a path that is no file yet");
+            picker.FindControl<TextBlock>("Footer").ShouldNotBeNull().IsVisible.ShouldBeFalse();
+
+            picker.TakeSelected();
+            Dispatcher.UIThread.RunJobs();
+
+            edits.ShouldHaveSingleItem().Text.ShouldBe("Scripts/Door.luau");
+            window.Close();
+        });
+    }
+
     [Fact]
     public void A_search_by_name_takes_the_best_match_on_enter()
     {

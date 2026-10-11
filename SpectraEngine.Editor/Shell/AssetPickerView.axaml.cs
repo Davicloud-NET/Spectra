@@ -120,23 +120,52 @@ public partial class AssetPickerView : UserControl
 
     // A script's path can be typed in full, for a file that is still to be
     // written. A path the project has is offered as that file, in the file's
-    // own spelling, and gets no second row.
+    // own spelling, however its case and slashes were typed. True when the
+    // path has a row.
     private bool AddTypedPath(string query)
     {
         if (!TypedScriptPath.TryRead(query, out string? path))
             return false;
 
-        if (_catalog is { } catalog)
+        if (FindFile(path) is { } file)
         {
-            foreach (AssetCatalogEntry entry in catalog.Entries)
-            {
-                if (string.Equals(entry.ContentPath, path, StringComparison.OrdinalIgnoreCase))
-                    return false;
-            }
+            // The search goes by the text as typed, and may have missed it.
+            if (!IsListed(file.ContentPath))
+                _rows.Add(new AssetPickerRow(file.ContentPath, file.Stem, file.Folder));
+
+            return true;
         }
 
         _rows.Add(new AssetPickerRow(path, path, TypedPathNote));
         return true;
+    }
+
+    private AssetCatalogEntry? FindFile(string contentPath)
+    {
+        if (_catalog is not { } catalog)
+            return null;
+
+        foreach (AssetCatalogEntry entry in catalog.Entries)
+        {
+            if (entry.Kind == _kind
+                && string.Equals(entry.ContentPath, contentPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return entry;
+            }
+        }
+
+        return null;
+    }
+
+    private bool IsListed(string contentPath)
+    {
+        foreach (AssetPickerRow row in _rows)
+        {
+            if (string.Equals(row.ContentPath, contentPath, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     // The row the list opens on: the current value, so Enter on an untouched
