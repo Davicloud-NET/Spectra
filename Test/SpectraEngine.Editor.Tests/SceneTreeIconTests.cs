@@ -4,6 +4,7 @@ using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Commands;
+using SpectraEngine.Editing.Icons;
 using SpectraEngine.Editor.Shell;
 using System.Numerics;
 
@@ -115,6 +116,18 @@ public sealed class SceneTreeIconTests
         rig.Publish();
 
         rig.LookOf(stranger).ShouldBe(ClassLook("from_another_game"));
+    }
+
+    [Fact]
+    public void An_entity_with_no_class_yet_shows_the_unknown_icon_as_it_does_in_the_3d_view()
+    {
+        var rig = new Rig();
+        SceneNode blank = rig.Add(new SceneNode("Blank") { Entity = new EntityData() });
+
+        rig.Publish();
+
+        rig.LookOf(blank).Icon.ShouldBe(WorldIcons.ForEntity(BuiltinClasses.Catalog, ""));
+        rig.LookOf(blank).Icon.ShouldBe(WorldIcons.UnknownEntity);
     }
 
     [Fact]

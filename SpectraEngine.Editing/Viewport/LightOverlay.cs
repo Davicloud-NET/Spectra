@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Gizmos;
@@ -91,14 +92,17 @@ public sealed class LightOverlay
                 continue;
 
             var pen = new IconPen(camera, at, radius, pixel, IconColor(light));
-            bool detailed = radius >= DetailPixels * pixel;
+
+            ViewportGlyph? glyph = null;
+            if (radius >= DetailPixels * pixel)
+                ViewportGlyphs.TryGet(IconOf(node, light, scene.EntitySchemas), out glyph);
 
             // Every backing line first, or one stroke's backing crosses out
             // the colour of the stroke before it.
             pen.Backing = true;
-            DrawIcon(output, node, light, in pen, detailed);
+            DrawIcon(output, node, light, in pen, glyph);
             pen.Backing = false;
-            DrawIcon(output, node, light, in pen, detailed);
+            DrawIcon(output, node, light, in pen, glyph);
 
             DrawnLastDraw++;
         }
@@ -124,9 +128,17 @@ public sealed class LightOverlay
         return peak > 1e-4f ? Vector3.Max(light.Color / peak, new Vector3(0.18f)) : Vector3.One;
     }
 
-    private static void DrawIcon(DebugDraw output, SceneNode node, Light light, in IconPen pen, bool detailed)
+    // The file the shell shows for this light. A light that is an entity
+    // shows its class, as its row in the scene tree does.
+    private static string IconOf(SceneNode node, Light light, EntitySchemaCatalog? schemas) =>
+        node.Entity is { } entity
+            ? WorldIcons.ForEntity(schemas, entity.ClassName)
+            : WorldIcons.ForLight(light.Kind);
+
+    // With no glyph the light is a ring: it is too far off for a drawing.
+    private static void DrawIcon(DebugDraw output, SceneNode node, Light light, in IconPen pen, ViewportGlyph? glyph)
     {
-        if (!detailed || !ViewportGlyphs.TryGet(WorldIcons.ForLight(light.Kind), out ViewportGlyph? glyph))
+        if (glyph is null)
         {
             // Hairlines here: the doubled stroke would fill a ring this small.
             float ring = pen.Radius * 0.8f;
@@ -143,7 +155,6 @@ public sealed class LightOverlay
             return;
         }
 
-        // The file the shell shows for this kind of light.
         pen.Glyph(output, glyph);
 
         // A bulb shines every way. Every other kind points somewhere.

@@ -129,11 +129,21 @@ public sealed class EditorIconsTests
     }
 
     [Fact]
+    public void An_entity_with_no_class_yet_gets_the_icon_the_3d_view_and_a_logic_card_give_it()
+    {
+        IconLook look = EditorIcons.ForNode(SceneNodeKind.Entity, "", null, BuiltinClasses.Catalog);
+
+        look.Icon.ShouldBe(WorldIcons.ForEntity(BuiltinClasses.Catalog, ""));
+        look.ShouldBe(EditorIcons.ForEntity(BuiltinClasses.Catalog, ""));
+        look.Icon.ShouldBe(WorldIcons.UnknownEntity);
+    }
+
+    [Fact]
     public void A_plain_part_block_or_cut_keeps_its_own_icon()
     {
-        EditorIcons.ForNode(SceneNodeKind.BrushPart, "", null, BuiltinClasses.Catalog).Icon.ShouldBe("IconBrushPart");
-        EditorIcons.ForNode(SceneNodeKind.BrushWorld, "", null, BuiltinClasses.Catalog).Icon.ShouldBe("IconBrushWorld");
-        EditorIcons.ForNode(SceneNodeKind.BrushSubtractive, "", null, BuiltinClasses.Catalog).Icon
+        EditorIcons.ForNode(SceneNodeKind.BrushPart, null, null, BuiltinClasses.Catalog).Icon.ShouldBe("IconBrushPart");
+        EditorIcons.ForNode(SceneNodeKind.BrushWorld, null, null, BuiltinClasses.Catalog).Icon.ShouldBe("IconBrushWorld");
+        EditorIcons.ForNode(SceneNodeKind.BrushSubtractive, null, null, BuiltinClasses.Catalog).Icon
             .ShouldBe("IconBrushSubtractive");
     }
 
@@ -146,7 +156,7 @@ public sealed class EditorIconsTests
         ShouldExist(look, kind.ToString());
         look.Icon.ShouldBe(WorldIcons.ForLight(kind));
         look.Tint.ShouldBe(EditorIcons.PlainLight.Tint);
-        EditorIcons.ForNode(SceneNodeKind.Light, "", kind, null).ShouldBe(look);
+        EditorIcons.ForNode(SceneNodeKind.Light, null, kind, null).ShouldBe(look);
     }
 
     [Fact]
@@ -187,7 +197,7 @@ public sealed class EditorIconsTests
         for (int i = 0; i < 1_000; i++)
         {
             EditorIcons.ForNode(SceneNodeKind.BrushPart, "func_door", null, BuiltinClasses.Catalog);
-            EditorIcons.ForNode(SceneNodeKind.Light, "", LightKind.Spot, BuiltinClasses.Catalog);
+            EditorIcons.ForNode(SceneNodeKind.Light, null, LightKind.Spot, BuiltinClasses.Catalog);
             EditorIcons.ForFile(ContentKind.Sound);
         }
 

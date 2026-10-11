@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Icons;
@@ -66,6 +67,25 @@ public sealed class LightIconTests
         // As many backing lines again, and nothing else.
         DebugLines.CountOf(output, Warm).ShouldBe(strokes * LinesAStroke);
         output.VertexCount.ShouldBe(strokes * LinesAStroke * 2 * 2);
+    }
+
+    [Fact]
+    public void A_light_that_is_an_entity_is_drawn_as_its_classs_icon_as_its_row_is()
+    {
+        var schemas = EntitySchemaCatalog.LoadFromSentDef(SentDef.Write([new EntitySchema("test_beacon", icon: "sound")]));
+        ViewportHarness beacons = Fixture();
+        beacons.Scene.EntitySchemas = schemas;
+        AddLight(beacons, LightKind.Spot, Vector3.Zero).Entity = new EntityData("test_beacon");
+        ViewportHarness spots = Fixture();
+        AddLight(spots, LightKind.Spot, Vector3.Zero);
+
+        DebugDraw output = Draw(beacons);
+
+        // Still a light: its own colour, and an arrow because a spot points.
+        ViewportGlyphs.TryGet(WorldIcons.ForEntity(schemas, "test_beacon"), out ViewportGlyph? glyph).ShouldBeTrue();
+        int strokes = glyph.ShouldNotBeNull().SegmentCount + ArrowStrokes;
+        DebugLines.CountOf(output, Warm).ShouldBe(strokes * LinesAStroke);
+        DebugLines.Colored(output, Warm).ShouldNotBe(DebugLines.Colored(Draw(spots), Warm));
     }
 
     [Fact]

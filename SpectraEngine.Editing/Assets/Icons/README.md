@@ -25,6 +25,7 @@ never redraw one in code.
 | A class that names none, or names one with no file | `IconEntity` |
 | A class this build has no schema for | `IconEntityUnknown` |
 | A light | `IconLight` for a point light, `IconLightSun`, `IconLightSpot`, `IconLightPanel`, `IconLightDisc` |
+| A light that is also an entity | its class's file, as any entity |
 
 A class names its icon in `[SpectraEntity(Icon = "door")]`. The name travels in
 the `.sentdef`, so a class from a game or a script names one the same way.

@@ -48,13 +48,16 @@ public static class EditorIcons
     /// The look of a node in the scene. An entity shows its class, whatever
     /// else the node carries, and a light shows its kind.
     /// </summary>
-    /// <param name="entityClass">The node's entity class, or empty when it carries none.</param>
+    /// <param name="entityClass">
+    /// The node's entity class, or null when it carries no entity. Empty is an
+    /// entity that has no class yet.
+    /// </param>
     /// <param name="light">The node's kind of light, or null when it carries none.</param>
     /// <param name="schemas">The classes the session knows, or null with no session.</param>
     public static IconLook ForNode(
         SceneNodeKind kind, string? entityClass, LightKind? light, EntitySchemaCatalog? schemas)
     {
-        if (!string.IsNullOrEmpty(entityClass))
+        if (entityClass is not null)
             return ForEntity(schemas, entityClass);
 
         return kind switch
