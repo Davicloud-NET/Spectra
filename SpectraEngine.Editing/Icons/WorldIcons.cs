@@ -52,22 +52,28 @@ public static class WorldIcons
         return key.ToString();
     }
 
-    /// <summary>The key of the icon a class is shown with. Null is a class with no schema.</summary>
-    public static string ForClass(EntitySchema? schema)
+    /// <summary>The key of the icon a class is shown with.</summary>
+    public static string ForClass(EntitySchema schema)
     {
-        if (schema is null)
-            return UnknownEntity;
+        ArgumentNullException.ThrowIfNull(schema);
 
         return schema.Icon.Length == 0 ? Entity : KeysByName.GetOrAdd(schema.Icon, Resolve);
     }
 
-    /// <summary>The key of the icon an entity of this class is shown with.</summary>
-    /// <param name="schemas">The classes the session knows, or null when it knows none.</param>
+    /// <summary>
+    /// The key of the icon an entity of this class is shown with. A class the
+    /// catalogue lacks gets <see cref="UnknownEntity"/>.
+    /// </summary>
+    /// <param name="schemas">
+    /// The classes the session knows. Null says nothing about any class, so
+    /// the answer is the plain <see cref="Entity"/>.
+    /// </param>
     public static string ForEntity(EntitySchemaCatalog? schemas, string? className)
     {
-        EntitySchema? schema = null;
-        schemas?.TryGetSchema(className, out schema);
-        return ForClass(schema);
+        if (schemas is null)
+            return Entity;
+
+        return schemas.TryGetSchema(className, out EntitySchema? schema) ? ForClass(schema) : UnknownEntity;
     }
 
     /// <summary>The key of the icon a light of this kind is shown with.</summary>

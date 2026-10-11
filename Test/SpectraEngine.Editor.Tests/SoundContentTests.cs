@@ -292,7 +292,7 @@ public sealed class SoundContentTests : IDisposable
         prompt.Subject.ShouldBe("Sounds/door_open.wav");
         prompt.Reason.ShouldBeEmpty();
         prompt.Hint.ShouldBe("as a sound that plays this file");
-        prompt.IconKey.ShouldBe(ViewportDropPrompt.SoundIcon);
+        prompt.IconKey.ShouldBe(EditorIcons.ForFile(ContentKind.Sound).Icon);
     }
 
     [Fact]

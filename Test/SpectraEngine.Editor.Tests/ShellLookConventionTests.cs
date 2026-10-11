@@ -56,13 +56,12 @@ public sealed class ShellLookConventionTests
     [Fact]
     public void Every_glyph_the_markup_asks_for_is_a_file_and_every_file_is_asked_for()
     {
-        // Theme/Icons.axaml is generated from Assets/Icons/*.svg, so the svg
-        // files are checked. A missing StaticResource only throws at load.
-        var files = new HashSet<string>(
-            Directory.EnumerateFiles(IconFolder(), "*.svg").Select(Path.GetFileNameWithoutExtension)!,
-            StringComparer.Ordinal);
+        // Theme/Icons.axaml is generated from the svg files, so the files are
+        // checked. A missing StaticResource only throws at load.
+        HashSet<string> files = IconFiles.Keys();
+        HashSet<string> shellFiles = IconFiles.KeysIn(IconFiles.ShellFolder);
 
-        files.Count.ShouldBeGreaterThan(30, "the icon set should be a folder of svg files");
+        shellFiles.Count.ShouldBeGreaterThan(30, "the icon set should be a folder of svg files");
 
         var named = new HashSet<string>(StringComparer.Ordinal);
         var missing = new List<string>();
@@ -79,7 +78,11 @@ public sealed class ShellLookConventionTests
                 continue;
             }
 
-            foreach (Match m in Regex.Matches(File.ReadAllText(file), @"(?:StaticResource |"")([A-Za-z0-9]+)"))
+            // Not the doc comments: cref="IconLook" names a type, not a glyph.
+            string text = string.Join('\n', File.ReadLines(file)
+                .Where(line => !line.TrimStart().StartsWith("///", StringComparison.Ordinal)));
+
+            foreach (Match m in Regex.Matches(text, @"(?:StaticResource |"")([A-Za-z0-9]+)"))
             {
                 string key = m.Groups[1].Value;
                 if (!key.StartsWith("Icon", StringComparison.Ordinal) && key != "CaretDown")
@@ -96,8 +99,11 @@ public sealed class ShellLookConventionTests
         }
 
         named.ShouldNotBeEmpty("the markup should name icons");
-        missing.ShouldBeEmpty("every icon the markup names must be a file in Assets/Icons");
-        files.Except(named).ShouldBeEmpty("every file in Assets/Icons should be named by some markup");
+        missing.ShouldBeEmpty("every icon the markup names must be a file in one of the two icon folders");
+
+        // The world icons are named by entity classes and kinds of light, not
+        // by markup. IconDriftConventionTests checks each of those is used.
+        shellFiles.Except(named).ShouldBeEmpty("every file in Assets/Icons should be named by some markup");
     }
 
     [Fact]
@@ -111,7 +117,7 @@ public sealed class ShellLookConventionTests
         var offenders = new List<string>();
         int examined = 0;
 
-        foreach (string file in Directory.EnumerateFiles(IconFolder(), "*.svg"))
+        foreach (string file in IconFiles.Folders.SelectMany(folder => Directory.EnumerateFiles(folder, "*.svg")))
         {
             examined++;
             (double width, double height, double[] view) = Box(File.ReadAllText(file));
@@ -134,7 +140,7 @@ public sealed class ShellLookConventionTests
         var offenders = new List<string>();
         int small = 0, large = 0;
 
-        foreach (string file in Directory.EnumerateFiles(IconFolder(), "Icon*.svg"))
+        foreach (string file in IconFiles.Folders.SelectMany(folder => Directory.EnumerateFiles(folder, "Icon*.svg")))
         {
             string name = Path.GetFileNameWithoutExtension(file);
             bool isLarge = name.StartsWith("IconLg", StringComparison.Ordinal);
@@ -206,9 +212,6 @@ public sealed class ShellLookConventionTests
 
         return (Length("width"), Length("height"), view);
     }
-
-    private static string IconFolder() =>
-        Path.Combine(SourceRoot(), "SpectraEngine.Editor", "Assets", "Icons");
 
     private static string SourceRoot()
     {

@@ -33,37 +33,45 @@ internal static class LogicFixture
         new EntitySchema(
             "func_button", "Button", "Movers",
             inputs: ["Use", "Press"],
-            outputs: ["OnPressed", "OnIn", "OnOut"]),
+            outputs: ["OnPressed", "OnIn", "OnOut"],
+            icon: "button"),
         new EntitySchema(
             "func_door", "Door", "Movers",
             inputs: ["Open", "Close", "Toggle"],
-            outputs: ["OnOpen", "OnClose", "OnFullyOpen", "OnFullyClosed"]),
+            outputs: ["OnOpen", "OnClose", "OnFullyOpen", "OnFullyClosed"],
+            icon: "door"),
         new EntitySchema(
             "func_movelinear", "Linear Mover", "Movers",
             inputs: ["Open", "Close", "SetPosition"],
-            outputs: ["OnFullyOpen", "OnFullyClosed"]),
+            outputs: ["OnFullyOpen", "OnFullyClosed"],
+            icon: "lift"),
         new EntitySchema(
             "math_counter", group: "Logic",
             inputs: ["Add", "Subtract", "SetValue", "SetValueNoFire", "SetHitMax", "SetHitMin", "GetValue"],
-            outputs: ["OutValue", "OnHitMax", "OnHitMin"]),
+            outputs: ["OutValue", "OnHitMax", "OnHitMin"],
+            icon: "counter"),
         new EntitySchema(
             "logic_relay", group: "Logic",
             inputs: ["Trigger", "Enable", "Disable", "Toggle"],
-            outputs: ["OnTrigger"]),
+            outputs: ["OnTrigger"],
+            icon: "relay"),
         new EntitySchema(
             "logic_timer", group: "Logic",
             inputs: ["Enable", "Disable", "Toggle"],
-            outputs: ["OnTimer"]),
+            outputs: ["OnTimer"],
+            icon: "timer"),
         new EntitySchema(
             "trigger_multiple", group: "Triggers",
             inputs: ["Enable", "Disable", "Toggle"],
-            outputs: ["OnStartTouch", "OnEndTouch", "OnTrigger"]),
+            outputs: ["OnStartTouch", "OnEndTouch", "OnTrigger"],
+            icon: "trigger"),
         new EntitySchema(
             "point_sound", "Sound", "Sound",
             inputs: ["Play", "Stop", "SetVolume", "SetPitch"],
-            outputs: ["OnEnded", "OnMarker"]),
-        new EntitySchema("info_player_start", "Player start", "Player"),
-        new EntitySchema("info_teleport_destination", group: "Triggers"),
+            outputs: ["OnEnded", "OnMarker"],
+            icon: "sound"),
+        new EntitySchema("info_player_start", "Player start", "Player", icon: "player-start"),
+        new EntitySchema("info_teleport_destination", group: "Triggers", icon: "destination"),
     ]));
 
     public static Guid Id(int number) => new(number, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);

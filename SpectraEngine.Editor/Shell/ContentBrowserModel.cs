@@ -109,33 +109,10 @@ public sealed class ContentEntry : ObservableObject
     public bool IsFolder => Kind == ContentKind.Folder;
 
     /// <summary>The glyph for this kind, from the theme dictionary.</summary>
-    public Geometry? Icon => Resource<Geometry>(Kind switch
-    {
-        ContentKind.Folder => "IconOpenFolder",
-        ContentKind.Texture => "IconMesh",
-        ContentKind.Material => "IconBrushPart",
-        ContentKind.Model => "IconMesh",
-        ContentKind.Shader => "IconBrushWorld",
-        ContentKind.Sound => "IconEntitySound",
-        _ => "IconEmpty",
-    });
+    public Geometry? Icon => EditorIcons.Glyph(EditorIcons.ForFile(Kind));
 
     /// <summary>The kind's tint.</summary>
-    public IBrush? KindBrush => Resource<IBrush>(Kind switch
-    {
-        ContentKind.Folder => "SpectraMode",
-        ContentKind.Texture => "SpectraKindMesh",
-        ContentKind.Material => "SpectraKindBrushPart",
-        ContentKind.Model => "SpectraKindBrushWorld",
-        ContentKind.Shader => "SpectraKindLight",
-
-        // The tint a sound has in the Logic view.
-        ContentKind.Sound => "SpectraKindBrushSubtractive",
-        _ => "SpectraTextMuted",
-    });
-
-    private static T? Resource<T>(string key) where T : class
-        => Application.Current?.TryFindResource(key, out object? value) == true ? value as T : null;
+    public IBrush? KindBrush => EditorIcons.Brush(EditorIcons.ForFile(Kind));
 }
 
 /// <summary>The project's <c>Assets/</c> folder, browsed. UI thread only.</summary>

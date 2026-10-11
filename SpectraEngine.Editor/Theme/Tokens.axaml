@@ -181,6 +181,18 @@
   <SolidColorBrush x:Key="SpectraKindLight" Color="#F2C75C" />
   <SolidColorBrush x:Key="SpectraKindEntity" Color="#B9A5FF" />
 
+  <!-- Entity-group tints, one per group a class files itself under. An
+       entity's icon wears its group's tint in the tree, on a Logic card, in a
+       menu and in the 3D view. A group with no token here wears
+       SpectraKindEntity. The 3D view cannot read this file, so
+       EntityGroupTints in SpectraEngine.Editing repeats the values and a test
+       fails when one differs. -->
+  <SolidColorBrush x:Key="SpectraGroupMovers" Color="#7FB4FF" />
+  <SolidColorBrush x:Key="SpectraGroupLogic" Color="#B9A5FF" />
+  <SolidColorBrush x:Key="SpectraGroupTriggers" Color="#F2C75C" />
+  <SolidColorBrush x:Key="SpectraGroupPlayer" Color="#6FD3B8" />
+  <SolidColorBrush x:Key="SpectraGroupSound" Color="#E58BD8" />
+
   <!-- The Logic view's graph. Ground is the page the cards stand on, between
        the window and the panel. CardHead carries the muted class line, so it
        is as light as that text allows. Stub is the card of a name nothing

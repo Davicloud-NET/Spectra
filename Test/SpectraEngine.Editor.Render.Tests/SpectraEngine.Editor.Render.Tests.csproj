@@ -33,4 +33,9 @@
     <Compile Include="..\Spectra.Kitchen.Tests\TempProject.cs" Link="TempProject.cs" />
   </ItemGroup>
 
+  <!-- The engine's own entity classes, for the sheets that show every one's icon. -->
+  <ItemGroup>
+    <Compile Include="..\SpectraEngine.Editor.Tests\BuiltinClasses.cs" Link="BuiltinClasses.cs" />
+  </ItemGroup>
+
 </Project>

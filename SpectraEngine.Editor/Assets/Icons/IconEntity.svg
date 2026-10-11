@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Tabler Icons "diamond", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
-     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M 4 3.333 h 8 l 2 3.333 l -5.667 6.333 a 0.467 0.467 0 0 1 -0.667 0 l -5.667 -6.333 l 2 -3.333" />
-  <path d="M 6.667 8 l -1.333 -1.467 l 0.4 -0.667" />
-</svg>

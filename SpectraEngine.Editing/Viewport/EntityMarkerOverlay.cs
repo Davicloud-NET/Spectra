@@ -74,12 +74,16 @@ public sealed class EntityMarkerOverlay
             ref readonly Mark mark = ref _marks[i];
             SceneNode node = nodes[mark.Node];
 
+            string? className = node.Entity?.ClassName;
             EntitySchema? schema = null;
-            scene.EntitySchemas?.TryGetSchema(node.Entity?.ClassName, out schema);
+            scene.EntitySchemas?.TryGetSchema(className, out schema);
 
             ViewportGlyph? icon = null;
-            if (mark.IsDetailed && mark.Pixel <= farthestIcon && IconsLastDraw < MaxIcons && TryFindIcon(schema, out icon))
+            if (mark.IsDetailed && mark.Pixel <= farthestIcon && IconsLastDraw < MaxIcons &&
+                TryFindIcon(WorldIcons.ForEntity(scene.EntitySchemas, className), out icon))
+            {
                 IconsLastDraw++;
+            }
 
             var pen = new IconPen(camera, node.WorldPosition, mark.Radius, mark.Pixel, EntityGroupTints.For(schema?.Group));
             bool faces = icon is not null && Faces(schema);
@@ -146,10 +150,9 @@ public sealed class EntityMarkerOverlay
         return _nearness[MaxIcons - 1];
     }
 
-    // The class's own icon, or the plain entity one when its file has no glyph.
-    private static bool TryFindIcon(EntitySchema? schema, out ViewportGlyph? icon) =>
-        ViewportGlyphs.TryGet(WorldIcons.ForClass(schema), out icon) ||
-        ViewportGlyphs.TryGet(WorldIcons.Entity, out icon);
+    // The icon's own glyph, or the plain entity one when its file gave none.
+    private static bool TryFindIcon(string key, out ViewportGlyph? icon) =>
+        ViewportGlyphs.TryGet(key, out icon) || ViewportGlyphs.TryGet(WorldIcons.Entity, out icon);
 
     // A logic entity's transform means nothing, so an arrow on it would say
     // something false. A class the schemas do not know gets one.

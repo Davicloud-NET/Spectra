@@ -8,12 +8,17 @@ Avalonia throws when a stretched Path draws a geometry that carries one.
 
 The bounding path Tabler ships in every file is dropped. It has no stroke in
 the original, but the build strokes every path it finds.
+
+The icons of entities and lights (WORLD) go to SpectraEngine.Editing, whose 3D
+view draws the same files. Everything else stays in this folder.
 """
 import os
 import re
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+WORLD_FOLDER = os.path.normpath(
+    os.path.join(HERE, "..", "..", "..", "SpectraEngine.Editing", "Assets", "Icons"))
 SOURCE = "https://raw.githubusercontent.com/tabler/tabler-icons/main/icons/outline/{}.svg"
 
 SMALL = {
@@ -26,13 +31,14 @@ SMALL = {
     "IconConvertKind": "switch-horizontal",
     "IconDelete": "trash",
     "IconDuplicate": "copy",
-    "IconEntity": "diamond",
+    "IconFileMaterial": "sphere",
+    "IconFileShader": "code",
+    "IconFileTexture": "photo",
     "IconFrame": "focus-centered",
     "IconFrameAll": "maximize",
     "IconGrid": "layout-grid",
     "IconGroup": "folder",
     "IconGroupNodes": "box-multiple",
-    "IconLight": "bulb",
     "IconList": "list",
     "IconMap": "map",
     "IconMesh": "vector-triangle",
@@ -46,6 +52,34 @@ SMALL = {
     "IconUndo": "arrow-back-up",
     "IconUngroupNodes": "stack-2",
     "IconWarning": "alert-triangle",
+}
+# An entity class names its icon in its schema: "trigger-once" is the file
+# IconEntityTriggerOnce. IconEntity is a class that names none, and
+# IconEntityUnknown a class this build has no schema for.
+WORLD = {
+    "IconEntity": "diamond",
+    "IconEntityAuto": "bolt",
+    "IconEntityBranch": "git-branch",
+    "IconEntityButton": "hand-click",
+    "IconEntityCase": "list-numbers",
+    "IconEntityCompare": "equal",
+    "IconEntityCounter": "number-123",
+    "IconEntityDestination": "map-pin",
+    "IconEntityDoor": "door",
+    "IconEntityLift": "elevator",
+    "IconEntityPlayerStart": "walk",
+    "IconEntityRelay": "arrows-split-2",
+    "IconEntitySound": "volume",
+    "IconEntityTeleport": "transfer",
+    "IconEntityTimer": "clock",
+    "IconEntityTrigger": "marquee-2",
+    "IconEntityTriggerOnce": "scan",
+    "IconEntityUnknown": "question-mark",
+    "IconLight": "bulb",
+    "IconLightDisc": "circle",
+    "IconLightPanel": "rectangle",
+    "IconLightSpot": "cone-2",
+    "IconLightSun": "sun",
 }
 LARGE = {
     "IconLgBrushPart": "box",
@@ -119,7 +153,7 @@ def scaled(d, factor):
     return " ".join(parts)
 
 
-def write(key, name, size):
+def write(folder, key, name, size):
     with urllib.request.urlopen(SOURCE.format(name)) as response:
         svg = response.read().decode("utf-8")
 
@@ -141,16 +175,18 @@ def write(key, name, size):
         f"{body}\n"
         "</svg>\n"
     )
-    with open(os.path.join(HERE, key + ".svg"), "w", encoding="utf-8", newline="\n") as handle:
+    with open(os.path.join(folder, key + ".svg"), "w", encoding="utf-8", newline="\n") as handle:
         handle.write(content)
 
 
 def main():
     for key, name in SMALL.items():
-        write(key, name, 16)
+        write(HERE, key, name, 16)
+    for key, name in WORLD.items():
+        write(WORLD_FOLDER, key, name, 16)
     for key, name in LARGE.items():
-        write(key, name, 24)
-    print(f"{len(SMALL)} small, {len(LARGE)} large")
+        write(HERE, key, name, 24)
+    print(f"{len(SMALL)} small, {len(WORLD)} world, {len(LARGE)} large")
 
 
 if __name__ == "__main__":

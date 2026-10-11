@@ -897,7 +897,11 @@ public partial class MainWindow : Window
             _viewport!.Host = session.Host;
             session.Host.FrameCompleted += OnFrameCompleted;
 
-            _tree = new SceneTreeModel(session.Host, _loggerFactory.CreateLogger<SceneTreeModel>());
+            // The catalogue gives an entity's row the icon its class names.
+            _tree = new SceneTreeModel(session.Host, _loggerFactory.CreateLogger<SceneTreeModel>())
+            {
+                Schemas = session.EntitySchemas,
+            };
             _shell.Tree = _tree;
 
             // The same catalogue instance the render thread stamps scenes with.

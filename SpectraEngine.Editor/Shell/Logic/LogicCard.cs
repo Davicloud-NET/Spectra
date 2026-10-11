@@ -15,6 +15,7 @@ public sealed class LogicCard
         int index,
         LogicEntityInfo entity,
         EntitySchema? schema,
+        IconLook look,
         IReadOnlyList<LogicPort> inputs,
         IReadOnlyList<LogicPort> outputs)
     {
@@ -24,6 +25,7 @@ public sealed class LogicCard
         ClassName = entity.ClassName;
         DisplayName = string.IsNullOrEmpty(schema?.DisplayName) ? entity.ClassName : schema.DisplayName;
         Group = schema?.Group ?? "";
+        Look = look;
         IsKnownClass = schema is not null;
         Inputs = inputs;
         Outputs = outputs;
@@ -38,6 +40,12 @@ public sealed class LogicCard
         ClassName = "";
         DisplayName = LogicText.StubLine(stub);
         Group = "";
+
+        // The activator is whoever set a wire off: an entity, said quietly. A
+        // name nothing answers to is a fault.
+        Look = stub == LogicStubKind.Activator
+            ? EditorIcons.PlainEntity with { Tint = "SpectraTextMuted" }
+            : new IconLook("IconWarning", "SpectraTextDanger");
         Inputs = inputs;
         Outputs = [];
         IsWired = true;
@@ -63,6 +71,9 @@ public sealed class LogicCard
 
     /// <summary>The category the class is filed under, or empty.</summary>
     public string Group { get; }
+
+    /// <summary>The icon in the card's header and its tint.</summary>
+    public IconLook Look { get; }
 
     /// <summary>Whether a schema describes the class. False for a stub.</summary>
     public bool IsKnownClass { get; }

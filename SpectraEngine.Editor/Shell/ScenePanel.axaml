@@ -10,8 +10,8 @@
        window's tree. -->
 
   <UserControl.Resources>
-    <shell:SceneNodeKindIconConverter x:Key="KindIcon" />
-    <shell:SceneNodeKindBrushConverter x:Key="KindTint" />
+    <shell:IconLookGlyphConverter x:Key="KindIcon" />
+    <shell:IconLookTintConverter x:Key="KindTint" />
     <shell:TreeDepthIndentConverter x:Key="DepthIndent" />
 
     <!-- Shared by every row. The verbs act on the selection, not the row.
@@ -304,11 +304,11 @@
                     <Path Data="{StaticResource IconChevronRight}" />
                   </Button>
                   <Path Grid.Column="1" Classes="icon kindtint"
-                        Data="{Binding Kind, Converter={StaticResource KindIcon}}"
-                        Stroke="{Binding Kind, Converter={StaticResource KindTint}}"
+                        Data="{Binding Look, Converter={StaticResource KindIcon}}"
+                        Stroke="{Binding Look, Converter={StaticResource KindTint}}"
                         Margin="2,0,0,0" />
                   <Path Grid.Column="1" Classes="icon kindsel"
-                        Data="{Binding Kind, Converter={StaticResource KindIcon}}"
+                        Data="{Binding Look, Converter={StaticResource KindIcon}}"
                         Margin="2,0,0,0" />
                   <TextBlock Grid.Column="2" Classes="rowname" Text="{Binding Name}" Margin="6,0,4,0"
                              IsVisible="{Binding !IsRenaming}"

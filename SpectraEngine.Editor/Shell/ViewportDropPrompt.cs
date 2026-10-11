@@ -14,6 +14,10 @@ namespace SpectraEngine.Editor.Shell;
 /// <param name="Reason">
 /// Why not, verbatim from <see cref="AssetDropPolicy"/>. Empty when accepting.
 /// </param>
+/// <param name="IconKey">
+/// The glyph beside the verdict: the dragged file's own icon, or the warning
+/// when refusing. Empty draws none.
+/// </param>
 // A record struct so an unchanged prompt compares equal: DragOver fires at
 // pointer rate and nearly always carries the same answer.
 public readonly record struct ViewportDropPrompt(
@@ -23,7 +27,7 @@ public readonly record struct ViewportDropPrompt(
     string Subject,
     string Reason,
     string Hint = "",
-    string IconKey = "IconMesh")
+    string IconKey = "")
 {
     /// <summary>No drag over the viewport, and nothing drawn.</summary>
     // Empty strings, not null: these bind to TextBlock.Text, where a null
@@ -33,12 +37,6 @@ public readonly record struct ViewportDropPrompt(
 
     /// <summary>The icon a refusing prompt wears.</summary>
     public const string RefusingIcon = "IconWarning";
-
-    /// <summary>The icon a material drop wears.</summary>
-    public const string MaterialIcon = "IconBrushPart";
-
-    /// <summary>The icon a sound drop wears.</summary>
-    public const string SoundIcon = "IconEntitySound";
 
     /// <summary>
     /// What to draw for <paramref name="payload"/> hovering over the viewport,
@@ -59,6 +57,9 @@ public readonly record struct ViewportDropPrompt(
         if (AssetDropPolicy.Refuse(payload, hasSession, viewportAcceptsDrops) is { } refusal)
             return new ViewportDropPrompt(true, false, "Cannot place", string.Empty, refusal, "", RefusingIcon);
 
+        // The file's icon, as the Content panel shows it.
+        string icon = EditorIcons.ForFile(payload.Kind).Icon;
+
         if (payload.Kind == ContentKind.Material)
         {
             return new ViewportDropPrompt(
@@ -66,16 +67,16 @@ public readonly record struct ViewportDropPrompt(
                 scope == MaterialDropScope.Face
                     ? "this face; hold Ctrl for the whole block"
                     : "the whole block; release Ctrl for one face",
-                MaterialIcon);
+                icon);
         }
 
         if (payload.Kind == ContentKind.Sound)
         {
             return new ViewportDropPrompt(
                 true, true, "Drop to place", payload.ContentPath, string.Empty,
-                "as a sound that plays this file", SoundIcon);
+                "as a sound that plays this file", icon);
         }
 
-        return new ViewportDropPrompt(true, true, "Drop to place", payload.ContentPath, string.Empty);
+        return new ViewportDropPrompt(true, true, "Drop to place", payload.ContentPath, string.Empty, IconKey: icon);
     }
 }

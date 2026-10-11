@@ -3,6 +3,7 @@ using SpectraEngine.Core.Entities;
 using SpectraEngine.Editing.Commands;
 using System;
 using System.Collections.Generic;
+using Path = Avalonia.Controls.Shapes.Path;
 
 namespace SpectraEngine.Editor.Shell;
 
@@ -17,6 +18,7 @@ public sealed class EntityInsertItem
         Display = schema.DisplayName.Length > 0 ? schema.DisplayName : schema.ClassName;
         Group = schema.Group;
         Placement = schema.Placement;
+        Look = EditorIcons.ForEntityClass(schema);
     }
 
     /// <summary>The wire name, as a map file spells it.</summary>
@@ -30,6 +32,9 @@ public sealed class EntityInsertItem
 
     /// <summary>How the class is placed.</summary>
     public EntityPlacement Placement { get; }
+
+    /// <summary>The class's icon and its group's tint.</summary>
+    public IconLook Look { get; }
 
     /// <summary>
     /// Whether the class is made from a block, a part or a group of them, so
@@ -117,10 +122,24 @@ public static class EntityInsertMenu
         {
             // Capture the name, not the entry.
             string className = entry.ClassName;
-            var row = new MenuItem { Header = entry.Display };
+            var row = new MenuItem { Header = entry.Display, Icon = IconOf(entry.Look) };
             ToolTip.SetTip(row, forMake ? entry.MakeTip : entry.Tip);
             row.Click += (_, _) => picked(className);
             rows.Add(row);
         }
+    }
+
+    // The class's icon in its group's tint, so a long list can be scanned by
+    // colour. The tint is a local value: the menu's muted glyph style would
+    // otherwise win.
+    private static Path IconOf(IconLook look)
+    {
+        var icon = new Path { Data = EditorIcons.Glyph(look) };
+        icon.Classes.Add("icon");
+
+        if (EditorIcons.Brush(look) is { } tint)
+            icon.Stroke = tint;
+
+        return icon;
     }
 }

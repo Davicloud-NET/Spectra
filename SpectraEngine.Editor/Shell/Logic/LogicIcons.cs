@@ -1,89 +1,37 @@
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using System;
+using System.Collections.Generic;
 
 namespace SpectraEngine.Editor.Shell.Logic;
 
-// The glyph in a card's header: one for each entity group, one for an entity
-// with no group and one for a target nothing answers to. Chosen by group
-// only. The shell knows no entity class by name.
+// The glyph in a card's header and the pen that tints it. Which icon a card
+// wears is the registry's answer for its class, the one the scene tree and
+// the menus give. This only keeps the theme's geometry and a pen for each.
 internal sealed class LogicIcons
 {
-    private readonly Geometry? _mover = LogicTheme.Icon("IconEntityMover");
-    private readonly Geometry? _logic = LogicTheme.Icon("IconEntityLogic");
-    private readonly Geometry? _trigger = LogicTheme.Icon("IconEntityTrigger");
-    private readonly Geometry? _player = LogicTheme.Icon("IconEntityPlayer");
-    private readonly Geometry? _sound = LogicTheme.Icon("IconEntitySound");
-    private readonly Geometry? _entity = LogicTheme.Icon("IconEntity");
-    private readonly Geometry? _missing = LogicTheme.Icon("IconWarning");
-
-    private readonly IPen _moverPen = Pen("SpectraKindBrushWorld");
-    private readonly IPen _logicPen = Pen("SpectraKindEntity");
-    private readonly IPen _triggerPen = Pen("SpectraKindLight");
-    private readonly IPen _playerPen = Pen("SpectraKindBrushPart");
-    private readonly IPen _soundPen = Pen("SpectraKindBrushSubtractive");
-    private readonly IPen _entityPen = Pen("SpectraKindEntity");
-    private readonly IPen _quietPen = Pen("SpectraTextMuted");
-    private readonly IPen _missingPen = Pen("SpectraTextDanger");
+    private readonly Dictionary<string, Geometry?> _glyphs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IPen> _pens = new(StringComparer.Ordinal);
+    private readonly double _stroke = LogicTheme.Size("SpectraLogicIconStroke");
 
     // The glyph on a 16 box, and the pen that tints it.
     public Geometry? Of(LogicCard card, out IPen pen)
     {
-        switch (card.Stub)
+        IconLook look = card.Look;
+
+        if (!_pens.TryGetValue(look.Tint, out IPen? found))
         {
-            case LogicStubKind.None:
-                break;
-
-            case LogicStubKind.Activator:
-                pen = _quietPen;
-                return _entity;
-
-            default:
-                pen = _missingPen;
-                return _missing;
+            found = new ImmutablePen(LogicTheme.Brush(look.Tint), _stroke, null, PenLineCap.Round, PenLineJoin.Round);
+            _pens.Add(look.Tint, found);
         }
 
-        if (Is(card, "Movers"))
+        if (!_glyphs.TryGetValue(look.Icon, out Geometry? glyph))
         {
-            pen = _moverPen;
-            return _mover;
+            glyph = LogicTheme.Icon(look.Icon);
+            _glyphs.Add(look.Icon, glyph);
         }
 
-        if (Is(card, "Logic"))
-        {
-            pen = _logicPen;
-            return _logic;
-        }
-
-        if (Is(card, "Triggers"))
-        {
-            pen = _triggerPen;
-            return _trigger;
-        }
-
-        if (Is(card, "Player"))
-        {
-            pen = _playerPen;
-            return _player;
-        }
-
-        if (Is(card, "Sound"))
-        {
-            pen = _soundPen;
-            return _sound;
-        }
-
-        pen = _entityPen;
-        return _entity;
+        pen = found;
+        return glyph;
     }
-
-    private static bool Is(LogicCard card, string group) =>
-        string.Equals(card.Group, group, StringComparison.Ordinal);
-
-    private static ImmutablePen Pen(string brush) => new(
-        LogicTheme.Brush(brush),
-        LogicTheme.Size("SpectraLogicIconStroke"),
-        null,
-        PenLineCap.Round,
-        PenLineJoin.Round);
 }

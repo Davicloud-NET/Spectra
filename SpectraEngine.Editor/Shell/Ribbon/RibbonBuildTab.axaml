@@ -262,7 +262,7 @@
                     IsEnabled="{Binding CanMakeEntity}"
                     ToolTip.Tip="Turn the selected block, part or group into a door, a trigger or another entity. Blocks in it become parts.">
               <StackPanel Orientation="Horizontal" Spacing="6">
-                <Path Classes="icon kind-entity" Data="{StaticResource IconEntity}" />
+                <Path Classes="icon kind-entity" Data="{x:Static shell:EditorIcons.PlainEntityGlyph}" />
                 <TextBlock Text="Make entity" VerticalAlignment="Center" />
                 <Path Classes="spincaret" Data="{StaticResource CaretDown}" />
               </StackPanel>

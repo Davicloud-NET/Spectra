@@ -58,8 +58,13 @@ public sealed class WorldIconTests
     {
         WorldIcons.ForEntity(Schemas, "from_another_game").ShouldBe(WorldIcons.UnknownEntity);
         WorldIcons.ForEntity(Schemas, null).ShouldBe(WorldIcons.UnknownEntity);
-        WorldIcons.ForEntity(null, "test_door").ShouldBe(WorldIcons.UnknownEntity);
-        WorldIcons.ForClass(null).ShouldBe(WorldIcons.UnknownEntity);
+    }
+
+    [Fact]
+    public void With_no_catalogue_at_all_a_class_gets_the_plain_entity_icon()
+    {
+        // No catalogue says nothing about a class, so it is not called unknown.
+        WorldIcons.ForEntity(null, "test_door").ShouldBe(WorldIcons.Entity);
     }
 
     [Fact]
@@ -88,12 +93,18 @@ public sealed class WorldIconTests
     [Fact]
     public void Asking_again_for_a_class_makes_no_garbage()
     {
-        Schemas.TryGetSchema("test_once", out EntitySchema? schema).ShouldBeTrue();
+        Schemas.TryGetSchema("test_once", out EntitySchema? found).ShouldBeTrue();
+        EntitySchema schema = found.ShouldNotBeNull();
         WorldIcons.ForClass(schema);
+        WorldIcons.ForEntity(Schemas, "test_once");
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1_000; i++)
+        {
             WorldIcons.ForClass(schema);
+            WorldIcons.ForEntity(Schemas, "test_once");
+        }
+
         long after = GC.GetAllocatedBytesForCurrentThread();
 
         (after - before).ShouldBe(0);

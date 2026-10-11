@@ -298,9 +298,9 @@
             <MenuItem Header="Insert block" InputGesture="Ctrl+D1" Click="OnInsertWorldBrushClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon kind-world" Data="{StaticResource IconBrushWorld}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Insert part" InputGesture="Ctrl+D2" Click="OnInsertPartBrushClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon kind-part" Data="{StaticResource IconBrushPart}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Insert cut" InputGesture="Ctrl+D3" Click="OnInsertSubtractiveBrushClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon kind-cut" Data="{StaticResource IconBrushSubtractive}" /></MenuItem.Icon></MenuItem>
-            <MenuItem Header="Insert light" InputGesture="Ctrl+D4" Click="OnInsertLightClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon kind-light" Data="{StaticResource IconLight}" /></MenuItem.Icon></MenuItem>
+            <MenuItem Header="Insert light" InputGesture="Ctrl+D4" Click="OnInsertLightClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon kind-light" Data="{x:Static shell:EditorIcons.PlainLightGlyph}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Insert surface light" Click="OnInsertSurfaceLightClicked" IsEnabled="{Binding !IsPlaying}"
-                      ToolTip.Tip="A lit panel flat on the surface you are looking at, parented to it."><MenuItem.Icon><Path Classes="icon menuicon kind-light" Data="{StaticResource IconLight}" /></MenuItem.Icon></MenuItem>
+                      ToolTip.Tip="A lit panel flat on the surface you are looking at, parented to it."><MenuItem.Icon><Path Classes="icon menuicon kind-light" Data="{StaticResource IconSurfaceLight}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Insert empty group" Click="OnInsertGroupClicked" IsEnabled="{Binding !IsPlaying}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconGroup}" /></MenuItem.Icon></MenuItem>
 
             <!-- Entries are built in code when the submenu opens, from the
@@ -311,7 +311,7 @@
                       IsVisible="{Binding HasEntityClasses}"
                       IsEnabled="{Binding !IsPlaying}"
                       SubmenuOpened="OnInsertEntityMenuOpened">
-              <MenuItem.Icon><Path Classes="icon menuicon kind-entity" Data="{StaticResource IconEntity}" /></MenuItem.Icon>
+              <MenuItem.Icon><Path Classes="icon menuicon kind-entity" Data="{x:Static shell:EditorIcons.PlainEntityGlyph}" /></MenuItem.Icon>
             </MenuItem>
             <Separator />
             <MenuItem Header="Duplicate" InputGesture="Ctrl+D" Click="OnDuplicateClicked" IsEnabled="{Binding CanEditSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconDuplicate}" /></MenuItem.Icon></MenuItem>
@@ -655,8 +655,8 @@
                         HorizontalAlignment="Center" Margin="0,16,0,0">
                   <StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                      <!-- One glyph, chosen by the prompt: mesh, material or
-                           warning. -->
+                      <!-- One glyph, chosen by the prompt: the dragged file's
+                           own icon, or the warning. -->
                       <Path Classes="icon dropicon" Data="{Binding DropIcon}" />
                       <TextBlock Classes="dropheadline" Text="{Binding DropHeadline}" />
                       <TextBlock Classes="dropsubject" Text="{Binding DropSubject}"

@@ -1,5 +1,6 @@
 ﻿using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Hosting;
 using SpectraEngine.Core.Scene;
 using System;
@@ -62,12 +63,27 @@ public sealed class SceneTreeNode(Guid id, string name) : ObservableObject
         set => Set(ref _name, value);
     }
 
-    /// <summary>What the node is, for the row's icon.</summary>
+    /// <summary>What the node is, for the filter.</summary>
     public SceneNodeKind Kind
     {
         get => _kind;
         set => Set(ref _kind, value);
     }
+
+    /// <summary>The node's entity class as the map spells it, or empty when it carries none.</summary>
+    public string EntityClass { get; internal set; } = string.Empty;
+
+    /// <summary>The node's kind of light, or null when it carries none.</summary>
+    public LightKind? LightKind { get; internal set; }
+
+    /// <summary>The row's icon and its tint.</summary>
+    public IconLook Look
+    {
+        get => _look;
+        internal set => Set(ref _look, value);
+    }
+
+    private IconLook _look = EditorIcons.ForNode(SceneNodeKind.Empty, null, null, null);
 
     /// <summary>The node's children, in the graph's own sibling order.</summary>
     public ObservableCollection<SceneTreeNode> Children { get; } = [];
@@ -219,6 +235,26 @@ public sealed class SceneTreeModel
 
     /// <summary>How many nodes the tree is showing.</summary>
     public int Count => _index.Count;
+
+    /// <summary>
+    /// The entity classes the session knows, which give an entity's row its
+    /// class's icon. Null with no session.
+    /// </summary>
+    public EntitySchemaCatalog? Schemas
+    {
+        get => _schemas;
+        set
+        {
+            if (ReferenceEquals(_schemas, value))
+                return;
+
+            _schemas = value;
+            foreach (SceneTreeNode node in _index.Values)
+                node.Look = EditorIcons.ForNode(node.Kind, node.EntityClass, node.LightKind, value);
+        }
+    }
+
+    private EntitySchemaCatalog? _schemas;
 
     /// <summary>
     /// Applies one snapshot's structural changes. Every published snapshot must
@@ -542,7 +578,7 @@ public sealed class SceneTreeModel
                     RemoveFromParent(moved);
                     Insert(moved, change.ParentId, change.SiblingIndex);
                     moved.Name = change.Name;
-                    moved.Kind = change.NodeKind;
+                    Describe(moved, in change);
                 }
                 else
                 {
@@ -551,10 +587,11 @@ public sealed class SceneTreeModel
                 break;
 
             case SceneChangeKind.Renamed:
+            case SceneChangeKind.KindChanged:
                 if (_index.TryGetValue(change.NodeId, out SceneTreeNode? renamed))
                 {
                     renamed.Name = change.Name;
-                    renamed.Kind = change.NodeKind;
+                    Describe(renamed, in change);
                 }
                 break;
         }
@@ -566,15 +603,25 @@ public sealed class SceneTreeModel
         {
             // An undone delete re-adds the node under the same id.
             existing.Name = change.Name;
-            existing.Kind = change.NodeKind;
+            Describe(existing, in change);
             RemoveFromParent(existing);
             Insert(existing, change.ParentId, change.SiblingIndex);
             return;
         }
 
-        var node = new SceneTreeNode(change.NodeId, change.Name) { Kind = change.NodeKind };
+        var node = new SceneTreeNode(change.NodeId, change.Name);
+        Describe(node, in change);
         _index[change.NodeId] = node;
         Insert(node, change.ParentId, change.SiblingIndex);
+    }
+
+    // What the node is, and so what its row's icon is.
+    private void Describe(SceneTreeNode node, in SceneChange change)
+    {
+        node.Kind = change.NodeKind;
+        node.EntityClass = change.EntityClass;
+        node.LightKind = change.LightKind;
+        node.Look = EditorIcons.ForNode(change.NodeKind, change.EntityClass, change.LightKind, _schemas);
     }
 
     private void Insert(SceneTreeNode node, Guid parentId, int siblingIndex)
@@ -689,13 +736,7 @@ public sealed class SceneTreeModel
     // lands at the top level. Internal for tests.
     internal static void Flatten(SceneNode node, List<SceneChange> into)
     {
-        into.Add(new SceneChange(
-            SceneChangeKind.Added,
-            node.Id,
-            node.Parent?.Id ?? Guid.Empty,
-            node.Name,
-            node.IndexInParent,
-            SceneNodeClassifier.Classify(node)));
+        into.Add(SceneChange.Of(SceneChangeKind.Added, node));
 
         IReadOnlyList<SceneNode> children = node.Children;
         for (int i = 0; i < children.Count; i++)

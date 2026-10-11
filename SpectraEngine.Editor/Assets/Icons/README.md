@@ -1,12 +1,22 @@
 # Editor icons
 
 One `.svg` per glyph. The file name is the resource key: `IconMove.svg` becomes
-`{StaticResource IconMove}`. `Icons.targets` turns this folder into
+`{StaticResource IconMove}`. `Icons.targets` turns two folders into
 `Theme/Icons.axaml` at build time. That file is generated, so don't edit it.
 
+| Folder | Holds |
+|---|---|
+| this one | the shell's own glyphs: tools, verbs, panels, files |
+| `SpectraEngine.Editing/Assets/Icons` | things that stand in the world: `IconEntity*` and `IconLight*` |
+
+The second folder is not here because the 3D view draws those files too, and
+`SpectraEngine.Editing` may not reference the editor. It has its own README.
+A key is in one folder or the other, never both: the build stops on a
+duplicate.
+
 Most glyphs are [Tabler Icons](https://tabler.io/icons), MIT. The licence is
-`LICENSE-tabler.txt`. `tabler.py` writes those files; the two tables at its top
-say which Tabler icon each key is.
+`LICENSE-tabler.txt`, in both folders. `tabler.py` writes those files to both
+folders, and the three tables at its top say which Tabler icon each key is.
 
 ## Two sets
 
@@ -19,14 +29,8 @@ Tabler draws on 24. The small set is the same paths scaled to 16 by
 `tabler.py`.
 
 A few are drawn by hand and are not in the script: `CaretDown`, `IconCheckBox`,
-`IconCheckTick`, `IconRadio`, `IconRadioDot`, `IconPlay`, `IconStop`,
-`IconEmpty`, `IconEntityMover`, `IconEntityLogic`, `IconEntityTrigger`,
-`IconEntityPlayer` and `IconEntitySound`.
-
-Those last five stand for an entity group on a Logic view card: movers, logic,
-triggers, the player and sound. One per group, never one per class: the shell
-knows no class by name. They are drawn in the stroke style of the Tabler set,
-on the same 16 box, and none is copied from it.
+`IconCheckTick`, `IconRadio`, `IconRadioDot`, `IconPlay`, `IconStop` and
+`IconEmpty`.
 
 ## Rules
 
@@ -37,6 +41,10 @@ on the same 16 box, and none is copied from it.
   rects and groups are ignored, so convert them to paths first.
 - Glyphs are stroked. The styles set the stroke width and colour. Play and Stop
   are the two that are filled.
+- The icon of an entity, a light or a file is named in one place,
+  `Shell/EditorIcons.cs`. The scene tree, the Logic view, the entity lists, the
+  Content panel and the drop prompt all ask it. Markup that needs one uses
+  `{x:Static shell:EditorIcons...}`.
 
 ## Adding one
 
@@ -44,5 +52,15 @@ on the same 16 box, and none is copied from it.
    big. Run `python tabler.py` in this folder.
 2. Name it in the markup: `<Path Classes="icon" Data="{StaticResource IconName}" />`.
 
+A file kind's icon is `IconFile*`: add the line to `SMALL` and the kind to
+`EditorIcons.ForFile`.
+
+## Swapping one
+
+Change its line in `tabler.py` and run the script, or replace the file by hand
+and change the line to match. Nothing else names a Tabler icon.
+
 `ShellLookConventionTests` fails if the markup names a glyph with no file, if a
-file is named by nothing, or if a file is on the wrong box.
+file here is named by nothing, or if a file is on the wrong box.
+`IconDriftConventionTests` fails if a table and a file disagree, or if a source
+outside `EditorIcons.cs` names an entity, light or file icon.

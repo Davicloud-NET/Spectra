@@ -251,7 +251,7 @@ public sealed class MaterialDropPromptTests
 
         prompt.Headline.ShouldBe("Drop to place");
         prompt.Hint.ShouldBe("");
-        prompt.IconKey.ShouldBe("IconMesh");
+        prompt.IconKey.ShouldBe(EditorIcons.ForFile(ContentKind.Model).Icon);
     }
 
     [Fact]
@@ -264,8 +264,10 @@ public sealed class MaterialDropPromptTests
         ViewportDropPrompt refusing = ViewportDropPrompt.For(
             texture, hasSession: true, viewportAcceptsDrops: true);
 
-        // Both arms are amber, so the icon has to tell them apart.
-        painting.IconKey.ShouldBe(ViewportDropPrompt.MaterialIcon);
+        // Both arms are amber, so the icon has to tell them apart. A material
+        // wears the icon it has in the Content panel.
+        painting.IconKey.ShouldBe(EditorIcons.ForFile(ContentKind.Material).Icon);
+        painting.IconKey.ShouldNotBe(ViewportDropPrompt.RefusingIcon);
         refusing.IconKey.ShouldBe(ViewportDropPrompt.RefusingIcon);
         refusing.Accepts.ShouldBeFalse();
         refusing.Reason.ShouldContain("material");
