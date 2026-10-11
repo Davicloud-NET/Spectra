@@ -17,5 +17,8 @@ internal struct ThreadSlot
     // How many values it yielded last.
     internal int ValueCount;
 
+    // The host let go of it while it ran. The slot goes when it next waits.
+    internal bool IsLetGo;
+
     internal int NextFree;
 }

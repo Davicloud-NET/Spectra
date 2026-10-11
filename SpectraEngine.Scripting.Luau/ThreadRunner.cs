@@ -46,6 +46,7 @@ internal sealed unsafe class ThreadRunner
         slot.Reference = reference;
         slot.Script = script;
         slot.ValueCount = 0;
+        slot.IsLetGo = false;
 
         Lua.lua_setthreaddata(state, ThreadData.Pack(index, script));
         return new LuauThread(_host, index, slot.Generation);
@@ -146,10 +147,29 @@ internal sealed unsafe class ThreadRunner
         return isEnded;
     }
 
+    // A thread that runs is in no script's hands and on no stack: the slot's
+    // reference is all that keeps it from Luau's collector. So one that is
+    // let go while it runs keeps its slot until it next waits.
     internal void Release(LuauThread thread)
     {
-        if (!_host.IsClosed && TryFind(thread, out int index))
+        if (_host.IsClosed || !TryFind(thread, out int index))
+            return;
+
+        if (IsRunning(_slots[index].State))
+            _slots[index].IsLetGo = true;
+        else
             Remove(index);
+    }
+
+    // Gives a script's own reference to its top-level thread to the thread's
+    // slot, for a thread that is still there when its script lets go of it.
+    internal bool TryHandOver(LuauThread thread, int reference)
+    {
+        if (!TryFind(thread, out int index))
+            return false;
+
+        _slots[index].Reference = reference;
+        return true;
     }
 
     // Ends every thread of a script, so that what they hold can be freed. One
@@ -222,6 +242,10 @@ internal sealed unsafe class ThreadRunner
             if (TryFind(thread, out index))
                 Remove(index);
         }
+        else if (_slots[index].IsLetGo)
+        {
+            Remove(index);
+        }
         else
         {
             _slots[index].ValueCount = results;
@@ -229,6 +253,9 @@ internal sealed unsafe class ThreadRunner
 
         return LuauResume.Yielded;
     }
+
+    // Luau calls a thread "normal" while it runs and is not the one that asks.
+    private bool IsRunning(nint state) => Lua.lua_costatus(_main, state) is LuaCoStatus.Running or LuaCoStatus.Normal;
 
     private LuauResume Finished(LuauThread thread, int results)
     {

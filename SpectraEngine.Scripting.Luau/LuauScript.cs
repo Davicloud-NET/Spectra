@@ -84,8 +84,12 @@ public sealed class LuauScript
         foreach (LuauFunction function in _functions.ToArray())
             function.Dispose();
 
-        Lua.lua_unref(_host.Stack.State, ThreadReference);
+        // A top-level thread that is running could not be ended, and this
+        // reference is all that keeps it. Its slot takes it until it waits.
+        int reference = ThreadReference;
         ThreadReference = Lua.NilReference;
+        if (!_host.Threads.TryHandOver(Thread, reference))
+            Lua.lua_unref(_host.Stack.State, reference);
     }
 
     internal void Track(LuauFunction function) => _functions.Add(function);

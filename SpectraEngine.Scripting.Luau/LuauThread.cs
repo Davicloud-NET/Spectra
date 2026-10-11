@@ -27,7 +27,7 @@ public readonly struct LuauThread : IEquatable<LuauThread>
 
     /// <summary>
     /// What the thread yielded, while it waits. For the thread that ended last, what it
-    /// returned. Throws once neither holds.
+    /// returned. Throws once neither holds. Read it before any thread runs again.
     /// </summary>
     public LuauStack Values => Find().Threads.ValuesOf(this, out _);
 

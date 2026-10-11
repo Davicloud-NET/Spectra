@@ -68,23 +68,56 @@ public sealed class SwitchOffTests
         host.Objects.Count.ShouldBe(0);
     }
 
-    // A thread that is running cannot be ended. It is ended when it next waits.
+    // A thread that is running cannot be ended, and the host's reference is
+    // all that keeps it from Luau's collector. So it is kept until it next
+    // waits, and ended then. The collection in between is what would free it.
     [Fact]
     public void A_script_switched_off_from_inside_its_own_call_ends_when_it_next_waits()
     {
         using LuauHost host = TestHost.Open(out RecordingSink sink, fresh => fresh.SetGlobal("leave"u8, stack =>
         {
             fresh.ScriptOf(stack).ShouldNotBeNull().SwitchOff();
+            fresh.Collect();
             return 0;
         }));
-        LuauScript script = host.LoadText("leave()\nprint('still in the same call')\ncoroutine.yield()\nprint('never')");
+        LuauScript script = host.LoadText(
+            "leave()\nlocal made = {}\nfor i = 1, 1000 do made[i] = { i } end\nprint('still in the same call', #made)\ncoroutine.yield()\nprint('never')");
 
         LuauResume outcome = script.Start();
 
         outcome.ShouldBe(LuauResume.Yielded);
         script.Thread.IsAlive.ShouldBeFalse();
         script.Thread.Resume().ShouldBe(LuauResume.Refused);
-        sink.Texts(ScriptSeverity.Print).ShouldBe(["still in the same call"]);
+        sink.Texts(ScriptSeverity.Print).ShouldBe(["still in the same call 1000"]);
+    }
+
+    [Fact]
+    public void A_thread_let_go_while_it_runs_is_kept_until_it_waits()
+    {
+        LuauThread running = default;
+        using LuauHost host = TestHost.Open(out _, fresh =>
+        {
+            fresh.SetGlobal("keep"u8, stack =>
+            {
+                LuauResume started = fresh.Start(stack, stack.Count, out _);
+                return stack.Push(started == LuauResume.Yielded) ? 1 : LuauStack.Raise;
+            });
+            fresh.SetGlobal("let_go"u8, stack =>
+            {
+                running = fresh.ThreadOf(stack);
+                running.Release();
+                fresh.Collect();
+                return 0;
+            });
+        });
+        LuauScript script = host.LoadText(
+            "return keep(function()\n    let_go()\n    local made = {}\n    for i = 1, 1000 do made[i] = { i } end\n    coroutine.yield(#made)\nend)");
+
+        LuauResume outcome = script.Start();
+
+        outcome.ShouldBe(LuauResume.Finished);
+        script.Thread.Values.GetBoolean(1).ShouldBeTrue();
+        running.IsAlive.ShouldBeFalse();
     }
 
     // A tag with no metatable is the host's own mistake. It is said out loud
