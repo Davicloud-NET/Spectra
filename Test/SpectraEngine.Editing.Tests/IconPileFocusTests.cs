@@ -24,7 +24,7 @@ public sealed class IconPileFocusTests
         outline.Draw(output, rig.Scene, rig.Camera, rig.ViewportSize, hovered: lift[3]);
 
         // A cross is three lines. One on the node, one on the icon at the end of the row.
-        CrossCentres(output, SelectionOutline.HoverColor).ShouldBe([Vector3.Zero, icons.Markers[3].At]);
+        CrossCenters(output, SelectionOutline.HoverColor).ShouldBe([Vector3.Zero, icons.Markers[3].At]);
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public sealed class IconPileFocusTests
 
         outline.Draw(output, rig.Scene, rig.Camera, rig.ViewportSize, hovered: null);
 
-        CrossCentres(output, SelectionOutline.SelectedColor).ShouldBe([Vector3.Zero, icons.Markers[1].At]);
+        CrossCenters(output, SelectionOutline.SelectedColor).ShouldBe([Vector3.Zero, icons.Markers[1].At]);
     }
 
     [Fact]
@@ -52,24 +52,24 @@ public sealed class IconPileFocusTests
 
         outline.Draw(output, rig.Scene, rig.Camera, rig.ViewportSize, hovered: sound);
 
-        CrossCentres(output, SelectionOutline.HoverColor).ShouldBe([new Vector3(1f, 2f, 0f)]);
+        CrossCenters(output, SelectionOutline.HoverColor).ShouldBe([new Vector3(1f, 2f, 0f)]);
     }
 
     // The middle of each cross drawn in this colour, three lines to a cross.
-    private static List<Vector3> CrossCentres(DebugDraw output, Vector3 color)
+    private static List<Vector3> CrossCenters(DebugDraw output, Vector3 color)
     {
         List<Vector3> vertices = DebugLines.Colored(output, color);
         (vertices.Count % 6).ShouldBe(0);
 
-        var centres = new List<Vector3>();
+        var centers = new List<Vector3>();
         for (int i = 0; i < vertices.Count; i += 6)
         {
-            Vector3 centre = (vertices[i] + vertices[i + 1]) * 0.5f;
-            Vector3.Distance(centre, (vertices[i + 2] + vertices[i + 3]) * 0.5f).ShouldBeLessThan(1e-5f);
-            Vector3.Distance(centre, (vertices[i + 4] + vertices[i + 5]) * 0.5f).ShouldBeLessThan(1e-5f);
-            centres.Add(centre);
+            Vector3 center = (vertices[i] + vertices[i + 1]) * 0.5f;
+            Vector3.Distance(center, (vertices[i + 2] + vertices[i + 3]) * 0.5f).ShouldBeLessThan(1e-5f);
+            Vector3.Distance(center, (vertices[i + 4] + vertices[i + 5]) * 0.5f).ShouldBeLessThan(1e-5f);
+            centers.Add(center);
         }
 
-        return centres;
+        return centers;
     }
 }

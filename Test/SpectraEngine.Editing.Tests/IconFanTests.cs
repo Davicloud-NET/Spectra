@@ -54,7 +54,7 @@ public sealed class IconFanTests
     }
 
     [Fact]
-    public void Two_at_one_point_end_one_width_apart_centred_on_the_point_in_the_order_given()
+    public void Two_at_one_point_end_one_width_apart_centered_on_the_point_in_the_order_given()
     {
         Vector2[] places = Spread(Point, Point);
 
@@ -67,7 +67,7 @@ public sealed class IconFanTests
     [InlineData(4)]
     [InlineData(5)]
     [InlineData(6)]
-    public void A_pile_of_up_to_six_is_one_row_centred_on_the_point(int count)
+    public void A_pile_of_up_to_six_is_one_row_centered_on_the_point(int count)
     {
         Vector2[] places = Spread(Pile(count));
 

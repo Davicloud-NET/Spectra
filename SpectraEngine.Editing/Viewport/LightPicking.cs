@@ -54,17 +54,17 @@ public static class LightPicking
 
     // Assumes a normalised direction. Near root, clamped to zero so an origin
     // inside the sphere hits at the origin.
-    internal static bool TryRaySphere(in Ray3 ray, Vector3 centre, float radius, out float distance)
+    internal static bool TryRaySphere(in Ray3 ray, Vector3 center, float radius, out float distance)
     {
         distance = 0f;
 
-        Vector3 toCentre = centre - ray.Origin;
-        float along = Vector3.Dot(toCentre, ray.Direction);
+        Vector3 toCenter = center - ray.Origin;
+        float along = Vector3.Dot(toCenter, ray.Direction);
 
         // How far the ray passes from the centre, measured at its nearest
         // point. A flat view's ray starts a far plane back, and there the
         // usual difference of squares has no digits left for an icon.
-        float missSquared = (toCentre - (ray.Direction * along)).LengthSquared();
+        float missSquared = (toCenter - (ray.Direction * along)).LengthSquared();
         float halfChordSquared = (radius * radius) - missSquared;
         if (halfChordSquared < 0f)
             return false;
