@@ -9,6 +9,7 @@ using SpectraEngine.Core.Maps;
 using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Projects;
+using SpectraEngine.Core.Scripting;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -244,6 +245,12 @@ public sealed class SceneManager
     /// </summary>
     public ISoundCatalog? SoundCatalog { get; set; }
 
+    /// <summary>
+    /// How a level's scripts get run. A host installs what runs them here,
+    /// and each play session then gets a runtime of its own.
+    /// </summary>
+    public ScriptHosting Scripts { get; } = new();
+
     // Not cached: a host may assign EntityCatalog between loads. Reading
     // Schemas freezes the catalogue.
     private EntitySchemaCatalog ResolveEntitySchemas() =>
@@ -272,7 +279,19 @@ public sealed class SceneManager
             Trace = _entityTrace,
             SoundCatalog = SoundCatalog ?? (_assets is { } assets ? new AssetSoundCatalog(assets) : null),
         };
-        world.Activate();
+        world.Scripts = Scripts.CreateRuntime(world, _assets?.Content, _logger);
+
+        try
+        {
+            world.Activate();
+        }
+        catch
+        {
+            // Nothing else holds the runtime yet, and it owns native memory.
+            world.Scripts?.Close();
+            throw;
+        }
+
         EntityWorld = world;
 
         _logger.LogDebug(
@@ -280,11 +299,25 @@ public sealed class SceneManager
             world.Entities.Count, world.Index?.NameCount ?? 0);
     }
 
-    /// <summary>Tears the entity runtime down. Harmless when none is running.</summary>
+    /// <summary>
+    /// Tears the entity runtime down and closes the level's scripts. Harmless
+    /// when none is running.
+    /// </summary>
     public void StopEntityWorld()
     {
-        EntityWorld?.Deactivate();
-        EntityWorld = null;
+        if (EntityWorld is not { } world)
+            return;
+
+        try
+        {
+            world.Deactivate();
+            EntityWorld = null;
+        }
+        finally
+        {
+            // After the entities, which may still read what a script moved.
+            world.Scripts?.Close();
+        }
     }
 
     /// <summary>

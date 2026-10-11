@@ -6,4 +6,7 @@ internal enum EntityEventKind : byte
 
     // Delivered to every entity the target name resolves to.
     Input = 1,
+
+    // Handed back to the script runtime, which knows what its token names.
+    ScriptWake = 2,
 }

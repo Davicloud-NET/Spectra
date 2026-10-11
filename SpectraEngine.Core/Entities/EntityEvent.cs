@@ -36,4 +36,7 @@ internal struct EntityEvent
     // think or an input no wire sent, so an event built without it is not
     // taken for wire zero.
     public int WireOrdinal;
+
+    // What the script runtime asked to be handed back. Only a script wake has one.
+    public long Token;
 }

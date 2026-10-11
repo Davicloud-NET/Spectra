@@ -10,6 +10,7 @@ using SpectraEngine.Core.Graphics;
 [assembly: InternalsVisibleTo("SpectraEngine.Entities.Tests")]
 [assembly: InternalsVisibleTo("SpectraEngine.Graphics.Tests")]
 [assembly: InternalsVisibleTo("SpectraEngine.Physics.Tests")]
+[assembly: InternalsVisibleTo("SpectraEngine.Scripting.Tests")]
 [assembly: InternalsVisibleTo("Spectra.Kitchen.Tests")]
 [assembly: InternalsVisibleTo("SceneProbe")]
 

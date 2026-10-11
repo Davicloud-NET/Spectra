@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Audio;
 using SpectraEngine.Core.Physics;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -47,6 +48,8 @@ public sealed class EntityWorld
 
     // True while Deactivate runs OnRemove. IsActive is already false by then.
     private bool _removing;
+
+    private bool _scriptsStarted;
 
     /// <param name="scene">The scene whose nodes carry the authored entities.</param>
     /// <param name="logger">Where refusals, missing classes and budget trips go.</param>
@@ -145,6 +148,13 @@ public sealed class EntityWorld
     public ISoundCatalog? SoundCatalog { get; set; }
 
     /// <summary>
+    /// What runs the level's scripts, or null for a level that plays without
+    /// them. Set it before the first <see cref="Tick"/>, which starts the
+    /// scripts. Whoever set it closes it once the world has stopped.
+    /// </summary>
+    public IScriptRuntime? Scripts { get; set; }
+
+    /// <summary>
     /// The most events one <see cref="Tick"/> sends of those that were
     /// waiting, and the most it sends of those it makes itself. Waiting
     /// events past it stay queued and go first on the next tick. What a tick
@@ -217,6 +227,7 @@ public sealed class EntityWorld
             throw new InvalidOperationException("This entity world is already active.");
 
         _clock.Restart();
+        _scriptsStarted = false;
         _tickingCount = 0;
         RefusedMoveCount = 0;
         _refusedMoveNodes.Clear();
@@ -302,8 +313,9 @@ public sealed class EntityWorld
     }
 
     /// <summary>
-    /// Runs one tick: finds the touches that started and ended since the last
-    /// tick, delivers what is due up to <see cref="MaxDispatchesPerTick"/>,
+    /// Runs one tick: on the first one starts the level's scripts, finds the
+    /// touches that started and ended since the last tick, delivers what is
+    /// due up to <see cref="MaxDispatchesPerTick"/>,
     /// calls <see cref="Entity.OnTick"/> on the entities that asked for it,
     /// in <see cref="Entities"/> order, then drains the deferred spawn and
     /// despawn queues.
@@ -332,6 +344,15 @@ public sealed class EntityWorld
         }
 
         _clock.Advance();
+
+        // Here and not while the level spawns: the player is there by now.
+        // Before the touches and the drain, so a script is running when the
+        // first tick's events go out.
+        if (!_scriptsStarted)
+        {
+            _scriptsStarted = true;
+            Scripts?.StartScripts();
+        }
 
         // Before the drain: an output a touch fires is delivered this tick.
         Touches.Update();
@@ -372,28 +393,55 @@ public sealed class EntityWorld
     /// <exception cref="InvalidOperationException">The world is not active.</exception>
     public bool SetLocalTransform(SceneNode node, in Transform value)
     {
+        if (TrySetLocalTransform(node, in value, out string? refusal))
+            return true;
+
+        if (_refusedMoveNodes.Add(node.Id))
+            _logger.LogError("An entity tried to move '{NodeName}' and was refused: {Why}.", node.Name, refusal);
+
+        return false;
+    }
+
+    /// <summary>
+    /// The same move for a caller that reports a refusal itself, as a script
+    /// does. Nothing is logged.
+    /// </summary>
+    /// <param name="refusal">Why the move was refused: the end of a sentence, with no full stop.</param>
+    /// <exception cref="InvalidOperationException">The world is not active.</exception>
+    public bool TrySetLocalTransform(SceneNode node, in Transform value, [NotNullWhen(false)] out string? refusal)
+    {
         ArgumentNullException.ThrowIfNull(node);
         ThrowIfStopped(nameof(SetLocalTransform));
 
-        // A moving world brush recompiles the level every tick, and the
-        // picture stays right while it does.
-        if (node.SubtreeStaticWorldBrushCount > 0)
+        refusal = FindMoveRefusal(node, in value);
+        if (refusal is not null)
         {
-            return RefuseMove(node,
-                "a world brush sits at or below it, and only parts can move while a level plays. " +
-                "Convert the brush to a part");
-        }
-
-        if (node.SubtreeBrushCount > 0 && value.Scale != node.LocalScale)
-        {
-            return RefuseMove(node,
-                "the move changes its scale, and a node cannot scale a brush at or below it. " +
-                "Resize the brush instead");
+            RefusedMoveCount++;
+            return false;
         }
 
         _movedNodes.Record(node);
         node.LocalTransform = value;
         return true;
+    }
+
+    /// <summary>
+    /// Queues a wake for <see cref="Scripts"/>, in the one order of wires and
+    /// thinks. The runtime gets the token back when the wake comes due.
+    /// </summary>
+    /// <param name="token">What the runtime wants handed back.</param>
+    /// <param name="ticks">How many ticks to wait. None is the drain that is running, or the next one.</param>
+    /// <returns>
+    /// False when the wake was not queued and will not come: the queue is
+    /// full, or the wait is longer than a level can count.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">The world is not active.</exception>
+    public bool QueueScriptWake(long token, long ticks)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(ticks);
+        ThrowIfStopped(nameof(QueueScriptWake));
+
+        return _dispatcher.QueueScriptWake(token, ticks);
     }
 
     /// <summary>
@@ -517,14 +565,23 @@ public sealed class EntityWorld
             throw new InvalidOperationException($"{call} on an entity world that is not active.");
     }
 
-    private bool RefuseMove(SceneNode node, string why)
+    private static string? FindMoveRefusal(SceneNode node, in Transform value)
     {
-        RefusedMoveCount++;
+        // A moving world brush recompiles the level every tick, and the
+        // picture stays right while it does.
+        if (node.SubtreeStaticWorldBrushCount > 0)
+        {
+            return "a world brush sits at or below it, and only parts can move while a level plays. " +
+                "Convert the brush to a part";
+        }
 
-        if (_refusedMoveNodes.Add(node.Id))
-            _logger.LogError("An entity tried to move '{NodeName}' and was refused: {Why}.", node.Name, why);
+        if (node.SubtreeBrushCount > 0 && value.Scale != node.LocalScale)
+        {
+            return "the move changes its scale, and a node cannot scale a brush at or below it. " +
+                "Resize the brush instead";
+        }
 
-        return false;
+        return null;
     }
 
     internal void ReportRefusedKeyvalue(Entity entity, string key, string value) =>

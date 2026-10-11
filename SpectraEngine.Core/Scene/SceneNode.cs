@@ -448,6 +448,13 @@ public class SceneNode
     }
 
     /// <summary>
+    /// The local transform that puts the node at a frame in the world, which
+    /// is what setting <see cref="CFrame"/> writes. For a caller that must
+    /// make the write some other way, as a running level must.
+    /// </summary>
+    public Transform LocalTransformAt(CFrame world) => WorldFrame.LocalFor(this, world);
+
+    /// <summary>
     /// How many brushes of any kind are in this node's subtree, its own
     /// included. Check this before writing <see cref="LocalScale"/>: a scale
     /// anywhere above a brush makes its placement non-rigid.

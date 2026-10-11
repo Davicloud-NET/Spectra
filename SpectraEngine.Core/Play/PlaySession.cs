@@ -104,9 +104,9 @@ public sealed class PlaySession
     }
 
     /// <summary>
-    /// Runs one fixed tick: entities, physics, then the character. Physics
-    /// steps outside play too. A use pressed on this tick reaches its entity
-    /// on the next one.
+    /// Runs one fixed tick: entities, physics, then the character. Scripts
+    /// are told before the physics step and at the end. Physics steps outside
+    /// play too. A use pressed on this tick reaches its entity on the next one.
     /// </summary>
     /// <param name="fixedDt">
     /// The fixed step, never a frame delta. While a level plays it must be
@@ -118,7 +118,9 @@ public sealed class PlaySession
         // Entities first: one that moves a platform must decide before the
         // step resolves against it. Null outside play, and once a map has
         // been loaded during play.
-        _sceneManager.EntityWorld?.Tick(fixedDt);
+        EntityWorld? entities = _sceneManager.EntityWorld;
+        entities?.Tick(fixedDt);
+        entities?.Scripts?.BeforeSimulation();
 
         IScenePhysics physics = _sceneManager.Physics;
         physics.PushKinematicTargets(fixedDt);
@@ -128,6 +130,15 @@ public sealed class PlaySession
         // the event buffers.
         physics.DrainEvents();
 
+        PlayTickResult result = TickCharacter(fixedDt, in command);
+
+        // The end of every tick, also of one in which nothing walks.
+        entities?.Scripts?.AfterSimulation();
+        return result;
+    }
+
+    private PlayTickResult TickCharacter(float fixedDt, in CharacterCommand command)
+    {
         if (!IsActive || Character is not { } character)
             return default;
 

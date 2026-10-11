@@ -17,6 +17,7 @@ using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Play;
 using SpectraEngine.Core.Projects;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting;
 using SpectraEngine.Core.Windowing;
 using System;
 using System.Collections.Generic;
@@ -123,6 +124,10 @@ public sealed class Engine
         SoundWallConsoleCommands.Register(_console.Commands, soundWalls, audioManager, renderer.Profiler);
         CaptionConsoleCommands.Register(_console.Commands, _captions);
         _entityWatch.Changed += RefreshEntityTrace;
+
+        // What a script prints goes out with the console's lines, unless the
+        // host has given its scripts somewhere else to report.
+        sceneManager.Scripts.Sink ??= new ConsoleScriptSink(_console.Output);
     }
 
     // The scene whose walls stand in a sound's way. None while there is no

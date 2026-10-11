@@ -134,6 +134,20 @@ internal sealed class EntityDispatcher
             Output = "",
         });
 
+    // False when the wake was not queued and will not come.
+    public bool QueueScriptWake(long token, long ticks) =>
+        TryPush(new EntityEvent
+        {
+            Tick = ticks > WholeTicks.Never - _world.TickNumber ? WholeTicks.Never : _world.TickNumber + ticks,
+            Sequence = _sequence++,
+            Kind = EntityEventKind.ScriptWake,
+            Token = token,
+            TargetName = "",
+            Input = "",
+            Parameter = "",
+            Output = "",
+        });
+
     // An event numbered below firstMadeHere was waiting when the drain began,
     // and those all sort ahead of what the drain makes. Each of the two has
     // the budget to itself, so a loop cannot use up what the waiting need.
@@ -219,6 +233,12 @@ internal sealed class EntityDispatcher
             return;
         }
 
+        if (due.Kind == EntityEventKind.ScriptWake)
+        {
+            _world.Scripts?.Wake(due.Token);
+            return;
+        }
+
         var context = new EntityInputContext(due.Activator, due.Entity, due.Parameter);
 
         if (due.Target is { } instance)
@@ -297,8 +317,12 @@ internal sealed class EntityDispatcher
             && next.Tick <= tick
             && next.Sequence >= firstMadeHere)
         {
-            _queue.TryPop(out _);
+            _queue.TryPop(out EntityEvent dropped);
             discarded++;
+
+            // A thread waits on it and would wait for good.
+            if (dropped.Kind == EntityEventKind.ScriptWake)
+                _world.Scripts?.Drop(dropped.Token);
         }
 
         DiscardedCount += discarded;
@@ -325,15 +349,18 @@ internal sealed class EntityDispatcher
             _maxPendingEvents, Describe(made), NameOf(made));
     }
 
-    private static string Describe(in EntityEvent made) =>
-        made.Kind == EntityEventKind.Think
-            ? "a think"
-            : made.Output.Length > 0
-                ? $"output '{made.Output}' sending '{made.Input}'"
-                : $"input '{made.Input}'";
+    private static string Describe(in EntityEvent made) => made.Kind switch
+    {
+        EntityEventKind.Think => "a think",
+        EntityEventKind.ScriptWake => "the wake of a waiting thread",
+        _ when made.Output.Length > 0 => $"output '{made.Output}' sending '{made.Input}'",
+        _ => $"input '{made.Input}'",
+    };
 
-    private static string NameOf(in EntityEvent made) =>
-        made.Kind == EntityEventKind.Think
-            ? made.Entity?.TargetName ?? ""
-            : made.Target?.TargetName ?? made.TargetName;
+    private static string NameOf(in EntityEvent made) => made.Kind switch
+    {
+        EntityEventKind.Think => made.Entity?.TargetName ?? "",
+        EntityEventKind.ScriptWake => "a script",
+        _ => made.Target?.TargetName ?? made.TargetName,
+    };
 }
