@@ -267,7 +267,7 @@ A `Script` never changes once made. An edit makes a new one, `script with { IsEn
 
 The setter is reference-compared. It keeps `Scene.ScriptNodes`, which lists script nodes in the order they were attached, and it raises `Scene.NodeKindChanged` when a script arrives or leaves. A script swapped for another raises nothing. A script does not put its node in the BVH, moves no brush count and dirties nothing.
 
-A node whose only payload is a script is a `SceneNodeKind.Script`. A part, an entity, a light or a mesh that also carries one keeps its own kind.
+A node whose only payload is a script is a `SceneNodeKind.Script`. A part, an entity, a light or a mesh that also carries one keeps its own kind. `SceneChange.HasScript` says a node carries one whatever its kind, so the scene tree's `t:script` finds a part with a script on it.
 
 A `.smap` saves the payload as `script`, with `path`, and with `enabled` and `module` only when they differ from the default. A baked map does not carry scripts yet: the cook bakes the node as a plain node and warns with `SC7011`.
 
@@ -298,7 +298,7 @@ They are the node's own declaration, as its map states it. Nothing resolves them
 
 Writing one raises nothing and dirties nothing. `Clone` copies both.
 
-A `.smap` saves them as `realm` and `state`, by name, and leaves each out when it is `Inherit`. The enums are numbered as the `.scmap` node record's two-bit fields are (`ScmapNodeRealm`, `ScmapNodeState`), but the cook does not write them into a baked map yet.
+A `.smap` saves them as `realm` and `state`, by name, and leaves each out when it is `Inherit`. A baked map keeps them too. The cook writes them into the `.scmap` node record's two-bit fields (`ScmapNodeRealm`, `ScmapNodeState`) and the loader sets them on the node, so the enums are numbered as those fields are.
 
 ---
 
