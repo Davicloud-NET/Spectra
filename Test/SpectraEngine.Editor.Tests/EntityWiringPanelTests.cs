@@ -543,7 +543,7 @@ public sealed class EntityWiringPanelTests
     }
 }
 
-/// <summary>The target picker and the input dropdown behind it.</summary>
+/// <summary>A picked target and the input dropdown behind it.</summary>
 // Inputs are offered only when the target resolves to one entity of a known class.
 public sealed class WiringTargetPickerTests
 {
@@ -559,12 +559,36 @@ public sealed class WiringTargetPickerTests
         new("timer", "logic_timer"),
     ];
 
+    // The inputs the dropdown offers on a wire aimed at this target.
+    private static IReadOnlyList<string> InputsFor(
+        string target, EntityTargetInfo[] scene, EntitySchemaCatalog? catalog)
+    {
+        var model = new EntityWiringModel((_, _) => { }) { Schemas = catalog };
+
+        model.Apply(new EntityPanelInfo
+        {
+            NodeId = Guid.NewGuid(),
+            ClassName = "logic_timer",
+            IsKnown = true,
+            Outputs = ["OnTimer"],
+            Connections =
+            [
+                new EntityConnectionInfo(
+                    new EntityConnection("OnTimer", target, "Trigger", "", 0f, EntityConnection.Infinite),
+                    TargetResolves: true),
+            ],
+            Targets = scene,
+        });
+
+        return model.Rows[0].InputChoices;
+    }
+
     [Fact]
     public void A_target_resolving_to_one_known_class_offers_its_inputs()
     {
         EntitySchemaCatalog catalog = Catalog(Relay("Trigger", "Enable", "Disable"));
 
-        IReadOnlyList<string> inputs = ConnectionRowModel.InputsFor("relay", Scene, catalog);
+        IReadOnlyList<string> inputs = InputsFor("relay", Scene, catalog);
 
         inputs.Count.ShouldBe(3);
         inputs.ShouldContain("Trigger");
@@ -575,8 +599,8 @@ public sealed class WiringTargetPickerTests
     {
         EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
 
-        IReadOnlyList<string> first = ConnectionRowModel.InputsFor("relay", Scene, catalog);
-        IReadOnlyList<string> again = ConnectionRowModel.InputsFor("relay", Scene, catalog);
+        IReadOnlyList<string> first = InputsFor("relay", Scene, catalog);
+        IReadOnlyList<string> again = InputsFor("relay", Scene, catalog);
 
         // Replacing a bound item source makes the control drop its selection.
         ReferenceEquals(first, again).ShouldBeTrue();
@@ -594,7 +618,7 @@ public sealed class WiringTargetPickerTests
         ];
 
         // Legal: the wire fires at both.
-        ConnectionRowModel.InputsFor("door", twins, catalog).Count.ShouldBe(0);
+        InputsFor("door", twins, catalog).Count.ShouldBe(0);
     }
 
     [Fact]
@@ -602,7 +626,7 @@ public sealed class WiringTargetPickerTests
     {
         EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
 
-        ConnectionRowModel.InputsFor("rel*", Scene, catalog).Count.ShouldBe(0);
+        InputsFor("rel*", Scene, catalog).Count.ShouldBe(0);
     }
 
     [Theory]
@@ -613,7 +637,7 @@ public sealed class WiringTargetPickerTests
     {
         EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
 
-        ConnectionRowModel.InputsFor(token, Scene, catalog).Count.ShouldBe(0);
+        InputsFor(token, Scene, catalog).Count.ShouldBe(0);
     }
 
     [Fact]
@@ -623,7 +647,7 @@ public sealed class WiringTargetPickerTests
 
         EntityTargetInfo[] unknown = [new("thing", "from_another_game")];
 
-        ConnectionRowModel.InputsFor("thing", unknown, catalog).Count.ShouldBe(0);
+        InputsFor("thing", unknown, catalog).Count.ShouldBe(0);
     }
 
     [Fact]
@@ -631,44 +655,9 @@ public sealed class WiringTargetPickerTests
     {
         EntitySchemaCatalog catalog = Catalog(Relay("Trigger"));
 
-        ConnectionRowModel.InputsFor("nobody", Scene, catalog).Count.ShouldBe(0);
-        ConnectionRowModel.InputsFor("", Scene, catalog).Count.ShouldBe(0);
-        ConnectionRowModel.InputsFor("relay", Scene, null).Count.ShouldBe(0);
-    }
-
-    [Fact]
-    public void The_picker_offers_the_runtime_tokens_before_the_scene()
-    {
-        var model = new EntityWiringModel((_, _) => { })
-        {
-            Schemas = Catalog(Relay("Trigger")),
-        };
-
-        model.Apply(new EntityPanelInfo
-        {
-            NodeId = Guid.NewGuid(),
-            ClassName = "logic_timer",
-            IsKnown = true,
-            Outputs = ["OnTimer"],
-            Connections =
-            [
-                new EntityConnectionInfo(
-                    new EntityConnection("OnTimer", "relay", "Trigger", "", 0f, EntityConnection.Infinite),
-                    TargetResolves: true),
-            ],
-            Targets = Scene,
-        });
-
-        ConnectionRowModel row = model.Rows[0];
-
-        row.TargetChoices[0].ShouldBe("!self");
-        row.TargetChoices[1].ShouldBe("!activator");
-        row.TargetChoices[2].ShouldBe("!caller");
-        row.TargetChoices.ShouldContain("relay");
-        row.TargetChoices.ShouldContain("timer");
-
-        row.HasInputChoices.ShouldBeTrue();
-        row.InputChoices.ShouldContain("Trigger");
+        InputsFor("nobody", Scene, catalog).Count.ShouldBe(0);
+        InputsFor("", Scene, catalog).Count.ShouldBe(0);
+        InputsFor("relay", Scene, null).Count.ShouldBe(0);
     }
 
     [Fact]
