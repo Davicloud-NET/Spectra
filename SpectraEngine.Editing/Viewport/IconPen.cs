@@ -17,9 +17,6 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
     // a drawing this small.
     private const float ThinBelowPixels = 10.5f;
 
-    private const float PointerStart = 1.3f;
-    private const float PointerEnd = 2.6f;
-
     private const int RingSegments = 12;
 
     public readonly Vector3 At = at;
@@ -86,23 +83,6 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
         }
     }
 
-    // The arrow that says which way the thing under a glyph faces. It starts
-    // clear of the glyph.
-    public readonly void Pointer(DebugDraw output, Vector3 direction)
-    {
-        Vector3 tip = At + (direction * Radius * PointerEnd);
-        Stroke(output, At + (direction * Radius * PointerStart), tip);
-
-        // Across the screen, so the barbs show whichever way the arrow points.
-        Vector3 across = Vector3.Cross(direction, Toward);
-        across = across.LengthSquared() > 1e-6f ? Vector3.Normalize(across) : Right;
-
-        Vector3 barb = across * (Radius * 0.28f);
-        Vector3 neck = tip - (direction * Radius * 0.5f);
-        Stroke(output, tip, neck + barb);
-        Stroke(output, tip, neck - barb);
-    }
-
     // A hairline ring facing the screen, for an icon too small for strokes.
     public readonly void ThinRing(DebugDraw output, float radius, Vector3 color)
     {
@@ -118,14 +98,14 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
     }
 
     // A hairline diamond facing the screen.
-    public readonly void ThinDiamond(DebugDraw output, Vector3 centre, float radius, Vector3 color)
+    public readonly void ThinDiamond(DebugDraw output, Vector3 center, float radius, Vector3 color)
     {
         Vector3 across = Right * radius;
         Vector3 along = Up * radius;
 
-        output.Line(centre + across, centre + along, color);
-        output.Line(centre + along, centre - across, color);
-        output.Line(centre - across, centre - along, color);
-        output.Line(centre - along, centre + across, color);
+        output.Line(center + across, center + along, color);
+        output.Line(center + along, center - across, color);
+        output.Line(center - across, center - along, color);
+        output.Line(center - along, center + across, color);
     }
 }

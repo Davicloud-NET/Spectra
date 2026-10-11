@@ -108,9 +108,10 @@ public sealed class EntityMarkerOverlay
             IconHome.Draw(output, in pen, _icons, first + i);
         }
 
-        foreach (ref readonly SceneIcon marker in markers)
+        for (int i = 0; i < markers.Length; i++)
         {
             // A node can have left the scene since the markers were placed.
+            ref readonly SceneIcon marker = ref markers[i];
             if (!marker.IsDrawn || marker.Node >= nodes.Count)
                 continue;
 
@@ -126,10 +127,13 @@ public sealed class EntityMarkerOverlay
 
             // Every backing line first, or one stroke's backing crosses out
             // the colour of the stroke before it.
-            pen.Backing = true;
-            DrawMarker(output, node, in pen, icon, faces);
-            pen.Backing = false;
-            DrawMarker(output, node, in pen, icon, faces);
+            for (int pass = 0; pass < 2; pass++)
+            {
+                pen.Backing = pass == 0;
+                DrawMarker(output, in pen, icon);
+                if (faces)
+                    IconArrow.Draw(output, in pen, _icons, first + i, Forward(node));
+            }
 
             DrawnLastDraw++;
         }
@@ -149,29 +153,25 @@ public sealed class EntityMarkerOverlay
     private static bool TryFindIcon(string key, out ViewportGlyph? icon) =>
         ViewportGlyphs.TryGet(key, out icon) || ViewportGlyphs.TryGet(WorldIcons.Entity, out icon);
 
-    private static void DrawMarker(DebugDraw output, SceneNode node, in IconPen pen, ViewportGlyph? icon, bool faces)
+    private static void DrawMarker(DebugDraw output, in IconPen pen, ViewportGlyph? icon)
     {
-        if (icon is null)
+        if (icon is not null)
         {
-            // Hairlines here: the doubled stroke would fill a diamond this small.
-            float small = pen.Radius * 0.8f;
-            if (pen.Backing)
-            {
-                pen.ThinDiamond(output, pen.At, small + pen.Pixel, IconPen.BackingColor);
-            }
-            else
-            {
-                pen.ThinDiamond(output, pen.At, small, pen.Color);
-                pen.ThinDiamond(output, pen.At, small - pen.Pixel, pen.Color);
-            }
-
+            pen.Glyph(output, icon);
             return;
         }
 
-        pen.Glyph(output, icon);
-
-        if (faces)
-            pen.Pointer(output, Forward(node));
+        // Hairlines here: the doubled stroke would fill a diamond this small.
+        float small = pen.Radius * 0.8f;
+        if (pen.Backing)
+        {
+            pen.ThinDiamond(output, pen.At, small + pen.Pixel, IconPen.BackingColor);
+        }
+        else
+        {
+            pen.ThinDiamond(output, pen.At, small, pen.Color);
+            pen.ThinDiamond(output, pen.At, small - pen.Pixel, pen.Color);
+        }
     }
 
     // The node's local +Z in the world, the row a light's direction is read from.

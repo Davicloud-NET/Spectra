@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Editing.Cameras;
 using SpectraEngine.Editing.Icons;
 using SpectraEngine.Editing.Viewport;
 
@@ -114,6 +115,38 @@ public sealed class IconHomeLineTests
         // Each ends on the middle icon's rim.
         for (int i = 1; i < sounds.Count; i += 2)
             Vector3.Distance(sounds[i], markers[1].At).ShouldBe(markers[1].Radius, tolerance: 1e-4f);
+    }
+
+    [Fact]
+    public void Seen_from_above_the_lines_home_of_things_over_each_other_stop_at_the_icon_in_the_middle()
+    {
+        // The three are on one point of the screen, each at its own height.
+        var rig = new IconPileRig();
+        rig.AddEntity(IconPileRig.Sound, Vector3.Zero);
+        rig.AddEntity(IconPileRig.Relay, new Vector3(0f, 2f, 0f));
+        rig.AddEntity(IconPileRig.Sound, new Vector3(0f, 4f, 0f));
+        rig.Harness.Orbit(Vector3.Zero, 10f, 0.4f, -0.5f);
+        rig.Harness.EditorCamera.SetView(EditorViewPreset.Top);
+        SceneIcon[] markers = rig.Place().Markers.ToArray();
+        markers[0].IsMoved.ShouldBeTrue();
+        markers[1].IsMoved.ShouldBeFalse();
+        markers[2].IsMoved.ShouldBeTrue();
+
+        DebugDraw output = Draw(rig);
+
+        // One line each, and no mark: the middle icon is drawn over the point.
+        List<Vector3> sounds = DebugLines.Colored(output, IconPileRig.SoundTint * LightOverlay.HomeLineDim);
+        sounds.Count.ShouldBe(2 * 2);
+        DebugLines.CountOf(output, IconPileRig.RelayTint * LightOverlay.HomeLineDim).ShouldBe(0);
+
+        // Each ends where the middle icon's rim is on screen.
+        for (int i = 1; i < sounds.Count; i += 2)
+        {
+            Vector3 from = sounds[i] - markers[1].At;
+            float across = Vector3.Dot(from, rig.Camera.Right);
+            float up = Vector3.Dot(from, rig.Camera.Up);
+            MathF.Sqrt((across * across) + (up * up)).ShouldBe(markers[1].Radius, tolerance: 1e-3f);
+        }
     }
 
     [Fact]

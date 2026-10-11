@@ -10,8 +10,6 @@ internal sealed class IconsAcrossScreen
     private float[] _across = [];
     private int[] _places = [];
     private int _count;
-    private Vector3 _eye;
-    private Vector3 _right;
 
     // Sorts the drawn icons by how far across the screen each stands, in pixels.
     public void Sort(ReadOnlySpan<SceneIcon> icons, Vector3 eye, Vector3 right)
@@ -23,8 +21,6 @@ internal sealed class IconsAcrossScreen
             _places = new int[room];
         }
 
-        _eye = eye;
-        _right = right;
         _count = 0;
 
         for (int i = 0; i < icons.Length; i++)
@@ -32,36 +28,29 @@ internal sealed class IconsAcrossScreen
             if (!icons[i].IsDrawn)
                 continue;
 
-            _across[_count] = Across(icons[i].At, icons[i].Pixel);
+            _across[_count] = Vector3.Dot(icons[i].At - eye, right) / icons[i].Pixel;
             _places[_count++] = i;
         }
 
         Array.Sort(_across, _places, 0, _count);
     }
 
-    // The places of the icons that stand no more than a margin, in pixels, to
-    // the left or right of the line from this icon to its node.
-    public ReadOnlySpan<int> BesideLineHome(in SceneIcon icon, float margin)
+    // The places of the icons that stand from this far across the screen to
+    // that far, in pixels.
+    public ReadOnlySpan<int> Between(float left, float right)
     {
-        float at = Across(icon.At, icon.Pixel);
-        float node = Across(icon.Anchor, icon.Pixel);
-        float from = MathF.Min(at, node) - margin;
-        float to = MathF.Max(at, node) + margin;
-
-        int first = _across.AsSpan(0, _count).BinarySearch(from);
+        int first = _across.AsSpan(0, _count).BinarySearch(left);
         if (first < 0)
             first = ~first;
 
         // A run of equal values may start before where the search landed.
-        while (first > 0 && _across[first - 1] >= from)
+        while (first > 0 && _across[first - 1] >= left)
             first--;
 
         int end = first;
-        while (end < _count && _across[end] <= to)
+        while (end < _count && _across[end] <= right)
             end++;
 
         return _places.AsSpan(first, end - first);
     }
-
-    private float Across(Vector3 point, float pixel) => Vector3.Dot(point - _eye, _right) / pixel;
 }

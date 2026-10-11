@@ -190,6 +190,48 @@ public sealed class IconPileDrawTests
         Vector3.Distance(tip, marker.At).ShouldBeGreaterThan(marker.Radius * 2f);
     }
 
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(20f)]
+    public void An_arrow_that_points_along_the_row_is_not_drawn_over_the_next_icon(float degrees)
+    {
+        // The start is on the left and faces the sound beside it, or a little above it.
+        var rig = new IconPileRig();
+        SceneNode start = rig.AddEntity(IconPileRig.Start, Vector3.Zero);
+        rig.AddEntity(IconPileRig.Sound, Vector3.Zero);
+        float radians = degrees * (MathF.PI / 180f);
+        start.LocalRotation = Light.RotationForDirection(new Vector3(MathF.Cos(radians), MathF.Sin(radians), 0f));
+
+        DebugDraw output = Draw(rig);
+        SceneIcon[] markers = rig.Place().Markers.ToArray();
+
+        // A stroke is two lines half a pixel to each side of where it runs.
+        List<Vector3> strokes = DebugLines.Colored(output, IconPileRig.StartTint);
+        strokes.ShouldNotBeEmpty();
+        foreach (Vector3 vertex in strokes)
+            Vector3.Distance(vertex, markers[1].At).ShouldBeGreaterThan(markers[1].Radius - markers[1].Pixel);
+    }
+
+    [Fact]
+    public void An_arrow_part_under_the_next_icon_is_drawn_up_to_that_icons_rim()
+    {
+        var rig = new IconPileRig();
+        SceneNode start = rig.AddEntity(IconPileRig.Start, Vector3.Zero);
+        rig.AddEntity(IconPileRig.Sound, Vector3.Zero);
+        float radians = 20f * (MathF.PI / 180f);
+        start.LocalRotation = Light.RotationForDirection(new Vector3(MathF.Cos(radians), MathF.Sin(radians), 0f));
+
+        DebugDraw output = Draw(rig);
+        SceneIcon[] markers = rig.Place().Markers.ToArray();
+
+        // The glyph ends 1.1 radii out. What is drawn past it is the arrow's stub.
+        float farthest = 0f;
+        foreach (Vector3 vertex in DebugLines.Colored(output, IconPileRig.StartTint))
+            farthest = MathF.Max(farthest, Vector3.Distance(vertex, markers[0].At));
+
+        farthest.ShouldBeInRange(markers[0].Radius * 1.35f, markers[0].Radius * 1.6f);
+    }
+
     [Fact]
     public void A_second_draw_of_piles_allocates_nothing()
     {

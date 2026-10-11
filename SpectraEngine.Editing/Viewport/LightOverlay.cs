@@ -121,9 +121,10 @@ public sealed class LightOverlay
             IconHome.Draw(output, in pen, _icons, i);
         }
 
-        foreach (ref readonly SceneIcon icon in icons)
+        for (int i = 0; i < icons.Length; i++)
         {
             // A node can have left the scene since the icons were placed.
+            ref readonly SceneIcon icon = ref icons[i];
             if (!icon.IsDrawn || icon.Node >= nodes.Count)
                 continue;
 
@@ -137,12 +138,19 @@ public sealed class LightOverlay
             if (icon.IsGlyph)
                 ViewportGlyphs.TryGet(IconOf(node, light, scene.EntitySchemas), out glyph);
 
+            // A bulb shines every way. Every other kind points somewhere.
+            bool points = glyph is not null && light.Kind != LightKind.Point;
+            Basis(node, out Vector3 forward, out _, out _);
+
             // Every backing line first, or one stroke's backing crosses out
             // the colour of the stroke before it.
-            pen.Backing = true;
-            DrawIcon(output, node, light, in pen, glyph);
-            pen.Backing = false;
-            DrawIcon(output, node, light, in pen, glyph);
+            for (int pass = 0; pass < 2; pass++)
+            {
+                pen.Backing = pass == 0;
+                DrawIcon(output, in pen, glyph);
+                if (points)
+                    IconArrow.Draw(output, in pen, _icons, i, forward);
+            }
 
             DrawnLastDraw++;
         }
@@ -177,33 +185,25 @@ public sealed class LightOverlay
             : WorldIcons.ForLight(light.Kind);
 
     // With no glyph the light is a ring: it is too far off for a drawing.
-    private static void DrawIcon(DebugDraw output, SceneNode node, Light light, in IconPen pen, ViewportGlyph? glyph)
+    private static void DrawIcon(DebugDraw output, in IconPen pen, ViewportGlyph? glyph)
     {
-        if (glyph is null)
+        if (glyph is not null)
         {
-            // Hairlines here: the doubled stroke would fill a ring this small.
-            float ring = pen.Radius * 0.8f;
-            if (pen.Backing)
-            {
-                pen.ThinRing(output, ring + pen.Pixel, IconPen.BackingColor);
-            }
-            else
-            {
-                pen.ThinRing(output, ring, pen.Color);
-                pen.ThinRing(output, ring - pen.Pixel, pen.Color);
-            }
-
+            pen.Glyph(output, glyph);
             return;
         }
 
-        pen.Glyph(output, glyph);
-
-        // A bulb shines every way. Every other kind points somewhere.
-        if (light.Kind == LightKind.Point)
-            return;
-
-        Basis(node, out Vector3 forward, out _, out _);
-        pen.Pointer(output, forward);
+        // Hairlines here: the doubled stroke would fill a ring this small.
+        float ring = pen.Radius * 0.8f;
+        if (pen.Backing)
+        {
+            pen.ThinRing(output, ring + pen.Pixel, IconPen.BackingColor);
+        }
+        else
+        {
+            pen.ThinRing(output, ring, pen.Color);
+            pen.ThinRing(output, ring - pen.Pixel, pen.Color);
+        }
     }
 
     private static void DrawShape(DebugDraw output, SceneNode node, Light light, Camera camera)

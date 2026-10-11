@@ -25,11 +25,13 @@ public sealed class SceneIcons
     private readonly SceneIconFan _fan = new();
     private readonly NearestGlyphs _nearestGlyphs = new();
 
-    // Sorted when the first line home asks, so a pick does not pay for it.
+    // Sorted when the first line across the icons asks, so a pick does not
+    // pay for it.
     private readonly IconsAcrossScreen _across = new();
     private bool _isAcrossSorted;
     private Vector3 _eye;
     private Vector3 _right;
+    private Vector3 _up;
 
     private SceneIcon[] _icons = [];
     private int _lightCount;
@@ -82,6 +84,7 @@ public sealed class SceneIcons
         _isAcrossSorted = false;
         _eye = camera.Position;
         _right = camera.Right;
+        _up = camera.Up;
 
         if (viewportSize.Y <= 0f)
             return;
@@ -162,9 +165,18 @@ public sealed class SceneIcons
         return false;
     }
 
-    // The places in All of the icons that may stand over the line from this
-    // icon to its node.
-    internal ReadOnlySpan<int> BesideLineHome(int place, float marginPixels)
+    // Where a point is on screen, in pixels from the eye's own point, y up.
+    // Icons on one screen point can be far apart in the world, so what
+    // covers what is worked out here.
+    internal Vector2 OnScreen(Vector3 point, float pixel)
+    {
+        Vector3 offset = point - _eye;
+        return new Vector2(Vector3.Dot(offset, _right), Vector3.Dot(offset, _up)) / pixel;
+    }
+
+    // The places in All of the drawn icons that stand between two lines down
+    // the screen, each given by how far across it is in pixels.
+    internal ReadOnlySpan<int> Between(float left, float right)
     {
         if (!_isAcrossSorted)
         {
@@ -172,7 +184,7 @@ public sealed class SceneIcons
             _isAcrossSorted = true;
         }
 
-        return _across.BesideLineHome(in _icons[place], marginPixels);
+        return _across.Between(left, right);
     }
 
     // Measures the icons of one of the scene's two lists into _icons, after
