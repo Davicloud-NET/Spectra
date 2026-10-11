@@ -85,6 +85,19 @@ public sealed class EntityInputAttribute : Attribute
 
     /// <summary>The wire name, as a map file spells it.</summary>
     public string Name { get; }
+
+    /// <summary>
+    /// The type of the one value the input takes, which must be the type the
+    /// method reads <see cref="EntityInputContext.Parameter"/> as. Unset
+    /// means the input takes no value.
+    /// </summary>
+    public KeyvalueType Parameter { get; set; }
+
+    /// <summary>
+    /// Whether the input also works with no parameter, as an <c>Add</c> that
+    /// adds one does. Only means something beside <see cref="Parameter"/>.
+    /// </summary>
+    public bool CanOmitParameter { get; set; }
 }
 
 /// <summary>
@@ -94,4 +107,10 @@ public sealed class EntityInputAttribute : Attribute
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false, Inherited = false)]
 public sealed class EntityOutputAttribute : Attribute
 {
+    /// <summary>
+    /// The type of the one value the output sends with every fire, in place
+    /// of the parameter a wire was authored with. Unset means the output
+    /// sends no value.
+    /// </summary>
+    public KeyvalueType Parameter { get; set; }
 }

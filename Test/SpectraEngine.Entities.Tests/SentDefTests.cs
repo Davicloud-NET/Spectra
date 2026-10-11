@@ -32,8 +32,8 @@ public sealed class SentDefTests
                 KeyvalueType.Bool, KeyvalueWidget.Auto, float.NaN, 12.5f,
                 KeyvalueFlags.ReadOnly | KeyvalueFlags.HideInEditor, KeyvalueDescriptor.NoChoices),
         ],
-        inputs: ["Open", "Close", "Toggle"],
-        outputs: ["OnOpened", "OnClosed"]);
+        inputs: EntityPort.Named("Open", "Close", "Toggle"),
+        outputs: EntityPort.Named("OnOpened", "OnClosed"));
 
     private static EntitySchema Bare(string className) => new(className);
 
@@ -106,8 +106,8 @@ public sealed class SentDefTests
         copy.Group.ShouldBe("Brush");
         copy.Placement.ShouldBe(EntityPlacement.Brush);
         copy.Origin.ShouldBe(EntityOrigin.SdkCSharp);
-        copy.Inputs.ShouldBe(["Open", "Close", "Toggle"]);
-        copy.Outputs.ShouldBe(["OnOpened", "OnClosed"]);
+        copy.InputNames.ShouldBe(["Open", "Close", "Toggle"]);
+        copy.OutputNames.ShouldBe(["OnOpened", "OnClosed"]);
 
         copy.Keyvalues.Count.ShouldBe(3);
 
@@ -234,7 +234,7 @@ public sealed class SentDefTests
 
         read[0].ClassName.ShouldBe("func_door");
         read[0].Keyvalues.Count.ShouldBe(3);
-        read[0].Outputs.ShouldBe(["OnOpened", "OnClosed"]);
+        read[0].OutputNames.ShouldBe(["OnOpened", "OnClosed"]);
 
         // Without the skip this record would be parsed twelve bytes early.
         read[1].ClassName.ShouldBe("zz_last");
@@ -285,7 +285,7 @@ public sealed class SentDefTests
         // The widest record: sixteen keyvalues and seventeen outputs.
         catalog.TryGetSchema("logic_case", out EntitySchema? cases).ShouldBeTrue();
         cases!.Keyvalues.Count.ShouldBe(LogicCase.CaseCount);
-        cases.Outputs.ShouldBe(LogicCase.SpectraSchema.Outputs);
+        cases.OutputNames.ShouldBe(LogicCase.SpectraSchema.OutputNames);
 
         catalog.TryGetSchema("func_door", out EntitySchema? door).ShouldBeTrue();
         door!.Placement.ShouldBe(EntityPlacement.Brush);
@@ -293,7 +293,7 @@ public sealed class SentDefTests
 
         catalog.TryGetSchema("logic_relay", out EntitySchema? relay).ShouldBeTrue();
         relay!.Placement.ShouldBe(EntityPlacement.Abstract);
-        relay.Inputs.ShouldBe(["Trigger", "Enable", "Disable", "Toggle"]);
+        relay.InputNames.ShouldBe(["Trigger", "Enable", "Disable", "Toggle"]);
 
         catalog.TryGetSchema("logic_timer", out EntitySchema? timer).ShouldBeTrue();
         KeyvalueDescriptor refire = timer!.Keyvalues.Single(keyvalue => keyvalue.Name == "refiretime");
@@ -306,7 +306,7 @@ public sealed class SentDefTests
         sound.Placement.ShouldBe(EntityPlacement.Point);
         sound.Keyvalues.Single(keyvalue => keyvalue.Name == "sound").Type.ShouldBe(KeyvalueType.AssetSound);
         sound.Keyvalues.Single(keyvalue => keyvalue.Name == "maxdistance").Type.ShouldBe(KeyvalueType.Distance);
-        sound.Outputs.ShouldBe([PointSound.OnEnded, PointSound.OnMarker]);
+        sound.OutputNames.ShouldBe([PointSound.OnEnded, PointSound.OnMarker]);
     }
 
     [Fact]

@@ -85,22 +85,51 @@ namespace TestGame.Entities
                 case "Close":
                     this.Close(ref context);
                     return true;
+                case "SetSpeed":
+                    this.SetSpeed(ref context);
+                    return true;
+                case "Nudge":
+                    this.Nudge(ref context);
+                    return true;
                 default:
                     return base.AcceptInput(input, ref context);
             }
         }
 
         /// <summary>Fires <c>OnOpened</c> along every wire a map authored on it.</summary>
-        private void FireOnOpened(
-            global::SpectraEngine.Core.Entities.Entity? activator = null,
-            string? parameterOverride = null) =>
-            FireOutput("OnOpened", activator, parameterOverride);
+        private void FireOnOpened(global::SpectraEngine.Core.Entities.Entity? activator = null) =>
+            FireOutput("OnOpened", activator);
 
         /// <summary>Fires <c>OnClosed</c> along every wire a map authored on it.</summary>
-        private void FireOnClosed(
-            global::SpectraEngine.Core.Entities.Entity? activator = null,
-            string? parameterOverride = null) =>
-            FireOutput("OnClosed", activator, parameterOverride);
+        private void FireOnClosed(global::SpectraEngine.Core.Entities.Entity? activator = null) =>
+            FireOutput("OnClosed", activator);
+
+        /// <summary>
+        /// Fires <c>OnMoved</c> along every wire a map authored on it. Each wire sends
+        /// <paramref name="value"/> in place of its own parameter.
+        /// </summary>
+        private void FireOnMoved(
+            float value,
+            global::SpectraEngine.Core.Entities.Entity? activator = null) =>
+            FireOutput("OnMoved", activator, global::SpectraEngine.Core.Entities.KeyvalueWire.Format(value));
+
+        /// <summary>
+        /// Fires <c>OnBlocked</c> along every wire a map authored on it. Each wire sends
+        /// <paramref name="value"/> in place of its own parameter.
+        /// </summary>
+        private void FireOnBlocked(
+            string value,
+            global::SpectraEngine.Core.Entities.Entity? activator = null) =>
+            FireOutput("OnBlocked", activator, value);
+
+        /// <summary>
+        /// Fires <c>OnLinked</c> along every wire a map authored on it. Each wire sends
+        /// <paramref name="value"/> in place of its own parameter.
+        /// </summary>
+        private void FireOnLinked(
+            global::System.Guid value,
+            global::SpectraEngine.Core.Entities.Entity? activator = null) =>
+            FireOutput("OnLinked", activator, value == global::System.Guid.Empty ? "" : global::SpectraEngine.Core.Entities.KeyvalueWire.Format(value));
 
         private static global::SpectraEngine.Core.Entities.EntitySchema CreateSpectraSchema()
         {
@@ -163,8 +192,21 @@ namespace TestGame.Entities
                     global::SpectraEngine.Core.Entities.KeyvalueDescriptor.NoChoices),
             };
 
-            var inputs = new string[] { "Open", "Close" };
-            var outputs = new string[] { "OnOpened", "OnClosed" };
+            var inputs = new global::SpectraEngine.Core.Entities.EntityPort[]
+            {
+                new global::SpectraEngine.Core.Entities.EntityPort("Open", global::SpectraEngine.Core.Entities.ParameterType.None),
+                new global::SpectraEngine.Core.Entities.EntityPort("Close", global::SpectraEngine.Core.Entities.ParameterType.None),
+                new global::SpectraEngine.Core.Entities.EntityPort("SetSpeed", global::SpectraEngine.Core.Entities.ParameterType.Of(global::SpectraEngine.Core.Entities.KeyvalueType.Float)),
+                new global::SpectraEngine.Core.Entities.EntityPort("Nudge", global::SpectraEngine.Core.Entities.ParameterType.Optional(global::SpectraEngine.Core.Entities.KeyvalueType.Float)),
+            };
+            var outputs = new global::SpectraEngine.Core.Entities.EntityPort[]
+            {
+                new global::SpectraEngine.Core.Entities.EntityPort("OnOpened", global::SpectraEngine.Core.Entities.ParameterType.None),
+                new global::SpectraEngine.Core.Entities.EntityPort("OnClosed", global::SpectraEngine.Core.Entities.ParameterType.None),
+                new global::SpectraEngine.Core.Entities.EntityPort("OnMoved", global::SpectraEngine.Core.Entities.ParameterType.Of(global::SpectraEngine.Core.Entities.KeyvalueType.Float)),
+                new global::SpectraEngine.Core.Entities.EntityPort("OnBlocked", global::SpectraEngine.Core.Entities.ParameterType.Of(global::SpectraEngine.Core.Entities.KeyvalueType.TargetName)),
+                new global::SpectraEngine.Core.Entities.EntityPort("OnLinked", global::SpectraEngine.Core.Entities.ParameterType.Of(global::SpectraEngine.Core.Entities.KeyvalueType.NodeRef)),
+            };
 
             return new global::SpectraEngine.Core.Entities.EntitySchema(
                 "func_door",

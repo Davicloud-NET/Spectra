@@ -27,8 +27,8 @@ public sealed class SentDefFacingTests
     private static EntitySchema Start(bool hasFacing) => new(
         "info_start",
         group: "Player",
-        inputs: ["Enable"],
-        outputs: ["OnUsed"],
+        inputs: EntityPort.Named("Enable"),
+        outputs: EntityPort.Named("OnUsed"),
         icon: "player-start",
         hasFacing: hasFacing);
 
@@ -52,7 +52,7 @@ public sealed class SentDefFacingTests
     }
 
     [Fact]
-    public void The_facing_is_the_lowest_bit_of_the_flags_that_end_the_record()
+    public void The_facing_is_the_lowest_bit_of_the_flags_that_follow_the_icon()
     {
         byte[] plain = SentDef.Write([Start(false)]);
         byte[] facing = SentDef.Write([Start(true)]);
@@ -62,8 +62,9 @@ public sealed class SentDefFacingTests
         BinaryPrimitives.ReadUInt32LittleEndian(plain.AsSpan(flags)).ShouldBe(0u);
         BinaryPrimitives.ReadUInt32LittleEndian(facing.AsSpan(flags)).ShouldBe(SentDef.TrailerHasFacing);
 
-        // The string table starts where the flags end.
-        (flags + sizeof(uint)).ShouldBe(
+        // After the flags come the types of the one input and the one output,
+        // and then the string table.
+        (flags + sizeof(uint) + SentDef.ParameterBytes(1, 1)).ShouldBe(
             (int)BinaryPrimitives.ReadUInt32LittleEndian(facing.AsSpan(SentDef.HeaderStringTableOffsetOffset)));
 
         facing.Length.ShouldBe(plain.Length);
@@ -84,7 +85,7 @@ public sealed class SentDefFacingTests
     [Fact]
     public void A_record_that_ends_at_its_icon_reads_with_the_icon_and_no_facing()
     {
-        // What the build before the flags wrote: the same record, four bytes shorter.
+        // What the build before the flags wrote: the same record, ending at its icon.
         byte[] older = SentDefImages.WithShorterRecords(
             SentDef.Write([Start(true), new EntitySchema("zz_last", hasFacing: true)]), sizeof(uint));
 
@@ -94,8 +95,8 @@ public sealed class SentDefFacingTests
         read[0].ClassName.ShouldBe("info_start");
         read[0].HasFacing.ShouldBeFalse();
         read[0].Icon.ShouldBe("player-start");
-        read[0].Inputs.ShouldBe(["Enable"]);
-        read[0].Outputs.ShouldBe(["OnUsed"]);
+        read[0].InputNames.ShouldBe(["Enable"]);
+        read[0].OutputNames.ShouldBe(["OnUsed"]);
         read[1].ClassName.ShouldBe("zz_last");
         read[1].HasFacing.ShouldBeFalse();
     }
@@ -110,7 +111,7 @@ public sealed class SentDefFacingTests
 
         read.HasFacing.ShouldBeFalse();
         read.Icon.ShouldBe("");
-        read.Outputs.ShouldBe(["OnUsed"]);
+        read.OutputNames.ShouldBe(["OnUsed"]);
     }
 
     [Fact]

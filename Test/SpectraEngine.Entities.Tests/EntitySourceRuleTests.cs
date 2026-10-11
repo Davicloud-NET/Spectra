@@ -30,8 +30,7 @@ public sealed class EntitySourceRuleTests
     [Fact]
     public void No_entity_source_writes_node_state_directly()
     {
-        string folder = Path.Combine(SourceRoot(), "SpectraEngine.Entities");
-        string[] files = [.. Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories).Where(IsSource)];
+        string[] files = EntitySources.Files();
         files.ShouldNotBeEmpty();
 
         var offenders = new List<string>();
@@ -102,26 +101,5 @@ public sealed class EntitySourceRuleTests
         }
 
         return writes;
-    }
-
-    private static bool IsSource(string path)
-    {
-        char separator = Path.DirectorySeparatorChar;
-        return !path.Contains($"{separator}obj{separator}", StringComparison.Ordinal)
-            && !path.Contains($"{separator}bin{separator}", StringComparison.Ordinal);
-    }
-
-    private static string SourceRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (dir.EnumerateFiles("*.slnx").Any())
-                return dir.FullName;
-
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException("could not find the solution root above the test binary");
     }
 }

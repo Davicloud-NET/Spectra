@@ -408,8 +408,8 @@ public sealed class FuncDoorTests
         schema.DisplayName.ShouldBe("Door");
         schema.Group.ShouldBe("Movers");
         schema.Placement.ShouldBe(EntityPlacement.Brush);
-        schema.Inputs.ShouldBe(["Open", "Close", "Toggle"]);
-        schema.Outputs.ShouldBe(["OnOpen", "OnClose", "OnFullyOpen", "OnFullyClosed"]);
+        schema.InputNames.ShouldBe(["Open", "Close", "Toggle"]);
+        schema.OutputNames.ShouldBe(["OnOpen", "OnClose", "OnFullyOpen", "OnFullyClosed"]);
 
         schema.Keyvalues.Select(keyvalue => keyvalue.Name)
             .ShouldBe(["movedir", "distance", "lip", "speed", "wait", "startopen"]);

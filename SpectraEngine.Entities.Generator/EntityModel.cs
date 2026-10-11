@@ -15,7 +15,17 @@ internal sealed record KeyvalueModel(
     float Min,
     float Max) : IEquatable<KeyvalueModel>;
 
-internal sealed record InputModel(string Name, string MethodName) : IEquatable<InputModel>;
+// Parameter is the KeyvalueType wire byte of the value the input takes, or
+// null for none. CanOmit says the input also works with no parameter.
+internal sealed record InputModel(
+    string Name,
+    string MethodName,
+    byte? Parameter,
+    bool CanOmit) : IEquatable<InputModel>;
+
+// Name is the member's own. Parameter is the KeyvalueType wire byte of the
+// value the output sends, or null for none.
+internal sealed record OutputModel(string Name, byte? Parameter) : IEquatable<OutputModel>;
 
 // Everything the emitter needs about one attributed class. Values only: an
 // ISymbol or SyntaxNode here pins the compilation and compares by reference,
@@ -40,6 +50,6 @@ internal sealed record EntityModel(
     bool IsPartial,
     EquatableArray<KeyvalueModel> Keyvalues,
     EquatableArray<InputModel> Inputs,
-    EquatableArray<string> Outputs,
+    EquatableArray<OutputModel> Outputs,
     EquatableArray<DiagnosticInfo> Diagnostics,
     LocationInfo? Location) : IEquatable<EntityModel>;

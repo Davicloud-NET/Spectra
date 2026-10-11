@@ -49,7 +49,7 @@ public sealed class EntityPanelInfoTests
     public void The_class_and_its_declared_outputs_ride_along()
     {
         EntitySchemaCatalog catalog = Catalog(
-            new EntitySchema("func_door", outputs: ["OnOpen", "OnClose"]));
+            new EntitySchema("func_door", outputs: EntityPort.Named("OnOpen", "OnClose")));
 
         SceneNode door = Placed("door", "func_door");
         Scene scene = NewScene(door);

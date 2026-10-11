@@ -247,7 +247,11 @@ public sealed class IconSheetTests(RibbonSession session)
         int at = entities.FindIndex(entity => entity.ClassName == first.ClassName);
         entities[at] = entities[at] with
         {
-            Wires = [Wire(first.Outputs[0], "!activator", "Kill"), Wire(first.Outputs[0], "NobodyHasThisName", "Open")],
+            Wires =
+            [
+                Wire(first.OutputNames[0], "!activator", "Kill"),
+                Wire(first.OutputNames[0], "NobodyHasThisName", "Open"),
+            ],
         };
 
         return [.. entities];

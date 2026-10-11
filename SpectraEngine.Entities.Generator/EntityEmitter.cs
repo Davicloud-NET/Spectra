@@ -156,20 +156,50 @@ internal static class EntityEmitter
         w.Line();
     }
 
+    // An output that sends a value takes it typed and writes it the way a
+    // keyvalue of that type is written. One that sends none has no way to be
+    // handed one, so what the schema says is what the class does.
     private static void EmitOutputs(SourceWriter w, EntityModel model)
     {
         for (int i = 0; i < model.Outputs.Count; i++)
         {
-            string output = model.Outputs[i];
-            w.Line($"/// <summary>Fires <c>{output}</c> along every wire a map authored on it.</summary>");
-            w.Line($"private void Fire{output}(");
+            OutputModel output = model.Outputs[i];
+            if (output.Parameter is not byte parameter)
+            {
+                w.Line($"/// <summary>Fires <c>{output.Name}</c> along every wire a map authored on it.</summary>");
+                w.Line($"private void Fire{output.Name}({Ns}.Entity? activator = null) =>");
+                w.Indent();
+                w.Line($"FireOutput({Literal(output.Name)}, activator);");
+                w.Outdent();
+                w.Line();
+                continue;
+            }
+
+            KeyvalueBinding.TryGet(parameter, out KeyvalueRow row);
+            w.Line("/// <summary>");
+            w.Line($"/// Fires <c>{output.Name}</c> along every wire a map authored on it. Each wire sends");
+            w.Line("/// <paramref name=\"value\"/> in place of its own parameter.");
+            w.Line("/// </summary>");
+            w.Line($"private void Fire{output.Name}(");
             w.Indent();
-            w.Line($"{Ns}.Entity? activator = null,");
-            w.Line("string? parameterOverride = null) =>");
-            w.Line($"FireOutput({Literal(output)}, activator, parameterOverride);");
+            w.Line($"{row.CSharpType} value,");
+            w.Line($"{Ns}.Entity? activator = null) =>");
+            w.Line($"FireOutput({Literal(output.Name)}, activator, {WireForm(row)});");
             w.Outdent();
             w.Line();
         }
+    }
+
+    private static string WireForm(KeyvalueRow row)
+    {
+        // The wire form of text is the text.
+        if (row.Reader is null)
+            return "value";
+
+        // No node is the empty string, which Format never writes.
+        return row.Value == KeyvalueBinding.NodeRefValue
+            ? $"value == global::System.Guid.Empty ? \"\" : {Ns}.KeyvalueWire.Format(value)"
+            : $"{Ns}.KeyvalueWire.Format(value)";
     }
 
     private static void EmitSchemaFactory(SourceWriter w, EntityModel model)
@@ -179,16 +209,16 @@ internal static class EntityEmitter
         EmitKeyvalueArray(w, model);
         w.Line();
 
-        var inputNames = new string[model.Inputs.Count];
-        for (int i = 0; i < inputNames.Length; i++)
-            inputNames[i] = model.Inputs[i].Name;
+        var inputs = new string[model.Inputs.Count];
+        for (int i = 0; i < inputs.Length; i++)
+            inputs[i] = Port(model.Inputs[i].Name, model.Inputs[i].Parameter, model.Inputs[i].CanOmit);
 
-        var outputNames = new string[model.Outputs.Count];
-        for (int i = 0; i < outputNames.Length; i++)
-            outputNames[i] = model.Outputs[i];
+        var outputs = new string[model.Outputs.Count];
+        for (int i = 0; i < outputs.Length; i++)
+            outputs[i] = Port(model.Outputs[i].Name, model.Outputs[i].Parameter, canOmit: false);
 
-        EmitNameArray(w, "inputs", inputNames);
-        EmitNameArray(w, "outputs", outputNames);
+        EmitPortArray(w, "inputs", inputs);
+        EmitPortArray(w, "outputs", outputs);
         w.Line();
 
         w.Line($"return new {Ns}.EntitySchema(");
@@ -247,23 +277,34 @@ internal static class EntityEmitter
         w.Line("};");
     }
 
-    private static void EmitNameArray(SourceWriter w, string variable, string[] names)
+    private static void EmitPortArray(SourceWriter w, string variable, string[] ports)
     {
-        if (names.Length == 0)
+        if (ports.Length == 0)
         {
-            w.Line($"var {variable} = global::System.Array.Empty<string>();");
+            w.Line($"var {variable} = global::System.Array.Empty<{Ns}.EntityPort>();");
             return;
         }
 
-        var text = new StringBuilder();
-        for (int i = 0; i < names.Length; i++)
+        w.Line($"var {variable} = new {Ns}.EntityPort[]");
+        w.Line("{");
+        w.Indent();
+        for (int i = 0; i < ports.Length; i++)
+            w.Line($"{ports[i]},");
+
+        w.Outdent();
+        w.Line("};");
+    }
+
+    private static string Port(string name, byte? parameter, bool canOmit)
+    {
+        string type = $"{Ns}.ParameterType.None";
+        if (parameter is byte value)
         {
-            if (i > 0)
-                text.Append(", ");
-            text.Append(Literal(names[i]));
+            KeyvalueBinding.TryGet(value, out KeyvalueRow row);
+            type = $"{Ns}.ParameterType.{(canOmit ? "Optional" : "Of")}({Ns}.KeyvalueType.{row.Name})";
         }
 
-        w.Line($"var {variable} = new string[] {{ {text} }};");
+        return $"new {Ns}.EntityPort({Literal(name)}, {type})";
     }
 
     private static void EmitRegistration(SourceWriter w, EntityModel model)

@@ -713,6 +713,11 @@
                   <TextBlock Classes="wirewarn" TextWrapping="Wrap"
                              IsVisible="{Binding HasTargetWarning}"
                              Text="{Binding TargetWarning}" />
+
+                  <!-- Says so and keeps the wire: an old level saves as it loaded. -->
+                  <TextBlock Classes="wirewarn" TextWrapping="Wrap"
+                             IsVisible="{Binding HasParameterWarning}"
+                             Text="{Binding ParameterWarning}" />
                 </StackPanel>
               </Border>
             </DataTemplate>

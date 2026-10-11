@@ -33,7 +33,7 @@ public sealed partial class PointSound : Entity
     public const string OnEnded = nameof(OnEnded);
 
     /// <summary>Fired when playback reaches a marker, with the marker's name.</summary>
-    [EntityOutput]
+    [EntityOutput(Parameter = KeyvalueType.String)]
     public const string OnMarker = nameof(OnMarker);
 
     // What the catalog said at spawn. Means nothing unless _canPlay.
@@ -251,7 +251,7 @@ public sealed partial class PointSound : Entity
     private void Stop(ref EntityInputContext context) => Halt();
 
     // From now on, and for every later Play.
-    [EntityInput("SetVolume")]
+    [EntityInput("SetVolume", Parameter = KeyvalueType.Float)]
     private void SetVolume(ref EntityInputContext context)
     {
         if (!KeyvalueWire.TryParseFloat(context.Parameter, out float volume) || volume < 0f)
@@ -265,7 +265,7 @@ public sealed partial class PointSound : Entity
     }
 
     // What has played so far stays played: the end moves by what is left.
-    [EntityInput("SetPitch")]
+    [EntityInput("SetPitch", Parameter = KeyvalueType.Float)]
     private void SetPitch(ref EntityInputContext context)
     {
         if (!KeyvalueWire.TryParseFloat(context.Parameter, out float pitch) || !IsPitch(pitch))
@@ -321,7 +321,7 @@ public sealed partial class PointSound : Entity
         {
             AudioMarker marker = markers[i];
             if (marker.Frame >= first && marker.Frame <= last)
-                FireOnMarker(parameterOverride: marker.Name);
+                FireOnMarker(marker.Name);
         }
     }
 

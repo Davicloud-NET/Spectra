@@ -71,16 +71,14 @@ internal static class EntityModelFactory
 
         var keyvalues = new List<KeyvalueModel>();
         var inputs = new List<InputModel>();
-        var outputs = new List<string>();
+        var outputs = new List<OutputModel>();
 
         foreach (ISymbol member in type.GetMembers())
         {
             token.ThrowIfCancellationRequested();
 
-            if (TryFindAttribute(member, OutputAttribute, out _))
-            {
-                outputs.Add(member.Name);
-            }
+            if (TryFindAttribute(member, OutputAttribute, out AttributeData? output))
+                outputs.Add(new OutputModel(member.Name, Parameter(output!, "Output", member.Name, diagnostics)));
 
             if (TryFindAttribute(member, KeyvalueAttribute, out AttributeData? keyvalue))
                 AddKeyvalue(member, keyvalue!, keyvalues, diagnostics);
@@ -209,8 +207,47 @@ internal static class EntityModelFactory
             return;
         }
 
-        inputs.Add(new InputModel(FirstStringArgument(attribute), method.Name));
+        string name = FirstStringArgument(attribute);
+        byte? parameter = Parameter(attribute, "Input", name, diagnostics);
+        bool canOmit = NamedBool(attribute, "CanOmitParameter");
+        if (canOmit && parameter is null)
+        {
+            diagnostics.Add(DiagnosticInfo.Create(
+                EntityDiagnostics.NothingToOmit, LocationOf(attribute), name));
+            canOmit = false;
+        }
+
+        inputs.Add(new InputModel(name, method.Name, parameter, canOmit));
     }
+
+    // The KeyvalueType an input or output says it carries, or null for no
+    // value. A kind no wire carries is reported and read as none, so the rest
+    // of the class still compiles.
+    private static byte? Parameter(
+        AttributeData attribute,
+        string what,
+        string name,
+        List<DiagnosticInfo> diagnostics)
+    {
+        if (!TryGetNamed(attribute, "Parameter", out TypedConstant declared))
+            return null;
+
+        byte value = ToByte(declared);
+        bool known = KeyvalueBinding.TryGet(value, out KeyvalueRow row);
+        if (known && KeyvalueBinding.CanCarry(value))
+            return value;
+
+        diagnostics.Add(DiagnosticInfo.Create(
+            EntityDiagnostics.ParameterNotCarried,
+            LocationOf(attribute),
+            what,
+            name,
+            known ? row.Name : value.ToString(CultureInfo.InvariantCulture)));
+        return null;
+    }
+
+    private static LocationInfo? LocationOf(AttributeData attribute) =>
+        LocationInfo.From(attribute.ApplicationSyntaxReference?.GetSyntax());
 
     private static bool TryFindAttribute(ISymbol member, string metadataName, out AttributeData? attribute)
     {

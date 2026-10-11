@@ -135,7 +135,7 @@ public sealed partial class FuncMoveLinear : Entity
     private void Close(ref EntityInputContext context) => HeadFor(0);
 
     // An argument that is not a number leaves the brush on its course.
-    [EntityInput("SetPosition")]
+    [EntityInput("SetPosition", Parameter = KeyvalueType.Float)]
     private void SetPosition(ref EntityInputContext context)
     {
         if (!KeyvalueWire.TryParseFloat(context.Parameter, out float position))

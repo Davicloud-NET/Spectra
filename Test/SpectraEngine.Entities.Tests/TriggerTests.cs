@@ -423,8 +423,8 @@ public sealed class TriggerTests
         multiple.ClassName.ShouldBe("trigger_multiple");
         multiple.Placement.ShouldBe(EntityPlacement.Volume);
         multiple.Keyvalues.Select(keyvalue => keyvalue.Name).ShouldBe(["startdisabled", "wait"]);
-        multiple.Inputs.ShouldBe(["Enable", "Disable", "Toggle"]);
-        multiple.Outputs.ShouldBe(
+        multiple.InputNames.ShouldBe(["Enable", "Disable", "Toggle"]);
+        multiple.OutputNames.ShouldBe(
             [TriggerMultiple.OnStartTouch, TriggerMultiple.OnEndTouch, TriggerMultiple.OnTrigger]);
 
         KeyvalueDescriptor wait = multiple.Keyvalues[1];
@@ -437,15 +437,15 @@ public sealed class TriggerTests
         once.ClassName.ShouldBe("trigger_once");
         once.Placement.ShouldBe(EntityPlacement.Volume);
         once.Keyvalues.Select(keyvalue => keyvalue.Name).ShouldBe(["startdisabled"]);
-        once.Inputs.ShouldBe(["Enable", "Disable", "Toggle"]);
-        once.Outputs.ShouldBe([TriggerOnce.OnStartTouch, TriggerOnce.OnTrigger]);
+        once.InputNames.ShouldBe(["Enable", "Disable", "Toggle"]);
+        once.OutputNames.ShouldBe([TriggerOnce.OnStartTouch, TriggerOnce.OnTrigger]);
 
         EntitySchema teleport = TriggerTeleport.SpectraSchema;
         teleport.ClassName.ShouldBe("trigger_teleport");
         teleport.Placement.ShouldBe(EntityPlacement.Volume);
         teleport.Keyvalues.Select(keyvalue => keyvalue.Name).ShouldBe(["target", "startdisabled"]);
-        teleport.Inputs.ShouldBe(["Enable", "Disable", "Toggle"]);
-        teleport.Outputs.ShouldBe([TriggerTeleport.OnStartTouch, TriggerTeleport.OnEndTouch]);
+        teleport.InputNames.ShouldBe(["Enable", "Disable", "Toggle"]);
+        teleport.OutputNames.ShouldBe([TriggerTeleport.OnStartTouch, TriggerTeleport.OnEndTouch]);
 
         KeyvalueDescriptor target = teleport.Keyvalues[0];
         target.Type.ShouldBe(KeyvalueType.TargetName);

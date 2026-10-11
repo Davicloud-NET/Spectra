@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
@@ -34,6 +35,38 @@ internal static class EntityConsoleText
 
         text.Append('(');
         return AppendQuoted(text, parameter).Append(')');
+    }
+
+    // An input or output as its class declares it: Open() takes nothing,
+    // SetValue(float) takes a number, Add(float?) works with or without. A
+    // bare name is one whose class does not say.
+    public static StringBuilder AppendPort(StringBuilder text, EntityPort port)
+    {
+        AppendName(text, port.Name);
+        if (!port.Parameter.IsSaid)
+            return text;
+
+        text.Append('(');
+        if (port.Parameter.HasValue)
+            text.Append(port.Parameter.ToString());
+
+        return text.Append(')');
+    }
+
+    public static string Port(EntityPort port) => AppendPort(new StringBuilder(), port).ToString();
+
+    // Every port of a list, with a space between.
+    public static string Ports(IReadOnlyList<EntityPort> ports)
+    {
+        var text = new StringBuilder();
+        for (int i = 0; i < ports.Count; i++)
+        {
+            if (i > 0)
+                text.Append(' ');
+            AppendPort(text, ports[i]);
+        }
+
+        return text.ToString();
     }
 
     // Rounded to the millisecond: a whole number of ticks is a float's worth

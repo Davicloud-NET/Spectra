@@ -106,8 +106,8 @@ public sealed class BuiltinEntityRegistrationTests
         schema.Placement.ShouldBe(EntityPlacement.Abstract);
         schema.Origin.ShouldBe(EntityOrigin.EngineCSharp);
 
-        schema.Inputs.ShouldBe(["Trigger", "Enable", "Disable", "Toggle"]);
-        schema.Outputs.ShouldBe([LogicRelay.OnTrigger]);
+        schema.InputNames.ShouldBe(["Trigger", "Enable", "Disable", "Toggle"]);
+        schema.OutputNames.ShouldBe([LogicRelay.OnTrigger]);
 
         schema.Keyvalues.Count.ShouldBe(1);
         KeyvalueDescriptor startDisabled = schema.Keyvalues[0];
@@ -144,7 +144,7 @@ public sealed class BuiltinEntityRegistrationTests
     [Fact]
     public void The_counters_three_outputs_are_all_declared()
     {
-        MathCounter.SpectraSchema.Outputs
+        MathCounter.SpectraSchema.OutputNames
             .ShouldBe([MathCounter.OutValue, MathCounter.OnHitMax, MathCounter.OnHitMin]);
     }
 
@@ -157,7 +157,7 @@ public sealed class BuiltinEntityRegistrationTests
         schema.DisplayName.ShouldBe("Logic Auto");
         schema.Keyvalues.ShouldBeEmpty();
         schema.Inputs.ShouldBeEmpty();
-        schema.Outputs.ShouldBe([LogicAuto.OnMapSpawn]);
+        schema.OutputNames.ShouldBe([LogicAuto.OnMapSpawn]);
     }
 
     [Fact]
@@ -166,8 +166,8 @@ public sealed class BuiltinEntityRegistrationTests
         EntitySchema schema = LogicBranch.SpectraSchema;
 
         schema.ClassName.ShouldBe("logic_branch");
-        schema.Inputs.ShouldBe(["SetValue", "SetValueTest", "Toggle", "ToggleTest", "Test"]);
-        schema.Outputs.ShouldBe([LogicBranch.OnTrue, LogicBranch.OnFalse]);
+        schema.InputNames.ShouldBe(["SetValue", "SetValueTest", "Toggle", "ToggleTest", "Test"]);
+        schema.OutputNames.ShouldBe([LogicBranch.OnTrue, LogicBranch.OnFalse]);
 
         schema.Keyvalues.Count.ShouldBe(1);
         KeyvalueDescriptor initial = schema.Keyvalues[0];
@@ -183,8 +183,8 @@ public sealed class BuiltinEntityRegistrationTests
         IEnumerable<int> numbers = Enumerable.Range(1, LogicCase.CaseCount);
 
         schema.ClassName.ShouldBe("logic_case");
-        schema.Inputs.ShouldBe(["InValue"]);
-        schema.Outputs.ShouldBe([.. numbers.Select(n => $"OnCase{n:00}"), LogicCase.OnDefault]);
+        schema.InputNames.ShouldBe(["InValue"]);
+        schema.OutputNames.ShouldBe([.. numbers.Select(n => $"OnCase{n:00}"), LogicCase.OnDefault]);
 
         schema.Keyvalues.Select(keyvalue => keyvalue.Name).ShouldBe(numbers.Select(n => $"case{n:00}"));
         schema.Keyvalues.Select(keyvalue => keyvalue.Display).ShouldBe(numbers.Select(n => $"Case {n:00}"));
@@ -197,8 +197,8 @@ public sealed class BuiltinEntityRegistrationTests
         EntitySchema schema = LogicCompare.SpectraSchema;
 
         schema.ClassName.ShouldBe("logic_compare");
-        schema.Inputs.ShouldBe(["SetValue", "SetValueCompare", "SetCompareValue", "Compare"]);
-        schema.Outputs.ShouldBe(
+        schema.InputNames.ShouldBe(["SetValue", "SetValueCompare", "SetCompareValue", "Compare"]);
+        schema.OutputNames.ShouldBe(
         [
             LogicCompare.OnLessThan, LogicCompare.OnEqualTo, LogicCompare.OnNotEqualTo, LogicCompare.OnGreaterThan,
         ]);

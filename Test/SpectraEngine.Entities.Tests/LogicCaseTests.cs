@@ -202,7 +202,7 @@ public sealed class LogicCaseTests
             node.Entity!.SetValue(key, value);
 
         EntityRuntime.Place(scene.Root, "sink", "test_recorder");
-        foreach (string output in LogicCase.SpectraSchema.Outputs)
+        foreach (string output in LogicCase.SpectraSchema.OutputNames)
             EntityRuntime.Wire(node, output, "sink", output);
 
         var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(_log));

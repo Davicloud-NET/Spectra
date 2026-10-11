@@ -4,7 +4,8 @@ namespace SpectraEngine.Entities.Tests;
 internal static class Fixtures
 {
     // Input of the committed snapshot: one keyvalue of every binding shape,
-    // two inputs, two outputs.
+    // an input that takes nothing, one that takes a number and one that can
+    // leave it out, and an output of each kind.
     public const string RepresentativeEntity = """
         using SpectraEngine.Core.Entities;
         using System;
@@ -21,6 +22,15 @@ internal static class Fixtures
 
             [EntityOutput]
             public const string OnClosed = nameof(OnClosed);
+
+            [EntityOutput(Parameter = KeyvalueType.Float)]
+            public const string OnMoved = nameof(OnMoved);
+
+            [EntityOutput(Parameter = KeyvalueType.TargetName)]
+            public const string OnBlocked = nameof(OnBlocked);
+
+            [EntityOutput(Parameter = KeyvalueType.NodeRef)]
+            public const string OnLinked = nameof(OnLinked);
 
             [Keyvalue("startopen", Display = "Start open", Default = "0")]
             public bool StartOpen { get; set; }
@@ -43,6 +53,20 @@ internal static class Fixtures
 
             [EntityInput("Close")]
             private void Close(ref EntityInputContext context) => FireOnClosed(context.Activator);
+
+            [EntityInput("SetSpeed", Parameter = KeyvalueType.Float)]
+            private void SetSpeed(ref EntityInputContext context)
+            {
+                if (KeyvalueWire.TryParseFloat(context.Parameter, out float speed))
+                    FireOnMoved(speed, context.Activator);
+            }
+
+            [EntityInput("Nudge", Parameter = KeyvalueType.Float, CanOmitParameter = true)]
+            private void Nudge(ref EntityInputContext context)
+            {
+                FireOnBlocked(TargetName);
+                FireOnLinked(Linked);
+            }
         }
         """;
 

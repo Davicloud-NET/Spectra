@@ -551,7 +551,7 @@ public sealed class WiringTargetPickerTests
         EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(schemas));
 
     private static EntitySchema Relay(params string[] inputs) =>
-        new("logic_relay", inputs: inputs, outputs: ["OnTrigger"]);
+        new("logic_relay", inputs: EntityPort.Named(inputs), outputs: EntityPort.Named("OnTrigger"));
 
     private static readonly EntityTargetInfo[] Scene =
     [

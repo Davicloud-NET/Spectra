@@ -88,6 +88,7 @@ public sealed class ConnectionRowModel : ObservableObject
 
             OutputField.Refresh(value, mixed: false);
             Raise(nameof(HasOutputChoices));
+            JudgeParameter();
             _changed();
         }
     }
@@ -161,6 +162,7 @@ public sealed class ConnectionRowModel : ObservableObject
             Raise();
             InputField.Refresh(value, mixed: false);
             Raise(nameof(HasInputChoices));
+            JudgeParameter();
             _changed();
         }
     }
@@ -206,6 +208,26 @@ public sealed class ConnectionRowModel : ObservableObject
             ? "No target set"
             : $"Nothing here is named '{_target}'";
 
+    // The class of the entity the wire leaves, when the session knows it.
+    internal EntitySchema? Sender { get; set; }
+
+    /// <summary>Whether to show the amber line about the parameter under this wire.</summary>
+    public bool HasParameterWarning => _parameterWarning.Length > 0;
+
+    /// <summary>
+    /// Why the parameter will not do what it looks like it does, in words,
+    /// or empty. A warning only: the wire is kept and saved as typed.
+    /// </summary>
+    public string ParameterWarning
+    {
+        get => _parameterWarning;
+        private set
+        {
+            if (Set(ref _parameterWarning, value))
+                Raise(nameof(HasParameterWarning));
+        }
+    }
+
     /// <summary>This row as the value the command writes.</summary>
     public EntityConnection ToConnection() =>
         new(_output, _target, _input, _parameter, _delay, _times);
@@ -249,6 +271,7 @@ public sealed class ConnectionRowModel : ObservableObject
 
         RefreshTargets(targets, targetsTruncated);
         RefreshInputs(schemas);
+        JudgeParameter();
     }
 
     // Rebuilt only when the list instance changed. The engine reuses it across
@@ -279,8 +302,9 @@ public sealed class ConnectionRowModel : ObservableObject
     private void RefreshInputs(EntitySchemaCatalog? schemas)
     {
         _schemas = schemas;
+        _receiver = ReceiverFor(_target, _targets, schemas);
 
-        IReadOnlyList<string> inputs = InputsFor(_target, _targets, schemas);
+        IReadOnlyList<string> inputs = _receiver?.InputNames ?? [];
 
         bool wasPickable = HasInputChoices;
 
@@ -298,12 +322,19 @@ public sealed class ConnectionRowModel : ObservableObject
     internal static IReadOnlyList<string> InputsFor(
         string target,
         IReadOnlyList<EntityTargetInfo> targets,
+        EntitySchemaCatalog? schemas) =>
+        ReceiverFor(target, targets, schemas)?.InputNames ?? [];
+
+    // The class of the one entity a target names, or null.
+    private static EntitySchema? ReceiverFor(
+        string target,
+        IReadOnlyList<EntityTargetInfo> targets,
         EntitySchemaCatalog? schemas)
     {
-        if (schemas is null || string.IsNullOrEmpty(target)) return [];
+        if (schemas is null || string.IsNullOrEmpty(target)) return null;
 
         // A runtime token or a wildcard has no single class.
-        if (target[0] == '!' || target[^1] == '*') return [];
+        if (target[0] == '!' || target[^1] == '*') return null;
 
         string? className = null;
         for (int i = 0; i < targets.Count; i++)
@@ -311,14 +342,31 @@ public sealed class ConnectionRowModel : ObservableObject
             if (!string.Equals(targets[i].Name, target, StringComparison.Ordinal)) continue;
 
             // Two entities share the name (legal: the wire fires at both).
-            if (className is not null) return [];
+            if (className is not null) return null;
 
             className = targets[i].ClassName;
         }
 
-        if (className is null) return [];
+        return schemas.TryGetSchema(className, out EntitySchema? schema) ? schema : null;
+    }
 
-        return schemas.TryGetSchema(className, out EntitySchema? schema) ? schema.Inputs : [];
+    // Nothing is said when a class is not known or does not say what it
+    // takes. A wire to !self arrives at the class it leaves.
+    private void JudgeParameter()
+    {
+        EntitySchema? receiver = _target == TargetNameIndex.SelfToken ? Sender : _receiver;
+
+        ParameterType sent = Sender is not null && Sender.TryGetOutput(_output, out EntityPort output)
+            ? output.Parameter
+            : ParameterType.NotSaid;
+        ParameterType taken = receiver is not null && receiver.TryGetInput(_input, out EntityPort input)
+            ? input.Parameter
+            : ParameterType.NotSaid;
+
+        ParameterVerdict verdict = ParameterText.Judge(sent, taken, _parameter);
+        ParameterWarning = verdict == ParameterVerdict.Fine
+            ? string.Empty
+            : WireParameterText.Warning(verdict, ToConnection(), taken);
     }
 
     private static bool Declares(IReadOnlyList<string> declared, string output)
@@ -339,6 +387,7 @@ public sealed class ConnectionRowModel : ObservableObject
 
         // A declared name switches the row back to the dropdown.
         Raise(nameof(HasOutputChoices));
+        JudgeParameter();
         _changed();
     }
 
@@ -349,6 +398,7 @@ public sealed class ConnectionRowModel : ObservableObject
 
         // Recompute the input list now rather than on the next publish.
         RefreshInputs(_schemas);
+        JudgeParameter();
 
         _changed();
     }
@@ -361,14 +411,18 @@ public sealed class ConnectionRowModel : ObservableObject
         Raise(nameof(Input));
 
         Raise(nameof(HasInputChoices));
+        JudgeParameter();
         _changed();
     }
 
     private EntitySchemaCatalog? _schemas;
+    private EntitySchema? _receiver;
+    private string _parameterWarning = string.Empty;
 
     private void CommitParameter(PropertyFieldModel field, string typed)
     {
         _parameter = typed;
+        JudgeParameter();
         _changed();
     }
 
@@ -453,6 +507,7 @@ public sealed class EntityWiringModel : ObservableObject
     private bool _hasEntity;
     private bool _isKnown = true;
     private IReadOnlyList<string> _outputs = [];
+    private EntitySchema? _sender;
     private IReadOnlyList<EntityTargetInfo> _targets = [];
     private bool _targetsTruncated;
 
@@ -536,6 +591,8 @@ public sealed class EntityWiringModel : ObservableObject
         HasEntity = true;
         IsKnown = info.IsKnown;
         _outputs = info.Outputs;
+        _sender = null;
+        Schemas?.TryGetSchema(info.ClassName, out _sender);
         _targets = info.Targets;
         _targetsTruncated = info.TargetsTruncated;
 
@@ -567,7 +624,7 @@ public sealed class EntityWiringModel : ObservableObject
         if (!_hasEntity)
             return;
 
-        var row = new ConnectionRowModel(Post);
+        var row = new ConnectionRowModel(Post) { Sender = _sender };
         row.Seed(_outputs, _targets, _targetsTruncated, Schemas);
         Rows.Add(row);
         Raise(nameof(IsEmpty));
@@ -612,7 +669,10 @@ public sealed class EntityWiringModel : ObservableObject
             Rows.Add(new ConnectionRowModel(Post));
 
         for (int i = 0; i < wires.Count; i++)
+        {
+            Rows[i].Sender = _sender;
             Rows[i].Refresh(wires[i], _outputs, _targets, _targetsTruncated, Schemas);
+        }
 
         if (countChanged)
             Raise(nameof(IsEmpty));

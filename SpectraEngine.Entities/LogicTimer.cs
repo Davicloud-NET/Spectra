@@ -113,7 +113,7 @@ public sealed partial class LogicTimer : Entity
 
     // Takes effect at the next interval. Rescheduling here would mean a level
     // that adjusts the interval every tick never fires.
-    [EntityInput("RefireTime")]
+    [EntityInput("RefireTime", Parameter = KeyvalueType.Float)]
     private void RefireTime(ref EntityInputContext context)
     {
         if (KeyvalueWire.TryParseFloat(context.Parameter, out float seconds))

@@ -13,6 +13,7 @@ namespace SpectraEngine.Core.Entities;
 /// </summary>
 // Each type record starts with its own size, itself included. A reader advances
 // by that size, so a newer writer can append fields without a version bump.
+// Every record is a multiple of four bytes long.
 public static class SentDef
 {
     /// <summary>
@@ -98,9 +99,10 @@ public static class SentDef
     public const int StringRefSize = 4;
 
     /// <summary>
-    /// Bytes of type record after its last output: the icon string reference,
-    /// then the class flags. A record written before one of them existed ends
-    /// sooner, and what it lacks reads as unset.
+    /// Bytes of trailer before the parameter types: the icon string reference,
+    /// then the class flags. The trailer follows the last output. A record
+    /// written before one of its fields existed ends sooner, and what it lacks
+    /// reads as unset.
     /// </summary>
     public const int TypeRecordTrailerSize = StringRefSize + sizeof(uint);
 
@@ -115,6 +117,35 @@ public static class SentDef
     /// are written zero and ignored on read.
     /// </summary>
     public const uint TrailerHasFacing = 1u << 0;
+
+    /// <summary>
+    /// Offset, within the trailer, of the parameter types: one byte for each
+    /// input and then one for each output, in the record's own order, then
+    /// zeros up to a multiple of four bytes. A record that ends before the
+    /// last of them reads with no type said.
+    /// </summary>
+    public const int TrailerParametersOffset = 0x08;
+
+    /// <summary>The parameter byte of an input or output that does not say what it carries.</summary>
+    public const byte ParameterNotSaid = 0;
+
+    /// <summary>The parameter byte of an input or output that carries no value.</summary>
+    public const byte ParameterNone = 1;
+
+    /// <summary>
+    /// The parameter byte of one value whose <see cref="KeyvalueType"/> byte
+    /// is 0. Another type's byte is this plus its own.
+    /// </summary>
+    public const byte ParameterFirstValue = 2;
+
+    /// <summary>The bit of a parameter byte that says the value may be left out.</summary>
+    public const byte ParameterOptional = 0x80;
+
+    /// <summary>
+    /// Bytes the parameter types take in a record with this many inputs and
+    /// outputs, padding included.
+    /// </summary>
+    public static int ParameterBytes(int inputCount, int outputCount) => (inputCount + outputCount + 3) & ~3;
 
     // Throws on invalid text. A U+FFFD replacement would change a class name
     // and the map naming it would load a placeholder with no error.
@@ -406,13 +437,14 @@ public static class SentDef
         }
 
         for (int i = 0; i < schema.Inputs.Count; i++)
-            strings.Intern(schema.Inputs[i]);
+            strings.Intern(schema.Inputs[i].Name);
         for (int i = 0; i < schema.Outputs.Count; i++)
-            strings.Intern(schema.Outputs[i]);
+            strings.Intern(schema.Outputs[i].Name);
 
         strings.Intern(schema.Icon);
 
-        return size + ((schema.Inputs.Count + schema.Outputs.Count) * StringRefSize) + TypeRecordTrailerSize;
+        return size + ((schema.Inputs.Count + schema.Outputs.Count) * StringRefSize) + TypeRecordTrailerSize
+            + ParameterBytes(schema.Inputs.Count, schema.Outputs.Count);
     }
 
     private static void WriteType(Span<byte> record, EntitySchema schema, StringTableBuilder strings)
@@ -461,16 +493,24 @@ public static class SentDef
         }
 
         for (int i = 0; i < schema.Inputs.Count; i++, position += StringRefSize)
-            BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Inputs[i]));
+            BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Inputs[i].Name));
 
         for (int i = 0; i < schema.Outputs.Count; i++, position += StringRefSize)
-            BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Outputs[i]));
+            BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Outputs[i].Name));
 
         Span<byte> trailer = record[position..];
         BinaryPrimitives.WriteUInt32LittleEndian(trailer[TrailerIconOffset..], strings.Intern(schema.Icon));
         BinaryPrimitives.WriteUInt32LittleEndian(
             trailer[TrailerFlagsOffset..], schema.HasFacing ? TrailerHasFacing : 0u);
-        position += TypeRecordTrailerSize;
+
+        // The padding after them is already zero: the image starts out zeroed.
+        Span<byte> parameters = trailer[TrailerParametersOffset..];
+        for (int i = 0; i < schema.Inputs.Count; i++)
+            parameters[i] = ParameterByte(schema.Inputs[i].Parameter);
+        for (int i = 0; i < schema.Outputs.Count; i++)
+            parameters[schema.Inputs.Count + i] = ParameterByte(schema.Outputs[i].Parameter);
+
+        position += TypeRecordTrailerSize + ParameterBytes(schema.Inputs.Count, schema.Outputs.Count);
 
         if (position != record.Length)
         {
@@ -582,22 +622,22 @@ public static class SentDef
                 name, display, tooltip, @default, (KeyvalueType)type, widget, min, max, flags, choices);
         }
 
-        var inputs = new string[inputCount];
+        var inputNames = new string[inputCount];
         for (int i = 0; i < inputCount; i++, position += StringRefSize)
         {
             RequireRoom(record.Length, position, StringRefSize, className, "input record", recordOffset);
-            inputs[i] = ReadString(record, table, decoded, position, recordOffset, index);
+            inputNames[i] = ReadString(record, table, decoded, position, recordOffset, index);
         }
 
-        var outputs = new string[outputCount];
+        var outputNames = new string[outputCount];
         for (int i = 0; i < outputCount; i++, position += StringRefSize)
         {
             RequireRoom(record.Length, position, StringRefSize, className, "output record", recordOffset);
-            outputs[i] = ReadString(record, table, decoded, position, recordOffset, index);
+            outputNames[i] = ReadString(record, table, decoded, position, recordOffset, index);
         }
 
         // The trailer grew a field at a time, so an older record ends before
-        // the icon or before the flags.
+        // the icon, before the flags or before the parameter types.
         int trailer = record.Length - position;
         string icon = trailer >= TrailerIconOffset + StringRefSize
             ? ReadString(record, table, decoded, position + TrailerIconOffset, recordOffset, index)
@@ -607,10 +647,54 @@ public static class SentDef
             ? BinaryPrimitives.ReadUInt32LittleEndian(record[(position + TrailerFlagsOffset)..])
             : 0u;
 
+        ReadOnlySpan<byte> parameters = trailer >= TrailerParametersOffset + inputCount + outputCount
+            ? record.Slice(position + TrailerParametersOffset, inputCount + outputCount)
+            : default;
+
+        EntityPort[] inputs = WithParameters(inputNames, parameters, first: 0);
+        EntityPort[] outputs = WithParameters(outputNames, parameters, first: inputCount);
+
         // Bytes left over are a newer writer's fields. Ignored.
         return new EntitySchema(
             className, displayName, group, (EntityPlacement)placement, (EntityOrigin)origin,
             keyvalues, inputs, outputs, icon, (classFlags & TrailerHasFacing) != 0);
+    }
+
+    // parameters is empty for a record written before it had them.
+    private static EntityPort[] WithParameters(string[] names, ReadOnlySpan<byte> parameters, int first)
+    {
+        var ports = new EntityPort[names.Length];
+        for (int i = 0; i < ports.Length; i++)
+        {
+            ParameterType parameter = parameters.IsEmpty ? ParameterType.NotSaid : ReadParameter(parameters[first + i]);
+            ports[i] = new EntityPort(names[i], parameter);
+        }
+
+        return ports;
+    }
+
+    private static byte ParameterByte(ParameterType parameter)
+    {
+        if (!parameter.HasValue)
+            return parameter.IsNone ? ParameterNone : ParameterNotSaid;
+
+        byte value = (byte)(ParameterFirstValue + (byte)parameter.ValueType);
+        return parameter.IsOptional ? (byte)(value | ParameterOptional) : value;
+    }
+
+    // A type a newer build added, or one no wire carries, reads as not said.
+    // Nothing is enforced by the type, so the file still loads.
+    private static ParameterType ReadParameter(byte stored)
+    {
+        int value = stored & ~ParameterOptional;
+        if (value == ParameterNone)
+            return ParameterType.None;
+
+        var type = (KeyvalueType)(value - ParameterFirstValue);
+        if (value < ParameterFirstValue || !ParameterType.CanCarry(type))
+            return ParameterType.NotSaid;
+
+        return (stored & ParameterOptional) != 0 ? ParameterType.Optional(type) : ParameterType.Of(type);
     }
 
     private static void RequireRoom(

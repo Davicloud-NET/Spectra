@@ -28,7 +28,33 @@ public sealed class EntityCommandsOverBuiltinsTests
         Printed(console).ShouldBe(
         [
             "ent_fire: logic_relay has no input 'trigger'. Did you mean Trigger? " +
-            "Inputs: Trigger Enable Disable Toggle",
+            "Inputs: Trigger() Enable() Disable() Toggle()",
+        ]);
+    }
+
+    [Fact]
+    public void Showing_a_counter_prints_what_each_input_takes_and_each_output_sends()
+    {
+        Scene scene = Level();
+        SceneNode counter = scene.Root.Traverse().Single(node => node.Name == "counter");
+        EntityRuntime.Wire(counter, MathCounter.OutValue, "relay1", "Trigger");
+        var console = new SpectraConsole();
+        EntityConsoleCommands.Register(console.Commands, new EntityWatch(console.Output));
+
+        console.Execute("ent_show counter", new ConsoleFrame(scene, null));
+
+        Printed(console).ShouldBe(
+        [
+            $"counter: math_counter, node {counter.Id:D}",
+            "counter keyvalue startvalue = 0 (default)",
+            "counter keyvalue min = 0 (default)",
+            "counter keyvalue max = 0 (default)",
+            "counter not running: no live state",
+            "counter output OutValue(float) -> relay1.Trigger fires=unlimited, 1 entity named relay1",
+            "counter output OnHitMax(): not wired",
+            "counter output OnHitMin(): not wired",
+            "counter inputs: Add(float?) Subtract(float?) SetValue(float) SetValueNoFire(float) " +
+            "SetHitMax(float) SetHitMin(float) GetValue()",
         ]);
     }
 

@@ -174,7 +174,7 @@ public static class EntityConsoleCommands
         {
             if (!schemas.TryGetSchema(entity.ClassName, out EntitySchema? schema)
                 || schema.Inputs.Count == 0
-                || Find(schema.Inputs, input, StringComparison.Ordinal) is not null)
+                || Find(schema.InputNames, input, StringComparison.Ordinal) is not null)
             {
                 return null;
             }
@@ -185,13 +185,13 @@ public static class EntityConsoleCommands
 
         string? meant = null;
         for (int i = 0; i < classes.Count && meant is null; i++)
-            meant = Find(classes[i].Inputs, input, StringComparison.OrdinalIgnoreCase);
+            meant = Find(classes[i].InputNames, input, StringComparison.OrdinalIgnoreCase);
         string hint = meant is null ? "" : $" Did you mean {meant}?";
 
         if (classes.Count == 1)
         {
             return $"ent_fire: {classes[0].ClassName} has no input '{input}'.{hint} " +
-                $"Inputs: {string.Join(' ', classes[0].Inputs)}";
+                $"Inputs: {EntityConsoleText.Ports(classes[0].Inputs)}";
         }
 
         string shown = EntityConsoleText.Name(target);

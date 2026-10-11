@@ -17,8 +17,8 @@ internal sealed class CounterEntity : Entity
     public static EntitySchema Schema { get; } = new(
         "counter",
         keyvalues: [Keyvalue("startvalue"), Keyvalue("max")],
-        inputs: ["Add", "SetValue"],
-        outputs: [OutValue, OnHitMax, OnHitMin]);
+        inputs: EntityPort.Named("Add", "SetValue"),
+        outputs: EntityPort.Named(OutValue, OnHitMax, OnHitMin));
 
     public override bool ParseKeyValue(string key, string value)
     {

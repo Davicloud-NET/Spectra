@@ -84,8 +84,8 @@ internal static class LogicRandomLevel
         names.Count == 0 || random.Next(10) == 0 ? "Mystery" : names[random.Next(names.Count)];
 
     private static IReadOnlyList<string> Outputs(string className) =>
-        LogicFixture.Catalog.TryGetSchema(className, out EntitySchema? schema) ? schema.Outputs : [];
+        LogicFixture.Catalog.TryGetSchema(className, out EntitySchema? schema) ? schema.OutputNames : [];
 
     private static IReadOnlyList<string> Inputs(string className) =>
-        LogicFixture.Catalog.TryGetSchema(className, out EntitySchema? schema) ? schema.Inputs : [];
+        LogicFixture.Catalog.TryGetSchema(className, out EntitySchema? schema) ? schema.InputNames : [];
 }

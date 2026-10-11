@@ -158,8 +158,8 @@ public sealed class EntitySchema
         EntityPlacement placement = EntityPlacement.Point,
         EntityOrigin origin = EntityOrigin.EngineCSharp,
         IReadOnlyList<KeyvalueDescriptor>? keyvalues = null,
-        IReadOnlyList<string>? inputs = null,
-        IReadOnlyList<string>? outputs = null,
+        IReadOnlyList<EntityPort>? inputs = null,
+        IReadOnlyList<EntityPort>? outputs = null,
         string icon = "",
         bool hasFacing = false)
     {
@@ -173,6 +173,8 @@ public sealed class EntitySchema
         Keyvalues = keyvalues ?? [];
         Inputs = inputs ?? [];
         Outputs = outputs ?? [];
+        InputNames = NamesOf(Inputs);
+        OutputNames = NamesOf(Outputs);
         Icon = icon ?? "";
         HasFacing = hasFacing;
     }
@@ -195,11 +197,23 @@ public sealed class EntitySchema
     /// <summary>The properties the class exposes, in declaration order.</summary>
     public IReadOnlyList<KeyvalueDescriptor> Keyvalues { get; }
 
-    /// <summary>The input names the class accepts.</summary>
-    public IReadOnlyList<string> Inputs { get; }
+    /// <summary>The inputs the class accepts, each with what it takes, in declaration order.</summary>
+    public IReadOnlyList<EntityPort> Inputs { get; }
 
-    /// <summary>The output names the class fires.</summary>
-    public IReadOnlyList<string> Outputs { get; }
+    /// <summary>The outputs the class fires, each with what it sends, in declaration order.</summary>
+    public IReadOnlyList<EntityPort> Outputs { get; }
+
+    /// <summary>
+    /// The names of <see cref="Inputs"/>, in the same order. One list for the
+    /// life of the schema, so a caller may keep it and compare by reference.
+    /// </summary>
+    public IReadOnlyList<string> InputNames { get; }
+
+    /// <summary>
+    /// The names of <see cref="Outputs"/>, in the same order. One list for
+    /// the life of the schema, so a caller may keep it and compare by reference.
+    /// </summary>
+    public IReadOnlyList<string> OutputNames { get; }
 
     /// <summary>
     /// The name of the icon an editor draws for the class, such as <c>door</c>,
@@ -213,4 +227,34 @@ public sealed class EntitySchema
     /// draws an arrow along the node's local +Z for a class that says yes.
     /// </summary>
     public bool HasFacing { get; }
+
+    /// <summary>The input called <paramref name="name"/>. Names are case sensitive.</summary>
+    public bool TryGetInput(string? name, out EntityPort input) => TryFind(Inputs, name, out input);
+
+    /// <summary>The output called <paramref name="name"/>. Names are case sensitive.</summary>
+    public bool TryGetOutput(string? name, out EntityPort output) => TryFind(Outputs, name, out output);
+
+    private static bool TryFind(IReadOnlyList<EntityPort> ports, string? name, out EntityPort found)
+    {
+        for (int i = 0; i < ports.Count; i++)
+        {
+            if (string.Equals(ports[i].Name, name, StringComparison.Ordinal))
+            {
+                found = ports[i];
+                return true;
+            }
+        }
+
+        found = default;
+        return false;
+    }
+
+    private static string[] NamesOf(IReadOnlyList<EntityPort> ports)
+    {
+        var names = new string[ports.Count];
+        for (int i = 0; i < names.Length; i++)
+            names[i] = ports[i].Name;
+
+        return names;
+    }
 }

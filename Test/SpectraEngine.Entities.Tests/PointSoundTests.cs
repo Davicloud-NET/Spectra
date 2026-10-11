@@ -414,8 +414,8 @@ public sealed class PointSoundTests
         schema.DisplayName.ShouldBe("Sound");
         schema.Group.ShouldBe("Sound");
         schema.Placement.ShouldBe(EntityPlacement.Point);
-        schema.Inputs.ShouldBe(["Play", "Stop", "SetVolume", "SetPitch"]);
-        schema.Outputs.ShouldBe([PointSound.OnEnded, PointSound.OnMarker]);
+        schema.InputNames.ShouldBe(["Play", "Stop", "SetVolume", "SetPitch"]);
+        schema.OutputNames.ShouldBe([PointSound.OnEnded, PointSound.OnMarker]);
 
         schema.Keyvalues.Select(keyvalue => keyvalue.Name).ShouldBe(
         [

@@ -73,6 +73,10 @@ internal static class KeyvalueBinding
         return false;
     }
 
+    // Mirrors Core's ParameterType.CanCarry: every kind up to NodeRef. The
+    // kinds after it only mean something on a keyvalue.
+    public static bool CanCarry(byte value) => value <= NodeRefValue;
+
     // The KeyvalueType a member gets when the author states none.
     public static bool TryInfer(ClrKind kind, out KeyvalueRow row)
     {

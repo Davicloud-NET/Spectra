@@ -235,8 +235,8 @@ public sealed class FuncMoveLinearTests
         schema.DisplayName.ShouldBe("Linear Mover");
         schema.Group.ShouldBe("Movers");
         schema.Placement.ShouldBe(EntityPlacement.Brush);
-        schema.Inputs.ShouldBe(["Open", "Close", "SetPosition"]);
-        schema.Outputs.ShouldBe(["OnFullyOpen", "OnFullyClosed"]);
+        schema.InputNames.ShouldBe(["Open", "Close", "SetPosition"]);
+        schema.OutputNames.ShouldBe(["OnFullyOpen", "OnFullyClosed"]);
 
         schema.Keyvalues.Select(keyvalue => keyvalue.Name)
             .ShouldBe(["movedir", "distance", "speed", "startposition"]);

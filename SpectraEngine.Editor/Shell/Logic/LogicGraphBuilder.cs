@@ -186,8 +186,8 @@ internal sealed class LogicGraphBuilder
                 _entities[i],
                 schema,
                 EditorIcons.ForEntity(_catalog, _entities[i].ClassName),
-                Ports(schema?.Inputs, _received[i], isOutput: false),
-                Ports(schema?.Outputs, _sent[i], isOutput: true));
+                Ports(schema?.InputNames, _received[i], isOutput: false),
+                Ports(schema?.OutputNames, _sent[i], isOutput: true));
 
             _cardOfEntity[i] = card;
             _cards.Add(card);

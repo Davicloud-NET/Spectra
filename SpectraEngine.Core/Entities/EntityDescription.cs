@@ -93,11 +93,12 @@ internal sealed class EntityDescription
 
         if (schema is not null)
         {
-            foreach (string declared in schema.Outputs)
+            foreach (EntityPort declared in schema.Outputs)
             {
-                _listedOutputs.Add(declared);
-                if (!WriteWiresOf(name, declared, note: ""))
-                    _output.Print($"{name} output {EntityConsoleText.Name(declared)}: not wired");
+                string shown = EntityConsoleText.Port(declared);
+                _listedOutputs.Add(declared.Name);
+                if (!WriteWiresOf(name, declared.Name, shown, note: ""))
+                    _output.Print($"{name} output {shown}: not wired");
             }
         }
 
@@ -110,10 +111,9 @@ internal sealed class EntityDescription
                 continue;
 
             _listedOutputs.Add(output);
-            string note = schema is { Outputs.Count: > 0 }
-                ? $", {schema.ClassName} has no output {EntityConsoleText.Name(output)}"
-                : "";
-            WriteWiresOf(name, output, note);
+            string shown = EntityConsoleText.Name(output);
+            string note = schema is { Outputs.Count: > 0 } ? $", {schema.ClassName} has no output {shown}" : "";
+            WriteWiresOf(name, output, shown, note);
         }
     }
 
@@ -124,7 +124,7 @@ internal sealed class EntityDescription
         else if (schema.Inputs.Count == 0)
             _output.Print($"{name} inputs: none");
         else
-            _output.Print($"{name} inputs: {string.Join(' ', schema.Inputs)}");
+            _output.Print($"{name} inputs: {EntityConsoleText.Ports(schema.Inputs)}");
     }
 
     // The runtime copy while the level runs, since it counts the fires left.
@@ -146,7 +146,9 @@ internal sealed class EntityDescription
         }
     }
 
-    private bool WriteWiresOf(string name, string output, string note)
+    // shown is the output as the row spells it: with what it sends, when
+    // its class says.
+    private bool WriteWiresOf(string name, string output, string shown, string note)
     {
         bool any = false;
         foreach (WireRow wire in _wires)
@@ -155,17 +157,16 @@ internal sealed class EntityDescription
                 continue;
 
             any = true;
-            _output.Print(WireText(name, wire) + note);
+            _output.Print(WireText(name, shown, wire) + note);
         }
 
         return any;
     }
 
-    private string WireText(string name, in WireRow row)
+    private string WireText(string name, string shown, in WireRow row)
     {
         EntityConnection wire = row.Connection;
-        var text = new StringBuilder(name).Append(" output ");
-        EntityConsoleText.AppendName(text, wire.Output).Append(" -> ");
+        var text = new StringBuilder(name).Append(" output ").Append(shown).Append(" -> ");
         EntityConsoleText.AppendName(text, wire.TargetName).Append('.');
         EntityConsoleText.AppendCall(text, wire.Input, wire.Parameter);
 

@@ -15,7 +15,7 @@ namespace SpectraEngine.Entities;
 public sealed partial class MathCounter : Entity
 {
     /// <summary>Fired with the new value whenever the count changes or is asked for.</summary>
-    [EntityOutput]
+    [EntityOutput(Parameter = KeyvalueType.Float)]
     public const string OutValue = nameof(OutValue);
 
     /// <summary>Fired when the count arrives at its ceiling, once per arrival.</summary>
@@ -75,27 +75,27 @@ public sealed partial class MathCounter : Entity
         state.Add("refused inputs", RefusedInputCount);
     }
 
-    [EntityInput("Add")]
+    [EntityInput("Add", Parameter = KeyvalueType.Float, CanOmitParameter = true)]
     private void Add(ref EntityInputContext context) => Move(Amount(ref context), ref context);
 
-    [EntityInput("Subtract")]
+    [EntityInput("Subtract", Parameter = KeyvalueType.Float, CanOmitParameter = true)]
     private void Subtract(ref EntityInputContext context) => Move(-Amount(ref context), ref context);
 
-    [EntityInput("SetValue")]
+    [EntityInput("SetValue", Parameter = KeyvalueType.Float)]
     private void SetValue(ref EntityInputContext context)
     {
         if (TryRead(ref context, out float value))
             Assign(value, context.Activator, announce: true);
     }
 
-    [EntityInput("SetValueNoFire")]
+    [EntityInput("SetValueNoFire", Parameter = KeyvalueType.Float)]
     private void SetValueNoFire(ref EntityInputContext context)
     {
         if (TryRead(ref context, out float value))
             Assign(value, context.Activator, announce: false);
     }
 
-    [EntityInput("SetHitMax")]
+    [EntityInput("SetHitMax", Parameter = KeyvalueType.Float)]
     private void SetHitMax(ref EntityInputContext context)
     {
         if (!TryRead(ref context, out float value))
@@ -105,7 +105,7 @@ public sealed partial class MathCounter : Entity
         Value = Clamp(Value);
     }
 
-    [EntityInput("SetHitMin")]
+    [EntityInput("SetHitMin", Parameter = KeyvalueType.Float)]
     private void SetHitMin(ref EntityInputContext context)
     {
         if (!TryRead(ref context, out float value))
@@ -116,15 +116,14 @@ public sealed partial class MathCounter : Entity
     }
 
     [EntityInput("GetValue")]
-    private void GetValue(ref EntityInputContext context) =>
-        FireOutValue(context.Activator, KeyvalueWire.Format(Value));
+    private void GetValue(ref EntityInputContext context) => FireOutValue(Value, context.Activator);
 
     private void Move(float delta, ref EntityInputContext context) =>
         Assign(Value + delta, context.Activator, announce: true);
 
     private void Assign(float value, Entity? activator, bool announce)
     {
-        // Overflow reaches infinity, which KeyvalueWire.Format cannot write.
+        // Overflow reaches infinity, which OutValue cannot carry.
         if (!float.IsFinite(value))
         {
             RefusedInputCount++;
@@ -139,7 +138,7 @@ public sealed partial class MathCounter : Entity
         if (!announce)
             return;
 
-        FireOutValue(activator, KeyvalueWire.Format(Value));
+        FireOutValue(Value, activator);
 
         if (IsClamped && Value >= Maximum && !wasAtMaximum)
             FireOnHitMax(activator);

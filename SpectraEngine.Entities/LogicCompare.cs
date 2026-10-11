@@ -63,14 +63,14 @@ public sealed partial class LogicCompare : Entity
         state.Add("refused inputs", RefusedInputCount);
     }
 
-    [EntityInput("SetValue")]
+    [EntityInput("SetValue", Parameter = KeyvalueType.Float)]
     private void SetValue(ref EntityInputContext context)
     {
         if (TryRead(ref context, out float value))
             Value = value;
     }
 
-    [EntityInput("SetValueCompare")]
+    [EntityInput("SetValueCompare", Parameter = KeyvalueType.Float)]
     private void SetValueCompare(ref EntityInputContext context)
     {
         if (!TryRead(ref context, out float value))
@@ -80,7 +80,7 @@ public sealed partial class LogicCompare : Entity
         Announce(context.Activator);
     }
 
-    [EntityInput("SetCompareValue")]
+    [EntityInput("SetCompareValue", Parameter = KeyvalueType.Float)]
     private void SetCompareValue(ref EntityInputContext context)
     {
         if (TryRead(ref context, out float value))

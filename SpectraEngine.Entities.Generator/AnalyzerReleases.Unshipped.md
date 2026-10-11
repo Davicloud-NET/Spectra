@@ -15,3 +15,5 @@ SPE005  | SpectraEntities | Error    | Reserved keyvalue name (targetname IS Sce
 SPE006  | SpectraEntities | Error    | Keyvalue type does not match the member
 SPE007  | SpectraEntities | Error    | Keyvalue member cannot be assigned
 SPE008  | SpectraEntities | Error    | Unknown entity placement
+SPE009  | SpectraEntities | Error    | Parameter type no wire carries
+SPE010  | SpectraEntities | Error    | Input has no parameter to leave out

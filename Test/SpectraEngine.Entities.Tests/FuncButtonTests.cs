@@ -315,8 +315,8 @@ public sealed class FuncButtonTests
         schema.DisplayName.ShouldBe("Button");
         schema.Group.ShouldBe("Movers");
         schema.Placement.ShouldBe(EntityPlacement.Brush);
-        schema.Inputs.ShouldBe(["Use", "Press"]);
-        schema.Outputs.ShouldBe(["OnPressed", "OnIn", "OnOut"]);
+        schema.InputNames.ShouldBe(["Use", "Press"]);
+        schema.OutputNames.ShouldBe(["OnPressed", "OnIn", "OnOut"]);
 
         schema.Keyvalues.Select(keyvalue => keyvalue.Name)
             .ShouldBe(["movedir", "distance", "lip", "speed", "wait"]);

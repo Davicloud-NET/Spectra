@@ -197,7 +197,7 @@ public sealed class LogicCompareTests
             node.Entity!.SetValue("comparevalue", compareValue);
 
         EntityRuntime.Place(scene.Root, "sink", "test_recorder");
-        foreach (string output in LogicCompare.SpectraSchema.Outputs)
+        foreach (string output in LogicCompare.SpectraSchema.OutputNames)
             EntityRuntime.Wire(node, output, "sink", output);
 
         var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(_log));

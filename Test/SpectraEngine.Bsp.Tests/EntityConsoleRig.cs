@@ -16,11 +16,14 @@ internal sealed class EntityConsoleRig
     public EntityConsoleRig()
     {
         var catalog = new EntityCatalog();
-        catalog.Add(new EntitySchema("relay", inputs: ["Trigger"], outputs: ["OnTrigger"]), () => new RelayEntity());
+        catalog.Add(
+            new EntitySchema(
+                "relay", inputs: EntityPort.Named("Trigger"), outputs: EntityPort.Named("OnTrigger")),
+            () => new RelayEntity());
         catalog.Add(CounterEntity.Schema, () => new CounterEntity());
         catalog.Add(new EntitySchema("recorder"), () => new RecordingEntity(Received));
         catalog.Add(
-            new EntitySchema("spawner", outputs: [SpawnFiringEntity.OnSpawned]),
+            new EntitySchema("spawner", outputs: EntityPort.Named(SpawnFiringEntity.OnSpawned)),
             () => new SpawnFiringEntity());
 
         Manager = new SceneManager(NullLogger<SceneManager>.Instance)

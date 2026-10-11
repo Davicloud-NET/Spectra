@@ -45,10 +45,10 @@ public sealed partial class LogicBranch : Entity
         state.Add("refused inputs", RefusedInputCount);
     }
 
-    [EntityInput("SetValue")]
+    [EntityInput("SetValue", Parameter = KeyvalueType.Bool)]
     private void SetValue(ref EntityInputContext context) => TryStore(ref context);
 
-    [EntityInput("SetValueTest")]
+    [EntityInput("SetValueTest", Parameter = KeyvalueType.Bool)]
     private void SetValueTest(ref EntityInputContext context)
     {
         if (TryStore(ref context))

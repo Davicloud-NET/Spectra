@@ -66,16 +66,67 @@ public sealed class EntitySchemaTests
             placement: EntityPlacement.Brush,
             origin: EntityOrigin.Luau,
             keyvalues: [Speed(), Speed(min: 0f)],
-            inputs: ["Open", "Close"],
-            outputs: ["OnFullyOpen"]);
+            inputs: EntityPort.Named("Open", "Close"),
+            outputs: EntityPort.Named("OnFullyOpen"));
 
         schema.ClassName.ShouldBe("func_door");
         schema.Placement.ShouldBe(EntityPlacement.Brush);
         schema.Origin.ShouldBe(EntityOrigin.Luau);
         schema.Keyvalues.Count.ShouldBe(2);
         schema.Keyvalues[1].HasMin.ShouldBeTrue();
-        schema.Inputs[0].ShouldBe("Open");
+        schema.Inputs[0].Name.ShouldBe("Open");
+        schema.InputNames.ShouldBe(["Open", "Close"]);
         schema.Outputs.Count.ShouldBe(1);
+        schema.OutputNames.ShouldBe(["OnFullyOpen"]);
+    }
+
+    [Fact]
+    public void An_input_and_an_output_are_listed_with_what_they_carry()
+    {
+        var schema = new EntitySchema(
+            "math_counter",
+            inputs:
+            [
+                new EntityPort("Add", ParameterType.Optional(KeyvalueType.Float)),
+                new EntityPort("GetValue", ParameterType.None),
+            ],
+            outputs: [new EntityPort("OutValue", ParameterType.Of(KeyvalueType.Float))]);
+
+        schema.Inputs[0].Parameter.ShouldBe(ParameterType.Optional(KeyvalueType.Float));
+        schema.Inputs[1].Parameter.IsNone.ShouldBeTrue();
+        schema.Outputs[0].Parameter.ValueType.ShouldBe(KeyvalueType.Float);
+        schema.InputNames.ShouldBe(["Add", "GetValue"]);
+        schema.OutputNames.ShouldBe(["OutValue"]);
+    }
+
+    [Fact]
+    public void The_names_are_one_list_for_the_life_of_the_schema()
+    {
+        // A dropdown bound to the list loses its selection when handed a new one.
+        var schema = new EntitySchema("func_door", inputs: EntityPort.Named("Open"), outputs: EntityPort.Named("OnOpen"));
+
+        schema.InputNames.ShouldBeSameAs(schema.InputNames);
+        schema.OutputNames.ShouldBeSameAs(schema.OutputNames);
+    }
+
+    [Fact]
+    public void An_input_or_an_output_is_found_by_its_exact_name()
+    {
+        var schema = new EntitySchema(
+            "func_door",
+            inputs: [new EntityPort("Open", ParameterType.None)],
+            outputs: [new EntityPort("OnOpen", ParameterType.None)]);
+
+        schema.TryGetInput("Open", out EntityPort open).ShouldBeTrue();
+        open.ShouldBe(new EntityPort("Open", ParameterType.None));
+        schema.TryGetOutput("OnOpen", out _).ShouldBeTrue();
+
+        // Case matters, as it does on a wire, and an input is not an output.
+        schema.TryGetInput("open", out EntityPort missing).ShouldBeFalse();
+        missing.ShouldBe(default);
+        schema.TryGetInput("OnOpen", out _).ShouldBeFalse();
+        schema.TryGetOutput("Open", out _).ShouldBeFalse();
+        schema.TryGetInput(null, out _).ShouldBeFalse();
     }
 
     [Fact]

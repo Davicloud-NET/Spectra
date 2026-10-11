@@ -20,8 +20,8 @@ public sealed class SentDefIconTests
                 "speed", "Speed", "", "100", KeyvalueType.Float, KeyvalueWidget.Auto,
                 float.NaN, float.NaN, 0u, KeyvalueDescriptor.NoChoices),
         ],
-        inputs: ["Open", "Close"],
-        outputs: ["OnOpened"],
+        inputs: EntityPort.Named("Open", "Close"),
+        outputs: EntityPort.Named("OnOpened"),
         icon: icon);
 
     [Fact]
@@ -30,8 +30,8 @@ public sealed class SentDefIconTests
         EntitySchema copy = SentDef.Read(SentDef.Write([Door("door")]))[0];
 
         copy.Icon.ShouldBe("door");
-        copy.Inputs.ShouldBe(["Open", "Close"]);
-        copy.Outputs.ShouldBe(["OnOpened"]);
+        copy.InputNames.ShouldBe(["Open", "Close"]);
+        copy.OutputNames.ShouldBe(["OnOpened"]);
     }
 
     [Fact]
@@ -48,10 +48,10 @@ public sealed class SentDefIconTests
         int recordSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(
             image.AsSpan(SentDef.HeaderSize + SentDef.TypeRecordSizeOffset));
 
-        // One keyvalue, two inputs and an output, then the trailer.
+        // One keyvalue, two inputs and an output, then the trailer and their types.
         recordSize.ShouldBe(
             SentDef.TypeRecordFixedSize + SentDef.KeyvalueRecordSize + (3 * SentDef.StringRefSize) +
-            SentDef.TypeRecordTrailerSize);
+            SentDef.TypeRecordTrailerSize + SentDef.ParameterBytes(2, 1));
 
         uint reference = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(IconReference(image)));
         int table = (int)BinaryPrimitives.ReadUInt32LittleEndian(
@@ -90,8 +90,8 @@ public sealed class SentDefIconTests
         read[0].ClassName.ShouldBe("func_door");
         read[0].Icon.ShouldBe("");
         read[0].Keyvalues.Count.ShouldBe(1);
-        read[0].Inputs.ShouldBe(["Open", "Close"]);
-        read[0].Outputs.ShouldBe(["OnOpened"]);
+        read[0].InputNames.ShouldBe(["Open", "Close"]);
+        read[0].OutputNames.ShouldBe(["OnOpened"]);
         read[1].ClassName.ShouldBe("zz_last");
         read[1].Icon.ShouldBe("");
     }

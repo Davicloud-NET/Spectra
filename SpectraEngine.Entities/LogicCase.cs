@@ -85,7 +85,7 @@ public sealed partial class LogicCase : Entity
     /// <summary>Fired with the value when it equals no case.</summary>
     // Carries the value, so a second logic_case wired to it can take over. The
     // numbered outputs carry nothing: a wire on them sends its own parameter.
-    [EntityOutput]
+    [EntityOutput(Parameter = KeyvalueType.String)]
     public const string OnDefault = nameof(OnDefault);
 
     private static readonly string[] CaseOutputs =
@@ -164,13 +164,13 @@ public sealed partial class LogicCase : Entity
     public string Case16 { get => _cases[15]; set => _cases[15] = value; }
 
     // No PickRandom: the runtime has no deterministic random source to draw from.
-    [EntityInput("InValue")]
+    [EntityInput("InValue", Parameter = KeyvalueType.String)]
     private void InValue(ref EntityInputContext context)
     {
         int match = IndexOfCase(context.Parameter);
         if (match < 0)
         {
-            FireOnDefault(context.Activator, context.Parameter);
+            FireOnDefault(context.Parameter, context.Activator);
             return;
         }
 

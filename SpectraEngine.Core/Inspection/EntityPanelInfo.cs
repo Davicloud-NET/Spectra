@@ -102,7 +102,7 @@ public sealed class EntityPanelInfo
 
         EntitySchema? schema = null;
         bool known = schemas is not null && schemas.TryGetSchema(entity.ClassName, out schema);
-        IReadOnlyList<string> outputs = known && schema is not null ? schema.Outputs : [];
+        IReadOnlyList<string> outputs = known && schema is not null ? schema.OutputNames : [];
 
         // One walk feeds both the picker and the resolve check, so they cannot
         // disagree. Runs even with no wires: the picker is offered then too.

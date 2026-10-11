@@ -87,4 +87,25 @@ internal static class EntityDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ParameterNotCarried = new(
+        id: "SPE009",
+        title: "Parameter type no wire carries",
+        messageFormat:
+            "{0} '{1}' declares a parameter of KeyvalueType.{2}, which no wire carries. Use Bool, Int, Float, " +
+            "String, Vec2, Vec3, Vec4, Color, Angles, TargetName or NodeRef. Choices, flags and a distance only " +
+            "mean something on a keyvalue, and a level's assets are found through its keyvalues.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor NothingToOmit = new(
+        id: "SPE010",
+        title: "Input has no parameter to leave out",
+        messageFormat:
+            "Input '{0}' sets CanOmitParameter and declares no Parameter. State the type of the parameter that " +
+            "may be left out, or remove CanOmitParameter.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }
