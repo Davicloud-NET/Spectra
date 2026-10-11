@@ -121,7 +121,7 @@ public sealed partial class TriggerMultiple : Entity, ITouchListener
         SetTicking(_ticksToRefire > 0);
     }
 
-    // At least one tick, so a wait shorter than a tick still refires.
-    private int RefireTicks() =>
-        Wait > 0f ? Math.Max(1, (int)MathF.Round(Wait / World.FixedDeltaTime)) : 0;
+    // Counted as the world counts any wait: none for a wait of zero, and at
+    // least one tick for any other, so a wait shorter than a tick still refires.
+    private int RefireTicks() => (int)Math.Min(World.TicksIn(Wait), int.MaxValue);
 }

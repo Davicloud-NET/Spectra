@@ -176,6 +176,5 @@ public sealed partial class FuncButton : Entity
 
     // Zero means stay in. A wait of no seconds still takes one tick: the
     // button arrived on this one.
-    private int WaitTicks() =>
-        Wait >= 0f ? LinearMover.WholeTicks(Wait / (double)World.FixedDeltaTime) : 0;
+    private int WaitTicks() => Wait >= 0f ? LinearMover.TicksOrOne(World, Wait) : 0;
 }

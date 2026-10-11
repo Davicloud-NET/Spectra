@@ -67,6 +67,31 @@ public sealed class TriggerTests
         heardIn.ShouldBe([1L, 31L, 61L, 91L]);
     }
 
+    [Theory]
+    [InlineData("0.1", 6)]
+    [InlineData("0.04", 3)]
+    [InlineData("0.02", 2)]
+    [InlineData("0.001", 1)]
+    public void A_wait_is_counted_in_whole_ticks_rounded_up_as_any_wait_in_the_world_is(string wait, int ticks)
+    {
+        SceneNode zone = Zone("trigger_multiple");
+        zone.Entity!.SetValue("wait", wait);
+        EntityRuntime.Wire(zone, TriggerMultiple.OnTrigger, "sink", "Trigger");
+        _player.Feet = Inside;
+        EntityWorld world = Play();
+
+        var heardIn = new List<long>();
+        for (int i = 0; i < 1 + (3 * ticks); i++)
+        {
+            int before = _log.Count;
+            world.Tick(Tick);
+            if (_log.Count > before)
+                heardIn.Add(world.TickNumber);
+        }
+
+        heardIn.ShouldBe([1L, 1L + ticks, 1L + (2 * ticks), 1L + (3 * ticks)]);
+    }
+
     [Fact]
     public void A_wait_of_zero_fires_OnTrigger_on_entry_only()
     {

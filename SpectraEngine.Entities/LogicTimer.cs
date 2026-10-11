@@ -6,6 +6,7 @@ namespace SpectraEngine.Entities;
 /// Fires an output on a repeating interval, for as long as it is enabled.
 /// </summary>
 // Enable restarts the interval, it does not resume a partly elapsed one.
+// The interval is counted in whole ticks, rounded up.
 // The interval is floored, not refused: zero would be a think that is always
 // due, and the keyvalue binder must not throw during a level load.
 [SpectraEntity("logic_timer", Group = "Logic", Placement = EntityPlacement.Abstract, Icon = "timer")]

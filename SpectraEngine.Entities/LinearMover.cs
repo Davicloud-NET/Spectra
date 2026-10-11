@@ -27,8 +27,6 @@ public sealed class LinearMover
 
     private const float MinimumDirectionLength = 1e-6f;
 
-    private const double WholeTickSlack = 1e-3;
-
     private readonly Entity _owner;
 
     // Null until the owner says which brushes travel with the node.
@@ -148,7 +146,7 @@ public sealed class LinearMover
 
         Closed = closed;
         Open = open;
-        TravelTicks = WholeTicks(distance / ((double)speed * _owner.World.FixedDeltaTime));
+        TravelTicks = TicksOrOne(_owner.World, distance / (double)speed);
         TicksTravelled = 0;
         TargetTicks = 0;
     }
@@ -237,11 +235,11 @@ public sealed class LinearMover
         return next == 0 ? LinearMoverStep.ArrivedClosed : LinearMoverStep.Stopped;
     }
 
-    // A float step puts 2 / (2 * dt) a hair off a whole number. Without the
-    // slack, a trip that divides evenly takes a tick more at some tick rates.
-    // Written so NaN means one tick.
-    internal static int WholeTicks(double ticks) =>
-        ticks > 1d ? (int)Math.Min(Math.Ceiling(ticks - WholeTickSlack), int.MaxValue) : 1;
+    // Seconds as the world counts any wait, and one tick where that is none:
+    // a trip of no length, or a rest of no seconds, still takes the tick it
+    // happens on.
+    internal static int TicksOrOne(EntityWorld world, double seconds) =>
+        (int)Math.Clamp(world.TicksIn(seconds), 1L, int.MaxValue);
 
     private float PlayerDepth() =>
         _solid is { } solid && _owner.World.Player is { IsPresent: true } player

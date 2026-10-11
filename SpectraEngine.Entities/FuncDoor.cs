@@ -236,6 +236,5 @@ public sealed partial class FuncDoor : Entity
 
     // Zero means stay open. A wait of no seconds still takes one tick: the
     // door arrived on this one.
-    private int WaitTicks() =>
-        Wait >= 0f ? LinearMover.WholeTicks(Wait / (double)World.FixedDeltaTime) : 0;
+    private int WaitTicks() => Wait >= 0f ? LinearMover.TicksOrOne(World, Wait) : 0;
 }
