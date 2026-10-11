@@ -99,8 +99,15 @@ public sealed class PlaySession
         if (!IsActive)
             return;
 
-        _sceneManager.StopEntityWorld();
-        IsActive = false;
+        try
+        {
+            _sceneManager.StopEntityWorld();
+        }
+        finally
+        {
+            // Also when the stop threw: the entities are gone either way.
+            IsActive = false;
+        }
     }
 
     /// <summary>

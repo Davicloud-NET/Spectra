@@ -278,8 +278,9 @@ public sealed class EntityWorld
     /// <summary>
     /// Runs <see cref="Entity.OnRemove"/> on everything, puts back what the
     /// level changed on its nodes, unsubscribes from the scene and drops every
-    /// instance. Harmless on an inactive world. When a removal throws, the
-    /// rest still happens before the exception leaves.
+    /// instance. Harmless on an inactive world. When an
+    /// <see cref="Entity.OnRemove"/> throws, the level is still put back and
+    /// let go of before the exception leaves.
     /// </summary>
     public void Deactivate()
     {

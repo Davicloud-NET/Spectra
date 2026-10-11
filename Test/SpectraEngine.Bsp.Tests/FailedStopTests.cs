@@ -3,6 +3,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps;
+using SpectraEngine.Core.Physics.Character;
+using SpectraEngine.Core.Play;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 
@@ -58,6 +60,21 @@ public sealed class FailedStopTests
         Should.Throw<InvalidOperationException>(manager.StopEntityWorld);
 
         manager.EntityWorld.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_play_session_whose_stop_threw_is_over()
+    {
+        SceneManager manager = Hosted();
+        Scene scene = manager.ActiveScene.ShouldNotBeNull();
+        BrokenLevel(scene.Root);
+        var session = new PlaySession(manager, new CharacterSimulation(scene));
+        session.Enter();
+
+        Should.Throw<InvalidOperationException>(session.Exit);
+
+        session.IsActive.ShouldBeFalse();
+        Should.NotThrow(() => session.Tick(EntityMotion.Dt, default));
     }
 
     [Fact]
