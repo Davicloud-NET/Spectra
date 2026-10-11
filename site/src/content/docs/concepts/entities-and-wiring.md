@@ -64,6 +64,8 @@ A trigger is a volume: a part that is not drawn and not solid, and that fires wh
 
 An entity with no shape shows in the viewport as its class's icon, which always faces you. It is the icon the class has in the scene tree, the Logic view and the Entity list, and it is drawn in the colour of the class's group, so a sound, a player start and a timer can be told apart at a glance. A class whose facing matters, such as a player start or a teleport destination, also gets an arrow that shows which way it points. A sound has a place and no direction, and a logic entity has neither, so they get no arrow. Far away, the icon becomes a small diamond in the same colour.
 
+Icons that would cover each other, such as the three sounds of one lift, are drawn side by side in the order the scene lists them, and a light's icon joins the same row. A thin line runs from each one back to where it really is, and a click takes the icon it lands on.
+
 A class this build does not know, such as one from another game, gets one icon that marks it as unknown. A class that names no icon gets the plain entity icon.
 
 ## Playing does not change the level
