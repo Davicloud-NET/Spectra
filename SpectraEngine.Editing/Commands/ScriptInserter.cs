@@ -22,8 +22,9 @@ public static class ScriptInserter
     /// <summary>
     /// Where a script goes when nobody pointed at a node: under the selected
     /// node, or under the root with nothing selected, which makes it a level
-    /// script. False with several selected, and <paramref name="refusal"/>
-    /// then says so.
+    /// script. A selected script with no children stands for the node it is
+    /// under, so a second insert lands beside the first. False with several
+    /// selected, and <paramref name="refusal"/> then says so.
     /// </summary>
     // A script acts on its parent, and the order nodes were selected in shows
     // nowhere. Taking the first would be a guess that leaves a file behind.
@@ -36,7 +37,7 @@ public static class ScriptInserter
         parent = selected.Count switch
         {
             0 => scene.Root,
-            1 => selected[0],
+            1 => ParentFor(scene, selected[0]),
             _ => null,
         };
 
@@ -45,6 +46,11 @@ public static class ScriptInserter
 
         return parent is not null;
     }
+
+    // Insert leaves the new script selected. Pressed again, it would nest the
+    // next one under a script, which nobody asks for by pressing twice.
+    private static SceneNode ParentFor(Scene scene, SceneNode selected) =>
+        SceneNodeClassifier.HasPlace(selected) ? selected : selected.Parent ?? scene.Root;
 
     /// <summary>
     /// Makes a script file named after the node the script goes under, or

@@ -383,15 +383,58 @@ public sealed class ScriptInsertTests : IDisposable
     }
 
     [Fact]
-    public void A_script_may_sit_under_a_script()
+    public void Pressed_twice_in_a_row_the_second_script_lands_beside_the_first()
     {
+        // The first insert leaves its script selected. The second must not
+        // nest under it: the part gets two scripts, and each its own file.
         SceneNode part = AddSelectedPart("Coin");
+
+        Insert();
+        ScriptInsertReport second = Insert();
+
+        second.Added.ShouldBeTrue(second.Describe());
+        second.Describe().ShouldBe("Added a script to 'Coin' and made its file, Assets/Scripts/Coin2.luau.");
+        part.Children.Select(child => child.Script.ShouldNotBeNull().Path)
+            .ShouldBe(["Scripts/Coin.luau", "Scripts/Coin2.luau"]);
+        part.Children.ShouldAllBe(child => child.Children.Count == 0);
+        _scene.Selection.Items.ShouldBe([part.Children[1]]);
+    }
+
+    [Fact]
+    public void With_a_level_script_selected_the_next_one_is_a_level_script_too()
+    {
         Insert();
 
-        // The new script is the selection, so the next one goes under it.
-        ScriptInsertReport nested = Insert();
+        ScriptInsertReport second = Insert();
 
-        nested.Added.ShouldBeTrue(nested.Describe());
-        part.Children[0].Children.ShouldHaveSingleItem().Script.ShouldBe(new Script("Scripts/Script.luau"));
+        second.IsLevelScript.ShouldBeTrue();
+        _scene.Root.Children.Select(child => child.Script.ShouldNotBeNull().Path)
+            .ShouldBe(["Scripts/Lobby.luau", "Scripts/Lobby2.luau"]);
+    }
+
+    [Fact]
+    public void A_script_dropped_on_a_script_goes_under_it_because_that_is_where_it_was_put()
+    {
+        SceneNode part = AddSelectedPart("Coin");
+        SceneNode first = _scene.Root.CreateChild("Loader");
+        first.Script = new Script("Scripts/Loader.luau");
+
+        _host.AttachScript("Scripts/shared/Timer.luau", first.Id).ParentName.ShouldBe("Loader");
+
+        first.Children.ShouldHaveSingleItem().Script.ShouldBe(new Script("Scripts/shared/Timer.luau"));
+        part.Children.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_selected_script_that_has_children_is_a_parent_and_takes_the_new_one()
+    {
+        SceneNode loader = _scene.Root.CreateChild("Loader");
+        loader.Script = new Script("Scripts/Loader.luau");
+        loader.CreateChild("Lamp");
+        _scene.Selection.Select(loader);
+
+        Insert().ParentName.ShouldBe("Loader");
+
+        loader.Children.Count.ShouldBe(2);
     }
 }
