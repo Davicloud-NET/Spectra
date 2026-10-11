@@ -9,9 +9,10 @@ namespace SpectraEngine.Core.Scene;
 /// </summary>
 internal static class EulerRotation
 {
-    // Past this sine the middle angle is a quarter turn as near as a float can
-    // tell, and the two outer angles turn about the same axis.
-    private const float PoleSine = 0.99999f;
+    // Below this cosine the middle angle is a quarter turn, and the two outer
+    // angles turn about the same axis. Set where the rounding of a float
+    // matrix, about 1e-7 divided by the cosine, grows past the cosine itself.
+    private const float PoleCosine = 3e-4f;
 
     /// <summary>Rx * Ry * Rz: the Z turn is applied first.</summary>
     public static Quaternion FromXyz(float rx, float ry, float rz) =>
@@ -27,11 +28,13 @@ internal static class EulerRotation
     // R22 = cos rx cos ry, R01 = -cos ry sin rz, R00 = cos ry cos rz.
     public static Vector3 ToXyz(in Matrix4x4 basis)
     {
-        float sine = Math.Clamp(basis.M31, -1f, 1f);
-        float ry = MathF.Asin(sine);
+        // From the cosine and not Asin of the sine, which loses half its
+        // digits near a quarter turn.
+        float cosine = MathF.Sqrt((basis.M11 * basis.M11) + (basis.M21 * basis.M21));
+        float ry = MathF.Atan2(basis.M31, cosine);
 
         // At the pole only rx + rz or rx - rz is fixed. All of it goes to rx.
-        if (MathF.Abs(sine) > PoleSine)
+        if (cosine < PoleCosine)
             return new Vector3(MathF.Atan2(basis.M23, basis.M22), ry, 0f);
 
         return new Vector3(
@@ -46,11 +49,11 @@ internal static class EulerRotation
     // R22 = cos ry cos rx, R10 = cos rx sin rz, R11 = cos rx cos rz.
     public static Vector3 ToYxz(in Matrix4x4 basis)
     {
-        float sine = Math.Clamp(-basis.M32, -1f, 1f);
-        float rx = MathF.Asin(sine);
+        float cosine = MathF.Sqrt((basis.M12 * basis.M12) + (basis.M22 * basis.M22));
+        float rx = MathF.Atan2(-basis.M32, cosine);
 
         // At the pole only ry + rz or ry - rz is fixed. All of it goes to ry.
-        if (MathF.Abs(sine) > PoleSine)
+        if (cosine < PoleCosine)
             return new Vector3(rx, MathF.Atan2(-basis.M13, basis.M11), 0f);
 
         return new Vector3(

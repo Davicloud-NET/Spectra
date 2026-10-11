@@ -141,7 +141,9 @@ public sealed class CFrameRotationTests
     [Fact]
     public void FromAxisAngle_about_the_diagonal_by_a_third_of_a_turn_cycles_the_axes()
     {
-        CFrame frame = CFrame.FromAxisAngle(new Vector3(1f, 1f, 1f), 2f * MathF.PI / 3f);
+        Vector3 diagonal = Vector3.Normalize(new Vector3(1f, 1f, 1f));
+
+        CFrame frame = CFrame.FromAxisAngle(diagonal, 2f * MathF.PI / 3f);
 
         // X goes to Y, Y to Z and Z to X.
         frame.ShouldHaveRotation(
@@ -150,6 +152,8 @@ public sealed class CFrameRotationTests
             0, 1, 0);
     }
 
+    // Our choice: Roblox's documentation asks for a unit axis and does not say
+    // what a longer one gives.
     [Fact]
     public void FromAxisAngle_does_not_need_a_unit_axis()
     {

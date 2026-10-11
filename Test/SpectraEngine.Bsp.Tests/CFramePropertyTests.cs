@@ -186,10 +186,31 @@ public sealed class CFramePropertyTests
 
         fromXyz.Z.ShouldBe(0f);
         fromYxz.Z.ShouldBe(0f);
-        fromXyz.Y.ShouldBe(middle, 1e-3f);
-        fromYxz.X.ShouldBe(middle, 1e-3f);
-        CFrame.Angles(fromXyz.X, fromXyz.Y, fromXyz.Z).ShouldBeNear(xyz, 1e-3f);
-        CFrame.FromOrientation(fromYxz.X, fromYxz.Y, fromYxz.Z).ShouldBeNear(yxz, 1e-3f);
+        fromXyz.Y.ShouldBe(middle, 1e-5f);
+        fromYxz.X.ShouldBe(middle, 1e-5f);
+        CFrame.Angles(fromXyz.X, fromXyz.Y, fromXyz.Z).ShouldBeNear(xyz, 1e-5f);
+        CFrame.FromOrientation(fromYxz.X, fromYxz.Y, fromYxz.Z).ShouldBeNear(yxz, 1e-5f);
+    }
+
+    [Theory]
+    [InlineData(1.5f)]
+    [InlineData(1.57f)]
+    [InlineData(1.5705f)]
+    [InlineData(1.5707f)]
+    [InlineData(1.57079f)]
+    [InlineData(-1.5707f)]
+    public void Close_to_a_pole_the_angles_still_build_the_rotation(float middle)
+    {
+        CFrame xyz = CFrame.Angles(0.4f, middle, -0.9f);
+        CFrame yxz = CFrame.FromOrientation(middle, 0.4f, -0.9f);
+
+        Vector3 fromXyz = xyz.ToEulerAnglesXYZ();
+        Vector3 fromYxz = yxz.ToOrientation();
+
+        fromXyz.Y.ShouldBe(middle, 1e-4f);
+        fromYxz.X.ShouldBe(middle, 1e-4f);
+        CFrame.Angles(fromXyz.X, fromXyz.Y, fromXyz.Z).ShouldBeNear(xyz, 5e-4f);
+        CFrame.FromOrientation(fromYxz.X, fromYxz.Y, fromYxz.Z).ShouldBeNear(yxz, 5e-4f);
     }
 
     [Fact]
