@@ -522,7 +522,9 @@ public abstract class GizmoTool
             return GizmoUpdateResult.DragCancelled;
         }
 
-        if (frame.WasReleased(DragButton))
+        // A press and its release inside one frame leave no release for a
+        // later one, so a button that is up ends the drag as well.
+        if (frame.WasReleased(DragButton) || !frame.IsDown(DragButton))
             return CommitDrag();
 
         // Zero-size viewport mid-drag (minimised window): ScreenPointToRay

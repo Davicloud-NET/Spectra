@@ -101,11 +101,18 @@ public sealed class BoxSelectController
             return BoxSelectResult.Cancelled;
         }
 
+        bool wasReleased = frame.WasReleased(DragButton);
+
+        // A press and its release inside one frame leave no release for this
+        // one. The button is up, so the marquee ends where it was.
+        if (!wasReleased && !frame.IsDown(DragButton))
+            return Commit(frame.Modifiers, frame.ViewportSize);
+
         // Track before testing the release, so a same-frame press and release
         // still sees where the cursor ended up.
         _current = frame.CursorPosition;
 
-        if (!frame.WasReleased(DragButton))
+        if (!wasReleased)
             return BoxSelectResult.Dragging;
 
         return Commit(frame.Modifiers, frame.ViewportSize);
