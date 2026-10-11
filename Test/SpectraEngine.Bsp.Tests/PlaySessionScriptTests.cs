@@ -25,13 +25,16 @@ public sealed class PlaySessionScriptTests
     public void A_tick_tells_the_scripts_before_the_physics_step_and_at_its_end()
     {
         SceneManager manager = Hosted(withScript: true);
-        var session = new PlaySession(manager, Walker(manager));
+        CharacterSimulation walker = Walker(manager);
+        walker.Mover = new RecordingMover(_log);
+        var session = new PlaySession(manager, walker);
         session.Enter();
 
         session.Tick(Dt, default);
         session.Tick(Dt, default);
 
-        string[] everyTick = ["before simulation", "push", "step", "drain", "after simulation"];
+        // The end comes after the character has walked, not only after physics.
+        string[] everyTick = ["before simulation", "push", "step", "drain", "character", "after simulation"];
         _log.ShouldBe(["make runtime", "start scripts", .. everyTick, .. everyTick]);
     }
 

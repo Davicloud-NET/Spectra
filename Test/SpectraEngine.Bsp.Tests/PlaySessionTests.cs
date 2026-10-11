@@ -518,19 +518,4 @@ public sealed class PlaySessionTests
 
         protected internal override void Think() => _log.Add("entities");
     }
-
-    private sealed class RecordingMover : ICharacterMover
-    {
-        private readonly List<string> _log;
-
-        public RecordingMover(List<string> log) => _log = log;
-
-        public void Tick(
-            ref CharacterState state,
-            in CharacterCommand command,
-            ICharacterCollisionSource source,
-            CharacterTuning tuning,
-            float deltaTime) =>
-            _log.Add("character");
-    }
 }
