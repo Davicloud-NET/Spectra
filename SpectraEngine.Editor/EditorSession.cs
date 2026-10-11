@@ -17,6 +17,7 @@ using SpectraEngine.Editing.Gizmos;
 using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Sounds;
 using SpectraEngine.Physics.Box3D;
+using SpectraEngine.Scripting.Luau.Runtime;
 using SpectraShade.Compiler;
 using System;
 using System.Collections.Generic;
@@ -93,6 +94,10 @@ public sealed class EditorSession : IDisposable
 
         sceneManager.PhysicsFactory = _ =>
             new Box3DScenePhysics(loggerFactory.CreateLogger<Box3DScenePhysics>());
+
+        // Each play session gets a script runtime of its own. Installed here,
+        // so the session that follows a crash runs scripts too.
+        sceneManager.Scripts.RuntimeFactory = LuauScriptRuntime.Create;
 
         SceneManager = sceneManager;
         _engine = new Engine(

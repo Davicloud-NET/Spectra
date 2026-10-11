@@ -18,6 +18,7 @@ using SpectraEngine.Executable;
 using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Executable.Editing;
 using SpectraEngine.Physics.Box3D;
+using SpectraEngine.Scripting.Luau.Runtime;
 using SpectraShade.Compiler;
 
 Log.Logger = new LoggerConfiguration()
@@ -195,6 +196,10 @@ try
     // A factory so Core never needs box3d.dll. Unset, the scene gets NullScenePhysics.
     sceneManager.PhysicsFactory = _ =>
         new Box3DScenePhysics(loggerFactory.CreateLogger<Box3DScenePhysics>());
+
+    // The same for Luau. Each play session gets a runtime of its own. Unset,
+    // or with the library not built, a level plays without its scripts.
+    sceneManager.Scripts.RuntimeFactory = LuauScriptRuntime.Create;
 
     var engine = new Engine(
         loggerFactory.CreateLogger<Engine>(),
