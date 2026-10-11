@@ -10,25 +10,36 @@ namespace SpectraEngine.Scripting.Tests;
 /// </summary>
 public sealed class RenameScriptTests
 {
+    private const string RenamesTwoNodes = """
+        local door = script.Parent
+        door.Name = "Gate"
+        print(door.Name, door)
+        door.Name = "Portcullis"
+        script.Name = "Opener"
+        print(door.Name, script)
+        """;
+
     [Fact]
-    public void A_script_renames_a_node_and_Stop_gives_the_name_back()
+    public void A_name_a_script_gives_a_node_is_its_name_on_the_next_line()
     {
         using var level = new ScriptLevel();
         SceneNode door = level.Part("Door", new Vector3(1f, 2f, 3f));
-        level.AddScript(door, """
-            local door = script.Parent
-            door.Name = "Gate"
-            print(door.Name, door)
-            door.Name = "Portcullis"
-            script.Name = "Opener"
-            print(door.Name, script)
-            """);
+        level.AddScript(door, RenamesTwoNodes);
 
         level.Play().Tick();
 
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(["Gate Gate", "Portcullis Opener"]);
         door.Name.ShouldBe("Portcullis");
+    }
+
+    [Fact]
+    public void Stop_gives_back_the_names_a_script_changed()
+    {
+        using var level = new ScriptLevel();
+        SceneNode door = level.Part("Door", new Vector3(1f, 2f, 3f));
+        level.AddScript(door, RenamesTwoNodes);
+        level.Play().Tick();
 
         level.Stop();
 
@@ -66,9 +77,6 @@ public sealed class RenameScriptTests
 
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(["first", "second", "heard"]);
-
-        level.Stop();
-        gate.Name.ShouldBe("Gate");
     }
 
     [Fact]
@@ -85,6 +93,9 @@ public sealed class RenameScriptTests
             print(pcall(function() door.Name = "\xff\xfe" end))
             print(pcall(function() door.Name = 5 end))
             print(pcall(function() door.Name = nil end))
+            print(pcall(function() door.Name = "two\u{2028}lines" end))
+            print(pcall(function() door.Name = "Door " end))
+            print(pcall(function() door.Name = "!self" end))
             door.Name = string.rep("x", 100)
             print(#door.Name)
             door.Name = ""
@@ -103,10 +114,32 @@ public sealed class RenameScriptTests
             $"false {here}:6: Unable to assign property Name. The string is not valid UTF-8",
             $"false {here}:7: Unable to assign property Name. string expected, got number",
             $"false {here}:8: Unable to assign property Name. string expected, got nil",
+            $"false {here}:9: Door cannot be renamed: a name cannot hold a line break or any other control character.",
+            $"false {here}:10: Door cannot be renamed: a name cannot start or end with a space.",
+            $"false {here}:11: Door cannot be renamed: a name cannot start with !, since no wire can reach one that does.",
             "100",
         ]);
-        level.Sink.Messages.Last().Line.ShouldBe(11);
+        level.Sink.Messages.Last().Line.ShouldBe(14);
         level.Errors.ShouldHaveSingleItem().ShouldEndWith("cannot be renamed: a name cannot be empty.");
         door.Name.ShouldBe(new string('x', 100));
+    }
+
+    // A map can hold a name that no script could give a node.
+    [Fact]
+    public void A_script_can_write_back_the_name_it_read_whatever_the_name()
+    {
+        using var level = new ScriptLevel();
+        SceneNode door = level.Part("two\tparts", Vector3.Zero);
+        level.AddScript(door, """
+            local door = script.Parent
+            door.Name = door.Name
+            print("written")
+            """);
+
+        level.Play().Tick();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["written"]);
+        door.Name.ShouldBe("two\tparts");
     }
 }

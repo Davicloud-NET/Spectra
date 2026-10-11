@@ -115,7 +115,8 @@ public sealed class ScriptWrites
             SettableMemberId.LocalPosition =>
                 TryMove(node, node.LocalTransform with { Position = value.Vector }, out refusal),
             SettableMemberId.LocalCFrame => TryMove(node, LocalUnderParent(node, value.Frame), out refusal),
-            _ => TryRename(node, value.Text, out refusal),
+            SettableMemberId.Name => TryRename(node, value.Text, out refusal),
+            _ => throw NoSuchMember(member),
         };
     }
 
@@ -160,6 +161,15 @@ public sealed class ScriptWrites
 
     private bool TryRename(SceneNode node, string name, [NotNullWhen(false)] out string? refusal)
     {
+        // The name a node has is left alone, like a frame it already has. A
+        // map can hold a name the rule refuses, and a script that writes
+        // back what it read is no error.
+        if (string.Equals(name, node.Name, StringComparison.Ordinal))
+        {
+            refusal = null;
+            return true;
+        }
+
         if (NodeName.WhyRefused(name) is { } why)
         {
             refusal = $"{node.Name} cannot be renamed: {why}.";

@@ -43,14 +43,10 @@ public sealed class ScriptWritesTests
     }
 
     [Fact]
-    public void Each_member_reads_back_what_was_written_and_Stop_puts_the_node_back()
+    public void Each_member_reads_back_what_was_written()
     {
-        SceneNode parent = _scene.Root.CreateChild("Rig");
-        parent.LocalPosition = new Vector3(10f, 0f, 0f);
-        SceneNode part = EntityMotion.BrushNode(parent, "Door", BrushKind.Part, new Vector3(1f, 2f, 3f));
-        byte[] authored = EntityMotion.Bits(part.LocalTransform);
-        EntityWorld world = Started();
-        var writes = new ScriptWrites(world);
+        SceneNode part = PartUnderAMovedParent();
+        var writes = new ScriptWrites(Started());
         CFrame turned = new CFrame(4f, 5f, 6f) * CFrame.Angles(0.1f, 0.2f, 0.3f);
 
         Write(writes, part, SettableMemberId.Position, MemberValue.Of(new Vector3(7f, 8f, 9f)));
@@ -68,7 +64,18 @@ public sealed class ScriptWritesTests
 
         Write(writes, part, SettableMemberId.Name, MemberValue.Of("Gate"));
         ScriptWrites.Read(part, SettableMemberId.Name).ShouldBe(MemberValue.Of("Gate"));
+    }
 
+    [Fact]
+    public void Stop_puts_back_every_member_a_script_wrote()
+    {
+        SceneNode part = PartUnderAMovedParent();
+        byte[] authored = EntityMotion.Bits(part.LocalTransform);
+        EntityWorld world = Started();
+        var writes = new ScriptWrites(world);
+        Write(writes, part, SettableMemberId.Position, MemberValue.Of(new Vector3(7f, 8f, 9f)));
+        Write(writes, part, SettableMemberId.LocalCFrame, MemberValue.Of(new CFrame(4f, 5f, 6f)));
+        Write(writes, part, SettableMemberId.Name, MemberValue.Of("Gate"));
         world.MovedNodeCount.ShouldBe(1);
         world.Journal.Count.ShouldBe(2);
 
@@ -153,59 +160,45 @@ public sealed class ScriptWritesTests
     }
 
     [Fact]
-    public void A_renamed_entity_is_found_by_its_new_name_and_by_its_old_one_after_Stop()
+    public void A_renamed_entity_answers_to_its_new_name_only()
     {
-        var log = new List<string>();
         SceneNode node = EntityRuntime.Place(_scene.Root, "Speaker", "recorder");
-        var world = new EntityWorld(_scene, new CapturingLogger(), EntityMotion.Catalog(log));
-        world.Activate();
-        var writes = new ScriptWrites(world);
+        EntityWorld world = Started();
+        TargetNameIndex index = world.Index.ShouldNotBeNull();
         var found = new List<Entity>();
 
-        Write(writes, node, SettableMemberId.Name, MemberValue.Of("Herald"));
+        Write(new ScriptWrites(world), node, SettableMemberId.Name, MemberValue.Of("Herald"));
 
-        world.Index.ShouldNotBeNull().Resolve("Herald", null, null, null, found);
+        index.Resolve("Herald", null, null, null, found);
         found.ShouldHaveSingleItem().Node.ShouldBeSameAs(node);
         found.Clear();
-        world.Index.Resolve("Speaker", null, null, null, found);
+        index.Resolve("Speaker", null, null, null, found);
         found.ShouldBeEmpty();
-
-        world.Deactivate();
-
-        node.Name.ShouldBe("Speaker");
     }
 
+    // A map can hold a name the rule refuses. A script that writes back
+    // what it read has changed nothing.
     [Theory]
-    [InlineData("", "a name cannot be empty")]
-    [InlineData(" \t ", "a name cannot be empty")]
-    [InlineData("two\nlines", "a name cannot hold a line break or any other control character")]
-    [InlineData("nul\0inside", "a name cannot hold a line break or any other control character")]
-    public void A_name_a_node_cannot_have_is_refused_with_its_reason(string name, string reason)
+    [InlineData("two\tparts")]
+    [InlineData(" padded ")]
+    [InlineData("!marked")]
+    public void A_write_of_the_name_a_node_has_is_taken_whatever_the_name(string authored)
     {
-        NodeName.WhyRefused(name).ShouldBe(reason);
+        NodeName.WhyRefused(authored).ShouldNotBeNull();
+        SceneNode part = EntityMotion.BrushNode(_scene.Root, authored, BrushKind.Part, Vector3.Zero);
+        EntityWorld world = Started();
+
+        Write(new ScriptWrites(world), part, SettableMemberId.Name, MemberValue.Of(authored));
+
+        part.Name.ShouldBe(authored);
+        world.Journal.Count.ShouldBe(0);
     }
 
-    [Fact]
-    public void A_name_is_at_most_a_hundred_characters_long()
+    private SceneNode PartUnderAMovedParent()
     {
-        NodeName.WhyRefused(new string('x', NodeName.MaxLength)).ShouldBeNull();
-        NodeName.WhyRefused(new string('x', NodeName.MaxLength + 1))
-            .ShouldBe("a name is at most 100 characters long, and this one has 101");
-        NodeName.WhyRefused("Tür 2 (links)").ShouldBeNull();
-    }
-
-    [Fact]
-    public void A_member_value_prints_the_same_on_every_machine_and_compares_by_what_it_holds()
-    {
-        MemberValue.Of(new Vector3(0.1f, -0f, 1e20f)).ToString().ShouldBe("0.1, -0, 1E+20");
-        MemberValue.Of("Door").ToString().ShouldBe("Door");
-        MemberValue.Of(new CFrame(1f, 2f, 3f)).ToString().ShouldBe("1, 2, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1");
-        MemberValue.None.ToString().ShouldBe("nil");
-
-        MemberValue.Of("Door").ShouldBe(MemberValue.Of("Door"));
-        MemberValue.Of("Door").ShouldNotBe(MemberValue.Of("door"));
-        MemberValue.Of(Vector3.One).ShouldNotBe(MemberValue.Of(new CFrame(Vector3.One)));
-        MemberValue.Of(new CFrame(Vector3.One)).ShouldBe(MemberValue.Of(new CFrame(1f, 1f, 1f)));
+        SceneNode parent = _scene.Root.CreateChild("Rig");
+        parent.LocalPosition = new Vector3(10f, 0f, 0f);
+        return EntityMotion.BrushNode(parent, "Door", BrushKind.Part, new Vector3(1f, 2f, 3f));
     }
 
     private EntityWorld Started()

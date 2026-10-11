@@ -18,10 +18,13 @@ internal sealed class RandomWrites(int seed)
     private static readonly float[] NotNumbers = [float.NaN, float.PositiveInfinity, float.NegativeInfinity];
 
     private static readonly string[] Names =
-        ["Door", "Gate 2", "Tür", "a", "!self", "wild*", new string('x', NodeName.MaxLength)];
+        ["Door", "Gate 2", "Tür", "a", "wild*", "\U0001F6AA", new string('x', NodeName.MaxLength)];
 
     private static readonly string[] RefusedNames =
-        ["", "   ", "two\nlines", "tab\there", new string('x', NodeName.MaxLength + 1)];
+    [
+        "", "   ", "two\nlines", "tab\there", "two\u2028lines", " Door", "Door ", "!self",
+        new string('x', NodeName.MaxLength + 1),
+    ];
 
     // Luau values of no kind a member takes. The door is handed no value.
     private static readonly string[] OtherLuau = ["nil", "5", "true", "{}", "workspace", "print"];
