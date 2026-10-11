@@ -14,6 +14,7 @@ using SpectraEngine.Editing.Commands;
 using SpectraEngine.Editing.Viewport;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Numerics;
 
@@ -1354,6 +1355,73 @@ public sealed class SceneEditorHost : ISceneEditor
             ClassName = className,
             OtherClasses = SoundEntityBuilder.CountClasses(_scene.EntitySchemas) - 1,
         };
+    }
+
+    /// <summary>
+    /// Makes a script file and adds a script that names it under the selected
+    /// node, or under the root with nothing selected, as one history entry.
+    /// See <see cref="ScriptInserter.InsertNew"/>.
+    /// </summary>
+    /// <param name="contentRoot">The project's content folder, where the file is made.</param>
+    /// <param name="text">What the new file holds.</param>
+    public ScriptInsertReport InsertScript(string contentRoot, string text)
+    {
+        if (RefuseEdit("Insert script"))
+            return ScriptInsertReport.RefusedBecause(string.Empty, EditRefusal);
+
+        _viewport.Reset();
+
+        ScriptInsertReport report = ScriptInserter.InsertNew(_scene, _undo, contentRoot, text);
+        _logger.LogInformation("Insert script: {Result} (undo {UndoDepth})", report.Describe(), _undo.UndoCount);
+        return report;
+    }
+
+    /// <summary>
+    /// Adds a script that names a file that is there, as one history entry,
+    /// and selects it. It goes under the node with <paramref name="parentId"/>,
+    /// else under what is at <paramref name="viewportPoint"/> or the root when
+    /// nothing is, else where <see cref="ScriptInserter.TryFindParent"/> says.
+    /// </summary>
+    /// <param name="contentPath">The script, as a path relative to the content root.</param>
+    public ScriptInsertReport AttachScript(
+        string contentPath, Guid? parentId = null, Vector2? viewportPoint = null)
+    {
+        if (string.IsNullOrWhiteSpace(contentPath))
+            return ScriptInsertReport.RefusedBecause("The script", "no file was given.");
+
+        if (RefuseEdit("Attach script"))
+            return ScriptInsertReport.RefusedBecause(contentPath, EditRefusal);
+
+        _viewport.Reset();
+
+        if (!TryFindScriptParent(parentId, viewportPoint, out SceneNode? parent, out string refusal))
+            return ScriptInsertReport.RefusedBecause(contentPath, refusal);
+
+        ScriptInsertReport report = ScriptInserter.Attach(_scene, _undo, parent, contentPath);
+        _logger.LogInformation("Attach script: {Result} (undo {UndoDepth})", report.Describe(), _undo.UndoCount);
+        return report;
+    }
+
+    private bool TryFindScriptParent(
+        Guid? parentId, Vector2? viewportPoint, [NotNullWhen(true)] out SceneNode? parent, out string refusal)
+    {
+        refusal = string.Empty;
+
+        if (parentId is { } id)
+        {
+            if (_scene.TryFindById(id, out parent))
+                return true;
+
+            refusal = "the node it was dropped on is no longer in the level.";
+            return false;
+        }
+
+        if (viewportPoint is null)
+            return ScriptInserter.TryFindParent(_scene, out parent, out refusal);
+
+        // Let go over nothing, it belongs to the level as a whole.
+        parent = TryFindSurface(viewportPoint, out SceneRaycastHit hit) ? hit.Node : _scene.Root;
+        return true;
     }
 
     /// <summary>
