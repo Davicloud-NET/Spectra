@@ -17,7 +17,9 @@ public sealed unsafe class LuauHost : IDisposable
     public static readonly TimeSpan DefaultCallLimit = TimeSpan.FromSeconds(3);
 
     /// <summary>How many bytes the scripts may hold before the running one is stopped.</summary>
-    public const long DefaultMemoryBudget = 256L * 1024 * 1024;
+    public const long DefaultMemoryBudget = 256 * Megabyte;
+
+    private const long Megabyte = 1024 * 1024;
 
     private readonly IScriptSink _sink;
     private readonly nint _main;
@@ -182,7 +184,7 @@ public sealed unsafe class LuauHost : IDisposable
     }
 
     /// <summary>The script whose code called a host function. Null when no script's did.</summary>
-    public LuauScript? ScriptOf(LuauStack stack) => ScriptOf(stack.State);
+    public LuauScript? ScriptOf(LuauStack stack) => _isClosed ? null : ScriptOf(stack.State);
 
     /// <summary>
     /// The thread a host function runs on, for a function that yields and wants to be the
@@ -217,7 +219,7 @@ public sealed unsafe class LuauHost : IDisposable
 
     /// <summary>Keeps the function at the index for the calling script. Null when there is none there.</summary>
     public LuauFunction? KeepFunction(LuauStack stack, int index) =>
-        stack.TypeOf(index) == LuauType.Function && TryKeep(stack, index, out int reference)
+        !_isClosed && stack.TypeOf(index) == LuauType.Function && TryKeep(stack, index, out int reference)
             ? new LuauFunction(this, reference, ScriptOf(stack.State))
             : null;
 
@@ -268,7 +270,9 @@ public sealed unsafe class LuauHost : IDisposable
 
     internal void Report(in ScriptMessage message) => _sink.Report(in message);
 
-    // Pushes them all, or none: false leaves the stack as it was.
+    // Pushes them all, or none: false leaves the stack as it was. A value
+    // that cannot be pushed is the host's own mistake, such as a tag with no
+    // metatable, so the sink hears of it.
     internal bool PushAll(LuauStack stack, ReadOnlySpan<LuauValue> values)
     {
         for (int i = 0; i < values.Length; i++)
@@ -276,7 +280,9 @@ public sealed unsafe class LuauHost : IDisposable
             if (values[i].PushTo(this, stack))
                 continue;
 
+            string reason = stack.GetText(-1) ?? "no reason given";
             stack.Pop(i + 1);
+            Report(new ScriptMessage(ScriptSeverity.Error, $"the host could not hand a value to a script: {reason}", string.Empty, 0));
             return false;
         }
 
@@ -286,8 +292,7 @@ public sealed unsafe class LuauHost : IDisposable
     // What the sink is told in place of Luau's own message when the host stopped a script.
     internal string Explain(int stop)
     {
-        const long megabyte = 1024 * 1024;
-        string budget = _memoryBudget >= megabyte ? $"{_memoryBudget / megabyte} MB" : $"{_memoryBudget / 1024} KB";
+        string budget = _memoryBudget >= Megabyte ? $"{_memoryBudget / Megabyte} MB" : $"{_memoryBudget / 1024} KB";
 
         return stop == Shim.StopMemory
             ? $"the scripts hold more than {budget} and this one was switched off"

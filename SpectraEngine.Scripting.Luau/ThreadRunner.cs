@@ -201,8 +201,22 @@ internal sealed unsafe class ThreadRunner
 
     private LuauResume Yielded(LuauThread thread, int results)
     {
-        if (TryFind(thread, out int index))
+        if (!TryFind(thread, out int index))
+            return LuauResume.Yielded;
+
+        // Its script was switched off while it ran, when it could not be ended.
+        if (_slots[index].Script is { IsSwitchedOff: true })
+        {
+            if (Shim.sl_cancel(_main, _slots[index].State) != LuaStatus.Ok)
+                Shim.sl_pop(_main, 1);
+            if (TryFind(thread, out index))
+                Remove(index);
+        }
+        else
+        {
             _slots[index].ValueCount = results;
+        }
+
         return LuauResume.Yielded;
     }
 
