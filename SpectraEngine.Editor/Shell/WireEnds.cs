@@ -11,26 +11,40 @@ internal sealed class WireEnds
 {
     private IReadOnlyList<EntityTargetInfo> _targets = [];
     private EntitySchemaCatalog? _schemas;
+    private bool _targetsTruncated;
 
     // The class of the entity the wire leaves, or null.
     public EntitySchema? Sender { get; set; }
 
-    // The class of the one entity the wire's target names, or null.
+    // The class of the one entity the wire's target names, or null. Good
+    // enough to offer its inputs, also when the list was cut short.
     public EntitySchema? Receiver { get; private set; }
 
-    // Takes the entities a target is looked up among.
-    public void Look(IReadOnlyList<EntityTargetInfo> targets, EntitySchemaCatalog? schemas)
+    // Takes the entities a target is looked up among. truncated says the
+    // scene has more of them than the list.
+    public void Look(IReadOnlyList<EntityTargetInfo> targets, bool truncated, EntitySchemaCatalog? schemas)
     {
         _targets = targets;
+        _targetsTruncated = truncated;
         _schemas = schemas;
     }
 
     public void Aim(string target) => Receiver = ReceiverFor(target, _targets, _schemas);
 
-    // The line under the wire about its parameter, or empty. A wire to !self
-    // arrives at the class it leaves.
-    public string ParameterWarning(in EntityConnection wire) => WireParameterText.Between(
-        in wire, Sender, wire.TargetName == TargetNameIndex.SelfToken ? Sender : Receiver);
+    // The line under the wire about its parameter, or empty.
+    public string ParameterWarning(in EntityConnection wire) =>
+        WireParameterText.Between(in wire, Sender, Answering(wire.TargetName));
+
+    // A wire to !self arrives at the class it leaves. With the list cut
+    // short, an entity past the cut may share the name, and then no one
+    // class answers.
+    private EntitySchema? Answering(string target)
+    {
+        if (target == TargetNameIndex.SelfToken)
+            return Sender;
+
+        return _targetsTruncated ? null : Receiver;
+    }
 
     private static EntitySchema? ReceiverFor(
         string target,

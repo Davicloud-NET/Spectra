@@ -273,7 +273,7 @@ public sealed class ConnectionRowModel : ObservableObject
 
         TargetResolves = info.TargetResolves;
 
-        _ends.Look(targets, schemas);
+        _ends.Look(targets, targetsTruncated, schemas);
         RefreshInputs();
         JudgeParameter();
     }

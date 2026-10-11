@@ -128,6 +128,45 @@ public sealed class WireParameterWarningTests
         Row("func_door", "OnOpen", target, input, parameter).HasParameterWarning.ShouldBeFalse();
     }
 
+    [Theory]
+    [InlineData("relic")]
+    [InlineData("stranger")]
+    [InlineData("twin")]
+    [InlineData("sco*")]
+    [InlineData("!activator")]
+    [InlineData("nobody")]
+    public void An_output_that_sends_its_own_value_is_said_whoever_the_wire_reaches(string target)
+    {
+        // Only the sender decides it, so the editor need not know the receiver.
+        Row("math_counter", "OutValue", target, "SetValue", "5")
+            .ParameterWarning.ShouldBe("OutValue sends its own value, so this parameter is not used");
+    }
+
+    [Fact]
+    public void Nothing_is_said_about_an_input_while_the_list_of_entities_is_cut_short()
+    {
+        // A second entity named door may sit past the cut, and the wire
+        // reaches that one too.
+        var wire = new EntityConnection("OnOpen", "door", "Open", "now", 0f, EntityConnection.Infinite);
+        Row("func_door", wire, truncated: false).ParameterWarning.ShouldBe("Open takes no parameter");
+
+        ConnectionRowModel row = Row("func_door", wire, truncated: true);
+
+        row.HasParameterWarning.ShouldBeFalse();
+        row.InputChoices.ShouldContain("Open");
+    }
+
+    [Fact]
+    public void What_does_not_hang_on_the_list_is_still_said_while_it_is_cut_short()
+    {
+        var toSelf = new EntityConnection("OnOpen", "!self", "Open", "now", 0f, EntityConnection.Infinite);
+        var replaced = new EntityConnection("OutValue", "door", "Open", "5", 0f, EntityConnection.Infinite);
+
+        Row("func_door", toSelf, truncated: true).ParameterWarning.ShouldBe("Open takes no parameter");
+        Row("math_counter", replaced, truncated: true)
+            .ParameterWarning.ShouldBe("OutValue sends its own value, so this parameter is not used");
+    }
+
     [Fact]
     public void A_sender_of_a_class_nobody_knows_may_send_the_value_so_nothing_is_missing()
     {
@@ -278,15 +317,21 @@ public sealed class WireParameterWarningTests
 
     // One wire on a selected entity of senderClass, as a snapshot brings it.
     private static ConnectionRowModel Row(
-        string senderClass, string output, string target, string input, string parameter)
+        string senderClass, string output, string target, string input, string parameter) =>
+        Row(
+            senderClass,
+            new EntityConnection(output, target, input, parameter, 0f, EntityConnection.Infinite),
+            truncated: false);
+
+    // truncated: the scene has more entities than the snapshot lists.
+    private static ConnectionRowModel Row(string senderClass, EntityConnection wire, bool truncated)
     {
         var model = new EntityWiringModel((_, _) => { }) { Schemas = Catalog };
-        model.Apply(Info(
-            senderClass, new EntityConnection(output, target, input, parameter, 0f, EntityConnection.Infinite)));
+        model.Apply(Info(senderClass, wire, truncated));
         return model.Rows[0];
     }
 
-    private static EntityPanelInfo Info(string senderClass, EntityConnection wire)
+    private static EntityPanelInfo Info(string senderClass, EntityConnection wire, bool truncated = false)
     {
         bool known = Catalog.TryGetSchema(senderClass, out EntitySchema? schema);
         return new EntityPanelInfo
@@ -297,6 +342,7 @@ public sealed class WireParameterWarningTests
             Outputs = schema?.OutputNames ?? [],
             Connections = [new EntityConnectionInfo(wire, TargetResolves: true)],
             Targets = Scene,
+            TargetsTruncated = truncated,
         };
     }
 

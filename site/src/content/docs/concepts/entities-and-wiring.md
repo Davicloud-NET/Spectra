@@ -57,7 +57,9 @@ The editor reads a wire's parameter against them. A line under the wire, in the 
 
 The line is a warning and nothing more. The wire is kept as you typed it, and a level that already holds such a wire loads and saves as it was.
 
-A wire gets no line when the editor cannot tell which class answers it: its target is a prefix, `!activator` or `!caller`, a name that several entities share, or an entity of a class this build does not know.
+The first three lines are about the input, so the editor has to know which class answers the wire. It cannot tell when the target is a prefix, `!activator` or `!caller`, a name that several entities share, or an entity of a class this build does not know. It says nothing about the input then. The same goes for a level with more than 2000 entities, where the editor does not list them all and a second entity of that name may be among the rest.
+
+The last line is about the output alone, so it shows whatever the target is.
 
 When the level plays, an input gets its parameter as text and reads it itself. What it does with text it cannot read is listed with each class.
 
