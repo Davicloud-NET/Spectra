@@ -59,6 +59,31 @@ public sealed class CrashCaseTests
             $"the process got through a raise over a managed frame and ended with {result.ExitCode}:\n{result.Output}");
     }
 
+    // The binding's own ways to end a script: an error, an exception in a
+    // host function, the watchdog and the memory budget. All four raise.
+    [Fact]
+    public async Task The_ways_a_host_ends_a_script_survive_garbage_collection()
+    {
+        CrashCaseProcess.Require();
+
+        CrashCaseProcess.Result result = await CrashCaseProcess.Run("host-stress");
+
+        result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
+        result.Output.ShouldContain("NativeAOT: True");
+        result.Output.ShouldContain("160 errors reported");
+    }
+
+    [Fact]
+    public async Task A_yield_from_a_host_function_survives_garbage_collection()
+    {
+        CrashCaseProcess.Require();
+
+        CrashCaseProcess.Result result = await CrashCaseProcess.Run("yield-from-host");
+
+        result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
+        result.Output.ShouldContain("yielded and resumed 400 times");
+    }
+
     [Fact]
     public async Task A_state_used_on_one_thread_is_closed_from_another()
     {
