@@ -180,7 +180,8 @@ public sealed class EntityGeneratorParameterTests
     [Fact]
     public void An_output_that_sends_nothing_cannot_be_handed_a_value()
     {
-        // So what the schema says an output sends is what the class sends.
+        // Entity.FireOutput by name still takes one. EntityOutputSourceTests
+        // reads the built-in classes for that.
         GeneratorRun run = GeneratorHarness.Run(Thing(
             "[EntityOutput]", "[EntityInput(\"Set\")]", "FireOnSet(context.Activator, \"5\");"));
 
