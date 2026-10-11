@@ -86,6 +86,22 @@ public sealed class ScriptPropertiesSheetTests(RibbonSession session) : IDisposa
     }
 
     [Fact]
+    public void A_file_row_that_names_a_batch_file_shows_its_whole_name()
+    {
+        session.On(() =>
+        {
+            // A level from somebody else can name any file as a script.
+            File.WriteAllText(_project.FullPath("Scripts/setup.bat"), "@echo off\n");
+            (Window window, PropertiesPanel panel, _) = OpenProperties("Scripts/setup.bat");
+
+            AssetCell(panel).GetVisualDescendants().OfType<TextBlock>().First().Text.ShouldBe("setup.bat");
+
+            ScriptSheet.Save(window, "script-properties-not-a-script@2x.png");
+            window.Close();
+        });
+    }
+
+    [Fact]
     public void A_file_deleted_outside_the_editor_shows_as_missing_once_the_rows_say_so()
     {
         session.On(() =>
@@ -172,6 +188,9 @@ public sealed class ScriptPropertiesSheetTests(RibbonSession session) : IDisposa
             picker.ShownRows.Select(row => row.ContentPath).ShouldBe([typed, lookalike]);
             picker.ShownRows[0].Folder.ShouldBe(AssetPickerView.TypedPathNote);
             picker.FindControl<ListBox>("Rows").ShouldNotBeNull().SelectedIndex.ShouldBe(0);
+
+            if (lookalike == "Scripts/Door.luau")
+                ScriptSheet.Save(TopLevel.GetTopLevel(picker).ShouldNotBeNull(), "script-picker-typed-first@2x.png");
 
             picker.TakeSelected();
             Dispatcher.UIThread.RunJobs();

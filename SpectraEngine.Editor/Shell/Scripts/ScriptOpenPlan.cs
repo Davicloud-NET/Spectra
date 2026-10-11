@@ -20,8 +20,12 @@ public static class ScriptOpenPlan
         var steps = new List<ScriptOpenStep>(3);
         bool isScript = IsScriptFile(request.FilePath);
 
-        if (isScript && facts.VisualStudioCode is { Length: > 0 } code && VisualStudioCode(code, request) is { } start)
+        if (isScript
+            && facts.VisualStudioCode is { Length: > 0 } code
+            && VisualStudioCode(code, request) is { } start)
+        {
             steps.Add(new ScriptOpenStep(ScriptOpenWay.VisualStudioCode, start));
+        }
 
         if (isScript && facts.HasDefaultProgram)
         {
