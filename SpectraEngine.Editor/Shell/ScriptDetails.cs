@@ -15,24 +15,31 @@ public static class ScriptDetails
     private const long MaxBytes = 4 * 1024 * 1024;
 
     /// <summary>Describes the script file at <paramref name="fullPath"/>. Reads the disk.</summary>
-    public static string Describe(string fullPath)
+    public static string Describe(string fullPath) =>
+        CountLines(fullPath) is int lines ? Describe(lines) : string.Empty;
+
+    /// <summary>
+    /// How many lines the file at <paramref name="fullPath"/> has, or null
+    /// when it cannot be read or is too big to be a script. Reads the disk.
+    /// </summary>
+    public static int? CountLines(string fullPath)
     {
         try
         {
             if (new FileInfo(fullPath).Length > MaxBytes)
-                return string.Empty;
+                return null;
 
             int lines = 0;
             using var reader = new StreamReader(fullPath);
             while (reader.ReadLine() is not null)
                 lines++;
 
-            return Describe(lines);
+            return lines;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Open in an editor that holds a lock, or gone since the listing.
-            return string.Empty;
+            return null;
         }
     }
 

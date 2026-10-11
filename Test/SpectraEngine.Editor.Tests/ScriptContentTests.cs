@@ -242,6 +242,14 @@ public sealed class ScriptContentTests : IDisposable
     }
 
     [Fact]
+    public void A_scripts_lines_are_counted_from_the_file_and_a_file_that_is_gone_has_no_count()
+    {
+        ScriptDetails.CountLines(Path.Combine(_root, "Scripts", "Door.luau")).ShouldBe(2);
+        ScriptDetails.CountLines(Path.Combine(_root, "Scripts", "shared", "Timer.luau")).ShouldBe(0);
+        ScriptDetails.CountLines(Path.Combine(_root, "Scripts", "nobody_wrote_this.luau")).ShouldBeNull();
+    }
+
+    [Fact]
     public void A_script_that_is_gone_when_it_is_read_says_nothing_and_does_not_throw()
     {
         ScriptDetails.Describe(Path.Combine(_root, "Scripts", "nobody_wrote_this.luau")).ShouldBeEmpty();

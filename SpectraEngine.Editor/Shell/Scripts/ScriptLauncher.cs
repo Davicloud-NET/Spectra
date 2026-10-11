@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -16,13 +17,16 @@ public sealed class ScriptLauncher
     private readonly IProgramStarter _starter;
     private readonly Func<ScriptEditorFacts> _survey;
     private readonly Func<string, bool> _fileExists;
+    private readonly Func<string, int?> _countLines;
 
     /// <summary>Creates a launcher.</summary>
     /// <param name="starter">Starts the program that was chosen.</param>
     /// <param name="survey">Says what this computer has, asked on every open.</param>
     /// <param name="fileExists">Whether a script is on disk. The real disk when null.</param>
+    /// <param name="countLines">How many lines a script has, or null when that is not known. The real disk when null.</param>
     public ScriptLauncher(
-        IProgramStarter starter, Func<ScriptEditorFacts> survey, Func<string, bool>? fileExists = null)
+        IProgramStarter starter, Func<ScriptEditorFacts> survey,
+        Func<string, bool>? fileExists = null, Func<string, int?>? countLines = null)
     {
         ArgumentNullException.ThrowIfNull(starter);
         ArgumentNullException.ThrowIfNull(survey);
@@ -30,6 +34,7 @@ public sealed class ScriptLauncher
         _starter = starter;
         _survey = survey;
         _fileExists = fileExists ?? File.Exists;
+        _countLines = countLines ?? ScriptDetails.CountLines;
     }
 
     /// <summary>A launcher over this computer.</summary>
@@ -68,6 +73,8 @@ public sealed class ScriptLauncher
         if (!_fileExists(request.FilePath))
             return new ScriptOpenOutcome(null, OutputSeverity.Error, $"{name} is not on disk.", []);
 
+        int? lines = request.Line is null ? null : _countLines(request.FilePath);
+        ScriptOpenRequest inFile = KeepLineInFile(request, lines);
         ScriptEditorFacts facts = _survey();
         bool isScript = ScriptOpenPlan.IsScriptFile(request.FilePath);
         var failures = new List<string>();
@@ -78,13 +85,13 @@ public sealed class ScriptLauncher
             : !facts.HasDefaultProgram ? NoProgramSet
             : null;
 
-        foreach (ScriptOpenStep step in ScriptOpenPlan.For(request, facts))
+        foreach (ScriptOpenStep step in ScriptOpenPlan.For(inFile, facts))
         {
             if (step.Way == ScriptOpenWay.FileManager && whyOnlyShown is not null)
                 notes.Add(whyOnlyShown);
 
             if (_starter.TryStart(step.Start, out string failure))
-                return Opened(step.Way, name, notes, failures);
+                return AboutTheLine(Opened(step.Way, name, notes, failures), request, lines);
 
             notes.Add(DidNotStart(step.Way));
             failures.Add($"{DidNotStart(step.Way).TrimEnd('.')} ({step.Start.FileName}): {failure}");
@@ -97,6 +104,41 @@ public sealed class ScriptLauncher
 
     private static string NotAScript(string name) =>
         $"{name} is not a .luau file, so no program was started for it.";
+
+    // A message can name a line the file no longer has, when the file was
+    // edited since. One past the count is the empty line after the last line
+    // break, which is where a script that ends too soon fails.
+    private static bool IsPastEnd(int line, int? lines) => lines is int count && line > count + 1;
+
+    private static ScriptOpenRequest KeepLineInFile(ScriptOpenRequest request, int? lines) =>
+        request.Line is int line && lines is int count && IsPastEnd(line, lines)
+            ? request with { Line = Math.Max(count, 1) }
+            : request;
+
+    // Says what became of the line that was asked for, when the caret is not on it.
+    private static ScriptOpenOutcome AboutTheLine(ScriptOpenOutcome opened, ScriptOpenRequest asked, int? lines)
+    {
+        if (asked.Line is not int line || line <= 0)
+            return opened;
+
+        if (lines is int count && IsPastEnd(line, lines))
+        {
+            string has = count == 1 ? "1 line" : $"{Number(count)} lines";
+            return opened with
+            {
+                Severity = OutputSeverity.Warning,
+                Message = $"{opened.Message} Line {Number(line)} is past its end: it has {has} now.",
+            };
+        }
+
+        // Only Visual Studio Code is handed a line. With anything else the
+        // person has to go there, so they are told where.
+        return opened.Way == ScriptOpenWay.VisualStudioCode
+            ? opened
+            : opened with { Message = $"{opened.Message} Look at line {Number(line)}." };
+    }
+
+    private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);
 
     private static ScriptOpenOutcome Opened(
         ScriptOpenWay way, string name, List<string> notes, List<string> failures)
