@@ -80,6 +80,29 @@ public sealed partial class Scene
     /// </summary>
     public event Action<SceneNode>? NodeRenamed;
 
+    /// <summary>
+    /// Raised when what an owned node is changes: it gains or loses a brush,
+    /// mesh, light or entity, its brush changes kind or operation, or its
+    /// entity changes class. Handlers must not mutate the graph.
+    /// </summary>
+    // A light edited in place tells nobody. Whoever changes its kind calls
+    // NotifyNodeKindChanged.
+    public event Action<SceneNode>? NodeKindChanged;
+
+    /// <summary>
+    /// Raises <see cref="NodeKindChanged"/> for a change no setter sees: a
+    /// light that was edited in place and is now another kind.
+    /// </summary>
+    public void NotifyNodeKindChanged(SceneNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        if (ReferenceEquals(node.Owner, this))
+            NodeKindChanged?.Invoke(node);
+    }
+
+    internal void OnNodeKindChanged(SceneNode node) => NodeKindChanged?.Invoke(node);
+
     // Membership and reparent notifications bump _graphStructureVersion:
     // traversal order may have changed.
     internal void OnNodeAdded(SceneNode node)

@@ -61,6 +61,7 @@ public sealed class SceneChangeLog
             previous.NodeRemoved -= OnNodeRemoved;
             previous.NodeReparented -= OnNodeReparented;
             previous.NodeRenamed -= OnNodeRenamed;
+            previous.NodeKindChanged -= OnNodeKindChanged;
         }
 
         _scene = scene;
@@ -71,6 +72,7 @@ public sealed class SceneChangeLog
             scene.NodeRemoved += OnNodeRemoved;
             scene.NodeReparented += OnNodeReparented;
             scene.NodeRenamed += OnNodeRenamed;
+            scene.NodeKindChanged += OnNodeKindChanged;
         }
 
         _changes.Clear();
@@ -104,6 +106,8 @@ public sealed class SceneChangeLog
 
     private void OnNodeRenamed(SceneNode node) => Record(SceneChangeKind.Renamed, node);
 
+    private void OnNodeKindChanged(SceneNode node) => Record(SceneChangeKind.KindChanged, node);
+
     private void Record(SceneChangeKind kind, SceneNode node)
     {
         if (_changes.Count >= _capacity)
@@ -113,12 +117,6 @@ public sealed class SceneChangeLog
             return;
         }
 
-        _changes.Add(new SceneChange(
-            kind,
-            node.Id,
-            node.Parent?.Id ?? Guid.Empty,
-            node.Name,
-            node.IndexInParent,
-            SceneNodeClassifier.Classify(node)));
+        _changes.Add(SceneChange.Of(kind, node));
     }
 }

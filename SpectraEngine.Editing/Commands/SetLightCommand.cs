@@ -110,7 +110,7 @@ public sealed class SetLightCommand : ICoalescingCommand
 
         if (scene.TryFindById(NodeId, out SceneNode? node) && node.Light is { } live)
         {
-            Before.ApplyTo(live);
+            Write(scene, node, live, Before);
             return;
         }
 
@@ -130,6 +130,16 @@ public sealed class SetLightCommand : ICoalescingCommand
             return;
 
         _lastApplied ??= new WeakReference<SceneNode>(node);
+        Write(scene, node, light, settings);
+    }
+
+    private static void Write(Scene scene, SceneNode node, Light light, Settings settings)
+    {
+        bool kindChanges = light.Kind != settings.Kind;
         settings.ApplyTo(light);
+
+        // Edited in place, so no setter on the node saw the light change kind.
+        if (kindChanges)
+            scene.NotifyNodeKindChanged(node);
     }
 }

@@ -100,11 +100,14 @@ public class SceneNode
         {
             if (ReferenceEquals(_meshRenderer, value))
                 return;
+            bool had = _meshRenderer is not null;
             _meshRenderer = value;
             // Or a save would name a model the node no longer draws.
             if (value is null)
                 MeshSource = null;
             Owner?.OnNodeSpatialComponentChanged(this);
+            if (had != (value is not null))
+                Owner?.OnNodeKindChanged(this);
         }
     }
 
@@ -127,8 +130,11 @@ public class SceneNode
         {
             if (ReferenceEquals(_light, value))
                 return;
+            LightKind? before = _light?.Kind;
             _light = value;
             Owner?.UpdateLightMembership(this);
+            if (before != value?.Kind)
+                Owner?.OnNodeKindChanged(this);
         }
     }
 
@@ -144,8 +150,11 @@ public class SceneNode
         {
             if (ReferenceEquals(_entity, value))
                 return;
+            string? before = _entity?.ClassName;
             _entity = value;
             Owner?.UpdateEntityMembership(this);
+            if (!string.Equals(before, value?.ClassName, StringComparison.Ordinal))
+                Owner?.OnNodeKindChanged(this);
         }
     }
 
@@ -165,6 +174,7 @@ public class SceneNode
             bool had = _brush is not null;
             bool has = value is not null;
             bool world = _brushKind == BrushKind.World;
+            bool sameOperation = _brush?.Operation == value?.Operation;
             _brush = value;
 
             if (had != has)
@@ -184,6 +194,11 @@ public class SceneNode
             // Not gated on kind: part brushes are culled and picked through
             // the BVH too.
             Owner?.OnNodeSpatialComponentChanged(this);
+
+            // A resize swaps the brush every frame of a drag and changes
+            // neither, so it raises nothing.
+            if (had != has || !sameOperation)
+                Owner?.OnNodeKindChanged(this);
         }
     }
 
@@ -206,6 +221,7 @@ public class SceneNode
 
             AdjustSubtreeBrushCounts(this, 0, value == BrushKind.World ? 1 : -1);
             Owner?.MarkAdmissionChanged(this);
+            Owner?.OnNodeKindChanged(this);
         }
     }
 

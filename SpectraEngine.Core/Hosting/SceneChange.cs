@@ -1,4 +1,4 @@
-﻿using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scene;
 using System;
 
 namespace SpectraEngine.Core.Hosting;
@@ -20,6 +20,13 @@ public enum SceneChangeKind
 
     /// <summary>The node's name changed. Carries the new name.</summary>
     Renamed,
+
+    /// <summary>
+    /// What the node is changed: it gained or lost a brush, mesh, light or
+    /// entity, its brush changed kind, its entity changed class or its light
+    /// changed kind.
+    /// </summary>
+    KindChanged,
 }
 
 /// <summary>
@@ -38,10 +45,37 @@ public enum SceneChangeKind
 /// it has no parent.
 /// </param>
 /// <param name="NodeKind">What the node is, derived from its payloads at the moment of the change.</param>
+/// <param name="EntityClass">
+/// The node's entity class as the map spells it, or empty when it carries no
+/// entity. A brush that carries one is still a brush in <paramref name="NodeKind"/>.
+/// </param>
+/// <param name="LightKind">The node's kind of light, or null when it carries none.</param>
 public readonly record struct SceneChange(
     SceneChangeKind Kind,
     Guid NodeId,
     Guid ParentId,
     string Name,
     int SiblingIndex,
-    SceneNodeKind NodeKind = SceneNodeKind.Empty);
+    SceneNodeKind NodeKind = SceneNodeKind.Empty,
+    string EntityClass = "",
+    LightKind? LightKind = null)
+{
+    /// <summary>
+    /// The change that says <paramref name="node"/> is as it is now. Render
+    /// thread only: it reads a live node.
+    /// </summary>
+    public static SceneChange Of(SceneChangeKind kind, SceneNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        return new SceneChange(
+            kind,
+            node.Id,
+            node.Parent?.Id ?? Guid.Empty,
+            node.Name,
+            node.IndexInParent,
+            SceneNodeClassifier.Classify(node),
+            node.Entity?.ClassName ?? string.Empty,
+            node.Light?.Kind);
+    }
+}
