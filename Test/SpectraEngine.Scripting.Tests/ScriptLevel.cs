@@ -29,6 +29,7 @@ internal sealed class ScriptLevel : IDisposable
         // Own catalogue: EntityCatalog.Shared freezes on first read.
         var catalog = new EntityCatalog();
         catalog.Add(new EntitySchema(SayingEntity.Class), () => new SayingEntity(Sink));
+        catalog.Add(new EntitySchema(PacingEntity.Class), () => new PacingEntity());
 
         Manager = new SceneManager(NullLogger<SceneManager>.Instance)
         {
