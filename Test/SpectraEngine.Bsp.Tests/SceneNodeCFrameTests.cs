@@ -272,6 +272,21 @@ public sealed class SceneNodeCFrameTests
         child.LocalPosition.ShouldBe(local);
     }
 
+    // In Roblox part.CFrame = part.CFrame + offset moves the part and never
+    // turns it: the sum's rotation is the part's own.
+    [Fact]
+    public void Moving_a_node_by_its_world_frame_under_a_turned_parent_does_not_turn_it()
+    {
+        var (_, _, child) = ParentAndChild(Slanted);
+        child.LocalCFrame = B;
+        Quaternion local = child.LocalRotation;
+
+        for (int i = 0; i < 20_000; i++)
+            child.CFrame += new Vector3(0.01f, -0.02f, 0.005f);
+
+        child.LocalRotation.ShouldBe(local);
+    }
+
     [Fact]
     public void Setting_the_world_frame_far_from_the_origin_lands_within_a_float_step()
     {

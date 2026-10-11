@@ -21,12 +21,15 @@ internal static class WorldFrame
             return local;
         }
 
+        CFrame current = Of(node);
         CFrame solved = Of(parent).ToObjectSpace(world);
-        local.Rotation = solved.Rotation;
 
-        // A turn in place asks for the position the node has. Solved again it
-        // would come back a rounding error away, and a spinning node would creep.
-        if (world.Position != node.WorldPosition)
+        // A turn in place asks for the position the node has, and a move for
+        // its rotation. Solved again that half would come back a rounding
+        // error away: a spinning node would creep and a moving one would turn.
+        if (world.Rotation != current.Rotation)
+            local.Rotation = solved.Rotation;
+        if (world.Position != current.Position)
             local.Position = PositionUnder(parent, world.Position) ?? solved.Position;
         return local;
     }
