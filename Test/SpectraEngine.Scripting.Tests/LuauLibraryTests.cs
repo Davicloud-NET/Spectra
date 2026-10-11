@@ -14,6 +14,20 @@ public sealed unsafe class LuauLibraryTests
         LuauLibrary.FindProblem().ShouldBeNull();
     }
 
+    // A library left in native/runtimes from before a change to the shim has
+    // every Luau constant right. Only this number tells it apart.
+    [Fact]
+    public void The_library_reports_the_revision_of_the_shim_it_was_built_from()
+    {
+        NativeLuau.Require();
+        int revision = 0;
+
+        int known = Shim.sl_constant("SL_SHIM_REVISION", &revision);
+
+        known.ShouldBe(1);
+        revision.ShouldBe(Shim.Revision);
+    }
+
     // The check compares by name. A library that answered for any name would
     // make it pass whatever the binding asked.
     [Fact]

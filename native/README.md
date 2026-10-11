@@ -161,21 +161,31 @@ So managed code never calls anything in Luau that can raise.
 `native/luau/spectra_luau.cpp` owns:
 
 - `callHost`, the one function Luau sees for every managed function. The
-  managed function returns a count, `-1` for an error with the value on top, or
-  `-2 - n` to yield `n` values. `callHost` raises or yields after it has returned.
+  managed function returns a count, `-1` or `-2` for an error with the value on
+  top, or `-3 - n` to yield `n` values. `callHost` raises or yields after it
+  has returned. With `-1` a message gets the position of the calling script in
+  front. With `-2` the value is raised as it is, for a host function that
+  passes on the error of a script it called.
 - every call that can raise, in a form that returns a status: load, call,
   resume, read and write a field, push a number or a string, make a table, a
   thread or userdata, turn a value into text, open the libraries. Most run
   under `lua_pcall`. A push can raise too, once one frame holds 8000 values,
-  so even a number is pushed through a check.
+  so even a number is pushed through a check. A refused call puts its message
+  past that limit and takes none of the caller's values.
+- the same forms on a thread that has yielded or ended in an error: they
+  refuse. A protected call there moves the thread's stack base, and Luau only
+  checks for it in a debug build. A number, a new thread and a resume still work.
 - the allocator. It counts and has no limit, because a refused allocation is a
-  raise from whichever call allocated.
-- the interrupt, which another thread arms to stop a script.
+  raise from whichever call allocated. Until the binding checks a memory
+  budget, a script that allocates without end ends the process.
+- the interrupt, which another thread arms to stop a script. The handler is
+  installed once, and arming sets a flag of the shim's own.
 - the panic handler. It keeps its message in `sl_fatal_message` for a debugger
   and prints nothing.
 - Luau's feature flags, set the way Luau's own tools set them.
 - `sl_constant`, which reports every number the binding copied from the
-  headers. `LuauLibrary.FindProblem` compares them at startup.
+  headers, and the shim's revision. `LuauLibrary.FindProblem` compares them at
+  startup, so a library left over from before a change to the shim is named.
 
 `Test/SpectraEngine.Scripting.CrashCases` is a console that shows the rule
 holding and what happens without it. It only means something as a native
@@ -208,6 +218,14 @@ It imports `native/Luau.targets`. The demo, the editor and `scook` do.
 
 The shim refuses to compile with another unwind mode or vector size, and the
 binding checks both at startup.
+
+### Changing the shim
+
+1. Raise `SL_SHIM_REVISION` in `native/luau/spectra_luau.h` and
+   `Shim.Revision` in `SpectraEngine.Scripting.Luau/Native/Shim.cs`.
+2. Run the build script again. A library from before the change is then
+   refused at startup, by its revision.
+3. Publish the crash cases again and run `SpectraEngine.Scripting.Tests`.
 
 ### Moving the pin
 

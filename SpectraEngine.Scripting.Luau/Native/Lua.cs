@@ -2,15 +2,10 @@ using System.Runtime.InteropServices;
 
 namespace SpectraEngine.Scripting.Luau.Native;
 
-// Luau's own entry points, named as in lua.h. A lua_State* is an nint.
-//
-// Only calls that cannot raise an error belong here. Luau raises with longjmp,
-// and a jump over a managed frame kills the process at a later garbage
-// collection. Whatever can run script code or fail goes through Shim, which
-// answers with a status. That includes every push: once one frame holds
-// MaxCStack values, Luau raises from the push itself.
-//
-// BindingSourceTests holds the list of names allowed here.
+// Luau's own entry points, named as in lua.h. A lua_State* is an nint. Only
+// calls that cannot raise belong here, and no push is one of them. The rest
+// goes through Shim. BindingSourceTests holds the list of names allowed here,
+// and native/README.md says why.
 internal static unsafe partial class Lua
 {
     internal const string Library = "spectra_luau";
@@ -33,6 +28,9 @@ internal static unsafe partial class Lua
 
     // Turns a number into a string where it sits. Ask lua_type first.
     [LibraryImport(Library)] internal static partial byte* lua_tolstring(nint L, int index, nuint* length);
+
+    // Null when the value is not userdata of this tag.
+    [LibraryImport(Library)] internal static partial void* lua_touserdatatagged(nint L, int index, int tag);
 
     [LibraryImport(Library)] internal static partial int lua_gc(nint L, LuaGc what, int data);
 

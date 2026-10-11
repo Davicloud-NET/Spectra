@@ -37,6 +37,20 @@ public sealed unsafe class HostContractTests
         state.PopText().ShouldBe("test:1: a host function failed without a message");
     }
 
+    // The message of a script the host function called already says where it
+    // failed. A second position in front would name the wrong line.
+    [Fact]
+    public void An_error_passed_on_as_it_is_keeps_its_one_position()
+    {
+        NativeLuau.Require();
+        using ProbeState state = Register("pass_on", &PassOn);
+
+        LuaStatus status = state.Run("local first = 1\npass_on(function()\n    error('no field')\nend)");
+
+        status.ShouldBe(LuaStatus.ErrorRun);
+        state.PopText().ShouldBe("test:3: no field");
+    }
+
     [Fact]
     public void A_count_larger_than_the_stack_is_an_error_and_not_a_read_past_it()
     {
@@ -87,6 +101,10 @@ public sealed unsafe class HostContractTests
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int FailWithNothing(nint L) => Shim.HostError;
+
+    // Calls its argument and raises what that call raised.
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static int PassOn(nint L) => Shim.sl_call(L, 0, 0) == LuaStatus.Ok ? 0 : Shim.HostRaise;
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int ReturnTooMany(nint L) => 3;

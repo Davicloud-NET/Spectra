@@ -4,13 +4,10 @@ using System.Text;
 
 namespace SpectraEngine.Scripting.Luau.Native;
 
-// The one host function of this layer. The tests and the crash cases call it,
-// and every later host function follows its shape:
-//
-// - It lets no exception out. One that leaves ends the process.
-// - It calls nothing in Luau that can raise.
-// - It fails by returning an error code. The shim raises the error after this
-//   frame has returned.
+// The one host function of this layer, for the tests and the crash cases.
+// Every later host function follows its shape: it lets no exception out, calls
+// nothing in Luau that can raise, and fails by returning an error code, which
+// the shim raises once this frame has returned.
 internal static unsafe class HostProbe
 {
     // Pushes the function. When the status is not Ok, the error value is on top instead.

@@ -2,20 +2,20 @@ using System.Runtime.InteropServices;
 
 namespace SpectraEngine.Scripting.Luau.Native;
 
-// The entry points of native/luau/spectra_luau.cpp.
-//
-// A call that returns a LuaStatus never raises. When the status is not Ok, the
-// error value is on top of the stack in place of the result.
-//
-// Most of them run a protected call on the state they are given. Luau allows
-// that only on a state that is not suspended, so on a thread that has yielded
-// use nothing but sl_pushnumber and sl_resume.
+// The entry points of native/luau/spectra_luau.cpp. A call that returns a
+// LuaStatus never raises. When the status is not Ok, the error value is on top
+// of the stack in place of the result. A thread that has yielded or failed
+// refuses all of them but sl_pushnumber, sl_newthread and sl_resume.
 internal static unsafe partial class Shim
 {
+    // Moves with SL_SHIM_REVISION in spectra_luau.h. LuauLibrary compares the two.
+    internal const int Revision = 1;
+
     // What a host function returns instead of a result count. The shim raises
     // the error or yields once the managed frame has returned.
-    internal const int HostError = -1; // the error value is on top of the stack
-    internal const int HostYield = -2; // HostYield - n yields the top n values
+    internal const int HostError = -1; // the error value is on top; text gets the script's position in front
+    internal const int HostRaise = -2; // the error value is on top and is raised as it is
+    internal const int HostYield = -3; // HostYield - n yields the top n values
 
     [LibraryImport(Lua.Library, StringMarshalling = StringMarshalling.Utf8)]
     internal static partial int sl_constant(string name, int* value);
@@ -52,8 +52,9 @@ internal static unsafe partial class Shim
     // Pushes the message and returns HostError, for a host function to return.
     [LibraryImport(Lua.Library)] internal static partial int sl_fail(nint L, byte* message, nuint length);
 
-    // Safe from any thread. The running script stops with an error at its next
-    // loop or call, and again after each pcall that catches it, until disarmed.
+    // From any thread, while the caller keeps the state open. The running
+    // script stops with an error at its next loop or call, and again after
+    // each pcall that catches it, until disarmed.
     [LibraryImport(Lua.Library)] internal static partial void sl_interrupt_arm(nint L);
     [LibraryImport(Lua.Library)] internal static partial void sl_interrupt_disarm(nint L);
 

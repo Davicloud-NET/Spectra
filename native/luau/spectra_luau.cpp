@@ -1,14 +1,7 @@
-// The native layer between managed code and the Luau VM.
-//
-// Luau raises an error with longjmp, to the nearest protected call. When the
-// jump crosses a managed frame the .NET runtime is left with a stale record of
-// the stack, and the process dies at a later garbage collection. So managed
-// code reaches Luau through this file only:
-//
-// - A host function returns a code, and callHost raises for it once the
-//   managed frame has returned.
-// - A call that can raise runs here under lua_pcall and answers with a status.
-//   When the status is not LUA_OK, the error value is on top of the stack.
+// The native layer between managed code and the Luau VM. A Luau error is a
+// longjmp, and one that crosses a managed frame kills a NativeAOT process, so
+// managed code reaches Luau through this file only. native/README.md has the
+// rule and what each part here does for it.
 
 #include "spectra_luau.h"
 
@@ -57,6 +50,8 @@ struct HostState
 {
     // Written by the thread that runs the state, read by any.
     std::atomic<int64_t> bytes{0};
+
+    // Written by any thread, read by the one that runs the state.
     std::atomic<int> stopRequested{0};
 
     // Registry references to the functions the status forms call.
@@ -167,6 +162,8 @@ void pushPosition(lua_State* L)
     lua_pushliteral(L, "");
 }
 
+// Installed for the life of the state. Arming only sets the flag, so no other
+// thread ever writes into the VM's own data.
 void interruptHandler(lua_State* L, int gc)
 {
     // gc >= 0 means the collector is running. Raising is not allowed there.
@@ -198,11 +195,15 @@ int callHost(lua_State* L)
         return result;
     }
 
-    if (result == SL_HOST_ERROR)
+    if (result == SL_HOST_ERROR || result == SL_HOST_RAISE)
     {
+        bool wantsPosition = result == SL_HOST_ERROR;
         if (top == 0)
+        {
             lua_pushliteral(L, "a host function failed without a message");
-        if (lua_type(L, -1) == LUA_TSTRING)
+            wantsPosition = true;
+        }
+        if (wantsPosition && lua_type(L, -1) == LUA_TSTRING)
         {
             pushPosition(L);
             lua_insert(L, -2);
@@ -261,12 +262,7 @@ int newUserdataBody(lua_State* L)
     if (static_cast<unsigned>(request->tag) >= LUA_UTAG_LIMIT)
         luaL_error(L, "userdata tag %d is out of range", request->tag);
 
-    lua_getuserdatametatable(L, request->tag);
-    bool hasMetatable = !lua_isnil(L, -1);
-    lua_pop(L, 1);
-
-    request->block = hasMetatable ? lua_newuserdatataggedwithmetatable(L, request->size, request->tag)
-                                  : lua_newuserdatatagged(L, request->size, request->tag);
+    request->block = lua_newuserdatatagged(L, request->size, request->tag);
     return 1;
 }
 
@@ -309,16 +305,32 @@ const BodyEntry bodyEntries[BodyCount] = {
     {toStringBody, "sl_tostring"},
 };
 
-// A push raises "stack overflow" once one frame holds LUAI_MAXCSTACK values.
-// A status form asks lua_checkstack first, which answers instead, and comes
-// here on a no: the values the call would have taken go, the message arrives.
-int refuseFullStack(lua_State* L, int consumed)
+const char stackOverflow[] = "stack overflow";
+
+// Leaves the message where the result would be. The values the call would
+// have taken go first. Room is made past the frame's limit, which a push
+// would raise on, so no other value has to go.
+int refuse(lua_State* L, int consumed, const char* message)
 {
     lua_pop(L, consumed);
-    if (!lua_checkstack(L, 1))
-        lua_pop(L, 1);
-    lua_pushliteral(L, "stack overflow");
+    lua_rawcheckstack(L, 1);
+    lua_pushstring(L, message);
     return LUA_ERRRUN;
+}
+
+// Why this thread cannot make a protected call that needs so many more slots,
+// or null. Luau asks about the thread's state in a debug build only. A call on
+// a thread that has yielded moves its stack base under the host.
+const char* whyNot(lua_State* L, int slots)
+{
+    int status = lua_status(L);
+    if (status == LUA_YIELD || status == LUA_BREAK)
+        return "the thread is suspended";
+    if (status != LUA_OK)
+        return "the thread ended with an error";
+
+    // A push raises once one frame holds LUAI_MAXCSTACK values. This answers.
+    return slots > 0 && !lua_checkstack(L, slots) ? stackOverflow : nullptr;
 }
 
 void pushBody(lua_State* L, Body body)
@@ -329,8 +341,8 @@ void pushBody(lua_State* L, Body body)
 // Calls a body with one argument. Leaves its results or the error value on top.
 int protect(lua_State* L, Body body, void* argument, int results)
 {
-    if (!lua_checkstack(L, 2))
-        return refuseFullStack(L, 0);
+    if (const char* reason = whyNot(L, 2))
+        return refuse(L, 0, reason);
 
     pushBody(L, body);
     lua_pushlightuserdata(L, argument);
@@ -347,7 +359,9 @@ struct Constant
 
 const Constant constants[] = {
     SL_CONSTANT(SL_LUAU_RELEASE),
+    SL_CONSTANT(SL_SHIM_REVISION),
     SL_CONSTANT(SL_HOST_ERROR),
+    SL_CONSTANT(SL_HOST_RAISE),
     SL_CONSTANT(SL_HOST_YIELD),
 
     SL_CONSTANT(LUA_USE_LONGJMP),
@@ -386,6 +400,8 @@ const Constant constants[] = {
     SL_CONSTANT(LUA_TUSERDATA),
     SL_CONSTANT(LUA_TTHREAD),
     SL_CONSTANT(LUA_TBUFFER),
+    SL_CONSTANT(LUA_TCLASS),
+    SL_CONSTANT(LUA_TOBJECT),
 
     SL_CONSTANT(LUA_GCSTOP),
     SL_CONSTANT(LUA_GCRESTART),
@@ -447,6 +463,7 @@ SL_API lua_State* sl_newstate()
     lua_Callbacks* callbacks = lua_callbacks(L);
     callbacks->userdata = host;
     callbacks->panic = panicHandler;
+    callbacks->interrupt = interruptHandler;
 
     for (int i = 0; i < BodyCount; i++)
     {
@@ -491,12 +508,12 @@ SL_API int sl_pushhostfunction(lua_State* L, HostFunction function, const char* 
     return protect(L, PushHostFunctionBody, &closure, 1);
 }
 
-// Even a number goes through a check: see refuseFullStack. No protected call
-// is made, so this one also works on a thread that has yielded.
+// Even a number is checked for room. No protected call is made, so this one
+// also works on a thread that has yielded.
 SL_API int sl_pushnumber(lua_State* L, double value)
 {
     if (!lua_checkstack(L, 1))
-        return refuseFullStack(L, 0);
+        return refuse(L, 0, stackOverflow);
 
     lua_pushnumber(L, value);
     return LUA_OK;
@@ -514,7 +531,7 @@ SL_API int sl_newthread(lua_State* L, lua_State** thread)
 {
     *thread = nullptr;
     if (!lua_checkstack(L, 1))
-        return refuseFullStack(L, 0);
+        return refuse(L, 0, stackOverflow);
 
     *thread = lua_newthread(L);
     return LUA_OK;
@@ -526,8 +543,6 @@ SL_API int sl_createtable(lua_State* L, int arraySize, int recordSize)
     return protect(L, CreateTableBody, &size, 1);
 }
 
-// The userdata takes the metatable of its tag when lua_setuserdatametatable
-// has set one.
 SL_API int sl_newuserdata(lua_State* L, size_t size, int tag, void** block)
 {
     UserdataRequest request = {size, tag, nullptr};
@@ -539,8 +554,8 @@ SL_API int sl_newuserdata(lua_State* L, size_t size, int tag, void** block)
 // lua_getfield can run an __index metamethod.
 SL_API int sl_getfield(lua_State* L, int index, const char* key)
 {
-    if (!lua_checkstack(L, 3))
-        return refuseFullStack(L, 0);
+    if (const char* reason = whyNot(L, 3))
+        return refuse(L, 0, reason);
 
     index = lua_absindex(L, index);
     pushBody(L, GetFieldBody);
@@ -553,8 +568,8 @@ SL_API int sl_getfield(lua_State* L, int index, const char* key)
 // metamethod, and a frozen table refuses.
 SL_API int sl_setfield(lua_State* L, int index, const char* key)
 {
-    if (!lua_checkstack(L, 4))
-        return refuseFullStack(L, 1);
+    if (const char* reason = whyNot(L, 4))
+        return refuse(L, 1, reason);
 
     index = lua_absindex(L, index);
     pushBody(L, SetFieldBody);
@@ -571,8 +586,8 @@ SL_API int sl_setfield(lua_State* L, int index, const char* key)
 // Pushes the value as text, through __tostring when it has one.
 SL_API int sl_tostring(lua_State* L, int index)
 {
-    if (!lua_checkstack(L, 2))
-        return refuseFullStack(L, 0);
+    if (const char* reason = whyNot(L, 2))
+        return refuse(L, 0, reason);
 
     index = lua_absindex(L, index);
     pushBody(L, ToStringBody);
@@ -582,9 +597,8 @@ SL_API int sl_tostring(lua_State* L, int index)
 
 SL_API int sl_call(lua_State* L, int arguments, int results)
 {
-    int extra = results - (arguments + 1);
-    if (extra > 0 && !lua_checkstack(L, extra))
-        return refuseFullStack(L, arguments + 1);
+    if (const char* reason = whyNot(L, results - (arguments + 1)))
+        return refuse(L, arguments + 1, reason);
 
     return lua_pcall(L, arguments, results, 0);
 }
@@ -602,17 +616,16 @@ SL_API int sl_fail(lua_State* L, const char* message, size_t length)
     return SL_HOST_ERROR;
 }
 
-// Safe from any thread. The script stops at its next loop or call with an
-// error, and again after every pcall that catches it, until the host disarms.
+// Any thread may call this while the caller keeps the state from being
+// closed. The script stops at its next loop or call with an error, and again
+// after every pcall that catches it, until the host disarms.
 SL_API void sl_interrupt_arm(lua_State* L)
 {
     hostOf(L)->stopRequested.store(1, std::memory_order_relaxed);
-    lua_callbacks(L)->interrupt = interruptHandler;
 }
 
 SL_API void sl_interrupt_disarm(lua_State* L)
 {
-    lua_callbacks(L)->interrupt = nullptr;
     hostOf(L)->stopRequested.store(0, std::memory_order_relaxed);
 }
 

@@ -15,7 +15,9 @@ public static unsafe class LuauLibrary
     private static readonly (string Name, int Value)[] Copied =
     [
         ("SL_LUAU_RELEASE", Lua.Release),
+        ("SL_SHIM_REVISION", Shim.Revision),
         ("SL_HOST_ERROR", Shim.HostError),
+        ("SL_HOST_RAISE", Shim.HostRaise),
         ("SL_HOST_YIELD", Shim.HostYield),
 
         ("LUA_USE_LONGJMP", 1),
@@ -49,6 +51,8 @@ public static unsafe class LuauLibrary
         ("LUA_TUSERDATA", (int)LuaType.Userdata),
         ("LUA_TTHREAD", (int)LuaType.Thread),
         ("LUA_TBUFFER", (int)LuaType.Buffer),
+        ("LUA_TCLASS", (int)LuaType.Class),
+        ("LUA_TOBJECT", (int)LuaType.Object),
 
         ("LUA_GCSTOP", (int)LuaGc.Stop),
         ("LUA_GCRESTART", (int)LuaGc.Restart),

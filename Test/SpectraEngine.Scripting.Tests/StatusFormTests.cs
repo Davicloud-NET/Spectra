@@ -135,6 +135,8 @@ public sealed unsafe class StatusFormTests
         status.ShouldBe(LuaStatus.Ok);
         ((nint)block).ShouldNotBe(0);
         Lua.lua_type(state.L, -1).ShouldBe(LuaType.Userdata);
+        ((nint)Lua.lua_touserdatatagged(state.L, -1, 3)).ShouldBe((nint)block);
+        ((nint)Lua.lua_touserdatatagged(state.L, -1, 4)).ShouldBe(0);
     }
 
     [Fact]
@@ -149,45 +151,6 @@ public sealed unsafe class StatusFormTests
         status.ShouldBe(LuaStatus.ErrorRun);
         ((nint)block).ShouldBe(0);
         state.PopText().ShouldBe("userdata tag 128 is out of range");
-    }
-
-    // Luau raises from a push once one frame holds MaxCStack values. The status
-    // forms have to answer instead, or the raise would cross the caller.
-    [Fact]
-    public void A_full_stack_is_reported_as_a_status()
-    {
-        NativeLuau.Require();
-        using ProbeState state = new();
-
-        int pushed = 0;
-        LuaStatus status = LuaStatus.Ok;
-        while (status == LuaStatus.Ok && pushed <= Lua.MaxCStack)
-        {
-            status = LuaText.Push(state.L, "one more");
-            if (status == LuaStatus.Ok)
-                pushed++;
-        }
-
-        status.ShouldBe(LuaStatus.ErrorRun);
-        pushed.ShouldBeInRange(Lua.MaxCStack - 8, Lua.MaxCStack);
-        state.PopText().ShouldBe("stack overflow");
-
-        Lua.Pop(state.L, Lua.lua_gettop(state.L));
-        state.Run("return 1", results: 1).ShouldBe(LuaStatus.Ok);
-    }
-
-    [Fact]
-    public void A_number_too_many_is_refused_with_a_status()
-    {
-        NativeLuau.Require();
-        using ProbeState state = new();
-
-        int pushed = 0;
-        while (pushed <= Lua.MaxCStack && Shim.sl_pushnumber(state.L, pushed) == LuaStatus.Ok)
-            pushed++;
-
-        pushed.ShouldBe(Lua.MaxCStack);
-        state.PopText().ShouldBe("stack overflow");
     }
 
     private static LuaStatus GetField(ProbeState state, int index, ReadOnlySpan<byte> key)

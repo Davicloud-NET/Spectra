@@ -17,4 +17,8 @@ internal enum LuaType
     Userdata = 9,
     Thread = 10,
     Buffer = 11,
+
+    // No script can make these two: their feature flags are off.
+    Class = 12,
+    Object = 13,
 }

@@ -100,6 +100,19 @@ public sealed class ScriptRunTests
         Lua.lua_gettop(state.L).ShouldBe(0);
     }
 
+    // An empty span is pinned as a null pointer, which the compiler must not be handed.
+    [Fact]
+    public void An_empty_script_runs_and_returns_nothing()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+
+        LuaStatus status = state.Run("");
+
+        status.ShouldBe(LuaStatus.Ok);
+        Lua.lua_gettop(state.L).ShouldBe(0);
+    }
+
     [Fact]
     public void A_state_still_runs_scripts_after_one_failed()
     {

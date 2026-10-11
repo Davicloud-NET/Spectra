@@ -60,6 +60,58 @@ public sealed unsafe class YieldTests
         LuaText.Read(thread, -1).ShouldBe("waiting:2: late");
     }
 
+    // A protected call on a thread that has yielded moves its stack base, so
+    // the values it yielded would no longer be where the host reads them.
+    [Fact]
+    public void A_yielded_thread_refuses_a_call_that_runs_protected()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+        nint thread = StartThread(state, "local answer = wait_for(7, 41)\nreturn answer + 1");
+        Shim.sl_resume(thread, 0, 0).ShouldBe(LuaStatus.Yield);
+
+        LuaStatus status = LuaText.Push(thread, "text");
+
+        status.ShouldBe(LuaStatus.ErrorRun);
+        LuaText.Read(thread, -1).ShouldBe("the thread is suspended");
+        Lua.Pop(thread, 1);
+        Lua.lua_gettop(thread).ShouldBe(1);
+        Lua.lua_tonumberx(thread, 1, null).ShouldBe(41);
+    }
+
+    [Fact]
+    public void A_yielded_thread_resumes_after_it_refused_a_call()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+        nint thread = StartThread(state, "local answer = wait_for(7, 41)\nreturn answer + 1");
+        Shim.sl_resume(thread, 0, 0).ShouldBe(LuaStatus.Yield);
+        Shim.sl_tostring(thread, -1).ShouldBe(LuaStatus.ErrorRun);
+        Lua.Pop(thread, 2);
+
+        Shim.sl_pushnumber(thread, 100).ShouldBe(LuaStatus.Ok);
+        LuaStatus finished = Shim.sl_resume(thread, 0, 1);
+
+        finished.ShouldBe(LuaStatus.Ok);
+        Lua.lua_tonumberx(thread, -1, null).ShouldBe(101);
+    }
+
+    [Fact]
+    public void A_thread_that_ended_in_an_error_refuses_a_call_that_runs_protected()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+        nint thread = StartThread(state, "error('late')");
+        Shim.sl_resume(thread, 0, 0).ShouldBe(LuaStatus.ErrorRun);
+
+        LuaStatus status = Shim.sl_tostring(thread, -1);
+
+        status.ShouldBe(LuaStatus.ErrorRun);
+        LuaText.Read(thread, -1).ShouldBe("the thread ended with an error");
+        Lua.Pop(thread, 1);
+        LuaText.Read(thread, -1).ShouldBe("waiting:1: late");
+    }
+
     // A thread of its own with the source loaded and not yet started.
     private static nint StartThread(ProbeState state, string source)
     {
