@@ -371,6 +371,39 @@ public class SceneNode
     }
 
     /// <summary>
+    /// The node's position and rotation relative to its parent. Setting it
+    /// keeps <see cref="LocalScale"/>.
+    /// </summary>
+    public CFrame LocalCFrame
+    {
+        get => new(_localTransform.Position, _localTransform.Rotation);
+        set => LocalTransform = new Transform
+        {
+            Position = value.Position,
+            Rotation = value.Rotation,
+            Scale = _localTransform.Scale,
+        };
+    }
+
+    /// <summary>
+    /// The node's position and rotation in the world. The position is
+    /// <see cref="WorldPosition"/>. The rotation is the node's and its
+    /// ancestors' rotations composed, with their scale left out. Setting it
+    /// solves the local transform under the parent and keeps the scale.
+    /// </summary>
+    public CFrame CFrame
+    {
+        get => WorldFrame.Of(this);
+        set
+        {
+            // Solving a frame the node already has would come back a rounding
+            // error away, and every such write would count as a move.
+            if (value != CFrame)
+                LocalTransform = WorldFrame.LocalFor(this, value);
+        }
+    }
+
+    /// <summary>
     /// How many brushes of any kind are in this node's subtree, its own
     /// included. Check this before writing <see cref="LocalScale"/>: a scale
     /// anywhere above a brush makes its placement non-rigid.
