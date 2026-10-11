@@ -279,7 +279,7 @@ public sealed class EntityWiringEditTests
     // 'spectramap' is the engine's current version: a save stamps it.
     private static readonly byte[] WiredMap = Encoding.UTF8.GetBytes("""
         {
-          "spectramap": 4,
+          "spectramap": 5,
           "minimumReadableVersion": 3,
           "engine": "1.0.0",
           "scene": {

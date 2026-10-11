@@ -50,6 +50,7 @@ public static class MapFormat
     public const string MeshMember = "mesh";
     public const string LightMember = "light";
     public const string EntityMember = "entity";
+    public const string ScriptMember = "script";
     public const string ChildrenMember = "children";
 
     public const string ModelMember = "model";
@@ -100,6 +101,16 @@ public static class MapFormat
     public const string DelayMember = "delay";
     public const string TimesMember = "times";
 
+    // A script's enabled member is EnabledMember, as a light's is.
+    public const string PathMember = "path";
+    public const string ModuleMember = "module";
+
+    /// <summary>
+    /// Designed and not built: a script written inside the map. The reader
+    /// refuses it by this name.
+    /// </summary>
+    public const string SourceMember = "source";
+
     /// <summary>
     /// Target names resolved when a wire fires, not against the map. Matched ordinally.
     /// </summary>
@@ -120,13 +131,30 @@ public static class MapFormat
     public const string RectLight = "rect";
     public const string DiscLight = "disc";
 
-    /// <summary>Legal realm names. Core has no enum yet, so they are validated as strings.</summary>
-    public static readonly string[] Realms = ["shared", "server", "client"];
+    public const string SharedRealm = "shared";
+    public const string ServerRealm = "server";
+    public const string ClientRealm = "client";
 
-    /// <summary>Legal node state names.</summary>
-    public static readonly string[] States = ["active", "dormant"];
+    public const string ActiveState = "active";
+    public const string DormantState = "dormant";
 
     internal static string ToWire(BrushKind kind) => kind == BrushKind.Part ? PartKind : WorldKind;
+
+    // Inherit has no name: a node that declares nothing writes nothing.
+    internal static string ToWire(NodeRealm realm) => realm switch
+    {
+        NodeRealm.Shared => SharedRealm,
+        NodeRealm.Server => ServerRealm,
+        NodeRealm.Client => ClientRealm,
+        _ => throw new NotSupportedException($"No wire name for realm '{realm}'."),
+    };
+
+    internal static string ToWire(NodeState state) => state switch
+    {
+        NodeState.Active => ActiveState,
+        NodeState.Dormant => DormantState,
+        _ => throw new NotSupportedException($"No wire name for node state '{state}'."),
+    };
 
     internal static string ToWire(BrushOperation operation) =>
         operation == BrushOperation.Subtractive ? SubtractiveOperation : AdditiveOperation;

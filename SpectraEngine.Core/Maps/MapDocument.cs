@@ -72,7 +72,8 @@ public sealed class MapNode
         [MapFormat.IdMember, MapFormat.NameMember, MapFormat.RealmMember, MapFormat.StateMember,
          MapFormat.KindMember, MapFormat.CollideMember, MapFormat.QueryMember, MapFormat.TouchMember,
          MapFormat.RenderMember, MapFormat.TransformMember, MapFormat.BrushMember, MapFormat.MeshMember,
-         MapFormat.LightMember, MapFormat.EntityMember, MapFormat.EditorMember, MapFormat.ChildrenMember];
+         MapFormat.LightMember, MapFormat.EntityMember, MapFormat.ScriptMember, MapFormat.EditorMember,
+         MapFormat.ChildrenMember];
 
     public Guid Id { get; set; }
 
@@ -86,13 +87,13 @@ public sealed class MapNode
     // still valid JSON) point into the file.
     public long SourceOffset { get; set; }
 
-    /// <summary>The node's own declared realm, or null when omitted (meaning inherit).</summary>
-    // Validated on read though nothing binds it yet. A typo kept as an unknown
-    // member would fall through to shared.
-    public string? Realm { get; set; }
+    /// <summary>The node's own declared realm. Written unless it is <see cref="NodeRealm.Inherit"/>.</summary>
+    // Read by name and never kept as an unknown member: a typo carried along
+    // would fall through to shared.
+    public NodeRealm Realm { get; set; }
 
-    /// <summary>The node's own declared state, or null when omitted.</summary>
-    public string? State { get; set; }
+    /// <summary>The node's own declared state. Written unless it is <see cref="NodeState.Inherit"/>.</summary>
+    public NodeState State { get; set; }
 
     /// <summary>Declared brush kind, or null when omitted (meaning <c>World</c>).</summary>
     public BrushKind? Kind { get; set; }
@@ -124,12 +125,16 @@ public sealed class MapNode
     // scene on save, so a preserved entity would be deleted.
     public MapEntity? Entity { get; set; }
 
+    /// <summary>The script this node is, if any: the file it names.</summary>
+    // Bound for the same reason the entity is.
+    public MapScript? Script { get; set; }
+
     /// <summary>The reserved per-node <c>editor</c> key, carried verbatim.</summary>
     public PreservedValue? Editor { get; set; }
 
     public List<MapNode> Children { get; } = [];
 
-    /// <summary>Members this engine version does not recognise, such as <c>script</c>.</summary>
+    /// <summary>Members this engine version does not recognise.</summary>
     public List<PreservedMember> Unknown { get; } = [];
 }
 

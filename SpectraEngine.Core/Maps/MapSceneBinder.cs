@@ -40,10 +40,10 @@ public static class MapSceneBinder
     }
 
     // The oldest reader that can open and re-save this scene without losing data.
-    // Per document: only a shaped light (spot, rect, disc), an entity or a node
-    // flag that is off raises the floor, since an older editor would drop those
-    // on save. Light kind is tested, not its numbers. Takes the max of what
-    // applies.
+    // Per document: only a shaped light (spot, rect, disc), an entity, a node
+    // flag that is off, a script, or a declared realm or state raises the
+    // floor, since an older editor would drop those on save. Light kind is
+    // tested, not its numbers. Takes the max of what applies.
     private static int RequiredReaderVersion(Scene.Scene scene)
     {
         int floor = EngineInfo.MinimumReadableMapVersion;
@@ -57,37 +57,37 @@ public static class MapSceneBinder
             }
         }
 
-        // Checks descendants only: the root's own payload is never written.
-        if (CarriesEntity(scene.Root))
+        // Descendants only: the root's own payload is never written.
+        SceneNode root = scene.Root;
+
+        if (AnyBelow(root, static node => node.Entity is not null))
             floor = Math.Max(floor, EngineInfo.EntityMapVersion);
 
-        if (CarriesNodeFlags(scene.Root))
+        // What would write collide, query, touch or render.
+        if (AnyBelow(root, static node =>
+                !node.CanCollide || !node.CanQuery || !node.CanTouch || !node.IsRendered))
+        {
             floor = Math.Max(floor, EngineInfo.NodeFlagsMapVersion);
+        }
+
+        if (AnyBelow(root, static node => node.Script is not null))
+            floor = Math.Max(floor, EngineInfo.ScriptMapVersion);
+
+        if (AnyBelow(root, static node =>
+                node.DeclaredRealm != NodeRealm.Inherit || node.DeclaredState != NodeState.Inherit))
+        {
+            floor = Math.Max(floor, EngineInfo.NodeRealmMapVersion);
+        }
 
         return floor;
     }
 
-    private static bool CarriesEntity(SceneNode node)
+    private static bool AnyBelow(SceneNode node, Func<SceneNode, bool> carries)
     {
         foreach (SceneNode child in node.Children)
         {
-            if (child.Entity is not null || CarriesEntity(child))
+            if (carries(child) || AnyBelow(child, carries))
                 return true;
-        }
-
-        return false;
-    }
-
-    // True when a descendant would write collide, query, touch or render.
-    private static bool CarriesNodeFlags(SceneNode node)
-    {
-        foreach (SceneNode child in node.Children)
-        {
-            if (!child.CanCollide || !child.CanQuery || !child.CanTouch || !child.IsRendered ||
-                CarriesNodeFlags(child))
-            {
-                return true;
-            }
         }
 
         return false;
@@ -99,6 +99,9 @@ public static class MapSceneBinder
         {
             Id = node.Id,
             Name = node.Name,
+            // The node's own declaration, never what its parents make of it.
+            Realm = node.DeclaredRealm,
+            State = node.DeclaredState,
             // World is the default and is omitted.
             Kind = node.BrushKind == BrushKind.Part ? BrushKind.Part : null,
             Collide = node.CanCollide,
@@ -152,6 +155,17 @@ public static class MapSceneBinder
             }
 
             mapped.Entity = payload;
+        }
+
+        if (node.Script is { } script)
+        {
+            // Copy every field, as for the light.
+            mapped.Script = new MapScript
+            {
+                Path = script.Path,
+                Enabled = script.IsEnabled,
+                Module = script.IsModule,
+            };
         }
 
         // A mesh is saved as a reference to its model file, never as geometry.
@@ -330,6 +344,8 @@ public static class MapSceneBinder
         node.CanQuery = mapped.Query;
         node.CanTouch = mapped.Touch;
         node.IsRendered = mapped.Render;
+        node.DeclaredRealm = mapped.Realm;
+        node.DeclaredState = mapped.State;
 
         if (mapped.Brush is { } brush)
             node.Brush = ToBrush(brush, mapped);
@@ -371,6 +387,9 @@ public static class MapSceneBinder
 
             node.Entity = data;
         }
+
+        if (mapped.Script is { } script)
+            node.Script = ToScript(script, mapped);
 
         // In document order: child order is placement order, which breaks ties
         // in the carve.
@@ -416,6 +435,22 @@ public static class MapSceneBinder
             ex is FileNotFoundException or InvalidDataException or InvalidOperationException or ArgumentException)
         {
             report?.RecordUnresolved(node.Name, mesh.Model, ex.Message);
+        }
+    }
+
+    // The reader has checked a path it read. A document built in code has not
+    // been through it.
+    private static Script ToScript(MapScript mapped, MapNode owner)
+    {
+        try
+        {
+            return new Script(mapped.Path) { IsEnabled = mapped.Enabled, IsModule = mapped.Module };
+        }
+        catch (ArgumentException ex)
+        {
+            throw new MapFormatException(
+                $"This script names no file under the content root: {ex.Message}",
+                owner.Name, owner.SourceOffset, ex);
         }
     }
 

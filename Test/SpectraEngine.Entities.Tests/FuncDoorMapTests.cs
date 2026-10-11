@@ -16,7 +16,7 @@ public sealed class FuncDoorMapTests
     // that opens the door when the level starts.
     private const string DoorFixture = """
         {
-          "spectramap": 4,
+          "spectramap": 5,
           "minimumReadableVersion": 3,
           "engine": "1.0.0",
           "scene": {

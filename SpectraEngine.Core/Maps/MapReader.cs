@@ -1,4 +1,5 @@
-﻿using SpectraEngine.Core.Bsp;
+﻿using SpectraEngine.Core.Assets;
+using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Serialization;
 using System;
@@ -177,12 +178,12 @@ public static class MapReader
                     break;
 
                 case MapFormat.RealmMember:
-                    node.Realm = ReadVocabulary(ref reader, MapFormat.Realms, member, state);
+                    node.Realm = ReadRealm(ref reader, state);
                     anchor = 2;
                     break;
 
                 case MapFormat.StateMember:
-                    node.State = ReadVocabulary(ref reader, MapFormat.States, member, state);
+                    node.State = ReadNodeState(ref reader, state);
                     anchor = 3;
                     break;
 
@@ -238,18 +239,22 @@ public static class MapReader
                     anchor = 13;
                     break;
 
+                case MapFormat.ScriptMember:
+                    node.Script = ReadScript(ref reader, utf8, state);
+                    anchor = 14;
+                    break;
+
                 case MapFormat.EditorMember:
                     node.Editor = new PreservedValue(CanonicalJson.CaptureValue(ref reader, utf8));
-                    anchor = 14;
+                    anchor = 15;
                     break;
 
                 case MapFormat.ChildrenMember:
                     ReadNodeArray(ref reader, utf8, node.Children, state);
-                    anchor = 15;
+                    anchor = 16;
                     break;
 
                 default:
-                    // Includes 'script', which nothing in Core runs yet.
                     node.Unknown.Add(Preserve(ref reader, utf8, member, anchor));
                     break;
             }
@@ -273,16 +278,32 @@ public static class MapReader
         };
     }
 
-    private static string ReadVocabulary(
-        ref Utf8JsonReader reader, string[] vocabulary, string member, ReadState state)
+    private static NodeRealm ReadRealm(ref Utf8JsonReader reader, ReadState state)
     {
-        string value = ReadString(ref reader, member, state);
-        if (Array.IndexOf(vocabulary, value) < 0)
+        string value = ReadString(ref reader, MapFormat.RealmMember, state);
+        return value switch
         {
-            throw Fail(ref reader,
-                $"'{member}' must be one of {string.Join(", ", vocabulary)}; got '{value}'", state);
-        }
-        return value;
+            MapFormat.SharedRealm => NodeRealm.Shared,
+            MapFormat.ServerRealm => NodeRealm.Server,
+            MapFormat.ClientRealm => NodeRealm.Client,
+            // No fall-through to shared: a typo would hand a server node to every client.
+            _ => throw Fail(ref reader,
+                $"'{MapFormat.RealmMember}' must be '{MapFormat.SharedRealm}', '{MapFormat.ServerRealm}' or "
+                + $"'{MapFormat.ClientRealm}', not '{value}'", state),
+        };
+    }
+
+    private static NodeState ReadNodeState(ref Utf8JsonReader reader, ReadState state)
+    {
+        string value = ReadString(ref reader, MapFormat.StateMember, state);
+        return value switch
+        {
+            MapFormat.ActiveState => NodeState.Active,
+            MapFormat.DormantState => NodeState.Dormant,
+            _ => throw Fail(ref reader,
+                $"'{MapFormat.StateMember}' must be '{MapFormat.ActiveState}' or "
+                + $"'{MapFormat.DormantState}', not '{value}'", state),
+        };
     }
 
     private static MapTransform ReadTransform(ref Utf8JsonReader reader, ReadState state)
@@ -613,6 +634,74 @@ public static class MapReader
             throw Fail(ref reader, $"'entity' needs a '{MapFormat.ClassMember}' name", state);
 
         return entity;
+    }
+
+    private static MapScript ReadScript(
+        ref Utf8JsonReader reader, ReadOnlySpan<byte> utf8, ReadState state)
+    {
+        var script = new MapScript();
+        bool sawPath = false;
+        int anchor = -1;
+        Expect(ref reader, JsonTokenType.StartObject, $"'{MapFormat.ScriptMember}' must be an object", state);
+
+        while (NextMember(ref reader, out string member))
+        {
+            switch (member)
+            {
+                case MapFormat.PathMember:
+                    script.Path = ReadScriptPath(ref reader, state);
+                    sawPath = true;
+                    anchor = 0;
+                    break;
+
+                case MapFormat.EnabledMember:
+                    script.Enabled = ReadBool(ref reader, member, state);
+                    anchor = 1;
+                    break;
+
+                case MapFormat.ModuleMember:
+                    script.Module = ReadBool(ref reader, member, state);
+                    anchor = 2;
+                    break;
+
+                // Refused, not carried: the next save would drop it, and the
+                // script's code with it.
+                case MapFormat.SourceMember:
+                    throw Fail(ref reader,
+                        $"'{MapFormat.ScriptMember}' has a '{MapFormat.SourceMember}' member. Inline source is "
+                        + $"not supported yet: put the script in a .luau file and name it with "
+                        + $"'{MapFormat.PathMember}'", state);
+
+                default:
+                    script.Unknown.Add(Preserve(ref reader, utf8, member, anchor));
+                    break;
+            }
+        }
+
+        if (!sawPath)
+            throw Fail(ref reader, $"'{MapFormat.ScriptMember}' needs a '{MapFormat.PathMember}' to its file", state);
+
+        return script;
+    }
+
+    // Kept as the file spells it, so a read and a write give the same bytes.
+    // Checked here so the error names the node and the place.
+    private static string ReadScriptPath(ref Utf8JsonReader reader, ReadState state)
+    {
+        string path = ReadString(ref reader, MapFormat.PathMember, state);
+
+        try
+        {
+            ContentRoot.NormalizeRelativePath(path);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new MapFormatException(
+                $"a script's '{MapFormat.PathMember}' must name a file under the content root, not '{path}'",
+                state.NodeName, reader.TokenStartIndex, ex);
+        }
+
+        return path;
     }
 
     private static void ReadKeys(

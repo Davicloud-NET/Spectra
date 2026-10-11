@@ -17,7 +17,7 @@ namespace SpectraEngine.Bsp.Tests;
 public sealed class MapCodecTests
 {
     // Hand-authored, so it pins the shape instead of echoing the writer.
-    // 'script' is the member that is carried without being decoded.
+    // 'nav' is a member the engine does not know: carried, never decoded.
     private const string Canonical = """
         {
           "spectramap": 1,
@@ -85,7 +85,8 @@ public sealed class MapCodecTests
                   {"output":"OnClose","target":"Lamp","input":"TurnOff","param":"1","delay":0.25,"times":2}
                 ]
               },
-              "script": {"module":false,"source":["local part = script.Parent"]},
+              "script": {"path":"Scripts/door.luau","module":true},
+              "nav": {"cost":2,"links":["hall","yard"]},
               "children": [
                 {
                   "id": "5b2f8a11-6c04-4e29-8d73-1af90b4e2c65",
@@ -141,30 +142,42 @@ public sealed class MapCodecTests
     [Fact]
     public void An_unrecognised_member_comes_back_exactly_where_it_was()
     {
-        // 'script' sits between 'entity' and 'children' in the fixture.
+        // 'nav' sits between 'script' and 'children' in the fixture.
         byte[] written = MapWriter.Write(MapReader.Read(Utf8(Canonical)));
 
         // "light" marks the children, not "Lamp": the doorway's wires name
         // the lamp earlier in the file.
         string text = Encoding.UTF8.GetString(written);
-        text.IndexOf("\"script\"", StringComparison.Ordinal)
-            .ShouldBeGreaterThan(text.IndexOf("\"Doorway\"", StringComparison.Ordinal));
-        text.IndexOf("\"script\"", StringComparison.Ordinal)
+        text.IndexOf("\"nav\"", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(text.IndexOf("\"script\"", StringComparison.Ordinal));
+        text.IndexOf("\"nav\"", StringComparison.Ordinal)
             .ShouldBeLessThan(text.IndexOf("\"light\"", StringComparison.Ordinal),
-                "'script' was written before 'children', and must come back before it");
+                "'nav' was written before 'children', and must come back before it");
     }
 
     [Fact]
-    public void An_unbuilt_payload_is_carried_rather_than_decoded()
+    public void A_member_the_engine_does_not_know_is_carried_rather_than_decoded()
     {
         MapDocument document = MapReader.Read(Utf8(Canonical));
 
         MapNode doorway = document.Nodes[1];
         doorway.Unknown.Count.ShouldBe(1);
-        doorway.Unknown[0].Name.ShouldBe("script");
+        doorway.Unknown[0].Name.ShouldBe("nav");
         Encoding.UTF8.GetString(doorway.Unknown[0].Raw)
-            .ShouldBe("""{"module":false,"source":["local part = script.Parent"]}""",
-                "a script payload has no engine concept behind it yet, so it must ride through untouched");
+            .ShouldBe("""{"cost":2,"links":["hall","yard"]}""",
+                "a member with no engine concept behind it must ride through untouched");
+    }
+
+    [Fact]
+    public void The_script_payload_is_decoded_rather_than_carried()
+    {
+        MapDocument document = MapReader.Read(Utf8(Canonical));
+
+        MapScript script = document.Nodes[1].Script.ShouldNotBeNull();
+        script.Path.ShouldBe("Scripts/door.luau");
+        script.Enabled.ShouldBeTrue("an omitted 'enabled' means on");
+        script.Module.ShouldBeTrue();
+        script.Unknown.ShouldBeEmpty();
     }
 
     [Fact]

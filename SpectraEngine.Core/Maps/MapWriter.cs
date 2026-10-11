@@ -87,12 +87,12 @@ public static class MapWriter
         CanonicalJson.Flush(writer, node.Unknown, 1);
 
         // Omitted means inherit.
-        if (node.Realm is { } realm)
-            writer.WriteString(MapFormat.RealmMember, realm);
+        if (node.Realm != NodeRealm.Inherit)
+            writer.WriteString(MapFormat.RealmMember, MapFormat.ToWire(node.Realm));
         CanonicalJson.Flush(writer, node.Unknown, 2);
 
-        if (node.State is { } state)
-            writer.WriteString(MapFormat.StateMember, state);
+        if (node.State != NodeState.Inherit)
+            writer.WriteString(MapFormat.StateMember, MapFormat.ToWire(node.State));
         CanonicalJson.Flush(writer, node.Unknown, 3);
 
         // Omitted when World. A name, not a number, so renumbering the enum
@@ -147,19 +147,26 @@ public static class MapWriter
         }
         CanonicalJson.Flush(writer, node.Unknown, 13);
 
+        if (node.Script is { } script)
+        {
+            writer.WritePropertyName(MapFormat.ScriptMember);
+            writer.WriteRawValue(CompactScript(script));
+        }
+        CanonicalJson.Flush(writer, node.Unknown, 14);
+
         if (node.Editor is { } editor)
         {
             writer.WritePropertyName(MapFormat.EditorMember);
             writer.WriteRawValue(editor.Raw);
         }
-        CanonicalJson.Flush(writer, node.Unknown, 14);
+        CanonicalJson.Flush(writer, node.Unknown, 15);
 
         writer.WritePropertyName(MapFormat.ChildrenMember);
         writer.WriteStartArray();
         foreach (MapNode child in node.Children)
             WriteNode(writer, child);
         writer.WriteEndArray();
-        CanonicalJson.Flush(writer, node.Unknown, 15);
+        CanonicalJson.Flush(writer, node.Unknown, 16);
 
         writer.WriteEndObject();
     }
@@ -346,6 +353,24 @@ public static class MapWriter
 
         if (light.Radius != 0.5f) WriteFinite(w, MapFormat.RadiusMember, light.Radius);
         CanonicalJson.Flush(w, light.Unknown, 9);
+
+        w.WriteEndObject();
+    });
+
+    private static byte[] CompactScript(MapScript script) => CanonicalJson.Compact(w =>
+    {
+        w.WriteStartObject();
+        CanonicalJson.Flush(w, script.Unknown, -1);
+
+        // Always written: the reader refuses a record without it.
+        w.WriteString(MapFormat.PathMember, script.Path);
+        CanonicalJson.Flush(w, script.Unknown, 0);
+
+        if (!script.Enabled) w.WriteBoolean(MapFormat.EnabledMember, false);
+        CanonicalJson.Flush(w, script.Unknown, 1);
+
+        if (script.Module) w.WriteBoolean(MapFormat.ModuleMember, true);
+        CanonicalJson.Flush(w, script.Unknown, 2);
 
         w.WriteEndObject();
     });
