@@ -32,7 +32,73 @@ public sealed class PrintCapTests
         notice.Severity.ShouldBe(ScriptSeverity.Warning);
         notice.Text.ShouldBe(
             "150 more lines were printed in this tick and dropped. Scripts may print 100 lines a tick.");
-        notice.Position.ShouldBe($"{PathOf(script)}:2", "the notice stands where the last dropped line was printed");
+        notice.Position.ShouldBe($"{PathOf(script)}:2", "the notice stands where the script printed last");
+    }
+
+    [Fact]
+    public void The_notice_stands_at_the_script_that_flooded_and_not_at_the_one_whose_line_was_dropped_last()
+    {
+        using var level = new ScriptLevel();
+        SceneNode flood = AddScript(level, """
+            for i = 1, 5000 do
+                print("flood " .. i)
+            end
+            """);
+        SceneNode quiet = AddScript(level, "print('ready')");
+
+        level.Play().Tick();
+
+        level.Printed.ShouldNotContain("ready", "the flood used the tick's prints up before the second script ran");
+        ScriptMessage notice = level.Sink.Messages[^1];
+        notice.Text.ShouldBe(PrintCap.Describe(4901));
+        notice.Position.ShouldBe($"{PathOf(flood)}:2");
+        notice.Script.ShouldNotBe(PathOf(quiet));
+    }
+
+    [Fact]
+    public void Scripts_share_the_ticks_prints_and_the_notice_names_the_one_that_used_them()
+    {
+        using var level = new ScriptLevel();
+        SceneNode busy = AddScript(level, $$"""
+            for i = 1, {{Limit}} do
+                print("busy")
+            end
+            """);
+        AddScript(level, "print('one')\nprint('two')\nprint('three')");
+
+        level.Play().Tick();
+
+        level.Printed.Length.ShouldBe(Limit);
+        level.Printed.ShouldAllBe(line => line == "busy");
+        ScriptMessage notice = level.Sink.Messages[^1];
+        notice.Text.ShouldBe(PrintCap.Describe(3));
+        notice.Position.ShouldBe($"{PathOf(busy)}:2", "none of its own lines were dropped, and it left no room");
+    }
+
+    [Fact]
+    public void The_script_that_printed_the_most_is_found_again_in_each_tick()
+    {
+        using var level = new ScriptLevel();
+        SceneNode first = AddScript(level, $$"""
+            for i = 1, {{Limit + 10}} do
+                print("first")
+            end
+            """);
+        SceneNode second = AddScript(level, $$"""
+            task.wait()
+            for i = 1, {{Limit + 20}} do
+                print("second")
+            end
+            """);
+
+        level.Play().Tick(2);
+
+        ScriptMessage[] notices = [.. level.Sink.Messages.Where(message => message.Severity == ScriptSeverity.Warning)];
+        notices.Select(notice => (notice.Text, notice.Position)).ShouldBe(
+        [
+            (PrintCap.Describe(10), $"{PathOf(first)}:2"),
+            (PrintCap.Describe(20), $"{PathOf(second)}:3"),
+        ]);
     }
 
     [Fact]
