@@ -119,8 +119,9 @@ public partial class MainWindow
         }));
     }
 
-    // Opens a script by the path a level stores for it.
-    private void OpenScript(string contentPath, bool keepStatus = false)
+    // Opens a script by the path a level stores for it. A line, counted from
+    // 1, is where the caret goes: an error in Output knows its line.
+    private void OpenScript(string contentPath, bool keepStatus = false, int? line = null)
     {
         // A level opened by itself reads the engine's own content folder.
         string root = _document.Project?.AssetsPath ?? ContentRoot.Path;
@@ -136,14 +137,14 @@ public partial class MainWindow
             return;
         }
 
-        _ = OpenScriptFileAsync(full, keepStatus);
+        _ = OpenScriptFileAsync(full, keepStatus, line);
     }
 
     // The start runs off this thread and the answer comes back to it.
-    private async Task OpenScriptFileAsync(string fullPath, bool keepStatus = false)
+    private async Task OpenScriptFileAsync(string fullPath, bool keepStatus = false, int? line = null)
     {
         ScriptOpenOutcome outcome = await _scripts.OpenAsync(
-            new ScriptOpenRequest(fullPath, _document.Project?.Root));
+            new ScriptOpenRequest(fullPath, _document.Project?.Root, line));
 
         foreach (string failure in outcome.Failures)
             _shell.Output.Append(OutputSeverity.Warning, failure);

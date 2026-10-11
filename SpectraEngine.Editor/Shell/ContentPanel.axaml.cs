@@ -58,7 +58,8 @@ public partial class ContentPanel : UserControl
     // so the row cannot flip back and forth.
     private void UpdateNarrow()
     {
-        if (Model is not { } model)
+        // Before the first layout there is no width to judge by.
+        if (Model is not { } model || Toolbar.Bounds.Width <= 0)
             return;
 
         if (FilterChips.IsVisible && FilterChips.Bounds.Width > 0)
