@@ -26,6 +26,9 @@ public sealed class ViewportInteractionController
     // press, so a group can be dragged by one of its members.
     private SceneNode? _deferredSelect;
 
+    // The press that grabbed a handle, kept until the gesture ends.
+    private EditorInputFrame? _handlePress;
+
     /// <summary>Creates a viewport over a scene and its manipulator.</summary>
     public ViewportInteractionController(Scene scene, GizmoController gizmos)
     {
@@ -225,13 +228,14 @@ public sealed class ViewportInteractionController
         if (DragMode != ViewportDragMode.None)
         {
             ClearHover();
-            FinishGizmoGesture(gizmoResult, cancelRequested);
+            FinishGizmoGesture(in frame, gizmoResult, cancelRequested);
             return WithheldFromCamera();
         }
 
         if (gizmoResult == GizmoUpdateResult.DragBegan)
         {
             ClearHover();
+            _handlePress = frame;
             SetMode(ViewportDragMode.Manipulate);
             return WithheldFromCamera();
         }
@@ -283,6 +287,7 @@ public sealed class ViewportInteractionController
         BoxSelect.Cancel();
         Gizmos.Reset();
         _deferredSelect = null;
+        _handlePress = null;
         _pressedPlane = -1;
         PressedNode = null;
         ClearHover();
@@ -377,7 +382,7 @@ public sealed class ViewportInteractionController
         SetMode(ViewportDragMode.None);
     }
 
-    private void FinishGizmoGesture(GizmoUpdateResult result, bool cancelRequested)
+    private void FinishGizmoGesture(in EditorInputFrame frame, GizmoUpdateResult result, bool cancelRequested)
     {
         if (result is GizmoUpdateResult.DragBegan or GizmoUpdateResult.DragUpdated)
             return;
@@ -385,11 +390,35 @@ public sealed class ViewportInteractionController
         // DragCancelled without an abort means it never moved: a click, so
         // collapse. A committed drag and an Escape both leave the selection alone.
         if (result == GizmoUpdateResult.DragCancelled && !cancelRequested)
+        {
             ResolveDeferredSelect();
 
+            if (!frame.WasPressed(Gizmos.Active.CancelButton))
+                PickIconUnderHandle();
+        }
+
         _deferredSelect = null;
+        _handlePress = null;
         PressedNode = null;
         SetMode(ViewportDragMode.None);
+    }
+
+    // A pile's row stands round its node, and so do the handles of whichever
+    // of its icons is selected. A handle takes the press, as it must to be
+    // dragged. A click that moved nothing was meant for the icon under it.
+    private void PickIconUnderHandle()
+    {
+        if (_handlePress is not { } press || !TryPickNode(in press, out SceneNode? node) || node is null)
+            return;
+
+        if (node.Light is null && !EntityMarkerPicking.HasMarker(node))
+            return;
+
+        SelectionUpdate update = SelectionModifiers.Resolve(press.Modifiers);
+        if (update == SelectionUpdate.Replace && Scene.Selection.Count == 1 && Scene.Selection.Contains(node))
+            return;
+
+        ApplySingle(node, update);
     }
 
     private void ResolveDeferredSelect()
