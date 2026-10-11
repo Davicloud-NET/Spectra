@@ -32,6 +32,12 @@ public static class NodeInspector
     public const string BehaviorGroup = "Behavior";
     public const string EntityGroup = "Entity";
 
+    /// <summary>The script a node is: its file and its two switches.</summary>
+    public const string ScriptGroup = "Script";
+
+    private const string ScriptModuleHelp =
+        "A module does not run when the level starts. It runs when another script asks for it.";
+
     // Choice tokens per descriptor choice list. Weak, keyed on the schema's own
     // list, so an entry dies with its schema and nothing allocates per publish.
     private static readonly ConditionalWeakTable<object, string[]> ChoiceTokenCache = new();
@@ -104,6 +110,10 @@ public static class NodeInspector
 
         if (node.Entity is { } entity)
             DescribeEntity(entity, schemas, into);
+
+        if (node.Script is { } script)
+            DescribeScript(script, into);
+
         // Last, to match PropertyId order, which is what a merged selection uses.
         if (node.Brush is { } surfaced)
             DescribeMaterial(node, surfaced, pickedPlane, into);
@@ -430,6 +440,15 @@ public static class NodeInspector
             into.Add(PropertyRow.OfText(
                 EntityGroup, keyvalue.Key, PropertyId.EntityKeyvalue, keyvalue.Value, keyvalue.Key));
         }
+    }
+
+    // The file is plain text here. Nothing checks that it exists.
+    private static void DescribeScript(Script script, List<PropertyRow> into)
+    {
+        into.Add(PropertyRow.OfText(ScriptGroup, "File", PropertyId.ScriptFile, script.Path));
+        into.Add(PropertyRow.OfFlag(ScriptGroup, "Enabled", PropertyId.ScriptEnabled, script.IsEnabled));
+        into.Add(PropertyRow.OfFlag(ScriptGroup, "Module", PropertyId.ScriptModule, script.IsModule)
+            with { Help = ScriptModuleHelp });
     }
 
     private static bool IsDeclared(EntitySchema schema, string key)

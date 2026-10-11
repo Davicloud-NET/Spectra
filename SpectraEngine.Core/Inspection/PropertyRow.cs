@@ -54,6 +54,15 @@ public enum PropertyId
     EntityClassname,
     EntityKeyvalue,
 
+    /// <summary>The file a script names, as a content-relative path.</summary>
+    ScriptFile,
+
+    /// <summary>Whether a script may run.</summary>
+    ScriptEnabled,
+
+    /// <summary>Whether a script is a module, which runs when another script asks for it.</summary>
+    ScriptModule,
+
     /// <summary>Every face of a brush at once.</summary>
     BrushMaterial,
 

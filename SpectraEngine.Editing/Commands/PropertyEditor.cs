@@ -116,6 +116,9 @@ public static class PropertyEditor
 
         PropertyId.EntityKeyvalue => BuildEntityKeyvalue(node, edit, schemas),
 
+        PropertyId.ScriptFile or PropertyId.ScriptEnabled
+            or PropertyId.ScriptModule => BuildScript(node, edit),
+
         // Read-only properties are ignored, not thrown on.
         _ => null,
     };
@@ -288,6 +291,31 @@ public static class PropertyEditor
         };
 
         return next == current ? null : SetNodeFlagsCommand.Capture(node, next);
+    }
+
+    private static IEditorCommand? BuildScript(SceneNode node, PropertyEdit edit)
+    {
+        if (node.Script is not { } script) return null;
+
+        Script next;
+        try
+        {
+            next = edit.Id switch
+            {
+                PropertyId.ScriptFile => script with { Path = edit.Text },
+                PropertyId.ScriptEnabled => script with { IsEnabled = edit.Flag },
+                PropertyId.ScriptModule => script with { IsModule = edit.Flag },
+                _ => script,
+            };
+        }
+        catch (ArgumentException)
+        {
+            // An empty path, or one that leaves the content root. A script
+            // has to name a file, so the node keeps the one it has.
+            return null;
+        }
+
+        return next == script ? null : SetScriptCommand.Capture(node, next);
     }
 
     // Keyvalues are stored as wire text, so the edit is text too.
@@ -530,6 +558,7 @@ public static class PropertyEditor
             or PropertyId.FaceUOffset or PropertyId.FaceVOffset
             or PropertyId.FaceRotation => "Face Texture",
         PropertyId.EntityKeyvalue => "Entity Property",
+        PropertyId.ScriptFile or PropertyId.ScriptEnabled or PropertyId.ScriptModule => "Script",
         PropertyId.CanCollide or PropertyId.CanQuery or PropertyId.CanTouch
             or PropertyId.IsRendered => "Behavior",
         _ => "Light",
