@@ -7,9 +7,9 @@ namespace SpectraEngine.Editing.Viewport;
 /// Moves icons that would be drawn over each other apart, so each one can be
 /// read and clicked. An icon no other is drawn over keeps its place.
 /// </summary>
-// Icons whose anchors overlap are a pile and stand in rows, in the order
-// given. Icons still drawn over each other after that are pushed apart. Each
-// move starts at nothing as two icons meet, so nothing jumps.
+// Icons whose anchors overlap are a pile and stand in rows, in their order.
+// Icons still drawn over each other after that are pushed apart. Each move
+// starts at nothing as two icons meet, so nothing jumps.
 public sealed class IconFan
 {
     /// <summary>How many icons stand in a row before the next row starts.</summary>
@@ -30,18 +30,14 @@ public sealed class IconFan
     private int[] _piled = [];
     private int _piledCount;
 
-    // The icons the last spread found in a pile, each by its place in what
-    // was given, lowest first.
-    internal ReadOnlySpan<int> Piled => _piled.AsSpan(0, _piledCount);
-
     /// <summary>Works out where each icon is drawn, every icon taking part in full.</summary>
     /// <param name="anchors">Where each icon's node is on screen, in pixels with y down, in the order a row lists them.</param>
     /// <param name="halfWidths">Half of each icon's width, in pixels.</param>
     /// <param name="places">Receives where each icon is drawn.</param>
     public void Spread(ReadOnlySpan<Vector2> anchors, ReadOnlySpan<float> halfWidths, Span<Vector2> places) =>
-        Spread(anchors, halfWidths, default, places);
+        Spread(anchors, halfWidths, default, default, places);
 
-    /// <summary>Works out where each icon is drawn.</summary>
+    /// <summary>Works out where each icon is drawn, in the order a row lists them.</summary>
     /// <param name="anchors">Where each icon's node is on screen, in pixels with y down, in the order a row lists them.</param>
     /// <param name="halfWidths">Half of each icon's width, in pixels.</param>
     /// <param name="strengths">How much each icon takes part, from 0 to 1. Empty when all take part in full.</param>
@@ -50,11 +46,31 @@ public sealed class IconFan
         ReadOnlySpan<Vector2> anchors,
         ReadOnlySpan<float> halfWidths,
         ReadOnlySpan<float> strengths,
+        Span<Vector2> places) =>
+        Spread(anchors, halfWidths, strengths, default, places);
+
+    /// <summary>Works out where each icon is drawn.</summary>
+    /// <param name="anchors">Where each icon's node is on screen, in pixels with y down.</param>
+    /// <param name="halfWidths">Half of each icon's width, in pixels.</param>
+    /// <param name="strengths">How much each icon takes part, from 0 to 1. Empty when all take part in full.</param>
+    /// <param name="order">
+    /// Where each icon comes in a row, lowest first. Empty when the icons are
+    /// given in that order.
+    /// </param>
+    /// <param name="places">Receives where each icon is drawn.</param>
+    public void Spread(
+        ReadOnlySpan<Vector2> anchors,
+        ReadOnlySpan<float> halfWidths,
+        ReadOnlySpan<float> strengths,
+        ReadOnlySpan<int> order,
         Span<Vector2> places)
     {
         int count = anchors.Length;
-        if (halfWidths.Length != count || places.Length != count || (strengths.Length != count && !strengths.IsEmpty))
+        if (halfWidths.Length != count || places.Length != count ||
+            (strengths.Length != count && !strengths.IsEmpty) || (order.Length != count && !order.IsEmpty))
+        {
             throw new ArgumentException("Every icon needs an anchor, a width and a place.");
+        }
 
         if (_piles.Length < count)
         {
@@ -68,7 +84,7 @@ public sealed class IconFan
         for (int i = 0; i < count; i++)
             piles[i] = new Pile { Cell = halfWidths[i] };
 
-        Gather(anchors, halfWidths, strengths, piles);
+        Gather(anchors, halfWidths, strengths, order, piles);
 
         _piledCount = 0;
         for (int i = 0; i < count; i++)
@@ -80,13 +96,17 @@ public sealed class IconFan
         }
 
         if (_piledCount > 0)
-            PushApart(anchors, halfWidths, strengths, Piled, places);
+            PushApart(anchors, halfWidths, strengths, order, places);
     }
 
     // Adds every overlapping pair's share to both of its icons. A share is
     // none when the two only touch and all once they are half a width apart.
     private static void Gather(
-        ReadOnlySpan<Vector2> anchors, ReadOnlySpan<float> halfWidths, ReadOnlySpan<float> strengths, Span<Pile> piles)
+        ReadOnlySpan<Vector2> anchors,
+        ReadOnlySpan<float> halfWidths,
+        ReadOnlySpan<float> strengths,
+        ReadOnlySpan<int> order,
+        Span<Pile> piles)
     {
         for (int i = 0; i < anchors.Length - 1; i++)
         {
@@ -111,8 +131,15 @@ public sealed class IconFan
                 if (share <= 0f)
                     continue;
 
+                // From the earlier of the two in the order to the later.
+                bool isLaterFirst = !order.IsEmpty && order[j] < order[i];
+                int earlier = isLaterFirst ? j : i;
+                int later = isLaterFirst ? i : j;
+                if (isLaterFirst)
+                    apart = -apart;
+
                 // A row is spaced for its widest icon.
-                float uneven = halfWidths[j] - half;
+                float uneven = halfWidths[later] - halfWidths[earlier];
                 float wider = share * uneven;
                 uneven = MathF.Abs(uneven);
 
@@ -122,8 +149,8 @@ public sealed class IconFan
                 var inRow = new Vector2(overlap * (reach + (share * uneven)), 0f);
                 Vector2 pull = (apart + (inRow - stands)) * (together * (1f + share) * 0.5f);
 
-                piles[i].Meet(share, pull, half + wider, isAhead: false);
-                piles[j].Meet(share, -pull, halfWidths[j] - wider, isAhead: true);
+                piles[earlier].Meet(share, pull, halfWidths[earlier] + wider, isAhead: false);
+                piles[later].Meet(share, -pull, halfWidths[later] - wider, isAhead: true);
             }
         }
     }
@@ -201,26 +228,33 @@ public sealed class IconFan
         ReadOnlySpan<Vector2> anchors,
         ReadOnlySpan<float> halfWidths,
         ReadOnlySpan<float> strengths,
-        ReadOnlySpan<int> piled,
+        ReadOnlySpan<int> order,
         Span<Vector2> places)
     {
         ReadOnlySpan<Pile> piles = _piles.AsSpan(0, places.Length);
         Span<Vector2> pushes = _pushes.AsSpan(0, places.Length);
         pushes.Clear();
 
-        foreach (int moved in piled)
+        foreach (int moved in _piled.AsSpan(0, _piledCount))
         {
             for (int other = 0; other < places.Length; other++)
             {
-                // Two icons of piles meet once, at the earlier of them.
+                // Two icons of piles meet once, at the first given of them.
                 if (other == moved || (other < moved && piles[other].Others > 0f))
                     continue;
 
-                int earlier = Math.Min(moved, other);
-                int later = Math.Max(moved, other);
                 float reach = halfWidths[moved] + halfWidths[other];
+                if (MathF.Abs(places[other].X - places[moved].X) >= reach)
+                    continue;
+
+                bool isOtherLater = order.IsEmpty || order[other] == order[moved]
+                    ? other > moved
+                    : order[other] > order[moved];
+                int earlier = isOtherLater ? moved : other;
+                int later = isOtherLater ? other : moved;
+
                 Vector2 apart = places[later] - places[earlier];
-                if (MathF.Abs(apart.X) >= reach || apart.LengthSquared() >= reach * reach)
+                if (apart.LengthSquared() >= reach * reach)
                     continue;
 
                 // The later one goes underneath, the more so the nearer the

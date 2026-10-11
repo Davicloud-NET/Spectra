@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using SpectraEngine.Core.Scene;
 
@@ -8,24 +9,36 @@ namespace SpectraEngine.Editing.Viewport;
 // order nodes were attached, which a delete and its undo change.
 internal sealed class SceneTreeOrder
 {
-    private readonly Dictionary<SceneNode, int> _places = new(ReferenceEqualityComparer.Instance);
+    // Only filled during a walk, so no node is held between them.
+    private readonly Dictionary<SceneNode, int> _walked = new(ReferenceEqualityComparer.Instance);
+
+    private int[] _lights = [];
+    private int[] _entities = [];
     private Scene? _scene;
     private bool _isCurrent;
 
-    // The node's place in the tree, among the nodes with a light or an entity.
-    public int Of(Scene scene, SceneNode node)
+    // Walks the tree again when it changed since the last walk, or a node
+    // got or lost its light or entity.
+    public void Refresh(Scene scene)
     {
         if (!ReferenceEquals(scene, _scene))
             Watch(scene);
 
-        if (!_isCurrent)
-        {
-            Walk(scene.Root);
-            _isCurrent = true;
-        }
+        if (_isCurrent)
+            return;
 
-        return _places.TryGetValue(node, out int place) ? place : int.MaxValue;
+        Walk(scene.Root);
+        Fill(scene.LightNodes, ref _lights);
+        Fill(scene.EntityNodes, ref _entities);
+        _walked.Clear();
+        _isCurrent = true;
     }
+
+    // The tree place of the node at this place in Scene.LightNodes.
+    public int OfLight(int listed) => _lights[listed];
+
+    // The tree place of the node at this place in Scene.EntityNodes.
+    public int OfEntity(int listed) => _entities[listed];
 
     private void Watch(Scene scene)
     {
@@ -42,23 +55,27 @@ internal sealed class SceneTreeOrder
         scene.NodeRemoved += Forget;
         scene.NodeReparented += Forget;
         scene.NodeKindChanged += Forget;
-        Forget(scene.Root);
+        _isCurrent = false;
     }
 
-    // Lets go of every node too, so a level that was closed is not kept.
-    private void Forget(SceneNode changed)
-    {
-        _isCurrent = false;
-        _places.Clear();
-    }
+    private void Forget(SceneNode changed) => _isCurrent = false;
 
     private void Walk(SceneNode node)
     {
         if (node.Light is not null || node.Entity is not null)
-            _places[node] = _places.Count;
+            _walked[node] = _walked.Count;
 
         IReadOnlyList<SceneNode> children = node.Children;
         for (int i = 0; i < children.Count; i++)
             Walk(children[i]);
+    }
+
+    private void Fill(IReadOnlyList<SceneNode> listed, ref int[] places)
+    {
+        if (places.Length < listed.Count)
+            places = new int[Math.Max(listed.Count, places.Length * 2)];
+
+        for (int i = 0; i < listed.Count; i++)
+            places[i] = _walked.TryGetValue(listed[i], out int place) ? place : int.MaxValue;
     }
 }

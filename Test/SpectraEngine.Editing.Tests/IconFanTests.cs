@@ -192,6 +192,54 @@ public sealed class IconFanTests
     }
 
     [Fact]
+    public void Icons_given_with_an_order_stand_in_that_order()
+    {
+        var places = new Vector2[3];
+
+        new IconFan().Spread(Pile(3), Halves(3), default, [2, 0, 1], places);
+
+        places[1].ShouldBe(Point - new Vector2(Width, 0f));
+        places[2].ShouldBe(Point);
+        places[0].ShouldBe(Point + new Vector2(Width, 0f));
+    }
+
+    [Fact]
+    public void An_order_gives_what_listing_the_icons_in_that_order_gives()
+    {
+        var random = new Random(19);
+        const int Count = 30;
+        var anchors = new Vector2[Count];
+        var halfWidths = new float[Count];
+        var order = new int[Count];
+        for (int i = 0; i < Count; i++)
+        {
+            anchors[i] = new Vector2(random.NextSingle() * 90f, random.NextSingle() * 60f);
+            halfWidths[i] = 7f + (random.NextSingle() * 8f);
+            order[i] = i;
+        }
+
+        random.Shuffle(order);
+        var ordered = new Vector2[Count];
+        new IconFan().Spread(anchors, halfWidths, default, order, ordered);
+
+        // The same icons, listed by their order.
+        var listedAnchors = new Vector2[Count];
+        var listedHalfWidths = new float[Count];
+        for (int i = 0; i < Count; i++)
+        {
+            listedAnchors[order[i]] = anchors[i];
+            listedHalfWidths[order[i]] = halfWidths[i];
+        }
+
+        Vector2[] listed = Spread(listedAnchors, listedHalfWidths);
+
+        for (int i = 0; i < Count; i++)
+            Vector2.Distance(ordered[i], listed[order[i]]).ShouldBeLessThan(1e-3f, $"icon {i}");
+
+        ordered.ShouldNotBe(anchors);
+    }
+
+    [Fact]
     public void Two_piles_that_are_apart_do_not_move_each_other()
     {
         Vector2 other = Point + new Vector2(Width * 4f, 0f);
@@ -276,5 +324,6 @@ public sealed class IconFanTests
         Should.Throw<ArgumentException>(() => fan.Spread(new Vector2[2], new float[3], new Vector2[2]));
         Should.Throw<ArgumentException>(() => fan.Spread(new Vector2[2], new float[2], new Vector2[1]));
         Should.Throw<ArgumentException>(() => fan.Spread(new Vector2[2], new float[2], new float[1], new Vector2[2]));
+        Should.Throw<ArgumentException>(() => fan.Spread(new Vector2[2], new float[2], default, new int[3], new Vector2[2]));
     }
 }
