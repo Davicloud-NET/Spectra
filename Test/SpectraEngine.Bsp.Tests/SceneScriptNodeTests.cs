@@ -174,18 +174,19 @@ public sealed class SceneScriptNodeTests
     }
 
     [Fact]
-    public void The_same_script_set_again_changes_nothing()
+    public void An_edit_of_a_script_keeps_its_node_at_its_place_in_the_list()
     {
+        // Every edit sets a new script. Taken off and put back, the node
+        // would move to the end.
         var scene = new Scene("Scripts");
-        SceneNode node = scene.Root.CreateChild("Opener");
-        Script script = Door();
-        node.Script = script;
-        int raised = 0;
-        scene.NodeKindChanged += _ => raised++;
+        SceneNode first = scene.Root.CreateChild("First");
+        SceneNode second = scene.Root.CreateChild("Second");
+        first.Script = Door();
+        second.Script = Door();
 
-        node.Script = script;
+        first.Script = Door() with { IsEnabled = false };
+        first.Script = new Script("Scripts/gate.luau");
 
-        raised.ShouldBe(0);
-        scene.ScriptNodes.ShouldBe([node]);
+        scene.ScriptNodes.ShouldBe([first, second]);
     }
 }
