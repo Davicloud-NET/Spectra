@@ -55,6 +55,14 @@ internal sealed class RandomWrites(int seed)
         return new RandomWrite(member, value, luau);
     }
 
+    // A write of a value the member takes. A run makes one to every member
+    // of every node first, so no seed leaves one out.
+    public RandomWrite Taken(SettableMember member)
+    {
+        (MemberValue value, string luau) = Value(member.Kind, isRefused: false);
+        return new RandomWrite(member, value, luau);
+    }
+
     private RandomWrite WrongKind(SettableMember member)
     {
         if (Pick(2) == 0)

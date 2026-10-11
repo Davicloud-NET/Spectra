@@ -4,10 +4,10 @@ using SpectraEngine.Core.Scripting;
 namespace SpectraEngine.Scripting.Tests;
 
 /// <summary>
-/// Stop puts a level back as it was. Random writes to every member a script
-/// can set, on every kind of node, and the level saves to the same bytes
-/// after Stop as before Play. The seed is in every failure, and the same
-/// seed makes the same writes.
+/// Stop puts a level back as it was. A write to every member a script can
+/// set on every kind of node, then random ones, and the level saves to the
+/// same bytes after Stop as before Play. The seed is in every failure, and
+/// the same seed makes the same writes.
 /// </summary>
 public sealed class StopPromiseTests
 {
@@ -34,16 +34,20 @@ public sealed class StopPromiseTests
         for (int play = 1; play <= 2; play++)
         {
             string run = $"seed {seed}, play {play}";
-            level.Play().Tick();
-            var writes = new ScriptWrites(level.Entities);
+            var coverage = new WriteCoverage(level.Scene);
+            level.Play();
+            var door = new ScriptWrites(level.Entities);
 
-            int taken = 0;
+            // No tick has run, so nothing but these writes has changed the level.
+            int taken = WriteToEveryMember(door, coverage, nodes, random);
+            new LevelState(level.Scene).IsSavedAs(before).ShouldBeFalse($"{run}: the writes changed nothing a save holds");
+
             for (int i = 0; i < WritesPerPlay; i++)
             {
                 RandomWrite write = random.Next();
                 int node = random.Pick(nodes.Length);
                 MemberValue value = write.PutsBack ? atStart[node][(int)write.Member.Id] : write.Value;
-                if (writes.TryWrite(nodes[node], write.Member.Id, in value, out _))
+                if (coverage.Write(door, nodes[node], write.Member, in value))
                     taken++;
 
                 if (i % WritesPerTick == WritesPerTick - 1)
@@ -53,8 +57,8 @@ public sealed class StopPromiseTests
                 }
             }
 
-            ShouldBeAMix(taken, WritesPerPlay, run);
-            new LevelState(level.Scene).IsSavedAs(before).ShouldBeFalse($"{run}: the writes changed nothing a save holds");
+            ShouldBeAMix(taken, WritesPerPlay + (nodes.Length * ScriptWrites.Settable.Count), run);
+            coverage.ShouldBeWhole(run);
             level.Errors.ShouldBeEmpty(run);
 
             level.Stop();
@@ -83,24 +87,51 @@ public sealed class StopPromiseTests
             level.AddScript(node, WritingScript.From(random, WritesPerScript), "Writer");
 
         var before = new LevelState(level.Scene);
+        var coverage = new WriteCoverage(level.Scene);
 
         level.Play();
         for (int tick = 0; tick < WritingScript.TicksFor(WritesPerScript); tick++)
         {
             OneOfEverything.FireTheWire(level);
             level.Tick();
+            coverage.Look();
         }
 
         level.Errors.ShouldBeEmpty(run);
-        (int scripts, int taken, int refused) = WritingScript.Tally(level.Printed);
+        (int scripts, IReadOnlyDictionary<string, int> taken, int refused) = WritingScript.Tally(level.Printed);
         scripts.ShouldBe(nodes.Length, $"{run}: not every script reached its last line");
-        (taken + refused).ShouldBe(nodes.Length * WritesPerScript, run);
-        ShouldBeAMix(taken, taken + refused, run);
-        new LevelState(level.Scene).IsSavedAs(before).ShouldBeFalse($"{run}: the writes changed nothing a save holds");
+        foreach (SettableMember member in ScriptWrites.Settable)
+            coverage.Took(member, taken.GetValueOrDefault(member.Name));
+
+        ShouldBeAMix(taken.Values.Sum(), taken.Values.Sum() + refused, run);
+        coverage.ShouldBeWhole(run);
 
         level.Stop();
 
         new LevelState(level.Scene).ShouldBe(before, run);
+    }
+
+    // One write of a value it takes to every member of every node, so no
+    // seed leaves a member or a kind of node out. Hands back how many took.
+    private static int WriteToEveryMember(
+        ScriptWrites door, WriteCoverage coverage, SceneNode[] nodes, RandomWrites random)
+    {
+        int taken = 0;
+        foreach (SceneNode node in nodes)
+        {
+            foreach (SettableMember member in ScriptWrites.Settable)
+            {
+                // Not the value the member reads already, which changes nothing.
+                MemberValue value = random.Taken(member).Value;
+                while (value == ScriptWrites.Read(node, member.Id))
+                    value = random.Taken(member).Value;
+
+                if (coverage.Write(door, node, member, in value))
+                    taken++;
+            }
+        }
+
+        return taken;
     }
 
     // What each member a script can set reads on a node, in the list's order.
