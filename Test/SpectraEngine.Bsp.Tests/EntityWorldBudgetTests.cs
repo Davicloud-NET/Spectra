@@ -49,32 +49,27 @@ public sealed class EntityWorldBudgetTests
     }
 
     [Fact]
-    public void Falling_behind_is_an_error_once_each_time_it_starts_and_names_the_first_event_left()
+    public void Falling_behind_is_a_warning_said_once_a_level_and_names_the_first_event_left()
     {
         EntityRuntime.Place(_scene.Root, "bystander", "recorder");
         EntityWorld world = Started();
 
-        for (int i = 0; i < (Budget * 3) + 1; i++)
-            world.QueueInput("bystander", $"Ping{i}");
-        world.Tick(Tick);
-        world.Tick(Tick);
-        world.Tick(Tick);
+        FallBehindAndCatchUp(world);
+        FallBehindAndCatchUp(world);
 
-        // Behind for three ticks, said once.
-        world.DispatchBudgetTripCount.ShouldBe(3);
-        string error = _logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem();
-        error.ShouldContain($"More than {Budget}");
-        error.ShouldContain($"input 'Ping{Budget}'");
-        error.ShouldContain("'bystander'");
+        // Nothing was lost, so it is no error.
+        world.DispatchBudgetTripCount.ShouldBe(2);
+        _logger.MessagesAt(LogLevel.Error).ShouldBeEmpty();
+        string warning = _logger.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem();
+        warning.ShouldContain($"More than {Budget}");
+        warning.ShouldContain($"input 'Ping{Budget}'");
+        warning.ShouldContain("'bystander'");
 
-        world.Tick(Tick);
-        world.PendingEventCount.ShouldBe(0);
+        world.Deactivate();
+        world.Activate();
+        FallBehindAndCatchUp(world);
 
-        for (int i = 0; i < Budget + 1; i++)
-            world.QueueInput("bystander", "Again");
-        world.Tick(Tick);
-
-        _logger.MessagesAt(LogLevel.Error).Count.ShouldBe(2);
+        _logger.MessagesAt(LogLevel.Warning).Count.ShouldBe(2);
     }
 
     [Fact]
@@ -228,12 +223,29 @@ public sealed class EntityWorldBudgetTests
         most.ShouldBe(QueueLimit);
         world.DiscardedEventCount.ShouldBeGreaterThan(0);
 
-        // Falling behind is said once and the full queue once, though both last.
-        IReadOnlyList<string> errors = _logger.MessagesAt(LogLevel.Error);
-        errors.Count.ShouldBe(2);
-        errors[1].ShouldContain($"full at {QueueLimit}");
-        errors[1].ShouldContain("output 'OnTrigger' sending 'Trigger'");
-        errors[1].ShouldContain("'doubler'");
+        // Said once, though the queue stays full.
+        string error = _logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem();
+        error.ShouldContain($"full at {QueueLimit}");
+        error.ShouldContain("output 'OnTrigger' sending 'Trigger'");
+        error.ShouldContain("'doubler'");
+    }
+
+    [Fact]
+    public void A_queue_that_fills_again_after_it_emptied_is_an_error_again()
+    {
+        EntityRuntime.Place(_scene.Root, "bystander", "recorder");
+        EntityWorld world = Started();
+
+        for (int round = 0; round < 2; round++)
+        {
+            for (int i = 0; i < QueueLimit + 2; i++)
+                world.QueueInput("bystander", "Ping", delay: 2 * Tick);
+            Run(world, 2 + (QueueLimit / Budget));
+            world.PendingEventCount.ShouldBe(0);
+        }
+
+        world.DiscardedEventCount.ShouldBe(4);
+        _logger.MessagesAt(LogLevel.Error).Count.ShouldBe(2);
     }
 
     [Fact]
@@ -311,6 +323,16 @@ public sealed class EntityWorldBudgetTests
         };
         world.Activate();
         return world;
+    }
+
+    // One event more than a tick may send, then the tick that sends it.
+    private static void FallBehindAndCatchUp(EntityWorld world)
+    {
+        for (int i = 0; i < Budget + 1; i++)
+            world.QueueInput("bystander", $"Ping{i}");
+
+        Run(world, 2);
+        world.PendingEventCount.ShouldBe(0);
     }
 
     private string[] Heard() => [.. _log.Select(line => line.Split(':')[1])];

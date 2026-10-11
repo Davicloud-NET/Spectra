@@ -20,9 +20,9 @@ internal sealed class EntityDispatcher
     private int _maxDispatchesPerTick = 4096;
     private int _maxPendingEvents = 65536;
 
-    // Falling behind and a full queue are each logged when they start, not
-    // on every tick they last.
-    private bool _isBehind;
+    // Falling behind loses nothing, so it is logged once a level. A full
+    // queue is logged each time it fills.
+    private bool _reportedBehind;
     private bool _reportedFull;
 
     public EntityDispatcher(EntityWorld world, ILogger logger)
@@ -62,7 +62,7 @@ internal sealed class EntityDispatcher
         _queue.Clear();
         _resolved.Clear();
         _sequence = 0;
-        _isBehind = false;
+        _reportedBehind = false;
         _reportedFull = false;
     }
 
@@ -146,7 +146,6 @@ internal sealed class EntityDispatcher
         long firstMadeHere = _sequence;
         int waited = 0;
         int madeHere = 0;
-        bool behind = false;
 
         while (_queue.TryPeek(out EntityEvent next) && next.Tick <= tick)
         {
@@ -154,7 +153,6 @@ internal sealed class EntityDispatcher
             {
                 if (waited == _maxDispatchesPerTick)
                 {
-                    behind = true;
                     FallBehind(next);
                     break;
                 }
@@ -175,7 +173,6 @@ internal sealed class EntityDispatcher
             Dispatch(due);
         }
 
-        _isBehind = behind;
         return waited + madeHere;
     }
 
@@ -277,13 +274,14 @@ internal sealed class EntityDispatcher
     private void FallBehind(in EntityEvent next)
     {
         BudgetTripCount++;
-        if (_isBehind)
+        if (_reportedBehind)
             return;
 
-        _logger.LogError(
+        _reportedBehind = true;
+        _logger.LogWarning(
             "More than {Budget} entity events were waiting for one tick. The rest are sent on the next " +
-            "ticks, in the same order, so this level's logic runs late until it has caught up. First in " +
-            "line is {What} at '{TargetName}'. This is what a loop that waits and multiplies looks like.",
+            "ticks, in the same order, so this level's logic runs late. First in line is {What} at " +
+            "'{TargetName}'. A loop that waits and multiplies starts like this. Said once a level.",
             _maxDispatchesPerTick, Describe(next), NameOf(next));
     }
 

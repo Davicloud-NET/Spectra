@@ -193,6 +193,36 @@ public sealed class BuiltinEntityBehaviourTests
     }
 
     [Fact]
+    public void Two_relays_that_share_a_name_and_fire_at_it_after_a_wait_are_held_to_the_budget_and_the_queue()
+    {
+        var logger = new CapturingLogger();
+        var scene = new Scene("Entities");
+        for (int i = 0; i < 2; i++)
+        {
+            SceneNode echo = EntityRuntime.Place(scene.Root, "echo", "logic_relay");
+            EntityRuntime.Wire(echo, LogicRelay.OnTrigger, "echo", "Trigger", delay: 0.1f);
+        }
+
+        var world = new EntityWorld(scene, logger, EntityRuntime.Catalog([]));
+        world.Activate();
+        world.QueueInput("echo", "Trigger");
+
+        // Each input reaches both relays, so the count doubles every tenth
+        // of a second: a million in two seconds if nothing held it.
+        int mostSent = 0;
+        for (int i = 0; i < 180; i++)
+        {
+            world.Tick(Tick);
+            mostSent = System.Math.Max(mostSent, world.LastTickDispatchCount);
+        }
+
+        mostSent.ShouldBe(world.MaxDispatchesPerTick);
+        world.PendingEventCount.ShouldBe(world.MaxPendingEvents);
+        logger.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem().ShouldContain("'echo'");
+        logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem().ShouldContain("'echo'");
+    }
+
+    [Fact]
     public void A_timer_fires_on_its_interval_and_Enable_restarts_it()
     {
         var log = new List<string>();
