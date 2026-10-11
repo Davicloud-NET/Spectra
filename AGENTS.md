@@ -58,6 +58,7 @@ Demo switches worth knowing (`docs/performance.md` has the profiling ones):
 | `--offscreen-probe`, `--viewport-compare`, `--pacing-probe`, `--pipeline-compare` | render checks that need no person |
 | `--command="<line>"`, repeatable | run a console line once the scene is loaded; replies are logged with `[console]` |
 | `--console` | read console lines from the terminal while the demo runs |
+| `--script=<file>` | run one `.luau` file with no level and no window; what it prints is logged with `[script]`, and the exit code is 1 when it failed |
 
 The console command `fake_device_loss` makes the next present fail as a lost graphics device. The demo then ends with exit code 1, and the editor restarts its viewport. It is the only way to test either without pulling a laptop's plug.
 
@@ -74,7 +75,7 @@ Publishing:
 ## Layout
 
 - `Assets/`: the content root. Textures, `.spectramat` materials, models. Copied next to the executable.
-- `SpectraEngine.Core/`: the engine. `Graphics/` (renderers, pipelines, built-in shaders), `Scene/`, `Bsp/` (brushes, CSG, BSP), `Assets/` (content sources, pack readers, caches), `Maps/`, `Projects/`, `Entities/` (the runtime and the `ent_` commands), `Play/` (`PlaySession`), `ConsoleSystem/`, `Physics/`, `Audio/`, `Input/`, `Hosting/` (`EngineHost`), `Inspection/`.
+- `SpectraEngine.Core/`: the engine. `Graphics/` (renderers, pipelines, built-in shaders), `Scene/`, `Bsp/` (brushes, CSG, BSP), `Assets/` (content sources, pack readers, caches), `Maps/`, `Projects/`, `Entities/` (the runtime and the `ent_` commands), `Play/` (`PlaySession`), `ConsoleSystem/`, `Physics/`, `Audio/`, `Input/`, `Hosting/` (`EngineHost`), `Inspection/`, `Scripting/` (what a script reports, and the sink for it).
 - `SpectraEngine.Editing/`: editor logic. Commands, undo, gizmos, selection, cameras. `Assets/Icons/` holds the icons of entities and lights.
 - `SpectraEngine.Editor/`: the Avalonia shell. `Shell/` (the Logic view is `Shell/Logic/`), `Viewport/`, `Theme/`, `Sounds/`.
 - `SpectraEngine.Executable/`: the demo. Also hosts the editing layer.
@@ -172,6 +173,13 @@ Play and console
 - There is one `SpectraConsole` per engine, never a static. A line goes in as a string through `EngineHost.SubmitConsoleLine`, and what it prints comes back in `FrameSnapshot.ConsoleLines`.
 - A command reads `Scene.EntitySchemas`, never `EntityCatalog.Shared`, which freezes on its first read.
 
+Scripting
+
+- One `LuauHost` owns one Luau state and knows nothing of a scene. A script is a thread in it with globals of its own. A function the host keeps (`LuauFunction`) runs on a new thread that shares them.
+- A host function is a static `[UnmanagedCallersOnly]` pointer where it must be fast, and a delegate otherwise. It reads and pushes through `LuauStack` and fails by returning `stack.Fail(...)`.
+- What a script reports is a `ScriptMessage` in `SpectraEngine.Core/Scripting`, so the console and the editor carry it without the binding.
+- A script that runs past `LuauHost.CallLimit` or holds more than `MemoryBudget` is stopped and switched off. A script that is switched off never runs again, and the host lets go of its threads, its kept functions and its globals.
+
 ## Things that fail quietly
 
 Graphics
@@ -240,10 +248,12 @@ Entities and play
 
 Luau
 
-- A Luau call that can raise, made from managed code, works under the JIT and kills a NativeAOT build at a later garbage collection. Managed code reaches Luau through `Shim`, whose calls return a status, and a host function fails by returning `Shim.HostError`. `BindingSourceTests` holds the short list of direct calls.
+- A Luau call that can raise, made from managed code, works under the JIT and kills a NativeAOT build at a later garbage collection. Managed code reaches Luau through `Shim`, whose calls return a status, and a host function fails by returning `stack.Fail(...)`. `BindingSourceTests` holds the short list of direct calls.
 - So the crash cases only count from a published console: `dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r win-x64`, then `SpectraEngine.Scripting.Tests`. Until then they skip, and a stale publish is run as it is.
 - A change to the shim raises `SL_SHIM_REVISION` in `spectra_luau.h` and `Shim.Revision`. Left alone, a library built before the change passes the startup check and runs the old code.
-- A status form on a thread that has yielded or failed answers with an error and does nothing. Only `sl_pushnumber`, `sl_newthread` and `sl_resume` work there.
+- A status form that runs protected answers with an error on a thread that has yielded or failed, and does nothing. So a string or a table for a waiting thread is pushed on `LuauHost.Stack`, and `LuauThread.Resume` moves it.
+- `LuauHost.CallLimit` counts the host's own time too. A host function that takes three seconds gets the script that called it switched off, and the message blames the script.
+- A value a script no longer names can still sit in a stack slot of a waiting thread, and Luau keeps it alive until the slot is written again. A test that waits for Luau to let an object go ends the thread first.
 
 Tests and tools
 

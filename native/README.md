@@ -160,37 +160,72 @@ garbage collection, or goes on with damaged objects.
 So managed code never calls anything in Luau that can raise.
 `native/luau/spectra_luau.cpp` owns:
 
-- `callHost`, the one function Luau sees for every managed function. The
-  managed function returns a count, `-1` or `-2` for an error with the value on
-  top, or `-3 - n` to yield `n` values. `callHost` raises or yields after it
-  has returned. With `-1` a message gets the position of the calling script in
-  front. With `-2` the value is raised as it is, for a host function that
-  passes on the error of a script it called.
+- `callHost` and `callHostById`, the two functions Luau sees for every managed
+  function. The first calls a function pointer. The second calls the
+  binding's one entry point with the host's handle and a number, which is how
+  a delegate is reached. The managed function returns a count, `-1` or `-2`
+  for an error with the value on top, or `-3 - n` to yield `n` values. The
+  raise or the yield happens after it has returned. With `-1` a message gets
+  the position of the calling script in front. With `-2` the value is raised
+  as it is, for a host function that passes on the error of a script it called.
 - every call that can raise, in a form that returns a status: load, call,
-  resume, read and write a field, push a number or a string, make a table, a
-  thread or userdata, turn a value into text, open the libraries. Most run
-  under `lua_pcall`. A push can raise too, once one frame holds 8000 values,
-  so even a number is pushed through a check. A refused call puts its message
-  past that limit and takes none of the caller's values.
+  resume, cancel, read and write a field, push a string, make a table, a
+  thread or userdata, keep a value by a reference, turn a value into text,
+  open the libraries, seal the state. Most run under `lua_pcall`. A push can
+  raise too, once one frame holds 8000 values, so even a number is pushed
+  through a check. A refused call puts its message past that limit and takes
+  none of the caller's values.
 - the same forms on a thread that has yielded or ended in an error: they
   refuse. A protected call there moves the thread's stack base, and Luau only
-  checks for it in a debug build. A number, a new thread and a resume still work.
+  checks for it in a debug build. What needs no protected call still works
+  there: nil, a boolean, a number, a vector, a copy, a kept value, a read
+  from a table without metamethods, and `sl_xmove`. So a string for a thread
+  that waits is made on the main thread and moved, and `sl_resume` does the
+  moving: it takes its arguments from another thread's stack.
+- what a thread returned. A thread that ended with values on its stack reads
+  as one that has not started, and a second resume would call its first
+  result. `sl_resume` moves the values to a thread of the shim's own, which
+  `sl_results` hands out, and leaves the ended thread empty.
 - the allocator. It counts and has no limit, because a refused allocation is a
-  raise from whichever call allocated. Until the binding checks a memory
-  budget, a script that allocates without end ends the process.
-- the interrupt, which another thread arms to stop a script. The handler is
-  installed once, and arming sets a flag of the shim's own.
+  raise from whichever call allocated.
+- the calls into Luau, counted. The outermost one gets a serial, and
+  `sl_callstate` reports the serial and whether the call still runs. A
+  watchdog on another thread reads that and times the call by itself, so the
+  thread that runs scripts reads no clock.
+- the interrupt. `sl_interrupt_arm` names a serial, and the handler stops the
+  script when that call is the one running. A request that comes late names a
+  call that has ended and does nothing. The handler also holds the memory
+  budget: over it, it runs a full collection, and when the state still holds
+  too much it stops the script. Either way the script gets an error at the
+  line it was on, and again at every loop and call until the call ends or the
+  host asks why with `sl_takestop`. A pcall in the script cannot hold on.
+- the userdata of managed objects. It holds a slot and a generation of the
+  host's table, never a pointer. One userdata exists per slot at a time, kept
+  in a table with weak values, so two reads of one object are equal in a
+  script. The collector's destructor may not touch the VM. It only notes
+  which slot and generation went, and `sl_takereleased` hands the notes over.
+- a thread's data. The binding keeps a script's number in the low half and a
+  thread's slot in the high half. A thread that a script makes gets the low
+  half of its maker's, so a coroutine belongs to its script.
+- the sealing. `luaL_sandbox` freezes the tables that are globals. The shim
+  first freezes every table inside them, and a userdata metatable the same way.
+- `sl_frame`, which reads one frame of a call stack. A thread that ended in an
+  error keeps its frames, and that is where a traceback comes from.
 - the panic handler. It keeps its message in `sl_fatal_message` for a debugger
   and prints nothing.
 - Luau's feature flags, set the way Luau's own tools set them.
 - `sl_constant`, which reports every number the binding copied from the
-  headers, and the shim's revision. `LuauLibrary.FindProblem` compares them at
-  startup, so a library left over from before a change to the shim is named.
+  headers, and the shim's revision. `LuauLibrary.FindProblem` compares them
+  before a host opens a state, so a library left over from before a change to
+  the shim is named.
 
 `Test/SpectraEngine.Scripting.CrashCases` is a console that shows the rule
 holding and what happens without it. One case raises from a managed frame on
 purpose. The suite fails when that case gets through, because the other cases
-then prove nothing. It only means something as a native executable:
+then prove nothing. Two cases go through the binding: one ends scripts by an
+error, by an exception in a host function, by the watchdog and by the memory
+budget, and one yields from a host function, all with the collector at work.
+It only means something as a native executable:
 
 ```powershell
 dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r win-x64
@@ -249,3 +284,8 @@ binding checks both at startup.
   compiled on Windows and linked in WSL, also from a path with a space in it.
 - The panic handler, the allocator's abort and a compiler that returns null.
   Each ends the process or needs memory to run out, so no test runs them.
+- The memory budget against one call that allocates far past it. The check
+  runs at a script's loops and calls, so `string.rep` with a huge count is
+  over the budget before anything looks. The script is stopped right after.
+- How deep host functions and scripts may nest on a small stack. One level
+  takes about 2 KB of native stack on Windows, and Luau refuses the 200th.
