@@ -12,13 +12,16 @@ public static unsafe class LuauLibrary
     // Every number this binding copied from Luau's headers or from the shim.
     // A release that moves one would make the binding read the wrong stack
     // slot or misname a type, with no error.
-    private static readonly (string Name, int Value)[] Copied =
+    private static readonly (string Name, int Value)[] _copied =
     [
         ("SL_LUAU_RELEASE", Lua.Release),
         ("SL_SHIM_REVISION", Shim.Revision),
         ("SL_HOST_ERROR", Shim.HostError),
         ("SL_HOST_RAISE", Shim.HostRaise),
         ("SL_HOST_YIELD", Shim.HostYield),
+        ("SL_REFUSED", (int)LuaStatus.Refused),
+        ("SL_STOP_TIME", Shim.StopTime),
+        ("SL_STOP_MEMORY", Shim.StopMemory),
 
         ("LUA_USE_LONGJMP", 1),
         ("LUA_VECTOR_SIZE", Lua.VectorSize),
@@ -29,6 +32,8 @@ public static unsafe class LuauLibrary
         ("LUA_MULTRET", Lua.MultRet),
         ("LUA_REGISTRYINDEX", Lua.RegistryIndex),
         ("LUA_GLOBALSINDEX", Lua.GlobalsIndex),
+        ("LUA_NOREF", Lua.NoReference),
+        ("LUA_REFNIL", Lua.NilReference),
 
         ("LUA_OK", (int)LuaStatus.Ok),
         ("LUA_YIELD", (int)LuaStatus.Yield),
@@ -37,6 +42,12 @@ public static unsafe class LuauLibrary
         ("LUA_ERRMEM", (int)LuaStatus.ErrorMemory),
         ("LUA_ERRERR", (int)LuaStatus.ErrorInHandler),
         ("LUA_BREAK", (int)LuaStatus.Break),
+
+        ("LUA_CORUN", (int)LuaCoStatus.Running),
+        ("LUA_COSUS", (int)LuaCoStatus.Suspended),
+        ("LUA_CONOR", (int)LuaCoStatus.Normal),
+        ("LUA_COFIN", (int)LuaCoStatus.Finished),
+        ("LUA_COERR", (int)LuaCoStatus.Failed),
 
         ("LUA_TNONE", (int)LuaType.None),
         ("LUA_TNIL", (int)LuaType.Nil),
@@ -66,12 +77,18 @@ public static unsafe class LuauLibrary
         ("LUA_GCSETSTEPSIZE", (int)LuaGc.SetStepSize),
     ];
 
+    // The answer does not change while the process runs. Two threads that ask
+    // at once both find it, and it is the same.
+    private static volatile Answer? _answer;
+
     /// <summary>
     /// Says what is wrong with the native library, or returns null when it is
     /// there and was built from the Luau release this binding was written for.
-    /// Call it once before the first script runs.
+    /// A host asks before it opens a state.
     /// </summary>
-    public static string? FindProblem()
+    public static string? FindProblem() => (_answer ??= new Answer(Check())).Problem;
+
+    private static string? Check()
     {
         try
         {
@@ -93,7 +110,7 @@ public static unsafe class LuauLibrary
     private static string FindMismatches()
     {
         StringBuilder mismatches = new();
-        foreach ((string name, int expected) in Copied)
+        foreach ((string name, int expected) in _copied)
         {
             int actual;
             if (Shim.sl_constant(name, &actual) == 0)
@@ -104,4 +121,6 @@ public static unsafe class LuauLibrary
 
         return mismatches.ToString();
     }
+
+    private sealed record Answer(string? Problem);
 }

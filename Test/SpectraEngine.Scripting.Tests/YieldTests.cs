@@ -6,7 +6,7 @@ using SpectraEngine.Scripting.Luau.Native;
 
 namespace SpectraEngine.Scripting.Tests;
 
-/// <summary>A host function that yields the script which called it.</summary>
+/// <summary>A host function that yields the script which called it, at the level of the shim.</summary>
 public sealed unsafe class YieldTests
 {
     [Fact]
@@ -16,18 +16,52 @@ public sealed unsafe class YieldTests
         using ProbeState state = new();
         nint thread = StartThread(state, "local answer = wait_for(41)\nreturn answer + 1");
 
-        LuaStatus yielded = Shim.sl_resume(thread, 0, 0);
+        LuaStatus yielded = state.Resume(thread);
 
         yielded.ShouldBe(LuaStatus.Yield);
         Lua.lua_gettop(thread).ShouldBe(1);
         Lua.lua_tonumberx(thread, 1, null).ShouldBe(41);
 
-        Lua.Pop(thread, 1);
-        Shim.sl_pushnumber(thread, 100).ShouldBe(LuaStatus.Ok);
-        LuaStatus finished = Shim.sl_resume(thread, 0, 1);
+        Shim.sl_pushnumber(state.L, 100).ShouldBe(LuaStatus.Ok);
+        LuaStatus finished = state.Resume(thread, count: 1);
 
         finished.ShouldBe(LuaStatus.Ok);
-        Lua.lua_tonumberx(thread, -1, null).ShouldBe(101);
+        Lua.lua_tonumberx(state.Results, -1, null).ShouldBe(101);
+    }
+
+    // A thread that ended with values on its stack would read as one that
+    // has not started, and a second resume would call its first result.
+    [Fact]
+    public void What_a_thread_returned_moves_off_its_stack()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+        nint thread = StartThread(state, "return 'a', 'b'");
+
+        int results;
+        LuaStatus finished = Shim.sl_resume(thread, state.L, 0, &results);
+
+        finished.ShouldBe(LuaStatus.Ok);
+        results.ShouldBe(2);
+        Lua.lua_gettop(thread).ShouldBe(0);
+        LuaText.Read(state.Results, 1).ShouldBe("a");
+        LuaText.Read(state.Results, 2).ShouldBe("b");
+    }
+
+    [Fact]
+    public void A_thread_that_is_not_waiting_is_refused_and_the_values_for_it_are_taken()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+        nint thread = StartThread(state, "error('late')");
+        state.Resume(thread).ShouldBe(LuaStatus.ErrorRun);
+        Shim.sl_pushnumber(state.L, 1).ShouldBe(LuaStatus.Ok);
+        int before = Lua.lua_gettop(state.L);
+
+        LuaStatus status = state.Resume(thread, count: 1);
+
+        status.ShouldBe(LuaStatus.Refused);
+        Lua.lua_gettop(state.L).ShouldBe(before - 1);
     }
 
     [Fact]
@@ -51,10 +85,9 @@ public sealed unsafe class YieldTests
         NativeLuau.Require();
         using ProbeState state = new();
         nint thread = StartThread(state, "wait_for(0)\nerror('late')");
-        Shim.sl_resume(thread, 0, 0).ShouldBe(LuaStatus.Yield);
-        Lua.Pop(thread, 1);
+        state.Resume(thread).ShouldBe(LuaStatus.Yield);
 
-        LuaStatus status = Shim.sl_resume(thread, 0, 0);
+        LuaStatus status = state.Resume(thread);
 
         status.ShouldBe(LuaStatus.ErrorRun);
         LuaText.Read(thread, -1).ShouldBe("waiting:2: late");
@@ -68,7 +101,7 @@ public sealed unsafe class YieldTests
         NativeLuau.Require();
         using ProbeState state = new();
         nint thread = StartThread(state, "local answer = wait_for(7, 41)\nreturn answer + 1");
-        Shim.sl_resume(thread, 0, 0).ShouldBe(LuaStatus.Yield);
+        state.Resume(thread).ShouldBe(LuaStatus.Yield);
 
         LuaStatus status = LuaText.Push(thread, "text");
 
@@ -85,15 +118,31 @@ public sealed unsafe class YieldTests
         NativeLuau.Require();
         using ProbeState state = new();
         nint thread = StartThread(state, "local answer = wait_for(7, 41)\nreturn answer + 1");
-        Shim.sl_resume(thread, 0, 0).ShouldBe(LuaStatus.Yield);
+        state.Resume(thread).ShouldBe(LuaStatus.Yield);
         Shim.sl_tostring(thread, -1).ShouldBe(LuaStatus.ErrorRun);
-        Lua.Pop(thread, 2);
 
-        Shim.sl_pushnumber(thread, 100).ShouldBe(LuaStatus.Ok);
-        LuaStatus finished = Shim.sl_resume(thread, 0, 1);
+        Shim.sl_pushnumber(state.L, 100).ShouldBe(LuaStatus.Ok);
+        LuaStatus finished = state.Resume(thread, count: 1);
 
         finished.ShouldBe(LuaStatus.Ok);
-        Lua.lua_tonumberx(thread, -1, null).ShouldBe(101);
+        Lua.lua_tonumberx(state.Results, -1, null).ShouldBe(101);
+    }
+
+    // The way a string gets to a thread that has yielded: made on the main
+    // thread, where a protected call may run, and moved.
+    [Fact]
+    public void A_string_reaches_a_yielded_thread_by_being_moved_there()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+        nint thread = StartThread(state, "local answer = wait_for(1)\nreturn answer .. '!'");
+        state.Resume(thread).ShouldBe(LuaStatus.Yield);
+
+        LuaText.Push(state.L, "moved").ShouldBe(LuaStatus.Ok);
+        LuaStatus finished = state.Resume(thread, count: 1);
+
+        finished.ShouldBe(LuaStatus.Ok);
+        LuaText.Read(state.Results, -1).ShouldBe("moved!");
     }
 
     [Fact]
@@ -102,7 +151,7 @@ public sealed unsafe class YieldTests
         NativeLuau.Require();
         using ProbeState state = new();
         nint thread = StartThread(state, "error('late')");
-        Shim.sl_resume(thread, 0, 0).ShouldBe(LuaStatus.ErrorRun);
+        state.Resume(thread).ShouldBe(LuaStatus.ErrorRun);
 
         LuaStatus status = Shim.sl_tostring(thread, -1);
 
@@ -112,7 +161,8 @@ public sealed unsafe class YieldTests
         LuaText.Read(thread, -1).ShouldBe("waiting:1: late");
     }
 
-    // A thread of its own with the source loaded and not yet started.
+    // A thread of its own with the source loaded and not yet started. It
+    // stays on the main stack, which keeps it alive.
     private static nint StartThread(ProbeState state, string source)
     {
         Register(state);
@@ -129,7 +179,7 @@ public sealed unsafe class YieldTests
         state.Require(state.SetGlobal("wait_for"u8));
     }
 
-    // Yields its one argument to whoever resumed the thread.
+    // Yields its last argument to whoever resumed the thread.
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int WaitFor(nint L) => Shim.HostYield - 1;
 }

@@ -10,4 +10,7 @@ internal enum LuaStatus
     ErrorMemory = 4,
     ErrorInHandler = 5,
     Break = 6,
+
+    // The shim's own, SL_REFUSED: the call was not made and nothing was pushed.
+    Refused = 100,
 }

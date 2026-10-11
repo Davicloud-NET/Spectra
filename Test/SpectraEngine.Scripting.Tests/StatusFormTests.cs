@@ -156,12 +156,12 @@ public sealed unsafe class StatusFormTests
     private static LuaStatus GetField(ProbeState state, int index, ReadOnlySpan<byte> key)
     {
         fixed (byte* name = key)
-            return Shim.sl_getfield(state.L, index, name);
+            return Shim.sl_getfield(state.L, index, name, (nuint)key.Length);
     }
 
     private static LuaStatus SetField(ProbeState state, int index, ReadOnlySpan<byte> key)
     {
         fixed (byte* name = key)
-            return Shim.sl_setfield(state.L, index, name);
+            return Shim.sl_setfield(state.L, index, name, (nuint)key.Length);
     }
 }

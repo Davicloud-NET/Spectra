@@ -66,7 +66,7 @@ internal static unsafe class CloseCase
         if (loaded != LuaStatus.Ok)
             return "the waiting script did not load";
 
-        LuaStatus resumed = Shim.sl_resume(waiting, 0, 0);
+        LuaStatus resumed = state.Resume(waiting);
         return resumed == LuaStatus.Yield ? null : $"the waiting script ended with {resumed}";
     }
 

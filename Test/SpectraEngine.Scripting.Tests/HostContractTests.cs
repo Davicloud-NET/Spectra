@@ -86,7 +86,7 @@ public sealed unsafe class HostContractTests
         fixed (byte* pointer = key)
         {
             state.Require(Shim.sl_pushhostfunction(state.L, function, pointer));
-            state.Require(Shim.sl_setfield(state.L, Lua.GlobalsIndex, pointer));
+            state.Require(Shim.sl_setfield(state.L, Lua.GlobalsIndex, pointer, (nuint)name.Length));
         }
 
         return state;

@@ -14,7 +14,11 @@ internal static unsafe class LuaChunk
     // Ok, the message is on top instead, and a mistake in the script starts it
     // with the chunk's name and the line. Luau shows that name without its
     // first character: "=door" reads as "door", "@Scripts/door.luau" as the path.
-    internal static LuaStatus Load(nint L, string chunkName, ReadOnlySpan<byte> source)
+    internal static LuaStatus Load(nint L, string chunkName, ReadOnlySpan<byte> source) =>
+        Load(L, Encoding.UTF8.GetBytes(chunkName + '\0'), source);
+
+    // The name ends with a zero.
+    internal static LuaStatus Load(nint L, ReadOnlySpan<byte> chunkName, ReadOnlySpan<byte> source)
     {
         nuint size;
         byte* bytecode;
@@ -29,7 +33,7 @@ internal static unsafe class LuaChunk
 
         try
         {
-            fixed (byte* name = Encoding.UTF8.GetBytes(chunkName + '\0'))
+            fixed (byte* name = chunkName)
                 return Shim.sl_load(L, name, bytecode, size);
         }
         finally

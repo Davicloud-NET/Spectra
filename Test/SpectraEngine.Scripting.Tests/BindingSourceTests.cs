@@ -18,7 +18,9 @@ public sealed partial class BindingSourceTests
     private static readonly HashSet<string> CannotRaise =
     [
         "lua_gettop", "lua_settop",
-        "lua_type", "lua_tonumberx", "lua_toboolean", "lua_tolstring", "lua_touserdatatagged",
+        "lua_type", "lua_tonumberx", "lua_toboolean", "lua_tolstring", "lua_tovector", "lua_objlen",
+        "lua_touserdatatagged", "lua_tothread", "lua_status", "lua_costatus",
+        "lua_getthreaddata", "lua_setthreaddata", "lua_unref",
         "lua_gc",
     ];
 

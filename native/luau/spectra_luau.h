@@ -8,7 +8,7 @@
 // Raise it with every change to what this library does or exports, and
 // Shim.Revision with it. A library built before the change has every other
 // constant right, and the startup check tells it apart by this one.
-#define SL_SHIM_REVISION 1
+#define SL_SHIM_REVISION 2
 
 #ifndef SL_API
 #define SL_API extern "C"
@@ -19,6 +19,14 @@
 #define SL_HOST_ERROR (-1) // failed: text gets the calling script's position in front
 #define SL_HOST_RAISE (-2) // failed: the value is raised as it is
 #define SL_HOST_YIELD (-3) // SL_HOST_YIELD - n yields the top n values
+
+// A status of the shim's own, beside Luau's: the call was not made and no
+// error value was pushed.
+#define SL_REFUSED 100
+
+// Why the interrupt stopped a script.
+#define SL_STOP_TIME 1
+#define SL_STOP_MEMORY 2
 
 // Sets Luau's feature flags once. Whatever makes a state or compiles calls it first.
 void sl_apply_flags();

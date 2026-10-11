@@ -24,7 +24,7 @@ public sealed class InterruptTests
         Task watchdog = Task.Run(() =>
         {
             if (_loopStarted.Wait(Deadline, cancelled))
-                Shim.sl_interrupt_arm(running);
+                Shim.sl_interrupt_arm(running, Shim.CallSerial(running));
         }, cancelled);
 
         LuaStatus status = await RunToTheDeadline(state, "loop_started()\nwhile true do end");
@@ -39,7 +39,7 @@ public sealed class InterruptTests
     {
         NativeLuau.Require();
         using ProbeState state = new();
-        Shim.sl_interrupt_arm(state.L);
+        Shim.sl_interrupt_arm(state.L, state.NextCall);
 
         LuaStatus status = await RunToTheDeadline(state, "while true do\n    pcall(function() while true do end end)\nend");
 
@@ -54,7 +54,7 @@ public sealed class InterruptTests
     {
         NativeLuau.Require();
         using ProbeState state = new();
-        Shim.sl_interrupt_arm(state.L);
+        Shim.sl_interrupt_arm(state.L, state.NextCall);
         (await RunToTheDeadline(state, "while true do end")).ShouldBe(LuaStatus.ErrorRun);
         Lua.Pop(state.L, 1);
 

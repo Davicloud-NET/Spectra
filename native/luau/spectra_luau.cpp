@@ -25,6 +25,9 @@
 #error "The binding expects vectors of three floats."
 #endif
 
+// A thread's data holds two 32-bit numbers of the binding's.
+static_assert(sizeof(void*) == 8, "The shim expects 64-bit pointers.");
+
 // What a panic or a failed allocation left, for a debugger or a crash dump.
 // Nothing is printed: a game has no console. Not static, so the writes stay.
 char sl_fatal_message[512];
@@ -34,14 +37,21 @@ namespace
 
 enum Body
 {
+    SetupBody,
     OpenLibsBody,
+    SandboxBody,
     LoadBody,
     PushHostFunctionBody,
+    PushHostCallBody,
     PushStringBody,
     CreateTableBody,
     NewUserdataBody,
+    NewObjectBody,
+    SpawnBody,
+    KeepBody,
     GetFieldBody,
     SetFieldBody,
+    RawSetIndexBody,
     ToStringBody,
     BodyCount,
 };
@@ -51,14 +61,46 @@ struct HostState
     // Written by the thread that runs the state, read by any.
     std::atomic<int64_t> bytes{0};
 
-    // Written by any thread, read by the one that runs the state.
-    std::atomic<int> stopRequested{0};
+    // Bytes the state may hold, or 0 for no limit. Written by any thread.
+    std::atomic<int64_t> budget{0};
 
-    // Registry references to the functions the status forms call.
+    // (serial << 1) | running, for the outermost call into Luau. Written by
+    // the thread that runs the state, read by the watchdog.
+    std::atomic<uint64_t> call{2};
+
+    // The serial of the call to stop, or 0. Written by any thread.
+    std::atomic<uint32_t> stop{0};
+
+    // How many calls into Luau are on the C stack.
+    int depth = 0;
+
+    // Why the interrupt raised in this call, until the host takes it.
+    int stopReason = 0;
+
+    // The binding's handle to its host object. Never read here.
+    void* managed = nullptr;
+
+    // The thread whose host function is running, for lua_resume's count of C calls.
+    lua_State* current = nullptr;
+
+    // Holds what the last thread to end returned.
+    lua_State* results = nullptr;
+
+    // Registry references.
     int bodies[BodyCount] = {};
+    int closeThread = 0; // coroutine.close
+    int objects = 0;     // slot -> the userdata of a managed object, weak
+
+    bool objectTags[LUA_UTAG_LIMIT] = {};
+
+    // (slot << 32) | generation of each object userdata the collector freed.
+    uint64_t* released = nullptr;
+    size_t releasedCount = 0;
+    size_t releasedCapacity = 0;
 };
 
 typedef int (*HostFunction)(lua_State* L);
+typedef int (*HostCall)(lua_State* L, void* host, int id);
 
 struct Chunk
 {
@@ -69,8 +111,9 @@ struct Chunk
 
 struct HostClosure
 {
-    HostFunction function;
+    void* function;
     const char* debugName;
+    int id;
 };
 
 struct Text
@@ -90,6 +133,27 @@ struct UserdataRequest
     size_t size;
     int tag;
     void* block;
+};
+
+// What the userdata of a managed object holds.
+struct ObjectPayload
+{
+    uint32_t slot;
+    uint32_t generation;
+};
+
+struct ObjectRequest
+{
+    int tag;
+    ObjectPayload payload;
+};
+
+struct ThreadRequest
+{
+    int like;
+    int sandbox;
+    lua_State* thread;
+    int reference;
 };
 
 void keepFatalMessage(const char* prefix, const char* message)
@@ -128,8 +192,9 @@ void* countingAlloc(void* ud, void* ptr, size_t osize, size_t nsize)
     if (!block)
     {
         // Null would make Luau raise from whichever call allocated, and that
-        // call can have a managed frame under it. So there is no limit here,
-        // and a system with no memory left ends the process.
+        // call can have a managed frame under it. So there is no limit here.
+        // The budget is checked in the interrupt, and a system with no memory
+        // left ends the process.
         keepFatalMessage("luau: out of memory", nullptr);
         abort();
     }
@@ -162,31 +227,111 @@ void pushPosition(lua_State* L)
     lua_pushliteral(L, "");
 }
 
-// Installed for the life of the state. Arming only sets the flag, so no other
-// thread ever writes into the VM's own data.
+uint32_t serialOf(HostState* host)
+{
+    return static_cast<uint32_t>(host->call.load(std::memory_order_relaxed) >> 1);
+}
+
+// Counts the calls into Luau that are on the C stack. The outermost one gets
+// a serial, which is what the watchdog times and what it asks to stop. No
+// raise crosses a function that holds one: each makes a protected call.
+struct CallScope
+{
+    HostState* host;
+
+    explicit CallScope(HostState* host) : host(host)
+    {
+        if (host->depth++ > 0)
+            return;
+
+        host->stopReason = 0;
+        uint64_t serial = (host->call.load(std::memory_order_relaxed) >> 1) + 1;
+        host->call.store((serial << 1) | 1, std::memory_order_relaxed);
+    }
+
+    ~CallScope()
+    {
+        if (--host->depth == 0)
+            host->call.store(host->call.load(std::memory_order_relaxed) & ~uint64_t(1), std::memory_order_relaxed);
+    }
+};
+
+// A full collection first: what the allocator counts includes garbage, and
+// the budget is for what scripts hold.
+bool isOverBudget(lua_State* L, HostState* host)
+{
+    int64_t budget = host->budget.load(std::memory_order_relaxed);
+    if (budget <= 0 || host->bytes.load(std::memory_order_relaxed) <= budget)
+        return false;
+
+    lua_gc(L, LUA_GCCOLLECT, 0);
+    return host->bytes.load(std::memory_order_relaxed) > budget;
+}
+
+// Installed for the life of the state. Another thread only stores a serial,
+// so it never writes into the VM's own data. Once this has raised it raises
+// again at every loop and call, so a pcall in the script cannot hold on,
+// until the call ends or the host takes the reason.
 void interruptHandler(lua_State* L, int gc)
 {
     // gc >= 0 means the collector is running. Raising is not allowed there.
     if (gc >= 0)
         return;
 
-    if (hostOf(L)->stopRequested.load(std::memory_order_relaxed) == 0)
-        return;
+    HostState* host = hostOf(L);
+    if (host->stopReason == 0)
+    {
+        uint32_t stop = host->stop.load(std::memory_order_relaxed);
+        if (stop != 0 && stop == serialOf(host))
+            host->stopReason = SL_STOP_TIME;
+        else if (isOverBudget(L, host))
+            host->stopReason = SL_STOP_MEMORY;
+        else
+            return;
+    }
 
     lua_rawcheckstack(L, 2);
     pushPosition(L);
-    lua_pushliteral(L, "script stopped by the host");
+    lua_pushstring(L, host->stopReason == SL_STOP_MEMORY ? "script stopped by the host: out of memory" : "script stopped by the host");
     lua_concat(L, 2);
     lua_error(L);
 }
 
-// The only lua_CFunction Luau sees for a managed function.
-int callHost(lua_State* L)
+// A thread a script makes belongs to the script that made it: it gets the
+// low half of its maker's data. The high half names one thread.
+void threadCreated(lua_State* parent, lua_State* thread)
 {
-    HostFunction function = reinterpret_cast<HostFunction>(lua_tolightuserdata(L, lua_upvalueindex(1)));
-    int result = function(L);
+    if (parent)
+        lua_setthreaddata(thread, reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(lua_getthreaddata(parent)) & 0xffffffffu));
+}
 
-    // The managed frame is gone. A raise from here crosses native frames only.
+// Runs inside the collector, so it may not touch the VM. The host asks for
+// the list later.
+void objectCollected(lua_State* L, void* data)
+{
+    HostState* host = hostOf(L);
+    if (host->releasedCount == host->releasedCapacity)
+    {
+        size_t capacity = host->releasedCapacity == 0 ? 64 : host->releasedCapacity * 2;
+        void* grown = realloc(host->released, capacity * sizeof(uint64_t));
+        if (!grown)
+        {
+            keepFatalMessage("luau: out of memory", nullptr);
+            abort();
+        }
+
+        host->released = static_cast<uint64_t*>(grown);
+        host->releasedCapacity = capacity;
+    }
+
+    const ObjectPayload* payload = static_cast<const ObjectPayload*>(data);
+    host->released[host->releasedCount++] = (static_cast<uint64_t>(payload->slot) << 32) | payload->generation;
+}
+
+// What a host function returned, once its managed frame is gone. A raise from
+// here crosses native frames only.
+int finishHostCall(lua_State* L, int result)
+{
     int top = lua_gettop(L);
     if (result >= 0)
     {
@@ -218,9 +363,67 @@ int callHost(lua_State* L)
     return lua_yield(L, yielded);
 }
 
+// What Luau sees for a managed function that was handed over as a pointer.
+int callHost(lua_State* L)
+{
+    HostState* host = hostOf(L);
+    HostFunction function = reinterpret_cast<HostFunction>(lua_tolightuserdata(L, lua_upvalueindex(1)));
+
+    lua_State* outer = host->current;
+    host->current = L;
+    int result = function(L);
+    host->current = outer;
+
+    return finishHostCall(L, result);
+}
+
+// The same for the binding's one entry point, which finds its delegate by the id.
+int callHostById(lua_State* L)
+{
+    HostState* host = hostOf(L);
+    HostCall function = reinterpret_cast<HostCall>(lua_tolightuserdata(L, lua_upvalueindex(1)));
+    int id = static_cast<int>(reinterpret_cast<intptr_t>(lua_tolightuserdata(L, lua_upvalueindex(2))));
+
+    lua_State* outer = host->current;
+    host->current = L;
+    int result = function(L, host->managed, id);
+    host->current = outer;
+
+    return finishHostCall(L, result);
+}
+
+// Runs once, when the state is made.
+int setupBody(lua_State* L)
+{
+    HostState* host = hostOf(L);
+
+    host->results = lua_newthread(L);
+    lua_ref(L, -1);
+    lua_pop(L, 1);
+
+    lua_newtable(L);
+    lua_newtable(L);
+    lua_pushliteral(L, "v");
+    lua_setfield(L, -2, "__mode");
+    lua_setmetatable(L, -2);
+    host->objects = lua_ref(L, -1);
+    lua_pop(L, 1);
+    return 0;
+}
+
 int openLibsBody(lua_State* L)
 {
     luaL_openlibs(L);
+
+    lua_getglobal(L, "coroutine");
+    lua_getfield(L, -1, "close");
+    hostOf(L)->closeThread = lua_ref(L, -1);
+    return 0;
+}
+
+int sandboxBody(lua_State* L)
+{
+    luaL_sandbox(L);
     return 0;
 }
 
@@ -235,15 +438,28 @@ int loadBody(lua_State* L)
 int pushHostFunctionBody(lua_State* L)
 {
     const HostClosure* closure = static_cast<const HostClosure*>(lua_tolightuserdata(L, 1));
-    lua_pushlightuserdata(L, reinterpret_cast<void*>(closure->function));
+    lua_pushlightuserdata(L, closure->function);
     lua_pushcclosure(L, callHost, closure->debugName, 1);
     return 1;
 }
 
+int pushHostCallBody(lua_State* L)
+{
+    const HostClosure* closure = static_cast<const HostClosure*>(lua_tolightuserdata(L, 1));
+    lua_pushlightuserdata(L, closure->function);
+    lua_pushlightuserdata(L, reinterpret_cast<void*>(static_cast<intptr_t>(closure->id)));
+    lua_pushcclosure(L, callHostById, closure->debugName, 2);
+    return 1;
+}
+
+void pushText(lua_State* L, const Text* text)
+{
+    lua_pushlstring(L, text->data ? text->data : "", text->length);
+}
+
 int pushStringBody(lua_State* L)
 {
-    const Text* text = static_cast<const Text*>(lua_tolightuserdata(L, 1));
-    lua_pushlstring(L, text->data ? text->data : "", text->length);
+    pushText(L, static_cast<const Text*>(lua_tolightuserdata(L, 1)));
     return 1;
 }
 
@@ -256,27 +472,99 @@ int createTableBody(lua_State* L)
     return 1;
 }
 
+bool hasMetatable(lua_State* L, int tag)
+{
+    lua_getuserdatametatable(L, tag);
+    bool found = !lua_isnil(L, -1);
+    lua_pop(L, 1);
+    return found;
+}
+
 int newUserdataBody(lua_State* L)
 {
     UserdataRequest* request = static_cast<UserdataRequest*>(lua_tolightuserdata(L, 1));
     if (static_cast<unsigned>(request->tag) >= LUA_UTAG_LIMIT)
         luaL_error(L, "userdata tag %d is out of range", request->tag);
+    if (hostOf(L)->objectTags[request->tag])
+        luaL_error(L, "userdata tag %d stands for managed objects", request->tag);
 
-    request->block = lua_newuserdatatagged(L, request->size, request->tag);
+    request->block = hasMetatable(L, request->tag)
+        ? lua_newuserdatataggedwithmetatable(L, request->size, request->tag)
+        : lua_newuserdatatagged(L, request->size, request->tag);
+    memset(request->block, 0, request->size);
     return 1;
+}
+
+// Makes the userdata of a managed object and files it under its slot.
+int newObjectBody(lua_State* L)
+{
+    const ObjectRequest* request = static_cast<const ObjectRequest*>(lua_tolightuserdata(L, 1));
+    void* block = lua_newuserdatataggedwithmetatable(L, sizeof(ObjectPayload), request->tag);
+    memcpy(block, &request->payload, sizeof(ObjectPayload));
+
+    lua_getref(L, hostOf(L)->objects);
+    lua_pushvalue(L, -2);
+    lua_rawseti(L, -2, static_cast<int>(request->payload.slot) + 1);
+    lua_pop(L, 1);
+    return 1;
+}
+
+// Makes a thread and keeps it by a reference, so nothing has to stay on a stack.
+int spawnBody(lua_State* L)
+{
+    ThreadRequest* request = static_cast<ThreadRequest*>(lua_tolightuserdata(L, 1));
+    lua_State* thread = lua_newthread(L);
+
+    if (request->like != 0)
+    {
+        lua_getref(L, request->like);
+        if (!lua_isthread(L, -1))
+            luaL_error(L, "the reference is not a thread");
+
+        lua_getfenv(L, -1);
+        lua_xmove(L, thread, 1);
+        lua_replace(thread, LUA_GLOBALSINDEX);
+        lua_pop(L, 1);
+    }
+
+    if (request->sandbox)
+        luaL_sandboxthread(thread);
+
+    request->thread = thread;
+    request->reference = lua_ref(L, 2);
+    return 0;
+}
+
+// Arguments: where the reference goes, then the value.
+int keepBody(lua_State* L)
+{
+    *static_cast<int*>(lua_tolightuserdata(L, 1)) = lua_ref(L, 2);
+    return 0;
 }
 
 // Arguments: the key, then the object.
 int getFieldBody(lua_State* L)
 {
-    lua_getfield(L, 2, static_cast<const char*>(lua_tolightuserdata(L, 1)));
+    pushText(L, static_cast<const Text*>(lua_tolightuserdata(L, 1)));
+    lua_gettable(L, 2);
     return 1;
 }
 
 // Arguments: the key, the object, then the value.
 int setFieldBody(lua_State* L)
 {
-    lua_setfield(L, 2, static_cast<const char*>(lua_tolightuserdata(L, 1)));
+    pushText(L, static_cast<const Text*>(lua_tolightuserdata(L, 1)));
+    lua_insert(L, 3);
+    lua_settable(L, 2);
+    return 0;
+}
+
+// Arguments: the index, the table, then the value.
+int rawSetIndexBody(lua_State* L)
+{
+    int index = static_cast<int>(reinterpret_cast<intptr_t>(lua_tolightuserdata(L, 1)));
+    luaL_checktype(L, 2, LUA_TTABLE);
+    lua_rawseti(L, 2, index);
     return 0;
 }
 
@@ -294,25 +582,34 @@ struct BodyEntry
 
 // In the order of Body.
 const BodyEntry bodyEntries[BodyCount] = {
+    {setupBody, "sl_newstate"},
     {openLibsBody, "sl_openlibs"},
+    {sandboxBody, "sl_sandbox"},
     {loadBody, "sl_load"},
     {pushHostFunctionBody, "sl_pushhostfunction"},
+    {pushHostCallBody, "sl_pushhostcall"},
     {pushStringBody, "sl_pushstring"},
     {createTableBody, "sl_createtable"},
     {newUserdataBody, "sl_newuserdata"},
+    {newObjectBody, "sl_pushobject"},
+    {spawnBody, "sl_spawn"},
+    {keepBody, "sl_keep"},
     {getFieldBody, "sl_getfield"},
     {setFieldBody, "sl_setfield"},
+    {rawSetIndexBody, "sl_rawseti"},
     {toStringBody, "sl_tostring"},
 };
 
 const char stackOverflow[] = "stack overflow";
+const char badIndex[] = "no value at that stack index";
 
 // Leaves the message where the result would be. The values the call would
 // have taken go first. Room is made past the frame's limit, which a push
 // would raise on, so no other value has to go.
 int refuse(lua_State* L, int consumed, const char* message)
 {
-    lua_pop(L, consumed);
+    int top = lua_gettop(L);
+    lua_pop(L, consumed < top ? consumed : top);
     lua_rawcheckstack(L, 1);
     lua_pushstring(L, message);
     return LUA_ERRRUN;
@@ -331,6 +628,17 @@ const char* whyNot(lua_State* L, int slots)
 
     // A push raises once one frame holds LUAI_MAXCSTACK values. This answers.
     return slots > 0 && !lua_checkstack(L, slots) ? stackOverflow : nullptr;
+}
+
+// Luau checks an index in a debug build only. A negative one past the bottom
+// of the frame reads below it.
+bool isIndex(lua_State* L, int index)
+{
+    if (index > 0)
+        return true;
+    if (index < 0 && index > LUA_REGISTRYINDEX)
+        return -index <= lua_gettop(L);
+    return index == LUA_REGISTRYINDEX || index == LUA_GLOBALSINDEX;
 }
 
 void pushBody(lua_State* L, Body body)
@@ -363,6 +671,9 @@ const Constant constants[] = {
     SL_CONSTANT(SL_HOST_ERROR),
     SL_CONSTANT(SL_HOST_RAISE),
     SL_CONSTANT(SL_HOST_YIELD),
+    SL_CONSTANT(SL_REFUSED),
+    SL_CONSTANT(SL_STOP_TIME),
+    SL_CONSTANT(SL_STOP_MEMORY),
 
     SL_CONSTANT(LUA_USE_LONGJMP),
     SL_CONSTANT(LUA_VECTOR_SIZE),
@@ -386,6 +697,12 @@ const Constant constants[] = {
     SL_CONSTANT(LUA_ERRMEM),
     SL_CONSTANT(LUA_ERRERR),
     SL_CONSTANT(LUA_BREAK),
+
+    SL_CONSTANT(LUA_CORUN),
+    SL_CONSTANT(LUA_COSUS),
+    SL_CONSTANT(LUA_CONOR),
+    SL_CONSTANT(LUA_COFIN),
+    SL_CONSTANT(LUA_COERR),
 
     SL_CONSTANT(LUA_TNONE),
     SL_CONSTANT(LUA_TNIL),
@@ -445,6 +762,15 @@ SL_API int sl_constant(const char* name, int* value)
     return 0;
 }
 
+// Takes the main state. Any thread may call it once no thread runs the state.
+SL_API void sl_close(lua_State* L)
+{
+    HostState* host = hostOf(L);
+    lua_close(L);
+    free(host->released);
+    delete host;
+}
+
 SL_API lua_State* sl_newstate()
 {
     sl_apply_flags();
@@ -464,6 +790,7 @@ SL_API lua_State* sl_newstate()
     callbacks->userdata = host;
     callbacks->panic = panicHandler;
     callbacks->interrupt = interruptHandler;
+    callbacks->userthread = threadCreated;
 
     for (int i = 0; i < BodyCount; i++)
     {
@@ -472,15 +799,13 @@ SL_API lua_State* sl_newstate()
         lua_pop(L, 1);
     }
 
-    return L;
-}
+    if (protect(L, SetupBody, nullptr, 0) != LUA_OK)
+    {
+        sl_close(L);
+        return nullptr;
+    }
 
-// Takes the main state. Any thread may call it once no thread runs the state.
-SL_API void sl_close(lua_State* L)
-{
-    HostState* host = hostOf(L);
-    lua_close(L);
-    delete host;
+    return L;
 }
 
 // Bytes the state holds. Safe from any thread.
@@ -489,9 +814,40 @@ SL_API int64_t sl_memory(lua_State* L)
     return hostOf(L)->bytes.load(std::memory_order_relaxed);
 }
 
+// Bytes the state may hold before the running script is stopped, or 0 for no
+// limit. Safe from any thread.
+SL_API void sl_setbudget(lua_State* L, int64_t bytes)
+{
+    hostOf(L)->budget.store(bytes, std::memory_order_relaxed);
+}
+
+// The binding's own pointer. The shim hands it to callHostById and never reads it.
+SL_API void sl_sethost(lua_State* L, void* host)
+{
+    hostOf(L)->managed = host;
+}
+
+SL_API void* sl_host(lua_State* L)
+{
+    return hostOf(L)->managed;
+}
+
+// The thread that holds what the last thread to end returned.
+SL_API lua_State* sl_results(lua_State* L)
+{
+    return hostOf(L)->results;
+}
+
 SL_API int sl_openlibs(lua_State* L)
 {
     return protect(L, OpenLibsBody, nullptr, 0);
+}
+
+// Makes the libraries and the globals read-only. Takes the main state, once
+// the host has put its own functions and tables there.
+SL_API int sl_sandbox(lua_State* L)
+{
+    return protect(L, SandboxBody, nullptr, 0);
 }
 
 // Pushes the chunk as a function. A compile error travels in the bytecode and
@@ -504,8 +860,33 @@ SL_API int sl_load(lua_State* L, const char* chunkName, const char* bytecode, si
 
 SL_API int sl_pushhostfunction(lua_State* L, HostFunction function, const char* debugName)
 {
-    HostClosure closure = {function, debugName};
+    HostClosure closure = {reinterpret_cast<void*>(function), debugName, 0};
     return protect(L, PushHostFunctionBody, &closure, 1);
+}
+
+// The function is called with the pointer given to sl_sethost and this id.
+SL_API int sl_pushhostcall(lua_State* L, HostCall function, const char* debugName, int id)
+{
+    HostClosure closure = {reinterpret_cast<void*>(function), debugName, id};
+    return protect(L, PushHostCallBody, &closure, 1);
+}
+
+SL_API int sl_pushnil(lua_State* L)
+{
+    if (!lua_checkstack(L, 1))
+        return refuse(L, 0, stackOverflow);
+
+    lua_pushnil(L);
+    return LUA_OK;
+}
+
+SL_API int sl_pushboolean(lua_State* L, int value)
+{
+    if (!lua_checkstack(L, 1))
+        return refuse(L, 0, stackOverflow);
+
+    lua_pushboolean(L, value);
+    return LUA_OK;
 }
 
 // Even a number is checked for room. No protected call is made, so this one
@@ -519,10 +900,62 @@ SL_API int sl_pushnumber(lua_State* L, double value)
     return LUA_OK;
 }
 
+SL_API int sl_pushvector(lua_State* L, float x, float y, float z)
+{
+    if (!lua_checkstack(L, 1))
+        return refuse(L, 0, stackOverflow);
+
+    lua_pushvector(L, x, y, z);
+    return LUA_OK;
+}
+
 SL_API int sl_pushstring(lua_State* L, const char* data, size_t length)
 {
     Text text = {data, length};
     return protect(L, PushStringBody, &text, 1);
+}
+
+// Pushes a copy of the value at the index.
+SL_API int sl_pushvalue(lua_State* L, int index)
+{
+    if (!isIndex(L, index))
+        return refuse(L, 0, badIndex);
+    if (!lua_checkstack(L, 1))
+        return refuse(L, 0, stackOverflow);
+
+    lua_pushvalue(L, index);
+    return LUA_OK;
+}
+
+// Pushes the thread itself, as a value.
+SL_API int sl_pushthread(lua_State* L)
+{
+    if (!lua_checkstack(L, 1))
+        return refuse(L, 0, stackOverflow);
+
+    lua_pushthread(L);
+    return LUA_OK;
+}
+
+// Pops so many values, or all there are.
+SL_API void sl_pop(lua_State* L, int count)
+{
+    int top = lua_gettop(L);
+    lua_settop(L, count >= top ? 0 : top - (count > 0 ? count : 0));
+}
+
+// Moves the top values of one thread to another thread of the same state.
+// This is how a value gets to a thread that has yielded, where nothing that
+// runs protected can make one.
+SL_API int sl_xmove(lua_State* from, lua_State* to, int count)
+{
+    if (from == to || count < 0 || count > lua_gettop(from))
+        return refuse(from, 0, "there are not so many values to move");
+    if (!lua_checkstack(to, count))
+        return refuse(from, count, stackOverflow);
+
+    lua_xmove(from, to, count);
+    return LUA_OK;
 }
 
 // Pushes a new thread on L and hands back its state. The thread lives while
@@ -537,12 +970,63 @@ SL_API int sl_newthread(lua_State* L, lua_State** thread)
     return LUA_OK;
 }
 
+// Makes a thread and a reference that keeps it. With `like`, the reference of
+// another thread, it shares that thread's globals. With `sandbox` it gets
+// globals of its own that read through to the ones it would have had.
+SL_API int sl_spawn(lua_State* L, int like, int sandbox, lua_State** thread, int* reference)
+{
+    ThreadRequest request = {like, sandbox, nullptr, LUA_NOREF};
+    int status = protect(L, SpawnBody, &request, 0);
+
+    *thread = status == LUA_OK ? request.thread : nullptr;
+    *reference = status == LUA_OK ? request.reference : LUA_NOREF;
+    return status;
+}
+
+// Keeps the value at the index alive until lua_unref lets it go. The work is
+// done on the main thread, so the value may sit on a thread that has yielded.
+SL_API int sl_keep(lua_State* L, int index, int* reference)
+{
+    *reference = LUA_NOREF;
+    if (!isIndex(L, index))
+        return refuse(L, 0, badIndex);
+
+    lua_State* main = lua_mainthread(L);
+    if (const char* reason = whyNot(main, 3))
+        return refuse(L, 0, reason);
+
+    // L may be the main thread, and the two pushes below would move the index.
+    index = lua_absindex(L, index);
+    pushBody(main, KeepBody);
+    lua_pushlightuserdata(main, reference);
+    lua_xpush(L, main, index);
+    if (lua_pcall(main, 2, 0, 0) == LUA_OK)
+        return LUA_OK;
+
+    *reference = LUA_NOREF;
+    lua_pop(main, 1);
+    return refuse(L, 0, "the value could not be kept");
+}
+
+// Pushes what a reference keeps. No protected call, so any thread will do.
+SL_API int sl_getref(lua_State* L, int reference)
+{
+    if (!lua_checkstack(L, 1))
+        return refuse(L, 0, stackOverflow);
+
+    lua_getref(L, reference);
+    return LUA_OK;
+}
+
 SL_API int sl_createtable(lua_State* L, int arraySize, int recordSize)
 {
     TableSize size = {arraySize, recordSize};
     return protect(L, CreateTableBody, &size, 1);
 }
 
+// The block is zeroed. A tag with a metatable gives its userdata that
+// metatable. A tag that stands for managed objects is refused: sl_pushobject
+// makes those.
 SL_API int sl_newuserdata(lua_State* L, size_t size, int tag, void** block)
 {
     UserdataRequest request = {size, tag, nullptr};
@@ -551,29 +1035,105 @@ SL_API int sl_newuserdata(lua_State* L, size_t size, int tag, void** block)
     return status;
 }
 
-// lua_getfield can run an __index metamethod.
-SL_API int sl_getfield(lua_State* L, int index, const char* key)
+// Takes the table on top and makes it the one metatable of every userdata
+// with this tag. The table is frozen, since every script shares it. With
+// `releases`, the tag stands for managed objects: sl_pushobject makes its
+// userdata, and the collector reports each one it frees.
+SL_API int sl_setuserdatametatable(lua_State* L, int tag, int releases)
 {
+    if (lua_gettop(L) < 1 || !lua_istable(L, -1))
+        return refuse(L, 1, "a userdata metatable must be a table");
+    if (static_cast<unsigned>(tag) >= LUA_UTAG_LIMIT)
+        return refuse(L, 1, "the userdata tag is out of range");
+    if (!lua_checkstack(L, 1))
+        return refuse(L, 1, stackOverflow);
+    if (hasMetatable(L, tag))
+        return refuse(L, 1, "the userdata tag already has a metatable");
+
+    lua_setreadonly(L, -1, 1);
+    lua_setuserdatametatable(L, tag);
+    if (releases)
+    {
+        lua_setuserdatadtor(L, tag, objectCollected);
+        hostOf(L)->objectTags[tag] = true;
+    }
+    return LUA_OK;
+}
+
+// Pushes the userdata that stands for a slot of the host's object table. One
+// userdata exists per slot at a time, so two reads of one object are equal
+// in a script. When the slot's userdata is gone, a new one is made with
+// `nextGeneration` and `created` is set. The host then knows that a report
+// about the old generation is about a userdata it no longer counts on.
+SL_API int sl_pushobject(lua_State* L, int tag, uint32_t slot, uint32_t generation, uint32_t nextGeneration, int* created)
+{
+    *created = 0;
+    HostState* host = hostOf(L);
+    if (static_cast<unsigned>(tag) >= LUA_UTAG_LIMIT || !host->objectTags[tag])
+        return refuse(L, 0, "the userdata tag does not stand for managed objects");
+    if (slot >= 0x7fffffffu)
+        return refuse(L, 0, "the object slot is out of range");
+    if (!lua_checkstack(L, 2))
+        return refuse(L, 0, stackOverflow);
+
+    lua_getref(L, host->objects);
+    lua_rawgeti(L, -1, static_cast<int>(slot) + 1);
+    const ObjectPayload* found = static_cast<const ObjectPayload*>(lua_touserdatatagged(L, -1, tag));
+    if (found && found->slot == slot && found->generation == generation)
+    {
+        lua_remove(L, -2);
+        return LUA_OK;
+    }
+    lua_pop(L, 2);
+
+    ObjectRequest request = {tag, {slot, nextGeneration}};
+    int status = protect(L, NewObjectBody, &request, 1);
+    *created = status == LUA_OK ? 1 : 0;
+    return status;
+}
+
+// Hands over up to `capacity` of the object userdata the collector has freed
+// since the last call, each as (slot << 32) | generation. Returns how many.
+SL_API int sl_takereleased(lua_State* L, uint64_t* buffer, int capacity)
+{
+    HostState* host = hostOf(L);
+    int count = 0;
+    while (count < capacity && host->releasedCount > 0)
+        buffer[count++] = host->released[--host->releasedCount];
+    return count;
+}
+
+// lua_gettable can run an __index metamethod.
+SL_API int sl_getfield(lua_State* L, int index, const char* key, size_t length)
+{
+    if (!isIndex(L, index))
+        return refuse(L, 0, badIndex);
     if (const char* reason = whyNot(L, 3))
         return refuse(L, 0, reason);
 
+    Text text = {key, length};
+    CallScope scope(hostOf(L));
     index = lua_absindex(L, index);
     pushBody(L, GetFieldBody);
-    lua_pushlightuserdata(L, const_cast<char*>(key));
+    lua_pushlightuserdata(L, &text);
     lua_pushvalue(L, index);
     return lua_pcall(L, 2, 1, 0);
 }
 
 // Takes the value on top, as lua_setfield does. It can run a __newindex
 // metamethod, and a frozen table refuses.
-SL_API int sl_setfield(lua_State* L, int index, const char* key)
+SL_API int sl_setfield(lua_State* L, int index, const char* key, size_t length)
 {
+    if (lua_gettop(L) < 1 || !isIndex(L, index))
+        return refuse(L, 1, badIndex);
     if (const char* reason = whyNot(L, 4))
         return refuse(L, 1, reason);
 
+    Text text = {key, length};
+    CallScope scope(hostOf(L));
     index = lua_absindex(L, index);
     pushBody(L, SetFieldBody);
-    lua_pushlightuserdata(L, const_cast<char*>(key));
+    lua_pushlightuserdata(L, &text);
     lua_pushvalue(L, index);
     lua_pushvalue(L, -4);
     int status = lua_pcall(L, 3, 0, 0);
@@ -583,12 +1143,77 @@ SL_API int sl_setfield(lua_State* L, int index, const char* key)
     return status;
 }
 
+// Pushes t[n] with no metamethod. Something that is not a table gives nil.
+SL_API int sl_rawgeti(lua_State* L, int index, int n)
+{
+    if (!isIndex(L, index))
+        return refuse(L, 0, badIndex);
+    if (!lua_checkstack(L, 1))
+        return refuse(L, 0, stackOverflow);
+
+    if (lua_istable(L, index))
+        lua_rawgeti(L, index, n);
+    else
+        lua_pushnil(L);
+    return LUA_OK;
+}
+
+// t[n] = the value on top, with no metamethod. Takes the value. A frozen
+// table refuses.
+SL_API int sl_rawseti(lua_State* L, int index, int n)
+{
+    if (lua_gettop(L) < 1 || !isIndex(L, index))
+        return refuse(L, 1, badIndex);
+    if (const char* reason = whyNot(L, 4))
+        return refuse(L, 1, reason);
+
+    index = lua_absindex(L, index);
+    pushBody(L, RawSetIndexBody);
+    lua_pushlightuserdata(L, reinterpret_cast<void*>(static_cast<intptr_t>(n)));
+    lua_pushvalue(L, index);
+    lua_pushvalue(L, -4);
+    int status = lua_pcall(L, 3, 0, 0);
+
+    lua_remove(L, status == LUA_OK ? -1 : -2);
+    return status;
+}
+
+// One step of a walk over a table. Start with a cursor of 0. While there is
+// a pair, pushes its key and its value and sets `next` to the cursor of the
+// step after. At the end, and for something that is not a table, pushes
+// nothing and sets `next` to -1.
+SL_API int sl_rawiter(lua_State* L, int index, int cursor, int* next)
+{
+    *next = -1;
+    if (!isIndex(L, index))
+        return refuse(L, 0, badIndex);
+    if (!lua_checkstack(L, 2))
+        return refuse(L, 0, stackOverflow);
+
+    if (cursor >= 0 && lua_istable(L, index))
+        *next = lua_rawiter(L, index, cursor);
+    return LUA_OK;
+}
+
+// Makes a table read-only for scripts and for the host alike.
+SL_API int sl_freeze(lua_State* L, int index)
+{
+    if (!isIndex(L, index) || !lua_istable(L, index) || index == LUA_REGISTRYINDEX)
+        return refuse(L, 0, "only a table can be frozen");
+
+    lua_setreadonly(L, index, 1);
+    return LUA_OK;
+}
+
 // Pushes the value as text, through __tostring when it has one.
 SL_API int sl_tostring(lua_State* L, int index)
 {
+    if (!isIndex(L, index))
+        return refuse(L, 0, badIndex);
     if (const char* reason = whyNot(L, 2))
         return refuse(L, 0, reason);
 
+    CallScope scope(hostOf(L));
     index = lua_absindex(L, index);
     pushBody(L, ToStringBody);
     lua_pushvalue(L, index);
@@ -597,15 +1222,123 @@ SL_API int sl_tostring(lua_State* L, int index)
 
 SL_API int sl_call(lua_State* L, int arguments, int results)
 {
+    if (arguments < 0 || lua_gettop(L) < arguments + 1)
+        return refuse(L, arguments + 1, "there is no function under the arguments");
     if (const char* reason = whyNot(L, results - (arguments + 1)))
         return refuse(L, arguments + 1, reason);
 
+    CallScope scope(hostOf(L));
     return lua_pcall(L, arguments, results, 0);
 }
 
-SL_API int sl_resume(lua_State* thread, lua_State* from, int arguments)
+// Starts a thread or goes on with one that has yielded. Takes the top `count`
+// values of `source`, another thread of the same state: the arguments, and
+// under them the function when the thread is new and has none.
+//
+// LUA_YIELD: the thread's stack holds what it yielded. LUA_OK: it ended, and
+// what it returned is on the thread sl_results gives. `results` counts either.
+// An error status: the error value is on the thread's stack, and its frames
+// are still there for sl_frame. SL_REFUSED: the thread was not waiting.
+SL_API int sl_resume(lua_State* thread, lua_State* source, int count, int* results)
 {
-    return lua_resume(thread, from, arguments);
+    *results = 0;
+    if (thread == source || count < 0 || count > lua_gettop(source))
+        return SL_REFUSED;
+
+    HostState* host = hostOf(thread);
+    int arguments = count;
+    int status = lua_status(thread);
+    if (status == LUA_OK)
+    {
+        // Not started. LUA_COFIN is also what a thread with no function reads as.
+        int state = lua_costatus(source, thread);
+        if (state == LUA_COFIN)
+            arguments = count - 1;
+        else if (state != LUA_COSUS)
+            arguments = -1;
+    }
+    else if (status != LUA_YIELD)
+    {
+        arguments = -1;
+    }
+
+    if (arguments < 0 || thread == host->results || !lua_checkstack(thread, count))
+    {
+        lua_pop(source, count);
+        return SL_REFUSED;
+    }
+
+    // What it yielded is still there when the host did not take it.
+    if (status == LUA_YIELD)
+        lua_settop(thread, 0);
+    lua_xmove(source, thread, count);
+
+    {
+        CallScope scope(host);
+        status = lua_resume(thread, host->current, arguments);
+    }
+
+    if (status == LUA_YIELD)
+    {
+        *results = lua_gettop(thread);
+    }
+    else if (status == LUA_OK)
+    {
+        // A thread that ended with values on its stack reads as one that has
+        // not started. So they move, and the thread is left empty.
+        int returned = lua_gettop(thread);
+        lua_settop(host->results, 0);
+        if (returned > 0 && lua_checkstack(host->results, returned))
+        {
+            lua_xmove(thread, host->results, returned);
+            *results = returned;
+        }
+        lua_settop(thread, 0);
+    }
+
+    return status;
+}
+
+// Ends a thread that is waiting, as coroutine.close does, and leaves it
+// empty. L is another thread to run that on, the main one for a host. A
+// thread that is running cannot be ended, and the message says so.
+SL_API int sl_cancel(lua_State* L, lua_State* thread)
+{
+    HostState* host = hostOf(L);
+    if (L == thread || !lua_checkstack(thread, 1))
+        return refuse(L, 0, "the thread cannot be ended from here");
+    if (const char* reason = whyNot(L, 2))
+        return refuse(L, 0, reason);
+
+    CallScope scope(host);
+    lua_getref(L, host->closeThread);
+    lua_pushthread(thread);
+    lua_xmove(thread, L, 1);
+    return lua_pcall(L, 1, 0, 0);
+}
+
+// One frame of a thread's call stack, innermost first. Returns 0 past the
+// last frame, 1 for a function of a script and 2 for a function of the host
+// or of Luau. `source` is the chunk's name as it was loaded. The texts live
+// as long as the frame. Works on a thread that ended in an error, whose
+// frames are still there.
+SL_API int sl_frame(lua_State* L, int level, const char** source, const char** name, int* line)
+{
+    *source = nullptr;
+    *name = nullptr;
+    *line = 0;
+
+    lua_Debug ar;
+    if (level < 0 || !lua_getinfo(L, level, "sln", &ar))
+        return 0;
+
+    *name = ar.name;
+    if (strcmp(ar.what, "C") == 0)
+        return 2;
+
+    *source = ar.source;
+    *line = ar.currentline > 0 ? ar.currentline : 0;
+    return 1;
 }
 
 // For a host function: `return sl_fail(L, message, length);`. Whatever
@@ -616,17 +1349,42 @@ SL_API int sl_fail(lua_State* L, const char* message, size_t length)
     return SL_HOST_ERROR;
 }
 
-// Any thread may call this while the caller keeps the state from being
-// closed. The script stops at its next loop or call with an error, and again
-// after every pcall that catches it, until the host disarms.
-SL_API void sl_interrupt_arm(lua_State* L)
+// (serial << 1) | running, for the outermost call into Luau. Each such call
+// gets the next serial. Safe from any thread while the caller keeps the state
+// from being closed.
+SL_API uint64_t sl_callstate(lua_State* L)
 {
-    hostOf(L)->stopRequested.store(1, std::memory_order_relaxed);
+    return hostOf(L)->call.load(std::memory_order_relaxed);
+}
+
+// Asks the call with this serial to stop. Any thread may call this while the
+// caller keeps the state from being closed. The script stops at its next
+// loop or call with an error, and again after every pcall that catches it.
+// A request for a call that has ended does nothing.
+SL_API void sl_interrupt_arm(lua_State* L, uint32_t serial)
+{
+    hostOf(L)->stop.store(serial, std::memory_order_relaxed);
 }
 
 SL_API void sl_interrupt_disarm(lua_State* L)
 {
-    hostOf(L)->stopRequested.store(0, std::memory_order_relaxed);
+    hostOf(L)->stop.store(0, std::memory_order_relaxed);
+}
+
+// Why the interrupt stopped a script in this call: SL_STOP_TIME,
+// SL_STOP_MEMORY or 0. Taking the reason ends the stop, so whatever called
+// the stopped script goes on, as a new call for the watchdog.
+SL_API int sl_takestop(lua_State* L)
+{
+    HostState* host = hostOf(L);
+    int reason = host->stopReason;
+    if (reason == 0)
+        return 0;
+
+    host->stopReason = 0;
+    host->stop.store(0, std::memory_order_relaxed);
+    host->call.store(host->call.load(std::memory_order_relaxed) + 2, std::memory_order_relaxed);
+    return reason;
 }
 
 // Frees what sl_compile returned. The block came from this library's C

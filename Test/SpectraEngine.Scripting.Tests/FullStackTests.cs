@@ -93,7 +93,7 @@ public sealed unsafe class FullStackTests
 
         LuaStatus status;
         fixed (byte* key = "speed"u8)
-            status = Shim.sl_getfield(state.L, 1, key);
+            status = Shim.sl_getfield(state.L, 1, key, 5);
 
         ShouldBeRefusedWithTheFrameWhole(state, status);
     }

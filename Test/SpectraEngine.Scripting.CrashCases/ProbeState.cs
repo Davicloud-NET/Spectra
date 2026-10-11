@@ -3,10 +3,9 @@ using SpectraEngine.Scripting.Luau.Native;
 
 namespace SpectraEngine.Scripting.CrashCases;
 
-// A Luau state with the standard libraries and the probe as a global. The
-// crash cases and the test suite both set a state up through this.
-//
-// A name passed as bytes must be a u8 literal: the compiler ends those with a zero.
+// A Luau state with the standard libraries and the probe as a global, made
+// from the shim's own calls with no host around it. The crash cases and the
+// tests of the shim both set a state up through this.
 internal sealed unsafe class ProbeState : IDisposable
 {
     internal ProbeState()
@@ -22,6 +21,12 @@ internal sealed unsafe class ProbeState : IDisposable
 
     internal nint L { get; private set; }
 
+    // The thread that holds what the last thread to end returned.
+    internal nint Results => Shim.sl_results(L);
+
+    // The serial the next outermost call into Luau gets.
+    internal uint NextCall => Shim.CallSerial(L) + 1;
+
     // Runs the source as a chunk named "test". Its results, or the error value
     // when the status is not Ok, are left on the stack.
     internal LuaStatus Run(string source, int results = 0)
@@ -30,17 +35,25 @@ internal sealed unsafe class ProbeState : IDisposable
         return status == LuaStatus.Ok ? Shim.sl_call(L, 0, results) : status;
     }
 
+    // Starts a thread or goes on with it. The top `count` values of the main
+    // stack go with it.
+    internal LuaStatus Resume(nint thread, int count = 0)
+    {
+        int results;
+        return Shim.sl_resume(thread, L, count, &results);
+    }
+
     // Takes the value on top.
     internal LuaStatus SetGlobal(ReadOnlySpan<byte> name)
     {
         fixed (byte* key = name)
-            return Shim.sl_setfield(L, Lua.GlobalsIndex, key);
+            return Shim.sl_setfield(L, Lua.GlobalsIndex, key, (nuint)name.Length);
     }
 
     internal LuaStatus GetGlobal(ReadOnlySpan<byte> name)
     {
         fixed (byte* key = name)
-            return Shim.sl_getfield(L, Lua.GlobalsIndex, key);
+            return Shim.sl_getfield(L, Lua.GlobalsIndex, key, (nuint)name.Length);
     }
 
     // Pops the top value. Null when it was not a string.
