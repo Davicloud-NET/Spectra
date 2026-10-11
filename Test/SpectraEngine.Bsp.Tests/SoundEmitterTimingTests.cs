@@ -71,7 +71,7 @@ public sealed class SoundEmitterTimingTests
     {
         // 0.02f is a hair under a fiftieth, so fifty of them fall short of a second.
         const float fiftieth = 0.02f;
-        EntityWorld world = Started();
+        EntityWorld world = Started(fiftieth);
         world.Tick(fiftieth);
 
         SoundEmitter emitter = Play(world, new SoundDescription(Rate, Rate));
@@ -81,37 +81,23 @@ public sealed class SoundEmitterTimingTests
     }
 
     [Fact]
-    public void A_sound_started_while_the_level_spawns_counts_at_the_step_the_host_ticks_at()
+    public void A_sound_started_while_the_level_spawns_counts_at_the_worlds_step_from_its_first_frame()
     {
-        EntityWorld world = Started();
+        EntityWorld world = Started(Thirtieth);
         int id = world.Sounds.Play(_scene.Root, "a.wav", new SoundDescription(Rate, Rate), Settings());
+        world.Sounds.TryGet(id, out SoundEmitter spawned).ShouldBeTrue();
         long version = world.Sounds.Version;
 
         world.Tick(Thirtieth);
 
+        // The step was the world's before the first tick, so the tick changes nothing.
         world.Sounds.TryGet(id, out SoundEmitter emitter).ShouldBeTrue();
         emitter.FramesPlayedAt(1).ShouldBe(1_600L);
         emitter.HasEndedAt(29).ShouldBeFalse();
         emitter.HasEndedAt(30).ShouldBeTrue();
-        world.Sounds.Version.ShouldNotBe(version);
-    }
-
-    [Fact]
-    public void A_step_that_changes_part_way_keeps_what_was_played_and_counts_the_rest_anew()
-    {
-        EntityWorld world = Started();
-        int id = world.Sounds.Play(_scene.Root, "a.wav", new SoundDescription(Rate, Rate), Settings(pitch: 0.5f));
-        Run(world, 60);
-
-        world.Tick(Thirtieth);
-        world.Sounds.TryGet(id, out SoundEmitter emitter).ShouldBeTrue();
-
-        // Half played at 400 frames a tick, the other half at 800.
-        emitter.Pitch.ShouldBe(0.5f);
-        emitter.FramesPlayedAt(60).ShouldBe(24_000L);
-        emitter.FramesPlayedAt(61).ShouldBe(24_800L);
-        emitter.HasEndedAt(89).ShouldBeFalse();
-        emitter.HasEndedAt(90).ShouldBeTrue();
+        spawned.HasEndedAt(29).ShouldBeFalse();
+        spawned.HasEndedAt(30).ShouldBeTrue();
+        world.Sounds.Version.ShouldBe(version);
     }
 
     [Fact]
@@ -242,9 +228,9 @@ public sealed class SoundEmitterTimingTests
             world.Tick(Tick);
     }
 
-    private EntityWorld Started()
+    private EntityWorld Started(float step = Tick)
     {
-        var world = new EntityWorld(_scene, new CapturingLogger(), new EntityCatalog());
+        var world = new EntityWorld(_scene, new CapturingLogger(), new EntityCatalog()) { FixedDeltaTime = step };
         world.Activate();
         return world;
     }

@@ -124,10 +124,10 @@ public sealed class PointSoundTests
     }
 
     [Fact]
-    public void A_sound_that_starts_with_the_level_keeps_time_when_the_host_ticks_at_another_rate()
+    public void A_sound_that_starts_with_the_level_keeps_time_in_a_world_that_ticks_at_another_rate()
     {
         _rig.Sound(SoundRig.OneSecond, ("startplaying", "1"));
-        EntityWorld world = _rig.Start();
+        EntityWorld world = _rig.Start(1f / 30f);
 
         for (int i = 0; i < 40; i++)
             world.Tick(1f / 30f);

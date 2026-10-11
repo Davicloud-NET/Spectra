@@ -254,7 +254,11 @@ public sealed class SceneManager
     /// Builds the entity runtime over the active scene and activates it. A
     /// no-op when one is already running or no scene is loaded.
     /// </summary>
-    public void StartEntityWorld()
+    /// <param name="fixedDeltaTime">
+    /// The step the level runs at, in seconds. It is fixed here: the world
+    /// refuses a tick of any other length.
+    /// </param>
+    public void StartEntityWorld(float fixedDeltaTime = PhysicsDefaults.FixedDeltaTime)
     {
         if (EntityWorld is not null || ActiveScene is not { } scene)
             return;
@@ -264,6 +268,7 @@ public sealed class SceneManager
         // sound catalog too: a sound that plays at spawn asks it then.
         var world = new EntityWorld(scene, _logger, EntityCatalog)
         {
+            FixedDeltaTime = fixedDeltaTime,
             Trace = _entityTrace,
             SoundCatalog = SoundCatalog ?? (_assets is { } assets ? new AssetSoundCatalog(assets) : null),
         };

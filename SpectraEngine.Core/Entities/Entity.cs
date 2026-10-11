@@ -14,7 +14,7 @@ public abstract class Entity
     // First-appearance order over the authored connection list.
     private readonly List<EntityOutput> _outputs = [];
 
-    private float _nextThinkTime = float.PositiveInfinity;
+    private long _nextThinkTick = NoThink;
     private int _thinkSerial;
 
     /// <summary>
@@ -45,10 +45,22 @@ public abstract class Entity
     public IReadOnlyList<EntityOutput> Outputs => _outputs;
 
     /// <summary>
-    /// The world time this entity next thinks at, or
-    /// <see cref="float.PositiveInfinity"/> when it has no think pending.
+    /// What <see cref="NextThinkTick"/> reads when no think is pending.
     /// </summary>
-    public float NextThinkTime => _nextThinkTime;
+    public const long NoThink = long.MaxValue;
+
+    /// <summary>
+    /// The tick this entity next thinks on, or <see cref="NoThink"/> when it
+    /// has no think pending.
+    /// </summary>
+    public long NextThinkTick => _nextThinkTick;
+
+    /// <summary>
+    /// The world time of <see cref="NextThinkTick"/> in seconds, or
+    /// <see cref="float.PositiveInfinity"/> when no think is pending.
+    /// </summary>
+    public float NextThinkTime =>
+        _nextThinkTick == NoThink ? float.PositiveInfinity : World.TimeAt(_nextThinkTick);
 
     // A heap can't remove an entry, so a superseded think stays queued. The
     // serial tells the dispatcher to drop it.
@@ -82,7 +94,7 @@ public abstract class Entity
     }
 
     /// <summary>
-    /// Called at the time <see cref="SetNextThink"/> asked for. A think does
+    /// Called on the tick <see cref="SetNextThink"/> asked for. A think does
     /// not reschedule itself.
     /// </summary>
     protected internal virtual void Think()
@@ -121,24 +133,27 @@ public abstract class Entity
 
     /// <summary>
     /// Asks to be woken at world time <paramref name="time"/>, replacing any
-    /// think already pending. A time already past fires on the next tick.
+    /// think already pending. The time left is counted in whole ticks, as
+    /// <see cref="SetNextThinkIn"/> counts a delay. A time already past fires
+    /// on the next drain.
     /// </summary>
-    public void SetNextThink(float time)
-    {
-        _nextThinkTime = time;
-        _thinkSerial++;
-        World.ScheduleThink(this, time, _thinkSerial);
-    }
+    // A float time gets coarser the longer a level runs, and past a few
+    // minutes that can cost a tick. SetNextThinkIn does not have the problem.
+    public void SetNextThink(float time) => ThinkAfter(World.SecondsUntil(time));
 
-    /// <summary>Asks to be woken <paramref name="delay"/> seconds from now.</summary>
-    public void SetNextThinkIn(float delay) => SetNextThink(World.Time + delay);
+    /// <summary>
+    /// Asks to be woken <paramref name="delay"/> seconds from now, replacing
+    /// any think already pending. The delay is counted in whole ticks by the
+    /// rule of <see cref="WholeTicks"/>. No delay fires on the next drain.
+    /// </summary>
+    public void SetNextThinkIn(float delay) => ThinkAfter(delay);
 
     /// <summary>Drops any pending think.</summary>
     public void CancelThink()
     {
         // Bumping the serial is the cancel; the queued entry is dropped when it surfaces.
         _thinkSerial++;
-        _nextThinkTime = float.PositiveInfinity;
+        _nextThinkTick = NoThink;
     }
 
     /// <summary>
@@ -232,6 +247,16 @@ public abstract class Entity
 
             CollectBrushesBelow(child, owned);
         }
+    }
+
+    private void ThinkAfter(double seconds)
+    {
+        _nextThinkTick = World.TickAfter(seconds);
+        _thinkSerial++;
+
+        // A wait too long to count is no think at all.
+        if (_nextThinkTick != NoThink)
+            World.ScheduleThink(this, _nextThinkTick, _thinkSerial);
     }
 
     internal void Bind(SceneNode node, EntityWorld world, EntityData data)

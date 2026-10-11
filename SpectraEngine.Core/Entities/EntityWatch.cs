@@ -27,9 +27,11 @@ public sealed class EntityWatch : IEntityTrace
     private readonly List<string> _patterns = [];
     private readonly StringBuilder _line = new();
 
-    // The world time the last input fired by hand comes due at. Negative
-    // infinity when none is on its way.
-    private float _handFiredDue = float.NegativeInfinity;
+    // What _handFiredDueTick holds when no input fired by hand is on its way.
+    private const long NothingDue = -1;
+
+    // The tick the last input fired by hand comes due on.
+    private long _handFiredDueTick = NothingDue;
 
     private int _linesThisTick;
     private int _droppedThisTick;
@@ -63,7 +65,7 @@ public sealed class EntityWatch : IEntityTrace
     /// </summary>
     public event Action? Changed;
 
-    private bool IsNeeded => IsOn || _handFiredDue > float.NegativeInfinity;
+    private bool IsNeeded => IsOn || _handFiredDueTick != NothingDue;
 
     /// <summary>
     /// Turns the watch on for the entities <paramref name="patterns"/> name,
@@ -99,11 +101,10 @@ public sealed class EntityWatch : IEntityTrace
     {
         ArgumentNullException.ThrowIfNull(world);
 
-        // The sum the world makes when it queues the input, so the mark and
-        // the input come due in the same tick.
-        float due = world.Time + (delay > 0f ? delay : 0f);
-        if (due > _handFiredDue)
-            _handFiredDue = due;
+        // The tick the world gives the input when it queues it.
+        long due = world.TickAfter(delay);
+        if (due > _handFiredDueTick)
+            _handFiredDueTick = due;
 
         RaiseIfChanged();
     }
@@ -114,7 +115,7 @@ public sealed class EntityWatch : IEntityTrace
         bool queued = traced.Kind == EntityTraceKind.InputQueued;
 
         // A wire with no delay is sent in the same tick, and that line says it.
-        if (queued && traced.DueTime <= traced.Time)
+        if (queued && traced.DueTick <= traced.Tick)
             return;
 
         if (IsFiredByHand(traced))
@@ -154,8 +155,8 @@ public sealed class EntityWatch : IEntityTrace
 
         // Tick zero is a new level. An input fired by hand at the one before
         // it will never arrive.
-        if (tick == 0 || time >= _handFiredDue)
-            _handFiredDue = float.NegativeInfinity;
+        if (tick == 0 || tick >= _handFiredDueTick)
+            _handFiredDueTick = NothingDue;
 
         // Not at tick zero: the level is still starting, and a host that has
         // not taken the new world yet would lose the change.

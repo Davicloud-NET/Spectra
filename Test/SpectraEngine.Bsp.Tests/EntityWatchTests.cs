@@ -41,9 +41,10 @@ public sealed class EntityWatchTests
             "ent 1 miss relay1.OnTrigger -> dor1.Close  nothing is named dor1",
         ]);
 
+        // Two seconds from tick 1 is 120 ticks on.
         string[] later = rig.TickUntilPrinted(limit: 130);
-        rig.World.TickNumber.ShouldBeInRange(121, 122);
-        later.ShouldBe([$"ent {rig.World.TickNumber} send relay1.OnTrigger -> door1.Open by=auto"]);
+        rig.World.TickNumber.ShouldBe(121);
+        later.ShouldBe(["ent 121 send relay1.OnTrigger -> door1.Open by=auto"]);
     }
 
     [Fact]

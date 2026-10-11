@@ -176,7 +176,7 @@ public sealed class BuiltinEntityBehaviourTests
         EntityRuntime.Place(scene.Root, "sink", "test_recorder");
         EntityRuntime.Wire(relay, LogicRelay.OnTrigger, "sink", "Ping", delay: 0.5f);
 
-        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        EntityWorld world = QuarterSecondWorld(scene, log);
         world.Activate();
 
         var live = EntityRuntime.Live<LogicRelay>(world, relay);
@@ -203,14 +203,14 @@ public sealed class BuiltinEntityBehaviourTests
         EntityRuntime.Place(scene.Root, "sink", "test_recorder");
         EntityRuntime.Wire(timer, LogicTimer.OnTimer, "sink", "Ping");
 
-        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        EntityWorld world = QuarterSecondWorld(scene, log);
         world.Activate();
 
         var live = EntityRuntime.Live<LogicTimer>(world, timer);
         live.RefireInterval.ShouldBe(0.5f);
         live.IsEnabled.ShouldBeTrue();
 
-        // Quarter-second steps are exact in binary; 1/60ths would not be.
+        // Two ticks to an interval, so each line below is one tick.
         world.Tick(0.25f);
         log.ShouldBeEmpty();
 
@@ -239,7 +239,10 @@ public sealed class BuiltinEntityBehaviourTests
         EntityRuntime.Place(scene.Root, "sink", "test_recorder");
         EntityRuntime.Wire(timer, LogicTimer.OnTimer, "sink", "Ping");
 
-        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log))
+        {
+            FixedDeltaTime = 0.5f,
+        };
         world.Activate();
 
         var live = EntityRuntime.Live<LogicTimer>(world, timer);
@@ -301,4 +304,8 @@ public sealed class BuiltinEntityBehaviourTests
 
         EntityRuntime.Send(EntityRuntime.Live<LogicRelay>(world, relay), "Detonate").ShouldBeFalse();
     }
+
+    // Half a second is two of its ticks, so a test can step through an interval.
+    private static EntityWorld QuarterSecondWorld(Scene scene, List<string> log) =>
+        new(scene, new CapturingLogger(), EntityRuntime.Catalog(log)) { FixedDeltaTime = 0.25f };
 }

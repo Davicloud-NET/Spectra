@@ -53,10 +53,11 @@ internal sealed class SoundRig
         return node;
     }
 
-    public EntityWorld Start()
+    public EntityWorld Start(float step = Movers.Dt)
     {
         var world = new EntityWorld(Scene, Logger, EntityRuntime.Catalog(Heard))
         {
+            FixedDeltaTime = step,
             SoundCatalog = Catalog,
             Trace = Trace,
         };

@@ -5,6 +5,7 @@ using SpectraEngine.Core.Scene;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
 namespace SpectraEngine.Core.Entities;
 
@@ -43,9 +44,10 @@ public sealed class EntityWorld
     // Log a refused move once per node, not once per tick.
     private readonly HashSet<Guid> _refusedMoveNodes = [];
 
+    private readonly TickClock _clock = new(PhysicsDefaults.FixedDeltaTime);
+
     private TargetNameIndex? _index;
     private long _sequence;
-    private float _time;
     private int _tickingCount;
     private int _maxDispatchesPerTick = 4096;
 
@@ -80,22 +82,29 @@ public sealed class EntityWorld
     public bool IsActive { get; private set; }
 
     /// <summary>
-    /// Seconds of ticked time since <see cref="Activate"/>. A sum of floats:
-    /// count <see cref="TickNumber"/> for anything that must land on a tick.
+    /// Seconds of ticked time since <see cref="Activate"/>:
+    /// <see cref="TickNumber"/> times <see cref="FixedDeltaTime"/>. For a
+    /// person to read. Anything that must land on a tick counts ticks.
     /// </summary>
-    public float Time => _time;
+    public float Time => _clock.Time;
 
     /// <summary>
     /// The tick being run, or the last one run. Zero while entities spawn, one
     /// during the first <see cref="Tick"/>.
     /// </summary>
-    public long TickNumber { get; private set; }
+    public long TickNumber => _clock.Tick;
 
     /// <summary>
-    /// The fixed step in seconds: what <see cref="Tick"/> was last given, and
-    /// the engine's own step before the first tick.
+    /// The fixed step in seconds, the engine's own unless the world is made
+    /// with another. A world keeps its step for as long as it lives, and
+    /// <see cref="Tick"/> refuses any other.
     /// </summary>
-    public float FixedDeltaTime { get; private set; } = PhysicsDefaults.FixedDeltaTime;
+    /// <exception cref="ArgumentOutOfRangeException">The step is not a number above zero.</exception>
+    public float FixedDeltaTime
+    {
+        get => _clock.Step;
+        init => _clock = new TickClock(value);
+    }
 
     /// <summary>
     /// The player, for entities that sense or move it, or null when the host
@@ -163,7 +172,7 @@ public sealed class EntityWorld
     /// <summary>How many events the most recent <see cref="Tick"/> dispatched.</summary>
     public int LastTickDispatchCount { get; private set; }
 
-    /// <summary>Events waiting for their time to come.</summary>
+    /// <summary>Events waiting for their tick to come.</summary>
     public int PendingEventCount => _queue.Count;
 
     /// <summary>Nodes queued for a deferred spawn.</summary>
@@ -190,9 +199,7 @@ public sealed class EntityWorld
         if (IsActive)
             throw new InvalidOperationException("This entity world is already active.");
 
-        _time = 0f;
-        TickNumber = 0;
-        FixedDeltaTime = PhysicsDefaults.FixedDeltaTime;
+        _clock.Restart();
         _sequence = 0;
         _tickingCount = 0;
         RefusedMoveCount = 0;
@@ -237,7 +244,7 @@ public sealed class EntityWorld
         for (int i = 0; i < _entities.Count; i++)
             _entities[i].OnActivate();
 
-        Trace?.EndTick(TickNumber, _time);
+        Trace?.EndTick(TickNumber, Time);
     }
 
     /// <summary>
@@ -280,45 +287,40 @@ public sealed class EntityWorld
     }
 
     /// <summary>
-    /// Runs one tick of <paramref name="fixedDt"/> seconds: finds the touches
-    /// that started and ended since the last tick, delivers everything now
-    /// due, calls <see cref="Entity.OnTick"/> on the entities that asked
-    /// for it, in <see cref="Entities"/> order, then drains the deferred spawn
-    /// and despawn queues.
+    /// Runs one tick: finds the touches that started and ended since the last
+    /// tick, delivers everything now due, calls <see cref="Entity.OnTick"/>
+    /// on the entities that asked for it, in <see cref="Entities"/> order,
+    /// then drains the deferred spawn and despawn queues.
     /// </summary>
+    /// <param name="fixedDt">
+    /// The step the host is running at. It must be this world's
+    /// <see cref="FixedDeltaTime"/>.
+    /// </param>
     /// <exception cref="InvalidOperationException">The world is not active.</exception>
+    /// <exception cref="ArgumentException">The step is not this world's own.</exception>
     public void Tick(float fixedDt)
     {
         if (!IsActive)
             throw new InvalidOperationException("Tick on an entity world that is not active.");
 
-        // A playing sound counts its frames a tick from the step. One that
-        // started while the level spawned had only the engine's own to go by.
+        // Every wait was counted in ticks of the world's step. Another step
+        // would stretch them all and say nothing.
         if (fixedDt != FixedDeltaTime)
-            Sounds.OnStepChanged(TickNumber, fixedDt);
+        {
+            throw new ArgumentException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"This entity world was made with a step of {FixedDeltaTime} s and cannot tick at {fixedDt} s. ") +
+                "Make the world with the step its host runs at.",
+                nameof(fixedDt));
+        }
 
-        TickNumber++;
-        FixedDeltaTime = fixedDt;
-        _time += fixedDt;
+        _clock.Advance();
 
         // Before the drain: an output a touch fires is delivered this tick.
         Touches.Update();
 
-        int dispatched = 0;
-        while (_queue.TryPeek(out EntityEvent next) && next.Time <= _time)
-        {
-            if (dispatched >= _maxDispatchesPerTick)
-            {
-                TripDispatchBudget(next);
-                break;
-            }
-
-            _queue.TryPop(out EntityEvent due);
-            dispatched++;
-            Dispatch(due);
-        }
-
-        LastTickDispatchCount = dispatched;
+        LastTickDispatchCount = DrainDueEvents();
 
         // After the drain: an input delivered this tick moves its entity this
         // tick. Spawns and despawns are deferred, so the list holds still.
@@ -333,8 +335,14 @@ public sealed class EntityWorld
 
         DrainDeferred();
 
-        Trace?.EndTick(TickNumber, _time);
+        Trace?.EndTick(TickNumber, Time);
     }
+
+    /// <summary>
+    /// How many ticks of this world a wait of <paramref name="seconds"/>
+    /// takes, by the rule of <see cref="WholeTicks"/>.
+    /// </summary>
+    public long TicksIn(double seconds) => _clock.TicksIn(seconds);
 
     /// <summary>
     /// Moves a node while the level plays. The only way a running entity may
@@ -395,7 +403,7 @@ public sealed class EntityWorld
 
         var queued = new EntityEvent
         {
-            Time = _time,
+            Tick = TickNumber,
             Sequence = _sequence++,
             Kind = EntityEventKind.Input,
             Target = target,
@@ -418,7 +426,9 @@ public sealed class EntityWorld
     /// <param name="targetName">A name, or a prefix ending in <c>*</c>.</param>
     /// <param name="input">The input's name.</param>
     /// <param name="parameter">The argument, or null for none.</param>
-    /// <param name="delay">Seconds to wait. Zero delivers on the next drain.</param>
+    /// <param name="delay">
+    /// Seconds to wait, counted in whole ticks. Zero delivers on the next drain.
+    /// </param>
     /// <exception cref="InvalidOperationException">The world is not active.</exception>
     public void QueueInput(string targetName, string input, string? parameter = null, float delay = 0f)
     {
@@ -428,8 +438,7 @@ public sealed class EntityWorld
 
         var queued = new EntityEvent
         {
-            // Negative and NaN delays become zero.
-            Time = _time + (delay > 0f ? delay : 0f),
+            Tick = _clock.TickAfter(delay),
             Sequence = _sequence++,
             Kind = EntityEventKind.Input,
             TargetName = targetName,
@@ -490,11 +499,16 @@ public sealed class EntityWorld
         _pendingDespawn.Add(entity);
     }
 
-    internal void ScheduleThink(Entity entity, float time, int serial) =>
+    internal long TickAfter(double seconds) => _clock.TickAfter(seconds);
+
+    internal double SecondsUntil(float time) => _clock.SecondsUntil(time);
+
+    internal float TimeAt(long tick) => _clock.TimeAt(tick);
+
+    internal void ScheduleThink(Entity entity, long tick, int serial) =>
         _queue.Push(new EntityEvent
         {
-            // A NaN time would corrupt the heap's ordering. Use now instead.
-            Time = float.IsFinite(time) ? time : _time,
+            Tick = tick,
             Sequence = _sequence++,
             Kind = EntityEventKind.Think,
             Entity = entity,
@@ -513,12 +527,9 @@ public sealed class EntityWorld
         int wireIndex,
         string? parameterOverride)
     {
-        // Negative and NaN delays become zero.
-        float delay = wire.Delay > 0f ? wire.Delay : 0f;
-
         var queued = new EntityEvent
         {
-            Time = _time + delay,
+            Tick = _clock.TickAfter(wire.Delay),
             Sequence = _sequence++,
             Kind = EntityEventKind.Input,
             Entity = caller,
@@ -685,6 +696,26 @@ public sealed class EntityWorld
             target.TargetName, target.ClassName, due.Input);
     }
 
+    // Runs everything due this tick and returns how many events that was.
+    private int DrainDueEvents()
+    {
+        int dispatched = 0;
+        while (_queue.TryPeek(out EntityEvent next) && next.Tick <= TickNumber)
+        {
+            if (dispatched >= _maxDispatchesPerTick)
+            {
+                TripDispatchBudget(next);
+                break;
+            }
+
+            _queue.TryPop(out EntityEvent due);
+            dispatched++;
+            Dispatch(due);
+        }
+
+        return dispatched;
+    }
+
     private void TripDispatchBudget(in EntityEvent offender)
     {
         DispatchBudgetTripCount++;
@@ -707,7 +738,7 @@ public sealed class EntityWorld
         // Drop only what is due now. Later events are ordinary work, so a level
         // with one bad relay keeps running.
         int discarded = 0;
-        while (_queue.TryPeek(out EntityEvent next) && next.Time <= _time)
+        while (_queue.TryPeek(out EntityEvent next) && next.Tick <= TickNumber)
         {
             _queue.TryPop(out _);
             discarded++;

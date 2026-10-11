@@ -51,13 +51,17 @@ public sealed class WireActivityTraceTests
         EntityRuntime.Live(world, source).FireOutput("OnGo");
         float queuedAt = world.Time;
 
+        // A twentieth of a second is three ticks, and this is tick 1.
         LogicWireActivity waiting = Captured().Wires.ShouldHaveSingleItem();
         waiting.Waiting.ShouldBe(1);
         waiting.WaitingSince.ShouldBe(queuedAt);
-        waiting.WaitingDue.ShouldBe(queuedAt + 0.05f);
+        waiting.WaitingDue.ShouldBe((float)(4 * (double)Tick));
 
-        for (int i = 0; i < 4; i++)
-            world.Tick(Tick);
+        world.Tick(Tick);
+        world.Tick(Tick);
+        Captured().Wires.ShouldHaveSingleItem().Waiting.ShouldBe(1);
+
+        world.Tick(Tick);
 
         LogicWireActivity delivered = Captured().Wires.ShouldHaveSingleItem();
         delivered.Waiting.ShouldBe(0);
@@ -169,7 +173,7 @@ public sealed class WireActivityTraceTests
     }
 
     [Fact]
-    public void A_queued_input_the_world_dropped_stops_waiting()
+    public void A_queued_input_whose_arrival_the_trace_never_heard_of_stops_waiting()
     {
         SceneNode source = EntityRuntime.Place(_scene.Root, "source", "recorder");
         EntityRuntime.Place(_scene.Root, "target", "recorder");
@@ -177,7 +181,7 @@ public sealed class WireActivityTraceTests
         EntityWorld world = Started();
         EntityRuntime.Live(world, source).FireOutput("OnGo");
 
-        // The world never says it delivered. Time passing is all the trace sees.
+        // Nobody says it was delivered. Time passing is all the trace sees.
         _trace.EndTick(200, world.Time + 2f);
 
         Captured().Wires.ShouldHaveSingleItem().Waiting.ShouldBe(0);

@@ -106,6 +106,38 @@ public sealed class PlaySessionTests
     }
 
     [Fact]
+    public void A_session_starts_its_entities_at_the_engines_step_unless_it_is_made_with_another()
+    {
+        SceneManager manager = Hosted([]);
+        var session = new PlaySession(manager, Walker(manager));
+        session.Enter();
+        manager.EntityWorld.ShouldNotBeNull().FixedDeltaTime.ShouldBe(PhysicsDefaults.FixedDeltaTime);
+        session.Exit();
+
+        var slow = new PlaySession(manager, Walker(manager)) { FixedDeltaTime = 1f / 30f };
+        slow.Enter();
+
+        manager.EntityWorld.ShouldNotBeNull().FixedDeltaTime.ShouldBe(1f / 30f);
+        Should.NotThrow(() => slow.Tick(1f / 30f, default));
+    }
+
+    [Fact]
+    public void A_playing_session_ticked_at_a_step_that_is_not_its_own_is_refused_before_anything_runs()
+    {
+        var log = new List<string>();
+        var physics = new FakeScenePhysics(log);
+        SceneManager manager = Hosted(log, physics);
+        Place(manager, "clock", "thinker");
+        var session = new PlaySession(manager, Walker(manager));
+        session.Enter();
+
+        Should.Throw<ArgumentException>(() => session.Tick(1f / 30f, default));
+
+        log.ShouldBeEmpty();
+        manager.EntityWorld.ShouldNotBeNull().TickNumber.ShouldBe(0);
+    }
+
+    [Fact]
     public void A_tick_runs_entities_then_physics_then_the_character()
     {
         var log = new List<string>();

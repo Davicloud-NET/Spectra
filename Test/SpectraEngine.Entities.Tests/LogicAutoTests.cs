@@ -55,7 +55,10 @@ public sealed class LogicAutoTests
         EntityRuntime.Place(scene.Root, "sink", "test_recorder");
         EntityRuntime.Wire(auto, LogicAuto.OnMapSpawn, "sink", "Begin", delay: 0.5f);
 
-        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log))
+        {
+            FixedDeltaTime = 0.25f,
+        };
         world.Activate();
 
         world.Tick(0.25f);

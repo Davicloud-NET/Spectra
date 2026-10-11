@@ -39,21 +39,100 @@ public sealed class EntityWorldTickTests
     }
 
     [Fact]
-    public void The_fixed_step_is_the_engines_until_a_tick_says_otherwise()
+    public void The_fixed_step_is_the_engines_unless_the_world_is_made_with_another()
     {
-        var world = new EntityWorld(new Scene("Ticks"), new CapturingLogger(), EntityMotion.Catalog([]));
-        world.Activate();
+        var scene = new Scene("Ticks");
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityMotion.Catalog([]));
+        var slow = new EntityWorld(scene, new CapturingLogger(), EntityMotion.Catalog([]))
+        {
+            FixedDeltaTime = 1f / 30f,
+        };
 
         world.FixedDeltaTime.ShouldBe(PhysicsDefaults.FixedDeltaTime);
+        slow.FixedDeltaTime.ShouldBe(1f / 30f);
+    }
 
+    [Fact]
+    public void A_world_keeps_its_step_from_one_run_to_the_next()
+    {
+        var world = new EntityWorld(new Scene("Ticks"), new CapturingLogger(), EntityMotion.Catalog([]))
+        {
+            FixedDeltaTime = 1f / 30f,
+        };
+
+        world.Activate();
         world.Tick(1f / 30f);
-
-        world.FixedDeltaTime.ShouldBe(1f / 30f);
-
         world.Deactivate();
         world.Activate();
 
-        world.FixedDeltaTime.ShouldBe(PhysicsDefaults.FixedDeltaTime);
+        world.FixedDeltaTime.ShouldBe(1f / 30f);
+        Should.NotThrow(() => world.Tick(1f / 30f));
+    }
+
+    [Fact]
+    public void A_world_refuses_a_step_other_than_its_own()
+    {
+        var log = new List<string>();
+        var scene = new Scene("Ticks");
+        Ticker(scene.Root, "clock", ticking: true);
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityMotion.Catalog(log));
+        world.Activate();
+        world.Tick(Dt);
+        log.Clear();
+
+        ArgumentException refused = Should.Throw<ArgumentException>(() => world.Tick(1f / 30f));
+
+        refused.ParamName.ShouldBe("fixedDt");
+        refused.Message.ShouldContain("0.016666668");
+        refused.Message.ShouldContain("0.033333335");
+
+        // Refused before anything ran.
+        world.TickNumber.ShouldBe(1);
+        log.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_world_made_with_another_step_refuses_the_engines()
+    {
+        var world = new EntityWorld(new Scene("Ticks"), new CapturingLogger(), EntityMotion.Catalog([]))
+        {
+            FixedDeltaTime = 0.25f,
+        };
+        world.Activate();
+
+        Should.Throw<ArgumentException>(() => world.Tick(PhysicsDefaults.FixedDeltaTime));
+        Should.NotThrow(() => world.Tick(0.25f));
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-0.25f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void A_world_cannot_be_made_with_a_step_that_is_not_a_time(float step)
+    {
+        Should.Throw<ArgumentOutOfRangeException>(
+            () => new EntityWorld(new Scene("Ticks"), new CapturingLogger(), EntityMotion.Catalog([]))
+            {
+                FixedDeltaTime = step,
+            });
+    }
+
+    [Fact]
+    public void World_time_is_the_tick_number_times_the_step_however_long_the_level_runs()
+    {
+        const int ticksInAnHour = 60 * 60 * 60;
+        var world = new EntityWorld(new Scene("Ticks"), new CapturingLogger(), EntityMotion.Catalog([]));
+        world.Activate();
+        world.Time.ShouldBe(0f);
+
+        for (int i = 0; i < ticksInAnHour; i++)
+            world.Tick(Dt);
+
+        // A sum of float steps is seconds off by now.
+        world.TickNumber.ShouldBe(ticksInAnHour);
+        world.Time.ShouldBe((float)(ticksInAnHour * (double)Dt));
+        world.Time.ShouldBe(3600f, 0.001f);
     }
 
     [Fact]

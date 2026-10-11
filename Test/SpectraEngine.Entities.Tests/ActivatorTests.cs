@@ -22,7 +22,10 @@ public sealed class ActivatorTests
         EntityRuntime.Wire(timer, LogicTimer.OnTimer, "sink", "Ping");
         EntityRuntime.Wire(timer, LogicTimer.OnTimer, TargetNameIndex.ActivatorToken, "Disable");
 
-        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log))
+        {
+            FixedDeltaTime = 0.25f,
+        };
         world.Activate();
 
         for (int i = 0; i < 12; i++)
@@ -48,7 +51,10 @@ public sealed class ActivatorTests
         EntityRuntime.Wire(timer, LogicTimer.OnTimer, "sink", "Ping");
         EntityRuntime.Wire(relay, LogicRelay.OnTrigger, TargetNameIndex.ActivatorToken, "Disable");
 
-        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log));
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog(log))
+        {
+            FixedDeltaTime = 0.25f,
+        };
         world.Activate();
 
         for (int i = 0; i < 12; i++)

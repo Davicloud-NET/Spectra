@@ -80,9 +80,9 @@ internal sealed class EntityDescription
         foreach (KeyValuePair<string, string> row in _state)
             _output.Print($"{name} state {row.Key} = {Value(row.Value)}");
 
-        float next = live.NextThinkTime;
-        _output.Print(float.IsFinite(next)
-            ? $"{name} think: in {EntityConsoleText.Seconds(MathF.Max(next - live.World.Time, 0f))}s"
+        long ticksLeft = Math.Max(live.NextThinkTick - live.World.TickNumber, 0L);
+        _output.Print(live.NextThinkTick != Entity.NoThink
+            ? $"{name} think: in {EntityConsoleText.Seconds(ticksLeft * live.World.FixedDeltaTime)}s"
             : $"{name} think: none");
     }
 

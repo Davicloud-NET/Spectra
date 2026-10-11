@@ -51,6 +51,13 @@ public sealed class PlaySession
     /// <summary>Where a level with no player start is reported. Nowhere by default.</summary>
     public ILogger Logger { get; init; } = NullLogger.Instance;
 
+    /// <summary>
+    /// The step a level's entities are started at, in seconds: the engine's
+    /// own unless the host runs at another. <see cref="Tick"/> must be given
+    /// the same one while a level plays.
+    /// </summary>
+    public float FixedDeltaTime { get; init; } = PhysicsDefaults.FixedDeltaTime;
+
     /// <summary>Whether a level is being played.</summary>
     public bool IsActive { get; private set; }
 
@@ -68,7 +75,7 @@ public sealed class PlaySession
             return;
 
         // Entities first: one of them says where the character starts.
-        _sceneManager.StartEntityWorld();
+        _sceneManager.StartEntityWorld(FixedDeltaTime);
         EntityWorld? entities = _sceneManager.EntityWorld;
 
         ResolveSpawn(character, entities);
@@ -101,7 +108,10 @@ public sealed class PlaySession
     /// steps outside play too. A use pressed on this tick reaches its entity
     /// on the next one.
     /// </summary>
-    /// <param name="fixedDt">The fixed step, never a frame delta.</param>
+    /// <param name="fixedDt">
+    /// The fixed step, never a frame delta. While a level plays it must be
+    /// <see cref="FixedDeltaTime"/>, or the entities refuse the tick.
+    /// </param>
     /// <param name="command">What the character is asked to do. Unused outside play.</param>
     public PlayTickResult Tick(float fixedDt, in CharacterCommand command)
     {

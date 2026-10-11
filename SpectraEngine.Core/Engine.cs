@@ -927,6 +927,7 @@ public sealed class Engine
             {
                 Profiler = Profiler,
                 Logger = _logger,
+                FixedDeltaTime = _physicsTicks.FixedDeltaTime,
             };
             _play = play;
 

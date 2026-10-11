@@ -17,6 +17,7 @@ internal sealed class RecordingEntityTrace : IEntityTrace
         Entries.Add(new Entry(
             traced.Kind,
             traced.Tick,
+            traced.DueTick,
             traced.Time,
             traced.DueTime,
             Describe(traced),
@@ -51,6 +52,7 @@ internal sealed class RecordingEntityTrace : IEntityTrace
     internal sealed record Entry(
         EntityTraceKind Kind,
         long Tick,
+        long DueTick,
         float Time,
         float DueTime,
         string Line,

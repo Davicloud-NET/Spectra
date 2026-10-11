@@ -13,7 +13,8 @@ public sealed class WireActivityTrace : IEntityTrace
     /// <summary>How many events <see cref="LogicPlayInfo.Recent"/> holds.</summary>
     public const int RecentCapacity = 32;
 
-    // A queued input this long past due was dropped by the world unseen.
+    // A queued input this long past due arrived while this trace was not the
+    // world's, and nothing said so.
     private const float OverdueSeconds = 1f;
 
     private readonly Dictionary<(Guid Node, int Wire), Counts> _byWire = [];
@@ -57,7 +58,7 @@ public sealed class WireActivityTrace : IEntityTrace
                     fired.Fired++;
                     fired.LastFiredTick = traced.Tick;
 
-                    if (traced.DueTime > traced.Time)
+                    if (traced.DueTick > traced.Tick)
                         _waiting[traced.Sequence] = new Wait(fired, traced.Time, traced.DueTime);
                 }
 

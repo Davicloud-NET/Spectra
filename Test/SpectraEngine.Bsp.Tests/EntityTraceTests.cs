@@ -141,7 +141,7 @@ public sealed class EntityTraceTests
     }
 
     [Fact]
-    public void A_wire_that_waits_is_traced_with_the_time_it_is_due()
+    public void A_wire_that_waits_is_traced_with_the_tick_it_is_due_on()
     {
         var scene = new Scene("Trace");
         SceneNode source = EntityRuntime.Place(scene.Root, "source", "recorder");
@@ -153,11 +153,47 @@ public sealed class EntityTraceTests
 
         EntityRuntime.Live(world, source).FireOutput("OnGo");
 
+        // Half a second is thirty ticks.
         RecordingEntityTrace.Entry queued =
             trace.Entries.Single(entry => entry.Kind == EntityTraceKind.InputQueued);
         queued.Tick.ShouldBe(1);
+        queued.DueTick.ShouldBe(31);
         queued.Time.ShouldBe(world.Time);
-        queued.DueTime.ShouldBe(world.Time + 0.5f);
+        queued.DueTime.ShouldBe((float)(31 * (double)Tick));
+
+        for (int i = 0; i < 30; i++)
+            world.Tick(Tick);
+
+        RecordingEntityTrace.Entry sent = trace.Entries[^1];
+        sent.Kind.ShouldBe(EntityTraceKind.InputDelivered);
+        sent.Tick.ShouldBe(31);
+        sent.DueTick.ShouldBe(31);
+        sent.Time.ShouldBe(queued.DueTime);
+    }
+
+    [Fact]
+    public void A_wire_with_no_delay_and_a_fired_output_are_due_on_the_tick_they_are_made_on()
+    {
+        var scene = new Scene("Trace");
+        SceneNode relay = EntityRuntime.Place(scene.Root, "relay", "relay");
+        EntityRuntime.Place(scene.Root, "target", "recorder");
+        EntityRuntime.Wire(relay, "OnTrigger", "target", "Ping");
+        var trace = new RecordingEntityTrace();
+        EntityWorld world = Started(scene, trace);
+        world.Tick(Tick);
+
+        world.QueueInput("relay", "Trigger");
+        world.Tick(Tick);
+
+        // Queued by hand between ticks: due on the tick before the one that sent it.
+        trace.Entries.Select(entry => (entry.Line, entry.Tick, entry.DueTick)).ShouldBe(
+        [
+            ("queue - -> relay.Trigger", 1L, 1L),
+            ("send - -> relay.Trigger", 2L, 1L),
+            ("fire relay.OnTrigger by=relay", 2L, 2L),
+            ("queue relay.OnTrigger -> target.Ping by=relay", 2L, 2L),
+            ("send relay.OnTrigger -> target.Ping by=relay", 2L, 2L),
+        ]);
     }
 
     [Fact]

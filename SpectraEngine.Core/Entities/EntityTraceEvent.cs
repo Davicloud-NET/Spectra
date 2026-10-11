@@ -12,13 +12,19 @@ public readonly struct EntityTraceEvent
     /// <summary>The world's tick when it happened. Zero while the level spawns.</summary>
     public long Tick { get; init; }
 
-    /// <summary>The world's time when it happened, in seconds.</summary>
+    /// <summary>
+    /// The tick the input is or was due on. Later than <see cref="Tick"/>
+    /// only for a queued input that waits. For a fired output it is
+    /// <see cref="Tick"/>.
+    /// </summary>
+    public long DueTick { get; init; }
+
+    /// <summary>The world time of <see cref="Tick"/>, in seconds.</summary>
     public float Time { get; init; }
 
     /// <summary>
-    /// The world time the input is or was due at. Later than
-    /// <see cref="Time"/> only for a queued input that waits. For a fired
-    /// output it is <see cref="Time"/>.
+    /// The world time of <see cref="DueTick"/>, in seconds. For a person to
+    /// read: compare the ticks to tell whether an input waits.
     /// </summary>
     public float DueTime { get; init; }
 
@@ -81,8 +87,9 @@ public readonly struct EntityTraceEvent
     {
         Kind = kind,
         Tick = world.TickNumber,
+        DueTick = queued.Tick,
         Time = world.Time,
-        DueTime = queued.Time,
+        DueTime = world.TimeAt(queued.Tick),
         Source = queued.Entity,
         Output = queued.Output,
         TargetName = queued.TargetName,
@@ -103,6 +110,7 @@ public readonly struct EntityTraceEvent
         {
             Kind = EntityTraceKind.OutputFired,
             Tick = source.World.TickNumber,
+            DueTick = source.World.TickNumber,
             Time = source.World.Time,
             DueTime = source.World.Time,
             Source = source,

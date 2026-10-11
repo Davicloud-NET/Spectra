@@ -33,14 +33,10 @@ public sealed class LinearMoverTests
         // 0.02f is a hair under a fiftieth, so 2 / (2 * 0.02f) is a hair over 50.
         const float fiftieth = 1f / 50f;
         var scene = new Scene("Mover");
-        var world = new EntityWorld(scene, new CapturingLogger(), Movers.Catalog([]));
-        world.Activate();
-        world.Tick(fiftieth);
-
         SceneNode node = Movers.Part(scene.Root, "slab", Vector3.One, Vector3.Zero);
         node.Entity = new EntityData(MoverProbe.WireName);
-        world.QueueSpawn(node);
-        world.Tick(fiftieth);
+        var world = new EntityWorld(scene, new CapturingLogger(), Movers.Catalog([])) { FixedDeltaTime = fiftieth };
+        world.Activate();
 
         EntityRuntime.Live<MoverProbe>(world, node).Mover.TravelTicks.ShouldBe(50);
     }
