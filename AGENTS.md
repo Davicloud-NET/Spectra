@@ -150,7 +150,8 @@ Entities
 - An entity is strings on the node (`SceneNode.Entity`). The runtime copies them and never writes back.
 - The editor learns schemas only from `.sentdef` bytes, even in process.
 - A brush entity is a part that carries an entity. A trigger is such a part with collide, query and render off.
-- While a level plays, only `EntityWorld.SetLocalTransform` moves a node. It keeps the authored pose and Stop puts it back.
+- While a level plays, only `EntityWorld.SetLocalTransform` moves a node. It keeps the authored pose and Stop puts it back. A script goes through `TrySetLocalTransform`, which hands back the reason of a refusal.
+- A wire carries one string. `ParameterText` is the one place that turns a typed value into that string and back, and a generated `Fire` method goes through it too.
 - The player is not an entity. A trigger or a button the player sets off is its own activator.
 - Everything an entity waits for counts ticks: a wire's delay, a think, a mover's trip. Seconds become whole ticks once, when the wait starts, by `WholeTicks`. World time is the tick number times the step and is only for a person to read.
 
@@ -172,7 +173,7 @@ Sound
 
 Play and console
 
-- `PlaySession` runs the fixed tick: entities, physics, then the character. It needs no camera, input or renderer.
+- `PlaySession` runs the fixed tick: entities, physics, then the character. It needs no camera, input or renderer. It calls the level's scripts before the physics step and at the end of the tick, also when nothing walks.
 - There is one `SpectraConsole` per engine, never a static. A line goes in as a string through `EngineHost.SubmitConsoleLine`, and what it prints comes back in `FrameSnapshot.ConsoleLines`.
 - A command reads `Scene.EntitySchemas`, never `EntityCatalog.Shared`, which freezes on its first read.
 
@@ -180,6 +181,7 @@ Scripting
 
 - One `LuauHost` owns one Luau state and knows nothing of a scene. A script is a thread in it with globals of its own, and a function the host keeps (`LuauFunction`) runs on a new thread that shares them.
 - A script that runs past `LuauHost.CallLimit` or holds more than `MemoryBudget` is switched off and never runs again.
+- A level's scripts run in a `LuauScriptRuntime`, one for each play session. A host sets `SceneManager.Scripts.RuntimeFactory`, `StartEntityWorld` makes the runtime and `StopEntityWorld` closes it. A thread that waits is an event in the entity queue (`EntityWorld.QueueScriptWake`).
 
 ## Things that fail quietly
 
@@ -245,7 +247,10 @@ Entities and play
 - `SceneNode.DeclaredRealm` and `DeclaredState` are saved, also in a baked map, and nothing reads them. A dormant node still carves, draws and collides.
 - A default `SceneQueryFilter` wants `CanQuery`, which a trigger has off.
 - A wire's input name is case sensitive, and a wrong one is only a Debug log line. `ent_watch` shows it as `deny`.
-- A tick sends at most `MaxDispatchesPerTick` of the events that were waiting, and as many again of those it makes. Waiting ones past that go out on later ticks, in order, and are never dropped. What a tick makes past it is a loop with no delay, and is dropped. A loop that waits and multiplies is stopped by `MaxPendingEvents`: an event made while the queue is full is dropped.
+- A tick sends at most `MaxDispatchesPerTick` of the events that were waiting, and as many again of those it makes. Waiting ones past that go out on later ticks, in order, and are never dropped. What a tick makes past it is a loop with no delay, and is dropped. A loop that waits and multiplies is stopped by `MaxPendingEvents`: an event made while the queue is full is dropped. Entities and scripts each have both limits to themselves (`EntityEventLane`).
+- An input that reads `context.Parameter` says its type in `[EntityInput(Parameter = ...)]`, and an output that sends a value says it in `[EntityOutput(Parameter = ...)]`. Left out, the schema says it carries nothing, and the editor warns under every wire that gives it a parameter. `BuiltinParameterTypeTests` holds the list.
+- A typed output's `Fire` method handed a value no wire can carry, like a float that is not finite, fires nothing and warns once. It does not throw.
+- A `.sentdef` from before the types reads every input and output as `ParameterType.NotSaid`, which is not `None`. Judge nothing against it.
 - Whatever puts the play camera somewhere else in one frame calls `SoundPresenter.ListenerJumped`. A hop under 8 units is otherwise heard as motion, and every sound chirps.
 
 Luau
@@ -256,6 +261,12 @@ Luau
 - A status form that runs protected answers with an error on a thread that has yielded or failed, and does nothing. So a string or a table for a waiting thread is pushed on `LuauHost.Stack`, and `LuauThread.Resume` moves it.
 - `LuauHost.CallLimit` counts the host's own time too. A host function that takes three seconds gets the script that called it switched off, and the message blames the script.
 - A value a script no longer names can still sit in a stack slot of a waiting thread, and Luau keeps it alive until the slot is written again. A test that waits for Luau to let an object go ends the thread first.
+- Nothing the tick calls on `IScriptRuntime` may throw: `EntityWorld.Tick` has no catch. `LuauScriptRuntime` catches at each entry point, and a new one needs the same. `IScriptSink.Report` runs in the middle of a tick, and what a sink throws is dropped with its message.
+- `LuauScriptRuntime.Close` may run on another thread while a call into a script has not returned. It may not dispose a kept function or touch a stack. When a call into a script returns, the state may be gone: ask `LuauHost.IsClosed` before the host's stack is touched again.
+- A thread waits for one thing at a time and `WaitingThreads` holds it, for a tick or for a signal. A host function that yields asks `stack.CanYield` before it keeps anything for the resume, and `ThreadRunner.Resume` asks whether the thread has ended.
+- A userdata gets its tag's metatable when it is made. One pushed before the tag had a metatable has none for good, and a script gets `attempt to index userdata`.
+- `LuauHost.PushFunction` keeps its delegate until the host closes. Make a method once and hand it out from a `MethodTable`, never on a read.
+- A level with scripts and no `RuntimeFactory` plays without them and warns once. `--pack` plays the demo without its spinner, since a baked map has no scripts.
 
 Tests and tools
 
