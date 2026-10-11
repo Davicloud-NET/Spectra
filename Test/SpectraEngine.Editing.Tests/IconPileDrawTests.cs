@@ -227,6 +227,30 @@ public sealed class IconPileDrawTests
         }
     }
 
+    [Fact]
+    public void Icons_placed_before_a_node_left_the_scene_are_drawn_without_it()
+    {
+        var rig = new IconPileRig();
+        rig.AddLamp(new Vector3(-2f, 0f, 0f));
+        SceneNode lamp = rig.AddLamp(new Vector3(2f, 0f, 0f));
+        rig.AddEntity(IconPileRig.Sound, new Vector3(0f, 2f, 0f));
+        SceneNode sound = rig.AddEntity(IconPileRig.Sound, new Vector3(0f, -2f, 0f));
+
+        var icons = new SceneIcons();
+        var lamps = new LightOverlay(icons);
+        var markers = new EntityMarkerOverlay(icons);
+        var output = new DebugDraw();
+        icons.Place(rig.Scene, rig.Camera, rig.ViewportSize);
+
+        rig.Scene.Root.RemoveChild(lamp);
+        rig.Scene.Root.RemoveChild(sound);
+        lamps.DrawPlaced(output, rig.Scene, rig.Camera);
+        markers.DrawPlaced(output, rig.Scene, rig.Camera);
+
+        lamps.DrawnLastDraw.ShouldBe(1);
+        markers.DrawnLastDraw.ShouldBe(1);
+    }
+
     // How far apart the first and the last icon of the lift are drawn, in
     // pixels, with the lift this far in front of the camera.
     private static float Spread(IconPileRig rig, SceneNode[] lift, float depth, out float pixels)

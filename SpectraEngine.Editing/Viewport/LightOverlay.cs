@@ -114,7 +114,7 @@ public sealed class LightOverlay
         for (int i = 0; i < icons.Length; i++)
         {
             ref readonly SceneIcon icon = ref icons[i];
-            if (!icon.IsDrawn || !icon.IsMoved || nodes[icon.Node].Light is not { } light)
+            if (!icon.IsDrawn || !icon.IsMoved || icon.Node >= nodes.Count || nodes[icon.Node].Light is not { } light)
                 continue;
 
             var pen = new IconPen(camera, icon.At, icon.Radius, icon.Pixel, IconColor(light));
@@ -123,8 +123,12 @@ public sealed class LightOverlay
 
         foreach (ref readonly SceneIcon icon in icons)
         {
+            // A node can have left the scene since the icons were placed.
+            if (!icon.IsDrawn || icon.Node >= nodes.Count)
+                continue;
+
             SceneNode node = nodes[icon.Node];
-            if (!icon.IsDrawn || node.Light is not { } light)
+            if (node.Light is not { } light)
                 continue;
 
             var pen = new IconPen(camera, icon.At, icon.Radius, icon.Pixel, IconColor(light));

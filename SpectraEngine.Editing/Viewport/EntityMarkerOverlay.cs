@@ -101,7 +101,7 @@ public sealed class EntityMarkerOverlay
         for (int i = 0; i < markers.Length; i++)
         {
             ref readonly SceneIcon marker = ref markers[i];
-            if (!marker.IsDrawn || !marker.IsMoved)
+            if (!marker.IsDrawn || !marker.IsMoved || marker.Node >= nodes.Count)
                 continue;
 
             IconPen pen = PenFor(scene, camera, nodes[marker.Node], in marker, out _);
@@ -110,7 +110,8 @@ public sealed class EntityMarkerOverlay
 
         foreach (ref readonly SceneIcon marker in markers)
         {
-            if (!marker.IsDrawn)
+            // A node can have left the scene since the markers were placed.
+            if (!marker.IsDrawn || marker.Node >= nodes.Count)
                 continue;
 
             SceneNode node = nodes[marker.Node];
