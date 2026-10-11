@@ -237,15 +237,15 @@ public sealed class EntityMarkerTests
 
         new EntityMarkerOverlay().Draw(output, harness.Scene, harness.Scene.Camera, harness.ViewportSize);
 
-        int coloured = CountOf(output, Plain);
-        coloured.ShouldBe(output.VertexCount / 2);
+        int colored = CountOf(output, Plain);
+        colored.ShouldBe(output.VertexCount / 2);
 
         ReadOnlySpan<float> data = output.Vertices;
         for (int vertex = 0; vertex < output.VertexCount; vertex++)
         {
-            var colour = new Vector3(data[(vertex * 6) + 3], data[(vertex * 6) + 4], data[(vertex * 6) + 5]);
-            bool isColour = colour == Plain;
-            isColour.ShouldBe(vertex >= output.VertexCount / 2, $"vertex {vertex}");
+            var color = new Vector3(data[(vertex * 6) + 3], data[(vertex * 6) + 4], data[(vertex * 6) + 5]);
+            bool isColor = color == Plain;
+            isColor.ShouldBe(vertex >= output.VertexCount / 2, $"vertex {vertex}");
         }
     }
 
@@ -311,16 +311,16 @@ public sealed class EntityMarkerTests
     [Fact]
     public void No_marker_colour_is_another_overlays_colour()
     {
-        var colours = new List<Vector3> { Plain };
+        var colors = new List<Vector3> { Plain };
         foreach ((string group, _) in EntityGroupTints.Table)
-            colours.Add(EntityGroupTints.For(group));
+            colors.Add(EntityGroupTints.For(group));
 
-        foreach (Vector3 colour in colours)
+        foreach (Vector3 color in colors)
         {
-            colour.ShouldNotBe(PartBrushOverlay.DefaultColor);
-            colour.ShouldNotBe(SubtractiveBrushOverlay.DefaultColor);
-            colour.ShouldNotBe(VolumeOverlay.DefaultColor);
-            colour.ShouldNotBe(SelectionOutline.SelectedColor);
+            color.ShouldNotBe(PartBrushOverlay.DefaultColor);
+            color.ShouldNotBe(SubtractiveBrushOverlay.DefaultColor);
+            color.ShouldNotBe(VolumeOverlay.DefaultColor);
+            color.ShouldNotBe(SelectionOutline.SelectedColor);
         }
     }
 

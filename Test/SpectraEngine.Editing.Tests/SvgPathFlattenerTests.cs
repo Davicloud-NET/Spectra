@@ -36,19 +36,19 @@ public sealed class SvgPathFlattenerTests
     {
         // The way the icon files draw a circle: two half turns about (8, 8).
         Vector2[] circle = Flatten("M 3 8 a 5 5 0 1 0 10 0 a 5 5 0 1 0 -10 0").ShouldHaveSingleItem();
-        var centre = new Vector2(8f, 8f);
+        var center = new Vector2(8f, 8f);
 
         circle.Length.ShouldBeGreaterThan(8);
         ShouldBeNear(circle[0], circle[^1]);
 
         for (int i = 0; i < circle.Length; i++)
         {
-            Vector2.Distance(circle[i], centre).ShouldBe(5f, tolerance: 1e-4f);
+            Vector2.Distance(circle[i], center).ShouldBe(5f, tolerance: 1e-4f);
 
             // A chord is farthest from the circle at its middle.
             if (i > 0)
             {
-                float sag = 5f - Vector2.Distance((circle[i - 1] + circle[i]) * 0.5f, centre);
+                float sag = 5f - Vector2.Distance((circle[i - 1] + circle[i]) * 0.5f, center);
                 sag.ShouldBeInRange(0f, Tolerance);
             }
         }
@@ -93,15 +93,15 @@ public sealed class SvgPathFlattenerTests
     [InlineData("0 1", 8.66f, false)]
     [InlineData("1 0", 8.66f, true)]
     [InlineData("1 1", -8.66f, true)]
-    public void The_arc_flags_pick_the_arc(string flags, float centreY, bool isLarge)
+    public void The_arc_flags_pick_the_arc(string flags, float centerY, bool isLarge)
     {
         Vector2[] arc = Flatten($"M 0 0 A 10 10 0 {flags} 10 0", 0.01f).ShouldHaveSingleItem();
-        var centre = new Vector2(5f, centreY);
+        var center = new Vector2(5f, centerY);
 
         ShouldBeNear(arc[0], Vector2.Zero);
         ShouldBeNear(arc[^1], new Vector2(10f, 0f));
         foreach (Vector2 point in arc)
-            Vector2.Distance(point, centre).ShouldBe(10f, tolerance: 0.01f);
+            Vector2.Distance(point, center).ShouldBe(10f, tolerance: 0.01f);
 
         // The short arc bulges 1.34 from the chord and the long one 18.66.
         float bulge = 0f;
@@ -112,7 +112,7 @@ public sealed class SvgPathFlattenerTests
 
         // Sweep on turns clockwise on a screen, where y runs down.
         bool sweep = flags.EndsWith('1');
-        float turned = Cross(arc[0] - centre, arc[1] - centre);
+        float turned = Cross(arc[0] - center, arc[1] - center);
         (turned > 0f).ShouldBe(sweep);
     }
 
