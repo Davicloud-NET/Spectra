@@ -1,0 +1,79 @@
+<Project>
+
+  <!--
+    How an executable gets Luau. Import it in every project that runs scripts
+    or is published with one that does.
+
+    The libraries come from native/build-luau.ps1 or native/build-luau.sh and
+    are not committed. A build without them still builds: the shared library
+    is copied when it is there. A NativeAOT publish links the static one and
+    stops when it is not there.
+  -->
+
+  <PropertyGroup>
+    <!-- Luau is C++. On Linux the AOT link leaves libstdc++ out unless asked. -->
+    <LinkStandardCPlusPlusLibrary>true</LinkStandardCPlusPlusLibrary>
+  </PropertyGroup>
+
+  <!-- In a target: a publish with no -r works its runtime identifier out late. -->
+  <Target Name="FindLuauLibraries">
+    <PropertyGroup>
+      <_LuauRid>$(RuntimeIdentifier)</_LuauRid>
+      <_LuauRid Condition="'$(_LuauRid)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</_LuauRid>
+      <_LuauIsWindows>false</_LuauIsWindows>
+      <_LuauIsWindows Condition="$(_LuauRid.StartsWith('win'))">true</_LuauIsWindows>
+
+      <_LuauSharedName Condition="'$(_LuauIsWindows)' == 'true'">spectra_luau.dll</_LuauSharedName>
+      <_LuauSharedName Condition="'$(_LuauIsWindows)' != 'true'">libspectra_luau.so</_LuauSharedName>
+      <_LuauStaticName Condition="'$(_LuauIsWindows)' == 'true'">spectra_luau.lib</_LuauStaticName>
+      <_LuauStaticName Condition="'$(_LuauIsWindows)' != 'true'">libspectra_luau.a</_LuauStaticName>
+
+      <_LuauShared>$(MSBuildThisFileDirectory)runtimes/$(_LuauRid)/native/$(_LuauSharedName)</_LuauShared>
+      <_LuauStatic>$(MSBuildThisFileDirectory)runtimes/$(_LuauRid)/static/$(_LuauStaticName)</_LuauStatic>
+      <_LuauBuildScript Condition="'$(_LuauIsWindows)' == 'true'">native/build-luau.ps1</_LuauBuildScript>
+      <_LuauBuildScript Condition="'$(_LuauIsWindows)' != 'true'">native/build-luau.sh</_LuauBuildScript>
+    </PropertyGroup>
+  </Target>
+
+  <!-- dotnet run and the test suites load the shared library from beside the output. -->
+  <Target Name="CopyLuauLibrary" AfterTargets="CopyFilesToOutputDirectory" DependsOnTargets="FindLuauLibraries">
+    <Copy SourceFiles="$(_LuauShared)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(_LuauShared)')" />
+
+    <!-- So a clean removes it. -->
+    <ItemGroup>
+      <FileWrites Include="$(OutDir)$(_LuauSharedName)" Condition="Exists('$(_LuauShared)')" />
+    </ItemGroup>
+  </Target>
+
+  <!-- A publish that is not NativeAOT keeps loading the shared library. -->
+  <Target Name="PublishLuauLibrary"
+          AfterTargets="ComputeResolvedFilesToPublishList"
+          DependsOnTargets="FindLuauLibraries"
+          Condition="'$(PublishAot)' != 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(_LuauShared)"
+                             RelativePath="$(_LuauSharedName)"
+                             CopyToPublishDirectory="PreserveNewest"
+                             Condition="Exists('$(_LuauShared)')" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    A NativeAOT publish links Luau into the executable. SetupOSSpecificProps
+    only exists and only runs in such a publish, and it runs before the
+    compiler reads DirectPInvoke and before the linker reads NativeLibrary.
+  -->
+  <Target Name="LinkLuauLibrary" BeforeTargets="SetupOSSpecificProps" DependsOnTargets="FindLuauLibraries">
+    <Error Condition="!Exists('$(_LuauStatic)')"
+           Text="Luau is not built for $(_LuauRid). Run $(_LuauBuildScript), then publish again." />
+
+    <ItemGroup>
+      <DirectPInvoke Include="spectra_luau" />
+      <NativeLibrary Include="$(_LuauStatic)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

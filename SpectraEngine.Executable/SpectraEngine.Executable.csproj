@@ -75,4 +75,7 @@
     </ItemGroup>
   </Target>
 
+  <!-- Luau: copied beside a build, linked into a publish. -->
+  <Import Project="..\native\Luau.targets" />
+
 </Project>

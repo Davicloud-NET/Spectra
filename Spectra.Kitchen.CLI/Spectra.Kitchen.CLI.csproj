@@ -15,4 +15,7 @@
     <ProjectReference Include="..\SpectraEngine.Core\SpectraEngine.Core.csproj" />
   </ItemGroup>
 
+  <!-- Luau: copied beside a build, linked into a publish. -->
+  <Import Project="..\native\Luau.targets" />
+
 </Project>
