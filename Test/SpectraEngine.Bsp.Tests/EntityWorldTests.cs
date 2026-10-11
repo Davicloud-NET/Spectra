@@ -80,16 +80,18 @@ public sealed class EntityWorldTests
 
         world.Tick(Tick);
 
+        // The one fired before the tick was waiting, so it is not in the budget.
         world.DispatchBudgetTripCount.ShouldBe(1);
-        world.LastTickDispatchCount.ShouldBe(64);
+        world.LastTickDispatchCount.ShouldBe(1 + 64);
 
         string error = logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem();
-        // The cascade alternates, so the 65th event is aimed at relay_b.
-        error.ShouldContain("relay_b");
+        // The cascade alternates, so the 66th event is aimed at relay_a.
+        error.ShouldContain("relay_a");
         error.ShouldContain("OnTrigger");
 
         // The runaway is dropped, not requeued: no repeat error next tick.
-        world.DiscardedEventCount.ShouldBeGreaterThan(0);
+        world.DiscardedEventCount.ShouldBe(1);
+        world.PendingEventCount.ShouldBe(0);
         world.Tick(Tick);
         world.DispatchBudgetTripCount.ShouldBe(1);
         logger.MessagesAt(LogLevel.Error).Count.ShouldBe(1);

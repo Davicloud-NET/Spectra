@@ -150,8 +150,10 @@ public sealed class EntityWorld
     public ISoundCatalog? SoundCatalog { get; set; }
 
     /// <summary>
-    /// How many events one <see cref="Tick"/> may dispatch before the cascade
-    /// is treated as a runaway loop, logged and dropped.
+    /// How many of the events a <see cref="Tick"/> makes it may also dispatch
+    /// before the cascade is treated as a runaway loop, logged and dropped.
+    /// An event queued before the tick drains does not count and is never
+    /// dropped.
     /// </summary>
     public int MaxDispatchesPerTick
     {
@@ -169,7 +171,10 @@ public sealed class EntityWorld
     /// <summary>How many events a budget trip has discarded over this world's life.</summary>
     public int DiscardedEventCount { get; private set; }
 
-    /// <summary>How many events the most recent <see cref="Tick"/> dispatched.</summary>
+    /// <summary>
+    /// How many events the most recent <see cref="Tick"/> dispatched, those
+    /// that were waiting included.
+    /// </summary>
     public int LastTickDispatchCount { get; private set; }
 
     /// <summary>Events waiting for their tick to come.</summary>
@@ -697,15 +702,27 @@ public sealed class EntityWorld
     }
 
     // Runs everything due this tick and returns how many events that was.
+    // What was waiting when the drain began always runs: it sorts ahead of
+    // anything made here, and only what is made here counts against the
+    // budget. The sequence number tells the two apart, whatever kind of event
+    // it is.
     private int DrainDueEvents()
     {
+        long firstMadeHere = _sequence;
         int dispatched = 0;
+        int madeHere = 0;
+
         while (_queue.TryPeek(out EntityEvent next) && next.Tick <= TickNumber)
         {
-            if (dispatched >= _maxDispatchesPerTick)
+            if (next.Sequence >= firstMadeHere)
             {
-                TripDispatchBudget(next);
-                break;
+                if (madeHere == _maxDispatchesPerTick)
+                {
+                    TripDispatchBudget(next, firstMadeHere);
+                    break;
+                }
+
+                madeHere++;
             }
 
             _queue.TryPop(out EntityEvent due);
@@ -716,9 +733,22 @@ public sealed class EntityWorld
         return dispatched;
     }
 
-    private void TripDispatchBudget(in EntityEvent offender)
+    private void TripDispatchBudget(in EntityEvent offender, long firstMadeHere)
     {
         DispatchBudgetTripCount++;
+
+        // Drop what this drain made and has not sent. It stops at anything
+        // else: an event that was waiting, or one that is due on a later tick.
+        int discarded = 0;
+        while (_queue.TryPeek(out EntityEvent next)
+            && next.Tick <= TickNumber
+            && next.Sequence >= firstMadeHere)
+        {
+            _queue.TryPop(out _);
+            discarded++;
+        }
+
+        DiscardedEventCount += discarded;
 
         string offenderName = offender.Kind == EntityEventKind.Think
             ? offender.Entity?.TargetName ?? ""
@@ -731,20 +761,10 @@ public sealed class EntityWorld
 
         _logger.LogError(
             "Entity dispatch budget of {Budget} was exhausted in one tick; the cascade was still firing " +
-            "{What} at '{TargetName}'. Everything still due this tick has been dropped. This is what a " +
-            "zero-delay loop between two entities looks like.",
-            _maxDispatchesPerTick, what, offenderName);
-
-        // Drop only what is due now. Later events are ordinary work, so a level
-        // with one bad relay keeps running.
-        int discarded = 0;
-        while (_queue.TryPeek(out EntityEvent next) && next.Tick <= TickNumber)
-        {
-            _queue.TryPop(out _);
-            discarded++;
-        }
-
-        DiscardedEventCount += discarded;
+            "{What} at '{TargetName}'. The {Discarded} event(s) it had made and not sent were dropped. " +
+            "What was already waiting has run. This is what a zero-delay loop between two entities " +
+            "looks like.",
+            _maxDispatchesPerTick, what, offenderName, discarded);
     }
 
     private void DrainDeferred()

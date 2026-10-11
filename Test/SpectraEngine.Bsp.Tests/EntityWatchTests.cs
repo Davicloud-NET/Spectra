@@ -228,8 +228,9 @@ public sealed class EntityWatchTests
 
         IReadOnlyList<ConsoleLine> printed = TickLines(rig);
 
-        // Every dispatch is a send and the output it fires.
-        int events = Budget * 2;
+        // Every dispatch is a send and the output it fires. The input fired
+        // by hand was waiting, so the budget does not count it.
+        int events = (1 + Budget) * 2;
         printed.Count.ShouldBe(EntityWatch.MaxLinesPerTick + 1);
         printed[0].Text.ShouldBe("ent 1 send console -> ping.Trigger");
         printed[^1].Severity.ShouldBe(LogLevel.Warning);
