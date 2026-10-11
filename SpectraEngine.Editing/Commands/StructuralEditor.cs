@@ -132,9 +132,10 @@ public static class StructuralEditor
     }
 
     /// <summary>
-    /// Dissolves each selected node that has children: the children move up to
-    /// its parent, keeping world transforms and order, and the emptied node is
-    /// removed. Returns false when nothing selected has children.
+    /// Dissolves each selected group: its children move up to its parent,
+    /// keeping world transforms and order, and the emptied node is removed. A
+    /// node that is something itself, such as a part with a script under it,
+    /// is left alone. Returns false when nothing selected is a group.
     /// </summary>
     public static bool TryUngroup(Scene scene, UndoStack undo, IReadOnlyList<SceneNode> selection)
     {
@@ -145,7 +146,8 @@ public static class StructuralEditor
         var groups = new List<SceneNode>(roots.Count);
         foreach (SceneNode root in roots)
         {
-            if (root.Children.Count > 0)
+            // A node with children and a payload would lose the payload.
+            if (SceneNodeClassifier.Classify(root) == SceneNodeKind.Group)
                 groups.Add(root);
         }
 

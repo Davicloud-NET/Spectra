@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Commands;
@@ -264,6 +265,60 @@ public sealed class StructuralEditTests
 
         scene.Root.Children.Count.ShouldBe(2);
         undo.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Ungrouping_a_part_with_a_script_under_it_leaves_the_part_alone()
+    {
+        // Dissolved, the part would be deleted and its script left behind.
+        (Scene scene, UndoStack undo) = Fixture();
+        SceneNode door = BrushNode(scene, Vector3.Zero);
+        SceneNode opener = door.CreateChild("Opener");
+        opener.Script = new Script("Scripts/door.luau");
+
+        StructuralEditor.TryUngroup(scene, undo, [door]).ShouldBeFalse();
+
+        scene.TryFindById(door.Id, out _).ShouldBeTrue();
+        opener.Parent.ShouldBeSameAs(door);
+        undo.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Ungrouping_dissolves_no_node_that_is_something_itself()
+    {
+        (Scene scene, UndoStack undo) = Fixture();
+        SceneNode game = scene.Root.CreateChild("Game");
+        game.Script = new Script("Scripts/game.luau");
+        game.CreateChild("Settings");
+        SceneNode lamp = scene.Root.CreateChild("Lamp");
+        lamp.Light = new Light();
+        lamp.CreateChild("Shade");
+        SceneNode relay = scene.Root.CreateChild("Relay");
+        relay.Entity = new EntityData("logic_relay");
+        relay.CreateChild("Note");
+
+        StructuralEditor.TryUngroup(scene, undo, [game, lamp, relay]).ShouldBeFalse();
+
+        scene.Root.Children.ShouldBe([game, lamp, relay]);
+        game.Script.ShouldNotBeNull();
+        undo.Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Ungrouping_a_group_beside_a_part_with_children_dissolves_only_the_group()
+    {
+        (Scene scene, UndoStack undo) = Fixture();
+        SceneNode[] row = Row(scene, 2);
+        StructuralEditor.TryGroup(scene, undo, row).ShouldBeTrue();
+        SceneNode group = scene.Selection.Items[0];
+        SceneNode door = BrushNode(scene, new Vector3(8f, 0f, 0f));
+        door.CreateChild("Opener").Script = new Script("Scripts/door.luau");
+
+        StructuralEditor.TryUngroup(scene, undo, [group, door]).ShouldBeTrue();
+
+        scene.TryFindById(group.Id, out _).ShouldBeFalse();
+        scene.Root.Children.ShouldBe([row[0], row[1], door]);
+        door.Children.Count.ShouldBe(1);
     }
 
     [Fact]
