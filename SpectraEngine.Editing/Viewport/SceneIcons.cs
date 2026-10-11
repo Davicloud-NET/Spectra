@@ -145,7 +145,12 @@ public sealed class SceneIcons
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(node);
 
+        icon = default;
+
         bool isLight = node.Light is not null;
+        if (!isLight && !EntityMarkerPicking.HasMarker(node))
+            return false;
+
         ReadOnlySpan<SceneIcon> icons = isLight ? Lights : Markers;
         IReadOnlyList<SceneNode> nodes = isLight ? scene.LightNodes : scene.EntityNodes;
 
@@ -158,7 +163,6 @@ public sealed class SceneIcons
             }
         }
 
-        icon = default;
         return false;
     }
 
