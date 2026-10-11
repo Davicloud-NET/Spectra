@@ -107,21 +107,7 @@ public sealed class OutputLog : ObservableObject
         };
 
         while (Entries.Count >= Capacity)
-        {
-            OutputEntry dropped = Entries[0];
-            Entries.RemoveAt(0);
-            FallenOff++;
-
-            // A flood of prints takes an error off the top in a moment. The
-            // heading keeps count, so somebody knows to look in the run log.
-            if (dropped.Severity == OutputSeverity.Error)
-            {
-                ErrorCount--;
-                _errorsScrolledOut++;
-            }
-            else if (dropped.Severity == OutputSeverity.Warning)
-                WarningCount--;
-        }
+            DropOldest();
 
         Entries.Add(entry);
         Raise(nameof(HistoryLabel));
@@ -142,5 +128,22 @@ public sealed class OutputLog : ObservableObject
         WarningCount = 0;
         _errorsScrolledOut = 0;
         Raise(nameof(HistoryLabel));
+    }
+
+    private void DropOldest()
+    {
+        OutputEntry dropped = Entries[0];
+        Entries.RemoveAt(0);
+        FallenOff++;
+
+        // A flood of prints takes an error off the top in a moment. The
+        // heading keeps count, so somebody knows to look in the run log.
+        if (dropped.Severity == OutputSeverity.Error)
+        {
+            ErrorCount--;
+            _errorsScrolledOut++;
+        }
+        else if (dropped.Severity == OutputSeverity.Warning)
+            WarningCount--;
     }
 }

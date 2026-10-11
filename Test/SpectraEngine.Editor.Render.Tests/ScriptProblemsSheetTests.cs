@@ -70,6 +70,50 @@ public sealed class ScriptProblemsSheetTests(RibbonSession session)
         });
     }
 
+    [Fact]
+    public void One_broken_file_on_two_nodes_is_one_row_that_goes_to_the_node_it_names()
+    {
+        session.On(() =>
+        {
+            Guid door = Guid.NewGuid();
+            var model = new ShellModel();
+            new ScriptStartProblems(model.Problems).Apply(new FrameSnapshot
+            {
+                IsPlaying = true,
+                ConsoleLines =
+                [
+                    new ConsoleLine(0, LogLevel.Error, Mistake)
+                    {
+                        Place = new ConsolePlace("Scripts/door.luau", 2),
+                        ProblemNode = door,
+                    },
+                    new ConsoleLine(1, LogLevel.Error, Mistake.Replace("'Door'", "'Gate'"))
+                    {
+                        Place = new ConsolePlace("Scripts/door.luau", 2),
+                        ProblemNode = Guid.NewGuid(),
+                    },
+                ],
+            });
+
+            var panel = new ProblemsPanel { DataContext = model };
+            var activated = new List<Guid>();
+            panel.EntryActivated += entry => activated.Add(entry.NodeId);
+            var window = new Window { Content = panel, Width = 760, Height = 160 };
+            window.SetRenderScaling(2.0);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            model.Problems.Summary.ShouldBe("1 error");
+            TextBlock row = Row(panel, "Scripts/door.luau:2: " + Mistake + " The same goes for 1 more node.");
+
+            ContentPanelHarness.Click(window, row, times: 2);
+
+            activated.ShouldBe([door]);
+            ScriptSheet.Save(window, "output-script-problems-shared@2x.png");
+            window.Close();
+        });
+    }
+
     private static TextBlock Row(ProblemsPanel panel, string message) =>
         ScriptSheet.Shown<TextBlock>(panel).Single(block => block.Text == message);
 }

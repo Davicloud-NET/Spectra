@@ -212,6 +212,29 @@ public sealed class OutputSheetTests(RibbonSession session)
     }
 
     [Fact]
+    public void After_a_flood_the_heading_counts_the_errors_that_scrolled_out_and_an_empty_line_is_a_row()
+    {
+        session.On(() =>
+        {
+            (Window window, OutputPanel panel, _) = Open(Flood);
+            panel.GetVisualDescendants().OfType<ScrollViewer>().First().ScrollToEnd();
+            Dispatcher.UIThread.RunJobs();
+
+            Shown(panel, "Shell output, 500 of 500 lines, 1 error scrolled out").ShouldHaveSingleItem();
+
+            // print() with nothing in it: a row as tall as the others, with its place.
+            TextBlock before = Shown(panel, "spinner.luau:4").ShouldHaveSingleItem();
+            TextBlock empty = Shown(panel, "spinner.luau:5").ShouldHaveSingleItem();
+            TextBlock after = Shown(panel, "spinner.luau:6").ShouldHaveSingleItem();
+            (Top(empty, window) - Top(before, window)).ShouldBe(Top(after, window) - Top(empty, window), 0.01);
+            empty.GetVisualAncestors().OfType<Button>().ShouldHaveSingleItem().Focusable.ShouldBeTrue();
+
+            ScriptSheet.Save(window, "output-script-flood@2x.png");
+            window.Close();
+        });
+    }
+
+    [Fact]
     public void The_console_panel_shows_the_same_log_with_the_same_rows()
     {
         session.On(() =>
@@ -269,6 +292,21 @@ public sealed class OutputSheetTests(RibbonSession session)
             OutputSeverity.Warning,
             "6 console line(s) are missing here: more were printed than the editor kept up with.");
         output.Append(OutputSeverity.Command, "> ent_list");
+    }
+
+    // What a script that prints in a loop leaves: the error from before it
+    // is gone, and the last lines are a print, an empty one and the notice.
+    private static void Flood(OutputLog output)
+    {
+        output.Append(OutputSeverity.Error, "attempt to index nil with 'Name'", new ConsolePlace(Door, 12), NoCalls);
+
+        for (int i = 0; i < OutputLog.Capacity - 4; i++)
+            output.Append(OutputSeverity.Info, $"line {i}", new ConsolePlace("Scripts/flood.luau", 3), NoCalls);
+
+        output.Append(OutputSeverity.Info, "before the empty line", new ConsolePlace(Spinner, 4), NoCalls);
+        output.Append(OutputSeverity.Info, string.Empty, new ConsolePlace(Spinner, 5), NoCalls);
+        output.Append(OutputSeverity.Info, "after it", new ConsolePlace(Spinner, 6), NoCalls);
+        output.Append(OutputSeverity.Warning, DroppedNotice, new ConsolePlace("Scripts/flood.luau", 3), NoCalls);
     }
 
     private static (Window Window, OutputPanel Panel, ShellModel Model) Open(Action<OutputLog> fill, double width = 760)
