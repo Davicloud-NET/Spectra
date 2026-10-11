@@ -6,8 +6,10 @@ Paste the whole file into the command bar of Roblox Studio and press Enter.
 It prints one JSON document: each case's name with the twelve numbers of
 GetComponents, or three for a vector or a set of angles. A number that is not
 finite is written as null, and a case Roblox could not work out gets an empty
-list. Save what it prints as cframe-studio.json beside this file, then run the
-SpectraEngine.Bsp.Tests suite.
+list. The document comes in several messages, so that none is too long for the
+Output window. Copy them all into cframe-studio.json beside this file, then
+run the SpectraEngine.Bsp.Tests suite. A time in front of a line does no harm.
+The script also returns the document, for a tool that runs it.
 
 The lines between the two case marks are written by the tests from
 CFrameProbeCases.cs. To write them again, run the suite once with
@@ -256,6 +258,14 @@ frame("random_5_look_at", function() return CFrame.lookAt(Vector3.new(-5.791, -1
 frame("random_5_look_at_with_up", function() return CFrame.lookAt(Vector3.new(-5.791, -10.406, -13.278), Vector3.new(-9.188, -14.79, -4.82), Vector3.new(-0.615, -0.679, 0.202)) end)
 --[[ end of cases ]]
 
-local document = "{\n" .. table.concat(entries, ",\n") .. "\n}"
-print(document)
-return document
+for index = 1, #entries - 1 do
+	entries[index] = entries[index] .. ","
+end
+
+print("{")
+for first = 1, #entries, 20 do
+	print(table.concat(entries, "\n", first, math.min(first + 19, #entries)))
+end
+print("}")
+
+return "{\n" .. table.concat(entries, "\n") .. "\n}"
