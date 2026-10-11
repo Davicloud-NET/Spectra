@@ -46,6 +46,16 @@ internal static unsafe partial class Lua
     [LibraryImport(Library), SuppressGCTransition] internal static partial void* lua_getthreaddata(nint L);
     [LibraryImport(Library), SuppressGCTransition] internal static partial void lua_setthreaddata(nint L, void* data);
 
+    // The two below call the shim's atom lookup the first time a string is
+    // asked about. It is a search in a sorted list and calls nothing back.
+
+    // Null when the value is not a string. The atom is -1 for a name the host gave none.
+    [LibraryImport(Library), SuppressGCTransition]
+    internal static partial byte* lua_tolstringatom(nint L, int index, nuint* length, int* atom);
+
+    // The method a __namecall is for. Null when no method was called by name.
+    [LibraryImport(Library), SuppressGCTransition] internal static partial byte* lua_namecallatom(nint L, int* atom);
+
     // Turns a number into a string where it sits. Ask lua_type first.
     [LibraryImport(Library)] internal static partial byte* lua_tolstring(nint L, int index, nuint* length);
 

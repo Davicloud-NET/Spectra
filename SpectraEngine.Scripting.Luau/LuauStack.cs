@@ -70,6 +70,41 @@ public readonly unsafe ref struct LuauStack
     /// <summary>Reads a string, or null when the value is not one. Allocates.</summary>
     public string? GetText(int index) => LuaText.Read(_state, At(index));
 
+    /// <summary>
+    /// Reads the atom of the string at the index: the number <see cref="LuauHost.SetAtoms"/> gave that
+    /// name, or -1 for a name it gave none. False when the value is not a string.
+    /// </summary>
+    public bool TryGetAtom(int index, out int atom)
+    {
+        int found = -1;
+        bool isString = Lua.lua_tolstringatom(_state, At(index), null, &found) != null;
+        atom = found;
+        return isString;
+    }
+
+    /// <summary>
+    /// Inside a <c>__namecall</c>, the atom of the method that was called: the number
+    /// <see cref="LuauHost.SetAtoms"/> gave its name, or -1 for a name it gave none.
+    /// </summary>
+    public int NamecallAtom
+    {
+        get
+        {
+            int atom = -1;
+            return Lua.lua_namecallatom(_state, &atom) == null ? -1 : atom;
+        }
+    }
+
+    /// <summary>Inside a <c>__namecall</c>, the name of the method that was called. Allocates.</summary>
+    public string? NamecallName
+    {
+        get
+        {
+            ReadOnlySpan<byte> name = LuaText.FromNative(Lua.lua_namecallatom(_state, null));
+            return name.IsEmpty ? null : System.Text.Encoding.UTF8.GetString(name);
+        }
+    }
+
     /// <summary>Reads the block of a userdata made by <see cref="PushUserdata"/> with this tag.</summary>
     public bool TryGetUserdata<T>(int index, int tag, out T value)
         where T : unmanaged

@@ -215,6 +215,13 @@ So managed code never calls anything in Luau that can raise.
   and of its constructor, and the binding passes `Vector3` and `new`. The
   compiler then makes `Vector3.new(1, 2, 3)` a vector with no call, and takes
   `Vector3` for a name of the vector type.
+- the numbers of names. `sl_setatoms` takes the host's list of member names.
+  Luau asks the shim once for each string a script names a member with, and
+  keeps the answer in the string. `lua_namecallatom` and `lua_tolstringatom`
+  hand it over, so the binding switches on a number where it would compare a
+  name. A name that is not in the list reads as -1. The list is set once,
+  before a script runs, because a string that was asked about keeps its
+  number.
 - a thread's data. The binding keeps a script's number in the low half and a
   thread's slot in the high half. A thread that a script makes gets the low
   half of its maker's, so a coroutine belongs to its script.

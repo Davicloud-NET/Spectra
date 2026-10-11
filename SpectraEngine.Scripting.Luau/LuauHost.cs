@@ -123,6 +123,31 @@ public sealed unsafe class LuauHost : IDisposable
     }
 
     /// <summary>
+    /// Gives each name a number, its place in the list. A host function then switches on
+    /// <see cref="LuauStack.TryGetAtom"/> and <see cref="LuauStack.NamecallAtom"/> where it would
+    /// compare names. Once, before the host is sealed.
+    /// </summary>
+    /// <param name="names">The names as UTF-8, each ended by a zero byte.</param>
+    /// <param name="count">How many names there are.</param>
+    /// <exception cref="InvalidOperationException">The list was not taken, or a list is already set.</exception>
+    public void SetAtoms(ReadOnlySpan<byte> names, int count)
+    {
+        ObjectDisposedException.ThrowIf(_isClosed, this);
+        if (IsSealed)
+            throw new InvalidOperationException("Set the atoms before the host is sealed.");
+
+        fixed (byte* text = names)
+        {
+            if (Shim.sl_setatoms(_main, text, (nuint)names.Length, count) == 0)
+            {
+                throw new InvalidOperationException(
+                    "The atoms were not taken: the host has a list already, or a name is in it twice, " +
+                    "or the names do not each end with a zero.");
+            }
+        }
+    }
+
+    /// <summary>
     /// Makes every global read-only, with each table it holds, so no script can change what all
     /// scripts share. Scripts can be loaded from here on.
     /// </summary>

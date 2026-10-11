@@ -58,6 +58,14 @@ enum Body
     BodyCount,
 };
 
+// A name the host gave a number.
+struct Atom
+{
+    const char* text;
+    size_t length;
+    int16_t id;
+};
+
 struct HostState
 {
     // Written by the thread that runs the state, read by any.
@@ -99,6 +107,12 @@ struct HostState
     uint64_t* released = nullptr;
     size_t releasedCount = 0;
     size_t releasedCapacity = 0;
+
+    // The names the host gave a number, sorted by length and then by bytes.
+    // atomText holds their bytes.
+    Atom* atoms = nullptr;
+    int atomCount = 0;
+    char* atomText = nullptr;
 };
 
 typedef int (*HostFunction)(lua_State* L);
@@ -303,6 +317,34 @@ void interruptHandler(lua_State* L, int gc)
     lua_pushstring(L, host->stopReason == SL_STOP_MEMORY ? "script stopped by the host: out of memory" : "script stopped by the host");
     lua_concat(L, 2);
     lua_error(L);
+}
+
+int compareAtoms(const char* leftText, size_t leftLength, const Atom& right)
+{
+    if (leftLength != right.length)
+        return leftLength < right.length ? -1 : 1;
+    return memcmp(leftText, right.text, leftLength);
+}
+
+// Luau asks once for each string a member is named with and keeps the answer
+// in the string. -1 is a name the host gave no number.
+int16_t atomOf(lua_State* L, const char* text, size_t length)
+{
+    const HostState* host = hostOf(L);
+    int low = 0;
+    int high = host->atomCount - 1;
+    while (low <= high)
+    {
+        int middle = low + (high - low) / 2;
+        int order = compareAtoms(text, length, host->atoms[middle]);
+        if (order == 0)
+            return host->atoms[middle].id;
+        if (order < 0)
+            high = middle - 1;
+        else
+            low = middle + 1;
+    }
+    return -1;
 }
 
 // A thread a script makes belongs to the script that made it: it gets the
@@ -849,6 +891,8 @@ SL_API void sl_close(lua_State* L)
     HostState* host = hostOf(L);
     lua_close(L);
     free(host->released);
+    free(host->atoms);
+    free(host->atomText);
     delete host;
 }
 
@@ -872,6 +916,7 @@ SL_API lua_State* sl_newstate()
     callbacks->panic = panicHandler;
     callbacks->interrupt = interruptHandler;
     callbacks->userthread = threadCreated;
+    callbacks->useratom = atomOf;
 
     for (int i = 0; i < BodyCount; i++)
     {
@@ -911,6 +956,61 @@ SL_API void sl_sethost(lua_State* L, void* host)
 SL_API void* sl_host(lua_State* L)
 {
     return hostOf(L)->managed;
+}
+
+// Gives each name a number, its place in the list, which lua_namecallatom and
+// lua_tolstringatom then answer for a string of those bytes. `names` holds
+// `count` names, each ended by a zero. Luau keeps a string's number once it
+// has asked, so the list is set once, before a script runs. Returns 0 when
+// it was not taken.
+SL_API int sl_setatoms(lua_State* L, const char* names, size_t size, int count)
+{
+    HostState* host = hostOf(L);
+    if (host->atoms || count <= 0 || count > INT16_MAX || !names || size == 0 || names[size - 1] != 0)
+        return 0;
+
+    char* text = static_cast<char*>(malloc(size));
+    Atom* atoms = static_cast<Atom*>(malloc(static_cast<size_t>(count) * sizeof(Atom)));
+    if (!text || !atoms)
+    {
+        free(text);
+        free(atoms);
+        return 0;
+    }
+    memcpy(text, names, size);
+
+    // Sorted as it is filled. A name that is there twice is refused, since
+    // the two would have two numbers.
+    size_t offset = 0;
+    int filled = 0;
+    for (; filled < count && offset < size; filled++)
+    {
+        Atom atom = {text + offset, strlen(text + offset), static_cast<int16_t>(filled)};
+        offset += atom.length + 1;
+
+        int place = filled;
+        int order = 1;
+        while (place > 0 && (order = compareAtoms(atom.text, atom.length, atoms[place - 1])) < 0)
+        {
+            atoms[place] = atoms[place - 1];
+            place--;
+        }
+        if (order == 0)
+            break;
+        atoms[place] = atom;
+    }
+
+    if (filled != count || offset != size)
+    {
+        free(text);
+        free(atoms);
+        return 0;
+    }
+
+    host->atomText = text;
+    host->atoms = atoms;
+    host->atomCount = count;
+    return 1;
 }
 
 // The thread that holds what the last thread to end returned.
