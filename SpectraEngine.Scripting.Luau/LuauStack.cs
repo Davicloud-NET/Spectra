@@ -33,6 +33,12 @@ public readonly unsafe ref struct LuauStack
     /// <summary>How many values there are. In a host function, how many arguments it got.</summary>
     public int Count => Lua.lua_gettop(_state);
 
+    /// <summary>
+    /// Whether a host function may return <see cref="Yield"/> here. It may not inside a
+    /// metamethod or a function that Luau's own library calls, and the script then gets an error.
+    /// </summary>
+    public bool CanYield => Lua.lua_isyieldable(_state) != 0;
+
     /// <summary>What kind of value sits at the index.</summary>
     public LuauType TypeOf(int index) => (LuauType)Lua.lua_type(_state, At(index));
 

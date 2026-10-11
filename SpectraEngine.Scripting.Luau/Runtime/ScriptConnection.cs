@@ -5,7 +5,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 internal sealed class ScriptConnection : ScriptObject
 {
     private readonly ScriptSignal _signal;
-    private readonly LuauThread _waiter;
+    private readonly WaitingThreads? _waiting;
+    private readonly long _wait;
     private readonly bool _isOnce;
     private LuauFunction? _function;
 
@@ -16,10 +17,12 @@ internal sealed class ScriptConnection : ScriptObject
         _isOnce = isOnce;
     }
 
-    public ScriptConnection(ScriptSignal signal, LuauThread waiter)
+    // The thread's wait is kept with every other wait, under this token.
+    public ScriptConnection(ScriptSignal signal, WaitingThreads waiting, long wait)
     {
         _signal = signal;
-        _waiter = waiter;
+        _waiting = waiting;
+        _wait = wait;
         _isOnce = true;
     }
 
@@ -42,12 +45,19 @@ internal sealed class ScriptConnection : ScriptObject
         if (_isOnce)
             IsConnected = false;
 
-        LuauResume outcome = _function is { } function ? function.Start(arguments) : _waiter.Resume(arguments);
+        LuauResume outcome = _function is { } function ? function.Start(arguments) : ResumeWaiter(arguments);
 
         // Refused: its script was switched off, or the thread was cancelled.
         if (outcome == LuauResume.Refused || !IsConnected)
             Disconnect();
     }
+
+    // A thread that was cancelled or went on to another wait has left this
+    // one, and its token names nothing.
+    private LuauResume ResumeWaiter(ReadOnlySpan<LuauValue> arguments) =>
+        _waiting is { } waiting && waiting.TryTake(_wait, out WaitingThread waiter)
+            ? waiter.Thread.Resume(arguments)
+            : LuauResume.Refused;
 
     public void Disconnect()
     {

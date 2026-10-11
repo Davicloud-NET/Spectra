@@ -11,6 +11,11 @@ internal sealed class ScriptStarter(LuauHost host, IScriptSource source, NodeNam
     {
         foreach (SceneNode node in scene.Root.Traverse())
         {
+            // A close asked for from another thread takes the state when the
+            // script that was running comes back.
+            if (host.IsClosed)
+                return;
+
             // A module runs when a script asks for it, and nothing asks yet.
             if (node.Script is { IsEnabled: true, IsModule: false } script)
                 Start(node, script);

@@ -19,8 +19,11 @@ public readonly struct LuauThread : IEquatable<LuauThread>
 
     internal uint Generation { get; }
 
-    /// <summary>Whether the thread is still there: waiting, running or not yet started.</summary>
-    public bool IsAlive => Host is { IsClosed: false } host && host.Threads.TryFind(this, out _);
+    /// <summary>
+    /// Whether the thread is still there: waiting, running or not yet started. False also
+    /// for one a script ended, with <c>coroutine.close</c> or by resuming it to its end.
+    /// </summary>
+    public bool IsAlive => Host is { IsClosed: false } host && host.Threads.IsAlive(this);
 
     /// <summary>The script the thread belongs to, or null when it is gone or has none.</summary>
     public LuauScript? Script => Host?.Threads.ScriptOf(this);

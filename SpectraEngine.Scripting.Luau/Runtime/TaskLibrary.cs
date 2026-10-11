@@ -12,12 +12,13 @@ internal sealed class TaskLibrary
 
     private readonly LuauHost _host;
     private readonly EntityWorld _world;
-    private readonly WaitingThreads _waiting = new();
+    private readonly WaitingThreads _waiting;
 
-    public TaskLibrary(LuauHost host, EntityWorld world)
+    public TaskLibrary(LuauHost host, EntityWorld world, WaitingThreads waiting)
     {
         _host = host;
         _world = world;
+        _waiting = waiting;
 
         new ApiTable(host)
             .Function("wait"u8, stack => Wait(stack, WakeReply.Elapsed))
@@ -31,9 +32,6 @@ internal sealed class TaskLibrary
         SetGlobal("spawn"u8, stack => Later(stack, "spawn", target: 1, ticks: 1, WakeReply.ElapsedAndTime));
         SetGlobal("delay"u8, stack => Delay(stack, WakeReply.ElapsedAndTime));
     }
-
-    // How many threads wait for a tick.
-    public int WaitingCount => _waiting.Count;
 
     // A wait is over: the thread goes on, unless a script cancelled it or
     // gave it another wait since.
@@ -77,6 +75,11 @@ internal sealed class TaskLibrary
         if (!thread.IsAlive)
             return stack.Fail("this thread cannot wait");
 
+        // Before the wait is kept: a wake for a thread that never yielded
+        // would resume it wherever it next waits.
+        if (!stack.CanYield)
+            return stack.Fail(WaitingThreads.CannotYield);
+
         return Schedule(new WaitingThread(thread, _world.TickNumber, reply, null, 0), TicksFor(seconds))
             ? LuauStack.Yield()
             : stack.Fail(NoRoom);
@@ -101,7 +104,9 @@ internal sealed class TaskLibrary
 
     private int ResumeNow(LuauStack stack, int count)
     {
-        LuauThread thread = _host.ThreadAt(stack, 1);
+        if (!TryGetThread(stack, 1, out LuauThread thread))
+            return stack.Fail("task.spawn cannot resume a thread that has ended");
+
         _waiting.Remove(thread);
 
         return thread.Resume(stack, count - 1) == LuauResume.Refused
@@ -123,6 +128,13 @@ internal sealed class TaskLibrary
         if (type is not (LuauType.Function or LuauType.Thread))
             return ScriptArguments.Wrong(stack, target, function, "function or thread");
 
+        // The old spawn and delay hand over the two times and nothing else.
+        if (reply == WakeReply.ElapsedAndTime && count > target)
+        {
+            stack.Pop(count - target);
+            count = target;
+        }
+
         if (type == LuauType.Thread)
             return LaterWith(stack, function, target, ticks, reply);
 
@@ -142,10 +154,15 @@ internal sealed class TaskLibrary
     private int LaterWith(LuauStack stack, string function, int target, long ticks, WakeReply reply)
     {
         int count = stack.Count;
+        if (!TryGetThread(stack, target, out LuauThread thread))
+        {
+            string called = reply == WakeReply.ElapsedAndTime ? function : $"task.{function}";
+            return stack.Fail($"{called} cannot resume a thread that has ended");
+        }
+
         if (!TryKeepArguments(stack, target + 1, count, out LuauReference? kept))
             return stack.Fail($"{function} could not keep what the thread is to be handed");
 
-        LuauThread thread = _host.ThreadAt(stack, target);
         if (!Schedule(new WaitingThread(thread, _world.TickNumber, reply, kept, count - target), ticks))
         {
             kept?.Dispose();
@@ -167,6 +184,18 @@ internal sealed class TaskLibrary
         return thread.Cancel() || !thread.IsAlive
             ? 0
             : stack.Fail("task.cancel cannot end a thread that is running");
+    }
+
+    // The thread a script handed over. False for one that has ended, which
+    // is let go of again: looking it up may have made the host keep it.
+    private bool TryGetThread(LuauStack stack, int index, out LuauThread thread)
+    {
+        thread = _host.ThreadAt(stack, index);
+        if (thread.IsAlive)
+            return true;
+
+        thread.Release();
+        return false;
     }
 
     private void SetGlobal(ReadOnlySpan<byte> name, LuauHostFunction function)
@@ -233,11 +262,18 @@ internal sealed class TaskLibrary
             for (int n = 1; isStaged && n <= waiting.ArgumentCount; n++)
                 isStaged = stage.GetElement(below + 1, n);
 
-            // Resume takes the values. The table is left, or whatever a
-            // failed push put there.
             if (isStaged)
+            {
                 waiting.Thread.Resume(stage, waiting.ArgumentCount);
 
+                // A close asked for from another thread takes the state when
+                // this call returns, and the stage with it.
+                if (_host.IsClosed)
+                    return;
+            }
+
+            // Resume took the values. The table is left, or whatever a failed
+            // push put there.
             stage.Pop(stage.Count - below);
         }
     }

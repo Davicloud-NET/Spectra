@@ -61,6 +61,9 @@ internal sealed unsafe class ThreadRunner
             && _slots[index].Generation == thread.Generation;
     }
 
+    // Still there, and not ended by a script.
+    internal bool IsAlive(LuauThread thread) => TryFind(thread, out int index) && !HasEnded(index);
+
     internal LuauScript? ScriptOf(LuauThread thread) => TryFind(thread, out int index) ? _slots[index].Script : null;
 
     // The thread a host function runs on. One the host did not start, such as
@@ -100,7 +103,7 @@ internal sealed unsafe class ThreadRunner
         }
 
         thread = Add(state, reference, script);
-        return Resume(thread, source, count);
+        return Run(thread, state, source, count);
     }
 
     // Makes a thread and hands it the function and its arguments without
@@ -143,7 +146,20 @@ internal sealed unsafe class ThreadRunner
             return LuauResume.Refused;
         }
 
-        nint state = _slots[index].State;
+        // The shim cannot tell a thread that ended from a new one that has no
+        // function yet, and would call the first value it is handed.
+        if (HasEnded(index))
+        {
+            Remove(index);
+            Shim.sl_pop(source, count);
+            return LuauResume.Refused;
+        }
+
+        return Run(thread, _slots[index].State, source, count);
+    }
+
+    private LuauResume Run(LuauThread thread, nint state, nint source, int count)
+    {
         int results;
         LuaStatus status = Shim.sl_resume(state, source, count, &results);
 
@@ -284,6 +300,11 @@ internal sealed unsafe class ThreadRunner
 
     // Luau calls a thread "normal" while it runs and is not the one that asks.
     private bool IsRunning(nint state) => Lua.lua_costatus(_main, state) is LuaCoStatus.Running or LuaCoStatus.Normal;
+
+    // A script can end a thread behind the host's back, with coroutine.close
+    // or by resuming it to its end. Its slot is then all that is left of it.
+    private bool HasEnded(int index) =>
+        Lua.lua_costatus(_main, _slots[index].State) is LuaCoStatus.Finished or LuaCoStatus.Failed;
 
     private LuauResume Finished(LuauThread thread, int results)
     {

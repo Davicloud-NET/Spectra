@@ -14,6 +14,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     private readonly EntityWorld _world;
     private readonly NodeNamingSink _sink;
     private readonly LuauHost _host;
+    private readonly WaitingThreads _waiting = new();
     private readonly TaskLibrary _tasks;
     private readonly RunService _runService;
     private readonly ScriptStarter _starter;
@@ -42,8 +43,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             CFrameLibrary.Install(_host);
             ObjectMembers.Install(_host, new NodeMembers(_host, _world));
 
-            _tasks = new TaskLibrary(_host, _world);
-            _runService = new RunService(_host, new SignalMethods(_host));
+            _tasks = new TaskLibrary(_host, _world, _waiting);
+            _runService = new RunService(_host, new SignalMethods(_host, _waiting));
             SetGlobalObject("game"u8, new DataModel(_host, _world.Scene.Root, _runService));
             SetGlobalObject("workspace"u8, _world.Scene.Root);
 
@@ -67,11 +68,15 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         set => _host.CallLimit = value;
     }
 
-    /// <summary>How many threads wait for a tick.</summary>
-    public int WaitingThreadCount => _tasks.WaitingCount;
+    /// <summary>How many threads wait, for a tick or for a signal.</summary>
+    public int WaitingThreadCount => _waiting.Count;
 
-    /// <summary>Whether <see cref="Close"/> was called.</summary>
-    public bool IsClosed => _isClosed;
+    /// <summary>
+    /// Whether the Luau state is gone, and every thread with it. After
+    /// <see cref="Close"/> that is at once, or when the call into a script
+    /// that was running has returned.
+    /// </summary>
+    public bool IsClosed => _host.IsClosed;
 
     /// <summary>Makes the runtime for a level. This is the factory a host installs.</summary>
     public static IScriptRuntime Create(ScriptRuntimeSetup setup) => new LuauScriptRuntime(setup);

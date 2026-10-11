@@ -51,6 +51,36 @@ public sealed class RuntimeCloseTests
         part.LocalPosition.ShouldBe(new Vector3(0f, 2f, 0f));
     }
 
+    [Theory]
+    [InlineData("task.defer(coroutine.create(function(word) print(word) end), 'block')")]
+    [InlineData("task.delay(0, coroutine.create(function(word) print(word) end), 'block')")]
+    [InlineData("print('block')")]
+    public void A_tick_goes_on_and_reports_nothing_after_the_call_that_closed_the_state(string blocking)
+    {
+        using var level = new ScriptLevel();
+        using var sink = new BlockingSink();
+        level.Manager.Scripts.Sink = sink;
+        level.AddScript(level.Scene.Root, blocking);
+        level.AddScript(level.Scene.Root, "print('never started')");
+
+        // The close is asked for while the first script's call has not returned.
+        level.Play();
+        var ticking = new Thread(() => level.Tick(2));
+        ticking.Start();
+        sink.Blocked.Wait(_deadline, TestContext.Current.CancellationToken)
+            .ShouldBeTrue("the script never reached its print");
+        var taking = new Thread(() => level.Manager.TakeAuthoredMap());
+        taking.Start();
+        bool wasTaken = taking.Join(_deadline);
+
+        sink.LetGo();
+        ticking.Join(_deadline).ShouldBeTrue("the held tick never ended");
+
+        wasTaken.ShouldBeTrue("taking the level waited for the script's call");
+        level.Runtime.ShouldNotBeNull().IsClosed.ShouldBeTrue();
+        sink.Errors.ShouldBeEmpty();
+    }
+
     [Fact]
     public void A_scene_replaced_during_play_closes_the_runtime()
     {

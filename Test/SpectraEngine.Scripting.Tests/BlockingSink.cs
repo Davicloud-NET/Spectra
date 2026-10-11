@@ -10,8 +10,14 @@ internal sealed class BlockingSink : IScriptSink, IDisposable
 
     public ManualResetEventSlim Blocked { get; } = new();
 
+    // Read them once the thread that runs the scripts has ended.
+    public List<string> Errors { get; } = [];
+
     public void Report(in ScriptMessage message)
     {
+        if (message.Severity == ScriptSeverity.Error)
+            Errors.Add(message.Text);
+
         if (message.Text != "block")
             return;
 

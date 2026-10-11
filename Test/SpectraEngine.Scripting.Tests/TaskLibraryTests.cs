@@ -122,7 +122,11 @@ public sealed class TaskLibraryTests
             task.delay(0.05, function() print('kept') end)
             """);
 
-        level.Play().Tick(10);
+        // Only the last delay still waits: a cancel takes the wait with it.
+        level.Play().Tick();
+        level.Runtime.ShouldNotBeNull().WaitingThreadCount.ShouldBe(1);
+
+        level.Tick(9);
 
         level.Printed.ShouldBe(["kept"]);
         level.Errors.ShouldBeEmpty();
@@ -171,6 +175,26 @@ public sealed class TaskLibraryTests
             $"delay {Text(3 * step)} {Text((float)(4 * step))}",
             $"wait {Text(6 * step)} {Text((float)(7 * step))}",
         ]);
+    }
+
+    [Fact]
+    public void The_old_spawn_and_delay_hand_over_the_two_times_and_nothing_else()
+    {
+        using var level = new ScriptLevel();
+        level.AddScript(level.Scene.Root, """
+            local spawned = coroutine.create(function(...) print('spawned thread', select('#', ...)) end)
+            local delayed = coroutine.create(function(...) print('delayed thread', select('#', ...)) end)
+            spawn(function(...) print('spawn', select('#', ...)) end, 'more')
+            delay(0.05, function(...) print('delay', select('#', ...)) end, 'more')
+            spawn(spawned, 'more')
+            delay(0.05, delayed, 'more')
+            """);
+
+        level.Play().Tick(4);
+
+        level.Printed.ShouldBe(["spawn 2", "spawned thread 2", "delay 2", "delayed thread 2"]);
+        level.Errors.ShouldBeEmpty();
+        level.Runtime.ShouldNotBeNull().WaitingThreadCount.ShouldBe(0);
     }
 
     [Fact]

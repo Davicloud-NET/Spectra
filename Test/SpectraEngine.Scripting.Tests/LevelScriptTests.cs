@@ -1,6 +1,7 @@
 using System.Numerics;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
+using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.Tests;
 
@@ -169,10 +170,17 @@ public sealed class LevelScriptTests
             """);
 
         level.Play().Tick(2);
+        LuauScriptRuntime runtime = level.Runtime.ShouldNotBeNull();
         level.Stop();
-        level.Tick(10);
+
+        // A stopped level has no entity world to tick, so the runtime is
+        // called here the way a tick would call it.
+        runtime.IsClosed.ShouldBeTrue();
+        runtime.BeforeSimulation();
+        runtime.AfterSimulation();
 
         level.Printed.ShouldBe(["beat", "beat"]);
+        level.Errors.ShouldBeEmpty();
     }
 
     [Fact]

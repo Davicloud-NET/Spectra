@@ -5,10 +5,12 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 internal sealed class SignalMethods
 {
     private readonly LuauHost _host;
+    private readonly WaitingThreads _waiting;
 
-    public SignalMethods(LuauHost host)
+    public SignalMethods(LuauHost host, WaitingThreads waiting)
     {
         _host = host;
+        _waiting = waiting;
 
         OfSignal = new ApiTable(host)
             .Function("Connect"u8, stack => Connect(stack, "Connect", isOnce: false))
@@ -47,7 +49,12 @@ internal sealed class SignalMethods
         if (!thread.IsAlive)
             return stack.Fail("this thread cannot wait for a signal");
 
-        signal.Await(thread);
+        // Before the wait is kept: the next fire would resume a thread that
+        // never yielded wherever it waits by then.
+        if (!stack.CanYield)
+            return stack.Fail(WaitingThreads.CannotYield);
+
+        signal.Await(_waiting, thread);
         return LuauStack.Yield();
     }
 

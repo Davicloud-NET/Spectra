@@ -40,6 +40,9 @@ internal static unsafe partial class Lua
     [LibraryImport(Library), SuppressGCTransition] internal static partial nint lua_tothread(nint L, int index);
 
     [LibraryImport(Library), SuppressGCTransition] internal static partial LuaStatus lua_status(nint L);
+
+    // Zero inside a metamethod or a call from Luau's library, where lua_yield raises.
+    [LibraryImport(Library), SuppressGCTransition] internal static partial int lua_isyieldable(nint L);
     [LibraryImport(Library), SuppressGCTransition] internal static partial void* lua_getthreaddata(nint L);
     [LibraryImport(Library), SuppressGCTransition] internal static partial void lua_setthreaddata(nint L, void* data);
 

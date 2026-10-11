@@ -1,11 +1,14 @@
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// The threads that wait for a tick, each under a token. The entity queue
-// holds the token and hands it back when the wait is over. A thread waits
-// for one thing at a time: a new wait replaces the one before, whose token
-// then names nothing.
+// The threads that wait, each under a token. For a tick, the entity queue
+// holds the token and hands it back when the wait is over. For a signal, the
+// signal's listener holds it. A thread waits for one thing at a time: a new
+// wait replaces the one before, whose token then names nothing.
 internal sealed class WaitingThreads
 {
+    // Luau's own words for it. A wait says them before it is kept.
+    public const string CannotYield = "attempt to yield across metamethod/C-call boundary";
+
     private readonly Dictionary<LuauThread, int> _slotOf = [];
     private Slot[] _slots = new Slot[32];
     private int _used;

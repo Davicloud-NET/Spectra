@@ -32,8 +32,10 @@ internal sealed class ScriptSignal : ScriptObject
         return connection;
     }
 
-    // The thread goes on at the next fire, with what the signal was fired with.
-    public void Await(LuauThread thread) => _connections.Add(new ScriptConnection(this, thread));
+    // The thread goes on at the next fire, with what the signal was fired
+    // with, unless it has left the wait by then.
+    public void Await(WaitingThreads waiting, LuauThread thread) =>
+        _connections.Add(new ScriptConnection(this, waiting, waiting.Add(WaitingThread.ForSignal(thread))));
 
     // Runs the listeners in the order they connected. One that connects
     // during the fire waits for the next one. One that disconnects during it
