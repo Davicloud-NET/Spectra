@@ -19,6 +19,7 @@ public class SceneNode
     private MeshRenderer? _meshRenderer;
     private Light? _light;
     private Entities.EntityData? _entity;
+    private Script? _script;
     private PhysicsFlags _physicsFlags = PhysicsFlags.Default;
     private byte _collisionGroup;
     private bool _isRendered = true;
@@ -157,6 +158,38 @@ public class SceneNode
                 Owner?.OnNodeKindChanged(this);
         }
     }
+
+    /// <summary>
+    /// The script this node is, or null: the file it names and whether it
+    /// runs. The owning scene tracks script nodes in its own list.
+    /// </summary>
+    // Like a light, it does not put the node in the BVH and dirties nothing.
+    public Script? Script
+    {
+        get => _script;
+        set
+        {
+            if (ReferenceEquals(_script, value))
+                return;
+            bool had = _script is not null;
+            _script = value;
+            Owner?.UpdateScriptMembership(this);
+            if (had != (value is not null))
+                Owner?.OnNodeKindChanged(this);
+        }
+    }
+
+    /// <summary>
+    /// The realm this node declares for itself, as its map states it.
+    /// <see cref="NodeRealm.Inherit"/> unless set. Nothing resolves it yet.
+    /// </summary>
+    public NodeRealm DeclaredRealm { get; set; }
+
+    /// <summary>
+    /// The state this node declares for itself, as its map states it.
+    /// <see cref="NodeState.Inherit"/> unless set. Nothing resolves it yet.
+    /// </summary>
+    public NodeState DeclaredState { get; set; }
 
     /// <summary>
     /// Brush geometry this node contributes, if any. The node's world
@@ -543,6 +576,7 @@ public class SceneNode
     /// <summary>
     /// A detached copy of this node with a new id, for the caller to attach.
     /// The mesh renderer is shared; the brush, light and entity are copied.
+    /// The script is shared too, since it never changes.
     /// </summary>
     /// <param name="deep">
     /// True (the default) to copy the whole subtree; false for this node alone.
@@ -556,6 +590,8 @@ public class SceneNode
         copy._physicsFlags = _physicsFlags & ~PhysicsFlags.HasBody;
         copy._collisionGroup = _collisionGroup;
         copy._isRendered = _isRendered;
+        copy.DeclaredRealm = DeclaredRealm;
+        copy.DeclaredState = DeclaredState;
 
         // Kind before brush, so the brush setter counts it once.
         copy._brushKind = _brushKind;
@@ -568,6 +604,7 @@ public class SceneNode
         copy.Brush = _brush?.CloneShape();
         copy.Light = _light?.Clone();
         copy.Entity = Entity?.Clone();
+        copy.Script = _script;
 
         if (deep)
         {

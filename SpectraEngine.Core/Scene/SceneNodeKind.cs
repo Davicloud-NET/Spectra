@@ -33,8 +33,11 @@ public enum SceneNodeKind
     Light,
 
     /// <summary>Carries entity data: a class name, keyvalues and output wiring.</summary>
-    // Append only: the values cross the thread boundary as numbers.
     Entity,
+
+    /// <summary>Carries a script and no other payload.</summary>
+    // Append only: the values cross the thread boundary as numbers.
+    Script,
 }
 
 /// <summary>
@@ -68,6 +71,10 @@ public static class SceneNodeClassifier
 
         if (node.MeshRenderer is not null)
             return SceneNodeKind.Mesh;
+
+        // Last of the payloads: a part that carries a script is still a part.
+        if (node.Script is not null)
+            return SceneNodeKind.Script;
 
         return node.Children.Count > 0 ? SceneNodeKind.Group : SceneNodeKind.Empty;
     }

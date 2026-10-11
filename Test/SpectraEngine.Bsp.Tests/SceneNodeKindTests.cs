@@ -1,5 +1,6 @@
 ﻿using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
 using System.Numerics;
 
@@ -139,6 +140,60 @@ public sealed class SceneNodeKindTests
         node.Entity = null;
 
         SceneNodeClassifier.Classify(node).ShouldBe(SceneNodeKind.Empty);
+    }
+
+    [Fact]
+    public void A_node_whose_only_payload_is_a_script_is_a_script()
+    {
+        var scene = new Scene("Kinds");
+        SceneNode node = scene.Root.CreateChild("Opener");
+        node.Script = new Script("Scripts/door.luau");
+
+        SceneNodeClassifier.Classify(node).ShouldBe(SceneNodeKind.Script);
+
+        node.Script = null;
+        SceneNodeClassifier.Classify(node).ShouldBe(SceneNodeKind.Empty);
+    }
+
+    [Fact]
+    public void A_script_is_a_script_even_with_children_under_it()
+    {
+        var scene = new Scene("Kinds");
+        SceneNode node = scene.Root.CreateChild("Game");
+        node.Script = new Script("Scripts/game.luau");
+        node.CreateChild("Settings");
+
+        SceneNodeClassifier.Classify(node).ShouldBe(SceneNodeKind.Script);
+    }
+
+    [Fact]
+    public void A_switched_off_script_and_a_module_are_scripts_too()
+    {
+        var scene = new Scene("Kinds");
+        SceneNode node = scene.Root.CreateChild("Shared");
+        node.Script = new Script("Scripts/shared.luau") { IsEnabled = false, IsModule = true };
+
+        SceneNodeClassifier.Classify(node).ShouldBe(SceneNodeKind.Script);
+    }
+
+    [Fact]
+    public void Every_other_payload_outranks_a_script()
+    {
+        var script = new Script("Scripts/door.luau");
+
+        var part = new SceneNode("Part") { BrushKind = BrushKind.Part, Brush = Box(), Script = script };
+        var entity = new SceneNode("Entity") { Entity = new EntityData("logic_relay"), Script = script };
+        var light = new SceneNode("Light") { Light = new Light(), Script = script };
+        var mesh = new SceneNode("Mesh")
+        {
+            MeshRenderer = new MeshRenderer(new FakeMesh([], []), new Material(null)),
+            Script = script,
+        };
+
+        SceneNodeClassifier.Classify(part).ShouldBe(SceneNodeKind.BrushPart);
+        SceneNodeClassifier.Classify(entity).ShouldBe(SceneNodeKind.Entity);
+        SceneNodeClassifier.Classify(light).ShouldBe(SceneNodeKind.Light);
+        SceneNodeClassifier.Classify(mesh).ShouldBe(SceneNodeKind.Mesh);
     }
 
     [Fact]

@@ -82,8 +82,8 @@ public sealed partial class Scene
 
     /// <summary>
     /// Raised when what an owned node is changes: it gains or loses a brush,
-    /// mesh, light or entity, its brush changes kind or operation, or its
-    /// entity changes class. Handlers must not mutate the graph.
+    /// mesh, light, entity or script, its brush changes kind or operation, or
+    /// its entity changes class. Handlers must not mutate the graph.
     /// </summary>
     // A light edited in place tells nobody. Whoever changes its kind calls
     // NotifyNodeKindChanged.
@@ -116,6 +116,7 @@ public sealed partial class Scene
         // (undo of a delete) has to be relisted here.
         UpdateLightMembership(node);
         UpdateEntityMembership(node);
+        UpdateScriptMembership(node);
         NodeAdded?.Invoke(node);
     }
 
@@ -135,6 +136,7 @@ public sealed partial class Scene
         _drawableNodes.Remove(node);
         _lightNodes.Remove(node);
         _entityNodes.Remove(node);
+        _scriptNodes.Remove(node);
         NodeRemoved?.Invoke(node);
     }
 
@@ -169,6 +171,18 @@ public sealed partial class Scene
     /// attachment order. Not the order entities run in.
     /// </summary>
     public IReadOnlyList<SceneNode> EntityNodes => _entityNodes;
+
+    internal void UpdateScriptMembership(SceneNode node)
+    {
+        if (node.Script is not null) _scriptNodes.Add(node);
+        else _scriptNodes.Remove(node);
+    }
+
+    /// <summary>
+    /// Nodes currently carrying a <see cref="SceneNode.Script"/>, in
+    /// attachment order. Not the order scripts run in.
+    /// </summary>
+    public IReadOnlyList<SceneNode> ScriptNodes => _scriptNodes;
 
     // The render bit changes what draws and nothing else, so world placements
     // are left alone.
@@ -638,6 +652,9 @@ public sealed partial class Scene
 
     // A list too: a pick between two markers at one depth takes the first.
     private readonly OrderedIdentityList<SceneNode> _entityNodes = new();
+
+    // A list, as the two above, so whoever walks it sees one order every run.
+    private readonly OrderedIdentityList<SceneNode> _scriptNodes = new();
 
     private readonly HashSet<SceneNode> _partBrushNodes = [];
     private readonly PartBrushMeshCache _partBrushMeshes = new();

@@ -157,6 +157,51 @@ public sealed class SceneKindChangeTests
     }
 
     [Fact]
+    public void A_script_that_arrives_or_leaves_says_so()
+    {
+        (Scene scene, SceneChangeLog log) = Observed();
+        SceneNode node = scene.Root.AddChild(new SceneNode("Opener"));
+        log.Drain();
+
+        node.Script = new Script("Scripts/door.luau");
+        SceneChange made = Only(log);
+        made.Kind.ShouldBe(SceneChangeKind.KindChanged);
+        made.NodeId.ShouldBe(node.Id);
+        made.NodeKind.ShouldBe(SceneNodeKind.Script);
+
+        node.Script = null;
+        Only(log).NodeKind.ShouldBe(SceneNodeKind.Empty);
+    }
+
+    [Fact]
+    public void A_script_swapped_for_another_says_nothing()
+    {
+        // What every edit of a script does: the node is a script before and after.
+        (Scene scene, SceneChangeLog log) = Observed();
+        SceneNode node = scene.Root.AddChild(new SceneNode("Opener") { Script = new Script("Scripts/door.luau") });
+        log.Drain();
+
+        node.Script = new Script("Scripts/gate.luau");
+        node.Script = node.Script with { IsEnabled = false };
+
+        log.Drain().Changes.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void An_added_script_node_arrives_as_a_script()
+    {
+        (Scene scene, SceneChangeLog log) = Observed();
+
+        scene.Root.AddChild(new SceneNode("Opener") { Script = new Script("Scripts/door.luau") });
+
+        SceneChange added = Only(log);
+        added.Kind.ShouldBe(SceneChangeKind.Added);
+        added.NodeKind.ShouldBe(SceneNodeKind.Script);
+        added.EntityClass.ShouldBeNull();
+        added.LightKind.ShouldBeNull();
+    }
+
+    [Fact]
     public void A_light_edited_in_place_is_reported_by_whoever_changed_its_kind()
     {
         (Scene scene, SceneChangeLog log) = Observed();

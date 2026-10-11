@@ -172,7 +172,8 @@
   <SolidColorBrush x:Key="SpectraAxisZ" Color="#6FA4F2" />
 
   <!-- Node-kind tints. Saturated only for kinds that draw nothing in the
-       viewport or need finding fast: light, subtractive brush, entity. -->
+       viewport or need finding fast: light, subtractive brush, entity,
+       script. -->
   <SolidColorBrush x:Key="SpectraKindGroup" Color="#979BA4" />
   <SolidColorBrush x:Key="SpectraKindMesh" Color="#C3C6CB" />
   <SolidColorBrush x:Key="SpectraKindBrushWorld" Color="#7FB4FF" />
@@ -180,6 +181,7 @@
   <SolidColorBrush x:Key="SpectraKindBrushSubtractive" Color="#E58BD8" />
   <SolidColorBrush x:Key="SpectraKindLight" Color="#F2C75C" />
   <SolidColorBrush x:Key="SpectraKindEntity" Color="#B9A5FF" />
+  <SolidColorBrush x:Key="SpectraKindScript" Color="#A5D67A" />
 
   <!-- Entity-group tints, one per group a class files itself under. An
        entity's icon wears its group's tint in the tree, on a Logic card, in a

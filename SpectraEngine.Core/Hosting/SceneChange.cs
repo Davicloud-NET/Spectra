@@ -22,9 +22,9 @@ public enum SceneChangeKind
     Renamed,
 
     /// <summary>
-    /// What the node is changed: it gained or lost a brush, mesh, light or
-    /// entity, its brush changed kind, its entity changed class or its light
-    /// changed kind.
+    /// What the node is changed: it gained or lost a brush, mesh, light,
+    /// entity or script, its brush changed kind, its entity changed class or
+    /// its light changed kind.
     /// </summary>
     KindChanged,
 }

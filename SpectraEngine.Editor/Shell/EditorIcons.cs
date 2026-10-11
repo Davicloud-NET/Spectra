@@ -40,6 +40,8 @@ public static class EditorIcons
     // A mesh node, and the model file it is made from.
     private static readonly IconLook Mesh = new("IconMesh", "SpectraKindMesh");
 
+    private static readonly IconLook Script = new("IconScript", "SpectraKindScript");
+
     /// <summary>An entity of no particular class, as a menu names the kind.</summary>
     public static IconLook PlainEntity { get; } = new(WorldIcons.Entity, EntityTint);
 
@@ -92,6 +94,7 @@ public static class EditorIcons
             SceneNodeKind.BrushSubtractive => new IconLook("IconBrushSubtractive", "SpectraKindBrushSubtractive"),
             SceneNodeKind.Light => light is { } lightKind ? ForLight(lightKind) : PlainLight,
             SceneNodeKind.Entity => PlainEntity,
+            SceneNodeKind.Script => Script,
             _ => new IconLook("IconEmpty", MutedTint),
         };
     }

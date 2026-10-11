@@ -48,6 +48,7 @@ SMALL = {
     "IconRefresh": "refresh",
     "IconResize": "resize",
     "IconRotate": "rotate-clockwise",
+    "IconScript": "braces",
     "IconUndo": "arrow-back-up",
     "IconUngroupNodes": "stack-2",
     "IconWarning": "alert-triangle",
