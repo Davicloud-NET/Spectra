@@ -93,6 +93,38 @@ public sealed class ScriptPlaceTests
         script.LocalPosition.X.ShouldBe(40f);
     }
 
+    [Theory]
+    [InlineData(GizmoMode.Translate)]
+    [InlineData(GizmoMode.Scale)]
+    public void A_script_selected_last_does_not_turn_the_handles_of_the_part_beside_it(GizmoMode mode)
+    {
+        // The handles align to the last node selected. A script under a
+        // turned parent is selected last here, and the tool does not move it.
+        var harness = GizmoHarness.ThreeQuarterView();
+        SceneNode part = harness.AddSelectedBrushNode(Vector3.Zero);
+        SceneNode turned = harness.AddNode(new Vector3(40f, 0f, 0f), "Turned");
+        turned.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 4f);
+        SceneNode script = turned.CreateChild("Script");
+        script.Script = new Script("Scripts/spin.luau");
+        harness.Scene.Selection.Add(script);
+
+        GizmoTool tool = harness.Use(mode);
+        tool.Orientation = GizmoOrientation.Local;
+
+        tool.ReferenceNode.ShouldBeSameAs(part);
+        harness.LiveGeometry().AxisX.X.ShouldBe(1f, RoundTrip);
+        harness.LiveGeometry().AxisZ.Z.ShouldBe(1f, RoundTrip);
+    }
+
+    [Fact]
+    public void With_only_a_script_selected_no_node_gives_the_handles_their_frame()
+    {
+        var harness = GizmoHarness.ThreeQuarterView();
+        AddScript(harness, Vector3.Zero);
+
+        harness.Use(GizmoMode.Translate).ReferenceNode.ShouldBeNull();
+    }
+
     [Fact]
     public void A_script_under_a_selected_part_still_rides_along_with_it()
     {

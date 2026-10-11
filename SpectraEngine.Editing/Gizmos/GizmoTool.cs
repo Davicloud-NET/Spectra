@@ -305,15 +305,21 @@ public abstract class GizmoTool
     protected abstract void DrawHandles(DebugDraw output, in GizmoGeometry geometry, GizmoHandle highlighted);
 
     /// <summary>
-    /// The node a local-frame gizmo aligns to: the most recently selected one.
-    /// Null for an empty selection.
+    /// The node a local-frame gizmo aligns to: the most recently selected one
+    /// that has a place. Null when nothing selected has one.
     /// </summary>
     public SceneNode? ReferenceNode
     {
         get
         {
             IReadOnlyList<SceneNode> items = Scene.Selection.Items;
-            return items.Count == 0 ? null : items[items.Count - 1];
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                if (SceneNodeClassifier.HasPlace(items[i]))
+                    return items[i];
+            }
+
+            return null;
         }
     }
 
@@ -385,17 +391,7 @@ public abstract class GizmoTool
 
     // A script with no children has no place, so a selection of nothing else
     // gets no handles.
-    private bool HasPlacedSelection()
-    {
-        IReadOnlyList<SceneNode> items = Scene.Selection.Items;
-        for (int i = 0; i < items.Count; i++)
-        {
-            if (SceneNodeClassifier.HasPlace(items[i]))
-                return true;
-        }
-
-        return false;
-    }
+    private bool HasPlacedSelection() => ReferenceNode is not null;
 
     private GizmoGeometry BuildGeometry(in GizmoLayout layout, Quaternion frameRotation, Vector2 viewportSize) =>
         GizmoGeometry.Build(
