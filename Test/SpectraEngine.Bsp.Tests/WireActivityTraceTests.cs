@@ -181,8 +181,12 @@ public sealed class WireActivityTraceTests
         EntityWorld world = Started();
         EntityRuntime.Live(world, source).FireOutput("OnGo");
 
-        // Nobody says it was delivered. Time passing is all the trace sees.
-        _trace.EndTick(200, world.Time + 2f);
+        // Nobody says it was delivered. Ticks passing is all the trace sees,
+        // and it counts them, not the time.
+        _trace.EndTick(3, world.Time + 2f);
+        Captured().Wires.ShouldHaveSingleItem().Waiting.ShouldBe(1);
+
+        _trace.EndTick(200, world.Time);
 
         Captured().Wires.ShouldHaveSingleItem().Waiting.ShouldBe(0);
     }

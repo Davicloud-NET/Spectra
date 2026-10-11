@@ -128,6 +128,30 @@ public sealed class EntityWatchTests
     }
 
     [Fact]
+    public void A_wait_reads_the_same_hours_into_a_level()
+    {
+        var rig = new EntityConsoleRig();
+        SceneNode relay = rig.Place("relay1", "relay");
+        rig.Place("door1", "recorder");
+        EntityRuntime.Wire(relay, "OnTrigger", "door1", "Open", delay: 0.1f);
+        rig.Play();
+
+        // Four and a half hours. World time is two milliseconds coarse by now.
+        for (int i = 0; i < 1_000_000; i++)
+            rig.World.Tick(1f / 60f);
+        rig.Run("ent_watch relay1");
+
+        var waits = new List<string>();
+        for (int i = 0; i < 8; i++)
+        {
+            rig.World.QueueInput(EntityRuntime.Live(rig.World, relay), "Trigger");
+            waits.AddRange(rig.Tick().Where(line => line.Contains(" wait ")).Select(line => line[^8..]));
+        }
+
+        waits.ShouldBe(Enumerable.Repeat(" in=0.1s", 8));
+    }
+
+    [Fact]
     public void A_hand_fired_input_is_reported_with_watch_off()
     {
         var rig = new EntityConsoleRig();

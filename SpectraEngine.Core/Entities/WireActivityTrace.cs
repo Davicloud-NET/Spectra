@@ -13,9 +13,9 @@ public sealed class WireActivityTrace : IEntityTrace
     /// <summary>How many events <see cref="LogicPlayInfo.Recent"/> holds.</summary>
     public const int RecentCapacity = 32;
 
-    // A queued input this long past due arrived while this trace was not the
-    // world's, and nothing said so.
-    private const float OverdueSeconds = 1f;
+    // A queued input this many ticks past due arrived while this trace was
+    // not the world's, and nothing said so.
+    private const long OverdueTicks = 60;
 
     private readonly Dictionary<(Guid Node, int Wire), Counts> _byWire = [];
 
@@ -59,7 +59,7 @@ public sealed class WireActivityTrace : IEntityTrace
                     fired.LastFiredTick = traced.Tick;
 
                     if (traced.DueTick > traced.Tick)
-                        _waiting[traced.Sequence] = new Wait(fired, traced.Time, traced.DueTime);
+                        _waiting[traced.Sequence] = new Wait(fired, traced.Time, traced.DueTime, traced.DueTick);
                 }
 
                 break;
@@ -103,7 +103,7 @@ public sealed class WireActivityTrace : IEntityTrace
         _overdue.Clear();
         foreach (KeyValuePair<long, Wait> waiting in _waiting)
         {
-            if (waiting.Value.Due + OverdueSeconds < time)
+            if (waiting.Value.DueTick + OverdueTicks < tick)
                 _overdue.Add(waiting.Key);
         }
 
@@ -250,5 +250,6 @@ public sealed class WireActivityTrace : IEntityTrace
         public float WaitingDue;
     }
 
-    private readonly record struct Wait(Counts Wire, float Since, float Due);
+    // The times are for a view to draw. The tick is what says it is overdue.
+    private readonly record struct Wait(Counts Wire, float Since, float Due, long DueTick);
 }

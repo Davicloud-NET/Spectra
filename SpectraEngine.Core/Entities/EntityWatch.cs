@@ -217,7 +217,7 @@ public sealed class EntityWatch : IEntityTrace
 
             case EntityTraceKind.InputQueued:
                 AppendRoute(line.Append("wait "), traced, withParameter: true);
-                line.Append(" in=").Append(EntityConsoleText.Seconds(traced.DueTime - traced.Time)).Append('s');
+                line.Append(" in=").Append(EntityConsoleText.Seconds(traced.Wait)).Append('s');
                 _output.Print(line.ToString());
                 break;
 

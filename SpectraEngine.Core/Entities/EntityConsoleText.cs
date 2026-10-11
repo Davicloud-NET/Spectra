@@ -36,8 +36,8 @@ internal static class EntityConsoleText
         return AppendQuoted(text, parameter).Append(')');
     }
 
-    // Rounded to the millisecond: a delay read back off two world times is
-    // off by a float's worth.
+    // Rounded to the millisecond: a whole number of ticks is a float's worth
+    // off the seconds a mapper typed.
     public static string Seconds(float seconds) =>
         seconds.ToString("0.###", CultureInfo.InvariantCulture);
 

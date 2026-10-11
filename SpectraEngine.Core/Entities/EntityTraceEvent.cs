@@ -1,3 +1,5 @@
+using System;
+
 namespace SpectraEngine.Core.Entities;
 
 /// <summary>
@@ -27,6 +29,12 @@ public readonly struct EntityTraceEvent
     /// read: compare the ticks to tell whether an input waits.
     /// </summary>
     public float DueTime { get; init; }
+
+    /// <summary>
+    /// How long a queued input waits, in seconds: the ticks from
+    /// <see cref="Tick"/> to <see cref="DueTick"/>. Zero when it is due.
+    /// </summary>
+    public float Wait { get; init; }
 
     /// <summary>The entity whose output it is, or null for an input no output sent.</summary>
     public Entity? Source { get; init; }
@@ -90,6 +98,7 @@ public readonly struct EntityTraceEvent
         DueTick = queued.Tick,
         Time = world.Time,
         DueTime = world.TimeAt(queued.Tick),
+        Wait = (float)(Math.Max(queued.Tick - world.TickNumber, 0L) * (double)world.FixedDeltaTime),
         Source = queued.Entity,
         Output = queued.Output,
         TargetName = queued.TargetName,
