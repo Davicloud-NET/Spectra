@@ -103,7 +103,11 @@ jobs:
       # A skip fails the step: without the library this suite passes empty.
       # The crash cases are left out. They need the published console, and the
       # AOT job runs them.
+      #
+      # The timeout is for a script that nothing stops. The tests have their
+      # own deadlines, and this one holds if those fail too.
       - name: SpectraEngine.Scripting.Tests
+        timeout-minutes: 15
         shell: pwsh
         run: .github/run-unskipped.ps1 -Project Test/SpectraEngine.Scripting.Tests -Filter '-trait-', 'Suite=CrashCases'
 
@@ -228,6 +232,7 @@ jobs:
 
       # As on Windows: a skip fails the step, and the AOT job runs the crash cases.
       - name: SpectraEngine.Scripting.Tests
+        timeout-minutes: 15
         shell: pwsh
         run: .github/run-unskipped.ps1 -Project Test/SpectraEngine.Scripting.Tests -Filter '-trait-', 'Suite=CrashCases'
 
@@ -414,8 +419,10 @@ jobs:
       - name: Publish the scripting crash cases (win-x64)
         run: dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r win-x64
 
-      # The suite starts the published console once per case. One case has to die.
+      # The suite starts the published console once per case. One case has to
+      # die, and a case that hangs is killed by the suite or by the timeout.
       - name: Scripting crash cases
+        timeout-minutes: 15
         shell: pwsh
         run: .github/run-unskipped.ps1 -Project Test/SpectraEngine.Scripting.Tests -Filter '-trait', 'Suite=CrashCases'
 
@@ -455,5 +462,6 @@ jobs:
         run: dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r linux-x64
 
       - name: Scripting crash cases
+        timeout-minutes: 15
         shell: pwsh
         run: .github/run-unskipped.ps1 -Project Test/SpectraEngine.Scripting.Tests -Filter '-trait', 'Suite=CrashCases'

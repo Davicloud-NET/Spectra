@@ -65,6 +65,9 @@ internal sealed unsafe class ProbeState : IDisposable
             throw new InvalidOperationException($"{status}: {PopText()}");
     }
 
+    // Lets go of the state without closing it, when another thread still runs it.
+    internal void Abandon() => L = 0;
+
     public void Dispose()
     {
         if (L == 0)
