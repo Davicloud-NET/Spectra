@@ -28,20 +28,11 @@ public sealed class OutputStack : ObservableObject
         _first = _frames.Length > ShownAtFirst + 1 ? _frames[..ShownAtFirst] : _frames;
     }
 
-    /// <summary>Every call.</summary>
-    public IReadOnlyList<OutputFrame> Frames => _frames;
-
     /// <summary>The calls that show now.</summary>
     public IReadOnlyList<OutputFrame> Shown => _isOpen ? _frames : _first;
 
-    /// <summary>Whether there is any call to show.</summary>
-    public bool HasFrames => _frames.Length > 0;
-
     /// <summary>Whether some calls are held back, so there is something to ask for.</summary>
     public bool CanFold => _first.Length < _frames.Length;
-
-    /// <summary>Whether every call shows.</summary>
-    public bool IsOpen => _isOpen;
 
     /// <summary>What the row under the calls says: how many more there are, or how to hide them.</summary>
     public string FoldLabel => _isOpen
@@ -55,7 +46,6 @@ public sealed class OutputStack : ObservableObject
             return;
 
         _isOpen = !_isOpen;
-        Raise(nameof(IsOpen));
         Raise(nameof(Shown));
         Raise(nameof(FoldLabel));
     }
