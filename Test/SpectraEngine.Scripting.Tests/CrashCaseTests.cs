@@ -84,6 +84,19 @@ public sealed class CrashCaseTests
         result.Output.ShouldContain("yielded and resumed 400 times");
     }
 
+    // A stack overflow ends the process under the JIT as well. It is here
+    // because a case runs in a process of its own.
+    [Fact]
+    public async Task A_script_that_piles_up_finalizers_does_not_end_the_process()
+    {
+        CrashCaseProcess.Require();
+
+        CrashCaseProcess.Result result = await CrashCaseProcess.Run("many-finalizers");
+
+        result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
+        result.Output.ShouldContain("went on after 4 scripts");
+    }
+
     [Fact]
     public async Task A_state_used_on_one_thread_is_closed_from_another()
     {

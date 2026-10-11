@@ -213,7 +213,12 @@ So managed code never calls anything in Luau that can raise.
   error keeps its frames, and that is where a traceback comes from.
 - the panic handler. It keeps its message in `sl_fatal_message` for a debugger
   and prints nothing.
-- Luau's feature flags, set the way Luau's own tools set them.
+- Luau's feature flags, set the way Luau's own tools set them, but for one.
+  `LuauCoroutineFinally` stays off, so a script has no `coroutine.finally`.
+  Luau runs a coroutine's finalizers by recursion on the native stack, and its
+  limit of 200 C calls does not count that. 20000 of them on one coroutine
+  overflow the stack, which ends the process with no error to catch. A host
+  that ends a waiting thread runs them the same way.
 - `sl_constant`, which reports every number the binding copied from the
   headers, and the shim's revision. `LuauLibrary.FindProblem` compares them
   before a host opens a state, so a library left over from before a change to
@@ -225,7 +230,10 @@ purpose. The suite fails when that case gets through, because the other cases
 then prove nothing. Two cases go through the binding: one ends scripts by an
 error, by an exception in a host function, by the watchdog and by the memory
 budget, and one yields from a host function, all with the collector at work.
-It only means something as a native executable:
+A third piles finalizers on a coroutine, four ways. It dies of a stack
+overflow when `coroutine.finally` is there, also under the JIT, and is a case
+because a case has a process to itself.
+The console only means something as a native executable:
 
 ```powershell
 dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r win-x64
@@ -275,7 +283,11 @@ binding checks both at startup.
    up there by name.
 4. Read the calls listed in `BindingSourceTests` again in the new `lapi.cpp`.
    The list says they cannot raise, and only reading the source can confirm it.
-5. Publish the crash cases and run the suite once more.
+5. Look for `LuauCoroutineFinally` there too. Once Luau drops the flag,
+   `coroutine.finally` is in every build and `staysOff` in the shim does
+   nothing. A test in `ScriptRunTests` then fails, and the case
+   `many-finalizers` says whether the finalizers still overflow the stack.
+6. Publish the crash cases and run the suite once more.
 
 ### Not proven
 

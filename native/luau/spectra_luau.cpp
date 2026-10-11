@@ -791,6 +791,15 @@ const Constant constants[] = {
     SL_CONSTANT(LUA_GCSETSTEPSIZE),
 };
 
+// LuauCoroutineFinally is coroutine.finally. Luau runs a coroutine's
+// finalizers by recursion on the C stack, which its limit on C calls does not
+// count. 20000 of them on one coroutine overflow the stack, and that ends the
+// process with no error for anything to catch.
+bool staysOff(const char* flag)
+{
+    return strcmp(flag, "LuauCoroutineFinally") == 0;
+}
+
 } // namespace
 
 // Luau's own tools turn every feature flag on that is not experimental. A
@@ -800,7 +809,7 @@ void sl_apply_flags()
     static const bool applied = [] {
         for (Luau::FValue<bool>* flag = Luau::FValue<bool>::list; flag; flag = flag->next)
             if (strncmp(flag->name, "Luau", 4) == 0 && !Luau::isAnalysisFlagExperimental(flag->name))
-                flag->value = true;
+                flag->value = !staysOff(flag->name);
         return true;
     }();
     (void)applied;

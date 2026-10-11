@@ -156,6 +156,20 @@ public sealed class ScriptRunTests
         state.PopText().ShouldBe("table");
     }
 
+    // One flag stays off. Luau runs a coroutine's finalizers by recursion on
+    // the native stack, and 20000 of them on one coroutine end the process.
+    [Fact]
+    public void A_script_cannot_give_a_coroutine_a_finalizer()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+
+        LuaStatus status = state.Run("return type(coroutine.finally)", results: 1);
+
+        status.ShouldBe(LuaStatus.Ok);
+        state.PopText().ShouldBe("nil");
+    }
+
     [Fact]
     public void The_allocator_counts_what_a_script_holds()
     {
