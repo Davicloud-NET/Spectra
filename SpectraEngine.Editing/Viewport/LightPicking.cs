@@ -58,20 +58,24 @@ public static class LightPicking
     {
         distance = 0f;
 
-        Vector3 toCentre = ray.Origin - centre;
-        float b = Vector3.Dot(toCentre, ray.Direction);
-        float c = Vector3.Dot(toCentre, toCentre) - (radius * radius);
+        Vector3 toCentre = centre - ray.Origin;
+        float along = Vector3.Dot(toCentre, ray.Direction);
 
-        // Outside and pointing away.
-        if (c > 0f && b > 0f)
+        // How far the ray passes from the centre, measured at its nearest
+        // point. A flat view's ray starts a far plane back, and there the
+        // usual difference of squares has no digits left for an icon.
+        float missSquared = (toCentre - (ray.Direction * along)).LengthSquared();
+        float halfChordSquared = (radius * radius) - missSquared;
+        if (halfChordSquared < 0f)
             return false;
 
-        float discriminant = (b * b) - c;
-        if (discriminant < 0f)
+        float halfChord = MathF.Sqrt(halfChordSquared);
+
+        // The whole sphere is behind the origin.
+        if (along + halfChord < 0f)
             return false;
 
-        float near = -b - MathF.Sqrt(discriminant);
-        distance = MathF.Max(near, 0f);
+        distance = MathF.Max(along - halfChord, 0f);
         return true;
     }
 }

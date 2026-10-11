@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Editing.Cameras;
 using SpectraEngine.Editing.Icons;
 using SpectraEngine.Editing.Selection;
 using SpectraEngine.Editing.Viewport;
@@ -154,6 +155,40 @@ public sealed class IconPilePickTests
             foreach (Vector3 vertex in vertices)
                 Vector3.Distance(vertex, icon.At).ShouldBeLessThan(icon.Radius * 1.6f);
         }
+    }
+
+    [Fact]
+    public void In_a_flat_view_one_thing_above_another_stands_beside_it_and_each_is_picked_there()
+    {
+        // Seen from above, a lamp over a sound is on the same pixel.
+        var rig = new IconPileRig();
+        SceneNode sound = rig.AddEntity(IconPileRig.Sound, Vector3.Zero);
+        SceneNode lamp = rig.AddLamp(new Vector3(0f, 3f, 0f));
+        rig.Harness.Orbit(Vector3.Zero, 10f, 0.4f, -0.5f);
+        rig.Harness.EditorCamera.SetView(EditorViewPreset.Top);
+        rig.Camera.ProjectionKind.ShouldBe(CameraProjectionKind.Orthographic);
+
+        SceneIcons icons = rig.Place();
+        SceneIcon lampIcon = icons.Lights[0];
+        SceneIcon soundIcon = icons.Markers[0];
+
+        // Each stays at its own height, one icon width from the other across the screen.
+        float width = lampIcon.Radius * ViewportGlyphs.Reach * 2f;
+        Vector3.Dot(soundIcon.At - lampIcon.At, rig.Camera.Right).ShouldBe(width, tolerance: 1e-4f);
+        Vector3.Dot(soundIcon.At - lampIcon.At, rig.Camera.Up).ShouldBe(0f, tolerance: 1e-4f);
+        lampIcon.At.Y.ShouldBe(3f, tolerance: 1e-4f);
+        soundIcon.At.Y.ShouldBe(0f, tolerance: 1e-4f);
+
+        rig.Pick(lampIcon.At).ShouldBeSameAs(lamp);
+        rig.Pick(soundIcon.At).ShouldBeSameAs(sound);
+        rig.Pick(Vector3.Zero).ShouldBeNull();
+
+        // The rim is where it is drawn, though a flat view's rays start a far plane back.
+        Vector3 rim = rig.Camera.Right * lampIcon.Radius;
+        rig.Pick(lampIcon.At + (rim * 0.95f)).ShouldBeSameAs(lamp);
+        rig.Pick(lampIcon.At - (rim * 0.95f)).ShouldBeSameAs(lamp);
+        rig.Pick(lampIcon.At + (rim * 1.05f)).ShouldBeNull();
+        rig.Pick(lampIcon.At - (rim * 1.05f)).ShouldBeNull();
     }
 
     [Fact]
