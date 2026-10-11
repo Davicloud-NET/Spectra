@@ -5,9 +5,6 @@
 
 #include "luacode.h"
 
-// lua_CompileOptions grows between Luau releases. Filling it here keeps its
-// layout out of the binding.
-//
 // Returns the bytecode, to be freed with sl_free, or null when the compiler
 // itself failed. A script with a mistake in it still compiles: the bytecode
 // then carries the message and sl_load reports it.
@@ -16,6 +13,7 @@ SL_API char* sl_compile(const char* source, size_t size, int optimizationLevel, 
     sl_apply_flags();
     *bytecodeSize = 0;
 
+    // Filled here to keep its layout out of the binding. It grows between Luau releases.
     lua_CompileOptions options = {};
     options.optimizationLevel = optimizationLevel;
     options.debugLevel = debugLevel;
