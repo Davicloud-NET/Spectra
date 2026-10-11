@@ -17,7 +17,13 @@ internal sealed class NodeNamingSink(IScriptSink sink) : IScriptSink
         try
         {
             if (Loading is { } node && message.Severity == ScriptSeverity.Error)
-                sink.Report(message with { Text = $"{message.Text}. The script on '{node.Name}' did not start." });
+            {
+                sink.Report(message with
+                {
+                    Text = $"{message.Text}. The script on '{node.Name}' did not start.",
+                    ProblemNode = node.Id,
+                });
+            }
             else
                 sink.Report(in message);
         }

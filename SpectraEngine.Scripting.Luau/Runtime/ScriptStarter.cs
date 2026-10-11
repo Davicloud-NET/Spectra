@@ -26,7 +26,7 @@ internal sealed class ScriptStarter(LuauHost host, IScriptSource source, NodeNam
     {
         if (source.Read(script.Path) is not { } text)
         {
-            Report(script, $"'{node.Name}' names a script file that is not in the level's content, so it did not start.");
+            Report(node, script, $"'{node.Name}' names a script file that is not in the level's content, so it did not start.");
             return;
         }
 
@@ -41,9 +41,10 @@ internal sealed class ScriptStarter(LuauHost host, IScriptSource source, NodeNam
         if (loaded.SetGlobal("script"u8, LuauValue.Object(ScriptTags.Object, node)))
             loaded.Start();
         else
-            Report(script, $"The script on '{node.Name}' could not be given its node, so it did not start.");
+            Report(node, script, $"The script on '{node.Name}' could not be given its node, so it did not start.");
     }
 
-    private void Report(Script script, string text) =>
-        sink.Report(new ScriptMessage(ScriptSeverity.Error, text, script.Path, 0));
+    // A script that did not start stays wrong until the level is played again.
+    private void Report(SceneNode node, Script script, string text) =>
+        sink.Report(new ScriptMessage(ScriptSeverity.Error, text, script.Path, 0) { ProblemNode = node.Id });
 }

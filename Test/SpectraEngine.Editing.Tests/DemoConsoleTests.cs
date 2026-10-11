@@ -47,6 +47,52 @@ public sealed class DemoConsoleTests
     }
 
     [Fact]
+    public void A_line_from_a_script_is_logged_with_its_file_and_line_in_front_of_the_text()
+    {
+        var host = new EngineHost(NullLogger.Instance);
+        var log = new RecordingLogger();
+        DemoConsole.Attach(host, [], log);
+
+        ConsoleLine[] printed =
+        [
+            new(0, LogLevel.Information, "Spinner turns on a script") { Place = new ConsolePlace("Scripts/spinner.luau", 5) },
+            new(1, LogLevel.Warning, "careful") { Place = new ConsolePlace("Scripts/spinner.luau", 9) },
+        ];
+        host.PublishFrame(TimeSpan.Zero, _ => new FrameSnapshot { ConsoleLines = printed });
+
+        log.Entries.ShouldBe(
+        [
+            (LogLevel.Information, "[console] Scripts/spinner.luau:5: Spinner turns on a script"),
+            (LogLevel.Information, "[console] warning: Scripts/spinner.luau:9: careful"),
+        ]);
+    }
+
+    [Fact]
+    public void An_error_from_a_script_is_logged_with_a_line_for_each_caller_under_it()
+    {
+        var host = new EngineHost(NullLogger.Instance);
+        var log = new RecordingLogger();
+        DemoConsole.Attach(host, [], log);
+
+        ConsoleLine[] printed =
+        [
+            new(0, LogLevel.Error, "it broke")
+            {
+                Place = new ConsolePlace("Scripts/door.luau", 12),
+                Stack = [new ConsolePlace("Scripts/door.luau", 30, "press"), new ConsolePlace("Scripts/lobby.luau", 4)],
+            },
+        ];
+        host.PublishFrame(TimeSpan.Zero, _ => new FrameSnapshot { ConsoleLines = printed });
+
+        log.Entries.ShouldBe(
+        [
+            (LogLevel.Information, "[console] error: Scripts/door.luau:12: it broke"),
+            (LogLevel.Information, "[console] error:     Scripts/door.luau:30 in press"),
+            (LogLevel.Information, "[console] error:     Scripts/lobby.luau:4"),
+        ]);
+    }
+
+    [Fact]
     public void A_frame_that_printed_nothing_logs_nothing()
     {
         var host = new EngineHost(NullLogger.Instance);

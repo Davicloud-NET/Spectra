@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.ConsoleSystem;
 using System;
 using System.Collections.Generic;
@@ -5,8 +6,9 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Scripting;
 
 /// <summary>
-/// Writes what scripts report as console lines, with the file and the line
-/// in the text. So a print shows wherever the console's output shows.
+/// Writes what scripts report as console lines, one for each message. The
+/// file, the line and an error's stack travel beside the text, so a reader
+/// can take a person there. A print shows wherever the console's output shows.
 /// </summary>
 public sealed class ConsoleScriptSink : IScriptSink
 {
@@ -20,41 +22,39 @@ public sealed class ConsoleScriptSink : IScriptSink
     }
 
     /// <inheritdoc/>
-    public void Report(in ScriptMessage message)
-    {
-        Write(message.Severity, Describe(in message));
+    public void Report(in ScriptMessage message) =>
+        _output.Write(new ConsoleLine(0, SeverityOf(message.Severity), message.Text)
+        {
+            Place = message.Script.Length > 0 ? new ConsolePlace(message.Script, message.Line) : null,
+            Stack = FramesUnder(in message),
+            ProblemNode = message.ProblemNode,
+        });
 
-        // The line most often names the first frame's position already. After
-        // error(message, 2) it names the caller's, and the frame that raised
-        // is still to be shown.
+    // The line most often names the first frame's position already. After
+    // error(message, 2) it names the caller's, and the frame that raised is
+    // still to be shown.
+    private static IReadOnlyList<ConsolePlace> FramesUnder(in ScriptMessage message)
+    {
         IReadOnlyList<ScriptFrame> stack = message.Stack;
         bool isFirstNamed = stack.Count > 0 && stack[0].Script == message.Script && stack[0].Line == message.Line;
-        for (int i = isFirstNamed ? 1 : 0; i < stack.Count; i++)
-            Write(message.Severity, Describe(stack[i]));
-    }
+        int first = isFirstNamed ? 1 : 0;
+        if (stack.Count <= first)
+            return Array.Empty<ConsolePlace>();
 
-    /// <summary>The message as one line: <c>Scripts/door.luau:12: the text</c>.</summary>
-    public static string Describe(in ScriptMessage message) =>
-        message.Position.Length > 0 ? $"{message.Position}: {message.Text}" : message.Text;
-
-    private static string Describe(ScriptFrame frame) =>
-        frame.Function is null
-            ? $"    {frame.Script}:{frame.Line}"
-            : $"    {frame.Script}:{frame.Line} in {frame.Function}";
-
-    private void Write(ScriptSeverity severity, string line)
-    {
-        switch (severity)
+        var frames = new ConsolePlace[stack.Count - first];
+        for (int i = 0; i < frames.Length; i++)
         {
-            case ScriptSeverity.Error:
-                _output.Error(line);
-                break;
-            case ScriptSeverity.Warning:
-                _output.Warn(line);
-                break;
-            default:
-                _output.Print(line);
-                break;
+            ScriptFrame frame = stack[first + i];
+            frames[i] = new ConsolePlace(frame.Script, frame.Line, frame.Function);
         }
+
+        return frames;
     }
+
+    private static LogLevel SeverityOf(ScriptSeverity severity) => severity switch
+    {
+        ScriptSeverity.Error => LogLevel.Error,
+        ScriptSeverity.Warning => LogLevel.Warning,
+        _ => LogLevel.Information,
+    };
 }

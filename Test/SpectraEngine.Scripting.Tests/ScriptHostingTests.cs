@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Bsp.Tests;
-using SpectraEngine.Core.ConsoleSystem;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
@@ -104,46 +103,6 @@ public sealed class ScriptHostingTests
         setup.World.ShouldBeSameAs(level);
         setup.Sink.ShouldBeSameAs(sink);
         setup.Source.ShouldBeSameAs(source);
-    }
-
-    [Fact]
-    public void The_console_sink_writes_a_print_a_warning_and_an_error_with_file_and_line()
-    {
-        var output = new ConsoleOutput();
-        var sink = new ConsoleScriptSink(output);
-        ScriptFrame[] stack = [new("Scripts/door.luau", 12, "open"), new("Scripts/door.luau", 30, null)];
-
-        sink.Report(new ScriptMessage(ScriptSeverity.Print, "hello", "Scripts/door.luau", 3));
-        sink.Report(new ScriptMessage(ScriptSeverity.Warning, "careful", "Scripts/door.luau", 4));
-        sink.Report(new ScriptMessage(ScriptSeverity.Error, "it broke", "Scripts/door.luau", 12, stack));
-        sink.Report(new ScriptMessage(ScriptSeverity.Error, "no place", string.Empty, 0));
-
-        output.Drain().Select(line => (line.Severity, line.Text)).ShouldBe(
-        [
-            (LogLevel.Information, "Scripts/door.luau:3: hello"),
-            (LogLevel.Warning, "Scripts/door.luau:4: careful"),
-            (LogLevel.Error, "Scripts/door.luau:12: it broke"),
-            (LogLevel.Error, "    Scripts/door.luau:30"),
-            (LogLevel.Error, "no place"),
-        ]);
-    }
-
-    [Fact]
-    public void The_console_sink_shows_the_frame_that_raised_when_the_line_names_its_caller()
-    {
-        var output = new ConsoleOutput();
-        var sink = new ConsoleScriptSink(output);
-        ScriptFrame[] stack = [new("Scripts/door.luau", 12, "open"), new("Scripts/door.luau", 30, null)];
-
-        // What error(message, 2) gives: the position is the caller's.
-        sink.Report(new ScriptMessage(ScriptSeverity.Error, "no such door", "Scripts/door.luau", 30, stack));
-
-        output.Drain().Select(line => line.Text).ShouldBe(
-        [
-            "Scripts/door.luau:30: no such door",
-            "    Scripts/door.luau:12 in open",
-            "    Scripts/door.luau:30",
-        ]);
     }
 
     private static EntityWorld LevelWithScripts(int count)

@@ -18,14 +18,34 @@ public sealed class ConsoleOutput : IConsoleOutput
     /// <summary>How many lines are waiting.</summary>
     public int Count => _lines.Count;
 
-    /// <inheritdoc/>
-    public void Print(string text) => Add(LogLevel.Information, text);
+    /// <summary>
+    /// How many lines were written since this console was made, the dropped
+    /// ones too. It is the number the next line gets.
+    /// </summary>
+    public long Written => _nextSequence;
 
     /// <inheritdoc/>
-    public void Warn(string text) => Add(LogLevel.Warning, text);
+    public void Print(string text) => Write(new ConsoleLine(0, LogLevel.Information, text));
 
     /// <inheritdoc/>
-    public void Error(string text) => Add(LogLevel.Error, text);
+    public void Warn(string text) => Write(new ConsoleLine(0, LogLevel.Warning, text));
+
+    /// <inheritdoc/>
+    public void Error(string text) => Write(new ConsoleLine(0, LogLevel.Error, text));
+
+    /// <inheritdoc/>
+    public void Write(in ConsoleLine line)
+    {
+        ArgumentNullException.ThrowIfNull(line.Text);
+
+        // A dropped line still takes a number. The gap is how a reader learns
+        // that lines are missing.
+        long sequence = _nextSequence++;
+        if (_lines.Count >= Capacity)
+            return;
+
+        _lines.Add(line with { Sequence = sequence });
+    }
 
     /// <summary>Hands the waiting lines to the caller and starts a fresh batch.</summary>
     public IReadOnlyList<ConsoleLine> Drain()
@@ -38,18 +58,5 @@ public sealed class ConsoleOutput : IConsoleOutput
         List<ConsoleLine> batch = _lines;
         _lines = new List<ConsoleLine>(batch.Count);
         return batch;
-    }
-
-    private void Add(LogLevel severity, string text)
-    {
-        ArgumentNullException.ThrowIfNull(text);
-
-        // A dropped line still takes a number. The gap is how a reader learns
-        // that lines are missing.
-        long sequence = _nextSequence++;
-        if (_lines.Count >= Capacity)
-            return;
-
-        _lines.Add(new ConsoleLine(sequence, severity, text));
     }
 }

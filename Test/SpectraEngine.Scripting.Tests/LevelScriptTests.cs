@@ -97,7 +97,8 @@ public sealed class LevelScriptTests
     public void A_script_file_that_is_missing_names_its_node_and_the_other_scripts_run()
     {
         using var level = new ScriptLevel();
-        level.Scene.Root.CreateChild("Lamp").Script = new Script("Scripts/nowhere.luau");
+        SceneNode lamp = level.Scene.Root.CreateChild("Lamp");
+        lamp.Script = new Script("Scripts/nowhere.luau");
         level.AddScript(level.Scene.Root, "print('here')");
 
         level.Play().Tick();
@@ -105,6 +106,7 @@ public sealed class LevelScriptTests
         ScriptMessage missing = level.Sink.Messages.Single(message => message.Severity == ScriptSeverity.Error);
         missing.Script.ShouldBe("Scripts/nowhere.luau");
         missing.Text.ShouldContain("'Lamp'");
+        missing.ProblemNode.ShouldBe(lamp.Id);
         level.Printed.ShouldBe(["here"]);
     }
 
@@ -121,7 +123,21 @@ public sealed class LevelScriptTests
         mistake.Script.ShouldBe(broken.Script.ShouldNotBeNull().Path);
         mistake.Line.ShouldBe(2);
         mistake.Text.ShouldContain("'Broken'");
+        mistake.ProblemNode.ShouldBe(broken.Id);
         level.Printed.ShouldBe(["here"]);
+    }
+
+    [Fact]
+    public void An_error_in_a_script_that_started_is_no_standing_problem_of_its_node()
+    {
+        using var level = new ScriptLevel();
+        level.AddScript(level.Scene.Root, "print('one')\nerror('two')");
+
+        level.Play().Tick();
+
+        ScriptMessage failure = level.Sink.Messages.Single(message => message.Severity == ScriptSeverity.Error);
+        failure.ProblemNode.ShouldBe(Guid.Empty);
+        level.Sink.Messages.ShouldAllBe(message => message.ProblemNode == Guid.Empty);
     }
 
     [Fact]

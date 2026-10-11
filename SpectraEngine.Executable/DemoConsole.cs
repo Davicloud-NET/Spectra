@@ -18,7 +18,12 @@ internal static class DemoConsole
         host.FrameCompleted += snapshot =>
         {
             foreach (ConsoleLine line in snapshot.ConsoleLines)
+            {
                 logger.LogInformation("{Line}", Describe(in line));
+
+                foreach (ConsolePlace frame in line.Stack)
+                    logger.LogInformation("{Line}", Describe(line.Severity, "    " + frame.Described));
+            }
         };
 
         foreach (string command in commands)
@@ -28,12 +33,15 @@ internal static class DemoConsole
         }
     }
 
+    // Nobody can click in a log, so a line's place is text in front of it.
+    public static string Describe(in ConsoleLine line) => Describe(line.Severity, line.PlainText);
+
     // All at Information: a refused command is the console's news, not a
     // fault in the run. The severity stays readable in the text.
-    public static string Describe(in ConsoleLine line) => line.Severity switch
+    private static string Describe(LogLevel severity, string text) => severity switch
     {
-        LogLevel.Error => $"{Prefix} error: {line.Text}",
-        LogLevel.Warning => $"{Prefix} warning: {line.Text}",
-        _ => $"{Prefix} {line.Text}",
+        LogLevel.Error => $"{Prefix} error: {text}",
+        LogLevel.Warning => $"{Prefix} warning: {text}",
+        _ => $"{Prefix} {text}",
     };
 }

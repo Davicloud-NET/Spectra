@@ -228,4 +228,11 @@ public sealed class FrameSnapshot
     /// <see cref="ConsoleLine.Sequence"/> says how many.
     /// </summary>
     public IReadOnlyList<ConsoleLine> ConsoleLines { get; init; } = Array.Empty<ConsoleLine>();
+
+    /// <summary>
+    /// How many lines the console has written since the engine started, the
+    /// ones it could not hold too. A reader that has seen fewer by the end of
+    /// <see cref="ConsoleLines"/> has lost the rest.
+    /// </summary>
+    public long ConsoleLinesWritten { get; init; }
 }

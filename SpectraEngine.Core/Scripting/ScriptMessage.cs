@@ -22,6 +22,12 @@ public readonly record struct ScriptMessage(
     {
     }
 
+    /// <summary>
+    /// The node this message is a standing problem of: the one whose script
+    /// did not start. Empty for a message that only says what happened.
+    /// </summary>
+    public Guid ProblemNode { get; init; }
+
     /// <summary>The file and the line as <c>Scripts/door.luau:12</c>, or what of it is known.</summary>
     public string Position => Line > 0 ? $"{Script}:{Line}" : Script;
 }

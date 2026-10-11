@@ -233,6 +233,7 @@ public sealed class Engine
                 CaptionTime = _captions.Now,
                 PreviewingSound = _publishedPreview = _soundPreview.Path,
                 ConsoleLines = _console.Output.Drain(),
+                ConsoleLinesWritten = _console.Output.Written,
             };
         }, interacting);
     }

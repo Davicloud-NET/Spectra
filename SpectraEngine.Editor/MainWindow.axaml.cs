@@ -1479,7 +1479,12 @@ public partial class MainWindow : Window
         _consoleFeed.Feed(snapshot.ConsoleLines, _shell.Output);
 
         foreach (ConsoleLine line in snapshot.ConsoleLines)
-            _logger.LogInformation("[console] {Line}", line.Text);
+        {
+            _logger.LogInformation("[console] {Line}", line.PlainText);
+
+            foreach (ConsolePlace frame in line.Stack)
+                _logger.LogInformation("[console]     {Frame}", frame.Described);
+        }
     }
 
     private void OnConsoleCommand(string line)

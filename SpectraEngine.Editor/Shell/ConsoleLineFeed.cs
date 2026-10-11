@@ -32,7 +32,11 @@ public sealed class ConsoleLineFeed
                     $"{missing} console line(s) are missing here: more were printed than the editor kept up with.");
             }
 
-            output.Append(SeverityOf(line.Severity), line.Text);
+            OutputSeverity severity = SeverityOf(line.Severity);
+            output.Append(severity, line.PlainText);
+            foreach (ConsolePlace frame in line.Stack)
+                output.Append(severity, "    " + frame.Described);
+
             _next = line.Sequence + 1;
         }
     }
