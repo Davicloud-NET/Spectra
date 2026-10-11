@@ -161,5 +161,35 @@ public sealed class ScriptReportTests
         ScriptMessage message = sink.Single;
         message.Text.ShouldContain("stack overflow");
         message.Stack.Count.ShouldBeInRange(2, 64);
+        message.Text.ShouldMatch(@"stack overflow\. \d{3,} more calls are not shown\.$");
+    }
+
+    // The calls that show under an error would otherwise read as all of them.
+    [Theory]
+    [InlineData(39, "the bottom. 9 more calls are not shown.")]
+    [InlineData(31, "the bottom. 1 more call is not shown.")]
+    [InlineData(30, "the bottom")]
+    public void An_error_under_more_calls_than_are_kept_says_how_many_are_left_out(int depth, string expected)
+    {
+        using LuauHost host = TestHost.Open(out RecordingSink sink);
+        string source = $$"""
+            local function fall(depth)
+                if depth == 0 then
+                    error("the bottom")
+                end
+                fall(depth - 1)
+                return depth
+            end
+
+            fall({{depth}})
+            """;
+
+        host.RunText(source, "Scripts/well.luau").ShouldBe(LuauResume.Failed);
+
+        ScriptMessage message = sink.Single;
+        message.Text.ShouldBe(expected);
+        message.Line.ShouldBe(3);
+        message.Stack.Count.ShouldBe(Math.Min(depth + 2, 32));
+        message.Stack[0].ShouldBe(new ScriptFrame("Scripts/well.luau", 3, "fall"));
     }
 }

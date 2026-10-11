@@ -8,7 +8,8 @@ namespace SpectraEngine.Scripting.Luau;
 // Turns what Luau knows about a line or an error into a ScriptMessage.
 internal static unsafe class ScriptReport
 {
-    // A script that recursed until the stack ran out has 20000 frames.
+    // A script that recursed until the stack ran out has 20000 frames. The
+    // ones nearest to the error are kept, and the error says how many are not.
     private const int MostFrames = 32;
 
     private const int ScriptFrameKind = 1;
@@ -33,7 +34,7 @@ internal static unsafe class ScriptReport
     // its frames are still there.
     internal static ScriptMessage Failure(nint thread, nint main, LuauScript? script)
     {
-        ScriptFrame[] stack = Frames(thread, script);
+        ScriptFrame[] stack = Frames(thread, script, out int leftOut);
         string text = ErrorText(thread, main);
 
         // The message names the position itself, and error(message, 2) names
@@ -41,11 +42,11 @@ internal static unsafe class ScriptReport
         foreach (ScriptFrame frame in stack)
         {
             if (TrySplit(text, frame.Script, out int line, out string rest))
-                return new ScriptMessage(ScriptSeverity.Error, rest, frame.Script, line, stack);
+                return new ScriptMessage(ScriptSeverity.Error, WithCut(rest, leftOut), frame.Script, line, stack);
         }
 
         return stack.Length > 0
-            ? new ScriptMessage(ScriptSeverity.Error, text, stack[0].Script, stack[0].Line, stack)
+            ? new ScriptMessage(ScriptSeverity.Error, WithCut(text, leftOut), stack[0].Script, stack[0].Line, stack)
             : new ScriptMessage(ScriptSeverity.Error, text, script?.Name ?? string.Empty, 0);
     }
 
@@ -55,10 +56,13 @@ internal static unsafe class ScriptReport
             ? new ScriptMessage(ScriptSeverity.Error, rest, script, line)
             : new ScriptMessage(ScriptSeverity.Error, text, script, 0);
 
-    private static ScriptFrame[] Frames(nint thread, LuauScript? script)
+    // The script functions nearest to the error, and how many more there
+    // are further out.
+    private static ScriptFrame[] Frames(nint thread, LuauScript? script, out int leftOut)
     {
+        leftOut = 0;
         List<ScriptFrame> frames = [];
-        for (int level = 0; frames.Count < MostFrames; level++)
+        for (int level = 0; ; level++)
         {
             byte* source;
             byte* name;
@@ -69,11 +73,34 @@ internal static unsafe class ScriptReport
             if (kind != ScriptFrameKind)
                 continue;
 
+            if (frames.Count == MostFrames)
+            {
+                leftOut++;
+                continue;
+            }
+
             string? function = name == null ? null : Encoding.UTF8.GetString(LuaText.FromNative(name));
             frames.Add(new ScriptFrame(NameOf(source, script), line, function));
         }
 
         return [.. frames];
+    }
+
+    // The calls that show under an error would read as all there were. So an
+    // error with more of them says how many are missing.
+    private static string WithCut(string text, int leftOut)
+    {
+        if (leftOut == 0)
+            return text;
+
+        string more = leftOut == 1
+            ? "1 more call is not shown."
+            : $"{leftOut.ToString(CultureInfo.InvariantCulture)} more calls are not shown.";
+
+        if (text.Length == 0)
+            return more;
+
+        return text[^1] is '.' or '!' or '?' ? $"{text} {more}" : $"{text}. {more}";
     }
 
     // The chunk's name without the character Luau puts in front. Most frames
