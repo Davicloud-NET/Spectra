@@ -175,10 +175,8 @@ Play and console
 
 Scripting
 
-- One `LuauHost` owns one Luau state and knows nothing of a scene. A script is a thread in it with globals of its own. A function the host keeps (`LuauFunction`) runs on a new thread that shares them.
-- A host function is a static `[UnmanagedCallersOnly]` pointer where it must be fast, and a delegate otherwise. It reads and pushes through `LuauStack` and fails by returning `stack.Fail(...)`.
-- What a script reports is a `ScriptMessage` in `SpectraEngine.Core/Scripting`, so the console and the editor carry it without the binding.
-- A script that runs past `LuauHost.CallLimit` or holds more than `MemoryBudget` is stopped and switched off. A script that is switched off never runs again, and the host lets go of its threads, its kept functions and its globals.
+- One `LuauHost` owns one Luau state and knows nothing of a scene. A script is a thread in it with globals of its own, and a function the host keeps (`LuauFunction`) runs on a new thread that shares them.
+- A script that runs past `LuauHost.CallLimit` or holds more than `MemoryBudget` is switched off and never runs again.
 
 ## Things that fail quietly
 
