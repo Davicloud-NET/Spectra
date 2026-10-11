@@ -18,6 +18,11 @@ internal sealed class EntityDispatcher
 
     private long _sequence;
     private int _maxDispatchesPerTick = 4096;
+    private int _maxPendingEvents = 65536;
+
+    // Each is logged when it starts, not on every tick it lasts.
+    private bool _isBehind;
+    private bool _saidFull;
 
     public EntityDispatcher(EntityWorld world, ILogger logger)
     {
@@ -35,6 +40,16 @@ internal sealed class EntityDispatcher
         }
     }
 
+    public int MaxPendingEvents
+    {
+        get => _maxPendingEvents;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(value);
+            _maxPendingEvents = value;
+        }
+    }
+
     public int BudgetTripCount { get; private set; }
 
     public int DiscardedCount { get; private set; }
@@ -46,46 +61,66 @@ internal sealed class EntityDispatcher
         _queue.Clear();
         _resolved.Clear();
         _sequence = 0;
+        _isBehind = false;
+        _saidFull = false;
     }
 
-    public void QueueInput(Entity target, string input, string parameter, Entity? activator)
-    {
-        var queued = new EntityEvent
-        {
-            Tick = _world.TickNumber,
-            Sequence = _sequence++,
-            Kind = EntityEventKind.Input,
-            Target = target,
-            Activator = activator,
-            TargetName = "",
-            Input = input,
-            Parameter = parameter,
-            Output = "",
-        };
+    public void QueueInput(Entity target, string input, string parameter, Entity? activator) =>
+        Queue(
+            new EntityEvent
+            {
+                Tick = _world.TickNumber,
+                Sequence = _sequence++,
+                Kind = EntityEventKind.Input,
+                Target = target,
+                Activator = activator,
+                TargetName = "",
+                Input = input,
+                Parameter = parameter,
+                Output = "",
+            },
+            target);
 
-        _queue.Push(queued);
-        _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, _world, queued, target));
-    }
+    public void QueueInput(string targetName, string input, string parameter, float delay) =>
+        Queue(
+            new EntityEvent
+            {
+                Tick = _world.TickAfter(delay),
+                Sequence = _sequence++,
+                Kind = EntityEventKind.Input,
+                TargetName = targetName,
+                Input = input,
+                Parameter = parameter,
+                Output = "",
+            },
+            null);
 
-    public void QueueInput(string targetName, string input, string parameter, float delay)
-    {
-        var queued = new EntityEvent
-        {
-            Tick = _world.TickAfter(delay),
-            Sequence = _sequence++,
-            Kind = EntityEventKind.Input,
-            TargetName = targetName,
-            Input = input,
-            Parameter = parameter,
-            Output = "",
-        };
+    public void ScheduleOutput(
+        Entity caller,
+        Entity? activator,
+        string output,
+        in EntityConnection wire,
+        int wireIndex,
+        string? parameterOverride) =>
+        Queue(
+            new EntityEvent
+            {
+                Tick = _world.TickAfter(wire.Delay),
+                Sequence = _sequence++,
+                Kind = EntityEventKind.Input,
+                Entity = caller,
+                Activator = activator,
+                TargetName = wire.TargetName,
+                Input = wire.Input,
+                Parameter = parameterOverride ?? wire.Parameter,
+                Output = output,
+                WireOrdinal = wireIndex + 1,
+            },
+            null);
 
-        _queue.Push(queued);
-        _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, _world, queued, null));
-    }
-
-    public void ScheduleThink(Entity entity, long tick, int serial) =>
-        _queue.Push(new EntityEvent
+    // False when the think was not queued and will not come.
+    public bool ScheduleThink(Entity entity, long tick, int serial) =>
+        TryPush(new EntityEvent
         {
             Tick = tick,
             Sequence = _sequence++,
@@ -98,75 +133,77 @@ internal sealed class EntityDispatcher
             Output = "",
         });
 
-    public void ScheduleOutput(
-        Entity caller,
-        Entity? activator,
-        string output,
-        in EntityConnection wire,
-        int wireIndex,
-        string? parameterOverride)
-    {
-        var queued = new EntityEvent
-        {
-            Tick = _world.TickAfter(wire.Delay),
-            Sequence = _sequence++,
-            Kind = EntityEventKind.Input,
-            Entity = caller,
-            Activator = activator,
-            TargetName = wire.TargetName,
-            Input = wire.Input,
-            Parameter = parameterOverride ?? wire.Parameter,
-            Output = output,
-            WireOrdinal = wireIndex + 1,
-        };
-
-        _queue.Push(queued);
-        _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, _world, queued, null));
-    }
-
-    // Runs everything due this tick and returns how many events that was.
-    // What was waiting when the drain began always runs: it sorts ahead of
-    // anything made here, and only what is made here counts against the
-    // budget. The sequence number tells the two apart, whatever kind of event
-    // it is.
+    // An event numbered below firstMadeHere was waiting when the drain began,
+    // and those all sort ahead of what the drain makes. Each of the two has
+    // the budget to itself, so a loop cannot use up what the waiting need.
     public int DrainDue()
     {
+        if (_queue.Count <= _maxPendingEvents / 2)
+            _saidFull = false;
+
         long tick = _world.TickNumber;
         long firstMadeHere = _sequence;
-        int dispatched = 0;
+        int waited = 0;
         int madeHere = 0;
+        bool behind = false;
 
         while (_queue.TryPeek(out EntityEvent next) && next.Tick <= tick)
         {
-            if (next.Sequence >= firstMadeHere)
+            if (next.Sequence < firstMadeHere)
             {
-                if (madeHere == _maxDispatchesPerTick)
+                if (waited == _maxDispatchesPerTick)
                 {
-                    TripBudget(next, firstMadeHere);
+                    behind = true;
+                    FallBehind(next);
                     break;
                 }
 
+                waited++;
+            }
+            else if (madeHere == _maxDispatchesPerTick)
+            {
+                DropWhatThisDrainMade(next, firstMadeHere);
+                break;
+            }
+            else
+            {
                 madeHere++;
             }
 
             _queue.TryPop(out EntityEvent due);
-            dispatched++;
             Dispatch(due);
         }
 
-        return dispatched;
+        _isBehind = behind;
+        return waited + madeHere;
+    }
+
+    private void Queue(in EntityEvent input, Entity? target)
+    {
+        if (TryPush(input))
+            _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, _world, input, target));
+    }
+
+    private bool TryPush(in EntityEvent made)
+    {
+        if (_queue.Count >= _maxPendingEvents)
+        {
+            RefuseForRoom(made);
+            return false;
+        }
+
+        _queue.Push(made);
+        return true;
     }
 
     private void Dispatch(in EntityEvent due)
     {
         if (due.Kind == EntityEventKind.Think)
         {
-            Entity thinker = due.Entity!;
-            // Superseded by a later SetNextThink or CancelThink.
-            if (thinker.ThinkSerial != due.ThinkSerial)
-                return;
+            // A think whose serial has moved on was superseded or cancelled.
+            if (due.Entity is { } thinker && thinker.ThinkSerial == due.ThinkSerial)
+                thinker.Think();
 
-            thinker.Think();
             return;
         }
 
@@ -190,7 +227,7 @@ internal sealed class EntityDispatcher
 
         _resolved.Clear();
         // Self and caller are the same entity for a connection.
-        _world.Index!.Resolve(due.TargetName, due.Entity, due.Activator, due.Entity, _resolved);
+        _world.Index?.Resolve(due.TargetName, due.Entity, due.Activator, due.Entity, _resolved);
 
         if (_resolved.Count == 0)
         {
@@ -220,12 +257,27 @@ internal sealed class EntityDispatcher
             target.TargetName, target.ClassName, due.Input);
     }
 
-    private void TripBudget(in EntityEvent offender, long firstMadeHere)
+    // More was waiting than one tick may send. The rest stays queued and
+    // sorts first on the next tick, so nothing is lost and the order holds.
+    private void FallBehind(in EntityEvent next)
+    {
+        BudgetTripCount++;
+        if (_isBehind)
+            return;
+
+        _logger.LogError(
+            "More than {Budget} entity events were waiting for one tick. The rest are sent on the next " +
+            "ticks, in the same order, so this level's logic runs late until it has caught up. First in " +
+            "line is {What} at '{TargetName}'. This is what a loop that waits and multiplies looks like.",
+            _maxDispatchesPerTick, Describe(next), NameOf(next));
+    }
+
+    private void DropWhatThisDrainMade(in EntityEvent offender, long firstMadeHere)
     {
         BudgetTripCount++;
 
-        // Drop what this drain made and has not sent. It stops at anything
-        // else: an event that was waiting, or one that is due on a later tick.
+        // It stops at anything else: an event that was waiting, or one that
+        // is due on a later tick.
         long tick = _world.TickNumber;
         int discarded = 0;
         while (_queue.TryPeek(out EntityEvent next)
@@ -238,20 +290,37 @@ internal sealed class EntityDispatcher
 
         DiscardedCount += discarded;
 
-        string offenderName = offender.Kind == EntityEventKind.Think
-            ? offender.Entity?.TargetName ?? ""
-            : offender.Target?.TargetName ?? offender.TargetName;
-        string what = offender.Kind == EntityEventKind.Think
-            ? "a think"
-            : offender.Output.Length > 0
-                ? $"output '{offender.Output}' sending '{offender.Input}'"
-                : $"input '{offender.Input}'";
-
         _logger.LogError(
             "Entity dispatch budget of {Budget} was exhausted in one tick; the cascade was still firing " +
             "{What} at '{TargetName}'. The {Discarded} event(s) it had made and not sent were dropped. " +
             "What was already waiting has run. This is what a zero-delay loop between two entities " +
             "looks like.",
-            _maxDispatchesPerTick, what, offenderName, discarded);
+            _maxDispatchesPerTick, Describe(offender), NameOf(offender), discarded);
     }
+
+    private void RefuseForRoom(in EntityEvent made)
+    {
+        DiscardedCount++;
+        if (_saidFull)
+            return;
+
+        _saidFull = true;
+        _logger.LogError(
+            "The entity event queue is full at {Limit} events, so {What} at '{TargetName}' was dropped, " +
+            "and so is every event made while there is no room. What is already waiting will still run. " +
+            "This is what a loop that waits and multiplies looks like.",
+            _maxPendingEvents, Describe(made), NameOf(made));
+    }
+
+    private static string Describe(in EntityEvent made) =>
+        made.Kind == EntityEventKind.Think
+            ? "a think"
+            : made.Output.Length > 0
+                ? $"output '{made.Output}' sending '{made.Input}'"
+                : $"input '{made.Input}'";
+
+    private static string NameOf(in EntityEvent made) =>
+        made.Kind == EntityEventKind.Think
+            ? made.Entity?.TargetName ?? ""
+            : made.Target?.TargetName ?? made.TargetName;
 }

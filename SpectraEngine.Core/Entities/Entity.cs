@@ -252,12 +252,14 @@ public abstract class Entity
 
     private void ThinkAfter(double seconds)
     {
-        _nextThinkTick = World.TickAfter(seconds);
+        long tick = World.TickAfter(seconds);
         _thinkSerial++;
 
-        // A wait too long to count is no think at all.
-        if (_nextThinkTick != NoThink)
-            World.Dispatcher.ScheduleThink(this, _nextThinkTick, _thinkSerial);
+        // A wait too long to count is no think at all, and neither is one
+        // the queue had no room for.
+        _nextThinkTick = tick != NoThink && World.Dispatcher.ScheduleThink(this, tick, _thinkSerial)
+            ? tick
+            : NoThink;
     }
 
     internal void Bind(SceneNode node, EntityWorld world, EntityData data)

@@ -145,10 +145,10 @@ public sealed class EntityWorld
     public ISoundCatalog? SoundCatalog { get; set; }
 
     /// <summary>
-    /// How many of the events a <see cref="Tick"/> makes it may also dispatch
-    /// before the cascade is treated as a runaway loop, logged and dropped.
-    /// An event queued before the tick drains does not count and is never
-    /// dropped.
+    /// The most events one <see cref="Tick"/> sends of those that were
+    /// waiting, and the most it sends of those it makes itself. Waiting
+    /// events past it stay queued and go first on the next tick. What a tick
+    /// makes past it is a loop with no delay, and is logged and dropped.
     /// </summary>
     public int MaxDispatchesPerTick
     {
@@ -156,10 +156,28 @@ public sealed class EntityWorld
         set => _dispatcher.MaxDispatchesPerTick = value;
     }
 
-    /// <summary>How many ticks have hit <see cref="MaxDispatchesPerTick"/>.</summary>
+    /// <summary>
+    /// The most events that can wait at once. One made while the queue is
+    /// full is logged and dropped, which stops a loop that waits and
+    /// multiplies. Sending an event frees its place, so an entity that asks
+    /// for one more wait each time it is woken is not dropped.
+    /// </summary>
+    public int MaxPendingEvents
+    {
+        get => _dispatcher.MaxPendingEvents;
+        set => _dispatcher.MaxPendingEvents = value;
+    }
+
+    /// <summary>
+    /// How many ticks have hit <see cref="MaxDispatchesPerTick"/>, with
+    /// waiting events or with their own.
+    /// </summary>
     public int DispatchBudgetTripCount => _dispatcher.BudgetTripCount;
 
-    /// <summary>How many events a budget trip has discarded over this world's life.</summary>
+    /// <summary>
+    /// How many events have been dropped over this world's life: by a tick
+    /// that made too many, or because the queue was full.
+    /// </summary>
     public int DiscardedEventCount => _dispatcher.DiscardedCount;
 
     /// <summary>
@@ -168,7 +186,10 @@ public sealed class EntityWorld
     /// </summary>
     public int LastTickDispatchCount { get; private set; }
 
-    /// <summary>Events waiting for their tick to come.</summary>
+    /// <summary>
+    /// Events in the queue: those waiting for their tick, and those a tick
+    /// had no budget left to send.
+    /// </summary>
     public int PendingEventCount => _dispatcher.PendingCount;
 
     /// <summary>Nodes queued for a deferred spawn.</summary>

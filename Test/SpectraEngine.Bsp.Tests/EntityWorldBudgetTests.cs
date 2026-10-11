@@ -5,33 +5,76 @@ using SpectraEngine.Core.Scene;
 namespace SpectraEngine.Bsp.Tests;
 
 /// <summary>
-/// What the dispatch budget counts and what it drops: only events made in the
-/// drain that trips it. An event that was waiting when the drain began runs.
+/// What a tick sends and what it leaves: the budget's worth of what was
+/// waiting, the budget's worth of what it makes, and a queue that fills and
+/// goes no further. An event that was waiting is sent late, never dropped.
 /// </summary>
 public sealed class EntityWorldBudgetTests
 {
     private const float Tick = 1f / 60f;
     private const int Budget = 8;
+    private const int QueueLimit = Budget * 4;
 
     private readonly List<string> _log = [];
     private readonly CapturingLogger _logger = new();
     private readonly Scene _scene = new("Budget");
 
     [Fact]
-    public void More_waiting_events_than_the_budget_all_run_and_trip_nothing()
+    public void More_waiting_events_than_the_budget_go_out_over_the_next_ticks_in_order_and_none_is_lost()
+    {
+        const int pings = (Budget * 2) + 3;
+        EntityRuntime.Place(_scene.Root, "bystander", "recorder");
+        EntityWorld world = Started();
+
+        world.QueueInput("bystander", "Later", delay: 2 * Tick);
+        for (int i = 0; i < pings; i++)
+            world.QueueInput("bystander", $"Ping{i}");
+
+        world.Tick(Tick);
+        _log.Count.ShouldBe(Budget);
+        world.LastTickDispatchCount.ShouldBe(Budget);
+        world.PendingEventCount.ShouldBe(Budget + 3 + 1);
+
+        world.Tick(Tick);
+        _log.Count.ShouldBe(Budget * 2);
+
+        // Later was due a tick ago. It keeps its place behind the pings.
+        world.Tick(Tick);
+        world.LastTickDispatchCount.ShouldBe(3 + 1);
+        world.PendingEventCount.ShouldBe(0);
+        Heard().ShouldBe([.. Enumerable.Range(0, pings).Select(i => $"Ping{i}"), "Later"]);
+
+        world.DiscardedEventCount.ShouldBe(0);
+        world.DispatchBudgetTripCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Falling_behind_is_an_error_once_each_time_it_starts_and_names_the_first_event_left()
     {
         EntityRuntime.Place(_scene.Root, "bystander", "recorder");
         EntityWorld world = Started();
 
-        for (int i = 0; i < Budget * 3; i++)
+        for (int i = 0; i < (Budget * 3) + 1; i++)
             world.QueueInput("bystander", $"Ping{i}");
         world.Tick(Tick);
+        world.Tick(Tick);
+        world.Tick(Tick);
 
-        _log.Count.ShouldBe(Budget * 3);
-        world.LastTickDispatchCount.ShouldBe(Budget * 3);
-        world.DispatchBudgetTripCount.ShouldBe(0);
-        world.DiscardedEventCount.ShouldBe(0);
-        _logger.MessagesAt(LogLevel.Error).ShouldBeEmpty();
+        // Behind for three ticks, said once.
+        world.DispatchBudgetTripCount.ShouldBe(3);
+        string error = _logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem();
+        error.ShouldContain($"More than {Budget}");
+        error.ShouldContain($"input 'Ping{Budget}'");
+        error.ShouldContain("'bystander'");
+
+        world.Tick(Tick);
+        world.PendingEventCount.ShouldBe(0);
+
+        for (int i = 0; i < Budget + 1; i++)
+            world.QueueInput("bystander", "Again");
+        world.Tick(Tick);
+
+        _logger.MessagesAt(LogLevel.Error).Count.ShouldBe(2);
     }
 
     [Fact]
@@ -44,12 +87,13 @@ public sealed class EntityWorldBudgetTests
         EntityRuntime.Wire(pong, "OnTrigger", "ping", "Trigger");
         EntityWorld world = Started();
 
-        // Waiting from two ticks back, from before the loop starts and from after.
+        // Waiting from two ticks back, from before the loop starts and from
+        // after. With the loop's own first input that is the budget's worth.
         world.QueueInput("bystander", "Delayed", delay: 2 * Tick);
         world.Tick(Tick);
         world.QueueInput("bystander", "Before");
         world.QueueInput("ping", "Trigger");
-        for (int i = 0; i < Budget * 2; i++)
+        for (int i = 0; i < Budget - 3; i++)
             world.QueueInput("bystander", $"After{i}");
 
         world.Tick(Tick);
@@ -63,14 +107,14 @@ public sealed class EntityWorldBudgetTests
         error.ShouldContain("'pong'");
 
         // Every bystander's input arrived, in the order it was queued.
-        string[] heard = [.. _log.Select(line => line.Split(':')[1])];
-        heard.Length.ShouldBe(2 + (Budget * 2));
+        string[] heard = Heard();
+        heard.Length.ShouldBe(Budget - 1);
         heard[0].ShouldBe("Before");
         heard[1].ShouldBe("After0");
         heard[^1].ShouldBe("Delayed");
 
         // The waiting ones, the loop's first input, then the budget's worth of the loop.
-        world.LastTickDispatchCount.ShouldBe(heard.Length + 1 + Budget);
+        world.LastTickDispatchCount.ShouldBe(Budget + Budget);
         world.PendingEventCount.ShouldBe(0);
     }
 
@@ -106,7 +150,7 @@ public sealed class EntityWorldBudgetTests
         SceneNode node = EntityRuntime.Place(_scene.Root, "spinner", "spinner");
         EntityRuntime.Place(_scene.Root, "bystander", "recorder");
         EntityWorld world = Started();
-        var spinner = (SpinningEntity)EntityRuntime.Live(world, node);
+        var spinner = (RethinkingEntity)EntityRuntime.Live(world, node);
 
         spinner.SetNextThinkIn(0f);
         world.QueueInput("bystander", "Ping");
@@ -127,7 +171,7 @@ public sealed class EntityWorldBudgetTests
     }
 
     [Fact]
-    public void A_cascade_the_size_of_the_budget_runs_whole_however_much_was_waiting()
+    public void A_cascade_the_size_of_the_budget_runs_whole_in_a_tick_that_had_the_budget_waiting()
     {
         // A chain of relays, one hop for each event the budget allows.
         for (int i = 0; i < Budget; i++)
@@ -139,35 +183,153 @@ public sealed class EntityWorldBudgetTests
         EntityRuntime.Place(_scene.Root, "bystander", "recorder");
         EntityWorld world = Started();
 
-        for (int i = 0; i < Budget * 2; i++)
+        for (int i = 0; i < Budget - 1; i++)
             world.QueueInput("bystander", "Ping");
         world.QueueInput("relay0", "Trigger");
         world.Tick(Tick);
 
         world.DispatchBudgetTripCount.ShouldBe(0);
-        _log.Count.ShouldBe((Budget * 2) + 1);
+        world.LastTickDispatchCount.ShouldBe(Budget + Budget);
+        _log.Count.ShouldBe(Budget);
         _log[^1].ShouldStartWith("bystander:Trigger");
+    }
+
+    [Fact]
+    public void A_loop_that_waits_a_tick_and_doubles_never_makes_a_tick_send_more_than_the_budget()
+    {
+        Doubler();
+        EntityWorld world = Started();
+        world.QueueInput("doubler", "Trigger");
+
+        int most = 0;
+        for (int i = 0; i < 16; i++)
+        {
+            world.Tick(Tick);
+            most = Math.Max(most, world.LastTickDispatchCount);
+        }
+
+        most.ShouldBe(Budget);
+    }
+
+    [Fact]
+    public void A_loop_that_waits_a_tick_and_doubles_fills_the_queue_and_no_further()
+    {
+        Doubler();
+        EntityWorld world = Started();
+        world.QueueInput("doubler", "Trigger");
+
+        int most = 0;
+        for (int i = 0; i < 100; i++)
+        {
+            world.Tick(Tick);
+            most = Math.Max(most, world.PendingEventCount);
+        }
+
+        most.ShouldBe(QueueLimit);
+        world.DiscardedEventCount.ShouldBeGreaterThan(0);
+
+        // Falling behind is said once and the full queue once, though both last.
+        IReadOnlyList<string> errors = _logger.MessagesAt(LogLevel.Error);
+        errors.Count.ShouldBe(2);
+        errors[1].ShouldContain($"full at {QueueLimit}");
+        errors[1].ShouldContain("output 'OnTrigger' sending 'Trigger'");
+        errors[1].ShouldContain("'doubler'");
+    }
+
+    [Fact]
+    public void An_entity_that_waits_again_each_time_it_is_woken_keeps_running_in_a_full_queue()
+    {
+        Doubler();
+        SceneNode node = EntityRuntime.Place(_scene.Root, "pulse", "pulse");
+        EntityWorld world = Started();
+        var pulse = (RethinkingEntity)EntityRuntime.Live(world, node);
+        pulse.SetNextThinkIn(Tick);
+        world.QueueInput("doubler", "Trigger");
+
+        Run(world, 100);
+        world.PendingEventCount.ShouldBe(QueueLimit);
+        int thinksByThen = pulse.Thinks;
+        Run(world, 100);
+
+        // Late, since the level is behind, and never lost.
+        pulse.Thinks.ShouldBeGreaterThan(thinksByThen + 10);
+        pulse.NextThinkTick.ShouldNotBe(Entity.NoThink);
+    }
+
+    [Fact]
+    public void A_think_the_queue_has_no_room_for_does_not_come_and_reads_as_none()
+    {
+        SceneNode node = EntityRuntime.Place(_scene.Root, "pulse", "pulse");
+        EntityRuntime.Place(_scene.Root, "bystander", "recorder");
+        EntityWorld world = Started();
+        var pulse = (RethinkingEntity)EntityRuntime.Live(world, node);
+        for (int i = 0; i < QueueLimit; i++)
+            world.QueueInput("bystander", "Ping", delay: 1f);
+
+        pulse.SetNextThinkIn(Tick);
+
+        pulse.NextThinkTick.ShouldBe(Entity.NoThink);
+        world.PendingEventCount.ShouldBe(QueueLimit);
+        world.DiscardedEventCount.ShouldBe(1);
+        string error = _logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem();
+        error.ShouldContain("a think");
+        error.ShouldContain("'pulse'");
+
+        Run(world, 5);
+        pulse.Thinks.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void A_budget_or_a_queue_limit_below_one_is_refused(int limit)
+    {
+        var world = new EntityWorld(_scene, _logger, EntityRuntime.Catalog(_log));
+
+        Should.Throw<ArgumentOutOfRangeException>(() => world.MaxDispatchesPerTick = limit);
+        Should.Throw<ArgumentOutOfRangeException>(() => world.MaxPendingEvents = limit);
+    }
+
+    // Each Trigger sends itself two more, one tick on.
+    private void Doubler()
+    {
+        SceneNode doubler = EntityRuntime.Place(_scene.Root, "doubler", "relay");
+        EntityRuntime.Wire(doubler, "OnTrigger", "doubler", "Trigger", delay: Tick);
+        EntityRuntime.Wire(doubler, "OnTrigger", "doubler", "Trigger", delay: Tick);
     }
 
     private EntityWorld Started()
     {
         EntityCatalog catalog = EntityRuntime.Catalog(_log);
-        catalog.Add(new EntitySchema("spinner"), () => new SpinningEntity());
+        catalog.Add(new EntitySchema("spinner"), () => new RethinkingEntity(0f));
+        catalog.Add(new EntitySchema("pulse"), () => new RethinkingEntity(Tick));
 
-        var world = new EntityWorld(_scene, _logger, catalog) { MaxDispatchesPerTick = Budget };
+        var world = new EntityWorld(_scene, _logger, catalog)
+        {
+            MaxDispatchesPerTick = Budget,
+            MaxPendingEvents = QueueLimit,
+        };
         world.Activate();
         return world;
     }
 
-    // Every think asks for another with no delay.
-    private sealed class SpinningEntity : Entity
+    private string[] Heard() => [.. _log.Select(line => line.Split(':')[1])];
+
+    private static void Run(EntityWorld world, int ticks)
+    {
+        for (int i = 0; i < ticks; i++)
+            world.Tick(Tick);
+    }
+
+    // Every think asks for another, this long on.
+    private sealed class RethinkingEntity(float delay) : Entity
     {
         public int Thinks { get; private set; }
 
         protected internal override void Think()
         {
             Thinks++;
-            SetNextThinkIn(0f);
+            SetNextThinkIn(delay);
         }
     }
 }
