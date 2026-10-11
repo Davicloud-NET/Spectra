@@ -6,8 +6,6 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 // level's root as Workspace.
 internal sealed class DataModel : ScriptObject
 {
-    private const string WorkspaceName = "Workspace";
-
     private readonly LuauHost _host;
     private readonly SceneNode _workspace;
     private readonly RunService _runService;
@@ -40,13 +38,15 @@ internal sealed class DataModel : ScriptObject
             return ScriptArguments.NoSelf(stack, "GetService");
         }
 
-        return stack.GetText(2) switch
-        {
-            RunService.ServiceName => Push(stack, _runService),
-            WorkspaceName => Push(stack, _workspace),
-            null => ScriptArguments.Wrong(stack, 2, "GetService", "string", isMethod: true),
-            string other => stack.Fail($"'{other}' is not a valid Service name"),
-        };
+        // The name is compared where Luau keeps it, so asking makes no string.
+        if (!stack.TryGetUtf8(2, out ReadOnlySpan<byte> service))
+            return ScriptArguments.Wrong(stack, 2, "GetService", "string", isMethod: true);
+        if (service.SequenceEqual("RunService"u8))
+            return Push(stack, _runService);
+        if (service.SequenceEqual("Workspace"u8))
+            return Push(stack, _workspace);
+
+        return stack.Fail($"'{stack.GetText(2)}' is not a valid Service name");
     }
 
     private int Push(LuauStack stack, object value) =>
