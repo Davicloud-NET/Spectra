@@ -120,13 +120,10 @@ public readonly struct CFrame : IEquatable<CFrame>
     /// A right-handed rotation by radians about an axis of any length. An axis
     /// of no length gives no rotation.
     /// </summary>
-    public static CFrame FromAxisAngle(Vector3 axis, float angle)
-    {
-        float length = axis.Length();
-        return length > 0f && float.IsFinite(length)
-            ? new CFrame(Vector3.Zero, Quaternion.CreateFromAxisAngle(axis / length, angle))
+    public static CFrame FromAxisAngle(Vector3 axis, float angle) =>
+        UnitLength.TryOf(axis, out Vector3 unit)
+            ? new CFrame(Vector3.Zero, Quaternion.CreateFromAxisAngle(unit, angle))
             : Identity;
-    }
 
     /// <summary>A frame at one point that looks at another, with +Y up.</summary>
     public static CFrame LookAt(Vector3 at, Vector3 target) => LookAlong(at, target - at, Vector3.UnitY);
@@ -340,13 +337,10 @@ public readonly struct CFrame : IEquatable<CFrame>
 
     private static Quaternion Unit(Quaternion rotation)
     {
-        float lengthSquared = rotation.LengthSquared();
-        if (MathF.Abs(lengthSquared - 1f) <= UnitSlack)
+        if (MathF.Abs(rotation.LengthSquared() - 1f) <= UnitSlack)
             return rotation;
 
         // No length, or a value that is not finite, names no rotation.
-        return lengthSquared > 0f && float.IsFinite(lengthSquared)
-            ? Quaternion.Normalize(rotation)
-            : Quaternion.Identity;
+        return UnitLength.TryOf(rotation, out Quaternion unit) ? unit : Quaternion.Identity;
     }
 }

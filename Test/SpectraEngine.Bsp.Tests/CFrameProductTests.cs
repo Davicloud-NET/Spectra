@@ -242,6 +242,27 @@ public sealed class CFrameProductTests
         frame.ShouldBeNear(new CFrame(Vector3.Zero, unit));
     }
 
+    [Theory]
+    [InlineData(1e20f)]
+    [InlineData(1e-23f)]
+    public void A_very_long_or_a_very_short_rotation_is_brought_to_unit_length(float length)
+    {
+        // The quaternion (1, 0, 0, 0) is a half turn about X.
+        new CFrame(Vector3.Zero, new Quaternion(length, 0f, 0f, 0f)).ShouldHaveRotation(
+            1, 0, 0,
+            0, -1, 0,
+            0, 0, -1);
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void A_rotation_of_no_length_or_one_that_is_not_finite_is_no_rotation(float x)
+    {
+        new CFrame(new Vector3(1f, 2f, 3f), new Quaternion(x, 0f, 0f, 0f)).ShouldBe(new CFrame(1f, 2f, 3f));
+    }
+
     [Fact]
     public void A_unit_rotation_is_stored_bit_for_bit()
     {

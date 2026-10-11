@@ -17,11 +17,9 @@ internal static class LookRotation
     /// </summary>
     public static Quaternion Along(Vector3 direction, Vector3 up)
     {
-        float length = direction.Length();
-        if (!(length > 0f) || !float.IsFinite(length))
+        if (!UnitLength.TryOf(direction, out Vector3 look))
             return Quaternion.Identity;
 
-        Vector3 look = direction / length;
         Vector3 right = RightOf(look, up);
         return FromColumns(right, Vector3.Cross(right, look), -look);
     }
@@ -32,14 +30,9 @@ internal static class LookRotation
     /// </summary>
     public static Quaternion FromAxes(Vector3 vX, Vector3 vY)
     {
-        Vector3 z = Vector3.Cross(vX, vY);
-        float xLength = vX.Length();
-        float zLength = z.Length();
-        if (!(xLength > 0f) || !(zLength > 0f) || !float.IsFinite(xLength) || !float.IsFinite(zLength))
+        if (!UnitLength.TryOf(vX, out Vector3 x) || !TryUnitCross(x, vY, out Vector3 z))
             return Quaternion.Identity;
 
-        Vector3 x = vX / xLength;
-        z /= zLength;
         return FromColumns(x, Vector3.Cross(z, x), z);
     }
 
@@ -55,16 +48,20 @@ internal static class LookRotation
         return Vector3.Normalize(Vector3.UnitX - (look * look.X));
     }
 
-    private static bool TryUnitCross(Vector3 look, Vector3 up, out Vector3 right)
+    // The unit vector along a unit vector crossed with another of any length.
+    // False when the other has no length, is not finite, or runs along the first.
+    private static bool TryUnitCross(Vector3 unit, Vector3 other, out Vector3 cross)
     {
-        right = Vector3.Cross(look, up);
-        float lengthSquared = right.LengthSquared();
-
-        // Also false for an up of no length and for one that is not finite.
-        if (!(lengthSquared > ParallelSine * ParallelSine * up.LengthSquared()) || !float.IsFinite(lengthSquared))
+        cross = default;
+        if (!UnitLength.TryOf(other, out Vector3 otherUnit))
             return false;
 
-        right /= MathF.Sqrt(lengthSquared);
+        // Between two unit vectors the cross product is as long as the sine.
+        Vector3 raw = Vector3.Cross(unit, otherUnit);
+        if (!(raw.LengthSquared() > ParallelSine * ParallelSine))
+            return false;
+
+        cross = Vector3.Normalize(raw);
         return true;
     }
 

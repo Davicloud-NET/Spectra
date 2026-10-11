@@ -118,6 +118,32 @@ public sealed class CFrameLookAtTests
         CFrame.LookAlong(at, direction, Vector3.UnitX).ShouldBeNear(CFrame.LookAt(at, at + direction, Vector3.UnitX));
     }
 
+    // Only the direction of a look counts. The square of such a length is
+    // past what a float holds.
+    [Theory]
+    [InlineData(1e20f)]
+    [InlineData(1e-30f)]
+    public void A_very_long_or_a_very_short_direction_still_names_the_look(float length)
+    {
+        // A look along +Z: the half turn about Y.
+        CFrame.LookAlong(Vector3.Zero, new Vector3(0f, 0f, length)).ShouldHaveRotation(
+            -1, 0, 0,
+            0, 1, 0,
+            0, 0, -1);
+    }
+
+    [Theory]
+    [InlineData(1e20f)]
+    [InlineData(1e-25f)]
+    public void A_very_long_or_a_very_short_up_vector_still_rolls_the_frame(float length)
+    {
+        // Look (0, 0, -1) with up along X: right (0, -1, 0), up (1, 0, 0).
+        CFrame.LookAlong(Vector3.Zero, new Vector3(0f, 0f, -1f), new Vector3(length, 0f, 0f)).ShouldHaveRotation(
+            0, 1, 0,
+            -1, 0, 0,
+            0, 0, 1);
+    }
+
     // Our choice. Roblox's documentation gives no answer for a look along up.
     // Ours is the identity pitched a quarter turn: right stays on world +X.
     [Fact]
@@ -235,11 +261,35 @@ public sealed class CFrameLookAtTests
         frame.ShouldHaveRotation(1, 0, 0, 0, 1, 0, 0, 0, 1);
     }
 
+    // Our choice, as above: columns of any length are squared up.
+    [Theory]
+    [InlineData(1e20f)]
+    [InlineData(1e-30f)]
+    public void FromMatrix_squares_up_very_long_and_very_short_columns(float length)
+    {
+        CFrame frame = CFrame.FromMatrix(Vector3.Zero, new Vector3(0f, 0f, -length), new Vector3(0f, length, 0f));
+
+        // The columns of FromMatrix_takes_the_three_columns.
+        frame.ShouldHaveRotation(
+            0, 0, 1,
+            0, 1, 0,
+            -1, 0, 0);
+    }
+
     // Our choice: columns that span no frame give no rotation.
     [Fact]
     public void FromMatrix_with_parallel_columns_gives_no_rotation()
     {
         CFrame.FromMatrix(new Vector3(1f, 2f, 3f), Vector3.UnitX, Vector3.UnitX * 2f)
             .ShouldBe(new CFrame(1f, 2f, 3f));
+    }
+
+    // Our choice, as above. Columns this close to one line count as parallel,
+    // the way a look this close to its up vector does.
+    [Fact]
+    public void FromMatrix_with_columns_a_hair_from_parallel_gives_no_rotation()
+    {
+        CFrame.FromMatrix(Vector3.Zero, new Vector3(1f, 2f, 3f), new Vector3(1f, 2f, 3.00001f))
+            .ShouldBe(CFrame.Identity);
     }
 }

@@ -178,6 +178,19 @@ public sealed class CFrameRotationTests
         CFrame.FromAxisAngle(new Vector3(0f, 7f, 0f), Quarter).ShouldBeNear(CFrame.Angles(0f, Quarter, 0f));
     }
 
+    // Our choice, as above. The square of such a length is past what a float holds.
+    [Theory]
+    [InlineData(1e20f)]
+    [InlineData(1e-30f)]
+    public void FromAxisAngle_takes_a_very_long_or_a_very_short_axis(float length)
+    {
+        // Rx(90).
+        CFrame.FromAxisAngle(new Vector3(length, 0f, 0f), Quarter).ShouldHaveRotation(
+            1, 0, 0,
+            0, 0, -1,
+            0, 1, 0);
+    }
+
     // Our choice: Roblox's documentation does not say what an axis of no length gives.
     [Fact]
     public void FromAxisAngle_about_no_axis_is_the_identity()
