@@ -98,11 +98,23 @@ public static class SentDef
     public const int StringRefSize = 4;
 
     /// <summary>
-    /// Bytes of type record after its last output: the icon string reference.
-    /// A record written before the icon existed ends at its last output and
-    /// reads with no icon.
+    /// Bytes of type record after its last output: the icon string reference,
+    /// then the class flags. A record written before one of them existed ends
+    /// sooner, and what it lacks reads as unset.
     /// </summary>
-    public const int TypeRecordTrailerSize = StringRefSize;
+    public const int TypeRecordTrailerSize = StringRefSize + sizeof(uint);
+
+    /// <summary>Offset, within the trailer, of the icon string reference.</summary>
+    public const int TrailerIconOffset = 0x00;
+
+    /// <summary>Offset, within the trailer, of the <c>u32</c> class flags.</summary>
+    public const int TrailerFlagsOffset = 0x04;
+
+    /// <summary>
+    /// The class flag for <see cref="EntitySchema.HasFacing"/>. The other bits
+    /// are written zero and ignored on read.
+    /// </summary>
+    public const uint TrailerHasFacing = 1u << 0;
 
     // Throws on invalid text. A U+FFFD replacement would change a class name
     // and the map naming it would load a placeholder with no error.
@@ -454,7 +466,10 @@ public static class SentDef
         for (int i = 0; i < schema.Outputs.Count; i++, position += StringRefSize)
             BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Outputs[i]));
 
-        BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Icon));
+        Span<byte> trailer = record[position..];
+        BinaryPrimitives.WriteUInt32LittleEndian(trailer[TrailerIconOffset..], strings.Intern(schema.Icon));
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            trailer[TrailerFlagsOffset..], schema.HasFacing ? TrailerHasFacing : 0u);
         position += TypeRecordTrailerSize;
 
         if (position != record.Length)
@@ -581,15 +596,21 @@ public static class SentDef
             outputs[i] = ReadString(record, table, decoded, position, recordOffset, index);
         }
 
-        // The first field appended to the record, so an older one ends here.
-        string icon = record.Length - position >= TypeRecordTrailerSize
-            ? ReadString(record, table, decoded, position, recordOffset, index)
+        // The trailer grew a field at a time, so an older record ends before
+        // the icon or before the flags.
+        int trailer = record.Length - position;
+        string icon = trailer >= TrailerIconOffset + StringRefSize
+            ? ReadString(record, table, decoded, position + TrailerIconOffset, recordOffset, index)
             : string.Empty;
+
+        uint classFlags = trailer >= TrailerFlagsOffset + sizeof(uint)
+            ? BinaryPrimitives.ReadUInt32LittleEndian(record[(position + TrailerFlagsOffset)..])
+            : 0u;
 
         // Bytes left over are a newer writer's fields. Ignored.
         return new EntitySchema(
             className, displayName, group, (EntityPlacement)placement, (EntityOrigin)origin,
-            keyvalues, inputs, outputs, icon);
+            keyvalues, inputs, outputs, icon, (classFlags & TrailerHasFacing) != 0);
     }
 
     private static void RequireRoom(

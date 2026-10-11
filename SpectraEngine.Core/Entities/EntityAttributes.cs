@@ -32,6 +32,12 @@ public sealed class SpectraEntityAttribute : Attribute
     /// <c>door</c> or <c>trigger-once</c>. Unset means the plain entity icon.
     /// </summary>
     public string Icon { get; set; } = "";
+
+    /// <summary>
+    /// Whether the way an instance points changes what it does, as it does for
+    /// a player start. An editor draws an arrow for a class that says yes.
+    /// </summary>
+    public bool HasFacing { get; set; }
 }
 
 /// <summary>

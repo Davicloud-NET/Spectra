@@ -101,6 +101,7 @@ internal static class EntityModelFactory
             Group: group,
             Placement: placement,
             Icon: NamedString(attribute, "Icon"),
+            HasFacing: NamedBool(attribute, "HasFacing"),
             IsPartial: isPartial,
             Keyvalues: EquatableArray.From(keyvalues),
             Inputs: EquatableArray.From(inputs),
@@ -248,6 +249,9 @@ internal static class EntityModelFactory
 
     private static string NamedString(AttributeData attribute, string name) =>
         TryGetNamed(attribute, name, out TypedConstant value) && value.Value is string text ? text : "";
+
+    private static bool NamedBool(AttributeData attribute, string name) =>
+        TryGetNamed(attribute, name, out TypedConstant value) && value.Value is true;
 
     // Absent is not the same as the default: type inference needs to tell them apart.
     private static byte NamedByte(AttributeData attribute, string name, byte fallback) =>

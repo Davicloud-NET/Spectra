@@ -33,26 +33,20 @@ public sealed class EntityGeneratorSnapshotTests
     }
 
     [Theory]
-    [InlineData("Icon = \"trigger-once\"", "outputs,\"trigger-once\");")]
-    [InlineData("Group = \"Triggers\"", "outputs,\"\");")]
+    [InlineData("Icon = \"trigger-once\"", "outputs,\"trigger-once\",")]
+    [InlineData("Group = \"Triggers\"", "outputs,\"\",")]
     public void A_class_is_emitted_with_the_icon_it_names_or_with_none(string argument, string emitted)
     {
-        string source = $$"""
-            using SpectraEngine.Core.Entities;
+        Emitted(argument).ShouldContain(emitted);
+    }
 
-            namespace TestGame.Entities;
-
-            [SpectraEntity("test_thing", {{argument}})]
-            public sealed partial class TestThing : Entity
-            {
-            }
-            """;
-
-        GeneratorRun run = GeneratorHarness.Run(source);
-
-        run.Diagnostics.ShouldBeEmpty(run.Describe());
-        run.CompileErrors().ShouldBeEmpty();
-        string.Concat(run.OnlySource().Where(c => !char.IsWhiteSpace(c))).ShouldContain(emitted);
+    [Theory]
+    [InlineData("HasFacing = true", "outputs,\"\",true);")]
+    [InlineData("HasFacing = false", "outputs,\"\",false);")]
+    [InlineData("Group = \"Player\"", "outputs,\"\",false);")]
+    public void A_class_is_emitted_with_a_facing_only_when_it_says_so(string argument, string emitted)
+    {
+        Emitted(argument).ShouldContain(emitted);
     }
 
     [Fact]
@@ -123,5 +117,27 @@ public sealed class EntityGeneratorSnapshotTests
         generated.ShouldContain("ModuleInitializer");
         generated.ShouldNotContain("ParseKeyValue");
         generated.ShouldNotContain("AcceptInput");
+    }
+
+    // What the generator writes for a class with one named argument. Without
+    // the layout, so the lines of one call can be read as one.
+    private static string Emitted(string argument)
+    {
+        string source = $$"""
+            using SpectraEngine.Core.Entities;
+
+            namespace TestGame.Entities;
+
+            [SpectraEntity("test_thing", {{argument}})]
+            public sealed partial class TestThing : Entity
+            {
+            }
+            """;
+
+        GeneratorRun run = GeneratorHarness.Run(source);
+
+        run.Diagnostics.ShouldBeEmpty(run.Describe());
+        run.CompileErrors().ShouldBeEmpty();
+        return string.Concat(run.OnlySource().Where(c => !char.IsWhiteSpace(c)));
     }
 }

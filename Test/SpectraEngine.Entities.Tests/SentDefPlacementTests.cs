@@ -22,13 +22,13 @@ public sealed class SentDefPlacementTests
     ];
 
     // The same classes as this build writes them. Each record ends with an
-    // icon reference, zero here, so each is four bytes longer.
+    // icon reference and a flags word, zero here, so each is eight bytes longer.
     private static byte[] TodaysImage =>
     [
-        (byte)'S', (byte)'E', (byte)'N', (byte)'T', 1, 0, 20, 0, 3, 0, 0, 0, 104, 0, 0, 0, 36, 0, 0, 0,
-        28, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        28, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        28, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        (byte)'S', (byte)'E', (byte)'N', (byte)'T', 1, 0, 20, 0, 3, 0, 0, 0, 116, 0, 0, 0, 36, 0, 0, 0,
+        32, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        32, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        32, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0,
         9, 0, .. "func_wall"u8,
         9, 0, .. "info_spot"u8,

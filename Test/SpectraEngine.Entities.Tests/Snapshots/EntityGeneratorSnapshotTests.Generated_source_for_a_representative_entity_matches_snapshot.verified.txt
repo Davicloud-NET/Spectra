@@ -175,7 +175,8 @@ namespace TestGame.Entities
                 keyvalues,
                 inputs,
                 outputs,
-                "door");
+                "door",
+                false);
         }
 
         /// <summary>Registers this class into the process-wide catalogue.</summary>

@@ -42,19 +42,18 @@ public sealed class SentDefIconTests
     }
 
     [Fact]
-    public void The_icon_is_a_string_reference_in_the_last_four_bytes_of_the_record()
+    public void The_icon_is_a_string_reference_at_the_start_of_the_trailer()
     {
         byte[] image = SentDef.Write([Door("door")]);
         int recordSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(
             image.AsSpan(SentDef.HeaderSize + SentDef.TypeRecordSizeOffset));
 
-        // One keyvalue, two inputs and an output, then the icon.
+        // One keyvalue, two inputs and an output, then the trailer.
         recordSize.ShouldBe(
             SentDef.TypeRecordFixedSize + SentDef.KeyvalueRecordSize + (3 * SentDef.StringRefSize) +
             SentDef.TypeRecordTrailerSize);
 
-        uint reference = BinaryPrimitives.ReadUInt32LittleEndian(
-            image.AsSpan(SentDef.HeaderSize + recordSize - SentDef.TypeRecordTrailerSize));
+        uint reference = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(IconReference(image)));
         int table = (int)BinaryPrimitives.ReadUInt32LittleEndian(
             image.AsSpan(SentDef.HeaderStringTableOffsetOffset));
         int length = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(table + (int)reference));
@@ -66,11 +65,8 @@ public sealed class SentDefIconTests
     public void A_class_with_no_icon_writes_the_empty_string_reference()
     {
         byte[] image = SentDef.Write([Door("")]);
-        int recordSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(
-            image.AsSpan(SentDef.HeaderSize + SentDef.TypeRecordSizeOffset));
 
-        BinaryPrimitives.ReadUInt32LittleEndian(
-            image.AsSpan(SentDef.HeaderSize + recordSize - SentDef.TypeRecordTrailerSize)).ShouldBe(0u);
+        BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(IconReference(image))).ShouldBe(0u);
     }
 
     [Fact]
@@ -83,8 +79,10 @@ public sealed class SentDefIconTests
     [Fact]
     public void A_record_that_ends_at_its_last_output_reads_with_no_icon()
     {
-        // What a build from before the icon wrote: the same record, four bytes shorter.
-        byte[] older = WithoutTrailer(SentDef.Write([Door("door"), new EntitySchema("zz_last", icon: "relay")]));
+        // What a build from before the icon wrote: the same record with no trailer.
+        byte[] older = SentDefImages.WithShorterRecords(
+            SentDef.Write([Door("door"), new EntitySchema("zz_last", icon: "relay")]),
+            SentDef.TypeRecordTrailerSize);
 
         EntitySchema[] read = SentDef.Read(older);
 
@@ -102,10 +100,7 @@ public sealed class SentDefIconTests
     public void An_icon_reference_outside_the_string_table_is_refused()
     {
         byte[] image = SentDef.Write([Door("door")]);
-        int recordSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(
-            image.AsSpan(SentDef.HeaderSize + SentDef.TypeRecordSizeOffset));
-        BinaryPrimitives.WriteUInt32LittleEndian(
-            image.AsSpan(SentDef.HeaderSize + recordSize - SentDef.TypeRecordTrailerSize), 100_000u);
+        BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(IconReference(image)), 100_000u);
 
         Should.Throw<SentDefFormatException>(() => SentDef.Read(image))
             .Message.ShouldContain("outside the");
@@ -148,32 +143,7 @@ public sealed class SentDefIconTests
         BuiltinEntities.Schemas.Single(schema => schema.ClassName == className).Icon.ShouldBe(icon);
     }
 
-    // Takes the icon reference off the end of every type record, as a build
-    // from before it laid the file out.
-    private static byte[] WithoutTrailer(byte[] image)
-    {
-        int count = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(SentDef.HeaderTypeCountOffset));
-        int table = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(SentDef.HeaderStringTableOffsetOffset));
-
-        var older = new List<byte>(image.AsSpan(0, SentDef.HeaderSize).ToArray());
-        int at = SentDef.HeaderSize;
-        for (int i = 0; i < count; i++)
-        {
-            int size = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(at));
-            int kept = size - SentDef.TypeRecordTrailerSize;
-
-            Span<byte> record = image.AsSpan(at, kept).ToArray();
-            BinaryPrimitives.WriteUInt32LittleEndian(record, (uint)kept);
-            older.AddRange(record);
-            at += size;
-        }
-
-        older.AddRange(image.AsSpan(table));
-
-        byte[] bytes = [.. older];
-        BinaryPrimitives.WriteUInt32LittleEndian(
-            bytes.AsSpan(SentDef.HeaderStringTableOffsetOffset),
-            (uint)(table - (count * SentDef.TypeRecordTrailerSize)));
-        return bytes;
-    }
+    // Where the first record's icon reference is.
+    private static int IconReference(byte[] image) =>
+        SentDefImages.FirstTrailer(image) + SentDef.TrailerIconOffset;
 }

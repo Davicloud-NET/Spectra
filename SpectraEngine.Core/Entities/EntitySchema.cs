@@ -160,7 +160,8 @@ public sealed class EntitySchema
         IReadOnlyList<KeyvalueDescriptor>? keyvalues = null,
         IReadOnlyList<string>? inputs = null,
         IReadOnlyList<string>? outputs = null,
-        string icon = "")
+        string icon = "",
+        bool hasFacing = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(className);
 
@@ -173,6 +174,7 @@ public sealed class EntitySchema
         Inputs = inputs ?? [];
         Outputs = outputs ?? [];
         Icon = icon ?? "";
+        HasFacing = hasFacing;
     }
 
     /// <summary>The wire name, as a map file spells it.</summary>
@@ -205,4 +207,10 @@ public sealed class EntitySchema
     /// gets that icon too.
     /// </summary>
     public string Icon { get; }
+
+    /// <summary>
+    /// Whether the way the node points changes what the class does. An editor
+    /// draws an arrow along the node's local +Z for a class that says yes.
+    /// </summary>
+    public bool HasFacing { get; }
 }

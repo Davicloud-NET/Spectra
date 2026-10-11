@@ -203,7 +203,8 @@ internal static class EntityEmitter
         w.Line("keyvalues,");
         w.Line("inputs,");
         w.Line("outputs,");
-        w.Line($"{Literal(model.Icon)});");
+        w.Line($"{Literal(model.Icon)},");
+        w.Line(model.HasFacing ? "true);" : "false);");
         w.Outdent();
 
         w.Close();
