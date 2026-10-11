@@ -136,6 +136,32 @@ public sealed class SceneIcons
         return true;
     }
 
+    /// <summary>
+    /// The icon of this node as it was last placed. False when the node has
+    /// none in view.
+    /// </summary>
+    public bool TryFind(Scene scene, SceneNode node, out SceneIcon icon)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(node);
+
+        bool isLight = node.Light is not null;
+        ReadOnlySpan<SceneIcon> icons = isLight ? Lights : Markers;
+        IReadOnlyList<SceneNode> nodes = isLight ? scene.LightNodes : scene.EntityNodes;
+
+        foreach (ref readonly SceneIcon candidate in icons)
+        {
+            if (candidate.Node < nodes.Count && ReferenceEquals(nodes[candidate.Node], node))
+            {
+                icon = candidate;
+                return true;
+            }
+        }
+
+        icon = default;
+        return false;
+    }
+
     // Measures the icons of one of the scene's two lists into _icons, after
     // the ones already there. A node past the budget is still measured: it is
     // not drawn, and can still be clicked.

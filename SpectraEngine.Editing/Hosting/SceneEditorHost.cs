@@ -155,6 +155,7 @@ public sealed class SceneEditorHost : ISceneEditor
 
         Lights = new LightOverlay(_icons);
         _entityMarkers = new EntityMarkerOverlay(_icons);
+        Selection.Icons = _icons;
 
         _viewport = new ViewportInteractionController(scene, _gizmos)
         {

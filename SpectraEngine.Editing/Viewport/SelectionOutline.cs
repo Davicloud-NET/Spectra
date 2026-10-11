@@ -29,6 +29,12 @@ public sealed class SelectionOutline
     public OutlineMeshes? Silhouettes { get; set; }
 
     /// <summary>
+    /// Where the icons of lights and point entities stand, placed for this
+    /// frame. With it, a node whose icon was moved is marked on the icon too.
+    /// </summary>
+    public SceneIcons? Icons { get; set; }
+
+    /// <summary>
     /// How many nodes may be outlined in full before the pass falls back to
     /// bounds boxes.
     /// </summary>
@@ -91,6 +97,7 @@ public sealed class SelectionOutline
         else if (hovered is not null && !selection.Contains(hovered))
         {
             DrawNode(output, scene, camera, viewportSize, hovered, HoverColor, shapes, OutlineGroup.Hovered);
+            MarkMovedIcon(output, scene, hovered, HoverColor);
         }
 
         for (int i = 0; i < selection.Count; i++)
@@ -120,6 +127,7 @@ public sealed class SelectionOutline
             if (picked && node.Brush is { } pickedBrush)
                 DrawFaceLoop(output, pickedBrush, node.WorldMatrix, focus.PickedFacePlane, SelectedColor);
 
+            MarkMovedIcon(output, scene, node, SelectedColor);
             DrawnLastDraw++;
         }
 
@@ -208,6 +216,17 @@ public sealed class SelectionOutline
         // Plus the subtree's extent, faint.
         if (scene.TryGetWorldBounds(node, out Aabb bounds))
             output.Box(bounds.Min, bounds.Max, color * 0.4f);
+    }
+
+    // The cross a light or a point entity gets is on its node. When its icon
+    // stands in a row the icon gets one too, or nothing would say which icon
+    // of the row the cursor is over.
+    private void MarkMovedIcon(DebugDraw output, Scene scene, SceneNode node, Vector3 color)
+    {
+        if (Icons is null || !Icons.TryFind(scene, node, out SceneIcon icon) || !icon.IsDrawn || !icon.IsMoved)
+            return;
+
+        output.Cross(icon.At, GroupCrossPixels * icon.Pixel, color);
     }
 
     // A cross at the node's origin, sized in screen space so it is visible
