@@ -1,4 +1,5 @@
 using Spectra.Kitchen.Rules;
+using SpectraEngine.Core.Scripting;
 using System;
 
 namespace Spectra.Kitchen.Cooking;
@@ -18,6 +19,7 @@ public sealed class CookRuleSet
     private readonly ModelRule _model = new();
     private readonly SubtitleRule _subtitle = new();
     private readonly CaptionFileRule _captionFile;
+    private readonly ScriptRule _script;
 
     private readonly MapRule _map = new();
 
@@ -26,10 +28,14 @@ public sealed class CookRuleSet
     /// The language the project names as its own. The caption rule compares
     /// every other language with it.
     /// </param>
-    public CookRuleSet(string projectLanguage)
+    /// <param name="scriptCheck">What the script rule asks whether a script compiles.</param>
+    public CookRuleSet(string projectLanguage, IScriptSyntaxCheck scriptCheck)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectLanguage);
+        ArgumentNullException.ThrowIfNull(scriptCheck);
+
         _captionFile = new CaptionFileRule(projectLanguage);
+        _script = new ScriptRule(scriptCheck);
     }
 
     /// <summary>
@@ -50,6 +56,7 @@ public sealed class CookRuleSet
         if (ModelRule.Handles(contentPath)) return _model;
         if (SubtitleRule.Handles(contentPath)) return _subtitle;
         if (CaptionFileRule.Handles(contentPath)) return _captionFile;
+        if (ScriptRule.Handles(contentPath)) return _script;
 
         return _rawCopy;
     }

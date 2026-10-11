@@ -164,6 +164,8 @@ public static class CookGate
         7011 => CookGateVerdict.Warning,           // SC7011 MapScriptsLeftOut
 
         8001 => CookGateVerdict.Fatal,             // SC8001 ScriptSyntaxError
+        8002 => CookGateVerdict.Fatal,             // SC8002 ScriptNotChecked
+        8003 => CookGateVerdict.Fatal,             // SC8003 ScriptFileUnreadable
 
         9001 => CookGateVerdict.Fatal,             // SC9001 PackWriteFailed
         9002 => CookGateVerdict.Fatal,             // SC9002 PackEntryCollision

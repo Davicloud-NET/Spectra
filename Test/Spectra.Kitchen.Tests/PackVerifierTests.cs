@@ -1,8 +1,10 @@
 ﻿using Spectra.Kitchen.Cooking;
 using Spectra.Kitchen.Diagnostics;
 using Spectra.Kitchen.Packs;
+using Spectra.Kitchen.Rules;
 using SpectraEngine.Core;
 using SpectraEngine.Core.Assets.Packs;
+using SpectraEngine.Scripting.Luau;
 using System;
 using System.IO;
 using System.Linq;
@@ -166,10 +168,17 @@ public class PackVerifierTests
         string assets = Path.Combine(AppContext.BaseDirectory, "Assets");
         Directory.Exists(assets).ShouldBeTrue($"the engine's content should be beside the test binary: {assets}");
 
+        // The engine's scripts go through the compiler a game loads them with.
+        LuauSyntaxCheck luau = RealScriptCheck.Require();
+
         using var project = new TempProject();
         CopyTree(assets, project.Layout.AssetsPath);
 
-        PackVerifyResult result = Verify(Cook(project));
+        CookResult cooked = new CookSession(project.Layout, new CookSettings { ScriptCheck = luau }).Run();
+        cooked.Succeeded.ShouldBeTrue(string.Join(Environment.NewLine, cooked.Diagnostics));
+        cooked.Assets.Count(asset => asset.Rule == RuleKind.Script).ShouldBeGreaterThan(0);
+
+        PackVerifyResult result = Verify(cooked.OutputPath!);
 
         result.Succeeded.ShouldBeTrue(Describe(result));
         result.ReferencesChecked.ShouldBeGreaterThan(0);

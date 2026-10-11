@@ -39,7 +39,7 @@ public sealed class CookSession
         settings.Validate();
         _layout = layout;
         _settings = settings;
-        _rules = new CookRuleSet(layout.Project.LanguageOrDefault);
+        _rules = new CookRuleSet(layout.Project.LanguageOrDefault, settings.ScriptCheck);
     }
 
     /// <summary>Where output goes: <c>-o</c> if it was given, else the project's <c>cooked/</c>.</summary>

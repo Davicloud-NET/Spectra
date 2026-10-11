@@ -180,10 +180,16 @@ public class MaterialRuleTests
         result.Assets.Count(a => a.Rule == RuleKind.Material).ShouldBeGreaterThan(0);
     }
 
+    // The engine's content has a script in it, which this suite does not judge.
     private static CookResult Cook(TempProject project, bool cache = false, string label = "out") =>
         new CookSession(
                 project.Layout,
-                new CookSettings { UseCache = cache, OutputPath = Path.Combine(project.Root, label) })
+                new CookSettings
+                {
+                    UseCache = cache,
+                    OutputPath = Path.Combine(project.Root, label),
+                    ScriptCheck = new FakeScriptCheck(),
+                })
             .Run();
 
     private static string Describe(CookResult result) =>

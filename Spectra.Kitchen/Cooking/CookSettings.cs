@@ -1,5 +1,7 @@
 using Spectra.Kitchen.Cache;
+using Spectra.Kitchen.Scripts;
 using SpectraEngine.Core.Graphics;
+using SpectraEngine.Core.Scripting;
 using System;
 using System.Collections.Generic;
 
@@ -46,6 +48,14 @@ public sealed class CookSettings
 
     /// <summary>Keep authored brush geometry in a cooked map, so a verify can recompile it.</summary>
     public bool KeepBrushSource { get; init; }
+
+    /// <summary>
+    /// What says whether a script compiles before it is packed. The program
+    /// that hosts the cook installs the real one. With none installed, a
+    /// project that has scripts does not cook.
+    /// </summary>
+    // Not in any rule's declared settings: its release is a tool version, in every key.
+    public IScriptSyntaxCheck ScriptCheck { get; init; } = NoScriptSyntaxCheck.Instance;
 
     /// <summary>Which block-compression encoder to use.</summary>
     public CookEncoder Encoder { get; init; } = CookEncoder.Managed;

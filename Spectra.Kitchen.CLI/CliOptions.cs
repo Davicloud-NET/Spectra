@@ -1,5 +1,6 @@
 using Spectra.Kitchen.Cooking;
 using SpectraEngine.Core.Graphics;
+using SpectraEngine.Scripting.Luau;
 
 namespace Spectra.Kitchen.CLI;
 
@@ -43,6 +44,7 @@ internal sealed class CliOptions
         // --watch implies --loose
         Loose = Loose || Watch,
         KeepBrushSource = KeepBrushSource,
+        ScriptCheck = new LuauSyntaxCheck(),
         Encoder = Encoder,
         Strict = Strict,
         ManifestPath = ManifestPath,

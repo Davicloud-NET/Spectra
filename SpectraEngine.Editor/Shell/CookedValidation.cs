@@ -2,6 +2,7 @@ using Spectra.Kitchen.Cooking;
 using Spectra.Kitchen.Diagnostics;
 using Spectra.Kitchen.Packs;
 using SpectraEngine.Core.Projects;
+using SpectraEngine.Scripting.Luau;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -26,7 +27,7 @@ internal static class CookedValidation
         CookResult cooked;
         try
         {
-            cooked = new CookSession(layout, new CookSettings()).Run();
+            cooked = new CookSession(layout, new CookSettings { ScriptCheck = new LuauSyntaxCheck() }).Run();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

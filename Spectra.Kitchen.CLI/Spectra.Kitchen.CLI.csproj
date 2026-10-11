@@ -13,6 +13,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Spectra.Kitchen\Spectra.Kitchen.csproj" />
     <ProjectReference Include="..\SpectraEngine.Core\SpectraEngine.Core.csproj" />
+    <!-- The check a cook asks before it packs a script. -->
+    <ProjectReference Include="..\SpectraEngine.Scripting.Luau\SpectraEngine.Scripting.Luau.csproj" />
   </ItemGroup>
 
   <!-- Luau: copied beside a build, linked into a publish. -->

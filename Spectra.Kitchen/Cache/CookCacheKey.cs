@@ -88,7 +88,7 @@ public static class CookCacheKey
             stream.Str(pairs[i].Value);
         }
 
-        WriteToolVersions(stream);
+        WriteToolVersions(stream, settings);
 
         int inputs = 0, missing = 0;
         for (int i = 0; i < dependencies.Count; i++)
@@ -121,9 +121,9 @@ public static class CookCacheKey
 
     // Append only. Count and order are hashed, so reordering re-keys every
     // cached artifact.
-    private static void WriteToolVersions(KeyStream stream)
+    private static void WriteToolVersions(KeyStream stream, CookSettings settings)
     {
-        stream.U32(6);
+        stream.U32(7);
 
         Tool(stream, "encoder", EncoderVersion);
         Tool(stream, "shaderFormat", EngineInfo.ShaderFormatVersion);
@@ -133,6 +133,9 @@ public static class CookCacheKey
 
         // The encoder's output depends on the CPU's instruction set.
         Tool(stream, "isa", InstructionSetBaseline.Token);
+
+        // Whether a script is packed depends on the compiler that judged it.
+        Tool(stream, "luau", settings.ScriptCheck.CompilerVersion);
     }
 
     private static void Tool(KeyStream stream, string name, string value)

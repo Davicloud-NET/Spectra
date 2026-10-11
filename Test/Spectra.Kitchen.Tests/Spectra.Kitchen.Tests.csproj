@@ -11,6 +11,8 @@
     <ProjectReference Include="..\..\SpectraEngine.Physics.Box3D\SpectraEngine.Physics.Box3D.csproj" />
     <!-- For the one suite that plays a cooked level with the real door and trigger. -->
     <ProjectReference Include="..\..\SpectraEngine.Entities\SpectraEngine.Entities.csproj" />
+    <!-- For the real script check, and for the level that is played loose and cooked. -->
+    <ProjectReference Include="..\..\SpectraEngine.Scripting.Luau\SpectraEngine.Scripting.Luau.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,5 +34,8 @@
     <!-- The level NoCodeLoopTests plays authored. Played cooked here. -->
     <Compile Include="..\SpectraEngine.Entities.Tests\NoCodeLoopLevel.cs" Link="NoCodeLoopLevel.cs" />
   </ItemGroup>
+
+  <!-- Puts the Luau library beside the tests and beside the scook they start, when it has been built. -->
+  <Import Project="..\..\native\Luau.targets" />
 
 </Project>

@@ -214,7 +214,7 @@ public class SubtitleRuleTests
         SubtitleRule.Handles("Sounds/vo/guard_hey.srt").ShouldBeFalse();
         SubtitleRule.Handles("Captions/en.txt").ShouldBeFalse();
 
-        new CookRuleSet("en").Resolve(Subtitles).ShouldBeOfType<SubtitleRule>();
+        new CookRuleSet("en", new FakeScriptCheck()).Resolve(Subtitles).ShouldBeOfType<SubtitleRule>();
     }
 
     private static TempProject ProjectWithTheGuard()

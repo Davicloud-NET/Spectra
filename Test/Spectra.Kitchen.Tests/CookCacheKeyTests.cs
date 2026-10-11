@@ -126,8 +126,50 @@ public class CookCacheKeyTests
     {
         byte[] stream = Stream(RuleKind.Map, 1, CookSettingKeys.None, new CookSettings());
 
-        foreach (string tool in new[] { "encoder", "shaderFormat", "mapFormat", "geometryFormat", "packFormat", "isa" })
+        foreach (string tool in new[]
+                 {
+                     "encoder", "shaderFormat", "mapFormat", "geometryFormat", "packFormat", "isa", "luau",
+                 })
+        {
             IndexOf(stream, Encoding.UTF8.GetBytes(tool)).ShouldBeGreaterThanOrEqualTo(0, tool);
+        }
+    }
+
+    [Fact]
+    public void The_script_compilers_release_is_the_seventh_tool_and_moves_every_key()
+    {
+        var older = new CookSettings { ScriptCheck = new FakeScriptCheck { CompilerVersion = "luau 0.742" } };
+        var newer = new CookSettings { ScriptCheck = new FakeScriptCheck { CompilerVersion = "luau 0.743" } };
+
+        byte[] stream = Stream(RuleKind.Script, 1, CookSettingKeys.None, older);
+        int name = IndexOf(stream, Encoding.UTF8.GetBytes("luau"));
+
+        // A string is its byte count, then its bytes: the name, then the value.
+        Encoding.UTF8.GetString(stream, name + 4 + sizeof(uint), "luau 0.742".Length).ShouldBe("luau 0.742");
+
+        // After the instruction set, which was the last one: the list is append only.
+        name.ShouldBeGreaterThan(IndexOf(stream, Encoding.UTF8.GetBytes("isa")));
+
+        // Every rule's key, by the rule for tools. Not only the script rule's.
+        foreach (RuleKind kind in new[] { RuleKind.Script, RuleKind.Image, RuleKind.RawCopy, RuleKind.Map })
+        {
+            Key(kind, 1, CookSettingKeys.None, newer)
+                .ShouldNotBe(Key(kind, 1, CookSettingKeys.None, older), kind.ToString());
+        }
+
+        // By the release it names, not by which check it is.
+        var another = new CookSettings { ScriptCheck = new FakeScriptCheck { CompilerVersion = "luau 0.742" } };
+        Key(RuleKind.Script, 1, CookSettingKeys.None, another)
+            .ShouldBe(Key(RuleKind.Script, 1, CookSettingKeys.None, older));
+    }
+
+    [Fact]
+    public void A_cook_with_no_check_installed_keys_on_having_none()
+    {
+        byte[] stream = Stream(RuleKind.RawCopy, 1, CookSettingKeys.None, new CookSettings());
+        int name = IndexOf(stream, Encoding.UTF8.GetBytes("luau"));
+
+        Encoding.UTF8.GetString(stream, name + 4 + sizeof(uint), 4).ShouldBe("none");
     }
 
     private const CookSettingKeys AllSettingKeys =

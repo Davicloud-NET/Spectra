@@ -12,6 +12,7 @@ using SpectraEngine.Core.Assets.Sources;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Graphics.Shaders;
 using SpectraEngine.Core.Maps.Compiled;
+using SpectraEngine.Core.Scripting;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -172,6 +173,7 @@ public static class PackVerifier
                     references += CheckReferences(name, blob.Span, strictStack, diagnostics, file);
                     CheckImage(name, blob.Span, diagnostics, file);
                     CheckAudio(name, blob.Span, diagnostics, file);
+                    CheckScript(name, blob.Span, diagnostics, file);
                     CollectShader(name, blob.Span, shaders, diagnostics, file);
                 }
             }
@@ -394,6 +396,23 @@ public static class PackVerifier
         catch (SaudioFormatException ex)
         {
             diagnostics.Add(CookDiagnostic.Error(CookDiagnosticCodes.AudioFileUnreadable, ex.Message, packFile));
+        }
+    }
+
+    // A script in a pack went through the script rule, so it has the header.
+    // One that is plain text was copied in and never compiled.
+    private static void CheckScript(
+        string name, ReadOnlySpan<byte> payload, CookDiagnosticLog diagnostics, string packFile)
+    {
+        if (!ScriptRule.Handles(name)) return;
+
+        try
+        {
+            _ = PackedScript.SourceOf(payload, name);
+        }
+        catch (InvalidDataException ex)
+        {
+            diagnostics.Add(CookDiagnostic.Error(CookDiagnosticCodes.ScriptFileUnreadable, ex.Message, packFile));
         }
     }
 

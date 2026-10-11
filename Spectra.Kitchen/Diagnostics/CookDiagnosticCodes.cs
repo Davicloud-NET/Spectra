@@ -277,8 +277,20 @@ public static class CookDiagnosticCodes
     /// </summary>
     public static readonly CookDiagnosticId MapScriptsLeftOut = CookDiagnosticId.Cook(7011);
 
-    /// <summary>A script the Luau front end refuses.</summary>
+    /// <summary>A script the Luau compiler refuses. Carries its message and the line.</summary>
     public static readonly CookDiagnosticId ScriptSyntaxError = CookDiagnosticId.Cook(8001);
+
+    /// <summary>
+    /// A script could not be checked: the cook's host installed no compiler,
+    /// or the Luau library is not built. The script is not packed.
+    /// </summary>
+    public static readonly CookDiagnosticId ScriptNotChecked = CookDiagnosticId.Cook(8002);
+
+    /// <summary>
+    /// A script in a pack is not a packed script this engine reads. From the
+    /// verifier.
+    /// </summary>
+    public static readonly CookDiagnosticId ScriptFileUnreadable = CookDiagnosticId.Cook(8003);
 
     /// <summary>The pack could not be written.</summary>
     public static readonly CookDiagnosticId PackWriteFailed = CookDiagnosticId.Cook(9001);

@@ -299,7 +299,7 @@ public class CaptionFileRuleTests
         CaptionFileRule.Handles("Sounds/labelled.markers.txt").ShouldBeFalse();
         CaptionFileRule.Handles("Captions.txt").ShouldBeFalse();
 
-        new CookRuleSet("en").Resolve(English).ShouldBeOfType<CaptionFileRule>();
+        new CookRuleSet("en", new FakeScriptCheck()).Resolve(English).ShouldBeOfType<CaptionFileRule>();
     }
 
     [Fact]
