@@ -188,6 +188,28 @@ public sealed class OutputLogTests
         Assert.Equal(0, log.ErrorCount);
         Assert.DoesNotContain(log.Entries, e => e.Text == "the first failure");
     }
+
+    [Fact]
+    public void The_heading_says_how_many_errors_have_scrolled_out()
+    {
+        var log = new OutputLog();
+        log.Append(OutputSeverity.Error, "the first failure");
+        log.Append(OutputSeverity.Warning, "a texture is missing");
+        log.Append(OutputSeverity.Error, "the second failure");
+        Assert.Equal("Shell output, 3 of 500 lines", log.HistoryLabel);
+
+        // A script that prints in a loop pushes all three out.
+        for (int i = 0; i < OutputLog.Capacity - 2; i++)
+            log.Append(OutputSeverity.Info, $"line {i}");
+        Assert.Equal("Shell output, 500 of 500 lines, 1 error scrolled out", log.HistoryLabel);
+
+        log.Append(OutputSeverity.Info, "one more");
+        log.Append(OutputSeverity.Info, "and another");
+        Assert.Equal("Shell output, 500 of 500 lines, 2 errors scrolled out", log.HistoryLabel);
+
+        log.Clear();
+        Assert.Equal("Shell output, 0 of 500 lines", log.HistoryLabel);
+    }
 }
 
 public sealed class ConsoleCommandsTests

@@ -60,6 +60,24 @@ public sealed class OutputLogPlaceTests
     }
 
     [Fact]
+    public void A_line_with_a_place_and_no_text_is_still_a_row()
+    {
+        var log = new OutputLog();
+
+        // print() with nothing in it, and error("").
+        log.Append(OutputSeverity.Info, string.Empty, new ConsolePlace(Door, 3), NoCalls);
+        log.Append(OutputSeverity.Error, string.Empty, new ConsolePlace(Door, 12), [new(Door, 30, "press")]);
+
+        log.Entries.Select(entry => (entry.Text, entry.PlaceLabel)).ShouldBe(
+        [
+            ("", "door.luau:3"),
+            ("", "door.luau:12"),
+        ]);
+        log.Entries[1].Stack.ShouldNotBeNull().Shown.ShouldHaveSingleItem().Label.ShouldBe("door.luau:30 in press");
+        log.ErrorCount.ShouldBe(1);
+    }
+
+    [Fact]
     public void Two_lines_fold_when_their_text_and_their_place_are_the_same()
     {
         var log = new OutputLog();

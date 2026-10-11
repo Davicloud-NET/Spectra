@@ -18,6 +18,7 @@ public sealed class OutputLog : ObservableObject
     private readonly Action<ConsolePlace> _requestPlace;
     private int _errorCount;
     private int _warningCount;
+    private long _errorsScrolledOut;
 
     /// <summary>An empty log.</summary>
     public OutputLog() => _requestPlace = place => PlaceRequested?.Invoke(place);
@@ -45,10 +46,18 @@ public sealed class OutputLog : ObservableObject
         }
     }
 
-    /// <summary>What this panel is, and how full it is.</summary>
+    /// <summary>
+    /// What this panel is and how full it is, and how many errors have
+    /// scrolled out of it since it was last empty.
+    /// </summary>
     // Not a verdict: errors scroll out of a bounded log. ProblemList answers
     // "is anything wrong". An error with calls under it is one line.
-    public string HistoryLabel => $"Shell output, {Entries.Count} of {Capacity} lines";
+    public string HistoryLabel => _errorsScrolledOut switch
+    {
+        0 => $"Shell output, {Entries.Count} of {Capacity} lines",
+        1 => $"Shell output, {Entries.Count} of {Capacity} lines, 1 error scrolled out",
+        _ => $"Shell output, {Entries.Count} of {Capacity} lines, {_errorsScrolledOut} errors scrolled out",
+    };
 
     /// <summary>How many lines have fallen off the top since the log was made.</summary>
     public long FallenOff { get; private set; }
@@ -74,7 +83,9 @@ public sealed class OutputLog : ObservableObject
         OutputSeverity severity, string text, ConsolePlace? place, IReadOnlyList<ConsolePlace> calls)
     {
         ArgumentNullException.ThrowIfNull(calls);
-        if (string.IsNullOrWhiteSpace(text))
+
+        // A script's print() of nothing is still a line, with a place to open.
+        if (place is null && string.IsNullOrWhiteSpace(text))
             return;
 
         string time = DateTime.Now.ToString("HH:mm:ss");
@@ -101,8 +112,13 @@ public sealed class OutputLog : ObservableObject
             Entries.RemoveAt(0);
             FallenOff++;
 
+            // A flood of prints takes an error off the top in a moment. The
+            // heading keeps count, so somebody knows to look in the run log.
             if (dropped.Severity == OutputSeverity.Error)
+            {
                 ErrorCount--;
+                _errorsScrolledOut++;
+            }
             else if (dropped.Severity == OutputSeverity.Warning)
                 WarningCount--;
         }
@@ -124,6 +140,7 @@ public sealed class OutputLog : ObservableObject
         Entries.Clear();
         ErrorCount = 0;
         WarningCount = 0;
+        _errorsScrolledOut = 0;
         Raise(nameof(HistoryLabel));
     }
 }
