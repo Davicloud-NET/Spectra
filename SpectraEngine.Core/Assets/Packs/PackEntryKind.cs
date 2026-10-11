@@ -25,7 +25,7 @@ public enum PackEntryKind : byte
     /// <summary>A compiled shader blob, one per target backend.</summary>
     Shader = 5,
 
-    /// <summary>Luau bytecode.</summary>
+    /// <summary>A packed script: a small header, then the script's text.</summary>
     Script = 6,
 
     /// <summary>A compiled map.</summary>
