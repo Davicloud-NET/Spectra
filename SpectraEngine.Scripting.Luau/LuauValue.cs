@@ -50,18 +50,25 @@ public readonly struct LuauValue
         return new LuauValue(Kind.Object, value, tag: tag);
     }
 
+    /// <summary>A boolean.</summary>
     public static implicit operator LuauValue(bool value) => new(Kind.Boolean, number: value ? 1 : 0);
 
+    /// <summary>A number.</summary>
     public static implicit operator LuauValue(double value) => new(Kind.Number, number: value);
 
+    /// <summary>A vector, as Luau's own vector type.</summary>
     public static implicit operator LuauValue(Vector3 value) => new(Kind.Vector, vector: value);
 
+    /// <summary>A string. Null is nil.</summary>
     public static implicit operator LuauValue(string? value) => value is null ? default : new(Kind.Text, value);
 
+    /// <summary>A value the host keeps. Null is nil.</summary>
     public static implicit operator LuauValue(LuauReference? value) => value is null ? default : new(Kind.Reference, value);
 
+    /// <summary>A function the host keeps. Null is nil.</summary>
     public static implicit operator LuauValue(LuauFunction? value) => value is null ? default : new(Kind.Function, value);
 
+    /// <summary>A thread, as a value a script can hold. One that is gone is nil.</summary>
     // The handle is unpacked into the fields there are, so it is not boxed.
     public static implicit operator LuauValue(LuauThread value) =>
         value.Host is null ? default : new(Kind.Thread, value.Host, number: value.Generation, tag: value.Slot);

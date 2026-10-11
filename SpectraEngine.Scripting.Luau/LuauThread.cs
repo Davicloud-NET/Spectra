@@ -83,8 +83,10 @@ public readonly struct LuauThread : IEquatable<LuauThread>
     /// <inheritdoc/>
     public override int GetHashCode() => HashCode.Combine(Slot, Generation);
 
+    /// <summary>Whether two handles name the same thread.</summary>
     public static bool operator ==(LuauThread left, LuauThread right) => left.Equals(right);
 
+    /// <summary>Whether two handles name different threads.</summary>
     public static bool operator !=(LuauThread left, LuauThread right) => !left.Equals(right);
 
     private LuauHost Find() =>
