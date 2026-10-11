@@ -104,7 +104,7 @@ public static class SentDef
     /// written before one of its fields existed ends sooner, and what it lacks
     /// reads as unset.
     /// </summary>
-    public const int TypeRecordTrailerSize = StringRefSize + sizeof(uint);
+    public const int TrailerFixedSize = StringRefSize + sizeof(uint);
 
     /// <summary>Offset, within the trailer, of the icon string reference.</summary>
     public const int TrailerIconOffset = 0x00;
@@ -320,7 +320,8 @@ public static class SentDef
                     cursor);
             }
 
-            EntitySchema schema = ReadType(image.Slice(cursor, (int)recordSize), table, decoded, i, cursor);
+            var source = new RecordSource(image.Slice(cursor, (int)recordSize), table, decoded, i, cursor);
+            EntitySchema schema = ReadType(in source);
 
             // Sorted order is part of the format. Strictly increasing also
             // rejects a duplicate class name.
@@ -397,44 +398,7 @@ public static class SentDef
 
         int size = TypeRecordFixedSize;
         for (int i = 0; i < schema.Keyvalues.Count; i++)
-        {
-            KeyvalueDescriptor keyvalue = schema.Keyvalues[i];
-
-            if (!Enum.IsDefined(keyvalue.Type))
-            {
-                throw new ArgumentException(
-                    $"Keyvalue '{keyvalue.Name}' on class '{schema.ClassName}' declares type " +
-                    $"{(byte)keyvalue.Type}, which is not a {nameof(KeyvalueType)} this build names.",
-                    nameof(schema));
-            }
-
-            // Reserved bits throw here and are masked on read. Dropping one on
-            // write would lose data the producer meant to ship.
-            uint reserved = keyvalue.Flags & ~KeyvalueFlags.DefinedMask;
-            if (reserved != 0)
-            {
-                throw new ArgumentException(
-                    $"Keyvalue '{keyvalue.Name}' on class '{schema.ClassName}' sets reserved flag bits " +
-                    $"0x{reserved:X8}. Those bits are claimed and unassigned; widen " +
-                    $"{nameof(KeyvalueFlags)}.{nameof(KeyvalueFlags.DefinedMask)} in the change that gives " +
-                    "them meaning.", nameof(schema));
-            }
-
-            strings.Intern(keyvalue.Name);
-            strings.Intern(keyvalue.Display);
-            strings.Intern(keyvalue.Tooltip);
-            strings.Intern(keyvalue.Default);
-
-            IReadOnlyList<(string Value, string Display)> choices = keyvalue.Choices ?? KeyvalueDescriptor.NoChoices;
-            RequireUInt16(choices.Count, $"choices on keyvalue '{keyvalue.Name}'", schema.ClassName);
-            for (int c = 0; c < choices.Count; c++)
-            {
-                strings.Intern(choices[c].Value);
-                strings.Intern(choices[c].Display);
-            }
-
-            size += KeyvalueRecordSize + (choices.Count * ChoiceRecordSize);
-        }
+            size += MeasureAndInternKeyvalue(schema.Keyvalues[i], schema, strings);
 
         for (int i = 0; i < schema.Inputs.Count; i++)
             strings.Intern(schema.Inputs[i].Name);
@@ -443,8 +407,48 @@ public static class SentDef
 
         strings.Intern(schema.Icon);
 
-        return size + ((schema.Inputs.Count + schema.Outputs.Count) * StringRefSize) + TypeRecordTrailerSize
+        return size + ((schema.Inputs.Count + schema.Outputs.Count) * StringRefSize) + TrailerFixedSize
             + ParameterBytes(schema.Inputs.Count, schema.Outputs.Count);
+    }
+
+    // The bytes one keyvalue takes, its choices included.
+    private static int MeasureAndInternKeyvalue(
+        KeyvalueDescriptor keyvalue, EntitySchema schema, StringTableBuilder strings)
+    {
+        if (!Enum.IsDefined(keyvalue.Type))
+        {
+            throw new ArgumentException(
+                $"Keyvalue '{keyvalue.Name}' on class '{schema.ClassName}' declares type " +
+                $"{(byte)keyvalue.Type}, which is not a {nameof(KeyvalueType)} this build names.",
+                nameof(schema));
+        }
+
+        // Reserved bits throw here and are masked on read. Dropping one on
+        // write would lose data the producer meant to ship.
+        uint reserved = keyvalue.Flags & ~KeyvalueFlags.DefinedMask;
+        if (reserved != 0)
+        {
+            throw new ArgumentException(
+                $"Keyvalue '{keyvalue.Name}' on class '{schema.ClassName}' sets reserved flag bits " +
+                $"0x{reserved:X8}. Those bits are claimed and unassigned; widen " +
+                $"{nameof(KeyvalueFlags)}.{nameof(KeyvalueFlags.DefinedMask)} in the change that gives " +
+                "them meaning.", nameof(schema));
+        }
+
+        strings.Intern(keyvalue.Name);
+        strings.Intern(keyvalue.Display);
+        strings.Intern(keyvalue.Tooltip);
+        strings.Intern(keyvalue.Default);
+
+        IReadOnlyList<(string Value, string Display)> choices = keyvalue.Choices ?? KeyvalueDescriptor.NoChoices;
+        RequireUInt16(choices.Count, $"choices on keyvalue '{keyvalue.Name}'", schema.ClassName);
+        for (int c = 0; c < choices.Count; c++)
+        {
+            strings.Intern(choices[c].Value);
+            strings.Intern(choices[c].Display);
+        }
+
+        return KeyvalueRecordSize + (choices.Count * ChoiceRecordSize);
     }
 
     private static void WriteType(Span<byte> record, EntitySchema schema, StringTableBuilder strings)
@@ -461,36 +465,7 @@ public static class SentDef
 
         int position = TypeRecordFixedSize;
         for (int i = 0; i < schema.Keyvalues.Count; i++)
-        {
-            KeyvalueDescriptor keyvalue = schema.Keyvalues[i];
-            IReadOnlyList<(string Value, string Display)> choices = keyvalue.Choices ?? KeyvalueDescriptor.NoChoices;
-            Span<byte> field = record[position..];
-
-            BinaryPrimitives.WriteUInt32LittleEndian(field[0x00..], strings.Intern(keyvalue.Name));
-            BinaryPrimitives.WriteUInt32LittleEndian(field[0x04..], strings.Intern(keyvalue.Display));
-            BinaryPrimitives.WriteUInt32LittleEndian(field[0x08..], strings.Intern(keyvalue.Tooltip));
-            BinaryPrimitives.WriteUInt32LittleEndian(field[0x0C..], strings.Intern(keyvalue.Default));
-            field[0x10] = (byte)keyvalue.Type;
-
-            // Not validated: an unknown widget reads back as Auto here, and a
-            // newer editor that knows it still gets the byte.
-            field[0x11] = keyvalue.Widget;
-            BinaryPrimitives.WriteUInt16LittleEndian(field[0x12..], (ushort)choices.Count);
-
-            // NaN means unbounded. Written as raw bits.
-            BinaryPrimitives.WriteSingleLittleEndian(field[0x14..], keyvalue.Min);
-            BinaryPrimitives.WriteSingleLittleEndian(field[0x18..], keyvalue.Max);
-            BinaryPrimitives.WriteUInt32LittleEndian(field[0x1C..], keyvalue.Flags);
-
-            position += KeyvalueRecordSize;
-            for (int c = 0; c < choices.Count; c++)
-            {
-                Span<byte> choice = record[position..];
-                BinaryPrimitives.WriteUInt32LittleEndian(choice[0..], strings.Intern(choices[c].Value));
-                BinaryPrimitives.WriteUInt32LittleEndian(choice[4..], strings.Intern(choices[c].Display));
-                position += ChoiceRecordSize;
-            }
-        }
+            position += WriteKeyvalue(record[position..], schema.Keyvalues[i], strings);
 
         for (int i = 0; i < schema.Inputs.Count; i++, position += StringRefSize)
             BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Inputs[i].Name));
@@ -498,7 +473,52 @@ public static class SentDef
         for (int i = 0; i < schema.Outputs.Count; i++, position += StringRefSize)
             BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Outputs[i].Name));
 
-        Span<byte> trailer = record[position..];
+        position += WriteTrailer(record[position..], schema, strings);
+
+        if (position != record.Length)
+        {
+            // MeasureAndIntern and WriteType disagree about the layout.
+            throw new InvalidOperationException(
+                $"Wrote {position} bytes into a {record.Length}-byte record for '{schema.ClassName}'.");
+        }
+    }
+
+    // Returns the bytes written: the keyvalue record and its choices.
+    private static int WriteKeyvalue(Span<byte> field, KeyvalueDescriptor keyvalue, StringTableBuilder strings)
+    {
+        IReadOnlyList<(string Value, string Display)> choices = keyvalue.Choices ?? KeyvalueDescriptor.NoChoices;
+
+        BinaryPrimitives.WriteUInt32LittleEndian(field[0x00..], strings.Intern(keyvalue.Name));
+        BinaryPrimitives.WriteUInt32LittleEndian(field[0x04..], strings.Intern(keyvalue.Display));
+        BinaryPrimitives.WriteUInt32LittleEndian(field[0x08..], strings.Intern(keyvalue.Tooltip));
+        BinaryPrimitives.WriteUInt32LittleEndian(field[0x0C..], strings.Intern(keyvalue.Default));
+        field[0x10] = (byte)keyvalue.Type;
+
+        // Not validated: an unknown widget reads back as Auto here, and a
+        // newer editor that knows it still gets the byte.
+        field[0x11] = keyvalue.Widget;
+        BinaryPrimitives.WriteUInt16LittleEndian(field[0x12..], (ushort)choices.Count);
+
+        // NaN means unbounded. Written as raw bits.
+        BinaryPrimitives.WriteSingleLittleEndian(field[0x14..], keyvalue.Min);
+        BinaryPrimitives.WriteSingleLittleEndian(field[0x18..], keyvalue.Max);
+        BinaryPrimitives.WriteUInt32LittleEndian(field[0x1C..], keyvalue.Flags);
+
+        int position = KeyvalueRecordSize;
+        for (int c = 0; c < choices.Count; c++, position += ChoiceRecordSize)
+        {
+            Span<byte> choice = field[position..];
+            BinaryPrimitives.WriteUInt32LittleEndian(choice[0..], strings.Intern(choices[c].Value));
+            BinaryPrimitives.WriteUInt32LittleEndian(choice[4..], strings.Intern(choices[c].Display));
+        }
+
+        return position;
+    }
+
+    // Returns the bytes written: the icon, the flags and the parameter types
+    // with their padding.
+    private static int WriteTrailer(Span<byte> trailer, EntitySchema schema, StringTableBuilder strings)
+    {
         BinaryPrimitives.WriteUInt32LittleEndian(trailer[TrailerIconOffset..], strings.Intern(schema.Icon));
         BinaryPrimitives.WriteUInt32LittleEndian(
             trailer[TrailerFlagsOffset..], schema.HasFacing ? TrailerHasFacing : 0u);
@@ -510,52 +530,25 @@ public static class SentDef
         for (int i = 0; i < schema.Outputs.Count; i++)
             parameters[schema.Inputs.Count + i] = ParameterByte(schema.Outputs[i].Parameter);
 
-        position += TypeRecordTrailerSize + ParameterBytes(schema.Inputs.Count, schema.Outputs.Count);
-
-        if (position != record.Length)
-        {
-            // MeasureAndIntern and WriteType disagree about the layout.
-            throw new InvalidOperationException(
-                $"Wrote {position} bytes into a {record.Length}-byte record for '{schema.ClassName}'.");
-        }
+        return TrailerFixedSize + ParameterBytes(schema.Inputs.Count, schema.Outputs.Count);
     }
 
-    private static EntitySchema ReadType(
-        ReadOnlySpan<byte> record,
-        ReadOnlySpan<byte> table,
-        Dictionary<uint, string> decoded,
-        int index,
-        long recordOffset)
+    private static EntitySchema ReadType(in RecordSource source)
     {
-        string className = ReadString(record, table, decoded, TypeRecordClassNameOffset, recordOffset, index);
+        ReadOnlySpan<byte> record = source.Bytes;
+
+        string className = source.String(TypeRecordClassNameOffset);
         if (className.Length == 0)
         {
             throw new SentDefFormatException(
-                $"Type record {index} has an empty class name; a class with no name cannot be looked up.",
-                recordOffset + TypeRecordClassNameOffset);
+                $"Type record {source.Index} has an empty class name; a class with no name cannot be looked up.",
+                source.Offset + TypeRecordClassNameOffset);
         }
 
-        string displayName = ReadString(record, table, decoded, TypeRecordDisplayNameOffset, recordOffset, index);
-        string group = ReadString(record, table, decoded, TypeRecordGroupOffset, recordOffset, index);
-
-        byte placement = record[TypeRecordPlacementOffset];
-        if (!Enum.IsDefined((EntityPlacement)placement))
-        {
-            // No fallback: placement decides whether a node carries brush geometry.
-            throw new SentDefFormatException(
-                $"Class '{className}' declares placement {placement}, which is not an " +
-                $"{nameof(EntityPlacement)} this build names.",
-                recordOffset + TypeRecordPlacementOffset);
-        }
-
-        byte origin = record[TypeRecordOriginOffset];
-        if (!Enum.IsDefined((EntityOrigin)origin))
-        {
-            throw new SentDefFormatException(
-                $"Class '{className}' declares origin {origin}, which is not an " +
-                $"{nameof(EntityOrigin)} this build names.",
-                recordOffset + TypeRecordOriginOffset);
-        }
+        string displayName = source.String(TypeRecordDisplayNameOffset);
+        string group = source.String(TypeRecordGroupOffset);
+        EntityPlacement placement = ReadPlacement(in source, className);
+        EntityOrigin origin = ReadOrigin(in source, className);
 
         int keyvalueCount = BinaryPrimitives.ReadUInt16LittleEndian(record[TypeRecordKeyvalueCountOffset..]);
         int inputCount = BinaryPrimitives.ReadUInt16LittleEndian(record[TypeRecordInputCountOffset..]);
@@ -563,84 +556,17 @@ public static class SentDef
 
         var keyvalues = new KeyvalueDescriptor[keyvalueCount];
         int position = TypeRecordFixedSize;
-
         for (int i = 0; i < keyvalueCount; i++)
-        {
-            RequireRoom(record.Length, position, KeyvalueRecordSize, className, "keyvalue record", recordOffset);
-            ReadOnlySpan<byte> field = record.Slice(position, KeyvalueRecordSize);
+            keyvalues[i] = ReadKeyvalue(in source, className, ref position);
 
-            string name = ReadString(field, table, decoded, 0x00, recordOffset + position, index);
-            string display = ReadString(field, table, decoded, 0x04, recordOffset + position, index);
-            string tooltip = ReadString(field, table, decoded, 0x08, recordOffset + position, index);
-            string @default = ReadString(field, table, decoded, 0x0C, recordOffset + position, index);
-
-            byte type = field[0x10];
-            if (!Enum.IsDefined((KeyvalueType)type))
-            {
-                throw new SentDefFormatException(
-                    $"Keyvalue '{name}' on class '{className}' declares type {type}, which is not a " +
-                    $"{nameof(KeyvalueType)} this build names.",
-                    recordOffset + position + 0x10);
-            }
-
-            // Unknown widget falls back to Auto rather than failing the file.
-            byte widget = field[0x11];
-            if (!KeyvalueWidget.IsDefined(widget))
-                widget = KeyvalueWidget.Auto;
-
-            int choiceCount = BinaryPrimitives.ReadUInt16LittleEndian(field[0x12..]);
-            float min = BinaryPrimitives.ReadSingleLittleEndian(field[0x14..]);
-            float max = BinaryPrimitives.ReadSingleLittleEndian(field[0x18..]);
-
-            // Drop bits this build does not know; another tool may have set them.
-            uint flags = KeyvalueFlags.Mask(BinaryPrimitives.ReadUInt32LittleEndian(field[0x1C..]));
-
-            position += KeyvalueRecordSize;
-
-            IReadOnlyList<(string Value, string Display)> choices;
-            if (choiceCount == 0)
-            {
-                choices = KeyvalueDescriptor.NoChoices;
-            }
-            else
-            {
-                var list = new (string Value, string Display)[choiceCount];
-                for (int c = 0; c < choiceCount; c++)
-                {
-                    RequireRoom(record.Length, position, ChoiceRecordSize, className, "choice record", recordOffset);
-                    ReadOnlySpan<byte> choice = record.Slice(position, ChoiceRecordSize);
-                    list[c] = (
-                        ReadString(choice, table, decoded, 0, recordOffset + position, index),
-                        ReadString(choice, table, decoded, 4, recordOffset + position, index));
-                    position += ChoiceRecordSize;
-                }
-
-                choices = list;
-            }
-
-            keyvalues[i] = new KeyvalueDescriptor(
-                name, display, tooltip, @default, (KeyvalueType)type, widget, min, max, flags, choices);
-        }
-
-        var inputNames = new string[inputCount];
-        for (int i = 0; i < inputCount; i++, position += StringRefSize)
-        {
-            RequireRoom(record.Length, position, StringRefSize, className, "input record", recordOffset);
-            inputNames[i] = ReadString(record, table, decoded, position, recordOffset, index);
-        }
-
-        var outputNames = new string[outputCount];
-        for (int i = 0; i < outputCount; i++, position += StringRefSize)
-        {
-            RequireRoom(record.Length, position, StringRefSize, className, "output record", recordOffset);
-            outputNames[i] = ReadString(record, table, decoded, position, recordOffset, index);
-        }
+        string[] inputNames = ReadNames(in source, className, "input record", inputCount, ref position);
+        string[] outputNames = ReadNames(in source, className, "output record", outputCount, ref position);
 
         // The trailer grew a field at a time, so an older record ends before
         // the icon, before the flags or before the parameter types.
         int trailer = record.Length - position;
         string icon = trailer >= TrailerIconOffset + StringRefSize
-            ? ReadString(record, table, decoded, position + TrailerIconOffset, recordOffset, index)
+            ? source.String(position + TrailerIconOffset)
             : string.Empty;
 
         uint classFlags = trailer >= TrailerFlagsOffset + sizeof(uint)
@@ -656,8 +582,104 @@ public static class SentDef
 
         // Bytes left over are a newer writer's fields. Ignored.
         return new EntitySchema(
-            className, displayName, group, (EntityPlacement)placement, (EntityOrigin)origin,
+            className, displayName, group, placement, origin,
             keyvalues, inputs, outputs, icon, (classFlags & TrailerHasFacing) != 0);
+    }
+
+    private static EntityPlacement ReadPlacement(in RecordSource source, string className)
+    {
+        byte placement = source.Bytes[TypeRecordPlacementOffset];
+        if (Enum.IsDefined((EntityPlacement)placement))
+            return (EntityPlacement)placement;
+
+        // No fallback: placement decides whether a node carries brush geometry.
+        throw new SentDefFormatException(
+            $"Class '{className}' declares placement {placement}, which is not an " +
+            $"{nameof(EntityPlacement)} this build names.",
+            source.Offset + TypeRecordPlacementOffset);
+    }
+
+    private static EntityOrigin ReadOrigin(in RecordSource source, string className)
+    {
+        byte origin = source.Bytes[TypeRecordOriginOffset];
+        if (Enum.IsDefined((EntityOrigin)origin))
+            return (EntityOrigin)origin;
+
+        throw new SentDefFormatException(
+            $"Class '{className}' declares origin {origin}, which is not an " +
+            $"{nameof(EntityOrigin)} this build names.",
+            source.Offset + TypeRecordOriginOffset);
+    }
+
+    // Reads the keyvalue record at position and its choices, and moves
+    // position past them.
+    private static KeyvalueDescriptor ReadKeyvalue(in RecordSource source, string className, ref int position)
+    {
+        RequireRoom(source.Bytes.Length, position, KeyvalueRecordSize, className, "keyvalue record", source.Offset);
+        ReadOnlySpan<byte> field = source.Bytes.Slice(position, KeyvalueRecordSize);
+
+        string name = source.String(position + 0x00);
+        string display = source.String(position + 0x04);
+        string tooltip = source.String(position + 0x08);
+        string @default = source.String(position + 0x0C);
+
+        byte type = field[0x10];
+        if (!Enum.IsDefined((KeyvalueType)type))
+        {
+            throw new SentDefFormatException(
+                $"Keyvalue '{name}' on class '{className}' declares type {type}, which is not a " +
+                $"{nameof(KeyvalueType)} this build names.",
+                source.Offset + position + 0x10);
+        }
+
+        // Unknown widget falls back to Auto rather than failing the file.
+        byte widget = field[0x11];
+        if (!KeyvalueWidget.IsDefined(widget))
+            widget = KeyvalueWidget.Auto;
+
+        int choiceCount = BinaryPrimitives.ReadUInt16LittleEndian(field[0x12..]);
+        float min = BinaryPrimitives.ReadSingleLittleEndian(field[0x14..]);
+        float max = BinaryPrimitives.ReadSingleLittleEndian(field[0x18..]);
+
+        // Drop bits this build does not know; another tool may have set them.
+        uint flags = KeyvalueFlags.Mask(BinaryPrimitives.ReadUInt32LittleEndian(field[0x1C..]));
+
+        position += KeyvalueRecordSize;
+        IReadOnlyList<(string Value, string Display)> choices =
+            ReadChoices(in source, className, choiceCount, ref position);
+
+        return new KeyvalueDescriptor(
+            name, display, tooltip, @default, (KeyvalueType)type, widget, min, max, flags, choices);
+    }
+
+    private static IReadOnlyList<(string Value, string Display)> ReadChoices(
+        in RecordSource source, string className, int count, ref int position)
+    {
+        if (count == 0)
+            return KeyvalueDescriptor.NoChoices;
+
+        var choices = new (string Value, string Display)[count];
+        for (int c = 0; c < count; c++, position += ChoiceRecordSize)
+        {
+            RequireRoom(source.Bytes.Length, position, ChoiceRecordSize, className, "choice record", source.Offset);
+            choices[c] = (source.String(position), source.String(position + 4));
+        }
+
+        return choices;
+    }
+
+    // The names of a record's inputs or its outputs. what names them in an error.
+    private static string[] ReadNames(
+        in RecordSource source, string className, string what, int count, ref int position)
+    {
+        var names = new string[count];
+        for (int i = 0; i < count; i++, position += StringRefSize)
+        {
+            RequireRoom(source.Bytes.Length, position, StringRefSize, className, what, source.Offset);
+            names[i] = source.String(position);
+        }
+
+        return names;
     }
 
     // parameters is empty for a record written before it had them.
@@ -765,6 +787,34 @@ public static class SentDef
 
         throw new ArgumentException(
             $"Class '{className}' declares {count} {what}; the record stores that count as a u16.");
+    }
+
+    // One type record while it is read: its bytes, where they start in the
+    // image, and the table its string references point into.
+    private readonly ref struct RecordSource
+    {
+        private readonly ReadOnlySpan<byte> _table;
+        private readonly Dictionary<uint, string> _decoded;
+
+        public RecordSource(
+            ReadOnlySpan<byte> bytes, ReadOnlySpan<byte> table, Dictionary<uint, string> decoded, int index, long offset)
+        {
+            Bytes = bytes;
+            _table = table;
+            _decoded = decoded;
+            Index = index;
+            Offset = offset;
+        }
+
+        public ReadOnlySpan<byte> Bytes { get; }
+
+        // Which record of the file this is, for an error to name.
+        public int Index { get; }
+
+        public long Offset { get; }
+
+        // The string the reference at this offset in the record points at.
+        public string String(int position) => ReadString(Bytes, _table, _decoded, position, Offset, Index);
     }
 
     // Deduplicated string table. Ordinal keys, empty string at offset 0.

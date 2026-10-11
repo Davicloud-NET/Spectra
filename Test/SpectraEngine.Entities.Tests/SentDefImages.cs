@@ -13,7 +13,7 @@ internal static class SentDefImages
         int record = SentDef.HeaderSize;
         int recordSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(
             image.AsSpan(record + SentDef.TypeRecordSizeOffset));
-        return record + recordSize - ParameterBytes(image, record) - SentDef.TypeRecordTrailerSize;
+        return record + recordSize - ParameterBytes(image, record) - SentDef.TrailerFixedSize;
     }
 
     // Where the first type record's parameter types start.

@@ -51,7 +51,7 @@ public sealed class SentDefIconTests
         // One keyvalue, two inputs and an output, then the trailer and their types.
         recordSize.ShouldBe(
             SentDef.TypeRecordFixedSize + SentDef.KeyvalueRecordSize + (3 * SentDef.StringRefSize) +
-            SentDef.TypeRecordTrailerSize + SentDef.ParameterBytes(2, 1));
+            SentDef.TrailerFixedSize + SentDef.ParameterBytes(2, 1));
 
         uint reference = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(IconReference(image)));
         int table = (int)BinaryPrimitives.ReadUInt32LittleEndian(
@@ -82,7 +82,7 @@ public sealed class SentDefIconTests
         // What a build from before the icon wrote: the same record with no trailer.
         byte[] older = SentDefImages.WithShorterRecords(
             SentDef.Write([Door("door"), new EntitySchema("zz_last", icon: "relay")]),
-            SentDef.TypeRecordTrailerSize);
+            SentDef.TrailerFixedSize);
 
         EntitySchema[] read = SentDef.Read(older);
 

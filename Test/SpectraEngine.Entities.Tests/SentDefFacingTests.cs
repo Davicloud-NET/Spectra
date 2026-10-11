@@ -105,7 +105,7 @@ public sealed class SentDefFacingTests
     public void A_record_with_no_trailer_reads_with_no_facing()
     {
         byte[] oldest = SentDefImages.WithShorterRecords(
-            SentDef.Write([Start(true)]), SentDef.TypeRecordTrailerSize);
+            SentDef.Write([Start(true)]), SentDef.TrailerFixedSize);
 
         EntitySchema read = SentDef.Read(oldest)[0];
 
