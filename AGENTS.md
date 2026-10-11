@@ -195,6 +195,7 @@ Avalonia
 - `ApplyViewArrangement` sizes and shows the view panes and never moves one. The 3D view's track never goes to zero: a swap chain with no width may not come back.
 - The compositor waits on the shared target's key with no deadline. An engine that dies must keep answering (`Renderer.OfferSharedTurn`) until the shell has cleared `viewport.Host` and `IsAwaitingEngine` is false, or the whole window freezes.
 - When the engine's render thread dies the editor restarts the viewport and keeps the level (`MainWindow.Recovery.cs`, `SessionRecovery`). Anything a session owns must be rebuilt by that path too, or it works until the first restart.
+- A text or number a property refuses goes in `PropertyLimits`. The panel reads it to say why and `PropertyEditor` reads it to refuse. A rule in only the editor is a value dropped on the render thread with no message.
 
 Host
 
@@ -255,7 +256,6 @@ Tests and tools
 - An agent's worktree keeps about 4.6 GB of build output. Delete `bin` and `obj` in a worktree once its branch is merged, or the drive fills.
 - A build that runs out of disk leaves truncated files in `obj` that the next build takes for up to date. Delete `bin` and `obj`.
 - A save stamps `spectramap` with `EngineInfo.MapFormatVersion`. Raise it and every fixture that compares saved bytes has to name the new number.
-- A text or number a property refuses goes in `PropertyLimits`. The panel reads it to say why and `PropertyEditor` reads it to refuse. A rule in only the editor is a value dropped on the render thread with no message.
 - CI is `.github/workflows/ci.yml`, on Windows and Linux. The VSIX builds only on Windows. The graphics suite is skipped on hosted runners, which have no GPU.
 
 ## Where things are written down
