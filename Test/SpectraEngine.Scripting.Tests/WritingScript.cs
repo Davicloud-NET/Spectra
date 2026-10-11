@@ -7,13 +7,13 @@ namespace SpectraEngine.Scripting.Tests;
 // The Luau of a script that makes random writes: to its own node, to the
 // node above it and to the root, a few each tick. First one to every member
 // of each of the three, then the random ones. Every write is in a pcall,
-// and the script ends by printing how many each member took and how many
-// were refused.
+// and the script ends by printing how many were refused and how many each
+// member took. It is one line: every script ends on the same tick, and
+// scripts may print only so many lines in one.
 internal static class WritingScript
 {
     private const int WritesPerTick = 4;
 
-    private const string TookWord = "took";
     private const string EndWord = "refused";
 
     // Indexes into the script's table of targets.
@@ -51,8 +51,9 @@ internal static class WritingScript
             Append(text, random.Next(), 1 + random.Pick(TargetCount), ref written);
 
         return text
-            .AppendLine($"for member, count in taken do print('{TookWord}', member, count) end")
-            .AppendLine($"print('{EndWord}', refused)")
+            .AppendLine("local counts = {}")
+            .AppendLine("for member, count in taken do table.insert(counts, `{member}={count}`) end")
+            .AppendLine($"print('{EndWord}', refused, table.concat(counts, ' '))")
             .ToString();
     }
 
@@ -68,15 +69,17 @@ internal static class WritingScript
         var taken = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (string line in printed)
         {
-            string[] parts = line.Split(' ');
-            if (parts.Length == 3 && parts[0] == TookWord)
+            string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2 || parts[0] != EndWord)
+                continue;
+
+            scripts++;
+            refused += int.Parse(parts[1], CultureInfo.InvariantCulture);
+            foreach (string count in parts.AsSpan(2))
             {
-                taken[parts[1]] = taken.GetValueOrDefault(parts[1]) + int.Parse(parts[2], CultureInfo.InvariantCulture);
-            }
-            else if (parts.Length == 2 && parts[0] == EndWord)
-            {
-                scripts++;
-                refused += int.Parse(parts[1], CultureInfo.InvariantCulture);
+                int split = count.IndexOf('=');
+                string member = count[..split];
+                taken[member] = taken.GetValueOrDefault(member) + int.Parse(count[(split + 1)..], CultureInfo.InvariantCulture);
             }
         }
 
