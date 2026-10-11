@@ -9,7 +9,7 @@ namespace SpectraEngine.Scripting.Tests;
 /// </summary>
 public sealed partial class BindingSourceTests
 {
-    private const string Binding = "SpectraEngine.Scripting.Luau";
+    internal const string Binding = "SpectraEngine.Scripting.Luau";
 
     // Calls on Luau itself that were read in external/luau and cannot raise.
     // No push is among them: Luau raises from a push once one frame holds
@@ -128,7 +128,7 @@ public sealed partial class BindingSourceTests
     private static string[] ImportsIn(string source) =>
         [.. Import().Matches(source).Select(match => match.Groups["name"].Value)];
 
-    private static IEnumerable<string> Sources(string folder)
+    internal static IEnumerable<string> Sources(string folder)
     {
         char slash = Path.DirectorySeparatorChar;
         return Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories)
@@ -154,7 +154,7 @@ public sealed partial class BindingSourceTests
     [GeneratedRegex(@"<Project\s+Path=""(?<path>[^""]+\.csproj)""")]
     private static partial Regex ProjectPath();
 
-    private static string RepositoryRoot()
+    internal static string RepositoryRoot()
     {
         DirectoryInfo? folder = new(AppContext.BaseDirectory);
         while (folder is not null && !File.Exists(Path.Combine(folder.FullName, "Spectra.slnx")))
