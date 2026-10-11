@@ -138,7 +138,6 @@ public sealed class MapNodeRealmTests
     [Fact]
     public void A_map_that_declares_realms_and_states_saves_byte_for_byte_after_a_load()
     {
-        // A save used to drop both: the scene had nowhere to keep them.
         byte[] source = Utf8(Level);
         var loaded = new Scene("Testmap");
 
