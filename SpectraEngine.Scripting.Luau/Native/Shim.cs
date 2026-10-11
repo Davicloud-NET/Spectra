@@ -4,16 +4,12 @@ namespace SpectraEngine.Scripting.Luau.Native;
 
 // The entry points of native/luau/spectra_luau.cpp, which says what each
 // does. A call that returns a LuaStatus never raises. When the status is not
-// Ok, the error value is on top of the stack in place of the result.
-//
-// A thread that has yielded or failed refuses every call that runs protected.
-// What still works there: the pushes of nil, a boolean, a number and a
-// vector, sl_pushvalue, sl_pushthread, sl_getref, sl_xmove, sl_rawgeti,
-// sl_rawiter, sl_keep, sl_pop and sl_resume.
+// Ok, the error value is on top of the stack in place of the result. A thread
+// that has yielded or failed refuses every call that runs protected.
 internal static unsafe partial class Shim
 {
     // Moves with SL_SHIM_REVISION in spectra_luau.h. LuauLibrary compares the two.
-    internal const int Revision = 3;
+    internal const int Revision = 4;
 
     // What a host function returns instead of a result count. The shim raises
     // the error or yields once the managed frame has returned.

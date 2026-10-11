@@ -4,10 +4,8 @@ using SpectraEngine.Scripting.Luau.Native;
 namespace SpectraEngine.Scripting.Luau;
 
 /// <summary>
-/// The managed objects scripts hold. A script gets a userdata that names a
-/// slot here and the slot's generation, never a pointer. When the host lets an
-/// object go, what a script still holds of it reads as released, and not as
-/// whatever took the slot.
+/// The managed objects scripts hold. A script gets a userdata that names a slot here
+/// and its generation, so what it still holds of a released object reads as released.
 /// </summary>
 public sealed unsafe class LuauObjects
 {

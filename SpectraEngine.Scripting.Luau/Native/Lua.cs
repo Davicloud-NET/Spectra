@@ -6,9 +6,6 @@ namespace SpectraEngine.Scripting.Luau.Native;
 // calls that cannot raise belong here, and no push is one of them. The rest
 // goes through Shim. BindingSourceTests holds the list of names allowed here,
 // and native/README.md says why.
-//
-// Luau checks a stack index in a debug build only. A negative index past the
-// bottom of the frame reads below it, so LuauStack checks before it calls.
 internal static unsafe partial class Lua
 {
     internal const string Library = "spectra_luau";
@@ -26,7 +23,8 @@ internal static unsafe partial class Lua
     internal const int NilReference = 0;
 
     // The reads below take no lock, call nothing back and end in a few
-    // instructions, so they skip the switch out of managed mode.
+    // instructions, so they skip the switch out of managed mode. Luau checks
+    // an index in a debug build only: LuauStack checks before it calls.
     [LibraryImport(Library), SuppressGCTransition] internal static partial int lua_gettop(nint L);
     [LibraryImport(Library), SuppressGCTransition] internal static partial LuaType lua_type(nint L, int index);
     [LibraryImport(Library), SuppressGCTransition] internal static partial double lua_tonumberx(nint L, int index, int* isNumber);

@@ -1121,10 +1121,9 @@ SL_API int sl_setuserdatametatable(lua_State* L, int tag, int releases)
 }
 
 // Pushes the userdata that stands for a slot of the host's object table. One
-// userdata exists per slot at a time, so two reads of one object are equal
-// in a script. When the slot's userdata is gone, a new one is made with
-// `nextGeneration` and `created` is set. The host then knows that a report
-// about the old generation is about a userdata it no longer counts on.
+// exists per slot at a time, so two reads of one object are equal in a
+// script. When it is gone, a new one is made with `nextGeneration` and
+// `created` is set, and a report about the old generation means nothing.
 SL_API int sl_pushobject(lua_State* L, int tag, uint32_t slot, uint32_t generation, uint32_t nextGeneration, int* created)
 {
     *created = 0;
@@ -1291,14 +1290,43 @@ SL_API int sl_call(lua_State* L, int arguments, int results)
     return lua_pcall(L, arguments, results, 0);
 }
 
+// How many of `count` values are arguments for a thread that is to run: all
+// of them for one that yielded or has its function, one less for a new thread
+// that takes its function too. -1 when the thread is not waiting.
+static int argumentsFor(lua_State* thread, lua_State* source, int count)
+{
+    int status = lua_status(thread);
+    if (status == LUA_YIELD)
+        return count;
+    if (status != LUA_OK)
+        return -1;
+
+    // LUA_COFIN is also what a thread with no function reads as.
+    int state = lua_costatus(source, thread);
+    if (state == LUA_COFIN)
+        return count - 1;
+    return state == LUA_COSUS ? count : -1;
+}
+
+// A thread that ended with values on its stack reads as one that has not
+// started. So they move to the results thread, and the thread is left empty.
+static int takeResults(HostState* host, lua_State* thread)
+{
+    int returned = lua_gettop(thread);
+    lua_settop(host->results, 0);
+    if (returned > 0 && lua_checkstack(host->results, returned))
+        lua_xmove(thread, host->results, returned);
+    else
+        returned = 0;
+
+    lua_settop(thread, 0);
+    return returned;
+}
+
 // Starts a thread or goes on with one that has yielded. Takes the top `count`
 // values of `source`, another thread of the same state: the arguments, and
-// under them the function when the thread is new and has none.
-//
-// LUA_YIELD: the thread's stack holds what it yielded. LUA_OK: it ended, and
-// what it returned is on the thread sl_results gives. `results` counts either.
-// An error status: the error value is on the thread's stack, and its frames
-// are still there for sl_frame. SL_REFUSED: the thread was not waiting.
+// under them the function when the thread is new and has none. SL_REFUSED
+// when the thread was not waiting.
 SL_API int sl_resume(lua_State* thread, lua_State* source, int count, int* results)
 {
     *results = 0;
@@ -1306,22 +1334,7 @@ SL_API int sl_resume(lua_State* thread, lua_State* source, int count, int* resul
         return SL_REFUSED;
 
     HostState* host = hostOf(thread);
-    int arguments = count;
-    int status = lua_status(thread);
-    if (status == LUA_OK)
-    {
-        // Not started. LUA_COFIN is also what a thread with no function reads as.
-        int state = lua_costatus(source, thread);
-        if (state == LUA_COFIN)
-            arguments = count - 1;
-        else if (state != LUA_COSUS)
-            arguments = -1;
-    }
-    else if (status != LUA_YIELD)
-    {
-        arguments = -1;
-    }
-
+    int arguments = argumentsFor(thread, source, count);
     if (arguments < 0 || thread == host->results || !lua_checkstack(thread, count))
     {
         lua_pop(source, count);
@@ -1329,33 +1342,22 @@ SL_API int sl_resume(lua_State* thread, lua_State* source, int count, int* resul
     }
 
     // What it yielded is still there when the host did not take it.
-    if (status == LUA_YIELD)
+    if (lua_status(thread) == LUA_YIELD)
         lua_settop(thread, 0);
     lua_xmove(source, thread, count);
 
+    int status;
     {
         CallScope scope(host);
         status = lua_resume(thread, host->current, arguments);
     }
 
+    // After an error the value is on the thread's stack, and its frames are
+    // still there for sl_frame.
     if (status == LUA_YIELD)
-    {
         *results = lua_gettop(thread);
-    }
     else if (status == LUA_OK)
-    {
-        // A thread that ended with values on its stack reads as one that has
-        // not started. So they move, and the thread is left empty.
-        int returned = lua_gettop(thread);
-        lua_settop(host->results, 0);
-        if (returned > 0 && lua_checkstack(host->results, returned))
-        {
-            lua_xmove(thread, host->results, returned);
-            *results = returned;
-        }
-        lua_settop(thread, 0);
-    }
-
+        *results = takeResults(host, thread);
     return status;
 }
 
@@ -1377,11 +1379,10 @@ SL_API int sl_cancel(lua_State* L, lua_State* thread)
     return lua_pcall(L, 1, 0, 0);
 }
 
-// One frame of a thread's call stack, innermost first. Returns 0 past the
-// last frame, 1 for a function of a script and 2 for a function of the host
-// or of Luau. `source` is the chunk's name as it was loaded. The texts live
-// as long as the frame. Works on a thread that ended in an error, whose
-// frames are still there.
+// One frame of a thread's call stack, innermost first: 0 past the last
+// frame, 1 for a function of a script, 2 for one of the host or of Luau.
+// `source` is the chunk's name as it was loaded, and the texts live as long
+// as the frame. A thread that ended in an error still has its frames.
 SL_API int sl_frame(lua_State* L, int level, const char** source, const char** name, int* line)
 {
     *source = nullptr;

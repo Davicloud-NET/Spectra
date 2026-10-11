@@ -1,10 +1,8 @@
 namespace SpectraEngine.Scripting.Luau;
 
 /// <summary>
-/// A handle to a Luau thread the host keeps: a script's top level, a kept
-/// function that was started, or a coroutine that yielded into the host. The
-/// handle is a value and costs nothing to copy or to drop. Once the thread has
-/// ended, every copy of it answers as gone.
+/// A handle to a Luau thread the host keeps. It is a value: it costs nothing to copy,
+/// and once the thread has ended every copy of it answers as gone.
 /// </summary>
 public readonly struct LuauThread : IEquatable<LuauThread>
 {
@@ -61,6 +59,13 @@ public readonly struct LuauThread : IEquatable<LuauThread>
         ArgumentOutOfRangeException.ThrowIfNegative(count);
         return Host is { } host ? host.Threads.Resume(this, source.State, count) : LuauResume.Refused;
     }
+
+    /// <summary>
+    /// Pushes the thread as a value a script can hold, or nil when it is gone. False: it
+    /// could not be pushed, and an error value is on top instead.
+    /// </summary>
+    public bool Push(LuauStack stack) =>
+        Host is null ? stack.PushNil() : !Host.IsClosed && Host.Threads.Push(this, stack.State);
 
     /// <summary>Ends a thread that waits, as <c>coroutine.close</c> does. False when it is running or gone.</summary>
     public bool Cancel() => Host is { } host && host.Threads.Cancel(this);

@@ -192,6 +192,37 @@ public sealed class ThreadTests
         sink.Texts(ScriptSeverity.Print).ShouldBe(["42", "after"]);
     }
 
+    [Fact]
+    public void A_host_function_hands_the_thread_it_started_back_to_the_script()
+    {
+        using LuauHost host = TestHost.Open(out _, fresh => fresh.SetGlobal("spawn"u8, stack =>
+        {
+            fresh.Start(stack, stack.Count, out LuauThread started);
+            return started.Push(stack) ? 1 : LuauStack.Raise;
+        }));
+        LuauScript script = host.LoadText(
+            "local waiting = spawn(function() coroutine.yield() end)\nlocal ended = spawn(function() end)\nreturn type(waiting), coroutine.status(waiting), ended");
+
+        script.Start().ShouldBe(LuauResume.Finished);
+
+        script.Thread.Values.GetText(1).ShouldBe("thread");
+        script.Thread.Values.GetText(2).ShouldBe("suspended");
+        script.Thread.Values.IsNil(3).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_thread_goes_to_another_script_as_a_value()
+    {
+        using LuauHost host = TestHost.Open(out _);
+        LuauScript waiting = host.LoadText("coroutine.yield()", "Scripts/waiting.luau");
+        LuauScript asking = host.LoadText("local other = ...\nreturn coroutine.status(other)", "Scripts/asking.luau");
+        waiting.Start().ShouldBe(LuauResume.Yielded);
+
+        asking.Start([waiting.Thread]).ShouldBe(LuauResume.Finished);
+
+        asking.Thread.Values.GetText(1).ShouldBe("suspended");
+    }
+
     // Each start nests on the native stack. Luau counts the nesting and
     // answers with an error before the stack runs out.
     [Fact]

@@ -33,6 +33,7 @@ public readonly struct LuauValue
         Text,
         Reference,
         Function,
+        Thread,
         Object,
     }
 
@@ -61,6 +62,10 @@ public readonly struct LuauValue
 
     public static implicit operator LuauValue(LuauFunction? value) => value is null ? default : new(Kind.Function, value);
 
+    // The handle is unpacked into the fields there are, so it is not boxed.
+    public static implicit operator LuauValue(LuauThread value) =>
+        value.Host is null ? default : new(Kind.Thread, value.Host, number: value.Generation, tag: value.Slot);
+
     // False: the push could not be made and an error value is on top instead.
     internal bool PushTo(LuauHost host, LuauStack stack) => _kind switch
     {
@@ -70,6 +75,7 @@ public readonly struct LuauValue
         Kind.Text when _object is string text => stack.Push(text),
         Kind.Reference when _object is LuauReference reference => reference.Push(stack),
         Kind.Function when _object is LuauFunction function => function.Push(stack),
+        Kind.Thread when _object is LuauHost owner => new LuauThread(owner, _tag, (uint)_number).Push(stack),
         Kind.Object when _object is { } value => host.Objects.Push(stack, _tag, value),
         _ => stack.PushNil(),
     };

@@ -5,11 +5,11 @@ using SpectraEngine.Scripting.Luau.Native;
 namespace SpectraEngine.Scripting.Luau;
 
 /// <summary>
-/// The values of one Luau thread, counted from 1 at the bottom or from -1 at
-/// the top. A host function reads its arguments here and pushes its results.
-/// A method that pushes answers false when it could not: an error value is
-/// then on top instead. No method here allocates, but <see cref="GetText"/>.
+/// The values of one Luau thread, counted from 1 at the bottom or from -1 at the top.
+/// A host function reads its arguments here and pushes its results.
 /// </summary>
+// A method that pushes answers false when it could not: an error value is
+// then on top instead. Nothing here allocates but GetText.
 public readonly unsafe ref struct LuauStack
 {
     /// <summary>The index that stands for the globals of the script that is running.</summary>

@@ -4,11 +4,9 @@ using SpectraEngine.Scripting.Luau.Native;
 namespace SpectraEngine.Scripting.Luau;
 
 // Starts, resumes and ends the host's threads, and keeps the table their
-// handles point into.
-//
-// Script code runs inside sl_resume and sl_cancel, and it can start, end and
-// let go of threads. So nothing read from the table before such a call is
-// trusted after it: the slot is looked up again.
+// handles point into. Script code runs inside sl_resume and sl_cancel and can
+// start and end threads itself, so a slot found before such a call is looked
+// up again after it.
 internal sealed unsafe class ThreadRunner
 {
     private readonly LuauHost _host;
@@ -170,6 +168,18 @@ internal sealed unsafe class ThreadRunner
             else if (TryFind(thread, out int found))
                 Remove(found);
         }
+    }
+
+    // Pushes the thread itself, as a value a script can hold, or nil for one
+    // that is gone. A script's top-level thread is kept by its script.
+    internal bool Push(LuauThread thread, nint stack)
+    {
+        if (!TryFind(thread, out int index))
+            return Shim.sl_pushnil(stack) == LuaStatus.Ok;
+
+        ref ThreadSlot slot = ref _slots[index];
+        int reference = slot.Reference != 0 ? slot.Reference : slot.Script?.ThreadReference ?? Lua.NilReference;
+        return Shim.sl_getref(stack, reference) == LuaStatus.Ok;
     }
 
     internal LuauStack ValuesOf(LuauThread thread, out int count)

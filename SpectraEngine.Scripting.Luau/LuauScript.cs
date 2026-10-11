@@ -66,10 +66,8 @@ public sealed class LuauScript
     }
 
     /// <summary>
-    /// Switches the script off for good. None of its threads runs again and none of its
-    /// kept functions is called. The host lets go of all of them and of the script's
-    /// globals, so Luau can free what the script held. A thread of it that is running
-    /// now goes on to its next yield.
+    /// Switches the script off for good and lets go of its threads, its kept functions and
+    /// its globals. A thread of it that is running now goes on to its next yield.
     /// </summary>
     public void SwitchOff()
     {
