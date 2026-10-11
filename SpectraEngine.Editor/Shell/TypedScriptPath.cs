@@ -39,7 +39,23 @@ public static class TypedScriptPath
         if (normalized.EndsWith("/" + Extension, StringComparison.OrdinalIgnoreCase))
             return false;
 
+        if (!CanBeWrittenAnywhere(normalized))
+            return false;
+
         contentPath = normalized;
+        return true;
+    }
+
+    // A project is opened on every system, and Windows takes none of these
+    // in a file's name.
+    private static bool CanBeWrittenAnywhere(string contentPath)
+    {
+        foreach (char c in contentPath)
+        {
+            if (c < ' ' || c is '<' or '>' or ':' or '"' or '|' or '?' or '*')
+                return false;
+        }
+
         return true;
     }
 }

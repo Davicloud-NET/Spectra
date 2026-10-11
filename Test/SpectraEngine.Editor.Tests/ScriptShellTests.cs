@@ -267,6 +267,13 @@ public sealed class ScriptShellTests
     [InlineData("Scripts/.luau")]
     [InlineData("../gate.luau")]
     [InlineData(@"C:\Game\gate.luau")]
+    [InlineData("Scripts/a<b>.luau")]
+    [InlineData("Scripts/what?.luau")]
+    [InlineData("Scripts/every*.luau")]
+    [InlineData("Scripts/a|b.luau")]
+    [InlineData("Scripts/\"gate\".luau")]
+    [InlineData("Scripts/gate:2.luau")]
+    [InlineData("Scripts/tab\there.luau")]
     public void What_is_typed_is_no_path_unless_it_names_a_luau_file_inside_the_assets_folder(string typed)
     {
         TypedScriptPath.TryRead(typed, out string? path).ShouldBeFalse();

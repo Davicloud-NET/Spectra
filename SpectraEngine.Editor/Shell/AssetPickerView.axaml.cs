@@ -101,7 +101,7 @@ public partial class AssetPickerView : UserControl
 
         Rows.ItemsSource = null;
         Rows.ItemsSource = _rows;
-        Rows.SelectedIndex = PreselectedIndex(query);
+        Rows.SelectedIndex = typed ? 0 : PreselectedIndex(query);
 
         string? warning = _catalog?.Warning;
         string footer =
@@ -119,24 +119,20 @@ public partial class AssetPickerView : UserControl
     public const string TypedPathNote = "not a file yet";
 
     // A script's path can be typed in full, for a file that is still to be
-    // written. A path the project has is offered as that file, in the file's
-    // own spelling, however its case and slashes were typed. True when the
-    // path has a row.
+    // written. Its row goes first: the search matches letters in order, so it
+    // also lists every file whose name holds them. A path the project has is
+    // that file's row, in the file's own spelling. True when the path has a row.
     private bool AddTypedPath(string query)
     {
         if (!TypedScriptPath.TryRead(query, out string? path))
             return false;
 
-        if (FindFile(path) is { } file)
-        {
-            // The search goes by the text as typed, and may have missed it.
-            if (!IsListed(file.ContentPath))
-                _rows.Add(new AssetPickerRow(file.ContentPath, file.Stem, file.Folder));
+        AssetPickerRow row = FindFile(path) is { } file
+            ? new AssetPickerRow(file.ContentPath, file.Stem, file.Folder)
+            : new AssetPickerRow(path, path, TypedPathNote);
 
-            return true;
-        }
-
-        _rows.Add(new AssetPickerRow(path, path, TypedPathNote));
+        _rows.RemoveAll(listed => string.Equals(listed.ContentPath, row.ContentPath, StringComparison.Ordinal));
+        _rows.Insert(0, row);
         return true;
     }
 
@@ -155,17 +151,6 @@ public partial class AssetPickerView : UserControl
         }
 
         return null;
-    }
-
-    private bool IsListed(string contentPath)
-    {
-        foreach (AssetPickerRow row in _rows)
-        {
-            if (string.Equals(row.ContentPath, contentPath, StringComparison.Ordinal))
-                return true;
-        }
-
-        return false;
     }
 
     // The row the list opens on: the current value, so Enter on an untouched

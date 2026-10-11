@@ -152,6 +152,61 @@ public sealed class ScriptPropertiesSheetTests(RibbonSession session) : IDisposa
         });
     }
 
+    [Theory]
+    [InlineData("Scripts/Do.luau", "Scripts/Door.luau")]
+    [InlineData("Scripts/Spn.luau", ScriptProjectFixture.Spin)]
+    [InlineData("Scripts/shared/Tim.luau", "Scripts/shared/Timer.luau")]
+    public void Enter_on_a_whole_path_takes_that_path_and_not_a_file_that_holds_its_letters(
+        string typed, string lookalike)
+    {
+        // The search matches letters in order, so it finds the longer name too.
+        session.On(() =>
+        {
+            (Window window, PropertiesPanel panel, List<PropertyEdit> edits) =
+                OpenProperties(ScriptProjectFixture.Spin);
+            AssetPickerView picker = OpenPicker(panel);
+
+            picker.FindControl<TextBox>("Query").ShouldNotBeNull().Text = typed;
+            Dispatcher.UIThread.RunJobs();
+
+            picker.ShownRows.Select(row => row.ContentPath).ShouldBe([typed, lookalike]);
+            picker.ShownRows[0].Folder.ShouldBe(AssetPickerView.TypedPathNote);
+            picker.FindControl<ListBox>("Rows").ShouldNotBeNull().SelectedIndex.ShouldBe(0);
+
+            picker.TakeSelected();
+            Dispatcher.UIThread.RunJobs();
+
+            edits.ShouldHaveSingleItem().Text.ShouldBe(typed);
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void A_whole_path_that_names_a_file_takes_that_file_and_not_the_one_the_row_holds()
+    {
+        session.On(() =>
+        {
+            // The node's own file holds every letter of the path typed for
+            // Spin.luau, so it is listed too, and the list opens on it.
+            const string held = "Scripts/A_Spins.luau";
+            File.WriteAllText(_project.FullPath(held), "print(1)\n");
+            (Window window, PropertiesPanel panel, List<PropertyEdit> edits) = OpenProperties(held);
+            AssetPickerView picker = OpenPicker(panel);
+
+            picker.FindControl<TextBox>("Query").ShouldNotBeNull().Text = "scripts/spin.luau";
+            Dispatcher.UIThread.RunJobs();
+
+            picker.ShownRows.Select(row => row.ContentPath).ShouldBe([ScriptProjectFixture.Spin, held]);
+            picker.FindControl<ListBox>("Rows").ShouldNotBeNull().SelectedIndex.ShouldBe(0);
+
+            picker.TakeSelected();
+            Dispatcher.UIThread.RunJobs();
+
+            edits.ShouldHaveSingleItem().Text.ShouldBe(ScriptProjectFixture.Spin);
+            window.Close();
+        });
+    }
+
     [Fact]
     public void A_path_typed_in_another_case_is_offered_as_the_file_it_is()
     {
