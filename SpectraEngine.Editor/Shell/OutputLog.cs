@@ -88,9 +88,12 @@ public sealed class OutputLog : ObservableObject
             return;
         }
 
-        OutputEntry entry = place is null && calls.Count == 0
-            ? new OutputEntry(severity, text, time)
-            : new OutputEntry(severity, text, time, place, calls, _requestPlace);
+        var entry = new OutputEntry(severity, text, time)
+        {
+            Place = place,
+            Stack = calls.Count > 0 ? new OutputStack(calls, _requestPlace) : null,
+            Opener = _requestPlace,
+        };
 
         while (Entries.Count >= Capacity)
         {

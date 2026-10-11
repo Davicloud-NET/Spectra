@@ -73,17 +73,19 @@ public partial class OutputPanel : UserControl
             .Where(row => row.Classes.Contains("outrow") && row.Focusable && row.IsEffectivelyVisible),
     ];
 
-    // The row Tab lands on: the one that had the keyboard last, or the newest.
-    // The first one would scroll a full log back to its top.
+    // The row Tab lands on: the one that had the keyboard last, or the newest
+    // line. The first one would scroll a full log back to its top.
     private void OnTabPressed(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Tab)
             return;
 
         List<Button> rows = OpeningRows();
-        bool hasRow = KeyboardNavigation.GetTabOnceActiveElement(Rows) is Button row && rows.Contains(row);
-        if (rows.Count > 0 && !hasRow)
-            KeyboardNavigation.SetTabOnceActiveElement(Rows, rows[^1]);
+        if (KeyboardNavigation.GetTabOnceActiveElement(Rows) is Button had && rows.Contains(had))
+            return;
+
+        if (rows.LastOrDefault(row => row.DataContext is OutputEntry) is { } newest)
+            KeyboardNavigation.SetTabOnceActiveElement(Rows, newest);
     }
 
     private void OnRowGotFocus(object? sender, RoutedEventArgs e)
@@ -105,11 +107,11 @@ public partial class OutputPanel : UserControl
             return;
 
         List<Button> rows = OpeningRows();
-        int next = rows.IndexOf(from) + step;
-        if (rows.IndexOf(from) < 0 || next < 0 || next >= rows.Count)
+        int at = rows.IndexOf(from);
+        if (at < 0 || at + step < 0 || at + step >= rows.Count)
             return;
 
-        rows[next].Focus(NavigationMethod.Directional);
+        rows[at + step].Focus(NavigationMethod.Directional);
         e.Handled = true;
     }
 }

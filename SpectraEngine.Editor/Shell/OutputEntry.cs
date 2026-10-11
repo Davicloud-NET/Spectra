@@ -10,7 +10,6 @@ namespace SpectraEngine.Editor.Shell;
 /// <summary>One line in the output, and how many times it has been said.</summary>
 public sealed class OutputEntry : ObservableObject
 {
-    private readonly Action<ConsolePlace>? _open;
     private int _count = 1;
     private string _timeLabel;
 
@@ -21,17 +20,6 @@ public sealed class OutputEntry : ObservableObject
         _timeLabel = timeLabel;
     }
 
-    // A line that came from a place in a file. The calls are an error's.
-    internal OutputEntry(
-        OutputSeverity severity, string text, string timeLabel,
-        ConsolePlace? place, IReadOnlyList<ConsolePlace> calls, Action<ConsolePlace> open)
-        : this(severity, text, timeLabel)
-    {
-        _open = open;
-        Place = place;
-        Stack = calls.Count > 0 ? new OutputStack(calls, open) : null;
-    }
-
     /// <summary>How loud it is.</summary>
     public OutputSeverity Severity { get; }
 
@@ -39,7 +27,7 @@ public sealed class OutputEntry : ObservableObject
     public string Text { get; }
 
     /// <summary>The file and the line it came from, or null for a line with no place.</summary>
-    public ConsolePlace? Place { get; }
+    public ConsolePlace? Place { get; internal init; }
 
     /// <summary>Whether a click on the line can go somewhere.</summary>
     public bool HasPlace => Place is not null;
@@ -51,13 +39,16 @@ public sealed class OutputEntry : ObservableObject
     public string? PlaceTip => Place is { } place ? OutputPlaceText.Tip(place) : null;
 
     /// <summary>The calls under an error, or null for a line with none.</summary>
-    public OutputStack? Stack { get; }
+    public OutputStack? Stack { get; internal init; }
+
+    // What shows a place when somebody asks for this line's.
+    internal Action<ConsolePlace>? Opener { get; init; }
 
     /// <summary>Asks for the place to be shown. Does nothing for a line with no place.</summary>
     public void Open()
     {
         if (Place is { } place)
-            _open?.Invoke(place);
+            Opener?.Invoke(place);
     }
 
     /// <summary>When it was last said, as <c>HH:mm:ss</c>.</summary>
