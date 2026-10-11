@@ -4,31 +4,40 @@ using System.Numerics;
 namespace SpectraEngine.Editing.Viewport;
 
 /// <summary>
-/// Moves icons that overlap on screen apart into rows, so each one can be read
-/// and clicked. An icon nothing overlaps keeps its place.
+/// Moves icons that would be drawn over each other apart, so each one can be
+/// read and clicked. An icon no other is drawn over keeps its place.
 /// </summary>
-// Each pair that overlaps has a share: none when the two only touch, all of it
-// once they are half a width apart or nearer. A pair's share puts the later of
-// the two one place further along the row and draws both towards the point
-// between them. Every share is zero as a pair meets, so an icon joins or
-// leaves a pile with no jump, and neither does anything already in the pile.
-// The answer depends on the arguments alone.
+// Icons whose anchors overlap are a pile and stand in rows, in the order
+// given. Icons still drawn over each other after that are pushed apart. Each
+// move starts at nothing as two icons meet, so nothing jumps.
 public sealed class IconFan
 {
     /// <summary>How many icons stand in a row before the next row starts.</summary>
     public const int RowLength = 6;
 
+    // A pair turns as it comes apart, from side by side to the line between
+    // its anchors. The two ways round meet on this line, up and to the left of
+    // the earlier icon, and are blended this far to each side of it.
+    private const float SeamAngle = MathF.PI * 7f / 6f;
+    private const float SeamHalfWidth = MathF.PI / 12f;
+
+    // A push whose way is shorter than this share of touching counts for
+    // less, down to nothing where the way turns round.
+    private const float FullPushFrom = 0.5f;
+
     private Pile[] _piles = [];
+    private Vector2[] _pushes = [];
+    private int[] _piled = [];
 
     /// <summary>Works out where each icon is drawn, every icon taking part in full.</summary>
-    /// <param name="anchors">Where each icon's node is on screen, in pixels with y down, in scene order.</param>
+    /// <param name="anchors">Where each icon's node is on screen, in pixels with y down, in the order a row lists them.</param>
     /// <param name="halfWidths">Half of each icon's width, in pixels.</param>
     /// <param name="places">Receives where each icon is drawn.</param>
     public void Spread(ReadOnlySpan<Vector2> anchors, ReadOnlySpan<float> halfWidths, Span<Vector2> places) =>
         Spread(anchors, halfWidths, default, places);
 
     /// <summary>Works out where each icon is drawn.</summary>
-    /// <param name="anchors">Where each icon's node is on screen, in pixels with y down, in scene order.</param>
+    /// <param name="anchors">Where each icon's node is on screen, in pixels with y down, in the order a row lists them.</param>
     /// <param name="halfWidths">Half of each icon's width, in pixels.</param>
     /// <param name="strengths">How much each icon takes part, from 0 to 1. Empty when all take part in full.</param>
     /// <param name="places">Receives where each icon is drawn.</param>
@@ -43,7 +52,12 @@ public sealed class IconFan
             throw new ArgumentException("Every icon needs an anchor, a width and a place.");
 
         if (_piles.Length < count)
-            _piles = new Pile[Math.Max(count, _piles.Length * 2)];
+        {
+            int room = Math.Max(count, _piles.Length * 2);
+            _piles = new Pile[room];
+            _pushes = new Vector2[room];
+            _piled = new int[room];
+        }
 
         Span<Pile> piles = _piles.AsSpan(0, count);
         for (int i = 0; i < count; i++)
@@ -51,11 +65,21 @@ public sealed class IconFan
 
         Gather(anchors, halfWidths, strengths, piles);
 
+        int piled = 0;
         for (int i = 0; i < count; i++)
-            places[i] = piles[i].Ahead + piles[i].Behind > 0f ? Place(anchors[i], in piles[i]) : anchors[i];
+        {
+            bool isPiled = piles[i].Others > 0f;
+            places[i] = isPiled ? Place(anchors[i], in piles[i]) : anchors[i];
+            if (isPiled)
+                _piled[piled++] = i;
+        }
+
+        if (piled > 0)
+            PushApart(anchors, halfWidths, strengths, _piled.AsSpan(0, piled), places);
     }
 
-    // Adds every overlapping pair's share to both of its icons.
+    // Adds every overlapping pair's share to both of its icons. A share is
+    // none when the two only touch and all once they are half a width apart.
     private static void Gather(
         ReadOnlySpan<Vector2> anchors, ReadOnlySpan<float> halfWidths, ReadOnlySpan<float> strengths, Span<Pile> piles)
     {
@@ -76,24 +100,68 @@ public sealed class IconFan
                 if (MathF.Abs(apart.X) >= reach || apart.LengthSquared() >= reach * reach)
                     continue;
 
-                float share = MathF.Min((reach - apart.Length()) * 2f / reach, 1f) * strength;
-                if (!strengths.IsEmpty)
-                    share *= strengths[j];
-
+                float overlap = MathF.Min((reach - apart.Length()) * 2f / reach, 1f);
+                float together = strengths.IsEmpty ? strength : strength * strengths[j];
+                float share = overlap * together;
                 if (share <= 0f)
                     continue;
 
                 // A row is spaced for its widest icon.
-                float wider = share * (halfWidths[j] - half);
-                piles[i].Meet(share, apart, half + wider, isAhead: false);
-                piles[j].Meet(share, -apart, halfWidths[j] - wider, isAhead: true);
+                float uneven = halfWidths[j] - half;
+                float wider = share * uneven;
+                uneven = MathF.Abs(uneven);
+
+                // What takes the pair from its places in the row to where it
+                // stands: touching, turned by how far it has come apart.
+                Vector2 stands = Turned(apart, overlap) * (reach + (overlap * overlap * uneven));
+                var inRow = new Vector2(overlap * (reach + (share * uneven)), 0f);
+                Vector2 pull = (apart + (inRow - stands)) * (together * (1f + share) * 0.5f);
+
+                piles[i].Meet(share, pull, half + wider, isAhead: false);
+                piles[j].Meet(share, -pull, halfWidths[j] - wider, isAhead: true);
             }
         }
     }
 
+    // Which way the later icon of a pair stands from the earlier one. Side by
+    // side while they overlap in full, then turning towards the line between
+    // their anchors, the short way round. A pair listed against the screen
+    // goes round underneath.
+    private static Vector2 Turned(Vector2 apart, float overlap)
+    {
+        if (overlap >= 1f)
+            return Vector2.UnitX;
+
+        // Slow at first, so an icon that meets a whole pile does not dart off.
+        float turn = 1f - (overlap * MathF.Sqrt(overlap));
+        float fromSeam = MathF.Atan2(apart.Y, apart.X) - SeamAngle;
+        if (fromSeam <= -MathF.PI)
+            fromSeam += MathF.Tau;
+
+        float under = turn * (SeamAngle + fromSeam);
+        float over = turn * (SeamAngle + fromSeam - MathF.Tau);
+
+        if (fromSeam <= -SeamHalfWidth)
+            return Unit(under);
+
+        if (fromSeam >= SeamHalfWidth)
+            return Unit(over);
+
+        // Across the seam the two ways are opposite at one distance, and the
+        // pair is drawn on one point there. A turn that never jumps has one
+        // such point.
+        return Vector2.Lerp(Unit(under), Unit(over), (fromSeam + SeamHalfWidth) / (SeamHalfWidth * 2f));
+    }
+
+    private static Vector2 Unit(float angle)
+    {
+        (float sine, float cosine) = MathF.SinCos(angle);
+        return new Vector2(cosine, sine);
+    }
+
     private static Vector2 Place(Vector2 anchor, in Pile pile)
     {
-        float others = pile.Ahead + pile.Behind;
+        float others = pile.Others;
         Slot(pile.Ahead, out float column, out float row);
         Slot(others, out _, out float lastRow);
 
@@ -121,6 +189,59 @@ public sealed class IconFan
         column = ((int)rows & 1) == 0 ? along : RowLength - 1 - along;
     }
 
+    // Pushes apart two icons that are still drawn over each other, each by
+    // half of what is missing: a row and an icon beside it, or two rows. Only
+    // a pile's icons were moved, so one of the two is in a pile.
+    private void PushApart(
+        ReadOnlySpan<Vector2> anchors,
+        ReadOnlySpan<float> halfWidths,
+        ReadOnlySpan<float> strengths,
+        ReadOnlySpan<int> piled,
+        Span<Vector2> places)
+    {
+        ReadOnlySpan<Pile> piles = _piles.AsSpan(0, places.Length);
+        Span<Vector2> pushes = _pushes.AsSpan(0, places.Length);
+        pushes.Clear();
+
+        foreach (int moved in piled)
+        {
+            for (int other = 0; other < places.Length; other++)
+            {
+                // Two icons of piles meet once, at the earlier of them.
+                if (other == moved || (other < moved && piles[other].Others > 0f))
+                    continue;
+
+                int earlier = Math.Min(moved, other);
+                int later = Math.Max(moved, other);
+                float reach = halfWidths[moved] + halfWidths[other];
+                Vector2 apart = places[later] - places[earlier];
+                if (MathF.Abs(apart.X) >= reach || apart.LengthSquared() >= reach * reach)
+                    continue;
+
+                // The later one goes underneath, the more so the nearer the
+                // two are. So two on one point have a way to part.
+                float missing = reach - apart.Length();
+                Vector2 way = apart + new Vector2(0f, missing);
+                float length = way.Length();
+                if (length <= 0f)
+                    continue;
+
+                // Two of one pile stand where the pile's rule put them.
+                float together = (reach - Vector2.Distance(anchors[later], anchors[earlier])) * 2f / reach;
+                float part = MathF.Min(length / (reach * FullPushFrom), 1f) * (1f - Math.Clamp(together, 0f, 1f));
+                if (!strengths.IsEmpty)
+                    part *= strengths[moved] * strengths[other];
+
+                Vector2 push = way * (missing * part * 0.5f / length);
+                pushes[earlier] -= push;
+                pushes[later] += push;
+            }
+        }
+
+        for (int i = 0; i < places.Length; i++)
+            places[i] += pushes[i];
+    }
+
     // What an icon's overlaps add up to.
     private struct Pile
     {
@@ -128,23 +249,23 @@ public sealed class IconFan
         public float Ahead;
         public float Behind;
 
-        // Towards the middle of the icons it overlaps.
+        // Towards where its pairs stand.
         public Vector2 Pull;
 
         // Half the spacing of its row.
         public float Cell;
 
+        public readonly float Others => Ahead + Behind;
+
         // Counts one overlapping icon, which is ahead of this one in the order or behind it.
-        public void Meet(float share, Vector2 toward, float cell, bool isAhead)
+        public void Meet(float share, Vector2 pull, float cell, bool isAhead)
         {
             if (isAhead)
                 Ahead += share;
             else
                 Behind += share;
 
-            // Squared, so a pair that has only begun to overlap is pushed
-            // apart before it is drawn together.
-            Pull += toward * (share * share);
+            Pull += pull;
             Cell = MathF.Max(Cell, cell);
         }
     }

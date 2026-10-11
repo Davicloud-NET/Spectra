@@ -42,7 +42,7 @@ public sealed class IconFanTests
     [Fact]
     public void Icons_that_do_not_overlap_stay_where_they_are_to_the_bit()
     {
-        // The second only touches the first. The last two miss by a hair.
+        // The second only touches the first. The next two miss by a hair.
         Vector2[] anchors =
         [
             new(4f, 11f), new(4f + Width, 11f),
@@ -125,35 +125,30 @@ public sealed class IconFanTests
     }
 
     [Fact]
-    public void Two_that_half_overlap_are_pushed_apart_by_half_and_drawn_together_by_a_sixth()
+    public void Two_that_half_overlap_side_by_side_touch_round_the_middle_of_their_anchors()
     {
-        // Three quarters of a width apart is half way from touching to the
-        // distance where a pair is a row. So the share is a half: each is
-        // pushed half of a half width outwards, and drawn towards the other by
-        // the share squared, over one and the share, of what lies between.
         const float Apart = Width * 0.75f;
         Vector2[] places = Spread(new Vector2(0f, 0f), new Vector2(Apart, 0f));
 
-        const float Share = 0.5f;
-        float pushed = Share * Half;
-        float drawn = Share * Share / (1f + Share) * Apart;
-
-        places[0].X.ShouldBe(-pushed + drawn, tolerance: 1e-4f);
-        places[1].X.ShouldBe(Apart + pushed - drawn, tolerance: 1e-4f);
-        places[0].Y.ShouldBe(0f);
-        places[1].Y.ShouldBe(0f);
-
-        (places[1].X - places[0].X).ShouldBe(Width, tolerance: 1e-4f);
+        places[0].X.ShouldBe((Apart - Width) * 0.5f, tolerance: 1e-4f);
+        places[1].X.ShouldBe((Apart + Width) * 0.5f, tolerance: 1e-4f);
+        places[0].Y.ShouldBe(0f, tolerance: 1e-4f);
+        places[1].Y.ShouldBe(0f, tolerance: 1e-4f);
     }
 
     [Fact]
-    public void Two_that_half_overlap_one_above_the_other_part_sideways()
+    public void Two_that_half_overlap_one_above_the_other_touch_part_of_the_way_round_to_side_by_side()
     {
         const float Apart = Width * 0.75f;
         Vector2[] places = Spread(new Vector2(0f, 0f), new Vector2(0f, Apart));
 
-        places[0].ShouldBe(new Vector2(-5f, 2.5f));
-        places[1].ShouldBe(new Vector2(5f, Apart - 2.5f));
+        Vector2 stands = places[1] - places[0];
+        stands.Length().ShouldBe(Width, tolerance: 1e-3f);
+        ((places[0] + places[1]) * 0.5f).ShouldBe(new Vector2(0f, Apart * 0.5f));
+
+        // The first listed is on the left, and still the upper one.
+        float degrees = MathF.Atan2(stands.Y, stands.X) * (180f / MathF.PI);
+        degrees.ShouldBeInRange(50f, 65f);
     }
 
     [Fact]

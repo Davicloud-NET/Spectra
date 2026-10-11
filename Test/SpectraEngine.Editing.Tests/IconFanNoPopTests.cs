@@ -33,76 +33,79 @@ public sealed class IconFanNoPopTests
 
     [Theory]
     [MemberData(nameof(EveryWay))]
-    public void Sliding_one_icon_onto_another_moves_neither_more_than_three_steps_at_a_time(float degrees)
+    public void Sliding_one_icon_onto_another_moves_neither_more_than_seven_steps_at_a_time(float degrees)
     {
+        // Fastest where the pair changes sides: each goes half way round the
+        // other while the anchor travels half a width.
         for (int place = 0; place < 2; place++)
         {
             (float mover, float still) = Slide(still: 1, place, degrees);
 
-            mover.ShouldBeLessThan(3f, $"the one that slides, listed at {place}");
-            still.ShouldBeLessThan(2f, $"the one that stays, the other listed at {place}");
+            mover.ShouldBeLessThan(7f, $"the one that slides, listed at {place}");
+            still.ShouldBeLessThan(6f, $"the one that stays, the other listed at {place}");
         }
     }
 
     [Theory]
     [MemberData(nameof(EveryWay))]
-    public void A_third_icon_joining_a_pair_moves_no_more_than_four_steps_at_a_time_and_the_pair_two(float degrees)
+    public void A_third_icon_joining_a_pair_moves_no_more_than_nine_steps_at_a_time_and_the_pair_five(float degrees)
     {
         for (int place = 0; place < 3; place++)
         {
             (float mover, float pair) = Slide(still: 2, place, degrees);
 
-            mover.ShouldBeLessThan(4f, $"the one that joins, listed at {place}");
-            pair.ShouldBeLessThan(2f, $"the pair, the other listed at {place}");
+            mover.ShouldBeLessThan(9f, $"the one that joins, listed at {place}");
+            pair.ShouldBeLessThan(5f, $"the pair, the other listed at {place}");
         }
     }
 
     // It has furthest to go: from touching the pile to the end of a full row,
     // or round it to the row beneath.
     [Theory]
-    [InlineData(0f)]
-    [InlineData(60f)]
-    [InlineData(90f)]
-    [InlineData(135f)]
-    [InlineData(180f)]
-    [InlineData(300f)]
-    public void A_seventh_icon_joining_six_slides_to_its_place_and_the_six_hardly_move(float degrees)
+    [MemberData(nameof(EveryWay))]
+    public void A_seventh_icon_joining_six_slides_to_its_place_and_the_six_move_less(float degrees)
     {
         for (int place = 0; place < 7; place++)
         {
             (float mover, float six) = Slide(still: 6, place, degrees);
 
-            mover.ShouldBeLessThan(14f, $"the one that joins, listed at {place}");
-            six.ShouldBeLessThan(3f, $"the six, the other listed at {place}");
+            mover.ShouldBeLessThan(20f, $"the one that joins, listed at {place}");
+            six.ShouldBeLessThan(8f, $"the six, the other listed at {place}");
         }
     }
 
     [Fact]
-    public void Nothing_moves_at_the_instant_an_icon_touches_a_pile()
+    public void Nothing_jumps_as_an_icon_comes_to_touch_a_pile()
     {
         var fan = new IconFan();
-        Vector2[] pile = [Point, Point, Point];
-        var alone = new Vector2[3];
-        fan.Spread(pile, [Half, Half, Half], alone);
+        float[] halfWidths = [Half, Half, Half, Half];
 
         // Overlap is judged by the anchors, so one width from the point is
-        // where the fourth touches the pile.
-        Vector2 touching = Point + new Vector2(Width, 0f);
-        var joined = new Vector2[4];
-        fan.Spread([Point, touching, Point, Point], [Half, Half, Half, Half], joined);
-
-        joined[0].ShouldBe(alone[0]);
-        joined[1].ShouldBe(touching);
-        joined[2].ShouldBe(alone[1]);
-        joined[3].ShouldBe(alone[2]);
-
-        // A hair nearer, everything has moved by about a hair.
+        // where the fourth touches the pile. It is on the row's end there.
         const float Hair = 0.001f;
-        fan.Spread([Point, touching - new Vector2(Hair, 0f), Point, Point], [Half, Half, Half, Half], joined);
+        var nearly = new Vector2[4];
+        var touching = new Vector2[4];
+        var past = new Vector2[4];
+        fan.Spread([Point, Point + new Vector2(Width + Hair, 0f), Point, Point], halfWidths, nearly);
+        fan.Spread([Point, Point + new Vector2(Width, 0f), Point, Point], halfWidths, touching);
+        fan.Spread([Point, Point + new Vector2(Width - Hair, 0f), Point, Point], halfWidths, past);
 
-        Vector2.Distance(joined[0], alone[0]).ShouldBeLessThan(Hair * 4f);
-        Vector2.Distance(joined[1], touching).ShouldBeLessThan(Hair * 4f);
-        Vector2.Distance(joined[3], alone[2]).ShouldBeLessThan(Hair * 4f);
+        for (int i = 0; i < 4; i++)
+        {
+            Vector2.Distance(nearly[i], touching[i]).ShouldBeLessThan(Hair * 8f, $"icon {i}, before");
+            Vector2.Distance(past[i], touching[i]).ShouldBeLessThan(Hair * 8f, $"icon {i}, after");
+        }
+    }
+
+    [Fact]
+    public void An_icon_that_only_touches_another_moves_neither()
+    {
+        var places = new Vector2[2];
+        Vector2[] anchors = [Point, Point + new Vector2(Width, 0f)];
+
+        new IconFan().Spread(anchors, [Half, Half], places);
+
+        places.ShouldBe(anchors);
     }
 
     [Fact]
@@ -180,7 +183,7 @@ public sealed class IconFanNoPopTests
 
         // Every anchor moves a step a frame, and each icon is moved by all it
         // overlaps. A jump would be a width: two thousand steps.
-        (largest / Step).ShouldBeLessThan(25f);
+        (largest / Step).ShouldBeLessThan(22f);
     }
 
     // Slides one icon in a straight line from three widths away onto a pile
