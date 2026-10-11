@@ -174,7 +174,7 @@ public readonly unsafe ref struct LuauStack
 
     /// <summary>
     /// Takes the table on top and makes it the metatable of every userdata with this tag.
-    /// The table is frozen, since all scripts share it. A tag takes one metatable, once.
+    /// The table is frozen with all it holds, since all scripts share it. A tag takes one metatable, once.
     /// </summary>
     public bool SetUserdataMetatable(int tag) => Shim.sl_setuserdatametatable(_state, tag, 0) == LuaStatus.Ok;
 

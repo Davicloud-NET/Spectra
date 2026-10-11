@@ -121,7 +121,7 @@ public sealed unsafe class LuauHost : IDisposable
     }
 
     /// <summary>
-    /// Makes the libraries and every global read-only, so no script can change what all
+    /// Makes every global read-only, with each table it holds, so no script can change what all
     /// scripts share. Scripts can be loaded from here on.
     /// </summary>
     public void Seal()

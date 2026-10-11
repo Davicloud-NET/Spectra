@@ -134,11 +134,13 @@ public sealed class ObjectTests
     public void A_script_cannot_change_the_metatable_all_objects_of_a_kind_share()
     {
         using LuauHost host = OpenWithDoors(out _);
-        LuauScript script = host.LoadText("local door = ...\nreturn pcall(function() getmetatable(door).__index = nil end)");
+        LuauScript script = host.LoadText(
+            "local door = ...\nlocal shared = getmetatable(door)\nreturn pcall(function() shared.__index = nil end), pcall(function() shared.methods.added = 1 end)");
 
         script.Start([LuauValue.Object(DoorTag, new Door("front"))]).ShouldBe(LuauResume.Finished);
 
         script.Thread.Values.GetBoolean(1).ShouldBeFalse();
+        script.Thread.Values.GetBoolean(2).ShouldBeFalse();
     }
 
     [Fact]
@@ -166,6 +168,8 @@ public sealed class ObjectTests
         stack.NewTable().ShouldBeTrue();
         stack.Push("Door").ShouldBeTrue();
         stack.SetField(-2, "__type"u8).ShouldBeTrue();
+        stack.NewTable().ShouldBeTrue();
+        stack.SetField(-2, "methods"u8).ShouldBeTrue();
         fresh.Objects.SetMetatable(stack, DoorTag).ShouldBeTrue();
 
         fresh.SetGlobal("name_of"u8, call => fresh.Objects.TryGet(call, 1, DoorTag, out object? found) switch

@@ -46,6 +46,7 @@ enum Body
     PushStringBody,
     CreateTableBody,
     NewUserdataBody,
+    SetMetatableBody,
     NewObjectBody,
     SpawnBody,
     KeepBody,
@@ -154,6 +155,12 @@ struct ThreadRequest
     int sandbox;
     lua_State* thread;
     int reference;
+};
+
+struct MetatableRequest
+{
+    int tag;
+    int releases;
 };
 
 void keepFatalMessage(const char* prefix, const char* message)
@@ -421,9 +428,60 @@ int openLibsBody(lua_State* L)
     return 0;
 }
 
+// Makes a table read-only, with every table it holds and every metatable on
+// the way. One that is read-only already counts as done, which ends a cycle.
+// Raises, so it runs under a protected call only.
+void freezeDeep(lua_State* L, int index, int depth)
+{
+    if (!lua_istable(L, index) || lua_getreadonly(L, index))
+        return;
+    if (depth > 100)
+        luaL_error(L, "tables are nested too deep to freeze");
+
+    luaL_checkstack(L, 3, "too many values to freeze a table");
+    index = lua_absindex(L, index);
+    lua_setreadonly(L, index, 1);
+
+    if (lua_getmetatable(L, index))
+    {
+        freezeDeep(L, -1, depth + 1);
+        lua_pop(L, 1);
+    }
+
+    for (int cursor = lua_rawiter(L, index, 0); cursor >= 0; cursor = lua_rawiter(L, index, cursor))
+    {
+        freezeDeep(L, -1, depth + 1);
+        lua_pop(L, 2);
+    }
+}
+
+// luaL_sandbox freezes the tables that are globals, and not what they hold.
+// A table inside a host's table would stay writable for every script.
 int sandboxBody(lua_State* L)
 {
+    for (int cursor = lua_rawiter(L, LUA_GLOBALSINDEX, 0); cursor >= 0; cursor = lua_rawiter(L, LUA_GLOBALSINDEX, cursor))
+    {
+        freezeDeep(L, -1, 0);
+        lua_pop(L, 2);
+    }
+
     luaL_sandbox(L);
+    return 0;
+}
+
+// Arguments: the request, then the table.
+int setMetatableBody(lua_State* L)
+{
+    const MetatableRequest* request = static_cast<const MetatableRequest*>(lua_tolightuserdata(L, 1));
+    freezeDeep(L, 2, 0);
+    lua_settop(L, 2);
+    lua_setuserdatametatable(L, request->tag);
+
+    if (request->releases)
+    {
+        lua_setuserdatadtor(L, request->tag, objectCollected);
+        hostOf(L)->objectTags[request->tag] = true;
+    }
     return 0;
 }
 
@@ -591,6 +649,7 @@ const BodyEntry bodyEntries[BodyCount] = {
     {pushStringBody, "sl_pushstring"},
     {createTableBody, "sl_createtable"},
     {newUserdataBody, "sl_newuserdata"},
+    {setMetatableBody, "sl_setuserdatametatable"},
     {newObjectBody, "sl_pushobject"},
     {spawnBody, "sl_spawn"},
     {keepBody, "sl_keep"},
@@ -1036,28 +1095,29 @@ SL_API int sl_newuserdata(lua_State* L, size_t size, int tag, void** block)
 }
 
 // Takes the table on top and makes it the one metatable of every userdata
-// with this tag. The table is frozen, since every script shares it. With
-// `releases`, the tag stands for managed objects: sl_pushobject makes its
-// userdata, and the collector reports each one it frees.
+// with this tag. The table is frozen with all it holds, since every script
+// shares it. With `releases`, the tag stands for managed objects:
+// sl_pushobject makes its userdata, and the collector reports each one it frees.
 SL_API int sl_setuserdatametatable(lua_State* L, int tag, int releases)
 {
     if (lua_gettop(L) < 1 || !lua_istable(L, -1))
         return refuse(L, 1, "a userdata metatable must be a table");
     if (static_cast<unsigned>(tag) >= LUA_UTAG_LIMIT)
         return refuse(L, 1, "the userdata tag is out of range");
-    if (!lua_checkstack(L, 1))
-        return refuse(L, 1, stackOverflow);
+    if (const char* reason = whyNot(L, 3))
+        return refuse(L, 1, reason);
     if (hasMetatable(L, tag))
         return refuse(L, 1, "the userdata tag already has a metatable");
 
-    lua_setreadonly(L, -1, 1);
-    lua_setuserdatametatable(L, tag);
-    if (releases)
-    {
-        lua_setuserdatadtor(L, tag, objectCollected);
-        hostOf(L)->objectTags[tag] = true;
-    }
-    return LUA_OK;
+    MetatableRequest request = {tag, releases};
+    pushBody(L, SetMetatableBody);
+    lua_pushlightuserdata(L, &request);
+    lua_pushvalue(L, -3);
+    int status = lua_pcall(L, 2, 0, 0);
+
+    // The table is still under what the call left.
+    lua_remove(L, status == LUA_OK ? -1 : -2);
+    return status;
 }
 
 // Pushes the userdata that stands for a slot of the host's object table. One

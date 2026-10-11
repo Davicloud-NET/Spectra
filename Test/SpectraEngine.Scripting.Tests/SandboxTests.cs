@@ -40,6 +40,46 @@ public sealed class SandboxTests
         sink.Single.Text.ShouldContain("readonly");
     }
 
+    // Luau's own sandbox call freezes the tables that are globals, and not
+    // what they hold. Sealing goes all the way down.
+    [Fact]
+    public void A_script_cannot_change_a_table_inside_a_table_the_host_shares()
+    {
+        using LuauHost host = TestHost.Open(out RecordingSink sink, fresh =>
+        {
+            LuauStack stack = fresh.Stack;
+            stack.NewTable().ShouldBeTrue();
+            stack.NewTable().ShouldBeTrue();
+            stack.Push(20).ShouldBeTrue();
+            stack.SetField(-2, "speed"u8).ShouldBeTrue();
+            stack.SetField(-2, "door"u8).ShouldBeTrue();
+            stack.SetGlobal("settings"u8).ShouldBeTrue();
+        });
+
+        LuauResume outcome = host.RunText("settings.door.speed = 0");
+
+        outcome.ShouldBe(LuauResume.Failed);
+        sink.Single.Text.ShouldContain("readonly");
+    }
+
+    [Fact]
+    public void A_shared_table_that_holds_itself_is_sealed_all_the_same()
+    {
+        using LuauHost host = TestHost.Open(out _, fresh =>
+        {
+            LuauStack stack = fresh.Stack;
+            stack.NewTable().ShouldBeTrue();
+            stack.PushCopy(-1).ShouldBeTrue();
+            stack.SetField(-2, "self"u8).ShouldBeTrue();
+            stack.SetGlobal("ring"u8).ShouldBeTrue();
+        });
+
+        LuauScript script = host.LoadText("return pcall(function() ring.self.self.added = 1 end)");
+
+        script.Start().ShouldBe(LuauResume.Finished);
+        script.Thread.Values.GetBoolean(1).ShouldBeFalse();
+    }
+
     // An assignment to a global lands in the script's own table. The shared
     // one keeps what the host put there, for every other script.
     [Fact]

@@ -26,7 +26,7 @@ public sealed unsafe class LuauObjects
 
     /// <summary>
     /// Takes the table on top of the stack and makes it the metatable of every object
-    /// pushed with this tag. The table is frozen, since all scripts share it. Do this
+    /// pushed with this tag. The table is frozen with all it holds, since all scripts share it. Do this
     /// before the host is sealed. A tag takes one metatable, once.
     /// </summary>
     public bool SetMetatable(LuauStack stack, int tag) =>

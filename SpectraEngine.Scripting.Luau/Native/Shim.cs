@@ -13,7 +13,7 @@ namespace SpectraEngine.Scripting.Luau.Native;
 internal static unsafe partial class Shim
 {
     // Moves with SL_SHIM_REVISION in spectra_luau.h. LuauLibrary compares the two.
-    internal const int Revision = 2;
+    internal const int Revision = 3;
 
     // What a host function returns instead of a result count. The shim raises
     // the error or yields once the managed frame has returned.
