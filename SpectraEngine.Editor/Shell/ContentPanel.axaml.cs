@@ -50,12 +50,15 @@ public partial class ContentPanel : UserControl
     // The least width the search box can be typed in.
     private const double SearchRoom = 100.0;
 
-    // The row of chips at its full width, kept from when it last showed.
+    // The row of chips and the breadcrumb at their full widths, each kept
+    // from when it last showed.
     private double _chipsWidth;
+    private double _breadcrumbWidth;
 
-    // Asks what the search box would get with a chip per kind in the row,
-    // whichever of the two is showing. The answer is the same in both states,
-    // so the row cannot flip back and forth.
+    // Asks what the search box would get with a chip per kind and the
+    // breadcrumb in the row, whichever are showing. The answer is the same in
+    // every state, so the row cannot flip, and the first letter of a search,
+    // which hides the breadcrumb, does not bring the chips back.
     private void UpdateNarrow()
     {
         // Before the first layout there is no width to judge by.
@@ -65,11 +68,18 @@ public partial class ContentPanel : UserControl
         if (FilterChips.IsVisible && FilterChips.Bounds.Width > 0)
             _chipsWidth = FilterChips.Bounds.Width;
 
-        double withChips = FilterChips.IsVisible
-            ? SearchBox.Bounds.Width
-            : SearchBox.Bounds.Width + FilterMenuChip.Bounds.Width - _chipsWidth;
+        if (Breadcrumb.IsVisible)
+            _breadcrumbWidth = Breadcrumb.Bounds.Width;
 
-        model.IsNarrow = withChips < SearchRoom;
+        double room = SearchBox.Bounds.Width;
+
+        if (!FilterChips.IsVisible)
+            room += FilterMenuChip.Bounds.Width - _chipsWidth;
+
+        if (!Breadcrumb.IsVisible)
+            room -= _breadcrumbWidth;
+
+        model.IsNarrow = room < SearchRoom;
     }
 
     // Half a tile is worse than a row, so a short panel shows rows.

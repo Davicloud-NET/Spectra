@@ -29,7 +29,7 @@
       </Button>
 
       <!-- Hidden while searching: the results are not one folder. -->
-      <ItemsControl Grid.Column="1" ItemsSource="{Binding Content.Breadcrumbs}"
+      <ItemsControl Grid.Column="1" Name="Breadcrumb" ItemsSource="{Binding Content.Breadcrumbs}"
                     IsVisible="{Binding !Content.IsSearching}"
                     VerticalAlignment="Center">
         <ItemsControl.ItemsPanel>

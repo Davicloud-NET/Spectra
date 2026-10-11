@@ -111,6 +111,34 @@ public sealed class ScriptSheetTests(RibbonSession session) : IDisposable
         });
     }
 
+    [Fact]
+    public void Typing_a_search_in_a_narrow_panel_keeps_the_one_chip()
+    {
+        session.On(async () =>
+        {
+            (Window window, ContentPanel panel, ShellModel model) = await OpenContentAsync(ContentViewMode.List);
+            ContentBrowserModel browser = model.Content.ShouldNotBeNull();
+            Control chips = panel.FindControl<StackPanel>("FilterChips").ShouldNotBeNull();
+            window.Width = 570;
+            Dispatcher.UIThread.RunJobs();
+            browser.IsNarrow.ShouldBeTrue();
+
+            // The breadcrumb hides while a query is typed and the search box
+            // takes its room, which is enough for six chips.
+            browser.Query = "d";
+            Dispatcher.UIThread.RunJobs();
+
+            browser.IsNarrow.ShouldBeTrue("the first letter must not change the toolbar");
+            chips.IsEffectivelyVisible.ShouldBeFalse();
+
+            browser.Query = string.Empty;
+            Dispatcher.UIThread.RunJobs();
+
+            browser.IsNarrow.ShouldBeTrue();
+            Close(window, model);
+        });
+    }
+
     [Theory]
     [InlineData(ContentViewMode.List)]
     [InlineData(ContentViewMode.Grid)]
