@@ -53,6 +53,14 @@ try
             DemoStartupOptions.SelfTestEnvironmentVariable);
     }
 
+    // Exits before a renderer or window exists, and before anything of a level is set up.
+    if (options.ScriptPath is { } scriptPath)
+    {
+        if (!ScriptRun.Run(scriptPath, loggerFactory.CreateLogger("Script")))
+            Environment.ExitCode = 1;
+        return;
+    }
+
     // Anchors the built-in entity assembly. Nothing here calls into it (maps
     // name its classes as text), so a trimmed or AOT publish would drop it.
     // Must run before the first catalogue read, which freezes the catalogue.

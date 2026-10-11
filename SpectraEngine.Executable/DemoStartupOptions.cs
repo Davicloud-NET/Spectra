@@ -58,6 +58,10 @@ internal sealed record DemoStartupOptions(
     // Not named Console: that would hide System.Console in this record.
     public bool ConsoleInput { get; init; }
 
+    // A .luau file to run with no level and no window. The run ends when the
+    // script does.
+    public string? ScriptPath { get; init; }
+
     // Read only when no command-line switch names the self-test.
     public const string SelfTestEnvironmentVariable = "SPECTRA_SELFTEST";
 
@@ -71,7 +75,7 @@ internal sealed record DemoStartupOptions(
         "[--project=<folder>] [--save-project=<folder>] [--pack[=true|false]] [--dev[=true|false]] " +
         "[--exit-after-save[=true|false]] " +
         "[--export-entity-schema=<file.sentdef>] [--viewport-compare[=true|false]] " +
-        "[--pacing-probe[=true|false]] [--pipeline-compare[=true|false]] [--command=<console line>] [--console[=true|false]].";
+        "[--pacing-probe[=true|false]] [--pipeline-compare[=true|false]] [--command=<console line>] [--console[=true|false]] [--script=<file.luau>].";
 
     // Throws ArgumentException on a bad argument; Program logs it as a usage error.
     // An explicit --selftest=false beats the environment value.
@@ -110,6 +114,7 @@ internal sealed record DemoStartupOptions(
         TimeSpan? fullscreenCycle = null;
         IReadOnlyList<string> commands = [];
         bool consoleInput = false;
+        string? scriptPath = null;
 
         for (int i = 0; i < args.Count; i++)
         {
@@ -285,6 +290,11 @@ internal sealed record DemoStartupOptions(
                 case "console":
                     consoleInput = ParseBoolean(value, token);
                     continue;
+
+                // Runs the file through the script host and exits without opening a window.
+                case "script":
+                    scriptPath = ParseName(value, token);
+                    continue;
             }
 
             // Anything else is the positional backend. A second one is a typo.
@@ -336,7 +346,7 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromCommandLine, SelfTestSource.CommandLine,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput };
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput, ScriptPath = scriptPath };
 
         if (!string.IsNullOrWhiteSpace(selfTestEnvironmentValue))
         {
@@ -346,14 +356,14 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromEnvironment, SelfTestSource.Environment,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput };
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput, ScriptPath = scriptPath };
         }
 
         return new DemoStartupOptions(
             backend ?? GraphicsBackend.OpenGL, false, SelfTestSource.Default,
             fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput };
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput, ScriptPath = scriptPath };
     }
 
     private static string ParseName(string? value, string origin)

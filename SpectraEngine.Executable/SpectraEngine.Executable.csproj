@@ -17,6 +17,7 @@
     <ProjectReference Include="..\SpectraEngine.Editing\SpectraEngine.Editing.csproj" />
     <ProjectReference Include="..\SpectraEngine.Entities\SpectraEngine.Entities.csproj" />
     <ProjectReference Include="..\SpectraEngine.Physics.Box3D\SpectraEngine.Physics.Box3D.csproj" />
+    <ProjectReference Include="..\SpectraEngine.Scripting.Luau\SpectraEngine.Scripting.Luau.csproj" />
     <ProjectReference Include="..\SpectraShade.Compiler\SpectraShade.Compiler.csproj" />
   </ItemGroup>
 
