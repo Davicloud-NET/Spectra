@@ -122,6 +122,24 @@ public sealed class TargetNameIndexTests
         Resolve(world, "gate").ShouldHaveSingleItem().Node.ShouldBeSameAs(node);
     }
 
+    // A script can give an entity a new name on every tick of a long play.
+    [Fact]
+    public void A_name_no_entity_has_any_more_leaves_the_index()
+    {
+        var scene = new Scene("Entities");
+        SceneNode timer = EntityRuntime.Place(scene.Root, "timer", "recorder");
+        EntityRuntime.Place(scene.Root, "door", "recorder");
+
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityRuntime.Catalog([]));
+        world.Activate();
+
+        for (int i = 0; i < 1000; i++)
+            timer.Name = $"timer {i}";
+
+        world.Index.ShouldNotBeNull().NameCount.ShouldBe(2);
+        Resolve(world, "timer*").ShouldHaveSingleItem().Node.ShouldBeSameAs(timer);
+    }
+
     [Fact]
     public void A_node_removed_mid_session_leaves_the_index()
     {

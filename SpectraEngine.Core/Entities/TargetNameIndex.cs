@@ -46,20 +46,7 @@ public sealed class TargetNameIndex : IDisposable
     }
 
     /// <summary>How many distinct names currently have at least one entity.</summary>
-    public int NameCount
-    {
-        get
-        {
-            int names = 0;
-            foreach (List<Entity> bucket in _byName.Values)
-            {
-                if (bucket.Count > 0)
-                    names++;
-            }
-
-            return names;
-        }
-    }
+    public int NameCount => _byName.Count;
 
     /// <summary>How many entities this index knows about, listed or not.</summary>
     public int EntityCount => _byNodeId.Count;
@@ -227,8 +214,15 @@ public sealed class TargetNameIndex : IDisposable
 
     private void RemoveFromBucket(string name, Entity entity)
     {
-        if (_byName.TryGetValue(name, out List<Entity>? bucket))
-            bucket.Remove(entity);
+        if (!_byName.TryGetValue(name, out List<Entity>? bucket))
+            return;
+
+        bucket.Remove(entity);
+
+        // A name nobody has goes. A script can give an entity a new name on
+        // every tick, and a prefix wire walks every name that is here.
+        if (bucket.Count == 0)
+            _byName.Remove(name);
     }
 
     // Insertion sort: buckets are tiny and the sort must be stable, because
