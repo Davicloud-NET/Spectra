@@ -221,6 +221,7 @@ Entities and play
 
 - A new built-in class goes into `BuiltinEntities.Schemas` and `ClassCount`. Left out of both, it works until a trimmed build drops it, and then every map naming it loads a placeholder.
 - The entity generator reads only the members a class declares itself. A keyvalue on a base class binds nothing.
+- A class a builder turns to aim, like a player start, sets `HasFacing` on `[SpectraEntity]`. Left out, its marker in the 3D view has no arrow.
 - An `Icon` name with no file draws the plain entity icon and warns nobody. `IconDriftConventionTests` catches it for the built-in classes only.
 - `MapSceneBinder.FromScene` builds fresh nodes. A node member it does not copy is deleted by the next save.
 - A default `SceneQueryFilter` wants `CanQuery`, which a trigger has off.

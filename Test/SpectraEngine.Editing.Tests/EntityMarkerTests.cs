@@ -24,9 +24,19 @@ public sealed class EntityMarkerTests
     // The colour of a class no group claims, which is every class here.
     private static readonly Vector3 Plain = EntityGroupTints.For(null);
 
+    // The player start is what these tests place unless they say otherwise.
+    // It has a facing, so its marker carries the arrow.
+    private static readonly EntitySchemaCatalog Schemas = EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(
+    [
+        new EntitySchema("info_player_start", hasFacing: true),
+        new EntitySchema("logic_relay", placement: EntityPlacement.Abstract),
+        new EntitySchema("point_sound"),
+    ]));
+
     private static ViewportHarness Fixture()
     {
         var harness = new ViewportHarness();
+        harness.Scene.EntitySchemas = Schemas;
         harness.Scene.Camera.Position = new Vector3(0f, 0f, 12f);
         harness.Scene.Camera.LookAt(Vector3.Zero);
         return harness;
@@ -271,24 +281,22 @@ public sealed class EntityMarkerTests
     }
 
     [Fact]
-    public void A_logic_entity_gets_a_marker_with_no_arrow()
+    public void Only_a_class_with_a_facing_gets_an_arrow()
     {
-        // Its transform means nothing, so an arrow would say something false.
+        // An arrow on a sound or a relay would say something false. A class
+        // no schema knows has nothing to say it faces anywhere.
         ViewportHarness harness = Fixture();
-        harness.Scene.EntitySchemas = EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(
-        [
-            new EntitySchema("logic_relay", placement: EntityPlacement.Abstract),
-            new EntitySchema("info_player_start"),
-        ]));
-        SceneNode relay = AddEntity(harness, new Vector3(-3f, 0f, 0f), "logic_relay");
         SceneNode start = AddEntity(harness, new Vector3(3f, 0f, 0f), "info_player_start");
+        SceneNode sound = AddEntity(harness, new Vector3(0f, -3f, 0f), "point_sound");
+        SceneNode relay = AddEntity(harness, new Vector3(-3f, 0f, 0f), "logic_relay");
         SceneNode unknown = AddEntity(harness, new Vector3(0f, 3f, 0f), "from_another_game");
         var overlay = new EntityMarkerOverlay();
 
         // An icon's box ends at 1.56 radii, at its corners. An arrow goes past two.
-        Reach(harness, overlay, relay).ShouldBeLessThan(1.6f);
         Reach(harness, overlay, start).ShouldBeGreaterThan(2f);
-        Reach(harness, overlay, unknown).ShouldBeGreaterThan(2f);
+        Reach(harness, overlay, sound).ShouldBeLessThan(1.6f);
+        Reach(harness, overlay, relay).ShouldBeLessThan(1.6f);
+        Reach(harness, overlay, unknown).ShouldBeLessThan(1.6f);
     }
 
     [Fact]

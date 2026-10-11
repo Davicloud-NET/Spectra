@@ -17,6 +17,7 @@ namespace SpectraEngine.Editing.Tests;
 public sealed class EntityMarkerIconTests
 {
     private const string Sound = "test_sound";
+    private const string Start = "test_start";
     private const string Relay = "test_relay";
     private const string Plain = "test_plain";
     private const string Wrong = "test_wrong";
@@ -29,6 +30,7 @@ public sealed class EntityMarkerIconTests
     private static readonly EntitySchemaCatalog Schemas = EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(
     [
         new EntitySchema(Sound, group: "Sound", icon: "sound"),
+        new EntitySchema(Start, group: "Player", icon: "player-start", hasFacing: true),
         new EntitySchema(Relay, group: "Logic", placement: EntityPlacement.Abstract, icon: "relay"),
         new EntitySchema(Plain, group: "Player"),
         new EntitySchema(Wrong, group: "Triggers", icon: "no-such-drawing"),
@@ -72,8 +74,26 @@ public sealed class EntityMarkerIconTests
         DebugDraw output = Draw(harness);
 
         // As many backing lines again, and nothing else.
-        int strokes = Glyph("IconEntitySound").SegmentCount + ArrowStrokes;
+        int strokes = Glyph("IconEntitySound").SegmentCount;
         DebugLines.CountOf(output, EntityGroupTints.For("Sound")).ShouldBe(strokes * LinesAStroke);
+        output.VertexCount.ShouldBe(strokes * LinesAStroke * 2 * 2);
+    }
+
+    // A sound has a place and no direction. A relay has neither.
+    [Theory]
+    [InlineData(Start, "Player", "IconEntityPlayerStart", ArrowStrokes)]
+    [InlineData(Sound, "Sound", "IconEntitySound", 0)]
+    [InlineData(Relay, "Logic", "IconEntityRelay", 0)]
+    public void Only_a_class_with_a_facing_gets_an_arrow_beside_its_icon(
+        string className, string group, string glyph, int arrowStrokes)
+    {
+        ViewportHarness harness = Fixture();
+        Add(harness, className, Vector3.Zero);
+
+        DebugDraw output = Draw(harness);
+
+        int strokes = Glyph(glyph).SegmentCount + arrowStrokes;
+        DebugLines.CountOf(output, EntityGroupTints.For(group)).ShouldBe(strokes * LinesAStroke);
         output.VertexCount.ShouldBe(strokes * LinesAStroke * 2 * 2);
     }
 
@@ -93,19 +113,6 @@ public sealed class EntityMarkerIconTests
         sound.ShouldNotBe(relay);
     }
 
-    [Fact]
-    public void A_logic_class_gets_its_icon_and_no_arrow()
-    {
-        // Its transform means nothing, so an arrow would say something false.
-        ViewportHarness harness = Fixture();
-        Add(harness, Relay, Vector3.Zero);
-
-        DebugDraw output = Draw(harness);
-
-        DebugLines.CountOf(output, EntityGroupTints.For("Logic"))
-            .ShouldBe(Glyph("IconEntityRelay").SegmentCount * LinesAStroke);
-    }
-
     [Theory]
     [InlineData(Plain, "Player")]
     [InlineData(Wrong, "Triggers")]
@@ -117,19 +124,33 @@ public sealed class EntityMarkerIconTests
         DebugDraw output = Draw(harness);
 
         DebugLines.CountOf(output, EntityGroupTints.For(group))
-            .ShouldBe((Glyph(WorldIcons.Entity).SegmentCount + ArrowStrokes) * LinesAStroke);
+            .ShouldBe(Glyph(WorldIcons.Entity).SegmentCount * LinesAStroke);
     }
 
     [Fact]
-    public void A_class_no_schema_knows_draws_the_unknown_glyph_in_the_plain_colour()
+    public void A_class_no_schema_knows_draws_the_unknown_glyph_in_the_plain_colour_and_no_arrow()
     {
+        // Nothing says its facing means anything.
         ViewportHarness harness = Fixture();
         Add(harness, "from_another_game", Vector3.Zero);
 
         DebugDraw output = Draw(harness);
 
         DebugLines.CountOf(output, EntityGroupTints.For(null))
-            .ShouldBe((Glyph(WorldIcons.UnknownEntity).SegmentCount + ArrowStrokes) * LinesAStroke);
+            .ShouldBe(Glyph(WorldIcons.UnknownEntity).SegmentCount * LinesAStroke);
+    }
+
+    [Fact]
+    public void A_scene_with_no_schemas_draws_the_plain_glyph_and_no_arrow()
+    {
+        ViewportHarness harness = Fixture();
+        harness.Scene.EntitySchemas = null;
+        Add(harness, Start, Vector3.Zero);
+
+        DebugDraw output = Draw(harness);
+
+        DebugLines.CountOf(output, EntityGroupTints.For(null))
+            .ShouldBe(Glyph(WorldIcons.Entity).SegmentCount * LinesAStroke);
     }
 
     [Fact]
@@ -259,7 +280,7 @@ public sealed class EntityMarkerIconTests
     public void A_second_draw_allocates_nothing()
     {
         ViewportHarness harness = Fixture();
-        string[] classes = [Sound, Relay, Plain, Wrong, "from_another_game"];
+        string[] classes = [Sound, Start, Relay, Plain, Wrong, "from_another_game"];
         for (int i = 0; i < 40; i++)
             Add(harness, classes[i % classes.Length], new Vector3((i % 8) - 4f, (i / 8) - 2f, 0f));
         var overlay = new EntityMarkerOverlay { MaxIcons = 16 };

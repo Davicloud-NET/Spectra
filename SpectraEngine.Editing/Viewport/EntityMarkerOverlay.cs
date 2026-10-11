@@ -10,7 +10,8 @@ namespace SpectraEngine.Editing.Viewport;
 
 /// <summary>
 /// Draws a marker for every entity node that has nothing else to show it: its
-/// class's icon in its group's colour, with an arrow along the way it faces.
+/// class's icon in its group's colour, and an arrow along the way it faces
+/// when the class has a facing.
 /// </summary>
 // A point entity has no brush, mesh or light and is not in the spatial index,
 // so the marker is the only thing to see or click. It is sized by the light
@@ -86,7 +87,9 @@ public sealed class EntityMarkerOverlay
             }
 
             var pen = new IconPen(camera, node.WorldPosition, mark.Radius, mark.Pixel, EntityGroupTints.For(schema?.Group));
-            bool faces = icon is not null && Faces(schema);
+
+            // A class no schema knows gets no arrow: nothing says it faces anywhere.
+            bool faces = icon is not null && schema is { HasFacing: true };
 
             // Every backing line first, or one stroke's backing crosses out
             // the colour of the stroke before it.
@@ -153,11 +156,6 @@ public sealed class EntityMarkerOverlay
     // The icon's own glyph, or the plain entity one when its file gave none.
     private static bool TryFindIcon(string key, out ViewportGlyph? icon) =>
         ViewportGlyphs.TryGet(key, out icon) || ViewportGlyphs.TryGet(WorldIcons.Entity, out icon);
-
-    // A logic entity's transform means nothing, so an arrow on it would say
-    // something false. A class the schemas do not know gets one.
-    private static bool Faces(EntitySchema? schema) =>
-        schema is null || schema.Placement != EntityPlacement.Abstract;
 
     private static void DrawMarker(DebugDraw output, SceneNode node, in IconPen pen, ViewportGlyph? icon, bool faces)
     {
