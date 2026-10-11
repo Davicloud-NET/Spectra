@@ -297,23 +297,17 @@ public static class PropertyEditor
     {
         if (node.Script is not { } script) return null;
 
-        Script next;
-        try
+        // Script's path throws on these. A script has to name a file, so the
+        // node keeps the one it has.
+        if (PropertyLimits.Refusal(edit.Id, edit.Text) is not null) return null;
+
+        Script next = edit.Id switch
         {
-            next = edit.Id switch
-            {
-                PropertyId.ScriptFile => script with { Path = edit.Text },
-                PropertyId.ScriptEnabled => script with { IsEnabled = edit.Flag },
-                PropertyId.ScriptModule => script with { IsModule = edit.Flag },
-                _ => script,
-            };
-        }
-        catch (ArgumentException)
-        {
-            // An empty path, or one that leaves the content root. A script
-            // has to name a file, so the node keeps the one it has.
-            return null;
-        }
+            PropertyId.ScriptFile => script with { Path = edit.Text },
+            PropertyId.ScriptEnabled => script with { IsEnabled = edit.Flag },
+            PropertyId.ScriptModule => script with { IsModule = edit.Flag },
+            _ => script,
+        };
 
         return next == script ? null : SetScriptCommand.Capture(node, next);
     }

@@ -105,6 +105,26 @@ public sealed class ScriptShellTests
     }
 
     [Theory]
+    [InlineData(@"C:\Game\Assets\Scripts\gate.luau")]
+    [InlineData("../Scripts/gate.luau")]
+    [InlineData("./")]
+    public void A_file_outside_the_assets_folder_is_refused_and_the_row_says_why(string typed)
+    {
+        var rig = new Rig();
+        rig.Publish(Opener());
+        PropertyRowModel row = rig.Row(PropertyId.ScriptFile);
+
+        PropertyFieldModel file = row.Fields[0];
+        file.BeginEdit();
+        file.Text = typed;
+        file.Commit();
+
+        rig.Edits.ShouldBeEmpty();
+        file.Text.ShouldBe("Scripts/door.luau");
+        row.Rejection.ShouldBe("Not applied: File must be a path inside this project's Assets folder.");
+    }
+
+    [Theory]
     [InlineData(PropertyId.ScriptEnabled, false)]
     [InlineData(PropertyId.ScriptModule, true)]
     public void A_switch_is_sent_on_the_click(PropertyId id, bool clicked)

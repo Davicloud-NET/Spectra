@@ -1,4 +1,6 @@
+using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Inspection;
+using System;
 
 namespace SpectraEngine.Editing.Commands;
 
@@ -6,7 +8,7 @@ namespace SpectraEngine.Editing.Commands;
 /// What a property accepts, shared by the editor's refusal and the panel's
 /// message.
 /// </summary>
-// The Light setters throw on these values. Strings complete
+// The Light setters and Script's path throw on these values. Strings complete
 // "Not applied: Range must be ...".
 public static class PropertyLimits
 {
@@ -16,6 +18,14 @@ public static class PropertyLimits
         PropertyId.LightRange when !float.IsFinite(value) || value <= 0f => "greater than 0",
 
         PropertyId.LightIntensity when !float.IsFinite(value) || value < 0f => "0 or more",
+
+        _ => null,
+    };
+
+    /// <summary>Why <paramref name="text"/> would be refused, or null when it is fine.</summary>
+    public static string? Refusal(PropertyId id, string text) => id switch
+    {
+        PropertyId.ScriptFile when !IsContentPath(text) => "a path inside this project's Assets folder",
 
         _ => null,
     };
@@ -31,5 +41,19 @@ public static class PropertyLimits
             PropertyId.LightIntensity => "a number of 0 or more",
             _ => "a number",
         };
+    }
+
+    private static bool IsContentPath(string text)
+    {
+        try
+        {
+            ContentRoot.NormalizeRelativePath(text);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            // Empty, rooted, or it leaves the content root.
+            return false;
+        }
     }
 }

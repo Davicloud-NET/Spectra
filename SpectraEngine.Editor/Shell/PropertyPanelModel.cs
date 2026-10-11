@@ -542,7 +542,16 @@ public sealed class PropertyRowModel : ObservableObject
     {
         switch (Kind)
         {
+            // Text and numbers are refused here with the editor's own rule.
+            // Posted, a bad value is dropped on the render thread and nothing
+            // says why.
             case PropertyKind.Text:
+                if (PropertyLimits.Refusal(Id, typed) is { } whyNot)
+                {
+                    field.Reject($"Not applied: {Name} must be {whyNot}.");
+                    return;
+                }
+
                 Apply(new PropertyEdit { Id = Id, Key = Key, Text = typed });
                 break;
 
@@ -553,8 +562,6 @@ public sealed class PropertyRowModel : ObservableObject
                     return;
                 }
 
-                // Refuse here with the editor's own rule. Posted, a bad value is
-                // dropped on the render thread and nothing says why.
                 if (!IsEntityKeyvalue && PropertyLimits.Refusal(Id, number) is { } why)
                 {
                     field.Reject($"Not applied: {Name} must be {why}.");

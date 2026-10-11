@@ -47,6 +47,33 @@ public sealed class PropertyLimitsTests
         PropertyLimits.Refusal(PropertyId.Position, float.NaN).ShouldBeNull();
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("./")]
+    [InlineData("../outside.luau")]
+    [InlineData(@"C:\Game\Assets\Scripts\door.luau")]
+    public void A_script_file_must_be_a_path_inside_the_assets_folder(string path)
+    {
+        string refusal = PropertyLimits.Refusal(PropertyId.ScriptFile, path).ShouldNotBeNull();
+
+        refusal.ShouldContain("Assets folder");
+    }
+
+    [Theory]
+    [InlineData("Scripts/door.luau")]
+    [InlineData(@"\Scripts\Doors\vault.luau")]
+    public void A_script_file_under_the_assets_folder_is_allowed(string path)
+    {
+        PropertyLimits.Refusal(PropertyId.ScriptFile, path).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Any_other_text_is_allowed_here()
+    {
+        PropertyLimits.Refusal(PropertyId.NodeName, "../door").ShouldBeNull();
+        PropertyLimits.Refusal(PropertyId.EntityKeyvalue, @"C:\door").ShouldBeNull();
+    }
+
     [Fact]
     public void The_expected_text_names_the_format_and_the_bound()
     {
