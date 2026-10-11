@@ -9,8 +9,17 @@ namespace SpectraEngine.Core.ConsoleSystem;
 /// </summary>
 public sealed class ConsoleOutput : IConsoleOutput
 {
-    /// <summary>How many lines are kept between two drains. Later ones are dropped.</summary>
+    /// <summary>
+    /// How many lines are kept between two drains. A later one is dropped,
+    /// unless it is an error.
+    /// </summary>
     public const int Capacity = 1024;
+
+    /// <summary>
+    /// How many errors are kept past <see cref="Capacity"/>, so that a flood
+    /// of other lines does not take the error that comes after it.
+    /// </summary>
+    public const int ErrorRoom = 64;
 
     private List<ConsoleLine> _lines = [];
     private long _nextSequence;
@@ -41,7 +50,8 @@ public sealed class ConsoleOutput : IConsoleOutput
         // A dropped line still takes a number. The gap is how a reader learns
         // that lines are missing.
         long sequence = _nextSequence++;
-        if (_lines.Count >= Capacity)
+        int room = line.Severity >= LogLevel.Error ? Capacity + ErrorRoom : Capacity;
+        if (_lines.Count >= room)
             return;
 
         _lines.Add(line with { Sequence = sequence });

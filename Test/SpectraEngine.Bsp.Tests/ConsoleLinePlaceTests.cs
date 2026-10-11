@@ -86,4 +86,35 @@ public sealed class ConsoleLinePlaceTests
         output.Drain().Count.ShouldBe(ConsoleOutput.Capacity);
         output.Written.ShouldBe(ConsoleOutput.Capacity + Lost);
     }
+
+    [Fact]
+    public void An_error_after_a_flood_of_other_lines_is_kept_with_its_number()
+    {
+        const int Lost = 300;
+        var output = new ConsoleOutput();
+
+        // warn() in a loop, and then the error the loop led to.
+        for (int i = 0; i < ConsoleOutput.Capacity + Lost; i++)
+            output.Warn("careful");
+        output.Write(new ConsoleLine(0, LogLevel.Error, "it broke") { Place = new ConsolePlace(Door, 12) });
+        output.Print("after");
+
+        IReadOnlyList<ConsoleLine> kept = output.Drain();
+        kept.Count.ShouldBe(ConsoleOutput.Capacity + 1);
+        kept[^1].Text.ShouldBe("it broke");
+        kept[^1].Sequence.ShouldBe(ConsoleOutput.Capacity + Lost, "the jump in the numbers is how many lines went");
+        kept[^1].Place.ShouldBe(new ConsolePlace(Door, 12));
+    }
+
+    [Fact]
+    public void A_flood_of_errors_is_cut_too_when_their_own_room_is_full()
+    {
+        var output = new ConsoleOutput();
+
+        for (int i = 0; i < ConsoleOutput.Capacity + ConsoleOutput.ErrorRoom + 50; i++)
+            output.Error("it broke");
+
+        output.Drain().Count.ShouldBe(ConsoleOutput.Capacity + ConsoleOutput.ErrorRoom);
+        output.Written.ShouldBe(ConsoleOutput.Capacity + ConsoleOutput.ErrorRoom + 50);
+    }
 }
