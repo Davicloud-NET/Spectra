@@ -119,10 +119,10 @@ public sealed class IconPilePickTests
         SceneIcon lampIcon = icons.Lights[0];
         SceneIcon soundIcon = icons.Markers[0];
 
-        // Lights are listed before point entities, so the lamp is on the left.
+        // The sound comes first in the scene tree, so it is on the left.
         float half = lampIcon.Radius * ViewportGlyphs.Reach;
-        Vector3.Dot(lampIcon.At, rig.Camera.Right).ShouldBe(-half, tolerance: 1e-5f);
-        Vector3.Dot(soundIcon.At, rig.Camera.Right).ShouldBe(half, tolerance: 1e-5f);
+        Vector3.Dot(soundIcon.At, rig.Camera.Right).ShouldBe(-half, tolerance: 1e-5f);
+        Vector3.Dot(lampIcon.At, rig.Camera.Right).ShouldBe(half, tolerance: 1e-5f);
 
         rig.Pick(lampIcon.At).ShouldBeSameAs(lamp);
         rig.Pick(soundIcon.At).ShouldBeSameAs(sound);
@@ -174,8 +174,8 @@ public sealed class IconPilePickTests
 
         // Each stays at its own height, one icon width from the other across the screen.
         float width = lampIcon.Radius * ViewportGlyphs.Reach * 2f;
-        Vector3.Dot(soundIcon.At - lampIcon.At, rig.Camera.Right).ShouldBe(width, tolerance: 1e-4f);
-        Vector3.Dot(soundIcon.At - lampIcon.At, rig.Camera.Up).ShouldBe(0f, tolerance: 1e-4f);
+        Vector3.Dot(lampIcon.At - soundIcon.At, rig.Camera.Right).ShouldBe(width, tolerance: 1e-4f);
+        Vector3.Dot(lampIcon.At - soundIcon.At, rig.Camera.Up).ShouldBe(0f, tolerance: 1e-4f);
         lampIcon.At.Y.ShouldBe(3f, tolerance: 1e-4f);
         soundIcon.At.Y.ShouldBe(0f, tolerance: 1e-4f);
 
@@ -253,10 +253,12 @@ public sealed class IconPilePickTests
     [Fact]
     public void A_budget_set_on_the_overlay_is_the_budget_a_click_sees()
     {
-        // Two of the four may be glyphs. Those two are a pair, and the other
-        // two stay on the point as diamonds.
+        // Two may be glyphs. The near two are, and stand as a pair. The far
+        // two stay on their point as diamonds.
         var rig = new IconPileRig();
-        SceneNode[] lift = rig.AddLift(Vector3.Zero);
+        Vector3 back = new(4f, 0f, -4f);
+        SceneNode[] near = [rig.AddEntity(IconPileRig.Sound, Vector3.Zero), rig.AddEntity(IconPileRig.Sound, Vector3.Zero)];
+        SceneNode[] far = [rig.AddEntity(IconPileRig.Relay, back), rig.AddEntity(IconPileRig.Relay, back)];
         var icons = new SceneIcons();
         var overlay = new EntityMarkerOverlay(icons) { MaxIcons = 2 };
         rig.Harness.Viewport.Icons = icons;
@@ -270,9 +272,13 @@ public sealed class IconPilePickTests
         markers[2].IsMoved.ShouldBeFalse();
         markers[3].IsMoved.ShouldBeFalse();
 
-        rig.Click(markers[0].At).ShouldBeSameAs(lift[0]);
-        rig.Click(markers[1].At).ShouldBeSameAs(lift[1]);
-        rig.Click(Vector3.Zero).ShouldBeSameAs(lift[2]);
+        rig.Click(markers[0].At).ShouldBeSameAs(near[0]);
+        rig.Click(markers[1].At).ShouldBeSameAs(near[1]);
+        rig.Click(back).ShouldBeSameAs(far[0]);
+
+        // With glyphs to spare the far two stand apart, and their point is empty.
+        rig.Place().Markers[2].IsMoved.ShouldBeTrue();
+        rig.Pick(back).ShouldBeNull();
     }
 
     [Fact]

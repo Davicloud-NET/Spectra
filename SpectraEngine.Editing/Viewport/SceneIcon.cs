@@ -39,4 +39,7 @@ public struct SceneIcon
 
     /// <summary>Whether the icon is drawn somewhere other than on its node.</summary>
     public readonly bool IsMoved => At != Anchor;
+
+    // How much the icon takes part when icons are moved apart, from 0 to 1.
+    internal float FanStrength { get; set; }
 }

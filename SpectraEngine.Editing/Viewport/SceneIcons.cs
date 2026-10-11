@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using SpectraEngine.Core.Scene;
-using SpectraEngine.Editing.Icons;
 
 namespace SpectraEngine.Editing.Viewport;
 
@@ -21,12 +20,10 @@ public sealed class SceneIcons
     /// </summary>
     public const float DetailPixels = 6.5f;
 
-    // A glyph of DetailPixels takes no part in a fan and one of FullFanPixels
-    // takes all of its part. So a pile does not jump apart at the size where
-    // its marks turn into glyphs.
     private const float FullFanPixels = 8f;
 
-    private readonly IconFan _fan = new();
+    private readonly SceneIconFan _fan = new();
+    private readonly NearestGlyphs _nearestGlyphs = new();
 
     // Sorted when the first line home asks, so a pick does not pay for it.
     private readonly IconsAcrossScreen _across = new();
@@ -37,15 +34,6 @@ public sealed class SceneIcons
     private SceneIcon[] _icons = [];
     private int _lightCount;
     private int _markerCount;
-
-    // The glyphs the fan runs over, and each one's place in _icons.
-    private int[] _fanned = [];
-    private Vector2[] _anchors = [];
-    private Vector2[] _places = [];
-    private float[] _halfWidths = [];
-    private float[] _strengths = [];
-
-    private float[] _nearness = [];
 
     /// <summary>
     /// How many light icons may be drawn in one frame. The rest are counted in
@@ -107,8 +95,8 @@ public sealed class SceneIcons
         SkippedLights = skippedLights;
         SkippedMarkers = skippedMarkers;
 
-        KeepNearestMarkerGlyphs();
-        FanOut(camera);
+        _nearestGlyphs.Keep(_icons.AsSpan(_lightCount, _markerCount), MaxMarkerGlyphs);
+        _fan.Spread(scene, camera, _icons.AsSpan(0, _lightCount + _markerCount), _lightCount);
     }
 
     /// <summary>
@@ -149,32 +137,28 @@ public sealed class SceneIcons
     }
 
     /// <summary>
-    /// The icon of this node as it was last placed. False when the node has
-    /// none in view.
+    /// The icon of this node as it was last placed, when it is drawn off the
+    /// node. False for an icon on its node and for a node with no icon in view.
     /// </summary>
-    public bool TryFind(Scene scene, SceneNode node, out SceneIcon icon)
+    // Only the moved icons are looked at, and the budgets cap how many there are.
+    public bool TryFindMoved(Scene scene, SceneNode node, out SceneIcon icon)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(node);
 
-        icon = default;
-
-        bool isLight = node.Light is not null;
-        if (!isLight && !EntityMarkerPicking.HasMarker(node))
-            return false;
-
-        ReadOnlySpan<SceneIcon> icons = isLight ? Lights : Markers;
-        IReadOnlyList<SceneNode> nodes = isLight ? scene.LightNodes : scene.EntityNodes;
-
-        foreach (ref readonly SceneIcon candidate in icons)
+        foreach (int place in _fan.Moved)
         {
-            if (candidate.Node < nodes.Count && ReferenceEquals(nodes[candidate.Node], node))
+            IReadOnlyList<SceneNode> nodes = place < _lightCount ? scene.LightNodes : scene.EntityNodes;
+            int listed = _icons[place].Node;
+
+            if (listed < nodes.Count && ReferenceEquals(nodes[listed], node))
             {
-                icon = candidate;
+                icon = _icons[place];
                 return true;
             }
         }
 
+        icon = default;
         return false;
     }
 
@@ -217,6 +201,12 @@ public sealed class SceneIcons
             if (!LightPicking.TryMeasure(camera, viewportSize, at, out float radius, out float pixel))
                 continue;
 
+            // A glyph of DetailPixels takes no part in a fan and one of
+            // FullFanPixels all of its part, so a pile does not jump apart at
+            // the size where its marks turn into glyphs.
+            bool isGlyph = isDrawn && radius >= DetailPixels * pixel;
+            float size = ((radius / pixel) - DetailPixels) / (FullFanPixels - DetailPixels);
+
             _icons[first + count++] = new SceneIcon
             {
                 Node = i,
@@ -225,109 +215,12 @@ public sealed class SceneIcons
                 Radius = radius,
                 Pixel = pixel,
                 IsDrawn = isDrawn,
-                IsGlyph = isDrawn && radius >= DetailPixels * pixel,
+                IsGlyph = isGlyph,
+                FanStrength = isGlyph ? Math.Clamp(size, 0f, 1f) : 0f,
             };
 
             if (isDrawn)
                 drawn++;
-        }
-
-        return count;
-    }
-
-    // When more point entities are near enough for a glyph than may have one,
-    // the nearest keep it.
-    private void KeepNearestMarkerGlyphs()
-    {
-        Span<SceneIcon> markers = _icons.AsSpan(_lightCount, _markerCount);
-        if (_nearness.Length < markers.Length)
-            _nearness = new float[Math.Max(markers.Length, _nearness.Length * 2)];
-
-        int detailed = 0;
-        foreach (ref readonly SceneIcon marker in markers)
-        {
-            if (marker.IsGlyph)
-                _nearness[detailed++] = marker.Pixel;
-        }
-
-        if (detailed <= MaxMarkerGlyphs)
-            return;
-
-        // A pixel covers more of the world the farther off it is, so the
-        // smallest belong to the nearest.
-        float farthest = float.NegativeInfinity;
-        if (MaxMarkerGlyphs > 0)
-        {
-            Array.Sort(_nearness, 0, detailed);
-            farthest = _nearness[MaxMarkerGlyphs - 1];
-        }
-
-        int kept = 0;
-        foreach (ref SceneIcon marker in markers)
-            marker.IsGlyph = marker.IsGlyph && marker.Pixel <= farthest && kept++ < MaxMarkerGlyphs;
-    }
-
-    // Runs the fan over the glyphs, in the order they are listed: lights, then
-    // point entities. A small mark stays on its node.
-    private void FanOut(Camera camera)
-    {
-        int count = ProjectGlyphs(camera);
-        if (count < 2)
-            return;
-
-        _fan.Spread(
-            _anchors.AsSpan(0, count), _halfWidths.AsSpan(0, count),
-            _strengths.AsSpan(0, count), _places.AsSpan(0, count));
-
-        Vector3 right = camera.Right;
-        Vector3 up = camera.Up;
-
-        for (int i = 0; i < count; i++)
-        {
-            Vector2 moved = _places[i] - _anchors[i];
-            if (moved == Vector2.Zero)
-                continue;
-
-            // Across the screen at the node's own depth, so the icon keeps its size.
-            ref SceneIcon icon = ref _icons[_fanned[i]];
-            icon.At = icon.Anchor + (right * (moved.X * icon.Pixel)) - (up * (moved.Y * icon.Pixel));
-        }
-    }
-
-    // Fills the fan's input with every glyph: where it is on screen in pixels,
-    // y down, and how wide it is drawn.
-    private int ProjectGlyphs(Camera camera)
-    {
-        int total = _lightCount + _markerCount;
-        if (_fanned.Length < total)
-        {
-            int room = Math.Max(total, _fanned.Length * 2);
-            _fanned = new int[room];
-            _anchors = new Vector2[room];
-            _places = new Vector2[room];
-            _halfWidths = new float[room];
-            _strengths = new float[room];
-        }
-
-        Vector3 eye = camera.Position;
-        Vector3 right = camera.Right;
-        Vector3 up = camera.Up;
-        int count = 0;
-
-        for (int i = 0; i < total; i++)
-        {
-            ref readonly SceneIcon icon = ref _icons[i];
-            if (!icon.IsGlyph)
-                continue;
-
-            Vector3 offset = icon.Anchor - eye;
-            float radius = icon.Radius / icon.Pixel;
-
-            _fanned[count] = i;
-            _anchors[count] = new Vector2(Vector3.Dot(offset, right), -Vector3.Dot(offset, up)) / icon.Pixel;
-            _halfWidths[count] = radius * ViewportGlyphs.Reach;
-            _strengths[count] = Math.Clamp((radius - DetailPixels) / (FullFanPixels - DetailPixels), 0f, 1f);
-            count++;
         }
 
         return count;

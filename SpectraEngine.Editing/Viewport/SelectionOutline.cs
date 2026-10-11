@@ -223,7 +223,7 @@ public sealed class SelectionOutline
     // of the row the cursor is over.
     private void MarkMovedIcon(DebugDraw output, Scene scene, SceneNode node, Vector3 color)
     {
-        if (Icons is null || !Icons.TryFind(scene, node, out SceneIcon icon) || !icon.IsDrawn || !icon.IsMoved)
+        if (Icons is null || !Icons.TryFindMoved(scene, node, out SceneIcon icon))
             return;
 
         output.Cross(icon.At, GroupCrossPixels * icon.Pixel, color);

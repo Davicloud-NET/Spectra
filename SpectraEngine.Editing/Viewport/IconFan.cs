@@ -28,6 +28,11 @@ public sealed class IconFan
     private Pile[] _piles = [];
     private Vector2[] _pushes = [];
     private int[] _piled = [];
+    private int _piledCount;
+
+    // The icons the last spread found in a pile, each by its place in what
+    // was given, lowest first.
+    internal ReadOnlySpan<int> Piled => _piled.AsSpan(0, _piledCount);
 
     /// <summary>Works out where each icon is drawn, every icon taking part in full.</summary>
     /// <param name="anchors">Where each icon's node is on screen, in pixels with y down, in the order a row lists them.</param>
@@ -65,17 +70,17 @@ public sealed class IconFan
 
         Gather(anchors, halfWidths, strengths, piles);
 
-        int piled = 0;
+        _piledCount = 0;
         for (int i = 0; i < count; i++)
         {
             bool isPiled = piles[i].Others > 0f;
             places[i] = isPiled ? Place(anchors[i], in piles[i]) : anchors[i];
             if (isPiled)
-                _piled[piled++] = i;
+                _piled[_piledCount++] = i;
         }
 
-        if (piled > 0)
-            PushApart(anchors, halfWidths, strengths, _piled.AsSpan(0, piled), places);
+        if (_piledCount > 0)
+            PushApart(anchors, halfWidths, strengths, Piled, places);
     }
 
     // Adds every overlapping pair's share to both of its icons. A share is
