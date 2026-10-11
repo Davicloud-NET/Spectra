@@ -372,17 +372,27 @@ public class SceneNode
 
     /// <summary>
     /// The node's position and rotation relative to its parent. Setting it
-    /// keeps <see cref="LocalScale"/>.
+    /// keeps <see cref="LocalScale"/>, and writing an equal frame changes
+    /// nothing.
     /// </summary>
     public CFrame LocalCFrame
     {
         get => new(_localTransform.Position, _localTransform.Rotation);
-        set => LocalTransform = new Transform
+        set
         {
-            Position = value.Position,
-            Rotation = value.Rotation,
-            Scale = _localTransform.Scale,
-        };
+            // By the frame and not the quaternion's bits. A quaternion and its
+            // negative are one rotation, and LocalTransform would take the
+            // other sign for a move.
+            if (value == LocalCFrame)
+                return;
+
+            LocalTransform = new Transform
+            {
+                Position = value.Position,
+                Rotation = value.Rotation,
+                Scale = _localTransform.Scale,
+            };
+        }
     }
 
     /// <summary>

@@ -189,6 +189,38 @@ public sealed class SceneNodeCFrameTests
         fired.ShouldBe(0);
     }
 
+    // A quaternion and its negative are one rotation, so nothing moved.
+    [Fact]
+    public void Writing_the_local_frame_with_its_quaternion_negated_raises_no_change()
+    {
+        var (scene, _, child) = ParentAndChild(Slanted);
+        Quaternion q = Quaternion.CreateFromAxisAngle(Vector3.Normalize(new Vector3(1f, 2f, 3f)), 0.4f);
+        child.LocalPosition = new Vector3(4f, 5f, 6f);
+        child.LocalRotation = Quaternion.Negate(q);
+        int fired = 0;
+        scene.NodeTransformChanged += _ => fired++;
+
+        child.LocalCFrame = new CFrame(new Vector3(4f, 5f, 6f), q);
+
+        fired.ShouldBe(0);
+        child.LocalRotation.ShouldBe(Quaternion.Negate(q));
+    }
+
+    [Fact]
+    public void Writing_back_the_local_frame_of_a_rotation_that_is_not_unit_length_raises_no_change()
+    {
+        var (scene, _, child) = ParentAndChild(Slanted);
+        Quaternion stretched = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.4f) * 1.001f;
+        child.LocalRotation = stretched;
+        int fired = 0;
+        scene.NodeTransformChanged += _ => fired++;
+
+        child.LocalCFrame = child.LocalCFrame;
+
+        fired.ShouldBe(0);
+        child.LocalRotation.ShouldBe(stretched);
+    }
+
     [Fact]
     public void Writing_the_world_frame_a_node_already_has_raises_no_change()
     {
