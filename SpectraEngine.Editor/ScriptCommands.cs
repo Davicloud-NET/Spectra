@@ -4,6 +4,7 @@ using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Shell.Scripts;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Threading.Tasks;
@@ -22,8 +23,8 @@ internal sealed class ScriptCommands
     private readonly ScriptLauncher _launcher;
     private readonly Action<Action> _post;
 
-    // The name of the file an open is running for, or null.
-    private string? _opening;
+    // The opens that have not answered yet, each by its file and its line.
+    private readonly HashSet<(string File, int? Line)> _opening = [];
 
     /// <summary>Creates the commands.</summary>
     /// <param name="session">The session that is live now, or null.</param>
@@ -167,14 +168,15 @@ internal sealed class ScriptCommands
     /// <summary>Opens a script by its full path. The start runs off the calling thread.</summary>
     public async Task OpenFileAsync(string fullPath, bool keepStatus = false, int? line = null)
     {
-        // A click while a program is still starting would start it again.
-        if (_opening is { } busy)
+        // A second click on a row whose program is still starting would start
+        // it again. Another file or another line is another thing to open.
+        (string File, int? Line) asked = (fullPath, line);
+        if (!_opening.Add(asked))
         {
-            _shell.SetMessage($"{busy} is still being opened.");
+            _shell.SetMessage($"{Path.GetFileName(fullPath)} is still being opened.");
             return;
         }
 
-        _opening = Path.GetFileName(fullPath);
         ScriptOpenOutcome outcome;
         try
         {
@@ -182,7 +184,7 @@ internal sealed class ScriptCommands
         }
         finally
         {
-            _opening = null;
+            _opening.Remove(asked);
         }
 
         foreach (string failure in outcome.Failures)
