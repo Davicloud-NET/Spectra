@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SpectraEngine.Scripting.Tests</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\SpectraEngine.Scripting.Luau\SpectraEngine.Scripting.Luau.csproj" />
+  </ItemGroup>
+
+  <!-- Linked, not copied: the suite and the crash cases set a state up the same way. -->
+  <ItemGroup>
+    <Compile Include="..\SpectraEngine.Scripting.CrashCases\ProbeState.cs" Link="ProbeState.cs" />
+    <Compile Include="..\SpectraEngine.Scripting.CrashCases\CaseExit.cs" Link="CaseExit.cs" />
+  </ItemGroup>
+
+  <!-- Puts the shared library beside the tests when it has been built. -->
+  <Import Project="..\..\native\Luau.targets" />
+
+</Project>

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A console, published with NativeAOT and then run one case at a time by
+    SpectraEngine.Scripting.Tests. A raise over a managed frame survives under
+    the JIT and kills a native build, so these cases mean nothing from dotnet run.
+
+      dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r win-x64
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SpectraEngine.Scripting.CrashCases</RootNamespace>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+  <!-- Test/Directory.Build.props makes every project in this folder an xUnit suite. -->
+  <ItemGroup>
+    <PackageReference Remove="xunit.v3.mtp-v2;Verify.XunitV3;Shouldly" />
+    <Using Remove="Xunit;Shouldly" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\SpectraEngine.Scripting.Luau\SpectraEngine.Scripting.Luau.csproj" />
+  </ItemGroup>
+
+  <Import Project="..\..\native\Luau.targets" />
+
+</Project>

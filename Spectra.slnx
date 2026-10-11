@@ -10,6 +10,8 @@
       <Build Solution="Debug|*" Project="false" />
     </Project>
     <Project Path="Test/SpectraEngine.Physics.Tests/SpectraEngine.Physics.Tests.csproj" />
+    <Project Path="Test/SpectraEngine.Scripting.CrashCases/SpectraEngine.Scripting.CrashCases.csproj" />
+    <Project Path="Test/SpectraEngine.Scripting.Tests/SpectraEngine.Scripting.Tests.csproj" />
     <Project Path="Test/SpectraShade.Compiler.Tests/SpectraShade.Compiler.Tests.csproj" />
   </Folder>
   <Folder Name="/Benchmarks/">
@@ -28,6 +30,7 @@
   <Project Path="SpectraEngine.Entities/SpectraEngine.Entities.csproj" />
   <Project Path="SpectraEngine.Entities.Generator/SpectraEngine.Entities.Generator.csproj" />
   <Project Path="SpectraEngine.Physics.Box3D/SpectraEngine.Physics.Box3D.csproj" />
+  <Project Path="SpectraEngine.Scripting.Luau/SpectraEngine.Scripting.Luau.csproj" />
   <Project Path="SpectraEngine.Executable/SpectraEngine.Executable.csproj" Id="78f3c10f-f49b-4abe-809d-bec4cfd19994" />
   <Project Path="SpectraEngine.Editor/SpectraEngine.Editor.csproj" />
 </Solution>
