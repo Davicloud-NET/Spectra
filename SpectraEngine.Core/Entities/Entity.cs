@@ -134,8 +134,8 @@ public abstract class Entity
     /// <summary>
     /// Asks to be woken at world time <paramref name="time"/>, replacing any
     /// think already pending. The time left is counted in whole ticks, as
-    /// <see cref="SetNextThinkIn"/> counts a delay. A time already past fires
-    /// on the next drain.
+    /// <see cref="SetNextThinkIn"/> counts a delay. A time already past is no
+    /// delay.
     /// </summary>
     // A float time gets coarser the longer a level runs, and past a few
     // minutes that can cost a tick. SetNextThinkIn does not have the problem.
@@ -144,7 +144,8 @@ public abstract class Entity
     /// <summary>
     /// Asks to be woken <paramref name="delay"/> seconds from now, replacing
     /// any think already pending. The delay is counted in whole ticks by the
-    /// rule of <see cref="WholeTicks"/>. No delay fires on the next drain.
+    /// rule of <see cref="WholeTicks"/>. No delay fires in the drain that is
+    /// running, or in the next one when none is.
     /// </summary>
     public void SetNextThinkIn(float delay) => ThinkAfter(delay);
 
