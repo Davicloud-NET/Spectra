@@ -29,6 +29,9 @@ public sealed class ScriptWrites
     private static readonly byte[][] Utf8Names =
         Array.ConvertAll(Members, static member => Encoding.UTF8.GetBytes(member.Name));
 
+    // Handed out in place of the array, which a caller could write to.
+    private static readonly IReadOnlyList<SettableMember> Listed = Array.AsReadOnly(Members);
+
     private readonly EntityWorld _world;
 
     /// <summary>The writes of the scripts of one level.</summary>
@@ -39,7 +42,7 @@ public sealed class ScriptWrites
     }
 
     /// <summary>Every member of a node a script can set.</summary>
-    public static IReadOnlyList<SettableMember> Settable => Members;
+    public static IReadOnlyList<SettableMember> Settable => Listed;
 
     /// <summary>Finds a member a script can set by its name in UTF-8, which is how Luau hands a name over.</summary>
     public static bool TryFind(ReadOnlySpan<byte> name, out SettableMember member)

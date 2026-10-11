@@ -13,7 +13,7 @@ public sealed class StopPromiseTests
 {
     private const int WritesPerPlay = 320;
     private const int WritesPerTick = 16;
-    private const int WritesPerScript = 24;
+    private const int WritesPerScript = 40;
 
     [Theory]
     [InlineData(1)]

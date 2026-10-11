@@ -37,8 +37,8 @@ internal sealed class PlayJournal
             _entries.Add(new FirstValue<T>(node, kind, kind.Read(node)));
     }
 
-    // Newest first, so a value that depends on an older one goes back onto
-    // what it was written over.
+    // Newest first. A value that is already back raises no event and
+    // dirties nothing.
     public void Restore()
     {
         for (int i = _entries.Count - 1; i >= 0; i--)
