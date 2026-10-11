@@ -1,8 +1,8 @@
 <Project>
 
   <!--
-    How an executable gets Luau. Import it in every project that runs scripts
-    or is published with one that does.
+    How an executable gets Luau. Every executable that runs scripts imports
+    this file.
 
     The libraries come from native/build-luau.ps1 or native/build-luau.sh and
     are not committed. A build without them still builds: the shared library
@@ -11,7 +11,10 @@
   -->
 
   <PropertyGroup>
-    <!-- Luau is C++. On Linux the AOT link leaves libstdc++ out unless asked. -->
+    <!--
+      Luau is C++. On Linux the AOT link leaves libstdc++ out unless asked, and
+      with it the executable needs libstdc++.so.6 and libgcc_s.so.1 to start.
+    -->
     <LinkStandardCPlusPlusLibrary>true</LinkStandardCPlusPlusLibrary>
   </PropertyGroup>
 

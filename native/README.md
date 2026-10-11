@@ -163,9 +163,11 @@ So managed code never calls anything in Luau that can raise.
 - `callHost`, the one function Luau sees for every managed function. The
   managed function returns a count, `-1` for an error with the value on top, or
   `-2 - n` to yield `n` values. `callHost` raises or yields after it has returned.
-- every call that can raise, in a form that runs under `lua_pcall` and returns
-  a status: load, call, resume, read and write a field, push a string, make a
-  table, make userdata, turn a value into text, open the libraries.
+- every call that can raise, in a form that returns a status: load, call,
+  resume, read and write a field, push a number or a string, make a table, a
+  thread or userdata, turn a value into text, open the libraries. Most run
+  under `lua_pcall`. A push can raise too, once one frame holds 8000 values,
+  so even a number is pushed through a check.
 - the allocator. It counts and has no limit, because a refused allocation is a
   raise from whichever call allocated.
 - the interrupt, which another thread arms to stop a script.
@@ -192,6 +194,8 @@ It imports `native/Luau.targets`. The demo, the editor and `scook` do.
   and says nothing when it has not.
 - A NativeAOT publish links the static library. When it is missing the publish
   stops with one line that names the script to run.
+- On Linux the published executable then needs `libstdc++.so.6` and
+  `libgcc_s.so.1` to start, because Luau is C++.
 
 ### Build options
 
