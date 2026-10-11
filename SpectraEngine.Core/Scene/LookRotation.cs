@@ -1,0 +1,79 @@
+using System.Numerics;
+
+namespace SpectraEngine.Core.Scene;
+
+/// <summary>
+/// Rotations built from directions, for a frame that looks along its -Z with
+/// +X right and +Y up. No input gives a NaN.
+/// </summary>
+internal static class LookRotation
+{
+    // Below this sine of the angle between them, two directions count as one line.
+    private const float ParallelSine = 1e-5f;
+
+    /// <summary>
+    /// The rotation that looks along a direction: right is look cross up, up
+    /// is right cross look. A direction of no length gives no rotation.
+    /// </summary>
+    public static Quaternion Along(Vector3 direction, Vector3 up)
+    {
+        float length = direction.Length();
+        if (!(length > 0f) || !float.IsFinite(length))
+            return Quaternion.Identity;
+
+        Vector3 look = direction / length;
+        Vector3 right = RightOf(look, up);
+        return FromColumns(right, Vector3.Cross(right, look), -look);
+    }
+
+    /// <summary>
+    /// The rotation whose first column runs along <paramref name="vX"/> and
+    /// whose third is vX cross vY. Columns that span no plane give no rotation.
+    /// </summary>
+    public static Quaternion FromAxes(Vector3 vX, Vector3 vY)
+    {
+        Vector3 z = Vector3.Cross(vX, vY);
+        float xLength = vX.Length();
+        float zLength = z.Length();
+        if (!(xLength > 0f) || !(zLength > 0f) || !float.IsFinite(xLength) || !float.IsFinite(zLength))
+            return Quaternion.Identity;
+
+        Vector3 x = vX / xLength;
+        z /= zLength;
+        return FromColumns(x, Vector3.Cross(z, x), z);
+    }
+
+    // A look along up leaves look cross up with no direction. The frame is then
+    // the one +Y as up gives, and with the look along Y as well the right
+    // vector stays on +X: the identity pitched a quarter turn up or down.
+    private static Vector3 RightOf(Vector3 look, Vector3 up)
+    {
+        if (TryUnitCross(look, up, out Vector3 right) || TryUnitCross(look, Vector3.UnitY, out right))
+            return right;
+
+        // The look is along Y only to within the limit, so square +X up to it.
+        return Vector3.Normalize(Vector3.UnitX - (look * look.X));
+    }
+
+    private static bool TryUnitCross(Vector3 look, Vector3 up, out Vector3 right)
+    {
+        right = Vector3.Cross(look, up);
+        float lengthSquared = right.LengthSquared();
+
+        // Also false for an up of no length and for one that is not finite.
+        if (!(lengthSquared > ParallelSine * ParallelSine * up.LengthSquared()) || !float.IsFinite(lengthSquared))
+            return false;
+
+        right /= MathF.Sqrt(lengthSquared);
+        return true;
+    }
+
+    // System.Numerics reads a rotation matrix by rows, and its rows are where
+    // the three axes go.
+    private static Quaternion FromColumns(Vector3 x, Vector3 y, Vector3 z) =>
+        Quaternion.CreateFromRotationMatrix(new Matrix4x4(
+            x.X, x.Y, x.Z, 0f,
+            y.X, y.Y, y.Z, 0f,
+            z.X, z.Y, z.Z, 0f,
+            0f, 0f, 0f, 1f));
+}
