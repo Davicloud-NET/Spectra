@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Silk.NET.Maths;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Commands;
@@ -324,6 +325,62 @@ public sealed class ScriptInsertTests : IDisposable
         report.IsLevelScript.ShouldBeTrue();
         report.Describe().ShouldBe("Scripts/Spin.luau added as a level script.");
         _scene.Root.Children[^1].Script.ShouldBe(new Script("Scripts/Spin.luau"));
+    }
+
+    [Fact]
+    public void Dropped_on_a_lamps_icon_it_goes_under_the_lamp_and_not_the_wall_behind_it()
+    {
+        // A lamp is not in the spatial index. A click finds it by its icon.
+        SceneNode wall = AddPart("Wall");
+        wall.LocalPosition = new Vector3(0f, 0f, -5f);
+        SceneNode lamp = _scene.Root.CreateChild("Lamp");
+        lamp.Light = new Light { Kind = LightKind.Point, Range = 6f };
+        _scene.Camera.Position = new Vector3(0f, 0f, 10f);
+        _scene.Camera.LookAt(Vector3.Zero);
+
+        ScriptInsertReport report = _host.AttachScript("Scripts/Flicker.luau", viewportPoint: new Vector2(640f, 360f));
+
+        report.ParentName.ShouldBe("Lamp");
+        lamp.Children.ShouldHaveSingleItem().Script.ShouldBe(new Script("Scripts/Flicker.luau"));
+        wall.Children.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Dropped_on_a_point_entitys_icon_with_nothing_behind_it_goes_under_the_entity()
+    {
+        SceneNode relay = _scene.Root.CreateChild("Relay");
+        relay.Entity = new EntityData("logic_relay");
+        _scene.Camera.Position = new Vector3(0f, 0f, 10f);
+        _scene.Camera.LookAt(Vector3.Zero);
+
+        ScriptInsertReport report = _host.AttachScript("Scripts/Count.luau", viewportPoint: new Vector2(640f, 360f));
+
+        report.IsLevelScript.ShouldBeFalse();
+        report.Describe().ShouldBe("Scripts/Count.luau added to 'Relay' as a script.");
+        relay.Children.ShouldHaveSingleItem().Script.ShouldBe(new Script("Scripts/Count.luau"));
+    }
+
+    [Fact]
+    public void Dropped_on_a_part_a_long_way_off_it_still_goes_under_that_part()
+    {
+        // As far as a click reaches, which is further than an insert looks for a floor.
+        SceneNode part = AddPart("Tower");
+        _scene.Camera.Position = new Vector3(0f, 0f, 400f);
+        _scene.Camera.LookAt(Vector3.Zero);
+
+        ScriptInsertReport report = _host.AttachScript("Scripts/Spin.luau", viewportPoint: new Vector2(640f, 360f));
+
+        report.ParentName.ShouldBe("Tower");
+        part.Children.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public void With_no_file_named_nothing_is_added_and_the_line_is_a_sentence()
+    {
+        ScriptInsertReport report = _host.AttachScript(" ");
+
+        report.Added.ShouldBeFalse();
+        report.Describe().ShouldBe("Insert script did nothing: no file was given.");
     }
 
     [Fact]

@@ -449,6 +449,16 @@ public sealed class ViewportInteractionController
             Scene.Selection.ClearFace();
     }
 
+    /// <summary>
+    /// The node a click at this point would select, or null over nothing.
+    /// Changes nothing.
+    /// </summary>
+    public SceneNode? NodeAt(Vector2 point, Vector2 viewportSize)
+    {
+        var frame = new EditorInputFrame(point, viewportSize, default, default, default, default, default, 0f);
+        return TryPickNode(in frame, out SceneNode? node) ? node : null;
+    }
+
     private bool TryPickNode(in EditorInputFrame frame, out SceneNode? node) =>
         TryPickNode(in frame, out node, out _);
 

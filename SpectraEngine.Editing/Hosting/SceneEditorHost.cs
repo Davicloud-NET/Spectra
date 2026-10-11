@@ -1358,9 +1358,8 @@ public sealed class SceneEditorHost : ISceneEditor
     }
 
     /// <summary>
-    /// Makes a script file and adds a script that names it under the selected
-    /// node, or under the root with nothing selected, as one history entry.
-    /// See <see cref="ScriptInserter.InsertNew"/>.
+    /// Makes a script file and adds a script that names it, as one history
+    /// entry. <see cref="ScriptInserter.TryFindParent"/> says where it goes.
     /// </summary>
     /// <param name="contentRoot">The project's content folder, where the file is made.</param>
     /// <param name="text">What the new file holds.</param>
@@ -1378,16 +1377,19 @@ public sealed class SceneEditorHost : ISceneEditor
 
     /// <summary>
     /// Adds a script that names a file that is there, as one history entry,
-    /// and selects it. It goes under the node with <paramref name="parentId"/>,
-    /// else under what is at <paramref name="viewportPoint"/> or the root when
-    /// nothing is, else where <see cref="ScriptInserter.TryFindParent"/> says.
+    /// and selects it.
     /// </summary>
     /// <param name="contentPath">The script, as a path relative to the content root.</param>
+    /// <param name="parentId">The node it goes under. Null to go by the point.</param>
+    /// <param name="viewportPoint">
+    /// Where it was dropped: it goes under what a click there selects, or the
+    /// root over nothing. Null to go by the selection.
+    /// </param>
     public ScriptInsertReport AttachScript(
         string contentPath, Guid? parentId = null, Vector2? viewportPoint = null)
     {
         if (string.IsNullOrWhiteSpace(contentPath))
-            return ScriptInsertReport.RefusedBecause("The script", "no file was given.");
+            return ScriptInsertReport.RefusedBecause(string.Empty, "no file was given.");
 
         if (RefuseEdit("Attach script"))
             return ScriptInsertReport.RefusedBecause(contentPath, EditRefusal);
@@ -1416,11 +1418,12 @@ public sealed class SceneEditorHost : ISceneEditor
             return false;
         }
 
-        if (viewportPoint is null)
+        if (viewportPoint is not { } point)
             return ScriptInserter.TryFindParent(_scene, out parent, out refusal);
 
-        // Let go over nothing, it belongs to the level as a whole.
-        parent = TryFindSurface(viewportPoint, out SceneRaycastHit hit) ? hit.Node : _scene.Root;
+        // What a click there would select, so the icon of a light or a point
+        // entity counts. Let go over nothing, it belongs to the level as a whole.
+        parent = _viewport.NodeAt(point, _viewportSize) ?? _scene.Root;
         return true;
     }
 
