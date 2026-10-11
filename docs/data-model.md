@@ -93,7 +93,8 @@ A `CFrame` is a position and a unit quaternion. It is the transform a script wor
 - `Angles(rx, ry, rz)` takes radians and applies the Z turn first: `Rx * Ry * Rz`. `FromOrientation` is `Ry * Rx * Rz`, the same order as `Quaternion.CreateFromYawPitchRoll(ry, rx, rz)` and as `EulerAngles`.
 - `GetComponents` writes the position, then the rotation matrix row by row for column vectors. `ToMatrix` gives the engine's matrix, which holds the same nine numbers transposed.
 - Two frames are equal when all twelve components are, so a quaternion and its negative are one frame. `default(CFrame)` is the identity.
-- A product keeps a rotation that is unit length to within rounding as it is, so `a * CFrame.Identity` changes no bit. One that has drifted past that is renormalized, so a long chain of products stays a rotation.
+- A product keeps a rotation that is unit length to within rounding as it is. One that has drifted past that is renormalized, so a long chain of products stays a rotation.
+- A vector is turned by the rotation matrix, not by `Vector3.Transform` with the quaternion. The matrix sends the zero vector to zero with nothing left over, so `a * CFrame.Identity` equals `a` and a rotation times a rotation stays at the origin.
 
 On a node:
 

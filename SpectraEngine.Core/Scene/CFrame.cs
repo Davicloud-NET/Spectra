@@ -19,8 +19,8 @@ public readonly struct CFrame : IEquatable<CFrame>
 
     // Rounding alone leaves a product of unit quaternions this far from unit
     // length. A rotation within it is kept as it is, so multiplying by the
-    // identity changes no bit. One past it is renormalized, which is what
-    // stops drift in a long chain of products.
+    // identity gives back the same rotation. One past it is renormalized,
+    // which is what stops drift in a long chain of products.
     private const float UnitSlack = 1e-6f;
 
     // All zero in a default frame, which reads as no rotation.
@@ -187,8 +187,7 @@ public readonly struct CFrame : IEquatable<CFrame>
         new(a * b.Position, a.Rotation * b.Rotation);
 
     /// <summary>The point moved from the frame's space into the world.</summary>
-    public static Vector3 operator *(CFrame a, Vector3 point) =>
-        a.Position + Vector3.Transform(point, a.Rotation);
+    public static Vector3 operator *(CFrame a, Vector3 point) => a.Position + a.Turn(point);
 
     /// <summary>The frame moved by an offset in world space.</summary>
     public static CFrame operator +(CFrame a, Vector3 offset) => new(a.Position + offset, a.Rotation);
@@ -201,11 +200,7 @@ public readonly struct CFrame : IEquatable<CFrame>
     public static bool operator !=(CFrame a, CFrame b) => !a.Equals(b);
 
     /// <summary>The frame that undoes this one.</summary>
-    public CFrame Inverse()
-    {
-        Quaternion back = Quaternion.Conjugate(Rotation);
-        return new CFrame(-Vector3.Transform(Position, back), back);
-    }
+    public CFrame Inverse() => new(-TurnBack(Position), Quaternion.Conjugate(Rotation));
 
     /// <summary>
     /// The frame part of the way to <paramref name="goal"/>. The position
@@ -225,15 +220,13 @@ public readonly struct CFrame : IEquatable<CFrame>
     public Vector3 PointToWorldSpace(Vector3 point) => this * point;
 
     /// <summary>A point given in world space, in this frame's space.</summary>
-    public Vector3 PointToObjectSpace(Vector3 point) =>
-        Vector3.Transform(point - Position, Quaternion.Conjugate(Rotation));
+    public Vector3 PointToObjectSpace(Vector3 point) => TurnBack(point - Position);
 
     /// <summary>A direction turned from this frame's space into the world. The position plays no part.</summary>
-    public Vector3 VectorToWorldSpace(Vector3 vector) => Vector3.Transform(vector, Rotation);
+    public Vector3 VectorToWorldSpace(Vector3 vector) => Turn(vector);
 
     /// <summary>A direction turned from the world into this frame's space. The position plays no part.</summary>
-    public Vector3 VectorToObjectSpace(Vector3 vector) =>
-        Vector3.Transform(vector, Quaternion.Conjugate(Rotation));
+    public Vector3 VectorToObjectSpace(Vector3 vector) => TurnBack(vector);
 
     /// <summary>
     /// The angles in radians that <see cref="Angles"/> builds this rotation
@@ -321,6 +314,28 @@ public readonly struct CFrame : IEquatable<CFrame>
         for (int i = 0; i < ComponentCount; i++)
             parts[i] = components[i].ToString(CultureInfo.InvariantCulture);
         return string.Join(", ", parts);
+    }
+
+    // By the matrix, the way the rule is written. Vector3.Transform with the
+    // quaternion leaves the zero vector a rounding error away from zero, and
+    // a product of two rotations would then drift off the origin.
+    private Vector3 Turn(Vector3 v)
+    {
+        Matrix4x4 basis = Basis;
+        return new Vector3(
+            (basis.M11 * v.X) + (basis.M21 * v.Y) + (basis.M31 * v.Z),
+            (basis.M12 * v.X) + (basis.M22 * v.Y) + (basis.M32 * v.Z),
+            (basis.M13 * v.X) + (basis.M23 * v.Y) + (basis.M33 * v.Z));
+    }
+
+    // The matrix transposed, which turns the other way.
+    private Vector3 TurnBack(Vector3 v)
+    {
+        Matrix4x4 basis = Basis;
+        return new Vector3(
+            (basis.M11 * v.X) + (basis.M12 * v.Y) + (basis.M13 * v.Z),
+            (basis.M21 * v.X) + (basis.M22 * v.Y) + (basis.M23 * v.Z),
+            (basis.M31 * v.X) + (basis.M32 * v.Y) + (basis.M33 * v.Z));
     }
 
     private static Quaternion Unit(Quaternion rotation)

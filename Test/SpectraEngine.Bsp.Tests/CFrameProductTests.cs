@@ -144,13 +144,79 @@ public sealed class CFrameProductTests
     }
 
     [Fact]
-    public void Multiplying_by_the_identity_changes_no_bit()
+    public void Multiplying_by_the_identity_gives_the_same_frame()
     {
         CFrame frame = new CFrame(1.5f, -2.25f, 3.125f) * CFrame.Angles(0.3f, -0.7f, 1.1f);
 
         (frame * CFrame.Identity).ShouldBe(frame);
         (CFrame.Identity * frame).ShouldBe(frame);
         (frame * CFrame.Identity).Rotation.ShouldBe(frame.Rotation);
+    }
+
+    [Fact]
+    public void A_rotation_at_the_origin_times_the_identity_is_the_same_rotation()
+    {
+        CFrame turn = CFrame.Angles(0.3f, -0.7f, 1.1f);
+
+        (turn * CFrame.Identity).Position.ShouldBe(Vector3.Zero);
+        (turn * CFrame.Identity).ShouldBe(turn);
+    }
+
+    // The position of a product is a.p + a.R * b.p, and a matrix times the
+    // zero vector is the zero vector, with no rounding left over.
+    [Fact]
+    public void A_rotation_times_a_rotation_stays_at_the_origin()
+    {
+        var random = new Random(4201);
+        for (int i = 0; i < 1000; i++)
+        {
+            CFrame a = RandomFrames.Frame(random);
+            CFrame b = RandomFrames.Frame(random);
+
+            ((a - a.Position) * (b - b.Position)).Position.ShouldBe(Vector3.Zero);
+            (a * (b - b.Position)).Position.ShouldBe(a.Position);
+        }
+    }
+
+    [Fact]
+    public void The_inverse_of_a_rotation_at_the_origin_stays_at_the_origin()
+    {
+        var random = new Random(4202);
+        for (int i = 0; i < 1000; i++)
+        {
+            CFrame frame = RandomFrames.Frame(random);
+
+            (frame - frame.Position).Inverse().Position.ShouldBe(Vector3.Zero);
+        }
+    }
+
+    [Fact]
+    public void Turning_the_zero_vector_gives_the_zero_vector()
+    {
+        var random = new Random(4203);
+        for (int i = 0; i < 1000; i++)
+        {
+            CFrame frame = RandomFrames.Frame(random);
+
+            frame.VectorToWorldSpace(Vector3.Zero).ShouldBe(Vector3.Zero);
+            frame.VectorToObjectSpace(Vector3.Zero).ShouldBe(Vector3.Zero);
+            frame.PointToObjectSpace(frame.Position).ShouldBe(Vector3.Zero);
+            (frame * Vector3.Zero).ShouldBe(frame.Position);
+        }
+    }
+
+    // R * (s, 0, 0) is s times the first column, however small s is.
+    [Fact]
+    public void A_very_short_vector_is_turned_like_a_long_one()
+    {
+        CFrame frame = new CFrame(1f, 2f, 3f) * CFrame.Angles(0.3f, -0.7f, 1.1f);
+        const float tiny = 1e-9f;
+
+        Vector3 there = frame.VectorToWorldSpace(new Vector3(tiny, 0f, 0f));
+        Vector3 back = frame.VectorToObjectSpace(frame.XVector * tiny);
+
+        (there / tiny).ShouldBeNear(frame.XVector);
+        (back / tiny).ShouldBeNear(Vector3.UnitX);
     }
 
     [Fact]
