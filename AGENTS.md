@@ -150,7 +150,7 @@ Entities
 - An entity is strings on the node (`SceneNode.Entity`). The runtime copies them and never writes back.
 - The editor learns schemas only from `.sentdef` bytes, even in process.
 - A brush entity is a part that carries an entity. A trigger is such a part with collide, query and render off.
-- While a level plays, only `EntityWorld.SetLocalTransform` moves a node. It keeps the authored pose and Stop puts it back. A script goes through `TrySetLocalTransform`, which hands back the reason of a refusal.
+- While a level plays, a node changes only through the play journal (`PlayJournal`), which keeps the first value and puts it back at Stop. An entity moves a node with `EntityWorld.SetLocalTransform`. A script sets a member with `ScriptWrites.TryWrite`, and the binding has no other way to change a node.
 - A wire carries one string. `ParameterText` is the one place that turns a typed value into that string and back, and a generated `Fire` method goes through it too.
 - The player is not an entity. A trigger or a button the player sets off is its own activator.
 - Everything an entity waits for counts ticks: a wire's delay, a think, a mover's trip. Seconds become whole ticks once, when the wait starts, by `WholeTicks`. World time is the tick number times the step and is only for a person to read.
@@ -174,6 +174,7 @@ Sound
 Play and console
 
 - `PlaySession` runs the fixed tick: entities, physics, then the character. It needs no camera, input or renderer. It calls the level's scripts before the physics step and at the end of the tick, also when nothing walks.
+- A console line carries where it came from as data: `ConsoleLine.Place`, the calls under an error in `Stack`, and `ProblemNode` for a script that did not start. `Text` has no file and line in it. What writes a line where nobody can click writes `PlainText`.
 - There is one `SpectraConsole` per engine, never a static. A line goes in as a string through `EngineHost.SubmitConsoleLine`, and what it prints comes back in `FrameSnapshot.ConsoleLines`.
 - A command reads `Scene.EntitySchemas`, never `EntityCatalog.Shared`, which freezes on its first read.
 
@@ -211,6 +212,9 @@ Avalonia
 
 Host
 
+- `ConsoleOutput` drops what is written past 1024 lines between two drains and keeps up to `ErrorRoom` errors past that. Whoever builds a snapshot with console lines sets `ConsoleLinesWritten` too, or lines dropped at the end of a burst are never reported.
+- The Output and the Console panel show one log through one control, `OutputRows`. A row drawn in one panel's own markup is missing in the other.
+- `ScriptStartProblems` makes the Problems rows of scripts from console lines with `ProblemNode`, and has to see every snapshot in order. A snapshot the window has no room for still sends those lines through `ScriptStartProblems.KeptOf`.
 - Apply every published `FrameSnapshot`. The scene changes and console lines in one are sent once, so sampling the newest loses the rest.
 - A scene event handler must not change the graph. Neither must an `IEntityTrace`: it runs inside the dispatch.
 - The entity world has one trace slot. `ent_watch` and the Logic view share it through `EntityTracePair.Join`. Set `SceneManager.EntityTrace` to one of them and the other goes quiet.
@@ -242,6 +246,9 @@ Entities and play
 - A class a builder turns to aim, like a player start, sets `HasFacing` on `[SpectraEntity]`. Left out, its marker in the 3D view has no arrow.
 - An `Icon` name with no file draws the plain entity icon and warns nobody. `IconDriftConventionTests` catches it for the built-in classes only.
 - `MapSceneBinder.FromScene` builds fresh nodes. A node member it does not copy is deleted by the next save.
+- A write to a node that records nothing stays in the level after Stop, and nothing says so. A new member a script can set needs a `JournalKind`, a row in `ScriptWrites`, and a case in its `Read` and `TryWrite`. `StopPromiseTests` and `SettableListTests` catch one left out.
+- The journal puts a transform back bit for bit (`SceneNode.RestoreLocalTransform`). The ordinary setter takes -0 for 0 and keeps the one it has, and the level would save other bytes.
+- `NodeName` is the rule for a name a running level gives a node. The editor's rename is looser, so a map can hold a name a script cannot give.
 - A script is a `.luau` file under `Assets/`, named on its node by content path (`SceneNode.Script`). A `Script` never changes once made: an edit sets a new one.
 - A baked map carries no scripts yet. The cook warns with `SC7011`, the loaded node is a plain node, and a map that warns is baked again on every cook.
 - `SceneNode.DeclaredRealm` and `DeclaredState` are saved, also in a baked map, and nothing reads them. A dormant node still carves, draws and collides.
@@ -266,6 +273,7 @@ Luau
 - A thread waits for one thing at a time and `WaitingThreads` holds it, for a tick or for a signal. A host function that yields asks `stack.CanYield` before it keeps anything for the resume, and `ThreadRunner.Resume` asks whether the thread has ended.
 - A userdata gets its tag's metatable when it is made. One pushed before the tag had a metatable has none for good, and a script gets `attempt to index userdata`.
 - `LuauHost.PushFunction` keeps its delegate until the host closes. Make a method once and hand it out from a `MethodTable`, never on a read.
+- Scripts print at most `PrintCap.MaxPrintsPerTick` lines a tick, all scripts of a level together. Warnings and errors always pass. A test that prints more in one tick gets the rest as one warning.
 - A level with scripts and no `RuntimeFactory` plays without them and warns once. `--pack` plays the demo without its spinner, since a baked map has no scripts.
 
 Tests and tools
