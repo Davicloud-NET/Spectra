@@ -210,14 +210,15 @@ internal static class EntityModelFactory
         string name = FirstStringArgument(attribute);
         byte? parameter = Parameter(attribute, "Input", name, diagnostics);
         bool canOmit = NamedBool(attribute, "CanOmitParameter");
-        if (canOmit && parameter is null)
+
+        // A refused type has been reported already.
+        if (canOmit && !TryGetNamed(attribute, "Parameter", out _))
         {
             diagnostics.Add(DiagnosticInfo.Create(
                 EntityDiagnostics.NothingToOmit, LocationOf(attribute), name));
-            canOmit = false;
         }
 
-        inputs.Add(new InputModel(name, method.Name, parameter, canOmit));
+        inputs.Add(new InputModel(name, method.Name, parameter, canOmit && parameter is not null));
     }
 
     // The KeyvalueType an input or output says it carries, or null for no

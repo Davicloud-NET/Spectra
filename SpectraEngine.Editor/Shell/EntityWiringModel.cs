@@ -350,24 +350,9 @@ public sealed class ConnectionRowModel : ObservableObject
         return schemas.TryGetSchema(className, out EntitySchema? schema) ? schema : null;
     }
 
-    // Nothing is said when a class is not known or does not say what it
-    // takes. A wire to !self arrives at the class it leaves.
-    private void JudgeParameter()
-    {
-        EntitySchema? receiver = _target == TargetNameIndex.SelfToken ? Sender : _receiver;
-
-        ParameterType sent = Sender is not null && Sender.TryGetOutput(_output, out EntityPort output)
-            ? output.Parameter
-            : ParameterType.NotSaid;
-        ParameterType taken = receiver is not null && receiver.TryGetInput(_input, out EntityPort input)
-            ? input.Parameter
-            : ParameterType.NotSaid;
-
-        ParameterVerdict verdict = ParameterText.Judge(sent, taken, _parameter);
-        ParameterWarning = verdict == ParameterVerdict.Fine
-            ? string.Empty
-            : WireParameterText.Warning(verdict, ToConnection(), taken);
-    }
+    // A wire to !self arrives at the class it leaves.
+    private void JudgeParameter() => ParameterWarning = WireParameterText.Between(
+        ToConnection(), Sender, _target == TargetNameIndex.SelfToken ? Sender : _receiver);
 
     private static bool Declares(IReadOnlyList<string> declared, string output)
     {

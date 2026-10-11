@@ -9,6 +9,26 @@ namespace SpectraEngine.Editor.Shell;
 public static class WireParameterText
 {
     /// <summary>
+    /// The warning for a wire between two classes, or empty when there is
+    /// nothing to say. A class that is not known, or does not say what its
+    /// inputs take and its outputs send, is never judged.
+    /// </summary>
+    /// <param name="wire">The wire as it is typed.</param>
+    /// <param name="sender">The class the wire leaves, or null.</param>
+    /// <param name="receiver">The one class the wire arrives at, or null.</param>
+    public static string Between(in EntityConnection wire, EntitySchema? sender, EntitySchema? receiver)
+    {
+        ParameterType sent = sender is not null && sender.TryGetOutput(wire.Output, out EntityPort output)
+            ? output.Parameter
+            : ParameterType.NotSaid;
+        ParameterType taken = receiver is not null && receiver.TryGetInput(wire.Input, out EntityPort input)
+            ? input.Parameter
+            : ParameterType.NotSaid;
+
+        return Warning(ParameterText.Judge(sent, taken, wire.Parameter), in wire, taken);
+    }
+
+    /// <summary>
     /// The warning for <paramref name="verdict"/>, or empty when there is
     /// nothing to say. No full stop, like the line about the target.
     /// </summary>

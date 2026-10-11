@@ -114,6 +114,18 @@ public sealed class EntityGeneratorParameterTests
     }
 
     [Fact]
+    public void A_refused_type_that_may_be_left_out_is_reported_once_for_the_type()
+    {
+        GeneratorRun run = GeneratorHarness.Run(Thing(
+            "[EntityOutput]",
+            "[EntityInput(\"Set\", Parameter = KeyvalueType.Distance, CanOmitParameter = true)]",
+            ""));
+
+        run.DiagnosticIds.ShouldBe(["SPE009"]);
+        Compact(run.OnlySource()).ShouldContain($"new{Ns}.EntityPort(\"Set\",{Ns}.ParameterType.None),");
+    }
+
+    [Fact]
     public void An_output_that_sends_a_number_is_fired_with_the_number_and_writes_it_as_a_keyvalue_would()
     {
         GeneratorRun run = GeneratorHarness.Run(Thing(
