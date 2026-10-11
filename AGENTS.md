@@ -201,7 +201,7 @@ Host
 - Apply every published `FrameSnapshot`. The scene changes and console lines in one are sent once, so sampling the newest loses the rest.
 - A scene event handler must not change the graph. Neither must an `IEntityTrace`: it runs inside the dispatch.
 - The entity world has one trace slot. `ent_watch` and the Logic view share it through `EntityTracePair.Join`. Set `SceneManager.EntityTrace` to one of them and the other goes quiet.
-- The scene tree learns what a node is, its entity class and its kind of light from a `SceneChange` and nowhere else. The node's setters raise `Scene.NodeKindChanged`. A light edited in place raises nothing, so whoever changes its kind calls `Scene.NotifyNodeKindChanged`, or the row keeps its old icon.
+- The scene tree learns what a node is, its entity class, its kind of light and whether it carries a script from a `SceneChange` and nowhere else. A part that carries a script is still a part in its kind, and only `SceneChange.HasScript` tells a UI. The node's setters raise `Scene.NodeKindChanged`. A light edited in place raises nothing, so whoever changes its kind calls `Scene.NotifyNodeKindChanged`, or the row keeps its old icon.
 - The engine publishes a level's wiring (`FrameSnapshot.LogicGraph`) only while a view asks for it through `EngineHost.RequestLogicView`. A new session has been asked for nothing.
 - A member or namespace named `Console` hides `System.Console` for the whole file.
 
@@ -229,6 +229,9 @@ Entities and play
 - A class a builder turns to aim, like a player start, sets `HasFacing` on `[SpectraEntity]`. Left out, its marker in the 3D view has no arrow.
 - An `Icon` name with no file draws the plain entity icon and warns nobody. `IconDriftConventionTests` catches it for the built-in classes only.
 - `MapSceneBinder.FromScene` builds fresh nodes. A node member it does not copy is deleted by the next save.
+- A script is a `.luau` file under `Assets/`, named on its node by content path (`SceneNode.Script`). A `Script` never changes once made: an edit sets a new one.
+- A baked map carries no scripts yet. The cook warns with `SC7011`, the loaded node is a plain node, and a map that warns is baked again on every cook.
+- `SceneNode.DeclaredRealm` and `DeclaredState` are saved, also in a baked map, and nothing reads them. A dormant node still carves, draws and collides.
 - A default `SceneQueryFilter` wants `CanQuery`, which a trigger has off.
 - A wire's input name is case sensitive, and a wrong one is only a Debug log line. `ent_watch` shows it as `deny`.
 - A tick sends at most `MaxDispatchesPerTick` of the events that were waiting, and as many again of those it makes. Waiting ones past that go out on later ticks, in order, and are never dropped. What a tick makes past it is a loop with no delay, and is dropped. A loop that waits and multiplies is stopped by `MaxPendingEvents`: an event made while the queue is full is dropped.
@@ -249,6 +252,10 @@ Tests and tools
 - The tests that render through the real OpenAL (`-- -trait "Suite=AudioLoopback"`) skip unless `SPECTRA_AUDIO_LOOPBACK=1` is set. A green scene suite says nothing about `OpenAlBackend` or the low-pass filter.
 - An agent cannot drive the running editor. `SpectraEngine.Editor.Render.Tests` renders controls and writes PNGs under `artifacts/`. Colour, feel and gestures still need a person, and say so when you hand over.
 - After any agent run with write access, check `git status` before staging. Probes get left behind.
+- An agent's worktree keeps about 4.6 GB of build output. Delete `bin` and `obj` in a worktree once its branch is merged, or the drive fills.
+- A build that runs out of disk leaves truncated files in `obj` that the next build takes for up to date. Delete `bin` and `obj`.
+- A save stamps `spectramap` with `EngineInfo.MapFormatVersion`. Raise it and every fixture that compares saved bytes has to name the new number.
+- A text or number a property refuses goes in `PropertyLimits`. The panel reads it to say why and `PropertyEditor` reads it to refuse. A rule in only the editor is a value dropped on the render thread with no message.
 - CI is `.github/workflows/ci.yml`, on Windows and Linux. The VSIX builds only on Windows. The graphics suite is skipped on hosted runners, which have no GPU.
 
 ## Where things are written down
