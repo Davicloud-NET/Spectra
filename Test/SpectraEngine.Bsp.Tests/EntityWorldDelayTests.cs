@@ -107,7 +107,7 @@ public sealed class EntityWorldDelayTests
     }
 
     [Fact]
-    public void A_think_asked_for_at_a_world_time_is_counted_from_now_in_whole_ticks()
+    public void A_think_asked_for_at_a_world_time_comes_on_the_first_tick_at_or_after_it()
     {
         SceneNode node = EntityRuntime.Place(_scene.Root, "thinker", "thinker");
         EntityWorld world = Started();
@@ -124,6 +124,34 @@ public sealed class EntityWorldDelayTests
         thinker.NextThinkTick.ShouldBe(10);
         world.Tick(Tick);
         _log.ShouldBe(["think:thinker:11"]);
+    }
+
+    [Fact]
+    public void A_think_asked_for_at_a_world_time_lands_where_the_same_delay_would_for_half_an_hour()
+    {
+        const int ticksInHalfAnHour = 30 * 60 * 60;
+        float[] delays = [0.04f, 0.1f, 0.5f, 1f, 3f];
+        SceneNode node = EntityRuntime.Place(_scene.Root, "thinker", "thinker");
+        EntityWorld world = Started();
+        world.Trace = null;
+        Entity thinker = EntityRuntime.Live(world, node);
+
+        string? firstMiss = null;
+        for (int i = 0; i < ticksInHalfAnHour && firstMiss is null; i++)
+        {
+            world.Tick(Tick);
+            foreach (float delay in delays)
+            {
+                thinker.SetNextThink(world.Time + delay);
+                long landed = thinker.NextThinkTick - world.TickNumber;
+                if (landed != world.TicksIn(delay))
+                    firstMiss ??= $"{delay} s at tick {world.TickNumber} took {landed} ticks";
+            }
+
+            thinker.CancelThink();
+        }
+
+        firstMiss.ShouldBeNull();
     }
 
     [Fact]

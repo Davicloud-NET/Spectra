@@ -133,13 +133,14 @@ public abstract class Entity
 
     /// <summary>
     /// Asks to be woken at world time <paramref name="time"/>, replacing any
-    /// think already pending. The time left is counted in whole ticks, as
-    /// <see cref="SetNextThinkIn"/> counts a delay. A time already past is no
-    /// delay.
+    /// think already pending: on the first tick at or after it, counted from
+    /// the start of the level by the rule of <see cref="WholeTicks"/>. A time
+    /// already past is no delay.
     /// </summary>
-    // A float time gets coarser the longer a level runs, and past a few
-    // minutes that can cost a tick. SetNextThinkIn does not have the problem.
-    public void SetNextThink(float time) => ThinkAfter(World.SecondsUntil(time));
+    // A float time gets coarser the longer a level runs, and the rule's slack
+    // grows with it. Hours in, a time between two ticks can take the earlier
+    // one. SetNextThinkIn counts from now and does not have the problem.
+    public void SetNextThink(float time) => ThinkAt(World.TickAt(time));
 
     /// <summary>
     /// Asks to be woken <paramref name="delay"/> seconds from now, replacing
@@ -147,7 +148,7 @@ public abstract class Entity
     /// rule of <see cref="WholeTicks"/>. No delay fires in the drain that is
     /// running, or in the next one when none is.
     /// </summary>
-    public void SetNextThinkIn(float delay) => ThinkAfter(delay);
+    public void SetNextThinkIn(float delay) => ThinkAt(World.TickAfter(delay));
 
     /// <summary>Drops any pending think.</summary>
     public void CancelThink()
@@ -250,9 +251,8 @@ public abstract class Entity
         }
     }
 
-    private void ThinkAfter(double seconds)
+    private void ThinkAt(long tick)
     {
-        long tick = World.TickAfter(seconds);
         _thinkSerial++;
 
         // A wait too long to count is no think at all, and neither is one

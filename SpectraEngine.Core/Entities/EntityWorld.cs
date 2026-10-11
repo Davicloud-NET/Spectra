@@ -492,7 +492,7 @@ public sealed class EntityWorld
 
     internal long TickAfter(double seconds) => _clock.TickAfter(seconds);
 
-    internal double SecondsUntil(float time) => _clock.SecondsUntil(time);
+    internal long TickAt(double time) => _clock.TickAt(time);
 
     internal float TimeAt(long tick) => _clock.TimeAt(tick);
 

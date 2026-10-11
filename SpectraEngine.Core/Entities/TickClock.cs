@@ -37,9 +37,10 @@ internal sealed class TickClock
         return ticks > long.MaxValue - Tick ? long.MaxValue : Tick + ticks;
     }
 
-    // Now is taken in full precision: as a float it is too coarse to subtract
-    // from late in a level.
-    public double SecondsUntil(float time) => time - (Tick * (double)Step);
+    // The tick a world time falls on, counted from the start of the level and
+    // not from now: late in a level a float time is too coarse to take now
+    // away from. A time already past is the tick being run.
+    public long TickAt(double time) => Math.Max(Tick, TicksIn(time));
 
     public float TimeAt(long tick) =>
         tick == long.MaxValue ? float.PositiveInfinity : (float)(tick * (double)Step);
