@@ -322,6 +322,56 @@ public sealed class StructuralEditTests
     }
 
     [Fact]
+    public void Scripts_alone_can_be_grouped_and_the_group_sits_where_their_parent_does()
+    {
+        // A script with no children has no place, so there is no box to centre on.
+        (Scene scene, UndoStack undo) = Fixture();
+        SceneNode holder = scene.Root.CreateChild("Holder");
+        holder.LocalPosition = new Vector3(3f, 0f, 0f);
+        SceneNode timer = holder.CreateChild("Timer");
+        timer.Script = new Script("Scripts/timer.luau");
+        SceneNode score = holder.CreateChild("Score");
+        score.Script = new Script("Scripts/score.luau");
+
+        StructuralEditor.TryGroup(scene, undo, [timer, score]).ShouldBeTrue();
+
+        SceneNode group = scene.Selection.Items.ShouldHaveSingleItem();
+        group.Parent.ShouldBeSameAs(holder);
+        group.Children.ShouldBe([timer, score]);
+        group.LocalPosition.ShouldBe(Vector3.Zero);
+        undo.Count.ShouldBe(1);
+
+        undo.Undo().ShouldBeTrue();
+
+        holder.Children.ShouldBe([timer, score]);
+    }
+
+    [Fact]
+    public void One_script_can_be_put_in_a_group_of_its_own()
+    {
+        (Scene scene, UndoStack undo) = Fixture();
+        SceneNode game = scene.Root.CreateChild("Game");
+        game.Script = new Script("Scripts/game.luau");
+
+        StructuralEditor.TryGroup(scene, undo, [game]).ShouldBeTrue();
+
+        scene.Root.Children.ShouldHaveSingleItem().Children.ShouldBe([game]);
+    }
+
+    [Fact]
+    public void A_script_grouped_with_a_part_gets_a_group_centred_on_the_part()
+    {
+        (Scene scene, UndoStack undo) = Fixture();
+        SceneNode part = BrushNode(scene, new Vector3(6f, 0f, 0f));
+        SceneNode game = scene.Root.CreateChild("Game");
+        game.Script = new Script("Scripts/game.luau");
+
+        StructuralEditor.TryGroup(scene, undo, [part, game]).ShouldBeTrue();
+
+        scene.Selection.Items[0].LocalPosition.ShouldBeCloseTo(new Vector3(6f, 0f, 0f), Tolerance);
+    }
+
+    [Fact]
     public void Every_verb_refuses_an_empty_selection_without_touching_the_history()
     {
         (Scene scene, UndoStack undo) = Fixture();

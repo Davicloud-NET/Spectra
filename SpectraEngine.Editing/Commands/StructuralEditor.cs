@@ -98,15 +98,14 @@ public static class StructuralEditor
         if (!Matrix4x4.Invert(parent.WorldMatrix, out Matrix4x4 parentInverse))
             return false;
 
-        if (!GizmoSelectionBounds.TryMeasure(
-                roots, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, out Vector3 min, out Vector3 max))
-        {
-            return false;
-        }
+        // Scripts with no children have no box to centre on. A group of
+        // nothing else sits where the parent does.
+        bool hasBox = GizmoSelectionBounds.TryMeasure(
+            roots, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, out Vector3 min, out Vector3 max);
 
         var group = new SceneNode(groupName)
         {
-            LocalPosition = Vector3.Transform((min + max) * 0.5f, parentInverse),
+            LocalPosition = hasBox ? Vector3.Transform((min + max) * 0.5f, parentInverse) : Vector3.Zero,
         };
 
         // The group takes the first selected sibling's slot.
