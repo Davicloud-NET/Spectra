@@ -63,6 +63,12 @@ public readonly record struct SceneChange(
     public LightKind? LightKind { get; init; }
 
     /// <summary>
+    /// Whether the node carries a script. A part that carries one is still a
+    /// part in <see cref="NodeKind"/>.
+    /// </summary>
+    public bool HasScript { get; init; }
+
+    /// <summary>
     /// The change that says <paramref name="node"/> is as it is now. Render
     /// thread only: it reads a live node.
     /// </summary>
@@ -77,6 +83,7 @@ public readonly record struct SceneChange(
         {
             EntityClass = node.Entity?.ClassName,
             LightKind = node.Light?.Kind,
+            HasScript = node.Script is not null,
         };
     }
 }

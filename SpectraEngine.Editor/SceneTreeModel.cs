@@ -76,6 +76,9 @@ public sealed class SceneTreeNode(Guid id, string name) : ObservableObject
     /// <summary>The node's kind of light, or null when it carries none.</summary>
     public LightKind? LightKind { get; internal set; }
 
+    /// <summary>Whether the node carries a script, whatever else it is.</summary>
+    public bool HasScript { get; internal set; }
+
     /// <summary>The row's icon and its tint.</summary>
     public IconLook Look
     {
@@ -610,9 +613,12 @@ public sealed class SceneTreeModel
     // The words the toolbar and menus use, plus the enum names. Case and a
     // trailing plural s are ignored.
     // A door or a trigger is a part underneath and an entity as well, so
-    // t:entity finds it and so does t:part.
+    // t:entity finds it and so does t:part. A part that carries a script is
+    // found by t:script the same way.
     private static bool IsOfKind(SceneTreeNode node, SceneNodeKind wanted) =>
-        node.Kind == wanted || (wanted == SceneNodeKind.Entity && node.EntityClass is not null);
+        node.Kind == wanted
+        || (wanted == SceneNodeKind.Entity && node.EntityClass is not null)
+        || (wanted == SceneNodeKind.Script && node.HasScript);
 
     private static SceneNodeKind? ParseKind(string text) => text.Trim().TrimEnd('s').ToLowerInvariant() switch
     {
@@ -692,7 +698,8 @@ public sealed class SceneTreeModel
         node.Kind = change.NodeKind;
         node.EntityClass = change.EntityClass;
         node.LightKind = change.LightKind;
-        node.Look = EditorIcons.ForNode(change.NodeKind, change.EntityClass, change.LightKind, _schemas);
+        node.HasScript = change.HasScript;
+        node.Look =EditorIcons.ForNode(change.NodeKind, change.EntityClass, change.LightKind, _schemas);
     }
 
     private void Insert(SceneTreeNode node, Guid parentId, int siblingIndex)

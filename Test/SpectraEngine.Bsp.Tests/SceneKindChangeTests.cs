@@ -199,6 +199,27 @@ public sealed class SceneKindChangeTests
         added.NodeKind.ShouldBe(SceneNodeKind.Script);
         added.EntityClass.ShouldBeNull();
         added.LightKind.ShouldBeNull();
+        added.HasScript.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_part_says_when_it_gets_a_script_and_when_it_loses_it()
+    {
+        // The part is a part before and after. Only the flag tells a UI.
+        (Scene scene, SceneChangeLog log) = Observed();
+        SceneNode door = scene.Root.AddChild(new SceneNode("Door") { BrushKind = BrushKind.Part, Brush = Box() });
+        Only(log).HasScript.ShouldBeFalse();
+
+        door.Script = new Script("Scripts/door.luau");
+        SceneChange got = Only(log);
+        got.Kind.ShouldBe(SceneChangeKind.KindChanged);
+        got.NodeKind.ShouldBe(SceneNodeKind.BrushPart);
+        got.HasScript.ShouldBeTrue();
+
+        door.Script = null;
+        SceneChange lost = Only(log);
+        lost.NodeKind.ShouldBe(SceneNodeKind.BrushPart);
+        lost.HasScript.ShouldBeFalse();
     }
 
     [Fact]

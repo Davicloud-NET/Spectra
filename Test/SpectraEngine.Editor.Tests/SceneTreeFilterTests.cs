@@ -228,6 +228,26 @@ public sealed class SceneTreeFilterTests
     }
 
     [Fact]
+    public void A_part_that_carries_a_script_is_found_as_a_script_and_as_a_part()
+    {
+        SceneTreeModel tree = Populated();
+        var door = new SceneChange(SceneChangeKind.Added, Guid.NewGuid(), Root, "VaultDoor", 2, SceneNodeKind.BrushPart)
+        {
+            HasScript = true,
+        };
+        tree.ApplyChanges(Batch(2, door, Added(Guid.NewGuid(), Root, "Crate", 3, SceneNodeKind.BrushPart)));
+
+        tree.ApplyFilter("t:script");
+        Find(tree, "VaultDoor").Match.ShouldBe(SceneTreeMatch.Match);
+        Find(tree, "Crate").Match.ShouldBe(SceneTreeMatch.None);
+        tree.MatchCount.ShouldBe(1);
+
+        tree.ApplyFilter("t:part");
+        Find(tree, "VaultDoor").Match.ShouldBe(SceneTreeMatch.Match);
+        tree.MatchCount.ShouldBe(2);
+    }
+
+    [Fact]
     public void The_plural_of_entity_resolves_too()
     {
         // TrimEnd('s') gives "entitie", which the alias table has to carry.
