@@ -204,6 +204,14 @@ So managed code never calls anything in Luau that can raise.
   in a table with weak values, so two reads of one object are equal in a
   script. The collector's destructor may not touch the VM. It only notes
   which slot and generation went, and `sl_takereleased` hands the notes over.
+- the metatable of vectors. Luau keeps one for the whole type, and its vector
+  library sets one that knows `x`, `y` and `z` and nothing else.
+  `sl_setvectormetatable` puts the host's table in its place and freezes it.
+  That is how a script's `Vector3` gets `Magnitude` and its methods.
+- the compiler's names for a vector. `sl_compile` takes the name of a library
+  and of its constructor, and the binding passes `Vector3` and `new`. The
+  compiler then makes `Vector3.new(1, 2, 3)` a vector with no call, and takes
+  `Vector3` for a name of the vector type.
 - a thread's data. The binding keeps a script's number in the low half and a
   thread's slot in the high half. A thread that a script makes gets the low
   half of its maker's, so a coroutine belongs to its script.

@@ -219,7 +219,7 @@ The first two depend on `BrushKind`. Attaching, swapping or detaching a `Part` b
 
 `SceneNode.BrushKind` (`Scene/BrushKind.cs`) says what the node's brush is. A `World` brush is carved against its neighbours and fused into the compiled static world. A `Part` brush stands alone with its own mesh and is never carved. The default is `World`. The kind is not inherited, so a reparent cannot change what is carved. `IsStaticWorldBrush` is true for a node that has a brush of kind `World`.
 
-Moving a part costs no recompile, so anything that moves while a level plays must be a part. `EntityWorld.SetLocalTransform` refuses to move a node with a world brush at or below it.
+Moving a part costs no recompile, so anything that moves while a level plays must be a part. `EntityWorld.SetLocalTransform` refuses to move a node with a world brush at or below it. A script that writes such a node's `Position` or `CFrame` gets the refusal as an error.
 
 Changing the kind of a node that has a brush adjusts the static-world count and calls `Scene.MarkAdmissionChanged`, which dirties the static world and moves the node into or out of the part list. A part's mesh comes from `PartBrushMeshCache`.
 
@@ -251,13 +251,13 @@ What this buys: per-face materials with no per-face asset object anywhere. **The
 
 The name other entities fire at is the node's name. There is no separate target name field.
 
-What sits on the node is authored data. While a level plays, `EntityWorld` (`Entities/EntityWorld.cs`) builds one live `Entity` per entity node from the `EntityCatalog`, or a `PlaceholderEntity` for a class it does not know. The live entity gets its own copy of the connections and never writes back to the node. `EntityWorld.SetLocalTransform` is the only way a running entity moves a node, and `Deactivate` puts every moved node back.
+What sits on the node is authored data. While a level plays, `EntityWorld` (`Entities/EntityWorld.cs`) builds one live `Entity` per entity node from the `EntityCatalog`, or a `PlaceholderEntity` for a class it does not know. The live entity gets its own copy of the connections and never writes back to the node. `EntityWorld.SetLocalTransform` is the only way a running entity moves a node, and `Deactivate` puts every moved node back. A script moves a node the same way, through `TrySetLocalTransform`, which hands the reason of a refusal to its caller and logs nothing.
 
-`PlaySession` runs the entity tick first, then physics, then the character.
+`PlaySession` runs the entity tick first, then physics, then the character. It calls the level's scripts before the physics step and at the end of the tick.
 
 ### `Script`
 
-`SceneNode.Script` is a `Script` (`Scene/Script.cs`): the `.luau` file the node names, whether it is switched on, and whether it is a module. A script is a node of its own, so the node above it is what the script calls its parent, as in Roblox. Nothing runs a script yet. The payload only exists, saves, loads, copies and shows.
+`SceneNode.Script` is a `Script` (`Scene/Script.cs`): the `.luau` file the node names, whether it is switched on, and whether it is a module. A script is a node of its own, so the node above it is what the script calls its parent, as in Roblox. It runs while a level plays, which the end of this section describes.
 
 - `Path` is a normalized content-relative path (`ContentRoot.NormalizeRelativePath`), the identity every asset has. A script cannot name nothing, and it cannot name a file outside the content root. Whether the file exists is not checked.
 - `IsEnabled` is on unless switched off.
@@ -272,6 +272,14 @@ A node whose only payload is a script is a `SceneNodeKind.Script`. A part, an en
 A `.smap` saves the payload as `script`, with `path`, and with `enabled` and `module` only when they differ from the default. A baked map does not carry scripts yet: the cook bakes the node as a plain node and warns with `SC7011`.
 
 The editor writes it with `SetScriptCommand`.
+
+While a level plays, its scripts run in a script runtime (`Scripting/IScriptRuntime.cs`). `SceneManager.Scripts` holds the factory a host installed. `StartEntityWorld` makes one runtime for each play session and gives it to the entity world before the entities spawn, and `StopEntityWorld` closes it after they are removed. So Stop, a map load and the restart after a crash all end every script. The Luau runtime is `LuauScriptRuntime` in `SpectraEngine.Scripting.Luau/Runtime`, with one Luau state for each play session. A level with scripts and nothing to run them plays without them and says so once.
+
+- Every script that is switched on and is no module starts at the head of the first tick, in the order of the scene tree, before touches and the drain. The player exists by then. Its text is read by its path through the content sources. A file that is missing or does not compile is one error that names the node, and the other scripts start.
+- A thread that waits is an event in the entity world's queue (`EntityWorld.QueueScriptWake`), in one order with the wires and the thinks. `task.wait` goes on at the tick `WholeTicks` gives and never on the tick it was called on.
+- `RunService.Stepped` and `PreSimulation` fire before the physics step, `Heartbeat` and `PostSimulation` at the end of the tick, also in a tick where nothing walks. They fire on every fixed tick with the fixed step, so none, one or several times in a frame.
+- A script reads a node's `Name`, `ClassName`, `Parent`, `Position`, `CFrame`, `LocalPosition` and `LocalCFrame`. `Position` and `CFrame` are in world space. The class name is the entity class when the node has one, otherwise the node's kind in Roblox's words (`Scene/NodeClassName.cs`). A name the node does not have is an error, never `nil`.
+- A script writes the four transform members and nothing else. `Deactivate` puts every node it moved back, as it does for an entity.
 
 ### Node flags
 
@@ -387,7 +395,7 @@ Nothing in this section exists in the code, but for the two enums the first two 
 | `NodeState`: `Inherit \| Active \| Dormant` | Whether the node is **live**: carved, in the BVH, drawn, queried, ticking. Built and planned as the row above: a dormant node is declared and saved, and still live. | There is no way to make a brush inert today: `SnapshotFullWalk` admits every brush unconditionally (`Scene.cs:1349`) and `IsSpatial` is ancestry-blind (`SceneBvh.cs:146`), so a parked template would carve the world. Ship both axes or neither. | `docs/realms.md` §2.1–2.2 |
 | `RealmSet` — `[Flags] Inert \| Server \| Client \| Shared` | The **resolved** value, and it is a *set*, not an enum value. | Resolution is an intersection: `ToSet(declared) & parentEffective`. `Server ∩ Client` is empty, and the empty set has a name — `Inert` — rather than being promoted to the ancestor's realm, which would turn a dragged client HUD subtree into server code holding authority. | `docs/realms.md` §2.3, §3 R1–R3 |
 | `SceneNode.EffectiveRealm` / `IsLive` / `IsVisibleTo(mask)` | Cached resolved fields, maintained on declaration change and reparent only — never on the transform path. | `IsVisibleTo` is one AND and one compare: the entire enforcement primitive. | `docs/realms.md` §2.4 |
-| Running a `Script` | The payload is built (§3): a node that names a `.luau` file, with `IsEnabled` and `IsModule`. What runs it is planned. | A script is a node, so `script.Parent` is the parent node, as in Roblox. **There is no `ScriptKind.Server`/`.Client`:** run location is the *node's* `Realm`, so a client script is a node declared `Realm = "Client"` (`realms.md` §6.2 spends `O8`'s reservation; `networking.md` `N15` records the same correction). | `docs/roblox-onboarding.md` O8, corrected by `docs/realms.md` §6.2 |
+| Where a `Script` runs | The payload and what runs it are built (§3): a node that names a `.luau` file, with `IsEnabled` and `IsModule`. That its realm decides where it runs is planned. | A script is a node, so `script.Parent` is the parent node, as in Roblox. **There is no `ScriptKind.Server`/`.Client`:** run location is the *node's* `Realm`, so a client script is a node declared `Realm = "Client"` (`realms.md` §6.2 spends `O8`'s reservation; `networking.md` `N15` records the same correction). | `docs/roblox-onboarding.md` O8, corrected by `docs/realms.md` §6.2 |
 | Attributes | A closed `AttributeValue` readonly-struct union (Bool, Int, Double, String, Vector2, Vector3, Color3, CFrame, NumberRange…) **plus a `NodeRef` wrapping the node's `Guid`**, in a lazily allocated per-node dictionary. | **One** keyvalue mechanism serves both Roblox attributes and Source entity keyvalues — they are the same feature. `NodeRef` is the addition Roblox lacks and the entity wiring is unusable without it. | `docs/roblox-onboarding.md` O3 |
 | Tags | Per-node lazy tag list, a `Scene` reverse index, `GetTagged`, `TagAdded`/`TagRemoved`, and `ObserveTag` which **replays already-tagged nodes before connecting**. | The `CollectionService` equivalent, minus the `GetTagged`-loop-beside-every-connect boilerplate. The reverse index must take an audience mask or it enumerates content the caller cannot see. | `docs/roblox-onboarding.md` O3; `docs/roblox-to-spectra.md` (Instance API) |
 | `NetId` — packed `(index, generation)` `uint` | A **second, session-scoped** identity for gameplay replication. 20 index bits, generation above. | 16-byte Guids in every gameplay packet cost 64 KB/s per client in identifiers alone at 200 objects / 20 Hz. Authored nodes derive their index from the `.scmap` pre-order position, so both sides agree with zero spawn traffic. | `docs/networking.md` §3.3 |
@@ -459,7 +467,9 @@ One consequence already written down: instantiating a project template must **re
 | `EntityWorld` / `Entity` / `EntityCatalog` | **Yes** | `Entities/EntityWorld.cs`, `Entities/Entity.cs`, `Entities/EntityCatalog.cs` | The entity runtime: builds live entities from the authored data while a level plays, and never writes back |
 | Node flags `CanCollide`, `CanQuery`, `CanTouch` | **Yes** | `Scene/SceneNode.cs`; bits in `Scene/PhysicsFlags.cs` | Whether the node collides, is seen by queries and raises touch events. Not payloads. Saved in `.smap` as `collide`, `query`, `touch` |
 | Node flag `IsRendered` | **Yes** | `Scene/SceneNode.cs` | Whether the node's own mesh or part brush is drawn. Not a payload. Saved in `.smap` as `render` |
-| `Script` payload | **Yes** | `Scene/SceneNode.cs`; type in `Scene/Script.cs` | A node that names a `.luau` file by its content path, with `IsEnabled` and `IsModule`. A script is a node, so `script.Parent` is the parent node. Nothing runs it yet |
+| `Script` payload | **Yes** | `Scene/SceneNode.cs`; type in `Scene/Script.cs` | A node that names a `.luau` file by its content path, with `IsEnabled` and `IsModule`. A script is a node, so `script.Parent` is the parent node |
+| `IScriptRuntime` / `ScriptHosting` / `LuauScriptRuntime` | **Yes** | `Scripting/`; the Luau one in `SpectraEngine.Scripting.Luau/Runtime/` | What runs a level's scripts while it plays: one runtime for each play session, called at fixed points of the tick |
+| `NodeClassName` | **Yes** | `Scene/NodeClassName.cs` | The class name a node shows to a script: its entity class, or its kind in Roblox's words |
 | `Scene.ScriptNodes` / `SceneNodeKind.Script` | **Yes** | `Scene/Scene.cs`, `Scene/SceneNodeKind.cs` | The script nodes in attachment order, and the kind of a node whose only payload is a script |
 | Declared realm and state on a node | **Yes** | `Scene/SceneNode.cs`; enums in `Scene/NodeRealm.cs`, `Scene/NodeState.cs` | The node's own declaration, saved in `.smap` as `realm` and `state`. Not payloads. Nothing resolves them yet |
 | `SetNodeFlagsCommand`, `SetEntityCommand`, `SetEntityKeyvalueCommand`, `SetEntityConnectionsCommand`, `SetLightCommand`, `SetScriptCommand` | **Yes** | `Editing/Commands/` | Undoable edits of the flags, the entity payload, the light and the script |
@@ -479,7 +489,6 @@ One consequence already written down: instantiating a project template must **re
 | Inherited `NodeRealm` (audience) | **No** | `docs/realms.md` §2.2 | "Who holds this node", taken from the nodes above. The declaration is built, the inheriting is not |
 | Inherited `NodeState` (liveness) | **No** | `docs/realms.md` §2.2 | "Is this node live", taken from the nodes above. The declaration is built, the inheriting is not |
 | `RealmSet` / `EffectiveRealm` / `IsLive` | **No** | `docs/realms.md` §2.3–2.4 | Set-valued resolution; the empty set is `Inert` |
-| A script runtime | **No** | `docs/roblox-onboarding.md` O8 | What runs a `Script` payload while a level plays |
 | Attributes (`AttributeValue`, `NodeRef`) | **No** | `docs/roblox-onboarding.md` O3 | One typed keyvalue bag for both Roblox attributes and entity keyvalues |
 | Tags + reverse index + `ObserveTag` | **No** | `docs/roblox-onboarding.md` O3 | `CollectionService` equivalent with the boilerplate removed |
 | `NetId` | **No** | `docs/networking.md` §3.3 | Session-scoped 4-byte gameplay identity, `Shared` nodes only |
