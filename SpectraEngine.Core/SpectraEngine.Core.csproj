@@ -39,6 +39,10 @@
              Link="Assets\Captions\%(RecursiveDir)%(Filename)%(Extension)"
              TargetPath="Assets\Captions\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\Assets\Scripts\**\*.luau"
+             Link="Assets\Scripts\%(RecursiveDir)%(Filename)%(Extension)"
+             TargetPath="Assets\Scripts\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!--

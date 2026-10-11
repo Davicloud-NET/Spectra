@@ -32,6 +32,7 @@ Assets/**/*.py text eol=lf
 Assets/**/*.md text eol=lf
 Assets/**/*.txt text eol=lf
 Assets/**/*.vtt text eol=lf
+Assets/**/*.luau text eol=lf
 *.spectrashade text eol=lf
 Assets/**/*.png binary
 Assets/**/*.wav binary

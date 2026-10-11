@@ -844,6 +844,9 @@ public sealed class SceneManager
         PlayerSpawnYaw = DemoPlayArea.SpawnYaw;
         PlayerFallOutHeight = DemoPlayArea.FallOutHeight;
 
+        // The level's one script, on a part in the start room.
+        DemoSpinner.Build(scene, pillarMaterial);
+
         // One part brush, clear of everything else so it cannot z-fight.
         var floatingPart = scene.Root.CreateChild("FloatingPart");
         floatingPart.LocalPosition = new Vector3(0f, 2.6f, -3f);
