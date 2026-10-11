@@ -95,6 +95,27 @@ public sealed class EntityWorldMotionTests
         world.MovedNodeCount.ShouldBe(0);
     }
 
+    [Fact]
+    public void A_node_moved_back_to_where_it_was_keeps_the_sign_of_an_authored_zero()
+    {
+        var scene = new Scene("Motion");
+        SceneNode part = EntityMotion.BrushNode(scene.Root, "part", BrushKind.Part, new Vector3(-0f, 1f, 2f));
+        byte[] authored = EntityMotion.Bits(part.LocalTransform);
+        var world = new EntityWorld(scene, new CapturingLogger(), EntityMotion.Catalog([]));
+        world.Activate();
+
+        // Away, and back to the same place as a number: 0 where -0 was.
+        var away = new Transform { Position = new Vector3(5f, 1f, 2f) };
+        var back = new Transform { Position = new Vector3(0f, 1f, 2f) };
+        world.SetLocalTransform(part, in away).ShouldBeTrue();
+        world.SetLocalTransform(part, in back).ShouldBeTrue();
+        EntityMotion.Bits(part.LocalTransform).ShouldNotBe(authored);
+
+        world.Deactivate();
+
+        EntityMotion.Bits(part.LocalTransform).ShouldBe(authored);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(7)]

@@ -367,6 +367,18 @@ public class SceneNode
         }
     }
 
+    // Puts a transform back bit for bit, for the play journal. The setter
+    // takes one that differs only in the sign of a zero for equal and keeps
+    // the one it has, and the level would then save to other bytes.
+    internal void RestoreLocalTransform(in Transform value)
+    {
+        if (_localTransform.HasBitsOf(in value))
+            return;
+
+        _localTransform = value;
+        OnLocalTransformChanged();
+    }
+
     public Vector3 LocalPosition
     {
         get => _localTransform.Position;

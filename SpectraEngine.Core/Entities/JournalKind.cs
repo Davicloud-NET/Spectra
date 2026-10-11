@@ -8,7 +8,7 @@ internal static class JournalKind
 {
     public static readonly JournalKind<Transform> LocalTransform = new(
         static node => node.LocalTransform,
-        static (node, first) => node.LocalTransform = first);
+        static (node, first) => node.RestoreLocalTransform(in first));
 
     public static readonly JournalKind<string> Name = new(
         static node => node.Name,
