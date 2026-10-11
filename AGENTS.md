@@ -150,7 +150,8 @@ Icons
 - An entity class names its icon in `[SpectraEntity(Icon = "door")]`. The name travels in the `.sentdef` and becomes the file `IconEntity` plus the name in Pascal case. `WorldIcons` in `SpectraEngine.Editing` is the one place that rule is written.
 - The 3D view and the shell draw the same file from `SpectraEngine.Editing/Assets/Icons`. Never copy one into the editor's folder and never draw an entity or a light in code.
 - `SpectraEngine.Editor/Assets/Icons/tabler.py` is the only way a Tabler glyph gets into either folder. Its tables say which Tabler icon each file is. It fetches from the network when it runs.
-- In the shell only `Shell/EditorIcons.cs` names the icon or tint of an entity, a light or a file. Every surface asks it.
+- In the shell only `Shell/EditorIcons.cs` names the icon of an entity, a light or a file, and every surface asks it. A large ribbon button asks it for the same file scaled up, so there is no `IconLg` copy of one.
+- `EditorIcons` names their tints too. The `kind-entity` and `kind-light` style classes in `Theme/Controls.axaml` repeat two of them, so a glyph set in markup can still grey out when its button is disabled. A test holds those two to the registry.
 
 Sound
 
@@ -230,6 +231,7 @@ Tests and tools
 
 - Some tests read the source tree as text (COM ownership, tool content, brush opacity, the ribbon roster). They should not depend on line endings.
 - The cook's determinism tests run `scook` in separate processes on purpose: the string hash seed is per process.
+- The task in `Icons.targets` is a code fragment, and one of those succeeds whatever it logged. It sets `Success` itself. Without that a refused icon file is an error line in a build that goes on. `IconBuildTests` runs the task through `dotnet msbuild`.
 - The tests that render through the real OpenAL (`-- -trait "Suite=AudioLoopback"`) skip unless `SPECTRA_AUDIO_LOOPBACK=1` is set. A green scene suite says nothing about `OpenAlBackend` or the low-pass filter.
 - An agent cannot drive the running editor. `SpectraEngine.Editor.Render.Tests` renders controls and writes PNGs under `artifacts/`. Colour, feel and gestures still need a person, and say so when you hand over.
 - After any agent run with write access, check `git status` before staging. Probes get left behind.

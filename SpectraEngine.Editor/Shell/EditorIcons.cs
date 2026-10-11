@@ -15,7 +15,9 @@ namespace SpectraEngine.Editor.Shell;
 /// one drawing wherever it shows.
 /// </summary>
 // The only place in the shell that names the icon of an entity, a light or a
-// file: a test reads the sources and fails on such a key anywhere else. Which
+// file: a test reads the sources and fails on such a key anywhere else. The
+// same goes for an entity's or a light's tint, but for the theme's kind-entity
+// and kind-light style classes, which a test holds to the tints here. Which
 // file a class or a light gets is SpectraEngine.Editing's rule, and its 3D
 // view follows the same one.
 public static class EditorIcons
@@ -43,6 +45,12 @@ public static class EditorIcons
 
     /// <summary>A light of no particular kind, as a menu names the kind.</summary>
     public static IconLook PlainLight { get; } = ForLight(LightKind.Point);
+
+    /// <summary>
+    /// Whoever set a wire off, on a Logic card: an entity nobody can name
+    /// ahead of time, so it is the plain entity said quietly.
+    /// </summary>
+    public static IconLook Activator { get; } = PlainEntity with { Tint = MutedTint };
 
     /// <summary>For markup: <see cref="PlainEntity"/>'s glyph.</summary>
     public static Geometry? PlainEntityGlyph => Glyph(PlainEntity);

@@ -189,6 +189,14 @@ public sealed class EditorIconsTests
     }
 
     [Fact]
+    public void The_activator_is_the_plain_entity_in_a_quieter_tint()
+    {
+        EditorIcons.Activator.Icon.ShouldBe(EditorIcons.PlainEntity.Icon);
+        EditorIcons.Activator.Tint.ShouldNotBe(EditorIcons.PlainEntity.Tint);
+        ShouldExist(EditorIcons.Activator, "the activator");
+    }
+
+    [Fact]
     public void A_model_file_looks_as_the_mesh_node_it_becomes_does()
     {
         EditorIcons.ForFile(ContentKind.Model).ShouldBe(EditorIcons.ForNode(SceneNodeKind.Mesh, null, null, null));

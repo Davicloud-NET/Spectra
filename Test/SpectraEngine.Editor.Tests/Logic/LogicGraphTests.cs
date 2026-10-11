@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Inspection;
+using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Shell.Logic;
 using System.Linq;
 using static SpectraEngine.Editor.Tests.Logic.LogicFixture;
@@ -139,6 +140,7 @@ public sealed class LogicGraphTests
         stub.Stub.ShouldBe(LogicStubKind.Activator);
         stub.Name.ShouldBe("The activator");
         stub.DisplayName.ShouldBe("Decided while playing");
+        stub.Look.ShouldBe(EditorIcons.Activator);
 
         graph.Arriving(stub).Count.ShouldBe(2);
         graph.Edges.ShouldAllBe(edge => edge.Verdict == LogicVerdict.Fine);

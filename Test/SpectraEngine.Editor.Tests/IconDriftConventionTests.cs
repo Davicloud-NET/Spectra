@@ -21,47 +21,60 @@ public sealed class IconDriftConventionTests
     // Icons.targets writes this one from the icon files.
     private const string Generated = "Icons.axaml";
 
+    // The theme defines the tints, and its styles give two of them to the
+    // glyphs that markup sets.
+    private const string Tokens = "Tokens.axaml";
+    private const string Styles = "Controls.axaml";
+
     // Lg too: a large copy named in markup is a second drawing of the thing.
     private static readonly Regex GuardedKey = new(@"\bIcon(?:Lg)?(?:Entity|Light|File)[A-Za-z0-9]*\b");
+
+    private static readonly Regex GuardedTint = new(@"\bSpectra(?:KindEntity|KindLight|Group[A-Z][A-Za-z0-9]*)\b");
 
     [Fact]
     public void Outside_the_registry_no_shell_source_names_an_entity_light_or_file_icon()
     {
-        var offenders = new List<string>();
-        int examined = 0;
-
-        IEnumerable<string> sources = Directory
-            .EnumerateFiles(Path.Combine(IconFiles.SourceRoot(), "SpectraEngine.Editor"), "*.*", SearchOption.AllDirectories)
-            .Where(file => file.EndsWith(".axaml", StringComparison.Ordinal) || file.EndsWith(".cs", StringComparison.Ordinal))
-            .Where(file => !IsBuildOutput(file));
-
-        foreach (string file in sources)
-        {
-            string name = Path.GetFileName(file);
-            if (name is Registry or Generated)
-                continue;
-
-            examined++;
-            string[] lines = File.ReadAllLines(file);
-            for (int i = 0; i < lines.Length; i++)
-            {
-                foreach (Match match in GuardedKey.Matches(lines[i]))
-                    offenders.Add($"{name}({i + 1}): {match.Value}");
-            }
-        }
-
-        examined.ShouldBeGreaterThan(100, "the shell's sources should have been read, not skipped");
-        offenders.ShouldBeEmpty(
+        NamedOutside(GuardedKey, Registry, Generated).ShouldBeEmpty(
             "ask EditorIcons what icon a thing has. A key spelled anywhere else is a second answer to the same question");
     }
 
     [Fact]
-    public void The_registry_does_name_them_so_the_rule_above_is_not_empty()
+    public void Outside_the_registry_and_the_theme_no_shell_source_names_the_tint_of_an_entity_or_a_light()
+    {
+        NamedOutside(GuardedTint, Registry, Tokens, Styles).ShouldBeEmpty(
+            "ask EditorIcons what tint a thing has. In markup, wear the kind-entity or kind-light class");
+    }
+
+    [Theory]
+    [InlineData("kind-entity")]
+    [InlineData("kind-light")]
+    public void A_glyph_tinted_by_a_style_class_gets_the_tint_the_registry_gives(string styleClass)
+    {
+        // Markup takes such a glyph's drawing from the registry and its tint
+        // from this class, so that a disabled button can still grey it.
+        string styles = File.ReadAllText(Path.Combine(IconFiles.SourceRoot(), "SpectraEngine.Editor", "Theme", Styles));
+        string wanted = styleClass == "kind-entity" ? EditorIcons.PlainEntity.Tint : EditorIcons.PlainLight.Tint;
+
+        string[] tints = Regex
+            .Matches(
+                styles,
+                @"<Style Selector=""Path\.icon(?:-lg)?\." + styleClass + @""">\s*" +
+                @"<Setter Property=""Stroke"" Value=""\{StaticResource (?<tint>\w+)\}""")
+            .Select(match => match.Groups["tint"].Value)
+            .ToArray();
+
+        tints.Length.ShouldBe(2, "one rule for the small glyph and one for the large");
+        tints.ShouldAllBe(tint => tint == wanted);
+    }
+
+    [Fact]
+    public void The_registry_does_name_them_so_the_rules_above_are_not_empty()
     {
         string registry = File.ReadAllText(
             Path.Combine(IconFiles.SourceRoot(), "SpectraEngine.Editor", "Shell", Registry));
 
         GuardedKey.Matches(registry).ShouldNotBeEmpty();
+        GuardedTint.Matches(registry).ShouldNotBeEmpty();
     }
 
     [Fact]
@@ -223,6 +236,37 @@ public sealed class IconDriftConventionTests
     {
         foreach (EntitySchema schema in BuiltinClasses.Catalog.Schemas)
             EntityGroupTints.Has(schema.Group).ShouldBeTrue($"{schema.ClassName} is filed under '{schema.Group}'");
+    }
+
+    // Every place a shell source spells what the pattern guards, but for the
+    // files that may.
+    private static List<string> NamedOutside(Regex guarded, params string[] allowed)
+    {
+        var found = new List<string>();
+        int examined = 0;
+
+        IEnumerable<string> sources = Directory
+            .EnumerateFiles(Path.Combine(IconFiles.SourceRoot(), "SpectraEngine.Editor"), "*.*", SearchOption.AllDirectories)
+            .Where(file => file.EndsWith(".axaml", StringComparison.Ordinal) || file.EndsWith(".cs", StringComparison.Ordinal))
+            .Where(file => !IsBuildOutput(file));
+
+        foreach (string file in sources)
+        {
+            string name = Path.GetFileName(file);
+            if (allowed.Contains(name))
+                continue;
+
+            examined++;
+            string[] lines = File.ReadAllLines(file);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                foreach (Match match in guarded.Matches(lines[i]))
+                    found.Add($"{name}({i + 1}): {match.Value}");
+            }
+        }
+
+        examined.ShouldBeGreaterThan(100, "the shell's sources should have been read, not skipped");
+        return found;
     }
 
     private static string Hex(uint rgb) => "#" + rgb.ToString("X6", CultureInfo.InvariantCulture);

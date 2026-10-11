@@ -41,10 +41,9 @@ public sealed class LogicCard
         DisplayName = LogicText.StubLine(stub);
         Group = "";
 
-        // The activator is whoever set a wire off: an entity, said quietly. A
-        // name nothing answers to is a fault.
+        // A name nothing answers to is a fault.
         Look = stub == LogicStubKind.Activator
-            ? EditorIcons.PlainEntity with { Tint = "SpectraTextMuted" }
+            ? EditorIcons.Activator
             : new IconLook("IconWarning", "SpectraTextDanger");
         Inputs = inputs;
         Outputs = [];
