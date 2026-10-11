@@ -13,17 +13,29 @@ public static class ScriptFileMaker
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
     /// <summary>
-    /// Makes <c>Scripts/Name.luau</c> under <paramref name="contentRoot"/> for a
-    /// script that goes under a node called <paramref name="parentName"/>, with
-    /// a number added when the name is taken. False when the file could not be
-    /// written, and <paramref name="failure"/> then says why.
+    /// Makes <c>Scripts/Name.luau</c> under <paramref name="contentRoot"/>, named
+    /// after the node the script goes under, with a number when that is taken.
     /// </summary>
     /// <param name="contentPath">The new file, as the path a level stores.</param>
+    /// <param name="failure">Why no file was made, when the answer is false.</param>
     public static bool TryMake(
         string contentRoot, string? parentName, string text, out string contentPath, out string failure)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentRoot);
         ArgumentNullException.ThrowIfNull(text);
+
+        return TryMake(
+            contentRoot, parentName, stream => stream.Write(Utf8.GetBytes(text)), out contentPath, out failure);
+    }
+
+    /// <summary>
+    /// Makes the file as <see cref="TryMake(string, string?, string, out string, out string)"/>
+    /// does, and hands it to <paramref name="fill"/> to write.
+    /// </summary>
+    public static bool TryMake(
+        string contentRoot, string? parentName, Action<Stream> fill, out string contentPath, out string failure)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentRoot);
+        ArgumentNullException.ThrowIfNull(fill);
 
         contentPath = string.Empty;
         failure = string.Empty;
@@ -41,7 +53,7 @@ public static class ScriptFileMaker
             while (ScriptFileName.FirstFree(stem, taken.Contains) is { } name)
             {
                 shown = Shown(name);
-                if (TryWriteNew(Path.Combine(folder, name), text))
+                if (TryWriteNew(Path.Combine(folder, name), fill))
                 {
                     contentPath = ScriptFileName.Folder + "/" + name;
                     return true;
@@ -74,17 +86,45 @@ public static class ScriptFileMaker
 
     // False when the file is there after all. CreateNew is what keeps this
     // from ever writing over somebody's script.
-    private static bool TryWriteNew(string fullPath, string text)
+    private static bool TryWriteNew(string fullPath, Action<Stream> fill)
     {
+        FileStream stream;
         try
         {
-            using var stream = new FileStream(fullPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-            stream.Write(Utf8.GetBytes(text));
-            return true;
+            stream = new FileStream(fullPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         }
         catch (IOException) when (File.Exists(fullPath))
         {
             return false;
+        }
+
+        bool isFilled = false;
+        try
+        {
+            using (stream)
+                fill(stream);
+
+            isFilled = true;
+            return true;
+        }
+        finally
+        {
+            // Made and not filled: a full disk, a share that dropped. Left
+            // there it would take the name, empty.
+            if (!isFilled)
+                RemoveUnfilled(fullPath);
+        }
+    }
+
+    private static void RemoveUnfilled(string fullPath)
+    {
+        try
+        {
+            File.Delete(fullPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The write's own failure is the one to report.
         }
     }
 

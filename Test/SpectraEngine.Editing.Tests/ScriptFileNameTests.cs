@@ -196,6 +196,28 @@ public sealed class ScriptFileNameTests : IDisposable
     }
 
     [Fact]
+    public void A_write_that_fails_once_the_file_is_made_is_reported_and_leaves_no_file()
+    {
+        // A full disk or a share that dropped. The name was not taken, so
+        // the next number is not the answer.
+        int tries = 0;
+
+        ScriptFileMaker.TryMake(
+            _root, "Part",
+            _ =>
+            {
+                tries++;
+                throw new IOException("There is not enough space on the disk.");
+            },
+            out string path, out string failure).ShouldBeFalse();
+
+        tries.ShouldBe(1);
+        path.ShouldBeEmpty();
+        failure.ShouldBe("Assets/Scripts/Part.luau could not be written. There is not enough space on the disk.");
+        Directory.GetFiles(ScriptsFolder).ShouldBeEmpty();
+    }
+
+    [Fact]
     public void A_scripts_folder_that_cannot_be_made_is_a_sentence_and_not_an_exception()
     {
         // A file where the folder should be: nothing can be written under it.
