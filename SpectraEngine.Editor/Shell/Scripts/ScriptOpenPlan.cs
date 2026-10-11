@@ -95,7 +95,7 @@ public static class ScriptOpenPlan
         if (line.Contains('%'))
             return null;
 
-        // It starts whatever the batch file does, so its exit code is asked.
+        // It starts even when the batch file is broken, so its exit code is asked.
         return new ProgramStart(
             "cmd.exe", [], VerbatimArguments: "/d /s /c \"" + line + "\"", NoWindow: true, ChecksExitCode: true);
     }
