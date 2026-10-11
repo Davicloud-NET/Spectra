@@ -7,8 +7,6 @@ namespace SpectraEngine.Editor.Shell;
 /// <summary>The output log's view. Follows the tail only while already scrolled to it.</summary>
 public partial class OutputPanel : UserControl
 {
-    private const double TailSlack = 4.0;
-
     public OutputPanel()
     {
         InitializeComponent();
@@ -30,13 +28,7 @@ public partial class OutputPanel : UserControl
 
     private void OnAppended(OutputEntry entry)
     {
-        if (Scroller is not { } scroller)
-            return;
-
-        // Measure before the new row is laid out. After it the extent has
-        // grown and this is never at the tail.
-        bool atTail = scroller.Offset.Y >= scroller.Extent.Height - scroller.Viewport.Height - TailSlack;
-        if (!atTail)
+        if (Scroller is not { } scroller || !OutputTail.IsShown(scroller))
             return;
 
         // Post: the new row is not measured yet, ScrollToEnd now lands short.

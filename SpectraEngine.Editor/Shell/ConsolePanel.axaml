@@ -10,7 +10,7 @@
 
   <Grid RowDefinitions="*,Auto">
     <ScrollViewer Grid.Row="0" Name="Scroller" HorizontalScrollBarVisibility="Disabled">
-      <shell:OutputRows Margin="0,6,0,4" />
+      <shell:OutputRows Name="Lines" Margin="0,6,0,4" />
     </ScrollViewer>
 
     <Grid Grid.Row="1" ColumnDefinitions="Auto,*" Margin="8,4,8,8" ColumnSpacing="6">

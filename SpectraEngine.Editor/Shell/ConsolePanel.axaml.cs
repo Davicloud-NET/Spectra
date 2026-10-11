@@ -1,5 +1,7 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using System;
 using System.Collections.Generic;
@@ -20,13 +22,29 @@ public partial class ConsolePanel : UserControl
     {
         InitializeComponent();
         DataContextChanged += (_, _) => Subscribe();
+
+        // A line that opens something takes the keyboard when it is clicked.
+        // In a console the next key is typed, so the input line gets it back.
+        Lines.AddHandler(
+            PointerReleasedEvent, (_, _) => Input.Focus(), RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
     /// <summary>Raised with a line the user submitted. The window resolves it.</summary>
     public event Action<string>? CommandSubmitted;
 
-    /// <summary>Puts the caret in the input line.</summary>
-    public void FocusInput() => Input.Focus();
+    /// <summary>Puts the caret in the input line and shows the newest line.</summary>
+    public void FocusInput()
+    {
+        Input.Focus();
+        ShowNewest();
+    }
+
+    // Comes up at the newest line, also when lines came while it was away.
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        ShowNewest();
+    }
 
     private OutputLog? _log;
 
@@ -41,8 +59,17 @@ public partial class ConsolePanel : UserControl
             _log.Appended += OnAppended;
     }
 
-    // Always follows the tail, unlike the Output pane.
-    private void OnAppended(OutputEntry entry) =>
+    // Follows the newest line while it shows it, as the Output pane does, so
+    // a click on an older line keeps that line in view. What somebody typed
+    // brings the end back: the answer comes there.
+    private void OnAppended(OutputEntry entry)
+    {
+        if (entry.IsCommand || OutputTail.IsShown(Scroller))
+            ShowNewest();
+    }
+
+    // Post: a new row is not measured yet, and ScrollToEnd now lands short.
+    private void ShowNewest() =>
         Dispatcher.UIThread.Post(() => Scroller?.ScrollToEnd(), DispatcherPriority.Background);
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
