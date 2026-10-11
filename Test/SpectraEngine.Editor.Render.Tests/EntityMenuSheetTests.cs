@@ -100,8 +100,8 @@ public sealed class EntityMenuSheetTests(RibbonSession session)
 
             Headers(menu.Items).ShouldBe(
             [
-                "Rename", "Frame in viewport", "Duplicate", "Delete", "Group", "Ungroup",
-                "Convert block / part", "Make entity", "Remove entity", "Expand all", "Collapse all",
+                "Rename", "Frame in viewport", "Insert script", "Open script", "Duplicate", "Delete", "Group",
+                "Ungroup", "Convert block / part", "Make entity", "Remove entity", "Expand all", "Collapse all",
             ]);
             Make(menu).IsVisible.ShouldBeTrue();
             Headers(Make(menu).Items).ShouldBe(["Door", "Trigger (once)"]);

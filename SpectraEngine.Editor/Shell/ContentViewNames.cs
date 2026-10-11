@@ -10,6 +10,7 @@ public enum ContentFilter
     Materials,
     Models,
     Sounds,
+    Scripts,
 }
 
 /// <summary>Tiles or dense rows.</summary>

@@ -165,8 +165,21 @@ public sealed class PropertyRowModel : ObservableObject
                 if (cell.HasRejection) return cell.Rejection;
             }
 
-            return string.Empty;
+            return _pickRejection;
         }
+    }
+
+    // A row that picks a file has no cell to carry a refusal.
+    private string _pickRejection = string.Empty;
+
+    private void SetPickRejection(string text)
+    {
+        if (string.Equals(_pickRejection, text, StringComparison.Ordinal))
+            return;
+
+        _pickRejection = text;
+        Raise(nameof(Rejection));
+        Raise(nameof(HasRejection));
     }
 
     /// <summary>Whether any cell in this row is showing a refusal.</summary>
@@ -264,13 +277,20 @@ public sealed class PropertyRowModel : ObservableObject
             if (!Set(ref _assetPath, value))
                 return;
 
+            // The value moved, so what was refused before no longer stands.
+            SetPickRejection(string.Empty);
+
             Raise(nameof(AssetLabel));
             Raise(nameof(CanPreview));
+            Raise(nameof(CanOpen));
         }
     }
 
     /// <summary>Whether the row holds one sound file, which its play button can play.</summary>
     public bool CanPreview => AssetKind == AssetKind.Sound && _assetPath.Length > 0;
+
+    /// <summary>Whether the row holds one script file, which its Open button can open.</summary>
+    public bool CanOpen => AssetKind == AssetKind.Script && _assetPath.Length > 0;
 
     /// <summary>The file's stem, or "(mixed)", or what an empty row means for its kind.</summary>
     public string AssetLabel
@@ -311,7 +331,18 @@ public sealed class PropertyRowModel : ObservableObject
     {
         if (!IsAsset) return;
 
-        Apply(new PropertyEdit { Id = Id, Key = Key, Text = contentPath ?? string.Empty });
+        string path = contentPath ?? string.Empty;
+
+        // Refused here with the editor's own rule, as a typed cell is. Posted,
+        // a bad path is dropped on the render thread and nothing says why.
+        if (PropertyLimits.Refusal(Id, path) is { } whyNot)
+        {
+            SetPickRejection($"Not applied: {Name} must be {whyNot}.");
+            return;
+        }
+
+        SetPickRejection(string.Empty);
+        Apply(new PropertyEdit { Id = Id, Key = Key, Text = path });
     }
 
     /// <summary>Whether this row's label is a drag handle for its value.</summary>

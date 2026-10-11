@@ -68,6 +68,15 @@ public static class NodeInspector
         SceneNode node, List<PropertyRow> into, EntitySchemaCatalog? schemas = null,
         int pickedPlane = -1)
     {
+        DescribeOne(node, into, schemas, pickedPlane, asksForFiles: true);
+    }
+
+    // asksForFiles is off for a selection of many, so a publish never asks the
+    // disk about more than one script.
+    private static void DescribeOne(
+        SceneNode node, List<PropertyRow> into, EntitySchemaCatalog? schemas, int pickedPlane,
+        bool asksForFiles)
+    {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(into);
 
@@ -76,15 +85,8 @@ public static class NodeInspector
         into.Add(PropertyRow.OfText(NodeGroup, "Name", PropertyId.NodeName, node.Name));
         into.Add(PropertyRow.ReadOnly(NodeGroup, "Id", PropertyId.NodeId, node.Id.ToString("D")));
 
-        Transform local = node.LocalTransform;
-        into.Add(PropertyRow.OfVector(TransformGroup, "Position", PropertyId.Position, local.Position, "su"));
-        into.Add(PropertyRow.OfVector(
-            TransformGroup, "Rotation", PropertyId.Rotation,
-            EulerAngles.FromQuaternion(local.Rotation).AsDegrees, "deg"));
-        // No scale row on a brush node: placements must stay rigid or the
-        // static world stops compiling. Size is edited through the Brush section.
-        if (node.Brush is null)
-            into.Add(PropertyRow.OfVector(TransformGroup, "Scale", PropertyId.Scale, local.Scale));
+        if (HasTransformRows(node))
+            DescribeTransform(node, into);
 
         if (node.Brush is { } brush)
             DescribeBrush(node, brush, into);
@@ -112,11 +114,31 @@ public static class NodeInspector
             DescribeEntity(entity, schemas, into);
 
         if (node.Script is { } script)
-            DescribeScript(script, into);
+            DescribeScript(script, asksForFiles ? MissingScriptNote(node, script) : string.Empty, into);
 
         // Last, to match PropertyId order, which is what a merged selection uses.
         if (node.Brush is { } surfaced)
             DescribeMaterial(node, surfaced, pickedPlane, into);
+    }
+
+    /// <summary>
+    /// Whether the node shows the Position, Rotation and Scale rows. A script
+    /// with no children does not: nothing reads where it stands.
+    /// </summary>
+    public static bool HasTransformRows(SceneNode node) => SceneNodeClassifier.HasPlace(node);
+
+    private static void DescribeTransform(SceneNode node, List<PropertyRow> into)
+    {
+        Transform local = node.LocalTransform;
+        into.Add(PropertyRow.OfVector(TransformGroup, "Position", PropertyId.Position, local.Position, "su"));
+        into.Add(PropertyRow.OfVector(
+            TransformGroup, "Rotation", PropertyId.Rotation,
+            EulerAngles.FromQuaternion(local.Rotation).AsDegrees, "deg"));
+
+        // No scale row on a brush node: placements must stay rigid or the
+        // static world stops compiling. Size is edited through the Brush section.
+        if (node.Brush is null)
+            into.Add(PropertyRow.OfVector(TransformGroup, "Scale", PropertyId.Scale, local.Scale));
     }
 
     /// <summary>
@@ -150,7 +172,7 @@ public static class NodeInspector
         foreach (SceneNode node in nodes)
         {
             ArgumentNullException.ThrowIfNull(node);
-            Describe(node, scratch, schemas);
+            DescribeOne(node, scratch, schemas, pickedPlane: -1, asksForFiles: false);
 
             foreach (PropertyRow row in scratch)
             {
@@ -442,13 +464,22 @@ public static class NodeInspector
         }
     }
 
-    // The file is plain text here. Nothing checks that it exists.
-    private static void DescribeScript(Script script, List<PropertyRow> into)
+    private static void DescribeScript(Script script, string note, List<PropertyRow> into)
     {
-        into.Add(PropertyRow.OfText(ScriptGroup, "File", PropertyId.ScriptFile, script.Path));
+        into.Add(PropertyRow.OfAsset(
+            ScriptGroup, "File", PropertyId.ScriptFile, script.Path, AssetKind.Script, note));
         into.Add(PropertyRow.OfFlag(ScriptGroup, "Enabled", PropertyId.ScriptEnabled, script.IsEnabled));
         into.Add(PropertyRow.OfFlag(ScriptGroup, "Module", PropertyId.ScriptModule, script.IsModule)
             with { Help = ScriptModuleHelp });
+    }
+
+    // Asks the content sources a play session reads the file from. Nothing
+    // caches a script, so unlike a material this looks at the disk.
+    private static string MissingScriptNote(SceneNode node, Script script)
+    {
+        if (node.Owner?.Assets is not { } assets) return string.Empty;
+
+        return assets.Content.Exists(script.Path) ? string.Empty : "missing";
     }
 
     private static bool IsDeclared(EntitySchema schema, string key)

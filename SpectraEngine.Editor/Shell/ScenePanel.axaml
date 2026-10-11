@@ -21,6 +21,11 @@
       <MenuItem Header="Rename" InputGesture="F2" Click="OnMenuRename" />
       <MenuItem Header="Frame in viewport" InputGesture="F" Click="OnMenuFrame" />
       <Separator />
+      <!-- Under the selected node, as the ribbon's Script button does. -->
+      <MenuItem Header="Insert script" Click="OnMenuInsertScript" />
+      <!-- This one is the row's own: it opens the file this node names. -->
+      <MenuItem Header="Open script" Click="OnMenuOpenScript" IsVisible="{Binding HasScript}" />
+      <Separator />
       <MenuItem Header="Duplicate" InputGesture="Ctrl+D" Click="OnMenuDuplicate" />
       <MenuItem Header="Delete" InputGesture="Delete" Click="OnMenuDelete" />
       <Separator />

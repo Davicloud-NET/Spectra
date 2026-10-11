@@ -267,6 +267,7 @@ public sealed class IconSheetTests(RibbonSession session)
         File.WriteAllBytes(System.IO.Path.Combine(folder, "crate.obj"), "o crate\n"u8.ToArray());
         File.WriteAllBytes(System.IO.Path.Combine(folder, "glow.spectrashade"), "shader Glow {}\n"u8.ToArray());
         File.WriteAllBytes(System.IO.Path.Combine(folder, "hum.wav"), TempProject.Wav(frames: 300));
+        File.WriteAllBytes(System.IO.Path.Combine(folder, "spin.luau"), "print(\"spin\")\n"u8.ToArray());
         File.WriteAllBytes(System.IO.Path.Combine(folder, "notes.txt"), "notes\n"u8.ToArray());
         return root;
     }

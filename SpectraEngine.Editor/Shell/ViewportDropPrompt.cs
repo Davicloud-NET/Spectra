@@ -77,6 +77,14 @@ public readonly record struct ViewportDropPrompt(
                 "as a sound that plays this file", icon);
         }
 
+        // A script has no place. It goes under what the pointer is over.
+        if (payload.Kind == ContentKind.Script)
+        {
+            return new ViewportDropPrompt(
+                true, true, "Drop to add", payload.ContentPath, string.Empty,
+                "as a script under what it lands on, or a level script over nothing", icon);
+        }
+
         return new ViewportDropPrompt(true, true, "Drop to place", payload.ContentPath, string.Empty, IconKey: icon);
     }
 }

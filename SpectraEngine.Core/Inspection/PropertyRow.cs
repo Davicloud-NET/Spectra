@@ -108,6 +108,9 @@ public enum AssetKind
 
     /// <summary>A sound.</summary>
     Sound,
+
+    /// <summary>A <c>.luau</c> script.</summary>
+    Script,
 }
 
 /// <summary>How a row is edited. The panel renders one editor per kind.</summary>

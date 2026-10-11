@@ -274,7 +274,7 @@ public sealed class SoundContentTests : IDisposable
         var shader = new ContentDragPayload(ContentKind.Shader, "Shaders/lit.spectrashade", "lit.spectrashade");
 
         AssetDropPolicy.Refuse(shader, hasSession: true, viewportAcceptsDrops: true).ShouldBe(
-            "lit.spectrashade cannot be dropped into the scene; only models, materials and sounds can.");
+            "lit.spectrashade cannot be dropped into the scene; only models, materials, sounds and scripts can.");
     }
 
     [Theory]

@@ -189,11 +189,15 @@ public partial class MainWindow : Window
         _sceneView.ReparentRequested += (ids, parentId, index) => _session?.Reparent(ids, parentId, index);
         _sceneView.MakeEntityRequested += MakeEntity;
         _sceneView.RemoveEntityRequested += RemoveEntity;
+        _sceneView.InsertScriptRequested += InsertScript;
+        _sceneView.OpenScriptRequested += OpenScriptOf;
+        _sceneView.AssetDroppedOnNode += OnAssetDroppedOnNode;
         SetToolContent(SceneTool, _sceneView);
 
         _propertiesView = new PropertiesPanel();
         _propertiesView.EscapePressed += () => _viewport?.FocusEngine();
         _propertiesView.SelectRequested += id => _session?.Select(id);
+        _propertiesView.ScriptOpenRequested += path => OpenScript(path);
         SetToolContent(PropertiesTool, _propertiesView);
 
         _mapsView = new MapsPanel();
@@ -221,6 +225,7 @@ public partial class MainWindow : Window
 
         _contentView = new ContentPanel();
         _contentView.EntryActivated += OnContentActivated;
+        _contentView.InsertRequested += OnContentInsertRequested;
         _contentView.RevealRequested += entry => RevealInExplorer(entry.FullPath);
         SetToolContent(ContentTool, _contentView);
 
@@ -1492,9 +1497,17 @@ public partial class MainWindow : Window
     }
 
     // Double-click in the content browser: a model or a sound is placed at the
-    // view centre, a material paints the selection, anything else is selected.
+    // view centre, a material paints the selection, a script opens to be
+    // written in, anything else is selected.
     private void OnContentActivated(ContentEntry entry)
     {
+        if (entry.IsScript)
+        {
+            _shell.Content?.Select(entry);
+            _ = OpenScriptFileAsync(entry.FullPath);
+            return;
+        }
+
         if (!AssetDropPolicy.CanPlace(entry.Kind))
         {
             _shell.Content?.Select(entry);
@@ -1526,9 +1539,16 @@ public partial class MainWindow : Window
         PlaceAsset(session, payload, null);
     }
 
-    // A model becomes a mesh node, a sound a sound entity that plays it.
+    // A model becomes a mesh node, a sound a sound entity that plays it, and
+    // a script a script node under what the point is over.
     private void PlaceAsset(EditorSession session, ContentDragPayload payload, System.Numerics.Vector2? point)
     {
+        if (payload.Kind == ContentKind.Script)
+        {
+            AttachScript(session, payload.ContentPath, null, point);
+            return;
+        }
+
         if (payload.Kind == ContentKind.Sound)
         {
             session.InsertSound(
@@ -2137,6 +2157,10 @@ public partial class MainWindow : Window
                 RemoveEntity();
                 break;
 
+            case ShellVerbKind.InsertScript:
+                InsertScript();
+                break;
+
             case ShellVerbKind.Document:
                 RunDocumentVerb(verb.Document, args);
                 break;
@@ -2440,6 +2464,10 @@ public partial class MainWindow : Window
 
         var menu = new ContextMenu();
         menu.Items.Add(insert);
+
+        // Not under "Insert here": a script has no place. It goes under the
+        // node the right-click selected.
+        menu.Items.Add(Item("Insert script", null, InsertScript));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Duplicate", "Ctrl+D", () => _session?.Post(EditorHostCommand.Duplicate)));
         menu.Items.Add(Item("Delete", "Delete", () => _session?.Post(EditorHostCommand.Delete)));

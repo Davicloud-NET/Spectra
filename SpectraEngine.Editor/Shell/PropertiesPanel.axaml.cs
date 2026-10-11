@@ -34,6 +34,9 @@ public partial class PropertiesPanel : UserControl
     /// <summary>Raised with a node's id when a row asks to go to that entity.</summary>
     public event Action<Guid>? SelectRequested;
 
+    /// <summary>Raised with a script's content path when its row asks for it to be opened.</summary>
+    public event Action<string>? ScriptOpenRequested;
+
     private PropertyRowModel? _scrubRow;
     private PropertyFieldModel? _scrubField;
     private PropertyPanelModel? _scrubPanel;
@@ -426,6 +429,12 @@ public partial class PropertiesPanel : UserControl
     }
 
     private static string? RootFor(AssetCatalog catalog) => catalog.Root;
+
+    private void OnOpenScriptPressed(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control control && FindRow(control) is { CanOpen: true } row)
+            ScriptOpenRequested?.Invoke(row.AssetPath);
+    }
 
     private void OnAssetPicked(string contentPath)
     {

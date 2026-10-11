@@ -92,6 +92,8 @@ public static class CommandTable
         new("Insert surface light panel", ShellVerb.Of(InsertKind.SurfaceLight), CommandNeeds.NotPlaying),
         new("Insert empty group", ShellVerb.Of(InsertKind.Group), CommandNeeds.NotPlaying),
         new("Insert entity", ShellVerb.InsertEntity(), CommandNeeds.NotPlaying),
+        new("Insert script", ShellVerb.InsertScript(), CommandNeeds.NotPlaying | CommandNeeds.Project, "",
+            ["luau", "code", "new script"]),
 
         new("Move tool", ShellVerb.Of(GizmoCommand.UseTranslate), CommandNeeds.None, "W"),
         new("Rotate tool", ShellVerb.Of(GizmoCommand.UseRotate), CommandNeeds.None, "E"),

@@ -134,6 +134,9 @@ public static class RibbonLayout
                 new RibbonItem("insert.panel", "Light panel", ShellVerb.Of(InsertKind.SurfaceLight)),
                 new RibbonItem("insert.group", "Group", ShellVerb.Of(InsertKind.Group)),
 
+                // Goes under the selected node. A script has no place to aim at.
+                new RibbonItem("insert.script", "Script", ShellVerb.InsertScript()),
+
                 // Main half places the last class used; the caret opens the
                 // list and has no Tag. The flyout's classes come from the
                 // project's .sentdef at click time, so they are not roster items.

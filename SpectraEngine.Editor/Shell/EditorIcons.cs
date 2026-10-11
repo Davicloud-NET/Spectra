@@ -40,6 +40,7 @@ public static class EditorIcons
     // A mesh node, and the model file it is made from.
     private static readonly IconLook Mesh = new("IconMesh", "SpectraKindMesh");
 
+    // A script node, and the file it names.
     private static readonly IconLook Script = new("IconScript", "SpectraKindScript");
 
     /// <summary>An entity of no particular class, as a menu names the kind.</summary>
@@ -68,6 +69,9 @@ public static class EditorIcons
 
     /// <summary>For markup: the glyph of the light a surface light is, a panel.</summary>
     public static Geometry? SurfaceLightGlyph => Glyph(ForLight(LightKind.Rect));
+
+    /// <summary>For markup: a script's glyph, the one its node and its file wear.</summary>
+    public static Geometry? ScriptGlyph => Glyph(Script);
 
     /// <summary>
     /// The look of a node in the scene. An entity shows its class, whatever
@@ -129,6 +133,7 @@ public static class EditorIcons
         ContentKind.Model => Mesh,
         ContentKind.Shader => new IconLook("IconFileShader", LightTint),
         ContentKind.Sound => SoundFile,
+        ContentKind.Script => Script,
         _ => new IconLook("IconEmpty", MutedTint),
     };
 

@@ -38,6 +38,9 @@ public enum ContentKind
     /// <summary>A <c>.wav</c>.</summary>
     Sound,
 
+    /// <summary>A <c>.luau</c>.</summary>
+    Script,
+
     /// <summary>Anything else. Listed rather than hidden.</summary>
     Other,
 }
@@ -100,11 +103,15 @@ public sealed class ContentEntry : ObservableObject
         ContentKind.Model => "model",
         ContentKind.Shader => "shader",
         ContentKind.Sound => "sound",
+        ContentKind.Script => "script",
         _ => "file",
     };
 
     /// <summary>Whether this is a sound, which a row can play.</summary>
     public bool IsSound => Kind == ContentKind.Sound;
+
+    /// <summary>Whether this is a script, which a double click opens to be edited.</summary>
+    public bool IsScript => Kind == ContentKind.Script;
 
     public bool IsFolder => Kind == ContentKind.Folder;
 
@@ -193,8 +200,25 @@ public sealed class ContentBrowserModel : ObservableObject
             Raise(nameof(IsFilterMaterials));
             Raise(nameof(IsFilterModels));
             Raise(nameof(IsFilterSounds));
+            Raise(nameof(IsFilterScripts));
+            Raise(nameof(FilterLabel));
             Relist();
         }
+    }
+
+    /// <summary>The word for the kinds being listed, for the one chip a narrow panel has.</summary>
+    public string FilterLabel => ContentFilterNames.WordFor(_filter);
+
+    private bool _isNarrow;
+
+    /// <summary>
+    /// True when the panel is too narrow for a chip per kind beside a search
+    /// box that can be typed in. One chip that opens a list stands in for them.
+    /// </summary>
+    public bool IsNarrow
+    {
+        get => _isNarrow;
+        set => Set(ref _isNarrow, value);
     }
 
     public bool IsFilterAll => _filter == ContentFilter.All;
@@ -202,6 +226,7 @@ public sealed class ContentBrowserModel : ObservableObject
     public bool IsFilterMaterials => _filter == ContentFilter.Materials;
     public bool IsFilterModels => _filter == ContentFilter.Models;
     public bool IsFilterSounds => _filter == ContentFilter.Sounds;
+    public bool IsFilterScripts => _filter == ContentFilter.Scripts;
 
     /// <summary>Tiles or dense rows. Only the list virtualises.</summary>
     public ContentViewMode ViewMode
@@ -453,6 +478,7 @@ public sealed class ContentBrowserModel : ObservableObject
             ContentKind.Texture => await Task.Run(() => DescribeTexture(entry.FullPath)).ConfigureAwait(true),
             ContentKind.Material => await Task.Run(() => DescribeMaterial(entry.FullPath)).ConfigureAwait(true),
             ContentKind.Sound => await Task.Run(() => SoundDetails.Describe(entry.FullPath)).ConfigureAwait(true),
+            ContentKind.Script => await Task.Run(() => ScriptDetails.Describe(entry.FullPath)).ConfigureAwait(true),
             _ => string.Empty,
         };
 
@@ -593,6 +619,7 @@ public sealed class ContentBrowserModel : ObservableObject
         ContentFilter.Materials => kind == ContentKind.Material,
         ContentFilter.Models => kind == ContentKind.Model,
         ContentFilter.Sounds => kind == ContentKind.Sound,
+        ContentFilter.Scripts => kind == ContentKind.Script,
         _ => true,
     };
 

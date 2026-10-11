@@ -77,7 +77,14 @@ public sealed class SceneTreeNode(Guid id, string name) : ObservableObject
     public LightKind? LightKind { get; internal set; }
 
     /// <summary>Whether the node carries a script, whatever else it is.</summary>
-    public bool HasScript { get; internal set; }
+    // Raised on a change: the row's menu shows Open script by it.
+    public bool HasScript
+    {
+        get => _hasScript;
+        internal set => Set(ref _hasScript, value);
+    }
+
+    private bool _hasScript;
 
     /// <summary>The row's icon and its tint.</summary>
     public IconLook Look

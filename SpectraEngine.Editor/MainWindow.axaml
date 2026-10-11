@@ -313,6 +313,8 @@
                       SubmenuOpened="OnInsertEntityMenuOpened">
               <MenuItem.Icon><Path Classes="icon menuicon kind-entity" Data="{x:Static shell:EditorIcons.PlainEntityGlyph}" /></MenuItem.Icon>
             </MenuItem>
+            <MenuItem Header="Insert script" Click="OnInsertScriptClicked" IsEnabled="{Binding !IsPlaying}"
+                      ToolTip.Tip="A script under the selected node, or for the whole level with nothing selected."><MenuItem.Icon><Path Classes="icon menuicon kind-script" Data="{x:Static shell:EditorIcons.ScriptGlyph}" /></MenuItem.Icon></MenuItem>
             <Separator />
             <MenuItem Header="Duplicate" InputGesture="Ctrl+D" Click="OnDuplicateClicked" IsEnabled="{Binding CanEditSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconDuplicate}" /></MenuItem.Icon></MenuItem>
             <MenuItem Header="Delete" InputGesture="Delete" Click="OnDeleteClicked" IsEnabled="{Binding CanEditSelection}"><MenuItem.Icon><Path Classes="icon menuicon" Data="{StaticResource IconDelete}" /></MenuItem.Icon></MenuItem>

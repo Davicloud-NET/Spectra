@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.Logging;
 using SpectraEngine.Core.Hosting;
+using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Hosting;
 using System;
 using System.Collections.Generic;
@@ -46,6 +47,18 @@ public partial class ScenePanel : UserControl
 
     /// <summary>Take the entity off the selection.</summary>
     public event Action? RemoveEntityRequested;
+
+    /// <summary>Add a script under the selected node.</summary>
+    public event Action? InsertScriptRequested;
+
+    /// <summary>Open the script the node with this id carries.</summary>
+    public event Action<Guid>? OpenScriptRequested;
+
+    /// <summary>
+    /// A file from the Content panel was let go over a node: the file, and
+    /// the id of the node it should go under.
+    /// </summary>
+    public event Action<ContentDragPayload, Guid>? AssetDroppedOnNode;
 
     /// <summary>Where the panel's own diagnostics go. Set by the host window.</summary>
     public ILogger? Logger { get; set; }
@@ -507,6 +520,12 @@ public partial class ScenePanel : UserControl
         e.DragEffects = DragDropEffects.None;
         e.Handled = true;
 
+        if (e.DataTransfer.TryGetValue(ContentDrag.Format) is { } asset)
+        {
+            OverAsset(e, asset);
+            return;
+        }
+
         if (TryResolveDrop(e, out SceneTreeNode? row, out SceneTreeDropZone zone, out _, out _))
         {
             SetDropIndicator(row, zone);
@@ -520,9 +539,62 @@ public partial class ScenePanel : UserControl
 
     private void OnTreeDragLeave(object? sender, DragEventArgs e) => ClearDropIndicator();
 
+    // A file out of the Content panel. Any kind may land, so one that cannot
+    // go under a node is refused in words and not by the cursor alone. Only
+    // one that can lights the row it would go under.
+    private void OverAsset(DragEventArgs e, ContentDragPayload asset)
+    {
+        if (!TryResolveAssetTarget(e, out SceneTreeNode? row, out _))
+        {
+            ClearDropIndicator();
+            return;
+        }
+
+        if (AssetDropPolicy.CanDropOnNode(asset.Kind))
+            SetDropIndicator(row, SceneTreeDropZone.Into);
+        else
+            ClearDropIndicator();
+
+        e.DragEffects = DragDropEffects.Copy;
+    }
+
+    // The row under the pointer, whatever part of it. Below the rows it is
+    // the scene's root, which has no row to light.
+    private bool TryResolveAssetTarget(DragEventArgs e, out SceneTreeNode? row, out Guid nodeId)
+    {
+        row = null;
+        nodeId = Guid.Empty;
+
+        if (Model?.Tree is not { } tree)
+            return false;
+
+        if (RowBorderFrom(e.Source) is { DataContext: SceneTreeNode target })
+        {
+            row = target;
+            nodeId = target.Id;
+            return true;
+        }
+
+        if (tree.Roots.Count != 1)
+            return false;
+
+        nodeId = tree.Roots[0].Id;
+        return true;
+    }
+
     private void OnTreeDrop(object? sender, DragEventArgs e)
     {
         e.Handled = true;
+
+        if (e.DataTransfer.TryGetValue(ContentDrag.Format) is { } asset)
+        {
+            bool found = TryResolveAssetTarget(e, out _, out Guid nodeId);
+            ClearDropIndicator();
+            if (found)
+                AssetDroppedOnNode?.Invoke(asset, nodeId);
+
+            return;
+        }
 
         bool valid = TryResolveDrop(e, out _, out _, out Guid parentId, out int index);
         ClearDropIndicator();
@@ -670,10 +742,16 @@ public partial class ScenePanel : UserControl
             return;
 
         // Two quick chevron clicks must not also frame the camera.
-        if (RowNodeForDrag(e.Source) is null)
+        if (RowNodeForDrag(e.Source) is not { } row)
             return;
 
-        FrameRequested?.Invoke();
+        // A script has nothing to frame. Its file opens, as it does from the
+        // Content panel.
+        if (row.Kind == SceneNodeKind.Script)
+            OpenScriptRequested?.Invoke(row.Id);
+        else
+            FrameRequested?.Invoke();
+
         e.Handled = true;
     }
 
@@ -936,6 +1014,15 @@ public partial class ScenePanel : UserControl
 
     private void OnMenuRemoveEntity(object? sender, RoutedEventArgs e) =>
         RemoveEntityRequested?.Invoke();
+
+    private void OnMenuInsertScript(object? sender, RoutedEventArgs e) =>
+        InsertScriptRequested?.Invoke();
+
+    private void OnMenuOpenScript(object? sender, RoutedEventArgs e)
+    {
+        if (MenuNode(sender) is { HasScript: true } node)
+            OpenScriptRequested?.Invoke(node.Id);
+    }
 
     private void OnMenuExpandAll(object? sender, RoutedEventArgs e)
     {

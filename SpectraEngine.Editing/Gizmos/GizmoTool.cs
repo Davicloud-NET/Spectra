@@ -178,7 +178,7 @@ public abstract class GizmoTool
     /// </summary>
     public GizmoPick PickAt(in EditorInputFrame frame)
     {
-        if (Scene.Selection.Count == 0 ||
+        if (!HasPlacedSelection() ||
             frame.ViewportSize.X <= 0f || frame.ViewportSize.Y <= 0f ||
             !frame.IsPointerUsable)
         {
@@ -199,7 +199,7 @@ public abstract class GizmoTool
     /// </summary>
     public GizmoGeometry GeometryFor(Vector2 viewportSize)
     {
-        if (Scene.Selection.Count == 0 || viewportSize.X <= 0f || viewportSize.Y <= 0f)
+        if (!HasPlacedSelection() || viewportSize.X <= 0f || viewportSize.Y <= 0f)
             return default;
 
         Quaternion frameRotation = FrameRotation();
@@ -369,7 +369,7 @@ public abstract class GizmoTool
 
     private bool TryBuildGeometry(in EditorInputFrame frame)
     {
-        if (Scene.Selection.Count == 0 || frame.ViewportSize.X <= 0f || frame.ViewportSize.Y <= 0f)
+        if (!HasPlacedSelection() || frame.ViewportSize.X <= 0f || frame.ViewportSize.Y <= 0f)
         {
             _hasGeometry = false;
             return false;
@@ -381,6 +381,20 @@ public abstract class GizmoTool
         _livePivot = layout.Pivot;
         _hasGeometry = true;
         return true;
+    }
+
+    // A script with no children has no place, so a selection of nothing else
+    // gets no handles.
+    private bool HasPlacedSelection()
+    {
+        IReadOnlyList<SceneNode> items = Scene.Selection.Items;
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (SceneNodeClassifier.HasPlace(items[i]))
+                return true;
+        }
+
+        return false;
     }
 
     private GizmoGeometry BuildGeometry(in GizmoLayout layout, Quaternion frameRotation, Vector2 viewportSize) =>
@@ -452,10 +466,17 @@ public abstract class GizmoTool
             return Vector3.Zero;
 
         Vector3 sum = Vector3.Zero;
+        int placed = 0;
         for (int i = 0; i < items.Count; i++)
-            sum += items[i].WorldPosition;
+        {
+            if (!SceneNodeClassifier.HasPlace(items[i]))
+                continue;
 
-        return sum / items.Count;
+            sum += items[i].WorldPosition;
+            placed++;
+        }
+
+        return placed == 0 ? Vector3.Zero : sum / placed;
     }
 
     private GizmoUpdateResult BeginDrag(in EditorInputFrame frame)
@@ -496,7 +517,7 @@ public abstract class GizmoTool
 
             // A selected ancestor already carries this node. Editing both
             // would apply the edit twice.
-            if (HasSelectedAncestor(node))
+            if (HasSelectedAncestor(node) || !SceneNodeClassifier.HasPlace(node))
                 continue;
 
             _targets.Add(GizmoDragTarget.Capture(node));

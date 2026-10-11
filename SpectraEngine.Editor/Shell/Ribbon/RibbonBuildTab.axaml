@@ -77,6 +77,14 @@
                 <TextBlock Text="Group" VerticalAlignment="Center" />
               </StackPanel>
             </Button>
+            <Button Classes="rsmall" Tag="insert.script" Click="OnRibbonItemClick"
+                    IsEnabled="{Binding !IsPlaying}"
+                    ToolTip.Tip="A script under the selected node, or for the whole level with nothing selected. Its file is made in Assets/Scripts and opened.">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Path Classes="icon kind-script" Data="{x:Static shell:EditorIcons.ScriptGlyph}" />
+                <TextBlock Text="Script" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
           </StackPanel>
         </Border>
 

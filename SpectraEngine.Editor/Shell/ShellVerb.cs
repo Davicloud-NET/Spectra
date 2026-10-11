@@ -61,6 +61,13 @@ public enum ShellVerbKind
     RemoveEntity,
 
     /// <summary>
+    /// Add a script under the selected node and make its file, through
+    /// <c>EditorSession.InsertScript</c>. It has no place, so unlike
+    /// <see cref="Insert"/> it lands on the selection and not in front of the camera.
+    /// </summary>
+    InsertScript,
+
+    /// <summary>
     /// A document verb: a project, a level, a save. See <see cref="DocumentVerb"/>.
     /// </summary>
     Document,
@@ -272,6 +279,10 @@ public readonly record struct ShellVerb(
     /// <summary>Take the entity off the selection.</summary>
     public static ShellVerb RemoveEntity() =>
         new(ShellVerbKind.RemoveEntity, default, default, default, default, default, default);
+
+    /// <summary>Add a script under the selected node.</summary>
+    public static ShellVerb InsertScript() =>
+        new(ShellVerbKind.InsertScript, default, default, default, default, default, default);
 
     /// <summary>A document verb.</summary>
     public static ShellVerb Of(DocumentVerb verb) =>

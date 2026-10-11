@@ -14,8 +14,9 @@ public static class GizmoSelectionBounds
 {
     /// <summary>
     /// Measures the box enclosing <paramref name="nodes"/> along three unit axes,
-    /// as distances along each axis from the world origin. False for an empty list.
-    /// A node with no geometry counts as a point at its origin.
+    /// as distances along each axis from the world origin. False when nothing
+    /// in the list has a place. A node with no geometry counts as a point at
+    /// its origin, and a script with no children is left out.
     /// </summary>
     public static bool TryMeasure(
         IReadOnlyList<SceneNode> nodes,
@@ -38,6 +39,9 @@ public static class GizmoSelectionBounds
             SceneNode node = nodes[i];
             Vector3 centre;
             Vector3 half;
+
+            if (!SceneNodeClassifier.HasPlace(node))
+                continue;
 
             if (TryGetLocalBounds(node, out Aabb local))
             {

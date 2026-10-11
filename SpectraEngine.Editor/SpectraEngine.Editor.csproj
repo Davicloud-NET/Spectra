@@ -48,6 +48,11 @@
   </ItemGroup>
   <Import Project="Icons.targets" />
 
+  <!-- What Insert Script copies into a project. A file, so it is edited as one. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Templates\*.luau" />
+  </ItemGroup>
+
   <!-- Luau: copied beside a build and a publish. -->
   <Import Project="..\native\Luau.targets" />
 

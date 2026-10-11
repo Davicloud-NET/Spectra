@@ -68,7 +68,7 @@ public sealed class PropertiesSheetTests(RibbonSession session)
     }
 
     [Fact]
-    public void A_script_nodes_rows_rasterise_into_a_sheet()
+    public void A_module_script_at_the_inspectors_usual_width_rasterises_into_a_sheet()
     {
         session.On(() =>
         {
@@ -78,9 +78,11 @@ public sealed class PropertiesSheetTests(RibbonSession session)
             (Window window, PropertiesPanel panel, _) =
                 PropertyLabelFixture.Open(PropertyLabelFixture.UsualWidth, node);
 
-            // The kind word in the header, the file in a box, a checkbox for each switch.
+            // The kind word in the header, the file's name in a cell with Open
+            // beside it, a checkbox for each switch. ScriptSheetTests has the rest.
             Shown<TextBlock>(panel).ShouldContain(text => text.Text == "Script" && text.FontSize < 12);
-            Shown<TextBox>(panel).Count(box => box.Text == File).ShouldBe(1);
+            Shown<TextBlock>(panel).ShouldContain(text => text.Text == "vault_door");
+            Shown<TextBlock>(panel).ShouldContain(text => text.Text == "Open");
             Shown<CheckBox>(panel).Select(box => box.IsChecked).ShouldBe([true, true]);
 
             AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);

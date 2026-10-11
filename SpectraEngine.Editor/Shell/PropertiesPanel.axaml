@@ -528,7 +528,7 @@
 
                         <!-- Asset: file stem, full path in the tooltip. The whole
                              cell opens the picker. A sound has a play button
-                             beside it. -->
+                             beside it, and a script a button that opens it. -->
                         <Grid Grid.Column="1" ColumnDefinitions="*,Auto"
                               IsVisible="{Binding IsAsset}">
                           <Button Grid.Column="0" Classes="assetcell"
@@ -548,6 +548,13 @@
                                                     Height="{StaticResource SpectraFieldHeight}"
                                                     IsVisible="{Binding CanPreview}"
                                                     ContentPath="{Binding AssetPath}" />
+                          <!-- Raised like the cell beside it: both are pressed. -->
+                          <Button Grid.Column="1" Classes="assetcell open" Margin="4,0,0,0"
+                                  IsVisible="{Binding CanOpen}"
+                                  Click="OnOpenScriptPressed"
+                                  ToolTip.Tip="Open this script in your code editor.">
+                            <TextBlock Classes="assetname" Text="Open" />
+                          </Button>
                         </Grid>
 
                         <TextBlock Grid.Column="1" Text="{Binding ReadOnlyText}"

@@ -113,6 +113,7 @@ public sealed class AssetCatalog(ILogger logger)
         AssetKind.Texture => ContentKind.Texture,
         AssetKind.Model => ContentKind.Model,
         AssetKind.Sound => ContentKind.Sound,
+        AssetKind.Script => ContentKind.Script,
         _ => ContentKind.Other,
     };
 }

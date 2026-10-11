@@ -20,12 +20,12 @@ public sealed class ScriptShellTests
 
         public Rig() => Panel = new PropertyPanelModel(Edits.Add, _ => { }, _ => { });
 
-        // The rows the engine publishes for the node, from the inspector itself.
-        public void Publish(SceneNode node)
+        // The rows the engine publishes for the selection, from the inspector itself.
+        public void Publish(params SceneNode[] nodes)
         {
             var rows = new List<PropertyRow>();
-            NodeInspector.Describe(node, rows);
-            Panel.Apply(rows, 1);
+            NodeInspector.Describe(nodes, rows);
+            Panel.Apply(rows, nodes.Length);
         }
 
         public PropertyRowModel Row(PropertyId id) =>
@@ -72,7 +72,17 @@ public sealed class ScriptShellTests
     }
 
     [Fact]
-    public void The_script_section_holds_a_file_box_and_two_switches()
+    public void A_script_with_no_children_shows_its_script_section_and_no_transform()
+    {
+        var rig = new Rig();
+
+        rig.Publish(Opener());
+
+        rig.Panel.Groups.Select(group => group.Name).ShouldBe([NodeInspector.ScriptGroup]);
+    }
+
+    [Fact]
+    public void The_script_section_holds_a_file_to_pick_and_two_switches()
     {
         var rig = new Rig();
 
@@ -81,23 +91,59 @@ public sealed class ScriptShellTests
         PropertyGroupModel section = rig.Panel.Groups.Single(group => group.Name == NodeInspector.ScriptGroup);
         section.Rows.Select(row => row.Name).ShouldBe(["File", "Enabled", "Module"]);
         section.Rows.Select(row => row.Kind).ShouldBe(
-            [PropertyKind.Text, PropertyKind.Boolean, PropertyKind.Boolean]);
-        rig.Row(PropertyId.ScriptFile).Fields[0].Text.ShouldBe("Scripts/door.luau");
+            [PropertyKind.Asset, PropertyKind.Boolean, PropertyKind.Boolean]);
         rig.Row(PropertyId.ScriptEnabled).Flag.ShouldBeTrue();
         rig.Row(PropertyId.ScriptModule).Flag.ShouldBeFalse();
         rig.Row(PropertyId.ScriptModule).HasHelp.ShouldBeTrue();
     }
 
     [Fact]
-    public void A_typed_file_is_sent_as_text_for_the_file_row()
+    public void The_file_row_shows_the_files_name_and_keeps_its_whole_path()
     {
         var rig = new Rig();
         rig.Publish(Opener());
 
-        PropertyFieldModel file = rig.Row(PropertyId.ScriptFile).Fields[0];
-        file.BeginEdit();
-        file.Text = "Scripts/gate.luau";
-        file.Commit();
+        PropertyRowModel file = rig.Row(PropertyId.ScriptFile);
+
+        file.IsAsset.ShouldBeTrue();
+        file.AssetKind.ShouldBe(AssetKind.Script);
+        file.AssetLabel.ShouldBe("door");
+        file.AssetPath.ShouldBe("Scripts/door.luau");
+        file.HasNote.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_file_row_has_an_open_button_and_no_play_button()
+    {
+        var rig = new Rig();
+        rig.Publish(Opener());
+
+        PropertyRowModel file = rig.Row(PropertyId.ScriptFile);
+
+        file.CanOpen.ShouldBeTrue();
+        file.CanPreview.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Two_scripts_that_name_different_files_have_nothing_to_open()
+    {
+        var rig = new Rig();
+        var other = new SceneNode("Closer") { Script = new Script("Scripts/gate.luau") };
+
+        rig.Publish(Opener(), other);
+
+        PropertyRowModel file = rig.Row(PropertyId.ScriptFile);
+        file.AssetLabel.ShouldBe("(mixed)");
+        file.CanOpen.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_picked_file_is_sent_as_text_for_the_file_row()
+    {
+        var rig = new Rig();
+        rig.Publish(Opener());
+
+        rig.Row(PropertyId.ScriptFile).PickAsset("Scripts/gate.luau");
 
         PropertyEdit edit = rig.Edits.Single();
         edit.Id.ShouldBe(PropertyId.ScriptFile);
@@ -108,20 +154,49 @@ public sealed class ScriptShellTests
     [InlineData(@"C:\Game\Assets\Scripts\gate.luau")]
     [InlineData("../Scripts/gate.luau")]
     [InlineData("./")]
-    public void A_file_outside_the_assets_folder_is_refused_and_the_row_says_why(string typed)
+    [InlineData("")]
+    public void A_file_outside_the_assets_folder_is_refused_and_the_row_says_why(string picked)
     {
         var rig = new Rig();
         rig.Publish(Opener());
         PropertyRowModel row = rig.Row(PropertyId.ScriptFile);
 
-        PropertyFieldModel file = row.Fields[0];
-        file.BeginEdit();
-        file.Text = typed;
-        file.Commit();
+        row.PickAsset(picked);
 
         rig.Edits.ShouldBeEmpty();
-        file.Text.ShouldBe("Scripts/door.luau");
+        row.AssetPath.ShouldBe("Scripts/door.luau");
+        row.HasRejection.ShouldBeTrue();
         row.Rejection.ShouldBe("Not applied: File must be a path inside this project's Assets folder.");
+    }
+
+    [Fact]
+    public void A_refusal_goes_away_when_a_good_file_is_picked()
+    {
+        var rig = new Rig();
+        rig.Publish(Opener());
+        PropertyRowModel row = rig.Row(PropertyId.ScriptFile);
+        row.PickAsset("../elsewhere.luau");
+        var raised = new List<string?>();
+        row.PropertyChanged += (_, change) => raised.Add(change.PropertyName);
+
+        row.PickAsset("Scripts/gate.luau");
+
+        row.HasRejection.ShouldBeFalse();
+        raised.ShouldContain(nameof(PropertyRowModel.HasRejection));
+        rig.Edits.Single().Text.ShouldBe("Scripts/gate.luau");
+    }
+
+    [Fact]
+    public void A_material_row_may_still_be_set_to_none()
+    {
+        // The rule above is the script's alone: an empty material is the default one.
+        var rig = new Rig();
+        var block = new SceneNode("Wall") { Brush = Brush.CreateBox(-Vector3.One, Vector3.One) };
+        rig.Publish(block);
+
+        rig.Row(PropertyId.BrushMaterial).PickAsset(string.Empty);
+
+        rig.Row(PropertyId.BrushMaterial).HasRejection.ShouldBeFalse();
     }
 
     [Theory]
@@ -142,7 +217,7 @@ public sealed class ScriptShellTests
     [Fact]
     public void An_edit_of_a_script_refreshes_the_rows_without_rebuilding_them()
     {
-        // The node is a script before and after, so the boxes stay the same boxes.
+        // The node is a script before and after, so the rows stay the same rows.
         var rig = new Rig();
         SceneNode node = Opener();
         rig.Publish(node);
@@ -152,8 +227,36 @@ public sealed class ScriptShellTests
         rig.Publish(node);
 
         rig.Row(PropertyId.ScriptFile).ShouldBeSameAs(file);
-        file.Fields[0].Text.ShouldBe("Scripts/gate.luau");
+        file.AssetPath.ShouldBe("Scripts/gate.luau");
+        file.AssetLabel.ShouldBe("gate");
         rig.Row(PropertyId.ScriptEnabled).Flag.ShouldBeFalse();
         rig.Edits.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("Scripts/gate.luau", "Scripts/gate.luau")]
+    [InlineData(@"\Scripts\Doors\vault.luau ", "Scripts/Doors/vault.luau")]
+    [InlineData("  Scripts//gate.LUAU", "Scripts/gate.LUAU")]
+    [InlineData("gate.luau", "gate.luau")]
+    public void A_path_typed_into_the_picker_is_read_as_the_path_a_level_stores(string typed, string expected)
+    {
+        TypedScriptPath.TryRead(typed, out string? path).ShouldBeTrue();
+
+        path.ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("gate")]
+    [InlineData("Scripts/gate.lua")]
+    [InlineData(".luau")]
+    [InlineData("Scripts/.luau")]
+    [InlineData("../gate.luau")]
+    [InlineData(@"C:\Game\gate.luau")]
+    public void What_is_typed_is_no_path_unless_it_names_a_luau_file_inside_the_assets_folder(string typed)
+    {
+        TypedScriptPath.TryRead(typed, out string? path).ShouldBeFalse();
+
+        path.ShouldBeNull();
     }
 }

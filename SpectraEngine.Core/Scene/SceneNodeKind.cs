@@ -78,4 +78,15 @@ public static class SceneNodeClassifier
 
         return node.Children.Count > 0 ? SceneNodeKind.Group : SceneNodeKind.Empty;
     }
+
+    /// <summary>
+    /// Whether where the node stands matters to anything. False for a script
+    /// with no children: it is a file's name under its parent and nothing
+    /// reads its position.
+    /// </summary>
+    public static bool HasPlace(SceneNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        return node.Children.Count > 0 || Classify(node) != SceneNodeKind.Script;
+    }
 }

@@ -64,7 +64,9 @@ public partial class AssetPickerView : UserControl
         _current = currentPath ?? string.Empty;
         _word = ContentClassifier.Label(kind).ToLowerInvariant();
 
-        Query.PlaceholderText = "Search " + _word + "s";
+        Query.PlaceholderText = kind == ContentKind.Script
+            ? "Search scripts, or type a path"
+            : "Search " + _word + "s";
         Query.Text = string.Empty;
         Refresh();
 
@@ -76,9 +78,13 @@ public partial class AssetPickerView : UserControl
         string query = Query.Text ?? string.Empty;
 
         bool sounds = _kind == ContentKind.Sound;
+        bool scripts = _kind == ContentKind.Script;
 
         _rows.Clear();
-        _rows.Add(sounds ? NoSound : None);
+
+        // A script has to name a file, so its list has no row for none.
+        if (!scripts)
+            _rows.Add(sounds ? NoSound : None);
 
         int matches = 0;
         if (_catalog is { } catalog)
@@ -91,32 +97,71 @@ public partial class AssetPickerView : UserControl
             }
         }
 
+        bool typed = scripts && AddTypedPath(query);
+
         Rows.ItemsSource = null;
         Rows.ItemsSource = _rows;
-
-        // Preselect the current value so Enter on an untouched picker changes nothing.
-        int selected = 0;
-        for (int i = 1; i < _rows.Count; i++)
-        {
-            if (string.Equals(_rows[i].ContentPath, _current, StringComparison.Ordinal))
-            {
-                selected = i;
-                break;
-            }
-        }
-
-        Rows.SelectedIndex = _rows.Count > 0 ? selected : -1;
+        Rows.SelectedIndex = PreselectedIndex(query);
 
         string? warning = _catalog?.Warning;
         string footer =
             warning is { Length: > 0 } ? warning
-            : matches == 0 && query.Length > 0 ? "Nothing matches. Only \"None\" is left."
+            : typed ? string.Empty
+            : matches == 0 && query.Length > 0 ? NothingMatches(scripts)
             : matches == 0 ? $"This project has no {_word} files yet."
             : string.Empty;
 
         Footer.Text = footer;
         Footer.IsVisible = footer.Length > 0;
     }
+
+    /// <summary>What a typed path's row says beside it, where a file's row names its folder.</summary>
+    public const string TypedPathNote = "not a file yet";
+
+    // A script's path can be typed in full, for a file that is still to be
+    // written. A path the project has is offered as that file, in the file's
+    // own spelling, and gets no second row.
+    private bool AddTypedPath(string query)
+    {
+        if (!TypedScriptPath.TryRead(query, out string? path))
+            return false;
+
+        if (_catalog is { } catalog)
+        {
+            foreach (AssetCatalogEntry entry in catalog.Entries)
+            {
+                if (string.Equals(entry.ContentPath, path, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+        }
+
+        _rows.Add(new AssetPickerRow(path, path, TypedPathNote));
+        return true;
+    }
+
+    // The row the list opens on: the current value, so Enter on an untouched
+    // picker changes nothing.
+    private int PreselectedIndex(string query)
+    {
+        bool hasNone = _kind != ContentKind.Script;
+
+        for (int i = hasNone ? 1 : 0; i < _rows.Count; i++)
+        {
+            if (string.Equals(_rows[i].ContentPath, _current, StringComparison.Ordinal))
+                return i;
+        }
+
+        if (hasNone)
+            return 0;
+
+        // No row for none to rest on. Nothing is chosen until something is
+        // typed, and then Enter takes the best match.
+        return query.Length > 0 && _rows.Count > 0 ? 0 : -1;
+    }
+
+    private static string NothingMatches(bool scripts) => scripts
+        ? "Nothing matches. A path that ends in .luau can be typed in full."
+        : "Nothing matches. Only \"None\" is left.";
 
     /// <summary>How many files one search offers.</summary>
     public const int MaxRows = 40;

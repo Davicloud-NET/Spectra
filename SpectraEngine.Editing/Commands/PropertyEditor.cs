@@ -135,6 +135,10 @@ public static class PropertyEditor
 
     private static IEditorCommand? BuildTransform(SceneNode node, PropertyEdit edit)
     {
+        // Only where the inspector offers the rows: a bulk move must not
+        // shift a script that has no place.
+        if (!NodeInspector.HasTransformRows(node)) return null;
+
         Transform current = node.LocalTransform;
         Transform next = current;
 

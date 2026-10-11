@@ -280,6 +280,55 @@ public sealed class EditorSession : IDisposable
     }
 
     /// <summary>
+    /// Makes a script file in the project and adds a script that names it
+    /// under the selected node, or under the root with nothing selected.
+    /// </summary>
+    /// <param name="contentRoot">The project's Assets folder, where the file is made.</param>
+    /// <param name="text">What the new file holds.</param>
+    /// <param name="done">Called on the render thread with what happened.</param>
+    public void InsertScript(string contentRoot, string text, Action<ScriptInsertReport> done)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentRoot);
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(_ => done(
+            Editor is { } editor
+                ? editor.InsertScript(contentRoot, text)
+                : ScriptInsertReport.RefusedBecause(string.Empty, "the session has no editor yet.")));
+    }
+
+    /// <summary>Adds a script that names a file the project has.</summary>
+    /// <param name="contentPath">The script, relative to the content root.</param>
+    /// <param name="parentId">The node it goes under, or null to go by the point or the selection.</param>
+    /// <param name="viewportPoint">Where it was let go in the viewport, in pixels, or null.</param>
+    /// <param name="done">Called on the render thread with what happened.</param>
+    public void AttachScript(
+        string contentPath, Guid? parentId, Vector2? viewportPoint, Action<ScriptInsertReport> done)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentPath);
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(_ => done(
+            Editor is { } editor
+                ? editor.AttachScript(contentPath, parentId, viewportPoint)
+                : ScriptInsertReport.RefusedBecause(contentPath, "the session has no editor yet.")));
+    }
+
+    /// <summary>Asks which file a node's script names.</summary>
+    /// <param name="done">
+    /// Called on the render thread with the content path, or null when the
+    /// node is gone or carries no script.
+    /// </param>
+    public void FindScript(Guid nodeId, Action<string?> done)
+    {
+        ArgumentNullException.ThrowIfNull(done);
+
+        Host.EnqueueCommand(scene => done(
+            scene.TryFindById(nodeId, out SceneNode? node) ? node.Script?.Path : null));
+    }
+
+    /// <summary>
     /// Asks the engine to play one sound file by itself, or to stop when the
     /// path is empty. <see cref="FrameSnapshot.PreviewingSound"/> says what plays.
     /// </summary>

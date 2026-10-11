@@ -5,6 +5,10 @@ namespace SpectraEngine.Editor.Shell;
 /// <summary>What a file in a project is, from its extension.</summary>
 public static class ContentClassifier
 {
+    /// <summary>The extension a script file has, with its dot.</summary>
+    // Not .lua: the engine runs Luau and a level names a .luau file.
+    public const string ScriptExtension = ".luau";
+
     /// <summary>Classifies a file by its extension. Do not pass a folder.</summary>
     public static ContentKind Classify(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {
@@ -15,6 +19,7 @@ public static class ContentClassifier
 
         // What the cook reads as a sound.
         ".wav" or ".wave" => ContentKind.Sound,
+        ScriptExtension => ContentKind.Script,
         _ => ContentKind.Other,
     };
 
@@ -27,6 +32,7 @@ public static class ContentClassifier
         ContentKind.Model => "Model",
         ContentKind.Shader => "Shader",
         ContentKind.Sound => "Sound",
+        ContentKind.Script => "Script",
         _ => "File",
     };
 }

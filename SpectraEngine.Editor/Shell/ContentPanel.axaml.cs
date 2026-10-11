@@ -35,8 +35,40 @@ public partial class ContentPanel : UserControl
         AddHandler(PointerMovedEvent, OnTilePointerMoved, RoutingStrategies.Tunnel);
         AddHandler(PointerReleasedEvent, OnTilePointerReleased, RoutingStrategies.Tunnel);
 
+        // Tunnel: the list takes Enter for itself and marks it handled.
+        ListRows.AddHandler(KeyDownEvent, OnListKeyDown, RoutingStrategies.Tunnel);
+
         SizeChanged += (_, _) => UpdateCramped();
         DataContextChanged += (_, _) => UpdateCramped();
+
+        // The search box gets what the rest of the row leaves, so its width
+        // moves with the panel's and with the breadcrumb's.
+        SearchBox.SizeChanged += (_, _) => UpdateNarrow();
+        DataContextChanged += (_, _) => UpdateNarrow();
+    }
+
+    // The least width the search box can be typed in.
+    private const double SearchRoom = 100.0;
+
+    // The row of chips at its full width, kept from when it last showed.
+    private double _chipsWidth;
+
+    // Asks what the search box would get with a chip per kind in the row,
+    // whichever of the two is showing. The answer is the same in both states,
+    // so the row cannot flip back and forth.
+    private void UpdateNarrow()
+    {
+        if (Model is not { } model)
+            return;
+
+        if (FilterChips.IsVisible && FilterChips.Bounds.Width > 0)
+            _chipsWidth = FilterChips.Bounds.Width;
+
+        double withChips = FilterChips.IsVisible
+            ? SearchBox.Bounds.Width
+            : SearchBox.Bounds.Width + FilterMenuChip.Bounds.Width - _chipsWidth;
+
+        model.IsNarrow = withChips < SearchRoom;
     }
 
     // Half a tile is worse than a row, so a short panel shows rows.
@@ -47,9 +79,13 @@ public partial class ContentPanel : UserControl
     }
 
     /// <summary>
-    /// Raised when the user activates a file. Folders are opened by the panel itself.
+    /// Raised when the user activates a file, by a double click or Enter.
+    /// Folders are opened by the panel itself.
     /// </summary>
     public event Action<ContentEntry>? EntryActivated;
+
+    /// <summary>Raised when a row's menu asks to put the file into the level.</summary>
+    public event Action<ContentEntry>? InsertRequested;
 
     private ContentBrowserModel? Model =>
         (DataContext as ShellModel)?.Content;
@@ -58,6 +94,12 @@ public partial class ContentPanel : UserControl
     public event Action<ContentEntry>? RevealRequested;
 
     private void OnMenuInsert(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is ContentEntry entry)
+            InsertRequested?.Invoke(entry);
+    }
+
+    private void OnMenuOpen(object? sender, RoutedEventArgs e)
     {
         if ((sender as Control)?.DataContext is ContentEntry entry)
             EntryActivated?.Invoke(entry);
@@ -79,19 +121,34 @@ public partial class ContentPanel : UserControl
             Model?.NavigateTo(path);
     }
 
-    // Hand-written table, not Enum.Parse: trimming removes enum name reflection.
+    // A chip's Tag is its filter's word.
     private void OnFilterClicked(object? sender, RoutedEventArgs e)
     {
         if (Model is not { } model || (sender as Control)?.Tag is not string tag) return;
 
-        model.Filter = tag switch
+        model.Filter = ContentFilterNames.Parse(tag);
+    }
+
+    // The narrow panel's one chip: the same kinds, as a list.
+    private void OnFilterMenuClicked(object? sender, RoutedEventArgs e)
+    {
+        if (Model is not { } model || sender is not Control chip) return;
+
+        var list = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
+
+        foreach ((ContentFilter filter, string word) in ContentFilterNames.All)
         {
-            "Textures" => ContentFilter.Textures,
-            "Materials" => ContentFilter.Materials,
-            "Models" => ContentFilter.Models,
-            "Sounds" => ContentFilter.Sounds,
-            _ => ContentFilter.All,
-        };
+            var item = new MenuItem
+            {
+                Header = word,
+                ToggleType = MenuItemToggleType.Radio,
+                IsChecked = model.Filter == filter,
+            };
+            item.Click += (_, _) => model.Filter = filter;
+            list.Items.Add(item);
+        }
+
+        list.ShowAt(chip);
     }
 
     private void OnViewModeClicked(object? sender, RoutedEventArgs e)
@@ -124,9 +181,22 @@ public partial class ContentPanel : UserControl
     // all its rows, and its own DataContext is the shell's model.
     private void OnEntryActivated(object? sender, TappedEventArgs e)
     {
-        if (EntryFrom(e.Source) is not { } entry)
+        if (EntryFrom(e.Source) is { } entry)
+            Activate(entry);
+    }
+
+    // Enter on a row is a double click on it. Only the list takes the keyboard.
+    private void OnListKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || sender is not ListBox { SelectedItem: ContentEntry entry })
             return;
 
+        Activate(entry);
+        e.Handled = true;
+    }
+
+    private void Activate(ContentEntry entry)
+    {
         if (entry.IsFolder)
             Model?.Open(entry);
         else
