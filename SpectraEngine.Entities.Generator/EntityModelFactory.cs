@@ -77,8 +77,8 @@ internal static class EntityModelFactory
         {
             token.ThrowIfCancellationRequested();
 
-            if (TryFindAttribute(member, OutputAttribute, out AttributeData? output))
-                outputs.Add(new OutputModel(member.Name, Parameter(output!, "Output", member.Name, diagnostics)));
+            if (TryFindAttribute(member, OutputAttribute, out AttributeData? output) && output is not null)
+                outputs.Add(new OutputModel(member.Name, Parameter(output, "Output", member.Name, diagnostics)));
 
             if (TryFindAttribute(member, KeyvalueAttribute, out AttributeData? keyvalue))
                 AddKeyvalue(member, keyvalue!, keyvalues, diagnostics);

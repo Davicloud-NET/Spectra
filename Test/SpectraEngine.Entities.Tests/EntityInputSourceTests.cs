@@ -30,7 +30,7 @@ public sealed class EntityInputSourceTests
     ];
 
     [Fact]
-    public void An_input_says_it_takes_a_value_exactly_when_its_method_reads_one()
+    public void An_input_that_reads_its_parameter_says_it_takes_a_value_and_no_other_does()
     {
         var wrong = new List<string>();
         int inputs = 0;
@@ -80,7 +80,7 @@ public sealed class EntityInputSourceTests
     }
 
     [Fact]
-    public void An_input_may_leave_its_value_out_exactly_when_its_class_handles_none()
+    public void Only_a_class_that_handles_no_parameter_lets_an_input_leave_it_out()
     {
         foreach (string file in EntitySources.Files())
         {

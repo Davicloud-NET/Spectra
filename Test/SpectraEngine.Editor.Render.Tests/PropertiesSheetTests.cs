@@ -87,7 +87,11 @@ public sealed class PropertiesSheetTests(RibbonSession session)
                     Wire("VaultDoor", "Open", "now"),
                     Wire("Score", "SetValue", ""),
                 ],
-                Targets = [new EntityTargetInfo("Score", "math_counter"), new EntityTargetInfo("VaultDoor", "func_door")],
+                Targets =
+                [
+                    new EntityTargetInfo("Score", "math_counter"),
+                    new EntityTargetInfo("VaultDoor", "func_door"),
+                ],
             });
 
             var panel = new PropertiesPanel { DataContext = new ShellModel { Properties = panelModel } };

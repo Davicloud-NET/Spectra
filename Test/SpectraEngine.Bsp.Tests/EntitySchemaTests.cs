@@ -103,7 +103,8 @@ public sealed class EntitySchemaTests
     public void The_names_are_one_list_for_the_life_of_the_schema()
     {
         // A dropdown bound to the list loses its selection when handed a new one.
-        var schema = new EntitySchema("func_door", inputs: EntityPort.Named("Open"), outputs: EntityPort.Named("OnOpen"));
+        var schema = new EntitySchema(
+            "func_door", inputs: EntityPort.Named("Open"), outputs: EntityPort.Named("OnOpen"));
 
         schema.InputNames.ShouldBeSameAs(schema.InputNames);
         schema.OutputNames.ShouldBeSameAs(schema.OutputNames);

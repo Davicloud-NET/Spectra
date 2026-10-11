@@ -23,7 +23,7 @@ public sealed class EntityGeneratorParameterTests
         GeneratorRun run = GeneratorHarness.Run(Thing(
             $"[EntityOutput(Parameter = KeyvalueType.{type})]",
             $"[EntityInput(\"Set\", Parameter = KeyvalueType.{type})]",
-            "FireOnSet(default!);"));
+            "FireOnSet(default);"));
 
         if (!ParameterType.CanCarry(type))
         {
