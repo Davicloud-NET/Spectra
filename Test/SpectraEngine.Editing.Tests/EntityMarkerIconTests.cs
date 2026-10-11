@@ -149,6 +149,26 @@ public sealed class EntityMarkerIconTests
     }
 
     [Fact]
+    public void A_smaller_icon_is_drawn_with_strokes_one_pixel_wide()
+    {
+        // Two lines of colour a stroke would run together in a drawing this small.
+        ViewportHarness harness = Fixture();
+        SceneNode relay = Add(harness, Relay, new Vector3(0f, 0f, -14f));
+        var overlay = new EntityMarkerOverlay();
+
+        DebugDraw output = Draw(harness, overlay);
+
+        float pixels = LightPicking.PixelRadius(harness.Scene.Camera, harness.ViewportSize, relay.WorldPosition);
+        pixels.ShouldBeInRange(7f, 10f);
+        overlay.IconsLastDraw.ShouldBe(1);
+
+        // One line of colour between two of backing.
+        int segments = Glyph("IconEntityRelay").SegmentCount;
+        DebugLines.CountOf(output, EntityGroupTints.For("Logic")).ShouldBe(segments);
+        output.VertexCount.ShouldBe(segments * 3 * 2);
+    }
+
+    [Fact]
     public void The_icon_faces_the_camera()
     {
         ViewportHarness harness = Fixture();
@@ -202,7 +222,7 @@ public sealed class EntityMarkerIconTests
 
         // Listed far to near, so scene order is not what picks them.
         for (int i = 5; i >= 0; i--)
-            nodes.Add(Add(harness, Relay, new Vector3((i - 2.5f) * 2f, 0f, -i * 1.5f)));
+            nodes.Add(Add(harness, Relay, new Vector3((i - 2.5f) * 2f, 0f, -i)));
 
         var overlay = new EntityMarkerOverlay { MaxIcons = 2 };
         List<Vector3> drawn = DebugLines.Coloured(Draw(harness, overlay), EntityGroupTints.For("Logic"));

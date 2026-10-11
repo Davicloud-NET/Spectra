@@ -106,6 +106,24 @@ public sealed class LightIconTests
     }
 
     [Fact]
+    public void A_smaller_icon_is_drawn_with_strokes_one_pixel_wide()
+    {
+        ViewportHarness harness = Fixture();
+        SceneNode spot = AddLight(harness, LightKind.Spot, new Vector3(0f, 0f, -14f));
+
+        DebugDraw output = Draw(harness);
+
+        LightPicking.PixelRadius(harness.Scene.Camera, harness.ViewportSize, spot.WorldPosition)
+            .ShouldBeInRange(7f, 10f);
+
+        // One line of colour between two of backing.
+        ViewportGlyphs.TryGet(WorldIcons.ForLight(LightKind.Spot), out ViewportGlyph? glyph).ShouldBeTrue();
+        int strokes = glyph.ShouldNotBeNull().SegmentCount + ArrowStrokes;
+        DebugLines.CountOf(output, Warm).ShouldBe(strokes);
+        output.VertexCount.ShouldBe(strokes * 3 * 2);
+    }
+
+    [Fact]
     public void A_far_light_is_a_ring_and_nothing_else()
     {
         ViewportHarness harness = Fixture();
