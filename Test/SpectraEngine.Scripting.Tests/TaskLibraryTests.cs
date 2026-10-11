@@ -242,6 +242,33 @@ public sealed class TaskLibraryTests
     }
 
     [Fact]
+    public void More_waiting_threads_than_a_ticks_budget_hold_up_no_wire()
+    {
+        using var level = new ScriptLevel();
+        level.Scene.Root.CreateChild("Speaker").Entity = new EntityData(SayingEntity.Class);
+        level.AddScript(level.Scene.Root, """
+            for index = 1, 10 do
+                task.spawn(function()
+                    while true do
+                        task.wait()
+                    end
+                end)
+            end
+            """);
+
+        // Ten threads wake every tick and four may. The wire is queued behind them.
+        level.Play();
+        level.Entities.MaxDispatchesPerTick = 4;
+        level.Tick();
+        level.Entities.QueueInput("Speaker", "Say", "wire", delay: 2 * ScriptLevel.Dt);
+        level.Tick();
+        level.Printed.ShouldBeEmpty();
+
+        level.Tick();
+        level.Printed.ShouldBe(["wire"]);
+    }
+
+    [Fact]
     public void A_wait_with_no_room_left_is_an_error_in_the_script_and_a_wire_still_goes_out()
     {
         using var level = new ScriptLevel();

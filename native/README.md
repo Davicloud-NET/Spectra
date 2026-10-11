@@ -185,7 +185,10 @@ So managed code never calls anything in Luau that can raise.
 - what a thread returned. A thread that ended with values on its stack reads
   as one that has not started, and a second resume would call its first
   result. `sl_resume` moves the values to a thread of the shim's own, which
-  `sl_results` hands out, and leaves the ended thread empty.
+  `sl_results` hands out, and leaves the ended thread empty. An empty thread
+  that has ended still reads as a new one with no function, also after a
+  script closed it. So the binding asks `lua_costatus` before it resumes a
+  thread it did not just make, and only its start hands a function over.
 - the allocator. It counts and has no limit, because a refused allocation is a
   raise from whichever call allocated.
 - the calls into Luau, counted. The outermost one gets a serial, and
