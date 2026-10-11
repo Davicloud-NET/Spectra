@@ -31,8 +31,10 @@ A timer ticks four times a second. Each tick goes through a relay and adds 2 to 
 | Target | The name of the entity to send to. |
 | Input | The input to send. |
 | Parameter | A value to send along, if the input takes one. |
-| Delay | Seconds to wait before sending. |
+| Delay | Seconds to wait before sending, counted in whole ticks. |
 | Times | How many times the wire may fire. Forever by default. |
+
+A level runs at 60 ticks a second, and every wait is a whole number of ticks. A delay that falls between two ticks waits for the later one: 0.5 is 30 ticks, and 0.04 is 3 ticks, which is 0.05 seconds. Any delay above zero is at least one tick. A timer's interval and a trigger's refire time are counted the same way.
 
 ## Targets
 

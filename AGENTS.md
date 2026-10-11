@@ -145,7 +145,7 @@ Entities
 - A brush entity is a part that carries an entity. A trigger is such a part with collide, query and render off.
 - While a level plays, only `EntityWorld.SetLocalTransform` moves a node. It keeps the authored pose and Stop puts it back.
 - The player is not an entity. A trigger or a button the player sets off is its own activator.
-- Entity motion counts ticks. World time is a float sum and drifts.
+- Everything an entity waits for counts ticks: a wire's delay, a think, a mover's trip. Seconds become whole ticks once, when the wait starts, by `WholeTicks`. World time is the tick number times the step and is only for a person to read.
 
 Icons
 
@@ -228,6 +228,7 @@ Entities and play
 - `MapSceneBinder.FromScene` builds fresh nodes. A node member it does not copy is deleted by the next save.
 - A default `SceneQueryFilter` wants `CanQuery`, which a trigger has off.
 - A wire's input name is case sensitive, and a wrong one is only a Debug log line. `ent_watch` shows it as `deny`.
+- The dispatch budget counts only the events a tick's drain makes, so it stops a loop with no delay. A loop that waits a tick between hops is never stopped, and nothing that was already waiting is ever dropped.
 - Whatever puts the play camera somewhere else in one frame calls `SoundPresenter.ListenerJumped`. A hop under 8 units is otherwise heard as motion, and every sound chirps.
 
 Tests and tools

@@ -47,7 +47,7 @@ Fires when the player walks in, keeps firing while the player stays, and fires w
 | Setting | In the editor | Default | Meaning |
 |---|---|---|---|
 | `startdisabled` | Start disabled | 0 | Set to 1 and the trigger senses nothing until it gets `Enable`. |
-| `wait` | Refire time | 1 | Seconds between `OnTrigger` fires while the player stays inside. 0 fires on the way in only. |
+| `wait` | Refire time | 1 | Seconds between `OnTrigger` fires while the player stays inside, rounded up to whole ticks. 0 fires on the way in only. |
 
 | Output | Fires when |
 |---|---|

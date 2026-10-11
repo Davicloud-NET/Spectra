@@ -86,7 +86,7 @@ ent 1 send console -> score.Add("5")
 
 The first reply comes at once. The `send` line comes on the next tick, when the input arrives, whether the watch is on or not.
 
-The delay is in seconds. To give a delay with no parameter, put `""` where the parameter goes:
+The delay is in seconds, and it is counted in whole ticks like a wire's. To give a delay with no parameter, put `""` where the parameter goes:
 
 ```
 > ent_fire door* Open "" 2
@@ -362,7 +362,7 @@ Every line is `ent`, the tick, a verb, and what happened. Ticks count from 0, wh
 |---|---|
 | `fire` | An output fired. `wires` is how many wires it sent along. `spent` counts wires that have used up their fires. |
 | `send` | An input arrived at one entity. A name that reaches three entities prints three lines. |
-| `wait` | A wire with a delay is waiting. `in` is the delay in seconds. Its `send` prints when the delay is over. |
+| `wait` | A wire with a delay is waiting. `in` is how long, in seconds: the delay rounded up to whole ticks. Its `send` prints when the delay is over. |
 | `miss` | An input came due and nothing had the target's name. |
 | `deny` | An entity got an input its class does not take. It follows the `send`. |
 | `drop` | The tick had more lines than the limit. The line says how many were left out. |

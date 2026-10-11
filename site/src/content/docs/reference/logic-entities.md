@@ -35,7 +35,7 @@ Fires on a fixed interval.
 | Setting | In the editor | Default | Meaning |
 |---|---|---|---|
 | `startdisabled` | Start disabled | 0 | Set to 1 and the timer waits for `Enable`. |
-| `refiretime` | Refire time | 1 | Seconds between fires. Anything below 0.01 counts as 0.01. |
+| `refiretime` | Refire time | 1 | Seconds between fires, rounded up to whole ticks. Anything below 0.01 counts as 0.01, which is one tick. |
 
 | Input | Does |
 |---|---|
