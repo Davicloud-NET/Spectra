@@ -11,6 +11,9 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 // back. Nothing in the binding changes a node itself.
 internal sealed class NodeMembers(LuauHost host, ScriptWrites writes)
 {
+    // In bytes of UTF-8. A longer text is made into a string on every write.
+    private const int HeldTextLimit = 512;
+
     public int Read(LuauStack stack, SceneNode node, ReadOnlySpan<byte> name)
     {
         if (ScriptWrites.TryFind(name, out SettableMember member))
@@ -28,7 +31,7 @@ internal sealed class NodeMembers(LuauHost host, ScriptWrites writes)
     {
         if (!ScriptWrites.TryFind(name, out SettableMember member))
             return stack.Fail(WhyNotWritable(stack, node, name));
-        if (ReadValue(stack, 3, in member, out MemberValue value) is { } wrong)
+        if (ReadValue(stack, 3, node, in member, out MemberValue value) is { } wrong)
             return stack.Fail(wrong);
 
         return writes.TryWrite(node, member.Id, in value, out string? refusal) ? 0 : stack.Fail(refusal);
@@ -47,7 +50,8 @@ internal sealed class NodeMembers(LuauHost host, ScriptWrites writes)
 
     // Null when the value is of the kind the member takes. Otherwise what to
     // tell the script.
-    private static string? ReadValue(LuauStack stack, int index, in SettableMember member, out MemberValue value)
+    private static string? ReadValue(
+        LuauStack stack, int index, SceneNode node, in SettableMember member, out MemberValue value)
     {
         value = default;
         switch (member.Kind)
@@ -66,12 +70,24 @@ internal sealed class NodeMembers(LuauHost host, ScriptWrites writes)
                 if (!Utf8.IsValid(text))
                     return $"Unable to assign property {member.Name}. The string is not valid UTF-8";
 
-                value = MemberValue.Of(Encoding.UTF8.GetString(text));
+                value = MemberValue.Of(TextOf(text, ScriptWrites.Read(node, member.Id).Text));
                 return null;
 
             default:
                 return ScriptWrites.WrongKind(in member, ScriptArguments.TypeName(stack, index));
         }
+    }
+
+    // The text the member holds is handed back as it is. A script that
+    // writes the same name on every tick then makes no string.
+    private static string TextOf(ReadOnlySpan<byte> utf8, string held)
+    {
+        Span<byte> same = stackalloc byte[HeldTextLimit];
+        bool isHeld = utf8.Length <= same.Length
+            && Encoding.UTF8.TryGetBytes(held, same, out int written)
+            && utf8.SequenceEqual(same[..written]);
+
+        return isHeld ? held : Encoding.UTF8.GetString(utf8);
     }
 
     private static string WhyNotWritable(LuauStack stack, SceneNode node, ReadOnlySpan<byte> name)

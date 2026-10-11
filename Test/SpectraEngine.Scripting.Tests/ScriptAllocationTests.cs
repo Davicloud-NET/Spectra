@@ -50,4 +50,29 @@ public sealed class ScriptAllocationTests
             .ShouldBeFalse("the script did not move the part");
         allocated.ShouldBe(0, $"{Ticks} ticks of the script allocated on the managed heap");
     }
+
+    // A new name is a new string. The name the node has is none.
+    [Fact]
+    public void A_script_that_writes_the_name_a_node_has_every_tick_allocates_nothing_once_it_runs()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        SceneNode part = level.Part("Mover", new Vector3(0f, 2f, 0f));
+        level.AddScript(part, """
+            local part = script.Parent
+            while true do
+                task.wait()
+                part.Name = "Shown"
+            end
+            """);
+
+        level.Play().Tick(Ticks);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        level.Tick(Ticks);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        level.Errors.ShouldBeEmpty();
+        part.Name.ShouldBe("Shown");
+        allocated.ShouldBe(0, $"{Ticks} ticks of the script allocated on the managed heap");
+    }
 }
