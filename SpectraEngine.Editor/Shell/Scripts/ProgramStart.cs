@@ -11,9 +11,14 @@ namespace SpectraEngine.Editor.Shell.Scripts;
 /// command line by its own rules. Used in place of <paramref name="Arguments"/>.
 /// </param>
 /// <param name="NoWindow">Whether a console program starts with no console window of its own.</param>
+/// <param name="ChecksExitCode">
+/// Whether the program is waited on for a moment and an exit code other than
+/// 0 counts as not started. For a program that only starts another.
+/// </param>
 public sealed record ProgramStart(
     string FileName,
     IReadOnlyList<string> Arguments,
     bool UseShell = false,
     string? VerbatimArguments = null,
-    bool NoWindow = false);
+    bool NoWindow = false,
+    bool ChecksExitCode = false);

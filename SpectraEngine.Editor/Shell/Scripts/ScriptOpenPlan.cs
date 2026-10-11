@@ -18,11 +18,12 @@ public static class ScriptOpenPlan
         ArgumentNullException.ThrowIfNull(request);
 
         var steps = new List<ScriptOpenStep>(3);
+        bool isScript = IsScriptFile(request.FilePath);
 
-        if (facts.VisualStudioCode is { Length: > 0 } code)
-            steps.Add(new ScriptOpenStep(ScriptOpenWay.VisualStudioCode, VisualStudioCode(code, request)));
+        if (isScript && facts.VisualStudioCode is { Length: > 0 } code && VisualStudioCode(code, request) is { } start)
+            steps.Add(new ScriptOpenStep(ScriptOpenWay.VisualStudioCode, start));
 
-        if (facts.HasDefaultProgram)
+        if (isScript && facts.HasDefaultProgram)
         {
             steps.Add(new ScriptOpenStep(
                 ScriptOpenWay.DefaultProgram, new ProgramStart(request.FilePath, [], UseShell: true)));
@@ -34,9 +35,25 @@ public static class ScriptOpenPlan
         return steps;
     }
 
+    /// <summary>
+    /// Whether a path names a script file. Only such a file is handed to a
+    /// program: a level can name any file as its script, and the system would run it.
+    /// </summary>
+    public static bool IsScriptFile(string filePath)
+    {
+        ArgumentNullException.ThrowIfNull(filePath);
+
+        string name = filePath[(filePath.LastIndexOfAny(['/', '\\']) + 1)..];
+
+        // A colon in a name is a stream of another file on Windows.
+        return name.Length > ContentClassifier.ScriptExtension.Length
+            && name.EndsWith(ContentClassifier.ScriptExtension, StringComparison.OrdinalIgnoreCase)
+            && !name.Contains(':');
+    }
+
     // The folder first, so the window is the project's and its language
     // server reads every script. A window already open on it is used again.
-    private static ProgramStart VisualStudioCode(string program, ScriptOpenRequest request)
+    private static ProgramStart? VisualStudioCode(string program, ScriptOpenRequest request)
     {
         var arguments = new List<string>(3);
 
@@ -63,13 +80,20 @@ public static class ScriptOpenPlan
     // A batch file is run by the command prompt, which reads its line by its
     // own rules: with /s the outer quotes go and what is inside is kept, each
     // part in quotes of its own. No console window: the program has its own.
-    private static ProgramStart ThroughCommandPrompt(string batchFile, List<string> arguments)
+    private static ProgramStart? ThroughCommandPrompt(string batchFile, List<string> arguments)
     {
         string line = "\"" + batchFile + "\"";
         foreach (string argument in arguments)
             line += " \"" + argument + "\"";
 
-        return new ProgramStart("cmd.exe", [], VerbatimArguments: "/d /s /c \"" + line + "\"", NoWindow: true);
+        // It swaps %NAME% for a variable inside quotes too, and nothing on a
+        // command line stops it. Such a path goes to the next way.
+        if (line.Contains('%'))
+            return null;
+
+        // It starts whatever the batch file does, so its exit code is asked.
+        return new ProgramStart(
+            "cmd.exe", [], VerbatimArguments: "/d /s /c \"" + line + "\"", NoWindow: true, ChecksExitCode: true);
     }
 
     private static ProgramStart? FileManager(FileManagerKind kind, string filePath) => kind switch

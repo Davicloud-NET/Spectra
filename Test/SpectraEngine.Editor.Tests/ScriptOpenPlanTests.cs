@@ -72,6 +72,40 @@ public sealed class ScriptOpenPlanTests
     }
 
     [Fact]
+    public void The_command_prompt_is_asked_how_the_batch_file_ended_and_the_program_itself_is_not()
+    {
+        // The command prompt starts even when the batch file is broken.
+        ScriptOpenPlan.For(Request, Has(@"C:\Users\Ada\scoop\shims\code.cmd"))[0]
+            .Start.ChecksExitCode.ShouldBeTrue();
+
+        ScriptOpenPlan.For(Request, Has(Code))[0].Start.ChecksExitCode.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(@"D:\Games\%USERNAME%", @"D:\Games\%USERNAME%\Assets\Scripts\Spin.luau")]
+    [InlineData(@"D:\Games\Tower", @"D:\Games\Tower\Assets\Scripts\100%.luau")]
+    public void A_path_with_a_percent_sign_is_not_handed_to_the_command_prompt(string project, string file)
+    {
+        // It would swap %USERNAME% for the variable, quotes or not.
+        IReadOnlyList<ScriptOpenStep> steps = ScriptOpenPlan.For(
+            new ScriptOpenRequest(file, project), Has(@"C:\Users\Ada\scoop\shims\code.cmd", defaultProgram: true));
+
+        steps.Select(step => step.Way).ShouldBe([ScriptOpenWay.DefaultProgram, ScriptOpenWay.FileManager]);
+        steps.ShouldAllBe(step => step.Start.FileName != "cmd.exe");
+    }
+
+    [Fact]
+    public void A_path_with_a_percent_sign_still_opens_in_the_program_itself()
+    {
+        const string file = @"D:\Games\Tower\Assets\Scripts\100%.luau";
+
+        ScriptOpenStep first = ScriptOpenPlan.For(new ScriptOpenRequest(file, Project), Has(Code))[0];
+
+        first.Way.ShouldBe(ScriptOpenWay.VisualStudioCode);
+        first.Start.Arguments.ShouldBe([Project, file]);
+    }
+
+    [Fact]
     public void A_script_of_no_project_opens_by_itself()
     {
         ScriptOpenStep first = ScriptOpenPlan.For(new ScriptOpenRequest(File, null), Has(Code))[0];
@@ -139,6 +173,36 @@ public sealed class ScriptOpenPlanTests
     public void A_computer_with_nothing_to_ask_gets_no_steps_and_no_exception()
     {
         ScriptOpenPlan.For(Request, Has(manager: FileManagerKind.None)).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\setup.bat")]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\setup.exe")]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\setup.cmd")]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\setup.lnk")]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\Spin.luau.vbs")]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\Spin")]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\.luau")]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\setup.bat:Spin.luau")]
+    [InlineData("/home/ada/Tower/Assets/Scripts/setup.sh")]
+    public void A_file_that_is_no_script_is_handed_to_no_program_and_only_shown_in_its_folder(string file)
+    {
+        // The system would run it, and a level can name any file as its script.
+        IReadOnlyList<ScriptOpenStep> steps = ScriptOpenPlan.For(
+            new ScriptOpenRequest(file, Project), Has(Code, defaultProgram: true));
+
+        steps.ShouldHaveSingleItem().Way.ShouldBe(ScriptOpenWay.FileManager);
+        ScriptOpenPlan.IsScriptFile(file).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\Spin.luau")]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\SPIN.LUAU")]
+    [InlineData(@"D:\Games\Tower\Assets\Scripts\setup.bat.luau")]
+    [InlineData("/home/ada/Tower/Assets/Scripts/spin.luau")]
+    public void A_file_is_a_script_by_its_extension_in_any_case(string file)
+    {
+        ScriptOpenPlan.IsScriptFile(file).ShouldBeTrue();
     }
 
     // The computers below are described by two questions: what an environment

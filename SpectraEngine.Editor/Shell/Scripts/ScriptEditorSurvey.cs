@@ -15,8 +15,8 @@ public static class ScriptEditorSurvey
         HasDefaultProgram(),
         FileManager());
 
-    // Only Windows can be asked. Elsewhere the start is tried, and a failure
-    // falls through to the file manager.
+    // Only Windows can be asked. Elsewhere the start is tried, and a desktop
+    // with no program for the file reports nothing, so it counts as opened.
     private static bool HasDefaultProgram() =>
         !OperatingSystem.IsWindows() || FileAssociations.HasProgramFor(ContentClassifier.ScriptExtension);
 

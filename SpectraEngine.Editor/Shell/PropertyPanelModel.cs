@@ -304,6 +304,15 @@ public sealed class PropertyRowModel : ObservableObject
 
             int slash = _assetPath.LastIndexOf('/');
             string name = slash >= 0 ? _assetPath[(slash + 1)..] : _assetPath;
+
+            // A level can name any file as a script. One that is none keeps
+            // its extension, so setup.bat does not read as a script called setup.
+            if (AssetKind == AssetKind.Script
+                && !name.EndsWith(ContentClassifier.ScriptExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                return name;
+            }
+
             int dot = name.LastIndexOf('.');
             return dot > 0 ? name[..dot] : name;
         }

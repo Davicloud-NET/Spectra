@@ -112,6 +112,20 @@ public sealed class ScriptShellTests
         file.HasNote.ShouldBeFalse();
     }
 
+    [Theory]
+    [InlineData("Scripts/setup.bat", "setup.bat")]
+    [InlineData("Scripts/door.luau.exe", "door.luau.exe")]
+    [InlineData("Scripts/readme", "readme")]
+    [InlineData("Scripts/Door.LUAU", "Door")]
+    public void A_file_row_that_names_no_script_file_shows_the_whole_name(string path, string shown)
+    {
+        // A level can name any file. Its stem alone would read as a script.
+        var rig = new Rig();
+        rig.Publish(new SceneNode("Opener") { Script = new Script(path) });
+
+        rig.Row(PropertyId.ScriptFile).AssetLabel.ShouldBe(shown);
+    }
+
     [Fact]
     public void The_file_row_has_an_open_button_and_no_play_button()
     {

@@ -138,7 +138,7 @@ public sealed class ScriptLauncherTests
     }
 
     [Fact]
-    public void A_script_that_is_gone_from_the_disk_starts_nothing()
+    public void A_script_that_is_not_on_disk_starts_nothing()
     {
         Rig rig = With(Code, defaultProgram: true);
         rig.FileIsThere = false;
@@ -148,7 +148,42 @@ public sealed class ScriptLauncherTests
         rig.Starter.Asked.ShouldBeEmpty();
         outcome.Way.ShouldBeNull();
         outcome.Severity.ShouldBe(OutputSeverity.Error);
-        outcome.Message.ShouldBe("Spin.luau is not on disk any more.");
+
+        // Also said of a path picked before its file was written.
+        outcome.Message.ShouldBe("Spin.luau is not on disk.");
+    }
+
+    [Fact]
+    public void A_file_that_is_no_script_is_never_started_and_the_status_says_why()
+    {
+        // A level from somebody else can name a batch file as its script.
+        const string batch = @"D:\Games\Tower\Assets\Scripts\setup.bat";
+        Rig rig = With(Code, defaultProgram: true);
+
+        ScriptOpenOutcome outcome = rig.Launcher.Open(new ScriptOpenRequest(batch, Project));
+
+        ProgramStart only = rig.Starter.Asked.ShouldHaveSingleItem();
+        only.FileName.ShouldBe("explorer.exe");
+        only.UseShell.ShouldBeFalse();
+        outcome.Way.ShouldBe(ScriptOpenWay.FileManager);
+        outcome.IsOpenInEditor.ShouldBeFalse();
+        outcome.Severity.ShouldBe(OutputSeverity.Warning);
+        outcome.Message.ShouldBe(
+            "setup.bat is not a .luau file, so no program was started for it. setup.bat is shown in its folder.");
+    }
+
+    [Fact]
+    public void A_file_that_is_no_script_with_no_file_manager_to_show_it_starts_nothing()
+    {
+        var rig = new Rig { Facts = new ScriptEditorFacts(Code, true, FileManagerKind.None) };
+
+        ScriptOpenOutcome outcome = rig.Launcher.Open(
+            new ScriptOpenRequest(@"D:\Games\Tower\Assets\Scripts\setup.bat", Project));
+
+        rig.Starter.Asked.ShouldBeEmpty();
+        outcome.Way.ShouldBeNull();
+        outcome.Severity.ShouldBe(OutputSeverity.Error);
+        outcome.Message.ShouldBe("setup.bat is not a .luau file, so no program was started for it.");
     }
 
     [Fact]

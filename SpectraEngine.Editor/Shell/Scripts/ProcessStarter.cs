@@ -8,6 +8,10 @@ namespace SpectraEngine.Editor.Shell.Scripts;
 /// <summary>Starts a program as a process of its own.</summary>
 public sealed class ProcessStarter : IProgramStarter
 {
+    // A stand-in that fails does so at once. One that works may still be
+    // running after this, and that is taken as started.
+    private static readonly TimeSpan ExitWait = TimeSpan.FromSeconds(3);
+
     /// <inheritdoc/>
     public bool TryStart(ProgramStart start, out string failure)
     {
@@ -33,6 +37,14 @@ public sealed class ProcessStarter : IProgramStarter
         {
             // Not kept: the program outlives the call and the editor.
             using Process? process = Process.Start(info);
+
+            if (start.ChecksExitCode && process is not null
+                && process.WaitForExit(ExitWait) && process.ExitCode != 0)
+            {
+                failure = $"It ended with exit code {process.ExitCode}.";
+                return false;
+            }
+
             failure = string.Empty;
             return true;
         }

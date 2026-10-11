@@ -64,17 +64,24 @@ public sealed class ScriptLauncher
 
         string name = NameOf(request);
 
+        // Gone, or picked before it was written. The sentence fits both.
         if (!_fileExists(request.FilePath))
-            return new ScriptOpenOutcome(null, OutputSeverity.Error, $"{name} is not on disk any more.", []);
+            return new ScriptOpenOutcome(null, OutputSeverity.Error, $"{name} is not on disk.", []);
 
         ScriptEditorFacts facts = _survey();
+        bool isScript = ScriptOpenPlan.IsScriptFile(request.FilePath);
         var failures = new List<string>();
         var notes = new List<string>();
 
+        string? whyOnlyShown =
+            !isScript ? NotAScript(name)
+            : !facts.HasDefaultProgram ? NoProgramSet
+            : null;
+
         foreach (ScriptOpenStep step in ScriptOpenPlan.For(request, facts))
         {
-            if (step.Way == ScriptOpenWay.FileManager && !facts.HasDefaultProgram)
-                notes.Add(NoProgramSet);
+            if (step.Way == ScriptOpenWay.FileManager && whyOnlyShown is not null)
+                notes.Add(whyOnlyShown);
 
             if (_starter.TryStart(step.Start, out string failure))
                 return Opened(step.Way, name, notes, failures);
@@ -83,8 +90,13 @@ public sealed class ScriptLauncher
             failures.Add($"{DidNotStart(step.Way).TrimEnd('.')} ({step.Start.FileName}): {failure}");
         }
 
-        return Failed(name, failures);
+        return isScript
+            ? Failed(name, failures)
+            : new ScriptOpenOutcome(null, OutputSeverity.Error, NotAScript(name), failures);
     }
+
+    private static string NotAScript(string name) =>
+        $"{name} is not a .luau file, so no program was started for it.";
 
     private static ScriptOpenOutcome Opened(
         ScriptOpenWay way, string name, List<string> notes, List<string> failures)
