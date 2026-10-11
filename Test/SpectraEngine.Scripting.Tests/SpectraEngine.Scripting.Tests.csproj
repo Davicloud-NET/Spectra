@@ -15,6 +15,14 @@
     <Compile Include="..\SpectraEngine.Scripting.CrashCases\CaseExit.cs" Link="CaseExit.cs" />
   </ItemGroup>
 
+  <!-- A scene manager loads a level through a renderer. -->
+  <ItemGroup>
+    <Compile Include="..\SpectraEngine.Bsp.Tests\FakeRenderer.cs" Link="FakeRenderer.cs" />
+    <Compile Include="..\SpectraEngine.Bsp.Tests\SpatialTestHelpers.cs" Link="SpatialTestHelpers.cs" />
+    <!-- What a scene manager logged. -->
+    <Compile Include="..\SpectraEngine.Bsp.Tests\CapturingLogger.cs" Link="CapturingLogger.cs" />
+  </ItemGroup>
+
   <!-- Puts the shared library beside the tests when it has been built. -->
   <Import Project="..\..\native\Luau.targets" />
 
