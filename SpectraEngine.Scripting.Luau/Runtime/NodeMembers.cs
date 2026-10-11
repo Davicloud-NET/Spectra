@@ -78,7 +78,14 @@ internal sealed class NodeMembers(LuauHost host, EntityWorld world)
     private int Move(LuauStack stack, SceneNode node, in Transform local)
     {
         if (!world.IsActive)
-            return stack.Fail($"{node.Name} cannot be moved: the level has stopped");
+            return stack.Fail($"{node.Name} cannot be moved: the level has stopped.");
+
+        // A node at such a place is in no cell of the scene's index, and no
+        // query finds it again. A rotation is brought to unit length when a
+        // CFrame is made, so only the position can be off.
+        Vector3 position = local.Position;
+        if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z))
+            return stack.Fail($"{node.Name} cannot be moved: a position must be three numbers, with none of them infinite.");
 
         return world.TrySetLocalTransform(node, in local, out string? refusal)
             ? 0

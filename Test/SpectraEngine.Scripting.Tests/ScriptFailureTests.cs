@@ -127,6 +127,25 @@ public sealed class ScriptFailureTests
     }
 
     [Fact]
+    public void A_position_that_is_no_number_is_refused_and_the_part_stays()
+    {
+        using var level = new ScriptLevel();
+        SceneNode part = level.Part("Door", new Vector3(1f, 2f, 3f));
+        level.AddScript(part, """
+            local door = script.Parent
+            print(pcall(function() door.Position = Vector3.new(0 / 0, 0, 0) end))
+            print(pcall(function() door.CFrame = CFrame.new(0, math.huge, 0) end))
+            print(pcall(function() door.LocalPosition = Vector3.new(0, 0, -math.huge) end))
+            """);
+
+        level.Play().Tick();
+
+        level.Printed.Length.ShouldBe(3);
+        level.Printed.ShouldAllBe(line => line.StartsWith("false ") && line.Contains("Door cannot be moved"));
+        part.LocalPosition.ShouldBe(new Vector3(1f, 2f, 3f));
+    }
+
+    [Fact]
     public void A_member_that_is_not_there_is_an_error_on_a_read_and_on_a_write()
     {
         using var level = new ScriptLevel();
