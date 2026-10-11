@@ -546,6 +546,7 @@ public sealed class PropertyRowModel : ObservableObject
             // Posted, a bad value is dropped on the render thread and nothing
             // says why.
             case PropertyKind.Text:
+            case PropertyKind.Target:
                 if (PropertyLimits.Refusal(Id, typed) is { } whyNot)
                 {
                     field.Reject($"Not applied: {Name} must be {whyNot}.");

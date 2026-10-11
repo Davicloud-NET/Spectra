@@ -49,6 +49,13 @@ public sealed class EntityShellTests
         PresentCount = 1, SelectionCount = 1,
     };
 
+    private static PropertyRow KeyvalueTarget(string key, string value) => new()
+    {
+        Group = NodeInspector.EntityGroup, Name = key, Id = PropertyId.EntityKeyvalue,
+        Key = key, Kind = PropertyKind.Target, Text = value, Choices = [],
+        PresentCount = 1, SelectionCount = 1,
+    };
+
     private sealed class Rig
     {
         public List<PropertyEdit> Edits { get; } = [];
@@ -139,6 +146,29 @@ public sealed class EntityShellTests
         rig.Edits[^1].Axes.ShouldBe(PropertyAxes.Y);
         rig.Edits[^1].Text.Split(' ').Length.ShouldBe(3);
         rig.Edits[^1].Text.Split(' ')[1].ShouldBe("9");
+    }
+
+    [Fact]
+    public void A_target_name_typed_or_picked_is_sent_as_the_keyvalue_s_text()
+    {
+        var rig = new Rig();
+        rig.Publish(ClassRow("trigger_teleport"), KeyvalueTarget("target", ""));
+
+        PropertyFieldModel field = rig.Row("target").Fields[0];
+        field.BeginEdit();
+        field.Text = "Exit";
+        field.Commit();
+
+        rig.Edits.Count.ShouldBe(1);
+        rig.Edits[0].Id.ShouldBe(PropertyId.EntityKeyvalue);
+        rig.Edits[0].Key.ShouldBe("target");
+        rig.Edits[0].Text.ShouldBe("Exit");
+
+        rig.Row("target").PickTarget("Vault");
+
+        rig.Edits.Count.ShouldBe(2);
+        rig.Edits[1].Key.ShouldBe("target");
+        rig.Edits[1].Text.ShouldBe("Vault");
     }
 
     [Fact]
