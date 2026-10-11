@@ -12,13 +12,25 @@ runs:
       shell: bash
       run: echo "commit=$(git rev-parse HEAD:external/luau)" >> "$GITHUB_OUTPUT"
 
-    # The key moves only with the pin, the shim or a build script.
+    # The checkout brings no tags, so the build scripts skip their own check
+    # of the pin. This one asks Luau's repository which commit the release is.
+    - name: Compare the pin with SL_LUAU_RELEASE
+      shell: bash
+      run: |
+        release="0.$(sed -nE 's/^#define[[:space:]]+SL_LUAU_RELEASE[[:space:]]+([0-9]+).*/\1/p' native/luau/spectra_luau.h)"
+        tagged="$(git -C external/luau ls-remote origin "refs/tags/$release" "refs/tags/$release^{}" | tail -n 1 | cut -f 1)"
+        if [ "$tagged" != "${{ steps.pin.outputs.commit }}" ]; then
+          echo "::error title=Luau pin::external/luau is at ${{ steps.pin.outputs.commit }} and release $release is at ${tagged:-no commit}. Change SL_LUAU_RELEASE in native/luau/spectra_luau.h and Lua.Release in SpectraEngine.Scripting.Luau."
+          exit 1
+        fi
+
+    # The key moves only with the pin, the shim, a build script or this file.
     - name: Restore the Luau libraries
       id: cache
       uses: actions/cache@v4
       with:
         path: native/runtimes
-        key: luau-${{ runner.os }}-${{ steps.pin.outputs.commit }}-${{ hashFiles('native/luau/**', 'native/build-luau.ps1', 'native/build-luau.sh') }}
+        key: luau-${{ runner.os }}-${{ runner.arch }}-${{ steps.pin.outputs.commit }}-${{ hashFiles('native/luau/**', 'native/build-luau.ps1', 'native/build-luau.sh', '.github/actions/luau/action.yml') }}
 
     - name: Build Luau (Windows)
       if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
