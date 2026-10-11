@@ -303,9 +303,10 @@ public sealed class EntityWorld
 
     /// <summary>
     /// Runs one tick: finds the touches that started and ended since the last
-    /// tick, delivers everything now due, calls <see cref="Entity.OnTick"/>
-    /// on the entities that asked for it, in <see cref="Entities"/> order,
-    /// then drains the deferred spawn and despawn queues.
+    /// tick, delivers what is due up to <see cref="MaxDispatchesPerTick"/>,
+    /// calls <see cref="Entity.OnTick"/> on the entities that asked for it,
+    /// in <see cref="Entities"/> order, then drains the deferred spawn and
+    /// despawn queues.
     /// </summary>
     /// <param name="fixedDt">
     /// The step the host is running at. It must be this world's

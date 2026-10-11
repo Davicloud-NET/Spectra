@@ -20,9 +20,10 @@ internal sealed class EntityDispatcher
     private int _maxDispatchesPerTick = 4096;
     private int _maxPendingEvents = 65536;
 
-    // Each is logged when it starts, not on every tick it lasts.
+    // Falling behind and a full queue are each logged when they start, not
+    // on every tick they last.
     private bool _isBehind;
-    private bool _saidFull;
+    private bool _reportedFull;
 
     public EntityDispatcher(EntityWorld world, ILogger logger)
     {
@@ -62,7 +63,7 @@ internal sealed class EntityDispatcher
         _resolved.Clear();
         _sequence = 0;
         _isBehind = false;
-        _saidFull = false;
+        _reportedFull = false;
     }
 
     public void QueueInput(Entity target, string input, string parameter, Entity? activator) =>
@@ -139,7 +140,7 @@ internal sealed class EntityDispatcher
     public int DrainDue()
     {
         if (_queue.Count <= _maxPendingEvents / 2)
-            _saidFull = false;
+            _reportedFull = false;
 
         long tick = _world.TickNumber;
         long firstMadeHere = _sequence;
@@ -315,10 +316,10 @@ internal sealed class EntityDispatcher
     private void RefuseForRoom(in EntityEvent made)
     {
         DiscardedCount++;
-        if (_saidFull)
+        if (_reportedFull)
             return;
 
-        _saidFull = true;
+        _reportedFull = true;
         _logger.LogError(
             "The entity event queue is full at {Limit} events, so {What} at '{TargetName}' was dropped, " +
             "and so is every event made while there is no room. What is already waiting will still run. " +
