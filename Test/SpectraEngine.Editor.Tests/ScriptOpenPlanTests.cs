@@ -51,6 +51,27 @@ public sealed class ScriptOpenPlanTests
     }
 
     [Fact]
+    public void A_batch_file_that_stands_in_for_it_is_run_by_the_command_prompt()
+    {
+        // What a package manager puts on the path: code.cmd, with the program
+        // kept somewhere else. Each part keeps quotes of its own, so a space
+        // or an ampersand in the project's path does not split it.
+        const string shim = @"C:\Users\Ada\scoop\shims\code.cmd";
+        var request = new ScriptOpenRequest(@"D:\Me & You\Assets\Scripts\Spin.luau", @"D:\Me & You", 12);
+
+        ScriptOpenStep first = ScriptOpenPlan.For(request, Has(shim))[0];
+
+        first.Way.ShouldBe(ScriptOpenWay.VisualStudioCode);
+        first.Start.FileName.ShouldBe("cmd.exe");
+        first.Start.Arguments.ShouldBeEmpty();
+        first.Start.VerbatimArguments.ShouldBe(
+            "/d /s /c \"\"" + shim + "\" \"D:\\Me & You\" \"--goto\" " +
+            "\"D:\\Me & You\\Assets\\Scripts\\Spin.luau:12\"\"");
+        first.Start.NoWindow.ShouldBeTrue("the command prompt's own window would flash");
+        first.Start.UseShell.ShouldBeFalse();
+    }
+
+    [Fact]
     public void A_script_of_no_project_opens_by_itself()
     {
         ScriptOpenStep first = ScriptOpenPlan.For(new ScriptOpenRequest(File, null), Has(Code))[0];
@@ -140,6 +161,28 @@ public sealed class ScriptOpenPlanTests
             isWindows: true);
 
         found.ShouldBe(@"C:\Tools\VS Code\Code.exe");
+    }
+
+    [Fact]
+    public void A_batch_file_on_the_path_with_no_program_beside_it_is_taken_as_it_is()
+    {
+        string? found = VisualStudioCodeLocator.Find(
+            Environment(("PATH", @"C:\Windows;C:\Users\Ada\scoop\shims")),
+            Files(@"C:\Users\Ada\scoop\shims\code.cmd"),
+            isWindows: true);
+
+        found.ShouldBe(@"C:\Users\Ada\scoop\shims\code.cmd");
+    }
+
+    [Fact]
+    public void The_program_itself_on_the_path_is_started_directly()
+    {
+        string? found = VisualStudioCodeLocator.Find(
+            Environment(("PATH", @"D:\Portable\VSCode")),
+            Files(@"D:\Portable\VSCode\Code.exe"),
+            isWindows: true);
+
+        found.ShouldBe(@"D:\Portable\VSCode\Code.exe");
     }
 
     [Theory]

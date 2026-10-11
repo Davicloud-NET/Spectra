@@ -10,8 +10,10 @@ namespace SpectraEngine.Editor.Shell.Scripts;
 /// The whole argument text as the program wants it, for one that reads its
 /// command line by its own rules. Used in place of <paramref name="Arguments"/>.
 /// </param>
+/// <param name="NoWindow">Whether a console program starts with no console window of its own.</param>
 public sealed record ProgramStart(
     string FileName,
     IReadOnlyList<string> Arguments,
     bool UseShell = false,
-    string? VerbatimArguments = null);
+    string? VerbatimArguments = null,
+    bool NoWindow = false);

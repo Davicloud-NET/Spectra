@@ -13,7 +13,11 @@ public sealed class ProcessStarter : IProgramStarter
     {
         ArgumentNullException.ThrowIfNull(start);
 
-        var info = new ProcessStartInfo(start.FileName) { UseShellExecute = start.UseShell };
+        var info = new ProcessStartInfo(start.FileName)
+        {
+            UseShellExecute = start.UseShell,
+            CreateNoWindow = start.NoWindow,
+        };
 
         if (start.VerbatimArguments is { } verbatim)
         {

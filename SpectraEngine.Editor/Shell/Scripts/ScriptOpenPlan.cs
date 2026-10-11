@@ -53,7 +53,23 @@ public static class ScriptOpenPlan
             arguments.Add(request.FilePath);
         }
 
-        return new ProgramStart(program, arguments);
+        return IsBatchFile(program) ? ThroughCommandPrompt(program, arguments) : new ProgramStart(program, arguments);
+    }
+
+    private static bool IsBatchFile(string program) =>
+        program.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
+        || program.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+
+    // A batch file is run by the command prompt, which reads its line by its
+    // own rules: with /s the outer quotes go and what is inside is kept, each
+    // part in quotes of its own. No console window: the program has its own.
+    private static ProgramStart ThroughCommandPrompt(string batchFile, List<string> arguments)
+    {
+        string line = "\"" + batchFile + "\"";
+        foreach (string argument in arguments)
+            line += " \"" + argument + "\"";
+
+        return new ProgramStart("cmd.exe", [], VerbatimArguments: "/d /s /c \"" + line + "\"", NoWindow: true);
     }
 
     private static ProgramStart? FileManager(FileManagerKind kind, string filePath) => kind switch

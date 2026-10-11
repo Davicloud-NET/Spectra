@@ -32,17 +32,21 @@ public static class VisualStudioCodeLocator
     {
         foreach (string folder in Folders(environment("PATH"), ';'))
         {
+            if (fileExists(folder + @"\Code.exe"))
+                return folder + @"\Code.exe";
+
+            if (!fileExists(folder + @"\code.cmd"))
+                continue;
+
             // The path holds the bin folder, whose code.cmd is a batch file.
             // The program is one folder up, and starting it needs no shell
             // to read the arguments a second time.
-            if (fileExists(folder + @"\code.cmd") && ParentOf(folder) is { } home
-                && fileExists(home + @"\Code.exe"))
-            {
+            if (ParentOf(folder) is { } home && fileExists(home + @"\Code.exe"))
                 return home + @"\Code.exe";
-            }
 
-            if (fileExists(folder + @"\Code.exe"))
-                return folder + @"\Code.exe";
+            // A batch file with no program beside it: a package manager's
+            // stand-in for one kept somewhere else.
+            return folder + @"\code.cmd";
         }
 
         // The installer's own choices: for one user, then for everybody.
