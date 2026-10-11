@@ -1,8 +1,8 @@
 # The Spectra data model
 
-> **How to read this page.** Every row marked **EXISTS** carries a `file:line` citation and was read out of the tree on 2026-08-21. Every row marked **PLANNED** names the document that designs it and exists **nowhere in the code**. There is no third category: if it is not cited, it is not built.
+> **How to read this page.** What exists is cited by file. What is marked **PLANNED** names the document that designs it and is not in the code.
 >
-> Line numbers are for the branch `VSIXTest` at the time of writing. Citations point at declarations, not at every use.
+> The payload list in section 3, section 6 and the summary table in section 8 were checked against the tree on 2026-10-05. The `file:line` citations in the other sections were read on 2026-08-21 and the line numbers have moved since. Trust the file name, not the number.
 
 ---
 
@@ -14,7 +14,7 @@ Everything below follows from three decisions. They are worth reading first, bec
 
 One concrete class — `SceneNode` (`SpectraEngine.Core/Scene/SceneNode.cs:14`) — holds a name, a local transform, a parent and children, and *optional payload fields*. There is no component registry, no archetype table, no node subclassing, no polymorphic node types. World geometry is not a parallel system: a brush is a field on a node (`SceneNode.cs:116`).
 
-**Consequence:** every new capability is a nullable field on `SceneNode` or it does not exist. That is cheap to reason about and cheap to traverse, and it makes the payload count a real, watched cost on the hottest type in the engine — two fields today, and each addition is a deliberate act.
+**Consequence:** every new capability is a nullable field on `SceneNode` or it does not exist. That is cheap to reason about and cheap to traverse, and it makes the payload count a real, watched cost on the hottest type in the engine. There are four payload fields today (§3), and each addition is a deliberate act.
 
 ### Derived data is never authored.
 
@@ -80,18 +80,19 @@ Brushes are the authored truth for static world geometry. The carved surfaces, t
 - **Every transform setter early-outs on exact equality** (`SceneNode.cs:162`, `:176`, `:184`, `:196`). A no-op write invalidates nothing, dirties no static world, and raises no `NodeTransformChanged`. This is what makes absolute-value commands free to replay.
 - **`WorldMatrix` is cached and lazily recomputed** (`SceneNode.cs:229`): `local * Parent.WorldMatrix`. The dirty flag is propagated *eagerly* down the whole subtree by `MarkWorldDirty` (`SceneNode.cs:390`) — cheap for shallow trees, revisit for deep ones.
 - **Brush placements must be rigid.** `Scene.DescribeNonRigidDefect` (`Scene.cs:1409`) rejects a snapshot whose brush node has non-finite elements, projective components, scale, shear, or a reflection, at tolerance `1e-4f` (`Scene.cs:1398`). Rigidity is enforced at the snapshot — the single point where node transforms enter the brush pipeline — not trusted.
-- **Rigidity is a *subtree* property.** A scale written anywhere above a brush makes that brush's placement non-rigid and rejects the whole snapshot (`SceneNode.cs:212`). A tool about to write `LocalScale` must consult `SubtreeBrushCount`, not `node.Brush is not null`. **PLANNED:** when the counter grows its second lane (§2.4) this stays the **TOTAL** lane — rigidity is universal, and node scale is illegal above a `Part` brush for exactly the reasons it is illegal above a world brush (`LocalScale` accepts negative components while `Brush.WithScaledExtents` refuses them outright; a mirrored brush inverts winding). `docs/physics.md` §2.3a.
+- **Rigidity is a *subtree* property.** A scale written anywhere above a world brush makes that brush's placement non-rigid and rejects the whole snapshot. A tool about to write `LocalScale` must consult `SubtreeBrushCount`, not `node.Brush is not null`. That count covers world brushes and parts alike (§2.4), because node scale is as wrong above a part as above a world brush: `LocalScale` accepts negative components, `Brush.WithScaledExtents` refuses them, and a mirrored brush inverts winding. The snapshot only checks world brushes, so for a part the callers keep the rule. `ScaleGizmo` reads the count, and `EntityWorld.SetLocalTransform` refuses a scale change above any brush. `docs/physics.md` §2.3a.
 
 ### 2.4 Payload bookkeeping
 
 | Member | Where |
 | --- | --- |
-| `SubtreeBrushCount` | `SceneNode.cs:222` |
-| `AdjustSubtreeBrushCount` (private) | `SceneNode.cs:361` |
+| `SubtreeBrushCount` | `SceneNode.cs` |
+| `SubtreeStaticWorldBrushCount` | `SceneNode.cs` |
+| `AdjustSubtreeBrushCounts` (private) | `SceneNode.cs` |
 
-Maintained incrementally on the **whole ancestor chain** by the `Brush` setter and by reparenting, so reading it is O(1). Its job: a transform edit can decide in O(1) whether it affects the static world at all (`SceneNode.cs:379`). Moving a camera or a brushless prop must not launch a recompile; moving a group node with brush descendants must.
+Two counts with one writer. `SubtreeBrushCount` counts every brush in the subtree, the node's own included. `SubtreeStaticWorldBrushCount` counts only `World` brushes. Both are `int` fields, and `AdjustSubtreeBrushCounts` is the only code that writes either. It walks the ancestor chain from the `Brush` setter, the `BrushKind` setter and every reparent, so reading a count is O(1).
 
-**PLANNED — one field, two lanes, one writer** (`docs/physics.md` §2.3a, milestone `P7a`). When `BrushKind` lands, `_subtreeBrushCount` becomes `_subtreeBrushCounts`, a single `long` holding **two 32-bit lanes**: the **total** in the high half and the **static-world-only** count in the low half, mutated by exactly one private ancestor-chain writer and read through two projections — `SubtreeBrushCount` (meaning unchanged, every existing caller unchanged) and `SubtreeStaticWorldBrushCount`. **Both questions are real and neither lane may be deleted:** the *total* is what a tool about to write `LocalScale` must consult (§2.3's rigidity rule, and `ScaleGizmo.cs:330`/`:654` today), while the *static-world* lane is what decides whether an edit dirties the compiled world. Packing them in one field is deliberate — it makes "two independently-maintained subtree invariants" structurally impossible, which is what `realms.md` R15 forbids adding.
+Each answers its own question. The total is what a tool reads before it writes `LocalScale` (§2.3). The static-world count decides whether a transform edit dirties the compiled world: moving a camera, a prop or a subtree of parts launches no recompile, and moving a group with a world brush below it does.
 
 ### 2.5 Events
 
@@ -123,7 +124,7 @@ Two internal hooks cover what the public events do not: `OnNodeSpatialComponentC
 | `Aabb` | `Bsp/Aabb.cs:8` |
 | `Camera` | `Camera.cs:14`; `ScreenPointToRay` `:213`, `ScreenRectToFrustum` `:263`, `GetFrustum` `:203` |
 
-**Non-obvious:** a node is *spatial* — i.e. tracked by the BVH — iff it carries a `MeshRenderer` **or** a `Brush` (`SceneBvh.cs:146`). That test is ancestry-blind: there is no enable flag anywhere on this path today, **and the designs deliberately keep it `BrushKind`-blind too** — the BVH must index world brushes and part brushes alike, or part brushes fall out of frustum culling and out of editor picking (`docs/physics.md` §2.3a). `realms.md` R12 adds only a *liveness* condition, never a realm one, for the mirror reason. `QueryFrustum` does not clear the results list; `Frustum.Intersects` (`Frustum.cs:76`) is conservative (false positives possible, false negatives not).
+**Non-obvious:** a node is *spatial*, meaning the BVH tracks it, when it carries a `MeshRenderer` or a `Brush` (`SceneBvh.cs`). The test ignores ancestry and ignores `BrushKind`: world brushes and parts are both indexed, or parts would fall out of editor picking (`docs/physics.md` §2.3a). The scene keeps a second BVH for what draws on its own, which is a mesh or a part brush with `IsRendered` on. `CanQuery` is in neither test. A query applies it through its `SceneQueryFilter`. `realms.md` R12 plans a *liveness* condition here and no realm one. `QueryFrustum` does not clear the results list; `Frustum.Intersects` is conservative (false positives possible, false negatives not).
 
 `TraceSolidSpans` answers what a sound has to get through: the stretches of solid on a segment, nearest first, each with the material of the face the segment entered by. It reads the static world as last compiled, from the live placements or from a baked map's collision hulls, and the part brushes that collide, where they stand now. Cuts are open, and what lies behind a cut names the cut's face. Meshes do not block. It clips brush planes and does not ask the BSP.
 
@@ -143,7 +144,18 @@ A segment that lies in the plane of a brush face is in solid only where there is
 
 A **payload** is an optional, nullable field on `SceneNode` that gives the node a job beyond being a named transform. It is composition, not subclassing: there is one node class and no `IPayload` interface. Assigning a payload notifies the owning scene through the internal hooks, which is how the BVH and the static world stay in step.
 
-**Two payloads exist today**, and this page is the counting authority the other documents cite. For the avoidance of the miscount that has already happened once: the two built ones are `MeshRenderer` and `Brush`; four more are **designed and unbuilt** — `Entity`, `Script`, `PrefabInstance` and `Light` (§6) — and **physics bodies are deliberately not among them**, living in a `PhysicsFlags` byte plus a side table instead (`docs/physics.md` §2.6). Any document that names an ordinal ("the fourth payload", "no fifth payload") must agree with this paragraph or say plainly that it is counting designed ones. **`BrushKind` is likewise NOT a payload and does not move either count**: it is a one-byte enum field *qualifying* the `Brush` payload the node already carries — a brush is world geometry or a part — the same shape as `PhysicsFlags` and for the same reason (`docs/physics.md` §2.3a). It also ships as a **plain field, not a bit in a packed word**, because `NodeRealm`, `NodeState` and `PhysicsFlags` are all designed and unbuilt and `P7a` must not be gated on a packing scheme two unlanded designs own; whichever of them lands first defines the word and absorbs it. **`Brush.Operation` is likewise NOT a payload and moves neither count either** (`docs/negative-brushes.md`, `P7b`) — and it is not even a node field: it is a one-byte enum on the immutable `Brush` **value**, so unlike `BrushKind` it does not widen `SceneNode`'s surface at all. Two brush qualifiers, two different objects, for the reason §3's `Brush` entry gives. **One proposal is unreconciled and is flagged rather than silently counted:** `docs/networking.md` §6.2 describes `RemoteEvent`/`UnreliableRemoteEvent`/`RemoteFunction` as *node payloads*, which would be three more fields if taken literally. That question is open there (one field with a kind enum, a side table, or three accepted fields) and must be settled before `N15`; until it is, this page counts none of them.
+**Four payloads exist today**, and this page is the counting authority the other documents cite. They are `MeshRenderer`, `Brush`, `Light` and `Entity`. Two more are designed and unbuilt: `Script` and `PrefabInstance` (§6). A document that names an ordinal ("the fifth payload") must agree with this paragraph or say that it is counting designed ones.
+
+Some node fields are not payloads and do not move the count:
+
+- `BrushKind` is a one-byte enum that qualifies the `Brush` the node already carries.
+- `PhysicsFlags` is one byte of bits and `CollisionGroup` is another byte. Physics bodies are kept out of the payload list on purpose (`docs/physics.md` §2.6). They are meant to live in a side table, which is not built.
+- `IsRendered` is a bool.
+- `MeshSource` names the model file a `MeshRenderer` came from. Clearing the renderer clears it.
+
+`Brush.Operation` is not a node field at all. It is a one-byte enum on the immutable `Brush` value (`docs/negative-brushes.md`).
+
+One proposal is still open. `docs/networking.md` §6.2 describes `RemoteEvent`, `UnreliableRemoteEvent` and `RemoteFunction` as node payloads, which would be three more fields if taken literally. The choice there is one field with a kind enum, a side table, or three accepted fields, and it must be settled before `N15`. Until it is, this page counts none of them.
 
 ### `MeshRenderer` — `SceneNode.cs:82`
 
@@ -166,11 +178,27 @@ Brush surface: `Transform` (`:128`, for standalone use only — node-attached br
 
 **A `Brush` is immutable after construction.** Every mutator returns a new instance, and that is load-bearing: `Brush` reference identity is the carve cache's validity key (`Brush.cs:219`), so swapping the successor onto the node is precisely what invalidates that brush's cached carve — and only that brush's.
 
-**PLANNED — one new field on the brush value: `Operation` (`Additive` / `Subtractive`)**, with `WithOperation` as its successor factory (`docs/negative-brushes.md`, milestone `P7b`). It is **not a payload and does not move either count below** — it is a one-byte enum *qualifying the brush value itself*, the way `BrushKind` qualifies the brush *payload* from the node side. **The two are orthogonal and live on different objects on purpose**, and this page is where the distinction has to be right: `BrushKind` is on the **node** because it is an *admission* predicate and because it is meaningfully stamped on a node whose brush has not arrived yet; `Operation` is on the **immutable `Brush`** because the three mechanisms that detect a changed brush — `CsgCompileCache.TryGetValid`, `CsgIncrementalCompiler.SamePlacement` and both arms of `Scene.CollectDirtyCells` — compare `Brush` **reference identity** plus the placement matrix and **nothing else**. A flag anywhere other than the `Brush` value is invisible to all three: flipping it would hit every cache, dirty zero cells, and leave the old geometry rendering forever with the compile counter still ticking. Putting it on the *node* instead would make one `Brush` instance mean different things on different nodes, breaking two `Brush`-reference-keyed caches at once. **Consequence for `WithFaceSurface` and `WithScaledExtents`: both must thread `Operation` through, or resizing or retexturing a hole turns it into a solid block.**
+**`Operation` says whether a brush adds solid or removes it** (`Bsp/BrushOperation.cs`, `docs/negative-brushes.md`). It is `Additive` or `Subtractive`, and `WithOperation` returns the successor. The compiled world is the union of the additive brushes minus the union of the subtractive ones, with no order between brushes. A subtractive brush removes its solid from every additive brush it overlaps, and the cavity walls wear its face materials. A `.smap` saves it as `operation` inside the brush, and writes it only when it is subtractive.
 
-**The brush setter does three things** (`SceneNode.cs:119`): it maintains `SubtreeBrushCount` on the ancestor chain when a brush is attached or detached; it dirties the static world — conservatively via `MarkStaticWorldDirty` for attach/detach, since the placement count changes and every later slot shifts, or node-scoped via `MarkBrushSubtreeDirty` for a brush-for-brush swap; and it notifies the spatial index.
+`Operation` lives on the `Brush` value and not on the node. The compile caches and the incremental compiler tell a changed brush by `Brush` reference identity and the placement matrix. A flag kept anywhere else could flip without a new `Brush` reference, and the old geometry would keep drawing. `WithAllFacesMaterial`, `WithFaceSurface` and `WithScaledExtents` all pass `Operation` on, or retexturing or resizing a hole would turn it into a solid block.
 
-**PLANNED — three of those four lines grow a `BrushKind` test, and the fourth must not** (`docs/physics.md` §2.3a, which enumerates all fifteen gate sites in the engine with a verdict each). The counter adjust, the `MarkStaticWorldDirty` and the `MarkBrushSubtreeDirty` all become kind-conditional, so **attaching, swapping or detaching a `Part` brush signals the static world nothing at all**; the `OnNodeSpatialComponentChanged` call stays **kind-blind**, because `SceneBvh.IsSpatial` (`SceneBvh.cs:146`) indexes brush nodes and gating it would drop part brushes out of frustum culling and out of editor picking. This asymmetry is the whole shape of the split: **the derived static world stops seeing part brushes; the spatial index never does.**
+`Operation` and `BrushKind` are independent. A subtractive part carves nothing and draws nothing, and `Scene.InertPartBrushCount` counts those so the mistake can be reported.
+
+**The brush setter does three things** (`SceneNode.cs`). It keeps both subtree counts right on the ancestor chain when a brush is attached or detached. It dirties the static world: `MarkStructuralWorldDirty` for an attach or detach, since placement slots shift, and `MarkBrushSubtreeDirty` for a brush-for-brush swap. And it notifies the spatial index.
+
+The first two depend on `BrushKind`. Attaching, swapping or detaching a `Part` brush leaves the static-world count alone and dirties nothing. The third does not: `OnNodeSpatialComponentChanged` runs for both kinds, because parts are culled and picked through the BVH too. The compiled world does not see part brushes, and the spatial index sees every brush.
+
+### `BrushKind`
+
+`SceneNode.BrushKind` (`Scene/BrushKind.cs`) says what the node's brush is. A `World` brush is carved against its neighbours and fused into the compiled static world. A `Part` brush stands alone with its own mesh and is never carved. The default is `World`. The kind is not inherited, so a reparent cannot change what is carved. `IsStaticWorldBrush` is true for a node that has a brush of kind `World`.
+
+Moving a part costs no recompile, so anything that moves while a level plays must be a part. `EntityWorld.SetLocalTransform` refuses to move a node with a world brush at or below it.
+
+Changing the kind of a node that has a brush adjusts the static-world count and calls `Scene.MarkAdmissionChanged`, which dirties the static world and moves the node into or out of the part list. A part's mesh comes from `PartBrushMeshCache`.
+
+In the editor the change is a `SetBrushKindCommand`. Turning a block into a part also runs `BrushKindConversion.BakeFaceAxes`, which gives each world-aligned face stored axes so its texture does not jump. Converting back does not make those faces world-aligned again. Undo does.
+
+A `.smap` saves the kind as `kind`, and writes it only for a part.
 
 ### `FaceSurface` — the per-face payload
 
@@ -186,6 +214,37 @@ What this buys: per-face materials with no per-face asset object anywhere. **The
 
 `MaterialRef` (`Assets/MaterialRef.cs:26`) is a 4-byte id (`:38`); id 0 is the engine default (`:29`, `:41`). `MaterialRegistry` (`:82`) is a process-wide, **append-only**, lock-guarded intern table: `Intern(path)` (`:110`) and `TryGetPath` (`:134`), keyed case-insensitively with backslashes folded. Ids are never reused or revoked, which is what makes one safe to hold inside an immutable CSG artifact for the life of the process. Resolution to a real `Material` happens once, on the render thread, through `AssetManager.ResolveMaterial` (`Assets/AssetManager.cs:574`), which degrades to `DefaultMaterial` (`:220`) rather than throwing.
 
+### `Light`
+
+`SceneNode.Light` (`Scene/Light.cs`) makes the node a light: directional, point, spot, rect or disc. The node supplies the position and the direction. The scene lists lit nodes in `Scene.LightNodes`. A light does not put its node in the BVH. A `.smap` saves it as `light`.
+
+### `Entity`
+
+`SceneNode.Entity` is an `EntityData` (`Entities/EntityData.cs`): a class name, keyvalues as strings, and the connections leaving the entity's outputs. The class is a name and not a schema reference, so a map that names a class this build lacks still loads and saves. Keyvalues are a list and not a dictionary, so their order and any duplicate keys survive a save. The scene lists entity nodes in `Scene.EntityNodes`. A `.smap` saves the payload as `entity`, with `class`, `keys` and `outputs`.
+
+The name other entities fire at is the node's name. There is no separate target name field.
+
+What sits on the node is authored data. While a level plays, `EntityWorld` (`Entities/EntityWorld.cs`) builds one live `Entity` per entity node from the `EntityCatalog`, or a `PlaceholderEntity` for a class it does not know. The live entity gets its own copy of the connections and never writes back to the node. `EntityWorld.SetLocalTransform` is the only way a running entity moves a node, and `Deactivate` puts every moved node back.
+
+`PlaySession` runs the entity tick first, then physics, then the character.
+
+### Node flags
+
+Four switches on the node say how it behaves. They are not payloads, and each applies to its own node only.
+
+| Member | Default | What it does |
+| --- | --- | --- |
+| `CanCollide` | on | The node's geometry takes part in collision. |
+| `CanQuery` | on | Ray and overlap queries see the node. A default `SceneQueryFilter` requires it. |
+| `CanTouch` | on | The node raises touch events. |
+| `IsRendered` | on | The node's own mesh or part brush is drawn and casts a shadow. It does nothing on a world brush, which the static world draws. |
+
+The first three are bits in `PhysicsFlags` (`Scene/PhysicsFlags.cs`), one byte on the node. The byte also holds `Anchored`, `Massless` and `HasBody`. `HasBody` belongs to the physics layer, and nothing sets it yet. `IsRendered` is a separate bool.
+
+A `.smap` saves the four as `collide`, `query`, `touch` and `render`, each written only when it is off. A `.scmap` node record stores them inverted, as `NoCollide`, `NoQuery`, `NoTouch` and `NoRender` bits, so a record with none set has the defaults. `Anchored`, `Massless` and the collision group are not saved.
+
+The editor writes the flags with `SetNodeFlagsCommand`.
+
 ---
 
 ## 4. Derived data: brushes to pixels
@@ -194,7 +253,7 @@ Authored truth is exactly this: the set of brush nodes, their brushes, and their
 
 ### 4.1 The snapshot
 
-`Scene.SnapshotBrushPlacements` (`Scene.cs:1264`) captures one `BrushPlacement` (`Bsp/BrushPlacement.cs:20`) per brush node (**PLANNED:** per *static-world* brush node — both the full walk at `Scene.cs:1351` and the fast path's per-node test at `Scene.cs:1310` become `node.IsStaticWorldBrush`, and missing the second one silently forces the O(world) walk on every drag frame whenever a dirty world-brush subtree holds a part-brush descendant) — the brush reference plus the node's world matrix at that instant. Two paths: a **fast path** (`Scene.cs:1294`) that re-visits only nodes which reported an edit and patches their slots by paged copy-on-write, costing O(edit neighbourhood); and a **full walk** (`Scene.cs:1345`) for the first snapshot, structural edits and external dirtying, costing O(world). Rigidity is validated here (`Scene.cs:1409`); a defective snapshot is rejected whole and logged once (`Scene.cs:948`) rather than per frame.
+`Scene.SnapshotBrushPlacements` (`Scene.Placements.cs`) captures one `BrushPlacement` (`Bsp/BrushPlacement.cs`) per static-world brush node: the brush reference plus the node's world matrix at that instant. Both paths test `IsStaticWorldBrush`, so a part brush is never captured. The **full walk** visits every node. It runs for the first snapshot and after `MarkStaticWorldDirty`. The **fast path** revisits only the nodes that reported an edit and the world brushes under a dirty subtree. Rigidity is validated on both paths, and a defective snapshot is rejected whole.
 
 ### 4.2 The compile chain
 
@@ -263,9 +322,9 @@ Every command's `NodeId` is a `Guid` (`SetTransformCommand.cs:87`, `SetLocalTran
 
 ---
 
-## 6. What the designs add — all PLANNED, none in the tree
+## 6. What the designs add: all PLANNED, none in the tree
 
-Nothing in this section exists in the code. Each row names the document that owns it.
+Nothing in this section exists in the code. Each row names the document that owns it. What is built is in §3: `BrushKind`, `Brush.Operation`, the light and entity payloads and the node flags.
 
 | Concept | What it is | Why | Owner |
 | --- | --- | --- | --- |
@@ -273,16 +332,13 @@ Nothing in this section exists in the code. Each row names the document that own
 | `NodeState` — `Inherit \| Active \| Dormant` | Whether the node is **live**: carved, in the BVH, drawn, queried, ticking. | There is no way to make a brush inert today — `SnapshotFullWalk` admits every brush unconditionally (`Scene.cs:1349`) and `IsSpatial` is ancestry-blind (`SceneBvh.cs:146`) — so a parked template would carve the world. Ship both axes or neither. | `docs/realms.md` §2.1–2.2 |
 | `RealmSet` — `[Flags] Inert \| Server \| Client \| Shared` | The **resolved** value, and it is a *set*, not an enum value. | Resolution is an intersection: `ToSet(declared) & parentEffective`. `Server ∩ Client` is empty, and the empty set has a name — `Inert` — rather than being promoted to the ancestor's realm, which would turn a dragged client HUD subtree into server code holding authority. | `docs/realms.md` §2.3, §3 R1–R3 |
 | `SceneNode.EffectiveRealm` / `IsLive` / `IsVisibleTo(mask)` | Cached resolved fields, maintained on declaration change and reparent only — never on the transform path. | `IsVisibleTo` is one AND and one compare: the entire enforcement primitive. | `docs/realms.md` §2.4 |
-| `BrushKind` — `World \| Part` | A declared, **NOT inherited** one-byte enum on `SceneNode` qualifying the `Brush` payload: `World` fuses into the compiled static world, `Part` does not. Default `World`. With it come `IsStaticWorldBrush`, the two-lane subtree counter (§2.4), `Scene.MarkAdmissionChanged()` and `ConvertBrushKindCommand`. | A brush that **moves under simulation** changes the *overlap set* every tick, which defeats the incremental compiler's trusted carry and bails to the O(world) path forever — while everything still renders correctly. The split makes "participates in the fused world" a property a **simulation can never change and a human changes only by asking**. Not inherited **on purpose**: `AddChild` is therefore not a refusal site and **no reparent can rewrite world topology**. Note the correction that motivates it: the carve is **union-skin extraction**, so a part does not punch a hole in the floor — the damage is the per-tick recompile, not the geometry. | `docs/physics.md` §2.3a; `ROADMAP.md` `P7a` |
-| `Brush.Operation` — `Additive \| Subtractive` | A declared one-byte enum on the **immutable `Brush` value** (not on the node), with `WithOperation` as its successor factory. The compiled solid becomes `⋃{additive} \ ⋃{subtractive}`, regularized, evaluated as an **unordered set expression**. A subtractive brush emits no skin of its own; it induces cavity walls into each additive brush it cuts. | Hammer/Unreal/Roblox-style negation, which the engine has never had — the carve is union-skin extraction and two overlapping brushes *merge*. It lives on `Brush` and nowhere else because all three change detectors compare `Brush` reference identity plus the matrix and nothing else, so a flag on `BrushPlacement` or on the node would hit every cache, dirty zero cells, and render stale geometry forever with nothing at `ERR`. Unordered rather than an ordered tree because the engine's only total order is graph traversal order, and an ordered rule would let dragging a node into a folder flip a doorway into a wall. **Orthogonal to `BrushKind`: all four combinations are legal, including the inert `(Part, Subtractive)`.** | `docs/negative-brushes.md`; `ROADMAP.md` `P7b` |
 | `Script` payload | A **node** with a `Script` payload — so `script.Parent` is literally the parent node — carrying **one axis, `bool IsModule`**, plus `Disabled`. | Matches Roblox character-for-character, and falls out free: a script-only node carries no `MeshRenderer` or `Brush`, so the BVH and static world ignore it automatically. **There is no `ScriptKind.Server`/`.Client`:** run location is the *node's* `Realm`, so a client script is a node declared `Realm = "Client"` (`realms.md` §6.2 spends `O8`'s reservation; `networking.md` `N15` records the same correction). | `docs/roblox-onboarding.md` O8, corrected by `docs/realms.md` §6.2 |
-| `Entity` payload | Source-style entity base: `OnSpawn`/`OnActivate`/`OnRemove`, `AcceptInput`, `FireOutput`, connection tuples, `EntityWorld`, `EntityCatalog`. **`targetname` IS `SceneNode.Name`** — one identity, one field. | The no-code gameplay core. Tick runs on the render thread after `SceneManager.Update` and before `ProcessStaticWorldCompilation`, so an entity that moves a brush gets its cells dirtied the same frame. | `ROADMAP.md` P4–P9 |
 | Attributes | A closed `AttributeValue` readonly-struct union (Bool, Int, Double, String, Vector2, Vector3, Color3, CFrame, NumberRange…) **plus a `NodeRef` wrapping the node's `Guid`**, in a lazily allocated per-node dictionary. | **One** keyvalue mechanism serves both Roblox attributes and Source entity keyvalues — they are the same feature. `NodeRef` is the addition Roblox lacks and the entity wiring is unusable without it. | `docs/roblox-onboarding.md` O3 |
 | Tags | Per-node lazy tag list, a `Scene` reverse index, `GetTagged`, `TagAdded`/`TagRemoved`, and `ObserveTag` which **replays already-tagged nodes before connecting**. | The `CollectionService` equivalent, minus the `GetTagged`-loop-beside-every-connect boilerplate. The reverse index must take an audience mask or it enumerates content the caller cannot see. | `docs/roblox-onboarding.md` O3; `docs/roblox-to-spectra.md` (Instance API) |
 | `NetId` — packed `(index, generation)` `uint` | A **second, session-scoped** identity for gameplay replication. 20 index bits, generation above. | 16-byte Guids in every gameplay packet cost 64 KB/s per client in identifiers alone at 200 objects / 20 Hz. Authored nodes derive their index from the `.scmap` pre-order position, so both sides agree with zero spawn traffic. | `docs/networking.md` §3.3 |
-| Physics bodies — **deliberately NOT a payload** | A packed `PhysicsFlags` byte on `SceneNode` (`CanCollide`, `CanQuery`, `CanTouch`, `Anchored`, `Massless`, `HasBody`) plus a **side table** in the physics world keyed by `SceneNode.Id` holding the body handle, group and material, probed only when `HasBody` is set. | **Updated: a document now owns this.** `docs/physics.md` §2.6 refuses a fifth payload field explicitly, citing the same payload-count cost this page tracks, and puts the state in flags-plus-side-table instead — so the node gains a byte, not a reference. The static world becomes per-chunk convex hulls from the same placements (`Y3`), and physics becomes the sole authority for gameplay queries (`Y4`). What stays deferred is **rollback** (`Y13`'s re-evaluation gate — the chosen engine disclaims rollback determinism) and lag compensation (`Y16`). The per-instance state history ring is still `networking.md`'s (§4.4), because interpolation needs it and retrofitting it changes every instance's layout. | `docs/physics.md` §2.6, `Y0`–`Y16` |
+| Physics bodies, kept out of the payload list | A side table in the physics world keyed by `SceneNode.Id`, holding the body handle and probed only when the node's `HasBody` bit is set. The `PhysicsFlags` byte that bit lives in is built (§3). The side table and dynamic bodies are not. | A body then costs the node one bit and no reference, which is the payload-count cost this page tracks. Rollback (`Y13`) and lag compensation (`Y16`) stay deferred. The per-instance state history ring is `networking.md`'s (§4.4). | `docs/physics.md` §2.6, `Y6` |
 
-Also planned and adjacent to the model, named so they are not mistaken for existing: `.smap` authored JSON with zero derived data (`formats-and-pipeline.md` §2.6), `.scmap` baked binary with fixed 80-byte `NODE` records (`§2.7`), prefab `PrefabInstance` payload (`ROADMAP.md` P10), `Light` payload and a typed `Scene.Environment` (`roblox-to-spectra.md`, the `Lighting` row), and cvars as the settings surface (`docs/console.md` §5).
+Also planned and adjacent to the model, named so they are not mistaken for existing: the `PrefabInstance` payload (`ROADMAP.md` P10), a typed `Scene.Environment` (`roblox-to-spectra.md`, the `Lighting` row), and cvars as the settings surface (`docs/console.md` §5).
 
 ---
 
@@ -316,55 +372,59 @@ One consequence already written down: instantiating a project template must **re
 
 | Concept | Exists today | Where it lives | Purpose |
 | --- | --- | --- | --- |
-| `SceneNode` | **Yes** | `Scene/SceneNode.cs:14` | The single spine: name, transform, hierarchy, optional payloads |
-| `SceneNode.Id` (`Guid`) | **Yes** | `SceneNode.cs:60` | Universal, lifetime-stable reference |
-| `SceneNode(name, id)` | **Yes** | `SceneNode.cs:44` | Resurrect a node under its old identity |
-| `Transform` (pos/rot/scale) | **Yes** | `Scene/Transform.cs:5` | Local pose; `Model` composes S·R·T |
-| `WorldMatrix` (cached) | **Yes** | `SceneNode.cs:225` | Derived world pose; eagerly invalidated down the subtree |
-| Transform equality early-out | **Yes** | `SceneNode.cs:162`, `:176`, `:184`, `:196` | A no-op write dirties nothing and raises nothing |
-| `SubtreeBrushCount` | **Yes** | `SceneNode.cs:222` | O(1) "does this edit touch the static world" |
-| `Scene` | **Yes** | `Scene/Scene.cs:40` | Owns root, camera, selection, BVH, id index, derived world |
-| `Scene.TryFindById` | **Yes** | `Scene.cs:186` | Guid → live node, O(1) |
-| `NodeAdded`/`NodeRemoved`/`NodeTransformChanged` | **Yes** | `Scene.cs:98`, `:108`, `:118` | Change notification; handlers must not mutate the graph |
-| `SelectionSet` | **Yes** | `Scene/SelectionSet.cs:20` | Editor selection, auto-deselects on removal |
-| `SceneBvh` + `SceneRaycastHit` | **Yes** | `Scene/SceneBvh.cs:60`, `:30` | Dynamic AABB tree over spatial nodes |
-| `Camera`, `Ray3`, `Frustum`, `Aabb` | **Yes** | `Camera.cs:14`, `Ray3.cs:16`, `Frustum.cs:16`, `Bsp/Aabb.cs:8` | View, picking and culling primitives |
-| `MeshRenderer` payload | **Yes** | `SceneNode.cs:82`; type at `Scene/MeshRenderer.cs:10` | Draw this node with this mesh + material |
-| `Mesh` (GPU + CPU copy) | **Yes** | `Graphics/Mesh.cs:14` | Renderer-owned geometry with CPU positions/indices/bounds |
-| `Material` | **Yes** | `Graphics/Material.cs:47` | Shader + typed parameters + texture slots |
-| `Brush` payload | **Yes** | `SceneNode.cs:116`; type at `Bsp/Brush.cs:20` | Convex solid as half-spaces; the authoring primitive |
-| `Brush.WithScaledExtents` | **Yes** | `Bsp/Brush.cs:308` | Resize by editing plane offsets, never node scale |
-| `FaceSurface` | **Yes** | `Bsp/FaceSurface.cs:86` | Per-face material + Hammer texture axes, as a pure value |
-| `MaterialRef` / `MaterialRegistry` | **Yes** | `Assets/MaterialRef.cs:26`, `:82` | Interned material id safe to carry through a background compile |
-| `AssetManager` | **Yes** | `Assets/AssetManager.cs:49` | Typed caches; sync `Load*` vs async `Request*`; owns every GPU resource |
-| `BrushPlacement` | **Yes** | `Bsp/BrushPlacement.cs:20` | Brush + captured world matrix — the snapshot unit |
-| Rigidity validation | **Yes** | `Scene.cs:1409` | Rejects scale/shear/mirror/NaN brush placements at the snapshot |
-| `CsgWorld` | **Yes** | `Bsp/CsgWorld.cs:16` | The compiled static world (derived, never authored) |
-| `ChunkCoord` / `ChunkGrid` / `WorldChunk` | **Yes** | `ChunkCoord.cs:14`, `ChunkGrid.cs:23`, `WorldChunk.cs:30` | Sparse unbounded 32-unit cell partition |
-| `BspTree` / `BspNode` | **Yes** | `BspTree.cs:14`, `BspNode.cs:10` | Per-cell solid-leaf tree — **queries only**, never rendering |
-| `ChunkMesh` / `ChunkSubmesh` | **Yes** | `Bsp/ChunkMesh.cs:75`, `:39` | Per-cell render arrays, split per material |
-| Incremental compile caches | **Yes** | `CsgWorld.cs:224`, `:254`, `:301`, `:338` | Pure accelerators; disposable without loss |
-| `RenderView` / `RenderItem` | **Yes** | `Graphics/RenderView.cs:39`, `:15` | Reusable per-frame draw list |
-| `IEditorCommand` | **Yes** | `Editing/Commands/IEditorCommand.cs:31` | The only sanctioned way to change a scene |
-| `ICoalescingCommand` | **Yes** | `Commands/ICoalescingCommand.cs:21` | One drag → one undo entry |
-| `SetTransformCommand` / `SetLocalTransformCommand` / `SetBrushCommand` / `CompositeCommand` | **Yes** | `:25` / `:18` / `:32` / `:18` in `Editing/Commands/` | Absolute-value, Guid-addressed edits |
-| `UndoStack` | **Yes** | `Editing/Undo/UndoStack.cs:41` | Bounded ring history with gesture transactions |
+| `SceneNode` | **Yes** | `Scene/SceneNode.cs` | The single spine: name, transform, hierarchy, optional payloads |
+| `SceneNode.Id` (`Guid`) | **Yes** | `Scene/SceneNode.cs` | Universal, lifetime-stable reference |
+| `SceneNode(name, id)` | **Yes** | `Scene/SceneNode.cs` | Resurrect a node under its old identity |
+| `Transform` (pos/rot/scale) | **Yes** | `Scene/Transform.cs` | Local pose; `Model` composes S·R·T |
+| `WorldMatrix` (cached) | **Yes** | `Scene/SceneNode.cs` | Derived world pose; eagerly invalidated down the subtree |
+| Transform equality early-out | **Yes** | `Scene/SceneNode.cs` | A no-op write dirties nothing and raises nothing |
+| `SubtreeBrushCount` / `SubtreeStaticWorldBrushCount` | **Yes** | `Scene/SceneNode.cs` | O(1) "does this subtree hold a brush" and "does this edit touch the static world". Two counts, one writer |
+| `Scene` | **Yes** | `Scene/Scene.cs` and the `Scene.*.cs` partials | Owns root, camera, selection, BVH, id index, derived world |
+| `Scene.TryFindById` | **Yes** | `Scene/Scene.cs` | Guid → live node, O(1) |
+| `NodeAdded`/`NodeRemoved`/`NodeTransformChanged` | **Yes** | `Scene/Scene.cs` | Change notification; handlers must not mutate the graph |
+| `SelectionSet` | **Yes** | `Scene/SelectionSet.cs` | Editor selection, auto-deselects on removal |
+| `SceneBvh` + `SceneRaycastHit` | **Yes** | `Scene/SceneBvh.cs` | Dynamic AABB tree over spatial nodes |
+| `Camera`, `Ray3`, `Frustum`, `Aabb` | **Yes** | `Scene/Camera.cs`, `Scene/Ray3.cs`, `Scene/Frustum.cs`, `Bsp/Aabb.cs` | View, picking and culling primitives |
+| `MeshRenderer` payload | **Yes** | `Scene/SceneNode.cs`; type in `Scene/MeshRenderer.cs` | Draw this node with this mesh + material |
+| `Mesh` (GPU + CPU copy) | **Yes** | `Graphics/Mesh.cs` | Renderer-owned geometry with CPU positions/indices/bounds |
+| `Material` | **Yes** | `Graphics/Material.cs` | Shader + typed parameters + texture slots |
+| `Brush` payload | **Yes** | `Scene/SceneNode.cs`; type in `Bsp/Brush.cs` | Convex solid as half-spaces; the authoring primitive |
+| `Brush.WithScaledExtents` | **Yes** | `Bsp/Brush.cs` | Resize by editing plane offsets, never node scale |
+| `Brush.Operation` (`Additive`/`Subtractive`) + `Brush.WithOperation` | **Yes** | `Bsp/Brush.cs`; enum in `Bsp/BrushOperation.cs` | On the brush value, not the node, and not a payload: does this brush add solid or remove it. Independent of `BrushKind` |
+| `BrushKind` (`World`/`Part`) + `IsStaticWorldBrush` | **Yes** | `Scene/SceneNode.cs`; enum in `Scene/BrushKind.cs` | Declared per node, not inherited, not a payload: is this brush fused into the compiled static world, or does it stand alone as a part |
+| `Scene.MarkAdmissionChanged` | **Yes** | `Scene/Scene.cs` | Runs when a brush changes kind: dirties the static world and updates the part list |
+| `SetBrushKindCommand` + `BrushKindConversion` | **Yes** | `Editing/Commands/SetBrushKindCommand.cs`, `Editing/Commands/BrushKindConversion.cs` | World to part and back as an undoable command. Making a part bakes the axes of world-aligned faces, and converting back does not undo that |
+| `FaceSurface` | **Yes** | `Bsp/FaceSurface.cs` | Per-face material + Hammer texture axes, as a pure value |
+| `MaterialRef` / `MaterialRegistry` | **Yes** | `Assets/MaterialRef.cs` | Interned material id safe to carry through a background compile |
+| `AssetManager` | **Yes** | `Assets/AssetManager.cs` and the `AssetManager.*.cs` partials | Typed caches; sync `Load*` vs async `Request*`; owns every GPU resource |
+| `Light` payload | **Yes** | `Scene/SceneNode.cs`; type in `Scene/Light.cs` | Makes the node a light: directional, point, spot, rect or disc |
+| `Entity` payload | **Yes** | `Scene/SceneNode.cs`; type in `Entities/EntityData.cs` | Class name, keyvalues and output connections, authored on the node. The target name is `SceneNode.Name` |
+| `EntityWorld` / `Entity` / `EntityCatalog` | **Yes** | `Entities/EntityWorld.cs`, `Entities/Entity.cs`, `Entities/EntityCatalog.cs` | The entity runtime: builds live entities from the authored data while a level plays, and never writes back |
+| Node flags `CanCollide`, `CanQuery`, `CanTouch` | **Yes** | `Scene/SceneNode.cs`; bits in `Scene/PhysicsFlags.cs` | Whether the node collides, is seen by queries and raises touch events. Not payloads. Saved in `.smap` as `collide`, `query`, `touch` |
+| Node flag `IsRendered` | **Yes** | `Scene/SceneNode.cs` | Whether the node's own mesh or part brush is drawn. Not a payload. Saved in `.smap` as `render` |
+| `SetNodeFlagsCommand`, `SetEntityCommand`, `SetEntityKeyvalueCommand`, `SetEntityConnectionsCommand`, `SetLightCommand` | **Yes** | `Editing/Commands/` | Undoable edits of the flags, the entity payload and the light |
+| `BrushPlacement` | **Yes** | `Bsp/BrushPlacement.cs` | Brush + captured world matrix: the snapshot unit |
+| Rigidity validation | **Yes** | `Scene/Scene.cs`, `Scene/Scene.Placements.cs` | Rejects scale/shear/mirror/NaN brush placements at the snapshot |
+| `CsgWorld` | **Yes** | `Bsp/CsgWorld.cs` | The compiled static world (derived, never authored) |
+| `ChunkCoord` / `ChunkGrid` / `WorldChunk` | **Yes** | `Bsp/ChunkCoord.cs`, `Bsp/ChunkGrid.cs`, `Bsp/WorldChunk.cs` | Sparse unbounded 32-unit cell partition |
+| `BspTree` / `BspNode` | **Yes** | `Bsp/BspTree.cs`, `Bsp/BspNode.cs` | Per-cell solid-leaf tree. **Queries only**, never rendering |
+| `ChunkMesh` / `ChunkSubmesh` | **Yes** | `Bsp/ChunkMesh.cs` | Per-cell render arrays, split per material |
+| Incremental compile caches | **Yes** | `Bsp/CsgCompileCache.cs`, `Bsp/CsgWeldCache.cs`, `Bsp/CsgBspCache.cs`, `Bsp/CsgMeshCache.cs` | Pure accelerators; disposable without loss |
+| `RenderView` / `RenderItem` | **Yes** | `Graphics/RenderView.cs` | Reusable per-frame draw list |
+| `.smap` / `.scmap` node records | **Yes** | `Maps/MapDocument.cs`, `Maps/Compiled/ScmapRecords.cs` | Authored JSON with no derived data; baked binary with 80-byte `NODE` records |
+| `IEditorCommand` | **Yes** | `Editing/Commands/IEditorCommand.cs` | The only sanctioned way to change a scene |
+| `ICoalescingCommand` | **Yes** | `Editing/Commands/ICoalescingCommand.cs` | One drag → one undo entry |
+| `SetTransformCommand` / `SetLocalTransformCommand` / `SetBrushCommand` / `CompositeCommand` | **Yes** | `Editing/Commands/` | Absolute-value, Guid-addressed edits |
+| `UndoStack` | **Yes** | `Editing/Undo/UndoStack.cs` | Bounded ring history with gesture transactions |
 | `NodeRealm` (audience) | **No** | `docs/realms.md` §2.2 | Declared, inherited "who holds this node" |
 | `NodeState` (liveness) | **No** | `docs/realms.md` §2.2 | Declared, inherited "is this node live" |
 | `RealmSet` / `EffectiveRealm` / `IsLive` | **No** | `docs/realms.md` §2.3–2.4 | Set-valued resolution; the empty set is `Inert` |
 | `Script` payload | **No** | `docs/roblox-onboarding.md` O8 | A script is a node, so `script.Parent` is the parent node |
-| `Entity` payload | **No** | `ROADMAP.md` P4–P9 | Source-style entity I/O; `targetname` **is** `SceneNode.Name` |
 | Attributes (`AttributeValue`, `NodeRef`) | **No** | `docs/roblox-onboarding.md` O3 | One typed keyvalue bag for both Roblox attributes and entity keyvalues |
 | Tags + reverse index + `ObserveTag` | **No** | `docs/roblox-onboarding.md` O3 | `CollectionService` equivalent with the boilerplate removed |
 | `NetId` | **No** | `docs/networking.md` §3.3 | Session-scoped 4-byte gameplay identity, `Shared` nodes only |
-| `PhysicsFlags` byte + physics-world side table | **No** | `docs/physics.md` §2.6 | Designed, and deliberately **not** a payload: a bit set on the node, the body handle in a side table |
-| `BrushKind` (`World`/`Part`) + `IsStaticWorldBrush` | **No** | `docs/physics.md` §2.3a; `ROADMAP.md` `P7a` | Declared, **not inherited**, not a payload: does this brush fuse into the compiled static world, or render and simulate on its own |
-| `Brush.Operation` (`Additive`/`Subtractive`) + `Brush.WithOperation` | **No** | `docs/negative-brushes.md`; `ROADMAP.md` `P7b` | On the **brush value**, not the node, and not a payload: does this brush add solid or remove it. Orthogonal to `BrushKind` |
-| Two-lane `_subtreeBrushCounts` (total + static-world) | **No** | `docs/physics.md` §2.3a | One field, one writer, two projections — answers "does this subtree hold brushes" and "does it hold *carving* brushes" without a second invariant |
-| `Scene.MarkAdmissionChanged()` | **No** | `docs/realms.md` R17; `docs/physics.md` §2.3a | The named entry point for *"which nodes are admitted changed"* — bumps `_graphStructureVersion` **and** forces the full walk |
-| `ConvertBrushKindCommand` | **No** | `docs/physics.md` §2.3a | World↔Part as one undoable command; bakes UV axes, and its label states that the world-aligned flag does not survive the round trip |
+| Physics-world side table for bodies | **No** | `docs/physics.md` §2.6 | Designed, and not a payload: the `HasBody` bit on the node, the body handle in a side table |
 | `PrefabInstance` payload | **No** | `ROADMAP.md` P10 | `{prefab, seed, overrides}` with derived child GUIDs |
-| `Light` payload / `Scene.Environment` | **No** | `docs/roblox-to-spectra.md`, the `Lighting` row | Lights are spatial nodes; global settings are a typed struct, not a node |
-| `.smap` / `.scmap` node records | **No** | `docs/formats-and-pipeline.md` §2.6, §2.7 | Authored JSON with zero derived data; baked binary with 80-byte `NODE` records |
+| `Scene.Environment` | **No** | `docs/roblox-to-spectra.md`, the `Lighting` row | Global settings as a typed struct, not a node |
 | Signals (`Signal<T>`, `Destroying`) | **No** | `docs/roblox-to-spectra.md`, the Instance API table | Per-node events; scene-level events exist, per-node ones do not |
-| Settable `Parent`, `Clone`, `Destroy`, `FindFirstChild`, `IsA` | **No** | `docs/roblox-to-spectra.md`, the Instance API table | The familiarity API; today only `AddChild`/`RemoveChild`/`Traverse` exist |
+| Settable `Parent`, `Destroy`, `FindFirstChild`, `IsA` | **No** | `docs/roblox-to-spectra.md`, the Instance API table | The familiarity API. `AddChild`, `InsertChild`, `RemoveChild`, `Clone` and `Traverse` exist |
