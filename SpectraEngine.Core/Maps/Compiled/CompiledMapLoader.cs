@@ -121,22 +121,7 @@ public static class CompiledMapLoader
         {
             ScmapNodeRecord record = document.Nodes[i];
             string name = document.NodeName(i);
-            ScmapPayloadFlags flags = record.PayloadFlags;
-
-            // Keeps the stored id. Commands and entity wires address nodes by it.
-            var node = new SceneNode(name, record.NodeId)
-            {
-                LocalTransform = new Transform
-                {
-                    Position = record.LocalPosition,
-                    Rotation = record.LocalRotation,
-                    Scale = record.LocalScale,
-                },
-                CanCollide = (flags & ScmapPayloadFlags.NoCollide) == 0,
-                CanQuery = (flags & ScmapPayloadFlags.NoQuery) == 0,
-                CanTouch = (flags & ScmapPayloadFlags.NoTouch) == 0,
-                IsRendered = (flags & ScmapPayloadFlags.NoRender) == 0,
-            };
+            SceneNode node = NodeOf(in record, name, report);
 
             AttachPayload(node, in record, i, name, brushes, brushOfNode[i], materials, report);
 
@@ -159,6 +144,39 @@ public static class CompiledMapLoader
         report.LightsLoaded = nextLight;
 
         return nodes;
+    }
+
+    // Keeps the stored id. Commands and entity wires address nodes by it.
+    private static SceneNode NodeOf(scoped in ScmapNodeRecord record, string name, CompiledMapLoadReport report)
+    {
+        ScmapPayloadFlags flags = record.PayloadFlags;
+
+        return new SceneNode(name, record.NodeId)
+        {
+            LocalTransform = new Transform
+            {
+                Position = record.LocalPosition,
+                Rotation = record.LocalRotation,
+                Scale = record.LocalScale,
+            },
+            CanCollide = (flags & ScmapPayloadFlags.NoCollide) == 0,
+            CanQuery = (flags & ScmapPayloadFlags.NoQuery) == 0,
+            CanTouch = (flags & ScmapPayloadFlags.NoTouch) == 0,
+            IsRendered = (flags & ScmapPayloadFlags.NoRender) == 0,
+
+            // The record's two fields are numbered as the node's enums are.
+            DeclaredRealm = (NodeRealm)record.DeclaredRealm,
+            DeclaredState = StateOf(in record, name, report),
+        };
+    }
+
+    // The two-bit field has a fourth value that is no state.
+    private static NodeState StateOf(scoped in ScmapNodeRecord record, string name, CompiledMapLoadReport report)
+    {
+        if (record.DeclaredState != ScmapNodeState.Invalid) return (NodeState)record.DeclaredState;
+
+        report.StateInvalid(name);
+        return NodeState.Inherit;
     }
 
     // The world brushes come back as hulls placed by their nodes, for collision

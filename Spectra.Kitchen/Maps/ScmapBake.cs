@@ -137,7 +137,10 @@ public static class ScmapBake
                 node.LocalTransform,
                 PayloadKindOf(node, mapped),
                 PayloadFlagsOf(node),
-                PayloadIndex: PayloadIndexOf(mapped, assets)));
+                // The node's enums are numbered as the record's two fields are.
+                (ScmapNodeRealm)node.DeclaredRealm,
+                (ScmapNodeState)node.DeclaredState,
+                PayloadIndexOf(mapped, assets)));
 
             if (node.Brush is { } brush && KeepsSource(node, mapped, keepBrushSource))
                 builder.AddBrushSource(BrushSourceOf(index, brush, assets));

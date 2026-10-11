@@ -13,6 +13,7 @@ public sealed class CompiledMapLoadReport
     private readonly List<string> _partBrushesWithoutSource = [];
     private readonly List<string> _brushesRefused = [];
     private readonly List<string> _collisionHullsRefused = [];
+    private readonly List<string> _statesInvalid = [];
 
     /// <summary>
     /// What a <c>.scmap</c> at this format version cannot carry, whatever is in
@@ -43,6 +44,12 @@ public sealed class CompiledMapLoadReport
     /// and can be walked through.
     /// </summary>
     public IReadOnlyList<string> CollisionHullsRefused => _collisionHullsRefused;
+
+    /// <summary>
+    /// Nodes whose state field held the value that is no state. They declare
+    /// no state of their own.
+    /// </summary>
+    public IReadOnlyList<string> NodesWithInvalidState => _statesInvalid;
 
     /// <summary>Nodes rebuilt from the file.</summary>
     public int NodesLoaded { get; internal set; }
@@ -90,7 +97,7 @@ public sealed class CompiledMapLoadReport
     /// <summary>Whether nothing in this file was lost. Says nothing about <see cref="FormatGaps"/>.</summary>
     public bool IsComplete =>
         _unboundMeshInstances.Count == 0 && _partBrushesWithoutSource.Count == 0 && _brushesRefused.Count == 0
-        && _collisionHullsRefused.Count == 0 && !CollisionFaceMaterialsMissing;
+        && _collisionHullsRefused.Count == 0 && _statesInvalid.Count == 0 && !CollisionFaceMaterialsMissing;
 
     /// <summary>One sentence naming what this file lost, or null when nothing was.</summary>
     public string? Describe()
@@ -109,6 +116,13 @@ public sealed class CompiledMapLoadReport
             parts.Add(
                 $"{_collisionHullsRefused.Count} world brush(es) with no collision " +
                 $"({Join(_collisionHullsRefused)})");
+        }
+
+        if (_statesInvalid.Count > 0)
+        {
+            parts.Add(
+                $"{_statesInvalid.Count} node(s) with no valid state, loaded as declaring none " +
+                $"({Join(_statesInvalid)})");
         }
 
         if (CollisionFaceMaterialsMissing)
@@ -134,6 +148,8 @@ public sealed class CompiledMapLoadReport
     internal void BrushRefused(string node) => _brushesRefused.Add(node);
 
     internal void CollisionHullRefused(string node) => _collisionHullsRefused.Add(node);
+
+    internal void StateInvalid(string node) => _statesInvalid.Add(node);
 
     private static string Join(List<string> names) =>
         names.Count <= 5
