@@ -257,7 +257,7 @@ public abstract class Entity
 
         // A wait too long to count is no think at all.
         if (_nextThinkTick != NoThink)
-            World.ScheduleThink(this, _nextThinkTick, _thinkSerial);
+            World.Dispatcher.ScheduleThink(this, _nextThinkTick, _thinkSerial);
     }
 
     internal void Bind(SceneNode node, EntityWorld world, EntityData data)

@@ -58,7 +58,7 @@ public sealed class EntityOutput
 
     internal void Fire(Entity caller, Entity? activator, string? parameterOverride)
     {
-        EntityWorld world = caller.World;
+        EntityDispatcher dispatcher = caller.World.Dispatcher;
         for (int i = 0; i < _wires.Count; i++)
         {
             Wire wire = _wires[i];
@@ -66,7 +66,7 @@ public sealed class EntityOutput
             if (wire.FiresLeft == 0)
                 continue;
 
-            world.ScheduleOutput(caller, activator, Name, wire.Connection, wire.AuthoredIndex, parameterOverride);
+            dispatcher.ScheduleOutput(caller, activator, Name, wire.Connection, wire.AuthoredIndex, parameterOverride);
 
             if (wire.FiresLeft > 0)
             {
