@@ -12,7 +12,8 @@ internal static class Fixtures
 
         namespace TestGame.Entities;
 
-        [SpectraEntity("func_door", Display = "Door", Group = "Brush", Placement = EntityPlacement.Brush)]
+        [SpectraEntity(
+            "func_door", Display = "Door", Group = "Brush", Placement = EntityPlacement.Brush, Icon = "door")]
         public sealed partial class FuncDoor : Entity
         {
             [EntityOutput]

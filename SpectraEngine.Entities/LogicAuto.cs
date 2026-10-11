@@ -8,7 +8,7 @@ namespace SpectraEngine.Entities;
 // The map begins in OnActivate, once every entity has spawned. OnMapSpawn is
 // queued behind anything a spawn fired and arrives on the first tick.
 // An entity spawned into a running world fires when it joins.
-[SpectraEntity("logic_auto", Group = "Logic", Placement = EntityPlacement.Abstract)]
+[SpectraEntity("logic_auto", Group = "Logic", Placement = EntityPlacement.Abstract, Icon = "auto")]
 public sealed partial class LogicAuto : Entity
 {
     /// <summary>Fired once, when the map begins.</summary>

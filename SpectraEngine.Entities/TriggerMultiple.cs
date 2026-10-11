@@ -13,7 +13,7 @@ namespace SpectraEngine.Entities;
 // the player still inside starts a new touch on the next tick.
 // The trigger is its own activator: the player is not an entity, so
 // !activator on one of its wires names the trigger.
-[SpectraEntity("trigger_multiple", Group = "Triggers", Placement = EntityPlacement.Volume)]
+[SpectraEntity("trigger_multiple", Group = "Triggers", Placement = EntityPlacement.Volume, Icon = "trigger")]
 public sealed partial class TriggerMultiple : Entity, ITouchListener
 {
     /// <summary>Fired when the player comes inside.</summary>

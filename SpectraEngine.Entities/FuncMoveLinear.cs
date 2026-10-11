@@ -17,7 +17,12 @@ namespace SpectraEngine.Entities;
 // they are out of the way.
 // OnFullyOpen and OnFullyClosed fire on arriving at position 1 and 0, with the
 // mover as their activator. Arriving anywhere between fires nothing.
-[SpectraEntity("func_movelinear", Display = "Linear Mover", Group = "Movers", Placement = EntityPlacement.Brush)]
+[SpectraEntity(
+    "func_movelinear",
+    Display = "Linear Mover",
+    Group = "Movers",
+    Placement = EntityPlacement.Brush,
+    Icon = "lift")]
 public sealed partial class FuncMoveLinear : Entity
 {
     /// <summary>Fired when the brush arrives at position 1.</summary>

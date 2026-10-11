@@ -17,7 +17,7 @@ namespace SpectraEngine.Entities;
 // leaves the facing alone.
 // The trigger is its own activator: the player is not an entity, so
 // !activator on one of its wires names the trigger.
-[SpectraEntity("trigger_teleport", Group = "Triggers", Placement = EntityPlacement.Volume)]
+[SpectraEntity("trigger_teleport", Group = "Triggers", Placement = EntityPlacement.Volume, Icon = "teleport")]
 public sealed partial class TriggerTeleport : Entity, ITouchListener
 {
     /// <summary>Fired when the player comes inside. The player has moved by the time it is delivered.</summary>

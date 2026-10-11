@@ -9,7 +9,7 @@ namespace SpectraEngine.Entities;
 // so wiring can prime a branch without running it. Test fires, and
 // SetValueTest and ToggleTest do both.
 // The outputs carry no value: a wire on them sends its own parameter.
-[SpectraEntity("logic_branch", Group = "Logic", Placement = EntityPlacement.Abstract)]
+[SpectraEntity("logic_branch", Group = "Logic", Placement = EntityPlacement.Abstract, Icon = "branch")]
 public sealed partial class LogicBranch : Entity
 {
     /// <summary>Fired by a test while the value is true.</summary>

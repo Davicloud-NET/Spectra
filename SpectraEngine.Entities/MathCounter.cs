@@ -11,7 +11,7 @@ namespace SpectraEngine.Entities;
 // change that lands there. Whether it was already at the bound is read off the
 // previous value, so SetValueNoFire needs no special case.
 // Bounds apply only while max is above min. Setting a bound re-clamps and fires nothing.
-[SpectraEntity("math_counter", Group = "Logic", Placement = EntityPlacement.Abstract)]
+[SpectraEntity("math_counter", Group = "Logic", Placement = EntityPlacement.Abstract, Icon = "counter")]
 public sealed partial class MathCounter : Entity
 {
     /// <summary>Fired with the new value whenever the count changes or is asked for.</summary>

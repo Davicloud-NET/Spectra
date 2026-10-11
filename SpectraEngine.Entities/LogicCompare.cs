@@ -10,7 +10,7 @@ namespace SpectraEngine.Entities;
 // lands on its target, so test one with OnLessThan or OnGreaterThan.
 // SetValue and SetCompareValue only store. Compare and SetValueCompare fire.
 // The outputs carry no value: a wire on them sends its own parameter.
-[SpectraEntity("logic_compare", Group = "Logic", Placement = EntityPlacement.Abstract)]
+[SpectraEntity("logic_compare", Group = "Logic", Placement = EntityPlacement.Abstract, Icon = "compare")]
 public sealed partial class LogicCompare : Entity
 {
     /// <summary>Fired by a comparison while the value is below the compare value.</summary>

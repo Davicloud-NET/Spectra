@@ -18,7 +18,8 @@ namespace SpectraEngine.Entities;
 // OnPressed carries the activator of the input that pressed the button. The
 // player is not an entity, so a use from the player has the button itself. The
 // button is its own activator for OnIn and OnOut.
-[SpectraEntity("func_button", Display = "Button", Group = "Movers", Placement = EntityPlacement.Brush)]
+[SpectraEntity(
+    "func_button", Display = "Button", Group = "Movers", Placement = EntityPlacement.Brush, Icon = "button")]
 public sealed partial class FuncButton : Entity
 {
     /// <summary>Fired when a press is taken and the button starts to go in.</summary>

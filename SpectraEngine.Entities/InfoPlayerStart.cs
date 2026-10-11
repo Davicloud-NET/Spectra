@@ -11,7 +11,8 @@ namespace SpectraEngine.Entities;
     "info_player_start",
     Display = "Player start",
     Group = "Player",
-    Placement = EntityPlacement.Point)]
+    Placement = EntityPlacement.Point,
+    Icon = "player-start")]
 public sealed partial class InfoPlayerStart : Entity, IPlayerStart
 {
 }

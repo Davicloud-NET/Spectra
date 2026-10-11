@@ -202,7 +202,8 @@ internal static class EntityEmitter
         w.Line($"{Ns}.EntityOrigin.EngineCSharp,");
         w.Line("keyvalues,");
         w.Line("inputs,");
-        w.Line("outputs);");
+        w.Line("outputs,");
+        w.Line($"{Literal(model.Icon)});");
         w.Outdent();
 
         w.Close();

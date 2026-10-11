@@ -9,7 +9,7 @@ namespace SpectraEngine.Entities;
 // Refires while pending: a second Trigger before the first one's wire delay
 // has elapsed queues a second OnTrigger. The delay lives on the wire, not the
 // relay, so the relay has no "pending" state and no CancelPending input.
-[SpectraEntity("logic_relay", Group = "Logic", Placement = EntityPlacement.Abstract)]
+[SpectraEntity("logic_relay", Group = "Logic", Placement = EntityPlacement.Abstract, Icon = "relay")]
 public sealed partial class LogicRelay : Entity
 {
     /// <summary>Fired every time an accepted <c>Trigger</c> passes through.</summary>

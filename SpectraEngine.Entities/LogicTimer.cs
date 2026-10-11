@@ -8,7 +8,7 @@ namespace SpectraEngine.Entities;
 // Enable restarts the interval, it does not resume a partly elapsed one.
 // The interval is floored, not refused: zero would be a think that is always
 // due, and the keyvalue binder must not throw during a level load.
-[SpectraEntity("logic_timer", Group = "Logic", Placement = EntityPlacement.Abstract)]
+[SpectraEntity("logic_timer", Group = "Logic", Placement = EntityPlacement.Abstract, Icon = "timer")]
 public sealed partial class LogicTimer : Entity
 {
     /// <summary>The shortest interval a timer will run at, in seconds.</summary>

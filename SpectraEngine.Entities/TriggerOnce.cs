@@ -11,7 +11,7 @@ namespace SpectraEngine.Entities;
 // OnStartTouch and OnTrigger fire together, in that order.
 // The trigger is its own activator: the player is not an entity, so
 // !activator on one of its wires names the trigger.
-[SpectraEntity("trigger_once", Group = "Triggers", Placement = EntityPlacement.Volume)]
+[SpectraEntity("trigger_once", Group = "Triggers", Placement = EntityPlacement.Volume, Icon = "trigger-once")]
 public sealed partial class TriggerOnce : Entity, ITouchListener
 {
     /// <summary>Fired when the player comes inside.</summary>

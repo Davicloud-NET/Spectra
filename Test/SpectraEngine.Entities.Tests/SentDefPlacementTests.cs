@@ -7,13 +7,28 @@ public sealed class SentDefPlacementTests
     private static int PlacementByte => SentDef.HeaderSize + SentDef.TypeRecordPlacementOffset;
 
     // Three bare classes, a Brush, a Point and an Abstract, laid out by hand
-    // from the format. A build that does not know Volume writes the same.
+    // from the format as it was before a record carried an icon. A build that
+    // does not know Volume wrote the same.
     private static byte[] OlderImage =>
     [
         (byte)'S', (byte)'E', (byte)'N', (byte)'T', 1, 0, 20, 0, 3, 0, 0, 0, 92, 0, 0, 0, 36, 0, 0, 0,
         24, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
         24, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         24, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,
+        0, 0,
+        9, 0, .. "func_wall"u8,
+        9, 0, .. "info_spot"u8,
+        10, 0, .. "logic_gate"u8,
+    ];
+
+    // The same classes as this build writes them. Each record ends with an
+    // icon reference, zero here, so each is four bytes longer.
+    private static byte[] TodaysImage =>
+    [
+        (byte)'S', (byte)'E', (byte)'N', (byte)'T', 1, 0, 20, 0, 3, 0, 0, 0, 104, 0, 0, 0, 36, 0, 0, 0,
+        28, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        28, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        28, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0,
         9, 0, .. "func_wall"u8,
         9, 0, .. "info_spot"u8,
@@ -33,6 +48,14 @@ public sealed class SentDefPlacementTests
     }
 
     [Fact]
+    public void An_image_written_before_a_record_carried_an_icon_reads_with_none()
+    {
+        EntitySchema[] read = SentDef.Read(OlderImage);
+
+        read.Select(schema => schema.Icon).ShouldBe(["", "", ""]);
+    }
+
+    [Fact]
     public void The_three_older_placements_keep_their_bytes()
     {
         byte[] image = SentDef.Write(
@@ -42,7 +65,7 @@ public sealed class SentDefPlacementTests
             new EntitySchema("logic_gate", placement: EntityPlacement.Abstract),
         ]);
 
-        image.ShouldBe(OlderImage);
+        image.ShouldBe(TodaysImage);
     }
 
     [Fact]

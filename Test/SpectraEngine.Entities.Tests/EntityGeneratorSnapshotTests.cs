@@ -32,6 +32,29 @@ public sealed class EntityGeneratorSnapshotTests
         run.OnlySource().ShouldContain($"EntityPlacement.{placement},");
     }
 
+    [Theory]
+    [InlineData("Icon = \"trigger-once\"", "outputs,\"trigger-once\");")]
+    [InlineData("Group = \"Triggers\"", "outputs,\"\");")]
+    public void A_class_is_emitted_with_the_icon_it_names_or_with_none(string argument, string emitted)
+    {
+        string source = $$"""
+            using SpectraEngine.Core.Entities;
+
+            namespace TestGame.Entities;
+
+            [SpectraEntity("test_thing", {{argument}})]
+            public sealed partial class TestThing : Entity
+            {
+            }
+            """;
+
+        GeneratorRun run = GeneratorHarness.Run(source);
+
+        run.Diagnostics.ShouldBeEmpty(run.Describe());
+        run.CompileErrors().ShouldBeEmpty();
+        string.Concat(run.OnlySource().Where(c => !char.IsWhiteSpace(c))).ShouldContain(emitted);
+    }
+
     [Fact]
     public Task Generated_source_for_a_representative_entity_matches_snapshot()
     {

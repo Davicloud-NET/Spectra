@@ -23,8 +23,9 @@ internal sealed record InputModel(string Name, string MethodName) : IEquatable<I
 //
 // ContainingTypes: outermost first, each spelled as the partial declaration
 // the emitter reopens. ClassName is the wire name. Placement is an
-// EntityPlacement member name. IsPartial covers the containing types too.
-// Keyvalues, Inputs and Outputs are in declaration order.
+// EntityPlacement member name. Icon is the icon's name, or empty. IsPartial
+// covers the containing types too. Keyvalues, Inputs and Outputs are in
+// declaration order.
 internal sealed record EntityModel(
     string Namespace,
     EquatableArray<string> ContainingTypes,
@@ -34,6 +35,7 @@ internal sealed record EntityModel(
     string Display,
     string Group,
     string Placement,
+    string Icon,
     bool IsPartial,
     EquatableArray<KeyvalueModel> Keyvalues,
     EquatableArray<InputModel> Inputs,

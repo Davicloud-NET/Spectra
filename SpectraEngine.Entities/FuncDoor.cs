@@ -21,7 +21,7 @@ namespace SpectraEngine.Entities;
 // OnOpen and OnClose carry the activator of the input that caused them. The
 // door is its own activator for both arrivals, for closing after its wait and
 // for turning round on the player.
-[SpectraEntity("func_door", Display = "Door", Group = "Movers", Placement = EntityPlacement.Brush)]
+[SpectraEntity("func_door", Display = "Door", Group = "Movers", Placement = EntityPlacement.Brush, Icon = "door")]
 public sealed partial class FuncDoor : Entity
 {
     /// <summary>Fired when the door starts to open.</summary>

@@ -100,6 +100,7 @@ internal static class EntityModelFactory
             Display: display.Length > 0 ? display : HumanName(className),
             Group: group,
             Placement: placement,
+            Icon: NamedString(attribute, "Icon"),
             IsPartial: isPartial,
             Keyvalues: EquatableArray.From(keyvalues),
             Inputs: EquatableArray.From(inputs),

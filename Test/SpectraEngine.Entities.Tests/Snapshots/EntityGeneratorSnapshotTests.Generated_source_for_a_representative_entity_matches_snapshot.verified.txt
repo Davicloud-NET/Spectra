@@ -174,7 +174,8 @@ namespace TestGame.Entities
                 global::SpectraEngine.Core.Entities.EntityOrigin.EngineCSharp,
                 keyvalues,
                 inputs,
-                outputs);
+                outputs,
+                "door");
         }
 
         /// <summary>Registers this class into the process-wide catalogue.</summary>

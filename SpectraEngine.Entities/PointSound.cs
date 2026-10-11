@@ -17,7 +17,7 @@ namespace SpectraEngine.Entities;
 // Looped repeats the file's loop region, or the whole sound when it has none.
 // Not looped plays once through and ignores the region.
 // The sound is its own activator for OnEnded and OnMarker.
-[SpectraEntity("point_sound", Display = "Sound", Group = "Sound", Placement = EntityPlacement.Point)]
+[SpectraEntity("point_sound", Display = "Sound", Group = "Sound", Placement = EntityPlacement.Point, Icon = "sound")]
 public sealed partial class PointSound : Entity
 {
     /// <summary>The slowest a sound plays.</summary>

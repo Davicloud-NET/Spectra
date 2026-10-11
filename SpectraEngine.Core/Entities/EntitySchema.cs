@@ -159,7 +159,8 @@ public sealed class EntitySchema
         EntityOrigin origin = EntityOrigin.EngineCSharp,
         IReadOnlyList<KeyvalueDescriptor>? keyvalues = null,
         IReadOnlyList<string>? inputs = null,
-        IReadOnlyList<string>? outputs = null)
+        IReadOnlyList<string>? outputs = null,
+        string icon = "")
     {
         ArgumentException.ThrowIfNullOrEmpty(className);
 
@@ -171,6 +172,7 @@ public sealed class EntitySchema
         Keyvalues = keyvalues ?? [];
         Inputs = inputs ?? [];
         Outputs = outputs ?? [];
+        Icon = icon ?? "";
     }
 
     /// <summary>The wire name, as a map file spells it.</summary>
@@ -196,4 +198,11 @@ public sealed class EntitySchema
 
     /// <summary>The output names the class fires.</summary>
     public IReadOnlyList<string> Outputs { get; }
+
+    /// <summary>
+    /// The name of the icon an editor draws for the class, such as <c>door</c>,
+    /// or empty for the plain entity icon. A name no editor has a drawing for
+    /// gets that icon too.
+    /// </summary>
+    public string Icon { get; }
 }

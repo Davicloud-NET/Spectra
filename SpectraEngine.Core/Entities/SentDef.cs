@@ -97,6 +97,13 @@ public static class SentDef
     /// <summary>Bytes of one string reference, and of one input or output record.</summary>
     public const int StringRefSize = 4;
 
+    /// <summary>
+    /// Bytes of type record after its last output: the icon string reference.
+    /// A record written before the icon existed ends at its last output and
+    /// reads with no icon.
+    /// </summary>
+    public const int TypeRecordTrailerSize = StringRefSize;
+
     // Throws on invalid text. A U+FFFD replacement would change a class name
     // and the map naming it would load a placeholder with no error.
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
@@ -391,7 +398,9 @@ public static class SentDef
         for (int i = 0; i < schema.Outputs.Count; i++)
             strings.Intern(schema.Outputs[i]);
 
-        return size + ((schema.Inputs.Count + schema.Outputs.Count) * StringRefSize);
+        strings.Intern(schema.Icon);
+
+        return size + ((schema.Inputs.Count + schema.Outputs.Count) * StringRefSize) + TypeRecordTrailerSize;
     }
 
     private static void WriteType(Span<byte> record, EntitySchema schema, StringTableBuilder strings)
@@ -444,6 +453,9 @@ public static class SentDef
 
         for (int i = 0; i < schema.Outputs.Count; i++, position += StringRefSize)
             BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Outputs[i]));
+
+        BinaryPrimitives.WriteUInt32LittleEndian(record[position..], strings.Intern(schema.Icon));
+        position += TypeRecordTrailerSize;
 
         if (position != record.Length)
         {
@@ -569,10 +581,15 @@ public static class SentDef
             outputs[i] = ReadString(record, table, decoded, position, recordOffset, index);
         }
 
+        // The first field appended to the record, so an older one ends here.
+        string icon = record.Length - position >= TypeRecordTrailerSize
+            ? ReadString(record, table, decoded, position, recordOffset, index)
+            : string.Empty;
+
         // Bytes left over are a newer writer's fields. Ignored.
         return new EntitySchema(
             className, displayName, group, (EntityPlacement)placement, (EntityOrigin)origin,
-            keyvalues, inputs, outputs);
+            keyvalues, inputs, outputs, icon);
     }
 
     private static void RequireRoom(

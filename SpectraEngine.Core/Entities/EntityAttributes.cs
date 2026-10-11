@@ -26,6 +26,12 @@ public sealed class SpectraEntityAttribute : Attribute
 
     /// <summary>How instances are placed.</summary>
     public EntityPlacement Placement { get; set; } = EntityPlacement.Point;
+
+    /// <summary>
+    /// The icon an editor draws for this class: a short lower-case name such as
+    /// <c>door</c> or <c>trigger-once</c>. Unset means the plain entity icon.
+    /// </summary>
+    public string Icon { get; set; } = "";
 }
 
 /// <summary>

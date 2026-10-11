@@ -12,7 +12,7 @@ namespace SpectraEngine.Entities;
 // an empty case is unused and never matches.
 // Sixteen cases, written out because the generator binds one member to one
 // name. For more, wire OnDefault to a second logic_case.
-[SpectraEntity("logic_case", Group = "Logic", Placement = EntityPlacement.Abstract)]
+[SpectraEntity("logic_case", Group = "Logic", Placement = EntityPlacement.Abstract, Icon = "case")]
 public sealed partial class LogicCase : Entity
 {
     /// <summary>How many cases one entity holds.</summary>
