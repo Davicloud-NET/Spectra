@@ -6,19 +6,23 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace SpectraEngine.Core.Entities;
 
-// The moves of nodes while a level plays: which are refused and why, and
-// the authored transform every moved node goes back to at Stop.
+// The moves of nodes while a level plays: which are refused and why. A move
+// that is made records in the play journal first.
 internal sealed class PlayMoves
 {
     private readonly ILogger _logger;
-    private readonly MovedNodeJournal _moved = new();
+    private readonly PlayJournal _journal;
 
     // Log a refused move once per node, not once per tick.
     private readonly HashSet<Guid> _refusedNodes = [];
 
-    public PlayMoves(ILogger logger) => _logger = logger;
+    public PlayMoves(ILogger logger, PlayJournal journal)
+    {
+        _logger = logger;
+        _journal = journal;
+    }
 
-    public int MovedCount => _moved.Count;
+    public int MovedCount => _journal.CountOf(JournalKind.LocalTransform);
 
     public int RefusedCount { get; private set; }
 
@@ -27,8 +31,6 @@ internal sealed class PlayMoves
         RefusedCount = 0;
         _refusedNodes.Clear();
     }
-
-    public void PutBack() => _moved.Restore();
 
     // The move for a caller that reports a refusal itself. Nothing is logged.
     public bool TryMove(SceneNode node, in Transform value, [NotNullWhen(false)] out string? refusal)
@@ -40,7 +42,7 @@ internal sealed class PlayMoves
             return false;
         }
 
-        _moved.Record(node);
+        _journal.Record(node, JournalKind.LocalTransform);
         node.LocalTransform = value;
         return true;
     }

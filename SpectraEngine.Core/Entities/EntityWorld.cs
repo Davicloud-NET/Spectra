@@ -15,8 +15,8 @@ namespace SpectraEngine.Core.Entities;
 /// <see cref="Entity"/> per node carrying <see cref="EntityData"/>, resolves
 /// their wiring, and drains their think wakeups and output events in a
 /// deterministic total order. Instances exist only while the world is active
-/// and never write back to the authored data. A node they move goes back to
-/// its authored transform when the world deactivates. Render thread only.
+/// and never write back to the authored data. What the running level changes
+/// on a node goes back when the world deactivates. Render thread only.
 /// </summary>
 public sealed class EntityWorld
 {
@@ -36,6 +36,7 @@ public sealed class EntityWorld
     private readonly HashSet<string> _warnedMissingClasses = new(StringComparer.Ordinal);
     private readonly HashSet<string> _warnedPlaceholderInputs = new(StringComparer.Ordinal);
 
+    private readonly PlayJournal _journal = new();
     private readonly PlayMoves _moves;
 
     private readonly TickClock _clock = new(PhysicsDefaults.FixedDeltaTime);
@@ -63,7 +64,7 @@ public sealed class EntityWorld
         _logger = logger;
         _catalog = catalog ?? EntityCatalog.Shared;
         _dispatcher = new EntityDispatcher(this, logger);
-        _moves = new PlayMoves(logger);
+        _moves = new PlayMoves(logger, _journal);
         Touches = new TouchTracker(this);
         Sounds = new SoundEmitters(this);
     }
@@ -275,8 +276,8 @@ public sealed class EntityWorld
     }
 
     /// <summary>
-    /// Runs <see cref="Entity.OnRemove"/> on everything, puts every moved node
-    /// back where it was authored, unsubscribes from the scene and drops every
+    /// Runs <see cref="Entity.OnRemove"/> on everything, puts back what the
+    /// level changed on its nodes, unsubscribes from the scene and drops every
     /// instance. Harmless on an inactive world.
     /// </summary>
     public void Deactivate()
@@ -298,7 +299,7 @@ public sealed class EntityWorld
 
         // After every OnRemove: an entity being removed must still read the
         // pose it moved to, not the authored one.
-        _moves.PutBack();
+        _journal.Restore();
 
         _scene.NodeAdded -= Sounds.OnNodeAdded;
         _index?.Dispose();
@@ -527,6 +528,9 @@ public sealed class EntityWorld
     }
 
     internal EntityDispatcher Dispatcher => _dispatcher;
+
+    // Where every change to a node records while the level plays.
+    internal PlayJournal Journal => _journal;
 
     internal long TickAfter(double seconds) => _clock.TickAfter(seconds);
 
