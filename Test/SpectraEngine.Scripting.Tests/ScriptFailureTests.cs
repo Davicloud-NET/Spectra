@@ -1,6 +1,8 @@
 using System.Numerics;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
+using SpectraEngine.Scripting.Luau;
+using SpectraEngine.Scripting.Luau.Runtime;
 
 namespace SpectraEngine.Scripting.Tests;
 
@@ -68,9 +70,9 @@ public sealed class ScriptFailureTests
             """);
         level.AddScript(level.Scene.Root, Beats);
 
-        level.Play();
-        level.Runtime.ShouldNotBeNull().CallLimit = TimeSpan.FromMilliseconds(100);
-        level.Tick(5);
+        level.Play().Tick();
+        StopTheNextHangSoon(level);
+        level.Tick(4);
 
         ScriptMessage stopped = level.Sink.Messages.Single(message => message.Severity == ScriptSeverity.Error);
         stopped.Position.ShouldBe($"{endless.Script.ShouldNotBeNull().Path}:3");
@@ -96,12 +98,39 @@ public sealed class ScriptFailureTests
             while true do end
             """);
 
-        level.Play();
-        level.Runtime.ShouldNotBeNull().CallLimit = TimeSpan.FromMilliseconds(100);
-        level.Tick(12);
+        level.Play().Tick();
+        StopTheNextHangSoon(level);
+        level.Tick(11);
 
         level.Printed.ShouldBe(["stepped"]);
         level.Errors.Length.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_sink_that_throws_takes_no_exception_into_the_tick_and_the_scripts_run_on()
+    {
+        using var level = new ScriptLevel();
+        var sink = new ThrowingSink();
+        level.Manager.Scripts.Sink = sink;
+        SceneNode part = level.Part("Mover", new Vector3(0f, 2f, 0f));
+        level.AddScript(part, """
+            game:GetService("RunService").Heartbeat:Connect(function()
+                script.Parent.Position += Vector3.new(1, 0, 0)
+                print('beat')
+            end)
+            task.spawn(function()
+                task.wait()
+                error('late')
+            end)
+            print('top')
+            error('broken')
+            """);
+
+        level.Play();
+        Should.NotThrow(() => level.Tick(3));
+
+        sink.Asked.ShouldBeGreaterThan(0);
+        part.LocalPosition.ShouldBe(new Vector3(3f, 2f, 0f));
     }
 
     [Fact]
@@ -196,5 +225,19 @@ public sealed class ScriptFailureTests
         ]);
         part.LocalPosition.ShouldBe(new Vector3(1f, 2f, 3f));
         part.Name.ShouldBe("Door");
+    }
+
+    // The watchdog goes by the wall clock. The short limit holds for the one
+    // call that hangs, and the default is back before any other script runs.
+    // So a machine that stalls switches no other script off.
+    private static void StopTheNextHangSoon(ScriptLevel level)
+    {
+        LuauScriptRuntime runtime = level.Runtime.ShouldNotBeNull();
+        runtime.CallLimit = TimeSpan.FromMilliseconds(100);
+        level.Sink.Heard = message =>
+        {
+            if (message.Severity == ScriptSeverity.Error)
+                runtime.CallLimit = LuauHost.DefaultCallLimit;
+        };
     }
 }
