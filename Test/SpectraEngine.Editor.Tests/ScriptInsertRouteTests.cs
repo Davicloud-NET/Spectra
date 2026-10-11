@@ -104,17 +104,17 @@ public sealed class ScriptInsertRouteTests
     }
 
     [Fact]
-    public void Every_way_in_ends_in_the_windows_one_handler()
+    public void Every_way_in_ends_in_the_one_command()
     {
         string window = Source("MainWindow.axaml.cs");
-        string scripts = Source("MainWindow.Scripts.cs");
 
         // The ribbon and the palette post the verb, the tree raises its event,
         // and the two menus name the handler.
         window.ShouldContain("case ShellVerbKind.InsertScript:");
-        window.ShouldContain("_sceneView.InsertScriptRequested += InsertScript;");
-        window.ShouldContain("Item(\"Insert script\", null, InsertScript)");
-        scripts.ShouldContain("void OnInsertScriptClicked(object? sender, RoutedEventArgs e) => InsertScript();");
+        window.Split("_scripts.InsertNew()").Length.ShouldBe(3, "the verb and the Object menu's handler");
+        window.ShouldContain("_sceneView.InsertScriptRequested += _scripts.InsertNew;");
+        window.ShouldContain("Item(\"Insert script\", null, _scripts.InsertNew)");
+        window.ShouldContain("void OnInsertScriptClicked(object? sender, RoutedEventArgs e) => _scripts.InsertNew();");
     }
 
     [Fact]
@@ -123,14 +123,16 @@ public sealed class ScriptInsertRouteTests
         // The Open button, a double click in the Content panel, the tree's
         // menu, and Insert Script. A second Process.Start would be a second
         // answer to which program opens a script.
-        string scripts = Source("MainWindow.Scripts.cs");
+        string commands = Source("ScriptCommands.cs");
         string window = Source("MainWindow.axaml.cs");
 
-        scripts.Split("_scripts.OpenAsync(").Length.ShouldBe(2, "one call to the launcher");
-        window.ShouldContain("_propertiesView.ScriptOpenRequested += path => OpenScript(path);");
-        window.ShouldContain("_sceneView.OpenScriptRequested += OpenScriptOf;");
-        window.ShouldContain("_ = OpenScriptFileAsync(entry.FullPath);");
-        scripts.ShouldContain("OpenScript(report.ContentPath, keepStatus: true);");
-        scripts.ShouldNotContain("Process.Start");
+        commands.Split("_launcher.OpenAsync(").Length.ShouldBe(2, "one call to the launcher");
+        commands.ShouldContain("_ = OpenAsync(report.ContentPath, keepStatus: true);");
+        commands.ShouldNotContain("Process.Start");
+
+        window.Split("ScriptLauncher.").Length.ShouldBe(2, "the window makes one launcher and hands it over");
+        window.ShouldContain("_propertiesView.ScriptOpenRequested += path => _ = _scripts.OpenAsync(path);");
+        window.ShouldContain("_sceneView.OpenScriptRequested += _scripts.OpenOf;");
+        window.ShouldContain("_ = _scripts.OpenFileAsync(entry.FullPath);");
     }
 }

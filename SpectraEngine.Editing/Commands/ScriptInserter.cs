@@ -21,11 +21,9 @@ public static class ScriptInserter
 
     /// <summary>
     /// Where a script goes when nobody pointed at a node: under the selected
-    /// node, or under the root with nothing selected, which makes it a level
-    /// script. A selected script with no children stands for the node it is
-    /// under, so a second insert lands beside the first. False with several
-    /// selected, and <paramref name="refusal"/> then says so.
+    /// node, or under the root with nothing selected. False with several selected.
     /// </summary>
+    /// <param name="refusal">Why there is no parent, as the end of a sentence.</param>
     // A script acts on its parent, and the order nodes were selected in shows
     // nowhere. Taking the first would be a guess that leaves a file behind.
     public static bool TryFindParent(Scene scene, [NotNullWhen(true)] out SceneNode? parent, out string refusal)
@@ -53,9 +51,8 @@ public static class ScriptInserter
         SceneNodeClassifier.HasPlace(selected) ? selected : selected.Parent ?? scene.Root;
 
     /// <summary>
-    /// Makes a script file named after the node the script goes under, or
-    /// after the level for a level script, adds the script there as one
-    /// history entry and selects it. The file stays when the entry is undone.
+    /// Makes a script file, adds a script that names it as one history entry
+    /// and selects it. The file stays when the entry is undone.
     /// </summary>
     /// <param name="contentRoot">The folder the level's content paths are relative to.</param>
     /// <param name="text">What the new file holds.</param>

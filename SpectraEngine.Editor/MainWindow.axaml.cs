@@ -21,6 +21,7 @@ using SpectraEngine.Editing.Commands;
 using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Shell.Ribbon;
+using SpectraEngine.Editor.Shell.Scripts;
 using SpectraEngine.Editor.Viewport;
 using System;
 using System.Collections.Concurrent;
@@ -47,6 +48,7 @@ public partial class MainWindow : Window
     private readonly ShellModel _shell = new();
     private readonly CaptionOutput _captions;
     private readonly EditorDocument _document = new();
+    private readonly ScriptCommands _scripts;
 
     // Every snapshot is queued, not just the newest: a structural change rides
     // one snapshot and is then gone, so sampling the latest drops graph edits.
@@ -123,6 +125,9 @@ public partial class MainWindow : Window
 
         DataContext = _shell;
         _captions = new CaptionOutput(_shell.Output);
+        _scripts = new ScriptCommands(
+            _shell, _document, () => _session, ScriptLauncher.ForThisComputer(),
+            answer => Dispatcher.UIThread.Post(answer));
 
         HeaderStrip.Activated += OnHeaderAction;
         LogicHeader.HideRequested += () => OnShellVerb(ShellVerb.Of(WorkspaceCommand.HideLogic));
@@ -189,15 +194,15 @@ public partial class MainWindow : Window
         _sceneView.ReparentRequested += (ids, parentId, index) => _session?.Reparent(ids, parentId, index);
         _sceneView.MakeEntityRequested += MakeEntity;
         _sceneView.RemoveEntityRequested += RemoveEntity;
-        _sceneView.InsertScriptRequested += InsertScript;
-        _sceneView.OpenScriptRequested += OpenScriptOf;
-        _sceneView.AssetDroppedOnNode += OnAssetDroppedOnNode;
+        _sceneView.InsertScriptRequested += _scripts.InsertNew;
+        _sceneView.OpenScriptRequested += _scripts.OpenOf;
+        _sceneView.AssetDroppedOnNode += _scripts.AttachDropped;
         SetToolContent(SceneTool, _sceneView);
 
         _propertiesView = new PropertiesPanel();
         _propertiesView.EscapePressed += () => _viewport?.FocusEngine();
         _propertiesView.SelectRequested += id => _session?.Select(id);
-        _propertiesView.ScriptOpenRequested += path => OpenScript(path);
+        _propertiesView.ScriptOpenRequested += path => _ = _scripts.OpenAsync(path);
         SetToolContent(PropertiesTool, _propertiesView);
 
         _mapsView = new MapsPanel();
@@ -1496,6 +1501,18 @@ public partial class MainWindow : Window
             _shell.Output.Append(result.Severity, result.Reply);
     }
 
+    private void OnInsertScriptClicked(object? sender, RoutedEventArgs e) => _scripts.InsertNew();
+
+    // The Content panel's menu. A script goes under the selected node. Any
+    // other file does what a double click on it does.
+    private void OnContentInsertRequested(ContentEntry entry)
+    {
+        if (entry.IsScript)
+            _scripts.AttachListed(entry);
+        else
+            OnContentActivated(entry);
+    }
+
     // Double-click in the content browser: a model or a sound is placed at the
     // view centre, a material paints the selection, a script opens to be
     // written in, anything else is selected.
@@ -1504,7 +1521,7 @@ public partial class MainWindow : Window
         if (entry.IsScript)
         {
             _shell.Content?.Select(entry);
-            _ = OpenScriptFileAsync(entry.FullPath);
+            _ = _scripts.OpenFileAsync(entry.FullPath);
             return;
         }
 
@@ -1545,7 +1562,7 @@ public partial class MainWindow : Window
     {
         if (payload.Kind == ContentKind.Script)
         {
-            AttachScript(session, payload.ContentPath, null, point);
+            _scripts.Attach(session, payload.ContentPath, null, point);
             return;
         }
 
@@ -2158,7 +2175,7 @@ public partial class MainWindow : Window
                 break;
 
             case ShellVerbKind.InsertScript:
-                InsertScript();
+                _scripts.InsertNew();
                 break;
 
             case ShellVerbKind.Document:
@@ -2467,7 +2484,7 @@ public partial class MainWindow : Window
 
         // Not under "Insert here": a script has no place. It goes under the
         // node the right-click selected.
-        menu.Items.Add(Item("Insert script", null, InsertScript));
+        menu.Items.Add(Item("Insert script", null, _scripts.InsertNew));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item("Duplicate", "Ctrl+D", () => _session?.Post(EditorHostCommand.Duplicate)));
         menu.Items.Add(Item("Delete", "Delete", () => _session?.Post(EditorHostCommand.Delete)));
