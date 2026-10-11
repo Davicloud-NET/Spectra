@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tabler Icons "arrows-split-2", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 14 11.333 h -3.598 a 3.333 3.333 0 0 1 -2.731 -1.422 l -0.343 -0.489 a 3.333 3.333 0 0 0 -2.731 -1.422 h -2.598" />
+  <path d="M 14 4.667 h -3.597 a 3.333 3.333 0 0 0 -2.732 1.423 l -0.34 0.487 a 3.333 3.333 0 0 1 -2.731 1.423 h -2.6" />
+  <path d="M 12 6.667 l 2 -2 l -2 -2" />
+  <path d="M 12 13.333 l 2 -2 l -2 -2" />
+</svg>

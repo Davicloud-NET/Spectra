@@ -4,33 +4,28 @@ using System.Numerics;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Editing.Icons;
 
 namespace SpectraEngine.Editing.Viewport;
 
 /// <summary>
 /// Draws the distances a selected entity's class declares, each as a sphere
-/// round the node: how far a sound is heard, say.
+/// round the node in its group's colour: how far a sound is heard, say.
 /// </summary>
 // Which settings are distances comes from the schema, so a class written
 // outside the engine gets its spheres too. The viewport knows no class name.
 public sealed class EntityDistanceOverlay
 {
-    /// <summary>The default colour of an entity's smallest distance, the marker's green.</summary>
-    public static readonly Vector3 DefaultColor = EntityMarkerOverlay.DefaultColor;
-
-    /// <summary>The default colour of every larger distance, the same green dimmed.</summary>
+    /// <summary>
+    /// How bright every distance past the smallest is, so two read as two. The
+    /// smallest is the colour of the entity's marker.
+    /// </summary>
     // Dimmed less than a light's inner cone is: the far sphere is mostly seen
     // from inside, as thin arcs against sky.
-    public static readonly Vector3 DefaultOuterColor = EntityMarkerOverlay.DefaultColor * 0.7f;
+    public const float OuterDim = 0.7f;
 
     /// <summary>Whether the overlay draws at all.</summary>
     public bool Enabled { get; set; } = true;
-
-    /// <summary>The colour of an entity's smallest distance.</summary>
-    public Vector3 Color { get; set; } = DefaultColor;
-
-    /// <summary>The colour of every larger distance, so two read as two.</summary>
-    public Vector3 OuterColor { get; set; } = DefaultOuterColor;
 
     /// <summary>
     /// How many spheres may be drawn in one frame. The rest are counted in
@@ -62,13 +57,15 @@ public sealed class EntityDistanceOverlay
         {
             SceneNode node = selection[i];
             if (node.Entity is { } entity && schemas.TryGetSchema(entity.ClassName, out EntitySchema? schema))
-                DrawDistances(output, node.WorldPosition, entity, schema.Keyvalues);
+                DrawDistances(output, node.WorldPosition, entity, schema);
         }
     }
 
-    private void DrawDistances(
-        DebugDraw output, Vector3 at, EntityData entity, IReadOnlyList<KeyvalueDescriptor> declared)
+    private void DrawDistances(DebugDraw output, Vector3 at, EntityData entity, EntitySchema schema)
     {
+        IReadOnlyList<KeyvalueDescriptor> declared = schema.Keyvalues;
+        Vector3 colour = EntityGroupTints.For(schema.Group);
+
         // Read twice: the smallest has to be known before any is coloured.
         float smallest = float.PositiveInfinity;
         for (int i = 0; i < declared.Count; i++)
@@ -88,7 +85,7 @@ public sealed class EntityDistanceOverlay
                 continue;
             }
 
-            WireRing.Sphere(output, at, radius, radius > smallest ? OuterColor : Color);
+            WireRing.Sphere(output, at, radius, radius > smallest ? colour * OuterDim : colour);
             DrawnLastDraw++;
         }
     }

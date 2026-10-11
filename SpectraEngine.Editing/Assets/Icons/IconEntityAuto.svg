@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tabler Icons "bolt", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 8.667 2 l 0 4.667 l 4 0 l -5.333 7.333 l 0 -4.667 l -4 0 l 5.333 -7.333" />
+</svg>

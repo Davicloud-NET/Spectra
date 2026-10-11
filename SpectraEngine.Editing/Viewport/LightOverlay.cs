@@ -4,6 +4,7 @@ using System.Numerics;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Gizmos;
+using SpectraEngine.Editing.Icons;
 
 namespace SpectraEngine.Editing.Viewport;
 
@@ -13,7 +14,8 @@ namespace SpectraEngine.Editing.Viewport;
 // Lights have no mesh and are not in the spatial index (that would make them
 // collidable), so the icon is the only thing to see or click. It has to say
 // three things without being selected: what kind of light, which way it
-// points, and what colour it is.
+// points, and what colour it is. The kind is the icon file, the way is the
+// arrow and the colour is the light's own.
 public sealed class LightOverlay
 {
     /// <summary>
@@ -35,8 +37,8 @@ public sealed class LightOverlay
     /// </summary>
     public const float MinIconPixels = 4f;
 
-    // Under this radius the kind and the arrows are a smudge, so a far light
-    // is drawn as a dot in its colour.
+    // Under this radius the kind and the arrow are a smudge, so a far light
+    // is drawn as a ring in its colour.
     private const float DetailPixels = 6.5f;
 
     /// <summary>Whether the overlay draws at all.</summary>
@@ -124,7 +126,7 @@ public sealed class LightOverlay
 
     private static void DrawIcon(DebugDraw output, SceneNode node, Light light, in IconPen pen, bool detailed)
     {
-        if (!detailed)
+        if (!detailed || !ViewportGlyphs.TryGet(WorldIcons.ForLight(light.Kind), out ViewportGlyph? glyph))
         {
             // Hairlines here: the doubled stroke would fill a ring this small.
             float ring = pen.Radius * 0.8f;
@@ -141,86 +143,15 @@ public sealed class LightOverlay
             return;
         }
 
-        Basis(node, out Vector3 forward, out Vector3 right, out Vector3 up);
+        // The file the shell shows for this kind of light.
+        pen.Glyph(output, glyph);
 
-        switch (light.Kind)
-        {
-            // A sun: a disc with three arrows running the way the light travels.
-            case LightKind.Directional:
-            {
-                pen.Ring(output, pen.At, pen.Right, pen.Up, pen.Radius * 0.5f);
+        // A bulb shines every way. Every other kind points somewhere.
+        if (light.Kind == LightKind.Point)
+            return;
 
-                Vector3 side = pen.AcrossScreen(forward) * (pen.Radius * 0.62f);
-                Vector3 from = pen.At + (forward * pen.Radius * 0.85f);
-                pen.Arrow(output, from, from + (forward * pen.Radius * 2.6f), forward);
-                pen.Arrow(output, from + side, from + side + (forward * pen.Radius * 1.9f), forward);
-                pen.Arrow(output, from - side, from - side + (forward * pen.Radius * 1.9f), forward);
-                break;
-            }
-
-            // A bulb: a disc with rays in every direction.
-            case LightKind.Point:
-            {
-                pen.Ring(output, pen.At, pen.Right, pen.Up, pen.Radius * 0.45f);
-
-                for (int i = 0; i < 8; i++)
-                {
-                    float angle = i * (MathF.Tau / 8);
-                    Vector3 ray = (pen.Right * MathF.Cos(angle)) + (pen.Up * MathF.Sin(angle));
-                    pen.Stroke(output, pen.At + (ray * pen.Radius * 0.68f), pen.At + (ray * pen.Radius));
-                }
-
-                break;
-            }
-
-            // A cone from the lamp, as wide as its outer angle within reason.
-            case LightKind.Spot:
-            {
-                float half = Math.Clamp(light.OuterAngle, 12f, 42f) * (MathF.PI / 180f);
-                float length = pen.Radius * 2.8f;
-                Vector3 mouth = pen.At + (forward * length);
-                float mouthRadius = length * MathF.Tan(half);
-
-                pen.Ring(output, mouth, right, up, mouthRadius);
-                for (int i = 0; i < 4; i++)
-                {
-                    float angle = (i * (MathF.Tau / 4)) + (MathF.PI / 4f);
-                    Vector3 rim = mouth + (((right * MathF.Cos(angle)) + (up * MathF.Sin(angle))) * mouthRadius);
-                    pen.Stroke(output, pen.At, rim);
-                }
-
-                pen.Ring(output, pen.At, pen.Right, pen.Up, pen.Radius * 0.22f);
-                break;
-            }
-
-            // The panel in its own plane, with an arrow out of the side that
-            // lights. An area light is one-sided, so the arrow is the point.
-            case LightKind.Rect:
-            {
-                float longest = MathF.Max(MathF.Max(light.Width, light.Height), 1e-4f);
-                Vector3 halfWidth = right * pen.Radius * MathF.Max(light.Width / longest, 0.35f);
-                Vector3 halfHeight = up * pen.Radius * MathF.Max(light.Height / longest, 0.35f);
-
-                Vector3 a = pen.At - halfWidth - halfHeight;
-                Vector3 b = pen.At + halfWidth - halfHeight;
-                Vector3 c = pen.At + halfWidth + halfHeight;
-                Vector3 d = pen.At - halfWidth + halfHeight;
-
-                pen.Stroke(output, a, b);
-                pen.Stroke(output, b, c);
-                pen.Stroke(output, c, d);
-                pen.Stroke(output, d, a);
-                pen.Arrow(output, pen.At, pen.At + (forward * pen.Radius * 2.2f), forward);
-                break;
-            }
-
-            case LightKind.Disc:
-            {
-                pen.Ring(output, pen.At, right, up, pen.Radius);
-                pen.Arrow(output, pen.At, pen.At + (forward * pen.Radius * 2.2f), forward);
-                break;
-            }
-        }
+        Basis(node, out Vector3 forward, out _, out _);
+        pen.Pointer(output, forward);
     }
 
     private static void DrawShape(DebugDraw output, SceneNode node, Light light, Camera camera)

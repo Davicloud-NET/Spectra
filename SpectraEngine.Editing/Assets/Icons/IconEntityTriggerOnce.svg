@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tabler Icons "scan", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 3.333 8 h 9.333" />
+  <path d="M 2 4.667 v -1.333 a 1.333 1.333 0 0 1 1.333 -1.333 h 1.333" />
+  <path d="M 2 11.333 v 1.333 a 1.333 1.333 0 0 0 1.333 1.333 h 1.333" />
+  <path d="M 11.333 2 h 1.333 a 1.333 1.333 0 0 1 1.333 1.333 v 1.333" />
+  <path d="M 11.333 14 h 1.333 a 1.333 1.333 0 0 0 1.333 -1.333 v -1.333" />
+</svg>

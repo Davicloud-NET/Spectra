@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tabler Icons "cone-2", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 14 3.335 v 0.333 l -5.42 9.993 a 0.667 0.667 0 0 1 -1.16 0 l -5.42 -9.993 v -0.333 c 0 -1.106 2.687 -2.002 6 -2.002 s 6 0.896 6 2.001" />
+</svg>

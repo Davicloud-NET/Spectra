@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tabler Icons "rectangle", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 2 4.667 a 1.333 1.333 0 0 1 1.333 -1.333 h 9.333 a 1.333 1.333 0 0 1 1.333 1.333 v 6.667 a 1.333 1.333 0 0 1 -1.333 1.333 h -9.333 a 1.333 1.333 0 0 1 -1.333 -1.333 v -6.667" />
+</svg>

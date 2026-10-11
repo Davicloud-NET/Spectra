@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tabler Icons "number-123", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 2 6.667 l 1.333 -1.333 v 5.333" />
+  <path d="M 6 5.333 h 2 a 0.667 0.667 0 0 1 0.667 0.667 v 1.333 a 0.667 0.667 0 0 1 -0.667 0.667 h -1.333 a 0.667 0.667 0 0 0 -0.667 0.667 v 1.333 a 0.667 0.667 0 0 0 0.667 0.667 h 2" />
+  <path d="M 11.333 5.333 h 1.667 a 1 1 0 0 1 1 1 v 0.667 a 1 1 0 0 1 -1 1 h -1 h 1 a 1 1 0 0 1 1 1 v 0.667 a 1 1 0 0 1 -1 1 h -1.667" />
+</svg>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tabler Icons "map-pin", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 6 7.333 a 2 2 0 1 0 4 0 a 2 2 0 0 0 -4 0" />
+  <path d="M 11.771 11.105 l -2.829 2.829 a 1.333 1.333 0 0 1 -1.885 0 l -2.829 -2.829 a 5.333 5.333 0 1 1 7.543 0" />
+</svg>

@@ -15,4 +15,12 @@
     <ProjectReference Include="..\SpectraEngine.Core\SpectraEngine.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    The icons of things that stand in the world. The 3D view draws them from
+    here, and the editor's Icons.targets reads the same files for the shell.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Icons\*.svg" />
+  </ItemGroup>
+
 </Project>

@@ -9,6 +9,7 @@ using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Hosting;
+using SpectraEngine.Editing.Icons;
 using SpectraEngine.Editing.Selection;
 using SpectraEngine.Editing.Viewport;
 
@@ -20,6 +21,9 @@ namespace SpectraEngine.Editing.Tests;
 /// </summary>
 public sealed class EntityMarkerTests
 {
+    // The colour of a class no group claims, which is every class here.
+    private static readonly Vector3 Plain = EntityGroupTints.For(null);
+
     private static ViewportHarness Fixture()
     {
         var harness = new ViewportHarness();
@@ -218,9 +222,9 @@ public sealed class EntityMarkerTests
         overlay.Draw(output, harness.Scene, harness.Scene.Camera, harness.ViewportSize);
 
         overlay.DrawnLastDraw.ShouldBe(1);
-        CountOf(output, EntityMarkerOverlay.DefaultColor).ShouldBeGreaterThan(0);
+        CountOf(output, Plain).ShouldBeGreaterThan(0);
 
-        foreach (Vector3 vertex in Coloured(output, EntityMarkerOverlay.DefaultColor))
+        foreach (Vector3 vertex in Coloured(output, Plain))
             vertex.X.ShouldBeLessThan(0f);
     }
 
@@ -233,14 +237,14 @@ public sealed class EntityMarkerTests
 
         new EntityMarkerOverlay().Draw(output, harness.Scene, harness.Scene.Camera, harness.ViewportSize);
 
-        int coloured = CountOf(output, EntityMarkerOverlay.DefaultColor);
+        int coloured = CountOf(output, Plain);
         coloured.ShouldBe(output.VertexCount / 2);
 
         ReadOnlySpan<float> data = output.Vertices;
         for (int vertex = 0; vertex < output.VertexCount; vertex++)
         {
             var colour = new Vector3(data[(vertex * 6) + 3], data[(vertex * 6) + 4], data[(vertex * 6) + 5]);
-            bool isColour = colour == EntityMarkerOverlay.DefaultColor;
+            bool isColour = colour == Plain;
             isColour.ShouldBe(vertex >= output.VertexCount / 2, $"vertex {vertex}");
         }
     }
@@ -260,7 +264,7 @@ public sealed class EntityMarkerTests
 
             overlay.Draw(output, harness.Scene, harness.Scene.Camera, harness.ViewportSize);
 
-            Vector3 tip = Farthest(output, EntityMarkerOverlay.DefaultColor, start.WorldPosition);
+            Vector3 tip = Farthest(output, Plain, start.WorldPosition);
             Vector3.Dot(Vector3.Normalize(tip - start.WorldPosition), forward)
                 .ShouldBeGreaterThan(0.99f, $"facing {facing}");
         }
@@ -281,7 +285,8 @@ public sealed class EntityMarkerTests
         SceneNode unknown = AddEntity(harness, new Vector3(0f, 3f, 0f), "from_another_game");
         var overlay = new EntityMarkerOverlay();
 
-        Reach(harness, overlay, relay).ShouldBeLessThan(1f);
+        // An icon's box ends at 1.56 radii, at its corners. An arrow goes past two.
+        Reach(harness, overlay, relay).ShouldBeLessThan(1.6f);
         Reach(harness, overlay, start).ShouldBeGreaterThan(2f);
         Reach(harness, overlay, unknown).ShouldBeGreaterThan(2f);
     }
@@ -300,16 +305,23 @@ public sealed class EntityMarkerTests
 
         // One backing diamond and two in colour, four hairlines each.
         output.VertexCount.ShouldBe(3 * 4 * 2);
-        CountOf(output, EntityMarkerOverlay.DefaultColor).ShouldBe(2 * 4 * 2);
+        CountOf(output, Plain).ShouldBe(2 * 4 * 2);
     }
 
     [Fact]
-    public void The_marker_has_its_own_colour()
+    public void No_marker_colour_is_another_overlays_colour()
     {
-        EntityMarkerOverlay.DefaultColor.ShouldNotBe(PartBrushOverlay.DefaultColor);
-        EntityMarkerOverlay.DefaultColor.ShouldNotBe(SubtractiveBrushOverlay.DefaultColor);
-        EntityMarkerOverlay.DefaultColor.ShouldNotBe(VolumeOverlay.DefaultColor);
-        EntityMarkerOverlay.DefaultColor.ShouldNotBe(SelectionOutline.SelectedColor);
+        var colours = new List<Vector3> { Plain };
+        foreach ((string group, _) in EntityGroupTints.Table)
+            colours.Add(EntityGroupTints.For(group));
+
+        foreach (Vector3 colour in colours)
+        {
+            colour.ShouldNotBe(PartBrushOverlay.DefaultColor);
+            colour.ShouldNotBe(SubtractiveBrushOverlay.DefaultColor);
+            colour.ShouldNotBe(VolumeOverlay.DefaultColor);
+            colour.ShouldNotBe(SelectionOutline.SelectedColor);
+        }
     }
 
     [Fact]
@@ -383,13 +395,13 @@ public sealed class EntityMarkerTests
 
         var empty = new DebugDraw();
         host.Draw(empty);
-        CountOf(empty, EntityMarkerOverlay.DefaultColor).ShouldBe(0);
+        CountOf(empty, Plain).ShouldBe(0);
 
         scene.Root.AddChild(new SceneNode("start") { Entity = new EntityData("info_player_start") });
 
         var marked = new DebugDraw();
         host.Draw(marked);
-        CountOf(marked, EntityMarkerOverlay.DefaultColor).ShouldBeGreaterThan(0);
+        CountOf(marked, Plain).ShouldBeGreaterThan(0);
     }
 
     // How far the marker's colour reaches from the node, in marker radii.
@@ -403,7 +415,7 @@ public sealed class EntityMarkerTests
         float reach = 0f;
 
         // Others' markers are further off than any arrow reaches.
-        foreach (Vector3 vertex in Coloured(output, EntityMarkerOverlay.DefaultColor))
+        foreach (Vector3 vertex in Coloured(output, Plain))
         {
             float distance = Vector3.Distance(vertex, at);
             if (distance < radius * 3f)

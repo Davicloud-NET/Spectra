@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Editing.Icons;
 
 namespace SpectraEngine.Editing.Viewport;
 
@@ -11,6 +12,9 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
 {
     // Drawn under each stroke, so an icon reads over sky, floor or a lit wall.
     public static readonly Vector3 BackingColour = new(0.02f, 0.02f, 0.025f);
+
+    private const float PointerStart = 1.3f;
+    private const float PointerEnd = 2.6f;
 
     private const int RingSegments = 12;
 
@@ -56,6 +60,36 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
             output.Line(a - (across * 0.5f), b - (across * 0.5f), Colour);
         }
     }
+
+    // An icon file's drawing, facing the screen and centred on the icon.
+    public readonly void Glyph(DebugDraw output, ViewportGlyph glyph)
+    {
+        float size = Radius * ViewportGlyphs.Reach * 2f;
+        Vector3 across = Right * size;
+        Vector3 down = Up * -size;
+        Vector3 corner = At - ((across + down) * 0.5f);
+
+        for (int stroke = 0; stroke < glyph.StrokeCount; stroke++)
+        {
+            ReadOnlySpan<Vector2> points = glyph.Stroke(stroke);
+            Vector3 previous = corner + (across * points[0].X) + (down * points[0].Y);
+
+            for (int i = 1; i < points.Length; i++)
+            {
+                Vector3 current = corner + (across * points[i].X) + (down * points[i].Y);
+                Stroke(output, previous, current);
+                previous = current;
+            }
+        }
+    }
+
+    // The arrow that says which way the thing under a glyph faces. It starts
+    // clear of the glyph.
+    public readonly void Pointer(DebugDraw output, Vector3 direction) => Arrow(
+        output,
+        At + (direction * Radius * PointerStart),
+        At + (direction * Radius * PointerEnd),
+        direction);
 
     public readonly void Arrow(DebugDraw output, Vector3 from, Vector3 tip, Vector3 direction)
     {

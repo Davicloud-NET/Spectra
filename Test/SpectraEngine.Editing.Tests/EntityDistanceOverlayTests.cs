@@ -8,6 +8,7 @@ using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Hosting;
+using SpectraEngine.Editing.Icons;
 using SpectraEngine.Editing.Viewport;
 
 namespace SpectraEngine.Editing.Tests;
@@ -25,12 +26,16 @@ public sealed class EntityDistanceOverlayTests
     private const float MinDistance = 2f;
     private const float MaxDistance = 30f;
 
+    // A sound's nearest distance is the colour of its marker, and the rest dimmer.
+    private static readonly Vector3 Near = EntityGroupTints.For("Sound");
+    private static readonly Vector3 Far = Near * EntityDistanceOverlay.OuterDim;
+
     // Classes that exist only as .sentdef bytes, the way the editor learns any
     // class. The sound is shaped as point_sound. Naming the real one would load
     // its assembly after the shared catalogue was read, and that throws.
     private static readonly EntitySchemaCatalog Schemas = EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(
     [
-        new EntitySchema(Sound, keyvalues:
+        new EntitySchema(Sound, group: "Sound", keyvalues:
         [
             Setting("sound", KeyvalueType.AssetSound, ""),
             Setting("volume", KeyvalueType.Float, "1"),
@@ -108,8 +113,8 @@ public sealed class EntityDistanceOverlayTests
 
         overlay.Draw(output, scene);
 
-        ShouldBeSphere(Coloured(output, overlay.Color), sound.WorldPosition, 1.5f);
-        ShouldBeSphere(Coloured(output, overlay.OuterColor), sound.WorldPosition, 12f);
+        ShouldBeSphere(Coloured(output, Near), sound.WorldPosition, 1.5f);
+        ShouldBeSphere(Coloured(output, Far), sound.WorldPosition, 12f);
     }
 
     [Fact]
@@ -128,8 +133,8 @@ public sealed class EntityDistanceOverlayTests
         overlay.Draw(output, scene);
 
         sound.WorldPosition.ShouldNotBe(sound.LocalPosition);
-        ShouldBeSphere(Coloured(output, overlay.Color), sound.WorldPosition, MinDistance);
-        ShouldBeSphere(Coloured(output, overlay.OuterColor), sound.WorldPosition, MaxDistance);
+        ShouldBeSphere(Coloured(output, Near), sound.WorldPosition, MinDistance);
+        ShouldBeSphere(Coloured(output, Far), sound.WorldPosition, MaxDistance);
     }
 
     [Fact]
@@ -142,8 +147,8 @@ public sealed class EntityDistanceOverlayTests
 
         overlay.Draw(output, scene);
 
-        ShouldBeSphere(Coloured(output, overlay.Color), sound.WorldPosition, MinDistance);
-        ShouldBeSphere(Coloured(output, overlay.OuterColor), sound.WorldPosition, 9f);
+        ShouldBeSphere(Coloured(output, Near), sound.WorldPosition, MinDistance);
+        ShouldBeSphere(Coloured(output, Far), sound.WorldPosition, 9f);
     }
 
     [Fact]
@@ -156,17 +161,24 @@ public sealed class EntityDistanceOverlayTests
 
         overlay.Draw(output, scene);
 
-        ShouldBeSphere(Coloured(output, overlay.Color), sound.WorldPosition, 4f);
-        ShouldBeSphere(Coloured(output, overlay.OuterColor), sound.WorldPosition, 20f);
+        ShouldBeSphere(Coloured(output, Near), sound.WorldPosition, 4f);
+        ShouldBeSphere(Coloured(output, Far), sound.WorldPosition, 20f);
     }
 
     [Fact]
-    public void The_larger_distance_is_dimmer_than_the_entity_marker()
+    public void A_distance_takes_the_colour_of_the_entitys_group()
     {
-        var overlay = new EntityDistanceOverlay();
+        Scene scene = NewScene();
+        AddSelected(scene, Sound, Vector3.Zero);
+        SceneNode beacon = AddSelected(scene, Reach, new Vector3(100f, 0f, 0f));
+        var output = new DebugDraw();
 
-        overlay.Color.ShouldBe(EntityMarkerOverlay.DefaultColor);
-        overlay.OuterColor.Length().ShouldBeLessThan(overlay.Color.Length());
+        new EntityDistanceOverlay().Draw(output, scene);
+
+        // The beacon's class names no group, so it is the plain entity colour.
+        ShouldBeSphere(Coloured(output, EntityGroupTints.For(null)), beacon.WorldPosition, 5f);
+        Near.ShouldNotBe(EntityGroupTints.For(null));
+        EntityDistanceOverlay.OuterDim.ShouldBeLessThan(1f);
     }
 
     [Theory]
@@ -201,7 +213,7 @@ public sealed class EntityDistanceOverlayTests
         overlay.Draw(output, scene);
 
         overlay.DrawnLastDraw.ShouldBe(1);
-        ShouldBeSphere(Coloured(output, overlay.Color), sound.WorldPosition, MaxDistance);
+        ShouldBeSphere(Coloured(output, Near), sound.WorldPosition, MaxDistance);
     }
 
     [Fact]
@@ -309,17 +321,17 @@ public sealed class EntityDistanceOverlayTests
 
         var unselected = new DebugDraw();
         host.Draw(unselected);
-        Coloured(unselected, EntityDistanceOverlay.DefaultOuterColor).ShouldBeEmpty();
+        Coloured(unselected, Far).ShouldBeEmpty();
 
         scene.Selection.Add(sound);
 
         var selected = new DebugDraw();
         host.Draw(selected);
         ShouldBeSphere(
-            Coloured(selected, EntityDistanceOverlay.DefaultOuterColor), sound.WorldPosition, MaxDistance);
+            Coloured(selected, Far), sound.WorldPosition, MaxDistance);
 
-        // The marker is the same green, and all of it is well inside the near sphere.
-        List<Vector3> bright = Coloured(selected, EntityDistanceOverlay.DefaultColor);
+        // The marker is the same colour, and all of it is well inside the near sphere.
+        List<Vector3> bright = Coloured(selected, Near);
         bright.RemoveAll(vertex => Vector3.Distance(vertex, sound.WorldPosition) < MinDistance * 0.75f);
         ShouldBeSphere(bright, sound.WorldPosition, MinDistance);
     }

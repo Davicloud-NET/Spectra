@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tabler Icons "sun", MIT, scaled from its 24 box to 16. See LICENSE-tabler.txt. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+     fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M 5.333 8 a 2.667 2.667 0 1 0 5.333 0 a 2.667 2.667 0 1 0 -5.333 0" />
+  <path d="M 2 8 h 0.667 m 5.333 -6 v 0.667 m 5.333 5.333 h 0.667 m -6 5.333 v 0.667 m -4.267 -10.267 l 0.467 0.467 m 8.067 -0.467 l -0.467 0.467 m 0 7.6 l 0.467 0.467 m -8.067 -0.467 l -0.467 0.467" />
+</svg>
