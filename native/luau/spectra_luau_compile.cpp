@@ -24,7 +24,7 @@ SL_API char* sl_compile(const char* source, size_t size, int optimizationLevel, 
     // out. An exception must not reach the caller's managed frame.
     try
     {
-        return luau_compile(source, size, &options, bytecodeSize);
+        return luau_compile(source ? source : "", size, &options, bytecodeSize);
     }
     catch (...)
     {
