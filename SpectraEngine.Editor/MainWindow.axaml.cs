@@ -71,6 +71,7 @@ public partial class MainWindow : Window
     private ConsolePanel? _consoleView;
     private ConsoleCommands? _console;
     private readonly ConsoleLineFeed _consoleFeed = new();
+    private readonly ScriptStartProblems _scriptProblems;
 
     private EditorSession? _session;
     private SceneTreeModel? _tree;
@@ -125,6 +126,7 @@ public partial class MainWindow : Window
 
         DataContext = _shell;
         _captions = new CaptionOutput(_shell.Output);
+        _scriptProblems = new ScriptStartProblems(_shell.Problems);
         _scripts = new ScriptCommands(
             _shell, _document, () => _session, ScriptLauncher.ForThisComputer(),
             answer => Dispatcher.UIThread.Post(answer));
@@ -1058,6 +1060,7 @@ public partial class MainWindow : Window
         _entityAuditStale = false;
         _sceneView.ResetSelectionMemory();
         _consoleFeed.Reset();
+        _scriptProblems.Reset();
         _logic.Reset();
         _captions.Reset();
         _shell.SoundPreview.EndSession();
@@ -1473,10 +1476,8 @@ public partial class MainWindow : Window
     // them too. The log relay shows nothing below Warning, so no row doubles.
     private void ShowConsoleLines(FrameSnapshot snapshot)
     {
-        if (snapshot.ConsoleLines.Count == 0)
-            return;
-
-        _consoleFeed.Feed(snapshot.ConsoleLines, _shell.Output);
+        _scriptProblems.Apply(snapshot);
+        _consoleFeed.Feed(snapshot, _shell.Output);
 
         foreach (ConsoleLine line in snapshot.ConsoleLines)
         {

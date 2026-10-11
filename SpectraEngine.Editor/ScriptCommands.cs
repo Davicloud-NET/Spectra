@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Assets;
+using SpectraEngine.Core.ConsoleSystem;
 using SpectraEngine.Editing.Hosting;
 using SpectraEngine.Editor.Shell;
 using SpectraEngine.Editor.Shell.Scripts;
@@ -10,8 +11,8 @@ using System.Threading.Tasks;
 namespace SpectraEngine.Editor;
 
 /// <summary>
-/// What the window does with a script before the level plays: makes one,
-/// attaches one that is there, and opens one in a code editor.
+/// What the window does with a script: makes one, attaches one that is
+/// there, and opens one in a code editor, at a line when one is named.
 /// </summary>
 internal sealed class ScriptCommands
 {
@@ -20,6 +21,9 @@ internal sealed class ScriptCommands
     private readonly Func<EditorSession?> _session;
     private readonly ScriptLauncher _launcher;
     private readonly Action<Action> _post;
+
+    // The name of the file an open is running for, or null.
+    private string? _opening;
 
     /// <summary>Creates the commands.</summary>
     /// <param name="session">The session that is live now, or null.</param>
@@ -40,6 +44,9 @@ internal sealed class ScriptCommands
         _session = session;
         _launcher = launcher;
         _post = post;
+
+        // A line in Output that names a script and a line opens it there.
+        shell.Output.PlaceRequested += OpenPlace;
     }
 
     /// <summary>Makes a script file and adds a script that names it, under the selection.</summary>
@@ -131,6 +138,10 @@ internal sealed class ScriptCommands
         }));
     }
 
+    /// <summary>Opens the script a line in Output came from, at that line.</summary>
+    public void OpenPlace(ConsolePlace place) =>
+        _ = OpenAsync(place.File, line: place.Line > 0 ? place.Line : null);
+
     /// <summary>Opens a script by the path a level stores for it.</summary>
     /// <param name="keepStatus">Whether a plain "Opened" goes to Output and leaves the status bar.</param>
     /// <param name="line">Where the caret goes, counted from 1, or null for the top.</param>
@@ -156,8 +167,23 @@ internal sealed class ScriptCommands
     /// <summary>Opens a script by its full path. The start runs off the calling thread.</summary>
     public async Task OpenFileAsync(string fullPath, bool keepStatus = false, int? line = null)
     {
-        ScriptOpenOutcome outcome = await _launcher.OpenAsync(
-            new ScriptOpenRequest(fullPath, _document.Project?.Root, line));
+        // A click while a program is still starting would start it again.
+        if (_opening is { } busy)
+        {
+            _shell.SetMessage($"{busy} is still being opened.");
+            return;
+        }
+
+        _opening = Path.GetFileName(fullPath);
+        ScriptOpenOutcome outcome;
+        try
+        {
+            outcome = await _launcher.OpenAsync(new ScriptOpenRequest(fullPath, _document.Project?.Root, line));
+        }
+        finally
+        {
+            _opening = null;
+        }
 
         foreach (string failure in outcome.Failures)
             _shell.Output.Append(OutputSeverity.Warning, failure);
