@@ -75,10 +75,15 @@ public sealed class ViewportInteractionController
     public Gizmos.LightGizmo? LightTool { get; set; }
 
     /// <summary>
-    /// Where the icons of lights and point entities stand. Give it the one the
-    /// overlays draw with, so a click reads the budgets the drawing had.
+    /// Where the icons of lights and point entities stand, for a click and for
+    /// the marquee. Give it the one the overlays draw with, so both read the
+    /// budgets the drawing had.
     /// </summary>
-    public SceneIcons Icons { get; set; } = new();
+    public SceneIcons Icons
+    {
+        get => BoxSelect.Icons;
+        set => BoxSelect.Icons = value;
+    }
 
     /// <summary>What currently owns the pointer.</summary>
     public ViewportDragMode DragMode { get; private set; }
@@ -444,10 +449,18 @@ public sealed class ViewportInteractionController
         // The icon wins unless geometry is nearer by more than the icon's
         // radius. It draws on top, and a lamp flush against a ceiling would
         // otherwise be unclickable.
-        if (geometry)
+        if (geometry && icon is not null)
         {
-            float slack = LightPicking.WorldRadius(Scene.Camera, frame.ViewportSize, icon!.WorldPosition);
-            if (iconDistance > hit.Distance + slack)
+            float slack = LightPicking.WorldRadius(Scene.Camera, frame.ViewportSize, icon.WorldPosition);
+            bool isBehind = iconDistance > hit.Distance + slack;
+
+            // An icon that was moved along a wall can stand behind it while
+            // its node is in front. It is drawn all the same, so the wall
+            // wins only when it hides the node too.
+            if (isBehind && Icons.TryFindMoved(Scene, icon, out _))
+                isBehind = IsHidden(icon.WorldPosition, in ray, slack);
+
+            if (isBehind)
             {
                 node = hit.Node;
                 planeIndex = hit.PlaneIndex;
@@ -457,6 +470,25 @@ public sealed class ViewportInteractionController
 
         node = icon;
         return true;
+    }
+
+    // Whether geometry stands between the eye and this point, nearer than
+    // the point by more than the slack. The cursor's ray says which way a
+    // flat view looks.
+    private bool IsHidden(Vector3 point, in Ray3 cursor, float slack)
+    {
+        Camera camera = Scene.Camera;
+        Vector3 from = camera.ProjectionKind == CameraProjectionKind.Orthographic
+            ? point - (cursor.Direction * Vector3.Dot(point - cursor.Origin, cursor.Direction))
+            : camera.Position;
+
+        float distance = Vector3.Distance(from, point);
+        if (distance <= 0f)
+            return false;
+
+        var sight = new Ray3(from, (point - from) / distance);
+        return Scene.Raycast(in sight, out SceneRaycastHit block, SceneQueryFilter.EditorPicking, distance) &&
+               block.Distance + slack < distance;
     }
 
     private void SetMode(ViewportDragMode mode)

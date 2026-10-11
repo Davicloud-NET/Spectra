@@ -160,7 +160,7 @@ public sealed class LightSelectionTests
         var rect = ScreenRect.FromCorners(new Vector2(220f, 180f), new Vector2(560f, 430f));
 
         var actual = new List<SceneNode>();
-        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, mode, actual);
+        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, mode, actual, new SceneIcons());
 
         SceneNode[] expected = Oracle(harness, in rect, mode);
 
@@ -179,7 +179,7 @@ public sealed class LightSelectionTests
         var rect = ScreenRect.FromCorners(Vector2.Zero, harness.ViewportSize);
 
         var actual = new List<SceneNode>();
-        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, actual);
+        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, actual, new SceneIcons());
 
         actual.Count.ShouldBe(3);
     }
@@ -202,7 +202,7 @@ public sealed class LightSelectionTests
         var rect = ScreenRect.FromCorners(Vector2.Zero, harness.ViewportSize);
 
         var actual = new List<SceneNode>();
-        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, actual);
+        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, actual, new SceneIcons());
 
         // Already in the spatial index through its brush.
         actual.Count.ShouldBe(1);

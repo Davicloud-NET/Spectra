@@ -5,6 +5,7 @@ using SpectraEngine.Editing.Commands;
 using SpectraEngine.Editing.Gizmos;
 using SpectraEngine.Editing.Input;
 using SpectraEngine.Editing.Selection;
+using SpectraEngine.Editing.Viewport;
 using SpectraEngine.Editing.Undo;
 using System;
 using System.Collections.Generic;
@@ -356,12 +357,13 @@ public sealed class EditingAllocationTests
 
         var rect = new ScreenRect(new Vector2(100f, 80f), new Vector2(700f, 520f));
         var results = new List<SceneNode>();
+        var icons = new SceneIcons();
         for (int i = 0; i < 200; i++)
-            BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, results);
+            BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, results, icons);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 2_000; i++)
-            BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, results);
+            BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, results, icons);
         long after = GC.GetAllocatedBytesForCurrentThread();
 
         // A marquee is re-queried every frame it is dragged.

@@ -25,15 +25,21 @@ public static class BoxSelectQuery
     /// The list is cleared first.
     /// </summary>
     /// <param name="rect">The marquee, in viewport pixels (top-left origin, y down).</param>
+    /// <param name="icons">
+    /// Where the icons of lights and point entities stand: the one the view
+    /// draws with. They are placed for the scene's camera first.
+    /// </param>
     public static void Query(
         Scene scene,
         in ScreenRect rect,
         Vector2 viewportSize,
         BoxSelectMode mode,
-        List<SceneNode> results)
+        List<SceneNode> results,
+        SceneIcons icons)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(results);
+        ArgumentNullException.ThrowIfNull(icons);
 
         results.Clear();
         if (viewportSize.X <= 0f || viewportSize.Y <= 0f)
@@ -55,77 +61,45 @@ public static class BoxSelectQuery
 
         results.RemoveRange(write, results.Count - write);
 
-        AppendCoveredIcons(scene, camera, in rect, viewportSize, mode, results);
+        AppendCoveredIcons(scene, icons, in rect, viewportSize, mode, results);
     }
 
     // Lights and point entities are not in the spatial index (that would make
-    // them collidable), so they get their own pass. Tests the icon at the
-    // radius the overlay draws and the click picks.
+    // them collidable), so they get their own pass. Tests each icon where it
+    // is drawn, at the radius the overlay draws and the click picks.
     private static void AppendCoveredIcons(
         Scene scene,
-        Camera camera,
+        SceneIcons icons,
         in ScreenRect rect,
         Vector2 viewportSize,
         BoxSelectMode mode,
         List<SceneNode> results)
     {
-        IReadOnlyList<SceneNode> lights = scene.LightNodes;
+        Camera camera = scene.Camera;
+        icons.Place(scene, camera, viewportSize);
 
-        for (int i = 0; i < lights.Count; i++)
+        ReadOnlySpan<SceneIcon> all = icons.All;
+        int lights = icons.Lights.Length;
+
+        for (int i = 0; i < all.Length; i++)
         {
-            SceneNode node = lights[i];
+            ref readonly SceneIcon icon = ref all[i];
+            SceneNode node = i < lights ? scene.LightNodes[icon.Node] : scene.EntityNodes[icon.Node];
 
-            // Already judged through the index.
+            // A light with a shape was judged through the index.
             if (node.Brush is not null || node.MeshRenderer is not null)
                 continue;
 
-            if (CoversIcon(camera, node, in rect, viewportSize, mode))
+            Vector2 screen = Project(camera, icon.At, viewportSize);
+            float radius = icon.Radius / icon.Pixel;
+
+            var drawn = new ScreenRect(
+                new Vector2(screen.X - radius, screen.Y - radius),
+                new Vector2(screen.X + radius, screen.Y + radius));
+
+            if (mode == BoxSelectMode.Contain ? rect.Contains(in drawn) : rect.Intersects(in drawn))
                 results.Add(node);
         }
-
-        IReadOnlyList<SceneNode> entities = scene.EntityNodes;
-
-        for (int i = 0; i < entities.Count; i++)
-        {
-            SceneNode node = entities[i];
-
-            // An entity with a light was judged by the loop above.
-            if (EntityMarkerPicking.HasMarker(node) && CoversIcon(camera, node, in rect, viewportSize, mode))
-                results.Add(node);
-        }
-    }
-
-    /// <summary>
-    /// Whether the rectangle covers the icon drawn at this node: a light's,
-    /// or an entity's marker.
-    /// </summary>
-    public static bool CoversIcon(
-        Camera camera,
-        SceneNode node,
-        in ScreenRect rect,
-        Vector2 viewportSize,
-        BoxSelectMode mode)
-    {
-        ArgumentNullException.ThrowIfNull(camera);
-        ArgumentNullException.ThrowIfNull(node);
-
-        Vector3 at = node.WorldPosition;
-
-        // Behind the eye plane there is no projection.
-        float depth = Vector3.Dot(at - camera.Position, camera.Forward);
-        if (depth <= MinClipW)
-            return false;
-
-        Vector2 screen = Project(camera, at, viewportSize);
-        float radius = LightPicking.PixelRadius(camera, viewportSize, at);
-
-        var icon = new ScreenRect(
-            new Vector2(screen.X - radius, screen.Y - radius),
-            new Vector2(screen.X + radius, screen.Y + radius));
-
-        return mode == BoxSelectMode.Contain
-            ? rect.Contains(in icon)
-            : rect.Intersects(in icon);
     }
 
     private static Vector2 Project(Camera camera, Vector3 world, Vector2 viewportSize)

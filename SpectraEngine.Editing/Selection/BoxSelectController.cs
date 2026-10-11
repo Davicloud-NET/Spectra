@@ -2,6 +2,7 @@ using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Input;
+using SpectraEngine.Editing.Viewport;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -34,6 +35,12 @@ public sealed class BoxSelectController
 
     /// <summary>The scene whose nodes the marquee selects.</summary>
     public Scene Scene { get; }
+
+    /// <summary>
+    /// Where the icons of lights and point entities stand. The marquee takes
+    /// an icon where it is drawn.
+    /// </summary>
+    public SceneIcons Icons { get; set; } = new();
 
     /// <summary>Whether a node must touch the rectangle or lie fully inside it.</summary>
     public BoxSelectMode Mode { get; set; } = BoxSelectMode.Intersect;
@@ -143,7 +150,7 @@ public sealed class BoxSelectController
         }
 
         ScreenRect rect = Rect;
-        BoxSelectQuery.Query(Scene, in rect, viewportSize, Mode, _results);
+        BoxSelectQuery.Query(Scene, in rect, viewportSize, Mode, _results, Icons);
 
         Scene.Selection.Apply(_results, update);
 

@@ -229,7 +229,7 @@ public sealed class IconPilePickTests
     }
 
     [Fact]
-    public void A_marquee_takes_a_pile_by_where_its_entities_are_not_where_they_are_drawn()
+    public void A_marquee_takes_the_icons_it_is_drawn_round_and_not_what_is_on_the_point()
     {
         var rig = new IconPileRig();
         SceneNode[] lift = rig.AddLift(Vector3.Zero);
@@ -237,17 +237,64 @@ public sealed class IconPilePickTests
         float radius = markers[0].Radius / markers[0].Pixel;
         var taken = new List<SceneNode>();
 
-        // Round the point alone, well inside the row.
-        Vector2 point = rig.Harness.WorldToScreen(Vector3.Zero);
-        var onPoint = ScreenRect.FromCorners(point - new Vector2(2f), point + new Vector2(2f));
-        BoxSelectQuery.Query(rig.Scene, in onPoint, rig.ViewportSize, BoxSelectMode.Intersect, taken);
-        taken.Count.ShouldBe(lift.Length);
-
         // Round the icon at the left-hand end alone, which is drawn clear of the point.
         Vector2 end = rig.Harness.WorldToScreen(markers[0].At);
         var onEnd = ScreenRect.FromCorners(end - new Vector2(radius), end + new Vector2(radius));
-        BoxSelectQuery.Query(rig.Scene, in onEnd, rig.ViewportSize, BoxSelectMode.Intersect, taken);
+        BoxSelectQuery.Query(rig.Scene, in onEnd, rig.ViewportSize, BoxSelectMode.Intersect, taken, new SceneIcons());
+        taken.ShouldBe([lift[0]]);
+
+        // In the gap between the two middle icons, where all four nodes are.
+        Vector2 point = rig.Harness.WorldToScreen(Vector3.Zero);
+        var onPoint = ScreenRect.FromCorners(point - new Vector2(1f), point + new Vector2(1f));
+        BoxSelectQuery.Query(rig.Scene, in onPoint, rig.ViewportSize, BoxSelectMode.Intersect, taken, new SceneIcons());
         taken.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_marquee_dragged_in_the_viewport_selects_the_icons_inside_it()
+    {
+        var rig = new IconPileRig();
+        SceneNode[] lift = rig.AddLift(Vector3.Zero);
+        SceneIcon[] markers = rig.Place().Markers.ToArray();
+        float radius = markers[0].Radius / markers[0].Pixel;
+
+        // Round the two on the right.
+        Vector2 from = rig.Harness.WorldToScreen(markers[2].At) - new Vector2(radius + 2f);
+        Vector2 to = rig.Harness.WorldToScreen(markers[3].At) + new Vector2(radius + 2f);
+        rig.Harness.Viewport.BoxSelect.Mode = BoxSelectMode.Contain;
+        rig.Harness.DragRect(from, to);
+
+        rig.Scene.Selection.Items.ShouldBe([lift[2], lift[3]], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void A_moved_icon_that_stands_behind_a_wall_its_node_is_in_front_of_can_be_clicked()
+    {
+        // A wall just behind the lift, seen at a slant:
+        // one end of the row is drawn where the wall is nearer than the icon.
+        var rig = new IconPileRig();
+        SceneNode[] lift = rig.AddLift(Vector3.Zero);
+        SceneNode wall = rig.Harness.AddBrush(new Vector3(0f, 0f, 2.05f), 2f);
+        rig.Harness.Orbit(Vector3.Zero, 12f, MathF.PI / 6f, 0f);
+        SceneIcon[] markers = rig.Place().Markers.ToArray();
+
+        // The ray to an end icon meets the wall well before the icon.
+        int behind = -1;
+        for (int i = 0; i < markers.Length; i++)
+        {
+            Ray3 ray = rig.RayThrough(markers[i].At);
+            if (rig.Scene.Raycast(in ray, out SceneRaycastHit hit) &&
+                hit.Distance + (markers[i].Radius * 2f) < Vector3.Distance(ray.Origin, markers[i].At))
+            {
+                behind = i;
+            }
+        }
+
+        behind.ShouldBeGreaterThanOrEqualTo(0);
+        rig.Click(markers[behind].At).ShouldBeSameAs(lift[behind]);
+
+        // Beside the row a click still takes the wall.
+        rig.Click(markers[behind].At + (rig.Camera.Up * (markers[behind].Radius * 3f))).ShouldBeSameAs(wall);
     }
 
     [Fact]

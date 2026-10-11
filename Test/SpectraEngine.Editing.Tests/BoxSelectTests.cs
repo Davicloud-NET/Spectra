@@ -3,6 +3,7 @@ using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Selection;
+using SpectraEngine.Editing.Viewport;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -34,7 +35,7 @@ public sealed class BoxSelectTests
         var rect = ScreenRect.FromCorners(new Vector2(x0, y0), new Vector2(x1, y1));
 
         var actual = new List<SceneNode>();
-        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, mode, actual);
+        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, mode, actual, new SceneIcons());
 
         SceneNode[] expected = Oracle(harness, rect, mode);
 
@@ -83,8 +84,8 @@ public sealed class BoxSelectTests
 
         var loose = new List<SceneNode>();
         var strict = new List<SceneNode>();
-        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, loose);
-        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Contain, strict);
+        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, loose, new SceneIcons());
+        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Contain, strict, new SceneIcons());
 
         strict.ShouldBeSubsetOf(loose);
         strict.Count.ShouldBeLessThan(loose.Count); // the rect really does straddle some
@@ -99,8 +100,8 @@ public sealed class BoxSelectTests
 
         var a = ScreenRect.FromCorners(new Vector2(220f, 160f), new Vector2(600f, 440f));
         var b = ScreenRect.FromCorners(new Vector2(600f, 440f), new Vector2(220f, 160f));
-        BoxSelectQuery.Query(harness.Scene, in a, harness.ViewportSize, BoxSelectMode.Intersect, forward);
-        BoxSelectQuery.Query(harness.Scene, in b, harness.ViewportSize, BoxSelectMode.Intersect, backward);
+        BoxSelectQuery.Query(harness.Scene, in a, harness.ViewportSize, BoxSelectMode.Intersect, forward, new SceneIcons());
+        BoxSelectQuery.Query(harness.Scene, in b, harness.ViewportSize, BoxSelectMode.Intersect, backward, new SceneIcons());
 
         backward.ShouldBe(forward);
     }
@@ -150,7 +151,7 @@ public sealed class BoxSelectTests
         var to = new Vector2(460f, 340f);
         var rect = ScreenRect.FromCorners(from, to);
         var covered = new List<SceneNode>();
-        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, covered);
+        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, covered, new SceneIcons());
         covered.Count.ShouldBeGreaterThan(2);
 
         SceneNode outsider = harness.Scene.Root.Children.First(node => !covered.Contains(node));

@@ -197,7 +197,7 @@ public sealed class EntityMarkerTests
 
         var rect = ScreenRect.FromCorners(Vector2.Zero, harness.ViewportSize);
         var actual = new List<SceneNode>();
-        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, actual);
+        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, actual, new SceneIcons());
 
         actual.Count.ShouldBe(3);
         actual.ShouldContain(bare);
@@ -215,7 +215,7 @@ public sealed class EntityMarkerTests
         var rect = ScreenRect.FromCorners(
             new Vector2(harness.ViewportSize.X * 0.5f, 0f), harness.ViewportSize);
         var actual = new List<SceneNode>();
-        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, actual);
+        BoxSelectQuery.Query(harness.Scene, in rect, harness.ViewportSize, BoxSelectMode.Intersect, actual, new SceneIcons());
 
         actual.ShouldBe([right]);
     }
