@@ -99,8 +99,10 @@ An input that none of the entities has is refused before anything is sent:
 
 ```
 > ent_fire relay1 trigger
-ent_fire: logic_relay has no input 'trigger'. Did you mean Trigger? Inputs: Trigger Enable Disable Toggle
+ent_fire: logic_relay has no input 'trigger'. Did you mean Trigger? Inputs: Trigger() Enable() Disable() Toggle()
 ```
+
+The brackets say what each input takes, as in [`ent_show`](#ent_show).
 
 When a class's inputs are not known, the input is sent anyway and a `deny` line says how it went.
 
@@ -135,11 +137,11 @@ score state min = 0
 score state max = 3
 score state refused inputs = 0
 score think: none
-score output OutValue: not wired
-score output OnHitMax -> door*.Open in=2s fires=2 of 3 left, 2 entities matching door*
-score output OnHitMax -> dor1.Close fires=unlimited, nothing is named dor1
-score output OnHitMin: not wired
-score inputs: Add Subtract SetValue SetValueNoFire SetHitMax SetHitMin GetValue
+score output OutValue(float): not wired
+score output OnHitMax() -> door*.Open in=2s fires=2 of 3 left, 2 entities matching door*
+score output OnHitMax() -> dor1.Close fires=unlimited, nothing is named dor1
+score output OnHitMin(): not wired
+score inputs: Add(float?) Subtract(float?) SetValue(float) SetValueNoFire(float) SetHitMax(float) SetHitMin(float) GetValue()
 ```
 
 Every row starts with the entity's name.
@@ -149,8 +151,19 @@ Every row starts with the entity's name.
 | `keyvalue` | A setting. `(default)` means the level does not set it. |
 | `state` | A value the running entity holds now. |
 | `think` | When the entity next wakes by itself, such as a timer's next fire. |
-| `output` | One wire: where it goes, its delay, the fires it has left, and how many entities its target reaches now. An output with no wire reads `not wired`. |
-| `inputs` | The inputs the class takes. |
+| `output` | One wire: where it goes, its delay, the fires it has left, and how many entities its target reaches now. An output with no wire reads `not wired`. The brackets after the output's name hold what it sends. |
+| `inputs` | The inputs the class takes, each with what it takes in brackets. |
+
+What stands in the brackets:
+
+| Brackets | Means |
+|---|---|
+| `Open()` | No value. |
+| `SetValue(float)` | One value of that type. |
+| `Add(float?)` | One value of that type, or none. |
+| `Open` with no brackets | The class does not say. |
+
+The types are `bool`, `int`, `float`, `string`, `vec2`, `vec3`, `vec4`, `color`, `angles`, `targetname` and `noderef`. A `bool` is `0` or `1`, and a vector is its numbers with spaces between.
 
 Before you press Play there are no `state` and `think` rows. One row reads `score not running: no live state` in their place, and a wire shows its fires as a plain count.
 

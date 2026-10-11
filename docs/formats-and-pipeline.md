@@ -894,12 +894,17 @@ Per type (variable length)
 +0x14  u16   InputCount
 +0x16  u16   OutputCount
 then keyvalue, input and output records in that order
-then the trailer, which is the last 8 bytes of the record. A record that
-ends sooner was written before the field it lacks, and reads without it
+then the trailer, which ends the record. A record that ends sooner was
+written before the field it lacks, and reads without it
 +0x00  u32   IconRef      the class's icon name, such as "door", or 0 for none
 +0x04  u32   ClassFlags   bit0 hasFacing: the way the node points changes what
                           the class does. The other bits are written 0 and
                           ignored on read
++0x08  u8[]  Parameters   one byte for each input, then one for each output:
+                          what the input takes or the output sends. 0 not
+                          said, 1 no value, 2 + a keyvalue Type for one value
+                          of that type. bit7 set: the value may be left out.
+                          Then zeros up to a multiple of 4 bytes
 
 Input record / output record - 4 bytes
 +0x00  u32   NameRef
@@ -929,6 +934,12 @@ Choice record - 8 bytes, ChoiceCount of them immediately after the keyvalue reco
 `IconRef` is the first field added to a type record after files were written (2026-10-11), and it took no new version. It is appended after the last output, so the record is 4 bytes longer and `Version` is still 1. A reader that does not know it skips it, because it advances by `RecordSize`. A reader that does know it reads it only when the record has 4 bytes left after its outputs, so a file written before it loads and every class in it has no icon. The next field goes after `IconRef`, never before it. The name is what a class declares in `[SpectraEntity(Icon = "door")]`: short, lower case, words joined by hyphens. The file says nothing about drawings. An editor turns the name into its own icon, and a name it has no drawing for gets the plain entity icon, so a wrong name costs a picture and nothing else.
 
 `ClassFlags` was added the same day and the same way: 4 more bytes after `IconRef`, and `Version` is still 1. Bit 0 is `hasFacing`, which a class declares in `[SpectraEntity(HasFacing = true)]`. It says that turning the node changes what the class does, as it does for a player start, and an editor draws an arrow along the node's local +Z for such a class and for no other. A record that ends at its `IconRef` reads with every flag off. Before the flags an editor drew the arrow for every class that was not logic only, so a file from then shows no arrows until it is written again. An old file can lose an arrow that way, and it can never show one on a class that faces nowhere, such as a sound. The other 31 bits are written 0 and ignored on read. The next yes or no about a class takes one of them. A field of any other kind goes after `ClassFlags`.
+
+`Parameters` came next (2026-10-11), and `Version` is still 1. It says what each input takes and what each output sends: one byte for each input and then one for each output, in the order the record lists them, after `ClassFlags`. Zeros follow up to a multiple of four bytes, so every record is still a whole number of 4-byte words. A byte is 0 for not said, 1 for no value, and 2 plus a keyvalue `Type` for one value of that type, so a float is 4. Bit 7 says the value may be left out: `math_counter` adds one when `Add` comes with nothing. A class declares these in `[EntityInput("SetValue", Parameter = KeyvalueType.Float)]`, with `CanOmitParameter = true` beside it, and in `[EntityOutput(Parameter = KeyvalueType.Float)]`. An attribute that names no type means no value.
+
+A record that ends at its `ClassFlags`, or anywhere before the last of these bytes, reads with nothing said for every input and output. Not said is not no value. A tool can tell a class that says `Open` takes nothing from a file too old to say, and it judges nothing against a class that does not say. A byte this build cannot use reads as not said too: a type a newer build added, or one no wire carries. Nothing fails on it, because a type is knowledge and nothing at run time enforces one. An input still arrives as one string, and a wire is stored as it always was.
+
+A wire carries a bool, an int, a float, a string, a vec2, a vec3, a vec4, a color, angles, a targetname or a noderef. The generator refuses the other keyvalue types on an input or an output (`SPE009`). Choices, flags and a distance only mean something on a keyvalue. A level's assets are found through its keyvalues, so a sound named only on a wire would not be cooked. The text a value is carried as is the text a keyvalue of its type is written as, and `ParameterText` in `SpectraEngine.Core/Entities` is the one place that turns a typed value into that text and back. The next field goes after the padding.
 
 `DefaultRef` is a **string** reference and not a typed value, because `P5` pinned keyvalues as string-typed on the wire — if the schema's defaults were typed, the editor's "is this still the default?" comparison would become a type-conversion round trip and would drift silently.
 

@@ -7,6 +7,8 @@ These classes slide the brush they are on. Each one is a part, or a group of par
 
 In each settings table, the first column is the name a level file uses and the second is the label in the Properties panel.
 
+Takes is the parameter an input reads, and Sends is the value an output sends in the parameter's place. See [What an input takes](/concepts/entities-and-wiring/#what-an-input-takes).
+
 ## What they share
 
 Where you place the brush in the editor is one end of its trip: a door is built closed, a button is built out, a linear mover is built at position 0.
@@ -36,18 +38,18 @@ A brush that slides open and closes again: a door, a gate, a hatch.
 
 A door with nothing set slides up by its own height, less 0.05.
 
-| Input | Does |
-|---|---|
-| `Open` | Opens the door. A door that is closing turns round where it is. On a door that is open or opening it does nothing, and it does not restart the wait. |
-| `Close` | Closes the door and cuts its wait short. A door that is still opening turns round where it is. On a door that is closed or closing it does nothing. |
-| `Toggle` | Closes a door that is open or opening, and opens any other. |
+| Input | Takes | Does |
+|---|---|---|
+| `Open` | Nothing | Opens the door. A door that is closing turns round where it is. On a door that is open or opening it does nothing, and it does not restart the wait. |
+| `Close` | Nothing | Closes the door and cuts its wait short. A door that is still opening turns round where it is. On a door that is closed or closing it does nothing. |
+| `Toggle` | Nothing | Closes a door that is open or opening, and opens any other. |
 
-| Output | Fires when |
-|---|---|
-| `OnOpen` | The door starts to open. |
-| `OnClose` | The door starts to close, by an input or after its wait. |
-| `OnFullyOpen` | The door arrives open. |
-| `OnFullyClosed` | The door arrives closed. |
+| Output | Sends | Fires when |
+|---|---|---|
+| `OnOpen` | Nothing | The door starts to open. |
+| `OnClose` | Nothing | The door starts to close, by an input or after its wait. |
+| `OnFullyOpen` | Nothing | The door arrives open. |
+| `OnFullyClosed` | Nothing | The door arrives closed. |
 
 A door that starts open fires nothing when the level starts.
 
@@ -64,16 +66,16 @@ A brush that slides to wherever it is sent and rests there: a lift, a piston, a 
 | `speed` | Speed | 2 | Units a second. Anything below 0.01 counts as 0.01. |
 | `startposition` | Start position | 0 | Where along the way the brush is when the level starts, from 0 to 1. |
 
-| Input | Does |
-|---|---|
-| `Open` | Heads for position 1 from wherever the brush is. |
-| `Close` | Heads for position 0 from wherever the brush is. |
-| `SetPosition` | Heads for the parameter, a number from 0 to 1. A number outside that range goes to the nearer end. Anything that is not a number is ignored. |
+| Input | Takes | Does |
+|---|---|---|
+| `Open` | Nothing | Heads for position 1 from wherever the brush is. |
+| `Close` | Nothing | Heads for position 0 from wherever the brush is. |
+| `SetPosition` | A number | Heads for the parameter, a number from 0 to 1. A number outside that range goes to the nearer end. Anything that is not a number is ignored. |
 
-| Output | Fires when |
-|---|---|
-| `OnFullyOpen` | The brush arrives at position 1. |
-| `OnFullyClosed` | The brush arrives at position 0. |
+| Output | Sends | Fires when |
+|---|---|---|
+| `OnFullyOpen` | Nothing | The brush arrives at position 1. |
+| `OnFullyClosed` | Nothing | The brush arrives at position 0. |
 
 Stopping anywhere between the two ends fires nothing. Neither does a start position.
 
@@ -93,16 +95,16 @@ A brush that goes in when it is pressed and comes back out by itself: a wall but
 | `speed` | Speed | 1 | Units a second. Anything below 0.01 counts as 0.01. |
 | `wait` | Wait | 1 | Seconds the button stays in before it comes back out. -1 keeps it in. |
 
-| Input | Does |
-|---|---|
-| `Use` | Presses the button. This is what the player's use key sends. |
-| `Press` | Presses the button. The same thing, for a wire. |
+| Input | Takes | Does |
+|---|---|---|
+| `Use` | Nothing | Presses the button. This is what the player's use key sends. |
+| `Press` | Nothing | Presses the button. The same thing, for a wire. |
 
-| Output | Fires when |
-|---|---|
-| `OnPressed` | A press is taken and the button starts to go in. |
-| `OnIn` | The button arrives all the way in. |
-| `OnOut` | The button arrives back out. |
+| Output | Sends | Fires when |
+|---|---|---|
+| `OnPressed` | Nothing | A press is taken and the button starts to go in. |
+| `OnIn` | Nothing | The button arrives all the way in. |
+| `OnOut` | Nothing | The button arrives back out. |
 
 The button counts as pressed from the press until it is back out and at rest. A press in that time does nothing: it does not turn the button round and it does not restart the wait.
 

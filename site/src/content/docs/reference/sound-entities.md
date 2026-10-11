@@ -13,6 +13,8 @@ To hear a file without pressing Play, press the play button on its row in the Co
 
 In the settings table, the first column is the name a level file uses and the second is the label in the Properties panel.
 
+Takes is the parameter an input reads, and Sends is the value an output sends in the parameter's place. See [What an input takes](/concepts/entities-and-wiring/#what-an-input-takes).
+
 ## point_sound
 
 Plays a sound from where it stands: a hum, an alarm, a spoken line.
@@ -37,17 +39,17 @@ Select a sound in the editor and the viewport draws both distances round it.
 
 A volume below 0, or a pitch outside 0.1 to 10, is not used, and the default takes its place.
 
-| Input | Does |
-|---|---|
-| `Play` | Plays the sound from its start. On a sound that is already playing it starts over. |
-| `Stop` | Stops the sound. It fires nothing. |
-| `SetVolume` | Sets the volume to the parameter, a number from 0 up. It holds for every later `Play` too. Anything else is ignored. |
-| `SetPitch` | Sets the pitch to the parameter, a number from 0.1 to 10. What has played so far stays played, and the rest plays at the new speed. It holds for every later `Play` too. Anything else is ignored. |
+| Input | Takes | Does |
+|---|---|---|
+| `Play` | Nothing | Plays the sound from its start. On a sound that is already playing it starts over. |
+| `Stop` | Nothing | Stops the sound. It fires nothing. |
+| `SetVolume` | A number | Sets the volume to the parameter, a number from 0 up. It holds for every later `Play` too. Anything else is ignored. |
+| `SetPitch` | A number | Sets the pitch to the parameter, a number from 0.1 to 10. What has played so far stays played, and the rest plays at the new speed. It holds for every later `Play` too. Anything else is ignored. |
 
-| Output | Fires when |
-|---|---|
-| `OnEnded` | A sound that is not looped reaches its end. `Stop` does not fire it. |
-| `OnMarker` | The sound reaches a marker. It carries the marker's name. |
+| Output | Sends | Fires when |
+|---|---|---|
+| `OnEnded` | Nothing | A sound that is not looped reaches its end. `Stop` does not fire it. |
+| `OnMarker` | Text | The sound reaches a marker. It carries the marker's name. |
 
 The sound is its own activator for both outputs.
 

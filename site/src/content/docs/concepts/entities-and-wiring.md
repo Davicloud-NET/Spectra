@@ -38,6 +38,29 @@ A level runs at 60 ticks a second, and every wait is a whole number of ticks. A 
 
 Inputs that land on the same tick arrive in the order they were sent, which for one output's wires is the order they are listed in. A shorter delay does not go first: 0.02 and 0.03 are both 2 ticks. To make sure one input follows another, give it a delay at least a tick longer.
 
+## What an input takes
+
+Each input takes one kind of parameter, or none. A counter's `SetValue` takes a number. A branch's `SetValue` takes `0` or `1`. A door's `Open` takes nothing. A counter's `Add` takes a number or nothing, and adds 1 when it gets nothing.
+
+Some outputs send a value of their own. A counter's `OutValue` sends its number, and a sound's `OnMarker` sends the marker's name. That value takes the place of the wire's parameter, so whatever the Parameter field of such a wire holds is not used.
+
+The reference pages list both for every class, in the Takes and Sends columns.
+
+The editor reads a wire's parameter against them. A line under the wire, in the Sends section of the Properties panel, says when the parameter will not do what it looks like it does:
+
+| The line | Means |
+|---|---|
+| `SetValue takes a number, not 'five'` | The input cannot read what you typed. |
+| `SetValue needs a number` | The input needs a parameter and the wire has none. |
+| `Open takes no parameter` | The input ignores what you typed. |
+| `OutValue sends its own value, so this parameter is not used` | The output's value arrives, not what you typed. |
+
+The line is a warning and nothing more. The wire is kept as you typed it, and a level that already holds such a wire loads and saves as it was.
+
+A wire gets no line when the editor cannot tell which class answers it: its target is a prefix, `!activator` or `!caller`, a name that several entities share, or an entity of a class this build does not know.
+
+When the level plays, an input gets its parameter as text and reads it itself. What it does with text it cannot read is listed with each class.
+
 ## Targets
 
 The target is a node's name. If several nodes share the name, all of them get the input.
