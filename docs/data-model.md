@@ -267,9 +267,11 @@ The play journal (`Entities/PlayJournal.cs`) keeps that promise. The entity worl
 - An entity records through `EntityWorld.SetLocalTransform`, which refuses a node with a world brush at or below it and a scale change above a brush.
 - A script records through `ScriptWrites.TryWrite` (`Scripting/ScriptWrites.cs`). It checks the value, records, then writes. A refusal is a sentence for the script's error, and nothing is recorded or written.
 - `ScriptWrites.Settable` lists what a script can set: `Position`, `CFrame`, `LocalPosition`, `LocalCFrame` and `Name`. `Read` gives each back as a `MemberValue`, which compares and prints. The Luau binding looks every write up in that list and has no other way to change a node.
-- A rename is live at once. The name index hears it, so a wire finds the entity by its new name. A name a node cannot have (`Scene/NodeName.cs`) is an error at the script's line: an empty one, one over 100 characters, one with a line break.
+- A rename is live at once. The name index hears it, so a wire finds the entity by its new name, and a name no entity has any more leaves the index.
+- A name a node cannot have (`Scene/NodeName.cs`) is an error at the script's line: an empty one, one over 100 characters, one with a line break, one with a space at either end, and one that starts with `!`, which no wire can reach. The editor's rename is looser, so a map can hold such a name. A write of the name a node already has is always taken.
+- A stop that throws still puts the level back. When an entity's `OnRemove` throws, or a scene event handler does while a value goes back, the rest of the journal goes back first and the exception leaves after. `SceneManager.StopEntityWorld` lets go of the world either way.
 
-A write that does not record stays in the level after Stop, and nothing says so at the time. Two tests in `SpectraEngine.Scripting.Tests` watch for it. `StopPromiseTests` makes random writes from fixed seeds, through `ScriptWrites` and from real scripts, and compares the saved bytes and every settable member before Play and after Stop. `SettableListTests` fails when a script can set a member the list does not have.
+A write that does not record stays in the level after Stop, and nothing says so at the time. Two tests in `SpectraEngine.Scripting.Tests` watch for it. `StopPromiseTests` writes every member of every node of a small level and then makes random writes from fixed seeds, through `ScriptWrites` and from real scripts. It compares the saved bytes and every settable member before Play and after Stop, and fails when a member of a node went unchanged while the level played. `SettableListTests` fails when a script can set a member the list does not have.
 
 ### `Script`
 
