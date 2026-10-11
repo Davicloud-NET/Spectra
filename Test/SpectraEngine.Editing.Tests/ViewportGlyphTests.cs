@@ -131,6 +131,7 @@ public sealed class ViewportGlyphTests
     [InlineData("""<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="4" /></svg>""")]
     [InlineData("""<svg><path d="M 1 1 h 4" /></svg>""")]
     [InlineData("""<svg viewBox="0 0 0 16"><path d="M 1 1 h 4" /></svg>""")]
+    [InlineData("""<svg viewBox="0 0 16 16"><path d="M 1 1 h 4" /><path d="h 4" /></svg>""")]
     [InlineData("not an icon")]
     public void Text_that_is_no_icon_file_gives_no_glyph_and_does_not_throw(string svg)
     {

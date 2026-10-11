@@ -5,9 +5,11 @@
     icons in SpectraEngine.Editing/Assets/Icons/*.svg, one resource per file,
     keyed by file name.
 
-    Path data is copied as written. Scaling a 'd' string means handling arcs,
-    relative commands and flags, so width/height against the viewBox becomes a
-    Transform instead. A 24-box glyph drops in with width="16" height="16".
+    Path data is copied as written, but for a relative move that opens a path:
+    the paths of a file are joined, so that move is made absolute. Scaling a
+    'd' string means handling arcs, relative commands and flags, so
+    width/height against the viewBox becomes a Transform instead. A 24-box
+    glyph drops in with width="16" height="16".
 
     PathGeometry, not StreamGeometry: a StreamGeometry takes its data as element
     content and cannot also carry a Transform attribute.
@@ -52,6 +54,15 @@
         };
 
         Func<double, string> N = v => Math.Round(v, 5).ToString("0.#####", CultureInfo.InvariantCulture);
+
+        // A path that opens with a relative move starts from 0 0, and the 3D
+        // view reads it so. Joined after another path it would start where
+        // that one ended, so the move is written as absolute. Numbers after a
+        // move are lines, and those stay relative.
+        string number = @"[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?";
+        var leadingMove = new Regex(@"^m[\s,]*(?<x>" + number + @")[\s,]*(?<y>" + number + @")[\s,]*(?<more>(?=[-+.\d]))?");
+        MatchEvaluator Absolute = m =>
+            "M" + m.Groups["x"].Value + " " + m.Groups["y"].Value + (m.Groups["more"].Success ? " l " : " ");
 
         var rows = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -98,14 +109,25 @@
                 continue;
             }
 
-            string figures = string.Join(" ", paths.Matches(svg).Cast<Match>()
+            string[] data = paths.Matches(svg).Cast<Match>()
                 .Select(m => m.Groups["d"].Value.Trim())
-                .Where(d => d.Length > 0));
-            if (figures.Length == 0)
+                .Where(d => d.Length > 0)
+                .ToArray();
+            if (data.Length == 0)
             {
                 Log.LogError("Icons: '{0}' declares no path with a d attribute; only path geometry is supported.", item.ItemSpec);
                 continue;
             }
+
+            // Joined to the path before it, such a path would draw on as more
+            // of that one. The 3D view gives the file no glyph.
+            if (data.Any(d => d[0] != 'M' && d[0] != 'm'))
+            {
+                Log.LogError("Icons: '{0}' has a path that draws before it moves. Path data starts with M.", item.ItemSpec);
+                continue;
+            }
+
+            string figures = string.Join(" ", data.Select(d => leadingMove.Replace(d, Absolute)));
 
             double width = Length(widthRaw, view[2]);
             double height = Length(heightRaw, view[3]);
@@ -139,8 +161,9 @@
         text.Append("  GENERATED FROM Assets/Icons/*.svg AND SpectraEngine.Editing/Assets/Icons/*.svg\n");
         text.Append("  BY Icons.targets. DO NOT EDIT.\n\n");
         text.Append("  Change a glyph by replacing its .svg and rebuilding. Each Figures below\n");
-        text.Append("  is its file's own path data, copied verbatim; only the viewBox to\n");
-        text.Append("  width/height mapping is expressed here, as a Transform.\n");
+        text.Append("  is its file's own path data, joined. A relative move that opens a path\n");
+        text.Append("  is written as absolute, and the viewBox to width/height mapping is a\n");
+        text.Append("  Transform.\n");
         text.Append("-->\n");
         text.Append("<ResourceDictionary xmlns=\"https://github.com/avaloniaui\"\n");
         text.Append("                    xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n\n");
@@ -159,6 +182,10 @@
             File.WriteAllText(Output, emitted);
             Log.LogMessage(MessageImportance.High, "Icons: wrote {0} glyphs to {1}", rows.Count, Output);
         }
+
+        // A code fragment succeeds whatever it logged. Without this a refused
+        // file is an error line in a build that goes on without the icon.
+        Success = !Log.HasLoggedErrors;
       ]]></Code>
     </Task>
   </UsingTask>

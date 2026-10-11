@@ -3,8 +3,9 @@
   BY Icons.targets. DO NOT EDIT.
 
   Change a glyph by replacing its .svg and rebuilding. Each Figures below
-  is its file's own path data, copied verbatim; only the viewBox to
-  width/height mapping is expressed here, as a Transform.
+  is its file's own path data, joined. A relative move that opens a path
+  is written as absolute, and the viewBox to width/height mapping is a
+  Transform.
 -->
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">

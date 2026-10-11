@@ -49,11 +49,18 @@ public static class SvgPathFlattener
         // After a close the next segment starts a polyline of its own.
         private bool _isClosed;
 
+        private bool _hasMoved;
+
         public void Run(char command, ref SvgPathReader reader)
         {
             bool relative = char.IsAsciiLetterLower(command);
             Vector2 origin = relative ? _current : Vector2.Zero;
             char shape = char.ToUpperInvariant(command);
+
+            // The lists may hold the strokes of an earlier path, and a line
+            // drawn now would carry on from its last one.
+            if (shape != 'M' && !_hasMoved)
+                throw new FormatException($"'{command}' comes before any move.");
 
             switch (shape)
             {
@@ -116,11 +123,12 @@ public static class SvgPathFlattener
             points.Add(to);
             _current = _start = to;
             _isClosed = false;
+            _hasMoved = true;
         }
 
         private void LineTo(Vector2 to)
         {
-            if (_isClosed || starts.Count == 0)
+            if (_isClosed)
                 MoveTo(_current);
 
             if (to != _current)

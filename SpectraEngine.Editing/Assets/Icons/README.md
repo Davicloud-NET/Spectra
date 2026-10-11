@@ -45,6 +45,9 @@ only way a Tabler glyph gets in.
 - `width`, `height` and the `viewBox` are all 16, starting at 0 0.
 - Only `<path d="...">` is read, by both readers. Convert circles and rects to
   paths.
+- Every path starts with a move. A path that opens with a relative `m` starts
+  from 0 0 in both readers. The build stops on a path that opens with
+  anything else.
 - A path too short to see is a dot. The 3D view draws it as a short dash.
 
 ## Adding one

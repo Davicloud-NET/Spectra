@@ -39,6 +39,8 @@ A few are drawn by hand and are not in the script: `CaretDown`, `IconCheckBox`,
   other than `None` draws one. That is why the small set is scaled in the file.
 - Only `<path d="...">` is read. Several paths in one file are joined. Circles,
   rects and groups are ignored, so convert them to paths first.
+- Every path starts with a move, `M` or `m`. The build stops on one that does
+  not.
 - Glyphs are stroked. The styles set the stroke width and colour. Play and Stop
   are the two that are filled.
 - The icon of an entity, a light or a file is named in one place,

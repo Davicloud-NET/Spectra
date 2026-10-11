@@ -239,5 +239,41 @@ public sealed class SvgPathFlattenerTests
         Should.Throw<FormatException>(() => Flatten(data));
     }
 
+    [Theory]
+    [InlineData("L 4 4")]
+    [InlineData("h 4 v 4")]
+    [InlineData("a 5 5 0 1 0 10 0")]
+    [InlineData("z")]
+    public void Path_data_that_draws_before_it_moves_is_refused(string data)
+    {
+        Should.Throw<FormatException>(() => Flatten(data));
+    }
+
+    [Fact]
+    public void A_path_that_draws_before_it_moves_adds_nothing_to_the_strokes_of_the_path_before_it()
+    {
+        var points = new List<Vector2>();
+        var starts = new List<int>();
+        SvgPathFlattener.Flatten("M 1 1 h 4", Tolerance, points, starts);
+
+        Should.Throw<FormatException>(() => SvgPathFlattener.Flatten("h 4", Tolerance, points, starts));
+
+        points.ShouldBe([new Vector2(1f, 1f), new Vector2(5f, 1f)]);
+        starts.ShouldBe([0]);
+    }
+
+    [Fact]
+    public void A_path_that_opens_with_a_relative_move_starts_from_the_origin_whatever_came_before()
+    {
+        var points = new List<Vector2>();
+        var starts = new List<int>();
+        SvgPathFlattener.Flatten("M 2 2 h 4", Tolerance, points, starts);
+
+        SvgPathFlattener.Flatten("m 3 9 h 4", Tolerance, points, starts);
+
+        starts.ShouldBe([0, 2]);
+        points.GetRange(2, 2).ShouldBe([new Vector2(3f, 9f), new Vector2(7f, 9f)]);
+    }
+
     private static float Cross(Vector2 a, Vector2 b) => (a.X * b.Y) - (a.Y * b.X);
 }
