@@ -279,6 +279,10 @@ public sealed class Engine
     private readonly List<PropertyRow> _snapshotProperties = [];
     private PropertyRow[] _publishedProperties = [];
 
+    // A script's File row asks the disk whether its file is there. Half a
+    // second old is fresh enough for a note, and a slow share is asked less.
+    private readonly ScriptFileCheck _scriptFiles = new(TimeSpan.FromSeconds(0.5));
+
     // Rebuilt every publish, not diffed: values move all through a drag.
     private IReadOnlyList<PropertyRow> CaptureProperties()
     {
@@ -292,7 +296,7 @@ public sealed class Engine
         _snapshotNodes.AddRange(scene.Selection.Items);
 
         NodeInspector.Describe(
-            _snapshotNodes, _snapshotProperties, scene.EntitySchemas, scene.Selection.FacePlane);
+            _snapshotNodes, _snapshotProperties, scene.EntitySchemas, scene.Selection.FacePlane, _scriptFiles);
 
         // Copied out: the working list is reused next publish while a UI may
         // still be reading this one.

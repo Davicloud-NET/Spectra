@@ -35,9 +35,6 @@ public static class NodeInspector
     /// <summary>The script a node is: its file and its two switches.</summary>
     public const string ScriptGroup = "Script";
 
-    private const string ScriptModuleHelp =
-        "A module does not run when the level starts. It runs when another script asks for it.";
-
     // Choice tokens per descriptor choice list. Weak, keyed on the schema's own
     // list, so an entry dies with its schema and nothing allocates per publish.
     private static readonly ConditionalWeakTable<object, string[]> ChoiceTokenCache = new();
@@ -64,18 +61,19 @@ public static class NodeInspector
     /// <param name="schemas">
     /// Entity class schemas, or null. Without one an entity's keyvalues still show, as text.
     /// </param>
+    /// <param name="scriptFiles">
+    /// Says whether a script's file is there. Null asks the disk on every call.
+    /// </param>
     public static void Describe(
         SceneNode node, List<PropertyRow> into, EntitySchemaCatalog? schemas = null,
-        int pickedPlane = -1)
+        int pickedPlane = -1, ScriptFileCheck? scriptFiles = null)
     {
-        DescribeOne(node, into, schemas, pickedPlane, asksForFiles: true);
+        DescribeOne(node, into, schemas, pickedPlane, scriptFiles ?? ScriptFileCheck.EveryTime);
     }
 
-    // asksForFiles is off for a selection of many, so a publish never asks the
-    // disk about more than one script.
     private static void DescribeOne(
         SceneNode node, List<PropertyRow> into, EntitySchemaCatalog? schemas, int pickedPlane,
-        bool asksForFiles)
+        ScriptFileCheck? scriptFiles)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(into);
@@ -114,7 +112,7 @@ public static class NodeInspector
             DescribeEntity(entity, schemas, into);
 
         if (node.Script is { } script)
-            DescribeScript(script, asksForFiles ? MissingScriptNote(node, script) : string.Empty, into);
+            ScriptRows.Describe(node, script, scriptFiles, into);
 
         // Last, to match PropertyId order, which is what a merged selection uses.
         if (node.Brush is { } surfaced)
@@ -145,9 +143,13 @@ public static class NodeInspector
     /// Fills <paramref name="into"/> with the merged rows for a selection: the union of the
     /// nodes' properties in <see cref="PropertyId"/> order, with disagreement tracked per axis.
     /// </summary>
+    /// <param name="scriptFiles">
+    /// Says whether a script's file is there, for a selection of one. Null asks
+    /// the disk on every call.
+    /// </param>
     public static void Describe(
         IReadOnlyList<SceneNode> nodes, List<PropertyRow> into, EntitySchemaCatalog? schemas = null,
-        int pickedPlane = -1)
+        int pickedPlane = -1, ScriptFileCheck? scriptFiles = null)
     {
         ArgumentNullException.ThrowIfNull(nodes);
         ArgumentNullException.ThrowIfNull(into);
@@ -158,7 +160,7 @@ public static class NodeInspector
 
         if (nodes.Count == 1)
         {
-            Describe(nodes[0], into, schemas, pickedPlane);
+            Describe(nodes[0], into, schemas, pickedPlane, scriptFiles);
             return;
         }
 
@@ -172,7 +174,8 @@ public static class NodeInspector
         foreach (SceneNode node in nodes)
         {
             ArgumentNullException.ThrowIfNull(node);
-            DescribeOne(node, scratch, schemas, pickedPlane: -1, asksForFiles: false);
+            // No file check: a publish asks the disk about one script at most.
+            DescribeOne(node, scratch, schemas, pickedPlane: -1, scriptFiles: null);
 
             foreach (PropertyRow row in scratch)
             {
@@ -462,24 +465,6 @@ public static class NodeInspector
             into.Add(PropertyRow.OfText(
                 EntityGroup, keyvalue.Key, PropertyId.EntityKeyvalue, keyvalue.Value, keyvalue.Key));
         }
-    }
-
-    private static void DescribeScript(Script script, string note, List<PropertyRow> into)
-    {
-        into.Add(PropertyRow.OfAsset(
-            ScriptGroup, "File", PropertyId.ScriptFile, script.Path, AssetKind.Script, note));
-        into.Add(PropertyRow.OfFlag(ScriptGroup, "Enabled", PropertyId.ScriptEnabled, script.IsEnabled));
-        into.Add(PropertyRow.OfFlag(ScriptGroup, "Module", PropertyId.ScriptModule, script.IsModule)
-            with { Help = ScriptModuleHelp });
-    }
-
-    // Asks the content sources a play session reads the file from. Nothing
-    // caches a script, so unlike a material this looks at the disk.
-    private static string MissingScriptNote(SceneNode node, Script script)
-    {
-        if (node.Owner?.Assets is not { } assets) return string.Empty;
-
-        return assets.Content.Exists(script.Path) ? string.Empty : "missing";
     }
 
     private static bool IsDeclared(EntitySchema schema, string key)

@@ -86,7 +86,7 @@ public sealed class ScriptPropertiesSheetTests(RibbonSession session) : IDisposa
     }
 
     [Fact]
-    public void A_file_deleted_outside_the_editor_shows_as_missing_on_the_next_publish()
+    public void A_file_deleted_outside_the_editor_shows_as_missing_once_the_rows_say_so()
     {
         session.On(() =>
         {

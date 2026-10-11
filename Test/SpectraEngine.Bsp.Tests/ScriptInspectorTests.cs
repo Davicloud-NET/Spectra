@@ -219,6 +219,65 @@ public sealed class ScriptInspectorTests
     }
 
     [Fact]
+    public void A_publish_that_keeps_its_answer_does_not_ask_the_disk_again_until_the_answer_is_old()
+    {
+        // The rows are built on every publish, many times a second, on the
+        // thread that draws. A project on a slow share would stall it.
+        using var project = new ScriptFolder();
+        string full = project.Write("Scripts/door.luau");
+        SceneNode node = project.Scene.Root.CreateChild("Opener");
+        node.Script = new Script("Scripts/door.luau");
+        var clock = new ManualClock();
+        var files = new ScriptFileCheck(TimeSpan.FromSeconds(0.5), clock);
+        NoteOf(node, files).ShouldBeEmpty();
+
+        File.Delete(full);
+        clock.Advance(0.4);
+        NoteOf(node, files).ShouldBeEmpty("the kept answer is not old yet");
+
+        clock.Advance(0.2);
+        NoteOf(node, files).ShouldBe("missing");
+    }
+
+    [Fact]
+    public void A_kept_answer_is_for_one_path_so_another_file_is_asked_at_once()
+    {
+        using var project = new ScriptFolder();
+        project.Write("Scripts/door.luau");
+        SceneNode node = project.Scene.Root.CreateChild("Opener");
+        node.Script = new Script("Scripts/door.luau");
+        var files = new ScriptFileCheck(TimeSpan.FromSeconds(0.5), new ManualClock());
+        NoteOf(node, files).ShouldBeEmpty();
+
+        node.Script = new Script("Scripts/nobody_wrote_this.luau");
+
+        NoteOf(node, files).ShouldBe("missing");
+    }
+
+    [Fact]
+    public void A_kept_answer_is_for_one_level_so_another_levels_file_is_asked_at_once()
+    {
+        using var here = new ScriptFolder();
+        here.Write("Scripts/door.luau");
+        using var elsewhere = new ScriptFolder();
+        SceneNode has = here.Scene.Root.CreateChild("Opener");
+        has.Script = new Script("Scripts/door.luau");
+        SceneNode lacks = elsewhere.Scene.Root.CreateChild("Opener");
+        lacks.Script = new Script("Scripts/door.luau");
+        var files = new ScriptFileCheck(TimeSpan.FromSeconds(0.5), new ManualClock());
+
+        NoteOf(has, files).ShouldBeEmpty();
+        NoteOf(lacks, files).ShouldBe("missing");
+    }
+
+    private static string NoteOf(SceneNode node, ScriptFileCheck files)
+    {
+        var rows = new List<PropertyRow>();
+        NodeInspector.Describe([node], rows, scriptFiles: files);
+        return ScriptRows(rows)[0].Note;
+    }
+
+    [Fact]
     public void A_path_typed_with_other_slashes_finds_the_same_file()
     {
         using var project = new ScriptFolder();
