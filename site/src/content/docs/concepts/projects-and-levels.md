@@ -12,10 +12,10 @@ MyGame/
     Textures/
     Materials/
     Models/
+    Scripts/
   Maps/
     Lobby.smap/           one level
       map.json
-  Scripts/
   cooked/                 build output
 ```
 
@@ -59,12 +59,17 @@ When the editor saves, it only rewrites files that changed. Anything in a file t
 
 ## Assets
 
-Textures, materials and models live under `Assets`. Everything refers to an asset by its path from that folder, with forward slashes:
+Textures, materials, models, sounds and scripts live under `Assets`. Everything refers to an asset by its path from that folder, with forward slashes:
 
 ```
 Materials/wall.spectramat
 Textures/wall_brick.png
+Scripts/door.luau
 ```
+
+A script is a `.luau` file under `Assets`, like any other asset. The editor puts a new one in `Assets/Scripts`, and you can keep yours in any folder there.
+
+A project made with an older build has a `Scripts` folder beside `Assets`. Nothing reads that folder and nothing removes it. Move its files under `Assets` to use them.
 
 ## Build output
 

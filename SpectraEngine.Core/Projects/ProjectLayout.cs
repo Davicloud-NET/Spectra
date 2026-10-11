@@ -14,9 +14,8 @@ namespace SpectraEngine.Core.Projects;
 /// <code>
 /// MyGame/
 ///   MyGame.spectraproj    the manifest
-///   Assets/               the content root
+///   Assets/               the content root, scripts included
 ///   Maps/                 Lobby.smap/, Arena.smap/  (folders, not files)
-///   Scripts/              shared script modules
 ///   cooked/               cook output, gitignored
 /// </code>
 /// Everything authored is text. Only <c>cooked/</c> is binary.
@@ -41,7 +40,6 @@ public sealed class ProjectLayout
 
     public string AssetsPath => Path.Combine(Root, ProjectFormat.AssetsFolder);
     public string MapsPath => Path.Combine(Root, ProjectFormat.MapsFolder);
-    public string ScriptsPath => Path.Combine(Root, ProjectFormat.ScriptsFolder);
     public string CookedPath => Path.Combine(Root, ProjectFormat.CookedFolder);
 
     /// <summary>Resolves a project-relative path to a full one.</summary>
@@ -139,7 +137,6 @@ public sealed class ProjectLayout
         Directory.CreateDirectory(root);
         Directory.CreateDirectory(Path.Combine(root, ProjectFormat.AssetsFolder));
         Directory.CreateDirectory(Path.Combine(root, ProjectFormat.MapsFolder));
-        Directory.CreateDirectory(Path.Combine(root, ProjectFormat.ScriptsFolder));
 
         WriteIfAbsent(Path.Combine(root, ".gitignore"), GitIgnore);
         WriteIfAbsent(Path.Combine(root, ".gitattributes"), GitAttributes);

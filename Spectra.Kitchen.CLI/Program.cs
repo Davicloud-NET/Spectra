@@ -332,7 +332,7 @@ internal static class Program
             return false;
         }
 
-        foreach (string authored in new[] { layout.AssetsPath, layout.MapsPath, layout.ScriptsPath })
+        foreach (string authored in new[] { layout.AssetsPath, layout.MapsPath })
         {
             if (!PathsEqual(target, authored)) continue;
 

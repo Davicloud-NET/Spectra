@@ -22,9 +22,6 @@ public static class ProjectFormat
     /// <summary>Where map bundles live.</summary>
     public const string MapsFolder = "Maps";
 
-    /// <summary>Project-level shared script modules.</summary>
-    public const string ScriptsFolder = "Scripts";
-
     /// <summary>Cook output. Derived and gitignored.</summary>
     public const string CookedFolder = "cooked";
 

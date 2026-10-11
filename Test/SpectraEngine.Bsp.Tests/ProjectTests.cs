@@ -212,7 +212,6 @@ public sealed class ProjectTests
 
         Directory.Exists(created.AssetsPath).ShouldBeTrue();
         Directory.Exists(created.MapsPath).ShouldBeTrue();
-        Directory.Exists(created.ScriptsPath).ShouldBeTrue();
         File.Exists(Path.Combine(temp.Path, ".gitignore")).ShouldBeTrue();
 
         // Stops a Windows checkout converting map bundles to CRLF.
@@ -222,6 +221,34 @@ public sealed class ProjectTests
         ProjectLayout reopened = ProjectLayout.Open(created.ManifestPath);
         reopened.Project.Name.ShouldBe("MyGame");
         reopened.Project.Id.ShouldBe(created.Project.Id);
+    }
+
+    [Fact]
+    public void A_created_project_has_no_scripts_folder_beside_its_assets()
+    {
+        using var temp = new TemporaryFolder();
+
+        ProjectLayout.Create(temp.Path, "MyGame");
+
+        // A script is a content file under Assets.
+        Directory.GetDirectories(temp.Path).Select(Path.GetFileName).Order()
+            .ShouldBe(["Assets", "Maps"]);
+    }
+
+    [Fact]
+    public void A_project_from_before_keeps_its_scripts_folder_as_it_is()
+    {
+        using var temp = new TemporaryFolder();
+        ProjectLayout.Create(temp.Path, "MyGame");
+        string old = Path.Combine(temp.Path, "Scripts", "shared.luau");
+        Directory.CreateDirectory(Path.Combine(temp.Path, "Scripts"));
+        File.WriteAllText(old, "return {}");
+
+        ProjectLayout reopened = ProjectLayout.Open(temp.Path);
+        reopened.Save();
+
+        reopened.Project.Name.ShouldBe("MyGame");
+        File.ReadAllText(old).ShouldBe("return {}");
     }
 
     [Fact]

@@ -27,9 +27,6 @@ public static class MapFormat
     /// <summary>Per-user editor state. Gitignored; nothing may depend on it.</summary>
     public const string UserStateFileName = "editor.user.json";
 
-    /// <summary>Bundle-relative folder holding script payloads as real files.</summary>
-    public const string ScriptsFolderName = "scripts";
-
     public const string FormatVersionMember = "spectramap";
     public const string MinimumReadableMember = "minimumReadableVersion";
     public const string EngineMember = "engine";
