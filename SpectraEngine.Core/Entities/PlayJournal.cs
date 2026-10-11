@@ -1,6 +1,8 @@
 using SpectraEngine.Core.Scene;
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 
 namespace SpectraEngine.Core.Entities;
 
@@ -41,11 +43,24 @@ internal sealed class PlayJournal
     // dirties nothing.
     public void Restore()
     {
+        ExceptionDispatchInfo? first = null;
         for (int i = _entries.Count - 1; i >= 0; i--)
-            _entries[i].PutBack();
+        {
+            try
+            {
+                _entries[i].PutBack();
+            }
+            catch (Exception failure)
+            {
+                // Thrown again below. The older values go back first, or
+                // they stay in the level and the next save writes them.
+                first ??= ExceptionDispatchInfo.Capture(failure);
+            }
+        }
 
         _entries.Clear();
         _recorded.Clear();
+        first?.Throw();
     }
 
     private readonly record struct Key(SceneNode Node, object Kind);

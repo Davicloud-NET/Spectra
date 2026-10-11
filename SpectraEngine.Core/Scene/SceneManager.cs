@@ -311,12 +311,13 @@ public sealed class SceneManager
         try
         {
             world.Deactivate();
-            EntityWorld = null;
         }
         finally
         {
-            // Last, and also when an entity's removal threw: the runtime owns
-            // native memory and a thread of its own.
+            // Also when an entity's removal threw. The world has stopped by
+            // then, and kept here it would pass for one that runs. The
+            // runtime last: it owns native memory and a thread of its own.
+            EntityWorld = null;
             world.Scripts?.Close();
         }
     }

@@ -278,7 +278,8 @@ public sealed class EntityWorld
     /// <summary>
     /// Runs <see cref="Entity.OnRemove"/> on everything, puts back what the
     /// level changed on its nodes, unsubscribes from the scene and drops every
-    /// instance. Harmless on an inactive world.
+    /// instance. Harmless on an inactive world. When a removal throws, the
+    /// rest still happens before the exception leaves.
     /// </summary>
     public void Deactivate()
     {
@@ -290,27 +291,44 @@ public sealed class EntityWorld
         // Before OnRemove: a stop tells no listener that its touch ended.
         Touches.Clear();
 
-        _removing = true;
-        for (int i = 0; i < _entities.Count; i++)
-            _entities[i].OnRemove();
-        _removing = false;
+        try
+        {
+            _removing = true;
+            for (int i = 0; i < _entities.Count; i++)
+                _entities[i].OnRemove();
+        }
+        finally
+        {
+            // Also when a removal threw. What the level changed would stay
+            // in the scene, and the next save would write it.
+            _removing = false;
+            PutTheLevelBack();
+        }
+    }
 
+    private void PutTheLevelBack()
+    {
         Sounds.Clear();
 
-        // After every OnRemove: an entity being removed must still read the
-        // pose it moved to, not the authored one.
-        _journal.Restore();
+        try
+        {
+            // After every OnRemove: an entity being removed must still read
+            // the pose it moved to, not the authored one.
+            _journal.Restore();
+        }
+        finally
+        {
+            _scene.NodeAdded -= Sounds.OnNodeAdded;
+            _index?.Dispose();
+            _index = null;
+            Player = null;
 
-        _scene.NodeAdded -= Sounds.OnNodeAdded;
-        _index?.Dispose();
-        _index = null;
-        Player = null;
-
-        _entities.Clear();
-        _tickingCount = 0;
-        _dispatcher.Clear();
-        _pendingSpawn.Clear();
-        _pendingDespawn.Clear();
+            _entities.Clear();
+            _tickingCount = 0;
+            _dispatcher.Clear();
+            _pendingSpawn.Clear();
+            _pendingDespawn.Clear();
+        }
     }
 
     /// <summary>

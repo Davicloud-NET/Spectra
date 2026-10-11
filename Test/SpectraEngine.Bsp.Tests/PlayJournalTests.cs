@@ -30,21 +30,29 @@ public sealed class PlayJournalTests
     }
 
     [Fact]
-    public void Two_kinds_on_one_node_and_one_kind_on_two_nodes_are_entries_of_their_own()
+    public void Two_kinds_on_one_node_are_two_entries()
     {
         var journal = new PlayJournal();
         var door = new SceneNode("Door");
-        var gate = new SceneNode("Gate");
-        var mark = new JournalKind<string>(static node => node.Name, static (node, first) => node.Name = first);
 
         journal.Record(door, JournalKind.LocalTransform);
-        journal.Record(door, mark);
-        journal.Record(gate, mark);
-        journal.Record(gate, mark);
+        journal.Record(door, JournalKind.Name);
 
-        journal.Count.ShouldBe(3);
+        journal.Count.ShouldBe(2);
         journal.CountOf(JournalKind.LocalTransform).ShouldBe(1);
-        journal.CountOf(mark).ShouldBe(2);
+        journal.CountOf(JournalKind.Name).ShouldBe(1);
+    }
+
+    [Fact]
+    public void One_kind_on_two_nodes_is_two_entries()
+    {
+        var journal = new PlayJournal();
+
+        // Two nodes that hold the same values are still two.
+        journal.Record(new SceneNode("Door"), JournalKind.Name);
+        journal.Record(new SceneNode("Door"), JournalKind.Name);
+
+        journal.CountOf(JournalKind.Name).ShouldBe(2);
     }
 
     [Fact]
@@ -65,6 +73,27 @@ public sealed class PlayJournalTests
         journal.Restore();
 
         order.ShouldBe(["second Door", "first Gate", "first Door"]);
+    }
+
+    [Fact]
+    public void A_put_back_that_throws_does_not_keep_the_older_values_from_going_back()
+    {
+        var journal = new PlayJournal();
+        var faulty = new JournalKind<string>(
+            static node => node.Name, static (_, _) => throw new InvalidOperationException("A handler threw."));
+        var door = new SceneNode("Door") { LocalPosition = new Vector3(1f, 2f, 3f) };
+
+        journal.Record(door, JournalKind.LocalTransform);
+        door.LocalPosition = new Vector3(4f, 5f, 6f);
+        journal.Record(door, JournalKind.Name);
+        door.Name = "Gate";
+        journal.Record(new SceneNode("Latch"), faulty);
+
+        Should.Throw<InvalidOperationException>(journal.Restore).Message.ShouldBe("A handler threw.");
+
+        door.LocalPosition.ShouldBe(new Vector3(1f, 2f, 3f));
+        door.Name.ShouldBe("Door");
+        journal.Count.ShouldBe(0);
     }
 
     [Fact]
