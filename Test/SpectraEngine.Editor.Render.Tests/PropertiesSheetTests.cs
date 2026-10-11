@@ -68,6 +68,59 @@ public sealed class PropertiesSheetTests(RibbonSession session)
     }
 
     [Fact]
+    public void A_wire_whose_parameter_its_input_cannot_take_says_so_under_the_wire()
+    {
+        session.On(() =>
+        {
+            var panelModel = new PropertyPanelModel(_ => { }, _ => { }, _ => { }) { Schemas = TypedClasses() };
+
+            panelModel.Apply([], 1, new EntityPanelInfo
+            {
+                NodeId = Guid.NewGuid(),
+                ClassName = "func_button",
+                IsKnown = true,
+                Outputs = ["OnPressed"],
+                Connections =
+                [
+                    Wire("Score", "SetValue", "five"),
+                    Wire("Score", "SetValue", "5"),
+                    Wire("VaultDoor", "Open", "now"),
+                    Wire("Score", "SetValue", ""),
+                ],
+                Targets = [new EntityTargetInfo("Score", "math_counter"), new EntityTargetInfo("VaultDoor", "func_door")],
+            });
+
+            var panel = new PropertiesPanel { DataContext = new ShellModel { Properties = panelModel } };
+            var window = new Window { Content = panel, Width = 308, Height = 760 };
+            window.SetRenderScaling(2.0);
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            // One line under each wire but the second, in the colour of the
+            // line about a target nothing answers to.
+            Shown<TextBlock>(panel)
+                .Where(text => text.Classes.Contains("wirewarn"))
+                .Select(text => text.Text)
+                .ShouldBe(
+                [
+                    "SetValue takes a number, not 'five'",
+                    "Open takes no parameter",
+                    "SetValue needs a number",
+                ]);
+
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+            WriteableBitmap frame = window.GetLastRenderedFrame().ShouldNotBeNull();
+
+            Directory.CreateDirectory(RibbonSheetTests.OutputDirectory);
+            frame.Save(
+                Path.Combine(RibbonSheetTests.OutputDirectory, "properties-wire-parameter@2x.png"),
+                new PngBitmapEncoderOptions());
+
+            window.Close();
+        });
+    }
+
+    [Fact]
     public void A_module_script_at_the_inspectors_usual_width_rasterises_into_a_sheet()
     {
         session.On(() =>
@@ -96,6 +149,20 @@ public sealed class PropertiesSheetTests(RibbonSession session)
             window.Close();
         });
     }
+
+    // A button whose press sends nothing, a counter that takes a number and a
+    // door that takes none.
+    private static EntitySchemaCatalog TypedClasses() => EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(
+    [
+        new EntitySchema("func_button", outputs: [new EntityPort("OnPressed", ParameterType.None)]),
+        new EntitySchema(
+            "math_counter", inputs: [new EntityPort("SetValue", ParameterType.Of(KeyvalueType.Float))]),
+        new EntitySchema("func_door", inputs: [new EntityPort("Open", ParameterType.None)]),
+    ]));
+
+    private static EntityConnectionInfo Wire(string target, string input, string parameter) => new(
+        new EntityConnection("OnPressed", target, input, parameter, 0f, EntityConnection.Infinite),
+        TargetResolves: true);
 
     private static T[] Shown<T>(PropertiesPanel panel) where T : Control =>
         [.. panel.GetVisualDescendants().OfType<T>().Where(control => control.IsEffectivelyVisible)];
