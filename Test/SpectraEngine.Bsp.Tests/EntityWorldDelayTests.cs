@@ -244,6 +244,23 @@ public sealed class EntityWorldDelayTests
     }
 
     [Fact]
+    public void Two_wires_whose_delays_round_to_one_tick_arrive_in_wire_order_whichever_delay_is_shorter()
+    {
+        SceneNode source = EntityRuntime.Place(_scene.Root, "source", "recorder");
+        EntityRuntime.Place(_scene.Root, "target", "recorder");
+        EntityRuntime.Wire(source, "OnGo", "target", "Longer", delay: 0.03f);
+        EntityRuntime.Wire(source, "OnGo", "target", "Shorter", delay: 0.02f);
+        EntityWorld world = Started();
+
+        EntityRuntime.Live(world, source).FireOutput("OnGo");
+        world.Tick(Tick);
+        _log.ShouldBeEmpty();
+        world.Tick(Tick);
+
+        _log.Select(line => line.Split(':')[1]).ShouldBe(["Longer", "Shorter"]);
+    }
+
+    [Fact]
     public void An_input_queued_between_ticks_with_no_delay_goes_ahead_of_what_waited_for_the_next_tick()
     {
         EntityRuntime.Place(_scene.Root, "target", "recorder");
