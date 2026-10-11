@@ -35,6 +35,9 @@ public static class EditorIcons
     // The file a sound entity plays looks as that entity does.
     private static readonly IconLook SoundFile = new(WorldIcons.KeyForName("sound"), GroupTint("Sound"));
 
+    // A mesh node, and the model file it is made from.
+    private static readonly IconLook Mesh = new("IconMesh", "SpectraKindMesh");
+
     /// <summary>An entity of no particular class, as a menu names the kind.</summary>
     public static IconLook PlainEntity { get; } = new(WorldIcons.Entity, EntityTint);
 
@@ -75,7 +78,7 @@ public static class EditorIcons
         return kind switch
         {
             SceneNodeKind.Group => new IconLook("IconGroup", "SpectraKindGroup"),
-            SceneNodeKind.Mesh => new IconLook("IconMesh", "SpectraKindMesh"),
+            SceneNodeKind.Mesh => Mesh,
             SceneNodeKind.BrushWorld => new IconLook("IconBrushWorld", "SpectraKindBrushWorld"),
             SceneNodeKind.BrushPart => new IconLook("IconBrushPart", "SpectraKindBrushPart"),
             SceneNodeKind.BrushSubtractive => new IconLook("IconBrushSubtractive", "SpectraKindBrushSubtractive"),
@@ -110,9 +113,9 @@ public static class EditorIcons
     public static IconLook ForFile(ContentKind kind) => kind switch
     {
         ContentKind.Folder => new IconLook("IconOpenFolder", "SpectraMode"),
-        ContentKind.Texture => new IconLook("IconFileTexture", "SpectraKindMesh"),
+        ContentKind.Texture => new IconLook("IconFileTexture", "SpectraKindBrushWorld"),
         ContentKind.Material => new IconLook("IconFileMaterial", "SpectraKindBrushPart"),
-        ContentKind.Model => new IconLook("IconMesh", "SpectraKindBrushWorld"),
+        ContentKind.Model => Mesh,
         ContentKind.Shader => new IconLook("IconFileShader", LightTint),
         ContentKind.Sound => SoundFile,
         _ => new IconLook("IconEmpty", MutedTint),

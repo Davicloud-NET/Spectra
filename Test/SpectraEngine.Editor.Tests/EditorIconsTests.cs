@@ -189,6 +189,12 @@ public sealed class EditorIconsTests
     }
 
     [Fact]
+    public void A_model_file_looks_as_the_mesh_node_it_becomes_does()
+    {
+        EditorIcons.ForFile(ContentKind.Model).ShouldBe(EditorIcons.ForNode(SceneNodeKind.Mesh, null, null, null));
+    }
+
+    [Fact]
     public void Asking_for_a_look_makes_no_garbage()
     {
         EditorIcons.ForNode(SceneNodeKind.BrushPart, "func_door", null, BuiltinClasses.Catalog);
