@@ -231,7 +231,7 @@ Tests and tools
 
 - Some tests read the source tree as text (COM ownership, tool content, brush opacity, the ribbon roster). They should not depend on line endings.
 - The cook's determinism tests run `scook` in separate processes on purpose: the string hash seed is per process.
-- The task in `Icons.targets` is a code fragment, and one of those succeeds whatever it logged. It sets `Success` itself. Without that a refused icon file is an error line in a build that goes on. `IconBuildTests` runs the task through `dotnet msbuild`.
+- The task in `Icons.targets` is a code fragment, and one of those succeeds whatever it logged. It sets `Success` itself. Without that a refused icon file is an error line in a build that goes on. `IconBuildTests` runs the task through `dotnet msbuild`, and skips where there is a runtime and no SDK.
 - The tests that render through the real OpenAL (`-- -trait "Suite=AudioLoopback"`) skip unless `SPECTRA_AUDIO_LOOPBACK=1` is set. A green scene suite says nothing about `OpenAlBackend` or the low-pass filter.
 - An agent cannot drive the running editor. `SpectraEngine.Editor.Render.Tests` renders controls and writes PNGs under `artifacts/`. Colour, feel and gestures still need a person, and say so when you hand over.
 - After any agent run with write access, check `git status` before staging. Probes get left behind.
