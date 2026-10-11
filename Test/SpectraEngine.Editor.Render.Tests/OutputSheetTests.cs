@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Headless;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -176,6 +178,15 @@ public sealed class OutputSheetTests(RibbonSession session)
 
             row.IsPointerOver.ShouldBeTrue();
             ToolTip.GetTip(row).ShouldBe("Open Scripts/level one/door.luau at line 9");
+
+            // What a person sees of it: the fill, and the place gets brighter.
+            Face(row).Background.ShouldBe(Token("SpectraRowHover"));
+            Shown(panel, "door.luau:9").Single().Foreground.ShouldBe(Token("SpectraTextEmphasis"));
+
+            TextBlock away = Shown(panel, "spinner.luau:5").Single();
+            Face(away.GetVisualAncestors().OfType<Button>().Single()).Background.ShouldBe(Brushes.Transparent);
+            away.Foreground.ShouldBe(Token("SpectraTextMuted"));
+
             ScriptSheet.Save(window, "output-script-row-hover@2x.png");
             window.Close();
         });
@@ -273,6 +284,15 @@ public sealed class OutputSheetTests(RibbonSession session)
 
         return (window, panel, model);
     }
+
+    // The part of a row that is filled when the pointer is over it.
+    private static ContentPresenter Face(Button row) =>
+        row.GetVisualDescendants().OfType<ContentPresenter>().First(part => part.Name == "PART_ContentPresenter");
+
+    private static IBrush Token(string key) =>
+        Application.Current.ShouldNotBeNull().TryFindResource(key, out object? value) && value is IBrush brush
+            ? brush
+            : throw new InvalidOperationException($"The theme has no brush named {key}.");
 
     private static TextBlock[] Shown(Visual within, string text) =>
         [.. ScriptSheet.Shown<TextBlock>(within).Where(block => block.Text == text)];
