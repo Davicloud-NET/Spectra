@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Entities;
+using System.Globalization;
 using System.Numerics;
 
 namespace SpectraEngine.Bsp.Tests;
@@ -12,6 +13,16 @@ public sealed class ParameterTextTests
     private static readonly Guid Door = Guid.Parse("3f2a9c1e-5b7d-4e0a-9c41-0d2f6a8b1c33");
 
     private static ParameterType Of(KeyvalueType type) => ParameterType.Of(type);
+
+    // Built, not looked up: in globalization-invariant mode "de-DE" resolves
+    // to a culture with a dot separator.
+    private static CultureInfo CommaDecimal()
+    {
+        var culture = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+        culture.NumberFormat.NumberDecimalSeparator = ",";
+        culture.NumberFormat.NumberGroupSeparator = ".";
+        return culture;
+    }
 
     private static string Format(ParameterType parameter, ParameterValue value)
     {
@@ -58,6 +69,30 @@ public sealed class ParameterTextTests
         // Not the float widened, which would hand a script 0.10000000149011612.
         Parse(Of(KeyvalueType.Float), "0.1").Number.ShouldBe(0.1);
         Parse(Of(KeyvalueType.Float), " 2.5 ").Number.ShouldBe(2.5);
+    }
+
+    [Fact]
+    public void A_number_is_written_and_read_the_same_under_a_comma_decimal_culture()
+    {
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CommaDecimal();
+            0.1.ToString(CultureInfo.CurrentCulture).ShouldBe("0,1");
+
+            // The widened float is 0.10000000149011612, which is what a
+            // parse by the machine's culture would fall back to.
+            Parse(Of(KeyvalueType.Float), "0.1").Number.ShouldBe(0.1);
+            Parse(Of(KeyvalueType.Vec2), "0.5 -8").ShouldBe(ParameterValue.Of(new Vector2(0.5f, -8f)));
+            Format(Of(KeyvalueType.Float), ParameterValue.Of(0.25)).ShouldBe("0.25");
+            Format(ParameterType.NotSaid, ParameterValue.Of(0.25)).ShouldBe("0.25");
+
+            ParameterText.TryParse(Of(KeyvalueType.Float), "0,1", out _).ShouldBeFalse();
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
     }
 
     [Fact]
