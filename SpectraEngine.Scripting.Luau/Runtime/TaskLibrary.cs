@@ -8,7 +8,7 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 internal sealed class TaskLibrary
 {
     private const string NoRoom =
-        "the wait was not queued: the level has stopped, or too many events are waiting in it";
+        "the wait was not queued: the level has stopped, or too many threads are waiting in it";
 
     private readonly LuauHost _host;
     private readonly EntityWorld _world;

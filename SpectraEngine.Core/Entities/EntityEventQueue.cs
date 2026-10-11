@@ -81,6 +81,6 @@ internal sealed class EntityEventQueue
         return true;
     }
 
-    private static bool Precedes(in EntityEvent a, in EntityEvent b) =>
+    public static bool Precedes(in EntityEvent a, in EntityEvent b) =>
         a.Tick != b.Tick ? a.Tick < b.Tick : a.Sequence < b.Sequence;
 }

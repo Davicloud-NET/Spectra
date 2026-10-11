@@ -1,7 +1,8 @@
 namespace SpectraEngine.Core.Entities;
 
-// Thinks and inputs share one record and one queue. Two queues would order
-// events due on one tick by which queue drained first.
+// Thinks, inputs and the wakes of scripts share one record and one order.
+// The wakes wait in a queue of their own, and a drain takes whichever of the
+// two queues has the earlier event next.
 internal struct EntityEvent
 {
     // The tick it is due on. A wait in seconds became ticks when it was queued.

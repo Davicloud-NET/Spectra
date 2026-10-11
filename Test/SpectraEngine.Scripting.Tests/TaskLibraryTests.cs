@@ -242,6 +242,32 @@ public sealed class TaskLibraryTests
     }
 
     [Fact]
+    public void A_wait_with_no_room_left_is_an_error_in_the_script_and_a_wire_still_goes_out()
+    {
+        using var level = new ScriptLevel();
+        level.Scene.Root.CreateChild("Speaker").Entity = new EntityData(SayingEntity.Class);
+        SceneNode script = level.AddScript(level.Scene.Root, """
+            for index = 1, 4 do
+                task.delay(60, function() end)
+            end
+            print(pcall(function() task.wait() end))
+            """);
+
+        level.Play();
+        level.Entities.MaxPendingEvents = 4;
+        level.Tick();
+        level.Entities.QueueInput("Speaker", "Say", "wire");
+        level.Tick();
+
+        level.Printed.ShouldBe(
+        [
+            $"false {script.Script.ShouldNotBeNull().Path}:4: the wait was not queued: the level has stopped, " +
+            "or too many threads are waiting in it",
+            "wire",
+        ]);
+    }
+
+    [Fact]
     public void A_defer_loop_with_no_wait_is_cut_off_and_the_level_plays_on()
     {
         using var level = new ScriptLevel();

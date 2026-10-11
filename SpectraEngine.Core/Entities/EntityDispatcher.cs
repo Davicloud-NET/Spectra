@@ -5,12 +5,18 @@ using System.Collections.Generic;
 namespace SpectraEngine.Core.Entities;
 
 // What an entity world is waiting to send, and the sending of it once it is
-// due. Thinks and inputs share one order: the tick, then the order made in.
+// due. Thinks, inputs and the wakes of scripts share one order: the tick,
+// then the order made in.
 internal sealed class EntityDispatcher
 {
     private readonly EntityWorld _world;
     private readonly ILogger _logger;
-    private readonly EntityEventQueue _queue = new();
+    private readonly EntityDispatchLog _log;
+
+    // Each has the tick's budget and the queue's room to itself. A level
+    // with too many threads then runs its scripts late and its wires on time.
+    private readonly EntityEventLane _entities = new();
+    private readonly EntityEventLane _scripts = new();
 
     // Reused across dispatches. Safe: FireOutput queues, so no input handler
     // can resolve a target mid-dispatch.
@@ -20,15 +26,11 @@ internal sealed class EntityDispatcher
     private int _maxDispatchesPerTick = 4096;
     private int _maxPendingEvents = 65536;
 
-    // Falling behind loses nothing, so it is logged once a level. A full
-    // queue is logged each time it fills.
-    private bool _reportedBehind;
-    private bool _reportedFull;
-
     public EntityDispatcher(EntityWorld world, ILogger logger)
     {
         _world = world;
         _logger = logger;
+        _log = new EntityDispatchLog(logger);
     }
 
     public int MaxDispatchesPerTick
@@ -55,15 +57,14 @@ internal sealed class EntityDispatcher
 
     public int DiscardedCount { get; private set; }
 
-    public int PendingCount => _queue.Count;
+    public int PendingCount => _entities.Count + _scripts.Count;
 
     public void Clear()
     {
-        _queue.Clear();
+        _entities.Clear();
+        _scripts.Clear();
         _resolved.Clear();
         _sequence = 0;
-        _reportedBehind = false;
-        _reportedFull = false;
     }
 
     public void QueueInput(Entity target, string input, string parameter, Entity? activator) =>
@@ -121,7 +122,7 @@ internal sealed class EntityDispatcher
 
     // False when the think was not queued and will not come.
     public bool ScheduleThink(Entity entity, long tick, int serial) =>
-        TryPush(new EntityEvent
+        TryPush(_entities, new EntityEvent
         {
             Tick = tick,
             Sequence = _sequence++,
@@ -136,7 +137,7 @@ internal sealed class EntityDispatcher
 
     // False when the wake was not queued and will not come.
     public bool QueueScriptWake(long token, long ticks) =>
-        TryPush(new EntityEvent
+        TryPush(_scripts, new EntityEvent
         {
             Tick = ticks > WholeTicks.Never - _world.TickNumber ? WholeTicks.Never : _world.TickNumber + ticks,
             Sequence = _sequence++,
@@ -148,77 +149,99 @@ internal sealed class EntityDispatcher
             Output = "",
         });
 
-    // An event numbered below firstMadeHere was waiting when the drain began,
-    // and those all sort ahead of what the drain makes. Each of the two has
-    // the budget to itself, so a loop cannot use up what the waiting need.
+    // Sends what is due, the earlier of the two lanes' next events first. A
+    // lane that has used up its share stops for this drain, and the other
+    // goes on.
     public int DrainDue()
     {
-        if (_queue.Count <= _maxPendingEvents / 2)
-            _reportedFull = false;
+        _entities.BeginDrain(_maxPendingEvents);
+        _scripts.BeginDrain(_maxPendingEvents);
 
         long tick = _world.TickNumber;
         long firstMadeHere = _sequence;
-        int waited = 0;
-        int madeHere = 0;
+        int sent = 0;
 
-        while (_queue.TryPeek(out EntityEvent next) && next.Tick <= tick)
+        while (NextDue(tick, out EntityEvent next) is { } lane)
         {
-            if (next.Sequence < firstMadeHere)
+            if (!HasBudgetFor(lane, next, firstMadeHere))
             {
-                if (waited == _maxDispatchesPerTick)
-                {
-                    FallBehind(next);
-                    break;
-                }
-
-                waited++;
-            }
-            else if (madeHere == _maxDispatchesPerTick)
-            {
-                DropWhatThisDrainMade(next, firstMadeHere);
-                break;
-            }
-            else
-            {
-                madeHere++;
+                lane.IsOpen = false;
+                continue;
             }
 
-            _queue.TryPop(out EntityEvent due);
+            lane.TryPop(out EntityEvent due);
             Dispatch(due);
+            sent++;
         }
 
-        return waited + madeHere;
+        return sent;
+    }
+
+    private EntityEventLane? NextDue(long tick, out EntityEvent next)
+    {
+        bool isWakeDue = _scripts.TryPeekDue(tick, out EntityEvent wake);
+        if (!_entities.TryPeekDue(tick, out next))
+        {
+            next = wake;
+            return isWakeDue ? _scripts : null;
+        }
+
+        if (!isWakeDue || EntityEventQueue.Precedes(next, wake))
+            return _entities;
+
+        next = wake;
+        return _scripts;
+    }
+
+    // An event numbered below firstMadeHere was waiting when the drain began,
+    // and those all sort ahead of what the drain makes. Each of the two has
+    // the budget to itself, so a loop cannot use up what the waiting need.
+    private bool HasBudgetFor(EntityEventLane lane, in EntityEvent next, long firstMadeHere)
+    {
+        if (next.Sequence < firstMadeHere)
+        {
+            if (lane.Waited == _maxDispatchesPerTick)
+            {
+                FallBehind(lane, next);
+                return false;
+            }
+
+            lane.Waited++;
+            return true;
+        }
+
+        if (lane.MadeHere == _maxDispatchesPerTick)
+        {
+            DropWhatThisDrainMade(lane, next, firstMadeHere);
+            return false;
+        }
+
+        lane.MadeHere++;
+        return true;
     }
 
     private void Queue(in EntityEvent input, Entity? target)
     {
-        if (TryPush(input))
+        if (TryPush(_entities, input))
             _world.Trace?.Record(EntityTraceEvent.OfInput(EntityTraceKind.InputQueued, _world, input, target));
     }
 
-    private bool TryPush(in EntityEvent made)
+    private bool TryPush(EntityEventLane lane, in EntityEvent made)
     {
         // It would sit in the queue until the level stops.
         if (made.Tick == WholeTicks.Never)
         {
-            if (_logger.IsEnabled(LogLevel.Debug))
-            {
-                _logger.LogDebug(
-                    "Not queued: {What} at '{TargetName}' waits longer than a level can count, so it " +
-                    "would never come.",
-                    Describe(made), NameOf(made));
-            }
-
+            _log.NeverDue(made);
             return false;
         }
 
-        if (_queue.Count >= _maxPendingEvents)
+        if (lane.Count >= _maxPendingEvents)
         {
-            RefuseForRoom(made);
+            RefuseForRoom(lane, made);
             return false;
         }
 
-        _queue.Push(made);
+        lane.Push(made);
         return true;
     }
 
@@ -291,21 +314,17 @@ internal sealed class EntityDispatcher
 
     // More was waiting than one tick may send. The rest stays queued and
     // sorts first on the next tick, so nothing is lost and the order holds.
-    private void FallBehind(in EntityEvent next)
+    private void FallBehind(EntityEventLane lane, in EntityEvent next)
     {
         BudgetTripCount++;
-        if (_reportedBehind)
+        if (lane.ReportedBehind)
             return;
 
-        _reportedBehind = true;
-        _logger.LogWarning(
-            "More than {Budget} entity events were waiting for one tick. The rest are sent on the next " +
-            "ticks, in the same order, so this level's logic runs late. First in line is {What} at " +
-            "'{TargetName}'. A loop that waits and multiplies starts like this. Said once a level.",
-            _maxDispatchesPerTick, Describe(next), NameOf(next));
+        lane.ReportedBehind = true;
+        _log.FellBehind(ReferenceEquals(lane, _scripts), _maxDispatchesPerTick, next);
     }
 
-    private void DropWhatThisDrainMade(in EntityEvent offender, long firstMadeHere)
+    private void DropWhatThisDrainMade(EntityEventLane lane, in EntityEvent offender, long firstMadeHere)
     {
         BudgetTripCount++;
 
@@ -313,11 +332,11 @@ internal sealed class EntityDispatcher
         // is due on a later tick.
         long tick = _world.TickNumber;
         int discarded = 0;
-        while (_queue.TryPeek(out EntityEvent next)
+        while (lane.TryPeek(out EntityEvent next)
             && next.Tick <= tick
             && next.Sequence >= firstMadeHere)
         {
-            _queue.TryPop(out EntityEvent dropped);
+            lane.TryPop(out EntityEvent dropped);
             discarded++;
 
             // A thread waits on it and would wait for good.
@@ -326,41 +345,16 @@ internal sealed class EntityDispatcher
         }
 
         DiscardedCount += discarded;
-
-        _logger.LogError(
-            "Entity dispatch budget of {Budget} was exhausted in one tick; the cascade was still firing " +
-            "{What} at '{TargetName}'. The {Discarded} event(s) it had made and not sent were dropped. " +
-            "What was already waiting has run. This is what a zero-delay loop between two entities " +
-            "looks like.",
-            _maxDispatchesPerTick, Describe(offender), NameOf(offender), discarded);
+        _log.DroppedWhatADrainMade(ReferenceEquals(lane, _scripts), _maxDispatchesPerTick, offender, discarded);
     }
 
-    private void RefuseForRoom(in EntityEvent made)
+    private void RefuseForRoom(EntityEventLane lane, in EntityEvent made)
     {
         DiscardedCount++;
-        if (_reportedFull)
+        if (lane.ReportedFull)
             return;
 
-        _reportedFull = true;
-        _logger.LogError(
-            "The entity event queue is full at {Limit} events, so {What} at '{TargetName}' was dropped, " +
-            "and so is every event made while there is no room. What is already waiting will still run. " +
-            "This is what a loop that waits and multiplies looks like.",
-            _maxPendingEvents, Describe(made), NameOf(made));
+        lane.ReportedFull = true;
+        _log.RefusedForRoom(ReferenceEquals(lane, _scripts), _maxPendingEvents, made);
     }
-
-    private static string Describe(in EntityEvent made) => made.Kind switch
-    {
-        EntityEventKind.Think => "a think",
-        EntityEventKind.ScriptWake => "the wake of a waiting thread",
-        _ when made.Output.Length > 0 => $"output '{made.Output}' sending '{made.Input}'",
-        _ => $"input '{made.Input}'",
-    };
-
-    private static string NameOf(in EntityEvent made) => made.Kind switch
-    {
-        EntityEventKind.Think => made.Entity?.TargetName ?? "",
-        EntityEventKind.ScriptWake => "a script",
-        _ => made.Target?.TargetName ?? made.TargetName,
-    };
 }

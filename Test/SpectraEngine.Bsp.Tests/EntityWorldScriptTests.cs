@@ -123,7 +123,98 @@ public sealed class EntityWorldScriptTests
         _log.Skip(1).ShouldBe(["wake 1", "wake 2", "wake 3", "wake 4", "drop 5"]);
         world.DiscardedEventCount.ShouldBe(1);
         world.PendingEventCount.ShouldBe(0);
-        _logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem().ShouldContain("the wake of a waiting thread");
+
+        // The line blames a script, not a wire between two entities.
+        string error = _logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem();
+        error.ShouldContain("task.defer");
+        error.ShouldNotContain("entities");
+    }
+
+    [Fact]
+    public void More_waiting_wakes_than_the_budget_hold_up_nothing_an_entity_is_sent()
+    {
+        EntityRuntime.Place(_scene.Root, "bystander", "recorder");
+        EntityWorld world = Started(out _);
+        world.MaxDispatchesPerTick = 2;
+        for (int token = 1; token <= 5; token++)
+            world.QueueScriptWake(token, ticks: 1);
+        world.QueueInput("bystander", "Ping", delay: Tick);
+
+        world.Tick(Tick);
+
+        // The input was queued behind five wakes and still arrives on its tick.
+        _log.Skip(1).ShouldBe(["wake 1", "wake 2", "bystander:Ping::-:-"]);
+        string warning = _logger.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem();
+        warning.ShouldContain("More than 2");
+        warning.ShouldContain("script threads");
+
+        world.Tick(Tick);
+        world.Tick(Tick);
+        _log.Skip(4).ShouldBe(["wake 3", "wake 4", "wake 5"]);
+        world.DiscardedEventCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void More_waiting_inputs_than_the_budget_hold_up_no_wake()
+    {
+        EntityRuntime.Place(_scene.Root, "bystander", "recorder");
+        EntityWorld world = Started(out _);
+        world.MaxDispatchesPerTick = 2;
+        for (int i = 1; i <= 3; i++)
+            world.QueueInput("bystander", $"Ping{i}");
+        world.QueueScriptWake(7, ticks: 1);
+
+        world.Tick(Tick);
+
+        _log.Skip(1).ShouldBe(["bystander:Ping1::-:-", "bystander:Ping2::-:-", "wake 7"]);
+    }
+
+    [Fact]
+    public void A_loop_of_wakes_with_no_wait_drops_nothing_an_entity_made_in_that_drain()
+    {
+        SceneNode ping = EntityRuntime.Place(_scene.Root, "ping", "relay");
+        SceneNode pong = EntityRuntime.Place(_scene.Root, "pong", "relay");
+        EntityRuntime.Place(_scene.Root, "bystander", "recorder");
+        EntityRuntime.Wire(ping, "OnTrigger", "pong", "Trigger");
+        EntityRuntime.Wire(pong, "OnTrigger", "bystander", "Heard");
+        EntityWorld world = Started(out FakeScriptRuntime runtime);
+        world.MaxDispatchesPerTick = 2;
+
+        // The two wires fire one after the other in the drain, between the
+        // wakes of a loop that never waits.
+        runtime.OnWake = token => world.QueueScriptWake(token + 1, ticks: 0);
+        world.QueueScriptWake(1, ticks: 1);
+        world.QueueInput("ping", "Trigger");
+
+        world.Tick(Tick);
+
+        _log.Skip(1).ShouldBe(["wake 1", "wake 2", "bystander:Heard::ping:pong", "wake 3", "drop 4"]);
+        world.DiscardedEventCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_loop_between_two_entities_drops_no_wake_made_in_that_drain()
+    {
+        SceneNode ping = EntityRuntime.Place(_scene.Root, "ping", "relay");
+        SceneNode pong = EntityRuntime.Place(_scene.Root, "pong", "relay");
+        EntityRuntime.Wire(ping, "OnTrigger", "pong", "Trigger");
+        EntityRuntime.Wire(pong, "OnTrigger", "ping", "Trigger");
+        EntityWorld world = Started(out FakeScriptRuntime runtime);
+        world.MaxDispatchesPerTick = 4;
+
+        // Three wakes, each made by the one before with no wait, as a defer does.
+        runtime.OnWake = token =>
+        {
+            if (token < 4)
+                world.QueueScriptWake(token + 1, ticks: 0);
+        };
+        world.QueueInput("ping", "Trigger");
+        world.QueueScriptWake(1, ticks: 1);
+
+        world.Tick(Tick);
+
+        world.DispatchBudgetTripCount.ShouldBe(1);
+        _log.Skip(1).ShouldBe(["wake 1", "wake 2", "wake 3", "wake 4"]);
     }
 
     [Fact]
@@ -146,9 +237,39 @@ public sealed class EntityWorldScriptTests
         world.QueueScriptWake(1, ticks: 5).ShouldBeTrue();
         world.QueueScriptWake(2, ticks: 5).ShouldBeTrue();
         world.QueueScriptWake(3, ticks: 5).ShouldBeFalse();
+        _logger.MessagesAt(LogLevel.Error).ShouldHaveSingleItem().ShouldContain("2 script threads are waiting");
 
         world.Deactivate();
         Should.Throw<InvalidOperationException>(() => world.QueueScriptWake(4, ticks: 5));
+    }
+
+    [Fact]
+    public void Wakes_that_fill_their_queue_take_no_room_from_what_entities_send()
+    {
+        EntityRuntime.Place(_scene.Root, "bystander", "recorder");
+        EntityWorld world = Started(out _);
+        world.MaxPendingEvents = 2;
+
+        world.QueueScriptWake(1, ticks: 5).ShouldBeTrue();
+        world.QueueScriptWake(2, ticks: 5).ShouldBeTrue();
+        world.QueueScriptWake(3, ticks: 5).ShouldBeFalse();
+        world.QueueInput("bystander", "First");
+        world.QueueInput("bystander", "Second");
+        world.QueueInput("bystander", "Third");
+
+        world.Tick(Tick);
+
+        _log.Skip(1).ShouldBe(["bystander:First::-:-", "bystander:Second::-:-"]);
+        world.PendingEventCount.ShouldBe(2);
+        world.DiscardedEventCount.ShouldBe(2);
+
+        // The wakes still hold their two places, and the inputs have theirs back.
+        world.QueueInput("bystander", "Fourth");
+        world.QueueInput("bystander", "Fifth");
+        world.QueueScriptWake(4, ticks: 5).ShouldBeFalse();
+        world.Tick(Tick);
+
+        _log.Skip(3).ShouldBe(["bystander:Fourth::-:-", "bystander:Fifth::-:-"]);
     }
 
     [Fact]

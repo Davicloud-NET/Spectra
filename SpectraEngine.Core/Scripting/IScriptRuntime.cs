@@ -18,7 +18,7 @@ public interface IScriptRuntime
     /// <summary>A wake queued with <see cref="EntityWorld.QueueScriptWake"/> has come due.</summary>
     void Wake(long token);
 
-    /// <summary>A queued wake will not come: the tick it was made in made too many events.</summary>
+    /// <summary>A queued wake will not come: the tick it was made in made too many of them.</summary>
     void Drop(long token);
 
     /// <summary>The point of a tick before the physics step.</summary>
