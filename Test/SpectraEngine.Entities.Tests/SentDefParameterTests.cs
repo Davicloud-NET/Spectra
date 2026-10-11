@@ -131,12 +131,14 @@ public sealed class SentDefParameterTests
     {
         // It reads a record up to its class flags, skips the rest by the
         // record's size, and finds the strings by the header's offset.
-        const int olderRecord = 52;
+        byte[] older = ImageBeforeTheTypes;
+        byte[] written = SentDef.Write([Gate(saysTypes: true)]);
         int afterSize = SentDef.HeaderSize + sizeof(uint);
+        int olderRecord = (int)BinaryPrimitives.ReadUInt32LittleEndian(older.AsSpan(SentDef.HeaderSize));
 
-        ImageWithTheTypes.AsSpan(afterSize, olderRecord - sizeof(uint)).ToArray()
-            .ShouldBe(ImageBeforeTheTypes.AsSpan(afterSize, olderRecord - sizeof(uint)).ToArray());
-        ImageWithTheTypes.AsSpan(80).ToArray().ShouldBe(ImageBeforeTheTypes.AsSpan(72).ToArray());
+        written.AsSpan(afterSize, olderRecord - sizeof(uint)).ToArray()
+            .ShouldBe(older.AsSpan(afterSize, olderRecord - sizeof(uint)).ToArray());
+        written.AsSpan(StringTable(written)).ToArray().ShouldBe(older.AsSpan(StringTable(older)).ToArray());
     }
 
     [Fact]
@@ -163,8 +165,7 @@ public sealed class SentDefParameterTests
         image[types + 4].ShouldBe(SentDef.ParameterNone);
 
         // Three bytes of padding, then the string table.
-        (types + SentDef.ParameterBytes(3, 2)).ShouldBe(
-            (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(SentDef.HeaderStringTableOffsetOffset)));
+        (types + SentDef.ParameterBytes(3, 2)).ShouldBe(StringTable(image));
     }
 
     [Fact]
@@ -279,10 +280,14 @@ public sealed class SentDefParameterTests
     }
 
     [Fact]
-    public void The_types_did_not_take_a_new_version()
+    public void A_file_that_says_its_types_declares_the_version_the_older_build_wrote()
     {
-        // The record grew at its end, which a reader skips by the record's own size.
-        SentDef.Version.ShouldBe((ushort)1);
+        // An older reader refuses any other. It needs no new one: the record
+        // grew at its end, which that reader skips by the record's own size.
+        byte[] written = SentDef.Write([Gate(saysTypes: true)]);
+
+        BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(SentDef.HeaderVersionOffset)).ShouldBe(
+            BinaryPrimitives.ReadUInt16LittleEndian(ImageBeforeTheTypes.AsSpan(SentDef.HeaderVersionOffset)));
     }
 
     [Fact]
@@ -330,12 +335,16 @@ public sealed class SentDefParameterTests
         return optional ? ParameterType.Optional(type) : ParameterType.Of(type);
     }
 
+    // Where the header says the strings start.
+    private static int StringTable(byte[] image) =>
+        (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(SentDef.HeaderStringTableOffsetOffset));
+
     // Takes bytes off the end of the first type record, as a file cut short
     // would have them missing.
     private static byte[] CutFromFirstRecord(byte[] image, int bytes)
     {
         int recordSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(SentDef.HeaderSize));
-        int table = (int)BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(SentDef.HeaderStringTableOffsetOffset));
+        int table = StringTable(image);
         int end = SentDef.HeaderSize + recordSize;
 
         byte[] cut = [.. image.AsSpan(0, end - bytes), .. image.AsSpan(end)];
