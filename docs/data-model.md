@@ -251,9 +251,25 @@ What this buys: per-face materials with no per-face asset object anywhere. **The
 
 The name other entities fire at is the node's name. There is no separate target name field.
 
-What sits on the node is authored data. While a level plays, `EntityWorld` (`Entities/EntityWorld.cs`) builds one live `Entity` per entity node from the `EntityCatalog`, or a `PlaceholderEntity` for a class it does not know. The live entity gets its own copy of the connections and never writes back to the node. `EntityWorld.SetLocalTransform` is the only way a running entity moves a node, and `Deactivate` puts every moved node back. A script moves a node the same way, through `TrySetLocalTransform`, which hands the reason of a refusal to its caller and logs nothing.
+What sits on the node is authored data. While a level plays, `EntityWorld` (`Entities/EntityWorld.cs`) builds one live `Entity` per entity node from the `EntityCatalog`, or a `PlaceholderEntity` for a class it does not know. The live entity gets its own copy of the connections and never writes back to the node. `EntityWorld.SetLocalTransform` is the only way a running entity moves a node. A script sets a node's members through `ScriptWrites`. Both record in the play journal, and `Deactivate` puts back what they changed.
 
 `PlaySession` runs the entity tick first, then physics, then the character. It calls the level's scripts before the physics step and at the end of the tick.
+
+### What changes a node while a level plays
+
+Stop puts a level back as it was. A save after Stop writes the same bytes as a save before Play.
+
+The play journal (`Entities/PlayJournal.cs`) keeps that promise. The entity world owns one. Whatever changes a node while the level plays records there first, and `Deactivate` puts every recorded value back, newest first, after every entity's `OnRemove`.
+
+- An entry is a node, a kind and the value the node held before the first write of that kind. A later write of that kind to that node is a lookup. It records nothing and allocates nothing.
+- A kind (`Entities/JournalKind.cs`) is two functions: read the value, and put a first value back. There are two today, the local transform and the name. Something new a level can change is one more kind, not a second journal.
+- The transform goes back bit for bit (`SceneNode.RestoreLocalTransform`). The `LocalTransform` setter takes `-0` for `0` and keeps the one it has, and a map writes the sign.
+- An entity records through `EntityWorld.SetLocalTransform`, which refuses a node with a world brush at or below it and a scale change above a brush.
+- A script records through `ScriptWrites.TryWrite` (`Scripting/ScriptWrites.cs`). It checks the value, records, then writes. A refusal is a sentence for the script's error, and nothing is recorded or written.
+- `ScriptWrites.Settable` lists what a script can set: `Position`, `CFrame`, `LocalPosition`, `LocalCFrame` and `Name`. `Read` gives each back as a `MemberValue`, which compares and prints. The Luau binding looks every write up in that list and has no other way to change a node.
+- A rename is live at once. The name index hears it, so a wire finds the entity by its new name. A name a node cannot have (`Scene/NodeName.cs`) is an error at the script's line: an empty one, one over 100 characters, one with a line break.
+
+A write that does not record stays in the level after Stop, and nothing says so at the time. Two tests in `SpectraEngine.Scripting.Tests` watch for it. `StopPromiseTests` makes random writes from fixed seeds, through `ScriptWrites` and from real scripts, and compares the saved bytes and every settable member before Play and after Stop. `SettableListTests` fails when a script can set a member the list does not have.
 
 ### `Script`
 
@@ -279,7 +295,7 @@ While a level plays, its scripts run in a script runtime (`Scripting/IScriptRunt
 - A thread that waits is an event in the entity world's queue (`EntityWorld.QueueScriptWake`), in one order with the wires and the thinks. `task.wait` goes on at the tick `WholeTicks` gives and never on the tick it was called on. The wakes have a share of each tick's budget and of the queue's room to themselves. So a level with too many threads runs its scripts late and its wires on time, and a script that fills its queue gets an error where it asked to wait.
 - `RunService.Stepped` and `PreSimulation` fire before the physics step, `Heartbeat` and `PostSimulation` at the end of the tick, also in a tick where nothing walks. They fire on every fixed tick with the fixed step, so none, one or several times in a frame.
 - A script reads a node's `Name`, `ClassName`, `Parent`, `Position`, `CFrame`, `LocalPosition` and `LocalCFrame`. `Position` and `CFrame` are in world space. The class name is the entity class when the node has one, otherwise the node's kind in Roblox's words (`Scene/NodeClassName.cs`). A name the node does not have is an error, never `nil`.
-- A script writes the four transform members and nothing else. `Deactivate` puts every node it moved back, as it does for an entity.
+- A script writes the four transform members and `Name`, and nothing else. Every write goes through `ScriptWrites`, so `Deactivate` puts it back, as it does an entity's move.
 
 ### Node flags
 
@@ -470,6 +486,8 @@ One consequence already written down: instantiating a project template must **re
 | `Script` payload | **Yes** | `Scene/SceneNode.cs`; type in `Scene/Script.cs` | A node that names a `.luau` file by its content path, with `IsEnabled` and `IsModule`. A script is a node, so `script.Parent` is the parent node |
 | `IScriptRuntime` / `ScriptHosting` / `LuauScriptRuntime` | **Yes** | `Scripting/`; the Luau one in `SpectraEngine.Scripting.Luau/Runtime/` | What runs a level's scripts while it plays: one runtime for each play session, called at fixed points of the tick |
 | `NodeClassName` | **Yes** | `Scene/NodeClassName.cs` | The class name a node shows to a script: its entity class, or its kind in Roblox's words |
+| `PlayJournal` / `JournalKind` | **Yes** | `Entities/PlayJournal.cs`, `Entities/JournalKind.cs` | The first value of everything a running level changed on a node. `EntityWorld.Deactivate` puts each back, newest first |
+| `ScriptWrites` / `SettableMember` / `MemberValue` | **Yes** | `Scripting/ScriptWrites.cs` | The one way a script changes a node: the list of what it can set, a read of each, and a write that records first |
 | `Scene.ScriptNodes` / `SceneNodeKind.Script` | **Yes** | `Scene/Scene.cs`, `Scene/SceneNodeKind.cs` | The script nodes in attachment order, and the kind of a node whose only payload is a script |
 | Declared realm and state on a node | **Yes** | `Scene/SceneNode.cs`; enums in `Scene/NodeRealm.cs`, `Scene/NodeState.cs` | The node's own declaration, saved in `.smap` as `realm` and `state`. Not payloads. Nothing resolves them yet |
 | `SetNodeFlagsCommand`, `SetEntityCommand`, `SetEntityKeyvalueCommand`, `SetEntityConnectionsCommand`, `SetLightCommand`, `SetScriptCommand` | **Yes** | `Editing/Commands/` | Undoable edits of the flags, the entity payload, the light and the script |
