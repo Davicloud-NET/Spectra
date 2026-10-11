@@ -36,6 +36,10 @@ public sealed class LightSelectionTests
         return harness;
     }
 
+    private static bool TryPick(ViewportHarness harness, in Ray3 ray, out SceneNode? hit, out float distance) =>
+        new SceneIcons().TryPick(
+            harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize, out hit, out distance);
+
     [Fact]
     public void A_ray_through_a_lamps_icon_finds_it()
     {
@@ -44,9 +48,7 @@ public sealed class LightSelectionTests
 
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(harness.CenterPixel, harness.ViewportSize);
 
-        LightPicking.TryPick(
-            harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize,
-            out SceneNode? hit, out float distance).ShouldBeTrue();
+        TryPick(harness, in ray, out SceneNode? hit, out float distance).ShouldBeTrue();
 
         hit.ShouldBeSameAs(lamp);
         distance.ShouldBeGreaterThan(0f);
@@ -60,28 +62,25 @@ public sealed class LightSelectionTests
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(
             new Vector2(4f, 4f), harness.ViewportSize);
 
-        LightPicking.TryPick(
-            harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize,
-            out SceneNode? hit, out _).ShouldBeFalse();
+        TryPick(harness, in ray, out SceneNode? hit, out _).ShouldBeFalse();
 
         hit.ShouldBeNull();
     }
 
     [Fact]
-    public void The_nearest_of_two_stacked_lamps_wins()
+    public void The_nearest_of_two_far_lamps_under_one_pixel_wins()
     {
-        // Both project to the same pixel; only their depth differs.
+        // Both project to the same pixel; only their depth differs. They are
+        // rings this far off, and a ring stays on its lamp.
         ViewportHarness harness = BuildLitScene(
-            new Vector3(0f, 0f, -6f),
-            new Vector3(0f, 0f, 2f));
+            new Vector3(0f, 0f, -400f),
+            new Vector3(0f, 0f, -300f));
 
         SceneNode near = harness.Scene.Root.Children[1];
 
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(harness.CenterPixel, harness.ViewportSize);
 
-        LightPicking.TryPick(
-            harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize,
-            out SceneNode? hit, out _).ShouldBeTrue();
+        TryPick(harness, in ray, out SceneNode? hit, out _).ShouldBeTrue();
 
         hit.ShouldBeSameAs(near);
     }
@@ -124,9 +123,7 @@ public sealed class LightSelectionTests
 
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(harness.CenterPixel, harness.ViewportSize);
 
-        LightPicking.TryPick(
-            harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize,
-            out _, out _).ShouldBeFalse();
+        TryPick(harness, in ray, out _, out _).ShouldBeFalse();
     }
 
     [Fact]
@@ -138,9 +135,7 @@ public sealed class LightSelectionTests
         // The pixel must cover both, or the pick has nothing to choose between.
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(harness.CenterPixel, harness.ViewportSize);
         harness.Scene.Raycast(in ray, out _).ShouldBeTrue();
-        LightPicking.TryPick(
-            harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize,
-            out _, out _).ShouldBeTrue();
+        TryPick(harness, in ray, out _, out _).ShouldBeTrue();
 
         harness.Press(harness.CenterPixel);
         harness.Release(harness.CenterPixel);

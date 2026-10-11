@@ -62,7 +62,7 @@ public sealed class EntityMarkerTests
 
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(harness.CenterPixel, harness.ViewportSize);
 
-        EntityMarkerPicking.TryPick(
+        new SceneIcons().TryPick(
             harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize,
             out SceneNode? hit, out float distance).ShouldBeTrue();
 
@@ -78,7 +78,7 @@ public sealed class EntityMarkerTests
 
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(new Vector2(4f, 4f), harness.ViewportSize);
 
-        EntityMarkerPicking.TryPick(
+        new SceneIcons().TryPick(
             harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize,
             out SceneNode? hit, out _).ShouldBeFalse();
 
@@ -160,14 +160,15 @@ public sealed class EntityMarkerTests
     }
 
     [Fact]
-    public void The_nearer_of_a_lamp_and_a_marker_under_one_pixel_is_picked()
+    public void The_nearer_of_a_far_lamp_and_a_far_marker_under_one_pixel_is_picked()
     {
-        // Both project to the same pixel; only their depth differs.
+        // Both project to the same pixel; only their depth differs. They are
+        // small marks this far off, and a small mark stays on its node.
         ViewportHarness harness = Fixture();
-        SceneNode marker = AddEntity(harness, new Vector3(0f, 0f, 2f));
+        SceneNode marker = AddEntity(harness, new Vector3(0f, 0f, -300f));
         var lamp = new SceneNode("Lamp")
         {
-            LocalPosition = new Vector3(0f, 0f, -6f),
+            LocalPosition = new Vector3(0f, 0f, -400f),
             Light = new Light { Kind = LightKind.Point, Range = 6f },
         };
         harness.Scene.Root.AddChild(lamp);
@@ -176,7 +177,7 @@ public sealed class EntityMarkerTests
         harness.Release(harness.CenterPixel);
         harness.Scene.Selection.Items.ShouldBe([marker]);
 
-        marker.LocalPosition = new Vector3(0f, 0f, -9f);
+        marker.LocalPosition = new Vector3(0f, 0f, -500f);
         harness.Scene.Selection.Clear();
 
         harness.Press(harness.CenterPixel);
@@ -366,26 +367,27 @@ public sealed class EntityMarkerTests
         ViewportHarness harness = Fixture();
         for (int i = 0; i < 40; i++)
             AddEntity(harness, new Vector3((i % 8) - 4f, (i / 8) - 2f, 0f));
-        var overlay = new EntityMarkerOverlay();
+        var icons = new SceneIcons();
+        var overlay = new EntityMarkerOverlay(icons);
         var output = new DebugDraw();
         Ray3 ray = harness.Scene.Camera.ScreenPointToRay(harness.CenterPixel, harness.ViewportSize);
 
         for (int i = 0; i < 200; i++)
-            Frame(harness, overlay, output, in ray);
+            Frame(harness, icons, overlay, output, in ray);
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 2_000; i++)
-            Frame(harness, overlay, output, in ray);
+            Frame(harness, icons, overlay, output, in ray);
         long after = GC.GetAllocatedBytesForCurrentThread();
 
         (after - before).ShouldBe(0);
 
-        static void Frame(ViewportHarness harness, EntityMarkerOverlay overlay, DebugDraw output, in Ray3 ray)
+        static void Frame(
+            ViewportHarness harness, SceneIcons icons, EntityMarkerOverlay overlay, DebugDraw output, in Ray3 ray)
         {
             output.Clear();
             overlay.Draw(output, harness.Scene, harness.Scene.Camera, harness.ViewportSize);
-            EntityMarkerPicking.TryPick(
-                harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize, out _, out _);
+            icons.TryPick(harness.Scene, harness.Scene.Camera, in ray, harness.ViewportSize, out _, out _);
         }
     }
 

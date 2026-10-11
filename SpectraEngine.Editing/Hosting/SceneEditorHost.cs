@@ -75,8 +75,12 @@ public sealed class SceneEditorHost : ISceneEditor
     // A part with its render bit off draws nothing either.
     private readonly VolumeOverlay _volumeOutlines = new();
 
+    // Where the icons of lights and point entities stand. The two overlays
+    // that draw them and the viewport that picks them share it.
+    private readonly SceneIcons _icons = new();
+
     // An entity with no brush, mesh or light has nothing else to see or click.
-    private readonly EntityMarkerOverlay _entityMarkers = new();
+    private readonly EntityMarkerOverlay _entityMarkers;
 
     private readonly EntityDistanceOverlay _entityDistances = new();
 
@@ -102,7 +106,7 @@ public sealed class SceneEditorHost : ISceneEditor
     public SelectionOutline Selection { get; } = new();
 
     /// <summary>Every light's icon, and the selected lights' shapes.</summary>
-    public LightOverlay Lights { get; } = new();
+    public LightOverlay Lights { get; }
 
     /// <summary>The handles for a light's shape and aim.</summary>
     public LightGizmo LightGizmo { get; }
@@ -149,10 +153,14 @@ public sealed class SceneEditorHost : ISceneEditor
             AngleSnap = _gizmos.Rotate.Snap,
         };
 
+        Lights = new LightOverlay(_icons);
+        _entityMarkers = new EntityMarkerOverlay(_icons);
+
         _viewport = new ViewportInteractionController(scene, _gizmos)
         {
             CameraController = _camera,
             LightTool = LightGizmo,
+            Icons = _icons,
         };
         _inputSource = new EngineEditorInputSource(input, renderer);
         _gizmoBindings = BuildGizmoBindings();
@@ -756,9 +764,10 @@ public sealed class SceneEditorHost : ISceneEditor
         _partOutlines.Draw(output, _scene);
         _negativeOutlines.Draw(output, _scene);
         _volumeOutlines.Draw(output, _scene);
-        Lights.Draw(output, _scene, _scene.Camera, _viewportSize);
+        _icons.Place(_scene, _scene.Camera, _viewportSize);
+        Lights.DrawPlaced(output, _scene, _scene.Camera);
         _entityDistances.Draw(output, _scene);
-        _entityMarkers.Draw(output, _scene, _scene.Camera, _viewportSize);
+        _entityMarkers.DrawPlaced(output, _scene, _scene.Camera);
         LightGizmo.Draw(output, _viewportSize);
 
         Selection.Draw(output, _scene, _scene.Camera, _viewportSize, new OutlineFocus(

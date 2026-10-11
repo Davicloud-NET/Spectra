@@ -19,12 +19,14 @@ namespace SpectraEngine.Editing.Viewport;
 // the file the shell shows for the class.
 public sealed class EntityMarkerOverlay
 {
-    // Under this radius an icon is a smudge, so a far marker is a small
-    // diamond and nothing else.
-    private const float DetailPixels = 6.5f;
+    private readonly SceneIcons _icons;
 
-    private Mark[] _marks = [];
-    private float[] _nearness = [];
+    /// <summary>Creates the overlay.</summary>
+    /// <param name="icons">
+    /// Where the markers stand. Give it the one the viewport picks with, so a
+    /// budget set here is the budget a click sees.
+    /// </param>
+    public EntityMarkerOverlay(SceneIcons? icons = null) => _icons = icons ?? new SceneIcons();
 
     /// <summary>Whether the overlay draws at all.</summary>
     public bool Enabled { get; set; } = true;
@@ -33,14 +35,21 @@ public sealed class EntityMarkerOverlay
     /// How many markers may be drawn in one frame. The rest are counted in
     /// <see cref="SkippedLastDraw"/>.
     /// </summary>
-    public int MaxMarkers { get; set; } = 256;
+    public int MaxMarkers
+    {
+        get => _icons.MaxMarkers;
+        set => _icons.MaxMarkers = value;
+    }
 
     /// <summary>
     /// How many markers may be drawn as an icon in one frame. When more are
     /// near enough to read, the nearest get the icon and the rest a diamond.
     /// </summary>
-    // An icon costs ten times the lines of a diamond.
-    public int MaxIcons { get; set; } = 64;
+    public int MaxIcons
+    {
+        get => _icons.MaxMarkerGlyphs;
+        set => _icons.MaxMarkerGlyphs = value;
+    }
 
     /// <summary>Markers the last draw drew.</summary>
     public int DrawnLastDraw { get; private set; }
@@ -55,6 +64,22 @@ public sealed class EntityMarkerOverlay
     /// <param name="output">The depth-off overlay buffer.</param>
     public void Draw(DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize)
     {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(camera);
+
+        if (Enabled)
+            _icons.Place(scene, camera, viewportSize);
+
+        DrawPlaced(output, scene, camera);
+    }
+
+    /// <summary>
+    /// Draws the markers where they were last placed. For a host that places
+    /// the icons once a frame for every overlay that shares them.
+    /// </summary>
+    /// <param name="output">The depth-off overlay buffer.</param>
+    public void DrawPlaced(DebugDraw output, Scene scene, Camera camera)
+    {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(camera);
@@ -63,30 +88,30 @@ public sealed class EntityMarkerOverlay
         IconsLastDraw = 0;
         SkippedLastDraw = 0;
 
-        if (!Enabled || viewportSize.Y <= 0f)
+        if (!Enabled)
             return;
 
+        ReadOnlySpan<SceneIcon> markers = _icons.Markers;
         IReadOnlyList<SceneNode> nodes = scene.EntityNodes;
-        int count = Measure(nodes, camera, viewportSize);
-        float farthestIcon = FarthestIcon(count);
+        SkippedLastDraw = _icons.SkippedMarkers;
 
-        for (int i = 0; i < count; i++)
+        foreach (ref readonly SceneIcon marker in markers)
         {
-            ref readonly Mark mark = ref _marks[i];
-            SceneNode node = nodes[mark.Node];
+            if (marker.IsDrawn && marker.IsMoved)
+                PenFor(scene, camera, nodes[marker.Node], in marker, out _).Home(output, marker.Anchor);
+        }
 
-            string? className = node.Entity?.ClassName;
-            EntitySchema? schema = null;
-            scene.EntitySchemas?.TryGetSchema(className, out schema);
+        foreach (ref readonly SceneIcon marker in markers)
+        {
+            if (!marker.IsDrawn)
+                continue;
+
+            SceneNode node = nodes[marker.Node];
+            IconPen pen = PenFor(scene, camera, node, in marker, out EntitySchema? schema);
 
             ViewportGlyph? icon = null;
-            if (mark.IsDetailed && mark.Pixel <= farthestIcon && IconsLastDraw < MaxIcons &&
-                TryFindIcon(WorldIcons.ForEntity(scene.EntitySchemas, className), out icon))
-            {
+            if (marker.IsGlyph && TryFindIcon(WorldIcons.ForEntity(scene.EntitySchemas, node.Entity?.ClassName), out icon))
                 IconsLastDraw++;
-            }
-
-            var pen = new IconPen(camera, node.WorldPosition, mark.Radius, mark.Pixel, EntityGroupTints.For(schema?.Group));
 
             // A class no schema knows gets no arrow: nothing says it faces anywhere.
             bool faces = icon is not null && schema is { HasFacing: true };
@@ -97,60 +122,19 @@ public sealed class EntityMarkerOverlay
             DrawMarker(output, node, in pen, icon, faces);
             pen.Backing = false;
             DrawMarker(output, node, in pen, icon, faces);
-        }
 
-        DrawnLastDraw = count;
+            DrawnLastDraw++;
+        }
     }
 
-    // Fills _marks with the markers this frame draws, in scene order. A node
-    // is named by its place in the list, so nothing here outlives the frame.
-    private int Measure(IReadOnlyList<SceneNode> nodes, Camera camera, Vector2 viewportSize)
+    // The pen for one marker, in its group's colour, where the marker stands.
+    private static IconPen PenFor(
+        Scene scene, Camera camera, SceneNode node, in SceneIcon marker, out EntitySchema? schema)
     {
-        if (_marks.Length < MaxMarkers)
-        {
-            _marks = new Mark[MaxMarkers];
-            _nearness = new float[MaxMarkers];
-        }
+        schema = null;
+        scene.EntitySchemas?.TryGetSchema(node.Entity?.ClassName, out schema);
 
-        int count = 0;
-        for (int i = 0; i < nodes.Count; i++)
-        {
-            SceneNode node = nodes[i];
-            if (!EntityMarkerPicking.HasMarker(node))
-                continue;
-
-            if (count >= MaxMarkers)
-            {
-                SkippedLastDraw++;
-                continue;
-            }
-
-            if (LightPicking.TryMeasure(camera, viewportSize, node.WorldPosition, out float radius, out float pixel))
-                _marks[count++] = new Mark(i, radius, pixel, radius >= DetailPixels * pixel);
-        }
-
-        return count;
-    }
-
-    // The largest pixel size a marker may have and still get an icon. A pixel
-    // covers more of the world the farther off it is, so this picks the nearest.
-    private float FarthestIcon(int count)
-    {
-        int detailed = 0;
-        for (int i = 0; i < count; i++)
-        {
-            if (_marks[i].IsDetailed)
-                _nearness[detailed++] = _marks[i].Pixel;
-        }
-
-        if (detailed <= MaxIcons)
-            return float.PositiveInfinity;
-
-        if (MaxIcons <= 0)
-            return float.NegativeInfinity;
-
-        Array.Sort(_nearness, 0, detailed);
-        return _nearness[MaxIcons - 1];
+        return new IconPen(camera, marker.At, marker.Radius, marker.Pixel, EntityGroupTints.For(schema?.Group));
     }
 
     // The icon's own glyph, or the plain entity one when its file gave none.
@@ -165,12 +149,12 @@ public sealed class EntityMarkerOverlay
             float small = pen.Radius * 0.8f;
             if (pen.Backing)
             {
-                ThinDiamond(output, in pen, small + pen.Pixel, IconPen.BackingColor);
+                pen.ThinDiamond(output, pen.At, small + pen.Pixel, IconPen.BackingColor);
             }
             else
             {
-                ThinDiamond(output, in pen, small, pen.Color);
-                ThinDiamond(output, in pen, small - pen.Pixel, pen.Color);
+                pen.ThinDiamond(output, pen.At, small, pen.Color);
+                pen.ThinDiamond(output, pen.At, small - pen.Pixel, pen.Color);
             }
 
             return;
@@ -189,19 +173,4 @@ public sealed class EntityMarkerOverlay
         var forward = new Vector3(world.M31, world.M32, world.M33);
         return forward.LengthSquared() > 1e-12f ? Vector3.Normalize(forward) : Vector3.UnitZ;
     }
-
-    private static void ThinDiamond(DebugDraw output, in IconPen pen, float radius, Vector3 color)
-    {
-        Vector3 across = pen.Right * radius;
-        Vector3 along = pen.Up * radius;
-
-        output.Line(pen.At + across, pen.At + along, color);
-        output.Line(pen.At + along, pen.At - across, color);
-        output.Line(pen.At - across, pen.At - along, color);
-        output.Line(pen.At - along, pen.At + across, color);
-    }
-
-    // One marker of this frame: which node, how big, and whether it is near
-    // enough for an icon.
-    private readonly record struct Mark(int Node, float Radius, float Pixel, bool IsDetailed);
 }

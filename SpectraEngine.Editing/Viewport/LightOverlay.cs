@@ -4,7 +4,6 @@ using System.Numerics;
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
-using SpectraEngine.Editing.Gizmos;
 using SpectraEngine.Editing.Icons;
 
 namespace SpectraEngine.Editing.Viewport;
@@ -38,9 +37,23 @@ public sealed class LightOverlay
     /// </summary>
     public const float MinIconPixels = 4f;
 
-    // Under this radius the kind and the arrow are a smudge, so a far light
-    // is drawn as a ring in its colour.
-    private const float DetailPixels = 6.5f;
+    /// <summary>
+    /// How much of an icon's colour is left in the line from a moved icon
+    /// back to its node, and in the mark on the node.
+    /// </summary>
+    // Half, so the line does not read as one of the icon's strokes.
+    public const float HomeLineDim = 0.5f;
+
+    private const float DisabledDim = 0.32f;
+
+    private readonly SceneIcons _icons;
+
+    /// <summary>Creates the overlay.</summary>
+    /// <param name="icons">
+    /// Where the icons stand. Give it the one the viewport picks with, so a
+    /// budget set here is the budget a click sees.
+    /// </param>
+    public LightOverlay(SceneIcons? icons = null) => _icons = icons ?? new SceneIcons();
 
     /// <summary>Whether the overlay draws at all.</summary>
     public bool Enabled { get; set; } = true;
@@ -49,7 +62,11 @@ public sealed class LightOverlay
     /// How many light icons may be drawn in one frame. The rest are counted in
     /// <see cref="SkippedLastDraw"/>.
     /// </summary>
-    public int MaxIcons { get; set; } = 256;
+    public int MaxIcons
+    {
+        get => _icons.MaxLights;
+        set => _icons.MaxLights = value;
+    }
 
     /// <summary>Lights the last draw drew.</summary>
     public int DrawnLastDraw { get; private set; }
@@ -57,11 +74,26 @@ public sealed class LightOverlay
     /// <summary>Lights the last draw skipped because <see cref="MaxIcons"/> was reached.</summary>
     public int SkippedLastDraw { get; private set; }
 
-    private const float DisabledDim = 0.32f;
-
     /// <summary>Draws an icon per light, plus the selected lights' shapes.</summary>
     /// <param name="output">The depth-off overlay buffer.</param>
     public void Draw(DebugDraw output, Scene scene, Camera camera, Vector2 viewportSize)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(camera);
+
+        if (Enabled)
+            _icons.Place(scene, camera, viewportSize);
+
+        DrawPlaced(output, scene, camera);
+    }
+
+    /// <summary>
+    /// Draws the icons where they were last placed, plus the selected lights'
+    /// shapes. For a host that places the icons once a frame for every overlay
+    /// that shares them.
+    /// </summary>
+    /// <param name="output">The depth-off overlay buffer.</param>
+    public void DrawPlaced(DebugDraw output, Scene scene, Camera camera)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(scene);
@@ -70,31 +102,29 @@ public sealed class LightOverlay
         DrawnLastDraw = 0;
         SkippedLastDraw = 0;
 
-        if (!Enabled || viewportSize.Y <= 0f)
+        if (!Enabled)
             return;
 
+        ReadOnlySpan<SceneIcon> icons = _icons.Lights;
         IReadOnlyList<SceneNode> nodes = scene.LightNodes;
+        SkippedLastDraw = _icons.SkippedLights;
 
-        for (int i = 0; i < nodes.Count; i++)
+        foreach (ref readonly SceneIcon icon in icons)
         {
-            SceneNode node = nodes[i];
-            if (node.Light is not { } light)
+            if (icon.IsDrawn && icon.IsMoved && nodes[icon.Node].Light is { } light)
+                new IconPen(camera, icon.At, icon.Radius, icon.Pixel, IconColor(light)).Home(output, icon.Anchor);
+        }
+
+        foreach (ref readonly SceneIcon icon in icons)
+        {
+            SceneNode node = nodes[icon.Node];
+            if (!icon.IsDrawn || node.Light is not { } light)
                 continue;
 
-            if (DrawnLastDraw >= MaxIcons)
-            {
-                SkippedLastDraw++;
-                continue;
-            }
-
-            Vector3 at = node.WorldPosition;
-            if (!LightPicking.TryMeasure(camera, viewportSize, at, out float radius, out float pixel))
-                continue;
-
-            var pen = new IconPen(camera, at, radius, pixel, IconColor(light));
+            var pen = new IconPen(camera, icon.At, icon.Radius, icon.Pixel, IconColor(light));
 
             ViewportGlyph? glyph = null;
-            if (radius >= DetailPixels * pixel)
+            if (icon.IsGlyph)
                 ViewportGlyphs.TryGet(IconOf(node, light, scene.EntitySchemas), out glyph);
 
             // Every backing line first, or one stroke's backing crosses out
@@ -108,6 +138,7 @@ public sealed class LightOverlay
         }
 
         // Shapes for the selection only; one per light would bury the scene.
+        // They stand on the light itself, wherever its icon was moved to.
         IReadOnlyList<SceneNode> selection = scene.Selection.Items;
         for (int i = 0; i < selection.Count; i++)
         {
@@ -267,110 +298,5 @@ public sealed class LightOverlay
         forward = Vector3.Normalize(new Vector3(world.M31, world.M32, world.M33));
         right = Vector3.Normalize(new Vector3(world.M11, world.M12, world.M13));
         up = Vector3.Normalize(new Vector3(world.M21, world.M22, world.M23));
-    }
-}
-
-/// <summary>
-/// Ray-picking for light nodes, which the scene's spatial index does not carry.
-/// </summary>
-public static class LightPicking
-{
-    /// <summary>
-    /// The icon's world radius at <paramref name="at"/>. Zero when the point is
-    /// outside the view.
-    /// </summary>
-    public static float WorldRadius(Camera camera, Vector2 viewportSize, Vector3 at) =>
-        TryMeasure(camera, viewportSize, at, out float radius, out _) ? radius : 0f;
-
-    /// <summary>
-    /// The icon's radius on screen at <paramref name="at"/>, in pixels. Zero
-    /// when the point is outside the view.
-    /// </summary>
-    public static float PixelRadius(Camera camera, Vector2 viewportSize, Vector3 at) =>
-        TryMeasure(camera, viewportSize, at, out float radius, out float pixel) ? radius / pixel : 0f;
-
-    /// <summary>
-    /// The icon's world radius at <paramref name="at"/> and what one screen
-    /// pixel measures there. False when the point is outside the view.
-    /// </summary>
-    // The one place the icon's size is decided. Drawing, picking and the
-    // marquee all ask it, so what is clicked is what is seen.
-    public static bool TryMeasure(
-        Camera camera, Vector2 viewportSize, Vector3 at, out float worldRadius, out float worldPerPixel)
-    {
-        worldRadius = 0f;
-        worldPerPixel = 0f;
-
-        float depth = GizmoMath.ViewDepth(camera, at);
-        if (depth <= 0f || viewportSize.Y <= 0f)
-            return false;
-
-        worldPerPixel = GizmoMath.WorldPerPixel(camera, viewportSize.Y, depth);
-        if (worldPerPixel <= 0f)
-            return false;
-
-        worldRadius = Math.Clamp(
-            LightOverlay.IconWorldRadius,
-            LightOverlay.MinIconPixels * worldPerPixel,
-            LightOverlay.IconPixels * worldPerPixel);
-        return true;
-    }
-
-    /// <summary>The nearest light icon <paramref name="ray"/> passes through, if any.</summary>
-    public static bool TryPick(
-        Scene scene, Camera camera, in Ray3 ray, Vector2 viewportSize,
-        out SceneNode? node, out float distance)
-    {
-        ArgumentNullException.ThrowIfNull(scene);
-        ArgumentNullException.ThrowIfNull(camera);
-
-        node = null;
-        distance = float.PositiveInfinity;
-
-        if (viewportSize.Y <= 0f)
-            return false;
-
-        IReadOnlyList<SceneNode> nodes = scene.LightNodes;
-
-        for (int i = 0; i < nodes.Count; i++)
-        {
-            SceneNode candidate = nodes[i];
-            Vector3 at = candidate.WorldPosition;
-
-            float radius = WorldRadius(camera, viewportSize, at);
-            if (radius <= 0f)
-                continue;
-
-            if (!TryRaySphere(in ray, at, radius, out float hit) || hit >= distance)
-                continue;
-
-            node = candidate;
-            distance = hit;
-        }
-
-        return node is not null;
-    }
-
-    // Assumes a normalised direction. Near root, clamped to zero so an origin
-    // inside the sphere hits at the origin.
-    internal static bool TryRaySphere(in Ray3 ray, Vector3 centre, float radius, out float distance)
-    {
-        distance = 0f;
-
-        Vector3 toCentre = ray.Origin - centre;
-        float b = Vector3.Dot(toCentre, ray.Direction);
-        float c = Vector3.Dot(toCentre, toCentre) - (radius * radius);
-
-        // Outside and pointing away.
-        if (c > 0f && b > 0f)
-            return false;
-
-        float discriminant = (b * b) - c;
-        if (discriminant < 0f)
-            return false;
-
-        float near = -b - MathF.Sqrt(discriminant);
-        distance = MathF.Max(near, 0f);
-        return true;
     }
 }

@@ -74,6 +74,12 @@ public sealed class ViewportInteractionController
     /// </summary>
     public Gizmos.LightGizmo? LightTool { get; set; }
 
+    /// <summary>
+    /// Where the icons of lights and point entities stand. Give it the one the
+    /// overlays draw with, so a click reads the budgets the drawing had.
+    /// </summary>
+    public SceneIcons Icons { get; set; } = new();
+
     /// <summary>What currently owns the pointer.</summary>
     public ViewportDragMode DragMode { get; private set; }
 
@@ -426,8 +432,9 @@ public sealed class ViewportInteractionController
             in ray, out SceneRaycastHit hit, SceneQueryFilter.EditorPicking, PickDistance);
 
         // Lights and point entities are not in the spatial index (they would
-        // become collidable), so their icons are picked separately.
-        if (!TryPickIcon(in ray, frame.ViewportSize, out SceneNode? icon, out float iconDistance))
+        // become collidable), so their icons are picked separately, where
+        // they are drawn.
+        if (!Icons.TryPick(Scene, Scene.Camera, in ray, frame.ViewportSize, out SceneNode? icon, out float iconDistance))
         {
             node = geometry ? hit.Node : null;
             planeIndex = geometry ? hit.PlaneIndex : -1;
@@ -449,22 +456,6 @@ public sealed class ViewportInteractionController
         }
 
         node = icon;
-        return true;
-    }
-
-    // The nearer of a light's icon and an entity's marker.
-    private bool TryPickIcon(in Ray3 ray, Vector2 viewportSize, out SceneNode? node, out float distance)
-    {
-        bool lamp = LightPicking.TryPick(Scene, Scene.Camera, in ray, viewportSize, out node, out distance);
-
-        bool marker = EntityMarkerPicking.TryPick(
-            Scene, Scene.Camera, in ray, viewportSize, out SceneNode? marked, out float markerDistance);
-
-        if (!marker || (lamp && distance <= markerDistance))
-            return lamp;
-
-        node = marked;
-        distance = markerDistance;
         return true;
     }
 
