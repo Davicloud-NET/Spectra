@@ -13,6 +13,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 {
     private readonly EntityWorld _world;
     private readonly NodeNamingSink _sink;
+    private readonly PrintCap _prints;
     private readonly LuauHost _host;
     private readonly WaitingThreads _waiting = new();
     private readonly TaskLibrary _tasks;
@@ -31,7 +32,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
         _world = setup.World;
         _sink = new NodeNamingSink(setup.Sink);
-        _host = new LuauHost(_sink);
+        _prints = new PrintCap(_sink, _world);
+        _host = new LuauHost(_prints);
 
         try
         {
@@ -157,6 +159,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
             // What scripts let go of since the last tick.
             _host.Objects.ReleaseCollected();
+            _prints.EndTick();
         }
         catch (Exception e) // boundary: nothing of a script may throw into the tick
         {
