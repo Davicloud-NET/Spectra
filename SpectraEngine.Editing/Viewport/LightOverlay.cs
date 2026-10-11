@@ -118,7 +118,7 @@ public sealed class LightOverlay
                 continue;
 
             var pen = new IconPen(camera, icon.At, icon.Radius, icon.Pixel, IconColor(light));
-            IconHome.Draw(output, in pen, _icons.All, i);
+            IconHome.Draw(output, in pen, _icons, i);
         }
 
         foreach (ref readonly SceneIcon icon in icons)

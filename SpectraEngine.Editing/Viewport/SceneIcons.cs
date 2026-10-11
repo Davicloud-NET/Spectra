@@ -27,6 +27,7 @@ public sealed class SceneIcons
     private const float FullFanPixels = 8f;
 
     private readonly IconFan _fan = new();
+    private readonly IconsAcrossScreen _across = new();
 
     private SceneIcon[] _icons = [];
     private int _lightCount;
@@ -85,6 +86,7 @@ public sealed class SceneIcons
         _markerCount = 0;
         SkippedLights = 0;
         SkippedMarkers = 0;
+        _across.Clear();
 
         if (viewportSize.Y <= 0f)
             return;
@@ -168,6 +170,11 @@ public sealed class SceneIcons
 
         return false;
     }
+
+    // The places in All of the icons that may stand over the line from this
+    // icon to its node. Empty when no icon was moved.
+    internal ReadOnlySpan<int> BesideLineHome(int place, float marginPixels) =>
+        _across.BesideLineHome(in _icons[place], marginPixels);
 
     // Measures the icons of one of the scene's two lists into _icons, after
     // the ones already there. A node past the budget is still measured: it is
@@ -259,6 +266,7 @@ public sealed class SceneIcons
 
         Vector3 right = camera.Right;
         Vector3 up = camera.Up;
+        bool anyMoved = false;
 
         for (int i = 0; i < count; i++)
         {
@@ -269,7 +277,12 @@ public sealed class SceneIcons
             // Across the screen at the node's own depth, so the icon keeps its size.
             ref SceneIcon icon = ref _icons[_fanned[i]];
             icon.At = icon.Anchor + (right * (moved.X * icon.Pixel)) - (up * (moved.Y * icon.Pixel));
+            anyMoved = true;
         }
+
+        // Only a moved icon has a line home to look along.
+        if (anyMoved)
+            _across.Sort(All, camera.Position, right);
     }
 
     // Fills the fan's input with every glyph: where it is on screen in pixels,

@@ -104,14 +104,23 @@ public sealed class IconPileDrawTests
         }
     }
 
-    [Fact]
-    public void A_line_home_is_not_drawn_where_another_icon_stands_over_it()
+    // Four are a row. From seven on there are rows above each other, and
+    // lines home that run at a slant past several icons.
+    [Theory]
+    [InlineData(4)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(13)]
+    public void A_line_home_is_not_drawn_where_another_icon_stands_over_it(int count)
     {
         var rig = new IconPileRig();
-        rig.AddLift(Vector3.Zero);
+        for (int i = 0; i < count; i++)
+            rig.AddEntity(i % 2 == 0 ? IconPileRig.Sound : IconPileRig.Relay, Vector3.Zero);
+
         SceneIcon[] markers = rig.Place().Markers.ToArray();
 
         DebugDraw output = Draw(rig);
+        int pieces = 0;
 
         // Whatever is not a mark's edge is a piece of a line home. No point
         // of one is inside an icon's rim.
@@ -127,8 +136,12 @@ public sealed class IconPileDrawTests
                 Vector3 middle = (lines[i] + lines[i + 1]) * 0.5f;
                 foreach (SceneIcon marker in markers)
                     Vector3.Distance(middle, marker.At).ShouldBeGreaterThan(marker.Radius);
+
+                pieces++;
             }
         }
+
+        pieces.ShouldBeGreaterThanOrEqualTo(count);
     }
 
     [Fact]

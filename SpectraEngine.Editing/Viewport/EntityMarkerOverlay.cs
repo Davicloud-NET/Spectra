@@ -95,8 +95,9 @@ public sealed class EntityMarkerOverlay
         IReadOnlyList<SceneNode> nodes = scene.EntityNodes;
         SkippedLastDraw = _icons.SkippedMarkers;
 
-        // The lines home first, so they lie under every glyph.
-        ReadOnlySpan<SceneIcon> all = _icons.All;
+        // The lines home first, so they lie under every glyph. Markers come
+        // last among all the icons.
+        int first = _icons.All.Length - markers.Length;
         for (int i = 0; i < markers.Length; i++)
         {
             ref readonly SceneIcon marker = ref markers[i];
@@ -104,7 +105,7 @@ public sealed class EntityMarkerOverlay
                 continue;
 
             IconPen pen = PenFor(scene, camera, nodes[marker.Node], in marker, out _);
-            IconHome.Draw(output, in pen, all, all.Length - markers.Length + i);
+            IconHome.Draw(output, in pen, _icons, first + i);
         }
 
         foreach (ref readonly SceneIcon marker in markers)

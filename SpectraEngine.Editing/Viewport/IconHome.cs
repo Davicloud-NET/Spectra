@@ -17,9 +17,9 @@ internal static class IconHome
     private const int MostCovers = 16;
 
     // Draws the line home and the mark of the icon at this place among all of them.
-    public static void Draw(DebugDraw output, in IconPen pen, ReadOnlySpan<SceneIcon> all, int index)
+    public static void Draw(DebugDraw output, in IconPen pen, SceneIcons icons, int place)
     {
-        ref readonly SceneIcon icon = ref all[index];
+        ref readonly SceneIcon icon = ref icons.All[place];
         float distance = Vector3.Distance(icon.At, icon.Anchor);
         if (distance <= 0f)
             return;
@@ -29,7 +29,7 @@ internal static class IconHome
         float mark = MarkPixels * icon.Pixel;
 
         Span<Vector2> covers = stackalloc Vector2[MostCovers];
-        int count = FindCovers(all, index, covers, out float clear);
+        int count = FindCovers(icons, place, covers, out float clear);
 
         // The mark shrinks away as a rim passes over the node, so it does
         // not appear from nothing.
@@ -55,23 +55,25 @@ internal static class IconHome
     // icon's centre. Also how far the node is clear of the nearest rim, the
     // icon's own among them, which is right while it is less than the mark's
     // size.
-    private static int FindCovers(ReadOnlySpan<SceneIcon> all, int index, Span<Vector2> covers, out float clear)
+    private static int FindCovers(SceneIcons icons, int place, Span<Vector2> covers, out float clear)
     {
-        ref readonly SceneIcon icon = ref all[index];
+        ReadOnlySpan<SceneIcon> all = icons.All;
+        ref readonly SceneIcon icon = ref all[place];
         float distance = Vector3.Distance(icon.At, icon.Anchor);
         Vector3 toward = (icon.Anchor - icon.At) / distance;
         float mark = MarkPixels * icon.Pixel;
         int count = 0;
         clear = MathF.Min(mark, distance - icon.Radius);
 
-        for (int i = 0; i < all.Length; i++)
+        // No icon's rim is further from its centre than the largest icon's.
+        foreach (int beside in icons.BesideLineHome(place, LightOverlay.IconPixels + MarkPixels))
         {
-            ref readonly SceneIcon other = ref all[i];
+            ref readonly SceneIcon other = ref all[beside];
             Vector3 to = other.At - icon.At;
             float reach = distance + other.Radius + mark;
 
             // Too far off to be over any of it.
-            if (i == index || !other.IsDrawn || to.LengthSquared() >= reach * reach)
+            if (beside == place || to.LengthSquared() >= reach * reach)
                 continue;
 
             clear = MathF.Min(clear, Vector3.Distance(other.At, icon.Anchor) - other.Radius);
@@ -85,11 +87,11 @@ internal static class IconHome
             if (along + halfChord <= icon.Radius || along - halfChord >= distance)
                 continue;
 
-            int place = count++;
-            for (; place > 0 && covers[place - 1].X > along - halfChord; place--)
-                covers[place] = covers[place - 1];
+            int slot = count++;
+            for (; slot > 0 && covers[slot - 1].X > along - halfChord; slot--)
+                covers[slot] = covers[slot - 1];
 
-            covers[place] = new Vector2(along - halfChord, along + halfChord);
+            covers[slot] = new Vector2(along - halfChord, along + halfChord);
         }
 
         return count;
