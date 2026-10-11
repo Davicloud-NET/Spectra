@@ -62,7 +62,9 @@ An entity owns the brush on its own node and the brushes below it in the scene t
 
 A trigger is a volume: a part that is not drawn and not solid, and that fires when the player walks into it. The editor shows it as a yellow outline. In the Properties panel, under Behavior, a volume has Collides, Seen by queries and Drawn off, and Touch events on.
 
-An entity with no shape shows in the viewport as a green diamond.
+An entity with no shape shows in the viewport as its class's icon, which always faces you. It is the icon the class has in the scene tree, the Logic view and the Entity list, and it is drawn in the colour of the class's group, so a sound, a player start and a timer can be told apart at a glance. An arrow shows which way the entity faces, unless it is a logic entity, whose place and facing mean nothing. Far away, the icon becomes a small diamond in the same colour.
+
+A class this build does not know, such as one from another game, gets one icon that marks it as unknown. A class that names no icon gets the plain entity icon.
 
 ## Playing does not change the level
 

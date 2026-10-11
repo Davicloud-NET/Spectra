@@ -73,7 +73,7 @@ Publishing:
 
 - `Assets/`: the content root. Textures, `.spectramat` materials, models. Copied next to the executable.
 - `SpectraEngine.Core/`: the engine. `Graphics/` (renderers, pipelines, built-in shaders), `Scene/`, `Bsp/` (brushes, CSG, BSP), `Assets/` (content sources, pack readers, caches), `Maps/`, `Projects/`, `Entities/` (the runtime and the `ent_` commands), `Play/` (`PlaySession`), `ConsoleSystem/`, `Physics/`, `Audio/`, `Input/`, `Hosting/` (`EngineHost`), `Inspection/`.
-- `SpectraEngine.Editing/`: editor logic. Commands, undo, gizmos, selection, cameras.
+- `SpectraEngine.Editing/`: editor logic. Commands, undo, gizmos, selection, cameras. `Assets/Icons/` holds the icons of entities and lights.
 - `SpectraEngine.Editor/`: the Avalonia shell. `Shell/` (the Logic view is `Shell/Logic/`), `Viewport/`, `Theme/`, `Sounds/`.
 - `SpectraEngine.Executable/`: the demo. Also hosts the editing layer.
 - `SpectraEngine.Entities/` and `.Generator/`: built-in entities and the Roslyn generator.
@@ -145,6 +145,13 @@ Entities
 - The player is not an entity. A trigger or a button the player sets off is its own activator.
 - Entity motion counts ticks. World time is a float sum and drifts.
 
+Icons
+
+- An entity class names its icon in `[SpectraEntity(Icon = "door")]`. The name travels in the `.sentdef` and becomes the file `IconEntity` plus the name in Pascal case. `WorldIcons` in `SpectraEngine.Editing` is the one place that rule is written.
+- The 3D view and the shell draw the same file from `SpectraEngine.Editing/Assets/Icons`. Never copy one into the editor's folder and never draw an entity or a light in code.
+- `SpectraEngine.Editor/Assets/Icons/tabler.py` is the only way a Tabler glyph gets into either folder. Its tables say which Tabler icon each file is. It fetches from the network when it runs.
+- In the shell only `Shell/EditorIcons.cs` names the icon or tint of an entity, a light or a file. Every surface asks it.
+
 Sound
 
 - What is playing lives in the simulation (`EntityWorld.Sounds`) and is counted in ticks. A sound's end and its markers never come from the audio device.
@@ -188,6 +195,7 @@ Host
 - Apply every published `FrameSnapshot`. The scene changes and console lines in one are sent once, so sampling the newest loses the rest.
 - A scene event handler must not change the graph. Neither must an `IEntityTrace`: it runs inside the dispatch.
 - The entity world has one trace slot. `ent_watch` and the Logic view share it through `EntityTracePair.Join`. Set `SceneManager.EntityTrace` to one of them and the other goes quiet.
+- The scene tree learns what a node is, its entity class and its kind of light from a `SceneChange` and nowhere else. The node's setters raise `Scene.NodeKindChanged`. A light edited in place raises nothing, so whoever changes its kind calls `Scene.NotifyNodeKindChanged`, or the row keeps its old icon.
 - The engine publishes a level's wiring (`FrameSnapshot.LogicGraph`) only while a view asks for it through `EngineHost.RequestLogicView`. A new session has been asked for nothing.
 - A member or namespace named `Console` hides `System.Console` for the whole file.
 
@@ -212,6 +220,7 @@ Entities and play
 
 - A new built-in class goes into `BuiltinEntities.Schemas` and `ClassCount`. Left out of both, it works until a trimmed build drops it, and then every map naming it loads a placeholder.
 - The entity generator reads only the members a class declares itself. A keyvalue on a base class binds nothing.
+- An `Icon` name with no file draws the plain entity icon and warns nobody. `IconDriftConventionTests` catches it for the built-in classes only.
 - `MapSceneBinder.FromScene` builds fresh nodes. A node member it does not copy is deleted by the next save.
 - A default `SceneQueryFilter` wants `CanQuery`, which a trigger has off.
 - A wire's input name is case sensitive, and a wrong one is only a Debug log line. `ent_watch` shows it as `deny`.
