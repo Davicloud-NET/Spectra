@@ -49,7 +49,7 @@ public sealed class IconDriftConventionTests
             }
         }
 
-        examined.ShouldBeGreaterThan(100, "the shell's sources should have been read, not silently skipped");
+        examined.ShouldBeGreaterThan(100, "the shell's sources should have been read, not skipped");
         offenders.ShouldBeEmpty(
             "ask EditorIcons what icon a thing has. A key spelled anywhere else is a second answer to the same question");
     }
@@ -72,7 +72,7 @@ public sealed class IconDriftConventionTests
         foreach ((string table, Dictionary<string, string> rows) in tables)
         {
             string folder = table == "WORLD" ? IconFiles.WorldFolder : IconFiles.ShellFolder;
-            rows.Count.ShouldBeGreaterThan(8, $"{table} should have been read, not silently skipped");
+            rows.Count.ShouldBeGreaterThan(8, $"{table} should have been read, not skipped");
 
             foreach ((string key, string tabler) in rows)
             {
@@ -116,7 +116,7 @@ public sealed class IconDriftConventionTests
             }
         }
 
-        noted.ShouldBeGreaterThan(50, "the Tabler files should have been read, not silently skipped");
+        noted.ShouldBeGreaterThan(50, "the Tabler files should have been read, not skipped");
         strays.ShouldBeEmpty("a Tabler file gets in through tabler.py and no other way");
     }
 
