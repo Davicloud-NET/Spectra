@@ -28,6 +28,21 @@ public sealed unsafe class LuauLibraryTests
         revision.ShouldBe(Shim.Revision);
     }
 
+    // Each is a way the library fails to load, and none may end Play.
+    [Fact]
+    public void A_library_that_cannot_be_loaded_is_a_problem_with_the_way_to_build_it_and_no_exception()
+    {
+        string?[] problems =
+        [
+            LuauLibrary.Check(() => throw new DllNotFoundException()),
+            LuauLibrary.Check(() => throw new EntryPointNotFoundException("sl_constant")),
+            LuauLibrary.Check(() => throw new BadImageFormatException()),
+        ];
+
+        problems.ShouldAllBe(problem => problem != null && problem.Contains("native/build-luau.ps1"));
+        problems.Distinct().Count().ShouldBe(3);
+    }
+
     // The check compares by name. A library that answered for any name would
     // make it pass whatever the binding asked.
     [Fact]

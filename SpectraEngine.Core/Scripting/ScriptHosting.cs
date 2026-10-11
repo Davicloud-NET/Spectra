@@ -17,7 +17,8 @@ public sealed class ScriptHosting
     /// <summary>
     /// Makes the runtime for a level that is about to play. Null plays every
     /// level without its scripts. It throws <see cref="InvalidOperationException"/>
-    /// when scripts cannot run here, with the reason as the message.
+    /// when scripts cannot run here, with the reason as the message. Whatever
+    /// it throws, the level plays without its scripts and the log says why.
     /// </summary>
     public Func<ScriptRuntimeSetup, IScriptRuntime>? RuntimeFactory { get; set; }
 
@@ -46,6 +47,10 @@ public sealed class ScriptHosting
         catch (InvalidOperationException e)
         {
             return SayScriptsAreOff(logger, scripts, e.Message);
+        }
+        catch (Exception e) // boundary: a level plays without its scripts sooner than not at all
+        {
+            return SayScriptsAreOff(logger, scripts, $"The script runtime could not be made: {e.Message}");
         }
     }
 

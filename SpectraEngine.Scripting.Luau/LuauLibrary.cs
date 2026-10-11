@@ -86,13 +86,14 @@ public static unsafe class LuauLibrary
     /// there and was built from the Luau release this binding was written for.
     /// A host asks before it opens a state.
     /// </summary>
-    public static string? FindProblem() => (_answer ??= new Answer(Check())).Problem;
+    public static string? FindProblem() => (_answer ??= new Answer(Check(FindMismatches))).Problem;
 
-    private static string? Check()
+    // The probe is handed in, so a test can make it fail the ways a load does.
+    internal static string? Check(Func<string> probe)
     {
         try
         {
-            string mismatches = FindMismatches();
+            string mismatches = probe();
             return mismatches.Length == 0
                 ? null
                 : $"The Luau library does not match the binding:{mismatches} {HowToBuild}";
@@ -104,6 +105,11 @@ public static unsafe class LuauLibrary
         catch (EntryPointNotFoundException e)
         {
             return $"The Luau library is from another build: {e.Message} {HowToBuild}";
+        }
+        catch (BadImageFormatException)
+        {
+            return $"The Luau library ({Lua.Library}) was built for another kind of processor than this " +
+                $"program runs on. {HowToBuild}";
         }
     }
 

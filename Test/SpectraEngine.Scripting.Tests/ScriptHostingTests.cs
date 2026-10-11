@@ -45,6 +45,21 @@ public sealed class ScriptHostingTests
         said.ShouldContain("1 script(s)");
     }
 
+    // What a library built for another kind of processor throws when it loads.
+    [Fact]
+    public void A_factory_that_fails_some_other_way_still_lets_the_level_play_without_its_scripts()
+    {
+        var hosting = new ScriptHosting { RuntimeFactory = _ => throw new BadImageFormatException("not for this machine") };
+        var logger = new CapturingLogger();
+
+        hosting.CreateRuntime(LevelWithScripts(1), null, logger).ShouldBeNull();
+        hosting.CreateRuntime(LevelWithScripts(1), null, logger).ShouldBeNull();
+
+        string said = logger.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem();
+        said.ShouldContain("1 script(s)");
+        said.ShouldContain("not for this machine");
+    }
+
     [Fact]
     public void A_level_with_no_script_asks_for_no_runtime_and_says_nothing()
     {
@@ -110,6 +125,24 @@ public sealed class ScriptHostingTests
             (LogLevel.Error, "Scripts/door.luau:12: it broke"),
             (LogLevel.Error, "    Scripts/door.luau:30"),
             (LogLevel.Error, "no place"),
+        ]);
+    }
+
+    [Fact]
+    public void The_console_sink_shows_the_frame_that_raised_when_the_line_names_its_caller()
+    {
+        var output = new ConsoleOutput();
+        var sink = new ConsoleScriptSink(output);
+        ScriptFrame[] stack = [new("Scripts/door.luau", 12, "open"), new("Scripts/door.luau", 30, null)];
+
+        // What error(message, 2) gives: the position is the caller's.
+        sink.Report(new ScriptMessage(ScriptSeverity.Error, "no such door", "Scripts/door.luau", 30, stack));
+
+        output.Drain().Select(line => line.Text).ShouldBe(
+        [
+            "Scripts/door.luau:30: no such door",
+            "    Scripts/door.luau:12 in open",
+            "    Scripts/door.luau:30",
         ]);
     }
 

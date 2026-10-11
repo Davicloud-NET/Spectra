@@ -1,5 +1,6 @@
 using SpectraEngine.Core.ConsoleSystem;
 using System;
+using System.Collections.Generic;
 
 namespace SpectraEngine.Core.Scripting;
 
@@ -23,9 +24,13 @@ public sealed class ConsoleScriptSink : IScriptSink
     {
         Write(message.Severity, Describe(in message));
 
-        // The first frame is the position the line already names.
-        for (int i = 1; i < message.Stack.Count; i++)
-            Write(message.Severity, Describe(message.Stack[i]));
+        // The line most often names the first frame's position already. After
+        // error(message, 2) it names the caller's, and the frame that raised
+        // is still to be shown.
+        IReadOnlyList<ScriptFrame> stack = message.Stack;
+        bool isFirstNamed = stack.Count > 0 && stack[0].Script == message.Script && stack[0].Line == message.Line;
+        for (int i = isFirstNamed ? 1 : 0; i < stack.Count; i++)
+            Write(message.Severity, Describe(stack[i]));
     }
 
     /// <summary>The message as one line: <c>Scripts/door.luau:12: the text</c>.</summary>
