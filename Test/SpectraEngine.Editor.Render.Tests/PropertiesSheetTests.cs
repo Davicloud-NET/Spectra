@@ -2,16 +2,18 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Inspection;
+using SpectraEngine.Core.Scene;
 using SpectraEngine.Editor.Shell;
 
 namespace SpectraEngine.Editor.Render.Tests;
 
 /// <summary>
-/// Rasterises the property panel's wiring sections so a person can look at
-/// them: Now, Sends and Receives for one entity.
+/// Rasterises the property panel's sections so a person can look at them: Now,
+/// Sends and Receives for one entity, and the rows of a script.
 /// </summary>
 [Collection(RibbonSessionCollection.Name)]
 public sealed class PropertiesSheetTests(RibbonSession session)
@@ -64,4 +66,35 @@ public sealed class PropertiesSheetTests(RibbonSession session)
             window.Close();
         });
     }
+
+    [Fact]
+    public void A_script_nodes_rows_rasterise_into_a_sheet()
+    {
+        session.On(() =>
+        {
+            const string File = "Scripts/Doors/vault_door.luau";
+            var node = new SceneNode("Opener") { Script = new Script(File) { IsModule = true } };
+
+            (Window window, PropertiesPanel panel, _) =
+                PropertyLabelFixture.Open(PropertyLabelFixture.UsualWidth, node);
+
+            // The kind word in the header, the file in a box, a checkbox for each switch.
+            Shown<TextBlock>(panel).ShouldContain(text => text.Text == "Script" && text.FontSize < 12);
+            Shown<TextBox>(panel).Count(box => box.Text == File).ShouldBe(1);
+            Shown<CheckBox>(panel).Select(box => box.IsChecked).ShouldBe([true, true]);
+
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+            WriteableBitmap frame = window.GetLastRenderedFrame().ShouldNotBeNull();
+
+            Directory.CreateDirectory(RibbonSheetTests.OutputDirectory);
+            frame.Save(
+                Path.Combine(RibbonSheetTests.OutputDirectory, "properties-script@2x.png"),
+                new PngBitmapEncoderOptions());
+
+            window.Close();
+        });
+    }
+
+    private static T[] Shown<T>(PropertiesPanel panel) where T : Control =>
+        [.. panel.GetVisualDescendants().OfType<T>().Where(control => control.IsEffectivelyVisible)];
 }
