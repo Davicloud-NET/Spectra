@@ -1,0 +1,31 @@
+# The native Luau libraries, for every job that runs or links Luau. Needs the
+# external/luau submodule checked out.
+
+name: Luau
+description: Builds Luau and its shim, or takes them from the cache.
+
+runs:
+  using: composite
+  steps:
+    - name: Find the Luau pin
+      id: pin
+      shell: bash
+      run: echo "commit=$(git rev-parse HEAD:external/luau)" >> "$GITHUB_OUTPUT"
+
+    # The key moves only with the pin, the shim or a build script.
+    - name: Restore the Luau libraries
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: native/runtimes
+        key: luau-${{ runner.os }}-${{ steps.pin.outputs.commit }}-${{ hashFiles('native/luau/**', 'native/build-luau.ps1', 'native/build-luau.sh') }}
+
+    - name: Build Luau (Windows)
+      if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Windows'
+      shell: pwsh
+      run: native/build-luau.ps1
+
+    - name: Build Luau (Linux)
+      if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Linux'
+      shell: bash
+      run: bash native/build-luau.sh

@@ -6,6 +6,8 @@ namespace SpectraEngine.Scripting.Tests;
 /// The cases that only a native build can decide, run from the published
 /// console. They skip until it has been published.
 /// </summary>
+// CI runs this group by its trait, in the jobs that publish the console.
+[Trait("Suite", "CrashCases")]
 public sealed class CrashCaseTests
 {
     [Fact]
