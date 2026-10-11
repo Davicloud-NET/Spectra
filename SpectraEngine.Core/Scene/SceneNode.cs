@@ -398,8 +398,9 @@ public class SceneNode
     /// <summary>
     /// The node's position and rotation in the world. The position is
     /// <see cref="WorldPosition"/>. The rotation is the node's and its
-    /// ancestors' rotations composed, with their scale left out. Setting it
-    /// solves the local transform under the parent and keeps the scale.
+    /// ancestors' rotations composed, with their scale left out, a mirror
+    /// too. Setting it solves the local transform under the parent and keeps
+    /// the scale.
     /// </summary>
     public CFrame CFrame
     {

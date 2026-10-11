@@ -337,6 +337,39 @@ public sealed class SceneNodeCFrameTests
         child.CFrame.ShouldBeNear(new CFrame(13f, 7f, 9f) * CFrame.Angles(0f, 0.6f, 0f));
     }
 
+    // No frame can hold a mirror, so the world frame leaves it out like any
+    // other scale. The node's own -Z then points away from LookVector.
+    [Fact]
+    public void Under_a_mirrored_parent_the_rotation_leaves_the_mirror_out()
+    {
+        var (_, parent, child) = ParentAndChild(new CFrame(1f, 2f, 3f));
+        parent.LocalScale = new Vector3(-1f, -1f, -1f);
+        child.LocalCFrame = B;
+
+        // (1,2,3) - (4,5,6), with the rotation of B, which is Rx(90).
+        child.CFrame.ShouldHaveComponents(
+            -3, -3, -3,
+            1, 0, 0,
+            0, 0, -1,
+            0, 1, 0);
+        child.CFrame.LookVector.ShouldBeNear(new Vector3(0f, 1f, 0f));
+        Facing(child).ShouldBeNear(new Vector3(0f, -1f, 0f));
+    }
+
+    [Fact]
+    public void Setting_the_world_frame_under_a_mirrored_parent_lands_the_position_and_reads_back_the_frame()
+    {
+        var (_, parent, child) = ParentAndChild(Slanted);
+        parent.LocalScale = new Vector3(-2f, -2f, -2f);
+        CFrame asked = new CFrame(10f, -4f, 2f) * CFrame.Angles(0.2f, 1.3f, -0.4f);
+
+        child.CFrame = asked;
+
+        child.WorldPosition.ShouldBeNear(asked.Position, Loose);
+        child.CFrame.ShouldBeNear(asked, Loose);
+        Facing(child).ShouldBeNear(-asked.LookVector, Loose);
+    }
+
     [Fact]
     public void Setting_the_world_frame_under_a_scaled_parent_lands_the_position_where_asked()
     {
