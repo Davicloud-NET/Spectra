@@ -186,8 +186,7 @@ public static class SvgPathFlattener
 
         private void Arc(Vector2 origin, ref SvgPathReader reader)
         {
-            float radiusX = MathF.Abs(reader.ReadNumber());
-            float radiusY = MathF.Abs(reader.ReadNumber());
+            Vector2 radii = Vector2.Abs(reader.ReadPoint());
             float turn = reader.ReadNumber() * (MathF.PI / 180f);
             bool large = reader.ReadFlag();
             bool sweep = reader.ReadFlag();
@@ -196,13 +195,13 @@ public static class SvgPathFlattener
             if (to == _current)
                 return;
 
-            if (radiusX < 1e-6f || radiusY < 1e-6f)
+            if (radii.X < 1e-6f || radii.Y < 1e-6f)
             {
                 LineTo(to);
                 return;
             }
 
-            var arc = SvgArc.Between(_current, to, radiusX, radiusY, turn, large, sweep);
+            var arc = SvgArc.Between(_current, to, radii, turn, (large, sweep));
 
             // The angle whose chord sags by the tolerance on the larger radius.
             double sag = Math.Min(tolerance / Math.Max(arc.RadiusX, arc.RadiusY), 1.0);

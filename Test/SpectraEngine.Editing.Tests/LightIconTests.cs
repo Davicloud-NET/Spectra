@@ -76,7 +76,7 @@ public sealed class LightIconTests
         ViewportHarness spots = Fixture();
         AddLight(spots, LightKind.Spot, Vector3.Zero);
 
-        DebugLines.Coloured(Draw(suns), Warm).ShouldNotBe(DebugLines.Coloured(Draw(spots), Warm));
+        DebugLines.Colored(Draw(suns), Warm).ShouldNotBe(DebugLines.Colored(Draw(spots), Warm));
     }
 
     [Theory]
@@ -95,7 +95,7 @@ public sealed class LightIconTests
             lamp.LocalRotation = Light.RotationForDirection(forward);
 
             Vector3 tip = Vector3.Zero;
-            foreach (Vector3 vertex in DebugLines.Coloured(Draw(harness), Warm))
+            foreach (Vector3 vertex in DebugLines.Colored(Draw(harness), Warm))
             {
                 if (vertex.LengthSquared() > tip.LengthSquared())
                     tip = vertex;
@@ -157,7 +157,7 @@ public sealed class LightIconTests
         int icon = Draw(harness).VertexCount;
 
         harness.Scene.Selection.Add(lamp);
-        List<Vector3> drawn = DebugLines.Coloured(Draw(harness), Warm);
+        List<Vector3> drawn = DebugLines.Colored(Draw(harness), Warm);
 
         Draw(harness).VertexCount.ShouldBeGreaterThan(icon);
         drawn.ShouldContain(vertex => MathF.Abs(vertex.Length() - 3f) < 1e-3f);

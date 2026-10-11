@@ -224,7 +224,7 @@ public sealed class EntityMarkerTests
         overlay.DrawnLastDraw.ShouldBe(1);
         CountOf(output, Plain).ShouldBeGreaterThan(0);
 
-        foreach (Vector3 vertex in Coloured(output, Plain))
+        foreach (Vector3 vertex in Colored(output, Plain))
             vertex.X.ShouldBeLessThan(0f);
     }
 
@@ -415,7 +415,7 @@ public sealed class EntityMarkerTests
         float reach = 0f;
 
         // Others' markers are further off than any arrow reaches.
-        foreach (Vector3 vertex in Coloured(output, Plain))
+        foreach (Vector3 vertex in Colored(output, Plain))
         {
             float distance = Vector3.Distance(vertex, at);
             if (distance < radius * 3f)
@@ -428,7 +428,7 @@ public sealed class EntityMarkerTests
     private static Vector3 Farthest(DebugDraw output, Vector3 color, Vector3 from)
     {
         Vector3 farthest = from;
-        foreach (Vector3 vertex in Coloured(output, color))
+        foreach (Vector3 vertex in Colored(output, color))
         {
             if (Vector3.DistanceSquared(vertex, from) > Vector3.DistanceSquared(farthest, from))
                 farthest = vertex;
@@ -438,7 +438,7 @@ public sealed class EntityMarkerTests
     }
 
     // Six floats per vertex: position, then colour.
-    private static List<Vector3> Coloured(DebugDraw output, Vector3 color)
+    private static List<Vector3> Colored(DebugDraw output, Vector3 color)
     {
         ReadOnlySpan<float> data = output.Vertices;
         var positions = new List<Vector3>();
@@ -451,5 +451,5 @@ public sealed class EntityMarkerTests
         return positions;
     }
 
-    private static int CountOf(DebugDraw output, Vector3 color) => Coloured(output, color).Count;
+    private static int CountOf(DebugDraw output, Vector3 color) => Colored(output, color).Count;
 }

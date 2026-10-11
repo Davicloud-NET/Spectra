@@ -45,21 +45,23 @@ public enum SceneChangeKind
 /// it has no parent.
 /// </param>
 /// <param name="NodeKind">What the node is, derived from its payloads at the moment of the change.</param>
-/// <param name="EntityClass">
-/// The node's entity class as the map spells it, or empty when it carries no
-/// entity. A brush that carries one is still a brush in <paramref name="NodeKind"/>.
-/// </param>
-/// <param name="LightKind">The node's kind of light, or null when it carries none.</param>
 public readonly record struct SceneChange(
     SceneChangeKind Kind,
     Guid NodeId,
     Guid ParentId,
     string Name,
     int SiblingIndex,
-    SceneNodeKind NodeKind = SceneNodeKind.Empty,
-    string EntityClass = "",
-    LightKind? LightKind = null)
+    SceneNodeKind NodeKind = SceneNodeKind.Empty)
 {
+    /// <summary>
+    /// The node's entity class as the map spells it, or null when it carries no
+    /// entity. A brush that carries one is still a brush in <see cref="NodeKind"/>.
+    /// </summary>
+    public string? EntityClass { get; init; }
+
+    /// <summary>The node's kind of light, or null when it carries none.</summary>
+    public LightKind? LightKind { get; init; }
+
     /// <summary>
     /// The change that says <paramref name="node"/> is as it is now. Render
     /// thread only: it reads a live node.
@@ -68,14 +70,13 @@ public readonly record struct SceneChange(
     {
         ArgumentNullException.ThrowIfNull(node);
 
-        return new SceneChange(
-            kind,
-            node.Id,
-            node.Parent?.Id ?? Guid.Empty,
-            node.Name,
-            node.IndexInParent,
-            SceneNodeClassifier.Classify(node),
-            node.Entity?.ClassName ?? string.Empty,
-            node.Light?.Kind);
+        Guid parent = node.Parent?.Id ?? Guid.Empty;
+        SceneNodeKind what = SceneNodeClassifier.Classify(node);
+
+        return new SceneChange(kind, node.Id, parent, node.Name, node.IndexInParent, what)
+        {
+            EntityClass = node.Entity?.ClassName,
+            LightKind = node.Light?.Kind,
+        };
     }
 }

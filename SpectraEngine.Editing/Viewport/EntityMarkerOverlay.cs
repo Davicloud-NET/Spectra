@@ -167,12 +167,12 @@ public sealed class EntityMarkerOverlay
             float small = pen.Radius * 0.8f;
             if (pen.Backing)
             {
-                ThinDiamond(output, in pen, small + pen.Pixel, IconPen.BackingColour);
+                ThinDiamond(output, in pen, small + pen.Pixel, IconPen.BackingColor);
             }
             else
             {
-                ThinDiamond(output, in pen, small, pen.Colour);
-                ThinDiamond(output, in pen, small - pen.Pixel, pen.Colour);
+                ThinDiamond(output, in pen, small, pen.Color);
+                ThinDiamond(output, in pen, small - pen.Pixel, pen.Color);
             }
 
             return;
@@ -192,15 +192,15 @@ public sealed class EntityMarkerOverlay
         return forward.LengthSquared() > 1e-12f ? Vector3.Normalize(forward) : Vector3.UnitZ;
     }
 
-    private static void ThinDiamond(DebugDraw output, in IconPen pen, float radius, Vector3 colour)
+    private static void ThinDiamond(DebugDraw output, in IconPen pen, float radius, Vector3 color)
     {
         Vector3 across = pen.Right * radius;
         Vector3 along = pen.Up * radius;
 
-        output.Line(pen.At + across, pen.At + along, colour);
-        output.Line(pen.At + along, pen.At - across, colour);
-        output.Line(pen.At - across, pen.At - along, colour);
-        output.Line(pen.At - along, pen.At + across, colour);
+        output.Line(pen.At + across, pen.At + along, color);
+        output.Line(pen.At + along, pen.At - across, color);
+        output.Line(pen.At - across, pen.At - along, color);
+        output.Line(pen.At - along, pen.At + across, color);
     }
 
     // One marker of this frame: which node, how big, and whether it is near

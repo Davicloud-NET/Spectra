@@ -85,8 +85,8 @@ public sealed class EntityMarkerIconTests
         ViewportHarness relays = Fixture();
         Add(relays, Relay, Vector3.Zero);
 
-        List<Vector3> sound = DebugLines.Coloured(Draw(sounds), EntityGroupTints.For("Sound"));
-        List<Vector3> relay = DebugLines.Coloured(Draw(relays), EntityGroupTints.For("Logic"));
+        List<Vector3> sound = DebugLines.Colored(Draw(sounds), EntityGroupTints.For("Sound"));
+        List<Vector3> relay = DebugLines.Colored(Draw(relays), EntityGroupTints.For("Logic"));
 
         sound.ShouldNotBeEmpty();
         relay.ShouldNotBeEmpty();
@@ -175,7 +175,7 @@ public sealed class EntityMarkerIconTests
         harness.Orbit(Vector3.Zero, 12f, 0.9f, -0.6f);
         SceneNode relay = Add(harness, Relay, Vector3.Zero);
 
-        List<Vector3> drawn = DebugLines.Coloured(Draw(harness), EntityGroupTints.For("Logic"));
+        List<Vector3> drawn = DebugLines.Colored(Draw(harness), EntityGroupTints.For("Logic"));
 
         drawn.ShouldNotBeEmpty();
         foreach (Vector3 vertex in drawn)
@@ -191,7 +191,7 @@ public sealed class EntityMarkerIconTests
         SceneNode relay = Add(harness, Relay, new Vector3(1f, 2f, 0f));
         Camera camera = harness.Scene.Camera;
 
-        List<Vector3> drawn = DebugLines.Coloured(Draw(harness), EntityGroupTints.For("Logic"));
+        List<Vector3> drawn = DebugLines.Colored(Draw(harness), EntityGroupTints.For("Logic"));
 
         Vector3 middle = Vector3.Zero;
         foreach (Vector3 vertex in drawn)
@@ -225,7 +225,7 @@ public sealed class EntityMarkerIconTests
             nodes.Add(Add(harness, Relay, new Vector3((i - 2.5f) * 2f, 0f, -i)));
 
         var overlay = new EntityMarkerOverlay { MaxIcons = 2 };
-        List<Vector3> drawn = DebugLines.Coloured(Draw(harness, overlay), EntityGroupTints.For("Logic"));
+        List<Vector3> drawn = DebugLines.Colored(Draw(harness, overlay), EntityGroupTints.For("Logic"));
 
         overlay.DrawnLastDraw.ShouldBe(6);
         overlay.IconsLastDraw.ShouldBe(2);

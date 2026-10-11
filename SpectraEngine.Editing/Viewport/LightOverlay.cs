@@ -90,7 +90,7 @@ public sealed class LightOverlay
             if (!LightPicking.TryMeasure(camera, viewportSize, at, out float radius, out float pixel))
                 continue;
 
-            var pen = new IconPen(camera, at, radius, pixel, IconColour(light));
+            var pen = new IconPen(camera, at, radius, pixel, IconColor(light));
             bool detailed = radius >= DetailPixels * pixel;
 
             // Every backing line first, or one stroke's backing crosses out
@@ -115,7 +115,7 @@ public sealed class LightOverlay
 
     // The light's hue at full strength, so a dim lamp still shows its colour.
     // Grey when switched off.
-    private static Vector3 IconColour(Light light)
+    private static Vector3 IconColor(Light light)
     {
         if (!light.Enabled)
             return new Vector3(DisabledDim);
@@ -132,12 +132,12 @@ public sealed class LightOverlay
             float ring = pen.Radius * 0.8f;
             if (pen.Backing)
             {
-                pen.ThinRing(output, ring + pen.Pixel, IconPen.BackingColour);
+                pen.ThinRing(output, ring + pen.Pixel, IconPen.BackingColor);
             }
             else
             {
-                pen.ThinRing(output, ring, pen.Colour);
-                pen.ThinRing(output, ring - pen.Pixel, pen.Colour);
+                pen.ThinRing(output, ring, pen.Color);
+                pen.ThinRing(output, ring - pen.Pixel, pen.Color);
             }
 
             return;

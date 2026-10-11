@@ -64,7 +64,7 @@ public sealed class EntityDistanceOverlay
     private void DrawDistances(DebugDraw output, Vector3 at, EntityData entity, EntitySchema schema)
     {
         IReadOnlyList<KeyvalueDescriptor> declared = schema.Keyvalues;
-        Vector3 colour = EntityGroupTints.For(schema.Group);
+        Vector3 color = EntityGroupTints.For(schema.Group);
 
         // Read twice: the smallest has to be known before any is coloured.
         float smallest = float.PositiveInfinity;
@@ -85,7 +85,7 @@ public sealed class EntityDistanceOverlay
                 continue;
             }
 
-            WireRing.Sphere(output, at, radius, radius > smallest ? colour * OuterDim : colour);
+            WireRing.Sphere(output, at, radius, radius > smallest ? color * OuterDim : color);
             DrawnLastDraw++;
         }
     }

@@ -43,9 +43,9 @@ public sealed class SceneKindChangeTests
         changes[0].EntityClass.ShouldBe("func_door");
         changes[0].LightKind.ShouldBeNull();
         changes[1].NodeKind.ShouldBe(SceneNodeKind.Light);
-        changes[1].EntityClass.ShouldBe("");
+        changes[1].EntityClass.ShouldBeNull();
         changes[1].LightKind.ShouldBe(LightKind.Directional);
-        changes[2].EntityClass.ShouldBe("");
+        changes[2].EntityClass.ShouldBeNull();
         changes[2].LightKind.ShouldBeNull();
     }
 
@@ -65,6 +65,18 @@ public sealed class SceneKindChangeTests
         made.NodeKind.ShouldBe(SceneNodeKind.BrushPart);
 
         slab.Entity = null;
+        Only(log).EntityClass.ShouldBeNull();
+    }
+
+    [Fact]
+    public void An_entity_with_no_class_yet_is_told_apart_from_no_entity()
+    {
+        (Scene scene, SceneChangeLog log) = Observed();
+        SceneNode node = scene.Root.AddChild(new SceneNode("Blank"));
+        log.Drain();
+
+        node.Entity = new EntityData();
+
         Only(log).EntityClass.ShouldBe("");
     }
 

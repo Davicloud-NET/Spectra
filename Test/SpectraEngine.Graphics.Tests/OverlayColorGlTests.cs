@@ -14,7 +14,7 @@ namespace SpectraEngine.Graphics.Tests;
 // The 3D view draws an entity's icon in its group's tint this way, and the
 // tint has to come out as the shell shows it.
 [Collection(GlRendererCollection.Name)]
-public sealed class OverlayColourGlTests
+public sealed class OverlayColorGlTests
 {
     private const int Size = 64;
 
@@ -23,7 +23,7 @@ public sealed class OverlayColourGlTests
 
     private readonly GlRendererFixture _fixture;
 
-    public OverlayColourGlTests(GlRendererFixture fixture) => _fixture = fixture;
+    public OverlayColorGlTests(GlRendererFixture fixture) => _fixture = fixture;
 
     [Fact]
     public void A_line_given_a_theme_colours_linear_value_shows_as_that_colour()
@@ -50,7 +50,7 @@ public sealed class OverlayColourGlTests
     // Lines through the middle of the view, drawn over a resolved frame into a
     // target that encodes as the window and the editor's viewport do. The
     // middle pixel, read back.
-    private (byte R, byte G, byte B) DrawAcrossTheMiddle(Vector3 colour)
+    private (byte R, byte G, byte B) DrawAcrossTheMiddle(Vector3 color)
     {
         OpenGLRenderer renderer = _fixture.Renderer;
         RenderTarget output = renderer.CreateRenderTarget(
@@ -72,7 +72,7 @@ public sealed class OverlayColourGlTests
             for (int i = -6; i <= 6; i++)
             {
                 float y = i * 0.02f;
-                renderer.DebugDraw.Line(new Vector3(-1f, y, 0f), new Vector3(1f, y, 0f), colour);
+                renderer.DebugDraw.Line(new Vector3(-1f, y, 0f), new Vector3(1f, y, 0f), color);
             }
 
             Texture frame = renderer.SceneTarget.ShouldNotBeNull().ColorTexture.ShouldNotBeNull();

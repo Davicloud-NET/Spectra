@@ -8,10 +8,10 @@ namespace SpectraEngine.Editing.Viewport;
 
 // What a viewport icon is drawn with: the screen plane at the icon, one
 // pixel's world size there, and which of the two passes is running.
-internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Vector3 colour)
+internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Vector3 color)
 {
     // Drawn under each stroke, so an icon reads over sky, floor or a lit wall.
-    public static readonly Vector3 BackingColour = new(0.02f, 0.02f, 0.025f);
+    public static readonly Vector3 BackingColor = new(0.02f, 0.02f, 0.025f);
 
     // Under this radius a stroke is one pixel wide. Two would run together in
     // a drawing this small.
@@ -28,7 +28,7 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
     public readonly Vector3 Toward = Vector3.Normalize(Vector3.Cross(camera.Right, camera.Up));
     public readonly float Radius = radius;
     public readonly float Pixel = pixel;
-    public readonly Vector3 Colour = colour;
+    public readonly Vector3 Color = color;
     public readonly bool IsThin = radius < ThinBelowPixels * pixel;
     public bool Backing;
 
@@ -50,17 +50,17 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
         if (Backing)
         {
             Vector3 beside = across * (IsThin ? 1f : 1.5f);
-            output.Line(a + beside, b + beside, BackingColour);
-            output.Line(a - beside, b - beside, BackingColour);
+            output.Line(a + beside, b + beside, BackingColor);
+            output.Line(a - beside, b - beside, BackingColor);
         }
         else if (IsThin)
         {
-            output.Line(a, b, Colour);
+            output.Line(a, b, Color);
         }
         else
         {
-            output.Line(a + (across * 0.5f), b + (across * 0.5f), Colour);
-            output.Line(a - (across * 0.5f), b - (across * 0.5f), Colour);
+            output.Line(a + (across * 0.5f), b + (across * 0.5f), Color);
+            output.Line(a - (across * 0.5f), b - (across * 0.5f), Color);
         }
     }
 
@@ -104,7 +104,7 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
     }
 
     // A hairline ring facing the screen, for an icon too small for strokes.
-    public readonly void ThinRing(DebugDraw output, float radius, Vector3 colour)
+    public readonly void ThinRing(DebugDraw output, float radius, Vector3 color)
     {
         Vector3 previous = At + (Right * radius);
 
@@ -112,7 +112,7 @@ internal struct IconPen(Camera camera, Vector3 at, float radius, float pixel, Ve
         {
             float angle = i * (MathF.Tau / RingSegments);
             Vector3 current = At + (Right * radius * MathF.Cos(angle)) + (Up * radius * MathF.Sin(angle));
-            output.Line(previous, current, colour);
+            output.Line(previous, current, color);
             previous = current;
         }
     }

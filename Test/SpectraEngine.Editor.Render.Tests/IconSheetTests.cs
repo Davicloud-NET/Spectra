@@ -194,8 +194,12 @@ public sealed class IconSheetTests(RibbonSession session)
             new(SceneChangeKind.Added, root, Guid.Empty, "Level", -1, SceneNodeKind.Group),
         };
 
-        void Add(string name, SceneNodeKind kind, string entityClass = "", LightKind? light = null) => nodes.Add(
-            new SceneChange(SceneChangeKind.Added, Guid.NewGuid(), root, name, nodes.Count - 1, kind, entityClass, light));
+        void Add(string name, SceneNodeKind kind, string? entityClass = null, LightKind? light = null) => nodes.Add(
+            new SceneChange(SceneChangeKind.Added, Guid.NewGuid(), root, name, nodes.Count - 1, kind)
+            {
+                EntityClass = entityClass,
+                LightKind = light,
+            });
 
         Add("Empty", SceneNodeKind.Empty);
         Add("Group", SceneNodeKind.Group);

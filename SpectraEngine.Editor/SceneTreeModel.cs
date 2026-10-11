@@ -70,8 +70,8 @@ public sealed class SceneTreeNode(Guid id, string name) : ObservableObject
         set => Set(ref _kind, value);
     }
 
-    /// <summary>The node's entity class as the map spells it, or empty when it carries none.</summary>
-    public string EntityClass { get; internal set; } = string.Empty;
+    /// <summary>The node's entity class as the map spells it, or null when it carries none.</summary>
+    public string? EntityClass { get; internal set; }
 
     /// <summary>The node's kind of light, or null when it carries none.</summary>
     public LightKind? LightKind { get; internal set; }
