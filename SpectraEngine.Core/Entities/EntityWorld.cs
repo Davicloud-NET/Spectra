@@ -36,10 +36,7 @@ public sealed class EntityWorld
     private readonly HashSet<string> _warnedMissingClasses = new(StringComparer.Ordinal);
     private readonly HashSet<string> _warnedPlaceholderInputs = new(StringComparer.Ordinal);
 
-    private readonly MovedNodeJournal _movedNodes = new();
-
-    // Log a refused move once per node, not once per tick.
-    private readonly HashSet<Guid> _refusedMoveNodes = [];
+    private readonly PlayMoves _moves;
 
     private readonly TickClock _clock = new(PhysicsDefaults.FixedDeltaTime);
 
@@ -66,6 +63,7 @@ public sealed class EntityWorld
         _logger = logger;
         _catalog = catalog ?? EntityCatalog.Shared;
         _dispatcher = new EntityDispatcher(this, logger);
+        _moves = new PlayMoves(logger);
         Touches = new TouchTracker(this);
         Sounds = new SoundEmitters(this);
     }
@@ -215,10 +213,10 @@ public sealed class EntityWorld
     public int TickingEntityCount => _tickingCount;
 
     /// <summary>Nodes that will go back to their authored transform on <see cref="Deactivate"/>.</summary>
-    public int MovedNodeCount => _movedNodes.Count;
+    public int MovedNodeCount => _moves.MovedCount;
 
     /// <summary>How many moves <see cref="SetLocalTransform"/> has refused since <see cref="Activate"/>.</summary>
-    public int RefusedMoveCount { get; private set; }
+    public int RefusedMoveCount => _moves.RefusedCount;
 
     /// <summary>
     /// Builds every entity in the scene and brings it to life, in four phases.
@@ -232,8 +230,7 @@ public sealed class EntityWorld
         _clock.Restart();
         _scriptsStarted = false;
         _tickingCount = 0;
-        RefusedMoveCount = 0;
-        _refusedMoveNodes.Clear();
+        _moves.Begin();
         Touches.Clear();
         Sounds.Clear();
         _dispatcher.Clear();
@@ -301,7 +298,7 @@ public sealed class EntityWorld
 
         // After every OnRemove: an entity being removed must still read the
         // pose it moved to, not the authored one.
-        _movedNodes.Restore();
+        _moves.PutBack();
 
         _scene.NodeAdded -= Sounds.OnNodeAdded;
         _index?.Dispose();
@@ -396,13 +393,10 @@ public sealed class EntityWorld
     /// <exception cref="InvalidOperationException">The world is not active.</exception>
     public bool SetLocalTransform(SceneNode node, in Transform value)
     {
-        if (TrySetLocalTransform(node, in value, out string? refusal))
-            return true;
+        ArgumentNullException.ThrowIfNull(node);
+        ThrowIfStopped(nameof(SetLocalTransform));
 
-        if (_refusedMoveNodes.Add(node.Id))
-            _logger.LogError("An entity tried to move '{NodeName}' and was refused: {Why}.", node.Name, refusal);
-
-        return false;
+        return _moves.Move(node, in value);
     }
 
     /// <summary>
@@ -416,16 +410,7 @@ public sealed class EntityWorld
         ArgumentNullException.ThrowIfNull(node);
         ThrowIfStopped(nameof(SetLocalTransform));
 
-        refusal = FindMoveRefusal(node, in value);
-        if (refusal is not null)
-        {
-            RefusedMoveCount++;
-            return false;
-        }
-
-        _movedNodes.Record(node);
-        node.LocalTransform = value;
-        return true;
+        return _moves.TryMove(node, in value, out refusal);
     }
 
     /// <summary>
@@ -566,25 +551,6 @@ public sealed class EntityWorld
     {
         if (!IsRunningEntities)
             throw new InvalidOperationException($"{call} on an entity world that is not active.");
-    }
-
-    private static string? FindMoveRefusal(SceneNode node, in Transform value)
-    {
-        // A moving world brush recompiles the level every tick, and the
-        // picture stays right while it does.
-        if (node.SubtreeStaticWorldBrushCount > 0)
-        {
-            return "a world brush sits at or below it, and only parts can move while a level plays. " +
-                "Convert the brush to a part";
-        }
-
-        if (node.SubtreeBrushCount > 0 && value.Scale != node.LocalScale)
-        {
-            return "the move changes its scale, and a node cannot scale a brush at or below it. " +
-                "Resize the brush instead";
-        }
-
-        return null;
     }
 
     internal void ReportRefusedKeyvalue(Entity entity, string key, string value) =>

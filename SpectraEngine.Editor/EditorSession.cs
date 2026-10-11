@@ -51,19 +51,7 @@ public sealed class EditorSession : IDisposable
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<EditorSession>();
 
-        var shaderCompiler = new SpectraShadeCompiler();
-        _renderer = backend switch
-        {
-            GraphicsBackend.D3D11 => new D3D11Renderer(loggerFactory.CreateLogger<D3D11Renderer>(), shaderCompiler),
-            GraphicsBackend.D3D12 => new D3D12Renderer(loggerFactory.CreateLogger<D3D12Renderer>(), shaderCompiler),
-            _ => throw new NotSupportedException(
-                $"The editor viewport cannot host {backend} yet: an embedded OpenGL surface needs its own " +
-                "WGL context and proc-address loader, which is not built. Use d3d11 or d3d12."),
-        };
-
-        // Uncapped, the viewport presents thousands of frames a second and the
-        // gen0 pauses stall the UI thread too.
-        _renderer.VSync = true;
+        _renderer = CreateRenderer(loggerFactory, backend);
 
         // Schemas go through .sentdef bytes, never straight from EntityCatalog:
         // the editor must read the same thing whether a class came from C# or
@@ -571,4 +559,22 @@ public sealed class EditorSession : IDisposable
 
     /// <inheritdoc/>
     public void Dispose() => Stop();
+
+    private static Renderer CreateRenderer(ILoggerFactory loggerFactory, GraphicsBackend backend)
+    {
+        var shaderCompiler = new SpectraShadeCompiler();
+        Renderer renderer = backend switch
+        {
+            GraphicsBackend.D3D11 => new D3D11Renderer(loggerFactory.CreateLogger<D3D11Renderer>(), shaderCompiler),
+            GraphicsBackend.D3D12 => new D3D12Renderer(loggerFactory.CreateLogger<D3D12Renderer>(), shaderCompiler),
+            _ => throw new NotSupportedException(
+                $"The editor viewport cannot host {backend} yet: an embedded OpenGL surface needs its own " +
+                "WGL context and proc-address loader, which is not built. Use d3d11 or d3d12."),
+        };
+
+        // Uncapped, the viewport presents thousands of frames a second and the
+        // gen0 pauses stall the UI thread too.
+        renderer.VSync = true;
+        return renderer;
+    }
 }
