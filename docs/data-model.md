@@ -74,6 +74,8 @@ Brushes are the authored truth for static world geometry. The carved surfaces, t
 | `LocalPosition` / `LocalRotation` / `LocalScale` | `SceneNode.cs:171` / `:183` / `:195` |
 | `WorldMatrix` (cached) | `SceneNode.cs:225` |
 | `WorldPosition` | `SceneNode.cs:239` |
+| `CFrame` struct: `Position`, `Rotation`, no scale | `SpectraEngine.Core/Scene/CFrame.cs` |
+| `LocalCFrame` / `CFrame` (world) | `SceneNode.cs`, solved in `Scene/WorldFrame.cs` |
 
 **Non-obvious invariants:**
 
@@ -81,6 +83,28 @@ Brushes are the authored truth for static world geometry. The carved surfaces, t
 - **`WorldMatrix` is cached and lazily recomputed** (`SceneNode.cs:229`): `local * Parent.WorldMatrix`. The dirty flag is propagated *eagerly* down the whole subtree by `MarkWorldDirty` (`SceneNode.cs:390`) — cheap for shallow trees, revisit for deep ones.
 - **Brush placements must be rigid.** `Scene.DescribeNonRigidDefect` (`Scene.cs:1409`) rejects a snapshot whose brush node has non-finite elements, projective components, scale, shear, or a reflection, at tolerance `1e-4f` (`Scene.cs:1398`). Rigidity is enforced at the snapshot — the single point where node transforms enter the brush pipeline — not trusted.
 - **Rigidity is a *subtree* property.** A scale written anywhere above a world brush makes that brush's placement non-rigid and rejects the whole snapshot. A tool about to write `LocalScale` must consult `SubtreeBrushCount`, not `node.Brush is not null`. That count covers world brushes and parts alike (§2.4), because node scale is as wrong above a part as above a world brush: `LocalScale` accepts negative components, `Brush.WithScaledExtents` refuses them, and a mirrored brush inverts winding. The snapshot only checks world brushes, so for a part the callers keep the rule. `ScaleGizmo` reads the count, and `EntityWorld.SetLocalTransform` refuses a scale change above any brush. `docs/physics.md` §2.3a.
+
+#### CFrame
+
+A `CFrame` is a position and a unit quaternion. It is the transform a script works with, and every operation on it means what it means in Roblox:
+
+- `a * b` places `b` in the space of `a`. Applied to a point it applies `b` first, then `a`. The engine's matrices go the other way round, `world = local * parent.World`, because they act on row vectors. So `child.CFrame` is `parent.CFrame * child.LocalCFrame`.
+- A frame looks along its own -Z (`LookVector`), with +X right and +Y up. The engine's lights and player starts face +Z. That difference is decided and stays.
+- `Angles(rx, ry, rz)` takes radians and applies the Z turn first: `Rx * Ry * Rz`. `FromOrientation` is `Ry * Rx * Rz`, the same order as `Quaternion.CreateFromYawPitchRoll(ry, rx, rz)` and as `EulerAngles`.
+- `GetComponents` writes the position, then the rotation matrix row by row for column vectors. `ToMatrix` gives the engine's matrix, which holds the same nine numbers transposed.
+- Two frames are equal when all twelve components are, so a quaternion and its negative are one frame. `default(CFrame)` is the identity.
+- A product keeps a rotation that is unit length to within rounding as it is, so `a * CFrame.Identity` changes no bit. One that has drifted past that is renormalized, so a long chain of products stays a rotation.
+
+On a node:
+
+- `LocalCFrame` reads and writes `LocalPosition` and `LocalRotation` and keeps `LocalScale`.
+- `CFrame` is the world frame. Its position is `WorldPosition`. Its rotation is the rotations of the node and its ancestors composed, with scale left out. Under a stretched and turned ancestor the world matrix is sheared and holds no rotation of its own, so this is the one definition that always has an answer.
+- Setting `CFrame` solves the local transform under the parent. The position goes through the inverse of the parent's whole world matrix, so it lands where asked under a scaled ancestor too.
+- Both setters go through `LocalTransform`, so an equal write still changes nothing. A world frame the node already has is not solved at all: the answer would come back a rounding error away and count as a move.
+
+Where Roblox's documentation gives no answer, the engine's is its own and the tests say so: a look along the up vector keeps the right vector on +X, a look at the frame's own position gives no rotation, `FromAxisAngle` takes an axis of any length, `FromMatrix` squares up columns that are not a rotation, and at an Euler pole the Z angle is zero.
+
+The meanings are pinned twice. The tests hold `CFrame` against the rules written out with plain 3 by 3 matrices (`RobloxFrame` in the Bsp tests). And `Test/SpectraEngine.Bsp.Tests/Data/cframe-probe.luau` asks Roblox Studio the same cases: paste it into Studio's command bar, save what it prints beside it as `cframe-studio.json`, and the suite compares every case. Until that file exists those two tests skip.
 
 ### 2.4 Payload bookkeeping
 
@@ -377,6 +401,8 @@ One consequence already written down: instantiating a project template must **re
 | `SceneNode(name, id)` | **Yes** | `Scene/SceneNode.cs` | Resurrect a node under its old identity |
 | `Transform` (pos/rot/scale) | **Yes** | `Scene/Transform.cs` | Local pose; `Model` composes S·R·T |
 | `WorldMatrix` (cached) | **Yes** | `Scene/SceneNode.cs` | Derived world pose; eagerly invalidated down the subtree |
+| `CFrame` (pos/rot, no scale) | **Yes** | `Scene/CFrame.cs` | The transform scripts use, with Roblox's meaning for every operation |
+| `LocalCFrame` / `CFrame` on a node | **Yes** | `Scene/SceneNode.cs`, `Scene/WorldFrame.cs` | Local and world frame, both settable; scale is kept |
 | Transform equality early-out | **Yes** | `Scene/SceneNode.cs` | A no-op write dirties nothing and raises nothing |
 | `SubtreeBrushCount` / `SubtreeStaticWorldBrushCount` | **Yes** | `Scene/SceneNode.cs` | O(1) "does this subtree hold a brush" and "does this edit touch the static world". Two counts, one writer |
 | `Scene` | **Yes** | `Scene/Scene.cs` and the `Scene.*.cs` partials | Owns root, camera, selection, BVH, id index, derived world |
