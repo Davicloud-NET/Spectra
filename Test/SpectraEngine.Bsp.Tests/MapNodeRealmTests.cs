@@ -147,7 +147,8 @@ public sealed class MapNodeRealmTests
         SceneNode vault = loaded.Root.Children[0];
         vault.DeclaredRealm.ShouldBe(NodeRealm.Server);
         vault.DeclaredState.ShouldBe(NodeState.Inherit);
-        vault.Children[0].DeclaredRealm.ShouldBe(NodeRealm.Inherit, "the file states the node's own, never its parent's");
+        vault.Children[0].DeclaredRealm.ShouldBe(
+            NodeRealm.Inherit, "the file states the node's own, never its parent's");
         vault.Children[0].DeclaredState.ShouldBe(NodeState.Dormant);
         loaded.Root.Children[1].DeclaredRealm.ShouldBe(NodeRealm.Client);
         loaded.Root.Children[1].DeclaredState.ShouldBe(NodeState.Active);
