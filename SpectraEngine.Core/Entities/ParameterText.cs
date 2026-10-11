@@ -204,10 +204,10 @@ public static class ParameterText
         return true;
     }
 
-    // The id of no node is not a reference. No reference is no value.
+    // No node never gets here: it is no value, which TryFormat writes as "".
     private static bool TryFormatNode(in ParameterValue value, out string text)
     {
-        bool isNode = value.Kind == ParameterValueKind.NodeId && value.NodeId != Guid.Empty;
+        bool isNode = value.Kind == ParameterValueKind.NodeId;
         text = isNode ? KeyvalueWire.Format(value.NodeId) : "";
         return isNode;
     }

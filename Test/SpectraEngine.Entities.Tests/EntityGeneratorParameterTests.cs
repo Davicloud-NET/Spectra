@@ -16,6 +16,9 @@ public sealed class EntityGeneratorParameterTests
     // wire can carry and cannot see Core's.
     public static TheoryData<KeyvalueType> EveryType => new(Enum.GetValues<KeyvalueType>());
 
+    public static TheoryData<KeyvalueType> EveryCarriedType =>
+        new(Enum.GetValues<KeyvalueType>().Where(ParameterType.CanCarry));
+
     [Theory]
     [MemberData(nameof(EveryType))]
     public void An_input_and_an_output_may_carry_the_types_a_wire_can_and_no_other(KeyvalueType type)
@@ -126,7 +129,7 @@ public sealed class EntityGeneratorParameterTests
     }
 
     [Fact]
-    public void An_output_that_sends_a_number_is_fired_with_the_number_and_writes_it_as_a_keyvalue_would()
+    public void An_output_that_sends_a_number_is_fired_with_the_number_and_hands_it_on_with_its_type()
     {
         GeneratorRun run = GeneratorHarness.Run(Thing(
             "[EntityOutput(Parameter = KeyvalueType.Float)]",
@@ -137,33 +140,41 @@ public sealed class EntityGeneratorParameterTests
         run.CompileErrors().ShouldBeEmpty();
         Compact(run.OnlySource()).ShouldContain(
             $"privatevoidFireOnSet(floatvalue,{Ns}.Entity?activator=null)=>" +
-            $"FireOutput(\"OnSet\",activator,{Ns}.KeyvalueWire.Format(value));");
+            $"FireOutput(\"OnSet\",{Ns}.ParameterType.Of({Ns}.KeyvalueType.Float),{Ns}.ParameterValue.Of(value)," +
+            "activator);");
     }
 
-    [Fact]
-    public void An_output_that_sends_text_sends_it_as_it_is()
+    [Theory]
+    [InlineData(KeyvalueType.String, "string", "context.Parameter")]
+    [InlineData(KeyvalueType.TargetName, "string", "TargetName")]
+    [InlineData(KeyvalueType.NodeRef, "global::System.Guid", "System.Guid.Empty")]
+    [InlineData(KeyvalueType.Color, "global::System.Numerics.Vector3", "System.Numerics.Vector3.One")]
+    [InlineData(KeyvalueType.Int, "int", "3")]
+    [InlineData(KeyvalueType.Bool, "bool", "true")]
+    public void An_output_of_any_type_hands_its_value_on_the_same_way(KeyvalueType type, string held, string value)
     {
         GeneratorRun run = GeneratorHarness.Run(Thing(
-            "[EntityOutput(Parameter = KeyvalueType.String)]",
-            "[EntityInput(\"Set\")]",
-            "FireOnSet(context.Parameter);"));
+            $"[EntityOutput(Parameter = KeyvalueType.{type})]", "[EntityInput(\"Set\")]", $"FireOnSet({value});"));
 
         run.CompileErrors().ShouldBeEmpty();
         Compact(run.OnlySource()).ShouldContain(
-            $"privatevoidFireOnSet(stringvalue,{Ns}.Entity?activator=null)=>FireOutput(\"OnSet\",activator,value);");
+            $"privatevoidFireOnSet({held}value,{Ns}.Entity?activator=null)=>" +
+            $"FireOutput(\"OnSet\",{Ns}.ParameterType.Of({Ns}.KeyvalueType.{type}),{Ns}.ParameterValue.Of(value)," +
+            "activator);");
     }
 
-    [Fact]
-    public void An_output_that_sends_a_node_sends_the_empty_text_for_no_node()
+    [Theory]
+    [MemberData(nameof(EveryCarriedType))]
+    public void A_generated_class_writes_no_wire_text_itself(KeyvalueType type)
     {
-        GeneratorRun run = GeneratorHarness.Run(Thing(
-            "[EntityOutput(Parameter = KeyvalueType.NodeRef)]",
-            "[EntityInput(\"Set\")]",
-            "FireOnSet(System.Guid.Empty);"));
+        // ParameterText is the one writer. A second one here would have its
+        // own answer for no node and for a number that is not finite.
+        string emitted = GeneratorHarness
+            .Run(Thing($"[EntityOutput(Parameter = KeyvalueType.{type})]", "[EntityInput(\"Set\")]", ""))
+            .OnlySource();
 
-        run.CompileErrors().ShouldBeEmpty();
-        Compact(run.OnlySource()).ShouldContain(
-            $"value==global::System.Guid.Empty?\"\":{Ns}.KeyvalueWire.Format(value));");
+        emitted.ShouldNotContain("KeyvalueWire.Format");
+        emitted.ShouldNotContain("Guid.Empty");
     }
 
     [Fact]

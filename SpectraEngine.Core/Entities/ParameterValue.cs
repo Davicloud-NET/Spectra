@@ -84,6 +84,10 @@ public readonly record struct ParameterValue
     public static ParameterValue Of(Vector4 value) =>
         new(ParameterValueKind.Vector, vector: value, vectorSize: 4);
 
-    /// <summary>One node, by its <c>SceneNode.Id</c>.</summary>
-    public static ParameterValue Of(Guid nodeId) => new(ParameterValueKind.NodeId, nodeId: nodeId);
+    /// <summary>
+    /// One node, by its <c>SceneNode.Id</c>. The id of no node is
+    /// <see cref="None"/>, as it is for a keyvalue that names a node.
+    /// </summary>
+    public static ParameterValue Of(Guid nodeId) =>
+        nodeId == Guid.Empty ? None : new(ParameterValueKind.NodeId, nodeId: nodeId);
 }

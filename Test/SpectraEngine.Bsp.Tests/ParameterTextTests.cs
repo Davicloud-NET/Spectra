@@ -192,9 +192,20 @@ public sealed class ParameterTextTests
         Format(type, ParameterValue.None).ShouldBe("");
         Parse(type, "").ShouldBe(ParameterValue.None);
 
-        // The id of no node is not a way to say it.
-        ParameterText.TryFormat(type, ParameterValue.Of(Guid.Empty), out _).ShouldBeFalse();
         ParameterText.TryParse(type, "door1", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_id_of_no_node_is_no_value_as_a_class_holds_it_in_a_keyvalue()
+    {
+        ParameterType type = Of(KeyvalueType.NodeRef);
+
+        ParameterValue.Of(Guid.Empty).ShouldBe(ParameterValue.None);
+        Format(type, ParameterValue.Of(Guid.Empty)).ShouldBe("");
+        Parse(type, "00000000-0000-0000-0000-000000000000").ShouldBe(ParameterValue.None);
+
+        // So it is refused where a value is needed.
+        ParameterText.TryFormat(Of(KeyvalueType.Float), ParameterValue.Of(Guid.Empty), out _).ShouldBeFalse();
     }
 
     [Fact]

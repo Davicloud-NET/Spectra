@@ -156,9 +156,9 @@ internal static class EntityEmitter
         w.Line();
     }
 
-    // An output that sends a value takes it typed and writes it the way a
-    // keyvalue of that type is written. One that sends none has no way to be
-    // handed one, so what the schema says is what the class does.
+    // An output that sends a value takes it typed and hands it to Entity,
+    // where ParameterText writes it. Nothing is converted here, so a wire's
+    // text has one writer.
     private static void EmitOutputs(SourceWriter w, EntityModel model)
     {
         for (int i = 0; i < model.Outputs.Count; i++)
@@ -178,28 +178,23 @@ internal static class EntityEmitter
             KeyvalueBinding.TryGet(parameter, out KeyvalueRow row);
             w.Line("/// <summary>");
             w.Line($"/// Fires <c>{output.Name}</c> along every wire a map authored on it. Each wire sends");
-            w.Line("/// <paramref name=\"value\"/> in place of its own parameter.");
+            w.Line("/// <paramref name=\"value\"/> in place of its own parameter. A value no wire can");
+            w.Line("/// carry fires nothing and is logged.");
             w.Line("/// </summary>");
             w.Line($"private void Fire{output.Name}(");
             w.Indent();
             w.Line($"{row.CSharpType} value,");
             w.Line($"{Ns}.Entity? activator = null) =>");
-            w.Line($"FireOutput({Literal(output.Name)}, activator, {WireForm(row)});");
+            w.Line("FireOutput(");
+            w.Indent();
+            w.Line($"{Literal(output.Name)},");
+            w.Line($"{Ns}.ParameterType.Of({Ns}.KeyvalueType.{row.Name}),");
+            w.Line($"{Ns}.ParameterValue.Of(value),");
+            w.Line("activator);");
+            w.Outdent();
             w.Outdent();
             w.Line();
         }
-    }
-
-    private static string WireForm(KeyvalueRow row)
-    {
-        // The wire form of text is the text.
-        if (row.Reader is null)
-            return "value";
-
-        // No node is the empty string, which Format never writes.
-        return row.Value == KeyvalueBinding.NodeRefValue
-            ? $"value == global::System.Guid.Empty ? \"\" : {Ns}.KeyvalueWire.Format(value)"
-            : $"{Ns}.KeyvalueWire.Format(value)";
     }
 
     private static void EmitSchemaFactory(SourceWriter w, EntityModel model)

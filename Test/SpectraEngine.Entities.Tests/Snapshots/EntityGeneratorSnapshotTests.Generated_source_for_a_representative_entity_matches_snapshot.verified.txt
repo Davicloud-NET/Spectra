@@ -106,30 +106,45 @@ namespace TestGame.Entities
 
         /// <summary>
         /// Fires <c>OnMoved</c> along every wire a map authored on it. Each wire sends
-        /// <paramref name="value"/> in place of its own parameter.
+        /// <paramref name="value"/> in place of its own parameter. A value no wire can
+        /// carry fires nothing and is logged.
         /// </summary>
         private void FireOnMoved(
             float value,
             global::SpectraEngine.Core.Entities.Entity? activator = null) =>
-            FireOutput("OnMoved", activator, global::SpectraEngine.Core.Entities.KeyvalueWire.Format(value));
+            FireOutput(
+                "OnMoved",
+                global::SpectraEngine.Core.Entities.ParameterType.Of(global::SpectraEngine.Core.Entities.KeyvalueType.Float),
+                global::SpectraEngine.Core.Entities.ParameterValue.Of(value),
+                activator);
 
         /// <summary>
         /// Fires <c>OnBlocked</c> along every wire a map authored on it. Each wire sends
-        /// <paramref name="value"/> in place of its own parameter.
+        /// <paramref name="value"/> in place of its own parameter. A value no wire can
+        /// carry fires nothing and is logged.
         /// </summary>
         private void FireOnBlocked(
             string value,
             global::SpectraEngine.Core.Entities.Entity? activator = null) =>
-            FireOutput("OnBlocked", activator, value);
+            FireOutput(
+                "OnBlocked",
+                global::SpectraEngine.Core.Entities.ParameterType.Of(global::SpectraEngine.Core.Entities.KeyvalueType.TargetName),
+                global::SpectraEngine.Core.Entities.ParameterValue.Of(value),
+                activator);
 
         /// <summary>
         /// Fires <c>OnLinked</c> along every wire a map authored on it. Each wire sends
-        /// <paramref name="value"/> in place of its own parameter.
+        /// <paramref name="value"/> in place of its own parameter. A value no wire can
+        /// carry fires nothing and is logged.
         /// </summary>
         private void FireOnLinked(
             global::System.Guid value,
             global::SpectraEngine.Core.Entities.Entity? activator = null) =>
-            FireOutput("OnLinked", activator, value == global::System.Guid.Empty ? "" : global::SpectraEngine.Core.Entities.KeyvalueWire.Format(value));
+            FireOutput(
+                "OnLinked",
+                global::SpectraEngine.Core.Entities.ParameterType.Of(global::SpectraEngine.Core.Entities.KeyvalueType.NodeRef),
+                global::SpectraEngine.Core.Entities.ParameterValue.Of(value),
+                activator);
 
         private static global::SpectraEngine.Core.Entities.EntitySchema CreateSpectraSchema()
         {

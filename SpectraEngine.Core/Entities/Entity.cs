@@ -193,6 +193,48 @@ public abstract class Entity
         return null;
     }
 
+    // The outputs a refused value was logged for. A class that sends one bad
+    // value tends to send it every tick.
+    private HashSet<string>? _refusedOutputs;
+
+    /// <summary>
+    /// Fires <paramref name="output"/> with <paramref name="value"/> in place
+    /// of each wire's own parameter, as the text <see cref="ParameterText"/>
+    /// writes for an output that sends <paramref name="sends"/>. No value on
+    /// an output that sends none leaves each wire its own parameter.
+    /// </summary>
+    /// <returns>
+    /// False when the output cannot send the value, like a number that is not
+    /// finite. Nothing is fired then, and a warning is logged the first time.
+    /// </returns>
+    public bool FireOutput(string output, ParameterType sends, in ParameterValue value, Entity? activator = null)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+
+        if (ParameterText.TryFormat(sends, in value, out string text))
+        {
+            bool keepsWireParameter = value.Kind == ParameterValueKind.None && !sends.HasValue;
+            FireOutput(output, activator, keepsWireParameter ? null : text);
+            return true;
+        }
+
+        _refusedOutputs ??= new HashSet<string>(StringComparer.Ordinal);
+        if (_refusedOutputs.Add(output))
+            Warn($"fired {output} with {Refused(sends)}, so nothing was sent");
+
+        return false;
+    }
+
+    private static string Refused(ParameterType sends)
+    {
+        if (sends.IsNone)
+            return "a value, and it sends none";
+
+        return sends.HasValue
+            ? $"a value that is not a {sends.ValueType} a wire can carry"
+            : "a value no wire can carry";
+    }
+
     /// <summary>
     /// Reports that <paramref name="key"/> was recognised and its value could
     /// not be read, so the default stands.
