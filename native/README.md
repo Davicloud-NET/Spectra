@@ -225,8 +225,8 @@ binding checks both at startup.
 
 1. Raise `SL_SHIM_REVISION` in `native/luau/spectra_luau.h` and
    `Shim.Revision` in `SpectraEngine.Scripting.Luau/Native/Shim.cs`.
-2. Run the build script again. A library from before the change is then
-   refused at startup, by its revision.
+2. Run the build script again. Until then the startup check refuses the old
+   library by its revision.
 3. Publish the crash cases again and run `SpectraEngine.Scripting.Tests`.
 
 ### Moving the pin
