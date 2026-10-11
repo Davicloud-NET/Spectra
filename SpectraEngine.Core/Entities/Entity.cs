@@ -220,19 +220,12 @@ public abstract class Entity
 
         _refusedOutputs ??= new HashSet<string>(StringComparer.Ordinal);
         if (_refusedOutputs.Add(output))
-            Warn($"fired {output} with {Refused(sends)}, so nothing was sent");
+        {
+            string port = EntityConsoleText.Port(new EntityPort(output, sends));
+            Warn($"fired {port} with a value it cannot send, so nothing was sent");
+        }
 
         return false;
-    }
-
-    private static string Refused(ParameterType sends)
-    {
-        if (sends.IsNone)
-            return "a value, and it sends none";
-
-        return sends.HasValue
-            ? $"a value that is not a {sends.ValueType} a wire can carry"
-            : "a value no wire can carry";
     }
 
     /// <summary>

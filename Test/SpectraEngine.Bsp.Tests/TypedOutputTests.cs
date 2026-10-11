@@ -91,10 +91,7 @@ public sealed class TypedOutputTests
             sender.FireOutput("OnGo", Number, ParameterValue.Of(float.NaN));
 
         _logger.MessagesAt(LogLevel.Warning).ShouldBe(
-        [
-            "Entity 'sender' (recorder) fired OnGo with a value that is not a Float a wire can carry, " +
-            "so nothing was sent.",
-        ]);
+            ["Entity 'sender' (recorder) fired OnGo(float) with a value it cannot send, so nothing was sent."]);
 
         sender.FireOutput("OnStop", Number, ParameterValue.Of(float.NaN));
 
@@ -146,7 +143,7 @@ public sealed class TypedOutputTests
 
         _heard.ShouldBeEmpty();
         _logger.MessagesAt(LogLevel.Warning).ShouldBe(
-            ["Entity 'sender' (recorder) fired OnGo with a value, and it sends none, so nothing was sent."]);
+            ["Entity 'sender' (recorder) fired OnGo() with a value it cannot send, so nothing was sent."]);
     }
 
     [Fact]
