@@ -115,81 +115,81 @@ public static class MapSceneBinder
             mapped.Brush = BrushToMap(brush);
 
         if (node.Light is { } light)
-        {
-            // Copy every field. This is a fresh MapLight, so a member left out
-            // here is deleted from the file on the next save.
-            mapped.Light = new MapLight
-            {
-                Kind = light.Kind,
-                Color = light.Color,
-                Intensity = light.Intensity,
-                Range = light.Range,
-                Enabled = light.Enabled,
-                InnerAngle = light.InnerAngle,
-                OuterAngle = light.OuterAngle,
-                Width = light.Width,
-                Height = light.Height,
-                Radius = light.Radius,
-            };
-        }
+            mapped.Light = LightToMap(light);
 
         if (node.Entity is { } entity)
-        {
-            // Copy every field, as for the light.
-            var payload = new MapEntity { Class = entity.ClassName };
-
-            // Authored order, duplicates included.
-            payload.Keys.AddRange(entity.Keyvalues);
-
-            foreach (EntityConnection wire in entity.Connections)
-            {
-                payload.Outputs.Add(new MapConnection
-                {
-                    Output = wire.Output,
-                    Target = wire.TargetName,
-                    Input = wire.Input,
-                    Param = wire.Parameter,
-                    Delay = wire.Delay,
-                    Times = wire.TimesToFire,
-                });
-            }
-
-            mapped.Entity = payload;
-        }
+            mapped.Entity = EntityToMap(entity);
 
         if (node.Script is { } script)
-        {
-            // Copy every field, as for the light.
-            mapped.Script = new MapScript
-            {
-                Path = script.Path,
-                Enabled = script.IsEnabled,
-                Module = script.IsModule,
-            };
-        }
+            mapped.Script = ScriptToMap(script);
 
-        // A mesh is saved as a reference to its model file, never as geometry.
-        if (node.MeshRenderer is not null)
-        {
-            if (node.MeshSource is { } source)
-            {
-                mapped.Mesh = new MapMeshSource
-                {
-                    Model = source.ModelPath,
-                    Submesh = source.MeshIndex,
-                };
-            }
-            else
-            {
-                // Built in code: no file to name, so report it.
-                report?.RecordUnsourcedMesh(node);
-            }
-        }
+        mapped.Mesh = MeshToMap(node, report);
 
         foreach (SceneNode child in node.Children)
             mapped.Children.Add(NodeToMap(child, report));
 
         return mapped;
+    }
+
+    // Copy every field. This is a fresh MapLight, so a member left out here is
+    // deleted from the file on the next save. The same goes for the entity and
+    // the script below.
+    private static MapLight LightToMap(Light light) => new()
+    {
+        Kind = light.Kind,
+        Color = light.Color,
+        Intensity = light.Intensity,
+        Range = light.Range,
+        Enabled = light.Enabled,
+        InnerAngle = light.InnerAngle,
+        OuterAngle = light.OuterAngle,
+        Width = light.Width,
+        Height = light.Height,
+        Radius = light.Radius,
+    };
+
+    private static MapEntity EntityToMap(EntityData entity)
+    {
+        var mapped = new MapEntity { Class = entity.ClassName };
+
+        // Authored order, duplicates included.
+        mapped.Keys.AddRange(entity.Keyvalues);
+
+        foreach (EntityConnection wire in entity.Connections)
+        {
+            mapped.Outputs.Add(new MapConnection
+            {
+                Output = wire.Output,
+                Target = wire.TargetName,
+                Input = wire.Input,
+                Param = wire.Parameter,
+                Delay = wire.Delay,
+                Times = wire.TimesToFire,
+            });
+        }
+
+        return mapped;
+    }
+
+    private static MapScript ScriptToMap(Script script) => new()
+    {
+        Path = script.Path,
+        Enabled = script.IsEnabled,
+        Module = script.IsModule,
+    };
+
+    // A mesh is saved as a reference to its model file, never as geometry.
+    private static MapMeshSource? MeshToMap(SceneNode node, MapSaveReport? report)
+    {
+        if (node.MeshRenderer is null)
+            return null;
+
+        if (node.MeshSource is { } source)
+            return new MapMeshSource { Model = source.ModelPath, Submesh = source.MeshIndex };
+
+        // Built in code: no file to name, so report it.
+        report?.RecordUnsourcedMesh(node);
+        return null;
     }
 
     private static MapBrush BrushToMap(Brush brush)
@@ -354,39 +354,10 @@ public static class MapSceneBinder
             AttachMesh(node, mesh, assets, report);
 
         if (mapped.Light is { } light)
-        {
-            // Inner angle before outer: OuterAngle clamps against the inner one.
-            node.Light = new Light
-            {
-                Kind = light.Kind,
-                Color = light.Color,
-                Intensity = light.Intensity,
-                Range = light.Range,
-                Enabled = light.Enabled,
-                InnerAngle = light.InnerAngle,
-                OuterAngle = light.OuterAngle,
-                Width = light.Width,
-                Height = light.Height,
-                Radius = light.Radius,
-            };
-        }
+            node.Light = ToLight(light);
 
         if (mapped.Entity is { } entity)
-        {
-            // No catalogue lookup, so a class this build lacks round-trips.
-            var data = new EntityData(entity.Class);
-
-            // Add, not SetValue, which would collapse a duplicate key.
-            data.Keyvalues.AddRange(entity.Keys);
-
-            foreach (MapConnection wire in entity.Outputs)
-            {
-                data.Connections.Add(new EntityConnection(
-                    wire.Output, wire.Target, wire.Input, wire.Param, wire.Delay, wire.Times));
-            }
-
-            node.Entity = data;
-        }
+            node.Entity = ToEntity(entity);
 
         if (mapped.Script is { } script)
             node.Script = ToScript(script, mapped);
@@ -397,6 +368,38 @@ public static class MapSceneBinder
             node.AddChild(ToSceneNode(child, assets, report));
 
         return node;
+    }
+
+    // Inner angle before outer: OuterAngle clamps against the inner one.
+    private static Light ToLight(MapLight mapped) => new()
+    {
+        Kind = mapped.Kind,
+        Color = mapped.Color,
+        Intensity = mapped.Intensity,
+        Range = mapped.Range,
+        Enabled = mapped.Enabled,
+        InnerAngle = mapped.InnerAngle,
+        OuterAngle = mapped.OuterAngle,
+        Width = mapped.Width,
+        Height = mapped.Height,
+        Radius = mapped.Radius,
+    };
+
+    // No catalogue lookup, so a class this build lacks round-trips.
+    private static EntityData ToEntity(MapEntity mapped)
+    {
+        var data = new EntityData(mapped.Class);
+
+        // Add, not SetValue, which would collapse a duplicate key.
+        data.Keyvalues.AddRange(mapped.Keys);
+
+        foreach (MapConnection wire in mapped.Outputs)
+        {
+            data.Connections.Add(new EntityConnection(
+                wire.Output, wire.Target, wire.Input, wire.Param, wire.Delay, wire.Times));
+        }
+
+        return data;
     }
 
     // A model that cannot be resolved leaves a node with no renderer and a line
