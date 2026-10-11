@@ -198,15 +198,17 @@ public abstract class Entity
     private HashSet<string>? _refusedOutputs;
 
     /// <summary>
-    /// Fires <paramref name="output"/> with <paramref name="value"/> in place
-    /// of each wire's own parameter, as the text <see cref="ParameterText"/>
-    /// writes for an output that sends <paramref name="sends"/>. No value on
-    /// an output that sends none leaves each wire its own parameter.
+    /// Fires <paramref name="output"/> with <paramref name="value"/>, which
+    /// each wire sends in place of its own parameter.
     /// </summary>
+    /// <param name="sends">
+    /// What the output sends. <see cref="ParameterText"/> writes the value as that.
+    /// </param>
     /// <returns>
     /// False when the output cannot send the value, like a number that is not
     /// finite. Nothing is fired then, and a warning is logged the first time.
     /// </returns>
+    // No value on an output that sends none leaves each wire its own parameter.
     public bool FireOutput(string output, ParameterType sends, in ParameterValue value, Entity? activator = null)
     {
         ArgumentNullException.ThrowIfNull(output);
