@@ -3,10 +3,12 @@ using System.Numerics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Silk.NET.Maths;
 using SpectraEngine.Core.Bsp;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Input;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Editing.Hosting;
+using SpectraEngine.Editing.Icons;
 using SpectraEngine.Editing.Viewport;
 
 namespace SpectraEngine.Editing.Tests;
@@ -119,6 +121,43 @@ public sealed class VolumeOverlayTests
         VolumeOverlay.DefaultColor.ShouldNotBe(SelectionOutline.SelectedColor);
 
         CountOf(output, VolumeOverlay.DefaultColor).ShouldBe(output.VertexCount);
+    }
+
+    [Fact]
+    public void An_entitys_volume_is_outlined_in_its_groups_colour()
+    {
+        var scene = new Scene("Test")
+        {
+            EntitySchemas = EntitySchemaCatalog.LoadFromSentDef(SentDef.Write(
+            [
+                new EntitySchema("test_trigger", group: "Triggers", placement: EntityPlacement.Brush),
+                new EntitySchema("test_door", group: "Movers", placement: EntityPlacement.Brush),
+            ])),
+        };
+        AddVolume(scene, "trigger").Entity = new EntityData("test_trigger");
+        AddVolume(scene, "door").Entity = new EntityData("test_door");
+        AddVolume(scene, "clip");
+        var output = new DebugDraw();
+
+        new VolumeOverlay().Draw(output, scene);
+
+        int edges = output.VertexCount / 3;
+        edges.ShouldBeGreaterThan(0);
+        CountOf(output, EntityGroupTints.For("Triggers")).ShouldBe(edges);
+        CountOf(output, EntityGroupTints.For("Movers")).ShouldBe(edges);
+        CountOf(output, VolumeOverlay.DefaultColor).ShouldBe(edges);
+    }
+
+    [Fact]
+    public void A_volume_of_a_class_no_schema_knows_is_outlined_in_the_plain_entity_colour()
+    {
+        var scene = new Scene("Test");
+        AddVolume(scene, "stranger").Entity = new EntityData("from_another_game");
+        var output = new DebugDraw();
+
+        new VolumeOverlay().Draw(output, scene);
+
+        CountOf(output, EntityGroupTints.For(null)).ShouldBe(output.VertexCount);
     }
 
     [Fact]

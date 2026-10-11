@@ -1,25 +1,27 @@
 using System;
 using System.Numerics;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Graphics;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Editing.Icons;
 
 namespace SpectraEngine.Editing.Viewport;
 
 /// <summary>
 /// Draws the edges of every part brush whose
 /// <see cref="SceneNode.IsRendered"/> is off, such as a trigger volume or a
-/// clip brush.
+/// clip brush. An entity's volume is drawn in its group's colour.
 /// </summary>
 // These render nothing of their own, so this is the only place one can be seen.
 public sealed class VolumeOverlay
 {
-    /// <summary>The default outline colour, yellow.</summary>
+    /// <summary>The default outline colour of a volume that is no entity, yellow.</summary>
     public static readonly Vector3 DefaultColor = new(0.95f, 0.85f, 0.25f);
 
     /// <summary>Whether the overlay draws at all.</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>Outline colour.</summary>
+    /// <summary>Outline colour of a volume that is no entity.</summary>
     public Vector3 Color { get; set; } = DefaultColor;
 
     /// <summary>How many volumes may be outlined in one frame.</summary>
@@ -60,7 +62,19 @@ public sealed class VolumeOverlay
             }
 
             DrawnLastDraw++;
-            PartBrushOverlay.DrawBrushEdges(output, brush, node.WorldMatrix, Color);
+            PartBrushOverlay.DrawBrushEdges(output, brush, node.WorldMatrix, ColorOf(node, scene.EntitySchemas));
         }
+    }
+
+    // A trigger's outline is the colour of its row in the scene tree and of
+    // its card in the Logic view.
+    private Vector3 ColorOf(SceneNode node, EntitySchemaCatalog? schemas)
+    {
+        if (node.Entity is not { } entity)
+            return Color;
+
+        EntitySchema? schema = null;
+        schemas?.TryGetSchema(entity.ClassName, out schema);
+        return EntityGroupTints.For(schema?.Group);
     }
 }
