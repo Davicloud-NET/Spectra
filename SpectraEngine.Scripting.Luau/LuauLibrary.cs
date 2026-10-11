@@ -21,7 +21,6 @@ public static unsafe class LuauLibrary
         ("LUA_USE_LONGJMP", 1),
         ("LUA_VECTOR_SIZE", Lua.VectorSize),
         ("LUA_VECTOR_DOUBLE", 0),
-        ("LUA_MINSTACK", Lua.MinStack),
         ("LUAI_MAXCSTACK", Lua.MaxCStack),
         ("LUA_UTAG_LIMIT", Lua.UserdataTagLimit),
 

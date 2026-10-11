@@ -491,10 +491,33 @@ SL_API int sl_pushhostfunction(lua_State* L, HostFunction function, const char* 
     return protect(L, PushHostFunctionBody, &closure, 1);
 }
 
+// Even a number goes through a check: see refuseFullStack. No protected call
+// is made, so this one also works on a thread that has yielded.
+SL_API int sl_pushnumber(lua_State* L, double value)
+{
+    if (!lua_checkstack(L, 1))
+        return refuseFullStack(L, 0);
+
+    lua_pushnumber(L, value);
+    return LUA_OK;
+}
+
 SL_API int sl_pushstring(lua_State* L, const char* data, size_t length)
 {
     Text text = {data, length};
     return protect(L, PushStringBody, &text, 1);
+}
+
+// Pushes a new thread on L and hands back its state. The thread lives while
+// something refers to it.
+SL_API int sl_newthread(lua_State* L, lua_State** thread)
+{
+    *thread = nullptr;
+    if (!lua_checkstack(L, 1))
+        return refuseFullStack(L, 0);
+
+    *thread = lua_newthread(L);
+    return LUA_OK;
 }
 
 SL_API int sl_createtable(lua_State* L, int arraySize, int recordSize)

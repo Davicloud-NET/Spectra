@@ -60,7 +60,8 @@ internal static unsafe class CloseCase
             state.Require(Shim.sl_pushhostfunction(L, &Pause, name));
         state.Require(state.SetGlobal("pause"u8));
 
-        nint waiting = Lua.lua_newthread(L);
+        nint waiting;
+        state.Require(Shim.sl_newthread(L, &waiting));
         LuaStatus loaded = LuaChunk.Load(waiting, "=waiting", Encoding.UTF8.GetBytes("pause() return 1"));
         if (loaded != LuaStatus.Ok)
             return "the waiting script did not load";

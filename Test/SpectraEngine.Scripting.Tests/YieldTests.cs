@@ -23,7 +23,7 @@ public sealed unsafe class YieldTests
         Lua.lua_tonumberx(thread, 1, null).ShouldBe(41);
 
         Lua.Pop(thread, 1);
-        Lua.lua_pushnumber(thread, 100);
+        Shim.sl_pushnumber(thread, 100).ShouldBe(LuaStatus.Ok);
         LuaStatus finished = Shim.sl_resume(thread, 0, 1);
 
         finished.ShouldBe(LuaStatus.Ok);
@@ -64,7 +64,8 @@ public sealed unsafe class YieldTests
     private static nint StartThread(ProbeState state, string source)
     {
         Register(state);
-        nint thread = Lua.lua_newthread(state.L);
+        nint thread;
+        Shim.sl_newthread(state.L, &thread).ShouldBe(LuaStatus.Ok);
         LuaChunk.Load(thread, "=waiting", Encoding.UTF8.GetBytes(source)).ShouldBe(LuaStatus.Ok);
         return thread;
     }
@@ -78,9 +79,5 @@ public sealed unsafe class YieldTests
 
     // Yields its one argument to whoever resumed the thread.
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static int WaitFor(nint L)
-    {
-        Lua.lua_settop(L, 1);
-        return Shim.HostYield - 1;
-    }
+    private static int WaitFor(nint L) => Shim.HostYield - 1;
 }

@@ -10,14 +10,13 @@ namespace SpectraEngine.Scripting.Tests;
 public sealed partial class BindingSourceTests
 {
     // Calls on Luau itself that were read in external/luau and cannot raise.
-    // A push is on the list although it raises when one frame holds 8000
-    // values: Lua.cs says how the binding stays clear of that.
+    // No push is among them: Luau raises from a push once one frame holds
+    // 8000 values. lua_settop raises the same way when it grows the stack, so
+    // Lua keeps it private and only pops with it.
     private static readonly HashSet<string> CannotRaise =
     [
-        "lua_gettop", "lua_settop", "lua_checkstack",
+        "lua_gettop", "lua_settop",
         "lua_type", "lua_tonumberx", "lua_toboolean", "lua_tolstring",
-        "lua_pushnumber",
-        "lua_newthread",
         "lua_gc",
     ];
 
@@ -48,6 +47,14 @@ public sealed partial class BindingSourceTests
 
             Path.GetFileName(file).ShouldBe(expected, $"{name} is imported in {file}");
         }
+    }
+
+    [Fact]
+    public void Only_Lua_itself_reaches_lua_settop()
+    {
+        string source = File.ReadAllText(Path.Combine(RepositoryRoot(), "SpectraEngine.Scripting.Luau", "Native", "Lua.cs"));
+
+        source.ShouldContain("private static partial void lua_settop(");
     }
 
     private static List<(string File, string Name)> Imports()

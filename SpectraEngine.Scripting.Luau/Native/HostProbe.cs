@@ -40,7 +40,8 @@ internal static unsafe class HostProbe
 
             if (LuaText.Push(L, repeated) != LuaStatus.Ok)
                 return Shim.HostError;
-            Lua.lua_pushnumber(L, repeated.Length);
+            if (Shim.sl_pushnumber(L, repeated.Length) != LuaStatus.Ok)
+                return Shim.HostError;
             return 2;
         }
         catch (Exception e) // boundary: a managed exception must not reach a native frame

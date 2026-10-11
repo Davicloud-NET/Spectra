@@ -44,7 +44,7 @@ public sealed unsafe class StatusFormTests
         NativeLuau.Require();
         using ProbeState state = new();
         state.Run("return {}", results: 1).ShouldBe(LuaStatus.Ok);
-        Lua.lua_pushnumber(state.L, 7);
+        Shim.sl_pushnumber(state.L, 7).ShouldBe(LuaStatus.Ok);
 
         LuaStatus status = SetField(state, -2, "speed"u8);
 
@@ -60,7 +60,7 @@ public sealed unsafe class StatusFormTests
         NativeLuau.Require();
         using ProbeState state = new();
         state.Run("return table.freeze({})", results: 1).ShouldBe(LuaStatus.Ok);
-        Lua.lua_pushnumber(state.L, 7);
+        Shim.sl_pushnumber(state.L, 7).ShouldBe(LuaStatus.Ok);
 
         LuaStatus status = SetField(state, -2, "speed"u8);
 
@@ -172,8 +172,22 @@ public sealed unsafe class StatusFormTests
         pushed.ShouldBeInRange(Lua.MaxCStack - 8, Lua.MaxCStack);
         state.PopText().ShouldBe("stack overflow");
 
-        Lua.lua_settop(state.L, 0);
+        Lua.Pop(state.L, Lua.lua_gettop(state.L));
         state.Run("return 1", results: 1).ShouldBe(LuaStatus.Ok);
+    }
+
+    [Fact]
+    public void A_number_too_many_is_refused_with_a_status()
+    {
+        NativeLuau.Require();
+        using ProbeState state = new();
+
+        int pushed = 0;
+        while (pushed <= Lua.MaxCStack && Shim.sl_pushnumber(state.L, pushed) == LuaStatus.Ok)
+            pushed++;
+
+        pushed.ShouldBe(Lua.MaxCStack);
+        state.PopText().ShouldBe("stack overflow");
     }
 
     private static LuaStatus GetField(ProbeState state, int index, ReadOnlySpan<byte> key)

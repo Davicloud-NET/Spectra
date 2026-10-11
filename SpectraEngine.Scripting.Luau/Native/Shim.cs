@@ -5,9 +5,11 @@ namespace SpectraEngine.Scripting.Luau.Native;
 // The entry points of native/luau/spectra_luau.cpp.
 //
 // A call that returns a LuaStatus never raises. When the status is not Ok, the
-// error value is on top of the stack in place of the result. Each runs a
-// protected call on the state it is given, so that state must not be a thread
-// that has yielded.
+// error value is on top of the stack in place of the result.
+//
+// Most of them run a protected call on the state they are given. Luau allows
+// that only on a state that is not suspended, so on a thread that has yielded
+// use nothing but sl_pushnumber and sl_resume.
 internal static unsafe partial class Shim
 {
     // What a host function returns instead of a result count. The shim raises
@@ -30,8 +32,12 @@ internal static unsafe partial class Shim
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_call(nint L, int arguments, int results);
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_resume(nint thread, nint from, int arguments);
 
-    [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_pushhostfunction(nint L, delegate* unmanaged[Cdecl]<nint, int> function, byte* debugName);
+    // The thread is pushed on L and lives while something refers to it.
+    [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_newthread(nint L, nint* thread);
+
+    [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_pushnumber(nint L, double value);
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_pushstring(nint L, byte* data, nuint length);
+    [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_pushhostfunction(nint L, delegate* unmanaged[Cdecl]<nint, int> function, byte* debugName);
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_createtable(nint L, int arraySize, int recordSize);
     [LibraryImport(Lua.Library)] internal static partial LuaStatus sl_newuserdata(nint L, nuint size, int tag, void** block);
 
