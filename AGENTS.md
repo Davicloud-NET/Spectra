@@ -238,6 +238,8 @@ Luau
 
 - A Luau call that can raise, made from managed code, works under the JIT and kills a NativeAOT build at a later garbage collection. Managed code reaches Luau through `Shim`, whose calls return a status, and a host function fails by returning `Shim.HostError`. `BindingSourceTests` holds the short list of direct calls.
 - So the crash cases only count from a published console: `dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r win-x64`, then `SpectraEngine.Scripting.Tests`. Until then they skip, and a stale publish is run as it is.
+- A change to the shim raises `SL_SHIM_REVISION` in `spectra_luau.h` and `Shim.Revision`. Left alone, a library built before the change passes the startup check and runs the old code.
+- A status form on a thread that has yielded or failed answers with an error and does nothing. Only `sl_pushnumber`, `sl_newthread` and `sl_resume` work there.
 
 Tests and tools
 

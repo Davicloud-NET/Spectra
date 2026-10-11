@@ -188,8 +188,9 @@ So managed code never calls anything in Luau that can raise.
   startup, so a library left over from before a change to the shim is named.
 
 `Test/SpectraEngine.Scripting.CrashCases` is a console that shows the rule
-holding and what happens without it. It only means something as a native
-executable:
+holding and what happens without it. One case raises from a managed frame on
+purpose. The suite fails when that case gets through, because the other cases
+then prove nothing. It only means something as a native executable:
 
 ```powershell
 dotnet publish Test/SpectraEngine.Scripting.CrashCases -c Release -r win-x64
@@ -202,8 +203,9 @@ It imports `native/Luau.targets`. The demo, the editor and `scook` do.
 
 - A build copies the shared library beside the output when it has been built,
   and says nothing when it has not.
-- A NativeAOT publish links the static library. When it is missing the publish
-  stops with one line that names the script to run.
+- A NativeAOT publish links the static library, and links again when the
+  library is newer than the executable. When it is missing the publish stops
+  with one line that names the script to run.
 - On Linux the published executable then needs `libstdc++.so.6` and
   `libgcc_s.so.1` to start, because Luau is C++.
 
@@ -211,7 +213,7 @@ It imports `native/Luau.targets`. The demo, the editor and `scook` do.
 
 | Option | Value | Why |
 | --- | --- | --- |
-| `LUA_USE_LONGJMP` | 1 | A caught error costs less than with C++ exceptions, and an error nobody catches reaches the panic handler with its message. `docs/spikes/2026-10-luau-aot.md` has the numbers. |
+| `LUA_USE_LONGJMP` | 1 | A caught error costs less than with C++ exceptions, and an error nobody catches reaches the panic handler with its message. `docs/spikes/2026-10-luau-aot.md` has the numbers, taken on release 0.741. |
 | `LUA_VECTOR_SIZE` | 3 | A vector is three floats. It is Luau's default, set anyway so that a change is made on purpose. |
 | C runtime | `/MT` | The one a NativeAOT executable links. With `/MD` the publish fails with LNK2038. |
 | Code generator | left out | It helps arithmetic and little else, and it makes executable memory at run time. |
@@ -232,7 +234,8 @@ binding checks both at startup.
 1. Check out the new release tag in `external/luau`.
 2. Change `SL_LUAU_RELEASE` in `native/luau/spectra_luau.h` and `Lua.Release`
    in `SpectraEngine.Scripting.Luau/Native/Lua.cs`. The build scripts compare
-   the first with the submodule's tag when the checkout has tags.
+   the first with the submodule's tag when the checkout has tags. CI has none
+   and asks Luau's repository which commit the release is.
 3. Build, and run `SpectraEngine.Scripting.Tests`. A constant that moved shows
    up there by name.
 4. Read the calls listed in `BindingSourceTests` again in the new `lapi.cpp`.
@@ -243,4 +246,6 @@ binding checks both at startup.
 
 - `win-arm64` and `linux-arm64`. The scripts accept them and nobody has run them.
 - A publish on a Linux machine. The Linux executable that was tested was
-  compiled on Windows and linked in WSL.
+  compiled on Windows and linked in WSL, also from a path with a space in it.
+- The panic handler, the allocator's abort and a compiler that returns null.
+  Each ends the process or needs memory to run out, so no test runs them.
