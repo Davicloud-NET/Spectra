@@ -210,6 +210,28 @@ public sealed class ThreadTests
         script.Thread.Values.IsNil(3).ShouldBeTrue();
     }
 
+    // What task.defer and task.delay will be: the thread is there at once,
+    // with its function and arguments, and runs when the host says so.
+    [Fact]
+    public void A_host_function_prepares_a_thread_that_runs_later_with_its_arguments()
+    {
+        LuauThread deferred = default;
+        using LuauHost host = TestHost.Open(out RecordingSink sink, fresh => fresh.SetGlobal("defer"u8, stack =>
+        {
+            fresh.Prepare(stack, stack.Count, out deferred).ShouldBeTrue();
+            return deferred.Push(stack) ? 1 : LuauStack.Raise;
+        }));
+        host.RunText("local later = defer(function(a, b, c) print(a + b, c) end, 40, 2)\nprint(coroutine.status(later))")
+            .ShouldBe(LuauResume.Finished);
+        string[] before = sink.Texts(ScriptSeverity.Print);
+
+        LuauResume outcome = deferred.Resume(["and one more"]);
+
+        before.ShouldBe(["suspended"]);
+        outcome.ShouldBe(LuauResume.Finished);
+        sink.Texts(ScriptSeverity.Print).ShouldBe(["suspended", "42 and one more"]);
+    }
+
     [Fact]
     public void A_thread_goes_to_another_script_as_a_value()
     {

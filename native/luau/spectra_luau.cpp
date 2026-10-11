@@ -1290,9 +1290,10 @@ SL_API int sl_call(lua_State* L, int arguments, int results)
     return lua_pcall(L, arguments, results, 0);
 }
 
-// How many of `count` values are arguments for a thread that is to run: all
-// of them for one that yielded or has its function, one less for a new thread
-// that takes its function too. -1 when the thread is not waiting.
+// How many arguments a thread gets that is to run with `count` more values:
+// all of them when it yielded, one less when it is new and takes its function
+// too. One that was handed its function before, and maybe arguments with it,
+// gets those as well. -1 when the thread is not waiting.
 static int argumentsFor(lua_State* thread, lua_State* source, int count)
 {
     int status = lua_status(thread);
@@ -1305,7 +1306,7 @@ static int argumentsFor(lua_State* thread, lua_State* source, int count)
     int state = lua_costatus(source, thread);
     if (state == LUA_COFIN)
         return count - 1;
-    return state == LUA_COSUS ? count : -1;
+    return state == LUA_COSUS ? lua_gettop(thread) - 1 + count : -1;
 }
 
 // A thread that ended with values on its stack reads as one that has not

@@ -103,6 +103,34 @@ internal sealed unsafe class ThreadRunner
         return Resume(thread, source, count);
     }
 
+    // Makes a thread and hands it the function and its arguments without
+    // running it: the top `count` values of `source`, which are taken. The
+    // first Resume starts it.
+    internal bool Prepare(nint source, int count, LuauScript? script, out LuauThread thread)
+    {
+        thread = default;
+        if (_host.IsClosed || count < 1 || count > Lua.lua_gettop(source))
+            return false;
+
+        nint state;
+        int reference;
+        if (script is { IsSwitchedOff: true } || !Spawn(script, &state, &reference))
+        {
+            Shim.sl_pop(source, count);
+            return false;
+        }
+
+        thread = Add(state, reference, script);
+        if (Shim.sl_xmove(source, state, count) == LuaStatus.Ok)
+            return true;
+
+        // The values are gone and a message is in their place.
+        Shim.sl_pop(source, 1);
+        Release(thread);
+        thread = default;
+        return false;
+    }
+
     // Takes the top `count` values of `source`, whatever the outcome.
     internal LuauResume Resume(LuauThread thread, nint source, int count)
     {

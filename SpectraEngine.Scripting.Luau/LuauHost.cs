@@ -217,6 +217,14 @@ public sealed unsafe class LuauHost : IDisposable
         return Threads.Start(source.State, count, ScriptOf(source.State), out thread);
     }
 
+    /// <summary>
+    /// Makes the thread as <see cref="Start"/> does and does not run it, for a function
+    /// that is to run later. Its first resume starts it. False when no thread could be
+    /// made, as for a script that is switched off.
+    /// </summary>
+    public bool Prepare(LuauStack source, int count, out LuauThread thread) =>
+        Threads.Prepare(source.State, count, ScriptOf(source.State), out thread);
+
     /// <summary>Keeps the function at the index for the calling script. Null when there is none there.</summary>
     public LuauFunction? KeepFunction(LuauStack stack, int index) =>
         !_isClosed && stack.TypeOf(index) == LuauType.Function && TryKeep(stack, index, out int reference)
