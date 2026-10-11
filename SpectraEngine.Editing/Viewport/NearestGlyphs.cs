@@ -7,22 +7,32 @@ namespace SpectraEngine.Editing.Viewport;
 // first, so its pile has closed by the time the glyph goes.
 internal sealed class NearestGlyphs
 {
-    // An icon takes full part once it is this much nearer than the nearest
-    // one left out, as a share of that one's distance.
+    // An icon takes full part once it is this much nearer than the one whose
+    // coming nearer would cost it the glyph, as a share of that one's distance.
     private const float FadeBand = 0.1f;
 
     private float[] _nearness = [];
+    private int[] _places = [];
 
-    public void Keep(Span<SceneIcon> markers, int most)
+    // A flat view has no nearest: every icon is as far off as the next, the
+    // first listed keep their glyphs, and turning the camera changes nothing.
+    public void Keep(Span<SceneIcon> markers, int most, bool isFlat)
     {
         if (_nearness.Length < markers.Length)
-            _nearness = new float[Math.Max(markers.Length, _nearness.Length * 2)];
+        {
+            int room = Math.Max(markers.Length, _nearness.Length * 2);
+            _nearness = new float[room];
+            _places = new int[room];
+        }
 
         int detailed = 0;
-        foreach (ref readonly SceneIcon marker in markers)
+        for (int i = 0; i < markers.Length; i++)
         {
-            if (marker.IsGlyph)
-                _nearness[detailed++] = marker.Pixel;
+            if (!markers[i].IsGlyph)
+                continue;
+
+            _nearness[detailed] = markers[i].Pixel;
+            _places[detailed++] = i;
         }
 
         most = Math.Max(most, 0);
@@ -31,27 +41,53 @@ internal sealed class NearestGlyphs
 
         // A pixel covers more of the world the farther off it is, so the
         // smallest belong to the nearest.
-        Array.Sort(_nearness, 0, detailed);
-        float farthestKept = most > 0 ? _nearness[most - 1] : float.NegativeInfinity;
-        float nearestLeftOut = _nearness[most];
+        Array.Sort(_nearness, _places, 0, detailed);
 
-        // Of several just as far off as the farthest kept, the first listed
-        // keep theirs. One that is nearer is never left out for them.
-        int alike = most;
-        while (alike > 0 && _nearness[alike - 1] == farthestKept)
-            alike--;
-
-        alike = most - alike;
-
-        foreach (ref SceneIcon marker in markers)
+        for (int first = 0; first < detailed;)
         {
-            if (!marker.IsGlyph)
-                continue;
+            int end = first + 1;
+            while (end < detailed && _nearness[end] == _nearness[first])
+                end++;
 
-            marker.IsGlyph = marker.Pixel < farthestKept || (marker.Pixel == farthestKept && alike-- > 0);
+            // Of several just as far off, the first listed come first.
+            if (end - first > 1)
+                Array.Sort(_places, first, end - first);
 
-            float nearer = (nearestLeftOut - marker.Pixel) / (nearestLeftOut * FadeBand);
-            marker.FanStrength = marker.IsGlyph ? MathF.Min(marker.FanStrength, Math.Clamp(nearer, 0f, 1f)) : 0f;
+            for (int rank = first; rank < end; rank++)
+            {
+                ref SceneIcon marker = ref markers[_places[rank]];
+                marker.IsGlyph = rank < most;
+
+                if (!marker.IsGlyph)
+                    marker.FanStrength = 0f;
+                else if (!isFlat)
+                    marker.FanStrength = MathF.Min(marker.FanStrength, Part(markers, rank, end, most, detailed));
+            }
+
+            first = end;
         }
+    }
+
+    // How much part the icon at this place in the order takes, by how near
+    // it is to losing its glyph. Its run of icons just as far off ends at end.
+    private float Part(ReadOnlySpan<SceneIcon> markers, int rank, int end, int most, int detailed)
+    {
+        ref readonly SceneIcon marker = ref markers[_places[rank]];
+
+        // The icons of its own point stay behind it whatever the camera does.
+        int ownBehind = 0;
+        for (int later = rank + 1; later < end; later++)
+            ownBehind += markers[_places[later]].Anchor == marker.Anchor ? 1 : 0;
+
+        // It loses the glyph when this one comes nearer than it is.
+        int passer = most + ownBehind;
+        if (passer >= detailed)
+            return 1f;
+
+        // One just as far off at another point is as good as nearer.
+        if (passer < end)
+            return 0f;
+
+        return Math.Clamp((_nearness[passer] - marker.Pixel) / (_nearness[passer] * FadeBand), 0f, 1f);
     }
 }

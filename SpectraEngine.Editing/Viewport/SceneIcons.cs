@@ -98,7 +98,8 @@ public sealed class SceneIcons
         SkippedLights = skippedLights;
         SkippedMarkers = skippedMarkers;
 
-        _nearestGlyphs.Keep(_icons.AsSpan(_lightCount, _markerCount), MaxMarkerGlyphs);
+        bool isFlat = camera.ProjectionKind == CameraProjectionKind.Orthographic;
+        _nearestGlyphs.Keep(_icons.AsSpan(_lightCount, _markerCount), MaxMarkerGlyphs, isFlat);
         _fan.Spread(scene, camera, _icons.AsSpan(0, _lightCount + _markerCount), _lightCount);
     }
 
