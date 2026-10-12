@@ -45,8 +45,7 @@ internal sealed partial class ScriptCharacter : ScriptObject
 
     // A script that kept the character of a player that has left reads an
     // error at its line. What calls a host function catches it.
-    private IPlayerPresence Body =>
-        _door.Player ?? throw new InvalidOperationException("The player is not in the level.");
+    private IPlayerPresence Body => _door.Player ?? throw new InvalidOperationException(ScriptMember.HasLeft);
 
     /// <summary>Puts the player at rest at a position, or at a frame's position, facing along the frame's ZVector.</summary>
     [ScriptMethod(Parameters = "target: CFrame | Vector3")]

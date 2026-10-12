@@ -356,7 +356,7 @@ public sealed class PlayerScriptTests
 
         level.Errors.ShouldBeEmpty();
         level.Printed[0].ShouldBe("nil");
-        level.Printed[1].ShouldEndWith("The player is not in the level.");
+        level.Printed[1].ShouldEndWith("this object has left the level");
         level.Printed[2].ShouldEndWith("The player cannot be changed: nothing walks the level.");
         level.Printed[3].ShouldEndWith("The player cannot be changed: nothing walks the level.");
         level.Printed.ShouldAllBe(line => line == "nil" || line.StartsWith("false "));
