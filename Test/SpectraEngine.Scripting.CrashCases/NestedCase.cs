@@ -3,16 +3,16 @@ using SpectraEngine.Scripting.Luau;
 
 namespace SpectraEngine.Scripting.CrashCases;
 
-// A host function runs another script and waits for it, as require runs a
-// module. The script that asked is in the middle of a call, so a managed
-// frame of the host lies on the stack under the script it started. That one
-// ends in each way a script can: it returns, fails, waits, and is stopped by
-// the watchdog. The collector runs inside it and after it.
+// A host function runs another script and waits for it, so a managed frame
+// of the host lies on the stack under the script it started. That script
+// returns, fails, waits and is stopped by the watchdog, with the collector
+// at work. This is the host's half of require. RequireCase runs require.
 internal static class NestedCase
 {
     private const int Rounds = 40;
     private const string Failed = "it failed";
     private const string Waited = "it waited";
+    private const string Hang = "churn() while true do end";
 
     private const string Asker = """
         local inside = ...
@@ -22,13 +22,15 @@ internal static class NestedCase
         return worked, tostring(got)
         """;
 
+    private static readonly TimeSpan _hangLimit = TimeSpan.FromMilliseconds(20);
+
     // What the script inside does, and what the one that asked gets for it.
     private static readonly (string Inside, bool Works, string Gives)[] _ways =
     [
         ("churn() return 6 * 7", true, "42"),
         ("churn() local door = nil return door.open", false, Failed),
         ("churn() coroutine.yield() return 1", true, Waited),
-        ("churn() while true do end", false, Failed),
+        (Hang, false, Failed),
     ];
 
     internal static int Run()
@@ -75,7 +77,6 @@ internal static class NestedCase
             throw new InvalidOperationException("The host functions could not be set.");
 
         host.Seal();
-        host.CallLimit = TimeSpan.FromMilliseconds(20);
         return host;
     }
 
@@ -104,7 +105,15 @@ internal static class NestedCase
         if (!stack.TryGetUtf8(1, out ReadOnlySpan<byte> text) || host.Load("inside.luau", text) is not { } script)
             return stack.Fail("the script to run did not load");
 
+        // The short limit is for the script that hangs and from here on. A
+        // collection that takes long, in any of the others or in the script
+        // that asked, would otherwise stop the wrong one.
+        bool hangs = text.SequenceEqual(Encoding.UTF8.GetBytes(Hang));
+        if (hangs)
+            host.CallLimit = _hangLimit;
+
         LuauResume outcome = script.Start();
+        host.CallLimit = LuauHost.DefaultCallLimit;
         Stress.Churn();
         switch (outcome)
         {

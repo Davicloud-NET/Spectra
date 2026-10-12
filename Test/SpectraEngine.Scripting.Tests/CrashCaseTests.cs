@@ -97,9 +97,9 @@ public sealed class CrashCaseTests
         result.Output.ShouldContain("went on after 4 scripts");
     }
 
-    // What require does with a module. The script that asks has a managed
-    // frame of the host under the module, and no way the module ends may
-    // unwind through it.
+    // The host's half of require, with a stand-in for the loader. The script
+    // that asks has a managed frame of the host under the script it started,
+    // and no way that one ends may unwind through it.
     [Fact]
     public async Task A_script_run_from_inside_a_host_function_ends_every_way_and_its_asker_goes_on()
     {
@@ -110,6 +110,20 @@ public sealed class CrashCaseTests
         result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
         result.Output.ShouldContain("NativeAOT: True");
         result.Output.ShouldContain("160 scripts inside a host function, 80 errors reported");
+    }
+
+    // Require itself, in a level that plays: the loader, the runtime and the
+    // script API as native code.
+    [Fact]
+    public async Task A_script_of_a_level_asks_for_modules_that_end_every_way_in_a_native_build()
+    {
+        CrashCaseProcess.Require();
+
+        CrashCaseProcess.Result result = await CrashCaseProcess.Run("require-in-a-level");
+
+        result.ExitCode.ShouldBe(CaseExit.Passed, result.Output);
+        result.Output.ShouldContain("NativeAOT: True");
+        result.Output.ShouldContain("asked for 200 modules in a level, 80 errors reported");
     }
 
     [Fact]
