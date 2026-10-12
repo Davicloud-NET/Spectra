@@ -28,28 +28,10 @@ public static class NodeClassName
     {
         ArgumentNullException.ThrowIfNull(node);
 
-        return Of(
-            KindOf(node),
-            node.Entity?.ClassName,
-            node.Light?.Kind,
-            node.Script is { IsModule: true });
-    }
-
-    // A node of a baked level is still what a bake took from it. That payload
-    // gets the place the classifier gives it: a brush before everything, a
-    // mesh after an entity and a light.
-    private static SceneNodeKind KindOf(SceneNode node)
-    {
-        SceneNodeKind kind = SceneNodeClassifier.Classify(node);
-
-        return node.BakedKind switch
-        {
-            SceneNodeKind.BrushWorld => SceneNodeKind.BrushWorld,
-            SceneNodeKind.BrushSubtractive => SceneNodeKind.BrushSubtractive,
-            SceneNodeKind.Mesh when kind is SceneNodeKind.Script or SceneNodeKind.Group or SceneNodeKind.Empty =>
-                SceneNodeKind.Mesh,
-            _ => kind,
-        };
+        // First, so a door is a func_door and not the part it is made of.
+        return node.Entity is { ClassName.Length: > 0 } entity
+            ? entity.ClassName
+            : NodeClass.NameOf(NodeClass.KindOf(node));
     }
 
     /// <summary>The same from what a UI holds of a node.</summary>
@@ -67,19 +49,9 @@ public static class NodeClassName
         {
             SceneNodeKind.BrushWorld or SceneNodeKind.BrushPart or SceneNodeKind.BrushSubtractive => Part,
             SceneNodeKind.Mesh => MeshPart,
-            SceneNodeKind.Light => OfLight(light ?? LightKind.Point),
+            SceneNodeKind.Light => NodeClass.NameOf(NodeClass.OfLight(light ?? LightKind.Point)),
             SceneNodeKind.Script => isModule ? ModuleScript : Script,
             _ => Folder,
         };
     }
-
-    // Roblox has a word for three of them. The other two are named the same way.
-    private static string OfLight(LightKind kind) => kind switch
-    {
-        LightKind.Directional => "DirectionalLight",
-        LightKind.Spot => "SpotLight",
-        LightKind.Rect => "SurfaceLight",
-        LightKind.Disc => "DiscLight",
-        _ => "PointLight",
-    };
 }
