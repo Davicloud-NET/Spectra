@@ -75,4 +75,47 @@ public sealed class ScriptAllocationTests
         part.Name.ShouldBe("Shown");
         allocated.ShouldBe(0, $"{Ticks} ticks of the script allocated on the managed heap");
     }
+
+    // A name is compared where Luau keeps it. The hinge moves only when
+    // every one of the finds gave what it should.
+    [Fact]
+    public void A_script_that_finds_nodes_every_tick_allocates_nothing_once_it_runs()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        SceneNode house = House.Build(level);
+        SceneNode hinge = house.Traverse().Single(node => node.Name == "Hinge");
+        level.AddScript(level.Scene.Root, """
+            local house = workspace.House
+            local hinge = house.Door.Hinge
+            game:GetService("RunService").Heartbeat:Connect(function()
+                local found = house:FindFirstChild("Door") == hinge.Parent
+                    and workspace:FindFirstChild("Hinge", true) == hinge
+                    and house:FindFirstChildOfClass("PointLight") == house.Lamp
+                    and house:FindFirstChildWhichIsA("SpotLight", true) == house.Lamp.Shade
+                    and hinge:FindFirstAncestor("House") == house
+                    and hinge:FindFirstAncestorOfClass("Folder") == house
+                    and hinge:FindFirstAncestorWhichIsA("BasePart") == house.Door
+                    and hinge:IsA("BasePart") and not hinge:IsA("Light")
+                    and house:IsAncestorOf(hinge) and hinge:IsDescendantOf(workspace)
+                    and house:WaitForChild("Walls") == workspace.House.Walls
+                    and house:FindFirstChild("Nobody") == nil
+                    and house:FindFirstChild("Nobody", true) == nil
+
+                if found then
+                    hinge.Position += Vector3.new(0, 0.001, 0)
+                end
+            end)
+            """);
+
+        level.Play().Tick(Ticks);
+        Vector3 warm = hinge.LocalPosition;
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        level.Tick(Ticks);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        level.Errors.ShouldBeEmpty();
+        hinge.LocalPosition.ShouldNotBe(warm, "a find did not give what it should");
+        allocated.ShouldBe(0, $"{Ticks} ticks of the script allocated on the managed heap");
+    }
 }

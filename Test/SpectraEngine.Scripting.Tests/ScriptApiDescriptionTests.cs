@@ -24,6 +24,18 @@ public sealed partial class ScriptApiDescriptionTests
             RBXScriptConnection = run.Heartbeat:Connect(function() end),
             CFrame = CFrame.new(1, 2, 3),
             Vector3 = Vector3.new(1, 2, 3),
+            BasePart = workspace.Kinds.Part,
+            Part = workspace.Kinds.Part,
+            MeshPart = workspace.Kinds.MeshPart,
+            Light = workspace.Kinds.PointLight,
+            PointLight = workspace.Kinds.PointLight,
+            SpotLight = workspace.Kinds.SpotLight,
+            DirectionalLight = workspace.Kinds.DirectionalLight,
+            SurfaceLight = workspace.Kinds.SurfaceLight,
+            DiscLight = workspace.Kinds.DiscLight,
+            Folder = workspace.Kinds.Folder,
+            Script = script,
+            ModuleScript = workspace.Kinds.ModuleScript,
         }
         """;
 
@@ -43,7 +55,7 @@ public sealed partial class ScriptApiDescriptionTests
     public void An_object_of_every_class_has_the_members_the_description_gives_it_and_no_other()
     {
         string[] names = [.. Candidates()];
-        string[] printed = ScriptLevel.Run($$"""
+        string[] printed = ClassHolders.Run($$"""
             {{Holders}}
             local names = { {{string.Join(", ", names.Select(name => $"\"{name}\""))}} }
             for class, holder in holders do

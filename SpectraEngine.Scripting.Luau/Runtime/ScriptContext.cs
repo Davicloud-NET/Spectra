@@ -9,7 +9,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // What generated glue reaches a level through: the host, the method table
 // of each class, and the door. ScriptWrites is the only thing here that
-// sets a node, so Stop puts every write back.
+// sets a node, so Stop puts every write back. A member written by hand may
+// take the context too, and finds here what the level keeps for it.
 internal sealed class ScriptContext
 {
     // In bytes of UTF-8. A longer text is made into a string on every write.
@@ -20,9 +21,10 @@ internal sealed class ScriptContext
 
     // Gives the host the atoms and makes the method tables, so it comes
     // before anything else of the script API is set up.
-    public ScriptContext(LuauHost host, ScriptWrites writes)
+    public ScriptContext(LuauHost host, ScriptWrites writes, ChildWaits childWaits)
     {
         Host = host;
+        ChildWaits = childWaits;
         _writes = writes;
 
         if (ScriptApiCatalog.AtomCount > 0)
@@ -32,6 +34,9 @@ internal sealed class ScriptContext
     }
 
     public LuauHost Host { get; }
+
+    // The threads that wait for a child, which WaitForChild adds to.
+    public ChildWaits ChildWaits { get; }
 
     // Nil for null. False: an error value is on top instead.
     public bool PushObject(LuauStack stack, object? value) =>

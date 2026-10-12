@@ -21,6 +21,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     private readonly TaskLibrary _tasks;
     private readonly RunService _runService;
     private readonly ScriptStarter _starter;
+    private readonly ChildWaits _childWaits;
     private volatile bool _isClosed;
 
     /// <summary>Opens a Luau state and gives it everything a script of this level can reach.</summary>
@@ -36,10 +37,11 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         _sink = new NodeNamingSink(setup.Sink);
         _prints = new PrintCap(_sink, _world);
         _host = new LuauHost(_prints);
+        _childWaits = new ChildWaits(_host, _world, _waiting);
 
         try
         {
-            var context = new ScriptContext(_host, new ScriptWrites(_world));
+            var context = new ScriptContext(_host, new ScriptWrites(_world), _childWaits);
             Vector3Members.Install(context);
             Vector3Library.ScriptInstall(context);
 
@@ -59,6 +61,9 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
             _host.Seal();
             _starter = new ScriptStarter(_host, setup.Source, _sink);
+
+            // Last, so a runtime that was not made listens to nothing.
+            _childWaits.Listen();
         }
         catch
         {
@@ -114,7 +119,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
         try
         {
-            _tasks.Wake(token);
+            if (!_childWaits.TryWake(token))
+                _tasks.Wake(token);
         }
         catch (Exception e) // boundary: nothing of a script may throw into the tick
         {
@@ -130,7 +136,8 @@ public sealed class LuauScriptRuntime : IScriptRuntime
 
         try
         {
-            _tasks.Drop(token);
+            if (!_childWaits.TryDrop(token))
+                _tasks.Drop(token);
         }
         catch (Exception e) // boundary: nothing of a script may throw into the tick
         {
@@ -182,6 +189,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     public void Close()
     {
         _isClosed = true;
+        _childWaits.StopListening();
         _host.Close();
     }
 

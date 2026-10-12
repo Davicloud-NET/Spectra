@@ -8,7 +8,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 /// <summary>A node of the level's tree: a part, a light, a folder, a script.</summary>
 // A property with Sets has no body here. The generator writes it, and it
 // reads the member of ScriptWrites that a script's write goes through.
-[ScriptClass("Instance")]
+// A name that is no member is a child's, which ObjectMembers answers.
+[ScriptClass("Instance", ChildType = "Instance")]
 internal static partial class NodeApi
 {
     /// <summary>The node's name. A wire finds its entity by the same name.</summary>

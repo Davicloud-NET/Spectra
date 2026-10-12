@@ -42,6 +42,9 @@ public sealed class ScriptCostTests
         ("call a method of a service with a dot", "local _ = game.GetService(game, 'RunService')"),
         ("call a library function, CFrame out", "local _ = CFrame.Angles(0, i, 0)"),
         ("multiply two CFrames", "local _ = f * g"),
+        ("find a child by its name", "local _ = part:FindFirstChild('Script')"),
+        ("read a child by its name", "local _ = part.Script"),
+        ("ask a node what it is", "local _ = part:IsA('BasePart')"),
     ];
 
     public static TheoryData<string> Names => new(Crossings.Select(crossing => crossing.Name));

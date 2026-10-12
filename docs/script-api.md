@@ -72,6 +72,26 @@ private int Wait(LuauStack stack) => tasks.OldWait(stack);
 
 `Extends = "Instance"` on `[ScriptClass]` gives a class every member of another. Its switches hand a name the class does not declare to the class it extends, so a script finds there what the description promises. Both must be static classes whose members take the same object, such as a `SceneNode`. Anything else is an error. A class with `TypeParameters` extends nothing and has no operators.
 
+A class may declare no member at all, as `Part` and `SpotLight` do today:
+
+```csharp
+/// <summary>A light that shines in a cone.</summary>
+[ScriptClass("SpotLight", Extends = "Light")]
+internal static partial class SpotLightApi;
+```
+
+It still has the three switches. The catalogue writes them, since only it knows the type of the object, and each hands the name to the class it extends. Its first member moves the switches into its own file, and nothing else has to change.
+
+### A class of nodes
+
+A node is asked through the class of what it carries. `NodeClass.KindOf` in Core says which that is, and `NodeMembers` calls that class's switch. So a member declared on `LightApi` is found on every light and on no part. An entity counts as what carries it: a door is asked as a `Part`.
+
+Core also says what a class extends (`NodeClass.BaseOf`), which is what `IsA` goes by. The script API says it again with `Extends`, and a test holds the two alike.
+
+A new class of nodes is added in five places: a `NodeClassKind`, its name and what it extends in `NodeClass`, the class with `[ScriptClass]`, a line in each switch of `NodeMembers`, and a node in `ClassHolders` with its line in the description test.
+
+A name that is no member of a node is the name of a child: `workspace.Door`. `ObjectMembers` looks for one only when the switches have answered that there is no such member, so a member always wins and costs what it did. `ChildType` on `[ScriptClass]` tells the type checker.
+
 ### What crosses
 
 | C# | Luau |
@@ -113,6 +133,13 @@ private int Connect(LuauStack stack) => Listen(stack, "Connect", isOnce: false);
 
 In a static class the object comes after the stack: `static int GetComponents(LuauStack stack, CFrame self)`. Several `[ScriptOverload]` attributes declare several shapes.
 
+A member written by hand may take the `ScriptContext` in front of the stack. A static class has no fields of its own, and the context is where it finds what the level keeps for its scripts:
+
+```csharp
+[ScriptMethod(Returns = "{Instance}")]
+private static int GetChildren(ScriptContext context, LuauStack stack, SceneNode node)
+```
+
 Two more things stay by hand:
 
 - An operator. `[ScriptOperator("*", "Vector3", "Vector3")]` goes on the method that implements it, and that method is put into the metatable by hand (`CFrameMembers`).
@@ -131,7 +158,9 @@ For a library and for globals: `ScriptInstall`, which makes the table or sets th
 
 One more file, `ScriptApiCatalog.g.cs`, numbers every member name (`ScriptAtoms`) and every class (`ScriptClassIds`), and gathers the descriptions. A name's number is its atom: Luau hands it over in place of the name, so `part:FindFirstChild(...)` reaches its code through `__namecall` and a switch on a number, with no string compared.
 
-The metatables are still set up by hand, in `ObjectMembers`, `CFrameMembers` and `Vector3Members`. Each finds the object, calls the generated switch, and puts a name that means nothing into the words a script reads.
+The catalogue also holds the switches of every class that declares no member, as above.
+
+The metatables are still set up by hand, in `ObjectMembers`, `CFrameMembers` and `Vector3Members`. Each finds the object, calls the generated switch, and puts a name that means nothing into the words a script reads. For a node, `ObjectMembers` goes through `NodeMembers`, which picks the class.
 
 A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Generator/AnalyzerReleases.Unshipped.md` lists them. One about what an attribute says points at the attribute. One about the member itself points at the member: no summary, a type that cannot cross, a missing object parameter, a shape that cannot be called. A parameter Luau cannot name is marked at the parameter, and a class that extends what it cannot is marked at the class.
 

@@ -5,7 +5,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 // The one metatable every managed object shares: a node, a service, a
 // signal, a connection. The members are in the generated glue of each
 // class. This finds the object, and words what a script reads for a name
-// the object does not have. That is an error, never nil.
+// the object does not have. That is an error, never nil. On a node, a name
+// that is no member gives the child of that name.
 internal sealed class ObjectMembers
 {
     private readonly ScriptContext _context;
@@ -34,7 +35,14 @@ internal sealed class ObjectMembers
             return stack.Fail(NotAName(stack));
 
         int read = Read(stack, target, atom);
-        return read == ScriptMember.None ? stack.Fail(NotAMember(stack.GetText(2), target)) : read;
+        if (read != ScriptMember.None)
+            return read;
+
+        // A name that is no member is a child's, as in Roblox. Looked for
+        // only here, so a member always wins and costs what it did.
+        return target is SceneNode parent && ChildNamed(stack, parent) is { } child
+            ? ScriptResult.Of(_context.PushObject(stack, child))
+            : stack.Fail(NotAMember(stack.GetText(2), target));
     }
 
     private int NewIndex(LuauStack stack)
@@ -45,7 +53,7 @@ internal sealed class ObjectMembers
             return stack.Fail(NotAName(stack));
 
         int written = target is SceneNode node
-            ? NodeApi.ScriptWrite(_context, stack, node, atom)
+            ? NodeMembers.Write(_context, stack, node, atom)
             : ((ScriptObject)target).WriteMember(_context, stack, atom);
 
         return written switch
@@ -65,11 +73,11 @@ internal sealed class ObjectMembers
 
         int atom = stack.NamecallAtom;
         int called = target is SceneNode node
-            ? NodeApi.ScriptInvoke(_context, stack, node, atom)
+            ? NodeMembers.Invoke(_context, stack, node, atom)
             : ((ScriptObject)target).InvokeMember(_context, stack, atom);
 
         if (called == ScriptMember.None)
-            return stack.Fail(NotAMember(stack.NamecallName, target));
+            return FailNoMethod(stack, target);
         if (called != ScriptMember.NotCallable)
             return called;
 
@@ -80,8 +88,28 @@ internal sealed class ObjectMembers
 
     private int Read(LuauStack stack, object target, int atom) =>
         target is SceneNode node
-            ? NodeApi.ScriptRead(_context, stack, node, atom)
+            ? NodeMembers.Read(_context, stack, node, atom)
             : ((ScriptObject)target).ReadMember(_context, stack, atom);
+
+    // A child called like a method is read, as a property is, and is then no
+    // function. Any other name is no member.
+    private int FailNoMethod(LuauStack stack, object target)
+    {
+        string? name = stack.NamecallName;
+        if (target is SceneNode parent && name is not null && NodeTree.Child(parent, NodeMatch.Name, name) is { } child)
+            return _context.PushObject(stack, child) ? ScriptMember.FailNotCallable(stack) : LuauStack.Raise;
+
+        return stack.Fail(NotAMember(name, target));
+    }
+
+    // The child the second value names, or null.
+    private static SceneNode? ChildNamed(LuauStack stack, SceneNode parent)
+    {
+        Span<char> room = stackalloc char[NameChars.Room];
+        return stack.TryGetUtf8(2, out ReadOnlySpan<byte> name) && NameChars.TryRead(name, room, out ReadOnlySpan<char> wanted)
+            ? NodeTree.Child(parent, NodeMatch.Name, wanted)
+            : null;
+    }
 
     private int ToText(LuauStack stack) =>
         ScriptResult.Of(stack.Push(TargetOf(stack) switch
