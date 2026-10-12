@@ -47,6 +47,49 @@ internal static class AskingScript
 
         local target = script.Parent
 
+        -- What the node is, and what is around it: by name, by class and by
+        -- what a node is. Asked before any script has renamed anything.
+        local classes = {
+        	"Instance", "BasePart", "Part", "MeshPart", "Light", "PointLight", "SpotLight", "DirectionalLight",
+        	"SurfaceLight", "DiscLight", "Folder", "Script", "ModuleScript", "func_door", "logic_relay",
+        	"info_player_start", "trigger_multiple",
+        }
+
+        local function names(nodes)
+        	local list = {}
+        	for index, node in nodes do
+        		list[index] = node.Name .. " " .. node.ClassName
+        	end
+        	return #list .. ": " .. table.concat(list, ", ")
+        end
+
+        local function path(node)
+        	return if node then node:GetFullName() else "nothing"
+        end
+
+        local isA = {}
+        for _, class in classes do
+        	if target:IsA(class) then
+        		table.insert(isA, class)
+        	end
+        end
+
+        say("is a", table.concat(isA, " "))
+        say("children", names(target:GetChildren()))
+        say("descendants", names(target:GetDescendants()))
+        say("full name", script:GetFullName())
+        say("child by name", target.Ask == script and target:FindFirstChild("Ask") == script)
+        say("first of its name", path(workspace:FindFirstChild(who, true)))
+        say("first part below", path(target:FindFirstChildWhichIsA("BasePart", true)))
+        say("first light below", path(target:FindFirstChildWhichIsA("Light", true)))
+        say("script child", path(target:FindFirstChildOfClass("Script")))
+        say("part above", path(script:FindFirstAncestorWhichIsA("BasePart")))
+        say("folder above", path(script:FindFirstAncestorOfClass("Folder")))
+        say("workspace above", script:FindFirstAncestor(workspace.Name) == workspace)
+        say("in the tree", script:IsDescendantOf(workspace) and workspace:IsAncestorOf(script) and not script:IsAncestorOf(target))
+        say("a child that is there", target:WaitForChild("Ask") == script)
+        say("a child that never comes", target:WaitForChild("Nobody", 0.05))
+
         attempt("a member no node has", function() return target.Anchored end)
         attempt("a class name written", function() target.ClassName = "Part" end)
 

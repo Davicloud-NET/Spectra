@@ -20,7 +20,7 @@ public class LooseAndCookedLevelTests
 {
     // Long enough for the deepest script to ask everything, wait and count
     // three heartbeats.
-    private const int Ticks = 30;
+    private const int Ticks = 45;
 
     private static readonly Lazy<Played> BothRuns = new(PlayBoth);
 
@@ -46,7 +46,7 @@ public class LooseAndCookedLevelTests
         // A dropped line is a warning. The one error is the script with no file.
         played.Loose.ShouldNotContain(line => line.StartsWith("Warning", StringComparison.Ordinal));
         played.Loose.Count(line => line.StartsWith("Error", StringComparison.Ordinal)).ShouldBe(1);
-        played.Loose.Length.ShouldBeGreaterThan(AskedLevel.Askers.Length * 25);
+        played.Loose.Length.ShouldBeGreaterThan(AskedLevel.Askers.Length * 40);
     }
 
     [Theory]
@@ -69,6 +69,84 @@ public class LooseAndCookedLevelTests
 
         played.Loose.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
         played.Cooked.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+    }
+
+    // A world brush has no brush once it is baked, and a mesh the pack does
+    // not bind has no renderer. Each is still what it was.
+    [Theory]
+    [InlineData("Floor | is a | Instance BasePart Part")]
+    [InlineData("Doorway | is a | Instance BasePart Part")]
+    [InlineData("Plank | is a | Instance BasePart Part")]
+    [InlineData("Crate | is a | Instance BasePart Part")]
+    [InlineData("Bulb | is a | Instance BasePart Part")]
+    [InlineData("Door | is a | Instance BasePart Part func_door")]
+    [InlineData("Relay | is a | Instance logic_relay")]
+    [InlineData("Start | is a | Instance info_player_start")]
+    [InlineData("Sun | is a | Instance Light DirectionalLight")]
+    [InlineData("Spot | is a | Instance Light SpotLight")]
+    [InlineData("Prop | is a | Instance BasePart MeshPart")]
+    [InlineData("Shelf | is a | Instance Folder")]
+    [InlineData("Later | is a | Instance Script")]
+    [InlineData("Rules | is a | Instance ModuleScript")]
+    [InlineData("Ask | is a | Instance Script")]
+    [InlineData("Root | is a | Instance Folder")]
+    public void A_node_is_of_the_same_classes_in_both_levels(string said)
+    {
+        Played played = Play();
+
+        played.Loose.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+        played.Cooked.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("Shelf | children | 2: Plank Part, Ask Script")]
+    [InlineData("Props | children | 2: Prop MeshPart, Ask Script")]
+    [InlineData("Shelf | descendants | 3: Plank Part, Ask Script, Ask Script")]
+    [InlineData("Shelf | first part below | Root.Shelf.Plank")]
+    [InlineData("Props | first part below | Root.Props.Prop")]
+    [InlineData("Root | first part below | Root.Floor")]
+    [InlineData("Root | first light below | Root.Sun")]
+    [InlineData("Root | script child | Root.Later")]
+    [InlineData("Plank | part above | Root.Shelf.Plank")]
+    [InlineData("Plank | folder above | Root.Shelf")]
+    [InlineData("Spot | first of its name | Root.Lamp.Spot")]
+    [InlineData("Ask | full name | Root.Crate.Ask.Ask")]
+    public void A_search_of_the_tree_finds_the_same_node_in_both_levels(string said)
+    {
+        Played played = Play();
+
+        played.Loose.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+        played.Cooked.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_root_has_its_children_in_one_order_in_both_levels()
+    {
+        Played played = Play();
+
+        string loose = played.Loose.Single(line => line.Contains("Root | children | "));
+        string cooked = played.Cooked.Single(line => line.Contains("Root | children | "));
+
+        cooked.ShouldBe(loose);
+        loose.ShouldContain("Floor Part, Wall Part, BackWall Part, Doorway Part, Crate Part, Door func_door,");
+    }
+
+    [Fact]
+    public void Every_script_finds_its_own_node_by_name_and_waits_only_for_a_child_that_is_not_there()
+    {
+        Played played = Play();
+
+        foreach (string[] lines in new[] { played.Loose, played.Cooked })
+        {
+            foreach (string asker in AskedLevel.Askers)
+            {
+                lines.ShouldContain(line => line.EndsWith($"{asker} | child by name | true", StringComparison.Ordinal), asker);
+                lines.ShouldContain(line => line.EndsWith($"{asker} | workspace above | true", StringComparison.Ordinal), asker);
+                lines.ShouldContain(line => line.EndsWith($"{asker} | in the tree | true", StringComparison.Ordinal), asker);
+                lines.ShouldContain(line => line.EndsWith($"{asker} | a child that is there | true", StringComparison.Ordinal), asker);
+                lines.ShouldContain(line => line.EndsWith($"{asker} | a child that never comes | nil", StringComparison.Ordinal), asker);
+            }
+        }
     }
 
     [Theory]
