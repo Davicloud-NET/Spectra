@@ -4,6 +4,7 @@ using Spectra.Kitchen.Packs;
 using Spectra.Kitchen.Rules;
 using SpectraEngine.Core;
 using SpectraEngine.Core.Assets.Packs;
+using SpectraEngine.Core.Scripting;
 using SpectraEngine.Scripting.Luau;
 using System;
 using System.IO;
@@ -168,13 +169,12 @@ public class PackVerifierTests
         string assets = Path.Combine(AppContext.BaseDirectory, "Assets");
         Directory.Exists(assets).ShouldBeTrue($"the engine's content should be beside the test binary: {assets}");
 
-        // The engine's scripts go through the compiler a game loads them with.
-        LuauSyntaxCheck luau = RealScriptCheck.Require();
-
         using var project = new TempProject();
         CopyTree(assets, project.Layout.AssetsPath);
 
-        CookResult cooked = new CookSession(project.Layout, new CookSettings { ScriptCheck = luau })
+        // A fake check, so this runs where Luau is not built. The scripts
+        // are compiled for real in the test below.
+        CookResult cooked = new CookSession(project.Layout, new CookSettings { ScriptCheck = new FakeScriptCheck() })
             .Run(TestContext.Current.CancellationToken);
         cooked.Succeeded.ShouldBeTrue(string.Join(Environment.NewLine, cooked.Diagnostics));
         cooked.Assets.Count(asset => asset.Rule == RuleKind.Script).ShouldBeGreaterThan(0);
@@ -183,6 +183,25 @@ public class PackVerifierTests
 
         result.Succeeded.ShouldBeTrue(Describe(result));
         result.ReferencesChecked.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    [Trait("Suite", RealScriptCheck.Suite)]
+    public void The_engines_own_scripts_compile_with_the_compiler_a_game_loads_them_with()
+    {
+        LuauSyntaxCheck luau = RealScriptCheck.Require();
+        string assets = Path.Combine(AppContext.BaseDirectory, "Assets");
+
+        using var project = new TempProject();
+        foreach (string script in Directory.GetFiles(assets, "*" + PackedScript.FileExtension, SearchOption.AllDirectories))
+            project.WriteAsset(Path.GetRelativePath(assets, script), File.ReadAllBytes(script));
+
+        CookResult cooked = new CookSession(project.Layout, new CookSettings { UseCache = false, ScriptCheck = luau })
+            .Run(TestContext.Current.CancellationToken);
+
+        cooked.Succeeded.ShouldBeTrue(string.Join(Environment.NewLine, cooked.Diagnostics));
+        cooked.Assets.Count(asset => asset.Rule == RuleKind.Script).ShouldBeGreaterThan(0);
+        Verify(cooked.OutputPath.ShouldNotBeNull()).Succeeded.ShouldBeTrue();
     }
 
     [Fact]

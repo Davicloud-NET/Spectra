@@ -15,6 +15,7 @@ namespace Spectra.Kitchen.Tests;
 /// </summary>
 // Where the two differ, the cooked level is what is wrong: it has to answer
 // as the level somebody built does.
+[Trait("Suite", RealScriptCheck.Suite)]
 public class LooseAndCookedLevelTests
 {
     // Long enough for the deepest script to ask everything, wait and count

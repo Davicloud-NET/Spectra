@@ -241,6 +241,12 @@ jobs:
       - name: Spectra.Kitchen.Tests
         run: dotnet run --project Test/Spectra.Kitchen.Tests
 
+      # The tests that cook real scripts skip without the Luau library, and
+      # the step above passes on a skip. Here a skip fails.
+      - name: Spectra.Kitchen.Tests, the ones that need Luau
+        shell: pwsh
+        run: .github/run-unskipped.ps1 -Project Test/Spectra.Kitchen.Tests -Filter '-trait', 'Suite=RealLuau'
+
   # Export a project from the demo, cook it, verify the pack. Every other job
   # resolves loose files, so only this one sees what a shipped build sees.
   # Windows only: the export needs a graphics device.
@@ -337,6 +343,11 @@ jobs:
       - name: Spectra.Kitchen.Tests
         run: dotnet run --project Test/Spectra.Kitchen.Tests
 
+      # As on Linux: the tests that cook real scripts, with a skip as a failure.
+      - name: Spectra.Kitchen.Tests, the ones that need Luau
+        shell: pwsh
+        run: .github/run-unskipped.ps1 -Project Test/Spectra.Kitchen.Tests -Filter '-trait', 'Suite=RealLuau'
+
   # The cook determinism oracles under their own job name. They also run inside
   # Spectra.Kitchen.Tests above; this job exists so a failure is reported as a
   # determinism failure. Each host proves determinism against itself only:
@@ -360,8 +371,8 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # The oracles cook scripts, which scook checks with Luau. Without the
-      # library they skip, and a skip fails this job.
+      # The script oracles cook scripts, which scook checks with Luau. Without
+      # the library they skip, and a skip fails this job.
       - name: Build Luau, or take it from the cache
         uses: ./.github/actions/luau
 
@@ -385,7 +396,7 @@ jobs:
             exit 1
           }
           if ([int]$Matches[1] -gt 0) {
-            Write-Host "::error title=Determinism oracle skipped::$($Matches[1]) determinism test(s) skipped themselves. scook is build output of Spectra.Kitchen.CLI and was probably not beside the test binary."
+            Write-Host "::error title=Determinism oracle skipped::$($Matches[1]) determinism test(s) skipped themselves. An oracle skips when scook or the Luau library is not beside the test binary. scook is build output of Spectra.Kitchen.CLI, and the Luau step above builds the library. The reasons are in the log."
             exit 1
           }
 

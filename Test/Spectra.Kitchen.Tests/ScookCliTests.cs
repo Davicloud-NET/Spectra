@@ -210,6 +210,7 @@ public class ScookCliTests
     }
 
     [Fact]
+    [Trait("Suite", RealScriptCheck.Suite)]
     public void A_project_with_scripts_cooks_verifies_and_has_nothing_to_say()
     {
         RealScriptCheck.Require();
@@ -230,6 +231,7 @@ public class ScookCliTests
     }
 
     [Fact]
+    [Trait("Suite", RealScriptCheck.Suite)]
     public void A_script_with_a_mistake_fails_the_cook_on_a_line_that_names_its_place()
     {
         RealScriptCheck.Require();
@@ -251,6 +253,7 @@ public class ScookCliTests
     }
 
     [Fact]
+    [Trait("Suite", RealScriptCheck.Suite)]
     public void A_map_that_names_a_script_nobody_wrote_cooks_and_fails_to_verify()
     {
         RealScriptCheck.Require();
