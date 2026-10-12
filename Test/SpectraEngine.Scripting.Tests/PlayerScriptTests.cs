@@ -177,6 +177,41 @@ public sealed class PlayerScriptTests
     }
 
     [Fact]
+    public void The_facing_a_script_teleported_to_reads_back_on_later_ticks_until_a_view_has_taken_it()
+    {
+        using var level = new ScriptLevel();
+        level.AddScript(level.Scene.Root, $$"""
+            {{Character}}
+            local beats = 0
+            game:GetService("RunService").Heartbeat:Connect(function()
+                beats += 1
+                if beats == 10 then
+                    character:Teleport(CFrame.lookAt(Vector3.new(5, 0.05, 5), Vector3.new(5, 0.05, -4)))
+                end
+                if beats >= 10 then
+                    local look = character.CFrame.LookVector
+                    print(look.X, look.Y, look.Z)
+                end
+            end)
+            """);
+        level.Play();
+
+        // The commands keep the yaw a view had before the teleport.
+        Tick(level, Forward(0.6f), 13);
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.Length.ShouldBe(4);
+        foreach (string line in level.Printed)
+            Vector(line).Z.ShouldBe(-1f, 1e-5f, line);
+
+        // Once a view has turned to it, the facing is the commands' again.
+        Walker(level).TryTakeTeleport(out _).ShouldBeTrue();
+        Tick(level, Forward(0.6f));
+        Vector(level.Printed[^1]).X.ShouldBe(MathF.Cos(0.6f), 1e-5f);
+        Vector(level.Printed[^1]).Z.ShouldBe(MathF.Sin(0.6f), 1e-5f);
+    }
+
+    [Fact]
     public void A_teleport_to_the_frame_the_player_has_leaves_it_where_it_is_and_facing_as_it_did()
     {
         using var level = new ScriptLevel();

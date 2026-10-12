@@ -16,11 +16,11 @@ public interface IPlayerPresence
     /// <summary>The player's capsule in world space.</summary>
     CharacterCapsule Capsule { get; }
 
-    /// <summary>Where the feet are, how fast the player moves and whether it stands, as of the last tick.</summary>
+    /// <summary>
+    /// Where the feet are, how fast the player moves, whether it stands and
+    /// which way it faces, as of the last tick.
+    /// </summary>
     CharacterState State { get; }
-
-    /// <summary>The way the player faces, in radians, as of the last tick.</summary>
-    float Yaw { get; }
 
     /// <summary>
     /// How the player moves. A change takes effect on the next tick and

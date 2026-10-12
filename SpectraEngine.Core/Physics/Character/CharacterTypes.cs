@@ -182,6 +182,11 @@ public struct CharacterState
     // the node has moved since.
     public Vector3 GroundOrigin;
 
+    /// <summary>The way the character faces, in radians, as of the last tick.</summary>
+    // Written by CharacterSimulation, not by the mover, which takes its yaw
+    // from the command.
+    public float Yaw;
+
     public static CharacterState AtFeet(Vector3 feet) => new()
     {
         Position = feet,

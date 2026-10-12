@@ -18,6 +18,9 @@ public static class CharacterFacing
     public static CFrame FrameAt(Vector3 feet, float yaw) =>
         new(feet, Quaternion.CreateFromAxisAngle(Vector3.UnitY, (-MathF.PI / 2f) - yaw));
 
+    /// <summary>The frame of a character in a state: at its feet, looking the way it faces.</summary>
+    public static CFrame FrameOf(in CharacterState state) => FrameAt(state.Position, state.Yaw);
+
     /// <summary>
     /// The yaw a frame looks along, in radians. Null for a frame that looks
     /// straight up or down, which has no heading.

@@ -122,12 +122,12 @@ public sealed class CharacterPresenceTests
         character.SpawnYaw = 1.25f;
         character.Spawn();
 
-        presence.Yaw.ShouldBe(1.25f);
+        presence.State.Yaw.ShouldBe(1.25f);
 
         var turned = new CharacterCommand { Yaw = -0.5f };
         character.Tick(in turned, Dt);
 
-        presence.Yaw.ShouldBe(-0.5f);
+        presence.State.Yaw.ShouldBe(-0.5f);
     }
 
     [Fact]
@@ -138,10 +138,10 @@ public sealed class CharacterPresenceTests
         character.Spawn();
 
         presence.Teleport(new Vector3(1f, 0.05f, 1f));
-        presence.Yaw.ShouldBe(1.25f);
+        presence.State.Yaw.ShouldBe(1.25f);
 
         presence.Teleport(new Vector3(2f, 0.05f, 2f), yaw: 0.75f);
-        presence.Yaw.ShouldBe(0.75f);
+        presence.State.Yaw.ShouldBe(0.75f);
     }
 
     [Fact]
@@ -173,7 +173,7 @@ public sealed class CharacterPresenceTests
 
         character.State.Position.ShouldBe(character.SpawnPosition);
         character.State.Velocity.ShouldBe(Vector3.Zero);
-        presence.Yaw.ShouldBe(1.25f);
+        presence.State.Yaw.ShouldBe(1.25f);
 
         // A view snaps to it as to a teleport. It is not the fall-out guard.
         character.TryTakeTeleport(out float? yaw).ShouldBeTrue();

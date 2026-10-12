@@ -25,7 +25,7 @@ internal sealed partial class ScriptCharacter : ScriptObject
 
     /// <summary>Where the player's feet are and which way the player faces: along the frame's LookVector.</summary>
     [ScriptProperty(CannotSet = "CFrame cannot be set. Move the player with Teleport")]
-    public CFrame CFrame => CharacterFacing.FrameAt(Body.State.Position, Body.Yaw);
+    public CFrame CFrame => CharacterFacing.FrameOf(Body.State);
 
     /// <summary>How fast the player moves and which way, in units a second. A script sets it to push or throw the player. One that rises off the ground the player stands on lifts the player off it, and the rise of a walk up a slope does not.</summary>
     [ScriptProperty(SetBy = nameof(SetVelocity))]

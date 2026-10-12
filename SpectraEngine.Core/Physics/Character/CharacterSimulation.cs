@@ -61,10 +61,11 @@ public sealed class CharacterSimulation : IPlayerPresence
 
     /// <summary>
     /// The way the character faces, in radians: the yaw of the last command
-    /// ticked, of the spawn before the first, or of a teleport that turned it.
+    /// ticked, or of the spawn before the first. A teleport that names a
+    /// facing sets it, and it stays until <see cref="TryTakeTeleport"/> has
+    /// handed that facing to a view.
     /// </summary>
-    // Beside the state, not in it: the mover takes its yaw from the command.
-    public float Yaw { get; private set; }
+    public float Yaw => _state.Yaw;
 
     /// <summary>Where <see cref="Spawn"/> and the fall-out guard put the character.</summary>
     public Vector3 SpawnPosition { get; set; }
@@ -93,7 +94,7 @@ public sealed class CharacterSimulation : IPlayerPresence
     public void Spawn()
     {
         _state = CharacterState.AtFeet(SpawnPosition);
-        Yaw = SpawnYaw;
+        _state.Yaw = SpawnYaw;
         IsPresent = true;
 
         // A teleport no view took belongs to the run before this one.
@@ -121,12 +122,13 @@ public sealed class CharacterSimulation : IPlayerPresence
     {
         // Held buttons carry over, or a held jump reads as a new press.
         CharacterButtons held = _state.PrevButtons;
+        float facing = yaw ?? _state.Yaw;
         _state = CharacterState.AtFeet(feet);
         _state.PrevButtons = held;
+        _state.Yaw = facing;
 
         _teleportPending = true;
         _teleportYaw = yaw ?? _teleportYaw;
-        Yaw = yaw ?? Yaw;
     }
 
     /// <summary>
@@ -187,7 +189,11 @@ public sealed class CharacterSimulation : IPlayerPresence
         // Here as well as in the mover: a replaced mover that forgets would
         // turn one held button into a press on every tick.
         _state.PrevButtons = command.Buttons;
-        Yaw = command.Yaw;
+
+        // A facing a teleport named holds until a view has turned to it.
+        // Until then the command carries the yaw the view had before.
+        if (_teleportYaw is null)
+            _state.Yaw = command.Yaw;
 
         if (_state.Position.Y >= FallOutHeight)
             return false;

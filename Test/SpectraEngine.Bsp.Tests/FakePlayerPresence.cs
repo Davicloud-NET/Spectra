@@ -27,6 +27,7 @@ internal sealed class FakePlayerPresence : IPlayerPresence
         {
             CharacterState state = CharacterState.AtFeet(Feet);
             state.Velocity = Velocity;
+            state.Yaw = Yaw;
             return state;
         }
     }
