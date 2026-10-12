@@ -54,7 +54,8 @@ public sealed class CookSettings
     /// that hosts the cook installs the real one. With none installed, a
     /// project that has scripts does not cook.
     /// </summary>
-    // Not in any rule's declared settings: its release is a tool version, in every key.
+    // Its version is in a script's cache key and in no other
+    // (CookSettingKeys.ScriptCheck).
     public IScriptSyntaxCheck ScriptCheck { get; init; } = NoScriptSyntaxCheck.Instance;
 
     /// <summary>Which block-compression encoder to use.</summary>

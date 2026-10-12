@@ -42,6 +42,10 @@ public static class CookSettingsDigest
                 settings.AudioSampleRate.ToString(CultureInfo.InvariantCulture)));
         }
 
+        // By what it says it is, so two hosts with one compiler share a verdict.
+        if ((declared & CookSettingKeys.ScriptCheck) != 0)
+            pairs.Add(new("scriptCheck", settings.ScriptCheck.CompilerVersion));
+
         pairs.Sort(static (a, b) => string.CompareOrdinal(a.Key, b.Key));
         return pairs;
     }

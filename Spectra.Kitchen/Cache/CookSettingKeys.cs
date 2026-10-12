@@ -31,4 +31,10 @@ public enum CookSettingKeys
     /// sound is resampled to.
     /// </summary>
     AudioSampleRate = 1 << 4,
+
+    /// <summary>
+    /// Reads <c>CookSettings.ScriptCheck</c>: the compiler that says whether
+    /// a script is packed.
+    /// </summary>
+    ScriptCheck = 1 << 5,
 }

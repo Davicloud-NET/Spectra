@@ -126,55 +126,63 @@ public class CookCacheKeyTests
     {
         byte[] stream = Stream(RuleKind.Map, 1, CookSettingKeys.None, new CookSettings());
 
-        foreach (string tool in new[]
-                 {
-                     "encoder", "shaderFormat", "mapFormat", "geometryFormat", "packFormat", "isa", "luau",
-                 })
-        {
+        foreach (string tool in new[] { "encoder", "shaderFormat", "mapFormat", "geometryFormat", "packFormat", "isa" })
             IndexOf(stream, Encoding.UTF8.GetBytes(tool)).ShouldBeGreaterThanOrEqualTo(0, tool);
-        }
     }
 
     [Fact]
-    public void The_script_compilers_release_is_the_seventh_tool_and_moves_every_key()
+    public void The_script_compiler_is_in_the_key_of_the_rule_that_declares_it()
+    {
+        var older = new CookSettings { ScriptCheck = new FakeScriptCheck { CompilerVersion = "luau 0.742, shim 7" } };
+        var newer = new CookSettings { ScriptCheck = new FakeScriptCheck { CompilerVersion = "luau 0.743, shim 7" } };
+
+        byte[] stream = Stream(RuleKind.Script, 1, CookSettingKeys.ScriptCheck, older);
+        int name = IndexOf(stream, Encoding.UTF8.GetBytes("scriptCheck"));
+
+        // A string is its byte count, then its bytes: the name, then the value.
+        Encoding.UTF8.GetString(stream, name + "scriptCheck".Length + sizeof(uint), "luau 0.742, shim 7".Length)
+            .ShouldBe("luau 0.742, shim 7");
+
+        Key(RuleKind.Script, 1, CookSettingKeys.ScriptCheck, newer)
+            .ShouldNotBe(Key(RuleKind.Script, 1, CookSettingKeys.ScriptCheck, older));
+
+        // By what the check says it is, not by which object it is.
+        var another = new CookSettings { ScriptCheck = new FakeScriptCheck { CompilerVersion = "luau 0.742, shim 7" } };
+        Key(RuleKind.Script, 1, CookSettingKeys.ScriptCheck, another)
+            .ShouldBe(Key(RuleKind.Script, 1, CookSettingKeys.ScriptCheck, older));
+    }
+
+    [Fact]
+    public void A_new_script_compiler_leaves_the_key_of_everything_that_is_not_a_script()
     {
         var older = new CookSettings { ScriptCheck = new FakeScriptCheck { CompilerVersion = "luau 0.742" } };
         var newer = new CookSettings { ScriptCheck = new FakeScriptCheck { CompilerVersion = "luau 0.743" } };
+        var none = new CookSettings();
 
-        byte[] stream = Stream(RuleKind.Script, 1, CookSettingKeys.None, older);
-        int name = IndexOf(stream, Encoding.UTF8.GetBytes("luau"));
-
-        // A string is its byte count, then its bytes: the name, then the value.
-        Encoding.UTF8.GetString(stream, name + 4 + sizeof(uint), "luau 0.742".Length).ShouldBe("luau 0.742");
-
-        // After the instruction set, which was the last one: the list is append only.
-        name.ShouldBeGreaterThan(IndexOf(stream, Encoding.UTF8.GetBytes("isa")));
-
-        // Every rule's key, by the rule for tools. Not only the script rule's.
-        foreach (RuleKind kind in new[] { RuleKind.Script, RuleKind.Image, RuleKind.RawCopy, RuleKind.Map })
+        // A texture is not cooked again for a Luau update, and a host with
+        // no check keys it as scook does.
+        foreach (RuleKind kind in new[] { RuleKind.Image, RuleKind.RawCopy, RuleKind.Map, RuleKind.Audio })
         {
-            Key(kind, 1, CookSettingKeys.None, newer)
-                .ShouldNotBe(Key(kind, 1, CookSettingKeys.None, older), kind.ToString());
-        }
+            UInt128 key = Key(kind, 1, CookSettingKeys.None, older);
 
-        // By the release it names, not by which check it is.
-        var another = new CookSettings { ScriptCheck = new FakeScriptCheck { CompilerVersion = "luau 0.742" } };
-        Key(RuleKind.Script, 1, CookSettingKeys.None, another)
-            .ShouldBe(Key(RuleKind.Script, 1, CookSettingKeys.None, older));
+            Key(kind, 1, CookSettingKeys.None, newer).ShouldBe(key, kind.ToString());
+            Key(kind, 1, CookSettingKeys.None, none).ShouldBe(key, kind.ToString());
+        }
     }
 
     [Fact]
-    public void A_cook_with_no_check_installed_keys_on_having_none()
+    public void The_script_rule_declares_the_compiler_and_no_other_rule_does()
     {
-        byte[] stream = Stream(RuleKind.RawCopy, 1, CookSettingKeys.None, new CookSettings());
-        int name = IndexOf(stream, Encoding.UTF8.GetBytes("luau"));
+        new ScriptRule(new FakeScriptCheck()).SettingsRead.ShouldBe(CookSettingKeys.ScriptCheck);
 
-        Encoding.UTF8.GetString(stream, name + 4 + sizeof(uint), 4).ShouldBe("none");
+        IRule[] others = [new RawCopyRule(), new MapRule(), new MaterialRule(), new ModelRule()];
+        foreach (IRule rule in others)
+            (rule.SettingsRead & CookSettingKeys.ScriptCheck).ShouldBe(CookSettingKeys.None, rule.Kind.ToString());
     }
 
     private const CookSettingKeys AllSettingKeys =
         CookSettingKeys.Profile | CookSettingKeys.Targets | CookSettingKeys.Encoder |
-        CookSettingKeys.KeepBrushSource | CookSettingKeys.AudioSampleRate;
+        CookSettingKeys.KeepBrushSource | CookSettingKeys.AudioSampleRate | CookSettingKeys.ScriptCheck;
 
     private static byte[] Stream(
         RuleKind kind, int ruleVersion, CookSettingKeys declared, CookSettings settings) =>

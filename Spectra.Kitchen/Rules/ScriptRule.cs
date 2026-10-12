@@ -32,8 +32,8 @@ public sealed class ScriptRule : IRule
     public int Version => 1;
 
     /// <inheritdoc/>
-    // The compiler's release is in every key as a tool version.
-    public CookSettingKeys SettingsRead => CookSettingKeys.None;
+    // Another compiler may judge the same script another way.
+    public CookSettingKeys SettingsRead => CookSettingKeys.ScriptCheck;
 
     /// <summary>Whether <paramref name="contentPath"/> is a script this rule cooks.</summary>
     public static bool Handles(string contentPath)

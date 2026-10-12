@@ -232,9 +232,9 @@ public class ScriptRuleTests
         var newer = new FakeScriptCheck { CompilerVersion = "fake 2" };
         CookResult recooked = Cook(project, newer, cache: true);
 
-        // The release is a tool version, so it is in the key of the copy too.
-        recooked.CacheHits.ShouldBe(0);
-        recooked.CacheMisses.ShouldBe(2);
+        // The script is judged again. The file beside it is not cooked again.
+        recooked.CacheHits.ShouldBe(1);
+        recooked.CacheMisses.ShouldBe(1);
         newer.Asked.Length.ShouldBe(1);
     }
 
