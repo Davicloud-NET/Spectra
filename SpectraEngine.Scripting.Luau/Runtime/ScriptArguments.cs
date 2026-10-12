@@ -15,29 +15,23 @@ internal static class ScriptArguments
         return isNumber;
     }
 
-    // A number that may be left out, as the up vector of a look-at is.
+    // A number that may be left out, as the seconds of a wait may.
     public static bool TryOptionalNumber(LuauStack stack, int index, double fallback, out double value)
     {
         value = fallback;
         return stack.IsNil(index) || stack.TryGetNumber(index, out value);
     }
 
-    public static bool TryVector(LuauStack stack, int index, out Vector3 value) =>
-        stack.TryGetVector(index, out value);
-
-    public static bool TryOptionalVector(LuauStack stack, int index, Vector3 fallback, out Vector3 value)
-    {
-        value = fallback;
-        return stack.IsNil(index) || stack.TryGetVector(index, out value);
-    }
-
-    public static bool TryFrame(LuauStack stack, int index, out CFrame value) =>
-        FrameValue.TryGet(stack, index, out value);
-
     // The readers generated glue calls, one for each kind of value. A
     // string that reads as a number counts as one, as it does in Luau.
     public static bool TryDouble(LuauStack stack, int index, out double value) =>
         stack.TryGetNumber(index, out value);
+
+    public static bool TryVector(LuauStack stack, int index, out Vector3 value) =>
+        stack.TryGetVector(index, out value);
+
+    public static bool TryFrame(LuauStack stack, int index, out CFrame value) =>
+        FrameValue.TryGet(stack, index, out value);
 
     // True and false only. Any value counts as one of them in a condition,
     // and an argument of the wrong kind is a mistake.
