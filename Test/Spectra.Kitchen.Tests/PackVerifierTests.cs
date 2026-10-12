@@ -174,7 +174,8 @@ public class PackVerifierTests
         using var project = new TempProject();
         CopyTree(assets, project.Layout.AssetsPath);
 
-        CookResult cooked = new CookSession(project.Layout, new CookSettings { ScriptCheck = luau }).Run();
+        CookResult cooked = new CookSession(project.Layout, new CookSettings { ScriptCheck = luau })
+            .Run(TestContext.Current.CancellationToken);
         cooked.Succeeded.ShouldBeTrue(string.Join(Environment.NewLine, cooked.Diagnostics));
         cooked.Assets.Count(asset => asset.Rule == RuleKind.Script).ShouldBeGreaterThan(0);
 

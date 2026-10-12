@@ -160,7 +160,7 @@ public class ScriptRuleTests
         using var project = new TempProject();
         project.WriteAsset(Door, "print(1)\n");
 
-        CookResult cooked = new CookSession(project.Layout, new CookSettings { UseCache = false }).Run();
+        CookResult cooked = WithNoCheck(project);
 
         cooked.Succeeded.ShouldBeFalse();
         cooked.Diagnostics.Single(d => d.IsError).Id.ToString().ShouldBe("SC8002");
@@ -172,8 +172,7 @@ public class ScriptRuleTests
         using var project = new TempProject();
         project.WriteAsset("Data/notes.txt", "hello\n");
 
-        new CookSession(project.Layout, new CookSettings { UseCache = false }).Run()
-            .Succeeded.ShouldBeTrue();
+        WithNoCheck(project).Succeeded.ShouldBeTrue();
     }
 
     [Theory]
@@ -276,7 +275,7 @@ public class ScriptRuleTests
         string copied = Path.Combine(project.Root, "copied.spack");
         var writer = new PackWriter();
         writer.Add(Door, PackEntryKind.Script, Encoding.UTF8.GetBytes("print(1)\n"));
-        writer.WriteToFile(copied);
+        writer.WriteToFile(copied, TestContext.Current.CancellationToken);
 
         PackVerifyResult result = PackVerifier.Verify(copied);
 
@@ -286,6 +285,10 @@ public class ScriptRuleTests
         refused.Message.ShouldContain(Door);
         CookGate.Verdict(CookDiagnosticCodes.ScriptFileUnreadable).ShouldBe(CookGateVerdict.Fatal);
     }
+
+    // What a host that set nothing up cooks with.
+    private static CookResult WithNoCheck(TempProject project) =>
+        new CookSession(project.Layout, new CookSettings { UseCache = false }).Run();
 
     private static RuleContext Run(TempProject project, string path, IScriptSyntaxCheck check)
     {
