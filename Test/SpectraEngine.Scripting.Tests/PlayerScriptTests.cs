@@ -53,7 +53,7 @@ public sealed class PlayerScriptTests
     }
 
     [Fact]
-    public void The_frame_a_script_reads_stands_at_the_feet_and_looks_along_its_z_axis_the_way_the_player_walks()
+    public void The_frame_a_script_reads_stands_at_the_feet_and_looks_the_way_the_player_walks()
     {
         const float Yaw = 0.6f;
         using var level = new ScriptLevel();
@@ -62,7 +62,7 @@ public sealed class PlayerScriptTests
             game:GetService("RunService").Heartbeat:Connect(function()
                 local frame = character.CFrame
                 print(frame.Position == character.Position)
-                print(frame.ZVector.X, frame.ZVector.Y, frame.ZVector.Z)
+                print(frame.LookVector.X, frame.LookVector.Y, frame.LookVector.Z)
             end)
             """);
         level.Play();
@@ -80,6 +80,36 @@ public sealed class PlayerScriptTests
         Vector3 walked = Walker(level).State.Position - start;
         Vector3 along = Vector3.Normalize(new Vector3(walked.X, 0f, walked.Z));
         Vector3.Dot(along, facing).ShouldBe(1f, 1e-3f);
+    }
+
+    [Fact]
+    public void What_a_script_puts_in_front_of_the_frame_is_ahead_of_the_player_and_its_right_is_to_the_right()
+    {
+        using var level = new ScriptLevel();
+        level.AddScript(level.Scene.Root, $$"""
+            {{Character}}
+            game:GetService("RunService").Heartbeat:Connect(function()
+                local frame = character.CFrame
+                local ahead = (frame * CFrame.new(0, 0, -5)).Position - frame.Position
+                local right = (frame * CFrame.new(2, 0, 0)).Position - frame.Position
+                print(ahead.X, ahead.Y, ahead.Z, right.X, right.Y, right.Z)
+            end)
+            """);
+        level.Play();
+        CharacterSimulation walker = Walker(level);
+
+        // Yaw zero walks along +X, and a strafe to the right goes along +Z.
+        Tick(level, Forward(), 40);
+        float[] numbers = Numbers(level.Printed[^1]);
+        Vector3 before = walker.State.Position;
+        Tick(level, new CharacterCommand { MoveStrafe = CharacterCommand.Axis(1f) }, 40);
+
+        level.Errors.ShouldBeEmpty();
+        float[] aheadThenRight = [5f, 0f, 0f, 0f, 0f, 2f];
+        for (int i = 0; i < aheadThenRight.Length; i++)
+            numbers[i].ShouldBe(aheadThenRight[i], 1e-5f, $"number {i}");
+
+        (walker.State.Position.Z - before.Z).ShouldBeGreaterThan(1f);
     }
 
     [Fact]
@@ -122,14 +152,14 @@ public sealed class PlayerScriptTests
     }
 
     [Fact]
-    public void A_teleport_to_a_frame_turns_the_player_along_the_frames_z_axis()
+    public void A_teleport_to_a_frame_turns_the_player_to_what_the_frame_looks_at()
     {
         using var level = new ScriptLevel();
         level.AddScript(level.Scene.Root, $$"""
             {{Character}}
-            character:Teleport(CFrame.new(5, 0.05, 5) * CFrame.Angles(0, math.rad(180), 0))
-            local p, z = character.Position, character.CFrame.ZVector
-            print(p.X, p.Y, p.Z, z.X, z.Y, z.Z)
+            character:Teleport(CFrame.lookAt(Vector3.new(5, 0.05, 5), Vector3.new(5, 0.05, -4)))
+            local p, look = character.Position, character.CFrame.LookVector
+            print(p.X, p.Y, p.Z, look.X, look.Y, look.Z)
             """);
 
         level.Play().Tick();
@@ -141,7 +171,7 @@ public sealed class PlayerScriptTests
         numbers[4].ShouldBe(0f, 1e-5f);
         numbers[5].ShouldBe(-1f, 1e-5f);
 
-        // A view turns to it as it does for a trigger that teleports.
+        // A view turns to it as it does for a trigger that teleports: this yaw walks along -Z.
         Walker(level).TryTakeTeleport(out float? yaw).ShouldBeTrue();
         yaw.ShouldNotBeNull().ShouldBe(-MathF.PI / 2f, 1e-5f);
     }
@@ -159,7 +189,7 @@ public sealed class PlayerScriptTests
                     local before = character.CFrame
                     character:Teleport(before)
                     print(character.Position == before.Position)
-                    print((character.CFrame.ZVector - before.ZVector).Magnitude < 1e-5)
+                    print((character.CFrame.LookVector - before.LookVector).Magnitude < 1e-5)
                 end
             end)
             """);

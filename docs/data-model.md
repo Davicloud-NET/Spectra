@@ -89,7 +89,7 @@ Brushes are the authored truth for static world geometry. The carved surfaces, t
 A `CFrame` is a position and a unit quaternion. It is the transform a script works with, and every operation on it means what it means in Roblox:
 
 - `a * b` places `b` in the space of `a`. Applied to a point it applies `b` first, then `a`. The engine's matrices go the other way round, `world = local * parent.World`, because they act on row vectors. So `child.CFrame` is `parent.CFrame * child.LocalCFrame`.
-- A frame looks along its own -Z (`LookVector`), with +X right and +Y up. The engine's lights and player starts face +Z. That difference is decided and stays.
+- A frame looks along its own -Z (`LookVector`), with +X right and +Y up. The engine's lights and player starts face +Z. That difference is decided and stays. The player's frame as a script reads it (`CharacterFacing`) is a frame like any other and looks along `LookVector`, so a teleport to a player start's own frame turns the player round.
 - `Angles(rx, ry, rz)` takes radians and applies the Z turn first: `Rx * Ry * Rz`. `FromOrientation` is `Ry * Rx * Rz`, the same order as `Quaternion.CreateFromYawPitchRoll(ry, rx, rz)` and as `EulerAngles`.
 - `GetComponents` writes the position, then the rotation matrix row by row for column vectors. `ToMatrix` gives the engine's matrix, which holds the same nine numbers transposed.
 - Two frames are equal when all twelve components are, so a quaternion and its negative are one frame. `default(CFrame)` is the identity.

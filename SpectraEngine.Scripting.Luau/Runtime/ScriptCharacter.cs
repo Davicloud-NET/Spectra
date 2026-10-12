@@ -23,7 +23,7 @@ internal sealed partial class ScriptCharacter : ScriptObject
     [ScriptProperty(CannotSet = "Position cannot be set. Move the player with Teleport")]
     public Vector3 Position => Body.State.Position;
 
-    /// <summary>Where the player's feet are and which way the player faces: along the frame's ZVector, as a player start does.</summary>
+    /// <summary>Where the player's feet are and which way the player faces: along the frame's LookVector.</summary>
     [ScriptProperty(CannotSet = "CFrame cannot be set. Move the player with Teleport")]
     public CFrame CFrame => CharacterFacing.FrameAt(Body.State.Position, Body.Yaw);
 
@@ -47,7 +47,7 @@ internal sealed partial class ScriptCharacter : ScriptObject
     // error at its line. What calls a host function catches it.
     private IPlayerPresence Body => _door.Player ?? throw new InvalidOperationException(ScriptMember.HasLeft);
 
-    /// <summary>Puts the player at rest at a position, or at a frame's position, facing along the frame's ZVector.</summary>
+    /// <summary>Puts the player at rest at a position, or at a frame's position, facing along the frame's LookVector. A player start faces along its ZVector, so its own frame turns the player round.</summary>
     [ScriptMethod(Parameters = "target: CFrame | Vector3")]
     private int Teleport(LuauStack stack)
     {

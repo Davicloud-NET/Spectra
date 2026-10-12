@@ -108,8 +108,8 @@ public sealed class PlayerWrites
 
     /// <summary>
     /// Puts the player at rest with its feet at a frame's position, looking
-    /// along the frame's +Z. A frame that looks straight up or down leaves
-    /// the player looking the way it did.
+    /// along the frame's LookVector. A frame that looks straight up or down
+    /// leaves the player looking the way it did.
     /// </summary>
     /// <param name="refusal">Why the player was not moved, as the script's error says it.</param>
     /// <returns>False when the move was refused. The player is as it was then.</returns>

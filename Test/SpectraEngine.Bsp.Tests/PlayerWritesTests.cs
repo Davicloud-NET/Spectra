@@ -143,15 +143,16 @@ public sealed class PlayerWritesTests
     }
 
     [Fact]
-    public void A_teleport_to_a_frame_turns_the_player_along_the_frames_z_axis()
+    public void A_teleport_to_a_frame_turns_the_player_to_what_the_frame_looks_at()
     {
         PlayerWrites door = Started();
+        var feet = new Vector3(4f, 1f, -2f);
 
-        // As a player start that points down -Z is turned.
-        var frame = new CFrame(new Vector3(4f, 1f, -2f), Light.RotationForDirection(new Vector3(0f, 0f, -1f)));
+        CFrame frame = CFrame.LookAt(feet, feet + new Vector3(0f, 0f, -3f));
         door.TryTeleport(frame, out string? refusal).ShouldBeTrue(refusal);
 
-        _player.Feet.ShouldBe(new Vector3(4f, 1f, -2f));
+        // A command of this yaw walks along -Z.
+        _player.Feet.ShouldBe(feet);
         _player.Yaw.ShouldBe(-MathF.PI / 2f, 1e-5f);
     }
 
@@ -161,7 +162,7 @@ public sealed class PlayerWritesTests
         PlayerWrites door = Started();
         _player.Yaw = 0.5f;
 
-        var up = new CFrame(Vector3.Zero, Light.RotationForDirection(Vector3.UnitY));
+        CFrame up = CFrame.LookAlong(Vector3.Zero, Vector3.UnitY);
         door.TryTeleport(up, out string? refusal).ShouldBeTrue(refusal);
 
         _player.Teleports.Single().Yaw.ShouldBeNull();
