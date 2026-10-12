@@ -215,8 +215,11 @@ public sealed class ProjectTests
         File.Exists(Path.Combine(temp.Path, ".gitignore")).ShouldBeTrue();
 
         // Stops a Windows checkout converting map bundles to CRLF.
-        File.ReadAllText(Path.Combine(temp.Path, ".gitattributes"))
-            .ShouldContain("**/*.smap/** text eol=lf");
+        string attributes = File.ReadAllText(Path.Combine(temp.Path, ".gitattributes"));
+        attributes.ShouldContain("**/*.smap/** text eol=lf");
+
+        // And scripts, whose bytes go into the pack as they are.
+        attributes.ShouldContain("*.luau text eol=lf");
 
         ProjectLayout reopened = ProjectLayout.Open(created.ManifestPath);
         reopened.Project.Name.ShouldBe("MyGame");

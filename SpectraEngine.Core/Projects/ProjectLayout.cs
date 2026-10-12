@@ -217,5 +217,9 @@ public sealed class ProjectLayout
         # Keep the leading **/. Without it only a bundle in the project root matches.
         **/*.smap/** text eol=lf
         *.spectraproj text eol=lf
+
+        # A script is packed as the bytes its file has. Checked out with CRLF
+        # on one machine and LF on another, one commit cooks to two packs.
+        *.luau text eol=lf
         """;
 }
