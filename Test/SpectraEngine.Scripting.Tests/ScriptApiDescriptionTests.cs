@@ -72,6 +72,56 @@ public sealed partial class ScriptApiDescriptionTests
         }
     }
 
+    // An operator is bound by hand or is Luau's own, so only trying it
+    // shows whether the description is right about it.
+    [Fact]
+    public void A_value_takes_the_operators_the_description_gives_it_and_no_other()
+    {
+        string[] printed = ScriptLevel.Run("""
+            local values = { CFrame = CFrame.new(1, 2, 3), Vector3 = Vector3.new(1, 2, 3) }
+            local rights = { CFrame = values.CFrame, Vector3 = values.Vector3, number = 2, string = "two" }
+            local binary = {
+                ["+"] = function(a, b) return a + b end,
+                ["-"] = function(a, b) return a - b end,
+                ["*"] = function(a, b) return a * b end,
+                ["/"] = function(a, b) return a / b end,
+                ["//"] = function(a, b) return a // b end,
+                ["%"] = function(a, b) return a % b end,
+                ["^"] = function(a, b) return a ^ b end,
+                [".."] = function(a, b) return a .. b end,
+                ["<"] = function(a, b) return a < b end,
+            }
+            for class, value in values do
+                local found = {}
+                for operator, apply in binary do
+                    for kind, right in rights do
+                        if pcall(apply, value, right) then table.insert(found, operator .. kind) end
+                    end
+                end
+                if pcall(function() return -value end) then table.insert(found, "unm") end
+                if pcall(function() return #value end) then table.insert(found, "#") end
+                table.sort(found)
+                print(class .. ": " .. table.concat(found, " "))
+            end
+            """);
+
+        Dictionary<string, string> found = ByLabel(printed);
+        ScriptClassDescription[] values = [.. Api.Classes.Where(described => described.IsValue)];
+        found.Keys.Order(StringComparer.Ordinal).ShouldBe(
+            values.Select(described => described.Name).Order(StringComparer.Ordinal),
+            "the test tries no value of a value type the description has. Give it one");
+
+        foreach (ScriptClassDescription described in values)
+        {
+            IEnumerable<string> operators = described.Operators.SelectMany(op =>
+                op.Right.Length == 0 ? [op.Operator] : op.Right.Split('|').Select(right => op.Operator + right.Trim()));
+
+            found[described.Name].ShouldBe(
+                string.Join(' ', operators.Order(StringComparer.Ordinal)),
+                $"the operators a {described.Name} takes with each kind of value on its right, against the description");
+        }
+    }
+
     [Fact]
     public void Every_library_holds_the_functions_and_constants_the_description_gives_it_and_no_other()
     {
