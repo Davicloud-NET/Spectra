@@ -59,6 +59,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
             SceneNode workspace = _world.Scene.Root;
             var players = new Players(new PlayerWrites(_world));
             new LevelGlobals(new DataModel(_host, workspace, _runService, players), workspace).ScriptInstall(context);
+            new ModuleLoader(_host, setup.Source, _sink, _waiting).ScriptInstall(context);
 
             _host.Seal();
             _starter = new ScriptStarter(_host, setup.Source, _sink);

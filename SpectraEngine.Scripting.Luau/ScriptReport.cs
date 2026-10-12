@@ -30,6 +30,11 @@ internal static unsafe class ScriptReport
         }
     }
 
+    // The file of the script function that called the host function running
+    // on L. With no such function, the file of the thread's script.
+    internal static string CallerFile(nint L, LuauScript? script) =>
+        Line(L, script, ScriptSeverity.Print, string.Empty).Script;
+
     // A thread that ended in an error. The value is on top of its stack and
     // its frames are still there.
     internal static ScriptMessage Failure(nint thread, nint main, LuauScript? script)

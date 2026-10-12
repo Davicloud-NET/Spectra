@@ -358,8 +358,25 @@ public sealed class LuauDefinitionsTests
 
         foreach (ScriptPropertyDescription global in Api.Globals)
             written.ShouldContain($"\ndeclare {global.Name}: {global.Type}\n");
-        foreach (ScriptFunctionDescription function in Api.Functions)
+        foreach (ScriptFunctionDescription function in Api.Functions.Where(function => function.Name != "require"))
             written.ShouldContain($"\ndeclare function {function.Name}(");
+    }
+
+    // luau-lsp follows a path to its file through its own require. One
+    // declared here would take its place, and every module would be any.
+    [Fact]
+    public void The_file_leaves_require_to_the_type_checker_and_the_reference_still_has_it()
+    {
+        ScriptFunctionDescription require = Api.Functions.Single(function => function.Name == "require");
+
+        ScriptSignature shape = require.Signatures.ShouldHaveSingleItem();
+        shape.Parameters.ShouldBe([new ScriptParameter("module", "string | Instance")]);
+        shape.Returns.ShouldBe("any");
+        require.Summary.ShouldContain("nil when it was asked for by path");
+        LuauDefinitions.Write(Api).ShouldNotContain("require");
+
+        using JsonDocument json = JsonDocument.Parse(ScriptApiJson.Write(Api));
+        NamesIn(json.RootElement, "functions").ShouldContain("require");
     }
 
     [Fact]

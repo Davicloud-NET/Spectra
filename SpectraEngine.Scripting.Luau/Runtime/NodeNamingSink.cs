@@ -9,11 +9,25 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 // here, since a report is made in the middle of a tick.
 internal sealed class NodeNamingSink(IScriptSink sink) : IScriptSink
 {
+    private ScriptMessage? _lastError;
+
     // The node whose script is being compiled, or null.
     public SceneNode? Loading { get; set; }
 
+    // The error that came through last, as it was reported, and forgets it.
+    // Whoever runs a module asks here how it failed.
+    public ScriptMessage? TakeError()
+    {
+        ScriptMessage? last = _lastError;
+        _lastError = null;
+        return last;
+    }
+
     public void Report(in ScriptMessage message)
     {
+        if (message.Severity == ScriptSeverity.Error)
+            _lastError = message;
+
         try
         {
             if (Loading is { } node && message.Severity == ScriptSeverity.Error)

@@ -58,12 +58,20 @@ public static class LuauDefinitions
 
         foreach (ScriptFunctionDescription function in api.Functions)
         {
+            if (IsTheCheckersOwn(function.Name))
+                continue;
+
             text.Append('\n');
             WriteGlobalFunction(text, function);
         }
 
         return text.ToString();
     }
+
+    // The type checker's own require follows a path to its file and gives the
+    // module its type. A declaration would take its place and return any. So
+    // require is described for the reference and left out of this file.
+    private static bool IsTheCheckersOwn(string name) => name == "require";
 
     private static void WriteExternType(StringBuilder text, ScriptClassDescription described, string childType)
     {

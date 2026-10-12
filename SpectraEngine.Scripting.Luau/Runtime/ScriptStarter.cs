@@ -18,7 +18,7 @@ internal sealed partial class ScriptStarter(LuauHost host, IScriptSource source,
             if (host.IsClosed)
                 return;
 
-            // A module runs when a script asks for it, and nothing asks yet.
+            // A module runs when a script asks for it.
             if (node.Script is { IsEnabled: true, IsModule: false } script)
                 Start(node, script);
         }
