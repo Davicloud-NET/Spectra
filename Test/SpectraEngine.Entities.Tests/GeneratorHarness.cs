@@ -85,6 +85,21 @@ internal sealed class GeneratorRun
         return _result.GeneratedTrees[0].GetText().ToString();
     }
 
+    // The one generated file whose name ends this way.
+    public string SourceNamed(string ending)
+    {
+        SyntaxTree[] found = [.. _result.GeneratedTrees.Where(tree => tree.FilePath.EndsWith(ending, StringComparison.Ordinal))];
+        found.Length.ShouldBe(1, $"generated files ending in '{ending}'. {Describe()}");
+        return found[0].GetText().ToString();
+    }
+
+    // Every generated file under its name, in the order of the names.
+    public string AllSources() => string.Join(
+        "\n",
+        _result.GeneratedTrees
+            .OrderBy(tree => Path.GetFileName(tree.FilePath), StringComparer.Ordinal)
+            .Select(tree => $"// ---- {Path.GetFileName(tree.FilePath)} ----\n{tree.GetText()}"));
+
     // Errors from compiling the fixture together with the generated source.
     public string[] CompileErrors() => _output
         .GetDiagnostics()
