@@ -958,11 +958,10 @@ SL_API void* sl_host(lua_State* L)
     return hostOf(L)->managed;
 }
 
-// Gives each name a number, its place in the list, which lua_namecallatom and
-// lua_tolstringatom then answer for a string of those bytes. `names` holds
-// `count` names, each ended by a zero. Luau keeps a string's number once it
-// has asked, so the list is set once, before a script runs. Returns 0 when
-// it was not taken.
+// Gives each name its place in the list as a number, which lua_namecallatom
+// and lua_tolstringatom then answer. `names` holds `count` names, each ended
+// by a zero. Luau keeps a string's number once it has asked, so the list is
+// set once, before a script runs. Returns 0 when it was not taken.
 SL_API int sl_setatoms(lua_State* L, const char* names, size_t size, int count)
 {
     HostState* host = hostOf(L);

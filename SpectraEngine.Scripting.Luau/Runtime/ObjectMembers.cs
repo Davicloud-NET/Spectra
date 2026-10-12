@@ -2,11 +2,10 @@ using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Scripting.Luau.Runtime;
 
-// The one metatable every managed object shares: what a read, a write, a
-// call and a print of a node, a service, a signal or a connection come to.
-// The members are in the generated glue of each class. This finds the
-// object and says what a script reads when a name means nothing. A name the
-// object does not have is an error, never nil.
+// The one metatable every managed object shares: a node, a service, a
+// signal, a connection. The members are in the generated glue of each
+// class. This finds the object, and words what a script reads for a name
+// the object does not have. That is an error, never nil.
 internal sealed class ObjectMembers
 {
     private const string HasLeft = "this object has left the level";
