@@ -66,7 +66,11 @@ public SceneNode Workspace { get; }
 private int Wait(LuauStack stack) => tasks.OldWait(stack);
 ```
 
-`Name` is only needed when a script's name is not the member's own.
+`Name` is only needed when a script's name is not the member's own. Every name a script reads has to be one Luau can write, and so has the name of a C# parameter, which the description takes as it is. A word Luau keeps, such as `end` or `then`, is an error.
+
+### A class that extends another
+
+`Extends = "Instance"` on `[ScriptClass]` gives a class every member of another. Its switches hand a name the class does not declare to the class it extends, so a script finds there what the description promises. Both must be static classes whose members take the same object, such as a `SceneNode`. Anything else is an error. A class with `TypeParameters` extends nothing and has no operators.
 
 ### What crosses
 
@@ -95,7 +99,7 @@ public static partial Vector3 Position(SceneNode node);
 
 The generator writes the body, which reads the same member of the door. So what a script reads is what it wrote. The member itself is added to `ScriptWrites` first: a `SettableMemberId`, a row in its list, a case in `Read` and in `TryWrite`, and a `JournalKind`.
 
-A property that cannot be set answers "Property is read only". `CannotSet` gives it other words.
+A property that cannot be set answers "Property is read only". `CannotSet` gives it other words. The definitions file marks it `read`, so the type checker refuses the write the binding would refuse.
 
 ### Written by hand
 
@@ -112,13 +116,13 @@ In a static class the object comes after the stack: `static int GetComponents(Lu
 Two more things stay by hand:
 
 - An operator. `[ScriptOperator("*", "Vector3", "Vector3")]` goes on the method that implements it, and that method is put into the metatable by hand (`CFrameMembers`).
-- What is set outside the script API's own setup: `script`, which each script gets for itself, and `warn`, which a host has before it has a level. `ByHand = true` on the attribute declares it without binding it.
+- What is set outside the script API's own setup: `script`, which each script gets for itself, and `warn`, which a host has before it has a level. `ByHand = true` on `[ScriptProperty]` or `[ScriptFunction]` declares it without binding it.
 
 ## What is generated
 
 For a class or a value, in the other half of the declaring class:
 
-- `ScriptRead`, `ScriptWrite` and `ScriptInvoke`: a read, a write and a call of a member, each a switch on the member's atom. A write of a settable property calls the door. Every other write answers that the member is read only.
+- `ScriptRead`, `ScriptWrite` and `ScriptInvoke`: a read, a write and a call of a member, each a switch on the member's atom. A write of a settable property calls the door. Every other write answers that the member is read only. A name the class does not declare goes to the class it extends, through `ScriptBases` in the catalogue.
 - one method for each typed method, which checks every argument, converts it, calls and pushes the result. A wrong argument is refused in Roblox's words: `invalid argument #2 to 'Lerp' (number expected, got string)`.
 - `ScriptMethods`: the functions a script gets when it reads a method and does not call it.
 - `ScriptDescription`: the class as data.
@@ -129,7 +133,7 @@ One more file, `ScriptApiCatalog.g.cs`, numbers every member name (`ScriptAtoms`
 
 The metatables are still set up by hand, in `ObjectMembers`, `CFrameMembers` and `Vector3Members`. Each finds the object, calls the generated switch, and puts a name that means nothing into the words a script reads.
 
-A bad declaration is an error at the attribute, `SPS001` to `SPS009`. `SpectraEngine.Entities.Generator/AnalyzerReleases.Unshipped.md` lists them.
+A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Generator/AnalyzerReleases.Unshipped.md` lists them. One about what an attribute says points at the attribute. One about the member itself points at the member: no summary, a type that cannot cross, a missing object parameter, a shape that cannot be called. A parameter Luau cannot name is marked at the parameter, and a class that extends what it cannot is marked at the class.
 
 ## What the tests then demand
 
@@ -137,7 +141,7 @@ A bad declaration is an error at the attribute, `SPS001` to `SPS009`. `SpectraEn
 - `SettableListTests` holds the settable properties of the description equal to the list of `ScriptWrites`, by name, type and member.
 - `StopPromiseTests` writes to every settable member and compares the level's saved bytes after Stop.
 - `LuauDefinitionsTests` checks that the definitions file has every class, member and global.
-- `ScriptCostTests` fails when a crossing allocates. A new kind of crossing gets a row there.
+- `ScriptCostTests` fails when a crossing allocates. A new kind of crossing gets a row there. Its table of times is a measurement, which runs only when asked for: `dotnet run -c Release --project Test/SpectraEngine.Scripting.Tests -- -explicit only -class "SpectraEngine.Scripting.Tests.ScriptCostTests"`.
 - The generator's own tests are in `Test/SpectraEngine.Entities.Tests` (`ScriptApiGenerator*`). They compile its output against stubs of the binding in `ScriptApiHarness`. When the generator calls something new in the binding, the stub gets it too.
 
 ## The files
