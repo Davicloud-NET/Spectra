@@ -32,9 +32,11 @@ internal sealed partial class ScriptStarter(LuauHost host, IScriptSource source,
 
     private void Start(SceneNode node, Script script)
     {
-        if (source.Read(script.Path) is not { } text)
+        if (source.Read(script.Path, out string? problem) is not { } text)
         {
-            Report(node, script, $"'{node.Name}' names a script file that is not in the level's content, so it did not start.");
+            Report(node, script, problem is null
+                ? $"'{node.Name}' names a script file that is not in the level's content, so it did not start."
+                : $"{problem} The script on '{node.Name}' did not start.");
             return;
         }
 

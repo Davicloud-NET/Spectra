@@ -41,6 +41,16 @@ public static class PackedScript
     /// <summary>Whether a file's bytes are a packed script and not a script's text.</summary>
     public static bool IsPacked(ReadOnlySpan<byte> file) => file.StartsWith(Magic);
 
+    /// <summary>
+    /// The script's text in a file that is either that text or a packed
+    /// script, as a view of <paramref name="file"/>.
+    /// </summary>
+    /// <param name="file">The whole file.</param>
+    /// <param name="path">The script's path, for the message.</param>
+    /// <exception cref="InvalidDataException">The file is a packed script this build cannot read.</exception>
+    public static ReadOnlySpan<byte> TextOf(ReadOnlySpan<byte> file, string path) =>
+        IsPacked(file) ? SourceOf(file, path) : file;
+
     /// <summary>The script's text inside a packed script, as a view of <paramref name="file"/>.</summary>
     /// <param name="file">The whole entry, header included.</param>
     /// <param name="path">The script's content path, for the message.</param>

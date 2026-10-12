@@ -253,8 +253,8 @@ public class ScriptRuleTests
         var pack = project.Track(new PackSource(NullLogger.Instance, cooked.OutputPath.ShouldNotBeNull()));
         var loose = new LooseFileSource(NullLogger.Instance, project.Layout.AssetsPath);
 
-        byte[] fromPack = new ContentScriptSource(pack).Read(Door).ShouldNotBeNull();
-        byte[] fromFolder = new ContentScriptSource(loose).Read(Door).ShouldNotBeNull();
+        byte[] fromPack = new ContentScriptSource(pack).Read(Door, out _).ShouldNotBeNull();
+        byte[] fromFolder = new ContentScriptSource(loose).Read(Door, out _).ShouldNotBeNull();
 
         fromPack.ShouldBe(saved);
         fromFolder.ShouldBe(saved);
@@ -302,13 +302,13 @@ public class ScriptRuleTests
         using (ProjectContentMount dev = ProjectContentMount.Open(
                    NullLogger.Instance, project.Layout, ContentMountProfile.Dev))
         {
-            new ContentScriptSource(dev.Content).Read(Door).ShouldBe(edited);
+            new ContentScriptSource(dev.Content).Read(Door, out _).ShouldBe(edited);
         }
 
         using ProjectContentMount shipped = ProjectContentMount.Open(
             NullLogger.Instance, project.Layout, ContentMountProfile.Shipped);
 
-        byte[] packed = new ContentScriptSource(shipped.Content).Read(Door).ShouldNotBeNull();
+        byte[] packed = new ContentScriptSource(shipped.Content).Read(Door, out _).ShouldNotBeNull();
         Encoding.UTF8.GetString(packed).ShouldBe("print(\"cooked\")\n");
     }
 

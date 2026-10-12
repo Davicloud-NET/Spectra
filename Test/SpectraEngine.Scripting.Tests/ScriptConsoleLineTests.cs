@@ -74,6 +74,28 @@ public sealed class ScriptConsoleLineTests
     }
 
     [Fact]
+    public void A_script_file_that_cannot_be_read_says_why_and_not_that_it_is_missing()
+    {
+        const string Why = "'Scripts/old.luau' is a packed script of version 2, and this build reads version 1. " +
+            "Cook the project again.";
+
+        using var level = new ScriptLevel();
+        var console = new ConsoleOutput();
+        level.Manager.Scripts.Sink = new ConsoleScriptSink(console);
+        level.Files.AddUnreadable("Scripts/old.luau", Why);
+        SceneNode lamp = level.Scene.Root.CreateChild("Lamp");
+        lamp.Script = new Script("Scripts/old.luau");
+
+        level.Play().Tick();
+
+        ConsoleLine line = console.Drain().ShouldHaveSingleItem();
+        line.Severity.ShouldBe(LogLevel.Error);
+        line.ProblemNode.ShouldBe(lamp.Id);
+        line.Text.ShouldBe($"{Why} The script on 'Lamp' did not start.");
+        line.Text.ShouldNotContain("not in the level's content");
+    }
+
+    [Fact]
     public void A_flood_of_prints_leaves_room_in_the_console_for_the_error_after_it()
     {
         using var level = new ScriptLevel();

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Assets.Sources;
 using SpectraEngine.Core.Scripting;
@@ -101,29 +100,45 @@ public sealed class PackedScriptTests : IDisposable
 
         var source = new ContentScriptSource(new LooseFileSource(NullLogger.Instance, _root));
 
-        source.Read("Scripts/loose.luau").ShouldBe(text);
-        source.Read("Scripts/packed.luau").ShouldBe(text);
-        source.Read("Scripts/absent.luau").ShouldBeNull();
+        source.Read("Scripts/loose.luau", out _).ShouldBe(text);
+        source.Read("Scripts/packed.luau", out _).ShouldBe(text);
+
+        // No file is no problem with a file.
+        source.Read("Scripts/absent.luau", out string? problem).ShouldBeNull();
+        problem.ShouldBeNull();
     }
 
     [Fact]
-    public void A_packed_file_this_build_cannot_read_is_no_script_and_the_log_says_why()
+    public void A_packed_file_this_build_cannot_read_is_no_script_and_the_source_says_why()
     {
         byte[] entry = Packed("print(1)\n");
         entry[4] = 9;
         File.WriteAllBytes(Path.Combine(_root, "Scripts", "door.luau"), entry);
 
-        var log = new CapturingLogger();
-        var source = new ContentScriptSource(new LooseFileSource(NullLogger.Instance, _root), log);
+        var source = new ContentScriptSource(new LooseFileSource(NullLogger.Instance, _root));
 
-        source.Read(Door).ShouldBeNull();
-        log.MessagesAt(LogLevel.Error).ShouldHaveSingleItem().ShouldContain(Door);
+        source.Read(Door, out string? problem).ShouldBeNull();
+        problem.ShouldNotBeNull().ShouldContain(Door);
+        problem.ShouldContain("version 9");
+        problem.ShouldContain("Cook the project again");
     }
 
     [Fact]
     public void A_source_over_no_content_reads_nothing()
     {
-        new ContentScriptSource(null).Read(Door).ShouldBeNull();
+        new ContentScriptSource(null).Read(Door, out string? problem).ShouldBeNull();
+        problem.ShouldBeNull();
+    }
+
+    [Fact]
+    public void The_text_of_a_file_is_the_file_or_what_is_behind_its_header()
+    {
+        Encoding.UTF8.GetString(PackedScript.TextOf("print(1)\n"u8, Door)).ShouldBe("print(1)\n");
+        Encoding.UTF8.GetString(PackedScript.TextOf(Packed("print(1)\n"), Door)).ShouldBe("print(1)\n");
+
+        byte[] newer = Packed("print(1)\n");
+        newer[4] = 2;
+        Should.Throw<InvalidDataException>(() => PackedScript.TextOf(newer, Door));
     }
 
     // The format doc's layout, not the cook's writer: the reader is checked

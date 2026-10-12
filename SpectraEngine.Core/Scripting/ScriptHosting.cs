@@ -42,7 +42,7 @@ public sealed class ScriptHosting
         try
         {
             return factory(new ScriptRuntimeSetup(
-                world, Sink ?? SilentScriptSink.Instance, Source ?? new ContentScriptSource(content, logger)));
+                world, Sink ?? SilentScriptSink.Instance, Source ?? new ContentScriptSource(content)));
         }
         catch (InvalidOperationException e)
         {
