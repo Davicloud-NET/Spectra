@@ -55,7 +55,7 @@ internal static class ScriptModelFactory
                 ReadMember(state, member);
             }
 
-            ReadOperators(state, type);
+            ReadOperators(state, type, IsTableType(attribute));
         }
 
         return new ScriptContainerModel(
@@ -115,12 +115,19 @@ internal static class ScriptModelFactory
             why = "a value type is declared on a static class whose members take the value as their first parameter";
         else if (state.Kind == ScriptContainerKind.Class && !state.Type.IsStatic && !DerivesFromScriptObject(state.Type))
             why = "a class that is not static must derive from ScriptObject, whose members the generator overrides";
+        else if (IsTableType(attribute) && ScriptAttributes.NamedString(attribute, "Extends").Length > 0)
+            why = "a class with type parameters is written as a table type, which extends no class";
 
         if (why is not null)
             state.Report(ScriptApiDiagnostics.Misplaced, at, state.Type.Name, why);
 
         return why is null;
     }
+
+    // An extern type takes no type parameters, so the definitions file
+    // writes a class with any as a table type.
+    private static bool IsTableType(AttributeData attribute) =>
+        ScriptAttributes.NamedString(attribute, "TypeParameters").Length > 0;
 
     private static bool DerivesFromScriptObject(INamedTypeSymbol type)
     {
@@ -171,7 +178,7 @@ internal static class ScriptModelFactory
         state.Report(ScriptApiDiagnostics.Misplaced, ScriptAttributes.LocationOf(attribute), member.Name, why);
 
     // Operators are declared on the class, or on the method that implements one.
-    private static void ReadOperators(ScriptReadState state, INamedTypeSymbol type)
+    private static void ReadOperators(ScriptReadState state, INamedTypeSymbol type, bool isTableType)
     {
         var declaring = new List<ISymbol> { type };
         declaring.AddRange(type.GetMembers());
@@ -186,6 +193,8 @@ internal static class ScriptModelFactory
 
                 if (!state.HoldsObjects)
                     Misplace(state, symbol, attribute, "an operator is of a class or a value");
+                else if (isTableType)
+                    Misplace(state, symbol, attribute, "a class with type parameters is written as a table type, which takes no operator");
                 else if (!Operators.Contains(op))
                     state.Report(ScriptApiDiagnostics.NotLuau, ScriptAttributes.LocationOf(attribute), op, symbol.Name, "it is no operator of Luau");
                 else if (returns.Trim().Length == 0 || (LuauSignatureText.WhyNotBalanced(right) ?? LuauSignatureText.WhyNotBalanced(returns)) is not null)

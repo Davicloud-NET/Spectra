@@ -398,6 +398,26 @@ public sealed class ScriptApiGeneratorDiagnosticTests
         run.SourceCount.ShouldBe(0);
     }
 
+    // The definitions file writes such a class as a table type, which has
+    // no place for either.
+    [Theory]
+    [InlineData("[ScriptClass(\"Box\", TypeParameters = \"T\", Extends = \"Crate\")]", "extends no class")]
+    [InlineData("[ScriptClass(\"Box\", TypeParameters = \"T\"), ScriptOperator(\"+\", \"Box<T>\", \"Box<T>\")]", "takes no operator")]
+    public void A_class_with_type_parameters_and_a_base_or_an_operator_is_refused(string attributes, string why)
+    {
+        GeneratorRun run = Run($$"""
+            /// <summary>A box.</summary>
+            {{attributes}}
+            internal sealed partial class Box : ScriptObject
+            {
+            }
+            """);
+
+        run.DiagnosticIds.ShouldBe(["SPS008"]);
+        run.Diagnostics.Single().GetMessage().ShouldContain(why);
+        LineOf(run.Diagnostics.Single()).ShouldContain("[ScriptClass(\"Box\"");
+    }
+
     [Theory]
     [InlineData("[ScriptFunction] private static void Count(LuauStack stack) { }", "it takes a LuauStack and nothing else, and returns an int")]
     [InlineData("[ScriptFunction] private static int Count(LuauStack stack, int more) => 0;", "it takes a LuauStack and nothing else")]
