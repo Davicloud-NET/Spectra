@@ -17,8 +17,9 @@ internal static class ScriptApiFixtures
         """;
 
     // Input of the committed snapshot: a class of its own objects, a class
-    // over nodes with settable properties and one that extends it, a value
-    // type, a library and globals, with a member of every shape that is bound.
+    // over nodes with settable properties, one that extends it and one that
+    // extends that and declares nothing, a value type, a library and globals,
+    // with a member of every shape that is bound.
     public const string Representative = Usings + """
         /// <summary>A lamp a script switches.</summary>
         [ScriptClass("Lamp")]
@@ -85,6 +86,10 @@ internal static class ScriptApiFixtures
             /// <summary>Its path from the root.</summary>
             [ScriptMethod]
             public static string GetFullName(SceneNode node) => node.Name;
+
+            /// <summary>The nodes under it.</summary>
+            [ScriptMethod(Returns = "{Instance}")]
+            private static int GetChildren(ScriptContext context, LuauStack stack, SceneNode node) => 1;
         }
 
         /// <summary>A node with a shape.</summary>
@@ -99,6 +104,10 @@ internal static class ScriptApiFixtures
             [ScriptMethod]
             public static bool IsTouching(SceneNode node, SceneNode other) => false;
         }
+
+        /// <summary>A part with a slope. It declares nothing of its own.</summary>
+        [ScriptClass("WedgePart", Extends = "Part")]
+        internal static partial class WedgeApi;
 
         /// <summary>Three numbers.</summary>
         [ScriptValue("Point")]

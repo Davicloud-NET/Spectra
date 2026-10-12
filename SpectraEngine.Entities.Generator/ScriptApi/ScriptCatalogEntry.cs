@@ -7,6 +7,8 @@ namespace SpectraEngine.Entities.Generator.ScriptApi;
 // to list the descriptions and to find the class one extends. No more, so
 // an edit to a summary leaves the catalogue cached. MemberNames are the
 // names that get an atom. SelfType is empty for a class with no binding.
+// Reopens are the declarations the class sits in and its own, outermost
+// first, for the catalogue to write into a class that declares no member.
 internal sealed record ScriptCatalogEntry(
     ScriptContainerKind Kind,
     string FullTypeName,
@@ -14,7 +16,9 @@ internal sealed record ScriptCatalogEntry(
     string Extends,
     string SelfType,
     EquatableArray<string> MemberNames,
-    bool HasMethods) : IEquatable<ScriptCatalogEntry>
+    bool HasMethods,
+    bool IsStatic,
+    EquatableArray<string> Reopens) : IEquatable<ScriptCatalogEntry>
 {
     // What no two containers may share. Null for globals, which have no
     // name of their own and may be declared by several classes.

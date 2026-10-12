@@ -29,7 +29,8 @@ internal static class ScriptFunctionReader
             return;
 
         string summary = state.SummaryOf(member);
-        bool isByStack = method.Parameters.Length > 0 && IsStack(method.Parameters[0].Type);
+        int contexts = ContextCountOf(method);
+        bool isByStack = method.Parameters.Length > contexts && IsStack(method.Parameters[contexts].Type);
         ScriptFunctionModel? function = isByHand || isByStack
             ? ReadWritten(state, method, attribute, name, summary, isByHand)
             : ReadTyped(state, method, attribute, name, summary);
@@ -73,24 +74,38 @@ internal static class ScriptFunctionReader
     }
 
     // The call of a method that takes the stack, with {0} for the object.
-    // Empty when the method has another shape than its place asks for.
+    // Empty when the method has another shape than its place asks for. The
+    // context may come in front of the stack: every place a call is written
+    // has one.
     private static string StackCallOf(ScriptReadState state, IMethodSymbol method)
     {
         bool returnsCount = method.ReturnType.SpecialType == SpecialType.System_Int32;
+        int contexts = ContextCountOf(method);
+        string handed = contexts == 0 ? "stack" : "context, stack";
         if (state.TakesObjectFirst)
         {
-            if (!returnsCount || !method.IsStatic || method.Parameters.Length != 2)
+            if (!returnsCount || !method.IsStatic || method.Parameters.Length != contexts + 2)
                 return Refuse(state, method, "written by hand, it is static, takes a LuauStack and then the object, and returns an int");
 
-            return state.IsSelf(method.Parameters[1].Type, method) ? $"{state.FullTypeName}.{method.Name}(stack, {{0}})" : "";
+            return state.IsSelf(method.Parameters[contexts + 1].Type, method)
+                ? $"{state.FullTypeName}.{method.Name}({handed}, {{0}})"
+                : "";
         }
 
-        if (!returnsCount || method.Parameters.Length != 1)
+        if (!returnsCount || method.Parameters.Length != contexts + 1)
             return Refuse(state, method, "written by hand, it takes a LuauStack and nothing else, and returns an int");
 
         string owner = method.IsStatic ? state.FullTypeName : state.HoldsObjects ? "{0}" : "this";
-        return $"{owner}.{method.Name}(stack)";
+        return $"{owner}.{method.Name}({handed})";
     }
+
+    // One when the method takes the ScriptContext first, as one written by
+    // hand may, to reach what the level keeps for its scripts.
+    private static int ContextCountOf(IMethodSymbol method) =>
+        method.Parameters.Length > 0
+        && method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == ScriptNames.Context
+            ? 1
+            : 0;
 
     private static ScriptSignatureModel? ReadSignature(
         ScriptReadState state, IMethodSymbol method, AttributeData attribute, string parameters, string returns)

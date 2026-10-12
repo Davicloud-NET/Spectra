@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 
 namespace SpectraEngine.Entities.Generator.ScriptApi;
@@ -22,7 +23,7 @@ internal static class ScriptContainerEmitter
         for (int i = 0; i < model.ContainingTypes.Count; i++)
             w.Open(model.ContainingTypes[i]);
 
-        w.Open($"partial class {model.TypeName}");
+        w.Open(OwnDeclaration(model));
 
         if (model.Kind is ScriptContainerKind.Class or ScriptContainerKind.Value)
             ScriptClassEmitter.Emit(w, model);
@@ -58,7 +59,22 @@ internal static class ScriptContainerEmitter
             model.Extends,
             SelfType: holdsObjects ? model.Self?.ClrType ?? "" : "",
             new EquatableArray<string>(names),
-            HasMethods: holdsObjects && model.Self is not null && model.Functions.Count > 0);
+            HasMethods: holdsObjects && model.Self is not null && model.Functions.Count > 0,
+            model.IsStatic,
+            new EquatableArray<string>(ReopensOf(model)));
+    }
+
+    private static string OwnDeclaration(ScriptContainerModel model) => $"partial class {model.TypeName}";
+
+    private static string[] ReopensOf(ScriptContainerModel model)
+    {
+        var reopens = new List<string>();
+        if (model.Namespace.Length > 0)
+            reopens.Add($"namespace {model.Namespace}");
+
+        reopens.AddRange(model.ContainingTypes);
+        reopens.Add(OwnDeclaration(model));
+        return reopens.ToArray();
     }
 
     public static ScriptContainerPlace PlaceOf(ScriptContainerModel model) =>

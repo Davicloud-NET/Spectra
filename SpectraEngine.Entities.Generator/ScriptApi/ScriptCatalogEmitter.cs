@@ -13,6 +13,8 @@ internal static class ScriptCatalogEmitter
 {
     public const string HintName = "ScriptApiCatalog.g.cs";
 
+    private static readonly string[] Accesses = { "Read", "Write", "Invoke" };
+
     // Takes every container. Of two under one name it lists the first.
     public static string Emit(IReadOnlyList<ScriptCatalogEntry> entries)
     {
@@ -43,7 +45,39 @@ internal static class ScriptCatalogEmitter
         EmitCatalog(w, ordered, classes, atoms);
         EmitBases(w, entries, ordered);
         w.Close();
+        EmitHandOns(w, ordered);
         return w.ToString();
+    }
+
+    // A class that declares no member has no switches in its own file, and
+    // only the catalogue knows the type of its object. So its switches are
+    // written here, and each hands the name to the class it extends. A
+    // class picked by what an object is can then always be asked.
+    private static void EmitHandOns(SourceWriter w, IReadOnlyList<ScriptCatalogEntry> listed)
+    {
+        foreach (ScriptCatalogEntry entry in listed)
+        {
+            if (ScriptExtends.HandsOnTo(entry, listed) is not { } above)
+                continue;
+
+            string self = ScriptExtends.ObjectTypeOf(entry, listed);
+            w.Line();
+            for (int i = 0; i < entry.Reopens.Count; i++)
+                w.Open(entry.Reopens[i]);
+
+            w.Line($"// {entry.LuauName} declares no member itself, so each of these hands the atom to {above.LuauName}.");
+            foreach (string access in Accesses)
+            {
+                w.Line(
+                    $"internal static int Script{access}({ScriptNames.Context} context, {ScriptNames.Stack} stack, " +
+                    $"{self} self, int atom) =>");
+                w.Indent().Line($"{above.FullTypeName}.Script{access}(context, stack, self, atom);").Outdent();
+                w.Line();
+            }
+
+            for (int i = 0; i < entry.Reopens.Count; i++)
+                w.Close();
+        }
     }
 
     // What the switch of a class that extends another calls for a name it
@@ -64,7 +98,7 @@ internal static class ScriptCatalogEmitter
         foreach (ScriptCatalogEntry entry in extending)
         {
             ScriptCatalogEntry? above = ScriptExtends.BaseOf(entry, listed, out _);
-            foreach (string access in new[] { "Read", "Write", "Invoke" })
+            foreach (string access in Accesses)
             {
                 string answer = above is null
                     ? $"{ScriptNames.Member}.None"

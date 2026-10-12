@@ -42,6 +42,42 @@ internal static class ScriptExtends
         return null;
     }
 
+    // The class a static class with no member of its own hands every name
+    // to: the one it extends, when that has switches for the same object or
+    // hands on the same way. Null for every other class.
+    public static ScriptCatalogEntry? HandsOnTo(ScriptCatalogEntry entry, IReadOnlyList<ScriptCatalogEntry> listed)
+    {
+        if (!IsBare(entry) || IsEndless(entry, listed))
+            return null;
+
+        return StaticClassAbove(entry, listed) is { } above && ObjectTypeOf(above, listed).Length > 0 ? above : null;
+    }
+
+    // The type of the object a class's switches take: its own, or for a
+    // class that hands on, that of the class it hands on to. Empty for a
+    // class with no switches.
+    public static string ObjectTypeOf(ScriptCatalogEntry entry, IReadOnlyList<ScriptCatalogEntry> listed)
+    {
+        ScriptCatalogEntry? at = entry;
+        for (int depth = 0; at is not null && depth <= listed.Count; depth++)
+        {
+            if (at.SelfType.Length > 0)
+                return at.SelfType;
+
+            at = IsBare(at) ? StaticClassAbove(at, listed) : null;
+        }
+
+        return "";
+    }
+
+    private static bool IsBare(ScriptCatalogEntry entry) =>
+        entry.Kind == ScriptContainerKind.Class && entry.IsStatic && entry.SelfType.Length == 0 && entry.Extends.Length > 0;
+
+    // Only a static class takes its object as a parameter, which is what a
+    // class that hands on passes along.
+    private static ScriptCatalogEntry? StaticClassAbove(ScriptCatalogEntry entry, IReadOnlyList<ScriptCatalogEntry> listed) =>
+        ClassNamed(entry.Extends, listed) is { IsStatic: true } above ? above : null;
+
     // A line of classes longer than there are classes comes back to one of them.
     private static bool IsEndless(ScriptCatalogEntry entry, IReadOnlyList<ScriptCatalogEntry> listed)
     {

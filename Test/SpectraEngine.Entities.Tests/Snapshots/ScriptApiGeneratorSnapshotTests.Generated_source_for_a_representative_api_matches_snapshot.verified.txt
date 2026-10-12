@@ -14,21 +14,22 @@ namespace SpectraEngine.Scripting.Luau.Runtime
         public const int Dim = 2;
         public const int Enabled = 3;
         public const int FindFirstChild = 4;
-        public const int GetFullName = 5;
-        public const int IsDescendantOf = 6;
-        public const int IsTouching = 7;
-        public const int Lerp = 8;
-        public const int Magnitude = 9;
-        public const int Mass = 10;
-        public const int Name = 11;
-        public const int Next = 12;
-        public const int Parent = 13;
-        public const int Position = 14;
-        public const int Switched = 15;
-        public const int Toggle = 16;
-        public const int Turned = 17;
-        public const int Unpack = 18;
-        public const int components = 19;
+        public const int GetChildren = 5;
+        public const int GetFullName = 6;
+        public const int IsDescendantOf = 7;
+        public const int IsTouching = 8;
+        public const int Lerp = 9;
+        public const int Magnitude = 10;
+        public const int Mass = 11;
+        public const int Name = 12;
+        public const int Next = 13;
+        public const int Parent = 14;
+        public const int Position = 15;
+        public const int Switched = 16;
+        public const int Toggle = 17;
+        public const int Turned = 18;
+        public const int Unpack = 19;
+        public const int components = 20;
     }
 
     /// <summary>The number of each class and value type of the script API.</summary>
@@ -39,16 +40,17 @@ namespace SpectraEngine.Scripting.Luau.Runtime
         public const int Part = 2;
         public const int Point = 3;
         public const int RBXScriptSignal = 4;
+        public const int WedgePart = 5;
     }
 
     /// <summary>Everything the script API declares, gathered from the classes that declare it.</summary>
     internal static class ScriptApiCatalog
     {
         /// <summary>How many member names have an atom.</summary>
-        public const int AtomCount = 20;
+        public const int AtomCount = 21;
 
         /// <summary>The member names in the order of their atoms, each ended by a zero.</summary>
-        public static global::System.ReadOnlySpan<byte> AtomNames => "CFrame\0Connect\0Dim\0Enabled\0FindFirstChild\0GetFullName\0IsDescendantOf\0IsTouching\0Lerp\0Magnitude\0Mass\0Name\0Next\0Parent\0Position\0Switched\0Toggle\0Turned\0Unpack\0components\0"u8;
+        public static global::System.ReadOnlySpan<byte> AtomNames => "CFrame\0Connect\0Dim\0Enabled\0FindFirstChild\0GetChildren\0GetFullName\0IsDescendantOf\0IsTouching\0Lerp\0Magnitude\0Mass\0Name\0Next\0Parent\0Position\0Switched\0Toggle\0Turned\0Unpack\0components\0"u8;
 
         /// <summary>The whole script API as data.</summary>
         public static global::SpectraEngine.Core.Scripting.Api.ScriptApiDescription Description { get; } = new()
@@ -60,6 +62,7 @@ namespace SpectraEngine.Scripting.Luau.Runtime
                 global::TestGame.Scripting.PartApi.ScriptDescription,
                 global::TestGame.Scripting.PointApi.ScriptDescription,
                 global::TestGame.Scripting.Signal.ScriptDescription,
+                global::TestGame.Scripting.WedgeApi.ScriptDescription,
             ],
             Libraries =
             [
@@ -83,6 +86,7 @@ namespace SpectraEngine.Scripting.Luau.Runtime
             global::TestGame.Scripting.PartApi.ScriptMethods(context),
             global::TestGame.Scripting.PointApi.ScriptMethods(context),
             global::TestGame.Scripting.Signal.ScriptMethods(context),
+            null,
         ];
     }
 
@@ -95,6 +99,23 @@ namespace SpectraEngine.Scripting.Luau.Runtime
             global::TestGame.Scripting.NodeApi.ScriptWrite(context, stack, self, atom);
         internal static int Invoke_TestGame_Scripting_PartApi(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom) =>
             global::TestGame.Scripting.NodeApi.ScriptInvoke(context, stack, self, atom);
+    }
+}
+
+namespace TestGame.Scripting
+{
+    partial class WedgeApi
+    {
+        // WedgePart declares no member itself, so each of these hands the atom to Part.
+        internal static int ScriptRead(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom) =>
+            global::TestGame.Scripting.PartApi.ScriptRead(context, stack, self, atom);
+
+        internal static int ScriptWrite(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom) =>
+            global::TestGame.Scripting.PartApi.ScriptWrite(context, stack, self, atom);
+
+        internal static int ScriptInvoke(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom) =>
+            global::TestGame.Scripting.PartApi.ScriptInvoke(context, stack, self, atom);
+
     }
 }
 
@@ -283,6 +304,8 @@ namespace TestGame.Scripting
                     return context.PushMethod(stack, global::SpectraEngine.Scripting.Luau.Runtime.ScriptClassIds.Instance, "IsDescendantOf"u8);
                 case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.GetFullName:
                     return context.PushMethod(stack, global::SpectraEngine.Scripting.Luau.Runtime.ScriptClassIds.Instance, "GetFullName"u8);
+                case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.GetChildren:
+                    return context.PushMethod(stack, global::SpectraEngine.Scripting.Luau.Runtime.ScriptClassIds.Instance, "GetChildren"u8);
                 default:
                     return global::SpectraEngine.Scripting.Luau.Runtime.ScriptMember.None;
             }
@@ -304,6 +327,7 @@ namespace TestGame.Scripting
                 case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.FindFirstChild:
                 case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.IsDescendantOf:
                 case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.GetFullName:
+                case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.GetChildren:
                     return global::SpectraEngine.Scripting.Luau.Runtime.ScriptMember.ReadOnly;
                 default:
                     return global::SpectraEngine.Scripting.Luau.Runtime.ScriptMember.None;
@@ -321,6 +345,8 @@ namespace TestGame.Scripting
                     return __IsDescendantOf(context, stack, self);
                 case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.GetFullName:
                     return __GetFullName(context, stack, self);
+                case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.GetChildren:
+                    return global::TestGame.Scripting.NodeApi.GetChildren(context, stack, self);
                 case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.Name:
                 case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.Position:
                 case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.CFrame:
@@ -365,6 +391,7 @@ namespace TestGame.Scripting
                 .Function("FindFirstChild"u8, stack => context.TryGetObject(stack, 1, out global::SpectraEngine.Core.Scene.SceneNode? self) ? __FindFirstChild(context, stack, self) : global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments.NoSelf(stack, "FindFirstChild"))
                 .Function("IsDescendantOf"u8, stack => context.TryGetObject(stack, 1, out global::SpectraEngine.Core.Scene.SceneNode? self) ? __IsDescendantOf(context, stack, self) : global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments.NoSelf(stack, "IsDescendantOf"))
                 .Function("GetFullName"u8, stack => context.TryGetObject(stack, 1, out global::SpectraEngine.Core.Scene.SceneNode? self) ? __GetFullName(context, stack, self) : global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments.NoSelf(stack, "GetFullName"))
+                .Function("GetChildren"u8, stack => context.TryGetObject(stack, 1, out global::SpectraEngine.Core.Scene.SceneNode? self) ? global::TestGame.Scripting.NodeApi.GetChildren(context, stack, self) : global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments.NoSelf(stack, "GetChildren"))
                 .KeepAsMethods();
 
         public static partial string Name(global::SpectraEngine.Core.Scene.SceneNode node) =>
@@ -397,6 +424,7 @@ namespace TestGame.Scripting
                 new global::SpectraEngine.Core.Scripting.Api.ScriptFunctionDescription { Name = "FindFirstChild", Summary = "The child of that name, or nil.", Deprecated = "", Signatures = [new global::SpectraEngine.Core.Scripting.Api.ScriptSignature([new global::SpectraEngine.Core.Scripting.Api.ScriptParameter("name", "string"), new global::SpectraEngine.Core.Scripting.Api.ScriptParameter("recursive", "boolean?")], "Instance?")] },
                 new global::SpectraEngine.Core.Scripting.Api.ScriptFunctionDescription { Name = "IsDescendantOf", Summary = "Whether it is under the other node.", Deprecated = "", Signatures = [new global::SpectraEngine.Core.Scripting.Api.ScriptSignature([new global::SpectraEngine.Core.Scripting.Api.ScriptParameter("ancestor", "Instance")], "boolean")] },
                 new global::SpectraEngine.Core.Scripting.Api.ScriptFunctionDescription { Name = "GetFullName", Summary = "Its path from the root.", Deprecated = "", Signatures = [new global::SpectraEngine.Core.Scripting.Api.ScriptSignature([], "string")] },
+                new global::SpectraEngine.Core.Scripting.Api.ScriptFunctionDescription { Name = "GetChildren", Summary = "The nodes under it.", Deprecated = "", Signatures = [new global::SpectraEngine.Core.Scripting.Api.ScriptSignature([], "{Instance}")] },
             ],
             Signals =
             [
@@ -758,6 +786,40 @@ namespace TestGame.Scripting
             Methods =
             [
                 new global::SpectraEngine.Core.Scripting.Api.ScriptFunctionDescription { Name = "Connect", Summary = "Calls the function at every fire.", Deprecated = "", Signatures = [new global::SpectraEngine.Core.Scripting.Api.ScriptSignature([new global::SpectraEngine.Core.Scripting.Api.ScriptParameter("callback", "(T...) -> ()")], "")] },
+            ],
+            Signals =
+            [
+            ],
+            Operators =
+            [
+            ],
+        };
+
+    }
+}
+
+// ---- TestGame_Scripting_WedgeApi.ScriptApi.g.cs ----
+// <auto-generated/>
+#nullable enable
+
+namespace TestGame.Scripting
+{
+    partial class WedgeApi
+    {
+        /// <summary>What this class declares, as data.</summary>
+        internal static global::SpectraEngine.Core.Scripting.Api.ScriptClassDescription ScriptDescription { get; } = new()
+        {
+            Name = "WedgePart",
+            Extends = "Part",
+            IsValue = false,
+            TypeParameters = "",
+            ChildType = "",
+            Summary = "A part with a slope. It declares nothing of its own.",
+            Properties =
+            [
+            ],
+            Methods =
+            [
             ],
             Signals =
             [

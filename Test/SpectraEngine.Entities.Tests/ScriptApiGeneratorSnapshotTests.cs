@@ -27,7 +27,7 @@ public sealed class ScriptApiGeneratorSnapshotTests
     {
         GeneratorRun run = ScriptApiHarness.Run(ScriptApiFixtures.Representative);
 
-        run.SourceCount.ShouldBe(8);
+        run.SourceCount.ShouldBe(9);
     }
 
     // The description gives a class every member of the one it extends, so
@@ -62,7 +62,7 @@ public sealed class ScriptApiGeneratorSnapshotTests
 
         string catalogue = run.SourceNamed("ScriptApiCatalog.g.cs");
         catalogue.ShouldContain("public const int FindFirstChild = ");
-        catalogue.ShouldContain("public const int AtomCount = 20;");
+        catalogue.ShouldContain("public const int AtomCount = 21;");
 
         string node = Flat(run.SourceNamed("NodeApi.ScriptApi.g.cs"));
         node.ShouldContain(
@@ -93,7 +93,7 @@ public sealed class ScriptApiGeneratorSnapshotTests
         node.ShouldContain("returncontext.WriteVector(stack,self,global::SpectraEngine.Core.Scripting.SettableMemberId.Position);");
         node.ShouldContain("returncontext.WriteFrame(stack,self,global::SpectraEngine.Core.Scripting.SettableMemberId.CFrame);");
         node.ShouldContain("returnstack.Fail(\"Parentcannotbesetyet\");");
-        node.ShouldContain("ScriptAtoms.GetFullName:returnglobal::SpectraEngine.Scripting.Luau.Runtime.ScriptMember.ReadOnly;");
+        node.ShouldContain("ScriptAtoms.GetChildren:returnglobal::SpectraEngine.Scripting.Luau.Runtime.ScriptMember.ReadOnly;");
     }
 
     // The read of a settable property is the door's own, so what a script
