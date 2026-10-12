@@ -14,6 +14,9 @@ internal static class ScriptMember
     // A call of a member that is a property.
     public const int NotCallable = int.MinValue + 2;
 
+    // What a script reads when it uses what it still holds of such an object.
+    public const string HasLeft = "this object has left the level";
+
     // Luau's own words for a call of what is no function. The value that
     // was called is on top of the stack.
     public static int FailNotCallable(LuauStack stack) =>

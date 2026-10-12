@@ -58,13 +58,20 @@ internal static class ScriptArguments
     public static int Wrong(LuauStack stack, int index, string function, string expected, bool isMethod = false)
     {
         int number = isMethod ? index - 1 : index;
-        return stack.Fail(
-            $"invalid argument #{number} to '{function}' ({expected} expected, got {TypeName(stack, index)})");
+        string got = HasLeft(stack, index) ? "an object that has left the level" : TypeName(stack, index);
+        return stack.Fail($"invalid argument #{number} to '{function}' ({expected} expected, got {got})");
     }
 
     // The error for a method called with a dot, so that it got no object.
+    // One that got an object that has left says what a call with a colon says.
     public static int NoSelf(LuauStack stack, string method) =>
-        stack.Fail($"Expected ':' not '.' calling member function {method}");
+        stack.Fail(HasLeft(stack, 1) ? ScriptMember.HasLeft : $"Expected ':' not '.' calling member function {method}");
+
+    // Whether the value is what a script still holds of an object the level
+    // no longer has. A reader of objects answers false for it, as for a number.
+    private static bool HasLeft(LuauStack stack, int index) =>
+        LuauHost.From(stack) is { } host
+        && host.Objects.TryGet(stack, index, ScriptTags.Object, out _) == LuauObjectLookup.Released;
 
     // What a script would call the kind of value at the index.
     public static string TypeName(LuauStack stack, int index) => stack.TypeOf(index) switch

@@ -8,8 +8,6 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 // the object does not have. That is an error, never nil.
 internal sealed class ObjectMembers
 {
-    private const string HasLeft = "this object has left the level";
-
     private readonly ScriptContext _context;
 
     private ObjectMembers(ScriptContext context) => _context = context;
@@ -31,7 +29,7 @@ internal sealed class ObjectMembers
     private int Index(LuauStack stack)
     {
         if (TargetOf(stack) is not { } target)
-            return stack.Fail(HasLeft);
+            return stack.Fail(ScriptMember.HasLeft);
         if (!stack.TryGetAtom(2, out int atom))
             return stack.Fail(NotAName(stack));
 
@@ -42,7 +40,7 @@ internal sealed class ObjectMembers
     private int NewIndex(LuauStack stack)
     {
         if (TargetOf(stack) is not { } target)
-            return stack.Fail(HasLeft);
+            return stack.Fail(ScriptMember.HasLeft);
         if (!stack.TryGetAtom(2, out int atom))
             return stack.Fail(NotAName(stack));
 
@@ -63,7 +61,7 @@ internal sealed class ObjectMembers
     private int NameCall(LuauStack stack)
     {
         if (TargetOf(stack) is not { } target)
-            return stack.Fail(HasLeft);
+            return stack.Fail(ScriptMember.HasLeft);
 
         int atom = stack.NamecallAtom;
         int called = target is SceneNode node
