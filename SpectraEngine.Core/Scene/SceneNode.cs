@@ -267,10 +267,9 @@ public class SceneNode
     public bool IsStaticWorldBrush => _brush is not null && _brushKind == BrushKind.World;
 
     /// <summary>
-    /// What this node was in its authored level, when the level arrived baked
-    /// and the bake took the payload that said so: a world brush, which is in
-    /// the level's chunks now, or a mesh the baked map does not bind. Null in
-    /// an authored level and for every other node. Set when the node is made.
+    /// What a bake took from this node: a world brush, which is in the level's
+    /// chunks now, or a mesh the baked map does not bind. Null in an authored
+    /// level and for every other node. Set when the node is made.
     /// </summary>
     // The node has no such payload. This keeps its class name, and keeps a
     // world brush where the level was baked with it.

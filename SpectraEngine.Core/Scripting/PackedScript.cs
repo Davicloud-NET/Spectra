@@ -9,14 +9,9 @@ namespace SpectraEngine.Core.Scripting;
 /// The header says what the payload is. Today that is always the script's
 /// text, and the game compiles it when the level starts.
 /// </summary>
-// Little-endian:
-//   0x00  u8[4]  magic: 1B 'S' 'L' 'U'
-//   0x04  u16    version
-//   0x06  u8     payload kind, a PackedScriptPayload
-//   0x07  u8     zero
-//   0x08  u32    payload length in bytes
-//   0x0C  u32    zero
-//   0x10         the payload
+// Little-endian: the magic, a u16 version, the payload kind as one byte, a
+// zero byte, the payload's length as a u32, four zero bytes, the payload.
+// docs/formats-and-pipeline.md has the table.
 public static class PackedScript
 {
     /// <summary>The extension of a script file, loose or packed, with its dot.</summary>
