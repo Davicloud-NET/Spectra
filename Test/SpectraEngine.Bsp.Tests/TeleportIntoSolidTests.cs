@@ -51,15 +51,16 @@ public sealed class TeleportIntoSolidTests
     }
 
     [Fact]
-    public void A_teleport_into_the_middle_of_a_part_lifts_the_player_out_of_its_top_half_a_unit_a_tick()
+    public void A_teleport_into_the_middle_of_a_part_lifts_the_player_out_of_its_top_over_a_few_ticks()
     {
         _rig.Part("block", new Vector3(10f, 2f, 0f), new Vector3(2f));
         PlayerWrites door = Playing();
 
         door.TryTeleport(new Vector3(10f, 2f, 0f), out string? refusal).ShouldBeTrue(refusal);
 
+        // A tick pushes no further than the tuning lets it.
         _rig.Tick(default);
-        _rig.Character.State.Position.Y.ShouldBe(2.5f, 1e-3f);
+        _rig.Character.State.Position.Y.ShouldBe(2f + _rig.Character.Tuning.MaxPushPerTick, 1e-3f);
 
         _rig.Tick(default, 10);
         _rig.Character.State.Position.Y.ShouldBe(4f, 0.02f);
