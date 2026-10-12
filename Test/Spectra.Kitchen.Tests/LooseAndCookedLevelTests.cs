@@ -202,6 +202,17 @@ public class LooseAndCookedLevelTests
         played.Cooked.ShouldContain(line => line.EndsWith(said, StringComparison.Ordinal));
     }
 
+    // By a relative path, by @assets, an init module with @self, and a module
+    // node. From a pack every one of them is an entry behind a header.
+    [Fact]
+    public void A_script_gets_its_modules_by_every_way_of_asking_from_loose_files_and_from_the_pack()
+    {
+        Played played = Play();
+
+        played.Loose.Where(line => line.Contains(RequiringScript.Mark)).ShouldBe(RequiringScript.Lines);
+        played.Cooked.Where(line => line.Contains(RequiringScript.Mark)).ShouldBe(RequiringScript.Lines);
+    }
+
     // Skips where Luau is not built. The level is cooked and played once for
     // the whole class.
     private static Played Play()

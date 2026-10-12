@@ -40,6 +40,10 @@ internal static class AskedLevel
         MapFixture fixture = MapFixture.Fresh();
         fixture.WriteMaterials(project);
         project.WriteAsset(AskingScript.Path, AskingScript.Text);
+        project.WriteAsset(RequiringScript.Path, RequiringScript.Text);
+        project.WriteAsset(RequiringScript.ModulePath, RequiringScript.ModuleText);
+        foreach ((string path, string text) in RequiringScript.Modules)
+            project.WriteAsset(path, text);
 
         // The prop's model, with what it wears.
         foreach (string path in new[]
@@ -95,6 +99,12 @@ internal static class AskedLevel
         rules.Script = new Script(AskingScript.Path) { IsModule = true };
 
         root.CreateChild("Lost").Script = new Script(LostScript);
+
+        // A module node, and under it the script that asks for it and for
+        // modules no node names.
+        SceneNode answers = root.CreateChild(RequiringScript.ModuleNode);
+        answers.Script = new Script(RequiringScript.ModulePath) { IsModule = true };
+        answers.CreateChild("Requires").Script = new Script(RequiringScript.Path);
 
         foreach (string name in Askers.Where(name => name is not ("Root" or "Ask")))
             Ask(Named(scene, name));
