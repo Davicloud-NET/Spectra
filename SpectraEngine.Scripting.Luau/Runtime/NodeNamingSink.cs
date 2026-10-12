@@ -14,8 +14,8 @@ internal sealed class NodeNamingSink(IScriptSink sink) : IScriptSink
     // The node whose script is being compiled, or null.
     public SceneNode? Loading { get; set; }
 
-    // The error that came through last, as it was reported, and forgets it.
-    // Whoever runs a module asks here how it failed.
+    // Hands over the error that came through last, as the host reported it,
+    // and forgets it. Whoever runs a module asks here how it failed.
     public ScriptMessage? TakeError()
     {
         ScriptMessage? last = _lastError;
