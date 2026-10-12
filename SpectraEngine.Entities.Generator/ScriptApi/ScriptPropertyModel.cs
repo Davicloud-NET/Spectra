@@ -3,10 +3,9 @@ using System;
 namespace SpectraEngine.Entities.Generator.ScriptApi;
 
 // A property, a library constant, a global value or a signal. ReadFormat is
-// the C# that reads it, with {0} for the object. Sets is a member of
-// SettableMemberId, or empty. One with Sets is a partial method the generator
-// implements, with the accessibility Access and the parameter SelfName.
-// SetBy is the method of the object a write goes through, or empty.
+// the C# that reads it, with {0} for the object. Sets names a member of
+// SettableMemberId, and the generator then implements the partial method
+// with Access and SelfName. SetBy names the object's method a write goes to.
 internal sealed record ScriptPropertyModel(
     string LuauName,
     string Summary,
