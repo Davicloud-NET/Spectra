@@ -54,6 +54,13 @@ public sealed class CharacterSimulation : IPlayerPresence
     /// <summary>Feet position, velocity and ground state.</summary>
     public CharacterState State => _state;
 
+    /// <summary>
+    /// The way the character faces, in radians: the yaw of the last command
+    /// ticked, of the spawn before the first, or of a teleport that turned it.
+    /// </summary>
+    // Beside the state, not in it: the mover takes its yaw from the command.
+    public float Yaw { get; private set; }
+
     /// <summary>Where <see cref="Spawn"/> and the fall-out guard put the character.</summary>
     public Vector3 SpawnPosition { get; set; }
 
@@ -81,6 +88,7 @@ public sealed class CharacterSimulation : IPlayerPresence
     public void Spawn()
     {
         _state = CharacterState.AtFeet(SpawnPosition);
+        Yaw = SpawnYaw;
         IsPresent = true;
 
         // A teleport no view took belongs to the run before this one.
@@ -113,6 +121,32 @@ public sealed class CharacterSimulation : IPlayerPresence
 
         _teleportPending = true;
         _teleportYaw = yaw ?? _teleportYaw;
+        Yaw = yaw ?? Yaw;
+    }
+
+    /// <summary>
+    /// Sends the character back to its spawn, at rest and facing as it
+    /// started. A view picks it up as it does a teleport.
+    /// </summary>
+    public void Respawn() => Teleport(SpawnPosition, SpawnYaw);
+
+    /// <summary>
+    /// Gives the character a velocity, which the next tick carries on from.
+    /// One that points up takes it off the ground, as a jump does.
+    /// </summary>
+    public void SetVelocity(Vector3 velocity)
+    {
+        _state.Velocity = velocity;
+        if (velocity.Y <= 0f)
+            return;
+
+        // As the mover leaves the ground for a jump. Left standing, its
+        // ground snap takes the rise back on the next tick.
+        _state.Grounded = false;
+        _state.GroundNormal = Vector3.UnitY;
+        _state.GroundNodeId = default;
+        _state.AirTicks = byte.MaxValue;
+        _state.GroundSuppressTicks = Tuning.GroundSuppressTicks;
     }
 
     /// <summary>
@@ -142,6 +176,7 @@ public sealed class CharacterSimulation : IPlayerPresence
         // Here as well as in the mover: a replaced mover that forgets would
         // turn one held button into a press on every tick.
         _state.PrevButtons = command.Buttons;
+        Yaw = command.Yaw;
 
         if (_state.Position.Y >= FallOutHeight)
             return false;

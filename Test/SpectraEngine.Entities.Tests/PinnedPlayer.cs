@@ -18,5 +18,18 @@ internal sealed class PinnedPlayer : IPlayerPresence
 
     public CharacterCapsule Capsule => CharacterCapsule.FromFeet(Feet, Height, 0.35f);
 
+    public CharacterState State => CharacterState.AtFeet(Feet);
+
+    public float Yaw => 0f;
+
+    public CharacterTuning Tuning { get; } = new();
+
     public void Teleport(Vector3 feet, float? yaw = null) => Feet = feet;
+
+    public void Respawn() => Feet = Vector3.Zero;
+
+    // Pinned: nothing sets it moving.
+    public void SetVelocity(Vector3 velocity)
+    {
+    }
 }

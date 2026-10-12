@@ -18,11 +18,25 @@ internal sealed class FakePlayerPresence : IPlayerPresence
 
     public CharacterCapsule Capsule => CharacterCapsule.FromFeet(Feet, Height, Radius);
 
+    public CharacterState State => CharacterState.AtFeet(Feet);
+
+    public float Yaw { get; private set; }
+
+    public CharacterTuning Tuning { get; } = new();
+
     public List<(Vector3 Feet, float? Yaw)> Teleports { get; } = [];
 
     public void Teleport(Vector3 feet, float? yaw = null)
     {
         Feet = feet;
+        Yaw = yaw ?? Yaw;
         Teleports.Add((feet, yaw));
+    }
+
+    public void Respawn() => Teleport(Vector3.Zero);
+
+    // It stands where it is put.
+    public void SetVelocity(Vector3 velocity)
+    {
     }
 }

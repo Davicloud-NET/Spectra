@@ -115,6 +115,125 @@ public sealed class CharacterPresenceTests
         yaw.ShouldBeNull();
     }
 
+    [Fact]
+    public void The_character_faces_as_its_spawn_does_until_a_command_turns_it()
+    {
+        IPlayerPresence presence = OnAFloor(out CharacterSimulation character);
+        character.SpawnYaw = 1.25f;
+        character.Spawn();
+
+        presence.Yaw.ShouldBe(1.25f);
+
+        var turned = new CharacterCommand { Yaw = -0.5f };
+        character.Tick(in turned, Dt);
+
+        presence.Yaw.ShouldBe(-0.5f);
+    }
+
+    [Fact]
+    public void A_teleport_that_names_a_facing_turns_the_character_and_one_that_names_none_does_not()
+    {
+        IPlayerPresence presence = OnAFloor(out CharacterSimulation character);
+        character.SpawnYaw = 1.25f;
+        character.Spawn();
+
+        presence.Teleport(new Vector3(1f, 0.05f, 1f));
+        presence.Yaw.ShouldBe(1.25f);
+
+        presence.Teleport(new Vector3(2f, 0.05f, 2f), yaw: 0.75f);
+        presence.Yaw.ShouldBe(0.75f);
+    }
+
+    [Fact]
+    public void The_state_is_the_characters_own()
+    {
+        IPlayerPresence presence = OnAFloor(out CharacterSimulation character);
+        character.Spawn();
+        var walk = new CharacterCommand { MoveForward = CharacterCommand.Axis(1f) };
+        for (int i = 0; i < 30; i++)
+            character.Tick(in walk, Dt);
+
+        presence.State.Position.ShouldBe(character.State.Position);
+        presence.State.Velocity.ShouldBe(character.State.Velocity);
+        presence.State.Grounded.ShouldBeTrue();
+        presence.Tuning.ShouldBeSameAs(character.Tuning);
+    }
+
+    [Fact]
+    public void A_respawn_puts_the_character_back_at_its_spawn_at_rest_and_facing_as_it_started()
+    {
+        IPlayerPresence presence = OnAFloor(out CharacterSimulation character);
+        character.SpawnYaw = 1.25f;
+        character.Spawn();
+        var walk = new CharacterCommand { MoveForward = CharacterCommand.Axis(1f), Yaw = 0.25f };
+        for (int i = 0; i < 30; i++)
+            character.Tick(in walk, Dt);
+
+        presence.Respawn();
+
+        character.State.Position.ShouldBe(character.SpawnPosition);
+        character.State.Velocity.ShouldBe(Vector3.Zero);
+        presence.Yaw.ShouldBe(1.25f);
+
+        // A view snaps to it as to a teleport. It is not the fall-out guard.
+        character.TryTakeTeleport(out float? yaw).ShouldBeTrue();
+        yaw.ShouldBe(1.25f);
+        character.Respawns.ShouldBe(0);
+    }
+
+    [Fact]
+    public void A_velocity_that_points_up_lifts_a_standing_character_off_the_ground()
+    {
+        IPlayerPresence presence = OnAFloor(out CharacterSimulation character);
+        Vector3 standing = Settle(character);
+        const float Up = 6f;
+
+        presence.SetVelocity(new Vector3(0f, Up, 0f));
+        character.State.Grounded.ShouldBeFalse();
+
+        float highest = standing.Y;
+        int ticks = 0;
+        for (; ticks < 240 && (ticks < 5 || !character.State.Grounded); ticks++)
+        {
+            character.Tick(default, Dt);
+            highest = MathF.Max(highest, character.State.Position.Y);
+        }
+
+        // As high as a throw at that speed goes, and down again.
+        float rise = Up * Up / (2f * MathF.Abs(PhysicsDefaults.Gravity.Y));
+        (highest - standing.Y).ShouldBe(rise, 0.15f);
+        character.State.Grounded.ShouldBeTrue();
+        character.State.Position.Y.ShouldBe(standing.Y, 0.02f);
+    }
+
+    [Fact]
+    public void A_velocity_along_the_ground_pushes_a_standing_character_and_leaves_it_standing()
+    {
+        IPlayerPresence presence = OnAFloor(out CharacterSimulation character);
+        Vector3 standing = Settle(character);
+
+        presence.SetVelocity(new Vector3(5f, 0f, 0f));
+        character.State.Grounded.ShouldBeTrue();
+        for (int i = 0; i < 60; i++)
+            character.Tick(default, Dt);
+
+        character.State.Grounded.ShouldBeTrue();
+        character.State.Position.X.ShouldBeGreaterThan(standing.X + 0.2f);
+        character.State.Position.Y.ShouldBe(standing.Y, 0.02f);
+        character.State.Velocity.Length().ShouldBeLessThan(0.01f);
+    }
+
+    // Spawns the character and lets it land. Hands back where it stands.
+    private static Vector3 Settle(CharacterSimulation character)
+    {
+        character.Spawn();
+        for (int i = 0; i < 30; i++)
+            character.Tick(default, Dt);
+
+        character.State.Grounded.ShouldBeTrue();
+        return character.State.Position;
+    }
+
     private static IPlayerPresence OnAFloor(out CharacterSimulation character)
     {
         var scene = new Scene("Presence");

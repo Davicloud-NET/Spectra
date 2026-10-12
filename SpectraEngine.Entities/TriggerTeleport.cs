@@ -1,4 +1,5 @@
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Physics.Character;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -131,13 +132,7 @@ public sealed partial class TriggerTeleport : Entity, ITouchListener
             : $"names the destination '{Target}', which matches no entity, so it moves nobody");
     }
 
-    // Yaw zero looks along +X and a quarter turn looks along +Z, the way a
-    // character command reads it.
-    private static float? FacingYaw(in Matrix4x4 world)
-    {
-        // The third row is the node's local +Z in world space.
-        float x = world.M31;
-        float z = world.M33;
-        return x * x + z * z > 1e-8f ? MathF.Atan2(z, x) : null;
-    }
+    // The third row is the node's local +Z in world space.
+    private static float? FacingYaw(in Matrix4x4 world) =>
+        CharacterFacing.YawAlong(new Vector3(world.M31, world.M32, world.M33));
 }

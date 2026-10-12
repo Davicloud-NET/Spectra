@@ -205,9 +205,7 @@ public sealed class PlaySession
     private static float FacingYaw(SceneNode start)
     {
         Matrix4x4 world = start.WorldMatrix;
-        float x = world.M31;
-        float z = world.M33;
-        return (x * x) + (z * z) > 1e-8f ? MathF.Atan2(z, x) : 0f;
+        return CharacterFacing.YawAlong(new Vector3(world.M31, world.M32, world.M33)) ?? 0f;
     }
 
     // The edge comes from the state: one command is replayed for every tick
