@@ -13,9 +13,9 @@ namespace SpectraEngine.Core.Physics.Character;
 // scripted mover all tick this without them. The view lives elsewhere.
 public sealed class CharacterSimulation : IPlayerPresence, ITunedPlayer
 {
-    // A rise off the ground slower than this stays inside the mover's
-    // contact band, and its ground check stands the character again on the
-    // same tick. Leaving the ground for it would only cost a jump.
+    // A rise off the ground slower than this stays inside the mover's contact
+    // band, and the ground check stands the character again on the same tick.
+    // Leaving the ground for it would lift nothing and hold back a jump.
     private const float LiftOffSpeed = 0.5f;
 
     private readonly Scene.Scene _scene;
