@@ -36,13 +36,19 @@ internal sealed class CookedLevel : IDisposable
 
     public required long CarvesDuringLoad { get; init; }
 
-    public static CookedLevel Bake(SpectraEngine.Core.Scene.Scene source)
+    public static CookedLevel Bake(SpectraEngine.Core.Scene.Scene source) =>
+        Bake(MapSceneBinder.FromScene(source));
+
+    // For what a scene cannot say with no renderer, such as a node's mesh.
+    public static CookedLevel Bake(MapDocument source)
     {
         var project = new TempProject();
 
         try
         {
-            string bundle = MapFixture.WriteBundle(project, "Room.smap", source);
+            string bundle = Path.Combine(project.Layout.MapsPath, "Room.smap");
+            Directory.CreateDirectory(bundle);
+            MapBundle.Save(bundle, source);
 
             var context = new RuleContext(project.Root, "Maps/Room.smap", CookProfile.Ship);
             new MapRule().Cook(context);

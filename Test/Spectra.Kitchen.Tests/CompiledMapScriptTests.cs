@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SpectraEngine.Core.Bsp;
 using SpectraEngine.Core.Entities;
+using SpectraEngine.Core.Maps;
+using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Scene;
 using System.Collections.Generic;
 using System.Linq;
@@ -112,6 +114,55 @@ public class CompiledMapScriptTests
 
         MoveRefusal(level.Authored, name).ShouldBeNull();
         MoveRefusal(level.Scene, name).ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_wall_that_is_itself_a_script_loads_with_its_script_and_is_still_a_part()
+    {
+        SpectraEngine.Core.Scene.Scene scene = MapFixture.Fresh().BuildScene();
+        Named(scene, "Wall").Script = new Script("Scripts/wall.luau");
+
+        using CookedLevel level = CookedLevel.Bake(scene);
+
+        // The record sits on the node of the baked brush, not on a child.
+        ScmapProbe map = ScmapProbe.Read(level.File);
+        map.Nodes[(int)map.Scripts.ShouldHaveSingleItem().NodeIndex].PayloadKind
+            .ShouldBe(ScmapPayloadKind.StaticWorldBrush);
+
+        SceneNode wall = Named(level.Scene, "Wall");
+        wall.Script.ShouldBe(new Script("Scripts/wall.luau"));
+        wall.Brush.ShouldBeNull();
+        wall.BakedKind.ShouldBe(SceneNodeKind.BrushWorld);
+
+        NodeClassName.Of(wall).ShouldBe(NodeClassName.Part);
+        NodeClassName.Of(Named(level.Authored, "Wall")).ShouldBe(NodeClassName.Part);
+        MoveRefusal(level.Scene, "Wall").ShouldBe(MoveRefusal(level.Authored, "Wall").ShouldNotBeNull());
+    }
+
+    [Fact]
+    public void A_prop_that_is_itself_a_script_loads_with_its_script_and_is_still_a_mesh()
+    {
+        SpectraEngine.Core.Scene.Scene scene = MapFixture.Fresh().BuildScene();
+        scene.Root.CreateChild("Prop").Script = new Script("Scripts/prop.luau") { IsEnabled = false };
+
+        // A scene has a mesh only once a renderer loaded its model, so the
+        // document names it.
+        MapDocument document = MapSceneBinder.FromScene(scene);
+        document.Nodes.Single(node => node.Name == "Prop").Mesh = new MapMeshSource { Model = "Models/prop.gltf" };
+
+        using CookedLevel level = CookedLevel.Bake(document);
+
+        ScmapProbe map = ScmapProbe.Read(level.File);
+        map.Nodes[(int)map.Scripts.ShouldHaveSingleItem().NodeIndex].PayloadKind
+            .ShouldBe(ScmapPayloadKind.MeshInstance);
+
+        SceneNode prop = Named(level.Scene, "Prop");
+        prop.Script.ShouldBe(new Script("Scripts/prop.luau") { IsEnabled = false });
+        prop.BakedKind.ShouldBe(SceneNodeKind.Mesh);
+
+        // What a loose level says of it once its model is loaded.
+        NodeClassName.Of(prop).ShouldBe(NodeClassName.MeshPart);
+        MoveRefusal(level.Scene, "Prop").ShouldBeNull();
     }
 
     [Fact]

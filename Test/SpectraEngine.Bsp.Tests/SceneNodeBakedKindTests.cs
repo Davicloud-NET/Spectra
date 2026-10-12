@@ -110,6 +110,35 @@ public sealed class SceneNodeBakedKindTests
     }
 
     [Fact]
+    public void A_baked_mesh_that_is_itself_a_script_is_a_mesh_as_a_live_one_is()
+    {
+        var script = new Script("Scripts/a.luau");
+        var scene = new Scene("Both");
+        SceneNode live = SpatialTestHelpers.CreateMeshNode(scene.Root, "Live", Vector3.Zero);
+        live.Script = script;
+        var baked = new SceneNode("Baked") { BakedKind = SceneNodeKind.Mesh, Script = script };
+
+        NodeClassName.Of(live).ShouldBe(NodeClassName.MeshPart);
+        NodeClassName.Of(baked).ShouldBe(NodeClassName.MeshPart);
+
+        // Module or not: the mesh is what it is.
+        var module = new SceneNode("Module") { BakedKind = SceneNodeKind.Mesh, Script = script with { IsModule = true } };
+        NodeClassName.Of(module).ShouldBe(NodeClassName.MeshPart);
+    }
+
+    [Fact]
+    public void A_baked_wall_that_is_itself_a_script_is_a_part_and_a_bare_script_stays_a_script()
+    {
+        var script = new Script("Scripts/a.luau");
+
+        NodeClassName.Of(new SceneNode("Wall") { BakedKind = SceneNodeKind.BrushWorld, Script = script })
+            .ShouldBe(NodeClassName.Part);
+        NodeClassName.Of(new SceneNode("Cut") { BakedKind = SceneNodeKind.BrushSubtractive, Script = script })
+            .ShouldBe(NodeClassName.Part);
+        NodeClassName.Of(new SceneNode("Spin") { Script = script }).ShouldBe(NodeClassName.Script);
+    }
+
+    [Fact]
     public void An_entity_and_a_light_come_before_a_mesh_as_they_do_on_an_authored_node()
     {
         var lamp = new SceneNode("Lamp") { BakedKind = SceneNodeKind.Mesh, Light = new Light { Kind = LightKind.Spot } };
