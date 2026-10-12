@@ -287,7 +287,9 @@ The setter is reference-compared. It keeps `Scene.ScriptNodes`, which lists scri
 
 A node whose only payload is a script is a `SceneNodeKind.Script`. A part, an entity, a light or a mesh that also carries one keeps its own kind. `SceneChange.HasScript` says a node carries one whatever its kind, so the scene tree's `t:script` finds a part with a script on it.
 
-A `.smap` saves the payload as `script`, with `path`, and with `enabled` and `module` only when they differ from the default. A baked map does not carry scripts yet: the cook bakes the node as a plain node and warns with `SC7011`.
+A `.smap` saves the payload as `script`, with `path`, and with `enabled` and `module` only when they differ from the default. A baked map keeps it too: a `.scmap` has a script record for the node, which names the file, and the loader sets `SceneNode.Script` from it. The script's text is an entry of the pack, read by `ContentScriptSource` (`docs/formats-and-pipeline.md` §2.7 and §2.9).
+
+Under a baked map a node that was a world brush has no brush, and a mesh instance has no renderer. `SceneNode.BakedKind` says what such a node was. `NodeClassName` reads it, so a script gets the same class name from a cooked level as from the authored one, and `SceneNode.HoldsWorldBrush` counts a baked world brush like a live one, so a running level refuses to move it in both.
 
 The editor writes it with `SetScriptCommand`.
 

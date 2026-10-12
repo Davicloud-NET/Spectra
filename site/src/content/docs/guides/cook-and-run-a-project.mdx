@@ -52,9 +52,32 @@ Run these from the repository folder.
 | `.wav` sounds | `.saudio` | Resampled to one rate. Loop points and markers are kept. |
 | `.smap` levels | `.scmap` | Geometry already built, so loading does no carving. |
 | `.spectramat` materials | the same text | Checked, so a missing texture fails the cook. |
+| `.luau` scripts | the same text behind a small header | Checked, so a script with a mistake in it fails the cook. See [Scripts](#scripts). |
 | caption files and `.vtt` subtitles | the same text | Checked against the sounds. See [Captions and subtitles](/guides/captions/). |
 
 A cooked texture is larger on disk than its PNG. It loads faster and takes less video memory.
+
+## Scripts
+
+The cook reads every `.luau` file under `Assets` and compiles it with Luau, the same way the game does when a level starts. A script that compiles goes into the pack as its text. The game compiles it again when the level starts, so a pack keeps working when the engine moves to a newer Luau.
+
+A script with a mistake stops the cook, and the message names the file and the line:
+
+```
+Scripts/door.luau(4,1): error SC8001: Expected identifier when parsing expression, got '='
+```
+
+Luau names the line and not the column, so the column is always 1.
+
+A cooked level keeps its script nodes, and each one names its file. If a level names a script file that is not there, the cook still makes the pack. `verify` then fails with `SC7008` and names the level and the file.
+
+Three messages are about scripts:
+
+| Code | Means |
+|---|---|
+| `SC8001` | A script does not compile. The line is in the message. |
+| `SC8002` | A script could not be checked, so no pack was made. Luau is not built on this machine. Run `native/build-luau.ps1`, or `native/build-luau.sh` on Linux, and cook again. |
+| `SC8003` | From `verify`: a script in the pack is not in the form the cook writes. Cook the project again. |
 
 ## Markers in a sound
 
@@ -121,6 +144,6 @@ dotnet run --project SpectraEngine.Executable -- d3d11 --project=MyGame --pack -
 
 ## Limits today
 
-A cooked level holds its geometry, its collision, its lights and its entities, so you can walk it: add `--play` to start on foot.
+A cooked level holds its geometry, its collision, its lights, its entities and its scripts, so you can walk it: add `--play` to start on foot. The scripts run from the pack as they run from your files.
 
 A model placed in a level is not drawn from a cooked level yet.
