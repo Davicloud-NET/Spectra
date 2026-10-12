@@ -31,9 +31,22 @@ internal static unsafe class ScriptReport
     }
 
     // The file of the script function that called the host function running
-    // on L. With no such function, the file of the thread's script.
-    internal static string CallerFile(nint L, LuauScript? script) =>
-        Line(L, script, ScriptSeverity.Print, string.Empty).Script;
+    // on L, where Luau keeps its name: it lives as long as that call. With no
+    // such function, the file of the thread's script.
+    internal static ReadOnlySpan<byte> CallerFile(nint L, LuauScript? script)
+    {
+        for (int level = 0; ; level++)
+        {
+            byte* source;
+            byte* name;
+            int line;
+            int kind = Shim.sl_frame(L, level, &source, &name, &line);
+            if (kind == 0)
+                return script is null ? default : script.NameUtf8;
+            if (kind == ScriptFrameKind)
+                return WithoutMark(LuaText.FromNative(source));
+        }
+    }
 
     // A thread that ended in an error. The value is on top of its stack and
     // its frames are still there.
@@ -112,12 +125,12 @@ internal static unsafe class ScriptReport
     // are the script's own, and those reuse its name.
     private static string NameOf(byte* source, LuauScript? script)
     {
-        ReadOnlySpan<byte> name = LuaText.FromNative(source);
-        if (name.Length > 0 && name[0] is (byte)'@' or (byte)'=')
-            name = name[1..];
-
+        ReadOnlySpan<byte> name = WithoutMark(LuaText.FromNative(source));
         return script is not null && name.SequenceEqual(script.NameUtf8) ? script.Name : Encoding.UTF8.GetString(name);
     }
+
+    private static ReadOnlySpan<byte> WithoutMark(ReadOnlySpan<byte> chunkName) =>
+        chunkName.Length > 0 && chunkName[0] is (byte)'@' or (byte)'=' ? chunkName[1..] : chunkName;
 
     private static string ErrorText(nint thread, nint main)
     {

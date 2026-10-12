@@ -160,6 +160,57 @@ public sealed class RequirePathTests
     }
 
     [Fact]
+    public void One_string_asked_from_two_folders_names_two_modules_however_often_it_is_asked()
+    {
+        using var level = new ScriptLevel();
+        level.FileAt("Scripts/doors/words.luau", "return 'of the doors'");
+        level.FileAt("Scripts/lamps/words.luau", "return 'of the lamps'");
+        const string Ask = "print(require('./words'), require('./words'), require('./words'))";
+        level.ScriptAt("Scripts/doors/main.luau", Ask);
+        level.ScriptAt("Scripts/lamps/main.luau", Ask);
+
+        level.Play().Tick();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(
+        [
+            "of the doors of the doors of the doors",
+            "of the lamps of the lamps of the lamps",
+        ]);
+    }
+
+    // A handler that asks on every tick is common in a Roblox script.
+    [Theory]
+    [InlineData("./lib/near")]
+    [InlineData("@assets/Scripts/lib/near")]
+    public void Asking_again_for_a_module_by_its_path_allocates_nothing(string path)
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        level.FileAt("Scripts/lib/near.luau", "return {}");
+        level.ScriptAt("Scripts/main.luau", $$"""
+            game:GetService("RunService").Heartbeat:Connect(function()
+                for i = 1, 1000 do
+                    local _ = require('{{path}}')
+                end
+            end)
+            """);
+
+        level.Play().Tick(30);
+
+        // The best of a few runs, as the runtime compiles a method again once it has run often.
+        long allocated = long.MaxValue;
+        for (int run = 0; run < 3; run++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            level.Tick(50);
+            allocated = Math.Min(allocated, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+
+        level.Errors.ShouldBeEmpty();
+        allocated.ShouldBe(0);
+    }
+
+    [Fact]
     public void Two_spellings_of_one_path_are_one_module()
     {
         using var level = new ScriptLevel();

@@ -26,6 +26,7 @@ internal sealed partial class ModuleLoader(
 
     private readonly Dictionary<string, ScriptModule> _byPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<SceneNode, ScriptModule> _byNode = new(ReferenceEqualityComparer.Instance);
+    private readonly ModuleAsks _asks = new();
 
     // The modules whose files are running, each asked for by the one before it.
     private readonly List<ScriptModule> _running = [];
@@ -40,7 +41,7 @@ internal sealed partial class ModuleLoader(
     [ScriptFunction(Name = "require", Parameters = "module: string | Instance", Returns = "any")]
     private int Require(LuauStack stack)
     {
-        if (stack.TypeOf(1) == LuauType.String && stack.GetText(1) is { } asked)
+        if (stack.TypeOf(1) == LuauType.String && stack.TryGetUtf8(1, out ReadOnlySpan<byte> asked))
             return ByPath(stack, asked);
 
         return host.Objects.TryGet(stack, 1, ScriptTags.Object, out object? target) switch
@@ -52,16 +53,24 @@ internal sealed partial class ModuleLoader(
         };
     }
 
-    private int ByPath(LuauStack stack, string asked)
+    // Both spans are Luau's own bytes. They are read before the module runs.
+    private int ByPath(LuauStack stack, ReadOnlySpan<byte> askedBytes)
     {
-        string asker = ScriptReport.CallerFile(stack.State, host.ScriptOf(stack));
-        if (!ModulePath.TryResolve(asked, asker, out string[] files, out string? refusal))
+        ReadOnlySpan<byte> asker = ScriptReport.CallerFile(stack.State, host.ScriptOf(stack));
+        if (_asks.Find(asker, askedBytes) is { } again)
+            return Give(stack, again);
+
+        string asked = Encoding.UTF8.GetString(askedBytes);
+        if (!ModulePath.TryResolve(asked, Encoding.UTF8.GetString(asker), out string[] files, out string? refusal))
             return stack.Fail(refusal);
 
         foreach (string file in files)
         {
             if (_byPath.TryGetValue(file, out ScriptModule? known))
+            {
+                _asks.Add(asker, askedBytes, known);
                 return Give(stack, known);
+            }
         }
 
         if (TooDeep() is { } deep)
@@ -71,6 +80,7 @@ internal sealed partial class ModuleLoader(
 
         ScriptModule module = new(path, node: null);
         _byPath.Add(path, module);
+        _asks.Add(asker, askedBytes, module);
         return Load(stack, module, text);
     }
 

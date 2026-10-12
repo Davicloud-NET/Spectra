@@ -170,6 +170,36 @@ public sealed class ModuleNodeTests
             "false Scripts/main.luau:1: Requested module experienced an error while loading: Scripts/Rules.luau:1: ");
     }
 
+    // A handler that asks on every tick is common in a Roblox script.
+    [Fact]
+    public void Asking_again_for_a_module_by_its_node_allocates_nothing()
+    {
+        using var level = new ScriptLevel(hasCharacter: false);
+        SceneNode rules = level.ModuleAt("Scripts/Rules.luau", "return {}");
+        level.ScriptAt("Scripts/main.luau", """
+            local module = script.Parent
+            game:GetService("RunService").Heartbeat:Connect(function()
+                for i = 1, 1000 do
+                    local _ = require(module)
+                end
+            end)
+            """, under: rules);
+
+        level.Play().Tick(30);
+
+        // The best of a few runs, as the runtime compiles a method again once it has run often.
+        long allocated = long.MaxValue;
+        for (int run = 0; run < 3; run++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            level.Tick(50);
+            allocated = Math.Min(allocated, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+
+        level.Errors.ShouldBeEmpty();
+        allocated.ShouldBe(0);
+    }
+
     [Fact]
     public void A_module_node_is_run_again_in_the_next_play_session()
     {
