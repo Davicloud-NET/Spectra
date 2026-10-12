@@ -116,8 +116,16 @@ public sealed partial class LuauSyntaxCheckTests
     [Fact]
     public void It_names_the_release_the_binding_was_written_for()
     {
-        _check.CompilerVersion.ShouldBe($"luau 0.{Lua.Release}");
+        _check.CompilerVersion.ShouldStartWith($"luau 0.{Lua.Release},");
         _check.Problem.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Its_version_names_the_shim_and_the_compile_options_too()
+    {
+        // A cook keeps a verdict under this string. The shim sets the Luau
+        // flags a script compiles under, and the options are the other half.
+        _check.CompilerVersion.ShouldBe($"luau 0.{Lua.Release}, shim {Shim.Revision}, O1 g1");
     }
 
     [Fact]

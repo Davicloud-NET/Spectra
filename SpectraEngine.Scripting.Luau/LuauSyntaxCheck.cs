@@ -15,7 +15,7 @@ public sealed unsafe class LuauSyntaxCheck : IScriptSyntaxCheck
 {
     // What LuaChunk compiles a level's script with. A script can pass at one
     // level and run out of registers at another, so the two must not differ.
-    // SyntaxCheckSourceTests holds them together.
+    // LuauSyntaxCheckTests holds them together.
     private const int OptimizationLevel = 1;
     private const int DebugLevel = 1;
 
@@ -24,8 +24,10 @@ public sealed unsafe class LuauSyntaxCheck : IScriptSyntaxCheck
     private static ReadOnlySpan<byte> VectorConstructor => "new\0"u8;
 
     /// <inheritdoc/>
-    public string CompilerVersion { get; } =
-        "luau 0." + Lua.Release.ToString(CultureInfo.InvariantCulture);
+    // The shim is in it because it sets the Luau flags a script compiles under.
+    public string CompilerVersion { get; } = string.Create(
+        CultureInfo.InvariantCulture,
+        $"luau 0.{Lua.Release}, shim {Shim.Revision}, O{OptimizationLevel} g{DebugLevel}");
 
     /// <inheritdoc/>
     public string? Problem => LuauLibrary.FindProblem();

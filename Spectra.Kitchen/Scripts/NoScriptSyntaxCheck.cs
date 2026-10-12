@@ -25,6 +25,6 @@ public sealed class NoScriptSyntaxCheck : IScriptSyntaxCheck
         "Cook with scook, which has one.";
 
     /// <inheritdoc/>
-    // Never asked: the rule reads Problem first.
-    public ScriptSyntaxError? Check(ReadOnlySpan<byte> source) => null;
+    // Null would say the script compiles.
+    public ScriptSyntaxError? Check(ReadOnlySpan<byte> source) => throw new InvalidOperationException(Problem);
 }
