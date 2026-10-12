@@ -37,16 +37,9 @@ internal static class ScriptPropertyReader
             return;
         }
 
-        string sets = "";
-        if (!isSignal && ScriptAttributes.TryGetNamed(attribute, "Sets", out _))
-        {
-            sets = ScriptAttributes.NamedEnumMember(attribute, "Sets");
-            if (WhyNotSettable(state, member, type, sets) is { } why)
-            {
-                state.Report(ScriptApiDiagnostics.NotSettable, at, name, why);
-                return;
-            }
-        }
+        string? sets = isSignal ? "" : ReadSets(state, member, attribute, type, name);
+        if (sets is null)
+            return;
 
         string setBy = isSignal ? "" : ScriptAttributes.NamedString(attribute, "SetBy");
         if (setBy.Length > 0 && WhyNotSetBy(state, access.Type, type, sets, setBy) is { } whyNot)
@@ -158,6 +151,23 @@ internal static class ScriptPropertyReader
             state.Report(ScriptApiDiagnostics.WrongShape, LocationInfo.From(member), member.Name, why);
 
         return why is null;
+    }
+
+    // The member of the door the property is set through, or empty for a
+    // property that names none. Null when it names one it cannot be set
+    // through, which is reported.
+    private static string? ReadSets(
+        ScriptReadState state, ISymbol member, AttributeData attribute, ScriptTypeModel type, string name)
+    {
+        if (!ScriptAttributes.TryGetNamed(attribute, "Sets", out _))
+            return "";
+
+        string sets = ScriptAttributes.NamedEnumMember(attribute, "Sets");
+        if (WhyNotSettable(state, member, type, sets) is not { } why)
+            return sets;
+
+        state.Report(ScriptApiDiagnostics.NotSettable, ScriptAttributes.LocationOf(attribute), name, why);
+        return null;
     }
 
     // The generator writes the read of a property a script can set, from
