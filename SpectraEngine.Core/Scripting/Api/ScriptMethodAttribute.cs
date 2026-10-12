@@ -21,7 +21,4 @@ public sealed class ScriptMethodAttribute : Attribute
 
     /// <summary>What a method written by hand returns, as Luau writes it. Null for nothing.</summary>
     public string? Returns { get; set; }
-
-    /// <summary>The binding is written and installed by hand, and this only describes it.</summary>
-    public bool ByHand { get; set; }
 }

@@ -15,16 +15,8 @@ internal static class ScriptFunctionReader
 {
     public static void Read(ScriptReadState state, ISymbol member, AttributeData attribute)
     {
-        LocationInfo? at = ScriptAttributes.LocationOf(attribute);
+        // Only [ScriptFunction] has ByHand, so a method of a class never is.
         bool isByHand = ScriptAttributes.NamedBool(attribute, "ByHand");
-        if (isByHand && state.HoldsObjects)
-        {
-            state.Report(
-                ScriptApiDiagnostics.Misplaced, at, member.Name,
-                "only a function of a library and a global function can be bound by hand");
-            return;
-        }
-
         if (member is not IMethodSymbol { MethodKind: MethodKind.Ordinary, IsGenericMethod: false } method)
         {
             state.Report(
