@@ -4,9 +4,8 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 
 // The one metatable every managed object shares: a node, a service, a
 // signal, a connection. The members are in the generated glue of each
-// class. This finds the object, and words what a script reads for a name
-// the object does not have. That is an error, never nil. On a node, a name
-// that is no member gives the child of that name.
+// class. This finds the object. A name it does not have is an error, never
+// nil, and on a node it is the name of a child before it is that.
 internal sealed class ObjectMembers
 {
     private readonly ScriptContext _context;
