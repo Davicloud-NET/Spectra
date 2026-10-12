@@ -123,6 +123,22 @@ The generator writes the body, which reads the same member of the door. So what 
 
 A property that cannot be set answers "Property is read only". `CannotSet` gives it other words. The definitions file marks it `read`, so the type checker refuses the write the binding would refuse.
 
+### A property of an object that is no node
+
+The door sets nodes. An object of a class that is not static takes a write itself: `SetBy` names a method of the class that gets the value and returns null, or why it refused the value. The script reads that as its error.
+
+```csharp
+/// <summary>How fast the player walks, in units a second. Stop puts back what a script set.</summary>
+[ScriptProperty(SetBy = nameof(SetWalkSpeed))]
+public float WalkSpeed => Body.Tuning.WalkSpeed;
+
+private string? SetWalkSpeed(float value) => _door.TrySetWalkSpeed(value, out string? refused) ? null : refused;
+```
+
+The value is a number, a boolean, a string, a `Vector3` or a `CFrame`. One of another kind is refused before the method is called, in the words the door uses.
+
+What the method changes has to go back at Stop as well. The player's members go through `PlayerWrites` in Core, which records in the journal the door records in. A new one is a method there, and a `TuningJournalKind` when it changes the tuning, which outlives the level.
+
 ### Written by hand
 
 Some members cannot be generated: `CFrame.new` takes six shapes of arguments, `task.wait` yields. Such a member takes a `LuauStack` and returns how many values it pushed, as every host function does. Its attribute says what a script may hand it, as Luau writes it:
@@ -172,6 +188,7 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 - `NodeClassScriptTests` reads `NodeMembers` and fails when a class of nodes is sent to another script class than the one of its name.
 - `SettableListTests` holds the settable properties of the description equal to the list of `ScriptWrites`, by name, type and member.
 - `StopPromiseTests` writes to every settable member and compares the level's saved bytes after Stop.
+- `PlayerSettingTests` sets every settable property of the character from a script and compares what outlives a play session after Stop. It also tries every name on the player's objects: what takes a value must be what the description says a script can set.
 - `LuauDefinitionsTests` checks that the definitions file has every class, member and global.
 - `ScriptCostTests` fails when a crossing allocates. A new kind of crossing gets a row there. Its table of times is a measurement, which runs only when asked for: `dotnet run -c Release --project Test/SpectraEngine.Scripting.Tests -- -explicit only -class "SpectraEngine.Scripting.Tests.ScriptCostTests"`.
 - The generator's own tests are in `Test/SpectraEngine.Entities.Tests` (`ScriptApiGenerator*`). They compile its output against stubs of the binding in `ScriptApiHarness`. When the generator calls something new in the binding, the stub gets it too.

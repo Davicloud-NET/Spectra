@@ -23,11 +23,11 @@ internal sealed partial class ScriptCharacter : ScriptObject
     [ScriptProperty(CannotSet = "Position cannot be set. Move the player with Teleport")]
     public Vector3 Position => Body.State.Position;
 
-    /// <summary>Where the player's feet are and which way the player faces. The player looks along the frame's Z axis, as a player start does.</summary>
+    /// <summary>Where the player's feet are and which way the player faces: along the frame's ZVector, as a player start does.</summary>
     [ScriptProperty(CannotSet = "CFrame cannot be set. Move the player with Teleport")]
     public CFrame CFrame => CharacterFacing.FrameAt(Body.State.Position, Body.Yaw);
 
-    /// <summary>How fast the player moves, in units a second. Set, it is carried on from on the next tick, and one that points up lifts the player off the ground.</summary>
+    /// <summary>How fast the player moves and which way, in units a second. A script sets it to throw the player, and one that points up lifts the player off the ground.</summary>
     [ScriptProperty(SetBy = nameof(SetVelocity))]
     public Vector3 Velocity => Body.State.Velocity;
 
@@ -48,7 +48,7 @@ internal sealed partial class ScriptCharacter : ScriptObject
     private IPlayerPresence Body =>
         _door.Player ?? throw new InvalidOperationException("The player is not in the level.");
 
-    /// <summary>Puts the player at rest at a position, or at a frame's position, looking along the frame's Z axis.</summary>
+    /// <summary>Puts the player at rest at a position, or at a frame's position, facing along the frame's ZVector.</summary>
     [ScriptMethod(Parameters = "target: CFrame | Vector3")]
     private int Teleport(LuauStack stack)
     {
