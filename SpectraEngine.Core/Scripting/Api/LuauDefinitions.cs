@@ -73,16 +73,18 @@ public static class LuauDefinitions
             text.Append(" extends ").Append(described.Extends);
         text.Append(" with\n");
 
+        // "read" keeps the type checker from passing a write the binding refuses.
         foreach (ScriptPropertyDescription property in described.Properties)
         {
             WriteDoc(text, Indent, property.Summary, property.Deprecated);
-            text.Append(Indent).Append(property.Name).Append(": ").Append(property.Type).Append('\n');
+            text.Append(Indent).Append(property.Sets is null ? "read " : "");
+            text.Append(property.Name).Append(": ").Append(property.Type).Append('\n');
         }
 
         foreach (ScriptSignalDescription signal in described.Signals)
         {
             WriteDoc(text, Indent, signal.Summary, "");
-            text.Append(Indent).Append(signal.Name).Append(": ").Append(SignalOf(signal)).Append('\n');
+            text.Append(Indent).Append("read ").Append(signal.Name).Append(": ").Append(SignalOf(signal)).Append('\n');
         }
 
         foreach (ScriptFunctionDescription method in described.Methods)
@@ -114,6 +116,14 @@ public static class LuauDefinitions
     // table type whose methods name the object as their first parameter.
     private static void WriteTableType(StringBuilder text, ScriptClassDescription described)
     {
+        if (described.Operators.Count > 0 || described.Extends.Length > 0)
+        {
+            throw new ArgumentException(
+                $"'{described.Name}' has type parameters, so it is written as a table type. A table type takes " +
+                "no operator and extends no class.",
+                nameof(described));
+        }
+
         string self = $"{described.Name}<{WithoutDefaults(described.TypeParameters)}>";
 
         WriteDoc(text, "", described.Summary, "");
@@ -125,6 +135,12 @@ public static class LuauDefinitions
             text.Append(Indent).Append(property.Name).Append(": ").Append(property.Type).Append(",\n");
         }
 
+        foreach (ScriptSignalDescription signal in described.Signals)
+        {
+            WriteDoc(text, Indent, signal.Summary, "");
+            text.Append(Indent).Append(signal.Name).Append(": ").Append(SignalOf(signal)).Append(",\n");
+        }
+
         foreach (ScriptFunctionDescription method in described.Methods)
         {
             WriteDoc(text, Indent, method.Summary, method.Deprecated);
@@ -132,6 +148,9 @@ public static class LuauDefinitions
             AppendFunctionType(text, method.Signatures, self);
             text.Append(",\n");
         }
+
+        if (described.ChildType.Length > 0)
+            text.Append(Indent).Append("[string]: ").Append(described.ChildType).Append(",\n");
 
         text.Append("}\n");
     }
@@ -159,20 +178,23 @@ public static class LuauDefinitions
     }
 
     // A function with several shapes cannot be declared twice, so it is
-    // declared as a value whose type joins them.
+    // declared as a value whose type joins them. Luau takes an attribute in
+    // front of "declare function" only, so such a value says in words that
+    // it is an old spelling.
     private static void WriteGlobalFunction(StringBuilder text, ScriptFunctionDescription function)
     {
-        WriteDoc(text, "", function.Summary, "");
-        if (function.Deprecated.Length > 0)
-            text.Append("@[deprecated {use = \"").Append(function.Deprecated).Append("\"}]\n");
-
         if (function.Signatures.Count != 1)
         {
+            WriteDoc(text, "", function.Summary, function.Deprecated);
             text.Append("declare ").Append(function.Name).Append(": ");
             AppendFunctionType(text, function.Signatures, self: "");
             text.Append('\n');
             return;
         }
+
+        WriteDoc(text, "", function.Summary, "");
+        if (function.Deprecated.Length > 0)
+            text.Append("@[deprecated {use = ").Append(Quoted(function.Deprecated)).Append("}]\n");
 
         text.Append("declare function ").Append(function.Name).Append('(');
         AppendParameters(text, function.Signatures[0].Parameters, isType: false, hasSelf: false);
@@ -278,9 +300,33 @@ public static class LuauDefinitions
     private static void WriteDoc(StringBuilder text, string indent, string summary, string deprecated)
     {
         if (summary.Length > 0)
-            text.Append(indent).Append("--- ").Append(summary).Append('\n');
+            WriteDocLines(text, indent, summary);
         if (deprecated.Length > 0)
-            text.Append(indent).Append("--- Deprecated: use ").Append(deprecated).Append(".\n");
+            WriteDocLines(text, indent, $"Deprecated: use {deprecated}.");
+    }
+
+    // A line break in the words would end the comment and leave the rest as code.
+    private static void WriteDocLines(StringBuilder text, string indent, string words)
+    {
+        foreach (string line in words.ReplaceLineEndings("\n").Split('\n'))
+            text.Append(indent).Append("--- ").Append(line).Append('\n');
+    }
+
+    // A string as Luau writes one.
+    private static string Quoted(string value)
+    {
+        var quoted = new StringBuilder("\"", value.Length + 2);
+        foreach (char c in value)
+        {
+            if (c is '\\' or '"')
+                quoted.Append('\\').Append(c);
+            else if (c == '\n')
+                quoted.Append("\\n");
+            else if (c != '\r')
+                quoted.Append(c);
+        }
+
+        return quoted.Append('"').ToString();
     }
 
     // A class after the one it extends. The order is otherwise the description's.

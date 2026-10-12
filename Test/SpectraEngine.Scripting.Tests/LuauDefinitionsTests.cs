@@ -1,4 +1,7 @@
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using SpectraEngine.Core.Scripting;
 using SpectraEngine.Core.Scripting.Api;
 using SpectraEngine.Scripting.Luau.Runtime;
 
@@ -26,7 +29,7 @@ public sealed class LuauDefinitionsTests
         --- Two numbers.
         declare extern type Point with
             --- The first.
-            X: number
+            read X: number
             --- Both.
             function Split(self): (number, number)
             function __add(self, other: Point): Point
@@ -44,10 +47,10 @@ public sealed class LuauDefinitionsTests
         --- A door.
         declare extern type Door extends Instance with
             --- How fast it moves.
-            Speed: number
+            read Speed: number
             --- Fires when it is open.
-            Opened: RBXScriptSignal<Instance?, number>
-            Closed: RBXScriptSignal<()>
+            read Opened: RBXScriptSignal<Instance?, number>
+            read Closed: RBXScriptSignal<()>
             --- Opens it.
             function Open(self): ()
             --- Finds a part.
@@ -81,6 +84,65 @@ public sealed class LuauDefinitionsTests
         --- Picks.
         declare pick: ((index: number) -> string) & ((name: string) -> number)
 
+        --- Counts.
+        --- Deprecated: use Point.new.
+        declare count: (() -> number) & ((from: number) -> number)
+
+        """;
+
+    private const string SmallJson = """
+        {
+          "format": 1,
+          "classes": [
+            {
+              "name": "Point",
+              "extends": "",
+              "isValue": true,
+              "typeParameters": "",
+              "childType": "",
+              "summary": "Two numbers.",
+              "properties": [
+                {
+                  "name": "X",
+                  "type": "number",
+                  "summary": "The first.",
+                  "canSet": false,
+                  "deprecated": ""
+                }
+              ],
+              "methods": [
+                {
+                  "name": "Split",
+                  "summary": "Both.",
+                  "deprecated": "",
+                  "signatures": [
+                    {
+                      "parameters": [
+                        {
+                          "name": "at",
+                          "type": "number?"
+                        }
+                      ],
+                      "returns": "(number, number)"
+                    }
+                  ]
+                }
+              ],
+              "signals": [],
+              "operators": [
+                {
+                  "operator": "+",
+                  "right": "Point",
+                  "returns": "Point"
+                }
+              ]
+            }
+          ],
+          "libraries": [],
+          "globals": [],
+          "functions": []
+        }
+
         """;
 
     private static ScriptApiDescription Api => LuauScriptApi.Description;
@@ -93,12 +155,119 @@ public sealed class LuauDefinitionsTests
         written.ShouldBe(SmallFile.ReplaceLineEndings("\n"));
     }
 
+    // Held against text written down here, so every run of the suite is
+    // another process that has to write the same bytes.
     [Fact]
-    public void The_same_description_gives_the_same_bytes()
+    public void The_json_of_a_small_description_is_written_byte_for_byte()
     {
-        LuauDefinitions.Write(Small()).ShouldBe(LuauDefinitions.Write(Small()));
-        LuauDefinitions.Write(Api).ShouldBe(LuauDefinitions.Write(Api));
-        ScriptApiJson.Write(Api).ShouldBe(ScriptApiJson.Write(Api));
+        var api = new ScriptApiDescription
+        {
+            Classes =
+            [
+                new()
+                {
+                    Name = "Point",
+                    IsValue = true,
+                    Summary = "Two numbers.",
+                    Properties = [new() { Name = "X", Type = "number", Summary = "The first." }],
+                    Methods = [Function("Split", "Both.", new ScriptSignature([new("at", "number?")], "(number, number)"))],
+                    Operators = [new("+", "Point", "Point")],
+                },
+            ],
+        };
+
+        Encoding.UTF8.GetString(ScriptApiJson.Write(api)).ShouldBe(SmallJson.ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void A_deprecated_function_with_one_shape_carries_the_attribute_and_one_with_several_a_line_of_words()
+    {
+        string written = LuauDefinitions.Write(Small());
+
+        written.ShouldContain("--- Waits.\n@[deprecated {use = \"task.wait\"}]\ndeclare function wait(");
+        written.ShouldContain("--- Counts.\n--- Deprecated: use Point.new.\ndeclare count: ");
+        written.ShouldNotContain("}]\ndeclare count");
+    }
+
+    [Fact]
+    public void What_to_write_in_place_of_an_old_spelling_is_a_string_of_Luau()
+    {
+        var api = new ScriptApiDescription
+        {
+            Functions = [Function("old", "", new ScriptSignature([], "")) with { Deprecated = "the \"new\" \\ one" }],
+        };
+
+        LuauDefinitions.Write(api).ShouldContain("@[deprecated {use = \"the \\\"new\\\" \\\\ one\"}]\ndeclare function old(): ()\n");
+    }
+
+    [Fact]
+    public void Words_of_several_lines_stay_inside_the_comment()
+    {
+        var api = new ScriptApiDescription
+        {
+            Globals = [new() { Name = "level", Type = "Instance", Summary = "The level.\r\nIt has every node." }],
+        };
+
+        LuauDefinitions.Write(api).ShouldContain("\n--- The level.\n--- It has every node.\ndeclare level: Instance\n");
+    }
+
+    [Fact]
+    public void A_property_a_script_cannot_set_is_read_only_to_the_type_checker()
+    {
+        string written = LuauDefinitions.Write(Api);
+
+        BlockOf(written, "declare extern type Instance ").ShouldContain("\n    Position: Vector3\n");
+        BlockOf(written, "declare extern type Instance ").ShouldContain("\n    read ClassName: string\n");
+        BlockOf(written, "declare extern type CFrame ").ShouldContain("\n    read X: number\n");
+        BlockOf(written, "declare extern type RBXScriptConnection ").ShouldContain("\n    read Connected: boolean\n");
+
+        foreach (ScriptClassDescription described in Api.Classes.Where(described => described.TypeParameters.Length == 0))
+        {
+            string body = BlockOf(written, $"declare extern type {described.Name} ");
+            foreach (ScriptPropertyDescription property in described.Properties)
+                body.ShouldContain($"\n    {(property.Sets is null ? "read " : "")}{property.Name}: ", Case.Sensitive, described.Name);
+        }
+    }
+
+    [Fact]
+    public void A_class_with_type_parameters_keeps_its_signals_and_the_type_of_its_children()
+    {
+        var api = new ScriptApiDescription
+        {
+            Classes =
+            [
+                new()
+                {
+                    Name = "Folder",
+                    TypeParameters = "T",
+                    ChildType = "T",
+                    Signals = [new() { Name = "Added", Summary = "Fires for a new child.", Parameters = [new("child", "T")] }],
+                },
+            ],
+        };
+
+        LuauDefinitions.Write(api).ShouldEndWith("""
+
+            export type Folder<T> = {
+                --- Fires for a new child.
+                Added: RBXScriptSignal<T>,
+                [string]: T,
+            }
+
+            """.ReplaceLineEndings("\n"));
+    }
+
+    // A table type takes neither, and leaving them out would promise a
+    // script less than the binding gives.
+    [Fact]
+    public void A_class_with_type_parameters_and_an_operator_or_a_base_is_refused_by_name()
+    {
+        ScriptClassDescription generic = new() { Name = "Folder", TypeParameters = "T" };
+        var withOperator = new ScriptApiDescription { Classes = [generic with { Operators = [new("+", "T", "T")] }] };
+        var withBase = new ScriptApiDescription { Classes = [generic with { Extends = "Instance" }] };
+
+        Should.Throw<ArgumentException>(() => LuauDefinitions.Write(withOperator)).Message.ShouldContain("'Folder'");
+        Should.Throw<ArgumentException>(() => LuauDefinitions.Write(withBase)).Message.ShouldContain("'Folder'");
     }
 
     [Fact]
@@ -122,9 +291,9 @@ public sealed class LuauDefinitionsTests
                 : $"declare extern type {described.Name} ");
 
             foreach (ScriptPropertyDescription property in described.Properties)
-                body.ShouldContain($"\n    {property.Name}: {property.Type}", Case.Sensitive, described.Name);
+                body.ShouldMatch($@"\n    (read )?{property.Name}: {Regex.Escape(property.Type)}", described.Name);
             foreach (ScriptSignalDescription signal in described.Signals)
-                body.ShouldContain($"\n    {signal.Name}: RBXScriptSignal<", Case.Sensitive, described.Name);
+                body.ShouldContain($"\n    read {signal.Name}: RBXScriptSignal<", Case.Sensitive, described.Name);
             foreach (ScriptFunctionDescription method in described.Methods)
                 body.ShouldMatch($@"\n    (function {method.Name}\(self|{method.Name}: \(self)", described.Name);
         }
@@ -165,8 +334,8 @@ public sealed class LuauDefinitionsTests
     {
         string written = LuauDefinitions.Write(Api);
 
-        written.ShouldContain("\n    Heartbeat: RBXScriptSignal<number>\n");
-        written.ShouldContain("\n    Stepped: RBXScriptSignal<number, number>\n");
+        written.ShouldContain("\n    read Heartbeat: RBXScriptSignal<number>\n");
+        written.ShouldContain("\n    read Stepped: RBXScriptSignal<number, number>\n");
         written.ShouldContain("Connect: (self: RBXScriptSignal<T...>, callback: (T...) -> ()) -> RBXScriptConnection,");
         written.ShouldContain("Wait: (self: RBXScriptSignal<T...>) -> T...,");
     }
@@ -253,7 +422,10 @@ public sealed class LuauDefinitionsTests
                 Name = "Instance",
                 Summary = "A node.",
                 ChildType = "Instance",
-                Properties = [new() { Name = "Name", Type = "string", Summary = "Its name." }],
+                Properties =
+                [
+                    new() { Name = "Name", Type = "string", Summary = "Its name.", Sets = SettableMemberId.Name },
+                ],
             },
             new()
             {
@@ -311,6 +483,11 @@ public sealed class LuauDefinitionsTests
                 "Picks.",
                 new ScriptSignature([new("index", "number")], "string"),
                 new ScriptSignature([new("name", "string")], "number")),
+            Function(
+                "count",
+                "Counts.",
+                new ScriptSignature([], "number"),
+                new ScriptSignature([new("from", "number")], "number")) with { Deprecated = "Point.new" },
         ],
     };
 
