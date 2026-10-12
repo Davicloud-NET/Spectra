@@ -7,6 +7,12 @@ namespace SpectraEngine.Entities.Generator.ScriptApi;
 // list and to catch a slip. Luau itself is the judge of a type.
 internal static class LuauSignatureText
 {
+    private static readonly HashSet<string> Reserved = new()
+    {
+        "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "if", "in",
+        "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",
+    };
+
     // Null when the text reads. Otherwise what is wrong with it.
     public static string? ReadParameters(string text, List<LuauParameterModel> parameters)
     {
@@ -21,8 +27,8 @@ internal static class LuauSignatureText
 
             string name = piece.Substring(0, colon).Trim();
             string type = piece.Substring(colon + 1).Trim();
-            if (name != "..." && !IsName(name))
-                return $"'{name}' is no name for a parameter";
+            if (name != "..." && WhyNotName(name) is { } why)
+                return $"'{name}' is no name for a parameter: {why}";
             if (type.Length == 0)
                 return $"'{name}' has no type";
 
@@ -102,17 +108,19 @@ internal static class LuauSignatureText
         return -1;
     }
 
-    public static bool IsName(string text)
+    // Null for a name. Otherwise why Luau would not read it as one, and
+    // one that is not read ends the definitions file where it stands.
+    public static string? WhyNotName(string text)
     {
-        if (text.Length == 0 || char.IsDigit(text[0]))
-            return false;
+        if (Reserved.Contains(text))
+            return "it is a word Luau keeps for itself";
 
+        bool isName = text.Length > 0 && !IsDigit(text[0]);
         foreach (char c in text)
-        {
-            if (!char.IsLetterOrDigit(c) && c != '_')
-                return false;
-        }
+            isName &= IsDigit(c) || c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 
-        return true;
+        return isName ? null : "a name is letters from a to z, digits and underscores, and starts with no digit";
     }
+
+    private static bool IsDigit(char c) => c >= '0' && c <= '9';
 }

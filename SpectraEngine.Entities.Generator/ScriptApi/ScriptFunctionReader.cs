@@ -142,6 +142,13 @@ internal static class ScriptFunctionReader
             if (parameter.RefKind != RefKind.None || ScriptTypeMap.Of(parameter.Type) is not { } type)
                 return NotCarried(state, method, parameter.Type);
 
+            // The description names the parameter as C# does.
+            if (LuauSignatureText.WhyNotName(parameter.Name) is { } why)
+            {
+                state.Report(ScriptApiDiagnostics.NotLuau, LocationInfo.From(parameter), parameter.Name, method.Name, why);
+                return null;
+            }
+
             bool isOptional = type.IsNullable || parameter.HasExplicitDefaultValue;
             parameters.Add(new ScriptParameterModel(parameter.Name, type, isOptional, DefaultOf(parameter, type)));
         }

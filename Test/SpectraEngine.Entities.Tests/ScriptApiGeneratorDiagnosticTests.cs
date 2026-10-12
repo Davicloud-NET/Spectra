@@ -125,6 +125,68 @@ public sealed class ScriptApiGeneratorDiagnosticTests
         LineOf(run.Diagnostics.Single()).ShouldContain("[ScriptFunction(Parameters");
     }
 
+    // A word Luau keeps would end the definitions file at that line.
+    [Theory]
+    [InlineData("[ScriptMethod(Name = \"end\")] public static float Stop(Vector3 self) => 0f;", "'end' on 'Stop'")]
+    [InlineData("[ScriptMethod] public static float Mix(Vector3 self, Vector3 @then) => 0f;", "'then' on 'Mix'")]
+    [InlineData("[ScriptMethod] public static float Mix(Vector3 self, float alpha, bool @nil = false) => 0f;", "'nil' on 'Mix'")]
+    [InlineData("[ScriptMethod(Parameters = \"until: number\")] public static int Wait(LuauStack stack, Vector3 self) => 0;", "'until' is no name for a parameter")]
+    public void A_word_Luau_keeps_for_itself_is_refused_as_a_name(string member, string named)
+    {
+        GeneratorRun run = Run($$"""
+            /// <summary>A counter.</summary>
+            [ScriptValue("Counter")]
+            internal static partial class CounterApi
+            {
+                /// <summary>Something.</summary>
+                {{member}}
+            }
+            """);
+
+        run.DiagnosticIds.ShouldBe(["SPS004"]);
+        run.Diagnostics.Single().GetMessage().ShouldContain(named);
+        run.Diagnostics.Single().GetMessage().ShouldContain("a word Luau keeps for itself");
+        run.CompileErrors().ShouldBeEmpty();
+        run.SourceNamed("CounterApi.ScriptApi.g.cs").ShouldNotContain("Signatures");
+    }
+
+    [Theory]
+    [InlineData("local", "a word Luau keeps for itself")]
+    [InlineData("Zähler", "letters from a to z")]
+    public void A_class_under_what_is_no_name_in_Luau_is_refused(string name, string why)
+    {
+        GeneratorRun run = Run($$"""
+            /// <summary>A counter.</summary>
+            [ScriptValue("{{name}}")]
+            internal static partial class CounterApi
+            {
+            }
+            """);
+
+        run.DiagnosticIds.ShouldBe(["SPS004"]);
+        run.Diagnostics.Single().GetMessage().ShouldContain(why);
+        LineOf(run.Diagnostics.Single()).ShouldContain("[ScriptValue(");
+    }
+
+    [Fact]
+    public void A_parameter_Luau_cannot_name_is_refused_at_the_parameter()
+    {
+        GeneratorRun run = Run("""
+            /// <summary>A counter.</summary>
+            [ScriptLibrary("counter")]
+            internal static partial class CounterLibrary
+            {
+                /// <summary>The part between two numbers.</summary>
+                [ScriptFunction(Name = "between")]
+                public static double Between(double start, double @end) => @end - start;
+            }
+            """);
+
+        run.DiagnosticIds.ShouldBe(["SPS004"]);
+        Diagnostic refused = run.Diagnostics.Single();
+        _source.Substring(refused.Location.SourceSpan.Start, refused.Location.SourceSpan.Length).ShouldBe("@end");
+    }
+
     [Fact]
     public void An_operator_Luau_does_not_have_is_refused_at_the_attribute()
     {

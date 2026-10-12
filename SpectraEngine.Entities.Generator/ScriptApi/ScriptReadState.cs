@@ -64,9 +64,9 @@ internal sealed class ScriptReadState
             name = member.Name;
 
         LocationInfo? location = ScriptAttributes.LocationOf(attribute);
-        if (!LuauSignatureText.IsName(name))
+        if (LuauSignatureText.WhyNotName(name) is { } why)
         {
-            Report(ScriptApiDiagnostics.NotLuau, location, name, member.Name, "a name is letters, digits and underscores");
+            Report(ScriptApiDiagnostics.NotLuau, location, name, member.Name, why);
             return null;
         }
 

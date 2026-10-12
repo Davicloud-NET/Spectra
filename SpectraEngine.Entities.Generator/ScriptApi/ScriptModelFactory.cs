@@ -43,12 +43,8 @@ internal static class ScriptModelFactory
             state.Report(ScriptApiDiagnostics.NotPartial, location, type.Name);
 
         string summary = kind == ScriptContainerKind.Globals ? "" : state.SummaryOf(type);
-        if (kind != ScriptContainerKind.Globals && !LuauSignatureText.IsName(name))
-        {
-            state.Report(
-                ScriptApiDiagnostics.NotLuau, ScriptAttributes.LocationOf(attribute), name, type.Name,
-                "a name is letters, digits and underscores");
-        }
+        if (kind != ScriptContainerKind.Globals && LuauSignatureText.WhyNotName(name) is { } why)
+            state.Report(ScriptApiDiagnostics.NotLuau, ScriptAttributes.LocationOf(attribute), name, type.Name, why);
 
         bool isPlaced = IsPlaced(state, attribute);
         if (isPlaced)
