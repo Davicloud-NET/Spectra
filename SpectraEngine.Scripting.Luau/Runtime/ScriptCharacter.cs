@@ -27,7 +27,7 @@ internal sealed partial class ScriptCharacter : ScriptObject
     [ScriptProperty(CannotSet = "CFrame cannot be set. Move the player with Teleport")]
     public CFrame CFrame => CharacterFacing.FrameAt(Body.State.Position, Body.Yaw);
 
-    /// <summary>How fast the player moves and which way, in units a second. A script sets it to throw the player, and one that points up lifts the player off the ground.</summary>
+    /// <summary>How fast the player moves and which way, in units a second. A script sets it to push or throw the player. One that rises off the ground the player stands on lifts the player off it, and the rise of a walk up a slope does not.</summary>
     [ScriptProperty(SetBy = nameof(SetVelocity))]
     public Vector3 Velocity => Body.State.Velocity;
 

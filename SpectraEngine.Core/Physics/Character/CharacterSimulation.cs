@@ -13,6 +13,11 @@ namespace SpectraEngine.Core.Physics.Character;
 // scripted mover all tick this without them. The view lives elsewhere.
 public sealed class CharacterSimulation : IPlayerPresence
 {
+    // A rise off the ground slower than this stays inside the mover's
+    // contact band, and its ground check stands the character again on the
+    // same tick. Leaving the ground for it would only cost a jump.
+    private const float LiftOffSpeed = 0.5f;
+
     private readonly Scene.Scene _scene;
     private readonly ICharacterCollisionSource _source;
     private CharacterState _state;
@@ -132,12 +137,18 @@ public sealed class CharacterSimulation : IPlayerPresence
 
     /// <summary>
     /// Gives the character a velocity, which the next tick carries on from.
-    /// One that points up takes it off the ground, as a jump does.
+    /// One that points up and rises off the ground it stands on takes it off
+    /// the ground, as a jump does. The rise of a walk up a slope does not.
     /// </summary>
     public void SetVelocity(Vector3 velocity)
     {
         _state.Velocity = velocity;
-        if (velocity.Y <= 0f)
+        if (!_state.Grounded || velocity.Y <= 0f)
+            return;
+
+        // Along the ground normal, so a ramp's own rise and a push along
+        // the ground keep the character standing.
+        if (Vector3.Dot(velocity, _state.GroundNormal) <= LiftOffSpeed)
             return;
 
         // As the mover leaves the ground for a jump. Left standing, its

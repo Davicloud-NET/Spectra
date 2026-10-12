@@ -39,7 +39,7 @@ public interface IPlayerPresence
 
     /// <summary>
     /// Gives the player a velocity, which the next tick carries on from. One
-    /// that points up takes it off the ground.
+    /// that rises off the ground the player stands on takes it off the ground.
     /// </summary>
     void SetVelocity(Vector3 velocity);
 }

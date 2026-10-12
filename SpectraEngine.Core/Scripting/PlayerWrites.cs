@@ -78,7 +78,8 @@ public sealed class PlayerWrites
 
     /// <summary>
     /// Gives the player a velocity, in units a second. The next tick carries
-    /// on from it, and one that points up takes the player off the ground.
+    /// on from it, and one that rises off the ground the player stands on
+    /// takes the player off the ground.
     /// </summary>
     /// <param name="refusal">Why nothing was written, as the script's error says it.</param>
     /// <returns>False when the write was refused. The player is as it was then.</returns>
