@@ -460,7 +460,8 @@ public class MapRuleTests
     [Fact]
     public void A_bundle_that_still_has_a_scripts_folder_bakes_and_the_folder_stays_as_it_is()
     {
-        // Where a map was once meant to keep its scripts. Nothing reads it.
+        // A folder of the bundle like any other. Nothing in it is checked or
+        // packed, and the file is left alone.
         using var project = new TempProject();
         MapFixture fixture = MapFixture.Fresh();
         string bundle = fixture.WriteBundle(project, "Room.smap");
@@ -478,6 +479,32 @@ public class MapRuleTests
 
         MapBundle.Load(bundle).Nodes.Count.ShouldBeGreaterThan(0);
         File.ReadAllText(old).ShouldBe("not a script (");
+    }
+
+    [Fact]
+    public void A_file_in_a_bundles_old_scripts_folder_is_part_of_the_bundle_the_bake_hashes()
+    {
+        using var project = new TempProject();
+        MapFixture fixture = MapFixture.Fresh();
+        string bundle = fixture.WriteBundle(project, "Room.smap");
+
+        string old = Path.Combine(bundle, "scripts", "door.luau");
+        Directory.CreateDirectory(Path.Combine(bundle, "scripts"));
+        File.WriteAllText(old, "print(1)");
+
+        var context = new RuleContext(project.Root, "Maps/Room.smap", CookProfile.Ship);
+        new MapRule().Cook(context);
+        ScmapProbe before = ScmapProbe.Read(context.Emissions[0].Payload);
+
+        // Every file of a bundle but the user state is the map's source. So
+        // the file is a dependency, and an edit to it bakes the map again.
+        context.Dependencies.ShouldContain(read => read.Path == "Maps/Room.smap/scripts/door.luau");
+
+        File.WriteAllText(old, "print(2)");
+        ScmapProbe after = Bake(project, "Maps/Room.smap");
+
+        after.Header.SourceMapDigest.ShouldNotBe(before.Header.SourceMapDigest);
+        after.Scripts.ShouldBeEmpty();
     }
 
     [Fact]
