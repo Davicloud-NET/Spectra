@@ -36,6 +36,7 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
     {
         TimeSpan askedBefore = _asked;
         bool heldBefore = sink.HoldsErrors;
+        long bytesBefore = host.MemoryUsed;
         long started = Stopwatch.GetTimestamp();
 
         _asked = TimeSpan.Zero;
@@ -43,8 +44,13 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
         try
         {
             ScriptMessage? failure = Start(module, text, out LuauScript? script);
-            if (failure is { } said)
-                Fail(module, script, in said, Stopwatch.GetElapsedTime(started) - _asked);
+            if (failure is not { } said)
+                return;
+
+            // The time is the module's own, without the modules it asked for.
+            // The memory is all that was taken while it ran: what they hold stays held.
+            Cost own = new(Stopwatch.GetElapsedTime(started) - _asked, host.MemoryUsed - bytesBefore);
+            Fail(module, script, in said, own);
         }
         finally
         {
@@ -101,7 +107,7 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
         return message;
     }
 
-    private void Fail(ScriptModule module, LuauScript? script, in ScriptMessage said, TimeSpan own)
+    private void Fail(ScriptModule module, LuauScript? script, in ScriptMessage said, Cost own)
     {
         // It failed for the failure of a module it asked for. That one was
         // reported, so this one is not, and its askers get the same failure.
@@ -121,21 +127,23 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
         sink.Tell(script is null && module.Node is { } node ? NodeNamingSink.OnNode(in failure, node) : failure);
     }
 
-    // The host's limits are on the whole call, and the stop lands on what
-    // runs then. So a module is to blame for a stop only when half the time
-    // limit or more went by in its own code. Otherwise the ask that ran it
-    // fails, and the next one runs it again.
-    private ScriptMessage Stopped(ScriptModule module, int reason, in ScriptMessage said, TimeSpan own)
+    // The host's limits are on the whole call and on all scripts, and a stop
+    // lands on what runs then. So a module is to blame only when half the
+    // limit or more was its own, of the time or of the memory. Otherwise the
+    // ask that ran it fails, and the next one runs it again.
+    private ScriptMessage Stopped(ScriptModule module, int reason, in ScriptMessage said, Cost own)
     {
-        TimeSpan limit = host.CallLimit;
-        if (reason == Shim.StopTime && own.Ticks >= limit.Ticks / 2)
+        bool isItsOwn = reason == Shim.StopTime
+            ? own.Time.Ticks >= host.CallLimit.Ticks / 2
+            : own.Bytes >= host.MemoryBudget / 2;
+        if (isItsOwn)
             return said;
 
         module.IsKept = false;
         if (reason != Shim.StopTime)
             return said with { Text = $"{said.Text}. {RunsAgain}" };
 
-        string seconds = limit.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+        string seconds = host.CallLimit.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
         return said with
         {
             Text = "stopped while it loaded, because the code that asked for it had run for most of the " +
@@ -147,4 +155,7 @@ internal sealed class ModuleRunner(LuauHost host, NodeNamingSink sink, WaitingTh
 
     private static ScriptMessage Error(ScriptModule module, string text) =>
         new(ScriptSeverity.Error, text, module.Path, 0);
+
+    // What a module used up while its file ran.
+    private readonly record struct Cost(TimeSpan Time, long Bytes);
 }

@@ -1,9 +1,10 @@
 namespace SpectraEngine.Scripting.Tests;
 
 /// <summary>
-/// A module the host stops while it loads. The limits are on the whole
-/// call, so a module that was stopped for what its asker used fails that one
-/// ask and runs again on the next.
+/// A module the host stops while it loads. The limits are on the whole call
+/// and on all scripts. So a module that was stopped for what others used
+/// fails that one ask and runs again on the next, and one that used most of
+/// a limit itself stays failed.
 /// </summary>
 public sealed class ModuleStopTests
 {
@@ -85,6 +86,39 @@ public sealed class ModuleStopTests
             $"false Scripts/main.luau:2: {LoadFailed}: {StoppedForMemory}",
             "outer runs",
             "true 24577",
+        ]);
+    }
+
+    // It took more than half of the budget itself. Asking again would only
+    // fill the memory again, so it is not run again.
+    [Fact]
+    public void A_module_that_takes_most_of_the_memory_itself_stays_failed()
+    {
+        using var level = new ScriptLevel();
+        level.FileAt("Scripts/hog.luau", """
+            print('runs')
+            local first = string.rep('y', 40 * 1024 * 1024)
+            local second = string.rep('z', 40 * 1024 * 1024)
+            local held = 0
+            for i = 1, #first / 1024 do held += 1 end
+            return held + #second
+            """);
+        level.ScriptAt("Scripts/main.luau", """
+            print(pcall(require, './hog'))
+            print(pcall(require, './hog'))
+            """);
+
+        level.Play();
+        level.Runtime.ShouldNotBeNull().MemoryBudget = 64 * 1024 * 1024;
+        level.Tick();
+
+        const string Stopped = "Scripts/hog.luau:5: the scripts hold more than 64 MB and this one was switched off";
+        level.ErrorsWithPlace().ShouldBe([Stopped]);
+        level.Printed.ShouldBe(
+        [
+            "runs",
+            $"false Scripts/main.luau:1: {LoadFailed}: {Stopped}",
+            $"false Scripts/main.luau:2: {LoadFailed}: {Stopped}",
         ]);
     }
 
