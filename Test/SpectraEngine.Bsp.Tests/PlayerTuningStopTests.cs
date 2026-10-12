@@ -1,4 +1,8 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Physics.Character;
+using SpectraEngine.Core.Play;
+using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 
 namespace SpectraEngine.Bsp.Tests;
@@ -72,5 +76,52 @@ public sealed class PlayerTuningStopTests
         _rig.Session.Exit();
 
         tuning.WalkSpeed.ShouldBe(7f);
+    }
+
+    [Fact]
+    public void Taking_the_authored_map_during_play_puts_it_back()
+    {
+        float walk = _rig.Character.Tuning.WalkSpeed;
+        _rig.Session.Enter();
+        new PlayerWrites(_rig.Entities).TrySetWalkSpeed(9f, out _).ShouldBeTrue();
+
+        _rig.Manager.TakeAuthoredMap().ShouldNotBeNull();
+
+        _rig.Character.Tuning.WalkSpeed.ShouldBe(walk);
+    }
+
+    [Fact]
+    public void Shutting_the_scene_manager_down_during_play_puts_it_back()
+    {
+        float walk = _rig.Character.Tuning.WalkSpeed;
+        _rig.Session.Enter();
+        new PlayerWrites(_rig.Entities).TrySetWalkSpeed(9f, out _).ShouldBeTrue();
+
+        _rig.Manager.Shutdown();
+
+        _rig.Character.Tuning.WalkSpeed.ShouldBe(walk);
+    }
+
+    [Fact]
+    public void A_stop_that_throws_still_puts_it_back()
+    {
+        var manager = new SceneManager(NullLogger<SceneManager>.Instance)
+        {
+            Startup = StartupSceneKind.Baseplate,
+            EntityCatalog = FailingRemovalEntity.AddTo(EntityMotion.Catalog([])),
+        };
+        manager.LoadStartupScene(new FakeRenderer(), new AssetManager(NullLogger<AssetManager>.Instance));
+        Scene scene = manager.ActiveScene.ShouldNotBeNull();
+        EntityRuntime.Place(scene.Root, "broken", FailingRemovalEntity.Class);
+
+        var character = new CharacterSimulation(scene);
+        float walk = character.Tuning.WalkSpeed;
+        var session = new PlaySession(manager, character);
+        session.Enter();
+        new PlayerWrites(manager.EntityWorld.ShouldNotBeNull()).TrySetWalkSpeed(9f, out _).ShouldBeTrue();
+
+        Should.Throw<InvalidOperationException>(session.Exit);
+
+        character.Tuning.WalkSpeed.ShouldBe(walk);
     }
 }
