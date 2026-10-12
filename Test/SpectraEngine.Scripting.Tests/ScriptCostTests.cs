@@ -9,7 +9,8 @@ namespace SpectraEngine.Scripting.Tests;
 /// <summary>
 /// What it costs a script to cross into the engine and back: a property
 /// read, a method call, a Vector3 and a CFrame. None of them may allocate.
-/// The times are written beside the test binary, in script-costs.txt.
+/// The times are a measurement that runs when asked for, and are then
+/// written beside the test binary, in script-costs.txt.
 /// </summary>
 public sealed class ScriptCostTests
 {
@@ -36,6 +37,9 @@ public sealed class ScriptCostTests
         ("call a method of a CFrame, CFrame out", "local _ = f:Inverse()"),
         ("call a method of a CFrame, Vector3 in and out", "local _ = f:PointToWorldSpace(a)"),
         ("call a method of a service", "local _ = game:GetService('RunService')"),
+        ("read a method and do not call it", "local _ = f.Inverse"),
+        ("call a method of a CFrame with a dot", "local _ = f.Inverse(f)"),
+        ("call a method of a service with a dot", "local _ = game.GetService(game, 'RunService')"),
         ("call a library function, CFrame out", "local _ = CFrame.Angles(0, i, 0)"),
         ("multiply two CFrames", "local _ = f * g"),
     ];
@@ -49,7 +53,9 @@ public sealed class ScriptCostTests
         Measure(name).Allocated.ShouldBe(0, $"{Ticks * Rounds} rounds of '{name}' allocated");
     }
 
-    [Fact]
+    // A measurement and no test: it has nothing to fail on, so it runs only
+    // when asked for, with -explicit only.
+    [Fact(Explicit = true)]
     public void The_cost_of_every_crossing_is_written_down()
     {
         double empty = Measure(Nothing).Nanoseconds;
@@ -62,9 +68,7 @@ public sealed class ScriptCostTests
                 $"{name,-48} {Math.Max(0, nanoseconds - empty),7:0} ns  {allocated / (double)(Ticks * Rounds),5:0.#} bytes"));
         }
 
-        string file = Path.Combine(AppContext.BaseDirectory, "script-costs.txt");
-        File.WriteAllText(file, table.ToString());
-        File.Exists(file).ShouldBeTrue();
+        File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "script-costs.txt"), table.ToString());
     }
 
     // The time of one round and the bytes all rounds allocated.
