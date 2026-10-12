@@ -33,25 +33,4 @@ public static class NodeClassName
             ? entity.ClassName
             : NodeClass.NameOf(NodeClass.KindOf(node));
     }
-
-    /// <summary>The same from what a UI holds of a node.</summary>
-    /// <param name="kind">What the node is.</param>
-    /// <param name="entityClass">Its entity class, or null when it carries no entity.</param>
-    /// <param name="light">Its kind of light, or null when it carries none.</param>
-    /// <param name="isModule">Whether its script is a module.</param>
-    public static string Of(SceneNodeKind kind, string? entityClass, LightKind? light, bool isModule = false)
-    {
-        // First, so a door is a func_door and not the part it is made of.
-        if (!string.IsNullOrEmpty(entityClass))
-            return entityClass;
-
-        return kind switch
-        {
-            SceneNodeKind.BrushWorld or SceneNodeKind.BrushPart or SceneNodeKind.BrushSubtractive => Part,
-            SceneNodeKind.Mesh => MeshPart,
-            SceneNodeKind.Light => NodeClass.NameOf(NodeClass.OfLight(light ?? LightKind.Point)),
-            SceneNodeKind.Script => isModule ? ModuleScript : Script,
-            _ => Folder,
-        };
-    }
 }

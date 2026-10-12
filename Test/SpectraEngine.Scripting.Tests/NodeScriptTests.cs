@@ -80,18 +80,4 @@ public sealed class NodeScriptTests
             "Sun DirectionalLight",
         ]);
     }
-
-    [Fact]
-    public void The_class_name_rule_reads_the_same_from_what_a_UI_holds_of_a_node()
-    {
-        NodeClassName.Of(SceneNodeKind.BrushPart, null, null).ShouldBe("Part");
-        NodeClassName.Of(SceneNodeKind.BrushWorld, "func_door", null).ShouldBe("func_door");
-        NodeClassName.Of(SceneNodeKind.Mesh, null, null).ShouldBe("MeshPart");
-        NodeClassName.Of(SceneNodeKind.Light, null, LightKind.Rect).ShouldBe("SurfaceLight");
-        NodeClassName.Of(SceneNodeKind.Light, null, LightKind.Disc).ShouldBe("DiscLight");
-        NodeClassName.Of(SceneNodeKind.Group, "", null).ShouldBe("Folder");
-        NodeClassName.Of(SceneNodeKind.Empty, null, null).ShouldBe("Folder");
-        NodeClassName.Of(SceneNodeKind.Script, null, null).ShouldBe("Script");
-        NodeClassName.Of(SceneNodeKind.Script, null, null, isModule: true).ShouldBe("ModuleScript");
-    }
 }

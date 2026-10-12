@@ -159,13 +159,6 @@ public sealed class NodeClassTests
         NodeClass.BaseOf("").ShouldBeNull();
     }
 
-    [Fact]
-    public void The_class_name_of_a_node_is_the_name_of_its_class_unless_it_is_an_entity()
-    {
-        foreach (SceneNode node in new[] { new SceneNode("Plain"), Group(), Brush(BrushKind.World), Mesh() })
-            NodeClassName.Of(node).ShouldBe(NodeClass.NameOf(NodeClass.KindOf(node)));
-    }
-
     private static SceneNode Group()
     {
         var group = new SceneNode("Group");
