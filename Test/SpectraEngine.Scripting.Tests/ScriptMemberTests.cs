@@ -67,7 +67,7 @@ public sealed class ScriptMemberTests
         printed[1].ShouldEndWith("attempt to call a nil value");
         printed[2].ShouldEndWith("attempt to call a Vector3 value");
         printed[3].ShouldEndWith("attempt to call a number value");
-        printed[4].ShouldEndWith("attempt to call a Instance value");
+        printed[4].ShouldEndWith("attempt to call a RBXScriptSignal value");
     }
 
     [Fact]

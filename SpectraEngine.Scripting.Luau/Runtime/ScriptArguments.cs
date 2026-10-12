@@ -85,6 +85,15 @@ internal static class ScriptArguments
         LuauType.Function => "function",
         LuauType.Thread => "thread",
         LuauType.Buffer => "buffer",
-        _ => FrameValue.TryGet(stack, index, out _) ? "CFrame" : "Instance",
+        _ => FrameValue.TryGet(stack, index, out _) ? "CFrame" : ObjectName(stack, index),
     };
+
+    // A node is an Instance. Any other object goes by its class, or a
+    // message would read "Instance expected, got Instance".
+    private static string ObjectName(LuauStack stack, int index) =>
+        LuauHost.From(stack) is { } host
+        && host.Objects.TryGet(stack, index, ScriptTags.Object, out object? held) == LuauObjectLookup.Found
+        && held is ScriptObject other
+            ? other.ClassName
+            : "Instance";
 }

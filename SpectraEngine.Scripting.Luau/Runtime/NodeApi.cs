@@ -106,13 +106,33 @@ internal static partial class NodeApi
         return PushBelow(context, stack, node, stack.Count, ref count) ? 1 : LuauStack.Raise;
     }
 
-    /// <summary>Whether the other node is anywhere below this one.</summary>
-    [ScriptMethod]
-    public static bool IsAncestorOf(SceneNode node, SceneNode descendant) => NodeTree.IsAbove(node, descendant);
+    /// <summary>Whether the other node is anywhere below this one. Game and nil are below no node.</summary>
+    [ScriptMethod(Parameters = "descendant: (Instance | DataModel)?", Returns = "boolean")]
+    private static int IsAncestorOf(ScriptContext context, LuauStack stack, SceneNode node)
+    {
+        if (stack.IsNil(2) || context.TryGetObject(stack, 2, out DataModel? _))
+            return ScriptResult.Of(stack.Push(false));
 
-    /// <summary>Whether this node is anywhere below the other one.</summary>
-    [ScriptMethod]
-    public static bool IsDescendantOf(SceneNode node, SceneNode ancestor) => NodeTree.IsAbove(ancestor, node);
+        return context.TryGetObject(stack, 2, out SceneNode? descendant)
+            ? ScriptResult.Of(stack.Push(NodeTree.IsAbove(node, descendant)))
+            : ScriptArguments.Wrong(stack, 2, "IsAncestorOf", "Instance", isMethod: true);
+    }
+
+    /// <summary>Whether this node is anywhere below the other one. Every node of the level is below game, and every node is below nil.</summary>
+    // Nil is Roblox's rule, and so a node that left the level is told from
+    // one that is in it by asking about game.
+    [ScriptMethod(Parameters = "ancestor: (Instance | DataModel)?", Returns = "boolean")]
+    private static int IsDescendantOf(ScriptContext context, LuauStack stack, SceneNode node)
+    {
+        if (stack.IsNil(2))
+            return ScriptResult.Of(stack.Push(true));
+        if (context.TryGetObject(stack, 2, out DataModel? game))
+            return ScriptResult.Of(stack.Push(NodeTree.IsIn(game.Workspace, node)));
+
+        return context.TryGetObject(stack, 2, out SceneNode? ancestor)
+            ? ScriptResult.Of(stack.Push(NodeTree.IsAbove(ancestor, node)))
+            : ScriptArguments.Wrong(stack, 2, "IsDescendantOf", "Instance", isMethod: true);
+    }
 
     /// <summary>The names from the root of the level down to this node, with a dot between.</summary>
     [ScriptMethod]

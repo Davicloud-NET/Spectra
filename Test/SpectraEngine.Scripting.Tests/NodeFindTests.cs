@@ -174,6 +174,55 @@ public sealed class NodeFindTests
         printed.ShouldBe(["true true false", "true true false", "false false", "false false"]);
     }
 
+    // Roblox's own sample for IsDescendantOf asks a part about game.
+    [Fact]
+    public void Every_node_of_the_level_is_below_game_and_game_is_below_no_node()
+    {
+        string[] printed = House.Ask("""
+            local hinge = workspace.House.Door.Hinge
+            print(hinge:IsDescendantOf(game), workspace:IsDescendantOf(game), script:IsDescendantOf(game))
+            print(hinge:IsAncestorOf(game), workspace:IsAncestorOf(game))
+            """);
+
+        printed.ShouldBe(["true true true", "false false"]);
+    }
+
+    [Fact]
+    public void A_node_that_left_the_level_is_no_longer_below_game()
+    {
+        using var level = new ScriptLevel();
+        SceneNode crate = level.Scene.Root.CreateChild("Crate");
+        crate.CreateChild("Lid");
+        level.AddScript(level.Scene.Root, """
+            local crate, lid = workspace.Crate, workspace.Crate.Lid
+            print("removing")
+            print(crate:IsDescendantOf(game), lid:IsDescendantOf(game), lid:IsDescendantOf(crate), crate.Parent)
+            """);
+        level.Sink.Heard = message =>
+        {
+            if (message.Text == "removing")
+                level.Scene.Root.RemoveChild(crate);
+        };
+
+        level.Play().Tick();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["removing", "false false true nil"]);
+    }
+
+    // Roblox's rule. A script that asks about a node it did not find gets true.
+    [Fact]
+    public void Every_node_is_below_nil_and_nil_is_below_no_node()
+    {
+        string[] printed = House.Ask("""
+            local hinge, nobody = workspace.House.Door.Hinge, workspace:FindFirstChild("Nobody")
+            print(hinge:IsDescendantOf(nil), workspace:IsDescendantOf(nobody))
+            print(hinge:IsAncestorOf(nil), workspace:IsAncestorOf(nobody))
+            """);
+
+        printed.ShouldBe(["true true", "false false"]);
+    }
+
     [Fact]
     public void The_full_name_is_every_name_from_the_root_down_with_dots_between()
     {
@@ -247,7 +296,9 @@ public sealed class NodeFindTests
     [InlineData("workspace:FindFirstChildOfClass()", "invalid argument #1 to 'FindFirstChildOfClass' (string expected, got nil)")]
     [InlineData("workspace:FindFirstAncestorWhichIsA({})", "invalid argument #1 to 'FindFirstAncestorWhichIsA' (string expected, got table)")]
     [InlineData("workspace:IsAncestorOf('House')", "invalid argument #1 to 'IsAncestorOf' (Instance expected, got string)")]
-    [InlineData("workspace:IsDescendantOf(nil)", "invalid argument #1 to 'IsDescendantOf' (Instance expected, got nil)")]
+    [InlineData("workspace:IsDescendantOf(5)", "invalid argument #1 to 'IsDescendantOf' (Instance expected, got number)")]
+    [InlineData("workspace:IsDescendantOf(game:GetService('RunService'))", "invalid argument #1 to 'IsDescendantOf' (Instance expected, got RunService)")]
+    [InlineData("workspace:IsAncestorOf(game:GetService('RunService').Heartbeat)", "invalid argument #1 to 'IsAncestorOf' (Instance expected, got RBXScriptSignal)")]
     [InlineData("workspace.FindFirstChild('House')", "Expected ':' not '.' calling member function FindFirstChild")]
     [InlineData("workspace.GetChildren()", "Expected ':' not '.' calling member function GetChildren")]
     public void A_find_handed_the_wrong_thing_is_refused_in_Robloxs_words(string call, string error)

@@ -60,6 +60,10 @@ internal static class NodeTree
         return false;
     }
 
+    // Whether the node is the root or anywhere below it. That is what a
+    // script means by below game.
+    public static bool IsIn(SceneNode root, SceneNode node) => ReferenceEquals(root, node) || IsAbove(root, node);
+
     public static int CountBelow(SceneNode node)
     {
         IReadOnlyList<SceneNode> children = node.Children;
