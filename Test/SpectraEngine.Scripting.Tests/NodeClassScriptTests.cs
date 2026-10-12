@@ -150,6 +150,21 @@ public sealed class NodeClassScriptTests
         ]);
     }
 
+    [Fact]
+    public void The_definitions_file_has_each_class_after_the_one_it_extends_and_a_child_by_its_name()
+    {
+        string file = LuauDefinitions.Write(LuauScriptApi.Description);
+
+        file.ShouldContain("declare extern type BasePart extends Instance with\nend\n");
+        file.ShouldContain("declare extern type Part extends BasePart with\nend\n");
+        file.ShouldContain("declare extern type SpotLight extends Light with\nend\n");
+        file.ShouldContain("    [string]: Instance\nend\n");
+
+        Place(file, "Instance with").ShouldBeLessThan(Place(file, "BasePart extends"));
+        Place(file, "BasePart extends").ShouldBeLessThan(Place(file, "MeshPart extends"));
+        Place(file, "Light extends Instance").ShouldBeLessThan(Place(file, "DirectionalLight extends"));
+    }
+
     // Core says what a class extends for IsA, and the script API says it
     // again for the definitions file. A script would be told two things.
     [Fact]
@@ -166,5 +181,12 @@ public sealed class NodeClassScriptTests
                 described.Extends.ShouldBe(NodeClass.BaseOf(name) ?? "", $"what {name} extends");
             }
         }
+    }
+
+    private static int Place(string file, string declared)
+    {
+        int at = file.IndexOf("declare extern type " + declared, StringComparison.Ordinal);
+        at.ShouldBeGreaterThan(0, declared);
+        return at;
     }
 }

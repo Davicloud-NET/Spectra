@@ -1,3 +1,4 @@
+using System.Reflection;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting;
 
@@ -417,5 +418,34 @@ public sealed class WaitForChildTests
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(["got Key House"]);
         house.RemoveChild(key);
+    }
+
+    // The editor plays one level many times. A runtime left on the scene's
+    // events would be kept there with all it holds, one for every Play.
+    [Theory]
+    [InlineData(nameof(Scene.NodeAdded))]
+    [InlineData(nameof(Scene.NodeReparented))]
+    [InlineData(nameof(Scene.NodeRenamed))]
+    public void A_runtime_listens_to_the_scene_while_its_level_plays_and_no_longer(string sceneEvent)
+    {
+        using ScriptLevel level = House.With(WaitsForKey);
+        int before = ListenerCount(level.Scene, sceneEvent);
+
+        // The entity world listens too, and also lets go at Stop.
+        level.Play().Tick(2);
+        ListenerCount(level.Scene, sceneEvent).ShouldBeGreaterThan(before);
+
+        level.Stop();
+        ListenerCount(level.Scene, sceneEvent).ShouldBe(before);
+    }
+
+    // A field-like event keeps its listeners in a field of its own name.
+    private static int ListenerCount(Scene scene, string sceneEvent)
+    {
+        FieldInfo field = typeof(Scene)
+            .GetField(sceneEvent, BindingFlags.Instance | BindingFlags.NonPublic)
+            .ShouldNotBeNull($"Scene keeps {sceneEvent} some other way now");
+
+        return (field.GetValue(scene) as Delegate)?.GetInvocationList().Length ?? 0;
     }
 }
