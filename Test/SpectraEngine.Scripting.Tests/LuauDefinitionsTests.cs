@@ -372,11 +372,23 @@ public sealed class LuauDefinitionsTests
         ScriptSignature shape = require.Signatures.ShouldHaveSingleItem();
         shape.Parameters.ShouldBe([new ScriptParameter("module", "string | Instance")]);
         shape.Returns.ShouldBe("any");
-        require.Summary.ShouldContain("nil when it was asked for by path");
+        require.Summary.ShouldContain("runs once while the level plays");
         LuauDefinitions.Write(Api).ShouldNotContain("require");
 
         using JsonDocument json = JsonDocument.Parse(ScriptApiJson.Write(Api));
         NamesIn(json.RootElement, "functions").ShouldContain("require");
+    }
+
+    // The type stays Instance: as Instance? the checker would question every
+    // script.Parent. So the words have to say when there is no node.
+    [Fact]
+    public void The_script_global_says_that_it_is_nil_in_a_module_asked_for_by_path()
+    {
+        ScriptPropertyDescription script = Api.Globals.Single(global => global.Name == "script");
+
+        script.Type.ShouldBe("Instance");
+        script.Summary.ShouldContain("nil in a module that was asked for by path");
+        LuauDefinitions.Write(Api).ShouldContain("nil in a module that was asked for by path");
     }
 
     [Fact]

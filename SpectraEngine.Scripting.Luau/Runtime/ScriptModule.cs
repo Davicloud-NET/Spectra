@@ -15,6 +15,10 @@ internal sealed class ScriptModule(string path, SceneNode? node)
     // What it returned. Null while it runs and when it failed.
     public LuauReference? Value { get; set; }
 
-    // Why it returned nothing, with its file and line in front.
+    // Why it returned nothing: the first failure, with its file and line in front.
     public string Failure { get; set; } = $"{path}: the module did not run to its end";
+
+    // False for a failure that was not the module's doing. Only the ask that
+    // ran it fails then, and the next one runs it again.
+    public bool IsKept { get; set; } = true;
 }

@@ -227,6 +227,30 @@ public sealed class ModuleTests
         level.Runtime.ShouldNotBeNull().WaitingThreadCount.ShouldBe(0);
     }
 
+    // The wait is in another file. The error is where the module that loads
+    // called into it, and the calls under it lead to the wait.
+    [Fact]
+    public void A_module_that_waits_inside_another_files_function_is_refused_at_its_own_line_with_the_calls()
+    {
+        using var level = new ScriptLevel();
+        level.FileAt("Scripts/timer.luau", "return { after = function(seconds) task.wait(seconds) end }");
+        level.FileAt("Scripts/slow.luau", "local timer = require('./timer')\n\ntimer.after(0.1)\nreturn 1");
+        level.ScriptAt("Scripts/main.luau", "print(pcall(require, './slow'))");
+
+        level.Play().Tick(10);
+
+        ScriptMessage refusal = level.Sink.Messages.Single(message => message.Severity == ScriptSeverity.Error);
+        refusal.Position.ShouldBe("Scripts/slow.luau:3");
+        refusal.Text.ShouldStartWith("a module cannot wait before it returns.");
+        refusal.Stack.ShouldBe(
+        [
+            new ScriptFrame("Scripts/timer.luau", 1, "after"),
+            new ScriptFrame("Scripts/slow.luau", 3, null),
+        ]);
+        level.Printed.ShouldHaveSingleItem().ShouldStartWith(
+            $"false Scripts/main.luau:1: {LoadFailed}: Scripts/slow.luau:3: a module cannot wait");
+    }
+
     [Fact]
     public void A_function_of_a_module_may_wait_and_the_script_that_calls_it_waits()
     {

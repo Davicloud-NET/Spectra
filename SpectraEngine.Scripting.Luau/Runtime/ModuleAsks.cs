@@ -24,6 +24,9 @@ internal sealed class ModuleAsks
         _byHash[hash] = new Ask(asker.ToArray(), asked.ToArray(), module, _byHash.GetValueOrDefault(hash));
     }
 
+    // For when a module is forgotten: an ask that found it has to look again.
+    public void Clear() => _byHash.Clear();
+
     // The two are hashed apart, so "a" asking for "bc" is not "ab" asking for "c".
     private static int HashOf(ReadOnlySpan<byte> asker, ReadOnlySpan<byte> asked)
     {

@@ -12,18 +12,14 @@ namespace SpectraEngine.Scripting.Luau.Runtime;
 internal sealed partial class ModuleLoader(
     LuauHost host, IScriptSource source, NodeNamingSink sink, WaitingThreads waiting)
 {
-    // Roblox's words for the four.
+    // Roblox's words for the two.
     public const string InvalidArgument = "Attempted to call require with invalid argument(s).";
-    public const string NotOneValue = "Module code did not return exactly one value";
     public const string Recursive = "Requested module was required recursively";
-    public const string LoadFailed = "Requested module experienced an error while loading";
-
-    public const string Waited =
-        "a module cannot wait before it returns. Start a thread with task.spawn for what has to wait";
 
     // How many modules may run at once, each asked for by the one before.
     public const int MaxDepth = 100;
 
+    private readonly ModuleRunner _runner = new(host, sink, waiting);
     private readonly Dictionary<string, ScriptModule> _byPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<SceneNode, ScriptModule> _byNode = new(ReferenceEqualityComparer.Instance);
     private readonly ModuleAsks _asks = new();
@@ -32,11 +28,8 @@ internal sealed partial class ModuleLoader(
     private readonly List<ScriptModule> _running = [];
 
     /// <summary>
-    /// Gives what a module returns. A path starts with ./ or ../ from the file that asks, or with
-    /// @self or @assets, and names x.luau or x/init.luau without the extension. A node has to be a
-    /// module script. A module runs once while the level plays, the first time it is asked for, and
-    /// everyone gets the same value. It has to return one value and cannot wait before it does.
-    /// Its script is its node when it was asked for by node, and nil when it was asked for by path.
+    /// Gives what a module returns. The module is a file named by a path, such as ./lib/util or
+    /// @assets/Shared/util, or a module script. It runs once while the level plays.
     /// </summary>
     [ScriptFunction(Name = "require", Parameters = "module: string | Instance", Returns = "any")]
     private int Require(LuauStack stack)
@@ -56,7 +49,7 @@ internal sealed partial class ModuleLoader(
     // Both spans are Luau's own bytes. They are read before the module runs.
     private int ByPath(LuauStack stack, ReadOnlySpan<byte> askedBytes)
     {
-        ReadOnlySpan<byte> asker = ScriptReport.CallerFile(stack.State, host.ScriptOf(stack));
+        ReadOnlySpan<byte> asker = ScriptReport.CallerFile(stack.State);
         if (_asks.Find(asker, askedBytes) is { } again)
             return Give(stack, again);
 
@@ -64,13 +57,10 @@ internal sealed partial class ModuleLoader(
         if (!ModulePath.TryResolve(asked, Encoding.UTF8.GetString(asker), out string[] files, out string? refusal))
             return stack.Fail(refusal);
 
-        foreach (string file in files)
+        if (Known(files) is { } known)
         {
-            if (_byPath.TryGetValue(file, out ScriptModule? known))
-            {
-                _asks.Add(asker, askedBytes, known);
-                return Give(stack, known);
-            }
+            _asks.Add(asker, askedBytes, known);
+            return Give(stack, known);
         }
 
         if (TooDeep() is { } deep)
@@ -79,7 +69,7 @@ internal sealed partial class ModuleLoader(
             return stack.Fail(noFile);
 
         ScriptModule module = new(path, node: null);
-        _byPath.Add(path, module);
+        _byPath[path] = module;
         _asks.Add(asker, askedBytes, module);
         return Load(stack, module, text);
     }
@@ -108,6 +98,23 @@ internal sealed partial class ModuleLoader(
         _byNode.Add(node, module);
         return Load(stack, module, text);
     }
+
+    // The module one of the files already is. The table ignores case, as a
+    // pack and a Windows folder do. Where the source tells case apart, a
+    // file in another case is not there, so it is no module either, whoever
+    // asked first.
+    private ScriptModule? Known(string[] files)
+    {
+        foreach (string file in files)
+        {
+            if (_byPath.TryGetValue(file, out ScriptModule? known) && (known.Path == file || IsThere(file)))
+                return known;
+        }
+
+        return null;
+    }
+
+    private bool IsThere(string file) => source.Read(file, out string? problem) is not null || problem is not null;
 
     // The one file of them that is there, with its text. Otherwise the
     // refusal: none is there, both are, or the one cannot be read.
@@ -151,7 +158,7 @@ internal sealed partial class ModuleLoader(
         if (module.Value is { } value)
             return ScriptResult.Of(value.Push(stack));
 
-        return stack.Fail(_running.Contains(module) ? Circle(module) : $"{LoadFailed}: {module.Failure}");
+        return stack.Fail(_running.Contains(module) ? Circle(module) : _runner.Refusal(module));
     }
 
     // From the module that was asked for again to the one that asks, and
@@ -170,79 +177,29 @@ internal sealed partial class ModuleLoader(
         _running.Add(module);
         try
         {
-            if (Run(module, text) is { } failure)
-                module.Failure = failure;
+            _runner.Run(module, text);
         }
         finally
         {
             _running.Remove(module);
         }
 
+        if (module.Value is null && !module.IsKept)
+            Forget(module);
+
         return Give(stack, module);
     }
 
-    // Null when the module returned its one value, which it then keeps.
-    // Otherwise how it failed, which the sink has been told.
-    private string? Run(ScriptModule module, byte[] text)
+    // The next ask reads the module's file and runs it again.
+    private void Forget(ScriptModule module)
     {
-        sink.TakeError();
-        sink.Loading = module.Node;
-        LuauScript? script = host.Load(module.Path, text);
-        sink.Loading = null;
+        if (module.Node is { } node)
+            _byNode.Remove(node);
+        else
+            _byPath.Remove(module.Path);
 
-        // The host has reported a module that did not compile.
-        if (script is null)
-            return Heard(module);
-        if (module.Node is { } node && !script.SetGlobal("script"u8, LuauValue.Object(ScriptTags.Object, node)))
-            return Tell(Error(module, "the module could not be given its node"));
-
-        return script.Start() switch
-        {
-            LuauResume.Finished => Keep(module, script.Thread),
-            LuauResume.Yielded => Tell(EndWait(script)),
-            LuauResume.Failed => Heard(module),
-            _ => Tell(Error(module, "the module could not be started")),
-        };
+        _asks.Clear();
     }
-
-    private string? Keep(ScriptModule module, LuauThread thread)
-    {
-        if (thread.ValueCount != 1)
-            return Tell(Error(module, NotOneValue));
-
-        module.Value = host.Keep(thread.Values, 1);
-        return module.Value is null ? Tell(Error(module, "what the module returned could not be kept")) : null;
-    }
-
-    // Ends the module's thread where it waits, and its wait with it. The
-    // error is at the line that waited.
-    private ScriptMessage EndWait(LuauScript script)
-    {
-        LuauThread thread = script.Thread;
-        if (!thread.IsAlive)
-            return new ScriptMessage(ScriptSeverity.Error, Waited, script.Name, 0);
-
-        ScriptMessage message = ScriptReport.Line(thread.Values.State, script, ScriptSeverity.Error, Waited);
-        waiting.Remove(thread);
-        thread.Cancel();
-        return message;
-    }
-
-    // Reports a failure the host did not, and hands it back as an asker reads it.
-    private string Tell(in ScriptMessage message)
-    {
-        sink.Report(in message);
-        return Described(in message);
-    }
-
-    // What the host reported when the module did not compile or failed.
-    private string Heard(ScriptModule module) =>
-        sink.TakeError() is { } said ? Described(in said) : module.Failure;
-
-    private static string Described(in ScriptMessage message) => $"{message.Position}: {message.Text}";
-
-    private static ScriptMessage Error(ScriptModule module, string text) =>
-        new(ScriptSeverity.Error, text, module.Path, 0);
 
     private static string NotAModule(string got) =>
         $"{InvalidArgument} A path or a ModuleScript was expected, got {got}";

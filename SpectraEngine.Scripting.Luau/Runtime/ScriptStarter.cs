@@ -24,7 +24,10 @@ internal sealed partial class ScriptStarter(LuauHost host, IScriptSource source,
         }
     }
 
-    /// <summary>The node of the script that is running. Each script has its own.</summary>
+    /// <summary>
+    /// The node of the script that is running. Each script has its own. It is nil in a module
+    /// that was asked for by path, which has no node.
+    /// </summary>
     // By hand: it is a global of one script and not of the state, so it is
     // set when the script is loaded.
     [ScriptProperty(Name = "script", Type = "Instance", ByHand = true)]

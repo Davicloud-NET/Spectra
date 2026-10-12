@@ -340,7 +340,12 @@ internal sealed unsafe class ThreadRunner
 
         if (stop != 0)
         {
-            script?.SwitchOff();
+            if (script is not null)
+            {
+                script.StopReason = stop;
+                script.SwitchOff();
+            }
+
             message = message with { Text = _host.Explain(stop) };
         }
 

@@ -37,6 +37,10 @@ public sealed class LuauScript
 
     internal int Id { get; }
 
+    // Why the host stopped the script, as the shim numbers it: for time or
+    // for memory. Zero for a script the host did not stop.
+    internal int StopReason { get; set; }
+
     // Keeps the top-level thread, and through it the script's globals, for
     // the threads its kept functions are started on.
     internal int ThreadReference { get; private set; }

@@ -31,9 +31,10 @@ internal static unsafe class ScriptReport
     }
 
     // The file of the script function that called the host function running
-    // on L, where Luau keeps its name: it lives as long as that call. With no
-    // such function, the file of the thread's script.
-    internal static ReadOnlySpan<byte> CallerFile(nint L, LuauScript? script)
+    // on L, where Luau keeps its name: it lives as long as that call. Empty
+    // when no script function did, as on a thread that began with the host
+    // function. That thread's script is whoever started it, which says nothing.
+    internal static ReadOnlySpan<byte> CallerFile(nint L)
     {
         for (int level = 0; ; level++)
         {
@@ -42,10 +43,23 @@ internal static unsafe class ScriptReport
             int line;
             int kind = Shim.sl_frame(L, level, &source, &name, &line);
             if (kind == 0)
-                return script is null ? default : script.NameUtf8;
+                return default;
             if (kind == ScriptFrameKind)
                 return WithoutMark(LuaText.FromNative(source));
         }
+    }
+
+    // An error the host makes for a thread where it stands, such as one that
+    // waits where it may not. Its position is the thread's own code, the
+    // outermost script function, and the stack is what that line called.
+    internal static ScriptMessage Standing(nint thread, LuauScript? script, string text)
+    {
+        ScriptFrame[] stack = Frames(thread, script, out int leftOut);
+        if (stack.Length == 0)
+            return new ScriptMessage(ScriptSeverity.Error, text, script?.Name ?? string.Empty, 0);
+
+        ScriptFrame own = leftOut == 0 ? stack[^1] : Outermost(thread, script, stack[^1]);
+        return new ScriptMessage(ScriptSeverity.Error, WithCut(text, leftOut), own.Script, own.Line, stack);
     }
 
     // A thread that ended in an error. The value is on top of its stack and
@@ -102,6 +116,29 @@ internal static unsafe class ScriptReport
         }
 
         return [.. frames];
+    }
+
+    // The script function furthest out, for a stack with more of them than are kept.
+    private static ScriptFrame Outermost(nint thread, LuauScript? script, ScriptFrame nearest)
+    {
+        byte* lastSource = null;
+        int lastLine = 0;
+        for (int level = 0; ; level++)
+        {
+            byte* source;
+            byte* name;
+            int line;
+            int kind = Shim.sl_frame(thread, level, &source, &name, &line);
+            if (kind == 0)
+                break;
+            if (kind != ScriptFrameKind)
+                continue;
+
+            lastSource = source;
+            lastLine = line;
+        }
+
+        return lastSource == null ? nearest : new ScriptFrame(NameOf(lastSource, script), lastLine, null);
     }
 
     // The calls that show under an error would read as all there were. So an

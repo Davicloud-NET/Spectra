@@ -20,15 +20,8 @@ public sealed class ModuleCircleTests
         level.Play().Tick();
 
         const string Circle = $"{Recursive}: Scripts/a.luau -> Scripts/b.luau -> Scripts/a.luau";
-        level.ErrorsWithPlace().ShouldBe(
-        [
-            $"Scripts/b.luau:1: {Circle}",
-            $"Scripts/a.luau:1: {LoadFailed}: Scripts/b.luau:1: {Circle}",
-        ]);
-        level.Printed.ShouldBe(
-        [
-            $"false Scripts/main.luau:1: {LoadFailed}: Scripts/a.luau:1: {LoadFailed}: Scripts/b.luau:1: {Circle}",
-        ]);
+        level.ErrorsWithPlace().ShouldBe([$"Scripts/b.luau:1: {Circle}"]);
+        level.Printed.ShouldBe([$"false Scripts/main.luau:1: {LoadFailed}: Scripts/b.luau:1: {Circle}"]);
     }
 
     [Fact]
@@ -42,12 +35,9 @@ public sealed class ModuleCircleTests
 
         level.Play().Tick();
 
-        string[] errors = level.ErrorsWithPlace();
-        errors.Length.ShouldBe(4);
-        errors[0].ShouldBe(
-            $"Scripts/c.luau:2: {Recursive}: Scripts/a.luau -> Scripts/b.luau -> Scripts/c.luau -> Scripts/a.luau");
-        errors[3].ShouldStartWith($"Scripts/main.luau:1: {LoadFailed}: Scripts/a.luau:1: ");
-        errors[3].ShouldEndWith(errors[0]);
+        const string Circle =
+            $"Scripts/c.luau:2: {Recursive}: Scripts/a.luau -> Scripts/b.luau -> Scripts/c.luau -> Scripts/a.luau";
+        level.ErrorsWithPlace().ShouldBe([Circle, $"Scripts/main.luau:1: {LoadFailed}: {Circle}"]);
     }
 
     [Fact]
@@ -125,11 +115,11 @@ public sealed class ModuleCircleTests
             return;
         }
 
-        string[] errors = level.ErrorsWithPlace();
-        errors.Length.ShouldBe(100);
-        errors[0].ShouldBe(
-            "Scripts/m99.luau:1: modules ask for one another more than 100 deep, from Scripts/m0.luau down");
-        level.Printed.ShouldHaveSingleItem().ShouldStartWith("false Scripts/main.luau:1: ");
+        // One line for the hundred modules that failed with it.
+        const string TooDeep =
+            "Scripts/m99.luau:1: modules ask for one another more than 100 deep, from Scripts/m0.luau down";
+        level.ErrorsWithPlace().ShouldBe([TooDeep]);
+        level.Printed.ShouldBe([$"false Scripts/main.luau:1: {LoadFailed}: {TooDeep}"]);
     }
 
     [Fact]

@@ -44,7 +44,7 @@ internal static class ModulePath
         if (rest.StartsWith("./", StringComparison.Ordinal) || rest.StartsWith("../", StringComparison.Ordinal))
         {
             // An init file is its folder, so its ./ is beside the folder.
-            if (!TryAddModule(asker, place))
+            if (!TryAddModule(asker, place, out _))
                 return NoAsker(asked);
             if (place.Count == 0)
                 return Climbs(asked);
@@ -60,23 +60,41 @@ internal static class ModulePath
         string alias = slash < 0 ? rest[1..] : rest[1..slash];
         rest = slash < 0 ? string.Empty : rest[(slash + 1)..];
 
+        // For any other file, Luau's rule gives the folder of the file's own
+        // name, and its tools refuse a file that has such a folder beside it.
         if (alias.Equals("self", StringComparison.OrdinalIgnoreCase))
-            return TryAddModule(asker, place) ? null : NoAsker(asked);
+        {
+            if (!TryAddModule(asker, place, out bool isInit))
+                return NoAsker(asked);
+
+            return isInit ? null : NotInit(asked, asker);
+        }
 
         return alias.Equals("assets", StringComparison.OrdinalIgnoreCase)
             ? null
             : $"'@{alias}' is not a valid alias. {Shape}";
     }
 
+    // Luau walks real folders and fails at one that is not there. A script
+    // source has none to ask, so a path may not name a folder and climb again.
     private static string? Walk(string asked, string rest, List<string> place)
     {
+        bool hasNamed = false;
         foreach (string name in rest.Split('/'))
         {
             if (name.Length == 0 || name == ".")
                 continue;
 
             if (name != "..")
+            {
+                if (name.TrimEnd().EndsWith('.'))
+                    return EndsInDot(asked);
+
                 place.Add(name);
+                hasNamed = true;
+            }
+            else if (hasNamed)
+                return $"'{asked}' climbs with .. after it named a folder. Put every .. first";
             else if (place.Count == 0)
                 return Climbs(asked);
             else
@@ -93,7 +111,7 @@ internal static class ModulePath
     {
         string module = string.Join('/', place);
         string init = place.Count == 0 ? Init + Extension : $"{module}/{Init}{Extension}";
-        bool isFolderOnly = place.Count == 0 || place[^1].Equals(Init, StringComparison.OrdinalIgnoreCase);
+        bool isFolderOnly = place.Count == 0 || place[^1] == Init;
 
         try
         {
@@ -111,16 +129,20 @@ internal static class ModulePath
     }
 
     // The module a file is, as the names from the content root down to it:
-    // the file without its extension, or the folder of an init file.
-    private static bool TryAddModule(string file, List<string> place)
+    // the file without its extension, or the folder of an init file. Luau
+    // knows an init file by the bytes of its name, so Init.luau is none.
+    private static bool TryAddModule(string file, List<string> place, out bool isInit)
     {
+        isInit = false;
         if (file.Length == 0)
             return false;
 
         bool hasExtension = file.EndsWith(Extension, StringComparison.OrdinalIgnoreCase);
         string module = hasExtension ? file[..^Extension.Length] : file;
         place.AddRange(module.Split('/', StringSplitOptions.RemoveEmptyEntries));
-        if (place.Count > 0 && place[^1].Equals(Init, StringComparison.OrdinalIgnoreCase))
+
+        isInit = place.Count > 0 && place[^1] == Init;
+        if (isInit)
             place.RemoveAt(place.Count - 1);
 
         return true;
@@ -132,7 +154,16 @@ internal static class ModulePath
     private static string Climbs(string asked) => $"'{asked}' climbs out of the content root. {Shape}";
 
     private static string NoAsker(string asked) =>
-        $"'{asked}' is found from the file that asks, and this code has none. Start the path with @assets";
+        $"'{asked}' is found from the file of the function that calls require, and here no script " +
+        "function does. Start the path with @assets";
+
+    private static string NotInit(string asked, string asker) =>
+        $"'{asked}' is asked by {asker}, which is no init file. @self is the folder of the init.luau " +
+        "that asks. A file beside this one is at ./";
+
+    // Windows opens "lib." as "lib", and one file would be two modules.
+    private static string EndsInDot(string asked) =>
+        $"'{asked}' has a name that ends in a dot, which Windows reads as the name without it. Leave the dot out";
 
     private static string Hint(string asked)
     {
@@ -142,7 +173,7 @@ internal static class ModulePath
             return ". A path leaves the extension out";
         }
 
-        return asked.EndsWith("/" + Init, StringComparison.OrdinalIgnoreCase)
+        return asked.EndsWith("/" + Init, StringComparison.Ordinal)
             ? ". An init file is asked for by its folder's name"
             : string.Empty;
     }

@@ -84,6 +84,16 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         set => _host.CallLimit = value;
     }
 
+    /// <summary>
+    /// How many bytes the level's scripts may hold before the one that is
+    /// running is stopped. See <see cref="LuauHost.MemoryBudget"/>.
+    /// </summary>
+    public long MemoryBudget
+    {
+        get => _host.MemoryBudget;
+        set => _host.MemoryBudget = value;
+    }
+
     /// <summary>How many threads wait, for a tick or for a signal.</summary>
     public int WaitingThreadCount => _waiting.Count;
 

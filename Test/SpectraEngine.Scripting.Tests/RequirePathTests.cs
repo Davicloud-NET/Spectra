@@ -67,6 +67,43 @@ public sealed class RequirePathTests
         level.Printed.ShouldBe(["a saw"]);
     }
 
+    // A thread that starts with require has no script function that asks,
+    // and the thread's own script is whoever called in. So only a path from
+    // the content root is taken there.
+    [Theory]
+    [InlineData("task.spawn(require, './saw')")]
+    [InlineData("coroutine.wrap(require)('./saw')")]
+    [InlineData("task.spawn(require, '@self/saw')")]
+    public void Require_as_the_first_function_of_a_thread_has_no_file_to_ask_from(string ask)
+    {
+        using var level = new ScriptLevel();
+        level.FileAt("Shared/tools/init.luau", $"return {{ later = function() {ask} end }}");
+        level.FileAt("Shared/tools/saw.luau", "print('the right saw')\nreturn 1");
+        level.FileAt("Scripts/saw.luau", "print('the saw beside the script that called')\nreturn 2");
+        level.ScriptAt("Scripts/main.luau", "require('@assets/Shared/tools').later()");
+
+        level.Play().Tick();
+
+        string asked = ask.Contains("@self", StringComparison.Ordinal) ? "@self/saw" : "./saw";
+        level.Printed.ShouldBeEmpty();
+        level.Errors.ShouldHaveSingleItem().ShouldEndWith(
+            $"'{asked}' is found from the file of the function that calls require, and here no script " +
+            "function does. Start the path with @assets");
+    }
+
+    [Fact]
+    public void Require_as_the_first_function_of_a_thread_takes_a_path_from_the_content_root()
+    {
+        using var level = new ScriptLevel();
+        level.FileAt("Shared/tools/saw.luau", "return 'a saw'");
+        level.ScriptAt("Scripts/main.luau", "print(coroutine.wrap(require)('@assets/Shared/tools/saw'))");
+
+        level.Play().Tick();
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["a saw"]);
+    }
+
     [Fact]
     public void A_path_that_names_a_file_and_a_folder_with_an_init_file_is_an_error_that_names_the_two()
     {
@@ -148,6 +185,11 @@ public sealed class RequirePathTests
     [InlineData("@game/util", "'@game' is not a valid alias. " + Shape)]
     [InlineData("./util.luau", "no module at './util.luau': looked for Scripts/util.luau.luau and " +
         "Scripts/util.luau/init.luau. A path leaves the extension out")]
+    [InlineData("./lib/../util", "'./lib/../util' climbs with .. after it named a folder. Put every .. first")]
+    [InlineData("./lib./util", "'./lib./util' has a name that ends in a dot, which Windows reads as the " +
+        "name without it. Leave the dot out")]
+    [InlineData("@self/util", "'@self/util' is asked by Scripts/main.luau, which is no init file. @self is " +
+        "the folder of the init.luau that asks. A file beside this one is at ./")]
     public void A_path_require_cannot_follow_is_refused_at_the_askers_line(string asked, string refusal)
     {
         using var level = new ScriptLevel();
@@ -217,7 +259,7 @@ public sealed class RequirePathTests
         level.FileAt("Scripts/Lib/Util.luau", "print('ran')\nreturn {}");
         level.ScriptAt("Scripts/main.luau", """
             local util = require('./Lib/Util')
-            print(util == require('./Lib/../Lib/Util'), util == require('@ASSETS/Scripts/Lib/Util'))
+            print(util == require('./Lib/.//Util'), util == require('@ASSETS/Scripts/Lib/Util'))
             """);
 
         level.Play().Tick();
