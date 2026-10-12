@@ -27,7 +27,30 @@ public sealed class ScriptApiGeneratorSnapshotTests
     {
         GeneratorRun run = ScriptApiHarness.Run(ScriptApiFixtures.Representative);
 
-        run.SourceCount.ShouldBe(7);
+        run.SourceCount.ShouldBe(8);
+    }
+
+    // The description gives a class every member of the one it extends, so
+    // its switches hand a name they do not have to that class.
+    [Fact]
+    public void A_class_that_extends_another_hands_it_every_name_it_does_not_declare()
+    {
+        GeneratorRun run = ScriptApiHarness.Run(ScriptApiFixtures.Representative);
+        string part = Flat(run.SourceNamed("PartApi.ScriptApi.g.cs"));
+        string catalogue = Flat(run.SourceNamed("ScriptApiCatalog.g.cs"));
+
+        foreach (string access in new[] { "Read", "Write", "Invoke" })
+        {
+            part.ShouldContain(
+                "default:returnglobal::SpectraEngine.Scripting.Luau.Runtime.ScriptBases." +
+                $"{access}_TestGame_Scripting_PartApi(context,stack,self,atom);");
+            catalogue.ShouldContain(
+                $"{access}_TestGame_Scripting_PartApi(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContextcontext," +
+                "global::SpectraEngine.Scripting.Luau.LuauStackstack,global::SpectraEngine.Core.Scene.SceneNodeself,intatom)=>" +
+                $"global::TestGame.Scripting.NodeApi.Script{access}(context,stack,self,atom);");
+        }
+
+        Flat(run.SourceNamed("NodeApi.ScriptApi.g.cs")).ShouldNotContain("ScriptBases");
     }
 
     // A call is a switch on a number: the catalogue numbers the names, and
@@ -39,7 +62,7 @@ public sealed class ScriptApiGeneratorSnapshotTests
 
         string catalogue = run.SourceNamed("ScriptApiCatalog.g.cs");
         catalogue.ShouldContain("public const int FindFirstChild = ");
-        catalogue.ShouldContain("public const int AtomCount = 18;");
+        catalogue.ShouldContain("public const int AtomCount = 20;");
 
         string node = Flat(run.SourceNamed("NodeApi.ScriptApi.g.cs"));
         node.ShouldContain(

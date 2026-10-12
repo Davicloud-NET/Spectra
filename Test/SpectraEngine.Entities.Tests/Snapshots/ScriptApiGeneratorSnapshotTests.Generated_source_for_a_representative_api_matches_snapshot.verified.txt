@@ -16,17 +16,19 @@ namespace SpectraEngine.Scripting.Luau.Runtime
         public const int FindFirstChild = 4;
         public const int GetFullName = 5;
         public const int IsDescendantOf = 6;
-        public const int Lerp = 7;
-        public const int Magnitude = 8;
-        public const int Name = 9;
-        public const int Next = 10;
-        public const int Parent = 11;
-        public const int Position = 12;
-        public const int Switched = 13;
-        public const int Toggle = 14;
-        public const int Turned = 15;
-        public const int Unpack = 16;
-        public const int components = 17;
+        public const int IsTouching = 7;
+        public const int Lerp = 8;
+        public const int Magnitude = 9;
+        public const int Mass = 10;
+        public const int Name = 11;
+        public const int Next = 12;
+        public const int Parent = 13;
+        public const int Position = 14;
+        public const int Switched = 15;
+        public const int Toggle = 16;
+        public const int Turned = 17;
+        public const int Unpack = 18;
+        public const int components = 19;
     }
 
     /// <summary>The number of each class and value type of the script API.</summary>
@@ -34,18 +36,19 @@ namespace SpectraEngine.Scripting.Luau.Runtime
     {
         public const int Instance = 0;
         public const int Lamp = 1;
-        public const int Point = 2;
-        public const int RBXScriptSignal = 3;
+        public const int Part = 2;
+        public const int Point = 3;
+        public const int RBXScriptSignal = 4;
     }
 
     /// <summary>Everything the script API declares, gathered from the classes that declare it.</summary>
     internal static class ScriptApiCatalog
     {
         /// <summary>How many member names have an atom.</summary>
-        public const int AtomCount = 18;
+        public const int AtomCount = 20;
 
         /// <summary>The member names in the order of their atoms, each ended by a zero.</summary>
-        public static global::System.ReadOnlySpan<byte> AtomNames => "CFrame\0Connect\0Dim\0Enabled\0FindFirstChild\0GetFullName\0IsDescendantOf\0Lerp\0Magnitude\0Name\0Next\0Parent\0Position\0Switched\0Toggle\0Turned\0Unpack\0components\0"u8;
+        public static global::System.ReadOnlySpan<byte> AtomNames => "CFrame\0Connect\0Dim\0Enabled\0FindFirstChild\0GetFullName\0IsDescendantOf\0IsTouching\0Lerp\0Magnitude\0Mass\0Name\0Next\0Parent\0Position\0Switched\0Toggle\0Turned\0Unpack\0components\0"u8;
 
         /// <summary>The whole script API as data.</summary>
         public static global::SpectraEngine.Core.Scripting.Api.ScriptApiDescription Description { get; } = new()
@@ -54,6 +57,7 @@ namespace SpectraEngine.Scripting.Luau.Runtime
             [
                 global::TestGame.Scripting.NodeApi.ScriptDescription,
                 global::TestGame.Scripting.Lamp.ScriptDescription,
+                global::TestGame.Scripting.PartApi.ScriptDescription,
                 global::TestGame.Scripting.PointApi.ScriptDescription,
                 global::TestGame.Scripting.Signal.ScriptDescription,
             ],
@@ -76,9 +80,21 @@ namespace SpectraEngine.Scripting.Luau.Runtime
         [
             global::TestGame.Scripting.NodeApi.ScriptMethods(context),
             global::TestGame.Scripting.Lamp.ScriptMethods(context),
+            global::TestGame.Scripting.PartApi.ScriptMethods(context),
             global::TestGame.Scripting.PointApi.ScriptMethods(context),
             global::TestGame.Scripting.Signal.ScriptMethods(context),
         ];
+    }
+
+    /// <summary>Hands a member a class does not declare itself to the class it extends.</summary>
+    internal static class ScriptBases
+    {
+        internal static int Read_TestGame_Scripting_PartApi(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom) =>
+            global::TestGame.Scripting.NodeApi.ScriptRead(context, stack, self, atom);
+        internal static int Write_TestGame_Scripting_PartApi(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom) =>
+            global::TestGame.Scripting.NodeApi.ScriptWrite(context, stack, self, atom);
+        internal static int Invoke_TestGame_Scripting_PartApi(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom) =>
+            global::TestGame.Scripting.NodeApi.ScriptInvoke(context, stack, self, atom);
     }
 }
 
@@ -169,7 +185,7 @@ namespace TestGame.Scripting
         internal static global::SpectraEngine.Core.Scripting.Api.ScriptClassDescription ScriptDescription { get; } = new()
         {
             Name = "Lamp",
-            Extends = "Instance",
+            Extends = "",
             IsValue = false,
             TypeParameters = "",
             ChildType = "",
@@ -381,6 +397,97 @@ namespace TestGame.Scripting
                 new global::SpectraEngine.Core.Scripting.Api.ScriptFunctionDescription { Name = "FindFirstChild", Summary = "The child of that name, or nil.", Deprecated = "", Signatures = [new global::SpectraEngine.Core.Scripting.Api.ScriptSignature([new global::SpectraEngine.Core.Scripting.Api.ScriptParameter("name", "string"), new global::SpectraEngine.Core.Scripting.Api.ScriptParameter("recursive", "boolean?")], "Instance?")] },
                 new global::SpectraEngine.Core.Scripting.Api.ScriptFunctionDescription { Name = "IsDescendantOf", Summary = "Whether it is under the other node.", Deprecated = "", Signatures = [new global::SpectraEngine.Core.Scripting.Api.ScriptSignature([new global::SpectraEngine.Core.Scripting.Api.ScriptParameter("ancestor", "Instance")], "boolean")] },
                 new global::SpectraEngine.Core.Scripting.Api.ScriptFunctionDescription { Name = "GetFullName", Summary = "Its path from the root.", Deprecated = "", Signatures = [new global::SpectraEngine.Core.Scripting.Api.ScriptSignature([], "string")] },
+            ],
+            Signals =
+            [
+            ],
+            Operators =
+            [
+            ],
+        };
+
+    }
+}
+
+// ---- TestGame_Scripting_PartApi.ScriptApi.g.cs ----
+// <auto-generated/>
+#nullable enable
+
+namespace TestGame.Scripting
+{
+    partial class PartApi
+    {
+        /// <summary>Pushes the member with this atom. <c>ScriptMember.None</c> when there is none.</summary>
+        internal static int ScriptRead(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom)
+        {
+            switch (atom)
+            {
+                case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.Mass:
+                    return stack.Push((double)(global::TestGame.Scripting.PartApi.Mass(self))) ? 1 : global::SpectraEngine.Scripting.Luau.LuauStack.Raise;
+                case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.IsTouching:
+                    return context.PushMethod(stack, global::SpectraEngine.Scripting.Luau.Runtime.ScriptClassIds.Part, "IsTouching"u8);
+                default:
+                    return global::SpectraEngine.Scripting.Luau.Runtime.ScriptBases.Read_TestGame_Scripting_PartApi(context, stack, self, atom);
+            }
+        }
+
+        /// <summary>Sets the member with this atom to the third value on the stack.</summary>
+        internal static int ScriptWrite(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom)
+        {
+            switch (atom)
+            {
+                case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.Mass:
+                case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.IsTouching:
+                    return global::SpectraEngine.Scripting.Luau.Runtime.ScriptMember.ReadOnly;
+                default:
+                    return global::SpectraEngine.Scripting.Luau.Runtime.ScriptBases.Write_TestGame_Scripting_PartApi(context, stack, self, atom);
+            }
+        }
+
+        /// <summary>Calls the method with this atom on the object. Its arguments start at the second value.</summary>
+        internal static int ScriptInvoke(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self, int atom)
+        {
+            switch (atom)
+            {
+                case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.IsTouching:
+                    return __IsTouching(context, stack, self);
+                case global::SpectraEngine.Scripting.Luau.Runtime.ScriptAtoms.Mass:
+                    return global::SpectraEngine.Scripting.Luau.Runtime.ScriptMember.NotCallable;
+                default:
+                    return global::SpectraEngine.Scripting.Luau.Runtime.ScriptBases.Invoke_TestGame_Scripting_PartApi(context, stack, self, atom);
+            }
+        }
+
+        private static int __IsTouching(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context, global::SpectraEngine.Scripting.Luau.LuauStack stack, global::SpectraEngine.Core.Scene.SceneNode self)
+        {
+            if (!context.TryGetObject(stack, 2, out global::SpectraEngine.Core.Scene.SceneNode? a0))
+                return global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments.Wrong(stack, 2, "IsTouching", "Instance", isMethod: true);
+
+            return stack.Push(global::TestGame.Scripting.PartApi.IsTouching(self, a0)) ? 1 : global::SpectraEngine.Scripting.Luau.LuauStack.Raise;
+        }
+
+        /// <summary>The functions a script gets when it reads a method and does not call it.</summary>
+        internal static global::SpectraEngine.Scripting.Luau.Runtime.MethodTable ScriptMethods(global::SpectraEngine.Scripting.Luau.Runtime.ScriptContext context) =>
+            new global::SpectraEngine.Scripting.Luau.Runtime.ApiTable(context.Host)
+                .Function("IsTouching"u8, stack => context.TryGetObject(stack, 1, out global::SpectraEngine.Core.Scene.SceneNode? self) ? __IsTouching(context, stack, self) : global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments.NoSelf(stack, "IsTouching"))
+                .KeepAsMethods();
+
+        /// <summary>What this class declares, as data.</summary>
+        internal static global::SpectraEngine.Core.Scripting.Api.ScriptClassDescription ScriptDescription { get; } = new()
+        {
+            Name = "Part",
+            Extends = "Instance",
+            IsValue = false,
+            TypeParameters = "",
+            ChildType = "",
+            Summary = "A node with a shape.",
+            Properties =
+            [
+                new global::SpectraEngine.Core.Scripting.Api.ScriptPropertyDescription { Name = "Mass", Type = "number", Summary = "How heavy it is.", Sets = null, Deprecated = "" },
+            ],
+            Methods =
+            [
+                new global::SpectraEngine.Core.Scripting.Api.ScriptFunctionDescription { Name = "IsTouching", Summary = "Whether it touches the other part.", Deprecated = "", Signatures = [new global::SpectraEngine.Core.Scripting.Api.ScriptSignature([new global::SpectraEngine.Core.Scripting.Api.ScriptParameter("other", "Instance")], "boolean")] },
             ],
             Signals =
             [

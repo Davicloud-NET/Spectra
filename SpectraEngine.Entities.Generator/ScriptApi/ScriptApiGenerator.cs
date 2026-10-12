@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 
 namespace SpectraEngine.Entities.Generator.ScriptApi;
 
@@ -54,7 +55,7 @@ public sealed class ScriptApiGenerator : IIncrementalGenerator
         // are reported apart from the catalogue, which so stays cached.
         context.RegisterSourceOutput(
             Gathered(kinds, ScriptContainerEmitter.PlaceOf),
-            static (production, places) => ReportRepeats(production, places));
+            static (production, places) => ReportAcrossClasses(production, places));
     }
 
     private static IncrementalValuesProvider<ScriptContainerModel> Models(
@@ -106,31 +107,28 @@ public sealed class ScriptApiGenerator : IIncrementalGenerator
         if (entries.Length == 0)
             return;
 
-        // The first container under a name is the one the catalogue lists.
-        var kept = new List<ScriptCatalogEntry>(entries.Length);
-        var seen = new HashSet<string>();
-        foreach (ScriptCatalogEntry entry in entries)
-        {
-            if (ScriptContainerPlace.NameKeyOf(entry.Kind, entry.LuauName) is not { } key || seen.Add(key))
-                kept.Add(entry);
-        }
-
-        production.AddSource(ScriptCatalogEmitter.HintName, ScriptCatalogEmitter.Emit(kept));
+        production.AddSource(ScriptCatalogEmitter.HintName, ScriptCatalogEmitter.Emit(entries));
     }
 
-    // Every container under a name another one has taken.
-    private static void ReportRepeats(SourceProductionContext production, ImmutableArray<ScriptContainerPlace> places)
+    // What only all containers together show: a name another one has
+    // taken, and a class that extends what the binding cannot follow.
+    private static void ReportAcrossClasses(SourceProductionContext production, ImmutableArray<ScriptContainerPlace> places)
     {
+        List<ScriptCatalogEntry> listed = ScriptCatalogEntry.Listed(places.Select(place => place.Entry));
         var seen = new HashSet<string>();
         foreach (ScriptContainerPlace place in places)
         {
-            if (place.NameKey is not { } key || seen.Add(key))
-                continue;
-
-            production.ReportDiagnostic(DiagnosticInfo.Create(
-                ScriptApiDiagnostics.DuplicateName, place.Location, place.LuauName, "the script API").ToDiagnostic());
+            ScriptCatalogEntry entry = place.Entry;
+            if (entry.NameKey is { } key && !seen.Add(key))
+                Report(production, ScriptApiDiagnostics.DuplicateName, place, entry.LuauName, "the script API");
+            else if (ScriptExtends.BaseOf(entry, listed, out string? why) is null && why is not null)
+                Report(production, ScriptApiDiagnostics.CannotExtend, place, entry.LuauName, entry.Extends, why);
         }
     }
+
+    private static void Report(
+        SourceProductionContext production, DiagnosticDescriptor descriptor, ScriptContainerPlace place, params string[] arguments) =>
+        production.ReportDiagnostic(DiagnosticInfo.Create(descriptor, place.Location, arguments).ToDiagnostic());
 
     // ImmutableArray compares by reference, which would run the output
     // again on every edit.

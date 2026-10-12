@@ -17,11 +17,11 @@ internal static class ScriptApiFixtures
         """;
 
     // Input of the committed snapshot: a class of its own objects, a class
-    // over nodes with settable properties, a value type, a library and
-    // globals, with a member of every shape the generator binds.
+    // over nodes with settable properties and one that extends it, a value
+    // type, a library and globals, with a member of every shape that is bound.
     public const string Representative = Usings + """
         /// <summary>A lamp a script switches.</summary>
-        [ScriptClass("Lamp", Extends = "Instance")]
+        [ScriptClass("Lamp")]
         internal sealed partial class Lamp : ScriptObject
         {
             /// <summary>Whether it shines.</summary>
@@ -85,6 +85,19 @@ internal static class ScriptApiFixtures
             /// <summary>Its path from the root.</summary>
             [ScriptMethod]
             public static string GetFullName(SceneNode node) => node.Name;
+        }
+
+        /// <summary>A node with a shape.</summary>
+        [ScriptClass("Part", Extends = "Instance")]
+        internal static partial class PartApi
+        {
+            /// <summary>How heavy it is.</summary>
+            [ScriptProperty]
+            public static float Mass(SceneNode node) => 1f;
+
+            /// <summary>Whether it touches the other part.</summary>
+            [ScriptMethod]
+            public static bool IsTouching(SceneNode node, SceneNode other) => false;
         }
 
         /// <summary>Three numbers.</summary>

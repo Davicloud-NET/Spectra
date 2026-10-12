@@ -1,5 +1,4 @@
 using System.Linq;
-using System.Text;
 
 namespace SpectraEngine.Entities.Generator.ScriptApi;
 
@@ -7,14 +6,8 @@ namespace SpectraEngine.Entities.Generator.ScriptApi;
 // script API: its binding, and what it declares as data.
 internal static class ScriptContainerEmitter
 {
-    public static string HintName(ScriptContainerModel model)
-    {
-        var name = new StringBuilder(model.FullTypeName.Length + 16);
-        foreach (char c in model.FullTypeName.Replace("global::", ""))
-            name.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
-
-        return name.Append(".ScriptApi.g.cs").ToString();
-    }
+    public static string HintName(ScriptContainerModel model) =>
+        ScriptNames.Flat(model.FullTypeName) + ".ScriptApi.g.cs";
 
     public static string Emit(ScriptContainerModel model)
     {
@@ -62,10 +55,12 @@ internal static class ScriptContainerEmitter
             model.Kind,
             model.FullTypeName,
             model.LuauName,
+            model.Extends,
+            SelfType: holdsObjects ? model.Self?.ClrType ?? "" : "",
             new EquatableArray<string>(names),
             HasMethods: holdsObjects && model.Self is not null && model.Functions.Count > 0);
     }
 
     public static ScriptContainerPlace PlaceOf(ScriptContainerModel model) =>
-        new(model.Kind, model.LuauName, model.Location);
+        new(CatalogEntryOf(model), model.Location);
 }

@@ -26,3 +26,4 @@ SPS006  | SpectraScriptApi | Error   | Duplicate script API name
 SPS007  | SpectraScriptApi | Error   | Property cannot be set through the door
 SPS008  | SpectraScriptApi | Error   | Script attribute does not belong here
 SPS009  | SpectraScriptApi | Error   | Script API member has the wrong shape
+SPS010  | SpectraScriptApi | Error   | Script class extends what the binding cannot follow

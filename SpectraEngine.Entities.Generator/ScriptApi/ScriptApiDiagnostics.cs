@@ -86,4 +86,14 @@ internal static class ScriptApiDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor CannotExtend = new(
+        id: "SPS010",
+        title: "Script class extends what the binding cannot follow",
+        messageFormat:
+            "'{0}' extends '{1}', and a script would not find the members it is promised: {2}. A class extends " +
+            "one declared with [ScriptClass] whose members take the same object.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

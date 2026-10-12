@@ -274,6 +274,51 @@ public sealed class ScriptApiGeneratorDiagnosticTests
         run.CompileErrors().ShouldBeEmpty();
     }
 
+    // The description gives a class the members of the one it extends. Where
+    // the binding cannot hand them on, a script would be promised too much.
+    [Theory]
+    [InlineData("Missing", "'Missing' is no class declared with [ScriptClass]")]
+    [InlineData("Counter", "'Counter' is no class declared with [ScriptClass]")]
+    [InlineData("Lamp", "the members of 'Lamp' are of another object")]
+    [InlineData("Door", "go round in a circle")]
+    public void A_class_that_extends_what_the_binding_cannot_follow_is_refused(string extends, string why)
+    {
+        GeneratorRun run = Run($$"""
+            /// <summary>A lamp.</summary>
+            [ScriptClass("Lamp")]
+            internal sealed partial class Lamp : ScriptObject
+            {
+                /// <summary>Whether it shines.</summary>
+                [ScriptProperty]
+                public bool Enabled { get; set; }
+            }
+
+            /// <summary>A counter.</summary>
+            [ScriptValue("Counter")]
+            internal static partial class CounterApi
+            {
+                /// <summary>Its length.</summary>
+                [ScriptProperty]
+                public static float Length(Vector3 self) => self.Length();
+            }
+
+            /// <summary>A door.</summary>
+            [ScriptClass("Door", Extends = "{{extends}}")]
+            internal static partial class DoorApi
+            {
+                /// <summary>How far it is open.</summary>
+                [ScriptProperty]
+                public static float Opening(SceneNode node) => 0f;
+            }
+            """);
+
+        run.DiagnosticIds.ShouldBe(["SPS010"]);
+        run.Diagnostics.Single().GetMessage().ShouldContain($"'Door' extends '{extends}'");
+        run.Diagnostics.Single().GetMessage().ShouldContain(why);
+        LineOf(run.Diagnostics.Single()).ShouldContain("DoorApi");
+        run.CompileErrors().ShouldBeEmpty();
+    }
+
     [Theory]
     [InlineData("public static partial bool Name(SceneNode node);", "the door takes a string, a Vector3 or a CFrame")]
     [InlineData("public static string Name(SceneNode node) => node.Name;", "declare it as a partial method with no body")]

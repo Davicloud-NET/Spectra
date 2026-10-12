@@ -13,9 +13,10 @@ internal static class ScriptCatalogEmitter
 {
     public const string HintName = "ScriptApiCatalog.g.cs";
 
+    // Takes every container. Of two under one name it lists the first.
     public static string Emit(IReadOnlyList<ScriptCatalogEntry> entries)
     {
-        ScriptCatalogEntry[] ordered = entries
+        ScriptCatalogEntry[] ordered = ScriptCatalogEntry.Listed(entries)
             .OrderBy(entry => entry.LuauName, StringComparer.Ordinal)
             .ThenBy(entry => entry.FullTypeName, StringComparer.Ordinal)
             .ToArray();
@@ -40,8 +41,43 @@ internal static class ScriptCatalogEmitter
         EmitNumbers(w, "ScriptAtoms", "The number of each member name of the script API, which Luau hands over in place of the name.", atoms);
         EmitNumbers(w, "ScriptClassIds", "The number of each class and value type of the script API.", classes.Select(entry => entry.LuauName).ToArray());
         EmitCatalog(w, ordered, classes, atoms);
+        EmitBases(w, entries, ordered);
         w.Close();
         return w.ToString();
+    }
+
+    // What the switch of a class that extends another calls for a name it
+    // does not declare. A class the binding cannot follow hands on to nothing.
+    private static void EmitBases(
+        SourceWriter w, IReadOnlyList<ScriptCatalogEntry> entries, IReadOnlyList<ScriptCatalogEntry> listed)
+    {
+        ScriptCatalogEntry[] extending = entries
+            .Where(entry => entry.Extends.Length > 0 && entry.SelfType.Length > 0)
+            .OrderBy(entry => entry.FullTypeName, StringComparer.Ordinal)
+            .ToArray();
+        if (extending.Length == 0)
+            return;
+
+        w.Line();
+        w.Line("/// <summary>Hands a member a class does not declare itself to the class it extends.</summary>");
+        w.Open("internal static class ScriptBases");
+        foreach (ScriptCatalogEntry entry in extending)
+        {
+            ScriptCatalogEntry? above = ScriptExtends.BaseOf(entry, listed, out _);
+            foreach (string access in new[] { "Read", "Write", "Invoke" })
+            {
+                string answer = above is null
+                    ? $"{ScriptNames.Member}.None"
+                    : $"{above.FullTypeName}.Script{access}(context, stack, self, atom)";
+
+                w.Line(
+                    $"internal static int {ScriptNames.BaseCall(access, entry.FullTypeName)}({ScriptNames.Context} context, " +
+                    $"{ScriptNames.Stack} stack, {entry.SelfType} self, int atom) =>");
+                w.Indent().Line($"{answer};").Outdent();
+            }
+        }
+
+        w.Close();
     }
 
     private static void EmitNumbers(SourceWriter w, string type, string summary, string[] names)

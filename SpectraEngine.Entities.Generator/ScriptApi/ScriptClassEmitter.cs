@@ -57,7 +57,7 @@ internal static class ScriptClassEmitter
             w.Outdent();
         }
 
-        EmitDefault(w, "None");
+        EmitDefault(w, model, "Read");
         w.Close();
         w.Close();
         w.Line();
@@ -97,7 +97,7 @@ internal static class ScriptClassEmitter
 
         readOnly.AddRange(model.Functions.Select(function => function.LuauName));
         EmitCases(w, readOnly, $"return {ScriptNames.Member}.ReadOnly;");
-        EmitDefault(w, "None");
+        EmitDefault(w, model, "Write");
         w.Close();
         w.Close();
         w.Line();
@@ -119,7 +119,7 @@ internal static class ScriptClassEmitter
         }
 
         EmitCases(w, model.Properties.Select(property => property.LuauName).ToList(), $"return {ScriptNames.Member}.NotCallable;");
-        EmitDefault(w, "None");
+        EmitDefault(w, model, "Invoke");
         w.Close();
         w.Close();
         w.Line();
@@ -191,10 +191,16 @@ internal static class ScriptClassEmitter
         w.Indent().Line(body).Outdent();
     }
 
-    private static void EmitDefault(SourceWriter w, string answer)
+    // A name the class does not declare is one of the class it extends, or
+    // of none. `access` is Read, Write or Invoke.
+    private static void EmitDefault(SourceWriter w, ScriptContainerModel model, string access)
     {
+        string answer = model.Extends.Length > 0
+            ? $"{ScriptNames.Bases}.{ScriptNames.BaseCall(access, model.FullTypeName)}(context, stack, self, atom)"
+            : $"{ScriptNames.Member}.None";
+
         w.Line("default:");
-        w.Indent().Line($"return {ScriptNames.Member}.{answer};").Outdent();
+        w.Indent().Line($"return {answer};").Outdent();
     }
 
     private static string Atom(string name) => $"{ScriptNames.Atoms}.{ScriptNames.Identifier(name)}";

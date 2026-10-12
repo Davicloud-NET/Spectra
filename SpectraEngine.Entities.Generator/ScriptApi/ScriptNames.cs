@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis.CSharp;
+using System.Text;
 
 namespace SpectraEngine.Entities.Generator.ScriptApi;
 
@@ -23,6 +24,7 @@ internal static class ScriptNames
     public const string ApiTable = Runtime + ".ApiTable";
     public const string MethodTable = Runtime + ".MethodTable";
     public const string FrameValue = Runtime + ".FrameValue";
+    public const string Bases = Runtime + ".ScriptBases";
 
     public const string Raise = Stack + ".Raise";
 
@@ -33,4 +35,18 @@ internal static class ScriptNames
     // A Luau name as a C# identifier. A script may call a member "new".
     public static string Identifier(string name) =>
         SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None ? "@" + name : name;
+
+    // The full name of a C# type as one word, which no other type shares.
+    public static string Flat(string fullTypeName)
+    {
+        var flat = new StringBuilder(fullTypeName.Length);
+        foreach (char c in fullTypeName.Replace("global::", ""))
+            flat.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
+
+        return flat.ToString();
+    }
+
+    // The method of ScriptBases a class hands a member on through. `access`
+    // is Read, Write or Invoke.
+    public static string BaseCall(string access, string fullTypeName) => $"{access}_{Flat(fullTypeName)}";
 }
