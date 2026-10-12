@@ -92,7 +92,7 @@ A new class of nodes is added in five places: a `NodeClassKind`, its name and wh
 
 No node is a `BasePart` or a `Light` and nothing more. Such a class has no kind, no line in `NodeMembers` and no holder. It is named in `NeverAlone` in the description test, and its members are asked of the classes that extend it.
 
-A name that is no member of a node is the name of a child: `workspace.Door`. `ObjectMembers` looks for one only when the switches have answered that there is no such member, so a member always wins and costs what it did. `ChildType` on `[ScriptClass]` tells the type checker.
+A name that is no member of a node is the name of a child: `workspace.Door`. `ObjectMembers` looks for one only when the switches have answered that there is no such member, so a member always wins and costs what it did. `ChildType` on `[ScriptClass]` tells the type checker. Only `Instance` says it, and the definitions file writes it on every class that extends `Instance`: Luau's checker finds a property on the classes a class extends, and an indexer on the class alone (`external/luau/Analysis`).
 
 ### What crosses
 

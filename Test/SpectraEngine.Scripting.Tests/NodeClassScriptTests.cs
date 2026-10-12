@@ -180,10 +180,12 @@ public sealed class NodeClassScriptTests
     {
         string file = LuauDefinitions.Write(LuauScriptApi.Description);
 
-        file.ShouldContain("declare extern type BasePart extends Instance with\nend\n");
-        file.ShouldContain("declare extern type Part extends BasePart with\nend\n");
-        file.ShouldContain("declare extern type SpotLight extends Light with\nend\n");
-        file.ShouldContain("    [string]: Instance\nend\n");
+        // A class with no member of its own still says what a child reads as.
+        file.ShouldContain("declare extern type BasePart extends Instance with\n    [string]: Instance\nend\n");
+        file.ShouldContain("declare extern type Part extends BasePart with\n    [string]: Instance\nend\n");
+        file.ShouldContain("declare extern type SpotLight extends Light with\n    [string]: Instance\nend\n");
+        file.ShouldContain("declare extern type RunService with\n");
+        BlockOf(file, "RunService").ShouldNotContain("[string]");
 
         Place(file, "Instance with").ShouldBeLessThan(Place(file, "BasePart extends"));
         Place(file, "BasePart extends").ShouldBeLessThan(Place(file, "MeshPart extends"));
@@ -214,6 +216,13 @@ public sealed class NodeClassScriptTests
             .GetType($"{typeof(NodeMembers).Namespace}.{type}")
             ?.GetCustomAttribute<ScriptClassAttribute>()
             ?.Name;
+
+    // What the file declares of a class, up to its end.
+    private static string BlockOf(string file, string declared)
+    {
+        int at = Place(file, declared + " ");
+        return file[at..file.IndexOf("\nend\n", at, StringComparison.Ordinal)];
+    }
 
     private static int Place(string file, string declared)
     {

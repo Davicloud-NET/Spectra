@@ -40,7 +40,7 @@ public static class LuauDefinitions
             if (described.TypeParameters.Length > 0)
                 WriteTableType(text, described);
             else
-                WriteExternType(text, described);
+                WriteExternType(text, described, api.ChildTypeOf(described.Name));
         }
 
         foreach (ScriptLibraryDescription library in api.Libraries)
@@ -65,7 +65,7 @@ public static class LuauDefinitions
         return text.ToString();
     }
 
-    private static void WriteExternType(StringBuilder text, ScriptClassDescription described)
+    private static void WriteExternType(StringBuilder text, ScriptClassDescription described, string childType)
     {
         WriteDoc(text, "", described.Summary, "");
         text.Append("declare extern type ").Append(described.Name);
@@ -106,8 +106,10 @@ public static class LuauDefinitions
             text.Append("): ").Append(op.Returns).Append('\n');
         }
 
-        if (described.ChildType.Length > 0)
-            text.Append(Indent).Append("[string]: ").Append(described.ChildType).Append('\n');
+        // Luau's checker finds a property on the classes a class extends, and
+        // an indexer on the class alone. So each class says it again.
+        if (childType.Length > 0)
+            text.Append(Indent).Append("[string]: ").Append(childType).Append('\n');
 
         text.Append("end\n");
     }

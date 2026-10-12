@@ -59,6 +59,7 @@ public sealed class LuauDefinitionsTests
             --- The same as Open.
             --- Deprecated: use Open.
             function open(self): ()
+            [string]: Instance
         end
 
         --- Makes points.
@@ -259,6 +260,46 @@ public sealed class LuauDefinitionsTests
 
     // A table type takes neither, and leaving them out would promise a
     // script less than the binding gives.
+    // Luau's checker finds a property along the classes one extends and an
+    // indexer only on the class itself. A value typed Part would have no child.
+    [Fact]
+    public void A_class_says_the_type_of_its_children_itself_when_a_class_it_extends_has_one()
+    {
+        var api = new ScriptApiDescription
+        {
+            Classes =
+            [
+                new() { Name = "Hinge", Extends = "Part" },
+                new() { Name = "Instance", ChildType = "Instance" },
+                new() { Name = "Part", Extends = "Instance" },
+                new() { Name = "Signal" },
+            ],
+        };
+
+        LuauDefinitions.Write(api).ShouldEndWith("""
+
+            declare extern type Instance with
+                [string]: Instance
+            end
+
+            declare extern type Part extends Instance with
+                [string]: Instance
+            end
+
+            declare extern type Signal with
+            end
+
+            declare extern type Hinge extends Part with
+                [string]: Instance
+            end
+
+            """.ReplaceLineEndings("\n"));
+
+        api.ChildTypeOf("Hinge").ShouldBe("Instance");
+        api.ChildTypeOf("Signal").ShouldBe("");
+        api.ChildTypeOf("Nobody").ShouldBe("");
+    }
+
     [Fact]
     public void A_class_with_type_parameters_and_an_operator_or_a_base_is_refused_by_name()
     {

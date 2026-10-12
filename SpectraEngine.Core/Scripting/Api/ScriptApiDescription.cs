@@ -58,4 +58,23 @@ public sealed record ScriptApiDescription
 
         return names;
     }
+
+    /// <summary>
+    /// The class a child read by its name is of, for an object of the class:
+    /// what the class says, or the nearest class it extends that says one.
+    /// Empty when none does.
+    /// </summary>
+    public string ChildTypeOf(string className)
+    {
+        ScriptClassDescription? described = FindClass(className);
+        for (int depth = 0; described is not null && depth < 32; depth++)
+        {
+            if (described.ChildType.Length > 0)
+                return described.ChildType;
+
+            described = described.Extends.Length == 0 ? null : FindClass(described.Extends);
+        }
+
+        return "";
+    }
 }
