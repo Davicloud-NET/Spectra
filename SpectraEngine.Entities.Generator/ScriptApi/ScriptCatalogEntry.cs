@@ -11,5 +11,4 @@ internal sealed record ScriptCatalogEntry(
     string FullTypeName,
     string LuauName,
     EquatableArray<string> MemberNames,
-    bool HasMethods,
-    LocationInfo? Location) : IEquatable<ScriptCatalogEntry>;
+    bool HasMethods) : IEquatable<ScriptCatalogEntry>;

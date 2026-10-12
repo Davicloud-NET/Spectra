@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 
@@ -12,9 +13,9 @@ namespace SpectraEngine.Entities.Generator.ScriptApi;
 /// member come to, and the same declarations as data.
 /// </summary>
 // Set up like EntityGenerator: attributes are matched by metadata name, a
-// model holds values only, and emission is per class. The catalogue is the
-// one output behind a Collect, and it reads a cut-down entry, so an edit to
-// a summary re-emits one file.
+// model holds values only, and emission is per class. The catalogue is
+// behind a Collect and reads a cut-down entry with no place in it, so an
+// edit that changes no name re-emits one file.
 [Generator(LanguageNames.CSharp)]
 public sealed class ScriptApiGenerator : IIncrementalGenerator
 {
@@ -44,15 +45,16 @@ public sealed class ScriptApiGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(libraries, static (production, model) => Produce(production, model));
         context.RegisterSourceOutput(globals, static (production, model) => Produce(production, model));
 
-        IncrementalValueProvider<ImmutableArray<ScriptCatalogEntry>> catalog = Entries(classes)
-            .Combine(Entries(values))
-            .Combine(Entries(libraries))
-            .Combine(Entries(globals))
-            .Select(static (all, _) => all.Left.Left.Left.AddRange(all.Left.Left.Right).AddRange(all.Left.Right).AddRange(all.Right))
-            .WithComparer(EntriesComparer.Instance)
-            .WithTrackingName(TrackingNames.Catalog);
+        var kinds = new[] { classes, values, libraries, globals };
+        context.RegisterSourceOutput(
+            Gathered(kinds, ScriptContainerEmitter.CatalogEntryOf).WithTrackingName(TrackingNames.Catalog),
+            static (production, entries) => ProduceCatalog(production, entries));
 
-        context.RegisterSourceOutput(catalog, static (production, entries) => ProduceCatalog(production, entries));
+        // A place moves with every edit above it. The errors that need one
+        // are reported apart from the catalogue, which so stays cached.
+        context.RegisterSourceOutput(
+            Gathered(kinds, ScriptContainerEmitter.PlaceOf),
+            static (production, places) => ReportRepeats(production, places));
     }
 
     private static IncrementalValuesProvider<ScriptContainerModel> Models(
@@ -66,13 +68,25 @@ public sealed class ScriptApiGenerator : IIncrementalGenerator
                 model is null ? ImmutableArray<ScriptContainerModel>.Empty : ImmutableArray.Create(model))
             .WithTrackingName(TrackingNames.Models);
 
+    // One value of every emitted container, the kinds in the order given.
     // A class that is not emitted has nothing for the catalogue to name.
-    private static IncrementalValueProvider<ImmutableArray<ScriptCatalogEntry>> Entries(
-        IncrementalValuesProvider<ScriptContainerModel> models) =>
-        models
-            .Where(static model => model.IsPartial)
-            .Select(static (model, _) => ScriptContainerEmitter.CatalogEntryOf(model))
-            .Collect();
+    private static IncrementalValueProvider<ImmutableArray<T>> Gathered<T>(
+        IncrementalValuesProvider<ScriptContainerModel>[] kinds, Func<ScriptContainerModel, T> of)
+        where T : IEquatable<T>
+    {
+        IncrementalValueProvider<ImmutableArray<T>> all = default;
+        for (int i = 0; i < kinds.Length; i++)
+        {
+            IncrementalValueProvider<ImmutableArray<T>> kind = kinds[i]
+                .Where(static model => model.IsPartial)
+                .Select((model, _) => of(model))
+                .Collect();
+
+            all = i == 0 ? kind : all.Combine(kind).Select(static (both, _) => both.Left.AddRange(both.Right));
+        }
+
+        return all.WithComparer(ByItems<T>.Instance);
+    }
 
     private static void Produce(SourceProductionContext production, ScriptContainerModel model)
     {
@@ -92,33 +106,40 @@ public sealed class ScriptApiGenerator : IIncrementalGenerator
         if (entries.Length == 0)
             return;
 
+        // The first container under a name is the one the catalogue lists.
         var kept = new List<ScriptCatalogEntry>(entries.Length);
         var seen = new HashSet<string>();
         foreach (ScriptCatalogEntry entry in entries)
         {
-            // Globals have no name of their own, and several classes may declare some.
-            bool isNamed = entry.Kind != ScriptContainerKind.Globals;
-            string space = entry.Kind == ScriptContainerKind.Library ? "library " : "class ";
-            if (isNamed && !seen.Add(space + entry.LuauName))
-            {
-                production.ReportDiagnostic(DiagnosticInfo.Create(
-                    ScriptApiDiagnostics.DuplicateName, entry.Location, entry.LuauName, "the script API").ToDiagnostic());
-                continue;
-            }
-
-            kept.Add(entry);
+            if (ScriptContainerPlace.NameKeyOf(entry.Kind, entry.LuauName) is not { } key || seen.Add(key))
+                kept.Add(entry);
         }
 
         production.AddSource(ScriptCatalogEmitter.HintName, ScriptCatalogEmitter.Emit(kept));
     }
 
-    // ImmutableArray compares by reference, which would re-emit the
-    // catalogue on every edit.
-    private sealed class EntriesComparer : IEqualityComparer<ImmutableArray<ScriptCatalogEntry>>
+    // Every container under a name another one has taken.
+    private static void ReportRepeats(SourceProductionContext production, ImmutableArray<ScriptContainerPlace> places)
     {
-        public static readonly EntriesComparer Instance = new();
+        var seen = new HashSet<string>();
+        foreach (ScriptContainerPlace place in places)
+        {
+            if (place.NameKey is not { } key || seen.Add(key))
+                continue;
 
-        public bool Equals(ImmutableArray<ScriptCatalogEntry> left, ImmutableArray<ScriptCatalogEntry> right)
+            production.ReportDiagnostic(DiagnosticInfo.Create(
+                ScriptApiDiagnostics.DuplicateName, place.Location, place.LuauName, "the script API").ToDiagnostic());
+        }
+    }
+
+    // ImmutableArray compares by reference, which would run the output
+    // again on every edit.
+    private sealed class ByItems<T> : IEqualityComparer<ImmutableArray<T>>
+        where T : IEquatable<T>
+    {
+        public static readonly ByItems<T> Instance = new();
+
+        public bool Equals(ImmutableArray<T> left, ImmutableArray<T> right)
         {
             if (left.Length != right.Length)
                 return false;
@@ -132,6 +153,6 @@ public sealed class ScriptApiGenerator : IIncrementalGenerator
             return true;
         }
 
-        public int GetHashCode(ImmutableArray<ScriptCatalogEntry> entries) => entries.Length;
+        public int GetHashCode(ImmutableArray<T> items) => items.Length;
     }
 }

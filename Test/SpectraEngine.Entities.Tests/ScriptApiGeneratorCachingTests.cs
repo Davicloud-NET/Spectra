@@ -51,6 +51,16 @@ public sealed class ScriptApiGeneratorCachingTests
     }
 
     [Fact]
+    public void An_edit_that_moves_the_class_in_its_file_leaves_the_catalogue_alone()
+    {
+        GeneratorRunResult result = Edit(ScriptApiFixtures.Cached, ScriptApiFixtures.CachedWithLongerClassSummary);
+
+        ReasonsFor(result, ScriptApiGenerator.TrackingNames.Models).ShouldContain(IncrementalStepRunReason.Modified);
+        ReasonsFor(result, ScriptApiGenerator.TrackingNames.Catalog)
+            .ShouldAllBe(reason => reason == IncrementalStepRunReason.Cached || reason == IncrementalStepRunReason.Unchanged);
+    }
+
+    [Fact]
     public void A_new_member_writes_the_class_and_the_catalogue_again()
     {
         // The control for the tests above: the same kind of edit, and one

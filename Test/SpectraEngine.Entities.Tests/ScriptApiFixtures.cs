@@ -221,6 +221,22 @@ internal static class ScriptApiFixtures
         }
         """;
 
+    // A longer summary on the class moves the class and all in it.
+    public const string CachedWithLongerClassSummary = Usings + """
+        /// <summary>A counter of the things a level has.</summary>
+        [ScriptValue("Counter")]
+        internal static partial class CounterApi
+        {
+            /// <summary>Its length.</summary>
+            [ScriptProperty]
+            public static float Length(Vector3 self) => self.Length();
+
+            /// <summary>Adds to it.</summary>
+            [ScriptMethod]
+            public static Vector3 Add(Vector3 self, float amount) => self + new Vector3(amount);
+        }
+        """;
+
     public const string CachedWithExtraMember = Usings + """
         /// <summary>A counter.</summary>
         [ScriptValue("Counter")]

@@ -63,7 +63,9 @@ internal static class ScriptContainerEmitter
             model.FullTypeName,
             model.LuauName,
             new EquatableArray<string>(names),
-            HasMethods: holdsObjects && model.Self is not null && model.Functions.Count > 0,
-            model.Location);
+            HasMethods: holdsObjects && model.Self is not null && model.Functions.Count > 0);
     }
+
+    public static ScriptContainerPlace PlaceOf(ScriptContainerModel model) =>
+        new(model.Kind, model.LuauName, model.Location);
 }
