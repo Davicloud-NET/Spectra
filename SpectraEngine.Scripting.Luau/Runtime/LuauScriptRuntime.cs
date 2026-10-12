@@ -170,6 +170,7 @@ public sealed class LuauScriptRuntime : IScriptRuntime
         try
         {
             _runService.FireAfterSimulation(_world.FixedDeltaTime);
+            _childWaits.EndTick();
 
             // What scripts let go of since the last tick.
             _host.Objects.ReleaseCollected();

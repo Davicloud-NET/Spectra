@@ -313,6 +313,37 @@ public sealed class WaitForChildTests
         level.Runtime.ShouldNotBeNull().WaitingThreadCount.ShouldBe(0);
     }
 
+    // A wait with a timeout too long to count has no wake of its own. The
+    // wake of the arrival is its only one, so it may not be lost for room.
+    [Fact]
+    public void An_arrival_the_queue_has_no_room_for_ends_the_wait_once_there_is_room()
+    {
+        using ScriptLevel level = House.With("""
+            task.spawn(function()
+                print("got", workspace.House:WaitForChild("Key", math.huge))
+            end)
+            for _ = 1, 4 do
+                task.delay(0.1, function() end)
+            end
+            """);
+        SceneNode house = level.Scene.Root.Children.Single(node => node.Name == "House");
+
+        level.Play();
+        level.Entities.MaxPendingEvents = 4;
+        level.Tick();
+
+        // The four delays fill the queue until they come due.
+        house.CreateChild("Key");
+        level.Tick(4);
+        level.Printed.ShouldBeEmpty();
+
+        level.Tick(6);
+
+        level.Errors.ShouldBeEmpty();
+        level.Printed.ShouldBe(["got Key"]);
+        level.Runtime.ShouldNotBeNull().WaitingThreadCount.ShouldBe(0);
+    }
+
     [Fact]
     public void A_thread_that_was_cancelled_is_not_woken_by_the_child_or_by_the_warning()
     {

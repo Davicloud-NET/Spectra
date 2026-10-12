@@ -21,6 +21,10 @@ internal sealed class ChildWaits
     private readonly List<ChildWait> _waits = [];
     private int _tidyAt = FirstTidy;
 
+    // Set when the queue had no room for a wake. A wait with no timeout has
+    // no other wake to look again on.
+    private bool _owesWake;
+
     public ChildWaits(LuauHost host, EntityWorld world, WaitingThreads waiting)
     {
         _host = host;
@@ -112,9 +116,25 @@ internal sealed class ChildWaits
             return false;
 
         if (_world.IsActive)
-            _world.QueueScriptWake(token, 1);
+            QueueWake(token, 1);
 
         return true;
+    }
+
+    // The end of a tick. Asks again for every wake the queue had no room
+    // for, by looking at each wait whose child is there.
+    public void EndTick()
+    {
+        if (!_owesWake)
+            return;
+
+        _owesWake = false;
+        for (int i = 0; i < _waits.Count; i++)
+        {
+            ChildWait wait = _waits[i];
+            if (NodeTree.Child(wait.Parent, NodeMatch.Name, wait.Name) is not null)
+                QueueWake(wait.Token, 1);
+        }
     }
 
     private int Begin(LuauStack stack, SceneNode parent, ReadOnlySpan<char> name, bool hasTimeout, double seconds)
@@ -164,11 +184,8 @@ internal sealed class ChildWaits
             for (int i = 0; i < _waits.Count; i++)
             {
                 ChildWait wait = _waits[i];
-
-                // A queue with no room has said so itself. The wait then goes
-                // on to its own wake, which looks again.
                 if (ReferenceEquals(wait.Parent, parent) && string.Equals(wait.Name, node.Name, StringComparison.Ordinal))
-                    _world.QueueScriptWake(wait.Token, 0);
+                    QueueWake(wait.Token, 0);
             }
         }
         catch (Exception e) // boundary: whoever changed the level must not get a script's failure
@@ -176,6 +193,13 @@ internal sealed class ChildWaits
             _host.Report(new ScriptMessage(
                 ScriptSeverity.Error, $"The script runtime failed: {e.Message}", string.Empty, 0));
         }
+    }
+
+    // A wake too many does nothing, so one the queue refused is only owed.
+    private void QueueWake(long token, long ticks)
+    {
+        if (!_world.QueueScriptWake(token, ticks))
+            _owesWake = true;
     }
 
     private void Warn(in ChildWait wait) =>
