@@ -6,6 +6,7 @@ namespace SpectraEngine.Entities.Generator.ScriptApi;
 // the C# that reads it, with {0} for the object. Sets is a member of
 // SettableMemberId, or empty. One with Sets is a partial method the generator
 // implements, with the accessibility Access and the parameter SelfName.
+// SetBy is the method of the object a write goes through, or empty.
 internal sealed record ScriptPropertyModel(
     string LuauName,
     string Summary,
@@ -15,6 +16,7 @@ internal sealed record ScriptPropertyModel(
     string Access,
     string SelfName,
     string Sets,
+    string SetBy,
     string CannotSet,
     bool IsSignal,
     EquatableArray<LuauParameterModel> SignalParameters,

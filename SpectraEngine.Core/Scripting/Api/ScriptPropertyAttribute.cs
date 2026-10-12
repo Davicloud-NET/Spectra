@@ -19,6 +19,13 @@ public sealed class ScriptPropertyAttribute : Attribute
     public SettableMemberId Sets { get; set; }
 
     /// <summary>
+    /// The method a script's write goes through, for a property of an
+    /// object that is no node. It is a method of the same class that takes
+    /// the value and returns null, or why the value was refused.
+    /// </summary>
+    public string? SetBy { get; set; }
+
+    /// <summary>
     /// What a script is told when it sets a property it cannot set, in
     /// place of the words for a read-only property.
     /// </summary>

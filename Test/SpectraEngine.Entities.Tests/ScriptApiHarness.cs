@@ -90,6 +90,7 @@ internal static class ScriptApiHarness
                 public static bool TryFrame(LuauStack stack, int index, out CFrame value) { value = default; return true; }
                 public static int Wrong(LuauStack stack, int index, string function, string expected, bool isMethod = false) => -1;
                 public static int NoSelf(LuauStack stack, string method) => -1;
+                public static int WrongValue(LuauStack stack, string property, string expected) => -1;
             }
 
             internal static class FrameValue

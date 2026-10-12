@@ -84,6 +84,10 @@ internal static class ScriptClassEmitter
                 w.Line($"case {Atom(property.LuauName)}:");
                 w.Indent().Line($"return context.{door}(stack, self, {ScriptNames.Core}.SettableMemberId.{property.Sets});").Outdent();
             }
+            else if (property.SetBy.Length > 0)
+            {
+                EmitSetBy(w, property);
+            }
             else if (property.CannotSet.Length > 0)
             {
                 w.Line($"case {Atom(property.LuauName)}:");
@@ -101,6 +105,19 @@ internal static class ScriptClassEmitter
         w.Close();
         w.Close();
         w.Line();
+    }
+
+    // A write the object takes itself: its method gets the value, and what
+    // it returns is why it refused it, which the script reads as its error.
+    private static void EmitSetBy(SourceWriter w, ScriptPropertyModel property)
+    {
+        w.Open($"case {Atom(property.LuauName)}:");
+        ScriptMarshalling.EmitReadAssigned(w, property.Type, property.LuauName);
+        w.Line();
+        w.Line(
+            $"return self.{property.SetBy}({ScriptMarshalling.Assigned(property.Type)}) is {{ }} refusal " +
+            "? stack.Fail(refusal) : 0;");
+        w.Close();
     }
 
     // What __namecall comes to: the method is called with the object it was

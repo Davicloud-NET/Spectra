@@ -59,7 +59,7 @@ public static class ScriptApiJson
         writer.WriteString("name", property.Name);
         writer.WriteString("type", property.Type);
         writer.WriteString("summary", property.Summary);
-        writer.WriteBoolean("canSet", property.Sets is not null);
+        writer.WriteBoolean("canSet", property.CanSet);
         writer.WriteString("deprecated", property.Deprecated);
     }
 

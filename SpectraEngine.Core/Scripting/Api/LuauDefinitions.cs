@@ -77,7 +77,7 @@ public static class LuauDefinitions
         foreach (ScriptPropertyDescription property in described.Properties)
         {
             WriteDoc(text, Indent, property.Summary, property.Deprecated);
-            text.Append(Indent).Append(property.Sets is null ? "read " : "");
+            text.Append(Indent).Append(property.CanSet ? "" : "read ");
             text.Append(property.Name).Append(": ").Append(property.Type).Append('\n');
         }
 

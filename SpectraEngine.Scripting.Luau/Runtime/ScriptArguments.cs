@@ -62,6 +62,11 @@ internal static class ScriptArguments
         return stack.Fail($"invalid argument #{number} to '{function}' ({expected} expected, got {got})");
     }
 
+    // The error for a value of the wrong kind assigned to a property, in
+    // Roblox's words. The value is the third argument of __newindex.
+    public static int WrongValue(LuauStack stack, string property, string expected) =>
+        stack.Fail($"Unable to assign property {property}. {expected} expected, got {TypeName(stack, 3)}");
+
     // The error for a method called with a dot, so that it got no object.
     // One that got an object that has left says what a call with a colon says.
     public static int NoSelf(LuauStack stack, string method) =>

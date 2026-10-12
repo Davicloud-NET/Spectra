@@ -112,10 +112,11 @@ internal static class ScriptDescriptionEmitter
     private static string PropertyOf(ScriptPropertyModel property)
     {
         string sets = property.Sets.Length > 0 ? $"{ScriptNames.Core}.SettableMemberId.{property.Sets}" : "null";
+        string canSet = property.SetBy.Length > 0 ? "CanSet = true, " : "";
         return
             $"new {Property} {{ Name = {ScriptNames.Literal(property.LuauName)}, " +
             $"Type = {ScriptNames.Literal(property.Type.LuauType)}, Summary = {ScriptNames.Literal(property.Summary)}, " +
-            $"Sets = {sets}, Deprecated = {ScriptNames.Literal(property.Deprecated)} }}";
+            $"Sets = {sets}, {canSet}Deprecated = {ScriptNames.Literal(property.Deprecated)} }}";
     }
 
     private static string FunctionOf(ScriptFunctionModel function)

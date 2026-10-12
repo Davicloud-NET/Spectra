@@ -42,6 +42,23 @@ internal static class ScriptMarshalling
         return $"({parameter.Type.ClrType}{(isNullable ? "?" : "")})a{n}";
     }
 
+    // Reads the value a script assigns to a property, which is the third
+    // argument of __newindex, into the local `value`. One of the wrong kind
+    // returns the script's error from the generated method.
+    public static void EmitReadAssigned(SourceWriter w, ScriptTypeModel type, string property)
+    {
+        w.Line($"if (!{Reader(type, 3, "value")})");
+        w.Indent();
+        w.Line(
+            $"return {ScriptNames.Arguments}.WrongValue(stack, {ScriptNames.Literal(property)}, " +
+            $"{ScriptNames.Literal(type.LuauType)});");
+        w.Outdent();
+    }
+
+    // The assigned value as the C# method takes it. A number is read as a double.
+    public static string Assigned(ScriptTypeModel type) =>
+        type.Kind == ScriptValueKind.Number ? $"({type.ClrType})value" : "value";
+
     // The condition that reads the object a method is called on, into `self`.
     public static string ReadSelf(ScriptTypeModel self) => Reader(self, 1, "self");
 

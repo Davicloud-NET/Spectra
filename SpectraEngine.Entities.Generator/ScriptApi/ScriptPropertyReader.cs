@@ -48,6 +48,13 @@ internal static class ScriptPropertyReader
             }
         }
 
+        string setBy = isSignal ? "" : ScriptAttributes.NamedString(attribute, "SetBy");
+        if (setBy.Length > 0 && WhyNotSetBy(state, access.Type, type, sets, setBy) is { } whyNot)
+        {
+            state.Report(ScriptApiDiagnostics.WrongShape, at, member.Name, whyNot);
+            return;
+        }
+
         state.Properties.Add(new ScriptPropertyModel(
             LuauName: name,
             Summary: summary,
@@ -57,6 +64,7 @@ internal static class ScriptPropertyReader
             Access: SyntaxFacts.GetText(member.DeclaredAccessibility),
             SelfName: access.SelfName,
             Sets: sets,
+            SetBy: setBy,
             CannotSet: isSignal ? "" : ScriptAttributes.NamedString(attribute, "CannotSet"),
             IsSignal: isSignal,
             SignalParameters: EquatableArray.From(signalParameters),
@@ -166,5 +174,31 @@ internal static class ScriptPropertyReader
             return "declare it as a partial method with no body. The generator writes the body, which reads the member from the door";
 
         return null;
+    }
+
+    // A property of an object that is no node is set by a method of the
+    // object, which takes the value and says why when it refuses it.
+    private static string? WhyNotSetBy(
+        ScriptReadState state, ITypeSymbol clr, ScriptTypeModel type, string sets, string setBy)
+    {
+        if (sets.Length > 0)
+            return "a property is set through Sets or through SetBy, not both";
+        if (state.Kind != ScriptContainerKind.Class || state.TakesObjectFirst)
+            return "SetBy is for a class whose members are its own: one with [ScriptClass] that is not static. A member of a node is set through Sets";
+        if (type.IsNullable || type.Kind is ScriptValueKind.Utf8 or ScriptValueKind.Object)
+            return "SetBy takes a number, a boolean, a string, a Vector3 or a CFrame";
+
+        foreach (ISymbol candidate in state.Type.GetMembers(setBy))
+        {
+            if (candidate is IMethodSymbol { IsStatic: false, IsGenericMethod: false, Parameters.Length: 1 } setter
+                && setter.ReturnType.SpecialType == SpecialType.System_String
+                && SymbolEqualityComparer.Default.Equals(setter.Parameters[0].Type, clr))
+            {
+                return null;
+            }
+        }
+
+        return $"SetBy names '{setBy}', which must be a method of the class that takes a {clr.ToDisplayString()} " +
+            "and returns a string: null, or why the value was refused";
     }
 }
