@@ -58,6 +58,7 @@ Demo switches worth knowing (`docs/performance.md` has the profiling ones):
 | `--offscreen-probe`, `--viewport-compare`, `--pacing-probe`, `--pipeline-compare` | render checks that need no person |
 | `--command="<line>"`, repeatable | run a console line once the scene is loaded; replies are logged with `[console]` |
 | `--console` | read console lines from the terminal while the demo runs |
+| `--export-script-types=<file>`, `--export-script-api=<file>` | write the script API as `spectra.d.luau` for luau-lsp, or as JSON for the docs site, and exit with no window |
 | `--script=<file>` | run one `.luau` file with no level and no window; what it prints is logged with `[script]`, and the exit code is 1 when it failed |
 
 The console command `fake_device_loss` makes the next present fail as a lost graphics device. The demo then ends with exit code 1, and the editor restarts its viewport. It is the only way to test either without pulling a laptop's plug.
@@ -182,6 +183,7 @@ Scripting
 
 - One `LuauHost` owns one Luau state and knows nothing of a scene. A script is a thread in it with globals of its own, and a function the host keeps (`LuauFunction`) runs on a new thread that shares them.
 - A script that runs past `LuauHost.CallLimit` or holds more than `MemoryBudget` is switched off and never runs again.
+- Everything a script can reach is declared by attributes in `SpectraEngine.Scripting.Luau/Runtime`. `ScriptApiGenerator` (in `SpectraEngine.Entities.Generator/ScriptApi`) writes the binding and `LuauScriptApi.Description` from them, and the description writes the definitions file and the reference. `docs/script-api.md` says how a member is added.
 - A level's scripts run in a `LuauScriptRuntime`, one for each play session. A host sets `SceneManager.Scripts.RuntimeFactory`, `StartEntityWorld` makes the runtime and `StopEntityWorld` closes it. A thread that waits is an event in the entity queue (`EntityWorld.QueueScriptWake`).
 
 ## Things that fail quietly
@@ -246,11 +248,14 @@ Entities and play
 - A class a builder turns to aim, like a player start, sets `HasFacing` on `[SpectraEntity]`. Left out, its marker in the 3D view has no arrow.
 - An `Icon` name with no file draws the plain entity icon and warns nobody. `IconDriftConventionTests` catches it for the built-in classes only.
 - `MapSceneBinder.FromScene` builds fresh nodes. A node member it does not copy is deleted by the next save.
-- A write to a node that records nothing stays in the level after Stop, and nothing says so. A new member a script can set needs a `JournalKind`, a row in `ScriptWrites`, and a case in its `Read` and `TryWrite`. `StopPromiseTests` and `SettableListTests` catch one left out.
+- A write to a node that records nothing stays in the level after Stop, and nothing says so. A new member a script can set needs a `JournalKind`, a row in `ScriptWrites`, a case in its `Read` and `TryWrite`, and a `[ScriptProperty(Sets = ...)]` declared partial with no body. `StopPromiseTests` and `SettableListTests` catch one left out.
 - The journal puts a transform back bit for bit (`SceneNode.RestoreLocalTransform`). The ordinary setter takes -0 for 0 and keeps the one it has, and the level would save other bytes.
 - `NodeName` is the rule for a name a running level gives a node. The editor's rename is looser, so a map can hold a name a script cannot give.
 - A script is a `.luau` file under `Assets/`, named on its node by content path (`SceneNode.Script`). A `Script` never changes once made: an edit sets a new one.
-- A baked map carries no scripts yet. The cook warns with `SC7011`, the loaded node is a plain node, and a map that warns is baked again on every cook.
+- A baked map names its scripts' files and holds none of their text. The text is a pack entry behind a header (`PackedScript`). `ContentScriptSource` reads it for a level, and whatever else opens a `.luau` path gets the header when it comes from a pack.
+- A script node's file must end in `.luau`, or the bake stops with `SC7013`. The script rule goes by the extension, and any other file would be packed unchecked.
+- A cook asks `CookSettings.ScriptCheck` whether a script compiles. Left unset, a project with scripts fails with `SC8002`. scook and the editor install `LuauSyntaxCheck`, and a new host of the cook has to as well. Its `CompilerVersion` is in a script's cache key: whatever can change a verdict goes into that string.
+- Under a baked map a node that was a world brush has no brush. `SceneNode.BakedKind` says what it was. Ask `HoldsWorldBrush` before moving a node while a level plays, and `NodeClassName` for its class.
 - `SceneNode.DeclaredRealm` and `DeclaredState` are saved, also in a baked map, and nothing reads them. A dormant node still carves, draws and collides.
 - A default `SceneQueryFilter` wants `CanQuery`, which a trigger has off.
 - A wire's input name is case sensitive, and a wrong one is only a Debug log line. `ent_watch` shows it as `deny`.
@@ -274,7 +279,12 @@ Luau
 - A userdata gets its tag's metatable when it is made. One pushed before the tag had a metatable has none for good, and a script gets `attempt to index userdata`.
 - `LuauHost.PushFunction` keeps its delegate until the host closes. Make a method once and hand it out from a `MethodTable`, never on a read.
 - Scripts print at most `PrintCap.MaxPrintsPerTick` lines a tick, all scripts of a level together. Warnings and errors always pass. A test that prints more in one tick gets the rest as one warning.
-- A level with scripts and no `RuntimeFactory` plays without them and warns once. `--pack` plays the demo without its spinner, since a baked map has no scripts.
+- A level with scripts and no `RuntimeFactory` plays without them and warns once.
+- A member a metatable answers by hand (`ObjectMembers`, `CFrameMembers`, `Vector3Members`) with no attribute works, and is missing from the definitions file and the reference.
+- Luau keeps a string's atom once it has asked. `LuauHost.SetAtoms` runs once, before anything reads an atom. A name that is not in the list reads as -1.
+- A class with `[ScriptLibrary]` or `[ScriptGlobals]` does nothing until `LuauScriptRuntime` calls its generated `ScriptInstall`. The description has it either way.
+- A script API summary is read from the `///` lines. A `/** */` comment is not read, and the member fails with `SPS002`.
+- The definitions file marks a property with no `Sets` as `read`. The generator refuses a name Luau keeps for itself (`SPS004`), and a description built from data is not checked.
 
 Tests and tools
 
@@ -284,6 +294,8 @@ Tests and tools
 - The tests that render through the real OpenAL (`-- -trait "Suite=AudioLoopback"`) skip unless `SPECTRA_AUDIO_LOOPBACK=1` is set. A green scene suite says nothing about `OpenAlBackend` or the low-pass filter.
 - An agent cannot drive the running editor. `SpectraEngine.Editor.Render.Tests` renders controls and writes PNGs under `artifacts/`. Colour, feel and gestures still need a person, and say so when you hand over.
 - After any agent run with write access, check `git status` before staging. Probes get left behind.
+- A Spectra.Kitchen test that needs the Luau library calls `RealScriptCheck.Require()` and carries `Suite=RealLuau`. It skips without the library and fails without the trait. A test file outside the binding with `spectra_luau` in a string fails `BindingSourceTests`.
+- `ScriptCostTests` fails on an allocation. Its table of times is explicit and runs only with `-- -explicit only`, so a normal run reports one test as not run.
 - Everything that opens a script goes through `ScriptLauncher`, and it starts a program only for a `.luau` file (`ScriptOpenPlan.IsScriptFile`), since a level can name any file as its script. No test starts a program: `FakeProgramStarter` keeps what was asked.
 - An agent's worktree keeps about 4.6 GB of build output. Delete `bin` and `obj` in a worktree once its branch is merged, or the drive fills.
 - A build that runs out of disk leaves truncated files in `obj` that the next build takes for up to date. Delete `bin` and `obj`.
@@ -304,6 +316,7 @@ Tests and tools
 | `docs/performance.md` | how to measure, and current numbers |
 | `docs/physics.md`, `docs/negative-brushes.md` | physics, brush kinds, subtractive brushes |
 | `docs/audio.md` | how sound is built, what in it is tuning data, and the design for sound round corners |
+| `docs/script-api.md` | how a member is added to the script API: declare it, what is generated, what the tests demand |
 | `docs/console.md`, `docs/networking.md`, `docs/realms.md` | designs that are not built yet |
 | `docs/positioning.md`, `docs/roblox-*.md` | who the engine is for |
 | `docs/archive/architecture-notes-2026-10.md` | the old long guide: past decisions with their reasoning. Search it when you touch a subsystem. |
