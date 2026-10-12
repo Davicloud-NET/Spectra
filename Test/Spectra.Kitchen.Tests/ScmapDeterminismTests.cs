@@ -1,4 +1,6 @@
 using System.IO;
+using System.Linq;
+using SpectraEngine.Core.Scene;
 
 namespace Spectra.Kitchen.Tests;
 
@@ -41,6 +43,10 @@ public class ScmapDeterminismTests
         uint[] faces = [.. probe.Hulls.SelectMany(hull => hull.FaceAssets)];
         faces.Length.ShouldBe(24);
         faces.Distinct().Count().ShouldBe(2);
+
+        // And the script nodes, two of them on one file.
+        probe.Scripts.Count.ShouldBe(3);
+        probe.Scripts.Select(script => script.Path).Distinct().Count().ShouldBe(2);
     }
 
     [Fact]
@@ -90,12 +96,20 @@ public class ScmapDeterminismTests
 
     // Two materials (submesh ordering), a flush doorway cut (coincident planes),
     // a part brush (brush-source section always present), four entities with
-    // keyvalues, wires and node flags, and six lights.
+    // keyvalues, wires and node flags, six lights, and three script nodes. The
+    // map only names its scripts' files, so none is written.
     private static void WriteFixture(TempProject project)
     {
         MapFixture fixture = MapFixture.Fresh();
         fixture.WriteMaterials(project);
-        fixture.WriteBundle(project, "Room.smap", withEntities: true, withLights: true);
+
+        SpectraEngine.Core.Scene.Scene scene = fixture.BuildScene(withEntities: true, withLights: true);
+        scene.Root.Children.Single(node => node.Name == "Crate").CreateChild("Spin").Script =
+            new Script("Scripts/spin.luau");
+        scene.Root.CreateChild("Rules").Script = new Script("Scripts/Lib/rules.luau") { IsModule = true };
+        scene.Root.CreateChild("Later").Script = new Script("Scripts/spin.luau") { IsEnabled = false };
+
+        MapFixture.WriteBundle(project, "Room.smap", scene);
     }
 
     // --loose, so the .scmap is a file to compare directly.

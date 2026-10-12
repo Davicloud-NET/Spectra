@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using SpectraEngine.Core.Scene;
 
 namespace Spectra.Kitchen.Tests;
 
@@ -27,6 +28,10 @@ public class CookDeterminismTests
     // Two sounds and the label file beside one of them, which is copied raw.
     private const int SoundFileCount = 3;
 
+    // Two scripts, and the level that names them with its two materials.
+    private const int ScriptCount = 2;
+    private const int LevelFileCount = 3;
+
     private static readonly string[] Folders = ["Textures", "Models", "Materials", "Audio"];
 
     // Six sizes against four folders, so completion order is neither walk
@@ -37,6 +42,7 @@ public class CookDeterminismTests
     public void Two_clean_cooks_in_two_processes_are_byte_identical()
     {
         ScookProcess.Require();
+        RealScriptCheck.Require();
 
         using var project = new TempProject();
         WriteFixtureWithImages(project);
@@ -52,6 +58,7 @@ public class CookDeterminismTests
     public void A_cached_cook_and_a_clean_cook_are_byte_identical()
     {
         ScookProcess.Require();
+        RealScriptCheck.Require();
 
         using var project = new TempProject();
         WriteFixtureWithImages(project);
@@ -60,9 +67,11 @@ public class CookDeterminismTests
         CookRun clean = Cook(project, "cold");
         CookRun cached = Cook(project, "warm");
 
-        // Without this, a cache that never hits still passes.
-        cached.Stdout.ShouldContain(
-            $"{AssetCount + ImageCount + MaterialCount + ModelCount + SoundFileCount} from cache");
+        // Without this, a cache that never hits still passes. The scripts and
+        // the level are in the count: nothing about them is cooked again.
+        int everything = AssetCount + ImageCount + MaterialCount + ModelCount + SoundFileCount
+            + ScriptCount + LevelFileCount;
+        cached.Stdout.ShouldContain($"{everything} from cache");
 
         cached.Pack.ShouldBe(clean.Pack);
     }
@@ -71,6 +80,7 @@ public class CookDeterminismTests
     public void One_worker_and_many_workers_produce_the_same_pack()
     {
         ScookProcess.Require();
+        RealScriptCheck.Require();
 
         using var project = new TempProject();
         WriteFixtureWithImages(project);
@@ -154,6 +164,25 @@ public class CookDeterminismTests
 
         project.WriteAsset("Sounds/labelled.wav", TempProject.Wav(frames: 4_800, seed: 3));
         project.WriteAsset("Sounds/labelled.markers.txt", "0.05\t0.05\tsecond\n0.025\t0.025\tfirst\n");
+
+        WriteScriptsAndTheirLevel(project);
+    }
+
+    // Two scripts, which scook checks with Luau, and a level whose nodes name
+    // them: one twice, one switched off, one as a module.
+    private static void WriteScriptsAndTheirLevel(TempProject project)
+    {
+        project.WriteAsset("Scripts/spin.luau", "local part = script.Parent\nprint(part.Name)\n");
+        project.WriteAsset("Scripts/Lib/rules.luau", "return { speed = 2 }\n");
+
+        MapFixture fixture = MapFixture.Fresh();
+        fixture.WriteMaterials(project);
+
+        SpectraEngine.Core.Scene.Scene scene = fixture.BuildScene(withEntities: true, withLights: true);
+        scene.Root.CreateChild("Spin").Script = new Script("Scripts/spin.luau");
+        scene.Root.CreateChild("Later").Script = new Script("Scripts/spin.luau") { IsEnabled = false };
+        scene.Root.CreateChild("Rules").Script = new Script("Scripts/Lib/rules.luau") { IsModule = true };
+        MapFixture.WriteBundle(project, "Scripted.smap", scene);
     }
 
     private static CookRun Cook(TempProject project, string label, params string[] extra)
