@@ -1,5 +1,6 @@
 using System.Numerics;
 using SpectraEngine.Bsp.Tests;
+using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Scene;
 
 namespace SpectraEngine.Scripting.Tests;
@@ -10,8 +11,8 @@ namespace SpectraEngine.Scripting.Tests;
 // that asks an object for every name would take it for one.
 internal static class ClassHolders
 {
-    // Plays the level for a tick with this script under a part, and hands
-    // back what it printed.
+    // Plays the level for a tick with this script under a node that is an
+    // Instance and nothing more, and hands back what it printed.
     public static string[] Run(string text)
     {
         using var level = new ScriptLevel();
@@ -23,7 +24,11 @@ internal static class ClassHolders
         foreach (LightKind kind in Enum.GetValues<LightKind>())
             kinds.CreateChild(NodeClass.NameOf(NodeClass.OfLight(kind))).Light = new Light { Kind = kind };
 
-        level.AddScript(level.Part("Holder", new Vector3(0f, 2f, 0f)), text, "Asker");
+        // An entity that carries nothing else is of no class below Instance.
+        SceneNode holder = level.Scene.Root.CreateChild("Holder");
+        holder.Entity = new EntityData(SayingEntity.Class);
+
+        level.AddScript(holder, text, "Asker");
         level.Play().Tick();
 
         level.Errors.ShouldBeEmpty();

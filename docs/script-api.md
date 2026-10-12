@@ -90,6 +90,8 @@ Core also says what a class extends (`NodeClass.BaseOf`), which is what `IsA` go
 
 A new class of nodes is added in five places: a `NodeClassKind`, its name and what it extends in `NodeClass`, the class with `[ScriptClass]`, a line in each switch of `NodeMembers`, and a node in `ClassHolders` with its line in the description test.
 
+No node is a `BasePart` or a `Light` and nothing more. Such a class has no kind, no line in `NodeMembers` and no holder. It is named in `NeverAlone` in the description test, and its members are asked of the classes that extend it.
+
 A name that is no member of a node is the name of a child: `workspace.Door`. `ObjectMembers` looks for one only when the switches have answered that there is no such member, so a member always wins and costs what it did. `ChildType` on `[ScriptClass]` tells the type checker.
 
 ### What crosses
@@ -166,7 +168,8 @@ A bad declaration is an error, `SPS001` to `SPS010`. `SpectraEngine.Entities.Gen
 
 ## What the tests then demand
 
-- `ScriptApiDescriptionTests` asks an object of every class for every name, and compares with the description in both directions. A new class needs an object in its `Holders`. A member that a metatable answers by hand and no attribute declares fails here.
+- `ScriptApiDescriptionTests` asks an object of every class for every name, and compares with the description in both directions. A new class needs an object in its `Holders`. The object has to be of that class and of none below it: a `Part` as the holder of `Instance` would answer the members of `Part` too. A member that a metatable answers by hand and no attribute declares fails here.
+- `NodeClassScriptTests` reads `NodeMembers` and fails when a class of nodes is sent to another script class than the one of its name.
 - `SettableListTests` holds the settable properties of the description equal to the list of `ScriptWrites`, by name, type and member.
 - `StopPromiseTests` writes to every settable member and compares the level's saved bytes after Stop.
 - `LuauDefinitionsTests` checks that the definitions file has every class, member and global.

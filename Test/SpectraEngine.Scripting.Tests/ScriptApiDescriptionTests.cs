@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting.Api;
 using SpectraEngine.Scripting.Luau;
 using SpectraEngine.Scripting.Luau.Runtime;
@@ -24,10 +25,8 @@ public sealed partial class ScriptApiDescriptionTests
             RBXScriptConnection = run.Heartbeat:Connect(function() end),
             CFrame = CFrame.new(1, 2, 3),
             Vector3 = Vector3.new(1, 2, 3),
-            BasePart = workspace.Kinds.Part,
             Part = workspace.Kinds.Part,
             MeshPart = workspace.Kinds.MeshPart,
-            Light = workspace.Kinds.PointLight,
             PointLight = workspace.Kinds.PointLight,
             SpotLight = workspace.Kinds.SpotLight,
             DirectionalLight = workspace.Kinds.DirectionalLight,
@@ -38,6 +37,11 @@ public sealed partial class ScriptApiDescriptionTests
             ModuleScript = workspace.Kinds.ModuleScript,
         }
         """;
+
+    // No node is one of these and nothing more, so none has a holder: a node
+    // of a class below it would answer that class's members too. Its own
+    // members are asked of every class that extends it.
+    private static readonly string[] NeverAlone = [NodeClass.BasePart, NodeClass.Light];
 
     // Names a Roblox script would try, which no class here may answer by accident.
     private static readonly string[] RobloxNames =
@@ -71,16 +75,24 @@ public sealed partial class ScriptApiDescriptionTests
             """);
 
         Dictionary<string, string> found = ByLabel(printed);
+        ScriptClassDescription[] held = [.. Api.Classes.Where(described => !NeverAlone.Contains(described.Name))];
         found.Keys.Order(StringComparer.Ordinal).ShouldBe(
-            Api.Classes.Select(described => described.Name).Order(StringComparer.Ordinal),
+            held.Select(described => described.Name).Order(StringComparer.Ordinal),
             "the test holds no object of a class the description has. Give it one in Holders");
 
-        foreach (ScriptClassDescription described in Api.Classes)
+        foreach (ScriptClassDescription described in held)
         {
             found[described.Name].ShouldBe(
                 string.Join(' ', MembersOf(described).Order(StringComparer.Ordinal)),
                 $"what a script finds on a {described.Name}, against what the description says it has. " +
                 "A name with () is a method");
+        }
+
+        foreach (string name in NeverAlone)
+        {
+            held.ShouldContain(
+                described => described.Extends == name,
+                $"no class with a holder extends {name}, so nothing asks for its members");
         }
     }
 

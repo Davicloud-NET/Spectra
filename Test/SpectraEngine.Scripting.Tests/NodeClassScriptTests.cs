@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Text.RegularExpressions;
 using SpectraEngine.Core.Scene;
 using SpectraEngine.Core.Scripting.Api;
 using SpectraEngine.Scripting.Luau.Runtime;
@@ -109,9 +111,8 @@ public sealed class NodeClassScriptTests
         printed[2].ShouldEndWith("invalid argument #1 to 'IsA' (string expected, got Instance)");
     }
 
-    // The class of a node is asked first, and it hands a name it does not
-    // declare to the class it extends. So a read, a write and a call each
-    // reach Instance through the node's own class.
+    // Every class ends at Instance. Which class answered is not shown here:
+    // none below Instance declares a member yet, so no script can tell.
     [Fact]
     public void A_node_of_every_class_has_the_members_of_Instance()
     {
@@ -150,6 +151,30 @@ public sealed class NodeClassScriptTests
         ]);
     }
 
+    // Read from the source, since a wrong arm changes nothing a script sees
+    // until the two classes differ by a member.
+    [Theory]
+    [InlineData("Read")]
+    [InlineData("Write")]
+    [InlineData("Invoke")]
+    public void A_node_is_asked_through_the_script_class_named_like_its_class(string access)
+    {
+        string source = File.ReadAllText(
+            Path.Combine(BindingSourceTests.RepositoryRoot(), BindingSourceTests.Binding, "Runtime", "NodeMembers.cs"));
+        Dictionary<string, string> arms = Regex
+            .Matches(source, $@"NodeClassKind\.(?<kind>\w+) => (?<type>\w+)\.Script{access}\(")
+            .ToDictionary(arm => arm.Groups["kind"].Value, arm => arm.Groups["type"].Value);
+
+        // An entity that carries nothing else is the one kind with no arm of its own.
+        NodeClassKind[] kinds = [.. Enum.GetValues<NodeClassKind>().Where(kind => kind != NodeClassKind.Instance)];
+        arms.Keys.Order().ShouldBe(kinds.Select(kind => kind.ToString()).Order(), $"the kinds with an arm for {access}");
+        Regex.Matches(source, $@"_ => (?<type>\w+)\.Script{access}\(").ShouldHaveSingleItem()
+            .Groups["type"].Value.ShouldBe(nameof(NodeApi));
+
+        foreach (NodeClassKind kind in kinds)
+            ScriptClassOf(arms[kind.ToString()]).ShouldBe(NodeClass.NameOf(kind), $"where a {kind} is sent for {access}");
+    }
+
     [Fact]
     public void The_definitions_file_has_each_class_after_the_one_it_extends_and_a_child_by_its_name()
     {
@@ -182,6 +207,13 @@ public sealed class NodeClassScriptTests
             }
         }
     }
+
+    // The name [ScriptClass] gives a class of the binding, or null.
+    private static string? ScriptClassOf(string type) =>
+        typeof(NodeMembers).Assembly
+            .GetType($"{typeof(NodeMembers).Namespace}.{type}")
+            ?.GetCustomAttribute<ScriptClassAttribute>()
+            ?.Name;
 
     private static int Place(string file, string declared)
     {
