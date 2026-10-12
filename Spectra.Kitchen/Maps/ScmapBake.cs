@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Spectra.Kitchen.Diagnostics;
+using Spectra.Kitchen.Rules;
 using SpectraEngine.Core;
 using SpectraEngine.Core.Assets;
 using SpectraEngine.Core.Assets.Packs;
@@ -10,6 +11,7 @@ using SpectraEngine.Core.Entities;
 using SpectraEngine.Core.Maps;
 using SpectraEngine.Core.Maps.Compiled;
 using SpectraEngine.Core.Scene;
+using SpectraEngine.Core.Scripting;
 
 namespace Spectra.Kitchen.Maps;
 
@@ -58,12 +60,35 @@ public static class ScmapBake
         var builder = new ScmapBuilder(document.Scene.Name);
         var assets = new AssetTable(builder);
 
-        if (!WriteNodes(document, scene, builder, assets, keepBrushSource, report, sourcePath)) return null;
+        try
+        {
+            if (!WriteNodes(document, scene, builder, assets, keepBrushSource, report, sourcePath)) return null;
 
-        WriteChunks(world, builder, assets);
+            WriteChunks(world, builder, assets);
+        }
+        catch (ScmapAssetKindException ex)
+        {
+            report(AssetOfTwoKinds(ex, sourcePath));
+            return null;
+        }
 
         return builder.Build(sourceMapDigest, (uint)document.FormatVersion);
     }
+
+    private static CookDiagnostic AssetOfTwoKinds(ScmapAssetKindException clash, string sourcePath) =>
+        CookDiagnostic.Error(
+            CookDiagnosticCodes.MapAssetOfTwoKinds,
+            $"'{sourcePath}' names '{clash.ContentPath}' as a {Describe(clash.First)} and as a " +
+            $"{Describe(clash.Second)}. One file is one kind of asset. Give one of the two a file of its own.",
+            sourcePath);
+
+    private static string Describe(PackEntryKind kind) => kind switch
+    {
+        PackEntryKind.Material => "material",
+        PackEntryKind.Model => "model",
+        PackEntryKind.Script => "script",
+        _ => kind.ToString(),
+    };
 
     // Walks document and scene together in pre-order. The binder builds the
     // scene in document order, so the two sequences match.
@@ -114,7 +139,10 @@ public static class ScmapBake
                 PayloadIndexOf(mapped, assets)));
 
             WriteBrush(builder, assets, node, index, KeepsSource(node, mapped, keepBrushSource));
-            WriteLightEntityAndScript(builder, node, index, report, sourcePath);
+            WriteLightAndEntity(builder, node, index, report, sourcePath);
+
+            if (node.Script is { } script && !WriteScript(builder, node, script, index, report, sourcePath))
+                return false;
 
             PushChildren(pending, mapped.Children, node, index);
         }
@@ -168,7 +196,7 @@ public static class ScmapBake
         }
     }
 
-    private static void WriteLightEntityAndScript(
+    private static void WriteLightAndEntity(
         ScmapBuilder builder, SceneNode node, int index, Action<CookDiagnostic> report, string sourcePath)
     {
         if (node.Light is { } light)
@@ -181,10 +209,32 @@ public static class ScmapBake
             builder.AddEntity(new ScmapEntitySource(
                 index, entity.ClassName, [.. entity.Keyvalues], [.. entity.Connections]));
         }
+    }
 
-        // The file's path only. Its text is an entry of the pack.
-        if (node.Script is { } script)
-            builder.AddScript(new ScmapScriptSource(index, script.Path, script.IsEnabled, script.IsModule));
+    // The file's path only. Its text is an entry of the pack. False for a
+    // file the script rule does not cook: it would be packed as it is, and
+    // the game would compile at load what no cook checked.
+    private static bool WriteScript(
+        ScmapBuilder builder,
+        SceneNode node,
+        Script script,
+        int index,
+        Action<CookDiagnostic> report,
+        string sourcePath)
+    {
+        if (!ScriptRule.Handles(script.Path))
+        {
+            report(CookDiagnostic.Error(
+                CookDiagnosticCodes.MapScriptNotLuau,
+                $"Node '{node.Name}' in '{sourcePath}' names '{script.Path}' as its script. A script is a " +
+                $"{PackedScript.FileExtension} file: the cook checks and packs no other. Rename the file.",
+                sourcePath));
+
+            return false;
+        }
+
+        builder.AddScript(new ScmapScriptSource(index, script.Path, script.IsEnabled, script.IsModule));
+        return true;
     }
 
     private static void PushChildren(

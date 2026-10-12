@@ -271,6 +271,15 @@ public static class CookDiagnosticCodes
     /// </summary>
     public static readonly CookDiagnosticId MapEntityOnWorldBrush = CookDiagnosticId.Cook(7010);
 
+    /// <summary>A map names one content path as assets of two kinds, such as a script and a model.</summary>
+    public static readonly CookDiagnosticId MapAssetOfTwoKinds = CookDiagnosticId.Cook(7012);
+
+    /// <summary>
+    /// A script node names a file that is not a <c>.luau</c> file. The cook
+    /// would pack it unchecked.
+    /// </summary>
+    public static readonly CookDiagnosticId MapScriptNotLuau = CookDiagnosticId.Cook(7013);
+
     /// <summary>A script the Luau compiler refuses. Carries its message and the line.</summary>
     public static readonly CookDiagnosticId ScriptSyntaxError = CookDiagnosticId.Cook(8001);
 

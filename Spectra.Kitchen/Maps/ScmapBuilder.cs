@@ -69,9 +69,10 @@ public sealed class ScmapBuilder
 
     /// <summary>
     /// Adds an asset reference, or returns the index it already has. Keyed
-    /// case-insensitively on the normalised path. Throws if the path is already
-    /// present under a different kind.
+    /// case-insensitively on the normalised path. Only a script keeps one row
+    /// for each way its path is spelled.
     /// </summary>
+    /// <exception cref="ScmapAssetKindException">The path is already present under a different kind.</exception>
     public uint AddAsset(ScmapAssetSource asset) => _assets.Add(asset);
 
     /// <summary>

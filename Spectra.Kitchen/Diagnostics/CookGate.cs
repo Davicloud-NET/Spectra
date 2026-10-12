@@ -161,6 +161,8 @@ public static class CookGate
         7008 => CookGateVerdict.Fatal,             // SC7008 MapAssetMissing
         7009 => CookGateVerdict.Fatal,             // SC7009 MapFileUnreadable
         7010 => CookGateVerdict.WarningUnlessStrict, // SC7010 MapEntityOnWorldBrush
+        7012 => CookGateVerdict.Fatal,             // SC7012 MapAssetOfTwoKinds
+        7013 => CookGateVerdict.Fatal,             // SC7013 MapScriptNotLuau
 
         8001 => CookGateVerdict.Fatal,             // SC8001 ScriptSyntaxError
         8002 => CookGateVerdict.Fatal,             // SC8002 ScriptNotChecked

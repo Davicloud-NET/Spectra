@@ -16,34 +16,38 @@ internal sealed class ScmapAssetTable
     // Without regard to case, as a pack finds an asset.
     private readonly Dictionary<string, uint> _byPath = new(StringComparer.OrdinalIgnoreCase);
 
+    // The other spellings of a script's path, each with a row of its own.
+    private readonly Dictionary<string, uint> _scriptSpellings = new(StringComparer.Ordinal);
+
     public int Count => _rows.Count;
 
     public IReadOnlyList<ScmapAssetSource> Rows => _rows;
 
-    // The row of an asset, added when the path is new. Throws when the path
-    // has a row of another kind.
+    // The row of an asset, added when the path is new.
     public uint Add(ScmapAssetSource asset)
     {
         string path = ContentRoot.NormalizeRelativePath(asset.ContentPath);
 
-        if (_byPath.TryGetValue(path, out uint existing))
+        if (!_byPath.TryGetValue(path, out uint first))
         {
-            ScmapAssetSource had = _rows[(int)existing];
-            if (had.Kind != asset.Kind)
-            {
-                throw new InvalidOperationException(
-                    $"Asset '{path}' was added as {had.Kind} and again as {asset.Kind}. One path is one " +
-                    "asset, so a reader would have to choose which kind it is, and choosing silently is how " +
-                    "a material gets loaded as a model.");
-            }
-
-            return existing;
+            _byPath[path] = (uint)_rows.Count;
+            return Append(asset with { ContentPath = path });
         }
 
-        var index = (uint)_rows.Count;
-        _rows.Add(asset with { ContentPath = path });
-        _byPath[path] = index;
-        return index;
+        ScmapAssetSource had = _rows[(int)first];
+        if (had.Kind != asset.Kind)
+            throw new ScmapAssetKindException(path, had.Kind, asset.Kind);
+
+        // A script prints its path in front of a line, as its node spells it.
+        // So a second spelling of one file is a second row.
+        if (asset.Kind != PackEntryKind.Script || string.Equals(had.ContentPath, path, StringComparison.Ordinal))
+            return first;
+
+        if (_scriptSpellings.TryGetValue(path, out uint spelled))
+            return spelled;
+
+        _scriptSpellings[path] = (uint)_rows.Count;
+        return Append(asset with { ContentPath = path });
     }
 
     // The only way a material gets a row. MaterialRef.Id is per-process and
@@ -83,5 +87,11 @@ internal sealed class ScmapAssetTable
         }
 
         return body;
+    }
+
+    private uint Append(ScmapAssetSource row)
+    {
+        _rows.Add(row);
+        return (uint)(_rows.Count - 1);
     }
 }
