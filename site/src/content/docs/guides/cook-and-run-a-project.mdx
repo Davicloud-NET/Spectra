@@ -71,13 +71,16 @@ Luau names the line and not the column, so the column is always 1.
 
 A cooked level keeps its script nodes, and each one names its file. If a level names a script file that is not there, the cook still makes the pack. `verify` then fails with `SC7008` and names the level and the file.
 
-Three messages are about scripts:
+A script is a `.luau` file. A level that names any other file as a script does not cook.
+
+Four messages are about scripts:
 
 | Code | Means |
 |---|---|
 | `SC8001` | A script does not compile. The line is in the message. |
 | `SC8002` | A script could not be checked, so no pack was made. Luau is not built on this machine. Run `native/build-luau.ps1`, or `native/build-luau.sh` on Linux, and cook again. |
 | `SC8003` | From `verify`: a script in the pack is not in the form the cook writes. Cook the project again. |
+| `SC7013` | A level names a file as a script that is not a `.luau` file. The message names the node and the file. Rename the file. |
 
 ## Markers in a sound
 

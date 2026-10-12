@@ -114,11 +114,13 @@ The meanings are pinned twice. The tests hold `CFrame` against the rules written
 | --- | --- |
 | `SubtreeBrushCount` | `SceneNode.cs` |
 | `SubtreeStaticWorldBrushCount` | `SceneNode.cs` |
-| `AdjustSubtreeBrushCounts` (private) | `SceneNode.cs` |
+| `HoldsWorldBrush` | `SceneNode.cs` |
+| `SubtreeBrushCounts` (internal) | `SubtreeBrushCounts.cs` |
+| `AdjustSubtreeCounts` (private) | `SceneNode.cs` |
 
-Two counts with one writer. `SubtreeBrushCount` counts every brush in the subtree, the node's own included. `SubtreeStaticWorldBrushCount` counts only `World` brushes. Both are `int` fields, and `AdjustSubtreeBrushCounts` is the only code that writes either. It walks the ancestor chain from the `Brush` setter, the `BrushKind` setter and every reparent, so reading a count is O(1).
+Three counts with one writer. `SubtreeBrushCount` counts every brush in the subtree, the node's own included. `SubtreeStaticWorldBrushCount` counts only `World` brushes. The third counts the world brushes a bake took off their nodes (`BakedKind`). The three sit in one `SubtreeBrushCounts` field, and `AdjustSubtreeCounts` is the only code that writes it once a node is made. It walks the ancestor chain from the `Brush` setter, the `BrushKind` setter and every reparent, so reading a count is O(1).
 
-Each answers its own question. The total is what a tool reads before it writes `LocalScale` (§2.3). The static-world count decides whether a transform edit dirties the compiled world: moving a camera, a prop or a subtree of parts launches no recompile, and moving a group with a world brush below it does.
+Each answers its own question. The total is what a tool reads before it writes `LocalScale` (§2.3). The static-world count decides whether a transform edit dirties the compiled world: moving a camera, a prop or a subtree of parts launches no recompile, and moving a group with a world brush below it does. `HoldsWorldBrush` is true when the static-world count or the baked count is above zero, and it is what a running level asks before it moves a node.
 
 ### 2.5 Events
 

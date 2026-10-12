@@ -993,7 +993,7 @@ static FlatCell[] FlattenCells(CsgWorld world)
     return flat;
 }
 
-// StageNodes and StageCells mirror ScmapBake.WriteNodes/WriteChunks, which
+// StageNodes and StageCells mirror ScmapNodeBake.Write and ScmapBake.WriteChunks, which
 // need a MapDocument and a bound Scene these content sets do not have. Keep
 // them in step with the bake: asset indices, never MaterialRef.Id, and
 // submeshes sorted by asset index.
