@@ -311,6 +311,9 @@ public sealed class WaitForChildTests
         level.Errors.ShouldBeEmpty();
         level.Printed.ShouldBe(["adding", "1 Key", "2 Key", "3 Key", "4 Key", "5 Key", "6 Key"]);
         level.Runtime.ShouldNotBeNull().WaitingThreadCount.ShouldBe(0);
+
+        // They ran late. None was ended, so none counts as lost.
+        level.Entities.DiscardedEventCount.ShouldBe(0);
     }
 
     // A wait with a timeout too long to count has no wake of its own. The

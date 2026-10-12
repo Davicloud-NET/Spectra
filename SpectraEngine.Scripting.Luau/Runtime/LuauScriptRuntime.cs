@@ -129,20 +129,25 @@ public sealed class LuauScriptRuntime : IScriptRuntime
     }
 
     /// <inheritdoc/>
-    public void Drop(long token)
+    public bool Drop(long token)
     {
         if (_isClosed)
-            return;
+            return true;
 
         try
         {
-            if (!_childWaits.TryDrop(token))
-                _tasks.Drop(token);
+            // A thread that waits for a child waits on. Any other is ended.
+            if (_childWaits.TryDrop(token))
+                return false;
+
+            _tasks.Drop(token);
         }
         catch (Exception e) // boundary: nothing of a script may throw into the tick
         {
             ReportFault(e);
         }
+
+        return true;
     }
 
     /// <inheritdoc/>

@@ -317,6 +317,11 @@ internal sealed class EntityDispatcher
     private void FallBehind(EntityEventLane lane, in EntityEvent next)
     {
         BudgetTripCount++;
+        SayBehind(lane, next);
+    }
+
+    private void SayBehind(EntityEventLane lane, in EntityEvent next)
+    {
         if (lane.ReportedBehind)
             return;
 
@@ -332,20 +337,26 @@ internal sealed class EntityDispatcher
         // is due on a later tick.
         long tick = _world.TickNumber;
         int discarded = 0;
+        int late = 0;
         while (lane.TryPeek(out EntityEvent next)
             && next.Tick <= tick
             && next.Sequence >= firstMadeHere)
         {
             lane.TryPop(out EntityEvent dropped);
-            discarded++;
 
-            // A thread waits on it and would wait for good.
-            if (dropped.Kind == EntityEventKind.ScriptWake)
-                _world.Scripts?.Drop(dropped.Token);
+            // A thread waits on a wake and would wait for good. A runtime
+            // that has asked for another wake has lost nothing.
+            if (dropped.Kind == EntityEventKind.ScriptWake && _world.Scripts?.Drop(dropped.Token) == false)
+                late++;
+            else
+                discarded++;
         }
 
         DiscardedCount += discarded;
-        _log.DroppedWhatADrainMade(ReferenceEquals(lane, _scripts), _maxDispatchesPerTick, offender, discarded);
+        if (discarded > 0)
+            _log.DroppedWhatADrainMade(ReferenceEquals(lane, _scripts), _maxDispatchesPerTick, offender, discarded);
+        if (late > 0)
+            SayBehind(lane, offender);
     }
 
     private void RefuseForRoom(EntityEventLane lane, in EntityEvent made)

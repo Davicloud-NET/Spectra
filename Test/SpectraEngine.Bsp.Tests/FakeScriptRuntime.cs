@@ -16,6 +16,10 @@ internal sealed class FakeScriptRuntime : IScriptRuntime
     // What a thread that woke would do next.
     public Action<long>? OnWake { get; set; }
 
+    // What a runtime would do with a wake that was dropped. It answers
+    // whether what waited for the wake was ended.
+    public Func<long, bool>? OnDrop { get; set; }
+
     public bool IsClosed { get; private set; }
 
     public void StartScripts()
@@ -30,7 +34,11 @@ internal sealed class FakeScriptRuntime : IScriptRuntime
         OnWake?.Invoke(token);
     }
 
-    public void Drop(long token) => _log.Add($"drop {token}");
+    public bool Drop(long token)
+    {
+        _log.Add($"drop {token}");
+        return OnDrop?.Invoke(token) ?? true;
+    }
 
     public void BeforeSimulation() => _log.Add("before simulation");
 

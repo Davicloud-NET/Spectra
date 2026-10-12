@@ -217,6 +217,36 @@ public sealed class EntityWorldScriptTests
         _log.Skip(1).ShouldBe(["wake 1", "wake 2", "wake 3", "wake 4"]);
     }
 
+    // What three threads wait for arrives in one drain, and the runtime asks
+    // again for the wake the drain drops. Nothing was ended and nothing looped.
+    [Fact]
+    public void A_dropped_wake_the_runtime_asks_for_again_is_late_and_not_lost()
+    {
+        EntityWorld world = Started(out FakeScriptRuntime runtime);
+        world.MaxDispatchesPerTick = 2;
+        runtime.OnWake = token =>
+        {
+            for (int next = 2; token == 1 && next <= 4; next++)
+                world.QueueScriptWake(next, ticks: 0);
+        };
+        runtime.OnDrop = token =>
+        {
+            world.QueueScriptWake(token, ticks: 1);
+            return false;
+        };
+        world.QueueScriptWake(1, ticks: 1);
+
+        world.Tick(Tick);
+
+        _log.Skip(1).ShouldBe(["wake 1", "wake 2", "wake 3", "drop 4"]);
+        world.DiscardedEventCount.ShouldBe(0);
+        _logger.MessagesAt(LogLevel.Error).ShouldBeEmpty();
+        _logger.MessagesAt(LogLevel.Warning).ShouldHaveSingleItem().ShouldContain("run late");
+
+        world.Tick(Tick);
+        _log.Skip(5).ShouldBe(["wake 4"]);
+    }
+
     [Fact]
     public void A_wake_that_waits_longer_than_a_level_can_count_is_not_queued()
     {

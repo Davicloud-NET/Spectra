@@ -19,7 +19,11 @@ public interface IScriptRuntime
     void Wake(long token);
 
     /// <summary>A queued wake will not come: the tick it was made in made too many of them.</summary>
-    void Drop(long token);
+    /// <returns>
+    /// True when what waited for the wake was ended. False when it still
+    /// waits, because the runtime has asked for another wake.
+    /// </returns>
+    bool Drop(long token);
 
     /// <summary>The point of a tick before the physics step.</summary>
     void BeforeSimulation();
