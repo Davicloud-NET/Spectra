@@ -62,6 +62,14 @@ try
         return;
     }
 
+    // The same: a description of the build, which needs no level and no Luau state.
+    if (options.ExportScriptTypesPath is not null || options.ExportScriptApiPath is not null)
+    {
+        ScriptApiExport.Write(
+            options.ExportScriptTypesPath, options.ExportScriptApiPath, loggerFactory.CreateLogger("Script"));
+        return;
+    }
+
     // Anchors the built-in entity assembly. Nothing here calls into it (maps
     // name its classes as text), so a trimmed or AOT publish would drop it.
     // Must run before the first catalogue read, which freezes the catalogue.

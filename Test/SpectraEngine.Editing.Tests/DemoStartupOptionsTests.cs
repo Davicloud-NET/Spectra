@@ -316,4 +316,21 @@ public sealed class DemoStartupOptionsTests
         Should.Throw<ArgumentException>(
             () => DemoStartupOptions.Parse(["--pacing-probe"], selfTestEnvironmentValue: null));
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("true")]
+    public void The_script_api_is_exported_only_when_a_switch_names_a_file(string? environment)
+    {
+        DemoStartupOptions none = DemoStartupOptions.Parse([], environment);
+        none.ExportScriptTypesPath.ShouldBeNull();
+        none.ExportScriptApiPath.ShouldBeNull();
+
+        DemoStartupOptions both = DemoStartupOptions.Parse(
+            ["--export-script-types=out/spectra.d.luau", "--export-script-api=out/script-api.json"], environment);
+        both.ExportScriptTypesPath.ShouldBe("out/spectra.d.luau");
+        both.ExportScriptApiPath.ShouldBe("out/script-api.json");
+
+        Should.Throw<ArgumentException>(() => DemoStartupOptions.Parse(["--export-script-types"], environment));
+    }
 }

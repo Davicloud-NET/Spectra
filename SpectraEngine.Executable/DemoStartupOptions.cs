@@ -62,6 +62,14 @@ internal sealed record DemoStartupOptions(
     // script does.
     public string? ScriptPath { get; init; }
 
+    // Where to write the script API for luau-lsp, as spectra.d.luau. The
+    // run ends once it is written.
+    public string? ExportScriptTypesPath { get; init; }
+
+    // Where to write the script API as JSON, for the docs site. The run
+    // ends once it is written.
+    public string? ExportScriptApiPath { get; init; }
+
     // Read only when no command-line switch names the self-test.
     public const string SelfTestEnvironmentVariable = "SPECTRA_SELFTEST";
 
@@ -75,7 +83,8 @@ internal sealed record DemoStartupOptions(
         "[--project=<folder>] [--save-project=<folder>] [--pack[=true|false]] [--dev[=true|false]] " +
         "[--exit-after-save[=true|false]] " +
         "[--export-entity-schema=<file.sentdef>] [--viewport-compare[=true|false]] " +
-        "[--pacing-probe[=true|false]] [--pipeline-compare[=true|false]] [--command=<console line>] [--console[=true|false]] [--script=<file.luau>].";
+        "[--pacing-probe[=true|false]] [--pipeline-compare[=true|false]] [--command=<console line>] [--console[=true|false]] [--script=<file.luau>] " +
+        "[--export-script-types=<file.d.luau>] [--export-script-api=<file.json>].";
 
     // Throws ArgumentException on a bad argument; Program logs it as a usage error.
     // An explicit --selftest=false beats the environment value.
@@ -115,6 +124,8 @@ internal sealed record DemoStartupOptions(
         IReadOnlyList<string> commands = [];
         bool consoleInput = false;
         string? scriptPath = null;
+        string? exportScriptTypesPath = null;
+        string? exportScriptApiPath = null;
 
         for (int i = 0; i < args.Count; i++)
         {
@@ -295,6 +306,16 @@ internal sealed record DemoStartupOptions(
                 case "script":
                     scriptPath = ParseName(value, token);
                     continue;
+
+                // Writes the definitions file for luau-lsp and exits without opening a window.
+                case "export-script-types" or "exportscripttypes":
+                    exportScriptTypesPath = ParseName(value, token);
+                    continue;
+
+                // Writes the script API as JSON and exits without opening a window.
+                case "export-script-api" or "exportscriptapi":
+                    exportScriptApiPath = ParseName(value, token);
+                    continue;
             }
 
             // Anything else is the positional backend. A second one is a typo.
@@ -346,7 +367,7 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromCommandLine, SelfTestSource.CommandLine,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput, ScriptPath = scriptPath };
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput, ScriptPath = scriptPath, ExportScriptTypesPath = exportScriptTypesPath, ExportScriptApiPath = exportScriptApiPath };
 
         if (!string.IsNullOrWhiteSpace(selfTestEnvironmentValue))
         {
@@ -356,14 +377,14 @@ internal sealed record DemoStartupOptions(
                 backend ?? GraphicsBackend.OpenGL, fromEnvironment, SelfTestSource.Environment,
                 fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput, ScriptPath = scriptPath };
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput, ScriptPath = scriptPath, ExportScriptTypesPath = exportScriptTypesPath, ExportScriptApiPath = exportScriptApiPath };
         }
 
         return new DemoStartupOptions(
             backend ?? GraphicsBackend.OpenGL, false, SelfTestSource.Default,
             fullscreenCycle, play, offscreenProbe, pipeline, shadows, profile, vsync, debugLayer, adapter, windowSize, scatterGrid, propCount,
                 loadMapPath, saveMapPath, projectPath, saveProjectPath, bootFromPacks, devContentOverlay,
-                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput, ScriptPath = scriptPath };
+                exportEntitySchemaPath, exitAfterSave, viewportCompare, pacingProbe, demoCsgAnimation, frameContexts, uncapped, gbufferLayout, pipelineCompare) { Commands = commands, ConsoleInput = consoleInput, ScriptPath = scriptPath, ExportScriptTypesPath = exportScriptTypesPath, ExportScriptApiPath = exportScriptApiPath };
     }
 
     private static string ParseName(string? value, string origin)

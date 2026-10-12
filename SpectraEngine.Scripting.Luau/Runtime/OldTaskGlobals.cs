@@ -14,12 +14,12 @@ internal sealed partial class OldTaskGlobals(TaskLibrary tasks)
     private int Wait(LuauStack stack) => tasks.OldWait(stack);
 
     /// <summary>Runs a function on the next tick, with the seconds that passed and the level's time.</summary>
-    [ScriptFunction(Name = "spawn", Parameters = "callback: (number, number) -> ...any")]
+    [ScriptFunction(Name = "spawn", Parameters = "callback: (number, number) -> ...any", Returns = "thread")]
     [ScriptDeprecated("task.spawn")]
     private int Spawn(LuauStack stack) => tasks.OldSpawn(stack);
 
     /// <summary>Runs a function after so many seconds, with the seconds that passed and the level's time.</summary>
-    [ScriptFunction(Name = "delay", Parameters = "seconds: number, callback: (number, number) -> ...any")]
+    [ScriptFunction(Name = "delay", Parameters = "seconds: number, callback: (number, number) -> ...any", Returns = "thread")]
     [ScriptDeprecated("task.delay")]
     private int Delay(LuauStack stack) => tasks.OldDelay(stack);
 }
