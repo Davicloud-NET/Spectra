@@ -1,5 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -204,13 +206,38 @@ internal static class ScriptFunctionReader
         return parameter.ExplicitDefaultValue switch
         {
             bool flag => flag ? "true" : "false",
-            float number => ((double)number).ToString("R", CultureInfo.InvariantCulture),
-            double number => number.ToString("R", CultureInfo.InvariantCulture),
+            float number => WrittenNumber(parameter) ?? $"global::System.BitConverter.Int32BitsToSingle({BitsOf(number)})",
+            double number => WrittenNumber(parameter) ?? $"global::System.BitConverter.Int64BitsToDouble({BitsOf(number)}L)",
             int number => number.ToString(CultureInfo.InvariantCulture),
             string text => SymbolDisplay.FormatLiteral(text, quote: true),
             _ => type.IsNullable || type.Kind is ScriptValueKind.Text or ScriptValueKind.Object ? "null" : "default",
         };
     }
+
+    // The default as its author wrote it, when that is a number and no
+    // name. A number formatted here reads differently on another host of
+    // the compiler, and NaN and infinity format as no C# at all.
+    private static string? WrittenNumber(IParameterSymbol parameter)
+    {
+        foreach (SyntaxReference reference in parameter.DeclaringSyntaxReferences)
+        {
+            if (reference.GetSyntax() is not ParameterSyntax { Default.Value: { } value })
+                continue;
+
+            bool isNegated = value.IsKind(SyntaxKind.UnaryMinusExpression);
+            ExpressionSyntax number = isNegated ? ((PrefixUnaryExpressionSyntax)value).Operand : value;
+            if (number.IsKind(SyntaxKind.NumericLiteralExpression))
+                return value.ToString();
+        }
+
+        return null;
+    }
+
+    private static string BitsOf(float number) =>
+        BitConverter.ToInt32(BitConverter.GetBytes(number), 0).ToString(CultureInfo.InvariantCulture);
+
+    private static string BitsOf(double number) =>
+        BitConverter.DoubleToInt64Bits(number).ToString(CultureInfo.InvariantCulture);
 
     private static bool IsStack(ITypeSymbol type) =>
         type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == ScriptTypeMap.LuauStack;

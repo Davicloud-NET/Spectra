@@ -445,7 +445,7 @@ namespace TestGame.Scripting
         {
             if (!global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments.TryVector(stack, 2, out global::System.Numerics.Vector3 a0))
                 return global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments.Wrong(stack, 2, "Lerp", "Vector3", isMethod: true);
-            double a1 = 0.5;
+            double a1 = 0.5f;
             if (!stack.IsNil(3))
             {
                 if (!global::SpectraEngine.Scripting.Luau.Runtime.ScriptArguments.TryDouble(stack, 3, out double r1))

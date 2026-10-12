@@ -101,10 +101,37 @@ public sealed class ScriptApiGeneratorSnapshotTests
     {
         string point = Flat(ScriptApiHarness.Run(ScriptApiFixtures.Representative).SourceNamed("PointApi.ScriptApi.g.cs"));
 
-        point.ShouldContain("doublea1=0.5;if(!stack.IsNil(3)){");
+        point.ShouldContain("doublea1=0.5f;if(!stack.IsNil(3)){");
         point.ShouldContain("global::System.Numerics.Vector3?a1=null;if(!stack.IsNil(3)){");
         point.ShouldContain("string?a2=null;if(!stack.IsNil(4)){");
         point.ShouldContain("PointApi.Lerp(self,a0,(float)a1)");
+    }
+
+    // A number the generator formats itself reads differently from one
+    // host of the compiler to the next, and NaN reads as no number at all.
+    [Theory]
+    [InlineData("float by = 1e-5f", "doublea0=1e-5f;")]
+    [InlineData("double by = -0.25", "doublea0=-0.25;")]
+    [InlineData("float by = float.NaN", "doublea0=global::System.BitConverter.Int32BitsToSingle(-4194304);")]
+    [InlineData("float by = float.PositiveInfinity", "doublea0=global::System.BitConverter.Int32BitsToSingle(2139095040);")]
+    [InlineData("double by = double.NegativeInfinity", "doublea0=global::System.BitConverter.Int64BitsToDouble(-4503599627370496L);")]
+    [InlineData("double by = Math.PI", "doublea0=global::System.BitConverter.Int64BitsToDouble(4614256656552045848L);")]
+    public void A_default_is_written_as_its_author_wrote_it_or_by_its_bits(string parameter, string local)
+    {
+        GeneratorRun run = ScriptApiHarness.Run(ScriptApiFixtures.Usings + $$"""
+            /// <summary>A counter.</summary>
+            [ScriptValue("Counter")]
+            internal static partial class CounterApi
+            {
+                /// <summary>Makes it longer.</summary>
+                [ScriptMethod]
+                public static Vector3 Scale(Vector3 self, {{parameter}}) => self * (float)by;
+            }
+            """);
+
+        run.Diagnostics.ShouldBeEmpty(run.Describe());
+        run.CompileErrors().ShouldBeEmpty();
+        Flat(run.SourceNamed("CounterApi.ScriptApi.g.cs")).ShouldContain(local);
     }
 
     [Fact]
